@@ -1,5 +1,13 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## 1.0.1 — 2026-07-17
+
+Add (carry-forward of PR #601, `0a1576c4`): U16 lockfile —
+`templates/nextjs-app/package-lock.json` (lockfileVersion 3, 493 packages) so the Next.js
+template installs reproducibly (`npm ci`, 47/47 template vitest suite green per the QC
+judge's independent run). QC-judged 8.4 with the only blocker being this missing version
+bump; the bump trio (`skill-version.txt` + `SKILL.md` frontmatter + this entry) is the fix.
+
 ## 1.0.0 — 2026-07-15
 
 Initial skeleton (build unit U2, branch `skill62/cinematic-engine`).

@@ -1,7 +1,7 @@
 ---
 name: cinematic-web-funnel-engine
 description: Builds conversion-focused cinematic websites, landing pages, squeeze pages, sales pages, and multi-step funnels with complete copy, AI-generated scroll-controlled scenes, frame-matched video transitions, responsive Next.js delivery, Vercel deployment, and GoHighLevel/Convert and Flow integrations. Use when a client asks for an animated website, immersive landing page, cinematic funnel, scroll-story page, premium interactive web experience, or a funnel that combines conversion content with AI-generated motion.
-version: 1.0.0
+version: 1.0.1
 ---
 
 # Cinematic and Web Funnel Engine (Skill 62)
