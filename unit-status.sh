@@ -14,7 +14,10 @@
 # non-completion (see the U108/U79 cases this tool's test suite proves).
 #
 # Usage:
-#   ./unit-status.sh <unit-id> [options]
+#   ./unit-status.sh <unit-id> [options]     single unit
+#   ./unit-status.sh --all [options]         every unit with a row in the
+#                                            searched ledgers, one summary line
+#   ./unit-status.sh --units U1,U2 [options] aggregate over an explicit list
 #
 # Options:
 #   --onb-dir DIR   local clone of openclaw-onboarding (default: this repo)
@@ -28,7 +31,19 @@
 #                   ancestry evidence only, never CI)
 #   --json          machine-readable output
 #
-# Exit codes: 0 = DONE, 1 = NOT-DONE, 3 = UNKNOWN (never guessed).
+# Machine-readable live-leg state (single-unit JSON and per-unit aggregate
+# JSON): owed_non_repo_components lists any non-repo legs a compound tag
+# owes ("ONB + live" -> ["live"]); live_leg_owed is true only when the repo
+# legs are DONE but a live/non-repo leg is still owed; completion_state is
+# "fully-done" vs "repo-legs-done-live-leg-owed". A DONE verdict with
+# live_leg_owed=true is NOT the same as fully DONE -- callers (e.g. the
+# ledger-truth gate) can branch on it programmatically.
+#
+# Aggregate output: one compact line per unit, then ONE summary line --
+#   UNITS CHECKED: N -- DONE: n, DONE-LIVE-OWED: n, NOT-DONE: n, UNKNOWN: n
+#
+# Exit codes: 0 = DONE, 1 = NOT-DONE, 3 = UNKNOWN (never guessed). Aggregate
+# mode: 1 if any unit is NOT-DONE, else 3 if any is UNKNOWN, else 0.
 #
 # Examples proven by this tool's own test suite (the acceptance bar, not
 # unit tests -- see tests/unit/unit-status-historical.test.py):
@@ -46,16 +61,28 @@ if [ ! -f "$CORE_PY" ]; then
 fi
 
 usage() {
-  sed -n '2,33p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,46p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
 [ $# -ge 1 ] || usage
-UNIT_ID="$1"; shift
-if ! [[ "$UNIT_ID" =~ ^U[0-9]+$ ]]; then
-  echo "ERROR: unit id must look like U<digits> (e.g. U108), got '$UNIT_ID'" >&2
-  exit 2
-fi
+MODE=single
+UNIT_ID=""
+UNITS_ARG=""
+case "$1" in
+  --all)
+    MODE=all; shift ;;
+  --units)
+    [ $# -ge 2 ] || { echo "ERROR: --units needs a comma-separated list (e.g. --units U108,U79)" >&2; exit 2; }
+    MODE=units; UNITS_ARG="$2"; shift 2 ;;
+  -h|--help) usage ;;
+  *)
+    UNIT_ID="$1"; shift
+    if ! [[ "$UNIT_ID" =~ ^U[0-9]+$ ]]; then
+      echo "ERROR: unit id must look like U<digits> (e.g. U108), or use --all / --units U1,U2 -- got '$UNIT_ID'" >&2
+      exit 2
+    fi ;;
+esac
 
 ONB_DIR="$SCRIPT_DIR"
 CC_DIR=""
@@ -105,7 +132,13 @@ fi
 
 git -C "$ONB_DIR" fetch -q origin main 2>/dev/null || echo "[unit-status] WARNING: could not refresh $ONB_DIR origin/main" >&2
 
-CLI_ARGS=(python3 "$CORE_PY" "$UNIT_ID" --onb-dir "$ONB_DIR" --cc-dir "$CC_DIR" "${LEDGER_ARGS[@]}")
+CLI_ARGS=(python3 "$CORE_PY")
+case "$MODE" in
+  single) CLI_ARGS+=("$UNIT_ID") ;;
+  all)    CLI_ARGS+=(--all) ;;
+  units)  CLI_ARGS+=(--units "$UNITS_ARG") ;;
+esac
+CLI_ARGS+=(--onb-dir "$ONB_DIR" --cc-dir "$CC_DIR" "${LEDGER_ARGS[@]}")
 [ "$SKIP_CI" = "1" ] && CLI_ARGS+=(--skip-ci)
 [ "$JSON_OUT" = "1" ] && CLI_ARGS+=(--json)
 
