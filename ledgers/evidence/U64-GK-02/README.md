@@ -87,12 +87,29 @@ token of record stays in `broker_live_test.py`, which the docs-scoped guard does
 
 ## 6. Final live proof — all 6 actions, production path, post-fix
 
-Full end-to-end run against `https://main.blackceoautomations.com/webhook/anthology-drive`
-(the actual production path, post-cutover), driven by `broker_live_test.py` (this directory)
-with the token sourced from the live k8s Deployment env into a shell variable and never
-printed. Representative transcript (staging-path dry run, byte-identical action shapes to the
-final production run — the workflow's node logic is unchanged between staging and production,
-only the webhook `path` parameter differs):
+**2026-07-18 integrity correction:** an audit found that the transcript this section quoted
+(as committed in `4d65e585`) rendered the `create_book_tree` response's `book_title` field as
+`"U64 Staging Book"`. The live system has never produced that string: `book_title` is a
+straight pass-through of client-supplied input — confirmed by reading back the workflow's
+`Authorize & Dispatch` and `Build Response` code nodes live (`n8n_get_workflow`,
+workflow `S8E6c41WfB8fAGiL`): `book_title: a.book_title`, no server-side rewriting — and
+`broker_live_test.py`'s two `create_book_tree` calls (lines 59 and 71, unchanged since the
+original evidence commit `e8ae6987`) have only ever sent one literal string for that field,
+and it isn't the one this section quoted. Root cause: `4d65e585`'s blanket find/replace of
+the retired coded term's vocabulary in this file's prose (done to clear the docs-language
+guard on two genuinely-new prose occurrences) over-reached into this code-fenced block, which
+is supposed to be an untouched, byte-exact quote of real output, not prose subject to reword.
+Corrected below by re-running `broker_live_test.py`'s exact request bodies live and quoting
+the real response, byte for byte (one field elided — see the note under the transcript). The
+webhook path this evidence was originally captured against no longer exists — it was retired
+at cutover (§4/§7) and, probed live on 2026-07-18, now returns HTTP 404
+(`"The requested webhook \"POST ...\" is not registered."`) — so this re-run targeted the
+current production path, `https://main.blackceoautomations.com/webhook/anthology-drive` (the
+only webhook path now live; per §4/§7 the workflow's node logic does not depend on which path
+served the request), with the token sourced from the live k8s Deployment env into a shell
+variable and never printed.
+
+Fresh live run, all 6 actions, production path, 2026-07-18:
 
 ```
 === 0-capabilities -> HTTP 200 ===
@@ -103,7 +120,7 @@ only the webhook `path` parameter differs):
 === 1a-create_book_tree (create) -> HTTP 200 ===
 {"ok":true,"action":"create_book_tree","via":"n8n_broker",
  "client_key":"U64-LIVE-TEST","producer_email":"management@blackceo.com",
- "book_title":"U64 Staging Book","root_folder_id":"1vZFZN4XtYNvGJsFhH7eiG8HKz5CCltGF",
+ "book_title":"[elided -- see note below]","root_folder_id":"1vZFZN4XtYNvGJsFhH7eiG8HKz5CCltGF",
  "client_folder_id":"1gnqGPjsRiGcwUGGAY0XgM-GWej63-_Nt",
  "producer_folder_id":"1wwI447aWx8EJxKEnn8PX69dTDPAlj5GU",
  "book_folder_id":"1mZq-HLcxuY63zSJb59mtiBdvBaVfFW9T","producer_editor_shared":true}
@@ -116,18 +133,18 @@ only the webhook `path` parameter differs):
  "participant_folder_id":"1aRBAEMAwRE3r7k4NdwPq8_b-7qpOkXdW"}
 
 === 3-create_doc -> HTTP 200 ===
-{"ok":true,"doc_id":"1FAb_ruK31C_g9TJvPq8IMFxisDpY6dLIfFyBdePWH0o", ...}
+{"ok":true,"doc_id":"1RSi3ClYf5UARS2_f0hYhhfRwo_6D0ZCx_tJhUZ9vQkM", ...}
 
 === 4-upload_pdf -> HTTP 200 (POST-FIX; was empty body pre-fix) ===
-{"ok":true,"action":"upload_pdf","file_id":"1zslNzuBQjmvazF-HPxsRjFWfg8-s-qGt",
- "drive_url":"https://drive.google.com/file/d/1zslNzuBQjmvazF-HPxsRjFWfg8-s-qGt/view...",
+{"ok":true,"action":"upload_pdf","file_id":"1kLEjT1vRVd2vH6VGrSFT7Y2WXT0l7JZ-",
+ "drive_url":"https://drive.google.com/file/d/1kLEjT1vRVd2vH6VGrSFT7Y2WXT0l7JZ-/view...",
  "permission_id":"anyoneWithLink"}
 
 === 5-share_doc_edit -> HTTP 200 ===
 {"ok":true,"permission_id":"anyoneWithLink", ...}
 
 === 6-pull_doc_text -> HTTP 200, content READ BACK from live Google Docs, matches exactly what create_doc wrote ===
-{"ok":true,"doc_id":"1FAb_ruK31C_g9TJvPq8IMFxisDpY6dLIfFyBdePWH0o",
+{"ok":true,"doc_id":"1RSi3ClYf5UARS2_f0hYhhfRwo_6D0ZCx_tJhUZ9vQkM",
  "text":"U64 live test content -- proof-of-life for GK-02 broker deploy."}
 
 ================ SUMMARY ================
@@ -138,8 +155,20 @@ participant_tree_idempotent (read-back match): True
 pull_doc_text_matches (content read back matches what was written): True
 ```
 
-**Final production-path run** (after cutover, fresh scratch objects, same script pointed at
-`/webhook/anthology-drive` instead of the staging path) — identical summary:
+**`book_title` elision, explained:** the real value both sent and echoed back is the exact
+literal string on `broker_live_test.py` lines 59/71 — the same retired-term-bearing test-data
+label also appears verbatim in that script's `create_doc` name (line 101) and `upload_pdf` name
+(line 112), which is why those two response fields were already abbreviated with `...` above
+rather than spelled out. That literal string isn't reproduced inline here because doing so
+trips this repo's docs-language guard (`scripts/check-docs-language.py` — zero remaining
+allowlist carve-outs for new doc-file prose, verified locally by attempting exactly this and
+observing the guard fail); the guard doesn't scan `.py` files, which is why the literal stays
+readable in the script instead of here. This is an elision of a citation, not a rewording of
+evidence — unlike the `4d65e585` regression this replaces, no field value in this transcript
+has been changed to something the live system did not actually send or return.
+
+**Original cutover-time production run** (fresh scratch objects, same script pointed at
+`/webhook/anthology-drive` instead of the since-retired staging path) — identical summary:
 `ALL_2XX: True`, `ANY_501: False`, both idempotency checks `True`, content round-trip `True`.
 Doc id from that run: `1YpWTY6DwRBX32AmOxyxezo1OhbnKHPfhLPJrQbHLgVE`. A direct `capabilities` +
 `pull_doc_text` smoke test was also run against the production path immediately post-cutover
