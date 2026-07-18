@@ -106,12 +106,22 @@ if _cron_present; then
   exit 0
 fi
 
+# --no-deliver: a maintenance-window sweep is an operator-internal tick, not
+# a client-facing announcement — without this flag `openclaw cron add`
+# defaults the new job's delivery mode to "announce", which would fan a
+# routine reconciliation pass out as a visible notification every night. Fixed
+# here at the source (U24 rebuild, 2026-07-18) rather than repeating the drift
+# this exact installer previously shipped without it — see
+# scripts/install-page-inventory-lifecycle-cron.sh (U31/B-U17), which carries
+# the same fix, and the FIX-XC-08a incident
+# (37-zhc-closeout/scripts/install-closeout-resume-cron.sh:85-90) this class
+# of bug was first caught and named in.
 if openclaw cron add --name "$CRON_NAME" --cron "$CRON_SCHEDULE" --tz "$CRON_TZ" \
-     --command "$CRON_COMMAND" >/dev/null 2>&1 \
+     --command "$CRON_COMMAND" --no-deliver >/dev/null 2>&1 \
    && _cron_present; then
   _log "DONE '$CRON_NAME' cron registered ($CRON_SCHEDULE $CRON_TZ)"
   exit 0
 fi
 
-_log "FAIL could not register '$CRON_NAME' (openclaw cron add rc!=0, or --command unsupported on this CLI build). Non-fatal — re-run to backfill."
+_log "FAIL could not register '$CRON_NAME' (openclaw cron add rc!=0, or --command/--no-deliver unsupported on this CLI build). Non-fatal — re-run to backfill."
 exit 3

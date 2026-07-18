@@ -4,6 +4,51 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v19.62.0] - 2026-07-18 - U24 (B-U10) rebuild: sweep_base false-alarm fix, real cron installer, broken doc snippet
+
+> Note: `skill-version.txt` (v20.0.69) is repo-locked (rolled by
+> `scripts/bump-version.sh` at release, but ALSO bumped standalone here per CI
+> G3 — see `scripts/check-version-drift.py`); this CHANGELOG number is 06's
+> independent per-skill log.
+
+Rebuild of the U24/B-U10 archival-rail fixes (previously PR #595, which no
+longer merged cleanly against main after `fc9e636e` (2026-07-15) re-landed
+this same area with a different installer design). Re-implements the same
+three fixes against that CURRENT design rather than against `fc9e636e`'s
+predecessor:
+
+### Fixed
+- **`SweepReport.all_clean()` false alarm.** A box that has never run a
+  Skill-6 build (no evidence base directory yet) is `applicable: False` —
+  "nothing to sweep," not a problem. `all_clean()` used to AND that flag into
+  the result (`self.applicable and all(...)`), so `applicable=False` made
+  `all_clean()` return `False` too — every fleet box that had never built
+  anything would alarm "ATTENTION NEEDED" on its very first scheduled sweep.
+  Fixed: `all_clean()` now treats a non-applicable sweep as clean. Regression:
+  `tests/test_ghl_github_reconcile.py::TestSweepBase::
+  test_missing_base_dir_is_not_an_alarm` asserts `all_clean() is True` on a
+  missing base dir (previously asserted the buggy `False` — the test itself
+  carried the bug and is corrected here, mutation-proof against the fix being
+  reverted).
+- **`scripts/install-github-archive-reconcile-cron.sh` missing `--no-deliver`.**
+  The installer registered its nightly maintenance sweep via `openclaw cron
+  add` without `--no-deliver`, so the CLI's default "announce" delivery mode
+  would fan a routine internal sweep out as a client-facing notification
+  every night. Fixed to match the sibling installer's already-correct pattern
+  (`scripts/install-page-inventory-lifecycle-cron.sh`, U31/B-U17) and the
+  documented FIX-XC-08a precedent (`37-zhc-closeout/scripts/
+  install-closeout-resume-cron.sh:85-90`). Regression:
+  `tests/test_github_archive_maintenance_schedule.py::
+  TestInstallerAgainstFakeOpenclawCli::test_registers_with_no_deliver_flag`.
+- **SKILL.md broken paste-ready cron snippet.** The Reconciliation section's
+  hand-typed `openclaw cron create ... --schedule ...` example used a CLI
+  flag (`--schedule`) that does not exist (the real flag, for `openclaw cron
+  add`, is `--cron` — same FIX-XC-08a precedent above) and omitted
+  `--no-deliver`. Removed the hand-typed snippet entirely in favor of
+  pointing at the tested installer (`bash scripts/install-github-archive-
+  reconcile-cron.sh`), which is proven end-to-end against a fake CLI rather
+  than copy-pasted prose.
+
 ## [v19.61.0] - 2026-07-16 - GK-27/U89: relationship lattice pointer + citation tripwire
 
 > Note: `skill-version.txt` is repo-locked (rolled by `scripts/bump-version.sh` at

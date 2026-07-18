@@ -78,7 +78,9 @@ class TestInstallerAgainstFakeOpenclawCli:
     PATH — no live tool call, no network. Proves: (a) absent -> registers by
     reading the schedule entry's own name/schedule/tz/command, (b) present ->
     idempotent no-op, (c) never invents a name/command different from the
-    shipped entry file."""
+    shipped entry file, (d) always passes --no-deliver (U24 rebuild,
+    2026-07-18 — a maintenance-window sweep must never fan out as a
+    client-facing announcement)."""
 
     def _fake_openclaw(self, tmp_path, *, existing_names=()):
         """Write a fake `openclaw` executable that supports just enough of
@@ -135,6 +137,18 @@ exit 1
         logged = open(add_log).read()
         assert "skill6-github-archive-reconcile-sweep" in logged
         assert "--retry" in logged
+
+    def test_registers_with_no_deliver_flag(self, tmp_path):
+        """U24 rebuild (2026-07-18) — a maintenance-window reconciliation
+        sweep must never fan out as a client-facing announcement.
+        `openclaw cron add` defaults new jobs to "announce" delivery, so
+        --no-deliver must always be passed. Mutation-proof: dropping
+        --no-deliver from the installer's `openclaw cron add` call (the exact
+        regression this closes) makes this assertion fail."""
+        fake_bin, add_log = self._fake_openclaw(tmp_path, existing_names=())
+        self._run_installer(tmp_path, fake_bin)
+        logged = open(add_log).read()
+        assert "--no-deliver" in logged
 
     def test_idempotent_noop_when_already_present(self, tmp_path):
         fake_bin, add_log = self._fake_openclaw(

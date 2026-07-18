@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v20.0.68"
+  version: "v20.0.69"
   priority: HIGH
 ---
 
@@ -599,20 +599,22 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > proof-on-disk that the scheduled sweep actually ran, every time it runs:
 > `python3 tools/ghl_github_reconcile.py --sweep-base <dir> --retry`
 > (exit 0 = every run's code is confirmed in GitHub; exit 1 = attention
-> needed on at least one run). Wire it as a daily maintenance-window cron
-> (once per box, after Skill 06 is installed — mirrors `HEARTBEAT.md`'s
-> canary-cron pattern):
-> ```
-> openclaw cron create \
->   --name skill6-github-archive-reconcile-sweep \
->   --schedule "0 4 * * *" \
->   --tz "America/New_York" \
->   --agent main \
->   --session isolated \
->   --model "ollama/deepseek-v4-flash:cloud" \
->   --tools exec \
->   --message "Sweep the Skill-6 GitHub archival rail: exec python3 ~/.openclaw/skills/06-ghl-install-pages/tools/ghl_github_reconcile.py --sweep-base \"$HOME/clawd/skill6-fix\" --retry --json && echo SWEEP_OK || echo SWEEP_ATTENTION"
-> ```
+> needed on at least one run).
+>
+> **Install the cron via the tested installer — never a hand-typed command
+> (U24 rebuild, 2026-07-18).** This repo already has a documented incident of
+> exactly this class of doc bug: `37-zhc-closeout/scripts/install-closeout-
+> resume-cron.sh:85-90` (FIX-XC-08a) — `--schedule` is NOT a real `openclaw`
+> CLI flag (the real one, for `openclaw cron add`, is `--cron`), and omitting
+> `--no-deliver` makes a routine maintenance sweep announce into the client's
+> chat every time it fires. A prior revision of this section carried that
+> exact same bug in a paste-ready `openclaw cron create ... --schedule ...`
+> snippet; it has been removed rather than re-typed correctly, because the
+> installer below is tested end-to-end
+> (`tests/test_github_archive_maintenance_schedule.py` drives it against a
+> fake `openclaw` CLI and pins its exact registered argv) and a doc snippet is
+> not. Run once per box, after Skill 06 is installed:
+> `bash scripts/install-github-archive-reconcile-cron.sh [evidence-base-dir]`
 > Verify with `openclaw cron list | grep skill6-github-archive-reconcile-sweep`;
 > fire it once by hand (`openclaw cron run <id>`) to confirm the first dated
 > log lands under `github-archive-reconcile-logs/`.
@@ -620,16 +622,14 @@ This table supersedes any prior description of Vercel as a "manual last resort."
 > **The schedule ENTRY ships as a file, not just doctrine text (B-U10 CODE-MERGE
 > gate acceptance (c), amended 2026-07-15).** `schedule/skill6-github-archive-
 > reconcile-sweep.cron.json` is the single source of truth for the name/
-> schedule/tz/command above — both this doctrine text and `scripts/install-
-> github-archive-reconcile-cron.sh` (the idempotent installer that registers
-> it via `openclaw cron add`, by name, never duplicating) read from it, so the
-> two can never silently drift apart. Run the installer once per box (after
-> Skill 06 is installed) instead of typing the `openclaw cron create` command
-> by hand:
-> `bash scripts/install-github-archive-reconcile-cron.sh [evidence-base-dir]`
+> schedule/tz/command above — both this doctrine text and the installer
+> (which registers it via `openclaw cron add`, by name, never duplicating,
+> and always passes `--no-deliver` — see above) read from it, so the two can
+> never silently drift apart.
 > Proven offline in `tests/test_github_archive_maintenance_schedule.py`
-> (entry-file well-formedness + installer idempotency against a fake CLI, no
-> network); the LIVE registration + first live dated log are DEFERRED TO U22.
+> (entry-file well-formedness + installer idempotency + the mandatory
+> `--no-deliver` flag against a fake CLI, no network); the LIVE registration +
+> first live dated log are DEFERRED TO U22.
 >
 > **FAB-QC archive-receipt gate (U24/B-U10 item 3).**
 > `tools/ghl_archive_receipt_gate.py` is wired into `qc-built-funnel.sh` and
