@@ -139,7 +139,14 @@ any of U4-U11.
 
 ---
 
-## N8N-LEG RE-READ ADVISORY (2026-07-17T05:45Z) — n8n-SIDE LEGS OF U1..U11/U13 REQUIRE OPERATOR-AUTHORIZED LIVE RE-READ
+## N8N-LEG RE-READ ADVISORY (2026-07-17T05:45Z) — n8n-SIDE LEGS OF U2/U4/U5/U7/U8 REQUIRE OPERATOR-AUTHORIZED LIVE RE-READ
+
+> **SUPERSEDED IN PART (2026-07-17):** this advisory was written before commit
+> `25363b3f` (now on `origin/main`) verified the n8n-side legs of **U1, U3, U6, U9,
+> U10, U11, U13** with real live-execution evidence — all seven rows read `verified`
+> in the UNIT ROWS table above, which is the current status. The re-read requirement
+> below now applies ONLY to **U2, U4, U5, U7, U8**. The original advisory text is
+> kept for the audit trail; do not re-gate the seven already-verified rows on it.
 
 The repo-leg truth-up for U12/U14/U15/U16 landed on `origin/main` via PR #614's merge
 (commit `34dce869`, re-QC round 2, score 9.2): all four rows read `verified` with
@@ -150,9 +157,11 @@ as its own note because one requirement is still open:
 n8n-side legs of U1..U11 and U13 — including the n8n-leg claims embedded in U12's row
 above and the 19:50Z structural finding — MUST be re-read fresh from the live n8n API
 by an operator-authorized session before any of those rows move. Graph-shape evidence
-is not accept-criteria proof.
+is not accept-criteria proof. **(As of commit `25363b3f` this re-read has happened for
+U1, U3, U6, U9, U10, U11, U13; it remains open only for U2, U4, U5, U7, U8.)**
 
-Rows deliberately left open: U1..U11 and U13 (n8n-side legs pending the
-operator-authorized re-read above), U17 (repo tests merged via PR #613, merge
-`c993f2b5`, scored 9.4 — the row flip is the ledger's owning pass's call, not this
-note's), U18–U20 (operator-gated fleet provisioning and live proofs), U21 (close-out).
+Rows deliberately left open: U2, U4, U5, U7, U8 (n8n-side legs pending the
+operator-authorized re-read above), U18–U20 (operator-gated fleet provisioning and
+live proofs), U21 (close-out). U17's row was flipped to `verified` by the ledger's
+owning pass in commit `25363b3f` (repo tests merged via PR #613, merge `c993f2b5`,
+scored 9.4).
