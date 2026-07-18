@@ -13,8 +13,8 @@ Proves, structurally (no scores grepped), that:
      if the branch's git history is available, the file is byte-identical to
      its state on the merge-base with origin/main (best-effort; skipped, not
      failed, if git or the ref is unavailable).
-  3. department-floor.py --json still reports expected_floor_count 28 with the
-     SAME composition (22 mandatory + 6 universal-primary-vertical) declared in
+  3. department-floor.py --json still reports expected_floor_count 29 with the
+     SAME composition (23 mandatory + 6 universal-primary-vertical) declared in
      this folder's wiring.json, and returns rc 0 or 7 (7 only means "no
      workforce on this box to evaluate against", never a wiring defect; rc 3
      would mean the floor itself is broken and IS a failure here).
@@ -167,8 +167,8 @@ def check_floor(errors, w):
             f"[floor] department-floor.py reports expected_floor_count={verdict.get('expected_floor_count')}, "
             f"wiring.json declares {expected}"
         )
-    if verdict.get("expected_floor_count") != 28:
-        errors.append(f"[floor] expected_floor_count = {verdict.get('expected_floor_count')}, expected 28 (22 mandatory + 6 universal-primary-vertical)")
+    if verdict.get("expected_floor_count") != 29:
+        errors.append(f"[floor] expected_floor_count = {verdict.get('expected_floor_count')}, expected 29 (23 mandatory + 6 universal-primary-vertical)")
 
 
 def check_disk(errors, w):

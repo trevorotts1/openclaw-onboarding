@@ -1,8 +1,8 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
   "version": "20.0.66",
-  "total_roles": 435,
-  "total_departments": 35,
+  "total_roles": 438,
+  "total_departments": 36,
   "departments": {
     "account-management": {
       "count": 6,
@@ -204,6 +204,16 @@
       ],
       "content_sha": "sha256:7fa95f870e5331053db3e7fb4a7137614a8ffab7dec0a4440963a4bcd668339e",
       "content_hashed_at": "2026-07-15T23:32:48.507204+00:00"
+    },
+    "funnels": {
+      "count": 3,
+      "roles": [
+        "director-of-funnels",
+        "funnel-qa-conversion-verification-specialist",
+        "ghl-funnel-build-specialist"
+      ],
+      "content_sha": "sha256:889ec85c5bcd2f42ae85b8c9dd7eee8c7dc35baee1b1f9e153e53526a2d9ff86",
+      "content_hashed_at": "2026-07-17T01:20:05.141877+00:00"
     },
     "general-task": {
       "count": 8,
@@ -7645,6 +7655,54 @@
       "render_sha": "sha256:5416bf612128010ea05b8834b1b6d1e20190d6a3898e2d4fac74cffed2c4c08b",
       "content_version": "1.0.0",
       "content_hashed_at": "2026-07-15T23:32:48.507204+00:00"
+    },
+    {
+      "slug": "director-of-funnels",
+      "dept": "funnels",
+      "title": "Director of Funnels",
+      "role_type": "director",
+      "word_count": 2046,
+      "sop_count": 4,
+      "sop_min": 1,
+      "path": "templates/role-library/funnels/director-of-funnels.md",
+      "capability_class": "HEAVY-REASONING",
+      "vision_flag": false,
+      "content_sha": "sha256:ba59f5638a38d8cd7bd402ed7e0347c8df8397b860459c8d7b185699aac7f41d",
+      "render_sha": "sha256:f68000dce16462a4b13191d77ccde842eacfc3ef43a9136e2d99d5ef03a6c5f2",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-17T01:20:05.141877+00:00"
+    },
+    {
+      "slug": "funnel-qa-conversion-verification-specialist",
+      "dept": "funnels",
+      "title": "Funnel QA & Conversion Verification Specialist",
+      "role_type": "specialist",
+      "word_count": 1750,
+      "sop_count": 4,
+      "sop_min": 1,
+      "path": "templates/role-library/funnels/funnel-qa-conversion-verification-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false,
+      "content_sha": "sha256:407857b2c9a35e00448198a7b6115d57611954d91edff2d05865de5bc93a7430",
+      "render_sha": "sha256:47262a6502bbf591a0d0afe8789918c9cdac9076aa02141200405cc496be889c",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-17T01:20:05.141877+00:00"
+    },
+    {
+      "slug": "ghl-funnel-build-specialist",
+      "dept": "funnels",
+      "title": "GHL Funnel Build Specialist",
+      "role_type": "specialist",
+      "word_count": 1676,
+      "sop_count": 4,
+      "sop_min": 1,
+      "path": "templates/role-library/funnels/ghl-funnel-build-specialist.md",
+      "capability_class": "WRITING",
+      "vision_flag": false,
+      "content_sha": "sha256:246116498749deb3890f6a45cd5072f24c6bd01a4be219e66e37214a7eb22daa",
+      "render_sha": "sha256:a019fc63babcca7ea2b60ab374e3c82e479e6ace8eb541c44d1b61bf4bd7b4bc",
+      "content_version": "1.0.0",
+      "content_hashed_at": "2026-07-17T01:20:05.141877+00:00"
     }
   ],
   "sops": [

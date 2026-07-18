@@ -37,13 +37,13 @@
   },
 
   "floor_invariant": {
-    "expected_floor_count": 28,
-    "composition": "22 mandatory + 6 universal-primary-vertical",
+    "expected_floor_count": 29,
+    "composition": "23 mandatory + 6 universal-primary-vertical",
     "anthology_is_mandatory": false,
     "anthology_is_universal_primary": false,
     "floor_count_change": 0,
     "department_naming_map_touched": false,
-    "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; expected_floor_count stays 28, computed live from len(HARDCODED_MANDATORY-equivalent mandatory keys) + len(universal-primary vertical packs), never a hardcoded integer. A raw-text scan of department-naming-map.json for the string 'anthology' returns zero hits in both the mandatory and vertical_packs blocks."
+    "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; expected_floor_count stays 29, computed live from len(HARDCODED_MANDATORY-equivalent mandatory keys) + len(universal-primary vertical packs), never a hardcoded integer. A raw-text scan of department-naming-map.json for the string 'anthology' returns zero hits in both the mandatory and vertical_packs blocks."
   },
 
   "self_invocation": {

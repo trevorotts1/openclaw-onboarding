@@ -359,7 +359,7 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (standard: 22 mandatory + 6 universal-primary-vertical = 28)
+# CANONICAL DEPARTMENT FLOOR (standard: 23 mandatory + 6 universal-primary-vertical = 29)
 # ============================================================
 # Every Zero Human Company is built with the mandatory canonical departments
 # (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
@@ -678,7 +678,7 @@ def apply_semantic_merges(selected_departments, core_answers):
 def load_canonical_floor():
     """
     Read the mandatory canonical departments from department-naming-map.json
-    (22 in v2.6.0; the count is read live from the map, never hardcoded).
+    (23 in v2.6.2; the count is read live from the map, never hardcoded).
 
     Returns an ordered dict mapping canonical-id -> dept-info dict in the
     RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
@@ -701,20 +701,23 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
-    # (22 mandatory ids) so a broken install that lost the naming map still
-    # enforces the full MANDATORY floor. The 6 universal-primary verticals are NOT
-    # in this list - they carry their OWN broken-install fallback in
+    # (23 mandatory ids, v2.6.2) so a broken install that lost the naming map
+    # still enforces the full MANDATORY floor. The 6 universal-primary verticals
+    # are NOT in this list - they carry their OWN broken-install fallback in
     # _universal_primary_ids() (_HARDCODED_UNIVERSAL_PRIMARY), so the combined floor
-    # still degrades to the full 22 + 6 = 28, never to 22 (and never to the older
+    # still degrades to the full 23 + 6 = 29, never to 23 (and never to the older
     # stale 16). The full shipped role catalog is tracked separately in
-    # templates/role-library/_index.json - do not confuse it with the 28 floor.
+    # templates/role-library/_index.json - do not confuse it with the 29 floor.
+    # v2.6.2 (2026-07-16, operator ruling) added "funnels" as the 23rd mandatory
+    # id — see department-floor.py's HARDCODED_MANDATORY header for why it must
+    # be mandatory rather than vertical-gated.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
         "research", "communications", "crm", "openclaw-maintenance", "legal",
         "social-media", "paid-advertisement", "personal-assistant",
         "general-task", "project-architecture-office", "bugs", "healer",
-        "quality-control",
+        "quality-control", "funnels",
     ]
 
     floor = {}
@@ -3780,8 +3783,8 @@ INHERITED_FILES = ["TOOLS.md", "AGENTS.md", "USER.md"]
 CONTEXT_FILES = ["USER.md", "MEMORY.md", "AGENTS.md", "TOOLS.md", "IDENTITY.md", "SOUL.md"]
 
 # Legacy RECOMMENDED_DEPARTMENTS suggestion / display-metadata dict (N17 binding).
-# NOTE: this is NOT the canonical floor. The authoritative floor is 22 mandatory
-# + 6 universal-primary = 28, derived LIVE from department-naming-map.json (see
+# NOTE: this is NOT the canonical floor. The authoritative floor is 23 mandatory
+# + 6 universal-primary = 29, derived LIVE from department-naming-map.json (see
 # load_canonical_floor() + _universal_primary_ids()); the full shipped role catalog
 # is tracked in templates/role-library/_index.json. This legacy dict only supplies
 # display metadata (name/emoji/head/description) and MUST match the dashboard's
@@ -6046,6 +6049,9 @@ def create_governing_personas_md(dept_id, dept_info, categories_data):
         "crm": ["sales", "communication", "operations"],
         "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
         "account-management": ["communication", "coaching", "strategy-innovation"],
+        # v2.6.2 (2026-07-16, operator ruling): "funnels" added as a mandatory
+        # floor dept — see department-naming-map.json's mandatory.funnels entry.
+        "funnels": ["strategy-innovation", "marketing", "productivity-systems"],
     }
 
     domains = dept_to_domains.get(dept_id, ["leadership"])
@@ -6707,6 +6713,9 @@ def generate_persona_matrix(departments, persona_categories, company_name):
         "crm": ["sales", "communication", "operations"],
         "quality-control": ["productivity-systems", "operations", "strategy-innovation"],
         "account-management": ["communication", "coaching", "strategy-innovation"],
+        # v2.6.2 (2026-07-16, operator ruling): "funnels" added as a mandatory
+        # floor dept — see department-naming-map.json's mandatory.funnels entry.
+        "funnels": ["strategy-innovation", "marketing", "productivity-systems"],
     }
 
     content = f"""# Persona Matrix - {company_name}
