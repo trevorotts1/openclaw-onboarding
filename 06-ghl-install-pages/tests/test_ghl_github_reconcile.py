@@ -215,11 +215,31 @@ class TestSweepBase:
             fh.write("{}")
         return run_dir
 
-    def test_missing_base_dir_is_not_applicable(self, tmp_path):
+    def test_missing_base_dir_is_not_an_alarm(self, tmp_path):
+        """U24 rebuild (2026-07-18) — false-alarm fix. A box that has never
+        run a Skill-6 build (no evidence base dir yet) is `applicable=False`,
+        but that must NOT read as "attention needed": there is nothing to
+        sweep, which is a clean result, not a dirty one. Before this fix,
+        `all_clean()` ANDed `applicable` straight into the result, so every
+        never-built fleet box alarmed on its first scheduled sweep. This test
+        is mutation-proof against that regression: reverting the fix (i.e.
+        restoring `return self.applicable and all(...)`) makes
+        `all_clean()` return False here and fails this assertion."""
         report = rec.sweep_base(str(tmp_path / "does-not-exist"))
         assert report.applicable is False
-        assert report.all_clean() is False
         assert report.total_runs == 0
+        assert report.all_clean() is True
+
+    def test_cli_sweep_base_missing_dir_exits_zero_not_attention(self, tmp_path, capsys):
+        """Same false-alarm fix, exercised through the CLI entrypoint a
+        scheduled cron actually invokes: a missing/unresolvable base dir must
+        exit 0 (clean), never 1 (attention needed)."""
+        rc = rec.main(["--sweep-base", str(tmp_path / "does-not-exist"), "--json", "--no-log"])
+        assert rc == 0
+        out = capsys.readouterr().out
+        data = json.loads(out)
+        assert data["applicable"] is False
+        assert data["all_clean"] is True
 
     def test_empty_base_dir_no_runs_is_clean(self, tmp_path):
         base = str(tmp_path)

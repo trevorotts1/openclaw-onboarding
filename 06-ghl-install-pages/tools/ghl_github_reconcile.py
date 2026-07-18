@@ -177,7 +177,15 @@ class SweepReport:
     log_path: str = ""
 
     def all_clean(self) -> bool:
-        return self.applicable and all(r["report"]["all_clean"] for r in self.runs)
+        # "not applicable" (no evidence base exists yet on this box — e.g. it
+        # has never run a Skill-6 build) is NOT an attention-needed condition;
+        # it means there is nothing to sweep. Conflating the two was a genuine
+        # false-alarm bug (fixed U24 rebuild, 2026-07-18): every fleet box
+        # that had never run Skill-6 alarmed on its very first scheduled
+        # sweep. See TestSweepBase.test_missing_base_dir_is_not_an_alarm.
+        if not self.applicable:
+            return True
+        return all(r["report"]["all_clean"] for r in self.runs)
 
     def as_dict(self) -> dict:
         return {
