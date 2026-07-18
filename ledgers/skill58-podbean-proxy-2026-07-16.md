@@ -33,7 +33,7 @@ Spec: `skill58-podbean-server-side-publish-SPEC-v1-2026-07-16.md` (Section 5 = u
 | id | desc | [Model xN] label | status | evidence | timestamp |
 |---|---|---|---|---|---|
 | U1 | Prove n8n API WRITE capability (POST/GET/DELETE scratch workflow) or record manual-UI fallback | [Kimi x1] ledger truth-up U1 | verified | LIVE-PROVEN 2026-07-17, all three accept clauses, literal, per spec line 211. (a) POST to create a scratch workflow returned HTTP 200 with id `054kIrBCCErjOIe1`, active:false. (b) GET of that id returned HTTP 200, same id and name, 1 node. (c) DELETE returned HTTP 200; the immediate re-GET afterward returned HTTP 404. 'No other workflow touched' was proven by a full before/after metadata comparison across all 286 workflows on the instance (id, name, active state, last-updated time, node count): zero added, zero removed, zero changed, including a named watch-list of 5 sensitive workflow ids confirmed unchanged. A specific trap was checked and ruled out: n8n workflows can be soft-deleted ('archived') rather than truly deleted, which would also return HTTP 200 then 404 on re-GET as a false positive — settled by confirming the deleted probe id is absent even from an archive-inclusive listing, proving a genuine delete. No fallback path was needed; the write calls did not return an authorization error. | 2026-07-17T12:01:55Z |
-| U2 | Create + seed `podcast_publish_roster` data table (6 cols, all good_standing=YES, + OPERATOR TEST row) | — | pending | GREENFIELD. Fresh `GET /api/v1/data-tables` HTTP 200 → 6 tables exist; `podcast_publish_roster` is ABSENT. Reuse pattern: `snapshot_provision_ledger` (FCb16RvM2l7f4HKl). | 2026-07-16T12:35Z |
+| U2 | Create + seed `podcast_publish_roster` data table (6 cols, all good_standing=YES, + OPERATOR TEST row) | [Sonnet 5 x1] structure-mode re-read U2 | verified | STRUCTURE-MODE LIVE RE-READ 2026-07-18, both accept clauses confirmed, per this row's own spec text. Method: `n8n_manage_datatable` (`listTables` + `getRows`) only — no workflow node parameters or credentials were touched this pass (this pass was scoped structure-mode-only for workflow reads). Table `podcast_publish_roster` (id `UWjpksxU2b6TjKow`, created 2026-07-16T12:49:53.532Z, last updated 2026-07-17T08:35:24.004Z) now EXISTS with exactly 6 columns matching the requirement: `email`, `first_name`, `good_standing`, `last_name`, `notes`, `podbean_channel_id`. Fresh row-level re-read: 31/31 rows carry `good_standing = "YES"` — zero rows in any other status. One row (id 31 — the operator's own identity, not a client) carries the explicit marker `"OPERATOR TEST ROW for U19/U20 live proofs"` in its `notes` column, satisfying the OPERATOR TEST row requirement. Per this ledger's own NO-client-names/NO-emails convention, no client name, email, or channel ID from the roster is reproduced in this row — verification was performed by direct API read, only aggregate counts and the operator's own marker row are recorded here. | 2026-07-18T05:09:32Z |
 | U3 | Create `podcast_publish_ledger` data table (8 cols), empty at creation | [Kimi x1] ledger truth-up U3 | verified | LIVE-PROVEN 2026-07-17, both accept clauses, per spec line 219. (a) Schema re-read confirmed the table (id `3anOzegbKtLcgVud`) has exactly 8 columns in the spec-exact order: idempotency_key, channel_id, episode_number, permalink_url, status, reason, source, completed_at. (b) 'Empty at creation' was affirmatively PROVEN, not merely assumed: the table's own earliest surviving row still holds row-id 1, created 7 minutes 23 seconds after the table itself was created. Because this database engine's row ids only increase and are never reused after a row is deleted, an earliest row that still holds id 1 proves no row could have been created and then deleted before it — the table genuinely held zero rows during that entire 7-minute window. | 2026-07-17T12:01:55Z |
 | U4 | Snapshot workflow JSON, then add webhook header auth (`Podcast Publish Gate`, `X-Podcast-Publish-Token`) | — | pending | GREENFIELD — **LIVE SECURITY HOLE OPEN AND CARRYING REAL TRAFFIC**. Fresh API re-read of `TkL0rn2SH3q32SeB` webhook node: `authentication` key ABSENT, `credentials: NONE`, `path: podbean-publish`, `httpMethod: POST`. Webhook is publicly postable. Pattern source `aN6MrIJ4zLeKS047` still ACTIVE (2 nodes). **SEE THE LIVE-CALLER FINDING BELOW — execution 91115 published a real episode at 2026-07-16T12:38:08Z, DURING this bootstrap. U4 will 401 that caller unless it is provisioned first. This is now the central input to D1.** | 2026-07-16T12:41Z |
 | U5 | Good-standing + identity gate (roster lookup; downstream uses roster's `effective_channel_id`) | — | pending | GREENFIELD. Fresh re-read: ZERO dataTable nodes in the 24-node graph. No roster lookup exists. | 2026-07-16T12:35Z |
@@ -165,3 +165,37 @@ operator-authorized re-read above), U18–U20 (operator-gated fleet provisioning
 live proofs), U21 (close-out). U17's row was flipped to `verified` by the ledger's
 owning pass in commit `25363b3f` (repo tests merged via PR #613, merge `c993f2b5`,
 scored 9.4).
+
+---
+
+## STRUCTURE-MODE RE-VERIFICATION PASS (2026-07-18T05:09:32Z) — U2 CLOSES, U4/U5/U7/U8 REMAIN OPEN
+
+> **SUPERSEDED IN PART (2026-07-18):** this pass was scoped structure-mode-only for
+> every n8n read (no workflow node parameters, no credential/OAuth fields, no live
+> webhook-execution firing). Under that scope, **U2** — a data-table check, not a
+> workflow node-parameter check — was fully re-provable and is now `verified` above.
+> **U4, U5, U7, and U8 remain open.** Each one's accept text names a fact that only
+> lives inside a workflow node's *parameters* (webhook `authentication`/`credentials`
+> wiring for U4; the roster-lookup node's table target + the downstream
+> `effective_channel_id` expression for U5; the webhook's `responseMode` setting +
+> response-body shape for U7; the idempotency node chain's table target for U8) —
+> `n8n_get_workflow(TkL0rn2SH3q32SeB, mode=structure)` returns node `id`/`name`/`type`/
+> `position`/`disabled` and connections ONLY, never parameters, by design. A fresh
+> structure-mode re-read this pass DID confirm, as topology (not as accept-criteria
+> proof): a "Standing Gate" node chain (roster-lookup `dataTable` node → verdict →
+> IF → refusal branch with Gmail + Respond + Idempotency-mark) sits in the live
+> main path (U5 shape); an "Idempotency" node chain (lookup → verdict → two IFs →
+> upsert/mark-in-flight/mark-refused/mark-completed/mark-failed, all `dataTable`
+> nodes) sits first in the live main path (U8 shape); and 7 `respondToWebhook` nodes
+> (`Respond — Entry Guard Refused`, `Respond — Standing Identity Gate Refused`,
+> `Respond — Media Preflight Refused`, `Respond — Idempotent Replay`,
+> `Respond — Idempotency In Flight`, `Respond — Publish Success`,
+> `Respond — Publish Failure`) are wired as the terminal node of every branch (U7
+> shape). This is graph-shape evidence only, per this ledger's own prior finding —
+> it does not, by itself, prove any of U4/U5/U7/U8's specific named accept-criterion.
+> Confirming those requires either a parameter-level workflow read (out of this
+> pass's structure-mode-only scope) or a live-execution proof (also out of scope —
+> no webhook test calls were fired this pass). **CANNOT-VERIFY this pass; rows left
+> `pending`, unchanged.** `62EeUqT5Da63U4Kh` (2 real in-flight jobs), `BqRLOn8TP1wPaAzn`,
+> and `COfgxe6HXRcWOleV` were not read in any mode. Channel `vN6EJlUKjf6G` was not
+> encountered in this pass's roster read.
