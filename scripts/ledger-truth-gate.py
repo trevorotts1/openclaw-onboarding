@@ -27,17 +27,36 @@ WHAT THIS SCRIPT DOES:
      format the tool cannot parse (see UNPARSEABLE_LEDGER_FILES below).
 
 THE THREE KNOWN BLIND SPOTS (each handled explicitly, never silently):
-  1. UNPARSEABLE LEDGERS. `ledgers/skill58-podbean-proxy-2026-07-16.md` uses
-     a row shape with NO leg-requirement tag (`id | desc | label | status |
-     evidence | timestamp`), so the tool returns a generic UNKNOWN for its
-     rows. Worse: that file runs its OWN U-numbering for a different build
-     campaign, so its `U5` is NOT the kanban ledger's `U5` -- running the
-     tool on it would silently judge the WRONG unit's row (the tool finds
-     the first matching row id across all ledgers). Rows in these files are
-     therefore NOT ENFORCED: they fail the gate with a clearly labeled
-     "human review required" notice, never a generic failure, never a pass.
-     Add any future ledger with its own numbering/unparseable shape to
-     UNPARSEABLE_LEDGER_FILES below.
+  1. UNPARSEABLE LEDGERS / CROSS-CAMPAIGN ID COLLISIONS. A ledger can run its
+     OWN U-numbering for a different build campaign, so its `U5` is NOT the
+     same unit as some OTHER ledger's `U5`. `./unit-status.sh <id>` (with no
+     `--ledger` filter) searches EVERY ledger under `ledgers/*.md` -- kanban
+     first, then the rest alphabetically -- and `find_ledger_row()` returns
+     the FIRST matching row id it sees. Calling it with a bare unit id is
+     therefore only safe when that id is known to be globally unique;
+     otherwise the tool would silently judge the WRONG unit's row (verified,
+     empirically: `ledgers/skill58-podbean-proxy-2026-07-16.md`'s U2/U4/U5/U8
+     collide with FOUR unrelated, already-verified U2/U4/U5/U8 rows already
+     on `main` in the kanban ledger).
+     THE FIX (below, `run_unit_status()`): every candidate row this script
+     finds is checked via `--ledger <the exact file the diff found it in>`,
+     never the tool's bare-id/multi-ledger default. That makes the id-
+     collision structurally unreachable from this call site -- each
+     candidate is always resolved against the row it actually came from,
+     regardless of what any OTHER ledger happens to also call that id.
+     This closes the collision half of the old blind spot for EVERY ledger,
+     not just one name. The remaining half -- a row shape the tool's parser
+     genuinely cannot read at all (no recognizable leg tag anywhere in the
+     description column) -- still needs a real fix at the row-format level
+     (see `ledgers/skill58-podbean-proxy-2026-07-16.md`'s own "Row format"
+     section for the `(live, P#)` zero-leg tag convention this file adopted
+     to become parseable). UNPARSEABLE_LEDGER_FILES below stays available
+     for any FUTURE ledger whose shape still can't be fixed that way; a file
+     only belongs on it while it is genuinely unparseable, never merely
+     because it once collided with another campaign's numbering -- once
+     scoped lookup + a real leg tag both apply, remove it from the list
+     (this is exactly what happened to the podbean file, once a real
+     collision case, kept off the list now that both fixes are in place).
   2. UNKNOWN IS NOT A PASS. Compound leg tags like `(CC (+ONB), P#)` only
      get their PRIMARY leg checked (the secondary hint has no consistent
      grammar -- the tool says so in its own comments), and any tag shape the
@@ -79,13 +98,23 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ledgers whose row format unit-status.sh cannot parse and/or whose
-# U-numbering belongs to a different campaign (id collision = the tool would
-# judge the wrong unit's row). Detected by FILENAME, never guessed from
-# content. Candidates in these files get a labeled NOT-ENFORCED failure.
-UNPARSEABLE_LEDGER_FILES = frozenset({
-    "skill58-podbean-proxy-2026-07-16.md",
-})
+# Ledgers whose row format unit-status.sh genuinely cannot parse at all (no
+# leg-requirement tag anywhere in the description column, and no fix has been
+# applied to add one). Detected by FILENAME, never guessed from content.
+# Candidates in these files get a labeled NOT-ENFORCED failure.
+#
+# `skill58-podbean-proxy-2026-07-16.md` USED to live here: its bare U-ids
+# collide with the kanban ledger's own U-numbering (a different campaign) AND
+# its row shape carried no leg tag at all. Both are now fixed instead of
+# papered over: `run_unit_status()` below scopes every lookup to the exact
+# ledger file a candidate row was found in (killing the collision for this
+# file and every other one, present or future), and the podbean ledger's own
+# rows now carry a `(live, P#)` zero-leg tag per its "Row format" section
+# (killing the unparseable-shape half). A file belongs in this set only while
+# its row shape itself is genuinely unparseable -- never merely because its
+# ids happen to collide with another ledger's (that risk is eliminated by the
+# scoped lookup below, for every ledger, not just the ones named here).
+UNPARSEABLE_LEDGER_FILES = frozenset()
 
 # A ledger unit row: `| U108 | ...`. Matches every known ledger shape --
 # including the unparseable ones, which still start with `| U<id> |`.
@@ -148,13 +177,28 @@ def added_verified_rows(base, head, path):
     return out
 
 
-def run_unit_status(unit_id, cc_dir):
-    """Run the tool. Returns (parsed_json_or_None, human_error_or_None).
+def run_unit_status(unit_id, cc_dir, ledger_path):
+    """Run the tool, SCOPED to the one ledger file `ledger_path` -- the exact
+    file this candidate row was diffed out of. Returns
+    (parsed_json_or_None, human_error_or_None).
+
+    Passing `--ledger ledger_path` (rather than letting unit-status.sh fall
+    back to its own bare-id/multi-ledger default, which searches the kanban
+    ledger first and then every other ledgers/*.md file) is the fix for the
+    cross-campaign id-collision blind spot documented at the top of this
+    file: `find_ledger_row()` inside unit_status_core.py returns the FIRST
+    row matching the id across whatever ledger_paths it is given, so an
+    unscoped call is only safe when the id is globally unique. It is not --
+    proven empirically against this repo's real ledgers, see this file's
+    module docstring and tests/unit/ledger-truth-gate.test.py. Scoping to
+    the single source file makes the collision structurally unreachable:
+    the row read back is always the one this diff actually found, never a
+    same-numbered row from an unrelated campaign in a different ledger.
 
     The tool prints its JSON to stdout on every verdict path (exit 0 = DONE,
     1 = NOT-DONE, 3 = UNKNOWN). A crash, timeout, or unparseable stdout is a
     tool ERROR -- fail closed, never guess."""
-    cmd = ["./unit-status.sh", unit_id, "--cc-dir", cc_dir, "--json"]
+    cmd = ["./unit-status.sh", unit_id, "--cc-dir", cc_dir, "--ledger", ledger_path, "--json"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -214,7 +258,15 @@ def main():
         print("ledger-truth gate: no ledger files changed in this range -- nothing to gate. PASS.")
         return
 
-    candidates = {}          # unit_id -> list of (path, status_cell)
+    # Keyed by (path, unit_id) -- NEVER by unit_id alone. Two different
+    # ledger files can legitimately use the same bare id for two totally
+    # unrelated units (proven, not hypothetical -- see UNPARSEABLE_LEDGER_
+    # FILES's docstring above); collapsing them onto one key would silently
+    # merge two different claims' "where" reporting and -- far worse --
+    # would make it possible to check the id only ONCE instead of once per
+    # source file. Every (path, unit_id) candidate is resolved independently
+    # and scoped to its own file (see run_unit_status()).
+    candidates = {}          # (path, unit_id) -> status_cell
     not_enforced = []        # (path, unit_id, status_cell)
     for path in files:
         basename = Path(path).name
@@ -222,7 +274,7 @@ def main():
             if basename in UNPARSEABLE_LEDGER_FILES:
                 not_enforced.append((path, unit_id, status))
             else:
-                candidates.setdefault(unit_id, []).append((path, status))
+                candidates[(path, unit_id)] = status
 
     if not candidates and not not_enforced:
         print(f"ledger-truth gate: {len(files)} ledger file(s) changed, but no added row claims")
@@ -237,9 +289,9 @@ def main():
     passes = []     # unit ids with a real git-verified DONE
     zero_leg = []   # unit ids whose DONE is NOT independently checked
 
-    for unit_id in sorted(candidates, key=lambda u: int(u[1:])):
-        where = ", ".join(sorted({p for p, _ in candidates[unit_id]}))
-        result, error = run_unit_status(unit_id, args.cc_dir)
+    for path, unit_id in sorted(candidates, key=lambda pu: (int(pu[1][1:]), pu[0])):
+        where = path
+        result, error = run_unit_status(unit_id, args.cc_dir, path)
         if error is not None:
             failures.append(f"  unit {unit_id} ({where}): TOOL ERROR -- {error}\n"
                             f"    Failing closed: the gate could not verify this row. Human review required.")
