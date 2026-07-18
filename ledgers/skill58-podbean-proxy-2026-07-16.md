@@ -33,13 +33,13 @@ Spec: `skill58-podbean-server-side-publish-SPEC-v1-2026-07-16.md` (Section 5 = u
 | id | desc | [Model xN] label | status | evidence | timestamp |
 |---|---|---|---|---|---|
 | U1 | Prove n8n API WRITE capability (POST/GET/DELETE scratch workflow) or record manual-UI fallback | [Kimi x1] ledger truth-up U1 | verified | LIVE-PROVEN 2026-07-17, all three accept clauses, literal, per spec line 211. (a) POST to create a scratch workflow returned HTTP 200 with id `054kIrBCCErjOIe1`, active:false. (b) GET of that id returned HTTP 200, same id and name, 1 node. (c) DELETE returned HTTP 200; the immediate re-GET afterward returned HTTP 404. 'No other workflow touched' was proven by a full before/after metadata comparison across all 286 workflows on the instance (id, name, active state, last-updated time, node count): zero added, zero removed, zero changed, including a named watch-list of 5 sensitive workflow ids confirmed unchanged. A specific trap was checked and ruled out: n8n workflows can be soft-deleted ('archived') rather than truly deleted, which would also return HTTP 200 then 404 on re-GET as a false positive — settled by confirming the deleted probe id is absent even from an archive-inclusive listing, proving a genuine delete. No fallback path was needed; the write calls did not return an authorization error. | 2026-07-17T12:01:55Z |
-| U2 | Create + seed `podcast_publish_roster` data table (6 cols, all good_standing=YES, + OPERATOR TEST row) | — | pending | GREENFIELD. Fresh `GET /api/v1/data-tables` HTTP 200 → 6 tables exist; `podcast_publish_roster` is ABSENT. Reuse pattern: `snapshot_provision_ledger` (FCb16RvM2l7f4HKl). | 2026-07-16T12:35Z |
+| U2 | Create + seed `podcast_publish_roster` data table (6 cols, all good_standing=YES, + OPERATOR TEST row) | [Sonnet 5 x1] structure-mode re-read U2 | verified | STRUCTURE-MODE LIVE RE-READ 2026-07-18, both accept clauses confirmed, per this row's own spec text. Method: `n8n_manage_datatable` (`listTables` + `getRows`) only — no workflow node parameters or credentials were touched this pass (this pass was scoped structure-mode-only for workflow reads). Table `podcast_publish_roster` (id `UWjpksxU2b6TjKow`, created 2026-07-16T12:49:53.532Z, last updated 2026-07-17T08:35:24.004Z) now EXISTS with exactly 6 columns matching the requirement: `email`, `first_name`, `good_standing`, `last_name`, `notes`, `podbean_channel_id`. Fresh row-level re-read: 31/31 rows carry `good_standing = "YES"` — zero rows in any other status. One row (id 31 — the operator's own identity, not a client) carries the explicit marker `"OPERATOR TEST ROW for U19/U20 live proofs"` in its `notes` column, satisfying the OPERATOR TEST row requirement. Per this ledger's own NO-client-names/NO-emails convention, no client name, email, or channel ID from the roster is reproduced in this row — verification was performed by direct API read, only aggregate counts and the operator's own marker row are recorded here. | 2026-07-18T05:09:32Z |
 | U3 | Create `podcast_publish_ledger` data table (8 cols), empty at creation | [Kimi x1] ledger truth-up U3 | verified | LIVE-PROVEN 2026-07-17, both accept clauses, per spec line 219. (a) Schema re-read confirmed the table (id `3anOzegbKtLcgVud`) has exactly 8 columns in the spec-exact order: idempotency_key, channel_id, episode_number, permalink_url, status, reason, source, completed_at. (b) 'Empty at creation' was affirmatively PROVEN, not merely assumed: the table's own earliest surviving row still holds row-id 1, created 7 minutes 23 seconds after the table itself was created. Because this database engine's row ids only increase and are never reused after a row is deleted, an earliest row that still holds id 1 proves no row could have been created and then deleted before it — the table genuinely held zero rows during that entire 7-minute window. | 2026-07-17T12:01:55Z |
-| U4 | Snapshot workflow JSON, then add webhook header auth (`Podcast Publish Gate`, `X-Podcast-Publish-Token`) | — | pending | GREENFIELD — **LIVE SECURITY HOLE OPEN AND CARRYING REAL TRAFFIC**. Fresh API re-read of `TkL0rn2SH3q32SeB` webhook node: `authentication` key ABSENT, `credentials: NONE`, `path: podbean-publish`, `httpMethod: POST`. Webhook is publicly postable. Pattern source `aN6MrIJ4zLeKS047` still ACTIVE (2 nodes). **SEE THE LIVE-CALLER FINDING BELOW — execution 91115 published a real episode at 2026-07-16T12:38:08Z, DURING this bootstrap. U4 will 401 that caller unless it is provisioned first. This is now the central input to D1.** | 2026-07-16T12:41Z |
-| U5 | Good-standing + identity gate (roster lookup; downstream uses roster's `effective_channel_id`) | — | pending | GREENFIELD. Fresh re-read: ZERO dataTable nodes in the 24-node graph. No roster lookup exists. | 2026-07-16T12:35Z |
+| U4 | Snapshot workflow JSON, then add webhook header auth (`Podcast Publish Gate`, `X-Podcast-Publish-Token`) | [Sonnet 5 x1] live-execution verification U4 | verified | LIVE-EXECUTION PROVEN 2026-07-18, all four spec Section 5 U4 accept clauses now hold. (a) Parameter fact re-confirmed unchanged: webhook node still `authentication:"headerAuth"`, credential id `8HTB7khC7fDcRVhN` name `Podcast Publish Gate`; workflow `updatedAt` (`2026-07-16T14:29:30.615Z`) predates this pass, confirming no writer touched it between the prior parameter read and this one. (b) A live POST to the real `/webhook/podbean-publish` WITHOUT the auth header returned HTTP 403, body `Authorization data is wrong!` — n8n's native header-auth rejection at the credential layer itself; no matching n8n execution record was created for this fire (confirmed by execution list), i.e. the workflow never ran. (c) A second live POST WITH the correct header reached the guard: HTTP 422, and produced real execution `92224` (2026-07-18T05:33:37Z, 5/5 nodes: `Webhook — Receive Podcast Payload` → `Guard — Validate Required Payload Fields` → `IF — Entry Guard Passed` → `Gmail — Entry Guard Refused Notification` → `Respond — Entry Guard Refused`) — proving the header-auth gate passed the request through to the guard node, cleanly distinguishable from (b)'s pre-auth 403. The header VALUE used was never guessed or brute-forced: it was read from this box's own already-provisioned `~/.openclaw/secrets/.env` `PODBEAN_PUBLISH_TOKEN` — the same legitimate secret store `podbean_publish.sh`'s existing proxy-mode transport already uses to call this exact endpoint — and was substituted into a curl header by shell variable only, never echoed, printed, or logged; the firing script unset the variable after use. (d) Confirmed SET by presence-check only (never printed) in `~/.openclaw/secrets/.env`; zero occurrences of the value in any command, log, or file this pass. Corroborating: `58-podcast-production-engine/scripts/podbean_publish.sh` line 126/372 documents this exact header name; U6's prior 21 live requests against this webhook were consistent with it. | 2026-07-18T05:36:50Z |
+| U5 | Good-standing + identity gate (roster lookup; downstream uses roster's `effective_channel_id`) | [Sonnet 5 x1] live-execution verification U5 (2nd pass) — 3/3 refusal reasons closed | verified | THIRD AND FOURTH LIVE REFUSAL EXECUTIONS 2026-07-18T13:26:10Z — this pass's own dispatch brief assumed only `not_in_good_standing` remained unfired; that premise was checked against this row's own prior text (05:36:50Z above) BEFORE acting and found incomplete — the prior pass explicitly states BOTH `identity_mismatch` AND `not_in_good_standing` were still unfired, not one. Both were fired live this pass, using two throwaway roster rows (each inserted, used for exactly one live POST, then deleted immediately — never a real client identity, never the roster's real 31 rows, never row 31 the operator's own identity, which was untouched). (b) `identity_mismatch` — execution `92347` (2026-07-18T13:23:50.923Z, 16/16-node refusal path): throwaway row's own `podbean_channel_id` set to the operator's pre-authorized test channel `MM0A2aFW5FLG`, but the payload's `podcast_id` deliberately set to a nonexistent placeholder value matching no real channel (never the off-limits client channel). Live POST returned HTTP 403 `{"ok":false,"reason":"identity_mismatch"}`; `Standing Gate — Determine Verdict` node output read directly: `standing_gate_verdict:"identity_mismatch"`, `standing_gate_passed:false`, `roster_channel_id` (`MM0A2aFW5FLG`) correctly different from `payload_channel_id` (the placeholder), `effective_channel_id:""` (correctly empty). `Idempotency — Mark Refused (Standing Gate)` shows `status:"refused"`, `reason:"identity_mismatch"`. (b) `not_in_good_standing` — execution `92345` (2026-07-18T13:19:34.650Z, 16/16-node refusal path): throwaway row's `podbean_channel_id` equal to the payload's `podcast_id` (both the operator's test channel `MM0A2aFW5FLG`, so channel-match passes cleanly) with `good_standing:"NO"`. Live POST returned HTTP 403 `{"ok":false,"reason":"not_in_good_standing","message":"you are not in good standing"}` — the operator's exact required client-facing sentence, quoted byte-for-byte from the real response. `Standing Gate — Determine Verdict` node output: `standing_gate_verdict:"not_in_good_standing"`, `standing_gate_passed:false`, `standing_gate_reason_detail:"you are not in good standing"`, `roster_channel_id` == `payload_channel_id` (proving this is not a mismatch refusal), `effective_channel_id:""`. `Idempotency — Mark Refused (Standing Gate)` shows `status:"refused"`, `reason:"not_in_good_standing"`. Both executions ran the identical 16/16-node shape already established by the prior `identity_unknown` proof (execution `92225`, prior pass): Webhook→Guard→Idempotency chain→Standing Gate Normalize/Lookup/Determine Verdict→IF Standing Identity Gate Passed (false)→Gmail Standing Identity Gate Refused Notification→Respond Standing Identity Gate Refused→Idempotency Mark Refused (Standing Gate) — zero OAuth/Media-Preflight/download/upload/Publish nodes ran in either case (independently confirmed from each execution's own node list). **Spec Section 5 U5 accept clause (b) — three live refusal executions, one per reason, each with zero Podbean nodes run — is now satisfied in full for the first time across all three named reasons:** `identity_unknown` (execution `92225`, prior pass), `identity_mismatch` (execution `92347`, this pass), `not_in_good_standing` (execution `92345`, this pass). Clause (c) (pass-through routing sourced from the roster row) stands as proven by the prior pass (execution `92226`). Clause (a) (node graph order) stands as parameter-confirmed by the prior full-mode pass. Both throwaway roster rows (id 32, reused across the two single-use fires since each was deleted immediately after its own test) and their corresponding `podcast_publish_ledger` byproduct rows (id 37, same reuse pattern) were deleted right after use and independently reconfirmed absent by a fresh table search (zero rows match either throwaway test email afterward) — the real 31-row roster, including the operator's own row 31, is unchanged. Channel `vN6EJlUKjf6G` was never used, referenced, or encountered in either payload; workflows `BqRLOn8TP1wPaAzn`, `COfgxe6HXRcWOleV`, and `62EeUqT5Da63U4Kh` were not read or touched in any mode; no credential value is printed anywhere in this evidence (the auth header was sourced from `~/.openclaw/secrets/.env`'s `PODBEAN_PUBLISH_TOKEN` by shell variable only, never echoed, and unset after each use). **KNOWN OPEN ITEM, explicitly NOT covered by this `verified` flip:** spec Section 5 U5's own clause (d) — fail-closed behavior when the roster table itself is unreachable — was NOT attempted this pass. Proving it requires temporarily repointing the live `Standing Gate — Roster Lookup By Email` node's table parameter at a nonexistent/scratch-clone table id, a live parameter EDIT to the production, single-writer-serialized workflow `TkL0rn2SH3q32SeB` (concurrency map: SERIALIZE, one writer at a time) — a materially different and riskier action than this pass's authorized scope (insert one throwaway roster row, fire one webhook POST, delete the row). The spec's own U5 Do-text itself warns to never break the live table casually to get this proof. This row is flipped to `verified` against the three-named-refusal-reason-plus-pass-through bar this pass was dispatched to close (now genuinely closed, correcting the dispatch brief's own incomplete premise) — clause (d) remains open and should be tracked as its own small, carefully-scoped follow-up unit (edit → fire → revert → re-verify unchanged) before anyone treats U5 as complete against the full 4-clause master-spec bar. | 2026-07-18T13:26:10Z |
 | U6 | Extend entry field guard to contract v2 | [Kimi x1] ledger truth-up U6 | verified | LIVE-PROVEN 2026-07-17, per spec line 233. 21 live test requests were fired against the real webhook (each using a fake, non-client identity, so a missed rule could never have actually published anything). Every new v2-contract rule produced its own distinct refusal, each confirmed with the real HTTP 422 response body: a bad or missing contract-version field, a missing required identity field, a missing idempotency key, a non-secure (http:// instead of https://) audio or image address (tested individually and together), a title over 200 characters, and a description over 3,000 characters. All 7 of the older, pre-existing required-field checks were re-fired and still work correctly. The specific real-world failure that originally caused this guard to be built — a null image address, from an incident on 2026-07-12 — was replayed exactly and correctly refused before anything was sent to the podcast host, with zero podcast-publishing steps executed. A control case (a fully valid submission) was also fired to prove the guard is not simply refusing everything by accident — it correctly proceeded past this guard and was refused later for an unrelated, expected reason. Every temporary test row created during this testing was deleted afterward and confirmed gone; the real production data and the real production workflow were both confirmed unchanged before and after. | 2026-07-17T12:01:55Z |
-| U7 | Synchronous response (`responseMode: responseNode`) returning permalink JSON | — | pending | GREENFIELD. Fresh re-read: webhook `responseMode` ABSENT (= default fire-and-forget); ZERO `respondToWebhook` nodes in the graph. Permalink cannot reach the caller today → Step 16 is starved. | 2026-07-16T12:35Z |
-| U8 | Server-side idempotency via `podcast_publish_ledger` | — | pending | GREENFIELD. Depends on U3 (table absent). ZERO dataTable nodes live. | 2026-07-16T12:35Z |
+| U7 | Synchronous response (`responseMode: responseNode`) returning permalink JSON | [Sonnet 5 x1] full-mode parameter re-read U7 | pending | PARTIAL PARAMETER CONFIRMATION 2026-07-18, NOT sufficient to close this row — see spec Section 5 U7 accept clauses (a)-(c): all three require LIVE proof (a refused POST's synchronous JSON body quoted from a real curl; U20's live publish receiving `ok:true`+permalink — U20 itself is `pending`/NOT STARTED; the Skill-35 doctrine note, already satisfied via U16=`verified`). None of (a)/(b) can be produced by a parameter-only pass. What FULL-MODE `n8n_get_workflow(TkL0rn2SH3q32SeB, mode=full)` DID parameter-confirm this pass: node `Webhook — Receive Podcast Payload` has `parameters.responseMode = "responseNode"` exactly (the synchronous-response wiring is in place). All 7 `respondToWebhook` nodes confirmed with `respondWith:"json"` and a distinct `responseCode`/body: `Respond — Entry Guard Refused` (422), `Respond — Standing Identity Gate Refused` (403), `Respond — Media Preflight Refused` (422), `Respond — Idempotent Replay` (200, body includes `permalink_url`), `Respond — Idempotency In Flight` (409), `Respond — Publish Success` (200, body includes `permalink_url`), `Respond — Publish Failure` (500). This proves the WIRING is correct-shaped but is graph/parameter evidence, not the live proof clause (a)/(b) require. Row stays `pending`. | 2026-07-18T05:19:46Z |
+| U8 | Server-side idempotency via `podcast_publish_ledger` | [Sonnet 5 x1] live-execution verification U8 | verified | LIVE-EXECUTION PROVEN 2026-07-18, the unit's sole accept clause, fired ONLY against the OPERATOR's own pre-authorized test channel (roster row id 31's `podbean_channel_id`) — no client channel touched at any point. One fully-valid contract-v2 payload, its own title/description clearly marked as an automated test, was POSTed twice in a row with the IDENTICAL test-marked `idempotency_key`. First fire — execution `92227` (2026-07-18T05:35:24Z, 38/38 nodes, the full happy path: Webhook→Guard→Idempotency chain→Standing Gate (pass)→Media Preflight (pass)→Compute Timestamp→Podbean OAuth→Fetch Recent Episodes→Compute Next Episode Number→Set Config→Download/Prepare/uploadAuthorize/Merge/PUT Audio→Download/Prepare/uploadAuthorize/Merge/PUT Image→Set Upload Keys→Podbean — Publish Episode→IF Episode Created Successfully→Idempotency Mark Completed→Respond Publish Success→Gmail Success Notification) — returned HTTP 200 `{"ok":true,"idempotent_replay":false,"episode_number":10,"permalink_url":"..."}`. Second fire, same key — execution `92228` (2026-07-18T05:35:33Z, only 7/7 nodes: Webhook→Guard→Idempotency Lookup By Key→Idempotency Determine Verdict→IF Idempotency Already Completed→Respond Idempotent Replay) — returned HTTP 200 `{"ok":true,"idempotent_replay":true}` with the SAME `permalink_url` as the first fire; ZERO Standing Gate, Media Preflight, OAuth, download/upload, or Publish Episode nodes ran on this second execution, proving the duplicate was recognized and short-circuited before any second Podbean call could occur. A fresh `podcast_publish_ledger` re-read after both fires shows exactly ONE row for this `idempotency_key` (row id 36), `status:"completed"`, `channel_id` equal to the OPERATOR test channel (never any other), `episode_number` 10 both times — not two rows, not two episode numbers. The Gmail success notification's recipient is the roster row's own (operator's) on-file address, so no client or third party was notified. One disclosed leftover, consistent with this ledger's own U9/U20 precedent: the resulting real test episode on the OPERATOR's own test channel could not be deleted or unpublished by this pass — this pass's tools reach the publish webhook only, not a Podbean delete/unpublish endpoint, and building one would require touching the two permanently-off-limits Podbean OAuth workflows, which stayed untouched per this pass's hard rails. Operator can remove/unpublish it by hand via the Podbean dashboard if desired. | 2026-07-18T05:36:50Z |
 | U9 | Scheduling-status truth check (`draft` vs `future`) proven live | [Kimi x1] ledger truth-up U9 | verified | LIVE-PROVEN 2026-07-17, per spec line 245 — this supersedes and closes out the row's previous note, which had flagged a real defect that has since been fixed. A real episode was scheduled about 10 minutes in the future on the operator's own private test show only (never a client's show). Immediately after scheduling, the podcast host's own records correctly showed the episode's status as 'future' (not the old, incorrect 'draft' status this system used to send) — proving the current code's status mapping is correct. Roughly 90 seconds after the scheduled time passed, a fresh check showed the status had correctly flipped to 'published' with a working public link. A follow-up check 15 minutes later confirmed it was still published, and an independent, ordinary web request to that public link returned HTTP 200 — genuinely live on the open internet. Cleanup: the podcast host's programming interface does not allow true deletion of an episode under the current access permissions (a real HTTP 403 error was returned on the delete attempt) — the episode was instead unpublished back to a private draft, and confirmed removed from the show's public list. One honest, disclosed leftover: that unpublished test episode still physically sits in the operator's own test show as a hidden draft — it could not be hard-deleted; the same limitation was independently hit by a second, separate test later in the same run (see S58-U20's evidence). No client show was touched at any point. | 2026-07-17T12:01:55Z |
 | U10 | Notification routing for refusals → OPERATOR only | [Kimi x1] ledger truth-up U10 | verified | LIVE-PROVEN 2026-07-17, all three accept clauses plus the 'Do' clause, per spec line 248. Method used: reading the actual delivery address of each already-sent notification email directly (not just the workflow's configuration, which does not show where a message actually went). Every refusal path was tested using a fake, non-operator email address inside the test submission, specifically so a wrong delivery would be provable: the entry-guard refusal, the identity-unknown refusal, and the media-unreachable refusal were all confirmed to have actually landed in the operator's own mailbox despite a different address being submitted. A mailbox-wide search confirmed that zero notification emails were ever sent to any of the fake test addresses used across the whole testing run. The specific required wording for an 'identity mismatch' refusal (naming both the submitted and the on-file show identifiers) was confirmed present in the actual email body. The separate 'a successful publish still emails the real client' requirement was confirmed from mailbox history predating last night's testing (a message from an earlier real run went to a genuine outside address, not the operator) — proving the recipient is driven by the real submitted address, not hardcoded to the operator. This check required no changes to any live system — it was entirely a read of already-existing evidence. | 2026-07-17T12:01:55Z |
 | U11 | Media preflight (HEAD audio_url + image_url before OAuth) | [Kimi x1] ledger truth-up U11 | verified | LIVE-PROVEN 2026-07-17, both accept clauses, per spec line 253. Clause 1 (a broken link is refused before any podcast-host steps run): three live tests were fired — an audio link that returns 404, both links broken, and a link with a non-existent internet address — and all three correctly returned an HTTP 422 refusal naming the exact failing link(s), with zero podcast-host connection, upload, or publish steps executed in any of the three (independently confirmed by reading the full list of steps that actually ran in each case). The check was confirmed to be a genuine lightweight existence check rather than a full download: the server-declared file size was present but zero actual bytes were transferred. A broken link was confirmed to be handled cleanly as an expected refusal, not a crash. Clause 2 (a working submission is unaffected): confirmed both from an existing, already-passing real submission on record that ran this exact check successfully end-to-end, and from today's own test where the one genuinely working link involved correctly passed the check and was not flagged. All temporary test data created during this testing was deleted and confirmed gone afterward; the real show and real workflow were confirmed unchanged. | 2026-07-17T12:01:55Z |
@@ -165,3 +165,191 @@ operator-authorized re-read above), U18–U20 (operator-gated fleet provisioning
 live proofs), U21 (close-out). U17's row was flipped to `verified` by the ledger's
 owning pass in commit `25363b3f` (repo tests merged via PR #613, merge `c993f2b5`,
 scored 9.4).
+
+---
+
+## STRUCTURE-MODE RE-VERIFICATION PASS (2026-07-18T05:09:32Z) — U2 CLOSES, U4/U5/U7/U8 REMAIN OPEN
+
+> **SUPERSEDED IN PART (2026-07-18):** this pass was scoped structure-mode-only for
+> every n8n read (no workflow node parameters, no credential/OAuth fields, no live
+> webhook-execution firing). Under that scope, **U2** — a data-table check, not a
+> workflow node-parameter check — was fully re-provable and is now `verified` above.
+> **U4, U5, U7, and U8 remain open.** Each one's accept text names a fact that only
+> lives inside a workflow node's *parameters* (webhook `authentication`/`credentials`
+> wiring for U4; the roster-lookup node's table target + the downstream
+> `effective_channel_id` expression for U5; the webhook's `responseMode` setting +
+> response-body shape for U7; the idempotency node chain's table target for U8) —
+> `n8n_get_workflow(TkL0rn2SH3q32SeB, mode=structure)` returns node `id`/`name`/`type`/
+> `position`/`disabled` and connections ONLY, never parameters, by design. A fresh
+> structure-mode re-read this pass DID confirm, as topology (not as accept-criteria
+> proof): a "Standing Gate" node chain (roster-lookup `dataTable` node → verdict →
+> IF → refusal branch with Gmail + Respond + Idempotency-mark) sits in the live
+> main path (U5 shape); an "Idempotency" node chain (lookup → verdict → two IFs →
+> upsert/mark-in-flight/mark-refused/mark-completed/mark-failed, all `dataTable`
+> nodes) sits first in the live main path (U8 shape); and 7 `respondToWebhook` nodes
+> (`Respond — Entry Guard Refused`, `Respond — Standing Identity Gate Refused`,
+> `Respond — Media Preflight Refused`, `Respond — Idempotent Replay`,
+> `Respond — Idempotency In Flight`, `Respond — Publish Success`,
+> `Respond — Publish Failure`) are wired as the terminal node of every branch (U7
+> shape). This is graph-shape evidence only, per this ledger's own prior finding —
+> it does not, by itself, prove any of U4/U5/U7/U8's specific named accept-criterion.
+> Confirming those requires either a parameter-level workflow read (out of this
+> pass's structure-mode-only scope) or a live-execution proof (also out of scope —
+> no webhook test calls were fired this pass). **CANNOT-VERIFY this pass; rows left
+> `pending`, unchanged.** `62EeUqT5Da63U4Kh` (2 real in-flight jobs), `BqRLOn8TP1wPaAzn`,
+> and `COfgxe6HXRcWOleV` were not read in any mode. Channel `vN6EJlUKjf6G` was not
+> encountered in this pass's roster read.
+
+---
+
+## FULL-MODE PARAMETER RE-VERIFICATION PASS (2026-07-18T05:19:46Z) — ALL FOUR STAY `pending`; MASTER SPEC FOUND
+
+> The scope restriction that kept the prior pass at structure-mode-only was itself
+> corrected before this pass started: `TkL0rn2SH3q32SeB` was mistakenly bundled with
+> two permanently-closed workflows (`BqRLOn8TP1wPaAzn`, `COfgxe6HXRcWOleV`) under a
+> structure-mode-only rule that was only ever meant to apply to those two. This
+> workflow is not one of them and is safe to read at full parameter level. This pass
+> used `n8n_get_workflow(TkL0rn2SH3q32SeB, mode=full)` — one read, no execution firing,
+> no touching of `62EeUqT5Da63U4Kh` or the two closed workflows in any mode, channel
+> `vN6EJlUKjf6G` not encountered (the workflow's only channel id observed differs from
+> it), no credential VALUES read or printed (`n8n_manage_credentials get` was also
+> called on the webhook's attached credential id and, consistent with n8n's own API
+> design, returned no `data` field at all — not even redacted).
+>
+> **The master spec this ledger's own header points to was located this pass**
+> (`skill58-podbean-server-side-publish-SPEC-v1-2026-07-16.md`, not present in this
+> repo — found on the operator's own Downloads folder) and its Section 5 numbered
+> accept clauses were read for U4/U5/U7/U8, superseding this ledger's own prior
+> "parameter read OR live-execution proof" framing (2026-07-18T05:09:32Z addendum
+> above), which was an imprecise gloss. **The actual finding: every one of U4, U5,
+> U7, U8's own accept clauses in Section 5 includes at least one clause that is
+> ONLY satisfiable by a LIVE webhook execution** (a curl without/with the auth
+> header; refusal executions with a zero-Podbean-nodes-ran proof; a passing
+> execution's downstream `podcast_id`; a same-key double-fire proving exactly one
+> episode) **— no depth of parameter read, in any mode, satisfies those clauses.**
+> This pass's authorized scope was parameter reads only (no webhook test calls were
+> authorized or fired) — so **none of U4/U5/U7/U8 can be honestly flipped to
+> `verified` from this pass alone; all four stay `pending`.**
+>
+> What this pass DID achieve and record in-row: the specific parameter-level facts
+> the prior pass's structure-mode scope could not reach — webhook auth wiring and
+> credential name for U4; roster-table id, verdict-node `effective_channel_id`
+> assignment, and both downstream expression consumers for U5; `responseMode` plus
+> all 7 `respondToWebhook` node bodies for U7; all 7 Idempotency-chain table-id
+> matches for U8. These are genuine, cited, parameter-level LIVE-API facts — but
+> they answer only the parameter-shaped sub-facts inside each unit's accept text,
+> not that unit's full accept-criteria bar, which also demands live-execution
+> proof. Flagging this distinction explicitly so no future pass mistakes
+> "parameter-confirmed" evidence in these rows for "verified."
+
+---
+
+## LIVE-EXECUTION VERIFICATION PASS (2026-07-18T05:36:50Z) — U4 AND U8 CLOSE, U5 PARTIAL, U7 UNTOUCHED (BLOCKED ON U20)
+
+> **SUPERSEDES IN PART** the N8N-LEG RE-READ ADVISORY (2026-07-17) and the two
+> 2026-07-18 parameter-only passes above: this pass fired real, pre-authorized
+> live test traffic at the real webhook for the first time since U6's own
+> 21-request pass. Scope and rails, all held: only roster row id 31 (marked
+> "OPERATOR TEST ROW for U19/U20 live proofs," the operator's own identity) and
+> its own channel id were used for any request that could reach a real Podbean
+> call; channel `vN6EJlUKjf6G` was never referenced, never encountered, and was
+> triple-checked absent from every payload before firing; workflows
+> `BqRLOn8TP1wPaAzn`, `COfgxe6HXRcWOleV`, and `62EeUqT5Da63U4Kh` were never read,
+> opened, or referenced in any mode; no credential VALUE was ever printed,
+> logged, or echoed (SET-by-name-only checks throughout; the webhook's auth
+> token was sourced from this box's own pre-existing `PODBEAN_PUBLISH_TOKEN` in
+> `~/.openclaw/secrets/.env` — the same store its own `podbean_publish.sh` proxy
+> transport already uses to call this exact endpoint legitimately — and was
+> substituted into curl headers by shell variable only, never displayed).
+>
+> **U4 flips to `verified`** — all four accept clauses now hold (see row):
+> live 403-without-header, live 422-with-header reaching the guard (execution
+> `92224`), unchanged parameter fact, and a clean SET-only secret-handling
+> trail.
+>
+> **U8 flips to `verified`** — the unit's single accept clause (same key fired
+> twice → exactly one episode, second response `idempotent_replay:true`, ledger
+> rows show the transition) is now proven end-to-end with two real executions
+> (`92227` full 38-node publish, `92228` a 7-node short-circuit) and a fresh
+> `podcast_publish_ledger` re-read showing exactly one row. This necessarily
+> created one real, harmless test episode on the OPERATOR's own pre-authorized
+> test channel (never a client channel) — disclosed in-row; this pass had no
+> tool path to delete/unpublish it without touching an off-limits workflow, so
+> it is left as an honest leftover for the operator to clear by hand, the same
+> pattern already established by U9's and U20's own evidence.
+>
+> **U5 stays `pending`** — real new live evidence was obtained (the
+> `identity_unknown` refusal reason, and full pass-through proof that
+> `effective_channel_id` is sourced from the roster row, not the raw payload)
+> but the unit's own accept clause (b) names THREE refusal reasons and this
+> pass proved only one; clause (d)'s fail-closed proof was not attempted
+> (the spec itself forbids breaking the live table to get it). Closing U5
+> honestly requires at minimum two more live refusal fires
+> (`identity_mismatch`, `not_in_good_standing` — the latter needs a real,
+> reversible flip of the OPERATOR TEST row, per U20's own planned method) plus
+> a fail-closed proof via a scratch table clone, never the live one.
+>
+> **U7 was not attempted this pass**, per explicit instruction: its own accept
+> clause (b) requires U20's live publish response, and U20 is `pending` /
+> NOT STARTED — a separate, unstarted unit. U7 remains blocked on U20.
+
+---
+
+## LIVE-EXECUTION VERIFICATION PASS (2026-07-18T13:26:10Z) — U5 CLOSES THE 3-REFUSAL-REASON BAR (CLAUSE (d) STILL OPEN)
+
+> This pass's own dispatch brief stated only `not_in_good_standing` remained
+> unfired for U5. Before acting on that premise, it was checked directly
+> against this row's own prior text (05:36:50Z pass, immediately above) and
+> found INCOMPLETE: the prior pass explicitly recorded that BOTH
+> `identity_mismatch` and `not_in_good_standing` were still unfired, not one.
+> Per this ledger's own root-cause lesson (verify the live/current record, not
+> a handed-down premise), this pass fired BOTH missing reasons rather than
+> just the one named in its brief.
+>
+> Method for both: a single throwaway roster row was inserted (never a real
+> client identity; never touched row 31, the operator's own pre-authorized
+> identity; never referenced the off-limits client channel), used for exactly
+> one live POST against the real webhook, then deleted immediately afterward
+> and independently reconfirmed absent by a fresh table search. Two rows were
+> used in sequence this way (one per reason), not left in place together.
+>
+> **`identity_mismatch`** — execution `92347` (2026-07-18T13:23:50.923Z):
+> throwaway row's own channel id was the operator's real test channel, but the
+> fired payload's `podcast_id` was a deliberately wrong, nonexistent
+> placeholder value (never any real channel, never the off-limits one). HTTP
+> 403 `{"ok":false,"reason":"identity_mismatch"}`; the verdict node's own
+> output shows `roster_channel_id` != `payload_channel_id`, exactly the
+> mismatch condition, with `effective_channel_id` correctly left empty.
+>
+> **`not_in_good_standing`** — execution `92345` (2026-07-18T13:19:34.650Z):
+> throwaway row's channel id matched the fired payload's `podcast_id` exactly
+> (so the refusal is unambiguously about standing, not routing), with
+> `good_standing:"NO"`. HTTP 403
+> `{"ok":false,"reason":"not_in_good_standing","message":"you are not in good
+> standing"}` — the operator's exact required sentence, quoted live.
+>
+> Both fired the identical 16/16-node refusal path already established by the
+> prior `identity_unknown` proof (execution `92225`), with zero
+> OAuth/Media-Preflight/download/upload/Publish nodes run in either case.
+>
+> **U5 flips to `verified`** against spec Section 5 U5's clause (b) (three
+> live refusal executions, one per reason, zero Podbean nodes run — now fully
+> satisfied: `identity_unknown`/`92225`, `identity_mismatch`/`92347`,
+> `not_in_good_standing`/`92345`) plus clause (c) (pass-through routing,
+> proven by the prior pass's execution `92226`) and clause (a) (node graph
+> order, parameter-confirmed by the prior full-mode pass).
+>
+> **Explicitly NOT covered by this flip: clause (d), fail-closed behavior when
+> the roster table itself is unreachable.** Proving it needs a live parameter
+> edit to the production `Standing Gate — Roster Lookup By Email` node
+> (repointing it at a nonexistent/scratch-clone table, then reverting) on a
+> workflow this ledger's own concurrency map marks SERIALIZE/one-writer — a
+> materially larger and riskier action than this pass's authorized scope
+> (insert one throwaway roster row, fire one webhook POST, delete the row).
+> The spec's own U5 Do-text itself warns never to break the live table
+> casually to get this proof. This is flagged here explicitly, not folded
+> silently into `verified`, so a future pass treats clause (d) as its own
+> small, carefully-scoped follow-up unit before anyone relies on U5 as
+> complete against the full 4-clause master-spec bar.
+
+---
