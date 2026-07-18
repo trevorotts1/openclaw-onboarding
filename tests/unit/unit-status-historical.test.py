@@ -792,5 +792,256 @@ class Defect2OnlyRedLiveGatesVerdict(unittest.TestCase):
             )
 
 
+class LiveLegOwedMachineReadable(unittest.TestCase):
+    """MUTATION PROOF for the machine-readable "(live leg OWED)" state. BEFORE
+    this change, the only place a compound unit's owed non-repo leg appeared
+    was PROSE inside tag_note ("flagged OWED separately") -- nothing in the
+    JSON result distinguished "fully DONE" from "repo-legs DONE, live leg
+    OWED", so a caller (the ledger-truth gate) could not branch on it
+    programmatically. Every assertion below reads keys that DO NOT EXIST on
+    pre-change code (live_leg_owed / owed_non_repo_components /
+    completion_state, and the resolve_owed_non_repo_components function
+    itself) -- so on a revert these tests fail with AttributeError/KeyError,
+    never silently pass.
+
+    All offline: verbatim real tag strings (same discipline as
+    CompoundLegTagFix), fixture ledgers in tempdirs, and a monkeypatched
+    usc.resolve_leg (same pattern as Defect2OnlyRedLiveGatesVerdict) so no
+    real git dir or network is touched."""
+
+    # Real description-column texts copied VERBATIM from
+    # ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md (same source as
+    # CompoundLegTagFix.REAL_LIVE_TAG_UNITS / REAL_UNPARSEABLE_COMPOUND_UNITS).
+    REAL_COMPOUND_DESCS = {
+        "U29": ("[B/B-U15] (ONB + live, P2) ENV-MATRIX live proof: the ASSUMED VPS mount row + "
+                "first-hour ground truth on one Mac + one VPS + stale-env preflight", ["live"]),
+        "U63": ("[GK-01] (ONB + n8n, P0) **P0 live**: fix the podcast publish path that failed on "
+                "`image_url = null` + fail-closed entry guard + retry the episode", ["n8n"]),
+        "U71": ("[GK-09] (ONB + GHL, P1) Clear the WAF/edge 403 on `verify-imported`; run the "
+                "never-yet-run snapshot chain end-to-end once", ["ghl"]),
+        "U74": ("[GK-12] (n8n + ONB, P1) Canonicalize the podcast pipeline per D19 (kill the "
+                "double-publish risk)", ["n8n"]),
+    }
+
+    ONB_PLACEHOLDER = "/nonexistent-onb"
+    CC_PLACEHOLDER = "/nonexistent-cc"
+
+    def _satisfied_leg(self, *a, **kw):
+        return {
+            "satisfied": True, "proved": True, "method": "own-branch",
+            "evidence": "fixture leg for live-leg-owed test",
+            "raw": {"branch": "skill6-v2/U999-fixture", "tip": "deadbeef" * 5,
+                    "merge_sha": "cafebabe" * 5, "tag": None},
+        }
+
+    def _unsatisfied_leg(self, *a, **kw):
+        return {
+            "satisfied": False, "proved": True, "method": "own-branch-unmerged",
+            "evidence": "fixture unmerged leg for live-leg-owed test",
+            "raw": {"branch": "skill6-v2/U999-fixture"},
+        }
+
+    def _resolve_with_leg(self, unit_id, tag, leg_fn):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "fixture-ledger.md"
+            p.write_text(f"| {unit_id} | [X] ({tag}, P1) fixture row | label | verified | evidence | ts |\n")
+            orig = usc.resolve_leg
+            usc.resolve_leg = leg_fn
+            try:
+                return usc.resolve_unit(unit_id, self.ONB_PLACEHOLDER, self.CC_PLACEHOLDER, [str(p)], skip_ci=True)
+            finally:
+                usc.resolve_leg = orig
+
+    def test_resolver_flags_real_compound_tags_owed_components(self):
+        """The pure resolver, against the REAL ledger tag strings: every
+        non-repo component of a repo-carrying '+'-joined tag is listed,
+        regardless of '+'-join order. FAILS on revert with AttributeError
+        (function does not exist)."""
+        for uid, (desc, expected) in self.REAL_COMPOUND_DESCS.items():
+            self.assertEqual(
+                usc.resolve_owed_non_repo_components(desc), expected,
+                f"{uid}: owed components wrong -- got {usc.resolve_owed_non_repo_components(desc)}",
+            )
+
+    def test_resolver_returns_empty_for_non_compound_or_non_repo_shapes(self):
+        """Guard against over-flagging: bare repo tags, parenthesized
+        compound (the '(+ONB)' secondary is a repo hint, NOT a live leg),
+        zero-leg all-non-repo '+'-tags, and garbled fail-closed tags must
+        ALL return [] -- only a repo-carrying flat compound owes a live
+        leg."""
+        cases = [
+            "[X] (ONB, P1) bare single repo tag",
+            "[X] (both, P1) both-repos tag",
+            "[E2-3a (G2)] (CC (+ONB), P1) parenthesized compound -- secondary is a repo hint",
+            "[X] (GHL + n8n, P1) zero-leg, no repo component at all",
+            "[X] (0NB + live, P1) garbled repo token -- fail-closed unknown, nothing owed",
+            "[X] (live, P1) bare non-repo tag",
+        ]
+        for desc in cases:
+            self.assertEqual(
+                usc.resolve_owed_non_repo_components(desc), [],
+                f"must not flag owed components for: {desc!r}",
+            )
+
+    def test_done_compound_unit_is_visibly_live_leg_owed_not_fully_done(self):
+        """THE state this change exists to expose: repo leg DONE, live leg
+        owed. verdict stays DONE (repo legs ARE done), but the machine-
+        readable fields must distinguish it from fully-done. FAILS on
+        revert with KeyError ('live_leg_owed')."""
+        result = self._resolve_with_leg("U999101", "ONB + live", self._satisfied_leg)
+        self.assertEqual(result["verdict"], "DONE")
+        self.assertTrue(result["live_leg_owed"],
+                        f"REGRESSION: repo-done compound unit with an owed live leg must set live_leg_owed -- got {result}")
+        self.assertEqual(result["owed_non_repo_components"], ["live"])
+        self.assertEqual(result["completion_state"], "repo-legs-done-live-leg-owed",
+                         f"REGRESSION: must NOT read 'fully-done' -- got {result['completion_state']}")
+
+    def test_done_single_leg_unit_is_fully_done(self):
+        """The contrast case: a plain (ONB, P1) unit with its leg satisfied
+        is fully-done -- live_leg_owed False, no owed components."""
+        result = self._resolve_with_leg("U999102", "ONB", self._satisfied_leg)
+        self.assertEqual(result["verdict"], "DONE")
+        self.assertFalse(result["live_leg_owed"])
+        self.assertEqual(result["owed_non_repo_components"], [])
+        self.assertEqual(result["completion_state"], "fully-done")
+
+    def test_not_done_compound_lists_owed_components_but_flag_stays_false(self):
+        """live_leg_owed means 'repo legs DONE but live leg OWED' -- a unit
+        whose repo leg is NOT-DONE is not in that state at all. The owed
+        components stay VISIBLE (a caller can still see the unit owes a
+        live leg) but the flag and completion_state must not claim the
+        repo-done/live-owed shape."""
+        result = self._resolve_with_leg("U999103", "ONB + live", self._unsatisfied_leg)
+        self.assertEqual(result["verdict"], "NOT-DONE")
+        self.assertFalse(result["live_leg_owed"])
+        self.assertEqual(result["owed_non_repo_components"], ["live"])
+        self.assertIsNone(result["completion_state"])
+
+    def test_garbled_tag_stays_fail_closed_and_owes_nothing(self):
+        """Fail-closed behavior unchanged: an unparseable '+'-joined tag is
+        UNKNOWN (never DONE off the ledger's 'verified' cell) and carries
+        empty owed fields -- the new keys must not weaken the existing
+        loud-failure path."""
+        result = self._resolve_with_leg("U999104", "0NB + live", self._satisfied_leg)
+        self.assertEqual(result["verdict"], "UNKNOWN")
+        self.assertFalse(result["live_leg_owed"])
+        self.assertEqual(result["owed_non_repo_components"], [])
+        self.assertIsNone(result["completion_state"])
+
+
+class AllModeAggregate(unittest.TestCase):
+    """MUTATION PROOF for the --all aggregate count mode. BEFORE this change
+    the tool accepted exactly one unit id; list_ledger_unit_ids /
+    summarize_results / format_summary_line / aggregate_exit_code /
+    resolve_all_units did not exist. Every test below fails on a revert with
+    AttributeError -- never a hollow pass. All offline: fixture ledgers in
+    tempdirs + a monkeypatched usc.resolve_leg."""
+
+    ONB_PLACEHOLDER = "/nonexistent-onb"
+    CC_PLACEHOLDER = "/nonexistent-cc"
+
+    def _leg_satisfied(self, *a, **kw):
+        return {"satisfied": True, "proved": True, "method": "own-branch",
+                "evidence": "fixture satisfied leg", "raw": {"branch": "b", "tip": "d" * 40, "merge_sha": None, "tag": None}}
+
+    def _leg_unsatisfied(self, *a, **kw):
+        return {"satisfied": False, "proved": True, "method": "own-branch-unmerged",
+                "evidence": "fixture unmerged leg", "raw": {"branch": "b"}}
+
+    def test_list_ledger_unit_ids_numeric_sort_rows_only(self):
+        """Unit ids come from real row starts (`| U<n> |`), numeric-sorted
+        (U2 before U10) -- a prose mention of U99 mid-row must NOT become a
+        checked unit."""
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "fixture-ledger.md"
+            p.write_text(
+                "Some prose mentioning U99 and U1000 outside any row.\n"
+                "| U10 | [X] (live, P1) ten | label | pending | ev | ts |\n"
+                "| U2 | [X] (live, P1) two -- row text cites U99 in passing | label | pending | ev | ts |\n"
+                "not a row: | U77 | should not count (does not start the line)\n"
+                "| U1 | [X] (live, P1) one | label | pending | ev | ts |\n"
+            )
+            self.assertEqual(usc.list_ledger_unit_ids([str(p)]), ["U1", "U2", "U10"])
+
+    def test_result_tier_buckets_fail_closed(self):
+        """Tier mapping: DONE splits on live_leg_owed; NOT-DONE and UNKNOWN
+        pass through; an UNEXPECTED verdict value must bucket as UNKNOWN,
+        never ride along as a pass."""
+        self.assertEqual(usc.result_tier({"verdict": "DONE", "live_leg_owed": False}), "DONE")
+        self.assertEqual(usc.result_tier({"verdict": "DONE", "live_leg_owed": True}), "DONE-LIVE-OWED")
+        self.assertEqual(usc.result_tier({"verdict": "NOT-DONE"}), "NOT-DONE")
+        self.assertEqual(usc.result_tier({"verdict": "UNKNOWN"}), "UNKNOWN")
+        self.assertEqual(usc.result_tier({"verdict": "SOME-FUTURE-VALUE"}), "UNKNOWN",
+                         "an unrecognized verdict must bucket fail-closed as UNKNOWN")
+
+    def test_summary_line_and_exit_code_pure(self):
+        """The ONE summary line's exact format (fixed tier order, zero
+        counts printed), plus the aggregate exit-code vocabulary: NOT-DONE
+        dominates (1), else UNKNOWN (3), else 0."""
+        results = [
+            {"verdict": "DONE", "live_leg_owed": False},
+            {"verdict": "DONE", "live_leg_owed": True},
+            {"verdict": "NOT-DONE"},
+            {"verdict": "UNKNOWN"},
+        ]
+        counts = usc.summarize_results(results)
+        self.assertEqual(counts, {"DONE": 1, "DONE-LIVE-OWED": 1, "NOT-DONE": 1, "UNKNOWN": 1, "TOTAL": 4})
+        self.assertEqual(
+            usc.format_summary_line(counts),
+            "UNITS CHECKED: 4 -- DONE: 1, DONE-LIVE-OWED: 1, NOT-DONE: 1, UNKNOWN: 1",
+        )
+        self.assertEqual(usc.aggregate_exit_code(counts), 1, "any NOT-DONE must dominate the exit code")
+        self.assertEqual(
+            usc.aggregate_exit_code(usc.summarize_results([{"verdict": "DONE", "live_leg_owed": False},
+                                                            {"verdict": "UNKNOWN"}])),
+            3, "UNKNOWN with no NOT-DONE exits 3",
+        )
+        self.assertEqual(
+            usc.aggregate_exit_code(usc.summarize_results([{"verdict": "DONE", "live_leg_owed": False},
+                                                            {"verdict": "DONE", "live_leg_owed": True}])),
+            0, "all-DONE (incl. live-owed) exits 0",
+        )
+
+    def test_resolve_all_units_end_to_end_counts_and_summary(self):
+        """End-to-end over a fixture ledger: one fully-DONE unit, one
+        DONE-with-live-leg-owed, one NOT-DONE, one UNKNOWN (garbled tag --
+        the existing fail-closed path must survive aggregation). Asserts
+        the per-unit loop reused resolve_unit (full result dicts preserved),
+        the exact tier counts, and the one-line summary. FAILS on revert
+        with AttributeError (resolve_all_units does not exist)."""
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "fixture-ledger.md"
+            p.write_text(
+                "| U1 | [X] (ONB, P1) plain repo unit | label | verified | ev | ts |\n"
+                "| U2 | [X] (ONB + live, P1) compound live-owed unit | label | verified | ev | ts |\n"
+                "| U3 | [X] (0NB + live, P1) garbled token unit | label | verified | ev | ts |\n"
+                "| U4 | [X] (ONB, P1) repo unit with unmerged leg | label | pending | ev | ts |\n"
+            )
+            def fake_resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text):
+                if unit_id == "U4":
+                    return self._leg_unsatisfied()
+                return self._leg_satisfied()
+            orig = usc.resolve_leg
+            usc.resolve_leg = fake_resolve_leg
+            try:
+                agg = usc.resolve_all_units(["U1", "U2", "U3", "U4"], self.ONB_PLACEHOLDER,
+                                             self.CC_PLACEHOLDER, [str(p)], skip_ci=True)
+            finally:
+                usc.resolve_leg = orig
+
+            self.assertEqual([u["unit"] for u in agg["units"]], ["U1", "U2", "U3", "U4"],
+                             "per-unit order must follow the input list")
+            self.assertEqual([u["verdict"] for u in agg["units"]], ["DONE", "DONE", "UNKNOWN", "NOT-DONE"])
+            self.assertTrue(agg["units"][1]["live_leg_owed"],
+                            "the compound unit must surface live_leg_owed in the aggregate per-unit detail")
+            self.assertEqual(agg["counts"],
+                             {"DONE": 1, "DONE-LIVE-OWED": 1, "NOT-DONE": 1, "UNKNOWN": 1, "TOTAL": 4})
+            self.assertEqual(
+                agg["summary_line"],
+                "UNITS CHECKED: 4 -- DONE: 1, DONE-LIVE-OWED: 1, NOT-DONE: 1, UNKNOWN: 1",
+            )
+            self.assertEqual(usc.aggregate_exit_code(agg["counts"]), 1)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

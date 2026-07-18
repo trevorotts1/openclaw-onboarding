@@ -212,6 +212,48 @@ def resolve_required_legs(description):
     return set(), "unknown", f"leg tag '{tag}' does not match any known convention (both/ONB/CC/compound/zero-leg)."
 
 
+def resolve_owed_non_repo_components(description):
+    """The machine-readable form of the "flagged OWED separately" prose note in
+    resolve_required_legs()'s '+'-joined compound branch. Returns a sorted list
+    of the non-repo components of a flat compound leg tag that ALSO carries at
+    least one repo leg -- e.g. "(ONB + live, P2)" -> ["live"], "(n8n + ONB, P1)"
+    -> ["n8n"], "(ONB + GHL, P1)" -> ["ghl"]. These legs can NEVER be proven by
+    this tool's git check (they are proven by execution/live-run or not at all),
+    so a unit whose repo legs all resolve DONE is still only
+    "repo-legs-done, live-leg-OWED" -- a state a caller must be able to read
+    programmatically, not infer from a comment.
+
+    Returns [] for every other tag shape:
+      - bare single-repo tags ("(ONB, ...)" / "(CC, ...)" / "(both, ...)") --
+        no non-repo component exists;
+      - parenthesized compound "(CC (+ONB), ...)" -- the "(+...)" secondary is a
+        REPO hint with no consistent grammar (resolve_required_legs() says so);
+        it is not a live/non-repo leg and stays out of scope;
+      - zero-leg "+"-joined tags ("(GHL + n8n, ...)") -- no repo leg exists to
+        be "done", so the repo-done/live-owed distinction does not apply (the
+        zero-leg branch already owns that case);
+      - unparseable / garbled tags ("(0NB + live, ...)") -- fail-closed via
+        mode="unknown" in resolve_required_legs(); nothing is asserted here.
+
+    Reuses the SAME validated primitives as resolve_required_legs()
+    (parse_compound_leg_primary / parse_leg_requirement) -- no new parsing
+    regex, so the two cannot drift apart."""
+    if not description:
+        return []
+    if parse_compound_leg_primary(description):
+        return []
+    tag = parse_leg_requirement(description)
+    if tag is None:
+        return []
+    tag_l = tag.strip().lower()
+    if "+" not in tag_l:
+        return []
+    parts = [p.strip() for p in tag_l.split("+")]
+    if not any(p in ("onb", "cc") for p in parts):
+        return []
+    return sorted(p for p in parts if p not in ("onb", "cc"))
+
+
 # --------------------------------------------------------------------------
 # Branch discovery (own-named branch ONLY -- the "obvious" check; never the
 # sole source of truth, see resolve_leg() below for the cross-reference
@@ -794,6 +836,13 @@ def _split_json_objects(s):
 # Top-level: resolve a whole unit
 # --------------------------------------------------------------------------
 
+def _no_owed_legs():
+    """The stable, always-present schema for the machine-readable live-leg
+    fields (see resolve_owed_non_repo_components()): a caller never has to
+    guess whether the keys exist, on ANY return path."""
+    return {"owed_non_repo_components": [], "live_leg_owed": False, "completion_state": None}
+
+
 def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
     row_path, row_text = find_ledger_row(ledger_paths, unit_id)
     if row_text is None:
@@ -801,7 +850,7 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
             "unit": unit_id, "verdict": "UNKNOWN",
             "reason": f"No ledger row found for {unit_id} in any of: {', '.join(str(p) for p in ledger_paths)}. "
                       f"Cannot resolve required legs from §E.2 without a row to read the leg tag from. Refusing to guess.",
-            "legs": {},
+            "legs": {}, **_no_owed_legs(),
         }
 
     cells = [c.strip() for c in row_text.strip().strip("|").split("|")]
@@ -814,7 +863,7 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
         return {
             "unit": unit_id, "verdict": "UNKNOWN",
             "reason": f"Leg tag unparseable: {tag_note} Row: {row_path}. Refusing to guess DONE or NOT-DONE.",
-            "legs": {}, "ledger_status_cell": ledger_status_cell,
+            "legs": {}, "ledger_status_cell": ledger_status_cell, **_no_owed_legs(),
         }
 
     if mode == "zero-leg":
@@ -829,7 +878,7 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
                       f"Ledger status cell reads '{ledger_status_cell}'. "
                       f"{'DONE per hand-verified ledger status.' if verified else 'Not stamped verified -- UNKNOWN, not independently git-checkable.'}",
             "legs": {}, "mode": mode, "proved": None,
-            "ledger_status_cell": ledger_status_cell,
+            "ledger_status_cell": ledger_status_cell, **_no_owed_legs(),
         }
 
     repo_dirs = {"onb": onb_dir, "cc": cc_dir}
@@ -876,11 +925,123 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
     else:
         verdict = "UNKNOWN"
 
+    # Machine-readable "(live leg OWED)" state -- the structured form of what
+    # used to be prose-only inside tag_note. A compound unit ("ONB + live")
+    # whose repo leg(s) all resolve DONE is NOT the same as a fully-DONE unit:
+    # its live/non-repo leg is still owed (proven by execution/live-run, never
+    # by this tool's git check). `verdict` deliberately stays "DONE" (the repo
+    # legs ARE done -- existing callers/exit codes keep their meaning); the
+    # distinction lives in these three additive fields so a caller (e.g. the
+    # ledger-truth gate) can act on it programmatically:
+    #   owed_non_repo_components: which non-repo legs the tag owes ([] = none)
+    #   live_leg_owed:            True ONLY when verdict == DONE AND >=1
+    #                             non-repo component is owed
+    #   completion_state:         "fully-done" | "repo-legs-done-live-leg-owed"
+    #                             for a DONE verdict; None otherwise
+    owed_components = resolve_owed_non_repo_components(description)
+    live_leg_owed = verdict == "DONE" and bool(owed_components)
+    if verdict == "DONE":
+        completion_state = "repo-legs-done-live-leg-owed" if live_leg_owed else "fully-done"
+    else:
+        completion_state = None
+
     return {
         "unit": unit_id, "verdict": verdict, "mode": mode, "tag_note": tag_note,
         "required_legs": sorted(required_legs), "legs": leg_results,
         "ledger_row_path": row_path, "ledger_status_cell": ledger_status_cell,
+        "owed_non_repo_components": owed_components,
+        "live_leg_owed": live_leg_owed,
+        "completion_state": completion_state,
     }
+
+
+# --------------------------------------------------------------------------
+# Aggregate mode (--all / --units): one summary line across many units.
+# Reuses resolve_unit() per unit in a loop -- NEVER a reimplementation of the
+# per-unit resolution logic (a second implementation would be a drift vector,
+# the same disease class this file's module docstring calls out).
+# --------------------------------------------------------------------------
+
+# Fixed tier order for the summary line -- stable, so a caller can parse it
+# positionally as well as by name. "DONE-LIVE-OWED" is the machine-readable
+# tier for a unit whose repo legs are DONE but a live/non-repo leg is still
+# owed (see resolve_unit()'s live_leg_owed field); it is NOT a looser DONE
+# and is never folded into the plain "DONE" count.
+VERDICT_TIERS = ("DONE", "DONE-LIVE-OWED", "NOT-DONE", "UNKNOWN")
+
+
+def result_tier(result):
+    """The single tier a per-unit resolve_unit() result counts toward in the
+    aggregate summary. DONE splits by live_leg_owed; every non-DONE,
+    non-NOT-DONE verdict (including any future unexpected value) counts as
+    UNKNOWN -- fail-closed, never silently bucketed with a pass."""
+    if result.get("verdict") == "DONE":
+        return "DONE-LIVE-OWED" if result.get("live_leg_owed") else "DONE"
+    if result.get("verdict") == "NOT-DONE":
+        return "NOT-DONE"
+    return "UNKNOWN"
+
+
+def list_ledger_unit_ids(ledger_paths):
+    """Every unit id with a row (`| U<n> |`) in any of the given ledger files,
+    de-duplicated and sorted NUMERICALLY (U2 before U10). Never guessed from
+    prose mentions -- only a real row-start match counts (same UNIT_ROW_RE
+    the per-unit lookup uses)."""
+    seen = set()
+    for path in ledger_paths:
+        p = Path(path)
+        if not p.is_file():
+            continue
+        for line in p.read_text(errors="replace").splitlines():
+            m = UNIT_ROW_RE.match(line)
+            if m:
+                seen.add(m.group(1))
+    return sorted(seen, key=lambda u: int(u[1:]))
+
+
+def summarize_results(results):
+    """Pure tally of resolve_unit() results into the fixed VERDICT_TIERS
+    buckets plus TOTAL. Fully offline-testable."""
+    counts = {t: 0 for t in VERDICT_TIERS}
+    for r in results:
+        counts[result_tier(r)] += 1
+    counts["TOTAL"] = len(results)
+    return counts
+
+
+def format_summary_line(counts):
+    """The ONE aggregate line this mode exists to print, e.g.:
+      UNITS CHECKED: 12 -- DONE: 5, DONE-LIVE-OWED: 2, NOT-DONE: 1, UNKNOWN: 4
+    All four tiers are always present in fixed order, even at 0, so the line
+    is trivially greppable/diffable."""
+    return (
+        f"UNITS CHECKED: {counts['TOTAL']} -- "
+        + ", ".join(f"{t}: {counts[t]}" for t in VERDICT_TIERS)
+    )
+
+
+def aggregate_exit_code(counts):
+    """Same fail-closed vocabulary as single-unit mode (0 = DONE, 1 =
+    NOT-DONE, 3 = UNKNOWN), applied to the aggregate: any NOT-DONE unit
+    dominates (exit 1); else any UNKNOWN unit (exit 3); else 0.
+    DONE-LIVE-OWED counts as DONE for exit purposes -- its repo legs ARE
+    git-proven; the owed live leg is visible in the tier count, never an
+    exit-code surprise."""
+    if counts.get("NOT-DONE", 0) > 0:
+        return 1
+    if counts.get("UNKNOWN", 0) > 0:
+        return 3
+    return 0
+
+
+def resolve_all_units(unit_ids, onb_dir, cc_dir, ledger_paths, skip_ci=False):
+    """Run resolve_unit() for each unit id in order and package the aggregate:
+    the per-unit results (full detail preserved), the tier counts, and the
+    one-line summary. The per-unit logic itself is NEVER duplicated here --
+    this is a loop over the same function single-unit mode calls."""
+    results = [resolve_unit(u, onb_dir, cc_dir, ledger_paths, skip_ci=skip_ci) for u in unit_ids]
+    counts = summarize_results(results)
+    return {"units": results, "counts": counts, "summary_line": format_summary_line(counts)}
 
 
 # --------------------------------------------------------------------------
@@ -890,6 +1051,21 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
 def _print_human(result):
     print(f"UNIT: {result['unit']}")
     print(f"VERDICT: {result['verdict']}")
+    if result.get("verdict") == "DONE":
+        # VISIBLY distinguish "fully DONE" from "repo-leg-done, live-leg-OWED"
+        # on the verdict line itself -- the human-output mirror of the
+        # machine-readable live_leg_owed / completion_state fields.
+        if result.get("live_leg_owed"):
+            print(
+                f"COMPLETION: repo-legs-done-live-leg-owed -- repo leg(s) git-proven; "
+                f"non-repo leg(s) still OWED: {', '.join(result.get('owed_non_repo_components') or [])} "
+                f"(proven by execution/live-run, never by this tool's git check)"
+            )
+        elif result.get("completion_state") == "fully-done":
+            # Only the repo-leg path sets completion_state -- a zero-leg DONE
+            # (ledger-claim-only, not independently git-checkable) is NEVER
+            # labeled "fully-done" here.
+            print("COMPLETION: fully-done")
     if "mode" in result:
         print(f"leg mode: {result.get('mode')} -- {result.get('tag_note', '')}")
     if result.get("required_legs") is not None and result.get("legs"):
@@ -919,17 +1095,78 @@ def _print_human(result):
         print(f"(ledger's own status cell -- NOT trusted for the verdict above, shown for comparison only): {result.get('ledger_status_cell')}")
 
 
+def _print_all_human(aggregate):
+    """Compact per-unit lines, then the ONE summary line this mode exists
+    for. The summary line is always last on stdout."""
+    for r in aggregate["units"]:
+        line = f"{r['unit']}: {r['verdict']}"
+        if r.get("live_leg_owed"):
+            line += f" (live leg OWED: {', '.join(r.get('owed_non_repo_components') or [])})"
+        elif r.get("verdict") != "DONE":
+            reason = r.get("reason") or r.get("tag_note") or ""
+            if reason:
+                line += f" -- {reason[:160]}"
+        print(line)
+    print(aggregate["summary_line"])
+
+
+def _parse_explicit_units(raw_values):
+    """--units values: each is a comma-separated list (the flag is also
+    repeatable). Validate every id against ^U<digits>$ -- a malformed id is
+    a loud usage error (exit 2), never silently skipped."""
+    out = []
+    for raw in raw_values:
+        for tok in raw.split(","):
+            tok = tok.strip()
+            if not tok:
+                continue
+            if not re.match(r"^U[0-9]+$", tok):
+                print(f"ERROR: --units entries must look like U<digits> (e.g. U108), got '{tok}'", file=sys.stderr)
+                sys.exit(2)
+            if tok not in out:
+                out.append(tok)
+    return sorted(out, key=lambda u: int(u[1:]))
+
+
 def main():
     import argparse
 
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("unit_id")
+    ap.add_argument("unit_id", nargs="?", help="single unit id (omit when using --all / --units)")
+    ap.add_argument("--all", action="store_true", dest="all_units",
+                    help="aggregate mode: check EVERY unit with a row in the searched ledgers, "
+                         "print one summary line with the tier breakdown")
+    ap.add_argument("--units", action="append", dest="unit_list", metavar="U1,U2,...",
+                    help="aggregate mode over an explicit comma-separated list (repeatable)")
     ap.add_argument("--onb-dir", required=True)
     ap.add_argument("--cc-dir", required=True)
     ap.add_argument("--ledger", action="append", dest="ledger_paths", required=True)
     ap.add_argument("--skip-ci", action="store_true")
     ap.add_argument("--json", action="store_true")
     args = ap.parse_args()
+
+    modes = sum(1 for m in (bool(args.unit_id), args.all_units, bool(args.unit_list)) if m)
+    if modes != 1:
+        ap.error("exactly one of <unit-id>, --all, or --units must be given")
+
+    if args.all_units or args.unit_list:
+        if args.all_units:
+            unit_ids = list_ledger_unit_ids(args.ledger_paths)
+            if not unit_ids:
+                print(f"ERROR: --all found no unit rows in any of: {', '.join(str(p) for p in args.ledger_paths)}",
+                      file=sys.stderr)
+                sys.exit(2)
+        else:
+            unit_ids = _parse_explicit_units(args.unit_list)
+            if not unit_ids:
+                print("ERROR: --units parsed to an empty list", file=sys.stderr)
+                sys.exit(2)
+        aggregate = resolve_all_units(unit_ids, args.onb_dir, args.cc_dir, args.ledger_paths, skip_ci=args.skip_ci)
+        if args.json:
+            print(json.dumps(aggregate, indent=2, default=str))
+        else:
+            _print_all_human(aggregate)
+        sys.exit(aggregate_exit_code(aggregate["counts"]))
 
     result = resolve_unit(args.unit_id, args.onb_dir, args.cc_dir, args.ledger_paths, skip_ci=args.skip_ci)
 
