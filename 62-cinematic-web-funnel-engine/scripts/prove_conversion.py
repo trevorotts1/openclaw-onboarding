@@ -256,25 +256,18 @@ def _extract_site_data(site_dir: Path, reasons: List[str]) -> Optional[Dict[str,
     if brace_start < 0:
         reasons.append("lib/site-data.generated.ts SITE_DATA export is malformed (no opening brace)")
         return None
-    depth = 0
-    end = -1
-    for i in range(brace_start, len(text)):
-        ch = text[i]
-        if ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                end = i + 1
-                break
-    if end < 0:
-        reasons.append("lib/site-data.generated.ts SITE_DATA export is malformed (unbalanced braces)")
-        return None
+    # raw_decode parses exactly one JSON value starting at brace_start and
+    # returns where it ended — string-aware, so a `{`/`}` inside a copy
+    # fragment's own text can never throw off a naive brace counter.
     try:
-        return json.loads(text[brace_start:end])
+        obj, _end = json.JSONDecoder().raw_decode(text, brace_start)
     except json.JSONDecodeError as exc:
         reasons.append(f"lib/site-data.generated.ts SITE_DATA is not parseable JSON: {exc}")
         return None
+    if not isinstance(obj, dict):
+        reasons.append("lib/site-data.generated.ts SITE_DATA is not a JSON object")
+        return None
+    return obj
 
 
 # ---------------------------------------------------------------------------

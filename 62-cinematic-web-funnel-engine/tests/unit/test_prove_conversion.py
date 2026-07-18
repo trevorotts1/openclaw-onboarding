@@ -216,6 +216,22 @@ class ExtractSiteDataTests(unittest.TestCase):
             self.assertIsNone(pc._extract_site_data(Path(tmp), reasons))
             self.assertTrue(reasons)
 
+    def test_extraction_is_robust_to_braces_inside_string_values(self) -> None:
+        """A copy fragment carrying literal `{`/`}` inside its own text must not
+        throw off the SITE_DATA extraction (raw_decode is string-aware)."""
+        with tempfile.TemporaryDirectory() as tmp:
+            site = Path(tmp) / "site"
+            _write_site(site, _GOOD_CTA_MAP)
+            sd_path = site / "lib" / "site-data.generated.ts"
+            site_data = {"meta": {}, "scenes": [], "sections": [{"id": "hero", "html": "<p>Save {50} today }}{{</p>"}], "ctaMap": _GOOD_CTA_MAP, "embed": {"allowedAncestors": []}}
+            sd_path.write_text(
+                f"export const SITE_DATA: SiteData = {json.dumps(site_data, indent=2)};\n", encoding="utf-8"
+            )
+            reasons: list = []
+            data = pc._extract_site_data(site, reasons)
+            self.assertEqual(reasons, [])
+            self.assertEqual(data["ctaMap"], _GOOD_CTA_MAP)
+
 
 class EvaluateTests(unittest.TestCase):
     def _build(self, tmp: Path, *, cta_map=None, requirements=None, receipt=None, site_cta_map=None) -> Path:

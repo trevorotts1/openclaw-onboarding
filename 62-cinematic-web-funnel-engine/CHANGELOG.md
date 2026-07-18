@@ -1,5 +1,16 @@
 # Changelog — Cinematic and Web Funnel Engine (Skill 62)
 
+## 1.0.2 — 2026-07-18
+
+Fix (carry-forward of PR #602, `ce6aab7a`): `prove_conversion.py` JSON extraction is now
+robust to braces inside string values — `raw_decode`-based object extraction replaces the
+naive brace counter that mis-terminated on payloads like `{"text": "{"}` — plus regression
+test `test_extraction_is_robust_to_braces_inside_string_values`. QC-judged 8.4 with the
+only blockers being this missing version bump and draft state; the bump trio
+(`skill-version.txt` + `SKILL.md` frontmatter + this entry) is the fix. Landed as PR #626
+after PR #627 (below); re-bumped from the originally-proposed 1.0.1 to 1.0.2 at merge time
+to resolve the version collision with #627's 1.0.1, which merged first.
+
 ## 1.0.1 — 2026-07-17
 
 Add (carry-forward of PR #601, `0a1576c4`): U16 lockfile —
