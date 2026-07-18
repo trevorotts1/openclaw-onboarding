@@ -534,7 +534,7 @@ def upload_file(
     file_id = body.get("fileId") or body.get("id") or ""
     url = body.get("url") or ""
 
-    if status == 200 and file_id and url:
+    if status in (200, 201) and file_id and url:
         return {"fileId": str(file_id), "url": str(url)}
 
     if _retry:

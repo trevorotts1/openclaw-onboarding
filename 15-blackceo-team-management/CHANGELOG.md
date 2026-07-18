@@ -4,6 +4,14 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.7.2] - 2026-07-17
+
+### Fixed - PRIVACY (fleet no-client-names invariant)
+
+- CHANGELOG.md and INSTALL.md still carried real personal names and Telegram IDs from the pre-template design (an operator-team member and clients). Replaced with role placeholders ("a client", "Chief of Operations", `{{TEAM_MEMBER_CHAT_ID}}`). This unblocks the fail-closed `qc-assert-no-client-names` gate (PR #612 successor) in local/pre-commit full mode, where the accounts.md-derived roster made these five hits hard-block every commit on the operator box.
+
+---
+
 ## [v6.7.0] - 2026-06-15
 
 ### Added - OPERATOR/OWNER SESSION ISOLATION
@@ -35,7 +43,7 @@ Added 5 HARD auto-fail gates that fail QC if:
 
 ### Changed - STRUCTURAL REWRITE (Template System)
 - Removed ALL hardcoded team member IDs, names, and roles from client-facing files.
-- Original design referenced Trevor Otts (5252140759), LeAnne (6663821679), E.R. Spaulding (6771245262) - these are now replaced with configurable placeholders.
+- Original design referenced real personal names and Telegram IDs (of the operator and of clients) - these are now replaced with configurable placeholders.
 - Added Step 0: Team Member Intake - agent collects team data from operator before touching config.
 - Added TEAM_CONFIG.md generation step - stores team data in a structured file per deployment.
 - SKILL.md: "Three BlackCEO team IDs always present" replaced with "Configure any team size (2-20 members)."

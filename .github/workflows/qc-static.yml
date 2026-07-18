@@ -2507,26 +2507,28 @@ jobs:
           fail=0
 
           # 1. JSON: plugins.entries.whatsapp.enabled must not be true.
-          # A file that FAILS TO PARSE (0-byte evidence artifact, truncated,
-          # non-JSON) is NOT a whatsapp violation — it is simply unassessable.
-          # The old inline one-liner let json.load()'s exception (JSONDecodeError,
-          # UnicodeDecodeError, etc.) propagate as an uncaught traceback, which
-          # made python3 exit non-zero for ANY unparseable file — indistinguishable
-          # from the real "enabled: true" exit(1) signal. That misread every
-          # unparseable tracked .json (e.g. a 0-byte failed-API-call evidence
-          # artifact) as a WhatsApp fleet-ban violation: a guard crash was being
-          # reported as a product violation. Fixed by extracting the check into a
-          # real, independently-testable script (scripts/qc-check-whatsapp-json.py)
-          # instead of an inline multi-line `python3 -c "..."` string embedded in
-          # this YAML — the inline form is exactly the "multi-line Python
+          # A ZERO-BYTE evidence artifact is NOT a whatsapp violation — it is
+          # simply not applicable (exit 0). A NON-EMPTY file that fails to
+          # parse (truncated, non-JSON, non-UTF8) is NOT given that same
+          # pass: it fails CLOSED (exit 2, distinct from the exit-1 ban
+          # violation) so a genuinely corrupt/unreadable tracked JSON file
+          # can never be silently waved through as "not applicable". Only an
+          # ACTUALLY parsed dict with plugins.entries.whatsapp.enabled == true
+          # fails as a real violation (exit 1). Implemented as a real,
+          # independently-testable script (scripts/qc-check-whatsapp-json.py)
+          # instead of an inline multi-line `python3 -c "..."` string embedded
+          # in this YAML — the inline form is exactly the "multi-line Python
           # indentation issues in YAML" pitfall this file used to warn about
           # elsewhere, and it is not worth re-fighting per-runner quoting/embedding
-          # fragility for. The script catches the parse failure and treats "can't
-          # parse" as pass/skip (exit 0) — only an ACTUALLY parsed dict with
-          # plugins.entries.whatsapp.enabled == true fails (exit 1).
+          # fragility for.
           while IFS= read -r f; do
-            if ! python3 scripts/qc-check-whatsapp-json.py "$f" 2>/dev/null; then
+            rc=0
+            python3 scripts/qc-check-whatsapp-json.py "$f" 2>/dev/null || rc=$?
+            if [ "$rc" -eq 1 ]; then
               echo "✗ $f: plugins.entries.whatsapp.enabled is true (fleet ban violation)"
+              fail=1
+            elif [ "$rc" -ne 0 ]; then
+              echo "✗ $f: unreadable or malformed non-empty JSON — failing closed (cannot verify fleet ban compliance)"
               fail=1
             fi
           done < <(git ls-files -- '*.json' 2>/dev/null || find . -not -path './.git/*' -name '*.json')

@@ -1,0 +1,858 @@
+{
+  "deck_type": "signature_presentation",
+  "deck_slug": "golden-quest",
+  "signature_frame": "quest",
+  "provenance": "Derived deterministically from working/copy/sp_structure.json's own per-slide phase/label_slide/tags fields (the SACRED 4-phase structure ledger the Signature Presentation Architect locked under SOP 9.3) -- not hand-invented. Each slot's arc_section names the SACRED band the slide already belongs to (Avatar / Signature Story / Transformational Teaching / Purpose Pitch); this is the per-slide converting-arc allocation build_deck.py's PREFLIGHT_REQUIRED -> _chk_arc checks for at working/copy/arc_allocation.json.",
+  "bands": {
+    "avatar": {
+      "start": 1,
+      "end": 11,
+      "count": 11,
+      "label": "Avatar"
+    },
+    "story": {
+      "start": 12,
+      "end": 24,
+      "count": 13,
+      "label": "Signature Story"
+    },
+    "teaching": {
+      "start": 25,
+      "end": 60,
+      "count": 36,
+      "label": "Transformational Teaching"
+    },
+    "pitch": {
+      "start": 61,
+      "end": 103,
+      "count": 43,
+      "label": "Purpose Pitch"
+    }
+  },
+  "slots": [
+    {
+      "slide": 1,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": true,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 2,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 3,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 4,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 5,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 6,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 7,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 8,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 9,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 10,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 11,
+      "phase": "avatar",
+      "arc_section": "Avatar",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 12,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": true,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 13,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 14,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 15,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 16,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 17,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 18,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 19,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 20,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 21,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 22,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 23,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 24,
+      "phase": "story",
+      "arc_section": "Signature Story",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 25,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": true,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 26,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 27,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 28,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 29,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 30,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 31,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 32,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 33,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 34,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 35,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 36,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 37,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 38,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 39,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": true
+    },
+    {
+      "slide": 40,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 41,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 42,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 43,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 44,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 45,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 46,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 47,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 48,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 49,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 50,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 51,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": true
+    },
+    {
+      "slide": 52,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 53,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 54,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 55,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 56,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 57,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 58,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 59,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 60,
+      "phase": "teaching",
+      "arc_section": "Transformational Teaching",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 61,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": true,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 62,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 63,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 64,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 65,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 66,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 67,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 68,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 69,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 70,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 71,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 72,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 73,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 74,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 75,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 76,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 77,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 78,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 79,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 80,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 81,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 82,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 83,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 84,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 85,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 86,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 87,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 88,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 89,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 90,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 91,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 92,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 93,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 94,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 95,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 96,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 97,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 98,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 99,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 100,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    },
+    {
+      "slide": 101,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 102,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": false,
+      "case_study": false
+    },
+    {
+      "slide": 103,
+      "phase": "pitch",
+      "arc_section": "Purpose Pitch",
+      "label_slide": false,
+      "hook": true,
+      "case_study": false
+    }
+  ]
+}

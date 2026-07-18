@@ -162,7 +162,7 @@ Duplicate-folder guard: if listing finds two case-insensitive matches for the sa
 | Asset | Destination folder | Content type | Filename rule |
 |---|---|---|---|
 | Cover image | `podcast images/` | image/jpeg | letters/numbers/underscores/dashes only, no extra period before extension (`client_name_episode_title.jpg`) |
-| Episode MP3 | `podcast episodes/` | audio/mpeg | client name first, then episode title (`Leanne Dolce - The Power of Marketing.mp3`); letters, numbers, spaces, underscores, dashes only |
+| Episode MP3 | `podcast episodes/` | audio/mpeg | client name first, then episode title (`Sample Client - The Power of Marketing.mp3`); letters, numbers, spaces, underscores, dashes only |
 | Book teaser PDF (Interview mode only) | podcast folder area | application/pdf | same character rules |
 
 Per upload: `POST /medias/upload-file` with the file part, name, and the target folder ID; headers `Authorization: Bearer <PIT>`, `Version: 2021-07-28`. Capture the returned **public media URL**.

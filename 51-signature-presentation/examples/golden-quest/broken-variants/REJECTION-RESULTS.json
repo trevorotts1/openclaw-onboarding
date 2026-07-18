@@ -21,5 +21,11 @@
     "certificate_refused": true,
     "certificate_file_exists": false,
     "out": "AF-PROCESS-INTEGRITY: 1 of 5 declared step(s) failed process-integrity checks.\n\n  FAIL  [4.1] 'P-SP-STRUCTURE' (Signature Structure Gate (prove_sp_structure))\n        (a) No attestation record for phase 'P-SP-STRUCTURE' \u2014 phase was either never run or the runner exited without attesting it."
+  },
+  "D_phase_reordered": {
+    "rc": 2,
+    "rejected": true,
+    "defect": "slide 40 flipped from phase 'teaching' to 'avatar' (a phase re-appearing out of order), applied to the real 103-slide golden-quest deck -- the SACRED-order fail-first proof GK-25 spec:2085 clause 3 names explicitly (the PHASE-ORDER check, not AF-SP-PHASE-RANGE or the no-pitch/process-integrity checks A/B/C/E2E above already prove).",
+    "out": "FAIL: 2 structure violation(s) \u2014 deck is NOT run, NOT rendered, NOT updated.\n  VIOLATION [AF-SP-PHASE-ORDER] phase sequence ['avatar', 'story', 'teaching', 'avatar', 'teaching', 'pitch'] != required contiguous order ['avatar', 'story', 'teaching', 'pitch'] (phases must run in order, each contiguous, starting at slide 1)\n  VIOLATION [AF-SP-PHASE-RANGE] phase 'teaching' has 35 slides, under its floor of 36"
   }
 }

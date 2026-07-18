@@ -1,0 +1,12 @@
+PROCESS-CERTIFICATE: all 5 declared steps verified (substance_validated + client_reported + attested in order).
+  certificate_sha: 0a2c267de63e5c6c5ef9c77f4ad96325128a9b58bad4a95762e057f3f8344391
+  written to: <scratch>/deckrun/gq-iso/delivery/golden-quest-FINAL/PROCESS-CERTIFICATE.json
+exit=0
+
+Run against an ISOLATED scratch copy of this fixture ONLY (<scratchpad>/deckrun/gq-iso),
+never against this tracked repo path -- prove-deck.py mutates
+delivery/golden-quest-FINAL/PROCESS-CERTIFICATE.{json,md} on every run (re-stamps
+certified_at + certificate_sha). Blast radius confirmed via sha256 of all 38 fixture
+files before/after: those two files are the ONLY ones that changed. `git status --short`
+on this tracked repo is clean of any delivery/ changes, confirming prove-deck.py was
+never run in-tree.

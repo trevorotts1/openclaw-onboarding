@@ -130,6 +130,12 @@ class TestBoardContract:
         assert rec.calls == [], "a disabled board must touch the network NEVER"
 
     def test_ingest_routes_funnel_and_website(self, rec):
+        # 'funnel' -> 'funnels'. Unit 118 keeps the producer's dedicated slug
+        # and registers Funnels as a mandatory floor department rather than
+        # rerouting these cards to Marketing. The sibling
+        # test_cc_board_funnel_department_registration_gap.py test proves that
+        # the real producer stamp resolves through the consumer's tier-1
+        # slug/id lookup to the Funnels workspace on a standard-floor box.
         cc_board.ingest_task("Funnel job", job_type="funnel", env=ENV)
         cc_board.ingest_task("Site job", job_type="website", env=ENV)
         depts = [c["payload"]["department_slug"] for c in rec.calls

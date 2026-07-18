@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.66"
+ONBOARDING_VERSION="v20.0.68"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -413,8 +413,9 @@ OC_JSON = os.path.join(OC_CONFIG, "openclaw.json")
 OC_CREDS = os.path.join(OC_CONFIG, "credentials")
 OC_LOGS = os.path.join(OC_CONFIG, "logs")
 
-# BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (Trevor /
-# E.R. Spaulding / LeAnne Dolce).  They must NEVER be returned as a client
+# BUG-FIX (fix/cron-owner-chat-routing): these are OPERATOR chat IDs (the
+# operator / the operator's chief of operations / a client).  They must NEVER
+# be returned as a client
 # owner-chat target — doing so routes every cron delivery to the operator
 # instead of the client.  Confirmed live misrouting on multiple client boxes
 # (all crons wired to the operator ID instead of the client).
@@ -1066,11 +1067,24 @@ PYEOF
 #   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean app):
 #   export OPENCLAW_PODBEAN_CLIENT_ID="..."
 #   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
+#   # SERVER-SIDE PUBLISH-PROXY (S58-U15) — outranks the broker + legacy pairs
+#   # above; n8n does the whole publish so this box never holds a Podbean
+#   # credential in this mode:
+#   export OPENCLAW_PODBEAN_PUBLISH_URL="..."      # the n8n publish-proxy webhook (non-secret)
+#   export OPENCLAW_PODBEAN_PUBLISH_TOKEN="..."    # the shared X-Podcast-Publish-Token value
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
 #
 # Per-client install:
 #   OPENCLAW_OWNER_NAME="Sample Client" curl ...install.sh | bash
 #   (vars from operator's ~/.zshrc inherited automatically)
+#
+# Per-client PODCAST IDENTITY (S58-U15) — set PER BOX at provisioning time
+# (unlike the pairs above, these differ per client, so they belong on the
+# install command line, not in a shared ~/.zshrc):
+#   OPENCLAW_OWNER_NAME="Sample Client" \
+#     OPENCLAW_PODCAST_CLIENT_LAST_NAME="..." OPENCLAW_PODCAST_CLIENT_EMAIL="..." \
+#     curl ...install.sh | bash
+#   OPENCLAW_PODCAST_CLIENT_FIRST_NAME is optional (display/email text only).
 inject_shared_operator_secrets() {
     local injected_count=0
     local mode_oc_json_ready="no"
@@ -1167,6 +1181,64 @@ PYEOF
         injected_count=$((injected_count + 2))
     elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
+    fi
+
+    # Podbean SERVER-SIDE PUBLISH-PROXY pair (S58-U15; fleet DEFAULT for Step 15
+    # once staged, scripts/podbean_publish.sh precedence proxy -> broker -> local).
+    # n8n does the whole publish (OAuth mint, upload, create-episode) server-side;
+    # this box never holds a Podbean credential in proxy mode. UNLIKE the public
+    # Rescue Rangers webhook below, NEITHER value ships a hardcoded default in
+    # this repo — both are a non-obvious runtime endpoint and a secret, and flow
+    # ONLY from the operator's own env at install time, same both-or-neither
+    # doctrine as the broker pair above (a lone URL or a lone token is refused,
+    # never half-seeded).
+    if [ -n "${OPENCLAW_PODBEAN_PUBLISH_URL:-}" ] && [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
+        _shared_write_env "PODBEAN_PUBLISH_WEBHOOK_URL" "$OPENCLAW_PODBEAN_PUBLISH_URL"
+        _shared_write_env "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        _shared_write_ocjson "PODBEAN_PUBLISH_WEBHOOK_URL" "$OPENCLAW_PODBEAN_PUBLISH_URL"
+        _shared_write_ocjson "PODBEAN_PUBLISH_TOKEN" "$OPENCLAW_PODBEAN_PUBLISH_TOKEN"
+        success "Podbean publish-proxy pair injected from operator env (server-side publish; outranks broker/local; chmod 600)"
+        injected_count=$((injected_count + 2))
+    elif [ -n "${OPENCLAW_PODBEAN_PUBLISH_URL:-}" ] || [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
+        warn "Only one of OPENCLAW_PODBEAN_PUBLISH_URL / OPENCLAW_PODBEAN_PUBLISH_TOKEN set — both required. Skipping Podbean publish-proxy injection (this box falls back to broker/local mode)."
+    fi
+
+    # Podbean publish IDENTITY (S58-U15): the per-box client identity the n8n
+    # good-standing + identity gate authenticates against (last_name + email
+    # together select exactly one roster row; downstream ALWAYS uses the roster
+    # row's channel id, never this box's raw podcast_id). Required TOGETHER —
+    # a lone last name or a lone email can never resolve a roster row, so half a
+    # pair is refused rather than half-seeded (same doctrine as every pair
+    # above). A malformed email is refused too: it would only ever be rejected
+    # by the n8n gate at publish time, so catching the obvious shape mistake
+    # here saves a box a guaranteed-failing round trip. PODCAST_CLIENT_FIRST_NAME
+    # is display/email text only (never authorization, per spec Section 3), so
+    # it carries no pairing requirement and is seeded alone when present.
+    if [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] && [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        case "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" in
+            *[[:space:]]*)
+                warn "OPENCLAW_PODCAST_CLIENT_EMAIL contains whitespace — refusing to seed the podcast publish identity pair (would only ever be refused by the n8n gate)."
+                ;;
+            *@*.*)
+                _shared_write_env "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+                _shared_write_env "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+                _shared_write_ocjson "PODCAST_CLIENT_LAST_NAME" "$OPENCLAW_PODCAST_CLIENT_LAST_NAME"
+                _shared_write_ocjson "PODCAST_CLIENT_EMAIL" "$OPENCLAW_PODCAST_CLIENT_EMAIL"
+                success "Podcast publish identity (last name + email) injected from operator env (server-side good-standing gate)"
+                injected_count=$((injected_count + 2))
+                ;;
+            *)
+                warn "OPENCLAW_PODCAST_CLIENT_EMAIL does not look like an email address — refusing to seed the podcast publish identity pair."
+                ;;
+        esac
+    elif [ -n "${OPENCLAW_PODCAST_CLIENT_LAST_NAME:-}" ] || [ -n "${OPENCLAW_PODCAST_CLIENT_EMAIL:-}" ]; then
+        warn "Only one of OPENCLAW_PODCAST_CLIENT_LAST_NAME / OPENCLAW_PODCAST_CLIENT_EMAIL set — both required (they are the roster lookup key together). Skipping podcast publish identity injection; Step 15 will hard-stop until both are set."
+    fi
+    if [ -n "${OPENCLAW_PODCAST_CLIENT_FIRST_NAME:-}" ]; then
+        _shared_write_env "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+        _shared_write_ocjson "PODCAST_CLIENT_FIRST_NAME" "$OPENCLAW_PODCAST_CLIENT_FIRST_NAME"
+        success "Podcast publish client first name injected from operator env (display/email only, never authorization)"
+        injected_count=$((injected_count + 1))
     fi
 
     # Rescue Rangers escalation webhook (n8n). Client agents escalate unsolvable
@@ -2098,6 +2170,18 @@ discover_all_credentials() {
     # value the client supplies (it selects their show under BlackCEO's host
     # account) and it is not a secret.
     CRED_LIST="$CRED_LIST|PODBEAN_PODCAST_ID:Podbean Channel ID (podcast_id, per-client)"
+    # S58-U15: Podbean SERVER-SIDE PUBLISH-PROXY — the fleet default for Step 15
+    # (n8n does the whole publish; outranks the broker pair above). Discovery
+    # checks the box-LOCAL names the injector above writes (PODBEAN_PUBLISH_*),
+    # never the operator-side OPENCLAW_PODBEAN_PUBLISH_* source vars.
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_WEBHOOK_URL:Podbean n8n publish-proxy webhook URL (publish-proxy mode, outranks broker)"
+    CRED_LIST="$CRED_LIST|PODBEAN_PUBLISH_TOKEN:Podbean n8n publish-proxy shared token (publish-proxy mode)"
+    # Per-box podcast client identity — the good-standing + identity gate's
+    # roster lookup key (last name + email together; first name is display-only,
+    # never authorization).
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_LAST_NAME:Podcast client last name (server-side identity gate lookup key)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_EMAIL:Podcast client email (server-side identity gate lookup key)"
+    CRED_LIST="$CRED_LIST|PODCAST_CLIENT_FIRST_NAME:Podcast client first name (display/email only, optional)"
     CRED_LIST="$CRED_LIST|TAVILY_API_KEY:Tavily Search"
     CRED_LIST="$CRED_LIST|BRAVE_API_KEY:Brave Search"
     CRED_LIST="$CRED_LIST|KIE_API_KEY:KIE.ai (skill 27)"

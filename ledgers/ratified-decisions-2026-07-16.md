@@ -39,6 +39,24 @@ A sixth location, `ledgers/ratified-decisions-2026-07-16-GK-D4-D19.md` on `skill
 
 ---
 
+## Integration with `origin/main` — 2026-07-17 (post-merge reconciliation)
+
+**What happened since the Consolidation pass above.** The Consolidation section above was written and committed (`24d73c1a`, then filled in at `90f5252d`) before `fix/gk25-u87-golden-quest-real-run` (PR #599) actually merged. It merged afterward — merge commit `b8a34708` (two real parents, `caf20010` and `261fb26c`; not a squash), `mergedAt` `2026-07-17T06:03:58Z` — landing this same file, `ledgers/ratified-decisions-2026-07-16.md`, directly onto `origin/main` for the first time (two commits on that line, `26bb2d68` then a same-day trim `e4b44b57`). Before that merge, this exact path did not exist on `main` at all; this branch's own base commit (`da020401`, this branch's parent at the time it was cut) predates it too — confirmed by `git ls-tree` returning empty for this path at that commit.
+
+**What this pass did.** `origin/main` (tip `0348b9b3` at fetch time) was merged into this branch in a fresh, isolated scratch clone (never the shared tracked checkout). `git diff --name-only` between this branch's base (`da020401`) and `origin/main`'s new tip showed **147** changed files; the same comparison against this branch's own tip showed **1** changed file on this branch. The intersection of the two sets is exactly **one path** — this file. Every other file merged cleanly with no conflict.
+
+**The GK-25/U87 ruling text itself required no reconciliation.** Byte-for-byte diff (this pass, before touching anything) showed the `## GK-25 (U87) — prompt-floor receipt DESCOPED...` section already present in this branch's Consolidation (added above, from primary-source re-verification, not copied from `origin/main`) is **identical**, character for character, to the version `origin/main` landed via PR #599. Git's own merge confirmed this independently: it auto-merged that section with no conflict, because the text matched. No content decision was needed there — both sides already agreed.
+
+**What did conflict, and how it was resolved, by content:**
+1. **Two different opening "Note on this file's history across branches" paragraphs** (this branch's own, above; and PR #599's own, scoped to itself and `-d12-d4`). This branch's paragraph already names all five source branches including PR #599 by name and, together with the Consolidation section above it, is the fuller and (now) more current account — PR #599's own opening note is narrower and, as of PR #599's actual merge, describes a state that has since changed. **Resolution: this branch's paragraph is kept; `origin/main`'s alternate opening paragraph is not reproduced, since everything it stated is already covered, more completely, by the paragraph and Consolidation section already above.** Nothing in it was uniquely load-bearing — it named only itself and `-d12-d4`, both already accounted for here.
+2. **PR #599's own "Pass provenance — 2026-07-16 (GK-25/U87 prompt-floor descope)" footer**, specific to how *that* commit was verified (its own CI, its own author/committer check, its own leak scan). This is genuinely unique content, not duplicated anywhere in this file. **Resolution: preserved verbatim, reinserted immediately after the GK-25 (U87) section below, in the same position it occupied in `origin/main`'s copy.** No content is dropped by this merge.
+
+**Method:** `git merge origin/main` in the fresh scratch clone, on this branch; the two conflicts above were the only hunks git could not auto-resolve, both confined to this one file; resolved by direct comparison of both sides' text, not by mechanically preferring either branch. No other file in the 147-file diff required manual attention.
+
+**No other decision entry in this file is edited, reinterpreted, or renumbered by this pass.** D23's own section, its own Pass-provenance section, and every other section added by the Consolidation pass above are byte-for-byte unchanged.
+
+---
+
 ## FLEET-ROLL / P4 / U84-fleet-leg — REMOVED AS A COMPLETION BLOCKER
 
 **Trevor's exact words:** *"I'm not fleet rolling stuff until we get all this shit done… I determine when the fleet gets rolled. Don't put that fucking fleet roll back in that spec document ever again."*
@@ -222,6 +240,16 @@ An earlier note in this session claimed site 2 was "the TypeScript interface, ne
 
 ---
 
+## Pass provenance — 2026-07-16 (GK-25/U87 prompt-floor descope)
+
+The **GK-25 (U87)** ruling above was recorded on branch `fix/gk25-u87-golden-quest-real-run` (PR #599, draft), alongside the matching update to `ledgers/evidence/U87-GK-25/README.md`. Not merged by this pass — lands via the standing one-merge-writer-per-repo serial train.
+
+**Why this copy of the file is scoped to one entry, not a full merge of the sibling branch's history.** An earlier draft of this pass copied the full running history (D-U65 through GK-D4/D19) from `chore/ratified-decisions-2026-07-16-d12-d4`'s tip (`41d2d1f9`, read-only, never fetched into a working checkout or otherwise touched) so this file would read as one continuous record. That draft tripped this repo's `Docs-language guard (no NEW occurrences of the retired term)` CI check on PR #599: the copied D20 entry cites two ONB filenames by their pre-rename names, and `scripts/docs-language-allowlist.json` on current `origin/main` shows those exact renames already landed (U93/X-U-X3, 2026-07-16) with the allowlist explicitly emptied and locked ("this list must never grow again"). Re-adding those filenames to the allowlist to force a pass would go directly against that lock; rewriting another branch's already-ratified decision prose to match information from after it was written would misrepresent that record. The correct fix was neither — it was to not duplicate that unmerged content into this PR at all. This copy therefore carries only the one entry this PR is actually responsible for; the fuller history remains intact and un-touched on its own branch, and reconciling the two into one file on `main` is the serial merge-writer's job, not this pass's.
+
+**Evidence discipline for this pass:** every load-bearing claim about U87/GK-25 (blocker-closure findings, category scores, CI counts, `owedLegs`) was read directly from the round-2 judge ticket, not relayed from a sub-agent's self-description. PR #599's CI was independently verified this pass, not merely quoted, via four separate methods against its exact head SHA — authenticated paginated `gh api` check-runs, `gh pr checks`, GraphQL `statusCheckRollup`, and unauthenticated REST via `curl`. Author/committer/trailers were independently re-verified structurally this pass via `git log --format='%an|%cn|%(trailers)'` on a fresh scratch clone (never the shared tracked tree): `Trevor Otts <trevor@blackceo.com>` for both author and committer, zero trailers. No live box was mutated by this pass. `prove-deck.py` (write-capable) was not run at all this pass — no fixture content under `51-signature-presentation/examples/golden-quest/` was touched, only ledger/evidence prose.
+
+---
+
 ## Decisions found on unmerged branches but EXCLUDED from this consolidation
 
 Every item below was found, verbatim, as a "Trevor's ruling" claim on one of the four source branches enumerated above. None is reproduced in this file. Each is listed so it is not invisible to a future agent — and so none of them is silently re-asserted by omission being mistaken for absence-of-a-claim.
@@ -256,5 +284,8 @@ This consolidation was performed in a fresh, isolated clone of `openclaw-onboard
 
 - `ledgers/ratified-decisions-2026-07-16.md` — this file. D23's own section and its own "Pass provenance" section (both already present on this branch) are unmodified by this pass. This pass adds: the "Consolidation" section above D23; the FLEET-ROLL/P4, D-U22, D-U26, D8, D4, D15, GK-D4/D19, and GK-25/U87 sections; the "Decisions found but excluded" section; and this footer.
 - No other file is touched by this pass. `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md`, `ledgers/skill58-podbean-proxy-2026-07-16.md`, `58-podcast-production-engine/skill-version.txt`, and any file under `skill6-v2/U74`'s own branch are explicitly out of scope and were not read for editing, only for the cross-checks cited above.
+- **This pass (Integration with `origin/main`, 2026-07-17, following PR #599's merge):** merged `origin/main` into this branch via `git merge` in a fresh scratch clone. Added the "Integration with `origin/main`" section above (between "Consolidation" and "FLEET-ROLL/P4"); reinserted `origin/main`'s own "Pass provenance — 2026-07-16 (GK-25/U87 prompt-floor descope)" section verbatim, immediately after the GK-25 (U87) section, to preserve it without duplicating the (already-identical) GK-25 ruling text above it; and appends this bullet and the closing line below. No existing section's substance (D23, D8, D4, D15, GK-D4/D19, GK-25/U87, the exclusion list, or the Consolidation/Consolidation-provenance sections) is edited or reinterpreted by this pass — only this footer gains a new bullet and the file gains one new section plus one reinserted section, both additive.
 
 Consolidated 2026-07-17 on branch `chore/d23-hold-list-marketing-not-funnels` (PR #611), on top of its own existing D23 commits. Not merged by this pass — lands via the standing one-merge-writer-per-repo serial train, same as every entry it reproduces.
+
+Integrated with `origin/main` 2026-07-17 (post-PR599-merge reconciliation) on the same branch, same PR. Still not merged by this pass — lands via the same standing one-merge-writer-per-repo serial train.

@@ -4,7 +4,7 @@
 # the opt-out is recorded.
 #
 # WHAT IT PROVES (fails 3-ways against the pre-P2-05 tree):
-#   1. Every one of the 28 FLOOR departments (22 mandatory + 6 universal-primary)
+#   1. Every one of the 29 FLOOR departments (23 mandatory + 6 universal-primary)
 #      carries a non-empty loss_warning in department-naming-map.json.
 #      (FAILS pre-fix: loss_warning did not exist.)
 #   2. department-loss-warning.py returns the text (rc0) for a floor dept and
@@ -32,7 +32,7 @@ bad() { echo "  FAIL: $*"; FAIL=$((FAIL+1)); }
 
 command -v jq >/dev/null 2>&1 || { echo "SKIP: jq not on PATH"; exit 0; }
 
-# ── Test 1: all 28 floor depts carry a loss_warning ──────────────────────────
+# ── Test 1: all 29 floor depts carry a loss_warning ──────────────────────────
 python3 - "$NAMING_MAP" <<'PYEOF'
 import json, sys
 nm = json.load(open(sys.argv[1]))
@@ -52,10 +52,10 @@ count = len(mand) + univ
 if missing:
     print(f"  FAIL: {len(missing)} floor dept(s) missing loss_warning: {missing}")
     sys.exit(1)
-if count != 28:
-    print(f"  FAIL: expected 28 floor depts, found {count} (mandatory={len(mand)} univ={univ})")
+if count != 29:
+    print(f"  FAIL: expected 29 floor depts, found {count} (mandatory={len(mand)} univ={univ})")
     sys.exit(1)
-print(f"  PASS: all 28 floor departments carry a loss_warning ({len(mand)} mandatory + {univ} universal-primary)")
+print(f"  PASS: all 29 floor departments carry a loss_warning ({len(mand)} mandatory + {univ} universal-primary)")
 PYEOF
 if [ $? -eq 0 ]; then PASS=$((PASS+1)); else FAIL=$((FAIL+1)); fi
 

@@ -1,5 +1,51 @@
 #!/usr/bin/env bash
-# qc-assert-no-client-names.sh — v2.0.0
+# qc-assert-no-client-names.sh — v2.3.0
+#
+# v2.3.0 FIX (CI green without weakening fail-closed): v2.2.0 made structural
+# mode exit 2 in CI. But CI can NEVER have a roster — a bare GitHub runner has
+# no operator-local files BY DESIGN, and putting client PII into CI secrets was
+# explicitly rejected. So v2.2.0's CI exit-2 was not a gate that could ever
+# pass; it was a permanently red battery that blocked every PR. FIX: in CI,
+# structural mode now REPORTS ONLY — exit 0 with a loud ::warning:: workflow
+# annotation plus the full CANNOT VERIFY stderr message, so every CI run shows
+# exactly what was and was not verified (never a silent pass). The hard gate
+# lives where a roster genuinely exists: locally and in .githooks/pre-commit,
+# where structural mode STILL exits 2 (fail closed) and any roster hit exits 1.
+# Positive hits are UNCHANGED everywhere: an always-on-token hit or a roster
+# hit fails (exit 1) in CI and locally alike. Only the "cannot verify in CI"
+# state moved from red to annotated-green — nothing that CAN be checked was
+# weakened.
+#
+# v2.1.0 FIX (fleet-embeddings-CI-blind-spot): STRUCTURAL mode used to exit 0
+# ("PASS (structural)") whenever no roster was available — which is EVERY run
+# on a bare GitHub Actions runner, since CI never has $OPENCLAW_CLIENT_ROSTER
+# or ~/.openclaw/client-roster.txt. That meant the CRITICAL-1 CI step
+# (.github/workflows/qc-static.yml) had run the roster-specific check exactly
+# zero times in this repo's history and always reported success regardless.
+# FIX: when running under a real CI environment (GITHUB_ACTIONS=true / CI=true
+# — GitHub's own default env vars) AND no roster is available, this exits
+# non-zero with an unambiguous "CANNOT VERIFY" message instead of a silent
+# PASS. A gate that cannot do its job must never report success.
+#
+# v2.2.0 FIX (the roster had never run ANYWHERE, not just CI): v2.1.0 scoped
+# the fail-closed fix to CI only, to avoid hard-blocking local commits on
+# operator boxes that also had no curated roster — including, it turned out,
+# the primary operator Mac itself: NO box had ever had a curated
+# ~/.openclaw/client-roster.txt. So v2.1.0 bought an honest CI red light
+# while the actual per-name check still ran nowhere, ever — a better-labeled
+# gap, not a closed one. FIX: scripts/qc-derive-roster-from-accounts.py
+# derives a real roster STRUCTURALLY, at runtime, from the fleet's own
+# ~/clawd/accounts/accounts.md ($OPENCLAW_ACCOUNTS_MD to override) — data
+# that already exists locally and is never committed, printed, or logged by
+# name. When neither a curated roster NOR an accounts.md derivation is
+# available, structural mode now reports CANNOT VERIFY in EVERY environment,
+# not just CI — "no roster anywhere" is a genuinely exceptional state now
+# that a real local source exists, not the default everywhere.
+# A second, independent, roster-free signal (scripts/qc-heuristic-name-shapes.py)
+# also runs in every mode as an ADVISORY (non-blocking) floor — see that
+# script's header for why it is advisory rather than a hard gate (measured
+# false-positive rates at three scopes, all unusable as a blocking check on
+# this repo's own tracked tree).
 #
 # STATIC QC INVARIANT: enforces the fleet-wide rule that NO real client names
 # may appear in tracked repo files. This repo is a generic template; any client-
@@ -40,8 +86,14 @@
 #   files with similar names in other directories.
 #
 # Exit codes:
-#   0  — no client names found in tracked files (PASS)
-#   1  — one or more client names found (FAIL — block commit/QC)
+#   0  — no client names found (PASS), OR structural CANNOT VERIFY in CI
+#        (report-only there: ::warning:: annotation + stderr message; CI can
+#        never hold a roster by design, so the unverifiable state is surfaced
+#        loudly instead of blocking every PR)
+#   1  — one or more client names found (FAIL — block commit/QC, all envs)
+#   2  — structural CANNOT VERIFY locally / in pre-commit (FAIL CLOSED — a
+#        roster genuinely exists on operator boxes via accounts.md, so "no
+#        roster anywhere" is exceptional and must block)
 #
 # Usage:
 #   bash scripts/qc-assert-no-client-names.sh
@@ -113,6 +165,32 @@ _load_roster() {
   [ "${#CLIENT_NAMES[@]}" -gt 0 ] && ROSTER_AVAILABLE=1
   [ "$ROSTER_AVAILABLE" = 1 ]
 }
+
+# ─── DERIVED roster fallback (no curated file needed) ──────────────────────
+# scripts/qc-derive-roster-from-accounts.py builds a roster STRUCTURALLY from
+# ~/clawd/accounts/accounts.md ($OPENCLAW_ACCOUNTS_MD to override) — the real,
+# already-existing local source of the fleet roster. This exists because a
+# curated ~/.openclaw/client-roster.txt has never actually been created on
+# ANY operator box (this repo's own pre-fix history proves it: the roster-
+# specific check has run exactly zero times anywhere, CI or local). Without
+# this, "make CI fail closed" alone would only convert a false PASS into an
+# honest but permanently-empty CANNOT VERIFY — the roster-specific check
+# still never runs anywhere. This is what makes it actually run, on the one
+# machine that has the data to run it with.
+# NEVER echoes a derived name — only appends to CLIENT_NAMES in-process via
+# process substitution (no temp file, nothing written to disk, nothing
+# printed to this script's own stdout/stderr).
+_load_derived_roster() {
+  local derive_script="$SCRIPT_DIR/qc-derive-roster-from-accounts.py"
+  [ -f "$derive_script" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  local line
+  while IFS= read -r line; do
+    [ -z "$line" ] && continue
+    CLIENT_NAMES+=("$line")
+  done < <(python3 "$derive_script" 2>/dev/null)
+  [ "${#CLIENT_NAMES[@]}" -gt 0 ]
+}
 # ─────────────────────────────────────────────────────────────────────────────
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -129,17 +207,52 @@ while [ $# -gt 0 ]; do
   esac
 done
 
-# Load the external roster (if present) and decide the mode.
+# Detect a real CI environment. Both vars are set automatically by GitHub
+# Actions on every run ("Always set to true" per GitHub's own docs) — this is
+# environment introspection, not a credential and not invented: it is the
+# documented, standard way a script tells "running in CI" from "running on a
+# human's machine". https://docs.github.com/en/actions/reference/workflows-and-actions/variables
+IS_CI=0
+if [ "${GITHUB_ACTIONS:-}" = "true" ] || [ "${CI:-}" = "true" ]; then
+  IS_CI=1
+fi
+
+# Load a roster and decide the mode. THREE tiers, most-authoritative first:
+#   1. Curated roster ($OPENCLAW_CLIENT_ROSTER or ~/.openclaw/client-roster.txt)
+#   2. DERIVED roster (structurally parsed from ~/clawd/accounts/accounts.md)
+#   3. Neither available -> structural, no per-name check ran ANYWHERE.
+ROSTER_SOURCE=""
 if _load_roster; then
   MODE="full"
+  ROSTER_SOURCE="curated"
 else
-  MODE="structural"
-  echo "WARNING: client-name roster not found (looked in \$OPENCLAW_CLIENT_ROSTER," \
-       "then ${HOME:-/root}/.openclaw/client-roster.txt); SKIPPING the roster-specific" \
-       "client-name check. Always-on tokens (operator path + .example placeholders)" \
-       "are still enforced. Set OPENCLAW_CLIENT_ROSTER or create" \
-       "~/.openclaw/client-roster.txt (see scripts/client-roster.example.txt) to" \
-       "enable the full check." >&2
+  echo "WARNING: curated client-name roster not found (looked in" \
+       "\$OPENCLAW_CLIENT_ROSTER, then ${HOME:-/root}/.openclaw/client-roster.txt)." \
+       "Trying the accounts.md-derived roster next." >&2
+  if _load_derived_roster; then
+    MODE="full"
+    ROSTER_SOURCE="derived"
+    echo "NOTE: no curated roster; loaded a roster DERIVED structurally from" \
+         "accounts.md instead (see qc-derive-roster-from-accounts.py's own count" \
+         "line above — no names are echoed here or there). This is a real," \
+         "roster-based check, not the no-roster fallback." >&2
+  else
+    MODE="structural"
+    echo "WARNING: the accounts.md-derived roster is ALSO unavailable (missing," \
+         "unreadable, or produced zero candidates — see" \
+         "qc-derive-roster-from-accounts.py's own stderr above). SKIPPING the" \
+         "roster-specific client-name check entirely: no source could run it in" \
+         "this environment. Always-on tokens (operator path + .example" \
+         "placeholders) are still enforced below, but that is NOT the same" \
+         "check and this run CANNOT report a full PASS on that basis." >&2
+    if [ "$IS_CI" = 1 ]; then
+      echo "NOTE: this is a CI environment (GITHUB_ACTIONS/CI=true) — CI can never" \
+           "have either roster source by design (no operator-local files exist on a" \
+           "bare runner), so this is expected here and is REPORTED ONLY (warning" \
+           "annotation, exit 0) below — the blocking per-name gate runs locally /" \
+           "in pre-commit where a roster exists." >&2
+    fi
+  fi
 fi
 
 # Build a single ERE alternation pattern: always-on tokens in both modes, plus
@@ -248,13 +361,52 @@ if [ "${#FILES[@]}" -gt 0 ]; then
              | xargs -0 grep -E -Hin "$PATTERN" 2>/dev/null)
 fi
 
+# ─── Advisory (non-blocking) roster-free floor ─────────────────────────────
+# Independent second signal, needs no roster, runs in EVERY mode. Never
+# touches HITS or the exit code — see scripts/qc-heuristic-name-shapes.py's
+# header for why it is advisory rather than a gate (measured false-positive
+# rates at three scopes on this repo's own tree, all unusable as a blocker).
+HEURISTIC_SCRIPT="$SCRIPT_DIR/qc-heuristic-name-shapes.py"
+if [ -f "$HEURISTIC_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+  python3 "$HEURISTIC_SCRIPT" --repo-root "$REPO_ROOT" || true
+fi
+
 if [ "$HITS" -eq 0 ]; then
   if [ "$MODE" = "full" ]; then
-    echo "[qc-assert-no-client-names] PASS (full) — no roster client names, operator paths, or placeholder leaks in tracked files."
+    if [ "$ROSTER_SOURCE" = "derived" ]; then
+      echo "[qc-assert-no-client-names] PASS (full, roster DERIVED from accounts.md) — no derived-roster client names, operator paths, or placeholder leaks in tracked files."
+    else
+      echo "[qc-assert-no-client-names] PASS (full, curated roster) — no roster client names, operator paths, or placeholder leaks in tracked files."
+    fi
+    exit 0
   else
-    echo "[qc-assert-no-client-names] PASS (structural) — no operator paths or .example placeholder leaks in tracked files. NOTE: roster-specific client-name check was SKIPPED (no roster; see WARNING above)."
+    # Structural mode (no roster from EITHER source — curated file or
+    # accounts.md derivation) must NEVER report a bare PASS, in any
+    # environment. A check that did not run must never report success.
+    if [ "$IS_CI" = 1 ]; then
+      # v2.3.0: CI is REPORT-ONLY for the unverifiable state. CI can never
+      # have a roster by design (no operator-local files on a bare runner;
+      # client PII must never be provisioned into CI secrets), so exiting 2
+      # here was not an enforceable gate — it was a permanently red battery
+      # blocking every PR. Instead: exit 0, but surface the CANNOT VERIFY
+      # loudly as a workflow annotation (shows in the run's Annotations
+      # summary) plus the full stderr message. Nothing that CAN be verified
+      # in CI was weakened: always-on-token hits and (when a roster IS
+      # present, e.g. a self-hosted runner) roster hits still exit 1.
+      # The HARD gate for the per-name check lives where a roster genuinely
+      # exists: local runs and .githooks/pre-commit on the operator box,
+      # where this same state still exits 2 (fail closed) below.
+      echo "::warning title=qc-assert-no-client-names::CANNOT VERIFY (structural, CI) — no roster source exists on a bare CI runner by design, so the roster-specific per-name check DID NOT RUN here. Always-on tokens were checked and are clean. The blocking per-name gate runs locally / in pre-commit where the accounts.md-derived roster exists."
+      echo "[qc-assert-no-client-names] CANNOT VERIFY (structural, CI — report-only) — neither a curated roster nor an accounts.md-derived roster is available in this CI environment (CI never has either — no operator-local files exist on a bare runner, and client PII is intentionally never provisioned into CI secrets), so the roster-specific per-name check DID NOT RUN. Always-on tokens (operator path + .example placeholder leaks) were checked and are clean, but that alone does NOT mean 'no client names' — this is NOT a pass of the per-name check. See the ADVISORY heuristic output above for a second, non-authoritative signal. The blocking per-name gate runs locally and in .githooks/pre-commit on the operator box, where the accounts.md-derived roster exists and this same state fails closed (exit 2)." >&2
+      exit 0
+    else
+      # LOCAL / pre-commit: a roster genuinely exists on this class of machine
+      # (accounts.md derivation), so "no roster anywhere" is a genuinely
+      # exceptional state — FAIL CLOSED.
+      echo "[qc-assert-no-client-names] CANNOT VERIFY (structural) — neither \$OPENCLAW_CLIENT_ROSTER / ~/.openclaw/client-roster.txt NOR an accounts.md-derived roster could be loaded (see the WARNINGs above for which one failed and why), so the roster-specific per-name check DID NOT RUN. Always-on tokens (operator path + .example placeholder leaks) were checked and are clean, but that alone does NOT mean 'no client names'. Fix: provide a curated roster, or point \$OPENCLAW_ACCOUNTS_MD at a readable accounts.md-shaped file (default ~/clawd/accounts/accounts.md)." >&2
+      exit 2
+    fi
   fi
-  exit 0
 else
   echo "[qc-assert-no-client-names] INVARIANT VIOLATED — $HITS client-name hit(s) found in repo files:"
   for line in "${OFFENDERS[@]}"; do
