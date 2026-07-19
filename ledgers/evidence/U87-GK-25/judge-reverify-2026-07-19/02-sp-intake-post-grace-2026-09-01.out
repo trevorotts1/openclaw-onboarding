@@ -1,0 +1,6 @@
+{
+  "gate": "signature-presentation-intake",
+  "source": "51-signature-presentation/examples/golden-quest/sp_intake.json",
+  "pass": true,
+  "failures": []
+}

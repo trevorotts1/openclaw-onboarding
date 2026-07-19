@@ -1,0 +1,11 @@
+{
+  "gate": "signature-presentation-intake",
+  "source": "sp_intake_tampered.json",
+  "pass": false,
+  "failures": [
+    {
+      "code": "AF-SP-INTAKE-UNPACED",
+      "message": "turn_ledger_provenance.signature does not match its recomputed digest \u2014 the block was tampered or copied from a different record"
+    }
+  ]
+}
