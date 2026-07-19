@@ -69,6 +69,45 @@ REPO_LABELS = {
 # widening that is a separate, out-of-scope decision this fix does not make).
 NON_REPO_LEG_TOKENS = frozenset({"live", "read-only", "n8n", "ghl", "n/a", "na", "doc", "none"})
 
+# A leg tag shape LEG_TAG_RE (ledger_reconciler_core.py, shared with the
+# reconciler) cannot parse AT ALL: a nested-paren "live" tag like
+# "(live (read-only), P1)" / "(live (operator), P0)". LEG_TAG_RE's
+# "[^,)]+" capture (no comma/close-paren before the first comma) breaks on
+# the inner "(read-only)"/"(operator)" -- it stops matching at that inner
+# ")" and then requires a literal "," immediately after, which isn't there
+# (a ")" is instead), so the WHOLE match fails and parse_leg_requirement()
+# returns None. Same disease class as the parenthesized-compound tag
+# COMPOUND_LEG_TAG_RE already exists to catch (a "CC (+ONB)" primary), just
+# with a "live" primary instead of a "CC"/"ONB" one. Deliberately scoped to
+# THIS file only (not a change to the shared LEG_TAG_RE/COMPOUND_LEG_TAG_RE
+# in ledger_reconciler_core.py, which the reconciler's own patch/alarm logic
+# also depends on and this fix does not touch) -- it recognizes ONLY this
+# specific nested-paren "live" shape and confirms it as a genuine
+# zero-repo-leg tag; it does not attempt to parse the "<detail>" itself
+# (read-only/operator are informational only, never independently checked).
+NESTED_LIVE_TAG_RE = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?\(live\s*\([^)]*\)\s*,", re.IGNORECASE)
+
+# Bare (non-compound) non-repo leg tokens this resolver accepts as a
+# single, un-"+"-joined tag -- e.g. "(n8n, P1)". Currently ONLY "n8n".
+# NOT "ghl", even though "(GHL, P1)" is the structurally identical bare-tag
+# shape (e.g. ledger rows U69/U70) and NON_REPO_LEG_TOKENS above already
+# lists "ghl" for the "+"-joined case. This is a DELIBERATE, narrower scope
+# than reusing the full NON_REPO_LEG_TOKENS set here: widening bare-tag
+# recognition to "ghl" would also reclassify U70 from UNKNOWN to DONE as a
+# side effect -- purely because U70's OWN ledger status cell already reads
+# "verified (repo leg; live provisioning owed)" and this tool's existing
+# zero-leg branch trusts a "verified"-prefixed status cell at face value
+# (the same trust model already in production for U91/U96/U97's bare "doc"
+# tag) -- but U70 is one of the Anthology-family units this pass is
+# explicitly required to leave untouched (surface only, never reclassify).
+# "n8n" alone is safe to add: every OTHER bare "(n8n, ...)" row in the
+# ledger (U64/U65/U73/U75) has a non-"verified" status cell (partial/
+# deferred/pending/pending), so it stays UNKNOWN exactly as before this fix
+# -- only U72 (status "verified", explicitly in scope) flips. "GHL"
+# bare-tag support is left unparseable (UNKNOWN, fail-closed, unchanged) on
+# purpose -- not a limitation, a scope boundary.
+BARE_NON_REPO_TOKENS = frozenset({"n8n"})
+
 
 # --------------------------------------------------------------------------
 # Ledger row lookup
@@ -145,6 +184,14 @@ def resolve_required_legs(description):
             f"hint has no consistent grammar across rows and is not independently checked.",
         )
 
+    if NESTED_LIVE_TAG_RE.match(description):
+        return (
+            set(),
+            "zero-leg",
+            "nested-paren live tag (e.g. 'live (read-only)'/'live (operator)') -- "
+            "declares a non-repo (live/evidence-only) unit; no branch/merge to check.",
+        )
+
     tag = parse_leg_requirement(description)
     if tag is None:
         return set(), "unknown", "leg tag does not match the '(<tag>, P#)' convention at all."
@@ -207,7 +254,12 @@ def resolve_required_legs(description):
             f"({sorted(NON_REPO_LEG_TOKENS)}) -- refusing to guess zero-leg or a repo leg.",
         )
 
-    if "live" in tag_l or "read-only" in tag_l or tag_l in ("n/a", "na", "doc", "none"):
+    if (
+        "live" in tag_l
+        or "read-only" in tag_l
+        or tag_l in ("n/a", "na", "doc", "none")
+        or tag_l in BARE_NON_REPO_TOKENS
+    ):
         return set(), "zero-leg", f"leg tag '{tag}' declares a non-repo (live/doc/evidence-only) unit -- no branch/merge to check."
     return set(), "unknown", f"leg tag '{tag}' does not match any known convention (both/ONB/CC/compound/zero-leg)."
 
