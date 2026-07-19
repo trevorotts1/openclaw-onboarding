@@ -1,0 +1,3 @@
+FAIL: 2 structure violation(s) — deck is NOT run, NOT rendered, NOT updated.
+  VIOLATION [AF-SP-PHASE-RANGE] phase 'pitch' has 39 slides, under its floor of 40
+  VIOLATION [AF-SP-SLIDE-FLOOR] deck has 99 slides, under the 100-slide floor and no logged client-exact override

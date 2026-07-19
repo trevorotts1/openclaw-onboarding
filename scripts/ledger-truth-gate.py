@@ -27,48 +27,65 @@ WHAT THIS SCRIPT DOES:
      format the tool cannot parse (see UNPARSEABLE_LEDGER_FILES below).
 
 THE THREE KNOWN BLIND SPOTS (each handled explicitly, never silently):
-  1. UNPARSEABLE LEDGERS. `ledgers/skill58-podbean-proxy-2026-07-16.md` uses
-     a row shape with NO leg-requirement tag (`id | desc | label | status |
-     evidence | timestamp`), so the tool returns a generic UNKNOWN for its
-     rows. Worse: that file runs its OWN U-numbering for a different build
-     campaign, so its `U5` is NOT the kanban ledger's `U5` -- running the
-     tool on it would silently judge the WRONG unit's row (the tool finds
-     the first matching row id across all ledgers). Rows in these files are
-     therefore NOT ENFORCED by default: they fail the gate with a clearly
-     labeled "human review required" notice, never a generic failure, never
-     a silent pass. Add any future ledger with its own numbering/unparseable
-     shape to UNPARSEABLE_LEDGER_FILES below.
+  1. CROSS-CAMPAIGN LEDGERS. `ledgers/skill58-podbean-proxy-2026-07-16.md`
+     runs its OWN U-numbering for a different build campaign, so its `U12`
+     is NOT the kanban ledger's `U12` -- unit-status.sh's DEFAULT search
+     (no --ledger given) always checks the kanban ledger first, so calling
+     it with no scoping on one of this file's unit ids silently judges the
+     WRONG unit's row (empirically confirmed live: U21's real S58 row reads
+     `pending`/NOT STARTED, but the default search resolves it against the
+     kanban ledger's own, unrelated, already-verified `U21` and reports a
+     false DONE). PR #646 landed leg-requirement tags (`(ONB + n8n, P#)`,
+     `(live, P#)`, etc.) on every row in this file, so unit_status_core.py
+     CAN now correctly classify and resolve every row's leg requirement --
+     the row SHAPE was never the real blind spot once tags exist; the
+     collision from the tool's default multi-ledger SEARCH ORDER is. The
+     fix is `--ledger` SCOPING, not a bypass: run_unit_status() passes an
+     explicit `--ledger <path>` naming the EXACT file a candidate row's diff
+     came from whenever that file is a member of UNPARSEABLE_LEDGER_FILES
+     (see scoped_ledger_for() below) -- this makes find_ledger_row() search
+     ONLY that one file, so it can never resolve to a different campaign's
+     same-numbered row. NO_OWN_BRANCH_PREFIX_LEDGERS in unit_status_core.py
+     (a sibling fix, same root cause, landed in the same PR) additionally
+     disables the kanban ledger's `skill6-v2/<id>` own-branch-name lookup
+     for this file's rows, since S58 units ship on independently-named
+     branches (PR-cited merge SHAs quoted directly in the row's own prose)
+     -- cross-reference/token-scan resolve them correctly on their own.
+     Once scoped, a candidate row in this file is enforced exactly like any
+     other ledger's row: a real DONE/NOT-DONE/UNKNOWN verdict, never a
+     canned "unparseable, human review required" notice. Add any future
+     ledger with its own numbering to UNPARSEABLE_LEDGER_FILES below so its
+     rows get the same explicit scoping.
 
-     ZERO_LEG_OVERRIDES is the one narrow, explicit exception to "never a
-     pass" above -- and it is NOT a way to make the file's rows git-checkable
-     after all. This ledger's OWN header states its status vocabulary
-     directly: "`verified` is a GIT state ... or a LIVE-API state (n8n legs:
-     fresh API re-read)". Its own CONCURRENCY MAP table further names,
-     explicitly, EXACTLY which units carry a repo leg at all ("Repo
+     ZERO_LEG_OVERRIDES is a narrower, separate, PRE-EXISTING optimization
+     this fix leaves untouched: this ledger's OWN header states its status
+     vocabulary directly: "`verified` is a GIT state ... or a LIVE-API state
+     (n8n legs: fresh API re-read)". Its own CONCURRENCY MAP table further
+     names, explicitly, EXACTLY which units carry a repo leg at all ("Repo
      `openclaw-onboarding` | U12 (repo leg), U14, U15, U16, U17, U21"). Every
      OTHER unit in that file (U2/U4/U5/U8 among them) has NO repo leg to
      check, even in principle -- there is no branch, no merge, no check-run
      unit-status.sh could ever find for a data-table seed or a live webhook
-     header-auth flip. Refusing to enforce those forever, unconditionally,
-     the same as a genuinely ambiguous row, is not "safe caution" -- it is
-     manufacturing a permanent, mechanical block on a claim class the tool
-     was never able to check to begin with, forcing a branch-protection
-     override on every single PR that ever completes one of these units.
-     ZERO_LEG_OVERRIDES names, per ledger file, the SPECIFIC unit ids a
-     human has individually confirmed (by reading that file's own
-     CONCURRENCY MAP, never inferred at runtime, never "every id not in the
-     repo-leg list") to be genuinely zero-leg. A `verified`/`done` claim for
-     one of those ids is trusted from the ledger's own status cell and PASSES
-     WITH DISCLAIMER -- the EXACT SAME trust boundary unit_status_core.py's
-     own zero-leg mode already uses for every other zero-leg unit in this
-     repo (see blind spot 3 below); this does not lower that bar, it only
-     recognizes it applies here too. Any unit id in an UNPARSEABLE_LEDGER_FILES
-     member that is NOT on its ZERO_LEG_OVERRIDES allowlist -- including a
-     genuinely false claim, or a repo-leg unit like U12/U14-U17/U21, or any
-     future unit nobody has reviewed yet -- still gets the full, unconditional
-     NOT-ENFORCED/human-review-required failure, exactly as before this
-     mechanism existed. Extending the allowlist is a deliberate, reviewed,
-     one-line code change per unit id, never automatic.
+     header-auth flip; ZERO_LEG_OVERRIDES names, per ledger file, the
+     SPECIFIC unit ids a human has individually confirmed (by reading that
+     file's own CONCURRENCY MAP, never inferred at runtime) to be genuinely
+     zero-leg, and trusts a `verified`/`done` claim for one of those ids
+     from the ledger's own status cell WITHOUT invoking unit-status.sh at
+     all -- a cheap, already-tested fast path this fix does not need to
+     touch, since resolve_required_legs()'s own zero-leg mode (see blind
+     spot 3 below) would independently reach the identical trusted-DONE
+     verdict for these same four ids if it ran. Any unit id in an
+     UNPARSEABLE_LEDGER_FILES member that is NOT on its ZERO_LEG_OVERRIDES
+     allowlist -- including a genuinely false claim, a repo-leg unit like
+     U12/U14-U17/U21, or any future unit nobody has reviewed yet -- now
+     falls through to real, scoped enforcement (see classify_ledger_row()
+     below): a git-provable false claim is still mechanically caught as
+     NOT-DONE, never silently passed. Extending ZERO_LEG_OVERRIDES remains a
+     deliberate, reviewed, one-line code change per unit id, never automatic
+     -- and repo-leg units (U12/U14/U15/U16/U17/U21) must NEVER be added to
+     it: that allowlist exists ONLY for units with no repo leg to check in
+     principle, and adding a repo-leg unit to it would skip the exact git
+     verification this fix now makes possible for it.
   2. UNKNOWN IS NOT A PASS. Compound leg tags like `(CC (+ONB), P#)` only
      get their PRIMARY leg checked (the secondary hint has no consistent
      grammar -- the tool says so in its own comments), and any tag shape the
@@ -110,11 +127,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-# Ledgers whose row format unit-status.sh cannot parse and/or whose
-# U-numbering belongs to a different campaign (id collision = the tool would
-# judge the wrong unit's row). Detected by FILENAME, never guessed from
-# content. Candidates in these files get a labeled NOT-ENFORCED failure
-# UNLESS the specific unit id is also listed in ZERO_LEG_OVERRIDES below.
+# Ledgers whose U-numbering belongs to a different campaign than the kanban
+# ledger's -- id collision = unit-status.sh's DEFAULT multi-ledger search
+# (no --ledger given) would judge the wrong unit's row, because the kanban
+# ledger is always searched first. Detected by FILENAME, never guessed from
+# content. A candidate row in one of these files is never handed to
+# run_unit_status() without an explicit --ledger scoped to its own file (see
+# scoped_ledger_for() below) -- UNLESS the unit id is also listed in
+# ZERO_LEG_OVERRIDES below, in which case unit-status.sh is not invoked at
+# all for it (see classify_ledger_row()).
 UNPARSEABLE_LEDGER_FILES = frozenset({
     "skill58-podbean-proxy-2026-07-16.md",
 })
@@ -128,17 +149,24 @@ UNPARSEABLE_LEDGER_FILES = frozenset({
 # here is trusted from the ledger's own status cell and PASSES WITH
 # DISCLAIMER -- never silently, always printed, and never independently
 # git-verified (identical to unit_status_core.py's own zero-leg mode
-# elsewhere in this repo). Every other unit id in an UNPARSEABLE_LEDGER_FILES
-# member -- including ones this repo's own CONCURRENCY MAP names as carrying
-# a REAL repo leg (U12, U14, U15, U16, U17, U21 in the podbean file) -- is
-# deliberately NOT listed here and keeps the unconditional NOT-ENFORCED
-# failure. This is a hand-maintained ALLOWLIST, never a computed one: a
-# table-parsing shortcut that inferred this set from the concurrency map at
-# runtime could silently mis-derive it (a parsing bug, a reformatted table),
-# and defaulting "not in the repo-leg list" to trusted would let a FUTURE
-# unit added to this file with a genuine, un-reviewed repo leg slip through
-# trusted instead of blocked. Extend this set only unit-by-unit, only after
-# a human has actually read the concurrency map and confirmed it.
+# elsewhere in this repo) -- and unit-status.sh is never invoked for it at
+# all, since there is no repo leg to check in principle. Every other unit id
+# in an UNPARSEABLE_LEDGER_FILES member -- including ones this repo's own
+# CONCURRENCY MAP names as carrying a REAL repo leg (U12, U14, U15, U16,
+# U17, U21 in the podbean file) -- is deliberately NOT listed here and now
+# gets REAL, --ledger-scoped enforcement instead (see classify_ledger_row()
+# and scoped_ledger_for()) -- never a bypass, never a blanket pass. This is
+# a hand-maintained ALLOWLIST, never a computed one: a table-parsing
+# shortcut that inferred this set from the concurrency map at runtime could
+# silently mis-derive it (a parsing bug, a reformatted table), and
+# defaulting "not in the repo-leg list" to trusted would let a FUTURE unit
+# added to this file with a genuine, un-reviewed repo leg slip through
+# trusted (bypassing git verification) instead of actually being checked.
+# Extend this set only unit-by-unit, only after a human has actually read
+# the concurrency map and confirmed it -- and NEVER for a unit id the
+# concurrency map itself names as carrying a repo leg (U12/U14/U15/U16/
+# U17/U21): those must always go through real git verification, now that
+# --ledger scoping makes that verification correct.
 #
 # skill58-podbean-proxy-2026-07-16.md's own CONCURRENCY MAP table (the
 # "Repo `openclaw-onboarding`" row) names ONLY U12/U14/U15/U16/U17/U21 as
@@ -156,28 +184,60 @@ ZERO_LEG_OVERRIDES = {
 def classify_ledger_row(basename, unit_id):
     """Route a single candidate (verified/done) row to exactly one bucket:
       "enforce"            -- run the normal git+check-run verification path
-                               (unit-status.sh, candidates dict).
+                               (unit-status.sh, candidates dict). This is
+                               EVERY row except the ZERO_LEG_OVERRIDES
+                               allowlist below -- including every unit id in
+                               an UNPARSEABLE_LEDGER_FILES member, which used
+                               to get an unconditional "not_enforced" bypass
+                               before this fix (see the module docstring's
+                               "blind spot 1"). Those rows are still
+                               enforced correctly: the caller (main()) passes
+                               unit-status.sh an explicit --ledger scoped to
+                               the exact file the row's diff came from (see
+                               scoped_ledger_for()), which eliminates the
+                               cross-campaign collision the old bypass
+                               existed to avoid -- so real, git-derived
+                               enforcement is now safe for these rows too.
       "zero_leg_override"  -- basename is in UNPARSEABLE_LEDGER_FILES AND
                                unit_id is on that file's ZERO_LEG_OVERRIDES
                                allowlist: trust the ledger's own status cell,
                                PASS WITH DISCLAIMER, never independently
                                git-checked (unit-status.sh is never invoked
-                               for this row -- see the module docstring's
-                               "blind spot 1" section for why that matters:
-                               invoking it would risk the exact cross-file
-                               U-numbering collision this file is exempted
-                               for in the first place).
-      "not_enforced"       -- basename is in UNPARSEABLE_LEDGER_FILES and
-                               unit_id is NOT on the allowlist: the original,
-                               unconditional "human review required" failure,
-                               unchanged.
+                               for this row at all -- there is no repo leg
+                               to check in principle, so a subprocess call
+                               would only add cost, never proof; see the
+                               module docstring's "blind spot 1" section).
     A pure function (no I/O) so it is trivially unit-testable in isolation
     from git/subprocess -- see tests/unit/ledger-truth-gate.test.py."""
-    if basename not in UNPARSEABLE_LEDGER_FILES:
-        return "enforce"
     if unit_id in ZERO_LEG_OVERRIDES.get(basename, frozenset()):
         return "zero_leg_override"
-    return "not_enforced"
+    return "enforce"
+
+
+def scoped_ledger_for(paths):
+    """`paths`: the set of distinct ledger file paths a single unit id's
+    ADDED verified/done row(s) came from in this diff (usually exactly one).
+    Returns the single ledger path unit-status.sh's --ledger flag should be
+    scoped to, or None to let the tool use its own default multi-ledger
+    search (today: the kanban ledger first, then every other ledgers/*.md
+    file -- unchanged from before this fix for every ledger NOT in
+    UNPARSEABLE_LEDGER_FILES).
+
+    Scoping is the actual fix for the cross-campaign U-numbering collision
+    (module docstring "blind spot 1"): passing --ledger <path> makes
+    unit_status_core.find_ledger_row() search ONLY that one file, so it can
+    never resolve a unit id against a different campaign's same-numbered
+    row. Only applied when the row's file is a known cross-campaign ledger
+    (UNPARSEABLE_LEDGER_FILES) AND every changed row for this unit id in
+    this diff came from that SAME single file -- a unit id whose changed
+    rows span more than one ledger file in one diff is a separate, far
+    stranger scenario this fix does not attempt to silently resolve; the
+    tool's ordinary default search runs for it, exactly as it did before
+    this fix existed."""
+    if len(paths) != 1:
+        return None
+    (path,) = paths
+    return path if Path(path).name in UNPARSEABLE_LEDGER_FILES else None
 
 
 # A ledger unit row: `| U108 | ...`. Matches every known ledger shape --
@@ -241,13 +301,28 @@ def added_verified_rows(base, head, path):
     return out
 
 
-def run_unit_status(unit_id, cc_dir):
+def run_unit_status(unit_id, cc_dir, ledger_path=None):
     """Run the tool. Returns (parsed_json_or_None, human_error_or_None).
+
+    `ledger_path`, when given (see scoped_ledger_for()), is passed through
+    as an explicit `--ledger <ledger_path>` -- this makes unit-status.sh
+    search ONLY that one file for the unit's row, instead of its own default
+    multi-ledger search (kanban ledger first, then every other ledgers/*.md
+    file). This is the fix for the cross-campaign U-numbering collision
+    described in this module's docstring ("blind spot 1"): without it, a
+    unit id that also exists in the kanban ledger (e.g. U12, U14, U21) would
+    silently resolve against the KANBAN ledger's unrelated row instead of
+    the real one, because the kanban ledger is always searched first when no
+    --ledger is given. `ledger_path` is None for every other ledger file
+    (unchanged default multi-ledger search, exactly as before this fix).
 
     The tool prints its JSON to stdout on every verdict path (exit 0 = DONE,
     1 = NOT-DONE, 3 = UNKNOWN). A crash, timeout, or unparseable stdout is a
     tool ERROR -- fail closed, never guess."""
-    cmd = ["./unit-status.sh", unit_id, "--cc-dir", cc_dir, "--json"]
+    cmd = ["./unit-status.sh", unit_id, "--cc-dir", cc_dir]
+    if ledger_path:
+        cmd += ["--ledger", ledger_path]
+    cmd += ["--json"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=TOOL_TIMEOUT_SECONDS)
     except subprocess.TimeoutExpired:
@@ -308,7 +383,6 @@ def main():
         return
 
     candidates = {}          # unit_id -> list of (path, status_cell)
-    not_enforced = []        # (path, unit_id, status_cell)
     zero_leg_override = []   # (path, unit_id, status_cell) -- reviewed, trusted, PASS WITH DISCLAIMER
     for path in files:
         basename = Path(path).name
@@ -316,18 +390,15 @@ def main():
             route = classify_ledger_row(basename, unit_id)
             if route == "zero_leg_override":
                 zero_leg_override.append((path, unit_id, status))
-            elif route == "not_enforced":
-                not_enforced.append((path, unit_id, status))
             else:
                 candidates.setdefault(unit_id, []).append((path, status))
 
-    if not candidates and not not_enforced and not zero_leg_override:
+    if not candidates and not zero_leg_override:
         print(f"ledger-truth gate: {len(files)} ledger file(s) changed, but no added row claims")
         print("verified/done -- nothing to gate. PASS.")
         return
 
     print(f"ledger-truth gate: {len(candidates)} candidate unit(s) claiming verified/done"
-          + (f", {len(not_enforced)} row(s) in unparseable ledger file(s)" if not_enforced else "")
           + (f", {len(zero_leg_override)} row(s) on the reviewed zero-leg override allowlist" if zero_leg_override else ""))
     print(f"diff range: {args.base[:12]}..{args.head[:12]}")
 
@@ -336,8 +407,10 @@ def main():
     zero_leg = []   # unit ids whose DONE is NOT independently checked
 
     for unit_id in sorted(candidates, key=lambda u: int(u[1:])):
-        where = ", ".join(sorted({p for p, _ in candidates[unit_id]}))
-        result, error = run_unit_status(unit_id, args.cc_dir)
+        unit_paths = sorted({p for p, _ in candidates[unit_id]})
+        where = ", ".join(unit_paths)
+        ledger_path = scoped_ledger_for(set(unit_paths))
+        result, error = run_unit_status(unit_id, args.cc_dir, ledger_path=ledger_path)
         if error is not None:
             failures.append(f"  unit {unit_id} ({where}): TOOL ERROR -- {error}\n"
                             f"    Failing closed: the gate could not verify this row. Human review required.")
@@ -376,15 +449,8 @@ def main():
         print("  carries no repository leg at all (a live n8n/data-table claim, not a git-checkable")
         print("  one). Trusted from the ledger's own status cell, exactly like any other zero-leg unit")
         print("  elsewhere in this repo -- NOT independently git-verified, and never silently.")
-    for path, unit_id, status in not_enforced:
-        print(f"NOT ENFORCED -- HUMAN REVIEW REQUIRED: {unit_id} in {path}")
-        print(f"  row claims '{status}', but this ledger's row format cannot be parsed by the tool")
-        print("  (and its U-numbering belongs to a different campaign -- the tool would judge the")
-        print("  WRONG unit's row), and this unit id is not on that file's reviewed ZERO_LEG_OVERRIDES")
-        print("  allowlist. This is not a caught false stamp and not a pass: a human must verify this")
-        print("  row by hand.")
 
-    failed = bool(failures) or bool(not_enforced)
+    failed = bool(failures)
     if failures:
         print("\nFAILURES:")
         for block in failures:
