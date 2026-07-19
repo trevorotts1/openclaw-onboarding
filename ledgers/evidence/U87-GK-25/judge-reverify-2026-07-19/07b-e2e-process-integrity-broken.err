@@ -1,0 +1,4 @@
+AF-PROCESS-INTEGRITY: 1 of 5 declared step(s) failed process-integrity checks.
+
+  FAIL  [4.1] 'P-SP-STRUCTURE' (Signature Structure Gate (prove_sp_structure))
+        (a) No attestation record for phase 'P-SP-STRUCTURE' — phase was either never run or the runner exited without attesting it.

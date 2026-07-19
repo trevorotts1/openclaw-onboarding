@@ -1,0 +1,2 @@
+FAIL: 1 structure violation(s) — deck is NOT run, NOT rendered, NOT updated.
+  VIOLATION [AF-SP-CASESTUDY-CAP] 3 CASE_STUDY-tagged slides exceed the cap of 2 (Directive 12)
