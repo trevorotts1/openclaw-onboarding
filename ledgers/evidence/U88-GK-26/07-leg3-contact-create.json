@@ -1,0 +1,42 @@
+{
+  "contact": {
+    "id": "sYC4xfNGKbq5udtECTip",
+    "dateAdded": "2026-07-19T06:15:59.245Z",
+    "dateUpdated": "2026-07-19T06:15:59.245Z",
+    "deleted": false,
+    "tags": [
+      "u88-gk26-throwaway-test"
+    ],
+    "type": "lead",
+    "customFields": [],
+    "locationId": "Mct54Bwi1KlNouGXQcDX",
+    "firstName": "U88LiveProof",
+    "firstNameLowerCase": "u88liveproof",
+    "fullNameLowerCase": "u88liveproof skill6gk26",
+    "lastName": "Skill6GK26",
+    "lastNameLowerCase": "skill6gk26",
+    "email": "u88-gk26-liveproof-1784441758@example.invalid",
+    "emailLowerCase": "u88-gk26-liveproof-1784441758@example.invalid",
+    "bounceEmail": false,
+    "unsubscribeEmail": false,
+    "phone": "+15555550199",
+    "country": "US",
+    "source": "U88-GK26-content-conversation-loop-live-proof",
+    "createdBy": {
+      "source": "INTEGRATION",
+      "channel": "OAUTH",
+      "sourceId": "695c24c828a03f10fcbb819e",
+      "timestamp": "2026-07-19T06:15:59.245Z"
+    },
+    "lastUpdatedBy": {
+      "source": "INTEGRATION",
+      "channel": "OAUTH",
+      "sourceId": "695c24c828a03f10fcbb819e",
+      "timestamp": "2026-07-19T06:15:59.245Z"
+    },
+    "lastSessionActivityAt": "2026-07-19T06:15:59.331Z",
+    "validEmail": null,
+    "validEmailDate": null
+  },
+  "traceId": "e0337783-4991-4622-bb84-f1d4552acdbc"
+}

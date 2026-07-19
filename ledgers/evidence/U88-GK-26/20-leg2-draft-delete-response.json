@@ -1,0 +1,9 @@
+{
+  "success": true,
+  "statusCode": 200,
+  "message": "Deleted Post",
+  "results": {
+    "postId": "6a5c7e5345087110f27ce839"
+  },
+  "traceId": "472c36e7-6a75-4876-a0d2-8822f4482b51"
+}

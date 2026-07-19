@@ -1,0 +1,1 @@
+API Error (422): ['property scheduledAt should not exist']

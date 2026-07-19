@@ -1,5 +1,54 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.12] - 2026-07-19 — U88/GK-26 leg-2 redo: `--status draft` + `scheduleDate` field-name fix
+
+### Fixed
+- **`caf social create-post` now has a genuine, sourced, non-publishing draft path.** The
+  1.3.11 fail-closed fix correctly stopped the silent live-publish, but left open exactly what
+  body shape produces a real non-publishing draft (its own `--schedule` attempt 422'd,
+  `property scheduledAt should not exist`). Sourced GHL's own published Social Planner API docs
+  and cross-checked against a real, independent third-party GHL integration app targeting the
+  same endpoint: the real body has a dedicated `status` field (`draft`/`scheduled`/`published`)
+  and the real schedule field is `scheduleDate`, not `scheduledAt`. Added `--status
+  [draft|scheduled|published]`; `--status draft` satisfies the fail-closed gate on its own
+  (no `--schedule`/`--confirm-publish-now` needed) and was live-proven: create response +
+  independent read-back both showed `"status": "draft"`, no `publishedAt`, `previewLink: null`;
+  cleanly deleted and independently re-confirmed gone on a fresh re-read (unlike 1.3.11's
+  already-published-post delete, which reported success but never actually took effect).
+  `--schedule` now sends the correct `scheduleDate` field and implies `--status scheduled`.
+  `--confirm-publish-now` alone is unchanged (byte-identical body, zero regression).
+- 5 new regression tests (`test_u88_social_create_post.py`, 11/11 PASS) pin the new `--status
+  draft` body shape, the `scheduleDate` fix, and the three-door fail-closed gate. Full
+  `tools/engine/tests/` suite: 138/138 PASS, zero regressions.
+- Full live-proof evidence: `ledgers/evidence/U88-GK-26/` (this repo, `openclaw-onboarding`),
+  README "LEG 2 PASS 2" section + artifacts `18`-`21`.
+
+## [1.3.11] - 2026-07-19 — U88/GK-26 live-proof: `social create-post` fail-closed + real-API body fixes
+
+### Fixed
+- **`caf social create-post` no longer silently publishes live on a missing `--schedule`.**
+  Found running the real GK-26 content→conversation loop live on the operator's own box: the
+  original command's very first-ever real call 422'd (`property locationId should not exist`;
+  missing `type`/`userId`/`media`). After fixing that shape, a corrected call PUBLISHED A REAL
+  POST LIVE AND PUBLIC on a real connected account — omitting `--schedule` does not create a
+  draft on the real API. GHL's own `DELETE` endpoint for that already-published post returned
+  `success:true` six separate times across 5+ minutes of polling but never actually retracted
+  it. The command is now fail-closed: it REFUSES to run unless `--schedule <ISO-8601>` or an
+  explicit `--confirm-publish-now` is passed, quoting this incident in the refusal message. The
+  correct real body shape for a genuinely non-publishing scheduled/draft post is still
+  unconfirmed (a `--schedule` attempt hit a separate new 422, `property scheduledAt should not
+  exist`) — tracked as a named follow-up, not claimed solved.
+- **`caf social create-post` / `caf social posts` real-API body defects fixed**, all
+  root-caused from live 422 error text (neither command had any test coverage before this pass,
+  so neither defect was reachable by any existing fixture/mock): dropped the redundant
+  `locationId` body key both real endpoints reject; `create-post` now sends the required
+  `type`/`media`/`userId` fields; `posts` (list) now sends `limit`/`skip` as number strings, not
+  JSON integers.
+- New regression suite `tools/engine/tests/test_u88_social_create_post.py` (6/6 PASS) pins both
+  the fixed body shapes and the fail-closed refusal. Full `tools/engine/tests/` suite: 133/133
+  PASS, zero regressions.
+- Full live-proof evidence: `ledgers/evidence/U88-GK-26/` (this repo, `openclaw-onboarding`).
+
 ## [1.3.10] - 2026-07-16 — GK-27/U89: relationship lattice pointer + citation tripwire
 
 ### Added

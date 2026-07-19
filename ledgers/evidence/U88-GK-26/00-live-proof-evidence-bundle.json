@@ -1,0 +1,99 @@
+{
+  "unit": "U88 (GK-26)",
+  "run_mode": "live-operator-box",
+  "run_date": "2026-07-19",
+  "box": "operator box (Trevor's own machine, no client traffic)",
+  "ghl_location_used": {
+    "location_id": "Mct54Bwi1KlNouGXQcDX",
+    "business_name": "BlackCEO LLC",
+    "note": "Resolved LIVE via `caf locations get` (PIT-scoped default) -- NOT read from GOHIGHLEVEL_LOCATION_ID/GHL_COMPANY_ID, which are documented placeholders and were never used."
+  },
+  "gateway_restart": {
+    "authorized": true,
+    "performed": true,
+    "reason": "Skill 38's inbound hook was not configured (hooks.mappings had only the pre-existing 'anthology-intake' entry) -- a restart is required for a new hooks.mappings entry to take effect.",
+    "defect_found_and_fixed_during_restart": "First restart attempt CRASH-LOOPED: 'Gateway failed to start: hooks.defaultSessionKey must match hooks.allowedSessionKeyPrefixes.' Root cause: adding 'hook:ghl:' to hooks.allowedSessionKeyPrefixes made the pre-existing hooks.defaultSessionKey ('agent:main:main') fail that same new constraint. Fixed by adding the pre-existing defaultSessionKey's own value (plus 'anthology:') to the prefix allowlist, preserving all existing routing. Verified via a foreground `node ... gateway --port 18790` dry run before touching the real launchd service again; then `launchctl kickstart -k` succeeded and /healthz returned {\"ok\":true,\"status\":\"live\"}.",
+    "unrelated_preexisting_issue_confirmed_not_caused_by_this_change": "Telegram getUpdates polling conflict messages in the gateway log predate this restart (first occurrence 2026-07-19T01:56:11-04:00, well before any edit made here) -- a known pre-existing fleet issue, not a regression from this unit."
+  },
+  "legs": {
+    "leg1_pregen_gate_and_qc": {
+      "tier": "live (real module call, identical mechanics to the OFFLINE/FIXTURE tier)",
+      "result": "PASS",
+      "detail": "35-social-media-planner pregen_prompt_gate.check_prompt() -- real call, zero network. Section-19 QC + the paid kie.ai image generation remain intentionally fixture-labeled in BOTH tiers -- this proof must never trigger a paid generation call. DM-first-with-comment-backup CTA shape confirmed.",
+      "evidence_file": "01-legs-1-4-5-live-rerun.json (leg1 key)"
+    },
+    "leg2_queue_draft_post": {
+      "tier": "live (real GHL API calls against Trevor's own location, real Facebook page)",
+      "result": "FAIL (partial) -- create+read-back proven live; revert did NOT succeed; a real, unresolved code defect was found and partially remediated",
+      "sequence": [
+        "1) First real create-post call (original, unpatched CLI): HTTP 422 -- 'property locationId should not exist', missing type/userId/media. Evidence: 02-leg2-create-post-first-attempt-422.json.",
+        "2) Manually corrected body (type=post, media=[], userId=<resolved from a real createdBy.sourceId>, no locationId) -> HTTP 201 Created.",
+        "3) Read-back (posts/list, corrected body shape) confirmed the post exists: _id=6a5c6de164f715d074e3d317, but status=\"published\" (NOT draft) with a real, live previewLink -- omitting --schedule does not create a draft on the real API, contrary to the OFFLINE tier's FixtureAdapters assumption ({'status':'draft'}). Evidence: 04-leg2-posts-list-after-create.json.",
+        "4) DELETE /social-media-posting/<loc>/posts/<id> returned {success:true,statusCode:200,message:'Deleted Post'} -- but re-reading the SAME post immediately after, and again after 5+ minutes across 6 polls, still showed deleted:false, status:'published', updatedAt unchanged. The GHL delete call for an ALREADY-PUBLISHED post does not actually retract it despite reporting success. Evidence: 06-leg2-delete-post-response.json (the 200 'success'), 05-leg2-posts-list-after-delete-attempt.json (proof it is still there).",
+        "5) REMEDIATION APPLIED (both the git-tracked source and the box's own deployed CLI copy): `caf social create-post` is now fail-closed -- it REFUSES to run unless the caller passes --schedule <ISO-8601> OR explicitly passes --confirm-publish-now, with the exact live incident quoted in the refusal message. The 422-causing body defect (locationId in body; missing type/userId/media) and the `posts list` 422 (locationId in body; limit/skip must be number strings) are both fixed. A follow-up regression suite (44-convert-and-flow-operator/tools/engine/tests/test_u88_social_create_post.py, 6/6 PASS) pins both fixes. Full engine suite re-run: 133/133 PASS, zero regressions.",
+        "6) NOT attempted again live: the correct real body shape for a genuinely non-publishing scheduled/draft post is still UNCONFIRMED -- a --schedule attempt returned a NEW real 422 ('property scheduledAt should not exist', evidence 03-leg2-create-post-scheduled-attempt-422.txt). Repeating live experiments against the real, already-incident-affected account was judged too risky; this is filed as its own named follow-up, not silently claimed solved."
+      ],
+      "queued_post_id": "6a5c6de164f715d074e3d317",
+      "unresolved_live_side_effect": "A real post is still live and public on the real 'Black CEO' Facebook page (account id 64faa5bff0befc6c98267746_Mct54Bwi1KlNouGXQcDX_136340370119693_page) as of the end of this run. It could NOT be removed via the documented GHL API despite multiple genuine attempts over 5+ minutes. This requires the operator's direct attention (manual removal via GHL's own UI, or Facebook's own tools) -- flagged with maximum visibility in the PR and the final report, not buried.",
+      "evidence_files": [
+        "02-leg2-create-post-first-attempt-422.json",
+        "03-leg2-create-post-scheduled-attempt-422.txt",
+        "04-leg2-posts-list-after-create.json",
+        "05-leg2-posts-list-after-delete-attempt.json",
+        "06-leg2-delete-post-response.json"
+      ]
+    },
+    "leg3_inbound_conversation": {
+      "tier": "live (real gateway hooks.mappings entry, real agent session, real GHL Conversations round-trip)",
+      "result": "PASS",
+      "sequence": [
+        "1) Added hooks.mappings entry id=u88-live-proof-inbound (agent=main, deliver:false, model=ollama/kimi-k2.7-code:cloud, timeoutSeconds:120) alongside the pre-existing anthology-intake entry (untouched). Restarted the gateway (see gateway_restart above).",
+        "2) Created a REAL throwaway GHL contact at Trevor's own location: id=sYC4xfNGKbq5udtECTip, tag=u88-gk26-throwaway-test. Evidence: 07-leg3-contact-create.json.",
+        "3) POSTed a synthetic-but-realistic 23-field-shaped flat inbound body (channel=sms, the real contact id, the real location id) to http://127.0.0.1:18789/hooks/u88-live-proof-inbound with the gateway's real Bearer token -- HTTP 200 {\"ok\":true,\"runId\":\"910b4fa0-3f90-470a-bc11-451b44fcd2ee\"}. Evidence: 08-leg3-hook-synthetic-body.json, 09-leg3-hook-post-response.txt.",
+        "4) A real agent session (id 1f4329d2-27e7-46e7-97a9-63cb70b146d2, sessionKey agent:main:hook:ghl:sms:sYC4xfNGKbq5udtECTip) woke and ran. First model attempt (ollama/kimi-k2.7-code:cloud) failed with a REAL 429 -- Ollama Cloud's own monthly usage cap was reached on the operator's account (a genuine live precondition finding, not fabricated, not fixable by this unit). The gateway's own fallback chain retried on openrouter/xiaomi/mimo-v2.5-pro, which succeeded.",
+        "5) The agent autonomously: searched GHL Conversations for the contact (none existed yet, real empty result), attempted the SMS send (blocked by a real GHL 400 CONVERSATIONS_MSG_DND_ACTIVE_SMS -- the fake test phone number had been auto-flagged non-textable), diagnosed and cleared DND on that ONE test contact via a real PUT /contacts call, then resent.",
+        "6) Real GHL API success: conversationId=CKqCCQuSecOnb6UlbuoN, messageId=qq4kggYtda5goQgLrqfa, containing the required acknowledgement token U88-GK26-LIVE-PROOF-ACK.",
+        "7) The agent appended both the inbound and outbound messages to a real conversational-logs file for this contact (since removed as part of cleanup).",
+        "8) INDEPENDENT VERIFICATION (not taken from the agent's own self-report): a fresh `caf conversations get`/`messages` call confirmed the same conversationId/messageId/body text exist in GHL. Evidence: 11-leg3-conversation-get.json, 12-leg3-conversation-messages.json. Note (real, honest): the message's carrier-delivery status is \"failed\" with Twilio Error 21211 'Invalid To number format' -- expected and by design, since the reserved test number +15555550199 is not a real deliverable subscriber (same convention Skill 38's own official 24-self-test-hook.sh uses). This does NOT invalidate the leg: GK-26's own binary acceptance asks for 'conversation id + brain reply', both of which are real and independently confirmed; actual SMS carrier delivery to a fake number is out of scope by construction.",
+        "9) Separately, the REAL Skill 38 tier-ladder resolution module call (playbook_engine.resolve_from_log against the same fixture pair the OFFLINE tier uses) was re-run fresh on the operator box: active_workflow=good-playbook, active_phase=4, book_appointment present, model_tier=realtime-standard -- byte-identical to the OFFLINE tier's result, now also proven to run cleanly on the operator box's own checkout. Evidence: 14-leg3-tier-ladder-resolution.json.",
+        "10) CLEANUP (revert): the throwaway contact was deleted (`caf contacts delete`), independently re-confirmed gone via a second `caf contacts get` (HTTP 400 'Contact not found'); deleting the contact also removed its conversation, independently re-confirmed gone via `caf conversations get` (HTTP 400 'Conversation not found'). The local conversational-logs test file was removed. Evidence: 15-leg3-contact-delete.json, 16-leg3-contact-get-after-delete-404.txt, 17-leg3-conversation-get-after-delete-404.txt."
+      ],
+      "conversation_id": "CKqCCQuSecOnb6UlbuoN",
+      "message_id": "qq4kggYtda5goQgLrqfa",
+      "evidence_files": [
+        "07-leg3-contact-create.json",
+        "08-leg3-hook-synthetic-body.json",
+        "09-leg3-hook-post-response.txt",
+        "10-leg3-agent-session-transcript.jsonl",
+        "11-leg3-conversation-get.json",
+        "12-leg3-conversation-messages.json",
+        "13-leg3-conversational-log.md",
+        "14-leg3-tier-ladder-resolution.json",
+        "15-leg3-contact-delete.json",
+        "16-leg3-contact-get-after-delete-404.txt",
+        "17-leg3-conversation-get-after-delete-404.txt"
+      ]
+    },
+    "leg4_comment_handoff": {
+      "tier": "live (real module call, fully offline by design -- comment_reader.py makes no network call in either tier)",
+      "result": "PASS",
+      "detail": "Re-run fresh on the operator box: 1 handed-off event, 0 skipped, fenced handoff file written with the <<<UNTRUSTED-PUBLIC-COMMENT ... >>> fence markers present -- byte-identical mechanics to the OFFLINE tier.",
+      "evidence_file": "01-legs-1-4-5-live-rerun.json (leg4 key + leg4_file_content)"
+    },
+    "leg5_gap_c_matcher": {
+      "tier": "live (real module call against the real 38-template catalog on disk)",
+      "result": "PASS",
+      "detail": "Re-run fresh on the operator box. No-link case: matcher invoked, matched a template in {squeeze-page, lead-magnet} as expected. Client-link case: matcher NEVER invoked, client-supplied link wins (sovereignty). The resolved page URL for the no-link case remains a clearly-labeled FIXTURE placeholder in BOTH tiers -- no live GHL funnel page for this exact template exists to resolve a real URL from, and building one is out of GK-26's own scope (a full funnel build is Skill 6's own unit, not this proof).",
+      "evidence_file": "01-legs-1-4-5-live-rerun.json (leg5 key)"
+    }
+  },
+  "overall": {
+    "legs_passed": 4,
+    "legs_total": 5,
+    "failing_leg": "leg2_queue_draft_post",
+    "failing_leg_reason": "create+read-back mechanics proven live; revert (delete) did not succeed against an already-published post, and a real unrelated live-publish safety defect was found, root-caused, and partially remediated (fail-closed default now shipped) but the underlying 'how do you actually create a real non-publishing draft/scheduled post via this endpoint' question remains open.",
+    "fix_unit_filed": "Named follow-up: confirm the correct real GHL request-body shape for a genuinely non-publishing scheduled/draft social post (the 'property scheduledAt should not exist' 422 needs its own investigation); until resolved, `caf social create-post` requires explicit --confirm-publish-now for any real live publish.",
+    "zero_client_visible_messages_claim": "NOT MET AS LITERALLY STATED -- this ran on the operator's OWN business Facebook page (BlackCEO LLC, not a client), so no CLIENT was affected, but a real, still-unremoved PUBLIC post exists as an honest, disclosed side effect of this proof run.",
+    "honest_verdict": "PARTIAL, NOT fully verified -- 4 of 5 legs genuinely proven live end-to-end with independently-verified real evidence (real ids, real API responses, real timestamps); leg 2 is a genuine, disclosed, partially-remediated failure, not a fabricated pass."
+  }
+}
