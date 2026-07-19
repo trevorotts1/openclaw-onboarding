@@ -1017,7 +1017,7 @@ class AllModeAggregate(unittest.TestCase):
                 "| U3 | [X] (0NB + live, P1) garbled token unit | label | verified | ev | ts |\n"
                 "| U4 | [X] (ONB, P1) repo unit with unmerged leg | label | pending | ev | ts |\n"
             )
-            def fake_resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text):
+            def fake_resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text, **_kw):
                 if unit_id == "U4":
                     return self._leg_unsatisfied()
                 return self._leg_satisfied()
@@ -1195,6 +1195,281 @@ class NestedLiveTagAndBareN8nFix(unittest.TestCase):
                     f"REGRESSION: {uid} (incomplete, non-'verified' status) must NOT be upgraded to "
                     f"DONE just because its tag became parseable -- got {result['verdict']}: {result}",
                 )
+
+
+class S58LedgerCountingGapFix(unittest.TestCase):
+    """MUTATION PROOF for the S58 counting-gap defect (2026-07-19): every one
+    of skill58-podbean-proxy-2026-07-16.md's 21 unit rows had NO leg-
+    requirement tag in its desc column at all -- resolve_required_legs()
+    correctly fell into mode="unknown" for every single row (fail-closed,
+    exactly as designed), but that meant `unit-status.sh --all --ledger
+    ledgers/skill58-podbean-proxy-2026-07-16.md` printed UNKNOWN for ALL 21
+    units, always, with zero ability to adjudicate ANY of them -- a
+    tooling-coverage gap, not incomplete underlying work (verbatim repro:
+    "UNITS CHECKED: 21 -- DONE: 0, DONE-LIVE-OWED: 0, NOT-DONE: 0,
+    UNKNOWN: 21", exit 3).
+
+    Fixed by (a) adding real leg tags to the ledger rows (repo-leg units
+    get their real repo tag, citing the exact SHA already present in that
+    row's own evidence text; live-n8n-only units get the zero-leg 'live'
+    tag the resolver already recognized) and (b) a second, independently
+    discovered resolver bug this surfaced while verifying (a): resolve_unit()
+    hardcoded the Skill-6-only `skill6-v2/` own-branch prefix for EVERY
+    ledger, so S58's U12/U14/U21 (which reuse the same U<n> numbering)
+    silently resolved against Skill 6's OWN, unrelated `skill6-v2/U12` /
+    `skill6-v2/U14` / `skill6-v2/U21` branches instead of the real S58
+    evidence -- U21 (ledger status cell literally 'pending', zero repo work)
+    came back a false git-DONE this way before the
+    NO_OWN_BRANCH_PREFIX_LEDGERS fix, confirmed live during this fix's own
+    development and reproduced as a precondition below.
+
+    Network + gh auth NOT required beyond the initial clone/fetch (skip_ci
+    is used throughout, so no `gh api` check-run calls are made) -- reads
+    real branch lists / real merge commits already in
+    trevorotts1/openclaw-onboarding's history (both immutable)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.onb_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/openclaw-onboarding.git",
+            "UNIT_STATUS_TEST_ONB_DIR", "openclaw-onboarding",
+        )
+        cls.cc_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/blackceo-command-center.git",
+            "UNIT_STATUS_TEST_CC_DIR", "blackceo-command-center",
+        )
+        cls.s58_ledger = [str(Path(cls.onb_dir) / "ledgers" / "skill58-podbean-proxy-2026-07-16.md")]
+
+    def test_pretag_desc_text_reproduces_the_original_all_unknown_bug(self):
+        """PRECONDITION / proves the bug was real, not assumed: the EXACT
+        pre-fix desc text (verbatim, no leg tag at all) for a repo-leg unit
+        (U14) and a live-only unit (U1), fed straight into
+        resolve_required_legs(), must still classify mode='unknown' --
+        confirming the counting-gap was a real, structural tag-absence
+        (every row), not a narrow parsing edge case."""
+        pretag_u1 = "Prove n8n API WRITE capability (POST/GET/DELETE scratch workflow) or record manual-UI fallback"
+        pretag_u14 = "`publish-proxy` transport in `podbean_publish.sh` (proxy → broker → local)"
+        for desc in (pretag_u1, pretag_u14):
+            legs, mode, note = usc.resolve_required_legs(desc)
+            self.assertEqual(mode, "unknown", f"PRECONDITION FAILED for {desc!r}: got mode={mode!r} ({note})")
+            self.assertEqual(legs, set())
+
+    def test_s58_aggregate_matches_independently_verified_ground_truth(self):
+        """FAILS on the pre-fix ledger (all 21 rows mode='unknown', counts
+        {DONE:0, DONE-LIVE-OWED:0, NOT-DONE:0, UNKNOWN:21}). PASSES on the
+        shipped ledger + resolver fix: matches the independently-verified
+        ground truth exactly -- 16 ledger-'verified' rows split 15 plain-
+        DONE + 1 DONE-LIVE-OWED (U12: repo leg proven, n8n leg still owed),
+        5 ledger-'pending' rows all correctly UNKNOWN (never a false DONE,
+        never a false NOT-DONE), 0 NOT-DONE (no fabricated claim in this
+        ledger)."""
+        unit_ids = usc.list_ledger_unit_ids(self.s58_ledger)
+        self.assertEqual(unit_ids, [f"U{n}" for n in range(1, 22)])
+        agg = usc.resolve_all_units(unit_ids, self.onb_dir, self.cc_dir, self.s58_ledger, skip_ci=True)
+        self.assertEqual(
+            agg["counts"],
+            {"DONE": 15, "DONE-LIVE-OWED": 1, "NOT-DONE": 0, "UNKNOWN": 5, "TOTAL": 21},
+            f"REGRESSION: S58 aggregate must match independently-verified ground truth -- got {agg['counts']}",
+        )
+        by_unit = {u["unit"]: u for u in agg["units"]}
+        self.assertEqual(by_unit["U12"]["verdict"], "DONE")
+        self.assertTrue(by_unit["U12"]["live_leg_owed"],
+                         "U12 is HYBRID (repo leg + n8n leg) -- must be visibly live-leg-owed, not plain DONE.")
+        self.assertEqual(by_unit["U12"]["owed_non_repo_components"], ["n8n"])
+        for uid in ("U7", "U18", "U19", "U20", "U21"):
+            self.assertEqual(by_unit[uid]["verdict"], "UNKNOWN",
+                              f"{uid} is genuinely pending/NOT STARTED per the ledger's own status cell "
+                              f"-- must never resolve DONE.")
+
+    def test_u12_and_u14_resolve_via_real_cited_sha_not_skill6_collision_branch(self):
+        """MUTATION PROOF for the second, resolver-level bug this fix
+        surfaced: BEFORE NO_OWN_BRANCH_PREFIX_LEDGERS, S58's U12/U14 legs
+        resolved method='own-branch' against Skill 6's OWN, unrelated
+        `skill6-v2/U12` / `skill6-v2/U14` branches (both real, both merged,
+        both a completely different unit) -- coincidentally still verdict
+        DONE for these two, but for the WRONG reason (wrong evidence
+        entirely, not the real S58 PR merge commits already cited in the
+        row's own text). FAILS on pre-fix code (method=='own-branch' against
+        the WRONG branch); PASSES on shipped code (method=='cross-reference'
+        against the REAL cited SHA)."""
+        collision_branches = usc.list_all_remote_branches(self.onb_dir)
+        self.assertIn("skill6-v2/U12", collision_branches,
+                       "PRECONDITION FAILED: skill6-v2/U12 no longer exists -- collision no longer reproducible.")
+        self.assertIn("skill6-v2/U14", collision_branches,
+                       "PRECONDITION FAILED: skill6-v2/U14 no longer exists -- collision no longer reproducible.")
+
+        u12 = usc.resolve_unit("U12", self.onb_dir, self.cc_dir, self.s58_ledger, skip_ci=True)
+        onb_leg = u12["legs"]["onb"]
+        self.assertEqual(onb_leg["method"], "cross-reference",
+                          f"REGRESSION: U12's ONB leg must resolve via cross-reference to the REAL cited "
+                          f"PR #606 SHA, not an own-branch collision with skill6-v2/U12 -- got {onb_leg}")
+        # Two real SHAs are cited in U12's own row text for PR #606 (the
+        # branch tip `a5048fe0` and the merge commit `28bca8dd` it landed
+        # via) -- resolve_leg_via_citations() picks whichever confirmed-
+        # ancestor candidate it encounters FIRST in extraction order, which
+        # is legitimately either one (both are real, both independently
+        # verified ancestors of origin/main). Either is honest evidence;
+        # what must NEVER happen is a skill6-v2/U12 branch/sha appearing
+        # here at all.
+        self.assertIn(onb_leg["raw"]["citation"]["cited_sha"], {"a5048fe0", "28bca8dd"},
+                       f"got {onb_leg['raw']['citation']}")
+        self.assertEqual(onb_leg["raw"]["citation"]["merge_sha"][:8], "28bca8dd")
+
+        u14 = usc.resolve_unit("U14", self.onb_dir, self.cc_dir, self.s58_ledger, skip_ci=True)
+        onb_leg14 = u14["legs"]["onb"]
+        self.assertEqual(onb_leg14["method"], "cross-reference",
+                          f"REGRESSION: U14's ONB leg must resolve via cross-reference to the REAL cited "
+                          f"PR #609 SHA, not an own-branch collision with skill6-v2/U14 -- got {onb_leg14}")
+        self.assertIn(onb_leg14["raw"]["citation"]["cited_sha"], {"7b207bcf", "5020e2f0"},
+                       f"got {onb_leg14['raw']['citation']}")
+        self.assertEqual(onb_leg14["raw"]["citation"]["merge_sha"][:8], "5020e2f0")
+
+    def test_u21_pending_unit_does_not_false_positive_via_skill6_collision(self):
+        """THE concrete false-DONE this bug produced live during development:
+        U21 (ledger status cell literally 'pending', 'NOT STARTED. Gates
+        every verified row above.') has NO own-named branch under any real
+        S58 convention and NO citation SHA in its own row text -- yet,
+        before NO_OWN_BRANCH_PREFIX_LEDGERS, it resolved DONE anyway by
+        matching Skill 6's real, unrelated `skill6-v2/U21` branch via
+        own-branch (confirmed live during this fix's own development,
+        reproduced as a precondition below). FAILS on pre-fix code
+        (verdict=='DONE', method=='own-branch' against skill6-v2/U21);
+        PASSES on shipped code (verdict=='UNKNOWN', method=='none-found',
+        never a fabricated DONE for a unit with zero real evidence)."""
+        collision_branches = usc.list_all_remote_branches(self.onb_dir)
+        self.assertIn("skill6-v2/U21", collision_branches,
+                       "PRECONDITION FAILED: skill6-v2/U21 no longer exists -- collision no longer reproducible.")
+
+        result = usc.resolve_unit("U21", self.onb_dir, self.cc_dir, self.s58_ledger, skip_ci=True)
+        self.assertEqual(result["ledger_status_cell"], "pending")
+        self.assertEqual(
+            result["verdict"], "UNKNOWN",
+            f"REGRESSION: U21 is genuinely pending/NOT STARTED -- must never resolve DONE via the "
+            f"skill6-v2/U21 namespace collision. Got {result['verdict']}: {result}",
+        )
+        onb_leg = result["legs"]["onb"]
+        self.assertNotEqual(onb_leg["method"], "own-branch",
+                             f"REGRESSION: must not resolve via own-branch (that IS the collision) -- got {onb_leg}")
+        self.assertIsNone(onb_leg["satisfied"])
+
+    def test_own_branch_prefix_is_a_blocklist_not_an_allowlist(self):
+        """Direct unit coverage of NO_OWN_BRANCH_PREFIX_LEDGERS /
+        DEFAULT_OWN_BRANCH_PREFIX: deliberately a BLOCKLIST, not an
+        allowlist -- ONLY Skill 58's ledger (the one file with a proven,
+        empirical skill6-v2/ collision) is excluded from the default
+        own-named-branch prefix. Every other ledger basename -- the real
+        Skill-6 kanban ledger (unchanged behavior -- U108/U79 in
+        HistoricalCases above still pass unmodified), a brand-new one nobody
+        has written yet, or a TEST FIXTURE that deliberately emulates the
+        skill6-v2/ convention under a different filename (see
+        tests/unit/ledger-truth-gate.test.py's
+        FalseClaimStillRejectedElsewhere -- this is the regression an
+        allowlist-shaped fix would have silently broken and this test pins
+        against reintroducing) -- keeps the default 'skill6-v2/' prefix.
+        Offline, no network needed for this part."""
+        self.assertIn("skill58-podbean-proxy-2026-07-16.md", usc.NO_OWN_BRANCH_PREFIX_LEDGERS)
+        self.assertNotIn("skill6-blended-persona-kanban-v2-2026-07-13.md", usc.NO_OWN_BRANCH_PREFIX_LEDGERS)
+        self.assertNotIn("some-future-ledger-nobody-has-written-yet.md", usc.NO_OWN_BRANCH_PREFIX_LEDGERS)
+        self.assertNotIn("fixture-kanban-style.md", usc.NO_OWN_BRANCH_PREFIX_LEDGERS,
+                          "REGRESSION: this is the exact fixture basename "
+                          "ledger-truth-gate.test.py's FalseClaimStillRejectedElsewhere uses to "
+                          "exercise the default skill6-v2/ own-branch convention -- it must never "
+                          "be silently excluded.")
+        self.assertEqual(usc.DEFAULT_OWN_BRANCH_PREFIX, "skill6-v2/")
+        self.assertIsNone(usc.find_own_named_branch("/nonexistent-repo-dir-never-touched", "U1", prefix=None))
+        self.assertIsNone(usc.find_own_named_branch("/nonexistent-repo-dir-never-touched", "U1", prefix=""))
+
+    def test_token_scan_also_excludes_skill6_v2_namespace(self):
+        """MUTATION PROOF, same shape as the pre-existing
+        test_token_scan_excludes_proven_namespace_collision (skill62/ce-U15)
+        but for the newly-discovered skill6-v2/ direction: a pre-fix,
+        delimiter-only-plus-skill62-only-exclusion scan (i.e. the ORIGINAL
+        FOREIGN_NAMESPACE_PREFIXES tuple, reproduced inline) still matches
+        `skill6-v2/U21` for token 'U21' -- proving the collision was real
+        and not fixed by the pre-existing skill62 exclusion alone. The
+        shipped token_scan_any_branch() (FOREIGN_NAMESPACE_PREFIXES now
+        includes 'skill6-v2/') must exclude it."""
+        import re
+        naive_pattern = re.compile(r"(?:^|[^0-9A-Za-z])U21(?:[^0-9A-Za-z]|$)", re.IGNORECASE)
+        all_branches = usc.list_all_remote_branches(self.onb_dir)
+        pre_fix_foreign_prefixes = ("skill62/",)  # the ORIGINAL tuple, before this fix
+        naive_hits = [
+            b for b in all_branches
+            if naive_pattern.search(b) and not any(b.startswith(p) for p in pre_fix_foreign_prefixes)
+        ]
+        self.assertIn("skill6-v2/U21", naive_hits,
+                       "PRECONDITION FAILED: the pre-fix exclusion list no longer reproduces the "
+                       "skill6-v2/U21 collision -- either upstream history changed or this precondition "
+                       "needs updating; the mutation proof below is meaningless without a live FAIL case.")
+
+        fixed_hits = usc.token_scan_any_branch(self.onb_dir, "U21")
+        self.assertNotIn("skill6-v2/U21", fixed_hits,
+                          "REGRESSION: token_scan_any_branch('U21') must exclude skill6-v2/U21 "
+                          "(FOREIGN_NAMESPACE_PREFIXES) -- the shipped function reproduced the collision.")
+
+
+class FabricatedVerifiedClaimRejected(unittest.TestCase):
+    """MUTATION PROOF -- the ABSOLUTE RULE this fix was built under: a ledger
+    row that claims status='verified' and cites a SHA in its evidence prose,
+    but the cited SHA does not actually exist / is not a real commit in the
+    repo at all, must NEVER resolve DONE. This is the tool's whole reason to
+    exist (see unit_status_core.py's own module docstring: 'Nothing in this
+    file trusts a ledger row's own status cell, ever') -- proven here
+    against a REAL onb_dir (network required to clone/fetch, but the
+    resolution itself is a local git-verify, no `gh api` calls needed --
+    skip_ci=True throughout)."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.onb_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/openclaw-onboarding.git",
+            "UNIT_STATUS_TEST_ONB_DIR", "openclaw-onboarding",
+        )
+        cls.cc_dir = _clone_or_reuse(
+            "https://github.com/trevorotts1/blackceo-command-center.git",
+            "UNIT_STATUS_TEST_CC_DIR", "blackceo-command-center",
+        )
+
+    def test_fabricated_verified_row_citing_nonexistent_sha_is_rejected(self):
+        """A row shaped EXACTLY like a real S58 repo-leg row -- '(ONB, P1)'
+        tag, status='verified', evidence prose citing a merge commit in
+        backticks -- but the cited SHA does not exist in the real repo at
+        all. Must resolve UNKNOWN (fail-closed: 'no verifiable
+        cross-reference citation... resolved to a merged commit'), NEVER
+        DONE -- proving the tool independently re-derives from git and does
+        not trust the ledger's own 'verified' stamp plus a fabricated
+        citation. This is the exact shape the task's own ABSOLUTE RULE
+        warns against: 'do not falsely upgrade any status.'"""
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = Path(td) / "fixture-fabricated-ledger.md"
+            ledger_path.write_text(
+                "| U999201 | (ONB, P1) fabricated claim, no real merge | [Fake x1] fabricated | "
+                "verified | FABRICATED-EVIDENCE: merge commit `deadbeef01deadbeef01` merged into "
+                "`origin/main`, totally fake, never happened. | 2026-01-01T00:00:00Z |\n"
+            )
+            result = usc.resolve_unit(
+                "U999201", self.onb_dir, self.cc_dir, [str(ledger_path)], skip_ci=True
+            )
+            self.assertNotEqual(
+                result["verdict"], "DONE",
+                f"REGRESSION: a fabricated 'verified' claim citing a nonexistent SHA must NEVER "
+                f"resolve DONE -- got {result}",
+            )
+            self.assertEqual(result["verdict"], "UNKNOWN")
+            onb_leg = result["legs"]["onb"]
+            self.assertIsNone(onb_leg["satisfied"])
+            self.assertEqual(onb_leg["method"], "none-found")
+
+    def test_verify_candidate_sha_rejects_nonexistent_sha(self):
+        """Direct unit coverage of the primitive the test above relies on:
+        verify_candidate_sha() must return None for a syntactically-hex-
+        looking but nonexistent sha -- it does not even resolve to a real
+        commit in the repo, so no ancestry claim is ever made about it
+        (never silently treated as 'not an ancestor' either, which would
+        still be an assertion -- None means 'this citation doesn't even
+        resolve, discard it')."""
+        fabricated = usc.verify_candidate_sha(self.onb_dir, "deadbeef01deadbeef01")
+        self.assertIsNone(fabricated, f"got {fabricated}")
 
 
 if __name__ == "__main__":
