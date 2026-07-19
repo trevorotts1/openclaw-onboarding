@@ -222,6 +222,30 @@ on separate paths.
 
 ---
 
+## SMS / conversation sends — NEVER hand-roll bare urllib
+
+`POST /conversations/messages` is the endpoint that sends SMS/GHL messages. GHL's
+`services.leadconnectorhq.com` sits behind Cloudflare, and Cloudflare's edge WAF fingerprints
+and 403-blocks the DEFAULT Python `urllib` User-Agent (`Python-urllib/x.y`) BEFORE the request
+ever reaches GHL — proven live 2026-07-19: the 403 body is Cloudflare's own `error code: 1010`
+page (not a GHL JSON error), with `server: cloudflare` + `cf-ray` present and zero GHL response
+headers (no `x-ratelimit-*`, no `x-envoy-upstream-service-time`). The SAME request with `curl`,
+the `requests` Python library (default UA `python-requests/x.y` — what `ghl_client.py` already
+uses), or any explicit non-default `User-Agent` header flips straight to a genuine GHL response.
+
+**Use the canonical path — never improvise raw HTTP for this endpoint:**
+- `contacts send-sms <contact_id> --message "..."` — the CLI command added for this fix; sends
+  directly by contactId (no conversationId lookup required), routed through `ghl_client.post()`
+  (`requests`-backed, immune to the block).
+- `conversations send <conversation_id> --message "..."` — if you already have a conversationId.
+- The Community/Official GHL MCP `send_sms` tool (Tier 1/2 per `36-ghl-mcp-setup`) — also immune,
+  uses its own HTTP client, not bare urllib.
+- If you must use raw HTTP directly, set an explicit `User-Agent` header (e.g. `curl/8.4.0`) —
+  the ONLY thing that matters is that the UA string isn't the bare urllib default; `Accept` /
+  `Accept-Encoding` were proven NOT to matter in the live test.
+
+---
+
 ## TRINITY rule (skill 38 auto-invoke)
 
 Any workflow that contains a conversational node MUST produce all three legs:

@@ -327,6 +327,40 @@ def contacts_remove_tag(ctx, contact_id, tags):
         _handle_error(e)
 
 
+@contacts.command("send-sms")
+@click.argument("contact_id")
+@click.option("--message", required=True, help="Message text")
+@click.pass_context
+def contacts_send_sms(ctx, contact_id, message):
+    """Send an SMS directly to a contact by contactId — no conversationId lookup needed.
+
+    THIS IS THE CANONICAL SMS-SEND PATH. It exists to close the gap that was
+    causing fleet-wide 403s: `conversations send` (below) requires a
+    conversationId, which an agent often doesn't have on hand (e.g. it only
+    has a contactId from a webhook or a contact lookup) — so agents were
+    hand-rolling a one-off `urllib.request` POST to /conversations/messages
+    instead. That bare-urllib call gets 403'd by GHL's Cloudflare edge WAF,
+    which fingerprints and blocks the default "Python-urllib/x.y" User-Agent
+    signature BEFORE the request ever reaches GHL (proven live 2026-07-19:
+    Cloudflare error 1010 in the body, `server: cloudflare` + `cf-ray`
+    present, zero GHL response headers). This command uses api.post(), which
+    is backed by the `requests` library (default UA `python-requests/x.y`) —
+    that UA is NOT on Cloudflare's blocklist here and passes straight through
+    to GHL, exactly like curl does. NEVER hand-roll `urllib.request` against
+    this endpoint; use this command (or the MCP `send_sms` tool) instead.
+    """
+    try:
+        body = {
+            "type": "SMS",
+            "contactId": contact_id,
+            "message": message,
+        }
+        data = api.post("/conversations/messages", data=body)
+        _output(ctx, data, "SMS Sent")
+    except Exception as e:
+        _handle_error(e)
+
+
 # ===========================================================================
 # OPPORTUNITIES
 # ===========================================================================
