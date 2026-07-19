@@ -1,0 +1,4 @@
+VIOLATION: Phase-3 no-pitch prover failed:
+  - AF-SP-PITCH-IN-TEACH: Phase-3 ('teaching') slide 32 names the offer/product 'the called collective'. Phase 3 is NO-PITCH — the q7 offer name(s) are forbidden here and belong only in the Phase-4 pitch.
+  - AF-SP-PRICE-IN-TEACH: Phase-3 ('teaching') slide 32 contains a price token '$1,997'. Phase 3 must teach, not sell — no price/monetary tokens are allowed.
+  - AF-SP-CTA-IN-TEACH: Phase-3 ('teaching') slide 32 contains sale/enroll CTA language 'enroll now'. Phase 3 forbids offer/enroll/scarcity calls-to-action.

@@ -1,0 +1,9 @@
+slides tagged SECTION-HOOK: [5, 12, 25, 61]
+  slide 5: arc hook=False (must be False)
+  slide 12: arc hook=False (must be False)
+  slide 25: arc hook=False (must be False)
+  slide 61: arc hook=False (must be False)
+
+total slides checked: 103
+total mismatches: 0
+RESULT: PASS - zero mismatches

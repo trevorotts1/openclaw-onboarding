@@ -1,0 +1,3 @@
+PROCESS-CERTIFICATE: all 5 declared steps verified (substance_validated + client_reported + attested in order).
+  certificate_sha: a339a5d3f6a71e9d10729c53dbd266302d772040bdf8629145b2a47c633e537a
+  written to: <scratch>/deckrun/gq-iso/delivery/golden-quest-FINAL/PROCESS-CERTIFICATE.json
