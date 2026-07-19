@@ -170,3 +170,53 @@ again. Confirms the battery is a real regression lock, not a tautology.
   `build_bundle` — a caller that never adopts `build_comms_trigger` (i.e.
   every pre-U116 caller) is completely unaffected; this unit adds a new,
   additive mandatory-governance call site, it does not rewire existing ones.
+
+## Hand-verification receipt (2026-07-18, independent build session)
+
+The 2026-07-16 ledger-reconciler cron marked this unit "verified
+(auto-reconciled, needs test-proof confirmation)". An independent build
+session re-verified everything below against CURRENT live `origin/main`
+(ONB `a96999cb`, CC `0964020`) — not the branch tips — and re-derived the
+mutation proofs by hand. All findings confirm the unit as merged and
+conformant; the ledger row is upgraded to hand-verified.
+
+Merge state re-confirmed from git truth: ONB `skill6-v2/U116` (tip
+`cef6c474`) is an ancestor of `origin/main` (`git merge-base
+--is-ancestor`); CC leg merged via PR #201 (merge `3a50923`, CC-leg tip
+`1e65a94`, ripple v6.0.54). All deliverables present on live main.
+
+Re-run on current main (this pass):
+- ONB acceptance battery `tests/unit/u116-comms-audience-trigger-proof.test.py`:
+  16/16 PASS — BINARY (a) 5/5 per-type, (b) standard-recorded, (c)
+  specific-recorded, (d) both refusal lanes, SMS-routing + revert +
+  additive-only regression locks.
+- `persona_for_job.py --self-test` 18/18 PASS (U1 seam intact);
+  `comms_audience_trigger.py --self-test` 6/6 PASS.
+- persona-blend-matcher regression 57/57 PASS; A-U5 scoped-bundle
+  regression 14/14 PASS.
+- ONB CI guard workflow green on main (run 29623294359, success).
+- CC `u116-comms-audience-persist.test.ts` 10/10 PASS (incl. the
+  migration-090-vs-U116 name-collision guard);
+  `u116-comms-audience-chip-render.test.tsx` 10/10 PASS; `tsc --noEmit`
+  clean; full `test:unit` 1752 pass / 5 fail — all 5 pre-existing
+  `getInterviewState` failures on an UNMODIFIED origin/main worktree,
+  zero U116 relation.
+
+Mutation-proof RED/GREEN re-derived (4 mutations, each reverted after,
+both worktrees left clean):
+1. `force_content_task` neutralized in `persona_blend.py` -> 2 tests RED
+   (`test_blog_...`, `test_force_content_task_true_...`) -> restore ->
+   GREEN.
+2. Topic-refusal gate neutralized in `comms_audience_trigger.py` ->
+   `test_unfactored_topic_is_refused_not_silently_written` RED -> restore
+   -> GREEN.
+3. Audience stamping removed -> tests (b)+(c) RED (suite exit=1) ->
+   restore -> GREEN.
+4. `CommsAudienceChip` wiring removed from `MissionQueue.tsx` -> the 2
+   card-level render tests RED while the 8 isolated-component tests stayed
+   green (the two-layer design catches a wiring-only revert) -> restore ->
+   GREEN.
+
+The (e) "OWED" note in the ONB test file above is historical: the CC leg
+(board-card audience chip) LANDED 2026-07-16 via PR #201 and is proven by
+the CC render suite; no gap remains. BINARY (a)-(e): all PASS.
