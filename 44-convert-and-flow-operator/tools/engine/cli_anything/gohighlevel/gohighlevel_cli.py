@@ -1594,43 +1594,74 @@ def social_posts(ctx, limit, skip, post_type):
 @click.option("--text", required=True, help="Post text content")
 @click.option("--media-url", default=None, multiple=True, help="Media URLs (repeatable)")
 @click.option("--schedule", default=None,
-              help="Schedule time (ISO 8601). REQUIRED unless --confirm-publish-now is also "
-                   "passed -- see the fail-closed note below. KNOWN OPEN ISSUE (found live "
-                   "2026-07-19, U88/GK-26): the real API returned 422 'property scheduledAt "
-                   "should not exist' on this location/account -- the correct real body shape "
-                   "for a genuinely non-publishing scheduled/draft post is NOT YET CONFIRMED. "
-                   "Do not assume --schedule alone prevents an immediate live publish until "
-                   "this is verified against a real response with a non-'published' status; "
-                   "tracked as a named follow-up, not silently claimed solved.")
+              help="Schedule time (ISO 8601), sent as the real API's `scheduleDate` field. "
+                   "FIXED (U88/GK-26 re-run, 2026-07-19): the field is `scheduleDate`, NOT "
+                   "`scheduledAt` -- the earlier live attempt sent the wrong name and got a real "
+                   "422 ('property scheduledAt should not exist'). The correct name is sourced "
+                   "from GHL's own published marketplace API docs (create-post body field list) "
+                   "and independently confirmed against a real, working third-party GHL "
+                   "integration app that posts to this same endpoint. Passing --schedule implies "
+                   "--status scheduled unless --status is given explicitly.")
+@click.option("--status", "post_status", default=None,
+              type=click.Choice(["draft", "scheduled", "published"]),
+              help="Explicit lifecycle state for the real API's own `status` field. SOURCED "
+                   "(U88/GK-26 re-run, 2026-07-19): GHL's own marketplace docs list a `status` "
+                   "body field with example value 'draft'; a real, working third-party GHL "
+                   "integration app exposes the same field as a draft/scheduled/published select "
+                   "against this exact endpoint. `--status draft` is the safe, non-publishing, "
+                   "non-schedule-required state -- passing it satisfies the fail-closed gate "
+                   "below without needing --confirm-publish-now or --schedule.")
 @click.option("--post-user-id", envvar="GOHIGHLEVEL_SOCIAL_USER_ID", default=None,
               help="GHL userId the post is authored as (required by the real API). Resolve it "
                    "once via `caf --experimental contacts create ...` -> response.contact.createdBy.sourceId "
                    "(or any existing contact/post's createdBy field) for this integration, then set "
                    "GOHIGHLEVEL_SOCIAL_USER_ID so this flag does not need to be passed every call.")
 @click.option("--confirm-publish-now", is_flag=True, default=False,
-              help="Required to omit --schedule. Without a --schedule, GHL's real API PUBLISHES "
-                   "THE POST IMMEDIATELY AND PUBLICLY on the real connected account -- it does "
-                   "NOT save a draft (confirmed live, 2026-07-19: an unscheduled create-post call "
-                   "went live on a real Facebook page in ~17 seconds, and GHL's own DELETE endpoint "
-                   "for an already-published post returns success:true but does NOT actually retract "
-                   "it -- deleted stays false, status stays published, on repeated re-reads over 5+ "
-                   "minutes). This flag exists so that outcome can never happen silently again.")
+              help="Required to publish immediately with no --status draft and no --schedule. "
+                   "Without one of the three, GHL's real API PUBLISHES THE POST IMMEDIATELY AND "
+                   "PUBLICLY on the real connected account (confirmed live, 2026-07-19: an "
+                   "unscheduled, status-less create-post call went live on a real Facebook page "
+                   "in ~17 seconds, and GHL's own DELETE endpoint for an already-published post "
+                   "returns success:true but does NOT actually retract it -- deleted stays false, "
+                   "status stays published, on repeated re-reads over 5+ minutes). This flag "
+                   "exists so that outcome can never happen silently again.")
 @click.pass_context
-def social_create_post(ctx, account_id, text, media_url, schedule, post_user_id, confirm_publish_now):
+def social_create_post(ctx, account_id, text, media_url, schedule, post_status, post_user_id, confirm_publish_now):
     """Create a social media post.
 
-    FAIL-CLOSED BY DESIGN (see --confirm-publish-now): omitting --schedule used to
-    silently publish immediately with no draft state and no reliable way to undo it.
+    FAIL-CLOSED BY DESIGN (see --confirm-publish-now): omitting --status draft, --schedule,
+    AND --confirm-publish-now used to silently publish immediately with no draft state and
+    no reliable way to undo it. Prefer `--status draft` for a genuinely non-publishing post.
     """
     try:
-        if not schedule and not confirm_publish_now:
+        if post_status == "draft" and schedule:
             raise SystemExit(
-                "REFUSED: no --schedule given. Without one, GHL publishes this post "
-                "IMMEDIATELY AND PUBLICLY on the real connected account -- there is no "
-                "draft state, and GHL's own delete endpoint does not reliably retract an "
-                "already-published post (confirmed live, 2026-07-19). Pass --schedule "
-                "<ISO-8601> for a real draft/scheduled post, or pass --confirm-publish-now "
-                "if you explicitly intend an immediate live publish."
+                "REFUSED: --schedule was given together with --status draft, which is "
+                "contradictory. Use --status scheduled (or omit --status) with --schedule, "
+                "or use --status draft alone with no --schedule."
+            )
+        if post_status == "draft":
+            pass  # inherently safe: no schedule/confirm needed, never publishes.
+        elif schedule:
+            if post_status not in (None, "scheduled"):
+                raise SystemExit(
+                    f"REFUSED: --schedule was given together with --status {post_status!r}, "
+                    "which is contradictory. Use --status scheduled (or omit --status) with "
+                    "--schedule, or use --status draft alone with no --schedule."
+                )
+            post_status = "scheduled"
+        elif confirm_publish_now:
+            pass  # explicit, intentional immediate-publish opt-in (pre-existing behavior).
+        else:
+            raise SystemExit(
+                "REFUSED: none of --status draft, --schedule, or --confirm-publish-now was "
+                "given. Without one of these, GHL publishes this post IMMEDIATELY AND "
+                "PUBLICLY on the real connected account -- there is no draft state by default, "
+                "and GHL's own delete endpoint does not reliably retract an already-published "
+                "post (confirmed live, 2026-07-19). Pass --status draft for a genuine, "
+                "non-publishing draft (recommended), --schedule <ISO-8601> for a scheduled "
+                "post, or --confirm-publish-now if you explicitly intend an immediate live "
+                "publish."
             )
         if not post_user_id:
             raise SystemExit(
@@ -1651,8 +1682,10 @@ def social_create_post(ctx, account_id, text, media_url, schedule, post_user_id,
             "media": [{"url": u, "type": "image"} for u in media_url] if media_url else [],
             "userId": post_user_id,
         }
+        if post_status:
+            body["status"] = post_status
         if schedule:
-            body["scheduledAt"] = schedule
+            body["scheduleDate"] = schedule
         data = api.post(f"/social-media-posting/{_loc(ctx)}/posts", data=body)
         _output(ctx, data, "Post Created")
     except Exception as e:

@@ -19,11 +19,23 @@ never calls the real API by design -- this suite is what closes that blind spot)
      `success:true` / `"Deleted Post"` but did NOT actually retract it --
      re-reading the same post repeatedly over 5+ minutes still showed
      `deleted:false`, `status:"published"`. This is now a fail-closed refusal
-     (--schedule or --confirm-publish-now is required) so it can never happen
-     silently again.
+     (--status draft, --schedule, or --confirm-publish-now is required) so it
+     can never happen silently again.
   3. `POST /social-media-posting/{loc}/posts/list` also 422s on a redundant
      `locationId` key, and requires `limit`/`skip` as NUMBER STRINGS, not
      JSON integers ("property X must be a number string").
+  4. RE-RUN (2026-07-19, same day, U88/GK-26 leg-2 redo): the first fix's own
+     `--schedule` path used the wrong field name (`scheduledAt`) -- the real
+     API 422'd with 'property scheduledAt should not exist'. Sourced research
+     (GHL's own marketplace API docs body-field list, cross-confirmed against
+     a real third-party GHL integration app targeting this same endpoint)
+     found the correct field is `scheduleDate`, AND a dedicated `status` body
+     field (`draft` / `scheduled` / `published`) that is the real, documented
+     mechanism for a genuinely non-publishing draft. `--status draft` is now
+     the recommended safe path -- it satisfies the fail-closed gate on its
+     own, sends no `scheduleDate`, and was independently read back live
+     showing `"status": "draft"` (never published) before being deleted and
+     re-confirmed gone.
 
 Every test here uses mocks only -- NO live CRM is ever contacted (guarded by
 the same socket-level connect guard `test_ecosystem_cli.py` uses).
@@ -205,6 +217,87 @@ class TestSocialCreatePostFailClosed(_PatchedApiBase):
         ], post_return={"id": "post-3"})
         self.assertEqual(result.exit_code, 0, result.output)
         mock_post.assert_called_once()
+
+
+# ── (4): --status draft / fixed --schedule field name — the 2026-07-19 leg-2 redo ─
+
+class TestSocialCreatePostStatusDraft(_PatchedApiBase):
+    """`--status draft` is the sourced, safe, non-publishing path (real API's own
+    `status` field, docs example value `draft`). It must satisfy the fail-closed
+    gate on its own -- no --schedule, no --confirm-publish-now required."""
+
+    def test_status_draft_alone_is_accepted_and_sends_status_draft(self):
+        result, mock_post = self._invoke([
+            "--json", "--location-id", LOC,
+            "social", "create-post",
+            "--account-id", ACCOUNT_ID,
+            "--text", "hello world",
+            "--post-user-id", POST_USER_ID,
+            "--status", "draft",
+        ], post_return={"id": "post-draft-1"})
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_post.assert_called_once()
+        body = mock_post.call_args[1].get("data")
+        self.assertEqual(body.get("status"), "draft")
+        self.assertNotIn("scheduleDate", body, "a draft must not carry a scheduleDate")
+
+    def test_status_draft_does_not_require_schedule_or_confirm(self):
+        result, mock_post = self._invoke([
+            "--location-id", LOC,
+            "social", "create-post",
+            "--account-id", ACCOUNT_ID,
+            "--text", "hello world",
+            "--post-user-id", POST_USER_ID,
+            "--status", "draft",
+        ])
+        self.assertEqual(result.exit_code, 0, result.output)
+        mock_post.assert_called_once()
+
+    def test_schedule_sends_scheduleDate_not_scheduledAt_and_implies_status_scheduled(self):
+        """FIX: the real API 422'd on `scheduledAt` ('property scheduledAt should not
+        exist'). The correct field, sourced from GHL's own docs + a real third-party
+        integration app, is `scheduleDate`."""
+        result, mock_post = self._invoke([
+            "--json", "--location-id", LOC,
+            "social", "create-post",
+            "--account-id", ACCOUNT_ID,
+            "--text", "hello world",
+            "--post-user-id", POST_USER_ID,
+            "--schedule", "2027-01-01T12:00:00Z",
+        ], post_return={"id": "post-sched-1"})
+        self.assertEqual(result.exit_code, 0, result.output)
+        body = mock_post.call_args[1].get("data")
+        self.assertEqual(body.get("scheduleDate"), "2027-01-01T12:00:00Z")
+        self.assertNotIn("scheduledAt", body, "the old, real-API-422ing field name must be gone")
+        self.assertEqual(body.get("status"), "scheduled")
+
+    def test_schedule_with_contradictory_status_is_refused(self):
+        result, mock_post = self._invoke([
+            "--location-id", LOC,
+            "social", "create-post",
+            "--account-id", ACCOUNT_ID,
+            "--text", "hello world",
+            "--post-user-id", POST_USER_ID,
+            "--schedule", "2027-01-01T12:00:00Z",
+            "--status", "draft",
+        ])
+        self.assertNotEqual(result.exit_code, 0,
+                             "--schedule + --status draft is contradictory and must be refused")
+        mock_post.assert_not_called()
+
+    def test_no_status_no_schedule_no_confirm_is_still_refused(self):
+        """The fail-closed gate now has three doors (draft / schedule / confirm) but
+        must still refuse when none of the three is opened."""
+        result, mock_post = self._invoke([
+            "--location-id", LOC,
+            "social", "create-post",
+            "--account-id", ACCOUNT_ID,
+            "--text", "hello world",
+            "--post-user-id", POST_USER_ID,
+        ])
+        self.assertNotEqual(result.exit_code, 0)
+        mock_post.assert_not_called()
+        self.assertIn("REFUSED", result.output + (str(result.exception) or ""))
 
 
 if __name__ == "__main__":

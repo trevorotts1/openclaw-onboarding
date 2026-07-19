@@ -1,0 +1,50 @@
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Fetched Posts",
+  "results": {
+    "posts": [
+      {
+        "_id": "6a5c7e5345087110f27ce839",
+        "locationId": "Mct54Bwi1KlNouGXQcDX",
+        "platform": "google",
+        "deleted": false,
+        "displayDate": "2026-07-19T07:35:47.725Z",
+        "source": "composer",
+        "actionViaMagicLink": "none",
+        "rescheduledViaMagicLink": false,
+        "channel": "public",
+        "parentPostId": "7ffabff9-8c31-4e76-8828-4757618cfa1f",
+        "isCommentSyncing": false,
+        "createdAt": "2026-07-19T07:35:47.726Z",
+        "updatedAt": "2026-07-19T07:35:47.726Z",
+        "__v": 0,
+        "insights": {
+          "like": 0,
+          "share": 0,
+          "comment": 0
+        },
+        "previewLink": null,
+        "accountIds": [
+          "64faa5bff0befc6c98267746_Mct54Bwi1KlNouGXQcDX_136340370119693_page"
+        ],
+        "summary": "U88-GK26-LEG2-REDRAFT-2026-07-19 (THROWAWAY, DRAFT ONLY -- verifying real non-publish draft status, will be deleted after read-back). Not a real campaign post.",
+        "media": [],
+        "status": "draft",
+        "createdBy": "695c24c828a03f10fcbb819e",
+        "type": "post",
+        "ogTagsDetails": {},
+        "user": null,
+        "postApprovalDetails": {
+          "approverUser": null
+        },
+        "gmbPostDetails": {},
+        "tiktokPostDetails": {},
+        "instagramPostDetails": {}
+      }
+    ],
+    "count": 4323
+  },
+  "traceId": "b7463c38-9e8e-45ce-a12d-02f42cdbd08c",
+  "_note": "Trimmed to the ONE record this proof created; original response listed unrelated real business posting history (same convention as 04-leg2-posts-list-after-create.json from the prior pass)."
+}

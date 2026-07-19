@@ -1,0 +1,36 @@
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Fetched Posts",
+  "traceId": "fa3e0fb4-efb9-4c46-948b-ea04799c3486",
+  "draft_post_id": "6a5c7e5345087110f27ce839",
+  "matching_records_found": 0,
+  "top_5_ids_status_only_no_business_content": [
+    {
+      "_id": "6a5c6de164f715d074e3d317",
+      "status": "published",
+      "deleted": false
+    },
+    {
+      "_id": "6a5b78f3791b82e52b9fcb27",
+      "status": "published",
+      "deleted": false
+    },
+    {
+      "_id": "6a5b791feaab96571b666080",
+      "status": "published",
+      "deleted": false
+    },
+    {
+      "_id": "6a5b791feaab96571b66609e",
+      "status": "published",
+      "deleted": false
+    },
+    {
+      "_id": "6a5b79289c355d0e80c5bf25",
+      "status": "published",
+      "deleted": false
+    }
+  ],
+  "_note": "Fresh re-read via caf social posts (a separate GET-style list call from the create/first-read) immediately after the delete call. The draft post 6a5c7e5345087110f27ce839 is COMPLETELY ABSENT from the list (0 matching records) -- unlike the 2026-07-19 published-post incident (06/05 in the prior pass), where the deleted post remained visibly present with deleted:false/status:published across 6 re-reads over 5+ minutes. This delete genuinely worked. Full unrelated business post content omitted from this evidence file (repo is public; only ids/status/deleted retained for the top of the list, same no-client-content convention as the rest of this bundle)."
+}
