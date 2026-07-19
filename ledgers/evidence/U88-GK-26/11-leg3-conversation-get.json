@@ -1,0 +1,24 @@
+{
+  "locationId": "Mct54Bwi1KlNouGXQcDX",
+  "contactId": "sYC4xfNGKbq5udtECTip",
+  "inbox": true,
+  "unreadCount": 0,
+  "type": 1,
+  "deleted": false,
+  "id": "CKqCCQuSecOnb6UlbuoN",
+  "isLastMessageInternalComment": false,
+  "lastMessageType": 2,
+  "lastMessageBody": "U88-GK26-LIVE-PROOF-ACK \u2014 Test message received and acknowledged. This is a synthetic live-proof response from the operator box. No further action needed.",
+  "lastMessageDate": {
+    "seconds": 1784442127,
+    "nanoseconds": 66000000
+  },
+  "lastMessageDirection": "outbound",
+  "messageTypes": [
+    100,
+    2
+  ],
+  "firstUnreadInboundMessageId": null,
+  "firstUnreadInboundTimestamp": null,
+  "traceId": "33b1c1b8-d246-41d6-a7d7-d389897cf212"
+}

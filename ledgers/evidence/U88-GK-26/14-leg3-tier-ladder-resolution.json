@@ -1,0 +1,13 @@
+{
+  "active_workflow": "good-playbook",
+  "active_phase": 4,
+  "enabled_tools": [
+    "book_appointment",
+    "check_availability",
+    "escalate_to_human",
+    "reference_documents",
+    "update_contact",
+    "update_tags"
+  ],
+  "model_tier": "realtime-standard"
+}

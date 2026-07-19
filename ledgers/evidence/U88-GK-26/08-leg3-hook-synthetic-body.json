@@ -1,0 +1,13 @@
+{
+  "channel": "sms",
+  "first_name": "U88LiveProof",
+  "last_name": "Skill6GK26",
+  "phone": "+15555550199",
+  "email": "u88-gk26-liveproof-throwaway@example.invalid",
+  "contact_id": "sYC4xfNGKbq5udtECTip",
+  "location_id": "Mct54Bwi1KlNouGXQcDX",
+  "location_name": "BlackCEO LLC",
+  "subject": "",
+  "message_body": "Hi, can you confirm you received this test message? Reply with the acknowledgement token.",
+  "session_key": "hook:ghl:sms:sYC4xfNGKbq5udtECTip"
+}

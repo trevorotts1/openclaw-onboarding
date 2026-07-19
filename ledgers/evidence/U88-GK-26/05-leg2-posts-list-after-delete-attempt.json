@@ -1,0 +1,61 @@
+{
+  "success": true,
+  "statusCode": 201,
+  "message": "Fetched Posts",
+  "results": {
+    "posts": [
+      {
+        "_id": "6a5c6de164f715d074e3d317",
+        "locationId": "Mct54Bwi1KlNouGXQcDX",
+        "platform": "facebook",
+        "deleted": false,
+        "displayDate": "2026-07-19T06:25:54.242Z",
+        "source": "composer",
+        "actionViaMagicLink": "none",
+        "rescheduledViaMagicLink": false,
+        "channel": "public",
+        "parentPostId": "a3ed7a1e-d78c-4f70-8288-bdfe55aa82ff",
+        "isCommentSyncing": false,
+        "createdAt": "2026-07-19T06:25:37.185Z",
+        "updatedAt": "2026-07-19T06:25:54.244Z",
+        "__v": 0,
+        "accountId": "64faa5bff0befc6c98267746_Mct54Bwi1KlNouGXQcDX_136340370119693_page",
+        "postId": "1376836604539611",
+        "publishedAt": "2026-07-19T06:25:54.242Z",
+        "selectedBestTime": null,
+        "error": null,
+        "insights": {
+          "like": 0,
+          "share": 0,
+          "comment": 0
+        },
+        "previewLink": "https://www.facebook.com/724762579747020/posts/1376836604539611",
+        "accountIds": [
+          "64faa5bff0befc6c98267746_Mct54Bwi1KlNouGXQcDX_136340370119693_page"
+        ],
+        "summary": "U88/GK-26 operator-box live-proof test post (THROWAWAY, DRAFT ONLY, never published) -- Ready to grow your list the smart way? DM us the word GROW and we will send the swipe file straight to your inbox -- or grab the link in the comments if DMs are slow to load for you.",
+        "media": [],
+        "status": "published",
+        "createdBy": "695c24c828a03f10fcbb819e",
+        "type": "post",
+        "tags": [],
+        "ogTagsDetails": {},
+        "user": null,
+        "postApprovalDetails": {
+          "approverUser": null,
+          "approvalStatus": "not_required"
+        },
+        "gmbPostDetails": {
+          "shortenedLinks": null
+        },
+        "tiktokPostDetails": {
+          "shortenedLinks": null
+        },
+        "instagramPostDetails": {}
+      }
+    ],
+    "count": 4322
+  },
+  "traceId": "5074a6c1-391d-4b6b-aa92-cb81d92d5fb8",
+  "_note": "Trimmed to the ONE record this proof created; original response listed unrelated real business posting history."
+}

@@ -1572,7 +1572,15 @@ def social_accounts(ctx):
 def social_posts(ctx, limit, skip, post_type):
     """List social media posts."""
     try:
-        params = {"locationId": _loc(ctx), "limit": limit, "skip": skip}
+        # NOTE (U88/GK-26 live-proof, 2026-07-19): the real GHL `posts/list`
+        # endpoint 422s on two things the original body got wrong, discovered
+        # by a genuine live call (never caught by any fixture/mock test,
+        # since none of them talk to the real API): (1) it rejects a
+        # `locationId` key in the body -- the location is already the URL
+        # path segment; (2) `limit`/`skip` must be NUMBER STRINGS, not JSON
+        # integers ("property X must be a number string"). Fixed here from
+        # the real, reproduced error text.
+        params = {"limit": str(limit), "skip": str(skip)}
         if post_type:
             params["type"] = post_type
         data = api.post(f"/social-media-posting/{_loc(ctx)}/posts/list", data=params)
@@ -1585,18 +1593,64 @@ def social_posts(ctx, limit, skip, post_type):
 @click.option("--account-id", required=True, multiple=True, help="Social account IDs (repeatable)")
 @click.option("--text", required=True, help="Post text content")
 @click.option("--media-url", default=None, multiple=True, help="Media URLs (repeatable)")
-@click.option("--schedule", default=None, help="Schedule time (ISO 8601)")
+@click.option("--schedule", default=None,
+              help="Schedule time (ISO 8601). REQUIRED unless --confirm-publish-now is also "
+                   "passed -- see the fail-closed note below. KNOWN OPEN ISSUE (found live "
+                   "2026-07-19, U88/GK-26): the real API returned 422 'property scheduledAt "
+                   "should not exist' on this location/account -- the correct real body shape "
+                   "for a genuinely non-publishing scheduled/draft post is NOT YET CONFIRMED. "
+                   "Do not assume --schedule alone prevents an immediate live publish until "
+                   "this is verified against a real response with a non-'published' status; "
+                   "tracked as a named follow-up, not silently claimed solved.")
+@click.option("--post-user-id", envvar="GOHIGHLEVEL_SOCIAL_USER_ID", default=None,
+              help="GHL userId the post is authored as (required by the real API). Resolve it "
+                   "once via `caf --experimental contacts create ...` -> response.contact.createdBy.sourceId "
+                   "(or any existing contact/post's createdBy field) for this integration, then set "
+                   "GOHIGHLEVEL_SOCIAL_USER_ID so this flag does not need to be passed every call.")
+@click.option("--confirm-publish-now", is_flag=True, default=False,
+              help="Required to omit --schedule. Without a --schedule, GHL's real API PUBLISHES "
+                   "THE POST IMMEDIATELY AND PUBLICLY on the real connected account -- it does "
+                   "NOT save a draft (confirmed live, 2026-07-19: an unscheduled create-post call "
+                   "went live on a real Facebook page in ~17 seconds, and GHL's own DELETE endpoint "
+                   "for an already-published post returns success:true but does NOT actually retract "
+                   "it -- deleted stays false, status stays published, on repeated re-reads over 5+ "
+                   "minutes). This flag exists so that outcome can never happen silently again.")
 @click.pass_context
-def social_create_post(ctx, account_id, text, media_url, schedule):
-    """Create a social media post."""
+def social_create_post(ctx, account_id, text, media_url, schedule, post_user_id, confirm_publish_now):
+    """Create a social media post.
+
+    FAIL-CLOSED BY DESIGN (see --confirm-publish-now): omitting --schedule used to
+    silently publish immediately with no draft state and no reliable way to undo it.
+    """
     try:
+        if not schedule and not confirm_publish_now:
+            raise SystemExit(
+                "REFUSED: no --schedule given. Without one, GHL publishes this post "
+                "IMMEDIATELY AND PUBLICLY on the real connected account -- there is no "
+                "draft state, and GHL's own delete endpoint does not reliably retract an "
+                "already-published post (confirmed live, 2026-07-19). Pass --schedule "
+                "<ISO-8601> for a real draft/scheduled post, or pass --confirm-publish-now "
+                "if you explicitly intend an immediate live publish."
+            )
+        if not post_user_id:
+            raise SystemExit(
+                "REFUSED: --post-user-id (or GOHIGHLEVEL_SOCIAL_USER_ID) is required -- the "
+                "real GHL API 422s on `userId must be a string` without it. See --help for how "
+                "to resolve it once for this integration."
+            )
+        # NOTE (U88/GK-26 live-proof, 2026-07-19): the real API also 422s on a
+        # `locationId` key in the body (redundant with the URL path segment) and
+        # requires `type` + `media` (empty array is accepted, but the key must be
+        # present) in addition to `userId` above. None of this was reachable by
+        # the prior fixture-only test suite (FixtureAdapters never calls the real
+        # API by design) -- fixed here from the real, reproduced 422 error text.
         body = {
-            "locationId": _loc(ctx),
             "accountIds": list(account_id),
             "summary": text,
+            "type": "post",
+            "media": [{"url": u, "type": "image"} for u in media_url] if media_url else [],
+            "userId": post_user_id,
         }
-        if media_url:
-            body["media"] = [{"url": u, "type": "image"} for u in media_url]
         if schedule:
             body["scheduledAt"] = schedule
         data = api.post(f"/social-media-posting/{_loc(ctx)}/posts", data=body)

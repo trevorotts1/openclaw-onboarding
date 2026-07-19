@@ -1,0 +1,57 @@
+{
+  "messages": {
+    "lastMessageId": "w3gKYA5abk1kLjpbxs3w",
+    "nextPage": false,
+    "messages": [
+      {
+        "id": "qq4kggYtda5goQgLrqfa",
+        "direction": "outbound",
+        "status": "failed",
+        "type": 2,
+        "locationId": "Mct54Bwi1KlNouGXQcDX",
+        "attachments": [],
+        "body": "U88-GK26-LIVE-PROOF-ACK \u2014 Test message received and acknowledged. This is a synthetic live-proof response from the operator box. No further action needed.\nReply Unsubscribe to Unsubscribe\n_____________________________________\nWe truly appreciate all your support BlackCEO LLC & Trevor Otts",
+        "contactId": "sYC4xfNGKbq5udtECTip",
+        "contentType": "text/plain",
+        "conversationId": "CKqCCQuSecOnb6UlbuoN",
+        "dateAdded": "2026-07-19T06:22:06.363Z",
+        "dateUpdated": "2026-07-19T06:22:06.364Z",
+        "source": "app",
+        "from": "BlackCEO LLC",
+        "to": "+15555550199",
+        "error": "Error 21211 - Invalid \"To\" number format. Please check and try again.",
+        "meta": {
+          "marketplace": {
+            "appId": "695c24c828a03f10fcbb819e"
+          }
+        },
+        "messageType": "TYPE_SMS"
+      },
+      {
+        "id": "w3gKYA5abk1kLjpbxs3w",
+        "direction": "inbound",
+        "type": 25,
+        "locationId": "Mct54Bwi1KlNouGXQcDX",
+        "body": "DnD disabled by customer",
+        "contactId": "sYC4xfNGKbq5udtECTip",
+        "conversationId": "CKqCCQuSecOnb6UlbuoN",
+        "dateAdded": "2026-07-19T06:21:59.068Z",
+        "dateUpdated": "2026-07-19T06:21:59.068Z",
+        "from": "+15555550199",
+        "to": "BlackCEO LLC",
+        "activity": {
+          "data": {
+            "channel": [
+              "Call",
+              "SMS"
+            ]
+          },
+          "title": "DND disabled by customer",
+          "type": "contact_dnd_disabled"
+        },
+        "messageType": "TYPE_ACTIVITY_CONTACT"
+      }
+    ]
+  },
+  "traceId": "28f0c424-9813-4eca-ad4a-e8f787ce4b6f"
+}
