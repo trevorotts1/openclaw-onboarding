@@ -69,6 +69,45 @@ REPO_LABELS = {
 # widening that is a separate, out-of-scope decision this fix does not make).
 NON_REPO_LEG_TOKENS = frozenset({"live", "read-only", "n8n", "ghl", "n/a", "na", "doc", "none"})
 
+# A leg tag shape LEG_TAG_RE (ledger_reconciler_core.py, shared with the
+# reconciler) cannot parse AT ALL: a nested-paren "live" tag like
+# "(live (read-only), P1)" / "(live (operator), P0)". LEG_TAG_RE's
+# "[^,)]+" capture (no comma/close-paren before the first comma) breaks on
+# the inner "(read-only)"/"(operator)" -- it stops matching at that inner
+# ")" and then requires a literal "," immediately after, which isn't there
+# (a ")" is instead), so the WHOLE match fails and parse_leg_requirement()
+# returns None. Same disease class as the parenthesized-compound tag
+# COMPOUND_LEG_TAG_RE already exists to catch (a "CC (+ONB)" primary), just
+# with a "live" primary instead of a "CC"/"ONB" one. Deliberately scoped to
+# THIS file only (not a change to the shared LEG_TAG_RE/COMPOUND_LEG_TAG_RE
+# in ledger_reconciler_core.py, which the reconciler's own patch/alarm logic
+# also depends on and this fix does not touch) -- it recognizes ONLY this
+# specific nested-paren "live" shape and confirms it as a genuine
+# zero-repo-leg tag; it does not attempt to parse the "<detail>" itself
+# (read-only/operator are informational only, never independently checked).
+NESTED_LIVE_TAG_RE = re.compile(r"^\s*(?:\[[^\]]*\]\s*)?\(live\s*\([^)]*\)\s*,", re.IGNORECASE)
+
+# Bare (non-compound) non-repo leg tokens this resolver accepts as a
+# single, un-"+"-joined tag -- e.g. "(n8n, P1)". Currently ONLY "n8n".
+# NOT "ghl", even though "(GHL, P1)" is the structurally identical bare-tag
+# shape (e.g. ledger rows U69/U70) and NON_REPO_LEG_TOKENS above already
+# lists "ghl" for the "+"-joined case. This is a DELIBERATE, narrower scope
+# than reusing the full NON_REPO_LEG_TOKENS set here: widening bare-tag
+# recognition to "ghl" would also reclassify U70 from UNKNOWN to DONE as a
+# side effect -- purely because U70's OWN ledger status cell already reads
+# "verified (repo leg; live provisioning owed)" and this tool's existing
+# zero-leg branch trusts a "verified"-prefixed status cell at face value
+# (the same trust model already in production for U91/U96/U97's bare "doc"
+# tag) -- but U70 is one of the Anthology-family units this pass is
+# explicitly required to leave untouched (surface only, never reclassify).
+# "n8n" alone is safe to add: every OTHER bare "(n8n, ...)" row in the
+# ledger (U64/U65/U73/U75) has a non-"verified" status cell (partial/
+# deferred/pending/pending), so it stays UNKNOWN exactly as before this fix
+# -- only U72 (status "verified", explicitly in scope) flips. "GHL"
+# bare-tag support is left unparseable (UNKNOWN, fail-closed, unchanged) on
+# purpose -- not a limitation, a scope boundary.
+BARE_NON_REPO_TOKENS = frozenset({"n8n"})
+
 
 # --------------------------------------------------------------------------
 # Ledger row lookup
@@ -145,6 +184,14 @@ def resolve_required_legs(description):
             f"hint has no consistent grammar across rows and is not independently checked.",
         )
 
+    if NESTED_LIVE_TAG_RE.match(description):
+        return (
+            set(),
+            "zero-leg",
+            "nested-paren live tag (e.g. 'live (read-only)'/'live (operator)') -- "
+            "declares a non-repo (live/evidence-only) unit; no branch/merge to check.",
+        )
+
     tag = parse_leg_requirement(description)
     if tag is None:
         return set(), "unknown", "leg tag does not match the '(<tag>, P#)' convention at all."
@@ -207,7 +254,12 @@ def resolve_required_legs(description):
             f"({sorted(NON_REPO_LEG_TOKENS)}) -- refusing to guess zero-leg or a repo leg.",
         )
 
-    if "live" in tag_l or "read-only" in tag_l or tag_l in ("n/a", "na", "doc", "none"):
+    if (
+        "live" in tag_l
+        or "read-only" in tag_l
+        or tag_l in ("n/a", "na", "doc", "none")
+        or tag_l in BARE_NON_REPO_TOKENS
+    ):
         return set(), "zero-leg", f"leg tag '{tag}' declares a non-repo (live/doc/evidence-only) unit -- no branch/merge to check."
     return set(), "unknown", f"leg tag '{tag}' does not match any known convention (both/ONB/CC/compound/zero-leg)."
 
@@ -276,7 +328,23 @@ def find_own_named_branch(repo_dir, unit_id, prefix="skill6-v2/"):
     suffix variant (same convention as ledger_reconciler_core's
     _any_branch_for_unit -- the char after the id must be non-digit, so
     `skill6-v2/U590` is never mistaken for `skill6-v2/U59`). Returns the
-    matched branch name, or None."""
+    matched branch name, or None.
+
+    `prefix` falsy (None/"") means "this ledger does not use a dedicated
+    own-named-branch convention at all" -- returns None immediately,
+    without even listing branches. This is the fix for a real, empirically
+    confirmed cross-ledger collision: Skill 58's ledger also numbers its
+    units U1..U21, and Skill 6's OWN, unrelated units already occupy
+    `skill6-v2/U1`, `skill6-v2/U12`, `skill6-v2/U14`, `skill6-v2/U21`, etc.
+    Calling this with the skill6-v2/ prefix for a Skill-58 unit id would
+    silently resolve to Skill-6's branch and report ITS merge/tag as if it
+    were Skill 58's own evidence -- confirmed live for U12/U14/U21 (each
+    fell through to `skill6-v2/U12`/`U14`/`U21`, a completely different
+    unit, instead of the real cited PR merge commit). See
+    NO_OWN_BRANCH_PREFIX_LEDGERS in resolve_unit() for which ledgers are
+    entitled to a prefix at all."""
+    if not prefix:
+        return None
     all_branches = list_all_remote_branches(repo_dir)
     exact = f"{prefix}{unit_id}"
     if exact in all_branches:
@@ -305,7 +373,22 @@ def find_own_named_branch(repo_dir, unit_id, prefix="skill6-v2/"):
 # proven to collide, and additionally refuses to silently pick a winner
 # when more than one candidate remains after that exclusion; see
 # token_scan_any_branch()'s multi-hit handling in resolve_leg()).
-FOREIGN_NAMESPACE_PREFIXES = ("skill62/",)
+#
+# `skill6-v2/*` itself is ALSO listed here -- the same collision class in
+# the OPPOSITE direction: a second, unrelated ledger (Skill 58's) numbers
+# its own units U1..U21 too, and Skill 6's real branches already occupy
+# `skill6-v2/U1`, `skill6-v2/U12`, `skill6-v2/U14`, `skill6-v2/U21`, etc.
+# Confirmed live: without this exclusion, Skill 58's U21 (genuinely
+# `pending`/NOT STARTED, no repo work at all) would token-scan-match
+# `skill6-v2/U21` -- a completely different, already-merged Skill-6 unit --
+# and falsely resolve to git-DONE. This is always safe to exclude: any
+# ledger that GENUINELY uses the `skill6-v2/<id>` convention (only Skill 6's
+# own ledger does, see NO_OWN_BRANCH_PREFIX_LEDGERS in resolve_unit()) already
+# finds its own branch via find_own_named_branch()'s step-1 own-branch check
+# before token-scan ever runs -- token-scan step 3 explicitly skips the
+# already-found own_branch, so it never legitimately needs to reach back
+# into this namespace for a DIFFERENT branch.
+FOREIGN_NAMESPACE_PREFIXES = ("skill62/", "skill6-v2/")
 
 
 def token_scan_any_branch(repo_dir, unit_id):
@@ -444,6 +527,11 @@ def resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, own_row_text, prefi
         own_branch_note = (
             f"{repo_label}: own-named branch `{own_branch}` (tip `{tip[:8]}`) EXISTS but is "
             f"NOT an ancestor of `origin/main` -- unmerged."
+        )
+    elif not prefix:
+        own_branch_note = (
+            f"{repo_label}: this ledger does not use a dedicated own-named-branch convention "
+            f"(no prefix configured for it) -- resolving via cross-reference/token-scan only."
         )
     else:
         own_branch_note = f"{repo_label}: no branch named `{prefix}{unit_id}` (exact or disambiguated suffix) exists."
@@ -843,6 +931,39 @@ def _no_owed_legs():
     return {"owed_non_repo_components": [], "live_leg_owed": False, "completion_state": None}
 
 
+# Ledger files whose own unit-numbering is a SEPARATE, unrelated campaign
+# from Skill 6's kanban ledger -- the same class of collision
+# FOREIGN_NAMESPACE_PREFIXES already guards against at the branch-name level
+# (skill62/*), just discovered here one layer up, at the ledger-ROW level.
+# resolve_leg()'s own-named-branch step (default prefix "skill6-v2/") is
+# SKIPPED ENTIRELY for any ledger file listed here, because passing that
+# prefix to one of THESE ledgers' rows is a real, empirically confirmed bug,
+# not a hypothetical: it silently resolved Skill 58's U12/U14/U21 against
+# Skill 6's OWN, unrelated `skill6-v2/U12`/`U14`/`U21` branches (real,
+# already-merged Skill-6 units, completely different work) instead of the
+# real S58 PR merge commits already cited in those rows' own prose -- U21
+# (genuinely `pending`/NOT STARTED) came back a false git-DONE this way.
+# Skill 58's units ship on independently-named branches
+# (`feat/podbean-publish-proxy-s58-u14`, PR-cited merge SHAs quoted directly
+# in the row's own prose) -- cross-reference/token-scan (both already
+# ledger-agnostic) still resolve them correctly without this step.
+#
+# Deliberately a BLOCKLIST, not an allowlist: every OTHER ledger file --
+# including any future one nobody has reviewed yet, AND any test fixture
+# that deliberately emulates the skill6-v2/ convention under a different
+# filename (see tests/unit/ledger-truth-gate.test.py's
+# FalseClaimStillRejectedElsewhere, which builds a synthetic
+# "fixture-kanban-style.md" ledger specifically to exercise this exact
+# own-branch-unmerged path) -- keeps today's existing default ("skill6-v2/")
+# completely unchanged. An allowlist keyed to the one real skill6 filename
+# would silently break every such fixture/future ledger; a blocklist naming
+# only the ONE file with a proven, empirical collision does not.
+NO_OWN_BRANCH_PREFIX_LEDGERS = frozenset({
+    "skill58-podbean-proxy-2026-07-16.md",
+})
+DEFAULT_OWN_BRANCH_PREFIX = "skill6-v2/"
+
+
 def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
     row_path, row_text = find_ledger_row(ledger_paths, unit_id)
     if row_text is None:
@@ -881,12 +1002,17 @@ def resolve_unit(unit_id, onb_dir, cc_dir, ledger_paths, skip_ci=False):
             "ledger_status_cell": ledger_status_cell, **_no_owed_legs(),
         }
 
+    own_branch_prefix = (
+        None if (row_path and Path(row_path).name in NO_OWN_BRANCH_PREFIX_LEDGERS)
+        else DEFAULT_OWN_BRANCH_PREFIX
+    )
+
     repo_dirs = {"onb": onb_dir, "cc": cc_dir}
     leg_results = {}
     for leg in sorted(required_legs):
         repo_dir = repo_dirs[leg]
         repo_label = REPO_LABELS[leg]
-        leg_result = resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text)
+        leg_result = resolve_leg(repo_dir, repo_label, unit_id, ledger_paths, row_text, prefix=own_branch_prefix)
         if not skip_ci:
             # DEFECT-1 FIX: check CI on the leg's OWN head sha -- the commit
             # CI actually ran on -- never leg_result["raw"]["merge_sha"] (the
