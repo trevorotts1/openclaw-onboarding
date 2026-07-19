@@ -1,5 +1,32 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.13] - 2026-07-19 — `contacts send-sms`: canonical SMS-send path, closes the bare-urllib Cloudflare 403 gap
+
+### Fixed
+- **Root-caused a fleet-wide recurring SMS-send failure and closed the gap that caused it.**
+  Agents sending GHL SMS via a hand-rolled Python `urllib.request` POST to
+  `/conversations/messages` got a 403, then fell back to curl/MCP which worked — proven live
+  (2026-07-19, this box): the 403 is Cloudflare's OWN edge WAF fingerprinting and blocking the
+  default `Python-urllib/x.y` User-Agent BEFORE the request ever reaches GHL. Captured evidence:
+  body is Cloudflare's literal `error code: 1010` block page (not GHL JSON), `server: cloudflare`
+  + `cf-ray` present, zero GHL response headers. The SAME request with `curl`'s default UA, the
+  `requests` library's default UA (`python-requests/x.y` — what `ghl_client.py` already uses), or
+  ANY explicit non-default `User-Agent` flips it straight to a genuine GHL response
+  (`x-ratelimit-*` / `x-envoy-upstream-service-time` headers present). `Accept`/`Accept-Encoding`
+  were tested and proven NOT to matter.
+- Root gap: the CLI had no contactId-based send — `conversations send` requires a
+  `conversationId`, which an agent often doesn't have on hand, so it improvised raw HTTP instead.
+  Added `contacts send-sms <contact_id> --message "..."`, routed through `ghl_client.post()`
+  (`requests`-backed, immune to the block, already gated by the existing write safety gate —
+  location whitelist + approval token, same as every other write in this CLI).
+  Live-verified via `CAF_DRY_RUN=true` (correct method/URL/body, no network call executed).
+- Added SMS-send doctrine to `SKILL.md` ("SMS / conversation sends — NEVER hand-roll bare
+  urllib") and to the fleet-wide `AGENTS.md` ("GHL SMS / Conversation Send Doctrine").
+- Full diagnostic evidence (redacted, no client data): captured 403 bodies/headers for bare
+  urllib (default UA and literal `Python-urllib/3.13` UA), 400 GHL-level responses for
+  curl-UA/browser-UA urllib, native curl, and the `requests` library — all against a safe,
+  intentionally-nonexistent `contactId` (never a real recipient).
+
 ## [1.3.12] - 2026-07-19 — U88/GK-26 leg-2 redo: `--status draft` + `scheduleDate` field-name fix
 
 ### Fixed

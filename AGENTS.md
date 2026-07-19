@@ -1175,4 +1175,24 @@ per request.
 
 ---
 
-*Document version: 2026-03-13*
+## GHL SMS / Conversation Send Doctrine — NEVER hand-roll bare urllib (proven live 2026-07-19)
+
+To send SMS/GHL messages, use the canonical helper / MCP `send_sms` tool — NEVER hand-roll a bare
+Python `urllib` POST to `/conversations/messages`. GHL's Cloudflare edge returns a false 403 to
+default library User-Agents (Python `urllib`'s default `Python-urllib/x.y` signature is
+fingerprinted and blocked by Cloudflare's WAF BEFORE the request reaches GHL — the 403 body is
+Cloudflare's own `error code: 1010` page, not a GHL error, with `server: cloudflare` + `cf-ray`
+present and zero GHL response headers). If you must use raw HTTP, set an explicit `User-Agent`
+header (e.g. `curl/8.4.0`) — that single change flips the same request straight through to a
+genuine GHL response. Canonical paths, in order of preference:
+1. Skill 44 CLI: `contacts send-sms <contact_id> --message "..."` (sends by contactId directly,
+   no conversationId lookup) or `conversations send <conversation_id> --message "..."`. Both are
+   backed by `requests` (default UA `python-requests/x.y`), which is NOT on Cloudflare's
+   blocklist here and passes through exactly like curl.
+2. GHL MCP `send_sms` tool (Tier 1 official / Tier 2 community per `36-ghl-mcp-setup`) — uses its
+   own HTTP client, also immune.
+3. `curl` directly, if neither of the above is available.
+
+---
+
+*Document version: 2026-07-19*
