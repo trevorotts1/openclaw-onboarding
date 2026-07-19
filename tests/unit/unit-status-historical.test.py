@@ -1043,5 +1043,159 @@ class AllModeAggregate(unittest.TestCase):
             self.assertEqual(usc.aggregate_exit_code(agg["counts"]), 1)
 
 
+class NestedLiveTagAndBareN8nFix(unittest.TestCase):
+    """MUTATION PROOF -- two more leg-tag shapes resolve_required_legs()
+    could not classify at all, found auditing the 17 UNKNOWN units in the
+    2026-07-18 aggregate run (`UNITS CHECKED: 117 -- DONE: 91,
+    DONE-LIVE-OWED: 9, NOT-DONE: 0, UNKNOWN: 17`):
+
+    (a) NESTED-PAREN live tags -- "(live (read-only), P1)" / "(live
+        (operator), P0)". LEG_TAG_RE's "[^,)]+" capture (no comma/close-
+        paren before the first comma) breaks on the INNER ")" of
+        "(read-only)"/"(operator)"; parse_leg_requirement() returns None,
+        so resolve_required_legs() fell all the way to mode="unknown" --
+        never even reaching the "live" substring check that already
+        existed for a bare, non-nested "(live, ...)" tag.
+    (b) The BARE (non-"+"-joined) non-repo token "n8n" -- parse_leg_
+        requirement() DOES return the tag fine here (no nested parens),
+        but the bare-tag classification branch only recognized "live"/
+        "read-only"/"n/a"/"na"/"doc"/"none" -- "n8n" was previously
+        accepted ONLY inside a "+"-joined compound (NON_REPO_LEG_TOKENS,
+        see CompoundLegTagFix above), never as a standalone bare tag, so a
+        lone "(n8n, ...)" row also fell to mode="unknown".
+
+    Every description string below is copied VERBATIM from the real row in
+    ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md for the named
+    unit (same discipline as CompoundLegTagFix) -- U61/U81/U76/U66/U78 (the
+    nested-live shape) and U72 (the bare-n8n shape) are 6 of the 7 units
+    this fix flips from UNKNOWN to DONE (the 7th, U36, needed only a
+    ledger status-cell correction citing merged PR #635, not a parser
+    change -- see this same commit's ledger diff).
+
+    All offline: resolve_required_legs()/resolve_unit() are pure functions
+    of the description/ledger-row strings for the zero-leg path (it never
+    calls resolve_leg(), so no repo clone or network is needed here)."""
+
+    REAL_NESTED_LIVE_UNITS = {
+        "U61": "[JM/U64] (live (read-only), P1) Gateway spikes S1–S3 (model/effort override; "
+               "agent addressing; usage frames) — operator-box, read-only, evidence files",
+        "U81": "[GK-19] (live (operator), P0) Prove the Social Media Planner UNBROKEN against the "
+               "graphics handoff end-to-end — or capture the exact break",
+        "U76": "[GK-14] (live (read-only), P2) Instance-wide n8n/GHL audit read IN FULL + 100% "
+               "finding disposition + adjacent-engine GHL surfaces",
+        "U66": "[GK-04] (live (operator), P1) Repair the n8n management-API key wiring (kills the "
+               "\"manual import\" bottleneck); no-op write round-trip proof",
+        "U78": "[GK-16] (live (read-only), P1) Anthology live triage T1–T3 on the operator's own "
+               "box (version / drift signal / seeded+engine state)",
+    }
+
+    REAL_BARE_N8N_UNIT_ID = "U72"
+    REAL_BARE_N8N_DESC = (
+        "[GK-10] (n8n, P1) Remove the leftover live gate-test workflow (TEMP — its own name "
+        "demands deletion at cutover)"
+    )
+
+    def test_naive_leg_tag_re_cannot_parse_nested_live_tags_precondition(self):
+        """PRECONDITION / proves the bug was real: parse_leg_requirement()
+        (LEG_TAG_RE, UNCHANGED by this fix -- shared with the reconciler)
+        must still return None on every real nested-paren live description
+        -- confirming NESTED_LIVE_TAG_RE is doing real, necessary work, not
+        papering over an already-working path."""
+        for uid, desc in self.REAL_NESTED_LIVE_UNITS.items():
+            self.assertIsNone(
+                usc.parse_leg_requirement(desc),
+                f"PRECONDITION FAILED for {uid}: LEG_TAG_RE now parses the nested-paren tag "
+                f"directly -- either upstream regex changed or this precondition is stale.",
+            )
+
+    def test_nested_live_tags_resolve_zero_leg_not_unknown(self):
+        """FAILS on pre-fix code: mode == 'unknown' (leg tag unparseable),
+        legs == set() with an 'unparseable' note -- resolve_unit() would
+        print UNKNOWN regardless of the ledger's own verified status.
+        PASSES on shipped code: mode == 'zero-leg'."""
+        for uid, desc in self.REAL_NESTED_LIVE_UNITS.items():
+            legs, mode, note = usc.resolve_required_legs(desc)
+            self.assertEqual(mode, "zero-leg", f"{uid}: expected mode 'zero-leg', got {mode!r} ({note})")
+            self.assertEqual(legs, set(), f"{uid}: zero-leg unit must require no repo legs")
+            self.assertNotEqual(mode, "unknown", f"REGRESSION for {uid}: still falls to unknown.")
+
+    def test_bare_n8n_tag_resolves_zero_leg_not_unknown(self):
+        """Same proof, for the bare (not '+'-joined) 'n8n' tag shape --
+        FAILS on pre-fix code (mode='unknown'), PASSES on shipped code."""
+        legs, mode, note = usc.resolve_required_legs(self.REAL_BARE_N8N_DESC)
+        self.assertEqual(mode, "zero-leg", f"expected mode 'zero-leg', got {mode!r} ({note})")
+        self.assertEqual(legs, set())
+
+    def test_bare_ghl_tag_deliberately_still_unknown_scope_boundary(self):
+        """NOT a bug left unfixed -- a DELIBERATE scope boundary (see
+        BARE_NON_REPO_TOKENS's docstring in unit_status_core.py): widening
+        bare-tag recognition to 'ghl' would ALSO flip U70 (an
+        Anthology-family unit explicitly out of scope for this pass) from
+        UNKNOWN to DONE as an unreviewed side effect -- U70's own ledger
+        status cell already reads 'verified (repo leg; live provisioning
+        owed)', so it would pass the existing zero-leg 'verified' check
+        immediately. This test locks that boundary in place: a bare
+        '(GHL, ...)' tag must keep resolving 'unknown' until a human
+        explicitly widens it (a separate, future, reviewed change) --
+        regression here means the boundary was silently removed."""
+        legs, mode, note = usc.resolve_required_legs(
+            "[GK-08] (GHL, P1) Provision the declared-but-unprovisioned `chapter_rewrite1`/"
+            "`chapter_rewrite2` fields via the engine's own path"
+        )
+        self.assertEqual(
+            mode, "unknown",
+            f"SCOPE-BOUNDARY REGRESSION: bare GHL now resolves {mode!r} instead of 'unknown' -- "
+            f"if widening this is intentional, U70's exclusion reasoning must be revisited too.",
+        )
+
+    def test_seven_target_units_end_to_end_resolve_done(self):
+        """End-to-end (offline, skip_ci, fixture ledger -- zero-leg mode
+        never calls resolve_leg() so no repo clone is needed): all 7 real
+        units this fix targets (6 via nested-live, 1 via bare-n8n) resolve
+        DONE given their real 'verified' ledger status. FAILS on pre-fix
+        code: every one prints UNKNOWN regardless of status (mode=unknown
+        short-circuits resolve_unit() before the status cell is even
+        read)."""
+        target_units = dict(self.REAL_NESTED_LIVE_UNITS)
+        target_units[self.REAL_BARE_N8N_UNIT_ID] = self.REAL_BARE_N8N_DESC
+        rows = [f"| {uid} | {desc} | label | verified | evidence | ts |" for uid, desc in target_units.items()]
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = Path(td) / "fixture-ledger.md"
+            ledger_path.write_text("\n".join(rows) + "\n")
+            for uid in target_units:
+                result = usc.resolve_unit(uid, "/nonexistent-onb", "/nonexistent-cc", [str(ledger_path)], skip_ci=True)
+                self.assertEqual(
+                    result["verdict"], "DONE",
+                    f"REGRESSION: {uid} must resolve DONE -- got {result['verdict']}: {result}",
+                )
+
+    def test_deliberately_incomplete_fixture_row_still_unknown_no_false_upgrade(self):
+        """GUARD AGAINST OVER-CORRECTION -- the mutation proof's other
+        required direction: a genuinely-incomplete unit sharing the SAME
+        newly-recognized tag shapes must NOT be silently upgraded. Two
+        fixture rows, both zero-leg-tagged but NOT ledger-'verified':
+        (1) a nested-live tag with status 'pending', (2) a bare-n8n tag
+        with status 'in-progress'. Both must resolve UNKNOWN, never DONE --
+        proving this fix only widens WHICH TAGS are recognized as
+        zero-leg, never WHETHER a zero-leg unit is trusted (that gate --
+        ledger status cell startswith 'verified' -- is pre-existing,
+        untouched logic). NOT-DONE is structurally unreachable for a
+        zero-leg unit (no repo leg exists to be unsatisfied), so UNKNOWN
+        is the correct, and only possible, fail-closed outcome here."""
+        with tempfile.TemporaryDirectory() as td:
+            ledger_path = Path(td) / "fixture-ledger.md"
+            ledger_path.write_text(
+                "| U999201 | [X] (live (read-only), P1) incomplete nested-live fixture | label | pending | evidence | ts |\n"
+                "| U999202 | [X] (n8n, P1) incomplete bare-n8n fixture | label | in-progress | evidence | ts |\n"
+            )
+            for uid in ("U999201", "U999202"):
+                result = usc.resolve_unit(uid, "/nonexistent-onb", "/nonexistent-cc", [str(ledger_path)], skip_ci=True)
+                self.assertEqual(
+                    result["verdict"], "UNKNOWN",
+                    f"REGRESSION: {uid} (incomplete, non-'verified' status) must NOT be upgraded to "
+                    f"DONE just because its tag became parseable -- got {result['verdict']}: {result}",
+                )
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
