@@ -1150,6 +1150,128 @@ preclear_2026_7_1() {
   return 0
 }
 # <<< TRAP1-PRECLEAR-END
+
+# ----------------------------------------------------------
+# SELF-HEAL: weekly-cron updater URL
+# ----------------------------------------------------------
+# THE BUG THIS REPAIRS
+# Two updaters live in this repo. THIS one (repo root update-skills.sh) is the
+# canonical one: it carries the wiring, state-machine, A3 content-gate and
+# manifest/stamp pipeline. scripts/update-skills.sh is a much smaller legacy
+# script that only copies skills.
+#
+# Every box runs $HOME/.openclaw/skills/.update-restart-if-needed from a Sunday
+# 03:00 cron. scripts/setup-weekly-update.sh was corrected on 2026-06-27
+# (6a881c8a) to install the ROOT url, but NOTHING rewrote the copy already on
+# disk -- so every box provisioned BEFORE that date runs the LEGACY updater
+# every week, forever. This function repoints those boxes.
+#
+# HISTORY -- READ THIS BEFORE DELETING THE SELF-HEAL (updated at the PR #670 /
+# PR #671 merge, so the comment does not outlive the facts it describes)
+# When #670 was written, scripts/update-skills.sh was VERSION-GATED: a skill
+# whose local skill-version.txt matched the staged string was SKIPPED without
+# its contents ever being examined, shared-utils/ and universal-sops/ were not
+# referenced anywhere in the file, and the version stamp was written ANYWAY.
+# It therefore stamped boxes as current that were not, and that poisoned stamp
+# then made THIS script's "Already up to date" gate exit 0 without copying
+# anything -- a fleet roll read a matching stamp and silently no-oped while
+# reporting success.
+#
+# BOTH halves of that are now fixed, in the same merge as this comment:
+#   * scripts/update-skills.sh now decides per skill on CONTENT, delivers
+#     shared-utils/ and universal-sops/, and WITHHOLDS the stamp (exit 1) when
+#     a source file is still absent after the copy.
+#   * this script's same-version non-interactive branch no longer blind-exits;
+#     it runs a CONTENT RECHECK before deciding (see _SAME_VERSION_RECHECK).
+# So a poisoned stamp is no longer produced, and an existing one no longer
+# blinds this script. The self-heal is still correct and still wanted -- the
+# fleet should converge on ONE updater, the one with the gates -- but it is now
+# a convergence measure, not a rescue from an active time bomb. Boxes still on
+# the legacy URL re-fetch that file from main on every run, so they pick up the
+# content-based behaviour immediately regardless of whether this heal fires.
+#
+# PLACEMENT IS LOAD-BEARING
+# The call site sits BEFORE the UPDATE-PENDING prompt and BEFORE the version
+# gate -- both of which `exit 0`. A self-heal placed after either one would
+# never execute on precisely the boxes that are already poisoned, i.e. the only
+# boxes it exists to rescue. Do not move this call below the version gate.
+#
+# SAFETY
+# The edit is surgical (the URL line only), always takes a timestamped backup
+# first, and rewrites through a temp file + `cat >` so the original inode and
+# its 0700 permissions are preserved. It never CREATES the cron script and
+# never touches crontab -- installing a cron remains setup-weekly-update.sh's
+# job. On a box that is already correct it is a silent no-op.
+#
+# PATH NOTE: this targets $HOME/.openclaw/skills explicitly rather than
+# $SKILLS_DIR. discover_skills_dir() resolves to /data/.openclaw/skills on VPS
+# platforms, but setup-weekly-update.sh hardcodes the $HOME path when it writes
+# the cron script -- so $HOME is where the file to repair actually lives. Both
+# are checked anyway (deduplicated) in case a box differs.
+# ----------------------------------------------------------
+CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
+LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"
+
+heal_one_weekly_cron_updater() {
+  local cron_script="$1"
+
+  # Never CREATE the cron script here -- only repair one already on disk.
+  [ -f "$cron_script" ] || return 0
+
+  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- already points at the root updater: $cron_script"
+    return 0
+  fi
+
+  echo "  [cron-heal] LEGACY updater URL detected in $cron_script"
+
+  local backup="${cron_script}.bak.$(date +%Y%m%d-%H%M%S)"
+  if ! cp -p "$cron_script" "$backup" 2>/dev/null; then
+    echo "  [cron-heal] WARN: could not write a backup -- refusing to edit $cron_script"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/cron-heal-XXXXXX" 2>/dev/null)" || {
+    echo "  [cron-heal] WARN: mktemp failed -- leaving $cron_script untouched"
+    return 0
+  }
+
+  # Portable in-place edit: BSD sed (-i '') and GNU sed (-i) disagree on the
+  # backup-suffix argument, so write to a temp file and copy it back instead of
+  # using sed -i at all. `cat > "$cron_script"` (not mv) preserves the original
+  # inode, owner and 0700 mode -- an mv would install the temp file's 0600.
+  if sed "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" "$cron_script" > "$tmp" 2>/dev/null \
+     && [ -s "$tmp" ] \
+     && grep -q "$CANONICAL_UPDATER_URL" "$tmp" \
+     && ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$tmp"; then
+    cat "$tmp" > "$cron_script"
+    rm -f "$tmp"
+    echo "  [cron-heal] REPOINTED legacy -> root updater"
+    echo "               script: $cron_script"
+    echo "               backup: $backup"
+  else
+    rm -f "$tmp"
+    echo "  [cron-heal] WARN: rewrite produced unexpected content -- original left untouched"
+  fi
+}
+
+heal_weekly_cron_updater() {
+  local seen=""
+  local candidate
+  for candidate in "$HOME/.openclaw/skills/.update-restart-if-needed" \
+                   "${SKILLS_DIR:-}/.update-restart-if-needed"; do
+    case "$candidate" in
+      /.update-restart-if-needed|"") continue ;;   # empty SKILLS_DIR guard
+    esac
+    case " $seen " in
+      *" $candidate "*) continue ;;               # already healed this path
+    esac
+    seen="$seen $candidate"
+    heal_one_weekly_cron_updater "$candidate"
+  done
+}
+
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
@@ -1241,6 +1363,18 @@ main() {
   SKILLS_DIR=$(discover_skills_dir)
   export SKILLS_DIR
   echo "  📂 Skills directory: $SKILLS_DIR"
+
+  # MERGE NOTE (PR #670 + PR #671): both of these landed at this exact spot,
+  # independently, and for the SAME structural reason — every exit path below
+  # this line is an `exit 0`, so anything that must reach an already-poisoned
+  # or already-stamped box has to run here. Both are kept. Neither may be moved
+  # below the UPDATE-PENDING prompt or the version gate.
+
+  # SELF-HEAL the weekly cron's updater URL. See heal_weekly_cron_updater above
+  # for the full rationale. This MUST stay above the UPDATE-PENDING prompt and
+  # the version gate below -- both of them `exit 0`, and a box already poisoned
+  # by the legacy updater is exactly the box that hits those early exits.
+  heal_weekly_cron_updater
 
   # Reap the dead version-string manifest BEFORE any exit path below (the
   # pending-flag decline at "Update cancelled" and the already-up-to-date

@@ -149,7 +149,7 @@ If the client says ANY of the following at ANY time — today, tomorrow, next we
 
 Then IMMEDIATELY:
 1. Verify department folders exist on disk (check ~/.openclaw/workspaces/command-center/, ~/.openclaw/workspace/departments/, ~/Downloads/openclaw-master-files/)
-2. If folders exist: download and install Skill 32 from the onboarding repo (curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh | bash) then follow Skill 32 INSTALL.md
+2. If folders exist: download and install Skill 32 from the onboarding repo (curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash) then follow Skill 32 INSTALL.md — use the REPO-ROOT `update-skills.sh`, NOT `scripts/update-skills.sh`; the root script is the canonical updater and the only one that carries the wiring, state machine, A3 content-gate and manifest/stamp pipeline, so it is the only one that content-verifies what it installed
 3. If folders do NOT exist: ask "Where did you save your department folders?" and use their answer
 4. Do NOT wait for a scheduled check. Do NOT say "I'll look into it later." Install NOW.
 
