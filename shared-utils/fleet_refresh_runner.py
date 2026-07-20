@@ -1283,6 +1283,267 @@ def step_persona_grounding_health(
     return result
 
 
+# ── Provisioning-completeness gate (false-success closer) ─────────────────────
+#
+# run_box marks a box "ok" (PASS) when NO step string contains "failed". Before
+# this gate the substantive per-box checks were CC serving (build/restart+duck),
+# SOP coverage (embedding-health, Index-3), and the loaded-marker verify. NONE
+# verified that provisioning actually LANDED: a box could carry the full SOP
+# corpus yet ship PLACEHOLDER branding, a STALE/MISSING onboarding version stamp,
+# an EMPTY departments.json, and ZERO personas — and still report PASS. This step
+# closes that hole. It is GATING and reads LIVE box state through the SAME path
+# authority every consumer uses (get_openclaw_paths via _load_paths), honoring
+# the fixture redirect (FLEET_REFRESH_ROOT) so it is testable without a box.
+
+# Literal placeholder company names shipped by the provisioning templates —
+# rejected SPECIFICALLY so a legitimately-named client is never falsely failed:
+#   "Your Company"       — Command Center config/company-config.json default
+#                          (blackceo-command-center) + Skill-37 closeout defaults
+#   "Your Company Name"  — 23-ai-workforce-blueprint/scripts/workforce-config.json
+#                          non-interactive build template (company_name)
+# Compared case-insensitively after trimming. An empty/whitespace name is also a
+# FAIL (the unprovisioned state) but is reported distinctly from a placeholder.
+PLACEHOLDER_COMPANY_NAMES = frozenset({"your company", "your company name"})
+
+# The four checks that GATE the verdict. SOP + CC-SERVE are REPORTED in the
+# breakdown but stay gated where they already were (embedding-health / build-cc)
+# — this ADDS verification, it never removes a gate.
+_PROVISIONING_HARD_CHECKS = ("VERSION", "BRANDING", "DEPARTMENTS", "PERSONAS")
+
+
+def _prov_read_json(path) -> Optional[Any]:
+    """Read+parse a JSON file. Returns None on any absence/parse error."""
+    try:
+        if path and Path(path).is_file():
+            return json.loads(Path(path).read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return None
+
+
+def _resolve_provisioning_paths(paths: dict) -> dict:
+    """
+    Resolve the on-box provisioning artifacts the completeness gate reads.
+
+    Works in BOTH modes:
+      * real mode    — `paths` came from get_openclaw_paths(), which already
+        carries departments_json / company_config / coaching_personas / build_state.
+      * fixture mode — _load_paths() built a MINIMAL synthetic dict (via
+        FLEET_REFRESH_ROOT); those artifact keys are ABSENT, so we derive them
+        from the base roots exactly as detect_platform does.
+
+    Never raises. Returned Paths are not guaranteed to exist on disk.
+    """
+    workspace = Path(paths.get("workspace", "/nonexistent"))
+    company_root = Path(paths.get("company_root") or (workspace / "zero-human-company"))
+
+    # company_dir: the active <slug>/ under company_root. Prefer an explicit key;
+    # else pick the first child dir that actually carries a company-config.json or
+    # departments.json (mirrors resolve_active_company_dir's "real workforce" pick).
+    company_dir = paths.get("company_dir")
+    if company_dir:
+        company_dir = Path(company_dir)
+    else:
+        company_dir = None
+        try:
+            if company_root.is_dir():
+                for child in sorted(company_root.iterdir()):
+                    if child.is_dir() and (
+                        (child / "company-config.json").is_file()
+                        or (child / "departments.json").is_file()
+                    ):
+                        company_dir = child
+                        break
+        except OSError:
+            company_dir = None
+
+    def _pick(key: str, rel: str) -> Path:
+        v = paths.get(key)
+        if v:
+            return Path(v)
+        return (company_dir / rel) if company_dir else (workspace / rel)
+
+    coaching_personas = Path(
+        paths.get("coaching_personas") or (workspace / "data" / "coaching-personas")
+    )
+    cc_dir = paths.get("cc_dir")
+    cc_dir = Path(cc_dir) if cc_dir else None
+
+    return {
+        "company_dir":        company_dir,
+        "departments_json":   _pick("departments_json", "departments.json"),
+        "zhc_company_config": _pick("company_config", "company-config.json"),
+        "coaching_personas":  coaching_personas,
+        "personas_dir":       coaching_personas / "personas",
+        "build_state":        Path(paths.get("build_state") or (workspace / ".workforce-build-state.json")),
+        "cc_dir":             cc_dir,
+        "cc_company_config":  (cc_dir / "config" / "company-config.json") if cc_dir else None,
+        "cc_logo_config":     (cc_dir / "public" / "logo-config.json") if cc_dir else None,
+    }
+
+
+def _resolve_company_name(pp: dict) -> tuple[str, str]:
+    """
+    Resolve the box's company name from the strongest available live source.
+    Returns (name, source_label); name is "" when NO source yields one.
+
+    Order (first non-empty wins) — a real box has a real name in at least one:
+      1. Command Center config/company-config.json  -> companyName
+      2. ZHC <company_dir>/company-config.json       -> companyName|company_name|name
+      3. workspace/.workforce-build-state.json       -> companyName
+    """
+    cc = _prov_read_json(pp.get("cc_company_config"))
+    if isinstance(cc, dict):
+        v = str(cc.get("companyName", "") or "").strip()
+        if v:
+            return v, "cc-config"
+    zhc = _prov_read_json(pp.get("zhc_company_config"))
+    if isinstance(zhc, dict):
+        for k in ("companyName", "company_name", "name"):
+            v = str(zhc.get(k, "") or "").strip()
+            if v:
+                return v, f"zhc-config.{k}"
+    bs = _prov_read_json(pp.get("build_state"))
+    if isinstance(bs, dict):
+        v = str(bs.get("companyName", "") or "").strip()
+        if v:
+            return v, "build-state"
+    return "", "none"
+
+
+def step_provisioning_completeness(
+    paths: dict,
+    res: BoxResult,
+    pinned_onboarding_tag: str,
+) -> dict:
+    """
+    Step 8d: the provisioning-completeness gate (false-success closer).
+
+    HARD-GATES the box on four provisioning invariants SOP coverage never proved,
+    and REPORTS the two already-gated-elsewhere signals so the operator sees a
+    full per-check breakdown:
+
+      VERSION   (GATE)  — onboarding stamp present AND == the version being rolled
+                          (cc-compat.onboardingVersion). Stale / missing / unknown
+                          = FAIL, never a pass.
+      BRANDING  (GATE)  — resolved company name is non-empty AND not a shipped
+                          placeholder. When the CC config is present at the
+                          resolved path, its logo-config.json must also be
+                          present — but an EMPTY logoUrl is the DESIGNED text-SVG
+                          fallback (useLogoUrl renders the company name) and is
+                          NOT failed; only a missing/broken logo file fails.
+      DEPTS     (GATE)  — departments.json exists and is a NON-EMPTY array.
+      PERSONAS  (GATE)  — coaching-personas/personas holds >=1 persona dir with a
+                          persona-blueprint.md (same definition the drift probe uses).
+      SOP       (report)— mirrors res.steps["embedding-health"] (Index-3 CC SOP
+                          coverage is gated there; kept, not weakened).
+      CC-SERVE  (report)— mirrors res.board["cc_healthy"] (CC serving is gated by
+                          build-cc / restart-cc + the post-deploy duck test; kept).
+
+    READ-ONLY. Returns a per-check outcome dict. On ANY hard-check failure it
+    records res.step_fail("provisioning-completeness", <breakdown>), which flips
+    the box off "ok" via run_box's existing has_failures test — so no future roll
+    can green-light an incompletely-provisioned box.
+    """
+    pp = _resolve_provisioning_paths(paths)
+    checks: list[tuple[str, bool, str]] = []   # (name, ok, detail)
+
+    # ── VERSION (gate) ────────────────────────────────────────────────────────
+    stamp = str(res.onboarding_version or "unknown").strip()
+    want = str(pinned_onboarding_tag or "unknown").strip()
+    if stamp in ("", "unknown"):
+        checks.append(("VERSION", False, f"stamp missing/unknown (want {want})"))
+    elif stamp != want:
+        checks.append(("VERSION", False, f"{stamp} != {want}"))
+    else:
+        checks.append(("VERSION", True, stamp))
+
+    # ── BRANDING (gate) ───────────────────────────────────────────────────────
+    name, src = _resolve_company_name(pp)
+    norm = name.strip().lower()
+    if not name:
+        branding_ok, bdetail = False, "company name empty/unprovisioned (no config or build-state)"
+    elif norm in PLACEHOLDER_COMPANY_NAMES:
+        branding_ok, bdetail = False, f"placeholder company name {name!r} (src={src})"
+    else:
+        branding_ok, bdetail = True, f"{name!r} (src={src})"
+    # Logo: only judged when the CC config is present at the resolved path (proof
+    # the CC is provisioned THERE). Absent CC config -> logo is n/a (never a
+    # false-FAIL when the CC checkout lives at a path we did not resolve).
+    cc_cfg = pp.get("cc_company_config")
+    if branding_ok and cc_cfg and Path(cc_cfg).is_file():
+        logo = _prov_read_json(pp.get("cc_logo_config"))
+        if not isinstance(logo, dict) or "logoUrl" not in logo:
+            branding_ok = False
+            bdetail += "; logo-config.json missing/invalid at provisioned CC"
+        else:
+            bdetail += ("; logo=set" if str(logo.get("logoUrl", "")).strip()
+                        else "; logo=text-svg-fallback(ok)")
+    checks.append(("BRANDING", branding_ok, bdetail))
+
+    # ── DEPARTMENTS (gate) ────────────────────────────────────────────────────
+    depts = _prov_read_json(pp.get("departments_json"))
+    if not isinstance(depts, list):
+        checks.append(("DEPARTMENTS", False,
+                       f"departments.json missing/not-a-list ({pp.get('departments_json')})"))
+    elif len(depts) == 0:
+        checks.append(("DEPARTMENTS", False, "departments.json is an EMPTY array"))
+    else:
+        checks.append(("DEPARTMENTS", True, f"{len(depts)} departments"))
+
+    # ── PERSONAS (gate) ───────────────────────────────────────────────────────
+    pdir = pp.get("personas_dir")
+    persona_count = 0
+    try:
+        if pdir and Path(pdir).is_dir():
+            persona_count = sum(
+                1 for c in Path(pdir).iterdir()
+                if c.is_dir() and (c / "persona-blueprint.md").is_file()
+            )
+    except OSError:
+        persona_count = 0
+    if persona_count == 0:
+        checks.append(("PERSONAS", False, f"no personas under {pdir}"))
+    else:
+        checks.append(("PERSONAS", True, f"{persona_count} personas"))
+
+    # ── SOP (report — gated in step_embedding_health) ─────────────────────────
+    emb = str(res.steps.get("embedding-health", "not-run"))
+    sop_ok = emb == "pass" or emb.startswith("ok")
+    checks.append(("SOP", sop_ok, emb[:60]))
+
+    # ── CC-SERVE (report — gated by build-cc/restart-cc + duck test) ──────────
+    cc_serving = bool(res.board.get("cc_healthy", False))
+    checks.append(("CC-SERVE", cc_serving,
+                   "healthy" if cc_serving else "no local /api/health (informational)"))
+
+    # ── Emit the full per-check breakdown (operator sees exactly what is off) ──
+    breakdown = "  ".join(
+        f"{n}:{'ok' if ok else 'FAIL'}" + ("" if ok else f"({d})")
+        for (n, ok, d) in checks
+    )
+    _info(f"  provisioning-completeness: {breakdown}")
+    for (n, ok, d) in checks:
+        (_ok if ok else _err)(f"    {n}: {'ok' if ok else 'FAIL'} — {d}")
+
+    # ── Verdict: the FOUR hard gates only (SOP + CC-SERVE are reported) ────────
+    failed = [(n, d) for (n, ok, d) in checks
+              if n in _PROVISIONING_HARD_CHECKS and not ok]
+    result = {
+        "checks":    {n: {"ok": ok, "detail": d} for (n, ok, d) in checks},
+        "breakdown": breakdown,
+        "failed":    [n for (n, _d) in failed],
+    }
+    if failed:
+        res.step_fail(
+            "provisioning-completeness",
+            "; ".join(f"{n} FAIL {d}" for (n, d) in failed)[:300],
+        )
+    else:
+        res.step_ok("provisioning-completeness")
+    return result
+
+
 def step_log(paths: dict, res: BoxResult, dry_run: bool,
              pinned_onboarding_tag: str, cc_tag: str) -> None:
     """Step 9: append result to .fleet-refresh-log.json."""
@@ -1454,6 +1715,18 @@ def run_box(
         # Deliberately step_skip (not step_fail) — this is a NON-GATING
         # advisory probe; a probe-internal exception must never fail the box.
         res.step_skip("persona-grounding-health", f"probe raised: {e}")
+
+    # Step 8d (false-success closer): provisioning-completeness — always runs
+    # (read-only; reflects LIVE box state). GATING: VERSION + BRANDING +
+    # DEPARTMENTS + PERSONAS must all be present, else the box is flipped off
+    # "ok" with a per-check breakdown. SOP + CC-serving are reported here but
+    # stay gated where they already were (embedding-health / build-cc). A gate-
+    # internal exception is FAIL-CLOSED — an unverifiable box must never look
+    # PASS.
+    try:
+        step_provisioning_completeness(paths, res, pinned_onboarding_tag)
+    except Exception as e:
+        res.step_fail("provisioning-completeness", f"gate raised (fail-closed): {e}")
 
     # Step 9: log (skipped in verify-only as it's read-only mode)
     if not verify_only:
