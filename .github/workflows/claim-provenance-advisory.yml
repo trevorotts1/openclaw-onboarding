@@ -1,0 +1,50 @@
+name: claim-provenance-advisory
+
+# ADVISORY truth-enforcement check (operator ruling 2026-07-19: advisory,
+# not blocking). Scans lines ADDED by a pull request in ledgers/**, docs/**,
+# and CHANGELOG.md for claims with no provenance:
+#
+#   R1 verdict tokens (GATE RESULT / PASS / VERIFIED / ...) with no artifact,
+#      command, sha, or exit code nearby
+#   R2 counts with no command + definition behind them
+#   R3 duration estimates with no basis= and no GUESS label
+#   R4 capability assertions (no API exists / does not support / ...) with
+#      no tested= evidence and no UNKNOWN label
+#
+# It NEVER fails the build. Findings surface as ::warning annotations on the
+# pull request diff and in the job summary. Full rule rationale lives in
+# scripts/check-claim-provenance.py's docstring and
+# docs/TRUTH-ENFORCEMENT-ADVISORY.md.
+
+on:
+  pull_request:
+    paths:
+      - 'ledgers/**'
+      - 'docs/**'
+      - CHANGELOG.md
+      - scripts/check-claim-provenance.py
+      - .github/workflows/claim-provenance-advisory.yml
+  workflow_dispatch:
+
+jobs:
+  claim-provenance:
+    name: Claim-provenance advisory (labels, never blocks)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the linter
+        run: python3 -m py_compile scripts/check-claim-provenance.py
+
+      - name: Scan added lines for unproven claims (advisory)
+        env:
+          BASE_REF: ${{ github.base_ref }}
+        run: python3 scripts/check-claim-provenance.py --diff "origin/${BASE_REF:-main}"
