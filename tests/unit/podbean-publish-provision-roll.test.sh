@@ -4,8 +4,8 @@
 # S58-U18 — sandboxed end-to-end proof of the fleet provision roll
 # (scripts/fleet-roll/podbean-publish-provision-roll.sh) against a throwaway
 # home root (P18_HOME + per-entry "home" override — the script's documented
-# sandbox mechanism). No SSH, no docker, no network (--no-standing-probe), and
-# no writes anywhere outside the mktemp sandbox. The real operator store is
+# sandbox mechanism). SSH and Docker paths use local fakes only; there is no
+# network and no write outside the mktemp sandbox. The real operator store is
 # never read: P18_HOME redirects the token lookup into the sandbox too.
 #
 # Proves, against the REAL script:
@@ -29,6 +29,14 @@
 #  12. Mac restart uses launchctl and proves PID change plus ok:true health;
 #      failures surface GATEWAY_DOWN in the fleet summary.
 #  13. the duplicate is retired and secret-bearing data stays off child argv.
+#  14. a nonzero SSH/transport exit overrides a parsed result=OK and keeps the
+#      operator gate closed.
+#  15. VPS host env backup is one unique timestamped copy of the original.
+#  16. backup-copy failure aborts before the first store mutation.
+#  17. VPS recreate proves container-ID change, health, and inherited values.
+#  18. host-only VPS changes grade OK, never the no-restart OK_ALREADY verdict.
+#  19. an unwritable ledger aborts before transport.
+#  20. manifest build rejects duplicate names, SSH hosts, and operators.
 #
 # Exit 0 = all checks pass. Exit 1 = one or more failed.
 
@@ -379,6 +387,250 @@ if grep -q 'python3 - .*\$PUBLISH_TOKEN' "$ROLL" || grep -q 'shquote "\$_pb64"' 
   fail "publish token or token-bearing payload remains on a child process argv"
 else
   pass "publish token and token-bearing payload are absent from child argv"
+fi
+
+# --- 14. nonzero transport status overrides parsed result=OK -----------------
+TRANSPORT_BIN="$WORK/transport-bin"
+mkdir -p "$TRANSPORT_BIN"
+TRANSPORT_CALLS="$WORK/transport-calls"
+cat > "$TRANSPORT_BIN/ssh" <<'EOF'
+#!/bin/sh
+printf '%s\n' called >> "$TRANSPORT_CALLS"
+cat >/dev/null
+printf '%s\n' \
+  'changed=yes' \
+  'validate:PODBEAN_PUBLISH_WEBHOOK_URL:env=SET:ocjson=SET' \
+  'validate:PODBEAN_PUBLISH_TOKEN:env=SET:ocjson=SET' \
+  'validate:PODCAST_CLIENT_LAST_NAME:env=SET:ocjson=SET' \
+  'validate:PODCAST_CLIENT_EMAIL:env=SET:ocjson=SET' \
+  'result=OK'
+exit 23
+EOF
+chmod 700 "$TRANSPORT_BIN/ssh"
+TRANSPORT_MANIFEST="$WORK/transport-manifest.json"
+cat > "$TRANSPORT_MANIFEST" <<'EOF'
+[
+  {"name":"sandbox-transport-op","role":"operator","platform":"mac","ssh_target":"op.invalid",
+   "identity":{"last_name":"Operator","email":"operator@example.test","complete":true}},
+  {"name":"sandbox-transport-client","role":"client","platform":"mac","ssh_target":"client.invalid",
+   "identity":{"last_name":"Client","email":"client@example.test","complete":true}}
+]
+EOF
+: > "$TRANSPORT_CALLS"
+OUT="$(TRANSPORT_CALLS="$TRANSPORT_CALLS" PATH="$TRANSPORT_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$TRANSPORT_MANIFEST" --log-file "$WORK/transport.log" --apply --include-clients --no-standing-probe 2>&1)"; RC=$?
+if [ "$RC" = "2" ] && [ "$(wc -l < "$TRANSPORT_CALLS" | tr -d ' ')" = "1" ] &&
+   printf '%s\n' "$OUT" | grep -q 'box=sandbox-transport-op .*verdict=FAILED.*transport_rc=23' &&
+   printf '%s\n' "$OUT" | grep -q 'box=sandbox-transport-client .*verdict=REFUSED_OPERATOR_NOT_PROVEN'; then
+  pass "nonzero transport exit fails apply and keeps operator gate closed"
+else
+  fail "nonzero transport exit was ignored or opened the operator gate (rc=$RC)"; echo "$OUT"
+fi
+
+# --- 15/17/18. fake VPS exercises host env, recreate, health, and verdict -----
+VPS_BIN="$WORK/vps-bin"
+VPS_HOME="$WORK/vps-home"
+VPS_COMPOSE="$WORK/vps-compose"
+VPS_STATE="$WORK/vps-container-id"
+mkdir -p "$VPS_BIN" "$VPS_HOME/.openclaw/secrets" "$VPS_COMPOSE"
+printf '%s\n' old-container-id > "$VPS_STATE"
+printf '%s\n' 'services: {}' > "$VPS_COMPOSE/compose.yaml"
+cat > "$VPS_BIN/ssh" <<'EOF'
+#!/bin/sh
+sh -s
+EOF
+cat > "$VPS_BIN/docker" <<'EOF'
+#!/bin/sh
+case "$1" in
+  exec)
+    shift
+    runtime_mode=""
+    while [ "$#" -gt 0 ]; do
+      case "$1" in
+        -i) shift ;;
+        -u) shift 2 ;;
+        -e)
+          case "$2" in P18_MODE_OVERRIDE=*) runtime_mode="${2#*=}" ;; esac
+          shift 2
+          ;;
+        *) shift; break ;;
+      esac
+    done
+    if [ "$runtime_mode" = "runtimeverify" ]; then
+      set -a
+      . "$MOCK_HOST_ENV"
+      set +a
+      [ "${MOCK_RUNTIME_STALE:-0}" = "1" ] && unset PODBEAN_PUBLISH_WEBHOOK_URL
+    fi
+    P18_HOME="$MOCK_VPS_HOME" P18_MODE_OVERRIDE="$runtime_mode" sh -s
+    ;;
+  compose)
+    printf '%s-new\n' "$(sed -n '1p' "$MOCK_CID_STATE")" > "$MOCK_CID_STATE"
+    ;;
+  ps)
+    printf '%s\n' 'Up 10 seconds'
+    ;;
+  inspect)
+    case "$3" in
+      *State.Running*) printf '%s\n' true ;;
+      *Id*) sed -n '1p' "$MOCK_CID_STATE" ;;
+      *) exit 1 ;;
+    esac
+    ;;
+  *) exit 2 ;;
+esac
+EOF
+cat > "$VPS_BIN/curl" <<'EOF'
+#!/bin/sh
+printf '%s\n' '{"ok":true}'
+EOF
+cat > "$VPS_BIN/sleep" <<'EOF'
+#!/bin/sh
+exit 0
+EOF
+chmod 700 "$VPS_BIN/ssh" "$VPS_BIN/docker" "$VPS_BIN/curl" "$VPS_BIN/sleep"
+
+printf '%s\n' \
+  "PODBEAN_PUBLISH_WEBHOOK_URL=https://main.blackceoautomations.com/webhook/podbean-publish" \
+  "PODBEAN_PUBLISH_TOKEN=$TOKEN" \
+  'PODCAST_CLIENT_LAST_NAME=Operator' \
+  'PODCAST_CLIENT_EMAIL=operator@example.test' > "$VPS_HOME/.openclaw/secrets/.env"
+TOKEN="$TOKEN" VPS_OCJSON="$VPS_HOME/.openclaw/openclaw.json" python3 - <<'PY'
+import json, os
+json.dump({"env": {"vars": {
+    "PODBEAN_PUBLISH_WEBHOOK_URL": "https://main.blackceoautomations.com/webhook/podbean-publish",
+    "PODBEAN_PUBLISH_TOKEN": os.environ["TOKEN"],
+    "PODCAST_CLIENT_LAST_NAME": "Operator",
+    "PODCAST_CLIENT_EMAIL": "operator@example.test",
+}}}, open(os.environ["VPS_OCJSON"], "w"))
+PY
+cat > "$VPS_COMPOSE/.env" <<EOF
+UNCHANGED_MARKER=original
+PODBEAN_PUBLISH_WEBHOOK_URL=https://main.blackceoautomations.com/webhook/podbean-publish
+PODBEAN_PUBLISH_TOKEN=$TOKEN
+PODCAST_CLIENT_LAST_NAME=Operator
+PODCAST_CLIENT_EMAIL=stale@example.test
+EOF
+cp "$VPS_COMPOSE/.env" "$WORK/vps-host-env.original"
+VPS_MANIFEST="$WORK/vps-manifest.json"
+cat > "$VPS_MANIFEST" <<EOF
+[{"name":"sandbox-vps","role":"operator","platform":"vps","ssh_target":"vps.invalid",
+  "container":"sandbox-vps-openclaw-1","compose_dir":"$VPS_COMPOSE",
+  "identity":{"last_name":"Operator","email":"operator@example.test","complete":true}}]
+EOF
+OUT="$(MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps.log" --apply --no-standing-probe 2>&1)"; RC=$?
+VPS_BACKUPS="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' -print)"
+if [ "$(printf '%s\n' "$VPS_BACKUPS" | sed '/^$/d' | wc -l | tr -d ' ')" = "1" ] && cmp -s "$WORK/vps-host-env.original" "$VPS_BACKUPS"; then
+  pass "VPS host env has one unique timestamped snapshot of the original"
+else
+  fail "VPS host env backup was missing, repeated, or not the original"
+fi
+if [ "$RC" = "0" ] && printf '%s\n' "$OUT" | grep -q 'restart=recreate rc=0 container_id_changed=1 health_ok=1 runtime_values=1'; then
+  pass "VPS recreate proves new container, health, and inherited values"
+else
+  fail "VPS recreate lacked identity/health/runtime proof (rc=$RC)"; echo "$OUT"
+fi
+if printf '%s\n' "$OUT" | grep -q 'box=sandbox-vps .*verdict=OK ' &&
+   ! printf '%s\n' "$OUT" | grep -q 'box=sandbox-vps .*verdict=OK_ALREADY'; then
+  pass "host-only VPS change is reported OK, not OK_ALREADY"
+else
+  fail "host-only VPS change was misreported as OK_ALREADY"; echo "$OUT"
+fi
+
+printf '{}\n' > "$VPS_HOME/.openclaw/openclaw.json"
+OUT="$(MOCK_RUNTIME_STALE=1 MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-stale.log" --apply --no-standing-probe 2>&1)"; RC=$?
+if [ "$RC" = "2" ] && printf '%s\n' "$OUT" | grep -q 'runtime_values=0'; then
+  pass "VPS recreate rejects a healthy container with stale inherited values"
+else
+  fail "VPS recreate accepted stale inherited values (rc=$RC)"; echo "$OUT"
+fi
+
+# --- 16. backup copy failure aborts before mutation --------------------------
+BACKUP_HOME="$WORK/backup-home"
+BACKUP_BIN="$WORK/backup-bin"
+mkdir -p "$BACKUP_HOME/.openclaw/secrets" "$BACKUP_BIN"
+printf 'PODBEAN_PUBLISH_TOKEN=%s\n' "$TOKEN" > "$BACKUP_HOME/.openclaw/secrets/.env"
+printf '{}\n' > "$BACKUP_HOME/.openclaw/openclaw.json"
+cat > "$BACKUP_BIN/cp" <<'EOF'
+#!/bin/sh
+exit 73
+EOF
+chmod 700 "$BACKUP_BIN/cp"
+BACKUP_MANIFEST="$WORK/backup-manifest.json"
+cat > "$BACKUP_MANIFEST" <<EOF
+[{"name":"sandbox-backup-op","role":"operator","platform":"mac","ssh_target":"local","home":"$BACKUP_HOME",
+  "identity":{"last_name":"Operator","email":"operator@example.test","complete":true}}]
+EOF
+BEFORE_ENV="$(shasum -a 256 "$BACKUP_HOME/.openclaw/secrets/.env" | cut -d' ' -f1)"
+BEFORE_JSON="$(shasum -a 256 "$BACKUP_HOME/.openclaw/openclaw.json" | cut -d' ' -f1)"
+OUT="$(PATH="$BACKUP_BIN:$PATH" P18_HOME="$BACKUP_HOME" bash "$ROLL" --boxes-file "$BACKUP_MANIFEST" --log-file "$WORK/backup.log" --apply --no-standing-probe 2>&1)"; RC=$?
+AFTER_ENV="$(shasum -a 256 "$BACKUP_HOME/.openclaw/secrets/.env" | cut -d' ' -f1)"
+AFTER_JSON="$(shasum -a 256 "$BACKUP_HOME/.openclaw/openclaw.json" | cut -d' ' -f1)"
+if [ "$RC" = "2" ] && [ "$BEFORE_ENV" = "$AFTER_ENV" ] && [ "$BEFORE_JSON" = "$AFTER_JSON" ] &&
+   printf '%s\n' "$OUT" | grep -q 'reason=backup_copy_failed'; then
+  pass "backup copy failure aborts before any config mutation"
+else
+  fail "backup copy failure did not fail closed before mutation (rc=$RC)"; echo "$OUT"
+fi
+
+# --- 19. ledger must be writable before transport ----------------------------
+LEDGER_BIN="$WORK/ledger-bin"
+LEDGER_MARKER="$WORK/ledger-transport-called"
+mkdir -p "$LEDGER_BIN" "$WORK/ledger-is-a-directory"
+cat > "$LEDGER_BIN/ssh" <<'EOF'
+#!/bin/sh
+: > "$LEDGER_MARKER"
+cat >/dev/null
+exit 0
+EOF
+chmod 700 "$LEDGER_BIN/ssh"
+OUT="$(LEDGER_MARKER="$LEDGER_MARKER" PATH="$LEDGER_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$TRANSPORT_MANIFEST" --box sandbox-transport-op --log-file "$WORK/ledger-is-a-directory" 2>&1)"; RC=$?
+if [ "$RC" = "1" ] && [ ! -e "$LEDGER_MARKER" ] && printf '%s\n' "$OUT" | grep -q 'ledger'; then
+  pass "unwritable ledger aborts before any box transport"
+else
+  fail "unwritable ledger did not abort before transport (rc=$RC)"; echo "$OUT"
+fi
+
+# --- 20. manifest builder rejects duplicate identities/targets ---------------
+DUP_NAMES="$WORK/duplicate-names.json"
+cat > "$DUP_NAMES" <<'EOF'
+[
+  {"name":"sandbox-dup","role":"client","platform":"vps","ssh_target":"one.invalid","compose_dir":"/tmp/one"},
+  {"name":"sandbox-dup","role":"client","platform":"vps","ssh_target":"two.invalid","compose_dir":"/tmp/two"}
+]
+EOF
+OUT="$(python3 "$MANIFEST_BUILDER" --fleet-file "$DUP_NAMES" --out "$WORK/dup-names-out.json" 2>&1)"; RC=$?
+if [ "$RC" = "1" ] && printf '%s\n' "$OUT" | grep -q 'duplicate.*name'; then
+  pass "manifest builder rejects duplicate box names"
+else
+  fail "manifest builder accepted duplicate box names (rc=$RC)"; echo "$OUT"
+fi
+
+DUP_HOSTS="$WORK/duplicate-hosts.json"
+cat > "$DUP_HOSTS" <<'EOF'
+[
+  {"name":"sandbox-one","role":"client","platform":"vps","ssh_target":"first@same.invalid","compose_dir":"/tmp/one"},
+  {"name":"sandbox-two","role":"client","platform":"vps","ssh_target":"second@same.invalid","compose_dir":"/tmp/two"}
+]
+EOF
+OUT="$(python3 "$MANIFEST_BUILDER" --fleet-file "$DUP_HOSTS" --out "$WORK/dup-hosts-out.json" 2>&1)"; RC=$?
+if [ "$RC" = "1" ] && printf '%s\n' "$OUT" | grep -q 'duplicate.*SSH host'; then
+  pass "manifest builder rejects duplicate SSH hosts"
+else
+  fail "manifest builder accepted duplicate SSH hosts (rc=$RC)"; echo "$OUT"
+fi
+
+DUP_OPERATORS="$WORK/duplicate-operators.json"
+cat > "$DUP_OPERATORS" <<'EOF'
+[
+  {"name":"sandbox-op-one","role":"operator","platform":"mac","ssh_target":"one.invalid"},
+  {"name":"sandbox-op-two","role":"operator","platform":"mac","ssh_target":"two.invalid"}
+]
+EOF
+OUT="$(python3 "$MANIFEST_BUILDER" --fleet-file "$DUP_OPERATORS" --out "$WORK/dup-operators-out.json" 2>&1)"; RC=$?
+if [ "$RC" = "1" ] && printf '%s\n' "$OUT" | grep -q 'duplicate.*operator'; then
+  pass "manifest builder rejects duplicate operator entries"
+else
+  fail "manifest builder accepted duplicate operator entries (rc=$RC)"; echo "$OUT"
 fi
 
 echo "=== result: PASS=$PASS FAIL=$FAIL ==="
