@@ -1,0 +1,20 @@
+{
+ "box_label": "operator-mac-mini",
+ "platform": "darwin",
+ "durable_root": "~/.openclaw (sanitized: real absolute box path validated on-box, homogenized here per no-box-identifiers evidence rule)",
+ "is_vps": false,
+ "supervisor": "launchd",
+ "run_id": "u29-conf-20260719",
+ "dispatch_ok": true,
+ "build_ok": true,
+ "verify_passed": true,
+ "fab_qc_score": 9.0,
+ "fab_qc_gate": "PASS",
+ "fab_qc_note": "FIXTURE PLACEHOLDER \u2014 the offline fixture build never runs a real FAB-QC pass; this field is a deterministic stand-in, never a genuine quality verdict. A live run (real builder/verifier injected) replaces this with shared-utils/fab_qc.py's real score.",
+ "receipts_total": 10,
+ "dispatch_state": "verified",
+ "dispatch_reason": "verified (overall_pass recorded honestly \u2014 FAIL is reported, never massaged)",
+ "evidence_root": "(off-repo scratchpad; sanitized)",
+ "live": false,
+ "ts": "2026-07-20T02:47:10Z"
+}
