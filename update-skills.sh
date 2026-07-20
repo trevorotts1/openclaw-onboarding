@@ -1227,8 +1227,19 @@ main() {
         read -p "Already up to date. Force re-install? (y/N) " -n 1 -r
         echo
       else
-        echo "  (non-interactive: no TTY — already up to date, not forcing re-install)"
-        REPLY="N"
+        # CONTENT-AWARE EXIT (fleet fix). A matching stamp is NOT evidence that
+        # the installed content matches canonical. ONE string governs 62 skill
+        # trees plus shared-utils/ and universal-sops/ — and neither of those two
+        # carries a version file at all. Exiting here meant an arbitrarily
+        # drifted box was never compared, never repaired, and still reported
+        # success: the fleet-wide false-success path. We now continue far enough
+        # to PULL the source and diff it against the box (see CONTENT RECHECK
+        # below). If the content genuinely matches we exit 0 seconds later,
+        # BEFORE anything is copied, wired, or restarted — the same clean
+        # idempotent no-op as before, only now it is earned rather than assumed.
+        echo "  (non-interactive: no TTY — stamp is current; verifying CONTENT before deciding)"
+        _SAME_VERSION_RECHECK=1
+        REPLY="Y"
       fi
       if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "  Update cancelled."
@@ -1319,6 +1330,110 @@ main() {
   else
     echo "  [A2] skill-content-hash.sh not found in source — content verification unavailable (non-fatal for this install)"
     SRC_MANIFEST=""
+  fi
+
+# ────────────────────────────────────────────────────────────────────────────
+# CONTENT COMPARISON — the sync signal. Version strings are NOT.
+#
+# WHY: canonical routinely edits a skill tree's contents WITHOUT bumping that
+# tree's skill-version.txt (23 of 62 versioned trees were in that state at
+# origin/main 2d7bb304). A sync that decides on version-string equality
+# therefore reports "unchanged" for trees whose bytes differ, and shared-utils/
+# and universal-sops/ carry no version file at all, so a version gate has
+# nothing to evaluate for them. Decisions below are made on CONTENT.
+#
+# DIRECTIONAL ON PURPOSE: `_OC_TREE_MISSING` = a SOURCE file that is absent on
+# the box (or an entire absent tree). `_OC_TREE_DIFFERS` = a source file present
+# on the box with different bytes. Destination-only extras (__pycache__, *.bak,
+# runtime logs, per-box resolved artifacts) are NOT drift and must never force a
+# re-copy or fail a gate — the copy semantics are an additive merge, so
+# "source ⊆ dest, byte-for-byte" is the correct and complete health assertion.
+#
+# FAIL-CLOSED: if `diff` is unavailable we report drift, so the caller re-syncs
+# rather than silently skipping.
+#
+# NOTE: the `case` patterns below interpolate directory paths. Glob metacharacters
+# in a skills-dir path would widen the match; all real paths are $HOME/... or
+# /tmp/... so this is safe in practice, and a widened match can only cause an
+# extra (harmless) re-sync, never a skipped one.
+# ────────────────────────────────────────────────────────────────────────────
+_OC_TREE_MISSING=""
+_OC_TREE_DIFFERS=""
+_ocs_tree_compare() {
+  local _src="${1%/}" _dst="${2%/}" _out _line
+  _OC_TREE_MISSING=""
+  _OC_TREE_DIFFERS=""
+  [ -d "$_src" ] || return 0
+  if ! command -v diff >/dev/null 2>&1; then
+    _OC_TREE_MISSING=" (diff unavailable — assuming drift)"
+    return 0
+  fi
+  if [ ! -d "$_dst" ]; then
+    _OC_TREE_MISSING=" (entire tree absent: $_dst)"
+    return 0
+  fi
+  _out="$(diff -rq \
+            -x '.git' -x '__pycache__' -x '*.pyc' -x '*.pyo' -x '.DS_Store' \
+            -x '*.bak' -x '*.bak-*' -x '.wired-*' \
+            "$_src" "$_dst" 2>/dev/null || true)"
+  [ -n "$_out" ] || return 0
+  while IFS= read -r _line; do
+    case "$_line" in
+      "Only in $_src"*)   _OC_TREE_MISSING="${_OC_TREE_MISSING} ${_line#Only in }" ;;
+      "Files "*" differ") _OC_TREE_DIFFERS="${_OC_TREE_DIFFERS} ${_line}" ;;
+    esac
+  done < <(printf '%s\n' "$_out")
+  return 0
+}
+
+# _ocs_tree_in_sync <src> <dst>
+#   rc 0 = every source file is present on the box with identical bytes
+#   rc 1 = at least one source file is absent OR differs
+_ocs_tree_in_sync() {
+  _ocs_tree_compare "$1" "$2"
+  [ -z "$_OC_TREE_MISSING" ] && [ -z "$_OC_TREE_DIFFERS" ]
+}
+
+  # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
+  # Reached only via the same-version branch above. Decide on CONTENT:
+  #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
+  #   (2) shared-utils/ and universal-sops/, which skill-content-hash.sh does
+  #       NOT enumerate (it globs '[0-9]*' only) and which have no version file.
+  # Only a genuine match exits 0. Any drift falls through to the normal full
+  # sync, which is unconditional (rm -rf + cp -r per skill), so it repairs
+  # absent files, silently-edited files, and unbumped content alike. The cost
+  # of a false "drift" verdict is one extra sync; the cost of a false "clean"
+  # verdict is a broken box reporting success — so this errs toward syncing.
+  if [ "${_SAME_VERSION_RECHECK:-0}" -eq 1 ]; then
+    _RECHECK_DRIFT=""
+    if [ -n "$SRC_MANIFEST" ] && [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+      _RC_DEST_MANIFEST="$(bash "$_CONTENT_HASH_SCRIPT" "$SKILLS_DIR" 2>/dev/null || true)"
+      while IFS='|' read -r _rc_name _rc_src_digest; do
+        [ -n "$_rc_name" ] || continue
+        case "$_rc_name" in __TREE_SHA__) continue ;; esac
+        _rc_dest_digest="$(printf '%s\n' "$_RC_DEST_MANIFEST" \
+                           | awk -F'|' -v n="$_rc_name" '$1==n {print $2; exit}')"
+        if [ "$_rc_dest_digest" != "$_rc_src_digest" ]; then
+          _RECHECK_DRIFT="${_RECHECK_DRIFT} ${_rc_name}"
+        fi
+      done < <(printf '%s\n' "$SRC_MANIFEST")
+    else
+      # No manifest = no proof of health. Fail toward syncing, never toward exit 0.
+      _RECHECK_DRIFT="${_RECHECK_DRIFT} (content-manifest-unavailable)"
+    fi
+    for _rc_tree in shared-utils universal-sops; do
+      [ -d "$EXTRACTED_DIR/$_rc_tree" ] || continue
+      if ! _ocs_tree_in_sync "$EXTRACTED_DIR/$_rc_tree" "$SKILLS_DIR/$_rc_tree"; then
+        _RECHECK_DRIFT="${_RECHECK_DRIFT} ${_rc_tree}"
+      fi
+    done
+    if [ -z "$_RECHECK_DRIFT" ]; then
+      echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+      exit 0
+    fi
+    echo "  ✗ [CONTENT RECHECK] stamp is current but these trees DRIFTED:${_RECHECK_DRIFT}"
+    echo "    Proceeding with a full content sync — version strings are not a sync signal."
   fi
 
   # v10.15.48 (FIX 1): source the onboarding STATE MACHINE + verification GATE.
@@ -1511,12 +1626,17 @@ main() {
     # getting stamped (observed: a box missing the whole sop-embed-once/ dir). We assert
     # source ⊆ dest (missing source entries only — dest supersets are fine) and gate the
     # stamp on it via _STEP_GATE_FAILS below.
-    _SU_MISSING=""
-    for _su_src in "$EXTRACTED_DIR/shared-utils/"*; do
-      [ -e "$_su_src" ] || continue
-      _su_base="$(basename "$_su_src")"
-      [ -e "$SKILLS_DIR/shared-utils/$_su_base" ] || _SU_MISSING="${_SU_MISSING} $_su_base"
-    done
+    # v20.0.74: the original assertion iterated "$EXTRACTED_DIR/shared-utils/"*
+    # and tested `[ -e ]` on the BASENAME only — top-level existence, one level
+    # deep, no content comparison. A file drifted or absent INSIDE
+    # prebuilt-index/, sop-embed-once/ or tone-writing-core/ was invisible to
+    # it, and a top-level file present-but-stale passed. Recurse, and compare
+    # bytes. Absence still gates the stamp (below); byte differences are
+    # reported but deliberately NOT gated, so a file legitimately rewritten at
+    # install time cannot withhold the stamp fleet-wide.
+    _ocs_tree_compare "$EXTRACTED_DIR/shared-utils" "$SKILLS_DIR/shared-utils"
+    _SU_MISSING="$_OC_TREE_MISSING"
+    [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! shared-utils content differences:${_OC_TREE_DIFFERS}" || true
     if [ -n "$_SU_MISSING" ]; then
       _SHAREDUTILS_STATUS="fail"
       echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
@@ -1528,10 +1648,29 @@ main() {
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
   # Neither install nor update copied this before; Skills 47/48 wiring FAILed
   # with a FATAL looking for funnel/presentation/video/ad SOPs.
+  _UNIVERSALSOPS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/universal-sops" ]; then
     rm -rf "$SKILLS_DIR/universal-sops"
-    cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"
-    echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+    if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
+      _UNIVERSALSOPS_STATUS="fail"
+    fi
+    # PARITY WITH shared-utils (v20.0.11). This tree is rm -rf'd first, so a
+    # partial cp leaves the box with FEWER SOPs than it started with — and the
+    # old code printed "✓ universal-sops refreshed" UNCONDITIONALLY, with no
+    # status latch anywhere in this file, so a truncated copy was silent AND
+    # still stamped. universal-sops/ is not covered by the A3 numbered-skill
+    # gate either (skill-content-hash.sh enumerates only [0-9]* dirs), so this
+    # was the last unverified write in the run. Assert source ⊆ dest.
+    _ocs_tree_compare "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/universal-sops"
+    if [ -n "$_OC_TREE_MISSING" ]; then
+      _UNIVERSALSOPS_STATUS="fail"
+      echo "  ✗ universal-sops refresh INCOMPLETE — source SOPs missing from box:${_OC_TREE_MISSING}"
+    else
+      echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+    fi
+    # Byte differences are surfaced but do NOT withhold the stamp: a file
+    # legitimately rewritten later in the run must not block the fleet.
+    [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! universal-sops content differences:${_OC_TREE_DIFFERS}" || true
   fi
 
   # SK1-63 (fleet-installer wiring, update path): mirror the same runtime-dir
@@ -2695,7 +2834,10 @@ if isinstance(n, int) and n > 0:
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
   fi
   if [ "${_SHAREDUTILS_STATUS:-ok}" != "ok" ]; then
-    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared-utils refresh (cp -r shared-utils): incomplete — source entries missing from box (e.g. sop-embed-once/); not covered by the A3 numbered-skill gate\n"
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared-utils refresh (cp -r shared-utils): incomplete — source files missing from box (recursive check); not covered by the A3 numbered-skill gate\n"
+  fi
+  if [ "${_UNIVERSALSOPS_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - universal-sops refresh (rm -rf + cp -r universal-sops): incomplete — source SOPs missing from box; not covered by the A3 numbered-skill gate\n"
   fi
 
   # WORKFORCE-provisioning advisories (v20.0.10): recorded + surfaced, but they
