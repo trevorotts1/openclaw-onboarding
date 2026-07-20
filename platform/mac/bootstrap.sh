@@ -61,14 +61,25 @@ mkdir -p "$OC_BACKUPS" "$OC_INSTALL_LOG_DIR"
 LOG_FILE="$OC_INSTALL_LOG_DIR/openclaw-install-$(date +%Y%m%d-%H%M%S).log"
 exec 1> >(tee -a "$LOG_FILE") 2>&1
 
-# ── 5. POWER-OUTAGE SURVIVAL PRE-FLIGHT (HARD GATE) ──────────────────────────
+# ── 5. POWER-OUTAGE SURVIVAL PRE-FLIGHT (HARD GATE on PROVISION, ADVISORY on UPDATE) ──
 #
-# WHY THIS IS A GATE AND NOT A WARNING:
+# WHY THIS IS A GATE ON PROVISIONING AND ONLY AN ADVISORY ON UPDATES:
 #   A fleet audit measured 0 of 11 client Macs surviving a power outage. The
 #   installer happily laid LaunchAgent-based services (gateway, pm2 resurrect,
 #   Command Center tunnel, self-heal remediator) onto FileVault-locked boxes
 #   that never auto-log-in — and REPORTED SUCCESS. Those boxes are undead: they
 #   look provisioned and they never come back after a power cut.
+#
+#   That justifies a HARD gate when FIRST PROVISIONING a box (proving it can boot
+#   unattended before it is trusted to run headless). It does NOT justify aborting
+#   a ROUTINE UPDATE of an already-provisioned box that is up and reachable right
+#   now: an update is delivered over a live connection and does not depend on the
+#   box surviving a power cut, so FileVault-on / no-auto-login (a physical-security
+#   posture, not a software fault) must not refuse the update. The caller signals
+#   which path this is via OPENCLAW_BOOTSTRAP_MODE:
+#     • update-skills.sh sets OPENCLAW_BOOTSTRAP_MODE=update → ADVISORY, never aborts.
+#     • install.sh (first-time provisioning) leaves it unset → HARD gate, exit 78.
+#   The decision lives in ONE place: pr_preflight_gate() in lib-power-resilience.sh.
 #
 #   A user LaunchAgent lives in the `gui/<uid>` launchd domain. That domain DOES
 #   NOT EXIST until a console login creates it. RunAtLoad=true and KeepAlive=true
@@ -92,8 +103,16 @@ _PR_LIB="${_SCRIPT_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}/pla
 if [ -f "$_PR_LIB" ]; then
     # shellcheck source=/dev/null
     . "$_PR_LIB"
-    echo "[install] Power-outage survival pre-flight..."
-    if ! pr_assert_unattended_boot_capable; then
+    _PR_MODE="${OPENCLAW_BOOTSTRAP_MODE:-provision}"
+    if [ "$_PR_MODE" = "update" ]; then
+        echo "[update] Power-outage survival check (advisory — routine update path)..."
+    else
+        echo "[install] Power-outage survival pre-flight (hard gate — provisioning)..."
+    fi
+    # pr_preflight_gate decides provision (hard, exit 78) vs update (advisory,
+    # never aborts a reachable box). It returns non-zero ONLY on the provision
+    # path when the box cannot boot unattended.
+    if ! pr_preflight_gate "$_PR_MODE"; then
         echo "[install] ABORTED at the power-resilience gate (EX_CONFIG 78)." >&2
         echo "[install] Nothing was installed. Fix the box and re-run." >&2
         echo "[install] To remediate an EXISTING box:" >&2

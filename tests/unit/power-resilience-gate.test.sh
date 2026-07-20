@@ -240,8 +240,12 @@ echo "--- (5h) the provisioner actually CALLS pmset (wired, not just defined) --
 grep -q "pr_apply_pmset" "$BOOTSTRAP" \
     && pass "5h: platform/mac/bootstrap.sh calls pr_apply_pmset" \
     || fail "5h: the provisioner never calls pr_apply_pmset — dead code"
-grep -q "pr_assert_unattended_boot_capable" "$BOOTSTRAP" \
-    && pass "5i: platform/mac/bootstrap.sh calls the FileVault gate" \
+# bootstrap now reaches the FileVault gate through the mode-aware dispatcher
+# pr_preflight_gate (provision → pr_assert_unattended_boot_capable; update →
+# advisory). Behavioural proof that provision still hits the HARD gate is section
+# (11a). This asserts the gate is not dead code — it IS invoked.
+grep -q "pr_preflight_gate" "$BOOTSTRAP" \
+    && pass "5i: platform/mac/bootstrap.sh reaches the FileVault gate via pr_preflight_gate" \
     || fail "5i: the provisioner never calls the gate — dead code"
 grep -q "exit 78" "$BOOTSTRAP" \
     && pass "5j: the provisioner HARD-EXITS 78 on gate failure" \
@@ -374,6 +378,84 @@ grep -q "PHYSICALLY AT THIS MACHINE" "$WORK/fix.out" \
 grep -q "sshd never starts\|sshd doesn't run\|sshd is NOT running" "$WORK/fix.out" \
     && pass "10d: it kills the 'SSH rescue will save us' myth" \
     || fail "10d: it does not address the SSH-rescue myth"
+
+# =============================================================================
+# (11) UPDATE PATH — a physical-security posture must NOT abort a routine update
+# =============================================================================
+# THE BUG THIS CLOSES: update-skills.sh sources platform/mac/bootstrap.sh, which
+# ran the PROVISIONING hard gate (pr_assert_unattended_boot_capable) on EVERY run.
+# On a healthy, reachable, ALREADY-PROVISIONED FileVault-ON box, that gate exits
+# 78 and the ENTIRE update aborts before installing anything — blocking the fleet
+# roll over a posture (FileVault on / no auto-login) that a live update, delivered
+# over an existing connection, does not depend on. The fix scopes the hard gate to
+# provisioning and downgrades it to an ADVISORY on the update path.
+echo "--- (11) routine UPDATE on a FileVault-ON / no-auto-login box must PROCEED ---"
+export FV_STATE="On"; unset AUTOLOGIN
+unset OPENCLAW_ACCEPT_ATTENDED_ONLY_BOX
+rm -f "$PR_MARKER_ATTENDED"
+
+# 11a: the PROVISION path still fails closed (the hard gate is UNCHANGED).
+pr_preflight_gate provision >/dev/null 2>&1; RC11P=$?
+[ "$RC11P" -eq 78 ] \
+    && pass "11a: pr_preflight_gate provision → rc=78 (first-time provisioning still hard-gates)" \
+    || fail "11a: provision path returned rc=$RC11P, expected 78 — the provisioning gate regressed"
+
+# 11b: the UPDATE path PROCEEDS on the SAME box (rc 0, not 78). THIS is the fix —
+# it must FAIL against origin/main (where pr_preflight_gate does not exist) and
+# PASS here.
+OUT11="$(pr_preflight_gate update 2>&1)"; RC11U=$?
+[ "$RC11U" -eq 0 ] \
+    && pass "11b: pr_preflight_gate update → rc=0 (reachable box updates, does NOT abort 78)" \
+    || fail "11b: update path returned rc=$RC11U, expected 0 — the update would still abort"
+
+# 11c-e: the advisory explains it is not blocking + names the on-site remedy.
+echo "$OUT11" | grep -q "ADVISORY" \
+    && pass "11c: update path prints an ADVISORY (not a provisioning REFUSED)" \
+    || fail "11c: update path did not print an advisory"
+echo "$OUT11" | grep -q "does NOT block the update" \
+    && pass "11d: advisory states it does NOT block the update" \
+    || fail "11d: advisory does not say the update proceeds"
+echo "$OUT11" | grep -q "fix-power-resilience.sh" \
+    && pass "11e: advisory names the remedy (scripts/fix-power-resilience.sh)" \
+    || fail "11e: advisory does not name fix-power-resilience.sh"
+
+# 11f: an UPDATE must NOT write the permanent ATTENDED-ONLY marker — committing a
+# box to attended-only forever is a provisioning decision, not an update side effect.
+[ ! -f "$PR_MARKER_ATTENDED" ] \
+    && pass "11f: update advisory writes NO durable ATTENDED-ONLY marker" \
+    || fail "11f: update advisory wrote the permanent attended-only marker (must not)"
+
+# 11g: an UNKNOWN/empty mode fails SAFE toward the hard gate (no accidental bypass).
+pr_preflight_gate >/dev/null 2>&1; RC11D=$?
+[ "$RC11D" -eq 78 ] \
+    && pass "11g: default/empty mode → hard gate (rc=78), no accidental bypass" \
+    || fail "11g: default mode returned rc=$RC11D, expected 78 (fail-safe default lost)"
+
+# 11h-i: the update path still PASSES cleanly on a correctly-configured box.
+export FV_STATE="Off"; export AUTOLOGIN="clientuser"
+OUT11OK="$(pr_preflight_gate update 2>&1)"; RC11OK=$?
+[ "$RC11OK" -eq 0 ] \
+    && pass "11h: update path on a resilient box → rc=0" \
+    || fail "11h: update path on a resilient box returned rc=$RC11OK, expected 0"
+echo "$OUT11OK" | grep -q "Power-resilience OK" \
+    && pass "11i: resilient box under update prints the OK note" \
+    || fail "11i: resilient box under update missing the OK note"
+
+# --- WIRING: the decision is actually reachable from the real entrypoints ------
+echo "--- (11 wiring) bootstrap + update-skills route through the mode gate ---"
+grep -q "pr_preflight_gate" "$BOOTSTRAP" \
+    && pass "11j: platform/mac/bootstrap.sh calls pr_preflight_gate (mode-aware)" \
+    || fail "11j: bootstrap.sh does not call pr_preflight_gate — decision unreachable"
+grep -q "OPENCLAW_BOOTSTRAP_MODE" "$BOOTSTRAP" \
+    && pass "11k: bootstrap.sh branches on OPENCLAW_BOOTSTRAP_MODE" \
+    || fail "11k: bootstrap.sh does not read OPENCLAW_BOOTSTRAP_MODE"
+grep -q "exit 78" "$BOOTSTRAP" \
+    && pass "11l: bootstrap.sh STILL hard-exits 78 on a provisioning gate failure" \
+    || fail "11l: bootstrap.sh lost its provisioning hard-exit"
+UPDATER="$REPO_ROOT/update-skills.sh"
+grep -qE "export OPENCLAW_BOOTSTRAP_MODE=update" "$UPDATER" \
+    && pass "11m: update-skills.sh exports OPENCLAW_BOOTSTRAP_MODE=update (update path scoped)" \
+    || fail "11m: update-skills.sh does not signal update mode — the roll would still abort"
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
