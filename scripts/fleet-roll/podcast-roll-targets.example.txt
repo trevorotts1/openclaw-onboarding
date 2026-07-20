@@ -1,0 +1,27 @@
+# podcast-publish-roll.sh targets file (EXAMPLE; placeholders only).
+#
+# The REAL targets file carries per-client identity values (first, last, email
+# from the live publish roster), so it lives OPERATOR-LOCAL (for example under
+# ~/clawd/podcast-roll/) and is NEVER committed to this fleet-wide repo.
+#
+# Format (pipe-separated, one box per line, # comments ignored):
+#   slug|type|address|container|compose_dir|first_name|last_name|email
+#
+#   type=vps    address is the VPS IP (ssh root@IP); container is the Docker
+#               container name (openclaw-XXXX-openclaw-1); compose_dir is the
+#               host compose project dir (/docker/openclaw-XXXX)
+#   type=mac    address is the cloudflared tunnel ssh alias from ~/.ssh/config
+#               (rescue-...); container and compose_dir are "-"
+#   type=local  the operator box itself (slug MUST be blackceomacmini);
+#               address, container, compose_dir are "-"
+#
+# Identity rules (mirroring install.sh S58-U15): first, last, and email are all
+# required; the email must be a real email shape with no whitespace; identity
+# values must not contain whitespace (env lines are unquoted VAR=val).
+#
+# The shared PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN are NOT in
+# this file: they are read from the operator env store at run time.
+#
+# openclaw-xxxx|vps|203.0.113.10|openclaw-xxxx-openclaw-1|/docker/openclaw-xxxx|Firstname|Lastname|client@example.com
+# example-mac-client|mac|rescue-example-mac-client|-|-|Firstname|Lastname|client@example.com
+# blackceomacmini|local|-|-|-|Operatorfirst|Operatorlast|operator@example.com
