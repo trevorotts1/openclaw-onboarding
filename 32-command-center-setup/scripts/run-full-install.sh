@@ -30,7 +30,15 @@
 # from the first un-completed step on any failure or retry.
 #
 # Usage:
-#   bash run-full-install.sh [--update-only] <client-slug> <company-name> <contact-email>
+#   bash run-full-install.sh [--update-only] [--app-dir <path>] <client-slug> <company-name> <contact-email>
+#
+#   --app-dir <path>  Pin the Command Center checkout this run operates on.
+#                  Overrides $CC_APP_DIR, which in turn overrides the default
+#                  ${HOME}/projects/command-center. Use this on any box whose
+#                  CC is not at the default path. In --update-only mode the
+#                  resolved directory MUST validate as a real Command Center
+#                  git checkout or the run FAILS (exit 1) — it is never
+#                  silently skipped. $CC_PORT is honored the same way.
 #
 #   --update-only  Skip phases already done on a prior full install
 #                  (prereqs, workspace folders, agent materialize, tunnel,
@@ -51,17 +59,34 @@
 
 set -u
 
-# ---- --update-only flag parsing ----
+# ---- flag parsing (--update-only, --app-dir) ----
 # Must happen BEFORE positional args so $@ is clean for the slug/name/email
-# assignments below.  The flag may appear in any position.
+# assignments below.  Flags may appear in any position.
 UPDATE_ONLY=false
+APP_DIR_FLAG=""
+APP_DIR_FLAG_SET=false
 _POSITIONAL=()
+_expect_app_dir=false
 for _arg in "$@"; do
+  if [[ "$_expect_app_dir" == "true" ]]; then
+    APP_DIR_FLAG="$_arg"; APP_DIR_FLAG_SET=true; _expect_app_dir=false; continue
+  fi
   case "$_arg" in
     --update-only) UPDATE_ONLY=true ;;
+    --app-dir) _expect_app_dir=true ;;
+    --app-dir=*) APP_DIR_FLAG="${_arg#--app-dir=}"; APP_DIR_FLAG_SET=true ;;
     *) _POSITIONAL+=("$_arg") ;;
   esac
 done
+if [[ "$_expect_app_dir" == "true" ]]; then
+  echo "run-full-install.sh: --app-dir requires a path argument" >&2; exit 2
+fi
+# Fail CLOSED on an explicitly-empty pin: `--app-dir ""` is an operator mistake,
+# and silently falling through to the default is exactly how the wrong directory
+# gets updated with a green receipt.
+if [[ "$APP_DIR_FLAG_SET" == "true" && -z "$APP_DIR_FLAG" ]]; then
+  echo "run-full-install.sh: --app-dir was given an empty path" >&2; exit 2
+fi
 set -- "${_POSITIONAL[@]+"${_POSITIONAL[@]}"}"
 
 CLIENT_SLUG="${1:-}"
@@ -96,8 +121,44 @@ STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 LOG_FILE="$OC_ROOT/workspace/.command-center-install.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DASHBOARD_REPO="https://github.com/trevorotts1/blackceo-command-center.git"
-DASHBOARD_DIR="${HOME}/projects/command-center"
-DASHBOARD_PORT=4000
+# ---- Command Center install location (APPDIR-01) --------------------------
+# This used to be an unconditional `DASHBOARD_DIR="${HOME}/projects/command-center"`
+# with NO override of any kind. On the operator Mac that path exists as a
+# non-git DATA directory (mission-control.db + backups) while the live install
+# sits elsewhere, so --update-only hit the `.git not found` branch, logged a
+# WARN, and EXITED 0 having deployed nothing — a green roll receipt for code
+# that never shipped. Two halves of the fix: a real override here, and a
+# fail-closed assertion at the --update-only gate (cc_assert_update_only_checkout).
+#
+# Precedence, highest first:
+#   1. --app-dir <path>   explicit CLI pin (this run, this box)
+#   2. $CC_APP_DIR        ambient env pin — the SAME variable name the Command
+#                         Center's own update.sh honors, so one pin drives both
+#   3. ${HOME}/projects/command-center   the historical default
+# An explicitly-pinned value must survive all the way to the update.sh call
+# site (see cc_route_update_through_canonical_path) — it is never re-derived
+# or overwritten downstream.
+cc_resolve_dashboard_dir() {
+  DASHBOARD_DIR_SOURCE="default"
+  if [[ "${APP_DIR_FLAG_SET:-false}" == "true" ]]; then
+    DASHBOARD_DIR="$APP_DIR_FLAG"
+    DASHBOARD_DIR_SOURCE="--app-dir flag"
+  elif [[ -n "${CC_APP_DIR:-}" ]]; then
+    DASHBOARD_DIR="$CC_APP_DIR"
+    DASHBOARD_DIR_SOURCE="CC_APP_DIR env"
+  else
+    DASHBOARD_DIR="${HOME}/projects/command-center"
+  fi
+  # true when the operator pinned the path — a bad pin is FATAL rather than
+  # silently falling back, matching update.sh's "fix the pin" posture.
+  DASHBOARD_DIR_PINNED=false
+  [[ "$DASHBOARD_DIR_SOURCE" != "default" ]] && DASHBOARD_DIR_PINNED=true
+  # Honor an ambient CC_PORT for the same reason: the update.sh call site below
+  # used to hardcode-override whatever the operator had set.
+  DASHBOARD_PORT="${CC_PORT:-4000}"
+  return 0
+}
+cc_resolve_dashboard_dir
 # Box-own OpenClaw config — the ONLY source for this box's gateway auth token
 # (fix #2) and its own primary TEXT model (fix #3). Per-box + per-client: never a
 # shared/operator value. Read-only here; the token value is never logged/printed.
@@ -155,6 +216,133 @@ fail_install() {
   # into the jq program — a reason with a quote/newline no longer corrupts state.
   state_set_arg '.commandCenterStatus = "failed" | .commandCenterFailureReason = $val' "$reason"
   exit 1
+}
+
+# ----------------------------------------------------------------------
+# APPDIR-01 — Command Center checkout validation (fail CLOSED)
+# ----------------------------------------------------------------------
+# MIRRORS blackceo-command-center's update.sh `_cc_validate_checkout` (added by
+# that repo's TRAP-2 fix). It cannot be REUSED across repos: this installer must
+# resolve the directory BEFORE any Command Center checkout is guaranteed to
+# exist, so it cannot source a file that only lives inside that checkout. The
+# semantics are mirrored deliberately, check for check:
+#   * the path exists and is readable
+#   * it is the TOP LEVEL of a git worktree, not a path inside one. Using
+#     `git rev-parse --show-toplevel` rather than a `.git` test also handles a
+#     linked worktree, where `.git` is a FILE and not a directory — the old
+#     `[[ -d "$DASHBOARD_DIR/.git" ]]` test failed closed-eyed on those.
+#   * that worktree's `origin` resolves to the Command Center repo, compared by
+#     normalized slug so https/ssh/with-or-without-.git all match
+#   * the app structure is present and package.json names the CC app
+#
+# ONE DELIBERATE DIVERGENCE, stated plainly: update.sh's CC_REQUIRED_MARKERS
+# also demands `ecosystem.config.cjs` and `scripts/atomic-deploy.sh`. Those are
+# version-dependent — this installer's own tier-3 path in
+# cc_route_update_through_canonical_path exists precisely to serve older boxes
+# whose checkout has NEITHER update.sh NOR scripts/atomic-deploy.sh. Requiring
+# them here would hard-fail boxes this installer is documented to support. The
+# decoy the trap is about (a non-git data directory) and the wrong-repo /
+# subdirectory cases are all caught by the git-toplevel + origin-slug +
+# package.json-name checks above, which are mirrored exactly.
+CC_PKG_NAME="mission-control"
+CC_REQUIRED_MARKERS=("package.json" "next.config.mjs" "src")
+CC_CANDIDATE_PATH=""
+CC_CANDIDATE_REASON=""
+
+# Normalize a git remote URL to its bare repo name: handles
+# https://host/owner/repo.git, git@host:owner/repo.git, and trailing slashes.
+cc_repo_slug() {
+  local u="${1%/}"
+  u="${u%.git}"
+  u="${u##*/}"
+  u="${u##*:}"
+  printf '%s' "$u"
+}
+
+# Validate one candidate directory. Sets CC_CANDIDATE_PATH (physical path) on
+# success, CC_CANDIDATE_REASON (why rejected) on failure. Returns 0/1. Globals
+# on purpose: a command substitution would run this in a subshell and the
+# rejection reason would be lost.
+cc_validate_cc_checkout() {
+  local cand="$1"
+  local phys top top_phys origin_url slug marker expected
+  CC_CANDIDATE_PATH=""
+  CC_CANDIDATE_REASON=""
+  expected="$(cc_repo_slug "$DASHBOARD_REPO")"
+
+  if [[ -z "$cand" ]]; then
+    CC_CANDIDATE_REASON="empty path"
+    return 1
+  fi
+  if [[ ! -d "$cand" ]]; then
+    CC_CANDIDATE_REASON="no such directory"
+    return 1
+  fi
+  phys="$(cd "$cand" 2>/dev/null && pwd -P)" || phys=""
+  if [[ -z "$phys" ]]; then
+    CC_CANDIDATE_REASON="directory exists but is not readable"
+    return 1
+  fi
+  if ! command -v git >/dev/null 2>&1; then
+    CC_CANDIDATE_REASON="git is not installed on this box — cannot verify any checkout"
+    return 1
+  fi
+  top="$(git -C "$phys" rev-parse --show-toplevel 2>/dev/null)" || top=""
+  if [[ -z "$top" ]]; then
+    CC_CANDIDATE_REASON="not a git checkout (plain directory or decoy)"
+    return 1
+  fi
+  top_phys="$(cd "$top" 2>/dev/null && pwd -P)" || top_phys="$top"
+  if [[ "$top_phys" != "$phys" ]]; then
+    CC_CANDIDATE_REASON="not a checkout root — it is a subdirectory of the git repo at $top_phys"
+    return 1
+  fi
+  origin_url="$(git -C "$phys" config --get remote.origin.url 2>/dev/null)" || origin_url=""
+  if [[ -z "$origin_url" ]]; then
+    CC_CANDIDATE_REASON="git repo has no 'origin' remote"
+    return 1
+  fi
+  slug="$(cc_repo_slug "$origin_url")"
+  if [[ "$slug" != "$expected" ]]; then
+    # Never echo the remote URL raw — an https remote can carry embedded
+    # credentials. The normalized slug is safe.
+    CC_CANDIDATE_REASON="origin remote is a different repo (got '$slug', expected '$expected')"
+    return 1
+  fi
+  for marker in "${CC_REQUIRED_MARKERS[@]}"; do
+    if [[ ! -e "$phys/$marker" ]]; then
+      CC_CANDIDATE_REASON="Command Center repo, but the app structure is incomplete — missing $marker"
+      return 1
+    fi
+  done
+  if ! grep -Eq "\"name\"[[:space:]]*:[[:space:]]*\"${CC_PKG_NAME}\"" "$phys/package.json" 2>/dev/null; then
+    CC_CANDIDATE_REASON="package.json is not the Command Center app (expected \"name\": \"${CC_PKG_NAME}\")"
+    return 1
+  fi
+  CC_CANDIDATE_PATH="$phys"
+  return 0
+}
+
+# The --update-only entry gate. A refresh run has NOTHING to build if the
+# resolved directory is not a real Command Center checkout — and reporting
+# success in that state is the false-green this whole guard exists to kill.
+# Never returns on failure: it fail_install()s (exit 1).
+cc_assert_update_only_checkout() {
+  if cc_validate_cc_checkout "$DASHBOARD_DIR"; then
+    # Canonicalize onto the validated PHYSICAL path so every downstream cd/
+    # git/npm call in phase 6 operates on the directory that was actually
+    # verified, not on a symlink alias of it.
+    DASHBOARD_DIR="$CC_CANDIDATE_PATH"
+    log "INFO" "phase=6 dashboard-update: resolved Command Center checkout at $DASHBOARD_DIR (source: $DASHBOARD_DIR_SOURCE)"
+    return 0
+  fi
+  local hint
+  if [[ "$DASHBOARD_DIR_PINNED" == "true" ]]; then
+    hint="The path was pinned via $DASHBOARD_DIR_SOURCE — fix the pin, or drop it to fall back to the default \${HOME}/projects/command-center."
+  else
+    hint="Nothing pinned this path — it is the built-in default. If this box's Command Center lives somewhere else, pin it: bash run-full-install.sh --update-only --app-dir /path/to/command-center (or export CC_APP_DIR=/path/to/command-center)."
+  fi
+  fail_install "phase=6 dashboard-update (--update-only): refusing to run against an unvalidated directory. Resolved DASHBOARD_DIR='$DASHBOARD_DIR' (source: $DASHBOARD_DIR_SOURCE); REJECTED because: ${CC_CANDIDATE_REASON}. ${hint} NOTHING WAS DEPLOYED — this run is a FAILURE, not a skip. (Previously this exited 0 with only a WARN, producing a green roll receipt for code that never shipped.)"
 }
 
 # ----------------------------------------------------------------------
@@ -881,6 +1069,12 @@ cc_route_update_through_canonical_path() {
   if [[ -f "$update_sh" ]]; then
     tier=1
     log "INFO" "phase=6 (update-only): tier 1 — routing through CC's own update.sh (freshly pulled, owns atomic-deploy.sh)"
+    # APPDIR-01: these two exports no longer CLOBBER an operator-provided value.
+    # DASHBOARD_DIR/DASHBOARD_PORT are now DERIVED from --app-dir / $CC_APP_DIR /
+    # $CC_PORT at the top of this script, so an explicit pin propagates into
+    # update.sh unchanged instead of being overwritten with the hardcoded
+    # default. Passing them explicitly is still required: update.sh would
+    # otherwise autodetect, and this run has already validated the exact path.
     if CC_APP_DIR="$DASHBOARD_DIR" CC_PORT="$DASHBOARD_PORT" bash "$update_sh" >>"$LOG_FILE" 2>&1; then
       log "INFO" "phase=6 (update-only): update.sh reported success"
     else
@@ -1087,44 +1281,50 @@ log "INFO" "phase=6 dashboard-deploy: starting"
 if [[ "$UPDATE_ONLY" == "true" ]]; then
   # --update-only: git pull --ff-only + npm install + db:push + pm2 restart.
   # Skips db:seed (protects client-customized rows).
-  # Skips git-clone (we already verified .git exists before invoking this flag).
+  # Skips git-clone: a refresh must never CREATE a checkout. The gate below
+  # proves one already exists (and is the right repo) or fails the run.
   log "INFO" "phase=6 dashboard-update: --update-only — git pull + npm install + .env.local + db:push + CC's own update.sh (atomic-deploy, single canonical path, P1-07) (no db:seed)"
-  if [[ ! -d "$DASHBOARD_DIR/.git" ]]; then
-    log "WARN" "phase=6 dashboard-update: $DASHBOARD_DIR/.git not found — run full install first (skipping refresh)"
+  # APPDIR-01: fail CLOSED. This used to be `[[ ! -d "$DASHBOARD_DIR/.git" ]]`
+  # -> WARN -> fall through the whole phase -> exit 0. Two defects in one line:
+  # the `-d` test is wrong for a linked git worktree (where .git is a FILE), and
+  # "not a checkout" was treated as a benign skip rather than the hard failure
+  # it is. cc_assert_update_only_checkout() validates repo IDENTITY (not merely
+  # the presence of a .git) and fail_install()s with the resolved path, the
+  # rejection reason, and the --app-dir remedy.
+  # Never returns if the resolved directory is not a validated CC checkout.
+  cc_assert_update_only_checkout
+  if cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
+    log "INFO" "phase=6: git sync to origin default branch done (detached-HEAD-safe; local patches preserved)"
   else
-    if cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
-      log "INFO" "phase=6: git sync to origin default branch done (detached-HEAD-safe; local patches preserved)"
-    else
-      log "WARN" "phase=6: git sync non-clean (detached-HEAD or conflicting local patch) — continuing with existing checkout"
-    fi
-    ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
-      && log "INFO" "phase=6: npm install done" \
-      || log "WARN" "phase=6: npm install reported errors (continuing)"
-    # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
-    # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
-    cc_write_env_local
-    ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
-      && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
-      || log "WARN" "phase=6: db:push reported errors (continuing)"
-    # DATA-08 decoy-DB guard — hard, deploy-blocking gate. db:push has just
-    # created/migrated the real mission-control.db, so this is the earliest
-    # point the app-side and scripts-side resolutions can be compared for real.
-    if ! cc_verify_db_parity; then
-      fail_install "phase=6 (update-only): DATA-08 decoy-DB guard failed -- shared-utils/resolve_db.py resolves a DIFFERENT mission-control.db than the app (see $LOG_FILE). Set/clear DATABASE_PATH so scripts and app agree, then re-run."
-    fi
-    # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
-    # (mission-control, command-center) BEFORE the atomic deploy restarts the
-    # canonical process, so it is never fighting a duplicate alias for :4000.
-    cc_reconcile_pm2_names
-    # (1) P1-07: build + restart now route through CC's OWN canonical update
-    # path (update.sh -> atomic-deploy.sh: fresh-.next/BUILD_ID gate, atomic
-    # swap, health-check, auto-rollback on failure) instead of a hand-rolled
-    # `npm run build` + bare `pm2 restart` with no rollback. This is the
-    # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
-    # a pull-without-a-verified-rebuild is now structurally impossible.
-    cc_route_update_through_canonical_path || \
-      log "ERROR" "phase=6 (update-only): CC did not end this update GREEN — see the post-update assertion line above and $LOG_FILE. Not fatal to the rest of the Sunday run (other clients' boxes must not be blocked by one), but this box needs operator attention."
+    log "WARN" "phase=6: git sync non-clean (detached-HEAD or conflicting local patch) — continuing with existing checkout"
   fi
+  ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
+    && log "INFO" "phase=6: npm install done" \
+    || log "WARN" "phase=6: npm install reported errors (continuing)"
+  # (2)+(3)+(4) provision CC .env.local BEFORE the build so both the fresh build
+  # AND the fresh boot see the gateway token / sovereign model / API-auth posture.
+  cc_write_env_local
+  ( cd "$DASHBOARD_DIR" && npm run db:push >>"$LOG_FILE" 2>&1 ) \
+    && log "INFO" "phase=6: db:push done (runs migrations via getDb(); no demo seeding on client boxes)" \
+    || log "WARN" "phase=6: db:push reported errors (continuing)"
+  # DATA-08 decoy-DB guard — hard, deploy-blocking gate. db:push has just
+  # created/migrated the real mission-control.db, so this is the earliest
+  # point the app-side and scripts-side resolutions can be compared for real.
+  if ! cc_verify_db_parity; then
+    fail_install "phase=6 (update-only): DATA-08 decoy-DB guard failed -- shared-utils/resolve_db.py resolves a DIFFERENT mission-control.db than the app (see $LOG_FILE). Set/clear DATABASE_PATH so scripts and app agree, then re-run."
+  fi
+  # IDEMPOTENT + RECONCILING (v16.1.7): delete every non-canonical CC alias
+  # (mission-control, command-center) BEFORE the atomic deploy restarts the
+  # canonical process, so it is never fighting a duplicate alias for :4000.
+  cc_reconcile_pm2_names
+  # (1) P1-07: build + restart now route through CC's OWN canonical update
+  # path (update.sh -> atomic-deploy.sh: fresh-.next/BUILD_ID gate, atomic
+  # swap, health-check, auto-rollback on failure) instead of a hand-rolled
+  # `npm run build` + bare `pm2 restart` with no rollback. This is the
+  # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
+  # a pull-without-a-verified-rebuild is now structurally impossible.
+  cc_route_update_through_canonical_path || \
+    log "ERROR" "phase=6 (update-only): CC did not end this update GREEN — see the post-update assertion line above and $LOG_FILE. Not fatal to the rest of the Sunday run (other clients' boxes must not be blocked by one), but this box needs operator attention."
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
 else

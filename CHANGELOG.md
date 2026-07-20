@@ -1,3 +1,45 @@
+## [v20.0.74]  -  2026-07-20  -  APPDIR-01: the Command Center `--update-only` false green is closed
+
+`32-command-center-setup/scripts/run-full-install.sh` could deploy **nothing**
+and still report success, which means a fleet roll would collect green receipts
+for code that never shipped. Three lines, one failure mode: `DASHBOARD_DIR` was
+hardcoded to `${HOME}/projects/command-center` with no override of any kind; the
+`update.sh` call site then clobbered any ambient `CC_APP_DIR`/`CC_PORT`, so
+pinning the environment variable could not rescue it either; and when that
+hardcoded path was not a git checkout, `--update-only` logged a WARN and fell
+through the entire phase — no build, no restart, no failure.
+
+Proven on the operator Mac, where `~/projects/command-center` is a non-git DATA
+directory (mission-control.db plus backups) while the live install sits
+elsewhere. Phase 6 deployed nothing and did not fail; on a box whose downstream
+gates are green the run ends 0.
+
+Closed by three new functions in that installer: `cc_resolve_dashboard_dir()`
+(precedence `--app-dir` > `$CC_APP_DIR` > the historical default, with
+`$CC_PORT` honored — and because the directory and port are now DERIVED from
+those variables, the `update.sh` call site propagates an operator pin instead of
+overwriting it); `cc_validate_cc_checkout()` (MIRRORS
+`blackceo-command-center`'s `update.sh:_cc_validate_checkout` — git top-level,
+`origin` matching by normalized repo slug, app structure, `package.json` name —
+and via `git rev-parse --show-toplevel` it accepts a linked worktree, where
+`.git` is a FILE, which the old `[[ -d .git ]]` test rejected); and
+`cc_assert_update_only_checkout()`, which fails CLOSED with exit 1 naming the
+resolved path, the rejection reason, and the `--app-dir` remedy. The
+full-install branch is untouched — there a missing `.git` still correctly means
+"clone it here" — and no existing gate was weakened.
+
+New `scripts/test-cc-app-dir-resolution.sh` (16 cases) extracts the fixed
+functions verbatim and also drives the real installer end-to-end in a sandboxed
+HOME against local-path git remotes: no network, no gateway, no pm2, no
+credentials, no box touched. Measured against the pre-fix revision it reports
+1 passed / 27 failed; with the fix, 16 passed / 0 failed. Wired into new CI
+workflow `cc-app-dir-resolution-guard.yml`. The sibling D6/D7 guard is
+unaffected at 14 passed / 0 failed. `32-command-center-setup/skill-version.txt`
+rolled v12.9.41 -> v12.9.42 (CI guard G3); all 11 repo version markers rolled
+v20.0.73 -> v20.0.74 via `scripts/bump-version.sh`. `cc-compat.json`
+`commandCenter.pinnedTag`/`minVersion` UNCHANGED. No client names, no secret
+values, no box identifiers, no model added/removed/substituted.
+
 ## [v20.0.73]  -  2026-07-20  -  Test target repointed: BlackCEO LLC -> BCEO Client Sandbox (operator ruling)
 
 Operator ruling 2026-07-20: test runs on the operator box now target the

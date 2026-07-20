@@ -1,0 +1,76 @@
+name: CC --app-dir resolution + update-only fail-closed guard
+
+# APPDIR-01 — fails the build if the Skill-32 Command Center installer
+# (32-command-center-setup/scripts/run-full-install.sh) ever regresses on the
+# FALSE-SUCCESS defect this guard was written for:
+#
+#   DASHBOARD_DIR was hardcoded to ${HOME}/projects/command-center with no
+#   override, the update.sh call site clobbered any ambient CC_APP_DIR/CC_PORT,
+#   and when that hardcoded path was not a git checkout --update-only logged a
+#   WARN and fell through the ENTIRE phase — deploying nothing and reporting
+#   success. On the operator Mac that path is a non-git DATA directory while the
+#   live install sits elsewhere, so a fleet roll would have collected green
+#   receipts for code that never shipped.
+#
+# The fix under guard:
+#   * cc_resolve_dashboard_dir()      --app-dir > $CC_APP_DIR > default; $CC_PORT
+#                                     honored. A pin now propagates to update.sh
+#                                     instead of being overwritten.
+#   * cc_validate_cc_checkout()       mirrors blackceo-command-center update.sh's
+#                                     _cc_validate_checkout (git toplevel + origin
+#                                     slug + app structure + package.json name),
+#                                     and via `git rev-parse --show-toplevel` it
+#                                     accepts a linked worktree, where .git is a
+#                                     FILE — the old `[[ -d .git ]]` did not.
+#   * cc_assert_update_only_checkout() fail_install()s (exit 1) naming the resolved
+#                                     path, the reason, and the --app-dir remedy.
+#                                     Never a silent, green skip.
+#
+# scripts/test-cc-app-dir-resolution.sh extracts those functions VERBATIM
+# (function-name-anchored awk — no reimplementation) from the real installer AND
+# runs the real installer end-to-end against sandboxed HOMEs with local-path git
+# remotes. No network, no gateway, no pm2, no credentials, no box is touched.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "scripts/test-cc-app-dir-resolution.sh"
+      - ".github/workflows/cc-app-dir-resolution-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "32-command-center-setup/scripts/run-full-install.sh"
+      - "scripts/test-cc-app-dir-resolution.sh"
+      - ".github/workflows/cc-app-dir-resolution-guard.yml"
+
+jobs:
+  cc-app-dir-resolution-guard:
+    name: --app-dir/CC_APP_DIR honored; a non-checkout --update-only fails LOUD
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure git identity (needed for local test-fixture commits)
+        run: |
+          git config --global user.email "ci@example.test"
+          git config --global user.name "CI"
+
+      - name: Syntax-check the installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 32-command-center-setup/scripts/run-full-install.sh
+          echo "bash -n: PASS"
+
+      - name: Run APPDIR-01 regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-cc-app-dir-resolution.sh
+          echo "cc-app-dir-resolution-guard: PASS"
