@@ -769,6 +769,318 @@ PYEOF
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 }
 
+# >>> TRAP1-PRECLEAR-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
+# ----------------------------------------------------------
+# TRAP 1 (canary 2026-07-19) -- SAFE .clawdbot relic pre-clear
+# ----------------------------------------------------------
+# BACKGROUND. OpenClaw 2026.7.1 tightened its startup-migration gate: it fatally
+# refuses to start the gateway when a box carries a stale
+# <ocroot>/plugins/installs.json or a leftover ~/.clawdbot directory. The
+# documented remedy was a hand-typed pre-clear -- literally
+#   mv ~/.clawdbot ~/.clawdbot.bak-pre-2026.7.1
+# run on every box "before any fleet-wide roll", on the ASSUMPTION that
+# ~/.clawdbot is always a dead relic of the clawdbot->OpenClaw rename.
+#
+# THAT ASSUMPTION IS FALSE ON AT LEAST ONE REAL BOX. A live canary run found a
+# box where ~/.openclaw/workspace is a SYMLINK pointing INTO ~/.clawdbot/workspace,
+# making ~/.clawdbot the box's LIVE workspace root (agent workspaces declared in
+# openclaw.json, the departments tree, heartbeat state, files written the same
+# day). Running the documented `mv` there would have dangled the symlink and
+# taken the box down. The pre-clear must therefore NEVER be a blind move.
+#
+# TWO CHANGES ARE MADE HERE:
+#
+#  1) DETECT BEFORE MOVING, AND FAIL CLOSED. Nothing is renamed until this box
+#     has been proven NOT to depend on .clawdbot. Any live signal -- a symlink
+#     resolving into it, an openclaw.json path referencing it, a non-empty
+#     workspace/ inside it, a file written in the last 30 days, or simply an
+#     inability to check -- refuses the pre-clear loudly and exits non-zero.
+#     Ambiguity counts as LIVE. We would rather halt a roll than dangle a box.
+#
+#  2) IT DOES NOT RUN BY DEFAULT. The pre-clear exists to survive an OpenClaw
+#     BINARY version bump to 2026.7.1. This updater performs no such bump: it
+#     contains no `npm install -g openclaw`, no `openclaw@<version>`, no
+#     `openclaw update/upgrade`, no docker pull, and neither platform bootstrap
+#     (platform/mac/bootstrap.sh, platform/vps/bootstrap.sh) installs the binary
+#     either. A normal `update-skills.sh` run therefore cannot trigger the
+#     2026.7.1 gate, so running a destructive pre-clear on every update would be
+#     pure downside. It is opt-in only:
+#         bash update-skills.sh --preclear-check        # report only, never moves
+#         bash update-skills.sh --preclear-2026-7-1     # move, only if provably safe
+#         OPENCLAW_PRECLEAR_2026_7_1=1 bash update-skills.sh   # same as above
+#
+# Exit codes for the pre-clear modes: 0 = clean (or nothing to do), 3 = REFUSED
+# (a live signal was found, or liveness could not be determined). 3 is distinct
+# so a fleet driver can tell "this box is fine" from "this box needs a human".
+#
+# Both layouts are covered: Mac ($HOME/.openclaw) and VPS/Docker, where the
+# OpenClaw home may be /data/.openclaw or /home/node/.openclaw. No single path
+# is assumed -- every candidate root that exists is inspected.
+# ----------------------------------------------------------
+
+# Absolute, symlink-resolved path. Portable: macOS has no `readlink -f` and may
+# have no `realpath`, so python3 first, then a cd/pwd -P fallback.
+_pc_realpath() {
+  local p="${1:-}" out="" d b
+  [ -n "$p" ] || return 0
+  if command -v python3 >/dev/null 2>&1; then
+    out="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$p" 2>/dev/null || true)"
+  fi
+  if [ -z "$out" ] && [ -d "$p" ]; then
+    out="$( cd "$p" 2>/dev/null && pwd -P || true )"
+  fi
+  if [ -z "$out" ]; then
+    d="$(dirname "$p")"; b="$(basename "$p")"
+    if [ -d "$d" ]; then
+      out="$( cd "$d" 2>/dev/null && pwd -P || true )"
+      [ -n "$out" ] && out="$out/$b"
+    fi
+  fi
+  printf '%s\n' "$out"
+}
+
+# Every OpenClaw home this box could be using, deduped, existing dirs only.
+# Mac: $HOME/.openclaw. VPS/Docker: /data/.openclaw or /home/node/.openclaw
+# (container images differ) -- we never assume which.
+_pc_openclaw_homes() {
+  local h seen=""
+  for h in "${OC_CONFIG:-}" "$HOME/.openclaw" /data/.openclaw /home/node/.openclaw /root/.openclaw; do
+    [ -n "$h" ] || continue
+    [ -d "$h" ] || continue
+    case " $seen " in *" $h "*) continue ;; esac
+    seen="$seen $h"
+    printf '%s\n' "$h"
+  done
+}
+
+# Every .clawdbot root this box could be carrying: the sibling of each OpenClaw
+# home, plus $HOME/.clawdbot. Existing paths only.
+_pc_clawdbot_roots() {
+  local h c seen=""
+  { _pc_openclaw_homes | while IFS= read -r h; do dirname "$h"; done; printf '%s\n' "$HOME"; } 2>/dev/null \
+  | while IFS= read -r c; do
+      [ -n "$c" ] || continue
+      printf '%s/.clawdbot\n' "$c"
+    done \
+  | while IFS= read -r c; do
+      [ -e "$c" ] || continue
+      case " $seen " in *" $c "*) continue ;; esac
+      seen="$seen $c"
+      printf '%s\n' "$c"
+    done
+}
+
+# Liveness verdict for ONE .clawdbot root.
+#   prints one "  - <reason>" line per live signal found
+#   returns 0 = LIVE (do not touch), 1 = no live signal found
+# Fails CLOSED: if a check cannot be performed, that is itself a live signal.
+_pc_clawdbot_is_live() {
+  local root="${1:-}" live=1 root_real="" home ocjson link target n
+
+  [ -n "$root" ] || { echo "  - empty path passed to liveness check (cannot verify)"; return 0; }
+
+  # F. The root is itself a symlink -> renaming it moves a link, not the data,
+  # and the data it points at may be live. Never guess.
+  if [ -L "$root" ]; then
+    echo "  - $root is itself a SYMLINK (target not inspected) -- refusing to move a link"
+    live=0
+  fi
+
+  root_real="$(_pc_realpath "$root")"
+  if [ -z "$root_real" ]; then
+    echo "  - could not resolve a real path for $root (cannot verify it is dead)"
+    return 0
+  fi
+
+  # E. Unreadable -> cannot verify -> treat as live.
+  if [ ! -r "$root" ]; then
+    echo "  - $root is not readable by this user (cannot verify it is dead)"
+    live=0
+  fi
+
+  # A. Any symlink under any OpenClaw home that resolves INTO .clawdbot.
+  #    This is exactly the operator-Mac case: ~/.openclaw/workspace -> ~/.clawdbot/workspace.
+  while IFS= read -r home; do
+    [ -n "$home" ] || continue
+    while IFS= read -r link; do
+      [ -n "$link" ] || continue
+      target="$(_pc_realpath "$link")"
+      [ -n "$target" ] || continue
+      case "$target" in
+        "$root_real"|"$root_real"/*)
+          echo "  - $link is a symlink resolving into $root_real (moving it would DANGLE this link)"
+          live=0
+          ;;
+      esac
+    done < <(find "$home" -maxdepth 2 -type l -print 2>/dev/null || true)
+  done < <(_pc_openclaw_homes)
+
+  # B. openclaw.json referencing paths under .clawdbot (declared agent
+  #    workspaces, skills.path, scripts, secrets...). COUNT ONLY is printed --
+  #    openclaw.json holds credentials under env.vars and is never dumped.
+  while IFS= read -r home; do
+    ocjson="$home/openclaw.json"
+    [ -f "$ocjson" ] || continue
+    n=""
+    if command -v python3 >/dev/null 2>&1; then
+      n="$(OCJ="$ocjson" ROOTR="$root_real" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+hits = 0
+root = os.environ["ROOTR"]
+def walk(node):
+    global hits
+    if isinstance(node, str):
+        if "/.clawdbot" in node or node == root or node.startswith(root + "/"):
+            hits += 1
+    elif isinstance(node, dict):
+        for v in node.values():
+            walk(v)
+    elif isinstance(node, list):
+        for v in node:
+            walk(v)
+try:
+    walk(json.load(open(os.environ["OCJ"])))
+    print(hits)
+except Exception:
+    print("ERR")
+PYEOF
+)"
+    else
+      # No python3: count matching LINES only. Never print the matched text.
+      n="$(grep -c -F -- '.clawdbot' "$ocjson" 2>/dev/null || echo 0)"
+    fi
+    if [ "$n" = "ERR" ] || [ -z "$n" ]; then
+      echo "  - could not parse $ocjson to check for .clawdbot references (cannot verify it is dead)"
+      live=0
+    elif [ "$n" -gt 0 ] 2>/dev/null; then
+      echo "  - $ocjson contains $n path reference(s) under .clawdbot (values withheld)"
+      live=0
+    fi
+  done < <(_pc_openclaw_homes)
+
+  # C. A non-empty workspace/ inside .clawdbot -- structural evidence this root
+  #    is being used as a workspace root, not a config relic.
+  if [ -d "$root/workspace" ]; then
+    n="$(find "$root/workspace" -maxdepth 1 -mindepth 1 -print 2>/dev/null | head -n 20 | wc -l | tr -d ' ' || true)"
+    if [ -n "$n" ] && [ "$n" -gt 0 ] 2>/dev/null; then
+      echo "  - $root/workspace exists and is NOT empty ($n+ entries) -- this looks like a live workspace root"
+      live=0
+    fi
+  fi
+
+  # D. Anything written in the last 30 days. A true relic is cold.
+  #    maxdepth caps runtime on trees with dozens of agent workspaces; live
+  #    boxes write near the top (heartbeat state, session files) well inside it.
+  n="$(find "$root" -maxdepth 6 -type f -mtime -30 -print 2>/dev/null | head -n 1 || true)"
+  if [ -n "$n" ]; then
+    echo "  - $root contains file(s) modified in the last 30 days (e.g. $n) -- not a cold relic"
+    live=0
+  fi
+
+  return $live
+}
+
+# mode: "check" (report only, never mutates) | "apply" (rename, only if proven safe)
+preclear_2026_7_1() {
+  local mode="${1:-check}"
+  local refused=0 found=0 root home reasons ts is_live
+  ts="$(date +%Y%m%d-%H%M%S)"
+
+  echo ""
+  echo "============================================"
+  echo "   OpenClaw 2026.7.1 relic pre-clear (${mode})"
+  echo "============================================"
+  echo "  NOTE: this updater performs NO OpenClaw binary upgrade, so a normal"
+  echo "        update run never trips the 2026.7.1 startup gate. This step is"
+  echo "        opt-in and is only needed immediately before a version roll."
+  echo ""
+
+  # ---- PASS 1: detect only. Nothing is mutated until every root is cleared. ----
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    found=1
+    echo "  [preclear] inspecting $root"
+    # ONE call: capture the evidence lines and the verdict together.
+    # _pc_clawdbot_is_live returns 0 = LIVE, 1 = no live signal.
+    is_live=0
+    reasons="$(_pc_clawdbot_is_live "$root")" || is_live=1
+    if [ "$is_live" = "0" ]; then
+      refused=1
+      echo ""
+      echo "  ################################################################"
+      echo "  ##  PRE-CLEAR REFUSED -- .clawdbot IS LIVE ON THIS BOX         ##"
+      echo "  ################################################################"
+      echo "  ##  Path : $root"
+      echo "  ##  This box uses .clawdbot as a LIVE workspace/state root."
+      echo "  ##  The documented 'mv ~/.clawdbot ~/.clawdbot.bak' pre-clear"
+      echo "  ##  WAS NOT RUN. Running it would dangle live symlinks and/or"
+      echo "  ##  orphan declared agent workspaces and take this box down."
+      echo "  ##"
+      echo "  ##  Evidence:"
+      printf '%s\n' "$reasons" | sed 's/^/  ##  /'
+      echo "  ##"
+      echo "  ##  DO NOT roll this box to OpenClaw 2026.7.1 yet. A human must"
+      echo "  ##  first migrate the live data OFF .clawdbot (relocate the"
+      echo "  ##  workspace and repoint openclaw.json + symlinks at the real"
+      echo "  ##  OpenClaw home), then re-run --preclear-check."
+      echo "  ################################################################"
+      echo ""
+    else
+      echo "  [preclear] no live signal found for $root"
+    fi
+  done < <(_pc_clawdbot_roots)
+
+  # A stale plugins/installs.json is the OTHER half of the 2026.7.1 gate. It is
+  # only ever renamed (never deleted) and only when the .clawdbot half cleared,
+  # so a refused run leaves the box in exactly the state it started in.
+  while IFS= read -r home; do
+    [ -f "$home/plugins/installs.json" ] && { found=1; echo "  [preclear] found stale relic: $home/plugins/installs.json"; }
+  done < <(_pc_openclaw_homes)
+
+  if [ "$found" = "0" ]; then
+    echo "  [preclear] no 2026.7.1 relics on this box -- nothing to do."
+    return 0
+  fi
+
+  if [ "$refused" = "1" ]; then
+    echo "  [preclear] RESULT: REFUSED (exit 3). Nothing was moved."
+    return 3
+  fi
+
+  if [ "$mode" != "apply" ]; then
+    echo "  [preclear] RESULT: SAFE to pre-clear. Re-run with --preclear-2026-7-1 to apply."
+    return 0
+  fi
+
+  # ---- PASS 2: apply. Only reached when every root cleared detection. ----
+  while IFS= read -r root; do
+    [ -n "$root" ] || continue
+    if mv "$root" "${root}.bak-pre-2026.7.1-${ts}" 2>/dev/null; then
+      echo "  [preclear] renamed $root -> ${root}.bak-pre-2026.7.1-${ts}"
+    else
+      echo "  [preclear] ERROR: failed to rename $root -- leaving it in place" >&2
+      refused=1
+    fi
+  done < <(_pc_clawdbot_roots)
+
+  while IFS= read -r home; do
+    [ -f "$home/plugins/installs.json" ] || continue
+    if mv "$home/plugins/installs.json" "$home/plugins/installs.json.bak-pre-2026.7.1-${ts}" 2>/dev/null; then
+      echo "  [preclear] renamed $home/plugins/installs.json -> installs.json.bak-pre-2026.7.1-${ts}"
+    else
+      echo "  [preclear] ERROR: failed to rename $home/plugins/installs.json" >&2
+      refused=1
+    fi
+  done < <(_pc_openclaw_homes)
+
+  if [ "$refused" = "1" ]; then
+    echo "  [preclear] RESULT: INCOMPLETE (exit 3). Do not roll this box." >&2
+    return 3
+  fi
+  echo "  [preclear] RESULT: pre-clear complete. Relics renamed, not deleted."
+  return 0
+}
+# <<< TRAP1-PRECLEAR-END
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
@@ -797,6 +1109,12 @@ main() {
   # (number prefix matches skill folder name prefix)
   # ----------------------------------------------------------
   ONLY_SKILLS=""
+  # TRAP 1: the 2026.7.1 relic pre-clear is OPT-IN ONLY (see preclear_2026_7_1
+  # above for why: this updater performs no OpenClaw binary upgrade).
+  PRECLEAR_MODE=""
+  if [ "${OPENCLAW_PRECLEAR_2026_7_1:-0}" = "1" ]; then
+    PRECLEAR_MODE="apply"
+  fi
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --only)
@@ -806,16 +1124,40 @@ main() {
       --only=*)
         ONLY_SKILLS="${1#--only=}"
         ;;
+      --preclear-check)
+        PRECLEAR_MODE="check"
+        ;;
+      --preclear-2026-7-1)
+        PRECLEAR_MODE="apply"
+        ;;
       --help|-h)
-        echo "Usage: update-skills.sh [--only \"05,06,35\"]"
+        echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
         echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
         echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
         echo "  (no flag)     Install/update all skills"
+        echo ""
+        echo "  --preclear-check       Report whether this box carries OpenClaw 2026.7.1 startup-gate"
+        echo "                         relics (~/.clawdbot, plugins/installs.json) and whether they are"
+        echo "                         SAFE to move. Never moves anything. Exit 3 = live, needs a human."
+        echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
+        echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
+        echo "                         Needed only immediately before an OpenClaw binary roll to 2026.7.1;"
+        echo "                         a normal update run performs no binary upgrade and does not need it."
         exit 0
         ;;
     esac
     shift || true
   done
+
+  # TRAP 1: pre-clear runs standalone and exits -- it is a pre-roll maintenance
+  # action, not part of a skill update. Exit 3 propagates "REFUSED / needs a
+  # human" to whatever fleet driver invoked it, so a roll halts loudly instead
+  # of proceeding to a version bump that would down the box.
+  if [ -n "$PRECLEAR_MODE" ]; then
+    local _pc_rc=0
+    preclear_2026_7_1 "$PRECLEAR_MODE" || _pc_rc=$?
+    exit "$_pc_rc"
+  fi
 
   echo "============================================"
   echo "   OpenClaw Skills Updater (Mac)"
@@ -3042,8 +3384,126 @@ PYEOF
   # checkout of blackceo-command-center. Does NOT re-embed the persona index (honors
   # "never rebuild a live correct index" and "client uses own keys").
   # ----------------------------------------------------------
-  _CC_DIR="$HOME/projects/command-center"
+  # ----------------------------------------------------------
+  # TRAP-3 (second-Command-Center guard): _CC_DIR was hardcoded to the SINGLE
+  # candidate "$HOME/projects/command-center". Every "does a CC already exist?"
+  # test below keyed off that one path, so a box whose CC lives ANYWHERE else
+  # (VPS /data/projects/command-center, legacy $HOME/projects/mission-control,
+  # a blackceo-command-center-named checkout) looked CC-less to this updater.
+  # The F10 bootstrap branch then ran run-full-install.sh in FULL mode, which
+  # clones a SECOND Command Center into $HOME/projects/command-center and —
+  # 32-command-center-setup/scripts/run-full-install.sh:1215-1218 —
+  # `pm2 delete blackceo-command-center` (evicting the LIVE board) and restarts
+  # pm2 from the brand-new clone. On a client box that is a service outage plus
+  # a divergent mission-control.db. It was disarmed on the operator Mac ONLY
+  # because .workforce-build-state.json had an empty contactEmail — an accident,
+  # not a guard.
+  #
+  # Fix: resolve _CC_DIR by scanning the same candidate set the rest of the
+  # fleet already uses (32-command-center-setup/scripts/add-department.sh:153-158,
+  # qc-command-center-setup.sh:23 `find $HOME /data ... -name blackceo-command-center`),
+  # accepting only a VALIDATED checkout (.git + origin remote is
+  # blackceo-command-center + package.json). Bootstrap is then gated on ABSENCE
+  # proven three independent ways (no checkout, no pm2 app, port unbound)
+  # instead of on an unrelated build-state field.
+  # ----------------------------------------------------------
+  # >>> TRAP3-CC-GUARD-HELPERS-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
+  _CC_DIR_CANONICAL="$HOME/projects/command-center"
+  _CC_PORT="${CC_PORT:-4000}"
+  _CC_PM2_NAMES="blackceo-command-center mission-control command-center"
+
+  # cc_is_valid_checkout — a directory is a real Command Center checkout only if
+  # it is a git repo whose origin remote is the blackceo-command-center repo AND
+  # it carries a package.json. Remote match is what stops an unrelated
+  # ~/projects/command-center scratch dir from being mistaken for the board.
+  cc_is_valid_checkout() {
+    _ccv_dir="$1"
+    [ -n "$_ccv_dir" ] || return 1
+    [ -d "$_ccv_dir/.git" ] || return 1
+    [ -f "$_ccv_dir/package.json" ] || return 1
+    _ccv_remote=$(git -C "$_ccv_dir" remote get-url origin 2>/dev/null || echo "")
+    echo "$_ccv_remote" | grep -q 'blackceo-command-center' || return 1
+    return 0
+  }
+
+  # cc_resolve_existing_dir — echo the first VALIDATED CC checkout on this box.
+  # Canonical path first so an already-correct box resolves unchanged; then the
+  # documented fleet alternates. Echoes nothing and returns 1 when none exists.
+  cc_resolve_existing_dir() {
+    for _ccr_cand in \
+      "$_CC_DIR_CANONICAL" \
+      "/data/projects/command-center" \
+      "$HOME/projects/blackceo-command-center" \
+      "/data/projects/blackceo-command-center" \
+      "$HOME/projects/mission-control" \
+      "$HOME/blackceo-command-center" \
+      "/opt/mission-control" \
+      "/app"
+    do
+      if cc_is_valid_checkout "$_ccr_cand"; then
+        echo "$_ccr_cand"
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  # cc_running_pm2_app — echo the name of any pm2 app already running a Command
+  # Center (canonical or legacy alias). Absence of pm2 is NOT evidence of
+  # absence of a CC; it just means this signal abstains.
+  cc_running_pm2_app() {
+    command -v pm2 >/dev/null 2>&1 || return 1
+    _ccp_list=$(pm2 jlist 2>/dev/null || echo "")
+    [ -n "$_ccp_list" ] || return 1
+    for _ccp_name in $_CC_PM2_NAMES; do
+      if printf '%s' "$_ccp_list" \
+        | CC_WANT="$_ccp_name" python3 -c 'import json,os,sys
+want = os.environ["CC_WANT"]
+try:
+    apps = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; then
+        echo "$_ccp_name"
+        return 0
+      fi
+    done
+    return 1
+  }
+
+  # cc_port_bound — 0 when something is already LISTENING on the CC port.
+  # Tries lsof, then ss, then netstat, then an HTTP probe. Every probe missing
+  # means "unknown", which returns 1 (abstain) — the checkout and pm2 signals
+  # still gate the bootstrap.
+  cc_port_bound() {
+    if command -v lsof >/dev/null 2>&1; then
+      lsof -nP -iTCP:"$_CC_PORT" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+      return 1
+    fi
+    if command -v ss >/dev/null 2>&1; then
+      ss -ltn 2>/dev/null | grep -qE "[:.]${_CC_PORT}[[:space:]]" && return 0
+      return 1
+    fi
+    if command -v netstat >/dev/null 2>&1; then
+      netstat -an 2>/dev/null | grep -qE "[:.]${_CC_PORT}[[:space:]]+.*LISTEN" && return 0
+      return 1
+    fi
+    if command -v curl >/dev/null 2>&1; then
+      curl -fsS -o /dev/null --max-time 5 "http://127.0.0.1:${_CC_PORT}/" 2>/dev/null && return 0
+    fi
+    return 1
+  }
+
+  _CC_DIR="$(cc_resolve_existing_dir || echo "")"
+  if [ -n "$_CC_DIR" ]; then
+    [ "$_CC_DIR" = "$_CC_DIR_CANONICAL" ] \
+      || echo "  ℹ Command Center checkout resolved at non-canonical path: $_CC_DIR"
+  else
+    # No existing checkout — the canonical path is where a bootstrap would land.
+    _CC_DIR="$_CC_DIR_CANONICAL"
+  fi
   _CC_RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
+  # <<< TRAP3-CC-GUARD-HELPERS-END
   # Resolve client identity from build-state once (used by BOTH the refresh and
   # the F10 bootstrap branch). An interview-completed box has these populated.
   _STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
@@ -3083,40 +3543,96 @@ PYEOF
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
   fi
-  if [ -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ]; then
-    _CC_REMOTE=$(git -C "$_CC_DIR" remote get-url origin 2>/dev/null || echo "")
-    if echo "$_CC_REMOTE" | grep -q 'blackceo-command-center'; then
-      echo ""
-      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
-      if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
-        echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + workspace seed + sync-departments + pm2 restart)"
-      else
-        echo "  ⚠ Command Center refresh reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
-      fi
-    fi
-  elif [ ! -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ] \
-       && [ -n "$_CC_SLUG" ] && [ -n "$_CC_COMPANY" ] && [ -n "$_CC_EMAIL" ]; then
-    # F10 — CC bootstrap on update. Previously the refresh block above was the
-    # ONLY CC path on update and it was gated on $_CC_DIR/.git existing, so an
-    # interview-completed box that never cloned the dashboard got neither the
-    # seeder nor the board on update — it stayed without a Command Center
-    # forever. Run run-full-install.sh in FULL mode (clone + npm install +
-    # db:push + Phase 6b workspace seed + sync-departments + pm2 start) so the
-    # update path truly converges to the install path. Gated on a REAL interview
-    # (build-state slug+company+email present) so a pre-interview/in-flight box
-    # is never bootstrapped. run-full-install.sh is itself state-gated/idempotent
-    # and runs as the box user (never root).
+  # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
+  if cc_is_valid_checkout "$_CC_DIR" && [ -f "$_CC_RUN_INSTALL" ]; then
     echo ""
-    echo "  Command Center not yet provisioned on this box (no checkout) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
-    if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
-      echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+    echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
+    # TRAP-3 visibility: run-full-install.sh --update-only refreshes its OWN
+    # hardcoded DASHBOARD_DIR ($HOME/projects/command-center, line 99). When this
+    # box's CC lives elsewhere the installer logs "…/.git not found — skipping
+    # refresh" (run-full-install.sh:1092-1093) and exits 0, so the refresh is a
+    # silent no-op. It does NOT clone on the --update-only path, so nothing is
+    # damaged — but the operator must not read "refreshed" and believe it.
+    if [ "$_CC_DIR" != "$_CC_DIR_CANONICAL" ]; then
+      echo "  ⚠ CC checkout is at $_CC_DIR but run-full-install.sh --update-only only refreshes"
+      echo "    $_CC_DIR_CANONICAL — this refresh will be a NO-OP for this box."
+      echo "    Refresh that checkout directly (installer needs a CC-dir override — see trap3 note)."
+    fi
+    if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
+      echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + workspace seed + sync-departments + pm2 restart)"
     else
-      echo "  ⚠ Command Center bootstrap reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+      echo "  ⚠ Command Center refresh reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
     fi
-  elif [ ! -d "$_CC_DIR/.git" ] && [ -f "$_CC_RUN_INSTALL" ] && [ -n "$_CC_SLUG" ]; then
-    echo ""
-    echo "  ℹ Command Center not provisioned and build-state is missing company/email — bootstrap deferred (needs slug+company+email)."
+  elif [ -f "$_CC_RUN_INSTALL" ]; then
+    # F10 — CC bootstrap on update. The refresh branch above is the path for a
+    # box that already HAS a Command Center; this branch is strictly for a box
+    # that has NONE. Run run-full-install.sh in FULL mode (clone + npm install +
+    # db:push + Phase 6b workspace seed + sync-departments + pm2 start) so the
+    # update path truly converges to the install path.
+    #
+    # TRAP-3: bootstrap is now gated on PROVEN ABSENCE, checked three
+    # independent ways, because run-full-install.sh in FULL mode is destructive
+    # to an existing board (it pm2-deletes the canonical app and restarts from
+    # its own fresh clone). ANY positive existence signal aborts the bootstrap
+    # and says so out loud. The previous gate leaned on build-state
+    # slug/company/email being populated; an empty contactEmail is an accident
+    # of interview state, not a statement about whether a CC exists.
+    _CC_EXISTS_REASON=""
+    if cc_is_valid_checkout "$_CC_DIR"; then
+      _CC_EXISTS_REASON="a valid Command Center checkout is present at $_CC_DIR"
+    fi
+    if [ -z "$_CC_EXISTS_REASON" ]; then
+      _CC_PM2_FOUND="$(cc_running_pm2_app || echo "")"
+      [ -n "$_CC_PM2_FOUND" ] \
+        && _CC_EXISTS_REASON="pm2 is already running a Command Center app named '$_CC_PM2_FOUND'"
+    fi
+    if [ -z "$_CC_EXISTS_REASON" ] && cc_port_bound; then
+      _CC_EXISTS_REASON="port $_CC_PORT is already bound by a listening process"
+    fi
+
+    # Poisoned-target guard: run-full-install.sh only clones when
+    # $DASHBOARD_DIR/.git is ABSENT (run-full-install.sh:1132). If the canonical
+    # path already holds some OTHER git repo, the installer skips the clone and
+    # silently adopts that repo as the Command Center. Refuse loudly instead.
+    _CC_TARGET_BLOCKED=""
+    if [ -z "$_CC_EXISTS_REASON" ] && [ -d "$_CC_DIR_CANONICAL/.git" ] \
+       && ! cc_is_valid_checkout "$_CC_DIR_CANONICAL"; then
+      _CC_TARGET_BLOCKED="$_CC_DIR_CANONICAL contains a git repo that is NOT blackceo-command-center"
+    fi
+
+    if [ -n "$_CC_TARGET_BLOCKED" ]; then
+      echo ""
+      echo "  ⚠ Command Center bootstrap REFUSED — $_CC_TARGET_BLOCKED."
+      echo "    The installer skips its clone when a .git is already present, so it would"
+      echo "    adopt that unrelated repo as the Command Center. Move or remove that"
+      echo "    directory, then re-run the update."
+    elif [ -n "$_CC_EXISTS_REASON" ]; then
+      echo ""
+      echo "  ⏭ Command Center bootstrap SKIPPED — this box already has one: $_CC_EXISTS_REASON."
+      echo "    Bootstrap is only for a box with NO Command Center. Running the full"
+      echo "    installer here would clone a second copy, pm2-delete the running app and"
+      echo "    restart from the new clone (service outage + divergent mission-control.db)."
+      echo "    If this box genuinely needs a rebuild, run run-full-install.sh manually."
+    elif [ -n "$_CC_SLUG" ] && [ -n "$_CC_COMPANY" ] && [ -n "$_CC_EMAIL" ]; then
+      # Absence proven. slug+company+email are required ARGUMENTS of a full
+      # install (run-full-install.sh:73-83 hard-exits without all three) — an
+      # input-completeness precondition, not the safety guard.
+      echo ""
+      echo "  Command Center not present on this box (no checkout, no pm2 app, port $_CC_PORT free) — bootstrapping full install (clone + db:push + workspace seed + sync)..."
+      if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
+      else
+        echo "  ⚠ Command Center bootstrap reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+      fi
+    elif [ -n "$_CC_SLUG" ]; then
+      echo ""
+      echo "  ℹ Command Center not provisioned and build-state is missing company/email — bootstrap deferred (needs slug+company+email)."
+    else
+      echo ""
+      echo "  ℹ Command Center not provisioned and build-state has no client slug — bootstrap deferred (interview not completed)."
+    fi
   fi
+  # <<< TRAP3-CC-BOOTSTRAP-BRANCH-END
 
   fi
 
