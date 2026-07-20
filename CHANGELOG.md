@@ -1,3 +1,44 @@
+## [v20.0.70]  -  2026-07-19  -  Skill 58 ledger: S58-U21 release-ripple + truth-gate close-out (ONB leg)
+
+v20.0.70 — `closeout/s58-u21-podcast-terminal`: closes the ONB (repo) leg of S58-U21, the
+terminal "release ripple + truth-gate close-out" unit that gates every `verified` row in
+`ledgers/skill58-podbean-proxy-2026-07-16.md`.
+
+- **Ledger:** `ledgers/skill58-podbean-proxy-2026-07-16.md` U21 row moves `pending` ->
+  `in_progress` — deliberately NOT `verified` in this same PR. This ledger's own header
+  defines `verified` for repo legs as "merge commit is an ancestor of origin/main +
+  annotated tag resolves on the remote"; neither fact can exist before this very PR
+  merges, and the ledger-truth gate (`scripts/ledger-truth-gate.py`) correctly returns
+  verdict=UNKNOWN for a pre-merge `verified` claim on it (no merged branch, no citable
+  merge SHA yet — chicken-and-egg by construction for a terminal close-out unit, and the
+  gate refusing it is the gate working, not a gate defect). The flip to `verified`, with
+  the PR #, merge-commit SHA, ancestor confirmation, and annotated-tag proof appended to
+  the row, is the merge-writer's immediate post-merge follow-up per the row's own
+  append-evidence convention — never claimed in advance of the actual merge. **Retraction:**
+  an earlier draft of this entry recorded `GATE RESULT: PASS` from a pre-merge gate run;
+  that run had omitted the tool's mandatory `--cc-dir` argument and errored, so the PASS
+  was never actually produced — retracted here, not carried forward. The row's bounded,
+  read-only live-leg n8n re-check (health-check OK, roster table schema + 31/31
+  good-standing unchanged, production publish workflow's `updatedAt` byte-identical to
+  its already-recorded value) stands as recorded on the row.
+- **Ripple:** `scripts/bump-version.sh v20.0.70` rolled all 11 tracked repo version
+  markers `v20.0.68` -> `v20.0.70` in lockstep (`--check` exit 0 before and after).
+  **Renumbered v20.0.69 -> v20.0.70 pre-tag** (renumber-on-collision, same convention as
+  v20.0.66/v20.0.67's own notes): `06-ghl-install-pages/skill-version.txt` was already
+  pre-bumped to `v20.0.69` on `main` by `ee1dc5a4` (U24's own G3-compliance bump, the
+  `d00c4b5c`-class standing fix), so a v20.0.69 roll left that marker with NO diff while
+  this PR changes other files under `06-ghl-install-pages/` (`browser_manager.py`/`.sh`) —
+  the exact same-value collision G3's diff-presence heuristic flags, previously cleared by
+  retargeting one patch forward in `0348b9b3` (v20.0.67 -> v20.0.68). Applied PRE-tag here
+  (unlike `0348b9b3`'s post-tag case): no v20.0.69 tag, merge, or release ever existed, so
+  this same entry is renumbered in place rather than superseded, and v20.0.69 is skipped
+  (that number is spent on `main`'s 06 marker). Annotated tag `v20.0.70` (`git tag -a`;
+  `git cat-file -t` == `tag`) is cut at the merge-writer's step, at actual merge time —
+  the same standing convention this repo already uses (see v20.0.67/v20.0.68's own
+  entries above).
+- No client names, no emails, no channel ids, no secret values read or printed this
+  pass; client skills/engines still run only on the client's own providers.
+
 ## [v20.0.68]  -  2026-07-17  -  G3 correction: repo-wide roll re-targeted one patch forward after an exact-value collision
 
 v20.0.68 — corrects a CI regression introduced by the v20.0.67 repo-wide roll (previous entry, below). That roll brought all 11 canonical version markers into agreement at v20.0.67, and did fix the two checks it targeted ("QC static invariants" and "Verify all version markers agree"), but the SAME commit turned a third, previously-green check red: "G3 — skill content change requires skill-version.txt bump."
