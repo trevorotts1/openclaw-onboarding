@@ -84,10 +84,11 @@
 #   pair from PROCESS env — so a freshly provisioned box would keep silently
 #   falling back to broker mode until its next restart. Therefore: when (and
 #   only when) a box actually CHANGED, mac boxes get a gateway restart
-#   (openclaw CLI, launchctl kickstart fallback) and vps boxes get the
-#   force-recreate above. OK_ALREADY boxes are NEVER restarted, so idempotent
-#   re-runs disturb nothing. --no-restart skips both (box grades PARTIAL, not
-#   OK — a changed-but-not-restarted box is not a proven box).
+#   (launchctl kickstart, stop fallback on rc 125/126, then PID-change + health
+#   proof) and vps boxes get the force-recreate above. OK_ALREADY boxes are
+#   NEVER restarted, so idempotent re-runs disturb nothing. --no-restart skips
+#   both (box grades PARTIAL, not OK — a changed-but-not-restarted box is not a
+#   proven box).
 #
 # USAGE:
 #   bash scripts/fleet-roll/podbean-publish-provision-roll.sh \
