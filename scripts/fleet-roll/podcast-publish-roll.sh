@@ -85,6 +85,9 @@
 # ============================================================================
 set -u
 set -o pipefail
+echo "SUPERSEDED"
+echo "Use scripts/fleet-roll/podbean-publish-provision-roll.sh"
+exit 1
 
 # The five keys this roll owns (the remote payload hardcodes the full list;
 # NOTHING else is ever written). K_URL / K_TOK are also used by the VPS host
