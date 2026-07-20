@@ -6,6 +6,14 @@ REST API (`GET /funnels/page/<id>?locationId=<loc>`) on 2026-06-26, render-verif
 (HTTP 200 + marker in rendered body), and committed as the canonical reference for
 `new_page_blob()` in `tools/ghl_rest_canvas.py` (B1 fix).
 
+> **Test-target note (2026-07-20).** The operator's designated test sub-account moved
+> from BlackCEO LLC (`Mct54Bwi1KlNouGXQcDX`) to **BCEO Client Sandbox**
+> (`XCgFTEA1oDvsPnTqqgoB`) per operator ruling — see
+> `ledgers/test-target-repoint-2026-07-20.md`. These golden blobs and
+> `PROVENANCE.json` remain a true capture record from the PREVIOUS fixture and are
+> deliberately NOT rewritten. Any FUTURE golden re-capture targets BCEO Client
+> Sandbox.
+
 ## Files
 
 | File | What it is |

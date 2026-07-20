@@ -1,3 +1,21 @@
+## [v20.0.73]  -  2026-07-20  -  Test target repointed: BlackCEO LLC -> BCEO Client Sandbox (operator ruling)
+
+Operator ruling 2026-07-20: test runs on the operator box now target the
+**BCEO Client Sandbox** sub-account (`XCgFTEA1oDvsPnTqqgoB`) instead of
+**BlackCEO LLC** (`Mct54Bwi1KlNouGXQcDX`). Live env stores on the operator box
+(secrets env + openclaw config `env.vars`: location id + both write-allowlists,
+six settings total) were repointed and live-verified the same day (HTTP 200
+name-match on the new id; write gate refuses the old id). Repo side: the
+forward-looking designation prose in `06-ghl-install-pages/tools/gates.json`
+(`selectors._note`) and `06-ghl-install-pages/references/golden/README.md` now
+names the sandbox, and `ledgers/test-target-repoint-2026-07-20.md` records the
+full was->now list, the live proof, the sandbox ownership check, and the one
+known follow-up (a location-scoped Private Integration Token must be issued
+inside the sandbox for REST flows; the internal/browser auth path already
+works). All pre-2026-07-20 captures/evidence naming BlackCEO LLC are preserved
+unrewritten as records of the previous fixture. Version ripple to v20.0.73
+satisfies G3 (skill content changed under `06-ghl-install-pages/`).
+
 ## [v20.0.72]  -  2026-07-19  -  Fix CI red on main: banned operator-machine path token stripped from U22 evidence files
 
 v20.0.72 — repo-hygiene fix, no functional skill change. The U22-train evidence files
