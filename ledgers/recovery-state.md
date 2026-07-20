@@ -4,9 +4,9 @@ AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (b
 
 **FRESHNESS CONTRACT — verify liveness LIVE, never from this prose.** The reconciler runs on a 10-minute cron on the operator box, but the git-committed copy of this file is only rewritten (and committed) when its SUBSTANTIVE content changes — so an old `Generated` timestamp here does NOT by itself prove the reconciler is alive OR dead. Liveness proof lives on the operator box: `~/ledger-reconciler/recovery-state.md` gets a fresh `Generated` on EVERY pass, and `~/ledger-reconciler/logs/reconcile.log` gets a `run start`/`run end` pair per pass. If the newest `run start` there is older than ~20 minutes, the reconciler is DEAD (check `crontab -l` for the reconcile.sh entry) and every claim below — including the Integrity Alarms — is frozen at the `Generated` time: the alarms were true AT GENERATION but may have been resolved since. (This exact failure happened 2026-07-16: the cron was paused for a defect fix, never re-enabled, and 5 then-true alarms were presented as current for 3 days after every one of them had been resolved by merge.)
 
-Generated: 2026-07-20T03:00:04Z
-openclaw-onboarding `origin/main` HEAD: `3f57363a07aa98121043b35870168b40fd2603f3`
-blackceo-command-center `origin/main` HEAD: `7d1a247e7f499b99cf43a6e2049ef223bc7143e4`
+Generated: 2026-07-20T03:30:02Z
+openclaw-onboarding `origin/main` HEAD: `04c2a15024f0a2b99ff3b2b8ae5b5daa8826fb3e`
+blackceo-command-center `origin/main` HEAD: `b0b2be903c2b08f1c7676aa60cd93fb4135d65c8`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
 
@@ -49,7 +49,7 @@ No mismatches found this run.
 | U18 | `skill6-v2/U18` | `0b72ee80` | True | `706aff5d` | v20.0.27 | verified | 9.3 |
 | U2 | `skill6-v2/U2` | `1cb2c874` | True | `86420ff7` | v20.0.18 | verified | 8.9 |
 | U20 | `skill6-v2/U20` | `1bbfe0f0` | True | `ea371000` | v20.0.23 | verified | 9.1 |
-| U21 | `skill6-v2/U21` | `ad92145d` | True | `0d3f31a0` | v20.0.33 | verified (ONB half) | - |
+| U21 | `skill6-v2/U21` | `ad92145d` | True | `0d3f31a0` | v20.0.33 | verified (both halves — CC half merged, tag v6.0.18) | - |
 | U22 | `skill6-v2/U22` | `50ff2e79` | True | `b64c8166` | v20.0.35 | verified (LIVE-PROOF tier PAID 2026-07-19 — fixture-funnel 23/23 + producer→CC ingest handshake, re-proven live, evidence 06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/; A-U7/B-U10 GHL→Vercel live legs remain operator-gated on a named sandbox GHL location, owed, not claimed) | - |
 | U22-offline | `skill6-v2/U22-offline` | `694c341d` | True | `37431f41` | v20.0.71 | (no row) | - |
 | U23 | `skill6-v2/U23` | `2ff57796` | True | `f350cc9d` | v20.0.39 | verified | - |
@@ -62,10 +62,10 @@ No mismatches found this run.
 | U30 | `skill6-v2/U30` | `d3b4d0de` | True | `7e1a07e4` | v20.0.61 | verified (test-proof confirmed) | - |
 | U31 | `skill6-v2/U31` | `e7c3cbb5` | True | `ebef2f72` | v20.0.54 | verified | - |
 | U39 | `skill6-v2/U39` | `3ca7edae` | True | `1eb670d9` | v20.0.61 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (ONB half) | - |
+| U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (both halves — CC half merged, tag v6.0.17) | - |
 | U44 | `skill6-v2/U44` | `c6aca95f` | True | `0ecbcebe` | v20.0.60 | verified | - |
-| U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (ONB half) | - |
-| U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
+| U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (both halves — CC half merged, tag v6.0.16) | - |
+| U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; live "prove the loop" run NOT an operator item — blocked on two Command Center code defects, dispatched as their own build unit; D12/D-HL-3 crown-DECISION ratification is the SOLE remaining operator item) | - |
 | U59 | `skill6-v2/U59` | `985935c4` | True | `5c51fb96` | v20.0.60 | verified (test-proof confirmed) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `c3d13ec5` | True | `5a55f459` | v20.0.60 | DONE (operator-closed) — legs (a)/(c) PROVEN live; leg (b)/the authorization question below is SUPERSEDED by the 2026-07-19 operator closure (see lead sentence) | - |
@@ -76,7 +76,7 @@ No mismatches found this run.
 | U7 | `skill6-v2/U7` | `f06ce74c` | True | `8004d0b2` | v20.0.34 | verified | - |
 | U70 | `skill6-v2/U70` | `5fdbe35d` | True | `c7475499` | v20.0.45 | verified (repo leg; live provisioning owed) | - |
 | U71 | `skill6-v2/U71` | `16a6441c` | True | `144d2e88` | v20.0.59 | verified (repo leg; live snapshot-chain run owed) | - |
-| U74 | `skill6-v2/U74` | `c2772c0c` | True | `92d106a3` | v20.0.67 | verified (repo-half; n8n-half owed) | - |
+| U74 | `skill6-v2/U74` | `c2772c0c` | True | `92d106a3` | v20.0.67 | verified (repo-half 2026-07-17; the owed live one-publish-one-episode count has since been run and is cited in-row, 2026-07-19) | - |
 | U78 | `skill6-v2/U78` | `3bb3b2e5` | True | `8c631959` | v20.0.65 | verified (live record on file; not re-executed this pass) | - |
 | U79 | `skill6-v2/U79` | `3be48c21` | True | `b62455b1` | v20.0.63 | verified (test-proof confirmed) | - |
 | U8 | `skill6-v2/U8` | `2034ad79` | True | `3abbafe5` | v20.0.29 | verified | 8.9 |
@@ -122,7 +122,7 @@ No mismatches found this run.
 | U12 | `skill6-v2/U12` | `d9649e50` | True | `05971bda` | v6.0.53 | verified (test-proof confirmed) | - |
 | U15-cc | `skill6-v2/U15-cc` | `f273e5a1` | True | `99da561c` | v6.0.57 | (no row) | - |
 | U20 | `skill6-v2/U20` | `5e5c3bb9` | True | `ae80043b` | v6.0.4 | verified | 9.1 |
-| U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 | verified (ONB half) | - |
+| U21 | `skill6-v2/U21` | `5374c4fd` | True | `4759561a` | v6.0.18 | verified (both halves — CC half merged, tag v6.0.18) | - |
 | U22 | `skill6-v2/U22` | `f4f933ff` | True | `ae972738` | v6.0.20 | verified (LIVE-PROOF tier PAID 2026-07-19 — fixture-funnel 23/23 + producer→CC ingest handshake, re-proven live, evidence 06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/; A-U7/B-U10 GHL→Vercel live legs remain operator-gated on a named sandbox GHL location, owed, not claimed) | - |
 | U22-offline | `skill6-v2/U22-offline` | `6034e881` | True | `fe66e378` | v6.0.60 | (no row) | - |
 | U26 | `skill6-v2/U26` | `5e26d8d8` | True | `b3c585c1` | v6.0.3 | verified | 8.8 |
@@ -133,7 +133,7 @@ No mismatches found this run.
 | U37 | `skill6-v2/U37` | `88db8a74` | True | `d80eea2d` | v6.0.34 | verified | - |
 | U38 | `skill6-v2/U38` | `6971f6ab` | True | `b9b20b9e` | v6.0.40 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U39 | `skill6-v2/U39` | `163e75eb` | True | `3da3271e` | v6.0.45 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (ONB half) | - |
+| U4 | `skill6-v2/U4` | `ca647283` | True | `98e55842` | v6.0.17 | verified (both halves — CC half merged, tag v6.0.17) | - |
 | U40 | `skill6-v2/U40` | `1e9a57ce` | True | `36674061` | v6.0.6 | verified | 8.9 |
 | U41 | `skill6-v2/U41` | `64863d52` | True | `619b9eca` | v6.0.7 | verified | 8.9 |
 | U42 | `skill6-v2/U42` | `b50987cb` | True | `4b983a13` | v6.0.21 | verified | 9.2 |
@@ -144,9 +144,9 @@ No mismatches found this run.
 | U47 | `skill6-v2/U47` | `2944303f` | True | `169355ef` | v6.0.22 | verified | 9.0 |
 | U48 | `skill6-v2/U48` | `1dc10292` | True | `7f1c6620` | v6.0.9 | verified | 9.2 |
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 | verified | 9.0 |
-| U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (ONB half) | - |
+| U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (both halves — CC half merged, tag v6.0.16) | - |
 | U50 | `skill6-v2/U50` | `8d0c480a` | True | `28e91598` | v6.0.37 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 crown-DECISION ratification + live "prove the loop" run still waiting on Trevor / operator) | - |
+| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; live "prove the loop" run NOT an operator item — blocked on two Command Center code defects, dispatched as their own build unit; D12/D-HL-3 crown-DECISION ratification is the SOLE remaining operator item) | - |
 | U54 | `skill6-v2/U54` | `806b98c8` | True | `7b6642ac` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
