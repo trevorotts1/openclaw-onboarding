@@ -1081,6 +1081,117 @@ preclear_2026_7_1() {
   return 0
 }
 # <<< TRAP1-PRECLEAR-END
+
+# ----------------------------------------------------------
+# SELF-HEAL: weekly-cron updater URL
+# ----------------------------------------------------------
+# THE BUG THIS REPAIRS
+# Two updaters live in this repo and they behave OPPOSITELY:
+#   * THIS script (repo root update-skills.sh) -- CORRECT. Unconditionally
+#     rm -rf + cp -r every skill, unconditionally overlays shared-utils, and
+#     replicates universal-sops.
+#   * scripts/update-skills.sh (LEGACY) -- BROKEN. Version-GATED: when a skill's
+#     local skill-version.txt string equals the staged one it SKIPS that skill
+#     without ever examining its contents, never touches shared-utils or
+#     universal-sops at all -- and then writes the version stamp ANYWAY.
+#
+# Every box runs $HOME/.openclaw/skills/.update-restart-if-needed from a Sunday
+# 03:00 cron. scripts/setup-weekly-update.sh was corrected on 2026-06-27
+# (6a881c8a) to install the ROOT url, but NOTHING rewrote the copy already on
+# disk -- so every box provisioned BEFORE that date runs the LEGACY updater
+# every week, forever.
+#
+# WHY THAT IS A TIME BOMB AND NOT MERELY A SLOW UPDATE
+# The legacy updater stamps .onboarding-version with the version it CLAIMS to
+# have installed, having actually skipped most skill content. Once a box carries
+# a stamp equal to this script's ONBOARDING_VERSION, the whole-run gate in
+# main() ("Already up to date" -> exit 0) makes THIS updater copy NOTHING. A
+# fleet roll then reads a matching stamp and silently no-ops while reporting
+# success, leaving stale persona engines and missing publish scripts in place.
+# In short: the legacy cron poisons this script's own version gate.
+#
+# PLACEMENT IS LOAD-BEARING
+# The call site sits BEFORE the UPDATE-PENDING prompt and BEFORE the version
+# gate -- both of which `exit 0`. A self-heal placed after either one would
+# never execute on precisely the boxes that are already poisoned, i.e. the only
+# boxes it exists to rescue. Do not move this call below the version gate.
+#
+# SAFETY
+# The edit is surgical (the URL line only), always takes a timestamped backup
+# first, and rewrites through a temp file + `cat >` so the original inode and
+# its 0700 permissions are preserved. It never CREATES the cron script and
+# never touches crontab -- installing a cron remains setup-weekly-update.sh's
+# job. On a box that is already correct it is a silent no-op.
+#
+# PATH NOTE: this targets $HOME/.openclaw/skills explicitly rather than
+# $SKILLS_DIR. discover_skills_dir() resolves to /data/.openclaw/skills on VPS
+# platforms, but setup-weekly-update.sh hardcodes the $HOME path when it writes
+# the cron script -- so $HOME is where the file to repair actually lives. Both
+# are checked anyway (deduplicated) in case a box differs.
+# ----------------------------------------------------------
+CANONICAL_UPDATER_URL="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
+LEGACY_UPDATER_PATH_FRAGMENT="main/scripts/update-skills.sh"
+
+heal_one_weekly_cron_updater() {
+  local cron_script="$1"
+
+  # Never CREATE the cron script here -- only repair one already on disk.
+  [ -f "$cron_script" ] || return 0
+
+  if ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$cron_script" 2>/dev/null; then
+    echo "  [cron-heal] OK -- already points at the root updater: $cron_script"
+    return 0
+  fi
+
+  echo "  [cron-heal] LEGACY updater URL detected in $cron_script"
+
+  local backup="${cron_script}.bak.$(date +%Y%m%d-%H%M%S)"
+  if ! cp -p "$cron_script" "$backup" 2>/dev/null; then
+    echo "  [cron-heal] WARN: could not write a backup -- refusing to edit $cron_script"
+    return 0
+  fi
+
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/cron-heal-XXXXXX" 2>/dev/null)" || {
+    echo "  [cron-heal] WARN: mktemp failed -- leaving $cron_script untouched"
+    return 0
+  }
+
+  # Portable in-place edit: BSD sed (-i '') and GNU sed (-i) disagree on the
+  # backup-suffix argument, so write to a temp file and copy it back instead of
+  # using sed -i at all. `cat > "$cron_script"` (not mv) preserves the original
+  # inode, owner and 0700 mode -- an mv would install the temp file's 0600.
+  if sed "s|${LEGACY_UPDATER_PATH_FRAGMENT}|main/update-skills.sh|g" "$cron_script" > "$tmp" 2>/dev/null \
+     && [ -s "$tmp" ] \
+     && grep -q "$CANONICAL_UPDATER_URL" "$tmp" \
+     && ! grep -q "$LEGACY_UPDATER_PATH_FRAGMENT" "$tmp"; then
+    cat "$tmp" > "$cron_script"
+    rm -f "$tmp"
+    echo "  [cron-heal] REPOINTED legacy -> root updater"
+    echo "               script: $cron_script"
+    echo "               backup: $backup"
+  else
+    rm -f "$tmp"
+    echo "  [cron-heal] WARN: rewrite produced unexpected content -- original left untouched"
+  fi
+}
+
+heal_weekly_cron_updater() {
+  local seen=""
+  local candidate
+  for candidate in "$HOME/.openclaw/skills/.update-restart-if-needed" \
+                   "${SKILLS_DIR:-}/.update-restart-if-needed"; do
+    case "$candidate" in
+      /.update-restart-if-needed|"") continue ;;   # empty SKILLS_DIR guard
+    esac
+    case " $seen " in
+      *" $candidate "*) continue ;;               # already healed this path
+    esac
+    seen="$seen $candidate"
+    heal_one_weekly_cron_updater "$candidate"
+  done
+}
+
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
@@ -1172,6 +1283,12 @@ main() {
   SKILLS_DIR=$(discover_skills_dir)
   export SKILLS_DIR
   echo "  📂 Skills directory: $SKILLS_DIR"
+
+  # SELF-HEAL the weekly cron's updater URL. See heal_weekly_cron_updater above
+  # for the full rationale. This MUST stay above the UPDATE-PENDING prompt and
+  # the version gate below -- both of them `exit 0`, and a box already poisoned
+  # by the legacy updater is exactly the box that hits those early exits.
+  heal_weekly_cron_updater
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,

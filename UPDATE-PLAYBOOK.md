@@ -10,9 +10,19 @@ This playbook defines how updates are applied to an already-onboarded BlackCEO s
 ### Method 1: Terminal (Manual)
 The client or Trevor runs the universal bootstrap command in Terminal:
 ```
-curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/scripts/update-skills.sh | bash
+curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash
 ```
 This downloads the latest update script directly from GitHub and runs it. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
+
+> **Use the REPO-ROOT `update-skills.sh` — never `scripts/update-skills.sh`.**
+> The path differs by one segment and the two scripts behave OPPOSITELY. The
+> root script copies every skill unconditionally and syncs `shared-utils` and
+> `universal-sops`. The legacy `scripts/` one is version-gated: when a skill's
+> local `skill-version.txt` matches the staged string it skips that skill
+> without ever looking at its contents, never touches `shared-utils` or
+> `universal-sops` — and writes the version stamp anyway. That stamp then makes
+> the root updater's "Already up to date" gate exit without copying anything,
+> so later rolls silently no-op while reporting success.
 
 ### Method 2: Direct-to-Agent (Trevor sends a message)
 Trevor messages the client's agent on Telegram via Skill 15 (BlackCEO Management):

@@ -15,22 +15,60 @@
 REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
 
-# Check if cron already installed
+# ----------------------------------------------------------------------------
+# IDEMPOTENCY / REPAIR (2026-07-20)
+#
+# This script used to `exit 0` right here whenever the crontab already carried
+# an update-restart-if-needed line -- which made it USELESS as a repair tool and
+# is why a real defect survived for months:
+#
+#   The crontab line is always "0 3 * * 0 $HOME/.openclaw/skills/.update-restart-
+#   if-needed". It never contains the UPDATE_SCRIPT_URL that the referenced
+#   script points at. So a box whose .update-restart-if-needed still pointed at
+#   the LEGACY updater (main/scripts/update-skills.sh -- the version-gated one
+#   that skips skills and never syncs shared-utils/universal-sops, yet stamps
+#   the version anyway) looked perfectly healthy to this check, and re-running
+#   this installer to "fix" it silently changed nothing.
+#
+# The URL fix landed here on 2026-06-27 (6a881c8a), but only for FRESH installs.
+# Every box provisioned before that date kept running the legacy updater weekly.
+#
+# So: presence of the cron LINE no longer short-circuits the script. We always
+# (re)write the restart script to canonical content -- backing up any existing
+# copy first -- and only the crontab INSERT is skipped when already present, so
+# re-running still cannot duplicate a cron entry. Re-running is now a genuine,
+# safe repair.
+# ----------------------------------------------------------------------------
 EXISTING_CRON=$(crontab -l 2>/dev/null | grep "update-restart-if-needed")
 if [ -n "$EXISTING_CRON" ]; then
-    echo "[INFO] Weekly update cron already installed."
+    echo "[INFO] Weekly update cron line already present — will NOT duplicate it."
     echo "Current entry: $EXISTING_CRON"
-    echo ""
-    echo "To remove: crontab -e (and delete the update-restart line)"
-    echo "To force a manual check now:"
-    echo "  curl -fsSL $REPO_RAW | bash"
-    exit 0
+    echo "[INFO] Refreshing the restart script itself to canonical content..."
 fi
 
 # Install cron job — Sundays at 3:00 AM
-# Runs the update script, then restarts the gateway ONLY if an update was staged
-# The agent picks up the UPDATE PENDING flag on boot and follows UPDATE-PLAYBOOK.md
+# Runs the update script; the updater writes a SILENT UPDATE PENDING flag that
+# the agent picks up on its next session (see the SILENT-OPERATOR-CRON note below)
 RESTART_SCRIPT="$HOME/.openclaw/skills/.update-restart-if-needed"
+
+# Back up an existing restart script before overwriting, so a box-local change
+# is never destroyed silently and the previous URL stays auditable.
+if [ -f "$RESTART_SCRIPT" ]; then
+    RESTART_BACKUP="${RESTART_SCRIPT}.bak.$(date +%Y%m%d-%H%M%S)"
+    if cp -p "$RESTART_SCRIPT" "$RESTART_BACKUP" 2>/dev/null; then
+        echo "[INFO] Existing restart script backed up to: $RESTART_BACKUP"
+        if grep -q "main/scripts/update-skills.sh" "$RESTART_SCRIPT" 2>/dev/null; then
+            echo "[FIX ] It pointed at the LEGACY updater (main/scripts/update-skills.sh)."
+            echo "       Repointing to the ROOT updater: $REPO_RAW"
+        fi
+    else
+        echo "[WARN] Could not back up $RESTART_SCRIPT — refusing to overwrite it."
+        echo "       Fix the permissions and re-run, or edit the UPDATE_SCRIPT_URL line by hand."
+        exit 1
+    fi
+fi
+
+mkdir -p "$(dirname "$RESTART_SCRIPT")"
 cat > "$RESTART_SCRIPT" << 'RESTART_EOF'
 #!/bin/bash
 # Run the update script — fetch to temp file first so partial downloads do not
@@ -62,7 +100,13 @@ fi
 RESTART_EOF
 chmod +x "$RESTART_SCRIPT"
 
-(crontab -l 2>/dev/null; echo "0 3 * * 0 $RESTART_SCRIPT") | crontab -
+# Only INSERT the cron line when it is absent — re-running must never duplicate it.
+if [ -z "$EXISTING_CRON" ]; then
+    (crontab -l 2>/dev/null; echo "0 3 * * 0 $RESTART_SCRIPT") | crontab -
+    echo "[OK  ] Sunday 3:00 AM cron line installed."
+else
+    echo "[SKIP] Sunday cron line already present — not re-inserted."
+fi
 
 # Install Saturday 11:59 PM OpenClaw CLI update cron job
 # Updates OpenClaw to the latest version BEFORE the Sunday onboarding check
