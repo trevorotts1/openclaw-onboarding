@@ -1,0 +1,33 @@
+name: Command Center runtime config update guard
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - update-skills.sh
+      - shared-utils/reconcile_command_center_runtime.py
+      - tests/unit/update-command-center-runtime-config.test.sh
+      - .github/workflows/command-center-runtime-config-update-guard.yml
+  push:
+    branches: [main]
+    paths:
+      - update-skills.sh
+      - shared-utils/reconcile_command_center_runtime.py
+      - tests/unit/update-command-center-runtime-config.test.sh
+      - .github/workflows/command-center-runtime-config-update-guard.yml
+
+jobs:
+  runtime-config-update:
+    name: Local fixture reconciliation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax checks
+        run: |
+          bash -n update-skills.sh
+          bash -n tests/unit/update-command-center-runtime-config.test.sh
+          python3 -m py_compile shared-utils/reconcile_command_center_runtime.py
+
+      - name: Update-path fixtures
+        run: bash tests/unit/update-command-center-runtime-config.test.sh
