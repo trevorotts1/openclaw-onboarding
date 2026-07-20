@@ -455,6 +455,75 @@ get_current_version() {
   echo ""
 }
 
+# --- BEGIN REAP-DEAD-SKILL-MANIFEST ---
+# ----------------------------------------------------------
+# reap_dead_skill_manifest  (v20.0.74)
+#
+# WHAT: deletes ~/.openclaw/skills/.skill-manifest.json and the orphaned
+# regenerator ~/.openclaw/scripts/generate-manifest.sh from this box.
+#
+# WHY: .skill-manifest.json is a VERSION-STRING inventory written exactly
+# once -- by install.sh Step 11, during a FULL install -- and regenerated
+# by nothing. No updater has ever rewritten it. It therefore freezes at
+# the version of the last full install while the skills underneath keep
+# moving, and reports that stale version forever. Observed on the
+# operator box: manifest onboardingVersion=v20.0.10 against a
+# .onboarding-version stamp of v20.0.68. It manufactures phantom
+# "stale skill" findings that have already burned two audits.
+#
+# NOTHING READS IT. `git grep skill-manifest` over openclaw-onboarding
+# returns 4 hits: its two writers (install.sh:5414,
+# scripts/generate-manifest.sh:6) and two documentation lines
+# (VERSION-ARCHITECTURE.md:26,33). blackceo-command-center returns zero.
+# The live drift gate reads a DIFFERENT, content-hashed file --
+# .onboarding-content-manifest.json, written at the end of this script
+# and consumed by check-updates.sh (A4). So deletion has no functional
+# blast radius; its job is already done correctly, by content, elsewhere.
+#
+# WHY DELETE AND NOT RESTAMP: restamping preserves a version-string
+# oracle, and version strings are precisely what lied -- trees carry a
+# version identical to canonical while their contents differ. A
+# perfectly restamped .skill-manifest.json would have reported every one
+# of those drifted trees as healthy. Restamping costs the same effort as
+# deleting, adds a maintenance obligation on every update path, and
+# converts a noisy-but-noticed red light into a silent green one.
+#
+# WHY HERE: deleting from the repo alone leaves the lying copy armed on
+# every already-provisioned box. The reap runs from main() BEFORE every
+# exit path -- including the "already up to date" non-interactive no-op
+# -- so a box is cleaned even on a run that syncs nothing.
+#
+# SAFETY: idempotent, never fails the run, and matches only these two
+# exact basenames. .onboarding-version and
+# .onboarding-content-manifest.json live in the same directory, are
+# load-bearing, and are never touched.
+# ----------------------------------------------------------
+reap_dead_skill_manifest() {
+  local _rdsm_count=0
+  local _rdsm_path
+
+  for _rdsm_path in \
+      "${SKILLS_DIR:-$HOME/.openclaw/skills}/.skill-manifest.json" \
+      "$HOME/.openclaw/skills/.skill-manifest.json" \
+      "/data/.openclaw/skills/.skill-manifest.json" \
+      "$HOME/Downloads/openclaw-master-files/.skill-manifest.json" \
+      "$HOME/.openclaw/onboarding/.skill-manifest.json" \
+      "$HOME/.openclaw/scripts/generate-manifest.sh" \
+      "/data/.openclaw/scripts/generate-manifest.sh"; do
+    if [ -f "$_rdsm_path" ] && rm -f "$_rdsm_path" 2>/dev/null; then
+      _rdsm_count=$((_rdsm_count + 1))
+    fi
+  done
+
+  if [ "$_rdsm_count" -gt 0 ]; then
+    echo "  🧹 Reaped $_rdsm_count dead .skill-manifest.json artifact(s)"
+    echo "      (superseded by .onboarding-content-manifest.json -- content-hashed, not version-string)"
+  fi
+
+  return 0
+}
+# --- END REAP-DEAD-SKILL-MANIFEST ---
+
 # ----------------------------------------------------------
 # v20.0.73 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
@@ -1086,29 +1155,40 @@ preclear_2026_7_1() {
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
-# Two updaters live in this repo and they behave OPPOSITELY:
-#   * THIS script (repo root update-skills.sh) -- CORRECT. Unconditionally
-#     rm -rf + cp -r every skill, unconditionally overlays shared-utils, and
-#     replicates universal-sops.
-#   * scripts/update-skills.sh (LEGACY) -- BROKEN. Version-GATED: when a skill's
-#     local skill-version.txt string equals the staged one it SKIPS that skill
-#     without ever examining its contents, never touches shared-utils or
-#     universal-sops at all -- and then writes the version stamp ANYWAY.
+# Two updaters live in this repo. THIS one (repo root update-skills.sh) is the
+# canonical one: it carries the wiring, state-machine, A3 content-gate and
+# manifest/stamp pipeline. scripts/update-skills.sh is a much smaller legacy
+# script that only copies skills.
 #
 # Every box runs $HOME/.openclaw/skills/.update-restart-if-needed from a Sunday
 # 03:00 cron. scripts/setup-weekly-update.sh was corrected on 2026-06-27
 # (6a881c8a) to install the ROOT url, but NOTHING rewrote the copy already on
 # disk -- so every box provisioned BEFORE that date runs the LEGACY updater
-# every week, forever.
+# every week, forever. This function repoints those boxes.
 #
-# WHY THAT IS A TIME BOMB AND NOT MERELY A SLOW UPDATE
-# The legacy updater stamps .onboarding-version with the version it CLAIMS to
-# have installed, having actually skipped most skill content. Once a box carries
-# a stamp equal to this script's ONBOARDING_VERSION, the whole-run gate in
-# main() ("Already up to date" -> exit 0) makes THIS updater copy NOTHING. A
-# fleet roll then reads a matching stamp and silently no-ops while reporting
-# success, leaving stale persona engines and missing publish scripts in place.
-# In short: the legacy cron poisons this script's own version gate.
+# HISTORY -- READ THIS BEFORE DELETING THE SELF-HEAL (updated at the PR #670 /
+# PR #671 merge, so the comment does not outlive the facts it describes)
+# When #670 was written, scripts/update-skills.sh was VERSION-GATED: a skill
+# whose local skill-version.txt matched the staged string was SKIPPED without
+# its contents ever being examined, shared-utils/ and universal-sops/ were not
+# referenced anywhere in the file, and the version stamp was written ANYWAY.
+# It therefore stamped boxes as current that were not, and that poisoned stamp
+# then made THIS script's "Already up to date" gate exit 0 without copying
+# anything -- a fleet roll read a matching stamp and silently no-oped while
+# reporting success.
+#
+# BOTH halves of that are now fixed, in the same merge as this comment:
+#   * scripts/update-skills.sh now decides per skill on CONTENT, delivers
+#     shared-utils/ and universal-sops/, and WITHHOLDS the stamp (exit 1) when
+#     a source file is still absent after the copy.
+#   * this script's same-version non-interactive branch no longer blind-exits;
+#     it runs a CONTENT RECHECK before deciding (see _SAME_VERSION_RECHECK).
+# So a poisoned stamp is no longer produced, and an existing one no longer
+# blinds this script. The self-heal is still correct and still wanted -- the
+# fleet should converge on ONE updater, the one with the gates -- but it is now
+# a convergence measure, not a rescue from an active time bomb. Boxes still on
+# the legacy URL re-fetch that file from main on every run, so they pick up the
+# content-based behaviour immediately regardless of whether this heal fires.
 #
 # PLACEMENT IS LOAD-BEARING
 # The call site sits BEFORE the UPDATE-PENDING prompt and BEFORE the version
@@ -1284,11 +1364,24 @@ main() {
   export SKILLS_DIR
   echo "  📂 Skills directory: $SKILLS_DIR"
 
+  # MERGE NOTE (PR #670 + PR #671): both of these landed at this exact spot,
+  # independently, and for the SAME structural reason — every exit path below
+  # this line is an `exit 0`, so anything that must reach an already-poisoned
+  # or already-stamped box has to run here. Both are kept. Neither may be moved
+  # below the UPDATE-PENDING prompt or the version gate.
+
   # SELF-HEAL the weekly cron's updater URL. See heal_weekly_cron_updater above
   # for the full rationale. This MUST stay above the UPDATE-PENDING prompt and
   # the version gate below -- both of them `exit 0`, and a box already poisoned
   # by the legacy updater is exactly the box that hits those early exits.
   heal_weekly_cron_updater
+
+  # Reap the dead version-string manifest BEFORE any exit path below (the
+  # pending-flag decline at "Update cancelled" and the already-up-to-date
+  # no-op both exit 0 without reaching the sync). A box must be cleaned even
+  # on a run that copies nothing. See reap_dead_skill_manifest() for why this
+  # file is deleted rather than restamped.
+  reap_dead_skill_manifest
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
@@ -1344,8 +1437,19 @@ main() {
         read -p "Already up to date. Force re-install? (y/N) " -n 1 -r
         echo
       else
-        echo "  (non-interactive: no TTY — already up to date, not forcing re-install)"
-        REPLY="N"
+        # CONTENT-AWARE EXIT (fleet fix). A matching stamp is NOT evidence that
+        # the installed content matches canonical. ONE string governs 62 skill
+        # trees plus shared-utils/ and universal-sops/ — and neither of those two
+        # carries a version file at all. Exiting here meant an arbitrarily
+        # drifted box was never compared, never repaired, and still reported
+        # success: the fleet-wide false-success path. We now continue far enough
+        # to PULL the source and diff it against the box (see CONTENT RECHECK
+        # below). If the content genuinely matches we exit 0 seconds later,
+        # BEFORE anything is copied, wired, or restarted — the same clean
+        # idempotent no-op as before, only now it is earned rather than assumed.
+        echo "  (non-interactive: no TTY — stamp is current; verifying CONTENT before deciding)"
+        _SAME_VERSION_RECHECK=1
+        REPLY="Y"
       fi
       if [[ ! $REPLY =~ ^[Yy]$ ]]; then
         echo "  Update cancelled."
@@ -1436,6 +1540,110 @@ main() {
   else
     echo "  [A2] skill-content-hash.sh not found in source — content verification unavailable (non-fatal for this install)"
     SRC_MANIFEST=""
+  fi
+
+# ────────────────────────────────────────────────────────────────────────────
+# CONTENT COMPARISON — the sync signal. Version strings are NOT.
+#
+# WHY: canonical routinely edits a skill tree's contents WITHOUT bumping that
+# tree's skill-version.txt (23 of 62 versioned trees were in that state at
+# origin/main 2d7bb304). A sync that decides on version-string equality
+# therefore reports "unchanged" for trees whose bytes differ, and shared-utils/
+# and universal-sops/ carry no version file at all, so a version gate has
+# nothing to evaluate for them. Decisions below are made on CONTENT.
+#
+# DIRECTIONAL ON PURPOSE: `_OC_TREE_MISSING` = a SOURCE file that is absent on
+# the box (or an entire absent tree). `_OC_TREE_DIFFERS` = a source file present
+# on the box with different bytes. Destination-only extras (__pycache__, *.bak,
+# runtime logs, per-box resolved artifacts) are NOT drift and must never force a
+# re-copy or fail a gate — the copy semantics are an additive merge, so
+# "source ⊆ dest, byte-for-byte" is the correct and complete health assertion.
+#
+# FAIL-CLOSED: if `diff` is unavailable we report drift, so the caller re-syncs
+# rather than silently skipping.
+#
+# NOTE: the `case` patterns below interpolate directory paths. Glob metacharacters
+# in a skills-dir path would widen the match; all real paths are $HOME/... or
+# /tmp/... so this is safe in practice, and a widened match can only cause an
+# extra (harmless) re-sync, never a skipped one.
+# ────────────────────────────────────────────────────────────────────────────
+_OC_TREE_MISSING=""
+_OC_TREE_DIFFERS=""
+_ocs_tree_compare() {
+  local _src="${1%/}" _dst="${2%/}" _out _line
+  _OC_TREE_MISSING=""
+  _OC_TREE_DIFFERS=""
+  [ -d "$_src" ] || return 0
+  if ! command -v diff >/dev/null 2>&1; then
+    _OC_TREE_MISSING=" (diff unavailable — assuming drift)"
+    return 0
+  fi
+  if [ ! -d "$_dst" ]; then
+    _OC_TREE_MISSING=" (entire tree absent: $_dst)"
+    return 0
+  fi
+  _out="$(diff -rq \
+            -x '.git' -x '__pycache__' -x '*.pyc' -x '*.pyo' -x '.DS_Store' \
+            -x '*.bak' -x '*.bak-*' -x '.wired-*' \
+            "$_src" "$_dst" 2>/dev/null || true)"
+  [ -n "$_out" ] || return 0
+  while IFS= read -r _line; do
+    case "$_line" in
+      "Only in $_src"*)   _OC_TREE_MISSING="${_OC_TREE_MISSING} ${_line#Only in }" ;;
+      "Files "*" differ") _OC_TREE_DIFFERS="${_OC_TREE_DIFFERS} ${_line}" ;;
+    esac
+  done < <(printf '%s\n' "$_out")
+  return 0
+}
+
+# _ocs_tree_in_sync <src> <dst>
+#   rc 0 = every source file is present on the box with identical bytes
+#   rc 1 = at least one source file is absent OR differs
+_ocs_tree_in_sync() {
+  _ocs_tree_compare "$1" "$2"
+  [ -z "$_OC_TREE_MISSING" ] && [ -z "$_OC_TREE_DIFFERS" ]
+}
+
+  # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
+  # Reached only via the same-version branch above. Decide on CONTENT:
+  #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
+  #   (2) shared-utils/ and universal-sops/, which skill-content-hash.sh does
+  #       NOT enumerate (it globs '[0-9]*' only) and which have no version file.
+  # Only a genuine match exits 0. Any drift falls through to the normal full
+  # sync, which is unconditional (rm -rf + cp -r per skill), so it repairs
+  # absent files, silently-edited files, and unbumped content alike. The cost
+  # of a false "drift" verdict is one extra sync; the cost of a false "clean"
+  # verdict is a broken box reporting success — so this errs toward syncing.
+  if [ "${_SAME_VERSION_RECHECK:-0}" -eq 1 ]; then
+    _RECHECK_DRIFT=""
+    if [ -n "$SRC_MANIFEST" ] && [ -f "$_CONTENT_HASH_SCRIPT" ]; then
+      _RC_DEST_MANIFEST="$(bash "$_CONTENT_HASH_SCRIPT" "$SKILLS_DIR" 2>/dev/null || true)"
+      while IFS='|' read -r _rc_name _rc_src_digest; do
+        [ -n "$_rc_name" ] || continue
+        case "$_rc_name" in __TREE_SHA__) continue ;; esac
+        _rc_dest_digest="$(printf '%s\n' "$_RC_DEST_MANIFEST" \
+                           | awk -F'|' -v n="$_rc_name" '$1==n {print $2; exit}')"
+        if [ "$_rc_dest_digest" != "$_rc_src_digest" ]; then
+          _RECHECK_DRIFT="${_RECHECK_DRIFT} ${_rc_name}"
+        fi
+      done < <(printf '%s\n' "$SRC_MANIFEST")
+    else
+      # No manifest = no proof of health. Fail toward syncing, never toward exit 0.
+      _RECHECK_DRIFT="${_RECHECK_DRIFT} (content-manifest-unavailable)"
+    fi
+    for _rc_tree in shared-utils universal-sops; do
+      [ -d "$EXTRACTED_DIR/$_rc_tree" ] || continue
+      if ! _ocs_tree_in_sync "$EXTRACTED_DIR/$_rc_tree" "$SKILLS_DIR/$_rc_tree"; then
+        _RECHECK_DRIFT="${_RECHECK_DRIFT} ${_rc_tree}"
+      fi
+    done
+    if [ -z "$_RECHECK_DRIFT" ]; then
+      echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
+      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+      exit 0
+    fi
+    echo "  ✗ [CONTENT RECHECK] stamp is current but these trees DRIFTED:${_RECHECK_DRIFT}"
+    echo "    Proceeding with a full content sync — version strings are not a sync signal."
   fi
 
   # v10.15.48 (FIX 1): source the onboarding STATE MACHINE + verification GATE.
@@ -1628,12 +1836,17 @@ main() {
     # getting stamped (observed: a box missing the whole sop-embed-once/ dir). We assert
     # source ⊆ dest (missing source entries only — dest supersets are fine) and gate the
     # stamp on it via _STEP_GATE_FAILS below.
-    _SU_MISSING=""
-    for _su_src in "$EXTRACTED_DIR/shared-utils/"*; do
-      [ -e "$_su_src" ] || continue
-      _su_base="$(basename "$_su_src")"
-      [ -e "$SKILLS_DIR/shared-utils/$_su_base" ] || _SU_MISSING="${_SU_MISSING} $_su_base"
-    done
+    # v20.0.74: the original assertion iterated "$EXTRACTED_DIR/shared-utils/"*
+    # and tested `[ -e ]` on the BASENAME only — top-level existence, one level
+    # deep, no content comparison. A file drifted or absent INSIDE
+    # prebuilt-index/, sop-embed-once/ or tone-writing-core/ was invisible to
+    # it, and a top-level file present-but-stale passed. Recurse, and compare
+    # bytes. Absence still gates the stamp (below); byte differences are
+    # reported but deliberately NOT gated, so a file legitimately rewritten at
+    # install time cannot withhold the stamp fleet-wide.
+    _ocs_tree_compare "$EXTRACTED_DIR/shared-utils" "$SKILLS_DIR/shared-utils"
+    _SU_MISSING="$_OC_TREE_MISSING"
+    [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! shared-utils content differences:${_OC_TREE_DIFFERS}" || true
     if [ -n "$_SU_MISSING" ]; then
       _SHAREDUTILS_STATUS="fail"
       echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
@@ -1645,10 +1858,29 @@ main() {
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).
   # Neither install nor update copied this before; Skills 47/48 wiring FAILed
   # with a FATAL looking for funnel/presentation/video/ad SOPs.
+  _UNIVERSALSOPS_STATUS="ok"
   if [ -d "$EXTRACTED_DIR/universal-sops" ]; then
     rm -rf "$SKILLS_DIR/universal-sops"
-    cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"
-    echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+    if ! cp -r "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/"; then
+      _UNIVERSALSOPS_STATUS="fail"
+    fi
+    # PARITY WITH shared-utils (v20.0.11). This tree is rm -rf'd first, so a
+    # partial cp leaves the box with FEWER SOPs than it started with — and the
+    # old code printed "✓ universal-sops refreshed" UNCONDITIONALLY, with no
+    # status latch anywhere in this file, so a truncated copy was silent AND
+    # still stamped. universal-sops/ is not covered by the A3 numbered-skill
+    # gate either (skill-content-hash.sh enumerates only [0-9]* dirs), so this
+    # was the last unverified write in the run. Assert source ⊆ dest.
+    _ocs_tree_compare "$EXTRACTED_DIR/universal-sops" "$SKILLS_DIR/universal-sops"
+    if [ -n "$_OC_TREE_MISSING" ]; then
+      _UNIVERSALSOPS_STATUS="fail"
+      echo "  ✗ universal-sops refresh INCOMPLETE — source SOPs missing from box:${_OC_TREE_MISSING}"
+    else
+      echo "  ✓ universal-sops refreshed in $SKILLS_DIR/universal-sops"
+    fi
+    # Byte differences are surfaced but do NOT withhold the stamp: a file
+    # legitimately rewritten later in the run must not block the fleet.
+    [ -n "$_OC_TREE_DIFFERS" ] && echo "  ! universal-sops content differences:${_OC_TREE_DIFFERS}" || true
   fi
 
   # SK1-63 (fleet-installer wiring, update path): mirror the same runtime-dir
@@ -2812,7 +3044,10 @@ if isinstance(n, int) and n > 0:
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared core file unification (link_shared_core_files): incomplete\n"
   fi
   if [ "${_SHAREDUTILS_STATUS:-ok}" != "ok" ]; then
-    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared-utils refresh (cp -r shared-utils): incomplete — source entries missing from box (e.g. sop-embed-once/); not covered by the A3 numbered-skill gate\n"
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - shared-utils refresh (cp -r shared-utils): incomplete — source files missing from box (recursive check); not covered by the A3 numbered-skill gate\n"
+  fi
+  if [ "${_UNIVERSALSOPS_STATUS:-ok}" != "ok" ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - universal-sops refresh (rm -rf + cp -r universal-sops): incomplete — source SOPs missing from box; not covered by the A3 numbered-skill gate\n"
   fi
 
   # WORKFORCE-provisioning advisories (v20.0.10): recorded + surfaced, but they

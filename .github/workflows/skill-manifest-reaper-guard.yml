@@ -1,0 +1,86 @@
+name: skill-manifest reaper guard
+
+# Fails the build if the retirement of .skill-manifest.json ever regresses.
+#
+# BACKGROUND
+# ~/.openclaw/skills/.skill-manifest.json was a version-string inventory of
+# every numbered skill. install.sh Step 11 was its only live writer and no
+# updater ever regenerated it, so on every box it froze at the version of the
+# last FULL install while the skills underneath kept moving. It reported that
+# stale version forever and manufactured phantom "stale skill" findings that
+# burned two fleet audits. It had ZERO code readers in this repo or in
+# blackceo-command-center.
+#
+# It was DELETED rather than restamped, deliberately: a version-string oracle
+# cannot see content drift, which is the failure class that actually broke
+# boxes. Restamping would have converted a noticed red light into a silent
+# green one. The real drift oracle is the content-hashed
+# .onboarding-content-manifest.json (written by update-skills.sh, verified by
+# check-updates.sh A4).
+#
+# This guard enforces three things:
+#   1. update-skills.sh still carries the REAP-DEAD-SKILL-MANIFEST block, and
+#      that block still deletes the file from all box locations.
+#   2. The reaper never lists .onboarding-version or
+#      .onboarding-content-manifest.json as a deletion target.
+#   3. install.sh no longer generates the manifest, but still writes the
+#      load-bearing .onboarding-version stamp, and scripts/generate-manifest.sh
+#      stays deleted.
+#
+# scripts/test-skill-manifest-reaper.sh extracts the reaper VERBATIM from
+# update-skills.sh (marker-anchored awk — no reimplementation) and exercises it
+# against sandboxed HOME fixtures. No network, no real box, no credentials.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "install.sh"
+      - "scripts/generate-manifest.sh"
+      - "scripts/test-skill-manifest-reaper.sh"
+      - ".github/workflows/skill-manifest-reaper-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "install.sh"
+      - "scripts/generate-manifest.sh"
+      - "scripts/test-skill-manifest-reaper.sh"
+      - ".github/workflows/skill-manifest-reaper-guard.yml"
+
+jobs:
+  skill-manifest-reaper-guard:
+    name: .skill-manifest.json stays dead; .onboarding-content-manifest.json stays authoritative
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the touched scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          bash -n update-skills.sh
+          bash -n scripts/test-skill-manifest-reaper.sh
+
+      - name: Assert the dead writer is not resurrected
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -e scripts/generate-manifest.sh ]; then
+            echo "REGRESSION: scripts/generate-manifest.sh is back. It is an orphan with no callers."
+            exit 1
+          fi
+          echo "scripts/generate-manifest.sh: still deleted"
+
+      - name: Run the reaper fixture test suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-skill-manifest-reaper.sh
+          echo "skill-manifest-reaper-guard: PASS"

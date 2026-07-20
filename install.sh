@@ -5406,45 +5406,49 @@ else
 fi
 
 # ----------------------------------------------------------
-# Step 11: Generate Manifest
+# Step 11: Record Installed Version
+#
+# This step used to ALSO write $SKILLS_DIR/.skill-manifest.json -- a
+# version-string inventory of every numbered skill. That write has been
+# removed, and the file is now actively reaped, because:
+#
+#   1. Nothing ever regenerated it. install.sh was its only live writer,
+#      so on every box it froze at the version of the last FULL install
+#      while the updater kept moving the skills underneath. It reported a
+#      stale version forever and manufactured phantom "stale skill"
+#      findings in fleet audits.
+#   2. Nothing reads it. Zero code readers in openclaw-onboarding or in
+#      blackceo-command-center -- only its writers and two doc lines.
+#   3. Its job is already done correctly, by CONTENT, by
+#      .onboarding-content-manifest.json (written by update-skills.sh,
+#      verified by check-updates.sh A4). A version-string inventory
+#      cannot detect content drift, which is the failure class that
+#      actually broke boxes -- so restamping it would have replaced a
+#      noticed red light with a silent green one.
+#
+# .onboarding-version below is LOAD-BEARING and stays.
 # ----------------------------------------------------------
-send_telegram_progress "✓ Memory + playbook seeded. Generating your skill manifest now — last few steps…"
-step "Step 11: Generating Skill Manifest"
-
-MANIFEST_PATH="$SKILLS_DIR/.skill-manifest.json"
+send_telegram_progress "✓ Memory + playbook seeded. Recording your installed version now — last few steps…"
+step "Step 11: Recording Installed Version"
 
 echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
+success "Installed version recorded: $ONBOARDING_VERSION"
 
-python3 -c "
-import os, json
-from datetime import datetime, timezone
-
-skills_dir = '$SKILLS_DIR'
-manifest = {
-    'generated': datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ'),
-    'onboardingVersion': '$ONBOARDING_VERSION',
-    'skills': {}
-}
-
-for entry in sorted(os.listdir(skills_dir)):
-    full = os.path.join(skills_dir, entry)
-    if not os.path.isdir(full):
-        continue
-    if not entry[0].isdigit():
-        continue
-    ver_file = os.path.join(full, 'skill-version.txt')
-    if os.path.isfile(ver_file):
-        with open(ver_file) as f:
-            ver = f.read().strip()
-    else:
-        ver = 'unknown'
-    manifest['skills'][entry] = ver
-
-with open('$MANIFEST_PATH', 'w') as f:
-    json.dump(manifest, f, indent=2)
-
-print(f'  ✓ Manifest: {len(manifest[\"skills\"])} skills recorded')
-" 2>/dev/null || warn "Could not generate skill manifest"
+# Reap the retired version-string manifest and its orphaned regenerator so a
+# re-run of install.sh over an older box does not leave the lying file behind.
+for _DEAD_MANIFEST_ARTIFACT in \
+    "$SKILLS_DIR/.skill-manifest.json" \
+    "$HOME/.openclaw/skills/.skill-manifest.json" \
+    "/data/.openclaw/skills/.skill-manifest.json" \
+    "$HOME/Downloads/openclaw-master-files/.skill-manifest.json" \
+    "$HOME/.openclaw/onboarding/.skill-manifest.json" \
+    "$HOME/.openclaw/scripts/generate-manifest.sh" \
+    "/data/.openclaw/scripts/generate-manifest.sh"; do
+  # `|| true` is required: this script runs under `set -euo pipefail`, and a
+  # missing file makes the `[ -f ] && rm` chain the loop's non-zero exit status.
+  { [ -f "$_DEAD_MANIFEST_ARTIFACT" ] && rm -f "$_DEAD_MANIFEST_ARTIFACT" 2>/dev/null; } || true
+done
+unset _DEAD_MANIFEST_ARTIFACT
 
 # ----------------------------------------------------------
 # Completion

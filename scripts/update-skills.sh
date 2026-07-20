@@ -178,6 +178,69 @@ fi
 # ── STEP 5: Per-skill comparison ──
 show_step "Analyzing skill changes..."
 
+
+# ────────────────────────────────────────────────────────────────────────────
+# CONTENT COMPARISON — the sync signal. Version strings are NOT.
+#
+# WHY: canonical routinely edits a skill tree's contents WITHOUT bumping that
+# tree's skill-version.txt (23 of 62 versioned trees were in that state at
+# origin/main 2d7bb304). A sync that decides on version-string equality
+# therefore reports "unchanged" for trees whose bytes differ, and shared-utils/
+# and universal-sops/ carry no version file at all, so a version gate has
+# nothing to evaluate for them. Decisions below are made on CONTENT.
+#
+# DIRECTIONAL ON PURPOSE: `_OC_TREE_MISSING` = a SOURCE file that is absent on
+# the box (or an entire absent tree). `_OC_TREE_DIFFERS` = a source file present
+# on the box with different bytes. Destination-only extras (__pycache__, *.bak,
+# runtime logs, per-box resolved artifacts) are NOT drift and must never force a
+# re-copy or fail a gate — the copy semantics are an additive merge, so
+# "source ⊆ dest, byte-for-byte" is the correct and complete health assertion.
+#
+# FAIL-CLOSED: if `diff` is unavailable we report drift, so the caller re-syncs
+# rather than silently skipping.
+#
+# NOTE: the `case` patterns below interpolate directory paths. Glob metacharacters
+# in a skills-dir path would widen the match; all real paths are $HOME/... or
+# /tmp/... so this is safe in practice, and a widened match can only cause an
+# extra (harmless) re-sync, never a skipped one.
+# ────────────────────────────────────────────────────────────────────────────
+_OC_TREE_MISSING=""
+_OC_TREE_DIFFERS=""
+_ocs_tree_compare() {
+  local _src="${1%/}" _dst="${2%/}" _out _line
+  _OC_TREE_MISSING=""
+  _OC_TREE_DIFFERS=""
+  [ -d "$_src" ] || return 0
+  if ! command -v diff >/dev/null 2>&1; then
+    _OC_TREE_MISSING=" (diff unavailable — assuming drift)"
+    return 0
+  fi
+  if [ ! -d "$_dst" ]; then
+    _OC_TREE_MISSING=" (entire tree absent: $_dst)"
+    return 0
+  fi
+  _out="$(diff -rq \
+            -x '.git' -x '__pycache__' -x '*.pyc' -x '*.pyo' -x '.DS_Store' \
+            -x '*.bak' -x '*.bak-*' -x '.wired-*' \
+            "$_src" "$_dst" 2>/dev/null || true)"
+  [ -n "$_out" ] || return 0
+  while IFS= read -r _line; do
+    case "$_line" in
+      "Only in $_src"*)   _OC_TREE_MISSING="${_OC_TREE_MISSING} ${_line#Only in }" ;;
+      "Files "*" differ") _OC_TREE_DIFFERS="${_OC_TREE_DIFFERS} ${_line}" ;;
+    esac
+  done < <(printf '%s\n' "$_out")
+  return 0
+}
+
+# _ocs_tree_in_sync <src> <dst>
+#   rc 0 = every source file is present on the box with identical bytes
+#   rc 1 = at least one source file is absent OR differs
+_ocs_tree_in_sync() {
+  _ocs_tree_compare "$1" "$2"
+  [ -z "$_OC_TREE_MISSING" ] && [ -z "$_OC_TREE_DIFFERS" ]
+}
+
 SKILL_NAMES=()
 SKILL_ACTIONS=()
 SKOLD_VERSIONS=()
@@ -186,6 +249,7 @@ SKNEW_VERSIONS=()
 NEW_COUNT=0
 UPDATE_COUNT=0
 SKIP_COUNT=0
+DRIFT_COUNT=0
 
 for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
   [ -d "$SKILL_PATH" ] || continue
@@ -202,15 +266,22 @@ for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
   SKNEW_VERSIONS+=("$STAGED_V")
 
   if [ -d "$SKILLS_DIR/$SNAME" ]; then
-    if [ "$LOCAL_V" = "none" ]; then
+    if [ "$LOCAL_V" = "none" ] || [ "$LOCAL_V" != "$STAGED_V" ]; then
       SKILL_ACTIONS+=("UPDATE")
       UPDATE_COUNT=$((UPDATE_COUNT + 1))
-    elif [ "$LOCAL_V" = "$STAGED_V" ]; then
+    elif _ocs_tree_in_sync "${SKILL_PATH%/}" "$SKILLS_DIR/$SNAME"; then
       SKILL_ACTIONS+=("SKIP")
       SKIP_COUNT=$((SKIP_COUNT + 1))
     else
+      # SAME version string, DIFFERENT bytes. This is the exact case that
+      # silently under-synced the fleet: the old gate was `[ "$LOCAL_V" =
+      # "$STAGED_V" ] -> SKIP`, so a tree whose contents changed without a
+      # version bump — or whose files were never delivered at all — was
+      # reported as "unchanged" forever. Content wins over the version string.
       SKILL_ACTIONS+=("UPDATE")
       UPDATE_COUNT=$((UPDATE_COUNT + 1))
+      DRIFT_COUNT=$((DRIFT_COUNT + 1))
+      echo "  ! $SNAME: version $LOCAL_V unchanged but CONTENT drifted -> forcing update" >&3
     fi
   else
     SKILL_ACTIONS+=("NEW")
@@ -218,7 +289,7 @@ for SKILL_PATH in "$REPO_DIR"/[0-9]*/; do
   fi
 done
 
-echo "  Summary: $NEW_COUNT new, $UPDATE_COUNT updates, $SKIP_COUNT unchanged" >&3
+echo "  Summary: $NEW_COUNT new, $UPDATE_COUNT updates, $SKIP_COUNT unchanged ($DRIFT_COUNT of the updates are CONTENT drift at an unchanged version string)" >&3
 
 # ── STEP 6: Back up config ──
 show_step "Creating backup..."
@@ -305,6 +376,57 @@ done
 # ── Copy deprecated-models.json ──
 if [ -f "$REPO_DIR/scripts/deprecated-models.json" ]; then
   cp "$REPO_DIR/scripts/deprecated-models.json" "$SKILLS_DIR/../scripts/" 2>/dev/null || true
+fi
+
+# ── Refresh the two UNVERSIONED shared libraries ──────────────────────────
+# shared-utils/ (the persona engine: persona_for_job.py, embedding_engine.py,
+# the drift/grounding probes, ledger_reconciler_core.py, ...) and
+# universal-sops/ (the Skill 47/48 SOP cluster) carry NO skill-version.txt, so
+# the version-gated loop above had nothing to evaluate for them and this script
+# referenced neither tree ANYWHERE — `grep -c shared-utils` returned 0. Every
+# box whose weekly cron runs this script could therefore never receive them at
+# any version, forever. Mirrors update-skills.sh (repo root) 1503-1535.
+SHARED_TREE_FAIL=""
+if [ -d "$REPO_DIR/shared-utils" ]; then
+  mkdir -p "$SKILLS_DIR/shared-utils"
+  # Trailing /. = additive merge: CREATES files absent on the box and
+  # overwrites drifted ones, without deleting box-local extras.
+  if ! cp -r "$REPO_DIR/shared-utils/." "$SKILLS_DIR/shared-utils/"; then
+    SHARED_TREE_FAIL="${SHARED_TREE_FAIL} shared-utils(cp-failed)"
+  fi
+  chmod +x "$SKILLS_DIR/shared-utils/"*.sh "$SKILLS_DIR/shared-utils/"*.py 2>/dev/null || true
+  _ocs_tree_compare "$REPO_DIR/shared-utils" "$SKILLS_DIR/shared-utils"
+  if [ -n "$_OC_TREE_MISSING" ]; then
+    SHARED_TREE_FAIL="${SHARED_TREE_FAIL} shared-utils(absent:${_OC_TREE_MISSING})"
+  else
+    show_success "shared-utils refreshed ($SKILLS_DIR/shared-utils)"
+  fi
+  # Post-copy byte differences are surfaced but do NOT withhold the stamp:
+  # anything that legitimately rewrites a shared-utils file at install time
+  # would otherwise block the stamp fleet-wide. Absence still gates.
+  [ -n "$_OC_TREE_DIFFERS" ] && show_info "shared-utils: post-copy content differences:${_OC_TREE_DIFFERS}" || true
+fi
+if [ -d "$REPO_DIR/universal-sops" ]; then
+  # Destructive replace (matches the root updater) so canonical deletions
+  # propagate. Because the tree is wiped first, a partial cp leaves the box
+  # with FEWER SOPs than it started with — hence the gate below.
+  rm -rf "$SKILLS_DIR/universal-sops"
+  if ! cp -r "$REPO_DIR/universal-sops" "$SKILLS_DIR/"; then
+    SHARED_TREE_FAIL="${SHARED_TREE_FAIL} universal-sops(cp-failed)"
+  fi
+  _ocs_tree_compare "$REPO_DIR/universal-sops" "$SKILLS_DIR/universal-sops"
+  if [ -n "$_OC_TREE_MISSING" ]; then
+    SHARED_TREE_FAIL="${SHARED_TREE_FAIL} universal-sops(absent:${_OC_TREE_MISSING})"
+  else
+    show_success "universal-sops refreshed ($SKILLS_DIR/universal-sops)"
+  fi
+  [ -n "$_OC_TREE_DIFFERS" ] && show_info "universal-sops: post-copy content differences:${_OC_TREE_DIFFERS}" || true
+fi
+if [ -n "$SHARED_TREE_FAIL" ]; then
+  show_error "Shared library refresh INCOMPLETE:${SHARED_TREE_FAIL}"
+  echo "  Version stamp WITHHELD — the box would otherwise report success while" >&3
+  echo "  missing persona-engine helpers and/or universal SOPs. Re-run the updater." >&3
+  exit 1
 fi
 
 # ── Update installed version ──

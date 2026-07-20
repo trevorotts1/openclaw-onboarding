@@ -15,14 +15,22 @@ curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/mai
 This downloads the latest update script directly from GitHub and runs it. It works regardless of the client's installed version because it always pulls the newest script. The script stages the update and tells the human what to tell their agent next.
 
 > **Use the REPO-ROOT `update-skills.sh` — never `scripts/update-skills.sh`.**
-> The path differs by one segment and the two scripts behave OPPOSITELY. The
-> root script copies every skill unconditionally and syncs `shared-utils` and
-> `universal-sops`. The legacy `scripts/` one is version-gated: when a skill's
-> local `skill-version.txt` matches the staged string it skips that skill
-> without ever looking at its contents, never touches `shared-utils` or
-> `universal-sops` — and writes the version stamp anyway. That stamp then makes
-> the root updater's "Already up to date" gate exit without copying anything,
-> so later rolls silently no-op while reporting success.
+> The path differs by one segment. The root script is the canonical updater: it
+> copies every skill unconditionally, syncs `shared-utils` and `universal-sops`,
+> and carries the wiring, state machine, A3 content-gate and manifest/stamp
+> pipeline. The legacy `scripts/` one only copies skills — it has none of those
+> gates — so a box updated through it is never content-verified.
+>
+> Historical note (superseded, kept so the warning is not misread as still
+> live): the legacy script used to be *version-gated* — a skill whose local
+> `skill-version.txt` matched the staged string was skipped without its contents
+> ever being examined, `shared-utils` and `universal-sops` were never synced at
+> all, and the version stamp was written anyway. That poisoned stamp then made
+> the root updater's "Already up to date" gate exit without copying anything.
+> Both halves are fixed: the legacy script now decides on **content** and
+> withholds the stamp when a source file is missing, and the root updater now
+> runs a content recheck instead of blind-exiting on a matching stamp. Prefer
+> the root script for the gates, not because the legacy one silently lies.
 
 ### Method 2: Direct-to-Agent (Trevor sends a message)
 Trevor messages the client's agent on Telegram via Skill 15 (BlackCEO Management):
