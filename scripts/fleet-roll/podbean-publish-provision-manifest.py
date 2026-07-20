@@ -95,6 +95,44 @@ def build_identity(last, email, first, podcast_id):
     }
 
 
+def ssh_host_key(target):
+    """Normalize the textual SSH host; aliases/DNS resolution remain explicit."""
+    target = (target or "").strip()
+    if not target:
+        return ""
+    if target == "local":
+        return "local"
+    return target.rsplit("@", 1)[-1].lower()
+
+
+def reject_duplicate_targets(entries):
+    """Fail closed before writing a manifest that could target one box twice."""
+    operators = [entry["name"] for entry in entries
+                 if entry.get("role") == "operator"]
+    if len(operators) > 1:
+        eprint("manifest builder: duplicate operator entries (%s) — refusing"
+               % ", ".join(operators))
+        sys.exit(1)
+
+    names = {}
+    hosts = {}
+    for entry in entries:
+        name = entry["name"]
+        name_key = name.casefold()
+        if name_key in names:
+            eprint("manifest builder: duplicate box name %r — refusing" % name)
+            sys.exit(1)
+        names[name_key] = name
+
+        host_key = ssh_host_key(entry.get("ssh_target"))
+        if host_key in hosts:
+            eprint("manifest builder: duplicate SSH host %r targets both %s and %s — refusing"
+                   % (host_key, hosts[host_key], name))
+            sys.exit(1)
+        if host_key:
+            hosts[host_key] = name
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Build the operator-private S58-U18 provision manifest "
@@ -144,6 +182,10 @@ def main():
                 if isinstance(row, dict):
                     key = str(row.get(args.join_key, "") or "").strip()
                     if key:
+                        if key in roster_by_box:
+                            eprint("manifest builder: duplicate roster join key %r — refusing"
+                                   % key)
+                            sys.exit(1)
                         roster_by_box[key] = row
         for box in fleet:
             if not isinstance(box, dict) or not str(box.get("name", "")).strip():
@@ -186,6 +228,8 @@ def main():
     if not entries:
         eprint("manifest builder: produced zero entries — refusing to write an empty manifest")
         sys.exit(1)
+
+    reject_duplicate_targets(entries)
 
     out = os.path.expanduser(args.out)
     out_dir = os.path.dirname(out) or "."

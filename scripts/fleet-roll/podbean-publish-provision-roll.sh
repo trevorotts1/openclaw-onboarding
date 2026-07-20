@@ -34,8 +34,9 @@
 #   * IDEMPOTENT: a value already exactly set is a byte-identical no-op (the
 #     same exact-line check install.sh's _shared_write_env uses). Re-running
 #     converges; it never duplicates or reorders lines.
-#   * REVERSIBLE: before any write on a box, that box's secrets/.env and
-#     openclaw.json are copied into a timestamped 0700 backup dir ON THE BOX.
+#   * REVERSIBLE: before any write on a box, that box's secrets/.env,
+#     openclaw.json, and (on VPS) host compose .env are copied once into unique
+#     timestamped backups. A failed backup aborts before the first mutation.
 #   * ZERO SECRET VALUES IN OUTPUT: box reports carry variable NAMES and
 #     SET/NOT-SET/WRITTEN/ALREADY labels plus exit codes only. Secret values
 #     exist only inside a 0600 temp payload file (deleted on exit) and the
@@ -278,7 +279,6 @@ write_env() { # name value -> prints label only; install.sh exact-line no-op, bu
   # the var on a mid-write failure and can duplicate it on a grep error.
   [ -f "$SECENV" ] || { : > "$SECENV" || return 1; chmod 600 "$SECENV" 2>/dev/null || :; }
   if grep -qxF "$1=$2" "$SECENV" 2>/dev/null; then echo "env:$1=ALREADY"; return 0; fi
-  cp -p "$SECENV" "$SECENV.bak.s58u18" 2>/dev/null || :
   _rc=0
   grep -v "^$1=" "$SECENV" > "$SECENV.tmp.s58u18" 2>/dev/null || _rc=$?
   if [ "$_rc" -ge 2 ]; then
@@ -346,6 +346,37 @@ PY
   case "$_label" in WRITTEN|ALREADY) return 0 ;; *) return 1 ;; esac
 }
 
+# VPS post-recreate proof. Expected values are embedded in this stdin payload,
+# never argv or output. Prove the NEW container inherited every required value
+# and that its gateway returns ok:true before the wrapper can report success.
+if [ "${P18_MODE:-probe}" = "runtimeverify" ]; then
+  _runtime_ok=1
+  [ "${PODBEAN_PUBLISH_WEBHOOK_URL:-}" = "$S58V_URL" ] || _runtime_ok=0
+  [ "${PODBEAN_PUBLISH_TOKEN:-}" = "$S58V_TOKEN" ] || _runtime_ok=0
+  [ "${PODCAST_CLIENT_LAST_NAME:-}" = "$S58V_LAST" ] || _runtime_ok=0
+  [ "${PODCAST_CLIENT_EMAIL:-}" = "$S58V_EMAIL" ] || _runtime_ok=0
+  if [ -n "${S58V_FIRST:-}" ]; then
+    [ "${PODCAST_CLIENT_FIRST_NAME:-}" = "$S58V_FIRST" ] || _runtime_ok=0
+  fi
+  echo "runtime_values=$_runtime_ok"
+  [ "$_runtime_ok" = "1" ] || exit 1
+
+  _health_ok=0
+  _h=0
+  while [ "$_h" -lt 12 ]; do
+    _health="$(curl -s -m 5 http://127.0.0.1:18789/health 2>/dev/null || true)"
+    if printf '%s\n' "$_health" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+      _health_ok=1
+      break
+    fi
+    sleep 5
+    _h=$((_h + 1))
+  done
+  echo "health_ok=$_health_ok"
+  [ "$_health_ok" = "1" ] || exit 1
+  exit 0
+fi
+
 if [ "${P18_MODE:-probe}" = "probe" ]; then
   echo "box_home_present=$([ -d "$BOX_HOME/.openclaw" ] && echo yes || echo no)"
   if [ -f "$SKILL" ]; then
@@ -363,14 +394,34 @@ if [ "${P18_MODE:-probe}" = "probe" ]; then
   exit 0
 fi
 
-# ---- hostenv mode (VPS host leg) ---------------------------------------------
+# ---- hostenv modes (VPS host leg) --------------------------------------------
 # Mirrors the five values into the docker compose env_file on the HOST, so the
 # container process env carries them from the next force-recreate onward
 # (compose reads the env_file only at container create). Same exact-line
 # idempotency and atomic tmp+mv as write_env. Values that are not dotenv-safe
 # verbatim (spaces, quotes, '#') are double-quoted with escapes — dotenv-style.
+# The wrapper runs hostenvbackup BEFORE the container leg so a failed host
+# snapshot cannot leave even the container store half-mutated.
+if [ "$P18_MODE" = "hostenvbackup" ]; then
+  HF="${P18_HOSTENV_FILE:-}"
+  [ -n "$HF" ] || { echo "result=FAILED reason=hostenv_file_unset"; exit 1; }
+  [ -f "$HF" ] || { echo "result=FAILED reason=hostenv_file_missing"; exit 1; }
+  HTS="$(date -u +%Y%m%dT%H%M%SZ)"
+  HB="$(mktemp "${HF}.bak.s58u18-${HTS}.XXXXXX")" || {
+    echo "result=FAILED reason=hostenv_backup_create_failed"; exit 1;
+  }
+  if ! cp -p "$HF" "$HB"; then
+    rm -f "$HB"
+    echo "result=FAILED reason=hostenv_backup_copy_failed"
+    exit 1
+  fi
+  echo "hostenv_backup=copied"
+  exit 0
+fi
+
 if [ "$P18_MODE" = "hostenv" ]; then
   [ -n "${S58V_URL:-}" ] || { echo "result=FAILED reason=hostenv_requires_inject_payload"; exit 1; }
+  [ "${P18_HOSTENV_BACKUP_OK:-0}" = "1" ] || { echo "result=FAILED reason=hostenv_backup_not_proven"; exit 1; }
   HF="${P18_HOSTENV_FILE:-}"
   [ -n "$HF" ] || { echo "result=FAILED reason=hostenv_file_unset"; exit 1; }
   fmt_dotenv() {
@@ -381,9 +432,8 @@ if [ "$P18_MODE" = "hostenv" ]; then
   }
   hostenv_write() { # name value -> prints label only
     _line="$1=$(fmt_dotenv "$2")"
-    [ -f "$HF" ] || : > "$HF" || return 1
+    [ -f "$HF" ] || return 1
     if grep -qxF "$_line" "$HF" 2>/dev/null; then echo "hostenv:$1=ALREADY"; return 0; fi
-    cp -p "$HF" "$HF.bak.s58u18" 2>/dev/null || :
     _hrc=0
     grep -v "^$1=" "$HF" > "$HF.tmp.s58u18" 2>/dev/null || _hrc=$?
     if [ "$_hrc" -ge 2 ]; then rm -f "$HF.tmp.s58u18"; return 1; fi
@@ -406,11 +456,20 @@ fi
 
 # ---- inject mode -------------------------------------------------------------
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
-BK="$BOX_HOME/.openclaw/backups/s58-u18-$TS"
-mkdir -p "$BK" || { echo "result=FAILED reason=backup_dir_uncreatable"; exit 1; }
-chmod 700 "$BK" 2>/dev/null || :
-[ -f "$SECENV" ] && cp -p "$SECENV" "$BK/secrets.env"
-[ -f "$OCJSON" ] && cp -p "$OCJSON" "$BK/openclaw.json"
+BK_PARENT="$BOX_HOME/.openclaw/backups"
+mkdir -p "$BK_PARENT" || { echo "result=FAILED reason=backup_dir_uncreatable"; exit 1; }
+BK="$(mktemp -d "$BK_PARENT/s58-u18-$TS.XXXXXX")" || {
+  echo "result=FAILED reason=backup_dir_uncreatable"; exit 1;
+}
+chmod 700 "$BK" || { echo "result=FAILED reason=backup_dir_unprotectable"; exit 1; }
+if [ -f "$SECENV" ] && ! cp -p "$SECENV" "$BK/secrets.env"; then
+  echo "result=FAILED reason=backup_copy_failed store=secrets.env"
+  exit 1
+fi
+if [ -f "$OCJSON" ] && ! cp -p "$OCJSON" "$BK/openclaw.json"; then
+  echo "result=FAILED reason=backup_copy_failed store=openclaw.json"
+  exit 1
+fi
 echo "backup_dir_present=yes"
 echo "backup:secrets.env=$([ -f "$BK/secrets.env" ] && echo copied || echo absent)"
 echo "backup:openclaw.json=$([ -f "$BK/openclaw.json" ] && echo copied || echo absent)"
@@ -622,12 +681,13 @@ run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
   # Plain `ssh 'sh -s'` writes the HOST home, which is NOT the gateway store —
   # that lives at /data/.openclaw INSIDE the container. The payload rides
   # base64 inside a generated host wrapper (stdin-only; never argv):
-  #   1. docker exec -i -u node <container> sh -s   (container files, HOME=/data)
-  #   2. same payload re-run on the host in hostenv mode -> compose env_file
-  #   3. anything WRITTEN => docker compose up -d --force-recreate (compose
+  #   1. snapshot the host compose env_file once (inject only; fail closed)
+  #   2. docker exec -i -u node <container> sh -s   (container files, HOME=/data)
+  #   3. same payload re-run on the host in hostenv mode -> compose env_file
+  #   4. anything WRITTEN => docker compose up -d --force-recreate (compose
   #      reads the env_file only at create; a bare restart keeps the old env),
-  #      then prove the container came back. Roll in place, force-recreate,
-  #      NEVER re-init credentials — the propagate-rescue-webhook pattern.
+  #      then prove a new container, exact inherited values, and gateway health.
+  #      Roll in place, force-recreate, NEVER re-init credentials.
   _pb64="$(base64 < "$TMP_PAYLOAD" | tr -d '\n')"
   _wrap="$(mktemp "${TMPDIR:-/tmp}/s58u18-wrap.XXXXXX.sh")" || die "mktemp failed"
   chmod 600 "$_wrap"
@@ -642,15 +702,30 @@ run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
     printf 'PB64=%s\n' "$_pb64"
     cat <<'WRAP_EOF'
 TMP="$(mktemp /tmp/s58u18-p.XXXXXX)" || exit 97
+trap 'rm -f "$TMP"' EXIT
 chmod 600 "$TMP" 2>/dev/null || :
 printf '%s' "$PB64" | base64 -d > "$TMP" || { rm -f "$TMP"; exit 97; }
+HOUT=""
+if [ "$MODE" = "inject" ]; then
+  HBOUT="$(P18_MODE_OVERRIDE=hostenvbackup P18_HOSTENV_FILE="$COMPOSE_DIR/.env" sh "$TMP")"
+  HBRC=$?
+  printf '%s\n' "$HBOUT"
+  if [ "$HBRC" != "0" ]; then
+    rm -f "$TMP"
+    echo "result=FAILED reason=hostenv_backup_failed"
+    exit 1
+  fi
+fi
+OLD_CID=""
+if [ "$MODE" = "inject" ]; then
+  OLD_CID="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null || true)"
+fi
 COUT="$(docker exec -i -u node -e P18_HOME=/data "$CONTAINER" sh -s < "$TMP")"
 CRC=$?
 printf '%s\n' "$COUT"
 if [ "$CRC" != "0" ]; then rm -f "$TMP"; exit "$CRC"; fi
-HOUT=""
 if [ "$MODE" = "inject" ]; then
-  HOUT="$(P18_MODE_OVERRIDE=hostenv P18_HOSTENV_FILE="$COMPOSE_DIR/.env" sh "$TMP")"
+  HOUT="$(P18_MODE_OVERRIDE=hostenv P18_HOSTENV_BACKUP_OK=1 P18_HOSTENV_FILE="$COMPOSE_DIR/.env" sh "$TMP")"
   HRC=$?
   printf '%s\n' "$HOUT"
   if [ "$HRC" != "0" ]; then
@@ -659,7 +734,6 @@ if [ "$MODE" = "inject" ]; then
     exit 4
   fi
 fi
-rm -f "$TMP"
 if [ "$MODE" = "probe" ]; then
   # host-side survey leg: compose env_file SET/NOT-SET by NAME only
   for _v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODCAST_CLIENT_FIRST_NAME; do
@@ -690,20 +764,46 @@ if [ "$NEED" = "yes" ]; then
   fi
   ( cd "$COMPOSE_DIR" && docker compose up -d --force-recreate >/dev/null 2>&1 )
   RRC=$?
-  echo "restart=recreate rc=$RRC"
   if [ "$RRC" != "0" ]; then
+    echo "restart=failed method=recreate rc=$RRC"
     echo "result=PARTIAL reason=recreate_failed"
     exit 4
   fi
-  ST="$(docker ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null | head -n 1)"
-  if [ -n "$ST" ]; then echo "container_up=yes"; else echo "container_up=no"; fi
-  if [ -z "$ST" ]; then
-    echo "result=PARTIAL reason=container_not_up_after_recreate"
+
+  NEW_CID=""
+  RUNNING=false
+  _i=0
+  while [ "$_i" -lt 12 ]; do
+    NEW_CID="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null || true)"
+    RUNNING="$(docker inspect -f '{{.State.Running}}' "$CONTAINER" 2>/dev/null || echo false)"
+    if [ "$RUNNING" = "true" ] && [ -n "$NEW_CID" ] && [ "$NEW_CID" != "$OLD_CID" ]; then
+      break
+    fi
+    sleep 5
+    _i=$((_i + 1))
+  done
+  if [ "$RUNNING" != "true" ] || [ -z "$NEW_CID" ] || [ "$NEW_CID" = "$OLD_CID" ]; then
+    echo "GATEWAY_DOWN=1"
+    echo "restart=failed method=recreate rc=0 container_id_changed=0"
+    echo "result=PARTIAL reason=container_recreate_not_proven"
     exit 4
   fi
+
+  VOUT="$(docker exec -i -u node -e P18_HOME=/data -e P18_MODE_OVERRIDE=runtimeverify "$CONTAINER" sh -s < "$TMP")"
+  VRC=$?
+  printf '%s\n' "$VOUT"
+  if [ "$VRC" != "0" ]; then
+    echo "GATEWAY_DOWN=1"
+    echo "restart=failed method=recreate rc=0 container_id_changed=1"
+    echo "result=PARTIAL reason=runtime_not_proven"
+    rm -f "$TMP"
+    exit 4
+  fi
+  echo "restart=recreate rc=0 container_id_changed=1 health_ok=1 runtime_values=1"
 else
   echo "restart=not_needed"
 fi
+rm -f "$TMP"
 exit 0
 WRAP_EOF
   } > "$_wrap" || die "could not build vps wrapper"
@@ -748,12 +848,18 @@ run_box() { # mode -> box report on stdout; box exit code returned
   return $_brc
 }
 
-log_line() { # append to operator-private ledger log + echo to stdout
-  printf '%s\n' "$1"
-  [ -n "$LOG_FILE" ] || return 0
+prepare_ledger() { # fail before transport: a fleet mutation never runs blind
+  [ -n "$LOG_FILE" ] || die "ledger path is empty"
   _d="$(dirname "$LOG_FILE")"
-  if [ ! -d "$_d" ]; then mkdir -p "$_d" 2>/dev/null && chmod 700 "$_d" 2>/dev/null; fi
-  printf '%s\n' "$1" >> "$LOG_FILE" 2>/dev/null && chmod 600 "$LOG_FILE" 2>/dev/null
+  mkdir -p "$_d" 2>/dev/null || die "ledger directory is not creatable: $_d"
+  chmod 700 "$_d" 2>/dev/null || die "ledger directory cannot be protected: $_d"
+  ( : >> "$LOG_FILE" ) 2>/dev/null || die "ledger is not writable: $LOG_FILE"
+  chmod 600 "$LOG_FILE" 2>/dev/null || die "ledger cannot be protected: $LOG_FILE"
+}
+
+log_line() { # durable append first; stop immediately if the ledger fails later
+  ( printf '%s\n' "$1" >> "$LOG_FILE" ) 2>/dev/null || die "ledger append failed: $LOG_FILE"
+  printf '%s\n' "$1"
   return 0
 }
 
@@ -762,6 +868,7 @@ field() { # extract a field from a box report: $1=report $2=sed-pattern
 }
 
 # ---- main loop (redirection, NOT a pipeline: counters survive) ----------------
+prepare_ledger
 MODE_LABEL="DRY-RUN (read-only)"; [ "$APPLY" = "1" ] && MODE_LABEL="APPLY"
 printf '=== %s: %s | manifest=%s | operator-local-token=%s ===\n' \
   "$SCRIPT_NAME" "$MODE_LABEL" "$BOXES_FILE" "$TOKEN_LOCAL_STATE"
@@ -832,6 +939,9 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
   RESULT="$(field "$REPORT" 's/^result=\([A-Z]*\).*/\1/p')"
   REASON="$(field "$REPORT" 's/^result=[A-Z]* reason=\(.*\)/\1/p')"
   CHANGED_ST="$(field "$REPORT" 's/^changed=\(.*\)/\1/p')"
+  HOST_CHANGED_ST="$(field "$REPORT" 's/^hostenv_changed=\(.*\)/\1/p')"
+  EFFECTIVE_CHANGED_ST="$CHANGED_ST"
+  [ "$HOST_CHANGED_ST" = "yes" ] && EFFECTIVE_CHANGED_ST="yes"
   DRYEXIT="$(field "$REPORT" 's/^dryrun_exit=\([0-9]*\).*/\1/p')"
   GS="$(field "$REPORT" 's/^dryrun_exit=[0-9]* good_standing=\([a-z]*\).*/\1/p')"
   SKILL_ST="$(field "$REPORT" 's/^skill_script=\([a-z]*\).*/\1/p')"
@@ -846,18 +956,23 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
 
   VERDICT="OK"
   if [ "$APPLY" = "1" ]; then
-    case "$RESULT" in
-      OK)      VERDICT="OK"; [ "$CHANGED_ST" = "no" ] && VERDICT="OK_ALREADY" ;;
-      PARTIAL) VERDICT="PARTIAL" ;;
-      *)       VERDICT="FAILED" ;;
-    esac
+    if [ "$BOX_RC" != "0" ]; then
+      VERDICT="FAILED"
+      REASON="transport_exit_nonzero"
+    else
+      case "$RESULT" in
+        OK)      VERDICT="OK"; [ "$EFFECTIVE_CHANGED_ST" = "no" ] && VERDICT="OK_ALREADY" ;;
+        PARTIAL) VERDICT="PARTIAL" ;;
+        *)       VERDICT="FAILED" ;;
+      esac
+    fi
   else
     # dry-run survey: a reachable, probed box is OK regardless of current SET
     # state — the SET/NOT-SET columns ARE the survey result.
     [ "$BOX_RC" != "0" ] && VERDICT="UNREACHABLE_OR_ERROR"
   fi
 
-  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${CHANGED_ST:+ changed=$CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}${GATEWAY_DOWN_ST:+ gateway_down=$GATEWAY_DOWN_ST}"
+  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} transport_rc=$BOX_RC url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${EFFECTIVE_CHANGED_ST:+ changed=$EFFECTIVE_CHANGED_ST}${HOST_CHANGED_ST:+ host_changed=$HOST_CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}${GATEWAY_DOWN_ST:+ gateway_down=$GATEWAY_DOWN_ST}"
 
   if [ "$VERDICT" = "OK" ] || [ "$VERDICT" = "OK_ALREADY" ]; then
     COUNT_OK=$((COUNT_OK + 1))

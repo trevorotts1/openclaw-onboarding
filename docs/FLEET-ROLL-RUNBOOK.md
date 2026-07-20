@@ -164,9 +164,13 @@ The per-box payload branches on the profile recorded in Section 3.
   `docker compose restart`. A bare `restart` keeps the OLD image **and** skips
   re-reading `env_file` — so the box looks restarted but runs old code with a
   stale env. Always `up -d --force-recreate` after the pull.
-- **The host-side `.env` (e.g. `/docker/<project>/.env`) is READ, NEVER
-  rewritten.** It holds the box's real credentials. The roll consumes it; it does
-  not author it. Any step that would rewrite it is banned (Section 6).
+- **The host-side `.env` (e.g. `/docker/<project>/.env`) is read-only to general
+  update payloads.** It holds the box's real credentials, so arbitrary rewrites
+  remain banned (Section 6). The dedicated Podbean provisioning roll is the one
+  narrow exception: it may atomically replace only its five allowlisted Podbean
+  and podcast-identity keys, and only after one unique timestamped snapshot of
+  the original host file succeeds. Snapshot failure blocks all mutation on that
+  box; every non-allowlisted byte must remain unchanged.
 - **`pm2 save` after any change** that touches a pm2-managed process. The pm2
   dump re-injects the OLD environment on the next reboot otherwise — so a change
   that looked applied silently reverts on restart (this is exactly why the reboot
