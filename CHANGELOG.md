@@ -1,3 +1,31 @@
+## [v20.0.71]  -  2026-07-19  -  Skill 6: U22/B-U8 LIVE-PROOF tier paid + receipt branches landed
+
+v20.0.71 — U22/B-U8 LIVE-PROOF tier: the end-to-end operator-box fixture-funnel proof run,
+re-executed live 2026-07-19 (never trusted from the 7-16 receipts alone), plus both waiting
+ONB receipt branches merged.
+
+- **`skill6-v2/U22-offline` merged** (`37431f41`): bundle-receipt schema
+  (`shared-utils/persona-bundle-receipt.schema.json` + stdlib validator
+  `persona_bundle_receipt_schema.py`), guard-fab-qc-gate section 1e (schema presence +
+  validator self-test + a REAL ladder receipt validated against the schema),
+  `test_persona_bundle_ladder.py` fixture suite (14/14), persona-bundle fixture payloads,
+  and the CI mutation test `tests/unit/guard-fab-qc-gate-bundle-receipt.test.sh`
+  (sandbox manifest forward-fixed in the merge resolution for post-branch U10/U117 guard
+  checks; 4/4 after).
+- **`proof/u22-live-capstone` merged** (`5c421b56`): the 2026-07-16 LIVE-tier evidence
+  directory + append-only ledger addendum, landed as-committed.
+- **2026-07-19 re-proof landed** (`38774177`): fresh live run of
+  `prove_skill6_block_u22.py` (23/23, exit 0) with persistent receipts
+  (`mismatch-free-card.json` D4=10.0 / 0 mismatches / `receipt_source=threaded`) and a
+  fresh producer→CC ingest handshake against CC main `fe736ee7`/v6.0.59 on an isolated
+  scratch `DATABASE_PATH` (pinned case verbatim in `tasks` + `task_persona_bundle`, zero
+  selector spawns; control case fired the selector). Evidence:
+  `06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-19/`. U22 ledger row flipped
+  to `verified` with the A-U7/B-U10 GHL→Vercel live legs explicitly still operator-gated
+  (named sandbox GHL location), owed, not claimed.
+- **CC companion (same pass):** `skill6-v2/U22-offline` merged to
+  `blackceo-command-center` `main` @ `fe66e378`, ripple `7d1a247e`, tag `v6.0.60`.
+
 ## [v20.0.70]  -  2026-07-19  -  Skill 58 ledger: S58-U21 release-ripple + truth-gate close-out (ONB leg)
 
 v20.0.70 — `closeout/s58-u21-podcast-terminal`: closes the ONB (repo) leg of S58-U21, the
