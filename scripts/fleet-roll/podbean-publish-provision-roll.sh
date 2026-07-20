@@ -114,7 +114,8 @@ BOX_FILTERS=""
 
 err() { printf '%s\n' "$SCRIPT_NAME: $*" >&2; }
 die() { err "$*"; exit 1; }
-usage() { sed -n '2,95p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,98p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+shquote() { python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$1"; }
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -150,15 +151,18 @@ if [ "$APPLY" = "1" ] && [ -z "$PUBLISH_TOKEN" ]; then
 fi
 TOKEN_LOCAL_STATE="NOT-SET"; [ -n "$PUBLISH_TOKEN" ] && TOKEN_LOCAL_STATE="SET"
 
-# ---- parse the manifest into tab-separated box lines --------------------------
-# Fields: name \t role \t platform \t ssh_target \t home \t complete \t
-#         last_name \t email \t first_name \t podcast_id
+# ---- parse the manifest into pipe-delimited box lines -------------------------
+# Fields: name | role | platform | ssh_target | home | complete |
+#         last_name | email | first_name | podcast_id
+# PIPE, NOT TAB: tab is IFS whitespace, so `read` COLLAPSES consecutive tabs and
+# an empty optional field (home, first_name, podcast_id) silently shifts every
+# following column. A non-whitespace delimiter preserves empty fields exactly.
 # Identity values ride in shell variables only — never echoed by this script.
 MANIFEST_TSV="$(python3 - "$BOXES_FILE" <<'PYEOF'
 import json, sys
 
 def clean(v):
-    return str(v if v is not None else "").replace("\t", " ").replace("\n", " ")
+    return str(v if v is not None else "").replace("\t", " ").replace("\n", " ").replace("|", " ")
 
 try:
     rows = json.load(open(sys.argv[1]))
@@ -171,7 +175,7 @@ if not isinstance(rows, list) or not rows:
 out = []
 for r in rows:
     ident = r.get("identity") or {}
-    out.append("\t".join([
+    out.append("|".join([
         clean(r.get("name", "")),
         clean(r.get("role", "client")),
         clean(r.get("platform", "")),
@@ -188,7 +192,7 @@ PYEOF
 )" || die "could not parse manifest $BOXES_FILE"
 
 # Order: operator role first (stable), then clients.
-ORDERED_TSV="$(printf '%s\n' "$MANIFEST_TSV" | awk -F'\t' '{ if ($2=="operator") print "0\t"$0; else print "1\t"$0 }' | sort -s -k1,1 | cut -f2-)"
+ORDERED_TSV="$(printf '%s\n' "$MANIFEST_TSV" | awk -F'|' '{ if ($2=="operator") print "0\t"$0; else print "1\t"$0 }' | sort -s -k1,1 | cut -f2-)"
 
 # ---- emit the per-box payload script (POSIX sh; same for local and ssh) -------
 # The inject-mode values are embedded by build_payload via a generated
@@ -224,52 +228,70 @@ print("SET" if os.environ["V"] in ((d.get("env", {}) or {}).get("vars", {}) or {
 PY
 }
 
-write_env() { # name value -> prints label only; install.sh _shared_write_env semantics
-  [ -f "$SECENV" ] || { touch "$SECENV" || return 1; chmod 600 "$SECENV" 2>/dev/null || :; }
+write_env() { # name value -> prints label only; install.sh exact-line no-op, but the
+  # replace+append is built ENTIRELY in a tmp file and lands in ONE mv (atomic).
+  # install.sh's original appends to the live file after the mv, which can lose
+  # the var on a mid-write failure and can duplicate it on a grep error.
+  [ -f "$SECENV" ] || { : > "$SECENV" || return 1; chmod 600 "$SECENV" 2>/dev/null || :; }
   if grep -qxF "$1=$2" "$SECENV" 2>/dev/null; then echo "env:$1=ALREADY"; return 0; fi
   cp -p "$SECENV" "$SECENV.bak.s58u18" 2>/dev/null || :
   _rc=0
   grep -v "^$1=" "$SECENV" > "$SECENV.tmp.s58u18" 2>/dev/null || _rc=$?
-  if [ "$_rc" -le 1 ] && { [ -s "$SECENV.tmp.s58u18" ] || [ "$_rc" -eq 1 ]; }; then
-    mv "$SECENV.tmp.s58u18" "$SECENV" 2>/dev/null || rm -f "$SECENV.tmp.s58u18"
-  else
+  if [ "$_rc" -ge 2 ]; then
+    # grep errored: fail CLOSED — never append beside an unremoved old line.
     rm -f "$SECENV.tmp.s58u18"
+    return 1
   fi
-  printf '%s=%s\n' "$1" "$2" >> "$SECENV" || return 1
-  chmod 600 "$SECENV" 2>/dev/null || :
+  printf '%s=%s\n' "$1" "$2" >> "$SECENV.tmp.s58u18" || { rm -f "$SECENV.tmp.s58u18"; return 1; }
+  chmod 600 "$SECENV.tmp.s58u18" 2>/dev/null || :
+  mv "$SECENV.tmp.s58u18" "$SECENV" || { rm -f "$SECENV.tmp.s58u18"; return 1; }
   echo "env:$1=WRITTEN"
   CHANGED=1
   return 0
 }
 
-write_ocjson() { # name value -> prints label only; install.sh _shared_write_ocjson semantics
-  [ -f "$OCJSON" ] || { echo "ocjson:$1=NOFILE"; return 0; }
+write_ocjson() { # name value -> prints label only. Differences from install.sh's
+  # _shared_write_ocjson, on purpose (QC findings on a live-fleet tool):
+  #   * ATOMIC: serialize to a tmp file, os.replace() over the original — a
+  #     crash mid-write can never leave a truncated gateway config.
+  #   * FAIL-CLOSED on unparseable json: install.sh's `d = {}` fallback would
+  #     REBUILD openclaw.json as a minimal stub, destroying the box's config.
+  #   * FAIL-CLOSED on a missing file: a live box without openclaw.json is
+  #     broken; provisioning half a box and reporting OK would be a false-done.
+  [ -f "$OCJSON" ] || { echo "ocjson:$1=NOFILE"; return 1; }
   _label="$(OCJSON="$OCJSON" VAR="$1" VAL="$2" python3 - <<'PY' 2>/dev/null
 import json, os
 p, v, val = os.environ["OCJSON"], os.environ["VAR"], os.environ["VAL"]
 try:
     d = json.load(open(p))
 except Exception:
-    d = {}
+    print("UNPARSEABLE")
+    raise SystemExit(0)
 vars_ = d.setdefault("env", {}).setdefault("vars", {})
 if vars_.get(v) == val:
     print("ALREADY")  # exact -> byte-identical no-op (idempotent)
 else:
     vars_[v] = val
-    json.dump(d, open(p, "w"), indent=2)
+    tmp = p + ".tmp.s58u18"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(tmp, p)
     print("WRITTEN")
 PY
 )"
   [ -n "$_label" ] || _label="ERROR"
   [ "$_label" = "WRITTEN" ] && CHANGED=1
   echo "ocjson:$1=$_label"
-  [ "$_label" != "ERROR" ]
+  case "$_label" in WRITTEN|ALREADY) return 0 ;; *) return 1 ;; esac
 }
 
 if [ "${P18_MODE:-probe}" = "probe" ]; then
   echo "box_home_present=$([ -d "$BOX_HOME/.openclaw" ] && echo yes || echo no)"
   if [ -f "$SKILL" ]; then
-    _n=$(grep -c "PODBEAN_PUBLISH_WEBHOOK_URL" "$SKILL" 2>/dev/null || echo 0)
+    # NOTE: no `|| echo 0` — grep -c prints "0" itself on no-match (rc 1), and
+    # `$(grep -c ... || echo 0)` would capture "0<newline>0", corrupting the report.
+    _n=$(grep -c "PODBEAN_PUBLISH_WEBHOOK_URL" "$SKILL" 2>/dev/null)
+    [ -n "$_n" ] || _n=0
     echo "skill_script=present proxy_mode_markers=$_n"
   else
     echo "skill_script=missing proxy_mode_markers=0"
@@ -307,18 +329,27 @@ if [ -n "${S58V_FIRST:-}" ]; then
 fi
 echo "changed=$([ "$CHANGED" = "1" ] && echo yes || echo no)"
 
-# Post-write SET-by-name validation (fail-closed).
+# Post-write SET-by-name validation (fail-closed) — BOTH stores, per the U18
+# accept clause ("secrets/.env AND openclaw.json env.vars"). env missing is a
+# hard FAIL; ocjson missing is PARTIAL (values durable in env, runtime store
+# unproven) so it is never reported as a clean OK.
+for v in $NAMES; do
+  echo "validate:$v:env=$(secenv_state "$v"):ocjson=$(ocjson_state "$v")"
+done
 MISSING=""
+OCJ_MISSING=""
 for v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL; do
   [ "$(secenv_state "$v")" = "SET" ] || MISSING="$MISSING $v"
+  [ "$(ocjson_state "$v")" = "SET" ] || OCJ_MISSING="$OCJ_MISSING $v"
 done
 if [ -n "$MISSING" ]; then
   echo "result=FAILED reason=post_write_validation_missing"
   exit 1
 fi
-for v in $NAMES; do
-  echo "validate:$v:env=$(secenv_state "$v"):ocjson=$(ocjson_state "$v")"
-done
+if [ -n "$OCJ_MISSING" ]; then
+  echo "result=PARTIAL reason=ocjson_not_proven"
+  exit 4
+fi
 
 # Standing dry-run (U13 reachability; publishes nothing).
 if [ "${P18_STANDING:-1}" != "1" ]; then
@@ -326,7 +357,9 @@ if [ "${P18_STANDING:-1}" != "1" ]; then
   echo "result=OK"
   exit 0
 fi
-if [ ! -f "$SKILL" ] || [ "$(grep -c PODBEAN_PUBLISH_WEBHOOK_URL "$SKILL" 2>/dev/null || echo 0)" = "0" ]; then
+_pm=$(grep -c PODBEAN_PUBLISH_WEBHOOK_URL "$SKILL" 2>/dev/null)
+[ -n "$_pm" ] || _pm=0
+if [ ! -f "$SKILL" ] || [ "$_pm" = "0" ]; then
   echo "dryrun=skipped reason=skill_script_missing_or_no_proxy_mode"
   echo "result=PARTIAL reason=values_set_but_dry_run_not_runnable"
   exit 4
@@ -363,7 +396,12 @@ PAYLOAD_EOF
 
 # ---- per-box runner ------------------------------------------------------------
 TMP_PAYLOAD=""
-cleanup() { [ -n "$TMP_PAYLOAD" ] && rm -f "$TMP_PAYLOAD" 2>/dev/null; }
+ORDERED_FILE=""
+cleanup() {
+  [ -n "$TMP_PAYLOAD" ] && rm -f "$TMP_PAYLOAD" 2>/dev/null
+  [ -n "$ORDERED_FILE" ] && rm -f "$ORDERED_FILE" 2>/dev/null
+  return 0
+}
 trap cleanup EXIT
 
 box_selected() {
@@ -396,14 +434,26 @@ PYEOF
 }
 
 run_box() { # mode -> box report on stdout; box exit code returned
+  # Remote stdout is captured CLEAN — the caller parses ^-anchored fields, so a
+  # prefix (the original piped remote output through `sed 's/^/.../'`) makes
+  # every remote verdict unparseable: apply runs would always grade FAILED.
+  # Remote stderr flows through to the operator terminal untouched; the payload
+  # contract already forbids values on any stream. The payload file is removed
+  # per box — one long-lived trap-cleaned file would still leave N-1 stale
+  # token-bearing temp files behind on a multi-box run.
   build_payload "$1"
   if [ "$LOCAL" = "1" ] || [ "$B_SSH" = "local" ]; then
     bash "$TMP_PAYLOAD"
-    return $?
+    _brc=$?
+  else
+    ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 \
+        -o ServerAliveCountMax=3 \
+        "$B_SSH" 'sh -s' < "$TMP_PAYLOAD"
+    _brc=$?
   fi
-  ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 \
-      "$B_SSH" 'sh -s' < "$TMP_PAYLOAD" 2>&1 | sed 's/^/remote-err-or-out: /'
-  return "${PIPESTATUS[0]}"
+  rm -f "$TMP_PAYLOAD" 2>/dev/null
+  TMP_PAYLOAD=""
+  return $_brc
 }
 
 log_line() { # append to operator-private ledger log + echo to stdout
@@ -426,14 +476,33 @@ printf '=== %s: %s | manifest=%s | operator-local-token=%s ===\n' \
 
 OPERATOR_PROVEN=0
 COUNT_OK=0; COUNT_SKIP=0; COUNT_FAIL=0; COUNT_BLOCKED=0; COUNT_TOTAL=0
-NOW_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 ORDERED_FILE="$(mktemp "${TMPDIR:-/tmp}/s58u18-ordered.XXXXXX")" || die "mktemp failed"
 printf '%s\n' "$ORDERED_TSV" > "$ORDERED_FILE"
 
-while IFS='	' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_EMAIL B_FIRST B_PID; do
+# --local + --apply guard: --local redirects EVERY selected box onto THIS box's
+# filesystem. Unrestricted, `--apply --include-clients --local` would "provision"
+# each client entry against the operator's own store — overwriting the
+# operator's PODCAST_CLIENT_* identity with every client's in turn, reporting
+# fleet-wide OK while no client box was ever touched. Refuse anything but a
+# single selected box, and refuse a client identity unless the entry carries an
+# explicit sandbox home override.
+if [ "$APPLY" = "1" ] && [ "$LOCAL" = "1" ]; then
+  SEL_COUNT=0; SEL_UNSAFE=0
+  while IFS='|' read -r B_NAME B_ROLE _g3 _g4 B_HOME _g6 _g7 _g8 _g9 _g10; do
+    [ -n "$B_NAME" ] || continue
+    box_selected || continue
+    SEL_COUNT=$((SEL_COUNT + 1))
+    [ "$B_ROLE" = "operator" ] || [ -n "$B_HOME" ] || SEL_UNSAFE=1
+  done < "$ORDERED_FILE"
+  [ "$SEL_COUNT" -le 1 ] || die "--local with --apply selects $SEL_COUNT manifest entries; restrict to exactly one with --box (refusing to write multiple box identities onto THIS box)"
+  [ "$SEL_UNSAFE" = "0" ] || die "--local with --apply may only target an operator entry (or a sandbox entry with an explicit home override); refusing to write a client identity onto THIS box"
+fi
+
+while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_EMAIL B_FIRST B_PID; do
   [ -n "$B_NAME" ] || continue
   box_selected || continue
   COUNT_TOTAL=$((COUNT_TOTAL + 1))
+  NOW_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
   # identity fail-closed (both-or-neither, mirrors U15)
   if [ "$B_COMPLETE" != "1" ] || [ -z "$B_LAST" ] || [ -z "$B_EMAIL" ]; then
