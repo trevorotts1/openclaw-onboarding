@@ -507,6 +507,18 @@ elif str(v).startswith('warn:'): print('WARN')
 elif str(v).startswith('failed:'): print('FAIL')
 else: print(str(v)[:16])
 " 2>/dev/null || echo "?")
+  # false-success closer: provisioning-completeness outcome (VERSION+BRANDING+
+  # DEPARTMENTS+PERSONAS gate). Surfaced next to embed= so an incompletely-
+  # provisioned box is never mistaken for a clean PASS at a glance.
+  prov_health=$(echo "$box_result" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+v=d.get('steps',{}).get('provisioning-completeness','not-run')
+if v=='ok': print('OK')
+elif v is None or v=='not-run': print('NOT-RUN')
+elif str(v).startswith('failed:'): print('FAIL')
+else: print(str(v)[:16])
+" 2>/dev/null || echo "?")
 
   case "$result_val" in
     ok)      icon="✓" ;;
@@ -532,7 +544,7 @@ print('yes' if any('[exit-3]' in str(v) for v in steps.values()) else 'no')
     *)       icon="✗"; ANY_FAILED=1; ALL_OK=0 ;;
   esac
 
-  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health]"
+  echo "[fleet-refresh]   $icon  $box  [result=$result_val  onb=$onb_ver  cc=v$cc_ver  loaded=$loaded($confidence)  embed=$emb_health  prov=$prov_health]"
   [ -n "$errors" ] && echo "[fleet-refresh]        ERRORS: $errors"
 
   # Accumulate into fleet summary JSON

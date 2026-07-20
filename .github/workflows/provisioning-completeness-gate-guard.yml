@@ -1,0 +1,64 @@
+name: provisioning-completeness gate guard
+
+# Proves the false-success closer in the fleet-roll verdict.
+#
+# The roll verdict (shared-utils/fleet_refresh_runner.py::run_box) reports a box
+# "ok" (PASS) when no step string contains "failed". Before Step 8d
+# (step_provisioning_completeness) the substantive per-box checks were CC serving,
+# SOP coverage (embedding-health), and the loaded-marker verify — NONE verified
+# that provisioning actually landed. A box could carry the full SOP corpus yet
+# ship placeholder branding, a stale/missing onboarding version stamp, an empty
+# departments.json, and zero personas, and still be reported PASS.
+#
+# This guard runs the hermetic fixture suite (LOCAL FIXTURES ONLY — never a real
+# box) that proves, using run_box's EXACT has_failures verdict expression, that
+# such a box now FLIPS from PASS(before) to FAIL(after), and that a genuinely
+# fully-provisioned box is NOT false-failed.
+#
+# Security note: consumes only repo file content + local tmp fixtures (no
+# untrusted GitHub event fields, no network, no ssh, no box), so there is no
+# injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shared-utils/fleet_refresh_runner.py"
+      - "scripts/fleet-refresh.sh"
+      - "tests/unit/provisioning-completeness-gate.test.py"
+      - ".github/workflows/provisioning-completeness-gate-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "shared-utils/fleet_refresh_runner.py"
+      - "scripts/fleet-refresh.sh"
+      - "tests/unit/provisioning-completeness-gate.test.py"
+      - ".github/workflows/provisioning-completeness-gate-guard.yml"
+
+jobs:
+  provisioning-completeness-gate-guard:
+    name: VERSION+BRANDING+DEPARTMENTS+PERSONAS gate the roll verdict (no false-FAIL)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax check (runner + fleet-refresh.sh)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile shared-utils/fleet_refresh_runner.py
+          bash -n scripts/fleet-refresh.sh
+          echo "syntax OK"
+
+      - name: Provisioning-completeness gate suite (fixtures; FAIL-before/PASS-after)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/unit/provisioning-completeness-gate.test.py -v
+          echo "provisioning-completeness-gate-guard: PASS"
