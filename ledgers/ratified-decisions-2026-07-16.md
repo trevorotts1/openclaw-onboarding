@@ -289,3 +289,42 @@ This consolidation was performed in a fresh, isolated clone of `openclaw-onboard
 Consolidated 2026-07-17 on branch `chore/d23-hold-list-marketing-not-funnels` (PR #611), on top of its own existing D23 commits. Not merged by this pass — lands via the standing one-merge-writer-per-repo serial train, same as every entry it reproduces.
 
 Integrated with `origin/main` 2026-07-17 (post-PR599-merge reconciliation) on the same branch, same PR. Still not merged by this pass — lands via the same standing one-merge-writer-per-repo serial train.
+
+---
+
+## D12 (D-HL-3) — RATIFIED BY TREVOR, 2026-07-20: ONE updater — the Command Center's own `update.sh` is the sole path allowed to update an installed Command Center
+
+**Trevor's attestation, verbatim and complete.** On 2026-07-20, in his own Claude Code session, Trevor was asked, word for word:
+
+> "So: say 'yes, one updater' and an agent writes the entry quoting you. That closes it."
+
+He replied, word for word:
+
+> "yes"
+
+That single word is his entire attestation, reproduced here without expansion, paraphrase, or embellishment — the question above is exactly what his "yes" answered, and both are recorded together, with the date, so the attestation trail is complete and auditable. What the "yes" ratifies: **ONE updater script only — a single script is the sole path allowed to update the installed Command Center dashboard.**
+
+**Why this entry exists when item 5 of "Decisions found but excluded" (above) already names a prior D12 ratification and excludes it.** That prior attempt (commit `b9a14793`, on the still-unmerged branch `chore/ratified-decisions-2026-07-16-d12-d4`) was excluded for exactly one defect: *"No direct quote or attestation trail"* — an agent wrote the ruling and effectively signed Trevor's name to it. This entry cures that exact defect: his real word, the real question it answered, the real date, clearly attributed. The exclusion-list section above is a historical record and is not edited by this pass; for D12 only, its open state is superseded by this entry. (The prior attempt's technical findings — the two updater code defects — were real, and have since been fixed and merged; see U53's own ledger row for their live proof this pass.)
+
+**Ruling, precisely:** the Command Center repo's own `update.sh` (repo root of `trevorotts1/blackceo-command-center`), invoked with `CC_APP_DIR` pinned by the caller, is the ONE and ONLY path allowed to update an installed Command Center dashboard. The onboarding repo's Skill-32 refresh path and the Sunday update-check cron both route through it; no other code may pull, build, or restart a Command Center checkout. This is the master spec's own D-HL-3 recommendation, now ratified rather than merely recommended.
+
+**Consistency with live code — independently re-verified this pass, from fresh clones, not relayed:**
+
+- ONB `origin/main` (HEAD `9fac8bb0` at verification): `.github/workflows/u53-crown-executor-single-path-guard.yml` exists and fails the build if either of `update-skills.sh`'s D5 call sites, or `run-full-install.sh`'s Phase 6, ever regresses into inlining its own npm/pm2/git mutation instead of delegating to `update.sh`.
+- The probe was re-executed this pass against that fresh clone: `tests/probe/test-u53-hl-u68-crown-executor-single-path.sh` → **Passed: 10 / Failed: 0**, including *"D5 section contains ZERO direct npm/pm2/git mutation calls"* and *"tier 1 invokes update.sh with CC_APP_DIR (+ CC_PORT) pinned to the freshly-pulled checkout — matches D-HL-3's ruling verbatim"*.
+- CC `origin/main` HEAD is `b0b2be90` (PR #218's 2-parent merge, mergedAt 2026-07-20T03:08:05Z, confirmed on-main by direct git ancestry): `update.sh` routes every rebuild through `scripts/atomic-deploy.sh` and reads its exit-code contract explicitly (`0` green / `1` rolled-back / `2` pre-flight-failed / `3` health-indeterminate).
+- The ratified option was **already built and shipping** before the ruling — ratifying it costs zero code churn; ruling the other way would have meant deleting a shipped CI guard and a passing 10-assertion probe to adopt a path the master spec itself records as unverified.
+
+**Cross-reference — one decision, two labels.** D12 is the master spec's global decision-register number; **D-HL-3** is the same decision's section-local id in the H+L section (master spec crosswalk row `D12 | HL/D-HL-3 | ONE crowned executor for CC updates` and the full `Decision D-HL-3` block). Both labels are closed together by this entry.
+
+**Attestation provenance, stated precisely, matching this file's own standard.** The exchange quoted above occurred in Trevor's own session with his orchestrating agent; the agent writing this ledger entry received the verbatim question, the verbatim reply, and the date from that orchestrator's dispatch and did not itself witness the exchange. Unlike this file's earlier relayed entries, the actual words exchanged are reproduced in full — that is the difference this entry exists to make. If this attribution is wrong, Trevor corrects it in one line, and this note is what makes the error findable.
+
+**Effect:** D12/D-HL-3's decision gate is REMOVED. Per U53's own row (its 2026-07-19 truth-up), this ratification was the SOLE remaining operator item on U53; zero operator items now remain on that unit. U53's row in `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` is updated in this same pass — including the honest result of the live "prove the loop" run executed this pass (the two blocking code defects are fixed and their fixes PROVEN live; the run itself surfaced a third, previously unknown defect and auto-rolled back cleanly, so the live leg stays open rather than being false-closed — full receipts in the row). No other decision is touched, reinterpreted, or ratified by this entry — in particular, the remaining items in "Decisions found but excluded" (D-U65, D-U64, D-U74/U73, D-U63, D20) concern different subjects, carry no attestation from the 2026-07-20 exchange, and remain exactly as that section records them.
+
+---
+
+## Pass provenance — 2026-07-20 (D12/D-HL-3 attestation + U53 live loop-proof)
+
+Recorded on branch `chore/d12-ratified-trevor-attestation-u53-live-run`, in a fresh, isolated clone of `openclaw-onboarding` (never the shared tracked checkout, which held another writer's untracked work at the time and was left untouched). Files touched by this pass: this file (this section and the D12 entry above it) and `ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md` (U53's row only). No version marker is bumped and no tag is created — ledger-only change, matching this file's sibling passes.
+
+**Evidence discipline:** every load-bearing claim in the D12 entry and the U53 row update was re-derived this pass from primary source — fresh clones of both repos, direct `gh` reads of PR #218's merge state, foreground execution of the crown-executor probe, and a real, live execution of the crowned updater on the operator's own box (full sequence, receipts, and the resulting auto-rollback recorded in U53's row). The one relayed fact is Trevor's attestation itself, whose verbatim text and provenance are stated plainly in the entry. The live box was verified restored to its pre-run serving state before this pass ended (HTTP 200 `status: ok`, branding check PASS, demo pm2 apps untouched). No secret value was read or printed anywhere in this pass; credential-bearing files were not opened; no gate was weakened, overridden, or acknowledged-around to force a green result.
