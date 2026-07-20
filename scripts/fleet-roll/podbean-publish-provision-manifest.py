@@ -156,11 +156,22 @@ def main():
                 row.get(args.last_key), row.get(args.email_key),
                 row.get(args.first_key), row.get(args.podcast_id_key),
             )
+            role = str(box.get("role", "client")).strip()
+            platform = str(box.get("platform", "")).strip()
+            ssh_target = str(box.get("ssh_target", "")).strip()
+            if platform not in {"mac", "vps"}:
+                eprint("manifest builder: unsupported platform %r; expected mac or vps"
+                       % platform)
+                sys.exit(1)
+            if role != "operator" and ssh_target == "local":
+                eprint("manifest builder: non-operator rows may not set "
+                       "ssh_target to local")
+                sys.exit(1)
             entry = {
                 "name": name,
-                "role": str(box.get("role", "client")),
-                "platform": str(box.get("platform", "")),
-                "ssh_target": str(box.get("ssh_target", "")),
+                "role": role,
+                "platform": platform,
+                "ssh_target": ssh_target,
                 "identity": ident,
             }
             for opt in ("container", "compose_dir", "home"):

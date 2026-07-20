@@ -436,20 +436,55 @@ do_restart() { # gateway restart on THIS box, only when something changed.
   esac
   if [ -n "${P18_HOME:-}" ]; then echo "restart=skipped_sandbox_home"; return 0; fi
   PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
-  if command -v openclaw >/dev/null 2>&1; then
-    openclaw gateway restart >/dev/null 2>&1
+  _old_pid="$(launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}')"
+  launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" >/dev/null 2>&1
+  _rrc=$?
+  _method=kickstart
+  if [ "$_rrc" = "125" ] || [ "$_rrc" = "126" ]; then
+    # Some boxes reject kickstart; the KeepAlive=true plist restarts on stop.
+    _method=stop-fallback
+    launchctl stop ai.openclaw.gateway >/dev/null 2>&1
     _rrc=$?
-  else
-    launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" >/dev/null 2>&1
-    _rrc=$?
-    if [ "$_rrc" = "125" ] || [ "$_rrc" = "126" ]; then
-      # some boxes reject kickstart; the KeepAlive=true plist restarts on stop
-      launchctl stop ai.openclaw.gateway >/dev/null 2>&1
-      _rrc=$?
-    fi
   fi
-  echo "restart=attempted rc=$_rrc"
-  [ "$_rrc" = "0" ]
+
+  # A zero command status is not proof. The 2026-06-08 incident returned zero
+  # while the gateway stayed down. Prove both a new launchd PID and ok:true from
+  # the bounded local health poll before reporting success.
+  _pid_changed=0
+  _new_pid=""
+  _i=0
+  while [ "$_i" -lt 12 ]; do
+    sleep 5
+    _new_pid="$(launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}')"
+    case "$_new_pid" in
+      ""|-) : ;;
+      *)
+        case "$_old_pid" in
+          ""|-) _pid_changed=1 ;;
+          *) [ "$_new_pid" != "$_old_pid" ] && _pid_changed=1 ;;
+        esac
+        [ "$_pid_changed" = "1" ] && break
+        ;;
+    esac
+    _i=$((_i + 1))
+  done
+
+  _health_ok=0
+  _j=0
+  while [ "$_j" -lt 12 ]; do
+    _health="$(curl -s -m 5 http://127.0.0.1:18789/health 2>/dev/null || true)"
+    case "$_health" in *'"ok":true'*) _health_ok=1; break ;; esac
+    sleep 5
+    _j=$((_j + 1))
+  done
+
+  if [ "$_rrc" = "0" ] && [ "$_pid_changed" = "1" ] && [ "$_health_ok" = "1" ]; then
+    echo "restart=ok pid_changed=1 health_ok=1 method=$_method rc=$_rrc"
+    return 0
+  fi
+  echo "GATEWAY_DOWN=1"
+  echo "restart=failed pid_changed=$_pid_changed health_ok=$_health_ok method=$_method rc=$_rrc"
+  return 1
 }
 
 # Required four (values embedded by the generator header as S58V_*).
@@ -510,12 +545,6 @@ V_LAST=$(get_secenv PODCAST_CLIENT_LAST_NAME)
 V_EMAIL=$(get_secenv PODCAST_CLIENT_EMAIL)
 V_PID=$(get_secenv PODBEAN_PODCAST_ID)
 [ -n "$V_PID" ] || V_PID="${S58V_PODCAST_ID:-}"
-if [ -z "$V_PID" ]; then
-  echo "dryrun=skipped reason=no_channel_id_on_box_or_roster"
-  do_restart || :  # align runtime with the stores even on a PARTIAL box
-  echo "result=PARTIAL reason=values_set_but_channel_id_unknown"
-  exit 4
-fi
 TMPA="$(mktemp "${TMPDIR:-/tmp}/s58u18-dryrun.XXXXXX")" || exit 1
 trap 'rm -f "$TMPA"' EXIT
 DRYOUT="$(PODBEAN_PUBLISH_WEBHOOK_URL="$V_URL" PODBEAN_PUBLISH_TOKEN="$V_TOKEN" \
@@ -559,9 +588,11 @@ build_payload() { # mode -> 0600 temp payload in $TMP_PAYLOAD
   chmod 600 "$TMP_PAYLOAD"
   {
     if [ "$1" = "inject" ]; then
-      python3 - "$B_LAST" "$B_EMAIL" "$B_FIRST" "$B_PID" "$PUBLISH_URL" "$PUBLISH_TOKEN" <<'PYEOF'
-import shlex, sys
-last, email, first, pid, url, token = sys.argv[1:7]
+      S58_TOKEN_INPUT="$PUBLISH_TOKEN" \
+        python3 - "$B_LAST" "$B_EMAIL" "$B_FIRST" "$B_PID" "$PUBLISH_URL" <<'PYEOF'
+import os, shlex, sys
+last, email, first, pid, url = sys.argv[1:6]
+token = os.environ["S58_TOKEN_INPUT"]
 for name, val in [("S58V_LAST", last), ("S58V_EMAIL", email),
                   ("S58V_FIRST", first), ("S58V_PODCAST_ID", pid),
                   ("S58V_URL", url), ("S58V_TOKEN", token)]:
@@ -605,7 +636,9 @@ run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
     printf 'COMPOSE_DIR=%s\n' "$(shquote "$B_COMPOSE")"
     printf 'MODE=%s\n' "$(shquote "$1")"
     printf 'DO_RECREATE=%s\n' "$([ "$NO_RESTART" = "1" ] && echo 0 || echo 1)"
-    printf 'PB64=%s\n' "$(shquote "$_pb64")"
+    # Base64's alphabet is safe in an unquoted shell assignment. Keep the
+    # token-bearing payload out of shquote/python argv and write it with printf.
+    printf 'PB64=%s\n' "$_pb64"
     cat <<'WRAP_EOF'
 TMP="$(mktemp /tmp/s58u18-p.XXXXXX)" || exit 97
 chmod 600 "$TMP" 2>/dev/null || :
@@ -689,6 +722,10 @@ run_box() { # mode -> box report on stdout; box exit code returned
   # contract already forbids values on any stream. The payload file is removed
   # per box — one long-lived trap-cleaned file would still leave N-1 stale
   # token-bearing temp files behind on a multi-box run.
+  case "$B_PLATFORM" in
+    mac|vps) : ;;
+    *) echo "result=FAILED reason=unsupported_platform"; return 64 ;;
+  esac
   build_payload "$1"
   if [ "$LOCAL" = "1" ] || [ "$B_SSH" = "local" ]; then
     bash "$TMP_PAYLOAD"
@@ -696,11 +733,14 @@ run_box() { # mode -> box report on stdout; box exit code returned
   elif [ "$B_PLATFORM" = "vps" ]; then
     run_vps_box "$1"
     _brc=$?
-  else
+  elif [ "$B_PLATFORM" = "mac" ]; then
     ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 \
         -o ServerAliveCountMax=3 \
         "$B_SSH" 'sh -s' < "$TMP_PAYLOAD"
     _brc=$?
+  else
+    echo "result=FAILED reason=unsupported_platform"
+    _brc=64
   fi
   rm -f "$TMP_PAYLOAD" 2>/dev/null
   TMP_PAYLOAD=""
@@ -727,27 +767,9 @@ printf '=== %s: %s | manifest=%s | operator-local-token=%s ===\n' \
 
 OPERATOR_PROVEN=0
 COUNT_OK=0; COUNT_SKIP=0; COUNT_FAIL=0; COUNT_BLOCKED=0; COUNT_TOTAL=0
+COUNT_GATEWAY_DOWN=0
 ORDERED_FILE="$(mktemp "${TMPDIR:-/tmp}/s58u18-ordered.XXXXXX")" || die "mktemp failed"
 printf '%s\n' "$ORDERED_TSV" > "$ORDERED_FILE"
-
-# --local + --apply guard: --local redirects EVERY selected box onto THIS box's
-# filesystem. Unrestricted, `--apply --include-clients --local` would "provision"
-# each client entry against the operator's own store — overwriting the
-# operator's PODCAST_CLIENT_* identity with every client's in turn, reporting
-# fleet-wide OK while no client box was ever touched. Refuse anything but a
-# single selected box, and refuse a client identity unless the entry carries an
-# explicit sandbox home override.
-if [ "$APPLY" = "1" ] && [ "$LOCAL" = "1" ]; then
-  SEL_COUNT=0; SEL_UNSAFE=0
-  while IFS='|' read -r B_NAME B_ROLE _g3 _g4 B_HOME _g6 _g7 _g8 _g9 _g10; do
-    [ -n "$B_NAME" ] || continue
-    box_selected || continue
-    SEL_COUNT=$((SEL_COUNT + 1))
-    [ "$B_ROLE" = "operator" ] || [ -n "$B_HOME" ] || SEL_UNSAFE=1
-  done < "$ORDERED_FILE"
-  [ "$SEL_COUNT" -le 1 ] || die "--local with --apply selects $SEL_COUNT manifest entries; restrict to exactly one with --box (refusing to write multiple box identities onto THIS box)"
-  [ "$SEL_UNSAFE" = "0" ] || die "--local with --apply may only target an operator entry (or a sandbox entry with an explicit home override); refusing to write a client identity onto THIS box"
-fi
 
 while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOSE B_COMPLETE B_LAST B_EMAIL B_FIRST B_PID; do
   [ -n "$B_NAME" ] || continue
@@ -760,6 +782,17 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
     log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=BLOCKED_IDENTITY_INCOMPLETE detail=roster_identity_missing_last_name_or_email"
     COUNT_BLOCKED=$((COUNT_BLOCKED + 1))
     if [ "$APPLY" = "1" ]; then COUNT_FAIL=$((COUNT_FAIL + 1)); fi
+    continue
+  fi
+
+  # Match run_box's exact local-transport condition. A manifest row can request
+  # local transport without --local; never let either path write a client
+  # identity onto the operator filesystem.
+  if [ "$APPLY" = "1" ] && { [ "$LOCAL" = "1" ] || [ "$B_SSH" = "local" ]; } \
+      && [ "$B_ROLE" != "operator" ]; then
+    log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=BLOCKED_LOCAL_CLIENT_IDENTITY detail=local_transport_may_only_apply_operator_identity"
+    COUNT_BLOCKED=$((COUNT_BLOCKED + 1))
+    COUNT_FAIL=$((COUNT_FAIL + 1))
     continue
   fi
 
@@ -802,6 +835,8 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
   GS="$(field "$REPORT" 's/^dryrun_exit=[0-9]* good_standing=\([a-z]*\).*/\1/p')"
   SKILL_ST="$(field "$REPORT" 's/^skill_script=\([a-z]*\).*/\1/p')"
   RESTART_ST="$(field "$REPORT" 's/^restart=\(.*\)/\1/p')"
+  GATEWAY_DOWN_ST="$(field "$REPORT" 's/^GATEWAY_DOWN=\([01]\)$/\1/p')"
+  [ "$GATEWAY_DOWN_ST" = "1" ] && COUNT_GATEWAY_DOWN=$((COUNT_GATEWAY_DOWN + 1))
   if [ "$APPLY" = "1" ]; then PFIX="validate"; else PFIX="probe"; fi
   V_URL_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_WEBHOOK_URL:env=\\([A-Z-]*\\).*/\\1/p")"
   V_TOK_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_TOKEN:env=\\([A-Z-]*\\).*/\\1/p")"
@@ -821,7 +856,7 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
     [ "$BOX_RC" != "0" ] && VERDICT="UNREACHABLE_OR_ERROR"
   fi
 
-  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${CHANGED_ST:+ changed=$CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}"
+  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${CHANGED_ST:+ changed=$CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}${GATEWAY_DOWN_ST:+ gateway_down=$GATEWAY_DOWN_ST}"
 
   if [ "$VERDICT" = "OK" ] || [ "$VERDICT" = "OK_ALREADY" ]; then
     COUNT_OK=$((COUNT_OK + 1))
@@ -832,8 +867,8 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
 done < "$ORDERED_FILE"
 rm -f "$ORDERED_FILE"
 
-printf '=== summary: total=%d ok=%d skipped=%d blocked_identity=%d failed=%d | log=%s ===\n' \
-  "$COUNT_TOTAL" "$COUNT_OK" "$COUNT_SKIP" "$COUNT_BLOCKED" "$COUNT_FAIL" "$LOG_FILE"
+printf '=== summary: total=%d ok=%d skipped=%d blocked_identity=%d failed=%d gateway_down=%d | log=%s ===\n' \
+  "$COUNT_TOTAL" "$COUNT_OK" "$COUNT_SKIP" "$COUNT_BLOCKED" "$COUNT_FAIL" "$COUNT_GATEWAY_DOWN" "$LOG_FILE"
 
 if [ "$COUNT_FAIL" -gt 0 ]; then exit 2; fi
 exit 0
