@@ -701,10 +701,12 @@ if [ "$RC" = "2" ] &&
 else
   fail "VPS missing install did not fail closed before writes (rc=$RC)"; echo "$OUT"
 fi
-# The pre-fix implementation creates this empty assumed path. Remove that
-# fixture-only side effect so the remaining independent VPS checks see the
-# original data-root store when it is restored below.
-rm -rf "$VPS_ROOT/data/.openclaw"
+# The pre-fix implementation creates this empty assumed path. Move that
+# fixture-only side effect aside so the remaining independent VPS checks see
+# the original data-root store when it is restored below.
+if [ -e "$VPS_ROOT/data/.openclaw" ]; then
+  mv "$VPS_ROOT/data/.openclaw" "$WORK/assumed-openclaw.side-effect"
+fi
 mkdir -p "$VPS_HOME"
 mv "$WORK/data-openclaw.saved" "$VPS_HOME/.openclaw"
 
