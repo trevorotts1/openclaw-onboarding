@@ -58,7 +58,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.74"
+ONBOARDING_VERSION="v20.0.75"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -713,7 +713,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.74 - safe_json_edit
+# v20.0.75 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2445,6 +2445,115 @@ except Exception:
   fi
 
   # ----------------------------------------------------------
+  # Step U6d: Command Center runtime configuration reconciliation.
+  #
+  # Mirrors U6c's update-path backstop for the two other runtime stores that
+  # file sync alone cannot populate. The Command Center deliberately ships
+  # config/departments.json as [] and company-config.json with the exact
+  # template companyName "Your Company". Skill 32's later --update-only call
+  # tries to populate departments, but both that phase and the outer caller
+  # historically converted failures into WARN-only success. No update path
+  # applied the build-state/ZHC identity to company-config or logo-config.
+  #
+  # CONTRACT:
+  #   - source departments ONLY from this client's durable Skill-23 ZHC
+  #     departments.json (exact build-state slug; no most-recent cross-client
+  #     fallback);
+  #   - source branding ONLY from .workforce-build-state.json and the matching
+  #     ZHC company-config.json; never invent a company name;
+  #   - replace ONLY the exact shipped companyName "Your Company", populate
+  #     ONLY an empty departments array / empty logo URL, and preserve every
+  #     already-correct value byte-for-byte;
+  #   - independently re-assert all three files after the helper returns; any
+  #     unresolved identity/source or failed assertion withholds the version
+  #     stamp through _U6D_CC_CONFIG_FAIL below.
+  # ----------------------------------------------------------
+  _U6D_CC_CONFIG_FAIL=0
+  _U6D_CC_CONFIG_NOTE=""
+  _U6D_RECONCILE_PY="$SKILLS_DIR/shared-utils/reconcile_command_center_runtime.py"
+  [ -f "$_U6D_RECONCILE_PY" ] || _U6D_RECONCILE_PY="$EXTRACTED_DIR/shared-utils/reconcile_command_center_runtime.py"
+  _U6D_CC_DIR=""
+
+  # Resolve an EXISTING Command Center only. No directory is created here; the
+  # later D5/F10 branch owns first-time bootstrap. Explicit per-box overrides
+  # win, followed by the platform's canonical path and legacy read paths.
+  if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
+    _U6D_CC_CANDIDATES=(
+      "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}"
+      "/data/projects/command-center" "$HOME/projects/command-center"
+      "/data/projects/blackceo-command-center"
+      "$HOME/projects/blackceo-command-center"
+      "$HOME/projects/mission-control" "$HOME/blackceo-command-center"
+      "/opt/mission-control" "/app"
+    )
+  else
+    _U6D_CC_CANDIDATES=(
+      "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}"
+      "$HOME/projects/command-center" "/data/projects/command-center"
+      "$HOME/projects/blackceo-command-center"
+      "/data/projects/blackceo-command-center"
+      "$HOME/projects/mission-control" "$HOME/blackceo-command-center"
+      "/opt/mission-control" "/app"
+    )
+  fi
+  for _U6D_CANDIDATE in "${_U6D_CC_CANDIDATES[@]}"; do
+    [ -n "$_U6D_CANDIDATE" ] || continue
+    _U6D_REMOTE="$(git -C "$_U6D_CANDIDATE" remote get-url origin 2>/dev/null || echo "")"
+    if [ -d "$_U6D_CANDIDATE/config" ] && [ -d "$_U6D_CANDIDATE/.git" ] && \
+       [ -f "$_U6D_CANDIDATE/package.json" ] && \
+       printf '%s' "$_U6D_REMOTE" | grep -q 'blackceo-command-center'; then
+      _U6D_CC_DIR="$_U6D_CANDIDATE"
+      break
+    fi
+  done
+  unset _U6D_CANDIDATE _U6D_CC_CANDIDATES _U6D_REMOTE
+
+  echo ""
+  echo "  Step U6d: Command Center departments + branding population check..."
+  if [ -z "$_U6D_CC_DIR" ]; then
+    echo "  — Command Center runtime config: no installed Command Center checkout — SKIP (informational)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    _U6D_CC_CONFIG_FAIL=1
+    _U6D_CC_CONFIG_NOTE="python3 is unavailable — departments/branding could not be reconciled or verified"
+    echo "  ✗ Command Center runtime config: python3 MISSING — cannot populate or verify."
+  elif [ ! -f "$_U6D_RECONCILE_PY" ]; then
+    _U6D_CC_CONFIG_FAIL=1
+    _U6D_CC_CONFIG_NOTE="reconcile_command_center_runtime.py is missing — the update cannot populate departments/branding"
+    echo "  ✗ Command Center runtime config: reconciler MISSING ($_U6D_RECONCILE_PY)."
+  else
+    _U6D_OUT=""
+    _U6D_RC=0
+    if _U6D_OUT="$(python3 "$_U6D_RECONCILE_PY" \
+        --workspace "$OC_WORKSPACE_DEFAULT" \
+        --command-center-dir "$_U6D_CC_DIR" 2>&1)"; then
+      printf '%s\n' "$_U6D_OUT" >> "$LOG_FILE"
+    else
+      _U6D_RC=$?
+      printf '%s\n' "$_U6D_OUT" >> "$LOG_FILE"
+    fi
+    if [ "$_U6D_RC" -ne 0 ]; then
+      _U6D_CC_CONFIG_FAIL=1
+      _U6D_TAIL="$(printf '%s' "$_U6D_OUT" | tail -n 3 | tr '\n' ' ')"
+      _U6D_CC_CONFIG_NOTE="runtime reconciler FAILED (rc=$_U6D_RC): ${_U6D_TAIL}"
+      echo "  ✗ Command Center departments/branding reconciliation FAILED (rc=$_U6D_RC) — see $LOG_FILE"
+    elif ! python3 -c 'import json,sys
+cc=sys.argv[1]
+deps=json.load(open(cc+"/config/departments.json"))
+company=json.load(open(cc+"/config/company-config.json"))
+logo=json.load(open(cc+"/public/logo-config.json"))
+assert isinstance(deps,list) and len(deps)>0
+assert company.get("companyName") != "Your Company"
+assert isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()' \
+        "$_U6D_CC_DIR" >>"$LOG_FILE" 2>&1; then
+      _U6D_CC_CONFIG_FAIL=1
+      _U6D_CC_CONFIG_NOTE="reconciler returned success but independent assertion found empty departments, exact placeholder companyName, or empty logoUrl"
+      echo "  ✗ Command Center runtime config STILL incomplete after reconciliation — refusing update success."
+    else
+      echo "  ✓ Command Center runtime config populated and verified (departments non-empty; branding non-placeholder; logo non-empty)."
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # v10.15.47: WIRING PHASE -- per-skill executed steps (not prose).
   # For every installed skill folder, this phase:
   #   1. Runs the skill's own installer (wire.sh > install.sh > setup-*.sh) if present, idempotent.
@@ -3388,6 +3497,9 @@ if isinstance(n, int) and n > 0:
   #     is missing, failed, or ran and left the `sops` table below the manifest's
   #     canonical population. A box whose SOP database is a demo fixture must
   #     never be stamped as current: that is the 24-of-2578 defect this closes.
+  #   - _U6D_CC_CONFIG_FAIL: Command Center runtime departments + branding (U6d)
+  #     could not be sourced from this box's legitimate Skill-23 identity, failed
+  #     to write, or independently re-asserted as empty/placeholder afterward.
   #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
   #   - _SHAREDUTILS_STATUS: shared-utils/ refresh landed incomplete (a source
   #     top-level entry — e.g. sop-embed-once/ — is missing from the box). This tree
@@ -3400,6 +3512,9 @@ if isinstance(n, int) and n > 0:
   fi
   if [ "${_U6C_SOPLIB_FAIL:-0}" -eq 1 ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - SOP V2 library (U6c, ingest-sop-library.sh): the SOP DATABASE was not populated${_U6C_SOPLIB_NOTE:+ — ${_U6C_SOPLIB_NOTE}}\n"
+  fi
+  if [ "${_U6D_CC_CONFIG_FAIL:-0}" -eq 1 ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - Command Center runtime config (U6d, reconcile_command_center_runtime.py): departments/branding not populated${_U6D_CC_CONFIG_NOTE:+ — ${_U6D_CC_CONFIG_NOTE}}\n"
   fi
   if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - in-scope role/SOP content refresh (D2, refresh-stale-roles.py rc 3): an in-scope refresh that SHOULD have applied did not — see $LOG_FILE\n"
