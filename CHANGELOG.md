@@ -1,3 +1,25 @@
+## [v20.0.69]  -  2026-07-19  -  Skill 58 ledger: S58-U21 release-ripple + truth-gate close-out (ONB leg)
+
+v20.0.69 — `closeout/s58-u21-podcast-terminal`: closes the ONB (repo) leg of S58-U21, the
+terminal "release ripple + truth-gate close-out" unit that gates every `verified` row in
+`ledgers/skill58-podbean-proxy-2026-07-16.md`.
+
+- **Ledger:** `ledgers/skill58-podbean-proxy-2026-07-16.md` U21 row moves `pending` ->
+  `verified (ONB leg; live leg = bounded fresh re-read, not a full U1-U20 re-audit)`. See
+  that row for the full evidence trail: a fresh `scripts/ledger-truth-gate.py` run
+  (`--base v20.0.68 --head <this branch>`) returned `GATE RESULT: PASS` with zero
+  FAIL/ALARM entries, plus a bounded, read-only n8n re-check (health-check OK, roster
+  table schema + 31/31 good-standing unchanged, production publish workflow's
+  `updatedAt` byte-identical to its already-recorded value — proving nothing has
+  silently drifted underneath the U1-U20 evidence since it was captured).
+- **Ripple:** `scripts/bump-version.sh v20.0.69` rolled all 11 tracked repo version
+  markers `v20.0.68` -> `v20.0.69` in lockstep (`--check` exit 0 before and after).
+  Annotated tag `v20.0.69` (`git tag -a`; `git cat-file -t` == `tag`) is cut at the
+  merge-writer's step, at actual merge time — the same standing convention this
+  repo already uses (see v20.0.67/v20.0.68's own entries above).
+- No client names, no emails, no channel ids, no secret values read or printed this
+  pass; client skills/engines still run only on the client's own providers.
+
 ## [v20.0.68]  -  2026-07-17  -  G3 correction: repo-wide roll re-targeted one patch forward after an exact-value collision
 
 v20.0.68 — corrects a CI regression introduced by the v20.0.67 repo-wide roll (previous entry, below). That roll brought all 11 canonical version markers into agreement at v20.0.67, and did fix the two checks it targeted ("QC static invariants" and "Verify all version markers agree"), but the SAME commit turned a third, previously-green check red: "G3 — skill content change requires skill-version.txt bump."
