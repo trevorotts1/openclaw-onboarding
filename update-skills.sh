@@ -2088,6 +2088,144 @@ except Exception:
   fi
 
   # ----------------------------------------------------------
+  # Step U6c: SOP V2 LIBRARY INGESTION (v20.1.0).
+  #
+  # THE DEFECT THIS CLOSES. The updater synced FILES but never populated the
+  # SOP DATABASE. Proven live across two boxes: a box that ran the update,
+  # received every file and reported a green "update complete" still held 24
+  # `sops` rows -- 23 of them the CC boot-seed demo fixture (autoSeedStarterSOPs
+  # / STARTER_SOPS) plus 1 manual, with `SELECT COUNT(*) FROM sops WHERE source
+  # IS NOT NULL` = 0, i.e. NOTHING was ever ingested from any file. A correctly
+  # populated box holds 2578 (2555 library + 23 starters). 24/2578 means
+  # semantic SOP search covered 0.9% of the corpus while the box reported pass.
+  #
+  # WHY THE EXISTING WIRING DID NOT COVER IT. run-full-install.sh phase 6i DOES
+  # ingest, and DOES run in --update-only mode, and update-skills.sh DOES invoke
+  # it further down. But that invocation is
+  #     if bash "$_CC_RUN_INSTALL" --update-only ... ; then ✓ else ⚠ fi
+  # -- a phase-6i fail_install is swallowed into an advisory "⚠ reported errors"
+  # line that neither latches a gate, nor withholds the stamp, nor fails the
+  # run. Phase 6i additionally SKIPS itself entirely (exit 0) when no CLIENT_SLUG
+  # resolves, and is a documented NO-OP whenever this box's CC checkout is not at
+  # the installer's hardcoded DASHBOARD_DIR. Three independent silent paths to
+  # "green with an empty library". This step is the fail-CLOSED backstop.
+  #
+  # CONTRACT:
+  #   - IDEMPOTENT + NEVER CLOBBERS A HEALTHY BOX. ingest-sop-library.sh's
+  #     already-populated gate exits 0 without downloading, backing up, or
+  #     writing ANYTHING once the box is at/above the manifest's canonical
+  #     population. A box already carrying the full library (and any
+  #     client-authored SOPs on top) is left byte-for-byte alone. The ingester
+  #     itself is upsert-only (INSERT OR REPLACE on a deterministic
+  #     `sop_<slug>` primary key, INSERT OR IGNORE elsewhere) and DELETES
+  #     nothing, so even a forced re-run cannot duplicate a row or drop a
+  #     client SOP.
+  #   - STARTER SEED PRESERVED. The 23 CC starters and the 2555 library rows
+  #     occupy disjoint id-spaces (verified: 0 collisions), which is exactly why
+  #     a populated box reads 2578 and not 2555.
+  #   - SLUG IS NOT A BLOCKER. The client slug only scopes `client_template_vars`
+  #     rows; the SOP rows themselves are global. So unlike phase 6i, a box with
+  #     no resolvable slug still gets its library -- it falls back rather than
+  #     skipping the ingest and calling that success.
+  #   - ZERO EMBEDDING COST. This step ingests CONTENT ONLY. It makes no
+  #     embedding API call and cannot bill the client's Gemini key. See the
+  #     operator note the ingester prints about the resulting unembedded rows.
+  #   - FAILS LOUD. Any genuine failure latches _U6C_SOPLIB_FAIL, which withholds
+  #     the version stamp and exits 1 via the content-completeness gate below.
+  #     "No Command Center DB on this box" is NOT a failure (the CC is simply not
+  #     installed here) -- that is an informational skip.
+  # ----------------------------------------------------------
+  _U6C_SOPLIB_FAIL=0
+  _U6C_SOPLIB_NOTE=""
+  _U6C_INGEST_SH="$SKILLS_DIR/32-command-center-setup/scripts/ingest-sop-library.sh"
+  [ -f "$_U6C_INGEST_SH" ] || _U6C_INGEST_SH="$EXTRACTED_DIR/32-command-center-setup/scripts/ingest-sop-library.sh"
+  _U6C_ASSERT_PY="$SKILLS_DIR/32-command-center-setup/scripts/assert-sop-library-populated.py"
+  [ -f "$_U6C_ASSERT_PY" ] || _U6C_ASSERT_PY="$EXTRACTED_DIR/32-command-center-setup/scripts/assert-sop-library-populated.py"
+  _U6C_MANIFEST="$SKILLS_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+  [ -f "$_U6C_MANIFEST" ] || _U6C_MANIFEST="$EXTRACTED_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+
+  # Canonical population from the manifest (single source of truth shared with
+  # the ingester and embedding_health.py's coverage leg).
+  _U6C_CANON=2555
+  if [ -f "$_U6C_MANIFEST" ] && command -v python3 >/dev/null 2>&1; then
+    _U6C_CANON="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("canonical_sop_count") or 2555))
+except Exception:
+    print(2555)' "$_U6C_MANIFEST" 2>/dev/null || echo 2555)"
+  fi
+
+  # Resolve the SAME mission-control.db every other Skill-32 script resolves,
+  # via the shared resolver (honors $DASHBOARD_DB_PATH / $DATABASE_PATH first).
+  _U6C_DB=""
+  if command -v python3 >/dev/null 2>&1; then
+    _U6C_DB="$(python3 -c '
+import sys
+from pathlib import Path
+su = Path(sys.argv[1])
+sys.path.insert(0, str(su))
+try:
+    from resolve_db import find_dashboard_db, is_db_found
+    p = find_dashboard_db()
+    print(str(p) if is_db_found(p) else "")
+except Exception:
+    print("")' "$SKILLS_DIR/shared-utils" 2>/dev/null || true)"
+  fi
+
+  echo ""
+  echo "  Step U6c: SOP V2 library population check..."
+  if [ ! -f "$_U6C_INGEST_SH" ]; then
+    _U6C_SOPLIB_FAIL=1
+    _U6C_SOPLIB_NOTE="ingest-sop-library.sh not found on this box (Skill 32 install is partial) — the SOP library could never be ingested"
+    echo "  ✗ SOP library: ingester MISSING ($_U6C_INGEST_SH) — cannot populate the SOP database."
+  elif [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    # No Command Center on this box: legitimately nothing to populate.
+    echo "  — SOP library: no mission-control.db resolved on this box (Command Center not installed) — SKIP (informational, not a failure)."
+  else
+    _U6C_BEFORE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+    echo "  → SOP library: db=$_U6C_DB  rows=$_U6C_BEFORE  canonical=$_U6C_CANON"
+    if [ "${_U6C_BEFORE:-0}" -ge "${_U6C_CANON:-2555}" ] 2>/dev/null; then
+      # Healthy box (e.g. an already-rolled client at 2578). Touch NOTHING.
+      echo "  ✓ SOP library already at/above canonical population ($_U6C_BEFORE >= $_U6C_CANON) — no download, no write, DB untouched."
+    else
+      # Slug scopes client_template_vars only; the SOP rows are global, so a
+      # missing slug must NOT skip the ingest (that is phase 6i's silent hole).
+      _U6C_SLUG=""
+      _U6C_STATE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
+      if [ -f "$_U6C_STATE" ]; then
+        _U6C_SLUG=$(jq -r '.companySlug // .clientSlug // ""' "$_U6C_STATE" 2>/dev/null || echo "")
+      fi
+      [ -n "$_U6C_SLUG" ] || _U6C_SLUG="default"
+      echo "  → Ingesting SOP V2 library (box is under-populated: $_U6C_BEFORE < $_U6C_CANON)..."
+      _U6C_OUT="$(MISSION_CONTROL_DB="$_U6C_DB" bash "$_U6C_INGEST_SH" "$_U6C_SLUG" 2>&1)"; _U6C_RC=$?
+      printf '%s\n' "$_U6C_OUT" >> "$LOG_FILE"
+      _U6C_TAIL="$(printf '%s' "$_U6C_OUT" | tail -n 3 | tr '\n' ' ')"
+      if [ "$_U6C_RC" -ne 0 ]; then
+        _U6C_SOPLIB_FAIL=1
+        _U6C_SOPLIB_NOTE="ingest-sop-library.sh FAILED (rc=$_U6C_RC) — SOP library NOT populated (was $_U6C_BEFORE rows, canonical $_U6C_CANON). Last output: ${_U6C_TAIL}"
+        echo "  ✗ SOP library ingest FAILED (rc=$_U6C_RC) — see $LOG_FILE"
+      else
+        _U6C_AFTER="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+        # Independent re-assert with the fail-CLOSED row-count gate (the same
+        # one run-full-install.sh phase 6i uses). rc 0 from the ingester is not
+        # accepted as proof on its own.
+        _U6C_ASSERT_RC=0
+        if [ -f "$_U6C_ASSERT_PY" ] && command -v python3 >/dev/null 2>&1; then
+          python3 "$_U6C_ASSERT_PY" --db "$_U6C_DB" --min-total "$_U6C_CANON" --min-role-library 0 >>"$LOG_FILE" 2>&1 || _U6C_ASSERT_RC=$?
+        fi
+        if [ "${_U6C_AFTER:-0}" -lt "${_U6C_CANON:-2555}" ] 2>/dev/null || [ "$_U6C_ASSERT_RC" -ne 0 ]; then
+          _U6C_SOPLIB_FAIL=1
+          _U6C_SOPLIB_NOTE="SOP library ingest reported success but the table is STILL under-populated ($_U6C_AFTER rows < canonical $_U6C_CANON, row-count gate rc=$_U6C_ASSERT_RC) — refusing to call this update complete"
+          echo "  ✗ SOP library STILL under-populated after ingest ($_U6C_AFTER < $_U6C_CANON, gate rc=$_U6C_ASSERT_RC)"
+        else
+          echo "  ✓ SOP library populated: $_U6C_BEFORE → $_U6C_AFTER rows (canonical $_U6C_CANON, row-count gate PASS)"
+          printf '%s\n' "$_U6C_OUT" | grep -E '^\[sop-library\] (NOTE|  )' || true
+        fi
+      fi
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # v10.15.47: WIRING PHASE -- per-skill executed steps (not prose).
   # For every installed skill folder, this phase:
   #   1. Runs the skill's own installer (wire.sh > install.sh > setup-*.sh) if present, idempotent.
@@ -3027,6 +3165,10 @@ if isinstance(n, int) and n > 0:
   #     content refresh that SHOULD have re-applied the new library content to an
   #     EXISTING artifact genuinely failed. (Out-of-scope / MISSING / floor-fill
   #     rows exit 0 and never land here.)
+  #   - _U6C_SOPLIB_FAIL: SOP V2 library CONTENT population (U6c) -- the ingester
+  #     is missing, failed, or ran and left the `sops` table below the manifest's
+  #     canonical population. A box whose SOP database is a demo fixture must
+  #     never be stamped as current: that is the 24-of-2578 defect this closes.
   #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
   #   - _SHAREDUTILS_STATUS: shared-utils/ refresh landed incomplete (a source
   #     top-level entry — e.g. sop-embed-once/ — is missing from the box). This tree
@@ -3036,6 +3178,9 @@ if isinstance(n, int) and n > 0:
   # ----------------------------------------------------------
   if [ "${_U6B_PERSONA_FAIL:-0}" -eq 1 ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - persona index (U6b, provision-persona-index.sh): content incomplete${_PIDX_SKIP_WARNINGS:+ — ${_PIDX_SKIP_WARNINGS}}\n"
+  fi
+  if [ "${_U6C_SOPLIB_FAIL:-0}" -eq 1 ]; then
+    _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - SOP V2 library (U6c, ingest-sop-library.sh): the SOP DATABASE was not populated${_U6C_SOPLIB_NOTE:+ — ${_U6C_SOPLIB_NOTE}}\n"
   fi
   if [ "${_D2_REFRESH_STATUS:-ok}" != "ok" ]; then
     _STEP_GATE_FAILS="${_STEP_GATE_FAILS}  - in-scope role/SOP content refresh (D2, refresh-stale-roles.py rc 3): an in-scope refresh that SHOULD have applied did not — see $LOG_FILE\n"

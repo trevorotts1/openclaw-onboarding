@@ -63,6 +63,10 @@ on:
       - tests/unit/sop-embed-once-hash-skip.test.py
       - tests/unit/provision-sop-embeddings-idempotency.test.py
       - tests/unit/embedding-health-cc-sop-reconciliation.test.py
+      - shared-utils/sop-library/**
+      - update-skills.sh
+      - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   pull_request:
     paths:
@@ -99,6 +103,10 @@ on:
       - tests/unit/sop-embed-once-hash-skip.test.py
       - tests/unit/provision-sop-embeddings-idempotency.test.py
       - tests/unit/embedding-health-cc-sop-reconciliation.test.py
+      - shared-utils/sop-library/**
+      - update-skills.sh
+      - tests/unit/sop-library-coverage-gate.test.py
+      - tests/unit/sop-library-update-path-ingest.test.sh
       - .github/workflows/embedding-integrity-guard.yml
   workflow_dispatch:
 
@@ -227,3 +235,17 @@ jobs:
 
       - name: CC SOP embedding-health — dual-surface reconciliation (dark-box no longer false-passes)
         run: python3 tests/unit/embedding-health-cc-sop-reconciliation.test.py -v
+
+      # SOP CONTENT population (distinct from the embeddings pipeline above).
+      # The updater synced FILES but never populated the SOP DATABASE, so a box
+      # could report a green "update complete" while holding a 24-row demo
+      # fixture against a 2555-row canonical library -- and embedding_health.py
+      # called that `pass` because every leg it had tested consistency, not
+      # coverage. These two gates keep both halves closed.
+      - name: SOP library — coverage gate (an under-populated `sops` table can no longer report pass)
+        run: python3 tests/unit/sop-library-coverage-gate.test.py -v
+
+      - name: SOP library — update-path ingestion (idempotent, non-clobbering, fails loud; offline)
+        run: |
+          chmod +x tests/unit/sop-library-update-path-ingest.test.sh
+          bash tests/unit/sop-library-update-path-ingest.test.sh

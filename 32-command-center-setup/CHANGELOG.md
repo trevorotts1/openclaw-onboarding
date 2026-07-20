@@ -1,5 +1,52 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.43 — 2026-07-20 — SOP V2 library ingestion is now safe to run on EVERY roll (idempotent, non-clobbering, fail-loud)
+
+The updater synced FILES but never populated the SOP DATABASE. A box could run
+the update, receive every file, report a green "update complete", and still
+hold a demo-fixture-sized `sops` table: 24 rows (23 of them the Command
+Center's own `autoSeedStarterSOPs` boot seed) against a canonical library of
+2,555 — with `SELECT COUNT(*) FROM sops WHERE source IS NOT NULL` = 0, i.e.
+nothing had EVER been ingested from any file. Semantic SOP search covered
+0.9% of the corpus while the box reported healthy.
+
+`ingest-sop-library.sh` existed but no update path invoked it fail-closed.
+`run-full-install.sh` phase 6i does ingest and does run in `--update-only`
+mode, but `update-skills.sh` invoked it as
+`if bash "$_CC_RUN_INSTALL" --update-only ...; then ✓ else ⚠ fi` — a phase-6i
+`fail_install` was swallowed into an advisory line that never latched a gate,
+never withheld the stamp, and never failed the run. Phase 6i also skips itself
+entirely (exit 0) when no `CLIENT_SLUG` resolves, and is a documented no-op
+when the box's CC checkout is not at the installer's hardcoded `DASHBOARD_DIR`.
+
+Changes to `scripts/ingest-sop-library.sh` (all so the new `update-skills.sh`
+Step U6c can run it unattended on every box on every roll):
+
+- **Manifest pin.** Release tag, asset name, sha256 and canonical row count now
+  come from the new `shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json`, the
+  single source of truth shared with the updater and `embedding_health.py`.
+  Hardcoded fallbacks preserve pre-manifest behaviour.
+- **Already-populated skip gate.** A box at/above the canonical population is
+  left completely untouched — no download, no backup, no write, no network I/O.
+  This is what makes a healthy box (e.g. one already carrying 2,578 = 2,555
+  library + 23 starters) safe from a roll, and makes re-runs free.
+  `SOP_LIB_FORCE=1` overrides.
+- **sha256 hard gate.** A corrupt/truncated/substituted asset is never ingested
+  (exit 5), mirroring `provision_sop_embeddings.py`'s contract.
+- **Post-ingest population assert.** The Python ingester tallies per-row upsert
+  errors and still exits 0, so "it ran" was never proof "it landed". The table
+  is now re-read and the script exits 7 rather than report a green lie.
+- **Embedding-cost transparency.** Ingestion is CONTENT ONLY and makes ZERO
+  embedding API calls, so it cannot bill a client's key. The script now says so
+  explicitly and prints an operator note that the ingested rows are UNEMBEDDED
+  and that embedding them is a separate, explicitly-chosen, client-billed action.
+
+The row counts reconcile exactly: the asset holds 2,618 JSONL records / 2,617
+distinct slugs, and the ingester keys rows on `sop_<slug>` truncated to 60
+chars, so 62 long slugs collapse and the asset lands as exactly 2,555 rows —
+which is why a fully-populated box reads 2,578 and not 2,555 (the starter and
+library id-spaces are disjoint, verified 0 collisions).
+
 ## v12.9.42 — 2026-07-20 — APPDIR-01: `--app-dir` / `$CC_APP_DIR` honored, and a non-checkout `--update-only` now FAILS LOUD (run-full-install.sh)
 
 A false-success defect: `--update-only` could deploy nothing and still report

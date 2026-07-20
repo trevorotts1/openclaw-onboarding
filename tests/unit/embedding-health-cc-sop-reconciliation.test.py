@@ -133,10 +133,23 @@ class TestFreshBoxStillPassesInformationally(unittest.TestCase):
 class TestHealthyBoxStillPasses(unittest.TestCase):
     @patch.object(mod, "_attempt_smoke_embed", return_value=(True, "smoke ok (mocked)"))
     def test_sops_and_matching_embeddings_present_passes(self, _mock_smoke):
+        # SCOPED, NOT WEAKENED. This case asserts the leg-b contract "rows and
+        # matching embeddings present => no dark verdict". It deliberately uses a
+        # 5-row fixture because leg-b is about the rows-vs-embeddings RATIO, not
+        # corpus size. The leg-d coverage gate added alongside it would otherwise
+        # (correctly) fail this fixture for being 5/2555 -- a true statement about
+        # corpus coverage, but not what this test is measuring. Passing
+        # expected_sop_count=5 tells leg-d what "fully populated" means FOR THIS
+        # FIXTURE, so leg-b is tested in isolation. Leg-d's real behaviour against
+        # the manifest pin is proven separately, and fail-first, in
+        # tests/unit/sop-library-coverage-gate.test.py.
         cc_dir = _make_cc_dir(sops_rows=5, embedded_rows=5, model="gemini-embedding-2", dims=3072)
-        res = check_cc_sop_index(cc_dir, GOOGLE_JSON, generative_provider="anthropic")
+        res = check_cc_sop_index(
+            cc_dir, GOOGLE_JSON, generative_provider="anthropic", expected_sop_count=5
+        )
         self.assertTrue(res["pass"], res)
         self.assertFalse(res["needs_reindex"])
+        self.assertIsNot(res["leg_d_sop_coverage"], False)
 
 
 class TestActiveModelMismatchStillFails(unittest.TestCase):
