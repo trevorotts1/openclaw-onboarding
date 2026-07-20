@@ -226,5 +226,64 @@ class TestLoadSopsJsonl(unittest.TestCase):
             Path(path).unlink(missing_ok=True)
 
 
+class TestTruncationCollapseInvariant(unittest.TestCase):
+    """The publish gate in build-and-publish.sh must expect DISTINCT sop_id
+    count, not raw jsonl line count.
+
+    sop_id is "sop_" + slug.replace("-","_")[:60] — the SAME 60-char truncation
+    ingest-sop-library.py applies. In the real v10.13.29 library that collapses
+    2,618 records onto 2,555 rows (27 colliding ids absorbing 63 records), and
+    the client's own `sops` table collapses identically, so the asset is
+    COMPLETE at 2,555. A gate that compared row_count against the 2,618 line
+    count would refuse to publish a correct asset after paying the full embed
+    cost. These tests pin the invariant that makes the gate's denominator
+    correct.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
+        self.tmp.close()
+        self.conn = sqlite3.connect(self.tmp.name)
+        ensure_schema(self.conn)
+
+    def tearDown(self):
+        self.conn.close()
+        Path(self.tmp.name).unlink(missing_ok=True)
+
+    def test_slugs_differing_only_past_60_chars_share_one_sop_id(self):
+        base = "a" * 60  # first 60 chars identical -> divergence lands PAST the cap
+        slug_1, slug_2 = f"{base}-xx", f"{base}-yy"
+        self.assertNotEqual(slug_1, slug_2)
+        self.assertEqual(sop_id_from_slug(slug_1), sop_id_from_slug(slug_2))
+
+    def test_two_colliding_records_collapse_to_one_embedded_row(self):
+        base = "a" * 60
+        sops = [
+            {**SOP_A, "slug": f"{base}-xx", "name": "First"},
+            {**SOP_A, "slug": f"{base}-yy", "name": "Second"},
+        ]
+        stats = embed_delta(self.conn, sops, embed_fn=_fake_embed())
+        rows = self.conn.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0]
+        # Both records are embedded (distinct content -> distinct md5), but the
+        # PRIMARY KEY collapses them onto ONE row. row_count < record_count here
+        # is CORRECT, not an incomplete asset.
+        self.assertEqual(stats["embedded"], 2)
+        self.assertEqual(rows, 1)
+
+    def test_expected_row_count_is_distinct_sop_ids_not_record_count(self):
+        base = "a" * 60
+        sops = [
+            {**SOP_A, "slug": f"{base}-xx"},
+            {**SOP_A, "slug": f"{base}-yy"},
+            {**SOP_B, "slug": "test-unique-slug"},
+        ]
+        expected = len({sop_id_from_slug(s["slug"]) for s in sops})
+        embed_delta(self.conn, sops, embed_fn=_fake_embed())
+        actual = self.conn.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0]
+        self.assertEqual(expected, 2)
+        self.assertEqual(actual, expected, "publish gate denominator must be distinct sop_id count")
+        self.assertLess(expected, len(sops), "fixture must actually exercise a collision")
+
+
 if __name__ == "__main__":
     unittest.main()
