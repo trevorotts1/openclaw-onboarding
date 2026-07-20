@@ -1,0 +1,17 @@
+{
+  "task_id": "u22-proof-task",
+  "source": "threaded",
+  "bundle_sha": "c9751d0f10d81bec",
+  "voice_persona_id": "hormozi-100m-offers",
+  "topic_persona_id": "miller-building-storybrand",
+  "task_personas": [
+    {
+      "seq": 1,
+      "persona_id": "hormozi-100m-offers"
+    }
+  ],
+  "confirm_state": "confirmed",
+  "degradation": null,
+  "hold": false,
+  "generated_at": "2026-07-20T02:41:57Z"
+}

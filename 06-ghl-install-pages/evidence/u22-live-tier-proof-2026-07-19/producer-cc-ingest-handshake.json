@@ -1,0 +1,47 @@
+{
+  "unit": "U22 / B-U8 \u2014 deferred B-U7/U21 live producer->CC ingest handshake (re-proof)",
+  "run_date": "2026-07-19",
+  "cc_main_head": "fe736ee7a04ac19fdfff2ff84cd2b343d62e40a1",
+  "onb_main_head": "0324bd807a2ebc4ce2a47bc224c607d36653f8e0",
+  "server": "local next dev :4181, scratch DATABASE_PATH (C8 isolation verified live: first boot without WEBHOOK_SECRET/MC_API_TOKEN was refused 503 by the route's own misconfig gate; throwaway scratch auth values used, live mission-control.db never opened)",
+  "producer": "openclaw-onboarding/06-ghl-install-pages/tools/cc_board.py:ingest_task() (real function, real HTTP POST, HMAC-signed + bearer)",
+  "pinned_case": {
+    "task_id": "ff11db0e-beb9-4d2f-8196-9d329b49d9cb",
+    "http": 201,
+    "sent": {
+      "voice_persona_id": "hormozi-100m-offers",
+      "topic_persona_id": "miller-building-storybrand",
+      "bundle_sha": "30abe6c0a1ecc63af410e614737d6e5e867f1bafedfffbf312d4a1ab182404ab"
+    },
+    "tasks_row": {
+      "id": "ff11db0e-beb9-4d2f-8196-9d329b49d9cb",
+      "voice_persona_id": "hormozi-100m-offers",
+      "topic_persona_id": "miller-building-storybrand",
+      "persona_id": "hormozi-100m-offers",
+      "persona_mode": "leadership"
+    },
+    "task_persona_bundle_row": {
+      "task_id": "ff11db0e-beb9-4d2f-8196-9d329b49d9cb",
+      "confirm_state": "not_required",
+      "rationale_source": "producer_pinned_ingest",
+      "bundle_sha": "30abe6c0a1ecc63af410e614737d6e5e867f1bafedfffbf312d4a1ab182404ab",
+      "voice_id": "hormozi-100m-offers",
+      "topic_id": "miller-building-storybrand"
+    },
+    "resolvePersonaAndPin_log_lines_for_this_task": 0,
+    "verbatim_pin": true
+  },
+  "control_case": {
+    "task_id": "e5a722f2-72da-4b55-b61f-36fef19c72ee",
+    "http": 201,
+    "tasks_row": {
+      "id": "e5a722f2-72da-4b55-b61f-36fef19c72ee",
+      "voice_persona_id": null,
+      "topic_persona_id": null,
+      "persona_id": "russell-brunson-lead-funnels"
+    },
+    "selector_fired": true,
+    "selector_landed_persona": "russell-brunson-lead-funnels"
+  },
+  "pass": true
+}

@@ -1,0 +1,46 @@
+U22 / B-U8 LIVE-PROOF tier re-run — 2026-07-19, operator box
+ONB origin/main HEAD: 0324bd807a2ebc4ce2a47bc224c607d36653f8e0  (v20.0.68-69-g0324bd80)
+CC  origin/main HEAD: fe736ee7a04ac19fdfff2ff84cd2b343d62e40a1
+
+== 1. prove_skill6_block_u22.py (fresh clone, live) ==
+[cc_board:skill6] MISSION_CONTROL_URL unset — board disabled; activity not posted.
+==============================================================================
+U22 / B-U8 — Skill-6 persona-unification block, operator-box proof run
+==============================================================================
+  [PASS] B-U1/U15: receipt written to disk
+  [PASS] B-U1/U15: receipt source != absent (threaded rung)
+  [PASS] B-U1/U15: receipt source == threaded
+  [PASS] B-U1/U15: never holds on a confirmed bundle
+  [PASS] B-U2/U16: instantiate_pages produced pages
+  [PASS] B-U2/U16: EVERY page directive guardrail-terminated
+  [PASS] B-U2/U16: ONE task-level voice across every page
+  [PASS] B-U2/U16: distinct per-page directives (different topic/purpose)
+  [PASS] B-U3/U17: persona-selection-log.md written
+  [PASS] B-U3/U17: log voice_persona == bundle voice_persona_id
+  [PASS] B-U3/U17: legacy selected_persona: line present, byte-compatible
+  [PASS] B-U3/U17: {{BLEND_DIRECTIVE}} rendering ends in the guardrail
+  [PASS] B-U5/U19: load_inputs_from_evidence found the active bundle receipt
+  [PASS] B-U5/U19: D4 Persona grounding == 10.0 (bundle-aware voice grounding)
+  [PASS] B-U5/U19: D4 not a hard miss
+  [PASS] B-U5/U19: overall FAB-QC PASS on this fixture (mismatch-free card)
+  [PASS] B-U6/U20: declared voice == used voice (zero persona_mismatch)
+  [PASS] B-U6/U20: report_persona_used_to_card never raises (fail-soft)
+  [PASS] B-U6/U20: report_persona_used_to_card returns bool
+  [PASS] legacy control: no persona-bundle-receipt.json on disk
+  [PASS] legacy control: load_inputs_from_evidence -> persona_bundle == {}
+  [PASS] (c) legacy golden fixture PASSES FAB-QC
+  [PASS] (c) disk-loaded legacy result byte-identical to the in-memory golden
+------------------------------------------------------------------------------
+  [INFO] B-U4/U18 (copy_craft_pool) appears LANDED — re-run this script's companion guard (scripts/guard-fab-qc-gate.sh) to confirm the hard check now fires.
+  [INFO] B-U7/U21 (ingest parity) appears LANDED — this script's declared-vs-used check above already exercises the real bundle-voice equality either way.
+------------------------------------------------------------------------------
+== U22/B-U8 operator-box block proof: ALL LANDED CHECKS PASSED ==
+exit=0
+
+== 2. persistent-evidence companion run ==
+  "declared_voice": "hormozi-100m-offers",
+  "used_voice": "hormozi-100m-offers",
+  "mismatch_free": true,
+  "all_checks_ok": true
+}
+exit=0
