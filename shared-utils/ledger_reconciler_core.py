@@ -82,6 +82,55 @@ _COMPOUND_PRIMARY_TO_REPO_LABEL = {
     "CC": "blackceo-command-center",
 }
 
+# Alarm kinds that are INFORMATIONAL findings, not fail-closed contradictions.
+# Every severity split in this module (render, session log, JSON summary)
+# consults this ONE set -- adding a kind here is the single switch that keeps
+# it out of the hard-alarm count everywhere at once.
+INFORMATIONAL_ALARM_KINDS = frozenset({
+    "compound-tag-unconfirmed",
+    "cross-shipped-leg-verified",
+})
+
+# Any `skill6-v2/<unit-ish>` branch citation inside a ledger row's own text --
+# used ONLY by the cross-ship downgrade below to find candidate CARRIER
+# branches a row claims its leg shipped inside (the documented U108 shape:
+# its CC leg shipped inside `skill6-v2/U110`'s branch, self-documented in
+# both units' CHANGELOG entries and in U108's own re-corrected row).
+CROSS_SHIP_BRANCH_RE = re.compile(r"skill6-v2/(U\d+[A-Za-z0-9-]*)")
+
+
+def find_verified_cross_ship_carriers(row_raw_text, uid, units_truth):
+    """For a missing-leg candidate row (both-tagged, `verified`, no own
+    branch in this repo), scan the row's OWN raw text for citations of OTHER
+    units' `skill6-v2/*` branches and return the subset that are PROVABLY
+    merged into this repo's main (per units_truth, which was re-derived from
+    git -- never from the prose being scanned). The prose claim ("my leg
+    shipped inside that branch") is only honored when git proves the cited
+    carrier branch is real and merged; otherwise the caller keeps the hard
+    alarm (fail-closed). Citations of the unit's OWN branch (exact id or its
+    disambiguated-suffix variants) never count -- if such a branch existed,
+    _any_branch_for_unit() would already have found it."""
+    carriers = []
+    seen = set()
+    for m in CROSS_SHIP_BRANCH_RE.finditer(row_raw_text or ""):
+        token = m.group(1)
+        own = re.match(r"U\d+", token)
+        if own and own.group(0) == uid:
+            continue  # its own branch name (or a variant) -- not a carrier
+        branch = f"skill6-v2/{token}"
+        if branch in seen:
+            continue
+        seen.add(branch)
+        e = units_truth.get(branch)
+        if e and e.get("is_ancestor_of_main"):
+            carriers.append({
+                "branch": branch,
+                "tip": e.get("tip"),
+                "merge_sha": e.get("merge_sha"),
+                "tag": e.get("tag"),
+            })
+    return carriers
+
 
 def parse_compound_leg_primary(description):
     """Detect the U79 tag shape ("CC (+ONB), P1" / "ONB (+CC endpoint), P0")
@@ -502,7 +551,10 @@ def parse_ledger_rows(ledger_text):
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         if len(cells) < 4:
             continue
-        out[m.group(1)] = {"description": cells[1], "status": cells[3]}
+        # "raw" keeps the row's full line text (all cells, split-proof) for
+        # the cross-ship carrier scan -- the evidence cell alone cannot be
+        # reliably recovered on multi-pipe rows (see docstring above).
+        out[m.group(1)] = {"description": cells[1], "status": cells[3], "raw": line}
     return out
 
 
@@ -611,6 +663,41 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
         led_status = row["status"]
         if not STATUS_VERIFIED_RE.match(led_status.strip()):
             continue  # ledger already says pending/other -- consistent, no alarm
+        # CROSS-SHIP DOWNGRADE (the resolved-U108 shape): if this row's own
+        # text cites another unit's `skill6-v2/*` branch AND git proves that
+        # cited carrier branch is merged into THIS repo's main, the
+        # "verified with nothing merged" contradiction is factually resolved
+        # -- something the row points at IS merged here. Downgrade to an
+        # INFORMATIONAL finding (never silent, never a hard alarm that cries
+        # wolf every run on documented, human-reviewed, merged work). The
+        # prose is NOT trusted alone: only a git-proven carrier suppresses
+        # the hard alarm; content adequacy of the carrier remains the human
+        # call already recorded in the row. If no cited carrier is provably
+        # merged, the hard missing-leg alarm stands unchanged (fail-closed).
+        carriers = find_verified_cross_ship_carriers(row.get("raw", ""), uid, units_truth)
+        if carriers:
+            carrier_desc = ", ".join(
+                f"`{c['branch']}` (merge `{(c['merge_sha'] or '')[:8]}`, tag {c['tag'] or '-'})"
+                for c in carriers
+            )
+            alarms.append({
+                "unit": uid,
+                "repo": repo_label,
+                "branch": branch,
+                "tip": None,
+                "ledger_status": led_status.strip(),
+                "kind": "cross-shipped-leg-verified",
+                "reason": (
+                    f"{repo_label} leg of {uid} has no `{branch}` branch, but the "
+                    f"row's own text cites carrier branch(es) git PROVES merged "
+                    f"into {repo_label}'s main: {carrier_desc}. The verified-vs-"
+                    f"nothing-merged contradiction is resolved by the cited "
+                    f"carrier's merge; the carrier's CONTENT coverage was judged "
+                    f"by the human correction recorded in the row, not by this "
+                    f"machine check. Informational only."
+                ),
+            })
+            continue
         alarms.append({
             "unit": uid,
             "repo": repo_label,
@@ -704,18 +791,88 @@ def detect_failclosed_mismatches(repo_label, units_truth, github_ledger_text):
     return sorted(alarms, key=lambda a: int(a["unit"][1:]) if a["unit"][1:].isdigit() else 0)
 
 
-def render_recovery_state(truth, github_ledger_text, out_path):
+# --------------------------------------------------------------------------
+# Idempotent write (ported from the operator-box deployed copy, 2026-07-16 --
+# it was live-deployed there but never folded back into this canonical copy;
+# the two forks are re-unified as of 2026-07-19). Volatile lines (wall-clock
+# timestamp, HEAD shas, journal hit count) are neutralized before comparison
+# so the git-committed scratch copy only changes -- and therefore only
+# commits+pushes -- when something SUBSTANTIVE moved. The fail-closed
+# integrity alarm still renders fresh and therefore still commits+pushes
+# whenever it appears, changes, or clears.
+# --------------------------------------------------------------------------
+_VOLATILE_LINE_PREFIXES = (
+    "Generated:",
+    "openclaw-onboarding `origin/main` HEAD:",
+    "blackceo-command-center `origin/main` HEAD:",
+    "- journal corroboration hits scanned:",
+)
+
+
+def _neutralize_volatile(text):
+    """Replace the value of each volatile line with a fixed placeholder so two
+    snapshots that differ ONLY in wall-clock / HEAD-sha / journal-count compare
+    equal. Line positions are preserved (never collapses lines) so any real
+    substantive difference elsewhere is still detected."""
+    out = []
+    for line in text.split("\n"):
+        stripped = line.lstrip()
+        neutralized = False
+        for prefix in _VOLATILE_LINE_PREFIXES:
+            if stripped.startswith(prefix):
+                out.append(prefix + " <volatile-normalized>")
+                neutralized = True
+                break
+        if not neutralized:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _write_idempotent(out_path, new_text):
+    """Write new_text to out_path -- UNLESS a prior version already exists whose
+    substantive (volatile-neutralized) content is identical, in which case leave
+    the prior file byte-for-byte untouched. Keeping the committed scratch copy
+    byte-identical to origin/main means the bash wrapper's
+    `git diff --cached --quiet` sees no change -> NO commit, NO push on a run
+    where nothing real moved. Returns True if frozen (unchanged), else False."""
+    p = Path(out_path)
+    if p.exists():
+        old_text = p.read_text()
+        if _neutralize_volatile(old_text) == _neutralize_volatile(new_text):
+            return True  # no substantive change -- preserve prior bytes exactly
+    p.write_text(new_text)
+    return False
+
+
+def render_recovery_state(truth, github_ledger_text, out_path, idempotent=False):
     lines = []
     lines.append("# Ledger / Session-Log Reconciler — Recovery Snapshot")
     lines.append("")
     lines.append(
         "AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6"
         " (blended persona kanban v2) and Skill 62 (cinematic web funnel engine) builds."
-        " Rewritten in full every reconciler run (every 10 minutes via cron). If a build"
-        " session is lost to a context/session limit, this file is the fastest path back"
-        " to real state — every fact below was independently re-derived from `git`"
+        " Every fact below was independently re-derived from `git`"
         " (fetch + ancestry + direct-parent merge-commit match + annotated-tag lookup),"
-        " never copied from a prior run or from ledger prose."
+        " never copied from a prior run or from ledger prose. If a build"
+        " session is lost to a context/session limit, this file is the fastest path back"
+        " to real state."
+    )
+    lines.append("")
+    lines.append(
+        "**FRESHNESS CONTRACT — verify liveness LIVE, never from this prose.** The"
+        " reconciler runs on a 10-minute cron on the operator box, but the git-committed"
+        " copy of this file is only rewritten (and committed) when its SUBSTANTIVE content"
+        " changes — so an old `Generated` timestamp here does NOT by itself prove the"
+        " reconciler is alive OR dead. Liveness proof lives on the operator box:"
+        " `~/ledger-reconciler/recovery-state.md` gets a fresh `Generated` on EVERY pass,"
+        " and `~/ledger-reconciler/logs/reconcile.log` gets a `run start`/`run end` pair"
+        " per pass. If the newest `run start` there is older than ~20 minutes, the"
+        " reconciler is DEAD (check `crontab -l` for the reconcile.sh entry) and every"
+        " claim below — including the Integrity Alarms — is frozen at the `Generated`"
+        " time: the alarms were true AT GENERATION but may have been resolved since."
+        " (This exact failure happened 2026-07-16: the cron was paused for a defect fix,"
+        " never re-enabled, and 5 then-true alarms were presented as current for 3 days"
+        " after every one of them had been resolved by merge.)"
     )
     lines.append("")
     lines.append(f"Generated: {truth['generated_at']}")
@@ -726,12 +883,12 @@ def render_recovery_state(truth, github_ledger_text, out_path):
     all_alarms = truth.get("failclosed_alarms") or []
     # Severity split: "unmerged" and "missing-leg" are hard, fail-closed
     # contradictions (git truth directly contradicts a "verified" status).
-    # "compound-tag-unconfirmed" is a lower-severity, non-blocking finding
-    # (the safe branch check couldn't confirm a leg -- that is NOT the same
-    # claim as "the leg is missing"; see detect_failclosed_mismatches()'s
-    # docstring for why this severity is kept separate).
-    alarms = [a for a in all_alarms if a.get("kind") != "compound-tag-unconfirmed"]
-    info_findings = [a for a in all_alarms if a.get("kind") == "compound-tag-unconfirmed"]
+    # Kinds in INFORMATIONAL_ALARM_KINDS ("compound-tag-unconfirmed",
+    # "cross-shipped-leg-verified") are lower-severity, non-blocking findings
+    # -- see detect_failclosed_mismatches()'s docstring and the cross-ship
+    # downgrade comment for why each is kept out of the hard count.
+    alarms = [a for a in all_alarms if a.get("kind") not in INFORMATIONAL_ALARM_KINDS]
+    info_findings = [a for a in all_alarms if a.get("kind") in INFORMATIONAL_ALARM_KINDS]
     alarm_lookup = {(a["repo"], a["unit"]) for a in alarms}
     lines.append("## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)")
     lines.append("")
@@ -758,33 +915,35 @@ def render_recovery_state(truth, github_ledger_text, out_path):
     lines.append("")
 
     lines.append(
-        "## INTEGRITY FINDINGS — informational (compound-tag leg unconfirmed by"
-        " branch, NOT a fail-closed mismatch)"
+        "## INTEGRITY FINDINGS — informational (NOT fail-closed mismatches)"
     )
     lines.append("")
     if info_findings:
         lines.append(
-            f"**{len(info_findings)} finding(s) this run.** A compound/modified leg tag row"
-            " below (e.g. \"CC (+ONB)\", \"ONB (+CC endpoint)\") has no exact or"
+            f"**{len(info_findings)} finding(s) this run.** Two kinds land here, neither a"
+            " contradiction: (1) `compound-tag-unconfirmed` -- a compound/modified leg tag"
+            " row (e.g. \"CC (+ONB)\", \"ONB (+CC endpoint)\") has no exact or"
             " disambiguated-suffix `skill6-v2/<unit>` branch in the repo its primary leg"
             " needs. **This does NOT mean the leg is missing** -- a genuinely complete leg"
             " can ship under a branch name with zero discoverable relationship to its own"
             " unit id (proven twice: U15's ONB leg inside `skill6-v2/chainA`, U79's CC leg"
-            " as `u79-gk17-cc-anthology-selfheal-banner`). There is no safe, general way to"
-            " mechanically discover a non-namespaced branch name. Before resolving a finding"
-            " below either way, read the unit's own CHANGELOG.md entry AND any OTHER"
-            " cross-referenced unit's CHANGELOG/spec dependency line, and check for a"
-            " same-day merge under an unrelated or batched branch name -- resolving on"
-            " branch-name absence alone already produced one wrong correction this session"
-            " (U108, corrected to 'ONB half' before a deeper cross-reference check reversed"
-            " it)."
+            " as `u79-gk17-cc-anthology-selfheal-banner`); there is no safe, general way to"
+            " mechanically discover a non-namespaced branch name. Before resolving such a"
+            " finding either way, read the unit's own CHANGELOG.md entry AND any OTHER"
+            " cross-referenced unit's CHANGELOG/spec dependency line."
+            " (2) `cross-shipped-leg-verified` -- a both-leg row with no own-named branch"
+            " in a repo, whose row text cites a carrier branch git PROVES merged into that"
+            " repo's main (the resolved-U108 shape: its CC leg shipped inside"
+            " `skill6-v2/U110` by explicit, self-documented design). The merge proof is"
+            " machine-re-derived; the carrier's content coverage is the human judgment"
+            " already recorded in the row."
         )
         lines.append("")
-        lines.append("| unit | primary-leg repo | expected branch (not found) | shared ledger status |")
-        lines.append("|---|---|---|---|")
+        lines.append("| unit | repo | branch (own name, not found) | kind | shared ledger status |")
+        lines.append("|---|---|---|---|---|")
         for a in info_findings:
             lines.append(
-                f"| {a['unit']} | {a['repo']} | `{a['branch']}` | {a['ledger_status']} |"
+                f"| {a['unit']} | {a['repo']} | `{a['branch']}` | {a.get('kind')} | {a['ledger_status']} |"
             )
     else:
         lines.append("No informational findings this run.")
@@ -903,11 +1062,22 @@ def render_recovery_state(truth, github_ledger_text, out_path):
     alarm_units = ", ".join(f"{a['unit']}-{a['repo']}" for a in alarms) if alarms else "none"
     lines.append(f"- fail-closed integrity alarms this run (verified-but-unmerged leg mismatches): {len(alarms)} ({alarm_units})")
     info_units = ", ".join(f"{a['unit']}-{a['repo']}" for a in info_findings) if info_findings else "none"
-    lines.append(f"- informational leg-unconfirmed findings this run (compound-tag branches, NOT fail-closed): {len(info_findings)} ({info_units})")
+    lines.append(f"- informational leg-unconfirmed findings this run (NOT fail-closed; kinds in the findings table): {len(info_findings)} ({info_units})")
     lines.append(f"- journal corroboration hits scanned: {len(truth['journal_hits'])} (informational only, never authoritative)")
     lines.append("")
 
-    Path(out_path).write_text("\n".join(lines) + "\n")
+    text = "\n".join(lines) + "\n"
+    if idempotent:
+        # Committed scratch copy: freeze byte-for-byte when nothing substantive
+        # moved, so the wrapper makes NO noise commit/push on a no-change pass.
+        _write_idempotent(out_path, text)
+    else:
+        # Local operator-box copy: ALWAYS rewritten with a fresh `Generated`
+        # timestamp -- this is the liveness heartbeat the freshness contract
+        # above points at. Freezing this copy too (the pre-2026-07-19 behavior
+        # of the deployed fork) made a healthy reconciler indistinguishable
+        # from a dead one.
+        Path(out_path).write_text(text)
 
 
 # --------------------------------------------------------------------------
@@ -1007,16 +1177,18 @@ def main():
         "failclosed_alarms": failclosed_alarms,
     }
 
-    render_recovery_state(truth, github_ledger_text, args.recovery_out)
-    render_recovery_state(truth, github_ledger_text, args.recovery_copy_out)
+    # Local copy: always fresh (liveness heartbeat). Committed scratch copy:
+    # idempotent (no noise commits/pushes when nothing substantive moved).
+    render_recovery_state(truth, github_ledger_text, args.recovery_out, idempotent=False)
+    render_recovery_state(truth, github_ledger_text, args.recovery_copy_out, idempotent=True)
 
     # session log appends -- always safe, append-only. Split by severity:
     # "compound-tag-unconfirmed" findings are informational, NOT fail-closed
     # (see detect_failclosed_mismatches()'s docstring) -- report them
     # separately so the session log doesn't overstate a soft finding as a
     # hard mismatch.
-    hard_alarms = [a for a in failclosed_alarms if a.get("kind") != "compound-tag-unconfirmed"]
-    info_findings = [a for a in failclosed_alarms if a.get("kind") == "compound-tag-unconfirmed"]
+    hard_alarms = [a for a in failclosed_alarms if a.get("kind") not in INFORMATIONAL_ALARM_KINDS]
+    info_findings = [a for a in failclosed_alarms if a.get("kind") in INFORMATIONAL_ALARM_KINDS]
     alarm_units_summary = (
         ", ".join(f"{a['unit']}-{a['repo']}" for a in hard_alarms)
         if hard_alarms else "none"
@@ -1036,7 +1208,7 @@ def main():
         + ("(merge-queue writer lock was held -> ledger edit skipped this cycle, will retry next cron tick)" if not allow_edit else "(merge-queue writer lock free)"),
         f"- units auto-reconciled this pass: {', '.join(units_gap_filled) if units_gap_filled else 'none (no gap between git truth and ledger found)'}",
         f"- FAIL-CLOSED integrity alarms this pass (verified-but-unmerged leg mismatches): {len(hard_alarms)} ({alarm_units_summary})",
-        f"- informational leg-unconfirmed findings this pass (compound-tag branches, NOT fail-closed): {len(info_findings)} ({info_units_summary})",
+        f"- informational findings this pass (NOT fail-closed): {len(info_findings)} ({info_units_summary})",
         f"- recovery snapshot rewritten at `{args.recovery_out}`.",
     ]
     append_session_log(
@@ -1086,7 +1258,9 @@ def main():
         }
         for a in failclosed_alarms
     ]
-    hard_alarm_count = sum(1 for a in failclosed_alarms if a.get("kind") != "compound-tag-unconfirmed")
+    hard_alarm_count = sum(1 for a in failclosed_alarms if a.get("kind") not in INFORMATIONAL_ALARM_KINDS)
+    # Key name kept for backward compatibility with existing consumers; since
+    # 2026-07-19 it counts ALL informational kinds, not only compound-tag.
     compound_tag_informational_count = len(failclosed_alarms) - hard_alarm_count
 
     with open(args.result_out, "w") as fh:
