@@ -12,6 +12,7 @@
 #   PODCAST_CLIENT_LAST_NAME      (per-box identity tuple, from the roster)
 #   PODCAST_CLIENT_EMAIL          (per-box identity tuple, from the roster)
 #   PODCAST_CLIENT_FIRST_NAME     (optional; display/email text only)
+#   PODBEAN_PODCAST_ID            (required per-box Podbean Channel ID)
 #
 # and then VALIDATES per box, per the S58 spec U18 accept clause:
 #   1. every value SET by name (secrets/.env AND openclaw.json env.vars), and
@@ -36,15 +37,16 @@
 #     converges; it never duplicates or reorders lines.
 #   * REVERSIBLE: before any write on a box, that box's secrets/.env,
 #     openclaw.json, and (on VPS) host compose .env are copied once into unique
-#     timestamped backups. A failed backup aborts before the first mutation.
+#     timestamped backups. Exact no-ops create no backup. A failed required
+#     backup aborts before the first mutation.
 #   * ZERO SECRET VALUES IN OUTPUT: box reports carry variable NAMES and
 #     SET/NOT-SET/WRITTEN/ALREADY labels plus exit codes only. Secret values
 #     exist only inside a 0600 temp payload file (deleted on exit) and the
 #     box's own stores.
 #   * PER-BOX ISOLATION: one box failing never aborts the batch.
 #   * IDENTITY FAIL-CLOSED: a manifest entry whose roster identity is
-#     incomplete (no last name or no email) is BLOCKED, never half-written —
-#     the same both-or-neither rule U15's install.sh injection enforces.
+#     incomplete (no last name, email, or Podbean Channel ID) is BLOCKED, never
+#     half-written.
 #
 # MANIFEST (--boxes-file; OPERATOR-PRIVATE — never committed to any repo):
 #   JSON array, built by
@@ -244,11 +246,14 @@ BOX_HOME="${P18_HOME:-$HOME}"
 SECENV="$BOX_HOME/.openclaw/secrets/.env"
 OCJSON="$BOX_HOME/.openclaw/openclaw.json"
 SKILL="$BOX_HOME/.openclaw/skills/58-podcast-production-engine/scripts/podbean_publish.sh"
-NAMES="PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODCAST_CLIENT_FIRST_NAME"
+REQUIRED_NAMES="PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODBEAN_PODCAST_ID"
+OPTIONAL_NAMES="PODCAST_CLIENT_FIRST_NAME"
+NAMES="$REQUIRED_NAMES $OPTIONAL_NAMES"
 CHANGED=0
 
 secenv_state() { # name -> SET|NOT-SET
-  [ -f "$SECENV" ] && grep -q "^$1=" "$SECENV" 2>/dev/null && { echo SET; return; }
+  _sv="$(sed -n "s/^$1=//p" "$SECENV" 2>/dev/null | head -n 1)"
+  [ -n "$_sv" ] && { echo SET; return; }
   echo NOT-SET
 }
 ocjson_state() { # name -> SET|NOT-SET|NOFILE|UNREADABLE|NOTOOL
@@ -263,7 +268,8 @@ try:
     d = json.load(open(os.environ["OCJSON"]))
 except Exception:
     d = {}
-print("SET" if os.environ["V"] in ((d.get("env", {}) or {}).get("vars", {}) or {}) else "NOT-SET")
+value = ((d.get("env", {}) or {}).get("vars", {}) or {}).get(os.environ["V"], "")
+print("SET" if str(value) else "NOT-SET")
 PY
   elif command -v jq >/dev/null 2>&1; then
     _jv="$(jq -r --arg k "$1" '.env.vars[$k] // empty' "$OCJSON" 2>/dev/null)" || { echo UNREADABLE; return; }
@@ -271,6 +277,34 @@ PY
   else
     echo NOTOOL
   fi
+}
+
+secenv_value_matches() { # name expected -> exact, non-printing comparison
+  [ -f "$SECENV" ] && grep -qxF "$1=$2" "$SECENV" 2>/dev/null
+}
+
+ocjson_value_matches() { # name expected -> exact, non-printing comparison
+  [ -f "$OCJSON" ] || return 1
+  if command -v python3 >/dev/null 2>&1; then
+    OCJSON="$OCJSON" V="$1" EXPECTED="$2" python3 - <<'PY' >/dev/null 2>&1
+import json, os, sys
+try:
+    data = json.load(open(os.environ["OCJSON"]))
+except Exception:
+    raise SystemExit(1)
+actual = ((data.get("env", {}) or {}).get("vars", {}) or {}).get(os.environ["V"])
+raise SystemExit(0 if actual == os.environ["EXPECTED"] else 1)
+PY
+  elif command -v jq >/dev/null 2>&1; then
+    jq -e --arg k "$1" --arg v "$2" '.env.vars[$k] == $v' "$OCJSON" >/dev/null 2>&1
+  else
+    return 1
+  fi
+}
+
+pair_needs_write() { # name expected -> 0 when either durable store differs
+  secenv_value_matches "$1" "$2" && ocjson_value_matches "$1" "$2" && return 1
+  return 0
 }
 
 write_env() { # name value -> prints label only; install.sh exact-line no-op, but the
@@ -355,6 +389,7 @@ if [ "${P18_MODE:-probe}" = "runtimeverify" ]; then
   [ "${PODBEAN_PUBLISH_TOKEN:-}" = "$S58V_TOKEN" ] || _runtime_ok=0
   [ "${PODCAST_CLIENT_LAST_NAME:-}" = "$S58V_LAST" ] || _runtime_ok=0
   [ "${PODCAST_CLIENT_EMAIL:-}" = "$S58V_EMAIL" ] || _runtime_ok=0
+  [ "${PODBEAN_PODCAST_ID:-}" = "$S58V_PODCAST_ID" ] || _runtime_ok=0
   if [ -n "${S58V_FIRST:-}" ]; then
     [ "${PODCAST_CLIENT_FIRST_NAME:-}" = "$S58V_FIRST" ] || _runtime_ok=0
   fi
@@ -388,14 +423,14 @@ if [ "${P18_MODE:-probe}" = "probe" ]; then
   else
     echo "skill_script=missing proxy_mode_markers=0"
   fi
-  for v in $NAMES PODBEAN_PODCAST_ID; do
+  for v in $NAMES; do
     echo "probe:$v:env=$(secenv_state "$v"):ocjson=$(ocjson_state "$v")"
   done
   exit 0
 fi
 
 # ---- hostenv modes (VPS host leg) --------------------------------------------
-# Mirrors the five values into the docker compose env_file on the HOST, so the
+# Mirrors the six values into the docker compose env_file on the HOST, so the
 # container process env carries them from the next force-recreate onward
 # (compose reads the env_file only at container create). Same exact-line
 # idempotency and atomic tmp+mv as write_env. Values that are not dotenv-safe
@@ -406,6 +441,32 @@ if [ "$P18_MODE" = "hostenvbackup" ]; then
   HF="${P18_HOSTENV_FILE:-}"
   [ -n "$HF" ] || { echo "result=FAILED reason=hostenv_file_unset"; exit 1; }
   [ -f "$HF" ] || { echo "result=FAILED reason=hostenv_file_missing"; exit 1; }
+  hostenv_desired_line() { # name value -> dotenv-compatible line (captured only)
+    case "$2" in
+      ''|*[!A-Za-z0-9_@.:/+-]*)
+        _q=$(printf '%s' "$2" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        printf '%s="%s"\n' "$1" "$_q"
+        ;;
+      *) printf '%s=%s\n' "$1" "$2" ;;
+    esac
+  }
+  hostenv_value_matches() {
+    _expected="$(hostenv_desired_line "$1" "$2")"
+    grep -qxF "$_expected" "$HF" 2>/dev/null
+  }
+  HOST_NEEDS_BACKUP=0
+  hostenv_value_matches PODBEAN_PUBLISH_WEBHOOK_URL "$S58V_URL" || HOST_NEEDS_BACKUP=1
+  hostenv_value_matches PODBEAN_PUBLISH_TOKEN "$S58V_TOKEN" || HOST_NEEDS_BACKUP=1
+  hostenv_value_matches PODCAST_CLIENT_LAST_NAME "$S58V_LAST" || HOST_NEEDS_BACKUP=1
+  hostenv_value_matches PODCAST_CLIENT_EMAIL "$S58V_EMAIL" || HOST_NEEDS_BACKUP=1
+  hostenv_value_matches PODBEAN_PODCAST_ID "$S58V_PODCAST_ID" || HOST_NEEDS_BACKUP=1
+  if [ -n "${S58V_FIRST:-}" ]; then
+    hostenv_value_matches PODCAST_CLIENT_FIRST_NAME "$S58V_FIRST" || HOST_NEEDS_BACKUP=1
+  fi
+  if [ "$HOST_NEEDS_BACKUP" = "0" ]; then
+    echo "hostenv_backup=not_needed"
+    exit 0
+  fi
   HTS="$(date -u +%Y%m%dT%H%M%SZ)"
   HB="$(mktemp "${HF}.bak.s58u18-${HTS}.XXXXXX")" || {
     echo "result=FAILED reason=hostenv_backup_create_failed"; exit 1;
@@ -447,6 +508,7 @@ if [ "$P18_MODE" = "hostenv" ]; then
   hostenv_write PODBEAN_PUBLISH_TOKEN "$S58V_TOKEN"      || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
   hostenv_write PODCAST_CLIENT_LAST_NAME "$S58V_LAST"    || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
   hostenv_write PODCAST_CLIENT_EMAIL "$S58V_EMAIL"       || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  hostenv_write PODBEAN_PODCAST_ID "$S58V_PODCAST_ID"    || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
   if [ -n "${S58V_FIRST:-}" ]; then
     hostenv_write PODCAST_CLIENT_FIRST_NAME "$S58V_FIRST" || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
   fi
@@ -455,24 +517,37 @@ if [ "$P18_MODE" = "hostenv" ]; then
 fi
 
 # ---- inject mode -------------------------------------------------------------
-TS="$(date -u +%Y%m%dT%H%M%SZ)"
-BK_PARENT="$BOX_HOME/.openclaw/backups"
-mkdir -p "$BK_PARENT" || { echo "result=FAILED reason=backup_dir_uncreatable"; exit 1; }
-BK="$(mktemp -d "$BK_PARENT/s58-u18-$TS.XXXXXX")" || {
-  echo "result=FAILED reason=backup_dir_uncreatable"; exit 1;
-}
-chmod 700 "$BK" || { echo "result=FAILED reason=backup_dir_unprotectable"; exit 1; }
-if [ -f "$SECENV" ] && ! cp -p "$SECENV" "$BK/secrets.env"; then
-  echo "result=FAILED reason=backup_copy_failed store=secrets.env"
-  exit 1
+NEED_BACKUP=0
+pair_needs_write PODBEAN_PUBLISH_WEBHOOK_URL "$S58V_URL" && NEED_BACKUP=1
+pair_needs_write PODBEAN_PUBLISH_TOKEN "$S58V_TOKEN" && NEED_BACKUP=1
+pair_needs_write PODCAST_CLIENT_LAST_NAME "$S58V_LAST" && NEED_BACKUP=1
+pair_needs_write PODCAST_CLIENT_EMAIL "$S58V_EMAIL" && NEED_BACKUP=1
+pair_needs_write PODBEAN_PODCAST_ID "$S58V_PODCAST_ID" && NEED_BACKUP=1
+if [ -n "${S58V_FIRST:-}" ]; then
+  pair_needs_write PODCAST_CLIENT_FIRST_NAME "$S58V_FIRST" && NEED_BACKUP=1
 fi
-if [ -f "$OCJSON" ] && ! cp -p "$OCJSON" "$BK/openclaw.json"; then
-  echo "result=FAILED reason=backup_copy_failed store=openclaw.json"
-  exit 1
+if [ "$NEED_BACKUP" = "1" ]; then
+  TS="$(date -u +%Y%m%dT%H%M%SZ)"
+  BK_PARENT="$BOX_HOME/.openclaw/backups"
+  mkdir -p "$BK_PARENT" || { echo "result=FAILED reason=backup_dir_uncreatable"; exit 1; }
+  BK="$(mktemp -d "$BK_PARENT/s58-u18-$TS.XXXXXX")" || {
+    echo "result=FAILED reason=backup_dir_uncreatable"; exit 1;
+  }
+  chmod 700 "$BK" || { echo "result=FAILED reason=backup_dir_unprotectable"; exit 1; }
+  if [ -f "$SECENV" ] && ! cp -p "$SECENV" "$BK/secrets.env"; then
+    echo "result=FAILED reason=backup_copy_failed store=secrets.env"
+    exit 1
+  fi
+  if [ -f "$OCJSON" ] && ! cp -p "$OCJSON" "$BK/openclaw.json"; then
+    echo "result=FAILED reason=backup_copy_failed store=openclaw.json"
+    exit 1
+  fi
+  echo "backup_dir_present=yes"
+  echo "backup:secrets.env=$([ -f "$BK/secrets.env" ] && echo copied || echo absent)"
+  echo "backup:openclaw.json=$([ -f "$BK/openclaw.json" ] && echo copied || echo absent)"
+else
+  echo "backup=not_needed"
 fi
-echo "backup_dir_present=yes"
-echo "backup:secrets.env=$([ -f "$BK/secrets.env" ] && echo copied || echo absent)"
-echo "backup:openclaw.json=$([ -f "$BK/openclaw.json" ] && echo copied || echo absent)"
 
 write_pair() { # name value
   write_env "$1" "$2" || { echo "result=FAILED reason=env_write_failed"; exit 1; }
@@ -520,7 +595,7 @@ do_restart() { # gateway restart on THIS box, only when something changed.
       ""|-) : ;;
       *)
         case "$_old_pid" in
-          ""|-) _pid_changed=1 ;;
+          ""|-) : ;; # no before identity means a change cannot be proven
           *) [ "$_new_pid" != "$_old_pid" ] && _pid_changed=1 ;;
         esac
         [ "$_pid_changed" = "1" ] && break
@@ -533,7 +608,10 @@ do_restart() { # gateway restart on THIS box, only when something changed.
   _j=0
   while [ "$_j" -lt 12 ]; do
     _health="$(curl -s -m 5 http://127.0.0.1:18789/health 2>/dev/null || true)"
-    case "$_health" in *'"ok":true'*) _health_ok=1; break ;; esac
+    if printf '%s\n' "$_health" | grep -Eq '"ok"[[:space:]]*:[[:space:]]*true'; then
+      _health_ok=1
+      break
+    fi
     sleep 5
     _j=$((_j + 1))
   done
@@ -547,11 +625,12 @@ do_restart() { # gateway restart on THIS box, only when something changed.
   return 1
 }
 
-# Required four (values embedded by the generator header as S58V_*).
+# Required five runtime values (embedded by the generator header as S58V_*).
 write_pair PODBEAN_PUBLISH_WEBHOOK_URL "$S58V_URL"
 write_pair PODBEAN_PUBLISH_TOKEN "$S58V_TOKEN"
 write_pair PODCAST_CLIENT_LAST_NAME "$S58V_LAST"
 write_pair PODCAST_CLIENT_EMAIL "$S58V_EMAIL"
+write_pair PODBEAN_PODCAST_ID "$S58V_PODCAST_ID"
 if [ -n "${S58V_FIRST:-}" ]; then
   write_pair PODCAST_CLIENT_FIRST_NAME "$S58V_FIRST"
 fi
@@ -566,7 +645,7 @@ for v in $NAMES; do
 done
 MISSING=""
 OCJ_MISSING=""
-for v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL; do
+for v in $REQUIRED_NAMES; do
   [ "$(secenv_state "$v")" = "SET" ] || MISSING="$MISSING $v"
   [ "$(ocjson_state "$v")" = "SET" ] || OCJ_MISSING="$OCJ_MISSING $v"
 done
@@ -598,13 +677,26 @@ if [ ! -f "$SKILL" ] || [ "$_pm" = "0" ]; then
   echo "result=PARTIAL reason=values_set_but_dry_run_not_runnable"
   exit 4
 fi
-get_secenv() { sed -n "s/^$1=//p" "$SECENV" 2>/dev/null | head -n 1; }
-V_URL=$(get_secenv PODBEAN_PUBLISH_WEBHOOK_URL)
-V_TOKEN=$(get_secenv PODBEAN_PUBLISH_TOKEN)
-V_LAST=$(get_secenv PODCAST_CLIENT_LAST_NAME)
-V_EMAIL=$(get_secenv PODCAST_CLIENT_EMAIL)
-V_PID=$(get_secenv PODBEAN_PODCAST_ID)
-[ -n "$V_PID" ] || V_PID="${S58V_PODCAST_ID:-}"
+get_ocjson() { # gateway runtime source; never read probe values from secrets/.env
+  if command -v python3 >/dev/null 2>&1; then
+    OCJSON="$OCJSON" V="$1" python3 - <<'PY' 2>/dev/null
+import json, os
+try:
+    data = json.load(open(os.environ["OCJSON"]))
+except Exception:
+    raise SystemExit(1)
+value = ((data.get("env", {}) or {}).get("vars", {}) or {}).get(os.environ["V"], "")
+print(value if isinstance(value, str) else str(value))
+PY
+  else
+    jq -r --arg k "$1" '.env.vars[$k] // empty' "$OCJSON" 2>/dev/null
+  fi
+}
+V_URL=$(get_ocjson PODBEAN_PUBLISH_WEBHOOK_URL)
+V_TOKEN=$(get_ocjson PODBEAN_PUBLISH_TOKEN)
+V_LAST=$(get_ocjson PODCAST_CLIENT_LAST_NAME)
+V_EMAIL=$(get_ocjson PODCAST_CLIENT_EMAIL)
+V_PID=$(get_ocjson PODBEAN_PODCAST_ID)
 TMPA="$(mktemp "${TMPDIR:-/tmp}/s58u18-dryrun.XXXXXX")" || exit 1
 trap 'rm -f "$TMPA"' EXIT
 DRYOUT="$(PODBEAN_PUBLISH_WEBHOOK_URL="$V_URL" PODBEAN_PUBLISH_TOKEN="$V_TOKEN" \
@@ -736,7 +828,7 @@ if [ "$MODE" = "inject" ]; then
 fi
 if [ "$MODE" = "probe" ]; then
   # host-side survey leg: compose env_file SET/NOT-SET by NAME only
-  for _v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODCAST_CLIENT_FIRST_NAME; do
+  for _v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODBEAN_PODCAST_ID PODCAST_CLIENT_FIRST_NAME; do
     if [ -n "$COMPOSE_DIR" ] && [ -f "$COMPOSE_DIR/.env" ] && grep -q "^$_v=" "$COMPOSE_DIR/.env" 2>/dev/null; then
       echo "hostenv:$_v=SET"
     else
@@ -751,6 +843,12 @@ if [ "$NEED" = "yes" ]; then
   if [ "$DO_RECREATE" != "1" ]; then
     echo "restart=skipped_by_flag"
     echo "result=PARTIAL reason=changed_but_not_restarted"
+    exit 4
+  fi
+  if [ -z "$OLD_CID" ]; then
+    echo "GATEWAY_DOWN=1"
+    echo "restart=failed method=recreate container_id_before=unproven"
+    echo "result=PARTIAL reason=container_identity_before_recreate_not_proven"
     exit 4
   fi
   CF=""
@@ -885,9 +983,9 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
   COUNT_TOTAL=$((COUNT_TOTAL + 1))
   NOW_UTC="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
 
-  # identity fail-closed (both-or-neither, mirrors U15)
-  if [ "$B_COMPLETE" != "1" ] || [ -z "$B_LAST" ] || [ -z "$B_EMAIL" ]; then
-    log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=BLOCKED_IDENTITY_INCOMPLETE detail=roster_identity_missing_last_name_or_email"
+  # Identity fail-closed: every runtime-critical per-box value is required.
+  if [ "$B_COMPLETE" != "1" ] || [ -z "$B_LAST" ] || [ -z "$B_EMAIL" ] || [ -z "$B_PID" ]; then
+    log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=BLOCKED_IDENTITY_INCOMPLETE detail=roster_identity_missing_last_name_email_or_podcast_id"
     COUNT_BLOCKED=$((COUNT_BLOCKED + 1))
     if [ "$APPLY" = "1" ]; then COUNT_FAIL=$((COUNT_FAIL + 1)); fi
     continue
@@ -953,6 +1051,20 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
   V_TOK_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_TOKEN:env=\\([A-Z-]*\\).*/\\1/p")"
   V_LN_ST="$(field "$REPORT" "s/^$PFIX:PODCAST_CLIENT_LAST_NAME:env=\\([A-Z-]*\\).*/\\1/p")"
   V_EM_ST="$(field "$REPORT" "s/^$PFIX:PODCAST_CLIENT_EMAIL:env=\\([A-Z-]*\\).*/\\1/p")"
+  V_PID_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PODCAST_ID:env=\\([A-Z-]*\\).*/\\1/p")"
+  V_URL_OCJ="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_WEBHOOK_URL:env=[A-Z-]*:ocjson=\\([A-Z-]*\\).*/\\1/p")"
+  V_TOK_OCJ="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_TOKEN:env=[A-Z-]*:ocjson=\\([A-Z-]*\\).*/\\1/p")"
+  V_LN_OCJ="$(field "$REPORT" "s/^$PFIX:PODCAST_CLIENT_LAST_NAME:env=[A-Z-]*:ocjson=\\([A-Z-]*\\).*/\\1/p")"
+  V_EM_OCJ="$(field "$REPORT" "s/^$PFIX:PODCAST_CLIENT_EMAIL:env=[A-Z-]*:ocjson=\\([A-Z-]*\\).*/\\1/p")"
+  V_PID_OCJ="$(field "$REPORT" "s/^$PFIX:PODBEAN_PODCAST_ID:env=[A-Z-]*:ocjson=\\([A-Z-]*\\).*/\\1/p")"
+  STORES_PROVEN=1
+  if [ "$V_URL_ST" != "SET" ] || [ "$V_TOK_ST" != "SET" ] || \
+     [ "$V_LN_ST" != "SET" ] || [ "$V_EM_ST" != "SET" ] || \
+     [ "$V_PID_ST" != "SET" ] || [ "$V_URL_OCJ" != "SET" ] || \
+     [ "$V_TOK_OCJ" != "SET" ] || [ "$V_LN_OCJ" != "SET" ] || \
+     [ "$V_EM_OCJ" != "SET" ] || [ "$V_PID_OCJ" != "SET" ]; then
+    STORES_PROVEN=0
+  fi
 
   VERDICT="OK"
   if [ "$APPLY" = "1" ]; then
@@ -961,18 +1073,29 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
       REASON="transport_exit_nonzero"
     else
       case "$RESULT" in
-        OK)      VERDICT="OK"; [ "$EFFECTIVE_CHANGED_ST" = "no" ] && VERDICT="OK_ALREADY" ;;
+        OK)
+          if [ "$STORES_PROVEN" = "1" ]; then
+            VERDICT="OK"
+            [ "$EFFECTIVE_CHANGED_ST" = "no" ] && VERDICT="OK_ALREADY"
+          else
+            VERDICT="PARTIAL"
+            REASON="runtime_store_not_proven"
+          fi
+          ;;
         PARTIAL) VERDICT="PARTIAL" ;;
         *)       VERDICT="FAILED" ;;
       esac
     fi
   else
-    # dry-run survey: a reachable, probed box is OK regardless of current SET
-    # state — the SET/NOT-SET columns ARE the survey result.
-    [ "$BOX_RC" != "0" ] && VERDICT="UNREACHABLE_OR_ERROR"
+    if [ "$BOX_RC" != "0" ]; then
+      VERDICT="UNREACHABLE_OR_ERROR"
+    elif [ "$STORES_PROVEN" != "1" ]; then
+      VERDICT="PARTIAL"
+      REASON="runtime_store_not_proven"
+    fi
   fi
 
-  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} transport_rc=$BOX_RC url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${EFFECTIVE_CHANGED_ST:+ changed=$EFFECTIVE_CHANGED_ST}${HOST_CHANGED_ST:+ host_changed=$HOST_CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}${GATEWAY_DOWN_ST:+ gateway_down=$GATEWAY_DOWN_ST}"
+  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} transport_rc=$BOX_RC url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?} podcast_id=${V_PID_ST:-?} runtime_url=${V_URL_OCJ:-?} runtime_token=${V_TOK_OCJ:-?} runtime_last_name=${V_LN_OCJ:-?} runtime_email=${V_EM_OCJ:-?} runtime_podcast_id=${V_PID_OCJ:-?}${SKILL_ST:+ skill=$SKILL_ST}${EFFECTIVE_CHANGED_ST:+ changed=$EFFECTIVE_CHANGED_ST}${HOST_CHANGED_ST:+ host_changed=$HOST_CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}${GATEWAY_DOWN_ST:+ gateway_down=$GATEWAY_DOWN_ST}"
 
   if [ "$VERDICT" = "OK" ] || [ "$VERDICT" = "OK_ALREADY" ]; then
     COUNT_OK=$((COUNT_OK + 1))
