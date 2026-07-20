@@ -28,6 +28,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
+from detect_platform import get_openclaw_paths
+
 
 TEMPLATE_COMPANY_NAME = "Your Company"
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -71,23 +73,24 @@ def _valid_departments(payload: Any) -> bool:
     return True
 
 
-def _company_roots(workspace: Path, master_files: Optional[Path]) -> List[Path]:
-    roots: List[Path] = []
+def _company_roots(master_files: Optional[Path]) -> List[Path]:
     if master_files is not None:
-        roots.append(master_files / "zero-human-company")
-    env_master = os.environ.get("MASTER_FILES_DIR", "").strip()
-    if env_master:
-        roots.append(Path(env_master) / "zero-human-company")
-    roots.extend(
-        [
-            Path("/data/openclaw-master-files/zero-human-company"),
-            Path.home() / "Downloads/openclaw-master-files/zero-human-company",
-            workspace / "zero-human-company",
-            Path.home() / "clawd/zero-human-company",
-            Path.home() / "clawd/zhc",
-            Path("/data/clawd/zero-human-company"),
-        ]
-    )
+        roots: List[Path] = [master_files / "zero-human-company"]
+    else:
+        # detect_platform.py is the repository's sole authority for canonical
+        # and read-only legacy company resolution. In particular, do not add a
+        # second local-candidate loop here: that can select another client on a
+        # box whose historical layout differs from the updater's assumptions.
+        try:
+            paths = get_openclaw_paths()
+        except SystemExit as exc:
+            raise ReconcileError(
+                "cannot resolve the canonical company root for this platform"
+            ) from exc
+        roots = [Path(paths["company_root"])]
+        active_company = paths.get("company_dir")
+        if active_company is not None:
+            roots.append(Path(active_company).parent)
     deduped: List[Path] = []
     seen: Set[str] = set()
     for root in roots:
@@ -105,7 +108,7 @@ def _resolve_company_dir(
     if slug and not _SAFE_SLUG.fullmatch(slug):
         raise ReconcileError("build-state company slug is unsafe; refusing path resolution")
 
-    roots = _company_roots(workspace, master_files)
+    roots = _company_roots(master_files)
     if slug:
         matches = [root / slug for root in roots if (root / slug / "departments.json").is_file()]
         if len(matches) > 1:
