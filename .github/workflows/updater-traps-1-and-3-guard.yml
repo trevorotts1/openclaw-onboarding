@@ -1,0 +1,96 @@
+name: Updater traps 1+3 guard
+
+# Fails the build if update-skills.sh regresses on either of two traps a live
+# canary run surfaced on 2026-07-19:
+#
+#   TRAP 1 — the OpenClaw 2026.7.1 relic pre-clear
+#              mv ~/.clawdbot ~/.clawdbot.bak-pre-2026.7.1
+#            is destructive on any box where .clawdbot is STILL a live
+#            workspace root (symlinked-in workspace, or agent workspaces
+#            declared under it in openclaw.json). The pre-clear must stay
+#            OPT-IN, must detect across every candidate root before mutating
+#            anything, and must refuse with exit 3 on ANY live signal.
+#
+#   TRAP 3 — the Command Center bootstrap must never clone a SECOND board.
+#            It fires only on absence proven three independent ways (no valid
+#            checkout at any known path, no pm2 app under any historical name,
+#            port unbound), and refuses outright when the canonical path holds
+#            a foreign git repo — because run-full-install.sh:1132 skips its
+#            clone when a .git is present and would otherwise deploy that
+#            unrelated repo AS the Command Center.
+#
+# scripts/test-updater-traps-1-and-3.sh extracts both fixed blocks VERBATIM
+# from update-skills.sh (between the TRAP1-PRECLEAR / TRAP3-CC-* markers — no
+# reimplementation) and exercises them against sandboxed HOMEs with pm2/lsof
+# stubbed. No network, no clone, no box touched. If the markers drift the
+# suite exits 2 rather than silently testing nothing.
+#
+# Mutation-proven: the same suite scores 10 PASS / 20 FAIL against the pre-fix
+# logic and 30 PASS / 0 FAIL against the fix.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/test-updater-traps-1-and-3.sh"
+      - ".github/workflows/updater-traps-1-and-3-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/test-updater-traps-1-and-3.sh"
+      - ".github/workflows/updater-traps-1-and-3-guard.yml"
+
+jobs:
+  updater-traps-1-and-3-guard:
+    name: .clawdbot pre-clear refuses on a live box; CC bootstrap never clones a second board
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Configure git identity (needed for local test-fixture repos)
+        run: |
+          git config --global user.email "ci@example.test"
+          git config --global user.name "CI"
+
+      - name: Syntax-check update-skills.sh (including heredoc payloads)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n update-skills.sh
+          # bash -n does NOT parse heredoc bodies. Extract every python3
+          # heredoc and compile it separately so a broken payload cannot ship.
+          python3 - <<'PYEOF'
+          import re, sys
+          lines = open("update-skills.sh", encoding="utf-8", errors="replace").read().split("\n")
+          i = n = fails = 0
+          while i < len(lines):
+              m = re.search(r"<<-?'?(PYEOF|PY)'?\s*(\|\||&&|2>|>>|$)", lines[i])
+              if m and "python3" in lines[i]:
+                  tag, start = m.group(1), i + 1
+                  j = start
+                  while j < len(lines) and lines[j].strip() != tag:
+                      j += 1
+                  n += 1
+                  try:
+                      compile("\n".join(lines[start:j]), "heredoc@%d" % (start + 1), "exec")
+                  except SyntaxError as e:
+                      fails += 1
+                      print("FAIL heredoc at line %d: %s" % (start + 1, e))
+                  i = j
+              i += 1
+          print("python heredocs compiled: %d, failures: %d" % (n, fails))
+          sys.exit(1 if fails else 0)
+          PYEOF
+
+      - name: Run traps 1+3 regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-updater-traps-1-and-3.sh
+          echo "updater-traps-1-and-3-guard: PASS"
