@@ -31,9 +31,9 @@ It JOINS two operator-private inputs at runtime — never committed anywhere:
                 PODCAST_CLIENT_FIRST_NAME, PODBEAN_PODCAST_ID). Values are
                 never printed and never fabricated — absent means absent.
 
-FAIL-CLOSED IDENTITY: identity.complete is true ONLY when both last_name and
-email are non-empty (the same both-or-neither doctrine as install.sh's U15
-injection). Anything less stays complete=false and the roll BLOCKS that box.
+FAIL-CLOSED IDENTITY: identity.complete is true ONLY when last_name, email, and
+podcast_id are non-empty. Anything less stays complete=false and the roll
+BLOCKS that box; podbean_publish.sh requires the ID in every transport mode.
 
 ZERO VALUES IN OUTPUT: stdout carries box names, roles, platforms and
 complete/incomplete flags only. Identity values exist only inside the 0600
@@ -89,9 +89,9 @@ def build_identity(last, email, first, podcast_id):
         "email": email,
         "first_name": (first or "").strip(),
         "podcast_id": (podcast_id or "").strip(),
-        # both-or-neither, mirroring install.sh U15: a lone last name or a
-        # lone email can never resolve a roster row.
-        "complete": bool(last and email),
+        # The publisher requires the channel ID in proxy, broker, and local
+        # modes, so a row without it is not provisionable.
+        "complete": bool(last and email and (podcast_id or "").strip()),
     }
 
 
