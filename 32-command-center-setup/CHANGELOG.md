@@ -1,5 +1,63 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.42 — 2026-07-20 — APPDIR-01: `--app-dir` / `$CC_APP_DIR` honored, and a non-checkout `--update-only` now FAILS LOUD (run-full-install.sh)
+
+A false-success defect: `--update-only` could deploy nothing and still report
+success, so a fleet roll would collect green receipts for code that never
+shipped. Three lines, one failure mode:
+
+1. `DASHBOARD_DIR` was hardcoded to `${HOME}/projects/command-center` with **no
+   override of any kind** — no flag, no environment variable.
+2. The `update.sh` call site exported `CC_APP_DIR="$DASHBOARD_DIR"` and
+   `CC_PORT="$DASHBOARD_PORT"`, **clobbering** any ambient value, so pinning the
+   env var could not rescue (1) either.
+3. When that hardcoded path was not a git checkout, the phase logged
+   `WARN ... .git not found — run full install first (skipping refresh)` and
+   fell through the **entire** phase — no build, no restart, and no failure.
+
+Proven on the operator Mac, where `~/projects/command-center` exists as a
+non-git DATA directory (mission-control.db plus backups) while the live install
+sits elsewhere. Phase 6 deployed nothing and did not fail; on a box whose
+downstream gates are green the run ends 0.
+
+Fixed:
+
+* `cc_resolve_dashboard_dir()` — precedence `--app-dir` > `$CC_APP_DIR` >
+  `${HOME}/projects/command-center`, and `DASHBOARD_PORT` now honors an ambient
+  `$CC_PORT` (default `4000` unchanged). Because `DASHBOARD_DIR`/`DASHBOARD_PORT`
+  are now DERIVED from those variables, the `update.sh` call site propagates an
+  operator pin instead of overwriting it. `--app-dir` with a missing or empty
+  path exits 2 rather than silently falling back.
+* `cc_validate_cc_checkout()` — MIRRORS `blackceo-command-center`'s
+  `update.sh:_cc_validate_checkout`: git top-level, `origin` remote resolving to
+  the Command Center repo by normalized slug, required app structure, and
+  `package.json` naming the app. It cannot be REUSED across repos because this
+  installer must resolve the directory before any checkout is guaranteed to
+  exist. ONE DELIBERATE DIVERGENCE: `ecosystem.config.cjs` and
+  `scripts/atomic-deploy.sh` are NOT required markers here, because this
+  installer's own tier-3 update path exists to serve older boxes whose checkout
+  has neither. Using `git rev-parse --show-toplevel` also means a linked
+  worktree — where `.git` is a FILE, not a directory — validates correctly; the
+  old `[[ -d "$DASHBOARD_DIR/.git" ]]` test did not.
+* `cc_assert_update_only_checkout()` — fails CLOSED via `fail_install` (exit 1),
+  naming the resolved path, WHY it was rejected, and the `--app-dir` remedy.
+  Never a silent, green skip. On success it canonicalizes `DASHBOARD_DIR` to the
+  validated physical path so every downstream `cd`/git/npm call operates on the
+  directory that was actually verified.
+
+The full-install branch is unchanged: there, a missing `.git` still means
+"clone it here", which is correct.
+
+New `scripts/test-cc-app-dir-resolution.sh` (16 cases) extracts the four fixed
+functions verbatim via function-name-anchored awk AND runs the real installer
+end-to-end against sandboxed HOMEs with local-path git remotes (no network, no
+gateway, no pm2, no credentials, no box touched). It covers precedence, the
+anti-clobber contract, `$CC_PORT`, all four rejection reasons, valid-checkout
+and linked-worktree acceptance, and the fail-closed exit. Measured against the
+pre-fix revision it reports 1 passed / 27 failed; with this fix, 16 passed / 0
+failed. Wired into new CI workflow `cc-app-dir-resolution-guard.yml`. The
+sibling D6/D7 guard is unaffected (14 passed / 0 failed before and after).
+
 ## v12.9.39 — 2026-07-16 — X/U-X3 (U93): heartbeat-canary-probe.py renamed to heartbeat-embedding-probe.py
 
 `scripts/heartbeat-canary-probe.py` renamed to `scripts/heartbeat-embedding-probe.py`
