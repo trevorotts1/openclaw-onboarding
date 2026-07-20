@@ -490,6 +490,36 @@ if [ "$P18_MODE" = "hostenvbackup" ]; then
     exit 1
   fi
   echo "hostenv_backup=copied"
+  # RETENTION (OPENCLAW-BACKUP-RETENTION-V1, POSIX transcription).
+  # Every roll left another "<env>.bak.s58u18-<ts>.<rand>" beside the host
+  # compose env_file and nothing ever removed one. Keep the newest N and
+  # delete the rest, ONLY now that this run's copy is proven on disk, and
+  # NEVER this run's own copy. This payload runs under /bin/sh on the remote
+  # box and cannot source lib-shared.sh, so the policy is transcribed here;
+  # the match is the exact literal prefix this script itself writes plus a
+  # 4-digit year, one directory deep — no broad globs.
+  P18_KEEP="${OPENCLAW_BACKUP_KEEP:-3}"
+  case "$P18_KEEP" in ''|*[!0-9]*) P18_KEEP=3 ;; esac
+  [ "$P18_KEEP" -lt 1 ] && P18_KEEP=1
+  P18_BDIR="$(dirname "$HF")"
+  P18_BPFX="$(basename "$HF").bak.s58u18-"
+  P18_SEEN=0
+  find "$P18_BDIR" -mindepth 1 -maxdepth 1 -type f \
+       -name "${P18_BPFX}[0-9][0-9][0-9][0-9]*" 2>/dev/null \
+    | LC_ALL=C sort -r \
+    | while IFS= read -r P18_OLD; do
+        [ -n "$P18_OLD" ] || continue
+        P18_SEEN=$((P18_SEEN + 1))
+        if [ "$P18_SEEN" -le "$P18_KEEP" ]; then
+          echo "hostenv_backup_keep=$(basename "$P18_OLD")"
+          continue
+        fi
+        if [ "$P18_OLD" = "$HB" ]; then
+          echo "hostenv_backup_keep_current=$(basename "$P18_OLD")"
+          continue
+        fi
+        rm -f "$P18_OLD" && echo "hostenv_backup_pruned=$(basename "$P18_OLD")"
+      done
   exit 0
 fi
 
