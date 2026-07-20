@@ -4,8 +4,8 @@ AUTHORITATIVE, machine-derived-from-git-truth recovery source for the Skill 6 (b
 
 **FRESHNESS CONTRACT — verify liveness LIVE, never from this prose.** The reconciler runs on a 10-minute cron on the operator box, but the git-committed copy of this file is only rewritten (and committed) when its SUBSTANTIVE content changes — so an old `Generated` timestamp here does NOT by itself prove the reconciler is alive OR dead. Liveness proof lives on the operator box: `~/ledger-reconciler/recovery-state.md` gets a fresh `Generated` on EVERY pass, and `~/ledger-reconciler/logs/reconcile.log` gets a `run start`/`run end` pair per pass. If the newest `run start` there is older than ~20 minutes, the reconciler is DEAD (check `crontab -l` for the reconcile.sh entry) and every claim below — including the Integrity Alarms — is frozen at the `Generated` time: the alarms were true AT GENERATION but may have been resolved since. (This exact failure happened 2026-07-16: the cron was paused for a defect fix, never re-enabled, and 5 then-true alarms were presented as current for 3 days after every one of them had been resolved by merge.)
 
-Generated: 2026-07-20T03:30:02Z
-openclaw-onboarding `origin/main` HEAD: `04c2a15024f0a2b99ff3b2b8ae5b5daa8826fb3e`
+Generated: 2026-07-20T11:30:03Z
+openclaw-onboarding `origin/main` HEAD: `53aa593259ce5ded26965646f93f65b793a35ba0`
 blackceo-command-center `origin/main` HEAD: `b0b2be903c2b08f1c7676aa60cd93fb4135d65c8`
 
 ## INTEGRITY ALARMS — fail-closed (verified-but-unmerged leg mismatches)
@@ -65,7 +65,7 @@ No mismatches found this run.
 | U4 | `skill6-v2/U4` | `ee42a22a` | True | `7dfbad1a` | v20.0.31 | verified (both halves — CC half merged, tag v6.0.17) | - |
 | U44 | `skill6-v2/U44` | `c6aca95f` | True | `0ecbcebe` | v20.0.60 | verified | - |
 | U5 | `skill6-v2/U5` | `616084f2` | True | `e979d09d` | v20.0.32 | verified (both halves — CC half merged, tag v6.0.16) | - |
-| U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; live "prove the loop" run NOT an operator item — blocked on two Command Center code defects, dispatched as their own build unit; D12/D-HL-3 crown-DECISION ratification is the SOLE remaining operator item) | - |
+| U53 | `skill6-v2/U53` | `1afb5690` | True | `7b0e3a1b` | v20.0.57 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 RATIFIED BY TREVOR 2026-07-20 — decision gate CLOSED, zero operator items remain; live "prove the loop" run EXECUTED 2026-07-20: defect-1/2 fixes proven live, deploy auto-rolled back cleanly on NEW defect 3 — updater reverts live tracked company config, branding health gate correctly fails — live leg open on defect 3 only, scoped CC build work) | - |
 | U59 | `skill6-v2/U59` | `985935c4` | True | `5c51fb96` | v20.0.60 | verified (test-proof confirmed) | - |
 | U6 | `skill6-v2/U6` | `da5dd284` | True | `ada71006` | v20.0.27 | verified | 9.0 |
 | U63 | `skill6-v2/U63` | `c3d13ec5` | True | `5a55f459` | v20.0.60 | DONE (operator-closed) — legs (a)/(c) PROVEN live; leg (b)/the authorization question below is SUPERSEDED by the 2026-07-19 operator closure (see lead sentence) | - |
@@ -146,7 +146,7 @@ No mismatches found this run.
 | U49 | `skill6-v2/U49` | `0f8d63a2` | True | `bbfdb997` | v6.0.28 | verified | 9.0 |
 | U5 | `skill6-v2/U5` | `89229982` | True | `eb00420d` | v6.0.16 | verified (both halves — CC half merged, tag v6.0.16) | - |
 | U50 | `skill6-v2/U50` | `8d0c480a` | True | `28e91598` | v6.0.37 | verified (auto-reconciled, needs test-proof confirmation) | - |
-| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; live "prove the loop" run NOT an operator item — blocked on two Command Center code defects, dispatched as their own build unit; D12/D-HL-3 crown-DECISION ratification is the SOLE remaining operator item) | - |
+| U53 | `skill6-v2/U53` | `c8086c73` | True | `481ff9a2` | v6.0.36 | verified (both-repo code legs merged — CC v6.0.36 + ONB v20.0.57; D12/D-HL-3 RATIFIED BY TREVOR 2026-07-20 — decision gate CLOSED, zero operator items remain; live "prove the loop" run EXECUTED 2026-07-20: defect-1/2 fixes proven live, deploy auto-rolled back cleanly on NEW defect 3 — updater reverts live tracked company config, branding health gate correctly fails — live leg open on defect 3 only, scoped CC build work) | - |
 | U54 | `skill6-v2/U54` | `806b98c8` | True | `7b6642ac` | v6.0.39 | verified (auto-reconciled, needs test-proof confirmation) | - |
 | U55 | `skill6-v2/U55` | `a4c54669` | True | `917ea8f0` | v6.0.12 | verified | 8.9 |
 | U56 | `skill6-v2/U56` | `ce1fb032` | True | `a69f0da4` | v6.0.13 | verified | 9.0 |
