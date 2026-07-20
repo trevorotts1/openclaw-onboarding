@@ -455,6 +455,75 @@ get_current_version() {
   echo ""
 }
 
+# --- BEGIN REAP-DEAD-SKILL-MANIFEST ---
+# ----------------------------------------------------------
+# reap_dead_skill_manifest  (v20.0.74)
+#
+# WHAT: deletes ~/.openclaw/skills/.skill-manifest.json and the orphaned
+# regenerator ~/.openclaw/scripts/generate-manifest.sh from this box.
+#
+# WHY: .skill-manifest.json is a VERSION-STRING inventory written exactly
+# once -- by install.sh Step 11, during a FULL install -- and regenerated
+# by nothing. No updater has ever rewritten it. It therefore freezes at
+# the version of the last full install while the skills underneath keep
+# moving, and reports that stale version forever. Observed on the
+# operator box: manifest onboardingVersion=v20.0.10 against a
+# .onboarding-version stamp of v20.0.68. It manufactures phantom
+# "stale skill" findings that have already burned two audits.
+#
+# NOTHING READS IT. `git grep skill-manifest` over openclaw-onboarding
+# returns 4 hits: its two writers (install.sh:5414,
+# scripts/generate-manifest.sh:6) and two documentation lines
+# (VERSION-ARCHITECTURE.md:26,33). blackceo-command-center returns zero.
+# The live drift gate reads a DIFFERENT, content-hashed file --
+# .onboarding-content-manifest.json, written at the end of this script
+# and consumed by check-updates.sh (A4). So deletion has no functional
+# blast radius; its job is already done correctly, by content, elsewhere.
+#
+# WHY DELETE AND NOT RESTAMP: restamping preserves a version-string
+# oracle, and version strings are precisely what lied -- trees carry a
+# version identical to canonical while their contents differ. A
+# perfectly restamped .skill-manifest.json would have reported every one
+# of those drifted trees as healthy. Restamping costs the same effort as
+# deleting, adds a maintenance obligation on every update path, and
+# converts a noisy-but-noticed red light into a silent green one.
+#
+# WHY HERE: deleting from the repo alone leaves the lying copy armed on
+# every already-provisioned box. The reap runs from main() BEFORE every
+# exit path -- including the "already up to date" non-interactive no-op
+# -- so a box is cleaned even on a run that syncs nothing.
+#
+# SAFETY: idempotent, never fails the run, and matches only these two
+# exact basenames. .onboarding-version and
+# .onboarding-content-manifest.json live in the same directory, are
+# load-bearing, and are never touched.
+# ----------------------------------------------------------
+reap_dead_skill_manifest() {
+  local _rdsm_count=0
+  local _rdsm_path
+
+  for _rdsm_path in \
+      "${SKILLS_DIR:-$HOME/.openclaw/skills}/.skill-manifest.json" \
+      "$HOME/.openclaw/skills/.skill-manifest.json" \
+      "/data/.openclaw/skills/.skill-manifest.json" \
+      "$HOME/Downloads/openclaw-master-files/.skill-manifest.json" \
+      "$HOME/.openclaw/onboarding/.skill-manifest.json" \
+      "$HOME/.openclaw/scripts/generate-manifest.sh" \
+      "/data/.openclaw/scripts/generate-manifest.sh"; do
+    if [ -f "$_rdsm_path" ] && rm -f "$_rdsm_path" 2>/dev/null; then
+      _rdsm_count=$((_rdsm_count + 1))
+    fi
+  done
+
+  if [ "$_rdsm_count" -gt 0 ]; then
+    echo "  🧹 Reaped $_rdsm_count dead .skill-manifest.json artifact(s)"
+    echo "      (superseded by .onboarding-content-manifest.json -- content-hashed, not version-string)"
+  fi
+
+  return 0
+}
+# --- END REAP-DEAD-SKILL-MANIFEST ---
+
 # ----------------------------------------------------------
 # v20.0.73 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
@@ -1172,6 +1241,13 @@ main() {
   SKILLS_DIR=$(discover_skills_dir)
   export SKILLS_DIR
   echo "  📂 Skills directory: $SKILLS_DIR"
+
+  # Reap the dead version-string manifest BEFORE any exit path below (the
+  # pending-flag decline at "Update cancelled" and the already-up-to-date
+  # no-op both exit 0 without reaching the sync). A box must be cleaned even
+  # on a run that copies nothing. See reap_dead_skill_manifest() for why this
+  # file is deleted rather than restamped.
+  reap_dead_skill_manifest
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
