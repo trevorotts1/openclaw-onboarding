@@ -1,3 +1,15 @@
+## [v20.0.72]  -  2026-07-19  -  Fix CI red on main: banned operator-machine path token stripped from U22 evidence files
+
+v20.0.72 — repo-hygiene fix, no functional skill change. The U22-train evidence files
+(`06-ghl-install-pages/evidence/u22-live-tier-proof-2026-07-16/` and `-2026-07-19/`)
+embedded the always-banned operator-machine literal path token inside their recorded
+scratchpad paths, which `qc-assert-no-client-names.sh` hard-fails repo-wide — turning
+both "QC static invariants" and the GHL Tier-2 auth-fallback guard red on `main`.
+Same failure class and same remedy as commit `0fc04bd3` (U77 evidence): the token is
+redacted in-place (`-Users-operator-redacted`); no other evidence content changed.
+Version ripple to v20.0.72 exists solely to satisfy G3 (skill content changed under
+`06-ghl-install-pages/`).
+
 ## [v20.0.71]  -  2026-07-19  -  Skill 6: U22/B-U8 LIVE-PROOF tier paid + receipt branches landed
 
 v20.0.71 — U22/B-U8 LIVE-PROOF tier: the end-to-end operator-box fixture-funnel proof run,

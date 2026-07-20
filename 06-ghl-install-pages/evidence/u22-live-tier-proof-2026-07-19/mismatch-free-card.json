@@ -2,7 +2,7 @@
   "unit": "U22 / B-U8",
   "run_kind": "LIVE-TIER operator-box fixture funnel run (persistent evidence)",
   "run_date": "2026-07-19",
-  "evidence_root": "/private/tmp/claude-501/-Users-blackceomacmini/53dfb9de-0999-4a5e-959d-af894c99d069/scratchpad/u22/evidence-live-run",
+  "evidence_root": "/private/tmp/claude-501/-Users-operator-redacted/53dfb9de-0999-4a5e-959d-af894c99d069/scratchpad/u22/evidence-live-run",
   "bundle_voice_persona_id": "hormozi-100m-offers",
   "bundle_topic_persona_id": "miller-building-storybrand",
   "receipt_source": "threaded",
