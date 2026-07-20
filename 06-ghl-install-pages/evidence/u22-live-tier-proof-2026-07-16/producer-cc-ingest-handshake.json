@@ -1,0 +1,45 @@
+{
+  "unit": "U22 / B-U8",
+  "pays": "B-U7 (U21) — DEFERRED TO U22: the LIVE producer→CC ingest handshake (producer emits, card pins verbatim, selector does not spawn)",
+  "run_kind": "LIVE-TIER operator-box proof: real running blackceo-command-center Next.js dev server (port 4177), real isolated SQLite DB (DATABASE_PATH override, C8-guard-compliant, NOT the live mission-control.db), real HTTP POST from the real openclaw-onboarding cc_board.ingest_task() producer function against /api/tasks/ingest, real production write path (persistPersonaBundle / createTaskCore), real server log inspected for resolvePersonaAndPin presence/absence.",
+  "server": {
+    "repo": "trevorotts1/blackceo-command-center",
+    "head_at_run": "7fbae0b6a840efe109bc448130487279678cf13a (tag v6.0.39, v6.0.20/U22 CC-half confirmed ancestor)",
+    "port": 4177,
+    "database_path_override": "isolated scratch DB, never the live mission-control.db (C8 guard verified: process refused to start until DATABASE_PATH was set explicitly)",
+    "auth_escape_hatch_used": "ALLOW_INSECURE_OPEN_API=true (documented dev/test-only bridge in src/middleware.ts; NODE_ENV=development; explicitly neutered in production per INGEST-05) — used only because WEBHOOK_SECRET/MC_API_TOKEN are not provisioned on this scratch instance; no live/production CC instance touched"
+  },
+  "producer_call": {
+    "function": "06-ghl-install-pages/tools/cc_board.py:ingest_task()",
+    "repo": "trevorotts1/openclaw-onboarding",
+    "head_at_run": "a2c425da5d488b0d00705e26e67a5676da8d8601 (v20.0.35/U22 ONB-half confirmed ancestor)",
+    "voice_persona_id": "hormozi-100m-offers",
+    "topic_persona_id": "miller-building-storybrand",
+    "task_persona_ids": ["hormozi-100m-offers"],
+    "bundle_sha": "u22liveproofsha000000000000000000000000000000000000000000"
+  },
+  "producer_pinned_case": {
+    "task_id": "2127953f-50c1-4a90-9bb9-5ddeb25c03a5",
+    "http_status": 201,
+    "tasks_row_voice_persona_id": "hormozi-100m-offers",
+    "tasks_row_topic_persona_id": "miller-building-storybrand",
+    "task_persona_bundle_row_present": true,
+    "task_persona_bundle_confirm_state": "not_required",
+    "task_persona_bundle_rationale_source": "producer_pinned_ingest",
+    "task_persona_bundle_bundle_sha": "u22liveproofsha000000000000000000000000000000000000000000",
+    "resolvePersonaAndPin_log_lines_for_this_task": 0,
+    "selector_spawned": false,
+    "verbatim_pin_confirmed": true
+  },
+  "control_case_no_persona_fields": {
+    "task_id": "ce591bb6-5d99-4a21-b1a3-a4b3e7fe473a",
+    "http_status": 201,
+    "tasks_row_voice_persona_id": null,
+    "tasks_row_persona_id_after_async_pin": "butow-ultimate-guide-social-media-marketing",
+    "resolvePersonaAndPin_log_line": "[resolvePersonaAndPin] Persona landed for task ce591bb6-5d99-4a21-b1a3-a4b3e7fe473a: butow-ultimate-guide-social-media-marketing",
+    "selector_spawned": true,
+    "byte_identical_to_todays_async_pin_behavior": true
+  },
+  "conclusion": "PAID. Both branches proven on ONE live running server with real HTTP traffic and real DB writes: (a) producer-supplied persona fields → verbatim pin, resolvePersonaAndPin never invoked (0 log lines); (b) absent persona fields → today's async selector pin fires exactly as before (1 log line, persona landed). This is the B-U7/U21 criterion the OPERATOR RULINGS 2026-07-15 doctrine explicitly deferred to U22, now discharged with a dated operator-box receipt.",
+  "run_timestamp": "2026-07-16T12:39:55Z"
+}

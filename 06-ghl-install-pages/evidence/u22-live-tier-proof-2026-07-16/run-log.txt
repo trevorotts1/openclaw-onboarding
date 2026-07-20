@@ -1,0 +1,107 @@
+=== git HEAD at run time ===
+a2c425da5d488b0d00705e26e67a5676da8d8601 2026-07-16 08:30:21 -0400
+v20.0.35 (U22 ONB CODE-MERGE tier tag) confirmed ancestor of HEAD
+
+=== prove_skill6_block_u22.py (fresh run, current merged tree) ===
+[cc_board:skill6] MISSION_CONTROL_URL unset — board disabled; activity not posted.
+==============================================================================
+U22 / B-U8 — Skill-6 persona-unification block, operator-box proof run
+==============================================================================
+  [PASS] B-U1/U15: receipt written to disk
+  [PASS] B-U1/U15: receipt source != absent (threaded rung)
+  [PASS] B-U1/U15: receipt source == threaded
+  [PASS] B-U1/U15: never holds on a confirmed bundle
+  [PASS] B-U2/U16: instantiate_pages produced pages
+  [PASS] B-U2/U16: EVERY page directive guardrail-terminated
+  [PASS] B-U2/U16: ONE task-level voice across every page
+  [PASS] B-U2/U16: distinct per-page directives (different topic/purpose)
+  [PASS] B-U3/U17: persona-selection-log.md written
+  [PASS] B-U3/U17: log voice_persona == bundle voice_persona_id
+  [PASS] B-U3/U17: legacy selected_persona: line present, byte-compatible
+  [PASS] B-U3/U17: {{BLEND_DIRECTIVE}} rendering ends in the guardrail
+  [PASS] B-U5/U19: load_inputs_from_evidence found the active bundle receipt
+  [PASS] B-U5/U19: D4 Persona grounding == 10.0 (bundle-aware voice grounding)
+  [PASS] B-U5/U19: D4 not a hard miss
+  [PASS] B-U5/U19: overall FAB-QC PASS on this fixture (mismatch-free card)
+  [PASS] B-U6/U20: declared voice == used voice (zero persona_mismatch)
+  [PASS] B-U6/U20: report_persona_used_to_card never raises (fail-soft)
+  [PASS] B-U6/U20: report_persona_used_to_card returns bool
+  [PASS] legacy control: no persona-bundle-receipt.json on disk
+  [PASS] legacy control: load_inputs_from_evidence -> persona_bundle == {}
+  [PASS] (c) legacy golden fixture PASSES FAB-QC
+  [PASS] (c) disk-loaded legacy result byte-identical to the in-memory golden
+------------------------------------------------------------------------------
+  [INFO] B-U4/U18 (copy_craft_pool) appears LANDED — re-run this script's companion guard (scripts/guard-fab-qc-gate.sh) to confirm the hard check now fires.
+  [INFO] B-U7/U21 (ingest parity) appears LANDED — this script's declared-vs-used check above already exercises the real bundle-voice equality either way.
+------------------------------------------------------------------------------
+== U22/B-U8 operator-box block proof: ALL LANDED CHECKS PASSED ==
+EXIT CODE: 0
+
+=== persist_u22_proof.py (persistent-evidence wrapper, same production modules) ===
+==============================================================================
+U22 LIVE-TIER — persistent-evidence operator-box proof run
+evidence_root = /private/tmp/claude-501/-Users-blackceomacmini/99fa9f44-783c-445c-ad88-4a1c119bbb19/scratchpad/u22-live/evidence-live-run
+==============================================================================
+  [PASS] B-U1/U15: receipt written to disk
+  [PASS] B-U1/U15: receipt source != absent (threaded rung)
+  [PASS] B-U1/U15: receipt source == threaded
+  [PASS] B-U1/U15: never holds on a confirmed bundle
+  [PASS] B-U2/U16: instantiate_pages produced pages
+  [PASS] B-U2/U16: EVERY page directive guardrail-terminated
+  [PASS] B-U2/U16: ONE task-level voice across every page
+  [PASS] B-U2/U16: distinct per-page directives (different topic/purpose)
+  [PASS] B-U3/U17: persona-selection-log.md written
+  [PASS] B-U3/U17: log voice_persona == bundle voice_persona_id
+  [PASS] B-U5/U19: D4 Persona grounding == 10.0
+  [PASS] B-U5/U19: overall FAB-QC PASS (mismatch-free card)
+  [PASS] B-U6/U20: declared voice == used voice (zero persona_mismatch)
+------------------------------------------------------------------------------
+PER-PAGE BLEND RECEIPTS:
+[
+  {
+    "page": "optin",
+    "path": "optin",
+    "order": 1,
+    "voice_persona_id": "hormozi-100m-offers",
+    "topic_persona_id": "brunson-marketing-secrets-blackbook",
+    "declared_bundle_voice_persona_id": "hormozi-100m-offers",
+    "guardrail_terminated": true,
+    "persona_mismatch": false,
+    "blend_directive_sha256_len": 667
+  },
+  {
+    "page": "thankyou",
+    "path": "thankyou",
+    "order": 2,
+    "voice_persona_id": "hormozi-100m-offers",
+    "topic_persona_id": "brunson-marketing-secrets-blackbook",
+    "declared_bundle_voice_persona_id": "hormozi-100m-offers",
+    "guardrail_terminated": true,
+    "persona_mismatch": false,
+    "blend_directive_sha256_len": 666
+  }
+]
+------------------------------------------------------------------------------
+MISMATCH-FREE CARD:
+{
+  "unit": "U22 / B-U8",
+  "run_kind": "LIVE-TIER operator-box fixture funnel run (persistent evidence)",
+  "evidence_root": "/private/tmp/claude-501/-Users-blackceomacmini/99fa9f44-783c-445c-ad88-4a1c119bbb19/scratchpad/u22-live/evidence-live-run",
+  "bundle_voice_persona_id": "hormozi-100m-offers",
+  "bundle_topic_persona_id": "miller-building-storybrand",
+  "receipt_source": "threaded",
+  "receipt_hold": false,
+  "pages_total": 2,
+  "pages_guardrail_terminated": 2,
+  "persona_mismatch_events": 0,
+  "log_voice_equals_bundle_voice": true,
+  "fab_qc_d4_score": 10.0,
+  "fab_qc_overall_passed": true,
+  "declared_voice": "hormozi-100m-offers",
+  "used_voice": "hormozi-100m-offers",
+  "mismatch_free": true,
+  "all_checks_ok": true
+}
+------------------------------------------------------------------------------
+== RESULT: ALL CHECKS PASSED ==
+EXIT CODE: 0
