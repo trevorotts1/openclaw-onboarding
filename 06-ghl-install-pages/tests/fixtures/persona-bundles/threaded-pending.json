@@ -1,0 +1,23 @@
+{
+  "_comment": "B-U8/U22 fixture — a threaded bundle whose audience confirmation is still PENDING. On a CC-connected run (threaded implies CC-dispatched, per persona_bundle_ladder.py) this must HOLD, never build silently.",
+  "persona_id": "wiebe-copy-hackers",
+  "voice": {
+    "audience_persona": {"id": "wiebe-copy-hackers", "why": "fixture: SaaS founder audience, unconfirmed"},
+    "topic_persona": {"id": "miller-building-storybrand", "why": "fixture: onboarding-flow topic"},
+    "collapsed": false,
+    "collapsed_persona_id": null
+  },
+  "resolved_audience": {
+    "source": "inferred",
+    "candidates": ["SaaS founders", "product-led growth teams"],
+    "confidence": 0.62,
+    "label": "SaaS founders (unconfirmed)",
+    "id": null
+  },
+  "confirm_required": true,
+  "blend_directive": "Write in Wiebe's VOICE while carrying Miller's EXPERTISE on onboarding flow. STYLE-INSPIRED, NEVER IMPERSONATION.",
+  "task_personas": [
+    {"seq": 1, "persona_id": "wiebe-copy-hackers", "why": "fixture: primary voice, awaiting confirm"}
+  ],
+  "catalog_version": "1.4"
+}

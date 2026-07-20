@@ -1,0 +1,14 @@
+{
+  "_comment": "B-U8/U22 fixture — a CC-fetched bundle (flat shape) with confirmation still pending. cc_fetch implies CC-connected -> must HOLD, never build silently, never degrade.",
+  "voice_persona_id": "bly-copywriters-handbook",
+  "topic_persona_id": "hopkins-scientific-advertising",
+  "audience_id": null,
+  "audience_label": "mid-market operations directors (unconfirmed)",
+  "audience_source": "inferred",
+  "voice_collapsed": false,
+  "confirm_required": true,
+  "blend_directive": "Write in Bly's VOICE while carrying Hopkins' EXPERTISE on direct-response claims. STYLE-INSPIRED, NEVER IMPERSONATION.",
+  "task_personas": [
+    {"seq": 1, "persona_id": "bly-copywriters-handbook", "why": "fixture: CC-fetched voice, awaiting confirm"}
+  ]
+}

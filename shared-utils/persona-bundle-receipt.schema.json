@@ -1,0 +1,90 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "persona-bundle-receipt.schema.json",
+  "title": "Persona Bundle Acquisition Receipt (B-U1/U15, extended by B-U8/U22)",
+  "description": "The canonical shape routing/persona-bundle-receipt.json must carry — written by 06-ghl-install-pages/tools/persona_bundle_ladder.py::resolve_persona_bundle() and read by shared-utils/fab_qc.py's D4 v2 bundle-aware voice grounding (B-U5/U19). Validated offline by shared-utils/persona_bundle_receipt_schema.py; enforced in CI by scripts/guard-fab-qc-gate.sh (B-U8/U22 bundle-receipt schema check).",
+  "type": "object",
+  "required": [
+    "task_id",
+    "source",
+    "bundle_sha",
+    "voice_persona_id",
+    "topic_persona_id",
+    "task_personas",
+    "confirm_state",
+    "degradation",
+    "hold",
+    "generated_at"
+  ],
+  "additionalProperties": true,
+  "properties": {
+    "task_id": {
+      "type": ["string", "null"],
+      "description": "the task/board id the bundle was acquired for, or null when unknown"
+    },
+    "source": {
+      "type": "string",
+      "enum": ["threaded", "cc", "local", "absent"],
+      "description": "first-hit-wins ladder rung: threaded (caller supplied) -> cc (Command Center fetch) -> local (--blend selector) -> absent (no bundle anywhere, legacy no-op)"
+    },
+    "bundle_sha": {
+      "type": ["string", "null"],
+      "description": "sha256[:16] of the raw acquired bundle; null when source=absent"
+    },
+    "voice_persona_id": {
+      "type": ["string", "null"],
+      "description": "the resolved VOICE persona id D4 v2 grounds on when the receipt is ACTIVE (source != absent)"
+    },
+    "topic_persona_id": {
+      "type": ["string", "null"]
+    },
+    "task_personas": {
+      "type": "array",
+      "description": "ordered task-slot persona records; empty array (never null) when none were carried"
+    },
+    "confirm_state": {
+      "type": "string",
+      "enum": ["confirmed", "pending", "n/a"],
+      "description": "n/a only when source=absent; pending only when the bundle's audience confirmation has not landed"
+    },
+    "degradation": {
+      "type": ["string", "null"],
+      "description": "non-null ONLY on a standalone (no CC connection) run with confirm_state=pending — names the neutral topic-only house-voice degradation; never silent"
+    },
+    "hold": {
+      "type": "boolean",
+      "description": "true ONLY when confirm_state=pending on a CC-connected run (source in threaded/cc); a HOLD and a degradation are mutually exclusive"
+    },
+    "generated_at": {
+      "type": "string",
+      "description": "UTC timestamp, %Y-%m-%dT%H:%M:%SZ"
+    }
+  },
+  "allOf": [
+    {
+      "description": "source=absent <=> confirm_state=n/a (the legacy no-op pairing)",
+      "if": {"properties": {"source": {"const": "absent"}}},
+      "then": {"properties": {"confirm_state": {"const": "n/a"}, "hold": {"const": false}}}
+    },
+    {
+      "description": "hold=true only ever co-occurs with confirm_state=pending",
+      "if": {"properties": {"hold": {"const": true}}},
+      "then": {"properties": {"confirm_state": {"const": "pending"}}}
+    },
+    {
+      "description": "degradation is named only when confirm_state=pending (never on confirmed/n/a)",
+      "if": {"properties": {"degradation": {"not": {"type": "null"}}}},
+      "then": {"properties": {"confirm_state": {"const": "pending"}}}
+    },
+    {
+      "description": "hold and degradation are mutually exclusive (never both truthy on the same receipt)",
+      "not": {
+        "properties": {
+          "hold": {"const": true},
+          "degradation": {"not": {"type": "null"}}
+        },
+        "required": ["hold", "degradation"]
+      }
+    }
+  ]
+}

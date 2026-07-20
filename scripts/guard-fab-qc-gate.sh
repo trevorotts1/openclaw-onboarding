@@ -25,6 +25,9 @@ INSTR="$ROOT/44-convert-and-flow-operator/INSTRUCTIONS.md"
 PRODUCER="$ROOT/shared-utils/fab_artifact.py"
 CROSSWALK_PY="$ROOT/shared-utils/persona_crosswalk.py"
 CROSSWALK_JSON="$ROOT/shared-utils/persona-crosswalk.json"
+BUNDLE_LADDER="$ROOT/06-ghl-install-pages/tools/persona_bundle_ladder.py"
+BUNDLE_SCHEMA="$ROOT/shared-utils/persona-bundle-receipt.schema.json"
+BUNDLE_SCHEMA_PY="$ROOT/shared-utils/persona_bundle_receipt_schema.py"
 PAGE_QC="$ROOT/shared-utils/page_qc.py"
 COMMS_QC_TEST="$ROOT/tests/unit/u117-comms-qc-conformance.test.py"
 COMMS_QC_GUARD_TEST="$ROOT/tests/unit/u117-comms-qc-guard.test.sh"
@@ -87,6 +90,56 @@ sys.exit(0 if len(pool) > 0 else 1)
   else
     bad "copy_craft_pool MISSING or EMPTY in persona-crosswalk.json (D5/B-U4 copy-craft task-slot pool deleted/regressed)"
   fi
+fi
+
+# 1e. B-U8/U22 — bundle-receipt SCHEMA CHECK. The B-U1/U15 acquisition ladder
+#     ALWAYS writes routing/persona-bundle-receipt.json; B-U5/U19's FAB-QC D4
+#     v2 reads it. This proves the schema file + its stdlib-only validator
+#     both exist, the validator's own self-test passes, AND a REAL receipt
+#     produced by the ladder's own self-test run (not a hand fixture) still
+#     validates clean — so a future edit that silently drops/widens a field
+#     is caught here, not as a downstream FAB-QC misfire.
+[ -f "$BUNDLE_SCHEMA" ] && ok "bundle-receipt schema present: shared-utils/persona-bundle-receipt.schema.json" \
+                         || bad "MISSING shared-utils/persona-bundle-receipt.schema.json (B-U8/U22 schema check)"
+[ -f "$BUNDLE_SCHEMA_PY" ] && ok "bundle-receipt schema validator present: shared-utils/persona_bundle_receipt_schema.py" \
+                           || bad "MISSING shared-utils/persona_bundle_receipt_schema.py (B-U8/U22 schema check)"
+if [ -f "$BUNDLE_SCHEMA_PY" ]; then
+  if python3 "$BUNDLE_SCHEMA_PY" --self-test >/dev/null 2>&1; then
+    ok "bundle-receipt schema validator self-test passes (required keys, enums, cross-field rules)"
+  else
+    bad "bundle-receipt schema validator self-test FAILED (persona_bundle_receipt_schema.py regressed)"
+  fi
+fi
+if [ -f "$BUNDLE_LADDER" ] && [ -f "$BUNDLE_SCHEMA_PY" ]; then
+  BUNDLE_TMPDIR="$(mktemp -d)"
+  if python3 - "$BUNDLE_LADDER" "$BUNDLE_SCHEMA_PY" "$BUNDLE_TMPDIR" <<'PY' >/dev/null 2>&1
+import importlib.util, os, sys
+ladder_path, schema_py_path, tmpdir = sys.argv[1], sys.argv[2], sys.argv[3]
+
+def _load(name, path):
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+ladder = _load("persona_bundle_ladder", ladder_path)
+schema_mod = _load("persona_bundle_receipt_schema", schema_py_path)
+
+task = {"id": "guard-selftest", "persona_bundle": {
+    "voice_persona_id": "hormozi-100m-offers", "topic_persona_id": "miller-storybrand",
+    "confirm_required": False, "task_personas": [{"seq": 1, "persona_id": "hormozi-100m-offers"}],
+}}
+receipt = ladder.resolve_persona_bundle(task, tmpdir)
+ok, errors = schema_mod.validate_receipt(receipt)
+sys.exit(0 if ok else 1)
+PY
+  then
+    ok "a REAL receipt from persona_bundle_ladder's own resolve_persona_bundle() validates against the schema"
+  else
+    bad "a REAL persona_bundle_ladder receipt FAILED schema validation (ladder/schema drifted apart)"
+  fi
+  rm -rf "$BUNDLE_TMPDIR"
 fi
 
 # 2. Threshold == 8.5 in the scorer and the rubric (and not lowered).

@@ -1,0 +1,14 @@
+{
+  "_comment": "B-U8/U22 fixture — the shape cc_board.fetch_persona_bundle() returns: CC's FLAT task_persona_bundle mirror columns (voice_persona_id, topic_persona_id, audience_id, audience_label, audience_source, voice_collapsed, blend_directive) per persona_bundle_ladder.py's _normalize_bundle docstring, shape (a).",
+  "voice_persona_id": "cialdini-influence",
+  "topic_persona_id": "hopkins-scientific-advertising",
+  "audience_id": "cc-audience-42",
+  "audience_label": "enterprise procurement leads",
+  "audience_source": "operator_confirmed",
+  "voice_collapsed": false,
+  "confirm_required": false,
+  "blend_directive": "Write in Cialdini's VOICE while carrying Hopkins' EXPERTISE on data-led advertising claims. STYLE-INSPIRED, NEVER IMPERSONATION.",
+  "task_personas": [
+    {"seq": 1, "persona_id": "cialdini-influence", "why": "fixture: CC-fetched primary voice"}
+  ]
+}
