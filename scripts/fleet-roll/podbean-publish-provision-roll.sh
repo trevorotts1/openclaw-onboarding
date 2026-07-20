@@ -54,14 +54,40 @@
 #      "ssh_target":"local",
 #      "identity":{"last_name":"...","email":"...","first_name":"...",
 #                  "podcast_id":"...","complete":true}},
-#     {"name":"client-box-01","role":"client","platform":"vps",
-#      "ssh_target":"user@host",
+#     {"name":"openclaw-xxxx","role":"client","platform":"vps",
+#      "ssh_target":"root@<ip>",
+#      "container":"openclaw-xxxx-openclaw-1","compose_dir":"/root/openclaw",
 #      "identity":{"last_name":"...","email":"...","first_name":"",
 #                  "podcast_id":"","complete":true}}
 #   ]
 #   ssh_target "local" runs against THIS box (used for the operator box).
 #   An optional per-entry "home" overrides the box home root (sandbox/test
 #   use only; production entries omit it and get $HOME).
+#
+# TRANSPORT (platform-aware; the VPS gap was a QC finding):
+#   mac  : payload over `ssh 'sh -s'`, writes $HOME/.openclaw directly.
+#   vps  : plain ssh would write the HOST home — NOT the gateway's store, which
+#          lives at /data/.openclaw INSIDE the Docker container. The payload
+#          instead rides base64 inside a host wrapper that (1) runs it in the
+#          container via `docker exec -i -u node`, (2) mirrors the values into
+#          the host compose env_file, and (3) on change runs
+#          `docker compose up -d --force-recreate` (compose only reads the
+#          env_file at create; a bare restart keeps the old env). Roll in
+#          place, force-recreate, NEVER re-init credentials — same pattern the
+#          production-proven rescue-webhook propagation uses.
+#          Manifest: "compose_dir" is REQUIRED for a vps --apply; "container"
+#          defaults to "<name>-openclaw-1".
+#
+# RESTART (deliberate, verified decision — not an accident of omission):
+#   openclaw.json env.vars reach the gateway runtime ONLY at gateway start, the
+#   gateway never reads secrets/.env, and podbean_publish.sh resolves the proxy
+#   pair from PROCESS env — so a freshly provisioned box would keep silently
+#   falling back to broker mode until its next restart. Therefore: when (and
+#   only when) a box actually CHANGED, mac boxes get a gateway restart
+#   (openclaw CLI, launchctl kickstart fallback) and vps boxes get the
+#   force-recreate above. OK_ALREADY boxes are NEVER restarted, so idempotent
+#   re-runs disturb nothing. --no-restart skips both (box grades PARTIAL, not
+#   OK — a changed-but-not-restarted box is not a proven box).
 #
 # USAGE:
 #   bash scripts/fleet-roll/podbean-publish-provision-roll.sh \
@@ -81,6 +107,8 @@
 #   --include-clients    allow role="client" boxes in --apply (still requires
 #                        an operator box to pass earlier in the same run)
 #   --no-standing-probe  skip the podbean_publish.sh --dry-run validation leg
+#   --no-restart         skip the changed-box gateway restart / force-recreate
+#                        (changed boxes then grade PARTIAL, never OK)
 #   --log-file <f>       per-box ledger log (default: $P18_LOG_FILE or
 #                        ~/.openclaw/logs/s58-u18-provision-roll.log)
 #
@@ -108,13 +136,14 @@ APPLY=0
 LOCAL=0
 INCLUDE_CLIENTS=0
 STANDING_PROBE=1
+NO_RESTART=0
 BOXES_FILE="${P18_MANIFEST:-$HOME/.openclaw/secrets/s58-u18-provision-manifest.json}"
 LOG_FILE="${P18_LOG_FILE:-$HOME/.openclaw/logs/s58-u18-provision-roll.log}"
 BOX_FILTERS=""
 
 err() { printf '%s\n' "$SCRIPT_NAME: $*" >&2; }
 die() { err "$*"; exit 1; }
-usage() { sed -n '2,98p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+usage() { sed -n '2,/^set -u/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0; }
 shquote() { python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$1"; }
 
 while [ $# -gt 0 ]; do
@@ -124,6 +153,7 @@ while [ $# -gt 0 ]; do
     --local)             LOCAL=1; shift ;;
     --include-clients)   INCLUDE_CLIENTS=1; shift ;;
     --no-standing-probe) STANDING_PROBE=0; shift ;;
+    --no-restart)        NO_RESTART=1; shift ;;
     --box)               BOX_FILTERS="$BOX_FILTERS $2"; shift 2 ;;
     --boxes-file)        BOXES_FILE="$2"; shift 2 ;;
     --log-file)          LOG_FILE="$2"; shift 2 ;;
@@ -152,8 +182,8 @@ fi
 TOKEN_LOCAL_STATE="NOT-SET"; [ -n "$PUBLISH_TOKEN" ] && TOKEN_LOCAL_STATE="SET"
 
 # ---- parse the manifest into pipe-delimited box lines -------------------------
-# Fields: name | role | platform | ssh_target | home | complete |
-#         last_name | email | first_name | podcast_id
+# Fields: name | role | platform | ssh_target | home | container | compose_dir |
+#         complete | last_name | email | first_name | podcast_id
 # PIPE, NOT TAB: tab is IFS whitespace, so `read` COLLAPSES consecutive tabs and
 # an empty optional field (home, first_name, podcast_id) silently shifts every
 # following column. A non-whitespace delimiter preserves empty fields exactly.
@@ -181,6 +211,8 @@ for r in rows:
         clean(r.get("platform", "")),
         clean(r.get("ssh_target", "")),
         clean(r.get("home", "")),
+        clean(r.get("container", "")),
+        clean(r.get("compose_dir", "")),
         "1" if ident.get("complete") else "0",
         clean(ident.get("last_name", "")),
         clean(ident.get("email", "")),
@@ -201,7 +233,8 @@ ORDERED_TSV="$(printf '%s\n' "$MANIFEST_TSV" | awk -F'|' '{ if ($2=="operator") 
 emit_box_script() {
   cat <<'PAYLOAD_EOF'
 #!/bin/sh
-# S58-U18 per-box payload. Modes: probe (read-only) | inject (provision+prove).
+# S58-U18 per-box payload. Modes: probe (read-only) | inject (provision+prove)
+# | hostenv (VPS host leg: mirror values into the docker compose env_file).
 # Contract: print ONLY labels, variable NAMES, SET/NOT-SET/WRITTEN/ALREADY and
 # exit codes. NEVER print a value.
 umask 077
@@ -216,9 +249,13 @@ secenv_state() { # name -> SET|NOT-SET
   [ -f "$SECENV" ] && grep -q "^$1=" "$SECENV" 2>/dev/null && { echo SET; return; }
   echo NOT-SET
 }
-ocjson_state() { # name -> SET|NOT-SET|NOFILE|UNREADABLE
+ocjson_state() { # name -> SET|NOT-SET|NOFILE|UNREADABLE|NOTOOL
+  # python3 preferred; jq fallback for Docker containers whose node image may
+  # not ship python3 (the rescue-webhook propagation used jq in-container).
+  # Neither tool -> NOTOOL, which validation treats as not-proven (fail-closed).
   [ -f "$OCJSON" ] || { echo NOFILE; return; }
-  OCJSON="$OCJSON" V="$1" python3 - <<'PY' 2>/dev/null || { echo UNREADABLE; return; }
+  if command -v python3 >/dev/null 2>&1; then
+    OCJSON="$OCJSON" V="$1" python3 - <<'PY' 2>/dev/null || { echo UNREADABLE; return; }
 import json, os
 try:
     d = json.load(open(os.environ["OCJSON"]))
@@ -226,6 +263,12 @@ except Exception:
     d = {}
 print("SET" if os.environ["V"] in ((d.get("env", {}) or {}).get("vars", {}) or {}) else "NOT-SET")
 PY
+  elif command -v jq >/dev/null 2>&1; then
+    _jv="$(jq -r --arg k "$1" '.env.vars[$k] // empty' "$OCJSON" 2>/dev/null)" || { echo UNREADABLE; return; }
+    if [ -n "$_jv" ]; then echo SET; else echo NOT-SET; fi
+  else
+    echo NOTOOL
+  fi
 }
 
 write_env() { # name value -> prints label only; install.sh exact-line no-op, but the
@@ -259,7 +302,8 @@ write_ocjson() { # name value -> prints label only. Differences from install.sh'
   #   * FAIL-CLOSED on a missing file: a live box without openclaw.json is
   #     broken; provisioning half a box and reporting OK would be a false-done.
   [ -f "$OCJSON" ] || { echo "ocjson:$1=NOFILE"; return 1; }
-  _label="$(OCJSON="$OCJSON" VAR="$1" VAL="$2" python3 - <<'PY' 2>/dev/null
+  if command -v python3 >/dev/null 2>&1; then
+    _label="$(OCJSON="$OCJSON" VAR="$1" VAL="$2" python3 - <<'PY' 2>/dev/null
 import json, os
 p, v, val = os.environ["OCJSON"], os.environ["VAR"], os.environ["VAL"]
 try:
@@ -279,6 +323,22 @@ else:
     print("WRITTEN")
 PY
 )"
+  elif command -v jq >/dev/null 2>&1; then
+    # container fallback; jq errors on unparseable json -> empty tmp -> ERROR
+    _cur="$(jq -r --arg k "$1" '.env.vars[$k] // empty' "$OCJSON" 2>/dev/null)"
+    if [ "$_cur" = "$2" ]; then
+      _label="ALREADY"
+    elif jq --arg k "$1" --arg v "$2" \
+        '.env = (.env // {}) | .env.vars = (.env.vars // {}) | .env.vars[$k] = $v' \
+        "$OCJSON" > "$OCJSON.tmp.s58u18" 2>/dev/null && [ -s "$OCJSON.tmp.s58u18" ]; then
+      mv "$OCJSON.tmp.s58u18" "$OCJSON" && _label="WRITTEN" || _label="ERROR"
+    else
+      rm -f "$OCJSON.tmp.s58u18"
+      _label="ERROR"
+    fi
+  else
+    _label="NOTOOL"
+  fi
   [ -n "$_label" ] || _label="ERROR"
   [ "$_label" = "WRITTEN" ] && CHANGED=1
   echo "ocjson:$1=$_label"
@@ -302,6 +362,47 @@ if [ "${P18_MODE:-probe}" = "probe" ]; then
   exit 0
 fi
 
+# ---- hostenv mode (VPS host leg) ---------------------------------------------
+# Mirrors the five values into the docker compose env_file on the HOST, so the
+# container process env carries them from the next force-recreate onward
+# (compose reads the env_file only at container create). Same exact-line
+# idempotency and atomic tmp+mv as write_env. Values that are not dotenv-safe
+# verbatim (spaces, quotes, '#') are double-quoted with escapes — dotenv-style.
+if [ "$P18_MODE" = "hostenv" ]; then
+  [ -n "${S58V_URL:-}" ] || { echo "result=FAILED reason=hostenv_requires_inject_payload"; exit 1; }
+  HF="${P18_HOSTENV_FILE:-}"
+  [ -n "$HF" ] || { echo "result=FAILED reason=hostenv_file_unset"; exit 1; }
+  fmt_dotenv() {
+    case "$1" in
+      ''|*[!A-Za-z0-9_@.:/+-]*) printf '"%s"' "$(printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;;
+      *) printf '%s' "$1" ;;
+    esac
+  }
+  hostenv_write() { # name value -> prints label only
+    _line="$1=$(fmt_dotenv "$2")"
+    [ -f "$HF" ] || : > "$HF" || return 1
+    if grep -qxF "$_line" "$HF" 2>/dev/null; then echo "hostenv:$1=ALREADY"; return 0; fi
+    cp -p "$HF" "$HF.bak.s58u18" 2>/dev/null || :
+    _hrc=0
+    grep -v "^$1=" "$HF" > "$HF.tmp.s58u18" 2>/dev/null || _hrc=$?
+    if [ "$_hrc" -ge 2 ]; then rm -f "$HF.tmp.s58u18"; return 1; fi
+    printf '%s\n' "$_line" >> "$HF.tmp.s58u18" || { rm -f "$HF.tmp.s58u18"; return 1; }
+    mv "$HF.tmp.s58u18" "$HF" || { rm -f "$HF.tmp.s58u18"; return 1; }
+    echo "hostenv:$1=WRITTEN"
+    CHANGED=1
+    return 0
+  }
+  hostenv_write PODBEAN_PUBLISH_WEBHOOK_URL "$S58V_URL"  || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  hostenv_write PODBEAN_PUBLISH_TOKEN "$S58V_TOKEN"      || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  hostenv_write PODCAST_CLIENT_LAST_NAME "$S58V_LAST"    || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  hostenv_write PODCAST_CLIENT_EMAIL "$S58V_EMAIL"       || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  if [ -n "${S58V_FIRST:-}" ]; then
+    hostenv_write PODCAST_CLIENT_FIRST_NAME "$S58V_FIRST" || { echo "result=FAILED reason=hostenv_write_failed"; exit 1; }
+  fi
+  echo "hostenv_changed=$([ "$CHANGED" = "1" ] && echo yes || echo no)"
+  exit 0
+fi
+
 # ---- inject mode -------------------------------------------------------------
 TS="$(date -u +%Y%m%dT%H%M%SZ)"
 BK="$BOX_HOME/.openclaw/backups/s58-u18-$TS"
@@ -317,6 +418,38 @@ write_pair() { # name value
   write_env "$1" "$2" || { echo "result=FAILED reason=env_write_failed"; exit 1; }
   write_ocjson "$1" "$2" || { echo "result=FAILED reason=ocjson_write_failed"; exit 1; }
   return 0
+}
+
+do_restart() { # gateway restart on THIS box, only when something changed.
+  # WHY (verified live, not assumed): the gateway never reads secrets/.env, and
+  # podbean_publish.sh takes the proxy pair from PROCESS env, which the gateway
+  # populates from openclaw.json env.vars ONLY at start. Without a restart a
+  # freshly provisioned box passes every SET check yet still publishes in
+  # broker-fallback mode. OK_ALREADY (changed=no) never restarts.
+  # VPS boxes bake P18_RESTART=0: their restart is the wrapper's
+  # docker compose force-recreate, never an in-container restart.
+  [ "$CHANGED" = "1" ] || { echo "restart=not_needed"; return 0; }
+  case "${P18_RESTART:-1}" in
+    external) echo "restart=deferred_to_wrapper"; return 0 ;;  # VPS: wrapper force-recreates
+    1) : ;;
+    *) echo "restart=skipped_by_flag"; return 1 ;;             # --no-restart => PARTIAL
+  esac
+  if [ -n "${P18_HOME:-}" ]; then echo "restart=skipped_sandbox_home"; return 0; fi
+  PATH="$HOME/.local/bin:$HOME/.npm-global/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+  if command -v openclaw >/dev/null 2>&1; then
+    openclaw gateway restart >/dev/null 2>&1
+    _rrc=$?
+  else
+    launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" >/dev/null 2>&1
+    _rrc=$?
+    if [ "$_rrc" = "125" ] || [ "$_rrc" = "126" ]; then
+      # some boxes reject kickstart; the KeepAlive=true plist restarts on stop
+      launchctl stop ai.openclaw.gateway >/dev/null 2>&1
+      _rrc=$?
+    fi
+  fi
+  echo "restart=attempted rc=$_rrc"
+  [ "$_rrc" = "0" ]
 }
 
 # Required four (values embedded by the generator header as S58V_*).
@@ -347,6 +480,7 @@ if [ -n "$MISSING" ]; then
   exit 1
 fi
 if [ -n "$OCJ_MISSING" ]; then
+  do_restart || :  # align runtime with the stores even on a PARTIAL box
   echo "result=PARTIAL reason=ocjson_not_proven"
   exit 4
 fi
@@ -354,13 +488,18 @@ fi
 # Standing dry-run (U13 reachability; publishes nothing).
 if [ "${P18_STANDING:-1}" != "1" ]; then
   echo "dryrun=skipped reason=disabled"
-  echo "result=OK"
-  exit 0
+  if do_restart; then
+    echo "result=OK"
+    exit 0
+  fi
+  echo "result=PARTIAL reason=changed_but_not_restarted"
+  exit 4
 fi
 _pm=$(grep -c PODBEAN_PUBLISH_WEBHOOK_URL "$SKILL" 2>/dev/null)
 [ -n "$_pm" ] || _pm=0
 if [ ! -f "$SKILL" ] || [ "$_pm" = "0" ]; then
   echo "dryrun=skipped reason=skill_script_missing_or_no_proxy_mode"
+  do_restart || :  # align runtime with the stores even on a PARTIAL box
   echo "result=PARTIAL reason=values_set_but_dry_run_not_runnable"
   exit 4
 fi
@@ -373,6 +512,7 @@ V_PID=$(get_secenv PODBEAN_PODCAST_ID)
 [ -n "$V_PID" ] || V_PID="${S58V_PODCAST_ID:-}"
 if [ -z "$V_PID" ]; then
   echo "dryrun=skipped reason=no_channel_id_on_box_or_roster"
+  do_restart || :  # align runtime with the stores even on a PARTIAL box
   echo "result=PARTIAL reason=values_set_but_channel_id_unknown"
   exit 4
 fi
@@ -386,8 +526,12 @@ DRYRC=$?
 GS="$(printf '%s\n' "$DRYOUT" | sed -n 's/.*"good_standing":\([a-z]*\).*/\1/p' | head -n 1)"
 echo "dryrun_exit=$DRYRC good_standing=${GS:-unknown}"
 if [ "$DRYRC" = "0" ]; then
-  echo "result=OK"
-  exit 0
+  if do_restart; then
+    echo "result=OK"
+    exit 0
+  fi
+  echo "result=PARTIAL reason=changed_but_not_restarted"
+  exit 4
 fi
 echo "result=FAILED reason=standing_dry_run_failed"
 exit 1
@@ -423,14 +567,118 @@ for name, val in [("S58V_LAST", last), ("S58V_EMAIL", email),
                   ("S58V_URL", url), ("S58V_TOKEN", token)]:
     print("%s=%s" % (name, shlex.quote(val)))
 PYEOF
-      printf 'P18_MODE=inject\n'
+      # The override hook lets the VPS wrapper re-run the SAME payload file in
+      # hostenv mode on the host after the docker-exec container leg.
+      printf 'P18_MODE="${P18_MODE_OVERRIDE:-inject}"\n'
     else
-      printf 'P18_MODE=probe\n'
+      printf 'P18_MODE="${P18_MODE_OVERRIDE:-probe}"\n'
     fi
     [ "$STANDING_PROBE" = "1" ] || printf 'P18_STANDING=0\n'
-    [ -z "$B_HOME" ] || printf 'P18_HOME=%s\n' "$(python3 -c 'import shlex,sys; print(shlex.quote(sys.argv[1]))' "$B_HOME")"
+    # In-payload restart is for mac/local boxes only; a VPS box restarts via the
+    # wrapper's force-recreate, never from inside its own container.
+    if [ "$NO_RESTART" = "1" ]; then
+      printf 'P18_RESTART=0\n'
+    elif [ "$B_PLATFORM" = "vps" ]; then
+      printf 'P18_RESTART=external\n'
+    fi
+    [ -z "$B_HOME" ] || printf 'P18_HOME=%s\n' "$(shquote "$B_HOME")"
     emit_box_script
   } > "$TMP_PAYLOAD" || die "could not build payload"
+}
+
+run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
+  # Plain `ssh 'sh -s'` writes the HOST home, which is NOT the gateway store —
+  # that lives at /data/.openclaw INSIDE the container. The payload rides
+  # base64 inside a generated host wrapper (stdin-only; never argv):
+  #   1. docker exec -i -u node <container> sh -s   (container files, HOME=/data)
+  #   2. same payload re-run on the host in hostenv mode -> compose env_file
+  #   3. anything WRITTEN => docker compose up -d --force-recreate (compose
+  #      reads the env_file only at create; a bare restart keeps the old env),
+  #      then prove the container came back. Roll in place, force-recreate,
+  #      NEVER re-init credentials — the propagate-rescue-webhook pattern.
+  _pb64="$(base64 < "$TMP_PAYLOAD" | tr -d '\n')"
+  _wrap="$(mktemp "${TMPDIR:-/tmp}/s58u18-wrap.XXXXXX.sh")" || die "mktemp failed"
+  chmod 600 "$_wrap"
+  {
+    printf 'set -u\numask 077\n'
+    printf 'CONTAINER=%s\n' "$(shquote "$B_CONTAINER")"
+    printf 'COMPOSE_DIR=%s\n' "$(shquote "$B_COMPOSE")"
+    printf 'MODE=%s\n' "$(shquote "$1")"
+    printf 'DO_RECREATE=%s\n' "$([ "$NO_RESTART" = "1" ] && echo 0 || echo 1)"
+    printf 'PB64=%s\n' "$(shquote "$_pb64")"
+    cat <<'WRAP_EOF'
+TMP="$(mktemp /tmp/s58u18-p.XXXXXX)" || exit 97
+chmod 600 "$TMP" 2>/dev/null || :
+printf '%s' "$PB64" | base64 -d > "$TMP" || { rm -f "$TMP"; exit 97; }
+COUT="$(docker exec -i -u node -e P18_HOME=/data "$CONTAINER" sh -s < "$TMP")"
+CRC=$?
+printf '%s\n' "$COUT"
+if [ "$CRC" != "0" ]; then rm -f "$TMP"; exit "$CRC"; fi
+HOUT=""
+if [ "$MODE" = "inject" ]; then
+  HOUT="$(P18_MODE_OVERRIDE=hostenv P18_HOSTENV_FILE="$COMPOSE_DIR/.env" sh "$TMP")"
+  HRC=$?
+  printf '%s\n' "$HOUT"
+  if [ "$HRC" != "0" ]; then
+    rm -f "$TMP"
+    echo "result=PARTIAL reason=hostenv_write_failed_on_host"
+    exit 4
+  fi
+fi
+rm -f "$TMP"
+if [ "$MODE" = "probe" ]; then
+  # host-side survey leg: compose env_file SET/NOT-SET by NAME only
+  for _v in PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT_LAST_NAME PODCAST_CLIENT_EMAIL PODCAST_CLIENT_FIRST_NAME; do
+    if [ -n "$COMPOSE_DIR" ] && [ -f "$COMPOSE_DIR/.env" ] && grep -q "^$_v=" "$COMPOSE_DIR/.env" 2>/dev/null; then
+      echo "hostenv:$_v=SET"
+    else
+      echo "hostenv:$_v=NOT-SET"
+    fi
+  done
+  exit 0
+fi
+NEED=no
+printf '%s\n%s\n' "$COUT" "$HOUT" | grep -q '=WRITTEN' && NEED=yes
+if [ "$NEED" = "yes" ]; then
+  if [ "$DO_RECREATE" != "1" ]; then
+    echo "restart=skipped_by_flag"
+    echo "result=PARTIAL reason=changed_but_not_restarted"
+    exit 4
+  fi
+  CF=""
+  for _c in compose.yaml compose.yml docker-compose.yaml docker-compose.yml; do
+    [ -f "$COMPOSE_DIR/$_c" ] && { CF="$_c"; break; }
+  done
+  if [ -z "$CF" ]; then
+    echo "restart=failed reason=no_compose_file"
+    echo "result=PARTIAL reason=changed_but_cannot_recreate"
+    exit 4
+  fi
+  ( cd "$COMPOSE_DIR" && docker compose up -d --force-recreate >/dev/null 2>&1 )
+  RRC=$?
+  echo "restart=recreate rc=$RRC"
+  if [ "$RRC" != "0" ]; then
+    echo "result=PARTIAL reason=recreate_failed"
+    exit 4
+  fi
+  ST="$(docker ps --filter "name=$CONTAINER" --format '{{.Status}}' 2>/dev/null | head -n 1)"
+  if [ -n "$ST" ]; then echo "container_up=yes"; else echo "container_up=no"; fi
+  if [ -z "$ST" ]; then
+    echo "result=PARTIAL reason=container_not_up_after_recreate"
+    exit 4
+  fi
+else
+  echo "restart=not_needed"
+fi
+exit 0
+WRAP_EOF
+  } > "$_wrap" || die "could not build vps wrapper"
+  ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 \
+      -o ServerAliveCountMax=3 \
+      "$B_SSH" 'sh -s' < "$_wrap"
+  _vrc=$?
+  rm -f "$_wrap" 2>/dev/null
+  return $_vrc
 }
 
 run_box() { # mode -> box report on stdout; box exit code returned
@@ -444,6 +692,9 @@ run_box() { # mode -> box report on stdout; box exit code returned
   build_payload "$1"
   if [ "$LOCAL" = "1" ] || [ "$B_SSH" = "local" ]; then
     bash "$TMP_PAYLOAD"
+    _brc=$?
+  elif [ "$B_PLATFORM" = "vps" ]; then
+    run_vps_box "$1"
     _brc=$?
   else
     ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 \
@@ -498,7 +749,7 @@ if [ "$APPLY" = "1" ] && [ "$LOCAL" = "1" ]; then
   [ "$SEL_UNSAFE" = "0" ] || die "--local with --apply may only target an operator entry (or a sandbox entry with an explicit home override); refusing to write a client identity onto THIS box"
 fi
 
-while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_EMAIL B_FIRST B_PID; do
+while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOSE B_COMPLETE B_LAST B_EMAIL B_FIRST B_PID; do
   [ -n "$B_NAME" ] || continue
   box_selected || continue
   COUNT_TOTAL=$((COUNT_TOTAL + 1))
@@ -526,6 +777,19 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_
     fi
   fi
 
+  # VPS transport completeness — fail closed BEFORE touching the box: an apply
+  # without a compose_dir could inject the container but never mirror the
+  # env_file or force-recreate, leaving a half-provisioned box.
+  if [ "$B_PLATFORM" = "vps" ] && [ "$B_SSH" != "local" ] && [ "$LOCAL" != "1" ]; then
+    [ -n "$B_CONTAINER" ] || B_CONTAINER="${B_NAME}-openclaw-1"
+    if [ "$APPLY" = "1" ] && [ -z "$B_COMPOSE" ]; then
+      log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=BLOCKED_VPS_MANIFEST_INCOMPLETE detail=compose_dir_required_for_apply"
+      COUNT_BLOCKED=$((COUNT_BLOCKED + 1))
+      COUNT_FAIL=$((COUNT_FAIL + 1))
+      continue
+    fi
+  fi
+
   if [ "$APPLY" = "1" ]; then BOX_MODE="inject"; else BOX_MODE="probe"; fi
   REPORT="$(run_box "$BOX_MODE")"
   BOX_RC=$?
@@ -537,6 +801,7 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_
   DRYEXIT="$(field "$REPORT" 's/^dryrun_exit=\([0-9]*\).*/\1/p')"
   GS="$(field "$REPORT" 's/^dryrun_exit=[0-9]* good_standing=\([a-z]*\).*/\1/p')"
   SKILL_ST="$(field "$REPORT" 's/^skill_script=\([a-z]*\).*/\1/p')"
+  RESTART_ST="$(field "$REPORT" 's/^restart=\(.*\)/\1/p')"
   if [ "$APPLY" = "1" ]; then PFIX="validate"; else PFIX="probe"; fi
   V_URL_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_WEBHOOK_URL:env=\\([A-Z-]*\\).*/\\1/p")"
   V_TOK_ST="$(field "$REPORT" "s/^$PFIX:PODBEAN_PUBLISH_TOKEN:env=\\([A-Z-]*\\).*/\\1/p")"
@@ -556,7 +821,7 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_COMPLETE B_LAST B_
     [ "$BOX_RC" != "0" ] && VERDICT="UNREACHABLE_OR_ERROR"
   fi
 
-  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${CHANGED_ST:+ changed=$CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}"
+  log_line "[$NOW_UTC] box=$B_NAME role=$B_ROLE platform=$B_PLATFORM verdict=$VERDICT${REASON:+ reason=$REASON} url=${V_URL_ST:-?} token=${V_TOK_ST:-?} last_name=${V_LN_ST:-?} email=${V_EM_ST:-?}${SKILL_ST:+ skill=$SKILL_ST}${CHANGED_ST:+ changed=$CHANGED_ST}${DRYEXIT:+ dryrun_exit=$DRYEXIT}${GS:+ good_standing=$GS}${RESTART_ST:+ restart=$RESTART_ST}"
 
   if [ "$VERDICT" = "OK" ] || [ "$VERDICT" = "OK_ALREADY" ]; then
     COUNT_OK=$((COUNT_OK + 1))
