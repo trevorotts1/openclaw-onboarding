@@ -1341,8 +1341,27 @@ backup_config_file() {
         ts=$(date +%Y-%m-%d-%H%M%S)
         filename=$(basename "$file")
         backup="$OC_BACKUPS/${filename}-backup-${ts}.txt"
+        # Disk pre-check BEFORE the copy — a truncated config backup is worse
+        # than a loud refusal (helpers come from lib-shared.sh, sourced
+        # best-effort at the top of this script; skip cleanly if absent).
+        if command -v oc_backup_precheck_disk >/dev/null 2>&1; then
+            if ! oc_backup_precheck_disk "$backup" "$(oc_backup_size_kb "$file")" "config backup of $file"; then
+                # Every caller invokes this bare under `set -e`, so a nonzero
+                # return ABORTS the install. That is deliberate: this only
+                # triggers when the box has under ~10 MB free, and editing a
+                # config with no recoverable backup is the worse outcome.
+                note "REFUSING to continue: cannot back up $file — no disk headroom (see message above)"
+                return 1
+            fi
+        fi
         cp "$file" "$backup"
         note "Backed up: $backup"
+        # RETENTION: every invocation used to leave another
+        # <name>-backup-<ts>.txt in $OC_BACKUPS forever. Prune to the newest N
+        # for THIS filename only, and only now that the new copy exists.
+        if command -v oc_backup_prune >/dev/null 2>&1; then
+            oc_backup_prune "$OC_BACKUPS" "${filename}-backup-" "$backup"
+        fi
     fi
 }
 
