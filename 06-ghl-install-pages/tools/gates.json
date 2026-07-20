@@ -60,7 +60,7 @@
     "_note": "Three build methods (A raw-code funnel/page, B vercel-embed, C website page) hold a live end-to-end runtime PASS on the operator fixture (outcome_status `captured`). The REST_autosave method is the cracked canvas-REST path wired in by T1 (ghl_rest_canvas -> ghl_builder.emit_rest_save_plan); its outcome_status is `runtime` (PENDING-LIVE-RUN) because T1 is mock-unit-test only and the wired path has NOT yet been driven end-to-end (the underlying recipe is proven live in the headless-canvas solution doc, but this method only flips to `captured` on a fresh end-to-end receipt under the durable skill6-fix evidence root). This block does NOT alter the 28-entry `gates` array or its captured/runtime counts (still 2 captured / 26 runtime, as the install QC asserts). Per-gate DOM selectors remain resolve-at-runtime; what is captured/runtime here is the build OUTCOME each method produces."
   },
   "_env": {
-    "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BlackCEO LLC = test sub-account on this operator box; client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
+    "_note": "Wired from the UI-map pass (Downloads/ghl-ui-map.md). BCEO Client Sandbox (location XCgFTEA1oDvsPnTqqgoB) = designated test sub-account on this operator box per operator ruling 2026-07-20; every historical capture/evidence line in this file that names BlackCEO LLC (location Mct54Bwi1KlNouGXQcDX) records runs made against the PREVIOUS designated fixture and is preserved unrewritten. Client boxes substitute the client's own sub-account label + location id (NO-COMINGLING).",
     "test_subaccount_label": "<AGENCY_TEST_SUBACCOUNT>",
     "test_location_id": "FIXTURE0LOCATION0000",
     "preview_domain": "<PREVIEW_DOMAIN>",
