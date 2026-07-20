@@ -41,6 +41,8 @@
 #      gateway runtime store and the standing probe uses that store.
 #  22. exact no-op re-apply creates no additional target or host backup.
 #  23. missing before identities cannot prove Mac or VPS restart success.
+#  24. VPS OpenClaw-home discovery supports node-home and data-root layouts,
+#      and grades a missing install NEEDS-ATTENTION before any write.
 #
 # Exit 0 = all checks pass. Exit 1 = one or more failed.
 
@@ -501,7 +503,8 @@ fi
 
 # --- 15/17/18. fake VPS exercises host env, recreate, health, and verdict -----
 VPS_BIN="$WORK/vps-bin"
-VPS_HOME="$WORK/vps-home"
+VPS_ROOT="$WORK/vps-root"
+VPS_HOME="$VPS_ROOT/data"
 VPS_COMPOSE="$WORK/vps-compose"
 VPS_STATE="$WORK/vps-container-id"
 mkdir -p "$VPS_BIN" "$VPS_HOME/.openclaw/secrets" "$VPS_COMPOSE"
@@ -517,24 +520,46 @@ case "$1" in
   exec)
     shift
     runtime_mode=""
+    container_home=""
     while [ "$#" -gt 0 ]; do
       case "$1" in
         -i) shift ;;
         -u) shift 2 ;;
         -e)
-          case "$2" in P18_MODE_OVERRIDE=*) runtime_mode="${2#*=}" ;; esac
+          case "$2" in
+            P18_HOME=*) container_home="${2#*=}" ;;
+            P18_MODE_OVERRIDE=*) runtime_mode="${2#*=}" ;;
+          esac
           shift 2
           ;;
         *) shift; break ;;
       esac
     done
+    docker_stdin="$(cat)"
+    if [ -z "$container_home" ]; then
+      # Simulate the read-only in-container discovery probe against a fixture
+      # root while also proving the generated probe resolves the node account.
+      printf '%s\n' "$docker_stdin" | grep -q 'getent passwd node' || exit 91
+      if [ -f "$MOCK_VPS_ROOT/home/node/.openclaw/openclaw.json" ] &&
+         [ -d "$MOCK_VPS_ROOT/home/node/.openclaw/secrets" ]; then
+        printf '%s\n' /home/node
+      elif [ -f "$MOCK_VPS_ROOT/data/.openclaw/openclaw.json" ] &&
+           [ -d "$MOCK_VPS_ROOT/data/.openclaw/secrets" ]; then
+        printf '%s\n' /data
+      else
+        exit 1
+      fi
+      exit 0
+    fi
     if [ "$runtime_mode" = "runtimeverify" ]; then
       set -a
       . "$MOCK_HOST_ENV"
       set +a
       [ "${MOCK_RUNTIME_STALE:-0}" = "1" ] && unset PODBEAN_PUBLISH_WEBHOOK_URL
     fi
-    tee "${MOCK_RENDERED_PAYLOAD:-/dev/null}" | P18_HOME="$MOCK_VPS_HOME" P18_MODE_OVERRIDE="$runtime_mode" sh -s
+    fixture_home="$MOCK_VPS_ROOT$container_home"
+    printf '%s\n' "$docker_stdin" | tee "${MOCK_RENDERED_PAYLOAD:-/dev/null}" |
+      P18_HOME="$fixture_home" P18_MODE_OVERRIDE="$runtime_mode" sh -s
     ;;
   compose)
     printf '%s-new\n' "$(sed -n '1p' "$MOCK_CID_STATE")" > "$MOCK_CID_STATE"
@@ -599,7 +624,7 @@ cat > "$VPS_MANIFEST" <<EOF
   "container":"sandbox-vps-openclaw-1","compose_dir":"$VPS_COMPOSE",
   "identity":{"last_name":"Operator","email":"operator@example.test","podcast_id":"sandbox-vps-id","complete":true}}]
 EOF
-OUT="$(MOCK_HIDE_OLD_CID=1 MOCK_RENDERED_WRAPPER="$WORK/rendered-wrapper.sh" MOCK_RENDERED_PAYLOAD="$WORK/rendered-payload.sh" MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-no-old-id.log" --apply --no-standing-probe 2>&1)"; RC=$?
+OUT="$(MOCK_HIDE_OLD_CID=1 MOCK_RENDERED_WRAPPER="$WORK/rendered-wrapper.sh" MOCK_RENDERED_PAYLOAD="$WORK/rendered-payload.sh" MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-no-old-id.log" --apply --no-standing-probe 2>&1)"; RC=$?
 if [ "$RC" = "2" ] && printf '%s\n' "$OUT" | grep -q 'GATEWAY_DOWN=1' && printf '%s\n' "$OUT" | grep -q 'reason=container_identity_before_recreate_not_proven'; then
   pass "VPS recreate cannot prove identity change without a before container ID"
 else
@@ -616,7 +641,7 @@ PODCAST_CLIENT_EMAIL=stale@example.test
 PODBEAN_PODCAST_ID=sandbox-vps-id
 EOF
 cp "$VPS_COMPOSE/.env" "$WORK/vps-host-env.original"
-OUT="$(MOCK_RENDERED_WRAPPER="$WORK/rendered-wrapper.sh" MOCK_RENDERED_PAYLOAD="$WORK/rendered-payload.sh" MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps.log" --apply --no-standing-probe 2>&1)"; RC=$?
+OUT="$(MOCK_RENDERED_WRAPPER="$WORK/rendered-wrapper.sh" MOCK_RENDERED_PAYLOAD="$WORK/rendered-payload.sh" MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps.log" --apply --no-standing-probe 2>&1)"; RC=$?
 VPS_BACKUPS="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' -print)"
 if [ "$(printf '%s\n' "$VPS_BACKUPS" | sed '/^$/d' | wc -l | tr -d ' ')" = "1" ] && cmp -s "$WORK/vps-host-env.original" "$VPS_BACKUPS"; then
   pass "VPS host env has one unique timestamped snapshot of the original"
@@ -640,9 +665,52 @@ else
   fail "host-only VPS change was misreported as OK_ALREADY"; echo "$OUT"
 fi
 
+if printf '%s\n' "$OUT" | grep -q 'openclaw_home=/data/.openclaw'; then
+  pass "VPS discovery finds the data-root OpenClaw install"
+else
+  fail "VPS discovery did not report the data-root OpenClaw install"; echo "$OUT"
+fi
+
+# Move the real fixture store away from the formerly assumed location. The
+# node-home case must still probe cleanly and must not recreate data/.openclaw.
+mv "$VPS_HOME/.openclaw" "$WORK/data-openclaw.saved"
+mkdir -p "$VPS_ROOT/home/node"
+cp -R "$WORK/data-openclaw.saved" "$VPS_ROOT/home/node/.openclaw"
+OUT="$(MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-node-home.log" 2>&1)"; RC=$?
+if [ "$RC" = "0" ] && printf '%s\n' "$OUT" | grep -q 'openclaw_home=/home/node/.openclaw' &&
+   [ ! -e "$VPS_HOME/.openclaw" ]; then
+  pass "VPS discovery finds node-home when data-root is absent"
+else
+  fail "VPS discovery did not find node-home with data-root absent (rc=$RC)"; echo "$OUT"
+fi
+
+# With neither candidate installed, discovery must stop before the host backup
+# or any creation beneath either candidate path.
+mv "$VPS_ROOT/home/node/.openclaw" "$WORK/node-openclaw.saved"
+FAIL_CLOSED_ENV_BEFORE="$(shasum -a 256 "$VPS_COMPOSE/.env" | cut -d' ' -f1)"
+FAIL_CLOSED_BACKUPS_BEFORE="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' | wc -l | tr -d ' ')"
+OUT="$(MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-no-install.log" --apply --no-standing-probe 2>&1)"; RC=$?
+FAIL_CLOSED_ENV_AFTER="$(shasum -a 256 "$VPS_COMPOSE/.env" | cut -d' ' -f1)"
+FAIL_CLOSED_BACKUPS_AFTER="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' | wc -l | tr -d ' ')"
+if [ "$RC" = "2" ] &&
+   printf '%s\n' "$OUT" | grep -q 'verdict=NEEDS-ATTENTION reason=openclaw_home_not_found' &&
+   [ "$FAIL_CLOSED_ENV_BEFORE" = "$FAIL_CLOSED_ENV_AFTER" ] &&
+   [ "$FAIL_CLOSED_BACKUPS_BEFORE" = "$FAIL_CLOSED_BACKUPS_AFTER" ] &&
+   [ ! -e "$VPS_ROOT/data/.openclaw" ] && [ ! -e "$VPS_ROOT/home/node/.openclaw" ]; then
+  pass "VPS missing install is NEEDS-ATTENTION with no write side effects"
+else
+  fail "VPS missing install did not fail closed before writes (rc=$RC)"; echo "$OUT"
+fi
+# The pre-fix implementation creates this empty assumed path. Remove that
+# fixture-only side effect so the remaining independent VPS checks see the
+# original data-root store when it is restored below.
+rm -rf "$VPS_ROOT/data/.openclaw"
+mkdir -p "$VPS_HOME"
+mv "$WORK/data-openclaw.saved" "$VPS_HOME/.openclaw"
+
 VPS_HOST_BACKUPS_BEFORE="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' | wc -l | tr -d ' ')"
 VPS_BOX_BACKUPS_BEFORE="$(find "$VPS_HOME/.openclaw/backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
-OUT="$(MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-noop.log" --apply --no-standing-probe 2>&1)"; RC=$?
+OUT="$(MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-noop.log" --apply --no-standing-probe 2>&1)"; RC=$?
 VPS_HOST_BACKUPS_AFTER="$(find "$VPS_COMPOSE" -maxdepth 1 -type f -name '.env.bak.s58u18-*' | wc -l | tr -d ' ')"
 VPS_BOX_BACKUPS_AFTER="$(find "$VPS_HOME/.openclaw/backups" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ')"
 if [ "$RC" = "0" ] && [ "$VPS_HOST_BACKUPS_BEFORE" = "$VPS_HOST_BACKUPS_AFTER" ] && \
@@ -655,7 +723,7 @@ else
 fi
 
 printf '{}\n' > "$VPS_HOME/.openclaw/openclaw.json"
-OUT="$(MOCK_RUNTIME_STALE=1 MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_HOME="$VPS_HOME" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-stale.log" --apply --no-standing-probe 2>&1)"; RC=$?
+OUT="$(MOCK_RUNTIME_STALE=1 MOCK_HOST_ENV="$VPS_COMPOSE/.env" MOCK_VPS_ROOT="$VPS_ROOT" MOCK_CID_STATE="$VPS_STATE" PATH="$VPS_BIN:$PATH" P18_HOME="$SB" bash "$ROLL" --boxes-file "$VPS_MANIFEST" --log-file "$WORK/vps-stale.log" --apply --no-standing-probe 2>&1)"; RC=$?
 if [ "$RC" = "2" ] && printf '%s\n' "$OUT" | grep -q 'runtime_values=0'; then
   pass "VPS recreate rejects a healthy container with stale inherited values"
 else

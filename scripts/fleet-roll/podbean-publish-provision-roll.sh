@@ -69,11 +69,11 @@
 #
 # TRANSPORT (platform-aware; the VPS gap was a QC finding):
 #   mac  : payload over `ssh 'sh -s'`, writes $HOME/.openclaw directly.
-#   vps  : plain ssh would write the HOST home — NOT the gateway's store, which
-#          lives at /data/.openclaw INSIDE the Docker container. The payload
-#          instead rides base64 inside a host wrapper that (1) runs it in the
-#          container via `docker exec -i -u node`, (2) mirrors the values into
-#          the host compose env_file, and (3) on change runs
+#   vps  : plain ssh would write the HOST home — NOT the gateway's store. The
+#          host wrapper discovers the real store inside the Docker container,
+#          then (1) runs the payload there via `docker exec -i -u node`, (2)
+#          mirrors the values into the host compose env_file, and (3) on change
+#          runs
 #          `docker compose up -d --force-recreate` (compose only reads the
 #          env_file at create; a bare restart keeps the old env). Roll in
 #          place, force-recreate, NEVER re-init credentials — same pattern the
@@ -250,6 +250,19 @@ REQUIRED_NAMES="PODBEAN_PUBLISH_WEBHOOK_URL PODBEAN_PUBLISH_TOKEN PODCAST_CLIENT
 OPTIONAL_NAMES="PODCAST_CLIENT_FIRST_NAME"
 NAMES="$REQUIRED_NAMES $OPTIONAL_NAMES"
 CHANGED=0
+
+# A missing install is not a blank canvas. Probe/inject modes must never create
+# an assumed .openclaw tree or mutate one durable store before discovering that
+# the gateway config is absent. hostenv* runs on the VPS host and runtimeverify
+# checks process state, so neither mode has an OpenClaw-home precondition here.
+case "${P18_MODE:-probe}" in
+  probe|inject)
+    if [ ! -f "$OCJSON" ] || [ ! -d "$BOX_HOME/.openclaw/secrets" ]; then
+      echo "result=FAILED reason=openclaw_home_not_found"
+      exit 1
+    fi
+    ;;
+esac
 
 secenv_state() { # name -> SET|NOT-SET
   _sv="$(sed -n "s/^$1=//p" "$SECENV" 2>/dev/null | head -n 1)"
@@ -770,13 +783,14 @@ PYEOF
 }
 
 run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
-  # Plain `ssh 'sh -s'` writes the HOST home, which is NOT the gateway store —
-  # that lives at /data/.openclaw INSIDE the container. The payload rides
-  # base64 inside a generated host wrapper (stdin-only; never argv):
-  #   1. snapshot the host compose env_file once (inject only; fail closed)
-  #   2. docker exec -i -u node <container> sh -s   (container files, HOME=/data)
-  #   3. same payload re-run on the host in hostenv mode -> compose env_file
-  #   4. anything WRITTEN => docker compose up -d --force-recreate (compose
+  # Plain `ssh 'sh -s'` writes the HOST home, which is NOT the gateway store.
+  # The payload rides base64 inside a generated host wrapper (stdin-only; never
+  # argv):
+  #   1. discover a real in-container .openclaw using config+secrets sentinels
+  #   2. snapshot the host compose env_file once (inject only; fail closed)
+  #   3. docker exec -i -u node <container> sh -s at the discovered home
+  #   4. same payload re-run on the host in hostenv mode -> compose env_file
+  #   5. anything WRITTEN => docker compose up -d --force-recreate (compose
   #      reads the env_file only at create; a bare restart keeps the old env),
   #      then prove a new container, exact inherited values, and gateway health.
   #      Roll in place, force-recreate, NEVER re-init credentials.
@@ -794,10 +808,47 @@ run_vps_box() { # mode -> report on stdout; rc returned. Docker transport.
     printf 'PB64=%s\n' "$_pb64"
     cat <<'WRAP_EOF'
 TMP="$(mktemp /tmp/s58u18-p.XXXXXX)" || exit 97
-trap 'rm -f "$TMP"' EXIT
+CHOME_OUT="$(mktemp /tmp/s58u18-home.XXXXXX)" || { rm -f "$TMP"; exit 97; }
+trap 'rm -f "$TMP" "$CHOME_OUT"' EXIT
 chmod 600 "$TMP" 2>/dev/null || :
+chmod 600 "$CHOME_OUT" 2>/dev/null || :
 printf '%s' "$PB64" | base64 -d > "$TMP" || { rm -f "$TMP"; exit 97; }
 HOUT=""
+
+# Resolve the node account at runtime, then test every plausible layout. A
+# directory name alone is insufficient: require both the gateway config and
+# secrets directory so an empty bind target can never be selected or created.
+docker exec -i -u node "$CONTAINER" sh -s > "$CHOME_OUT" <<'DISCOVER_EOF'
+set -u
+NODE_HOME=""
+if command -v getent >/dev/null 2>&1; then
+  NODE_HOME="$(getent passwd node 2>/dev/null | awk -F: 'NR == 1 { print $6 }')"
+elif [ -r /etc/passwd ]; then
+  NODE_HOME="$(awk -F: '$1 == "node" { print $6; exit }' /etc/passwd 2>/dev/null)"
+fi
+SEEN=""
+for CANDIDATE in "$NODE_HOME" "${HOME:-}" /home/node /data; do
+  [ -n "$CANDIDATE" ] || continue
+  case "|$SEEN|" in *"|$CANDIDATE|"*) continue ;; esac
+  SEEN="${SEEN:+$SEEN|}$CANDIDATE"
+  if [ -f "$CANDIDATE/.openclaw/openclaw.json" ] &&
+     [ -d "$CANDIDATE/.openclaw/secrets" ]; then
+    printf '%s\n' "$CANDIDATE"
+    exit 0
+  fi
+done
+exit 1
+DISCOVER_EOF
+DISCOVERY_RC=$?
+CBOX_HOME="$(sed -n '1p' "$CHOME_OUT")"
+rm -f "$CHOME_OUT"
+if [ "$DISCOVERY_RC" != "0" ] || [ -z "$CBOX_HOME" ]; then
+  echo "openclaw_home=not_found"
+  echo "result=FAILED reason=openclaw_home_not_found"
+  rm -f "$TMP"
+  exit 1
+fi
+echo "openclaw_home=$CBOX_HOME/.openclaw"
 if [ "$MODE" = "inject" ]; then
   HBOUT="$(P18_MODE_OVERRIDE=hostenvbackup P18_HOSTENV_FILE="$COMPOSE_DIR/.env" sh "$TMP")"
   HBRC=$?
@@ -812,7 +863,7 @@ OLD_CID=""
 if [ "$MODE" = "inject" ]; then
   OLD_CID="$(docker inspect -f '{{.Id}}' "$CONTAINER" 2>/dev/null || true)"
 fi
-COUT="$(docker exec -i -u node -e P18_HOME=/data "$CONTAINER" sh -s < "$TMP")"
+COUT="$(docker exec -i -u node -e "P18_HOME=$CBOX_HOME" "$CONTAINER" sh -s < "$TMP")"
 CRC=$?
 printf '%s\n' "$COUT"
 if [ "$CRC" != "0" ]; then rm -f "$TMP"; exit "$CRC"; fi
@@ -887,7 +938,7 @@ if [ "$NEED" = "yes" ]; then
     exit 4
   fi
 
-  VOUT="$(docker exec -i -u node -e P18_HOME=/data -e P18_MODE_OVERRIDE=runtimeverify "$CONTAINER" sh -s < "$TMP")"
+  VOUT="$(docker exec -i -u node -e "P18_HOME=$CBOX_HOME" -e P18_MODE_OVERRIDE=runtimeverify "$CONTAINER" sh -s < "$TMP")"
   VRC=$?
   printf '%s\n' "$VOUT"
   if [ "$VRC" != "0" ]; then
@@ -1067,7 +1118,9 @@ while IFS='|' read -r B_NAME B_ROLE B_PLATFORM B_SSH B_HOME B_CONTAINER B_COMPOS
   fi
 
   VERDICT="OK"
-  if [ "$APPLY" = "1" ]; then
+  if [ "$REASON" = "openclaw_home_not_found" ]; then
+    VERDICT="NEEDS-ATTENTION"
+  elif [ "$APPLY" = "1" ]; then
     if [ "$BOX_RC" != "0" ]; then
       VERDICT="FAILED"
       REASON="transport_exit_nonzero"
