@@ -948,12 +948,39 @@ def check_persona_gemini_index(
     return res
 
 
+def _canonical_sop_count(explicit: Optional[int] = None) -> Optional[int]:
+    """Canonical `sops` population a fully-ingested box must hold.
+
+    Read from the ONE committed pin, shared-utils/sop-library/
+    SOP-LIBRARY-MANIFEST.json, so this health surface, ingest-sop-library.sh
+    and update-skills.sh Step U6c can never disagree about the target.
+    Returns None when the manifest is absent/unreadable -- in which case the
+    coverage leg below reports UNKNOWN and does NOT invent a verdict.
+    """
+    if explicit is not None:
+        return explicit
+    try:
+        mf = Path(__file__).resolve().parent / "sop-library" / "SOP-LIBRARY-MANIFEST.json"
+        with open(mf) as fh:
+            v = json.load(fh).get("canonical_sop_count")
+        return int(v) if v else None
+    except Exception:
+        return None
+
+
 def check_cc_sop_index(
     cc_dir: Path,
     openclaw_json: dict,
     generative_provider: Optional[str],
+    expected_sop_count: Optional[int] = None,
 ) -> dict:
-    """Check Index 3: CC SOP embeddings (mission-control.db)."""
+    """Check Index 3: CC SOP embeddings (mission-control.db).
+
+    `expected_sop_count` overrides the manifest pin for the leg-d COVERAGE
+    check. Pass it explicitly from tests that are exercising a different leg
+    on a deliberately small fixture, so leg-d does not editorialise about a
+    fixture size that is not what the test is about.
+    """
     res = _make_index_result("cc_sop (mission-control.db)")
     LBL = "Index 3 (cc_sop)"
 
@@ -1116,12 +1143,74 @@ def check_cc_sop_index(
     else:
         _ok(f"{LBL} leg-c: generative provider not confused with embedding provider")
 
+    # ── Leg (d): SOP CORPUS COVERAGE ──────────────────────────────────────────
+    # THE BLIND SPOT THIS CLOSES. Every leg above checks INTERNAL CONSISTENCY --
+    # "do the embeddings match the rows?" -- and a box whose `sops` table holds
+    # nothing but the CC boot-seed demo fixture is perfectly self-consistent. So
+    # a box carrying 24 rows where the canonical library is 2555 reported
+    # `overall: pass` while its semantic SOP search covered 0.9% of the corpus.
+    # That false-green is precisely what let the never-wired-into-the-updater
+    # SOP ingestion survive unnoticed. Consistency is not coverage: this leg
+    # compares the table against the canonical population it is SUPPOSED to hold.
+    res["leg_d_sop_coverage"] = None
+    res["leg_d_detail"] = "not evaluated"
+    expected = _canonical_sop_count(expected_sop_count)
+    if counts is None:
+        res["leg_d_detail"] = "no CC SOP database on this box — coverage not applicable"
+    elif expected is None:
+        res["leg_d_detail"] = (
+            "SOP-LIBRARY-MANIFEST.json unreadable — canonical population unknown, "
+            "coverage NOT evaluated (no verdict invented)"
+        )
+        _info(f"{LBL} leg-d: {res['leg_d_detail']}")
+    elif counts["sops_total"] == 0:
+        # Genuinely not provisioned yet. Unchanged semantics from leg-b: a fresh
+        # box with nothing loaded is not a failure.
+        res["leg_d_detail"] = (
+            f"sops_total=0 — box not provisioned yet (canonical {expected}); not a coverage failure"
+        )
+        _info(f"{LBL} leg-d: {res['leg_d_detail']}")
+    elif counts["sops_total"] < expected:
+        res["leg_d_sop_coverage"] = False
+        pct = 100.0 * counts["sops_total"] / expected
+        fixture = (
+            " This is DEMO-FIXTURE-SIZED: consistent with a table holding only the CC "
+            "autoSeedStarterSOPs boot seed, i.e. the SOP library was NEVER ingested here."
+            if counts["sops_total"] <= 60
+            else ""
+        )
+        msg = (
+            f"{LBL} leg-d FAIL (SOP corpus coverage): the `sops` table holds "
+            f"{counts['sops_total']} row(s) but the canonical SOP V2 library is {expected} — "
+            f"semantic SOP search covers only {pct:.1f}% of the corpus.{fixture} "
+            f"Every other leg here checks embeddings-vs-rows consistency and therefore CANNOT "
+            f"see this: an under-populated table is self-consistent and used to report "
+            f"`overall: pass`. Remedy: run a fleet update (update-skills.sh Step U6c ingests "
+            f"the library and FAILS LOUD if it cannot), or run "
+            f"32-command-center-setup/scripts/ingest-sop-library.sh <client-slug> directly. "
+            f"NOTE: ingestion loads CONTENT ONLY and costs nothing — embedding the ingested "
+            f"rows is a SEPARATE, explicit operator action billed to the CLIENT's own key."
+        )
+        res["errors"].append(msg)
+        res["leg_d_detail"] = (
+            f"sops_total={counts['sops_total']} canonical={expected} coverage={pct:.1f}% "
+            f"(db={counts['db_file']})"
+        )
+        _err(msg)
+    else:
+        res["leg_d_sop_coverage"] = True
+        res["leg_d_detail"] = (
+            f"sops_total={counts['sops_total']} >= canonical {expected} — SOP corpus fully populated"
+        )
+        _ok(f"{LBL} leg-d: {res['leg_d_detail']}")
+
     # ── Overall ────────────────────────────────────────────────────────────────
     res["pass"] = (
         res["leg_a_provider_capable"]
         and res["leg_a_smoke"] is True
         and res["leg_b_stamp_match"] is not False
         and res["leg_c_generative_not_embedding"]
+        and res["leg_d_sop_coverage"] is not False
         and not res["needs_reindex"]
     )
     return res
