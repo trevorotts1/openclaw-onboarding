@@ -31,6 +31,15 @@ export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 PLATFORM="${PLATFORM:-$OPENCLAW_PLATFORM}"
 export PLATFORM
 
+# This is the ROUTINE-UPDATE entrypoint, not first-time provisioning. Tell the
+# platform bootstrap so its power-outage pre-flight only ADVISES (never aborts)
+# on a FileVault-on / no-auto-login box: a live update over an existing
+# connection does not require the box to survive a power cut, so that physical-
+# security posture must not block the update. install.sh (provisioning) leaves
+# this unset and keeps the hard gate. Exported so it survives the self-sync
+# re-exec below. (Mac power-resilience gate scoping.)
+export OPENCLAW_BOOTSTRAP_MODE=update
+
 _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
 if [ -f "$_PLATFORM_BOOTSTRAP" ]; then

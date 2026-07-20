@@ -304,6 +304,94 @@ pr_assert_unattended_boot_capable() {
     return "$PR_EX_CONFIG"
 }
 
+# -----------------------------------------------------------------------------
+# pr_warn_unattended_boot_capable — THE ADVISORY. The NON-BLOCKING sibling of
+# pr_assert_unattended_boot_capable, for the ROUTINE-UPDATE path.
+#
+# WHY AN UPDATE MUST NOT INHERIT THE PROVISIONING GATE
+# ----------------------------------------------------
+# The hard gate answers "can this box reboot UNATTENDED after a power cut?" That
+# is the right question the FIRST time a box is trusted to run headless. It is
+# the WRONG question for a routine software/skills update: an update is delivered
+# over an ALREADY-LIVE connection to a box that is up and reachable RIGHT NOW. It
+# does not require the box to survive a power cut — it is not power-cutting the
+# box. FileVault-on (a GOOD at-rest-encryption posture) and a missing auto-login
+# affect ONLY unattended power-cut recovery, never the ability to receive an
+# update while connected. So on the update path this REPORTS the posture and the
+# remedy, then returns 0 so the update proceeds. It writes NO marker: committing
+# a box to "attended-only forever" is a provisioning decision made on-site, not
+# something a routine update should stamp.
+# -----------------------------------------------------------------------------
+pr_warn_unattended_boot_capable() {
+    local fv al
+    fv="$(pr_filevault_status)"
+    al="$(pr_autologin_user)"
+
+    pr_log "FileVault status : $fv"
+    pr_log "Auto-login user  : ${al:-<UNSET>}"
+
+    if [ "$fv" = "Off" ] && [ -n "$al" ]; then
+        pr_log "Power-resilience OK: FileVault Off + auto-login set — this box is"
+        pr_log "                    verified unattended-reboot-capable."
+        return 0
+    fi
+
+    {
+        echo ""
+        echo "----------------------------------------------------------------"
+        echo " ADVISORY — box is NOT verified unattended-reboot-capable"
+        echo " (update proceeds anyway — see why below)"
+        echo "----------------------------------------------------------------"
+        [ "$fv" != "Off" ] && echo "  FileVault is '$fv' (unattended power-cut recovery wants: Off)."
+        [ -z "$al" ]       && echo "  Auto-login is NOT set (autoLoginUser is empty)."
+        echo ""
+        echo "  This does NOT block the update. The update is delivered over an"
+        echo "  already-live connection to a box that is up right now; it does not"
+        echo "  depend on the box surviving a power cut, so this posture is not a"
+        echo "  reason to refuse it. Proceeding."
+        echo ""
+        echo "  It DOES mean that after an ACTUAL POWER CUT this box may not come"
+        echo "  back on its own: with FileVault on it can halt at the pre-boot"
+        echo "  unlock screen, and login-gated LaunchAgents do not start until a"
+        echo "  human logs in. That is a physical-premises decision to make on-site,"
+        echo "  not something this update changes."
+        echo ""
+        echo "  TO MAKE IT UNATTENDED-CAPABLE (a human must do this ON SITE — it"
+        echo "  cannot be done remotely; turning FileVault off needs the disk"
+        echo "  password):"
+        echo "    bash scripts/fix-power-resilience.sh <box> --apply"
+        echo "    (or: System Settings -> FileVault -> Off, then set auto-login)"
+        echo "----------------------------------------------------------------"
+        echo ""
+    } >&2
+
+    pr_warn "Proceeding with the update on a box not verified unattended-reboot-"
+    pr_warn "capable. Remediate on-site with scripts/fix-power-resilience.sh."
+    return 0
+}
+
+# -----------------------------------------------------------------------------
+# pr_preflight_gate <mode> — the mode-aware power-resilience pre-flight DECISION
+# that the platform bootstrap delegates to. ONE place decides provision-vs-update.
+#
+#   mode = "update"        → pr_warn_unattended_boot_capable (ADVISORY, never
+#                            aborts a reachable box over a power-cut posture).
+#   mode = anything else   → pr_assert_unattended_boot_capable (the HARD gate:
+#                            first-time provisioning must prove outage-survival
+#                            before the box is trusted to run headless).
+#
+# Returns 0 to proceed, or PR_EX_CONFIG (78) to abort (provisioning path only).
+# Default is the hard gate: an unknown/unset mode fails SAFE toward provisioning.
+# -----------------------------------------------------------------------------
+pr_preflight_gate() {
+    local mode="${1:-provision}"
+    if [ "$mode" = "update" ]; then
+        pr_warn_unattended_boot_capable
+        return 0
+    fi
+    pr_assert_unattended_boot_capable
+}
+
 # =============================================================================
 # DEFECT 2 — pmset. Absent from the provisioner entirely until now.
 # =============================================================================
