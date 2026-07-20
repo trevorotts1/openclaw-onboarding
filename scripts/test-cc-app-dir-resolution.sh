@@ -149,13 +149,29 @@ make_cc_origin() {
   git -C "$seed" branch -M main >/dev/null 2>&1
   git -C "$seed" remote add origin "$bare"
   git -C "$seed" push --quiet -u origin main >/dev/null 2>&1
+  # Point the bare repo's HEAD at the branch we actually pushed. `git init
+  # --bare` seeds HEAD from init.defaultBranch, which is `master` on stock
+  # Linux/CI and frequently `main` on a developer Mac. When HEAD names a branch
+  # that does not exist, `git clone` still SUCCEEDS but checks out NOTHING —
+  # yielding an empty working tree that fails validation for the wrong reason.
+  # Set it explicitly rather than relying on the host's git defaults.
+  git -C "$bare" symbolic-ref HEAD refs/heads/main
   printf '%s %s' "$root" "$bare"
 }
 
 # A clone of that origin = a valid Command Center checkout.
+# Fails LOUD rather than returning a silently-empty checkout: a fixture that
+# quietly produces the wrong thing makes every downstream assertion meaningless.
 make_cc_checkout() {
   local bare="$1" dest="$2"
-  git clone --quiet "$bare" "$dest" >/dev/null 2>&1
+  if ! git clone --quiet "$bare" "$dest" >/dev/null 2>&1; then
+    echo "FATAL(fixture): git clone of $bare into $dest failed" >&2
+    return 1
+  fi
+  if [ ! -f "$dest/package.json" ] || [ ! -d "$dest/src" ]; then
+    echo "FATAL(fixture): clone of $bare produced an empty/incomplete working tree at $dest" >&2
+    return 1
+  fi
   git -C "$dest" config user.email "t@example.test"
   git -C "$dest" config user.name "T"
 }
