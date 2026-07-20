@@ -125,8 +125,34 @@ elif [ ! -f "$STAGED_JSONL_GZ" ]; then
 else
     gunzip -c "$STAGED_JSONL_GZ" > "$STAGED_JSONL"
 fi
-SOP_COUNT_SRC="$(wc -l < "$STAGED_JSONL" | tr -d ' ')"
-echo "  ✓ staged $SOP_COUNT_SRC SOP record(s) from $STAGED_JSONL"
+SOP_RECORDS_SRC="$(wc -l < "$STAGED_JSONL" | tr -d ' ')"
+# The publish gate below compares against the number of ROWS the embedder can
+# possibly produce, and sop_embeddings.sop_id is a PRIMARY KEY. sop_id is
+# derived as "sop_" + slug.replace("-","_")[:60] — the SAME 60-char truncation
+# ingest-sop-library.py applies — so records whose slugs collide after
+# truncation deliberately COLLAPSE onto one row (and onto one `sops` row on
+# every client box). Counting raw jsonl lines here would make the gate compare
+# 2,618 records against the 2,555 rows that are correct by construction and
+# refuse to publish a complete asset. Derive the expected row count with the
+# embedder's OWN id function so the two can never drift apart.
+SOP_COUNT_SRC="$(python3 - "$SELF_DIR" "$STAGED_JSONL" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from embed_sop_library import sop_id_from_slug
+ids = set()
+with open(sys.argv[2], encoding="utf-8") as fh:
+    for line in fh:
+        line = line.strip()
+        if not line:
+            continue
+        slug = json.loads(line).get("slug")
+        if slug:
+            ids.add(sop_id_from_slug(slug))
+print(len(ids))
+PY
+)"
+echo "  ✓ staged $SOP_RECORDS_SRC SOP record(s) from $STAGED_JSONL"
+echo "  ✓ expected embedded rows (distinct sop_id after 60-char truncation): $SOP_COUNT_SRC"
 
 # ── 3) Incremental embed (HASH-SKIP embeds ONLY new/changed SOPs) ────────────
 echo "→ [3/6] incremental embed — HASH-SKIP guard embeds ONLY new/changed SOPs (NO full furnace)"
@@ -162,7 +188,7 @@ else:
     except Exception:
         print(0)
 ' "$STAGED_DB")"
-    echo "  staged sop_embeddings row_count=$ROW_COUNT (source sops=$SOP_COUNT_SRC) — dry-run stops here"
+    echo "  staged sop_embeddings row_count=$ROW_COUNT (expected=$SOP_COUNT_SRC from $SOP_RECORDS_SRC records) — dry-run stops here"
     echo "DONE (dry-run). No manifest written, no release published."
     exit 0
 fi
@@ -173,12 +199,12 @@ if command -v sha256sum >/dev/null 2>&1; then NEW_SHA="$(sha256sum "$REBUILT_GZ"
 GZ_BYTES="$(wc -c < "$REBUILT_GZ" | tr -d ' ')"
 DB_BYTES="$(wc -c < "$STAGED_DB" | tr -d ' ')"
 ROW_COUNT="$(python3 -c 'import sqlite3,sys;c=sqlite3.connect(sys.argv[1]);print(c.execute("SELECT COUNT(*) FROM sop_embeddings").fetchone()[0])' "$STAGED_DB")"
-echo "  sop_embeddings row_count=$ROW_COUNT  source sops=$SOP_COUNT_SRC"
+echo "  sop_embeddings row_count=$ROW_COUNT  expected=$SOP_COUNT_SRC (from $SOP_RECORDS_SRC source records)"
 
 # Triad guard — refuse to publish a mismatched asset (mirrors the persona
 # pipeline's N38 triad gate): every source SOP must have been embedded.
 if [ "$ROW_COUNT" -lt "$SOP_COUNT_SRC" ]; then
-    echo "WARN: row_count ($ROW_COUNT) < source sop count ($SOP_COUNT_SRC) — NOT publishing an incomplete asset" >&2
+    echo "WARN: row_count ($ROW_COUNT) < expected distinct sop_id count ($SOP_COUNT_SRC, from $SOP_RECORDS_SRC source records) — NOT publishing an incomplete asset" >&2
     rm -f "$REBUILT_GZ"
     exit 1
 fi
