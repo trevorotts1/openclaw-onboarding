@@ -32,8 +32,12 @@
 # (operator-local rescue-webhook fan-out), with these deliberate differences:
 #   1. NO embedded roster. Targets come ONLY from --targets FILE. The script
 #      can never fan out wider than the rows it is handed.
-#   2. Gateway restart is MANDATORY in real mode (kickstart, stop fallback,
-#      openclaw CLI last resort; docker compose up -d --force-recreate on VPS).
+#   2. Gateway restart is MANDATORY in real mode. Mac: launchctl kickstart, then
+#      a stop-and-let-launchd-relaunch fallback -- launchctl ONLY, never
+#      `openclaw gateway restart` (see mac_restart_payload). VPS: docker compose
+#      up -d --force-recreate. Every restart is verified by a PID change AND a
+#      health probe; a box whose gateway does not come back is reported with an
+#      explicit GATEWAY_DOWN=MANUAL-INTERVENTION-REQUIRED marker.
 #   3. ATOMIC config writes (temp file + rename) with surfaced errors and
 #      restore-from-backup on any failure. Closes the known non-atomic
 #      json.dump defect in install.sh's _shared_write_ocjson.
@@ -235,18 +239,67 @@ val_for() {
   esac
 }
 
+# ---- channel id lookup helpers (BOTH config stores) -------------------------
+# PODBEAN_PODCAST_ID can live in EITHER store. The publisher reads it from the
+# PROCESS environment, which the gateway populates from openclaw.json env.vars
+# at start, so a box whose id lives only in the json store is fully provisioned
+# and must not be skipped. Consulting only ${ENV_FILE} false-SKIPs those boxes.
+#
+# PRECEDENCE: openclaw.json env.vars WINS over the env store, because env.vars
+# is what the gateway actually injects into the publisher process environment
+# at runtime; that is the value production really uses.
+#
+# DISAGREEMENT is NOT silently resolved. Two stores holding different ids means
+# the box is misconfigured, so both fingerprints are printed and the box FAILS
+# loudly (a plain REMOTE-ERROR, not a "precheck:" one, so the operator side
+# buckets it as FAIL rather than SKIP). The id value itself is never printed.
+env_lookup() { # $1=key -> value from ENV_FILE, one optional quote layer stripped
+  l="$(grep -m1 "^$1=" "${ENV_FILE}" 2>/dev/null || true)"
+  [ -n "$l" ] || return 0
+  v="${l#*=}"
+  case "$v" in
+    \'*\') v="${v#\'}"; v="${v%\'}" ;;
+    \"*\") v="${v#\"}"; v="${v%\"}" ;;
+  esac
+  printf '%s' "$v"
+}
+json_lookup() { # $1=key -> value from openclaw.json env.vars ("" if absent)
+  # same reader json_state() below uses; nonzero exit if the store is unreadable.
+  jq -r --arg k "$1" '.env.vars[$k] // ""' "${JSON_FILE}" 2>/dev/null
+}
+idhash() { # short one-way fingerprint; the id value itself is NEVER printed
+  if command -v sha256sum >/dev/null 2>&1; then printf '%s' "$1" | sha256sum | cut -c1-8
+  elif command -v shasum >/dev/null 2>&1; then printf '%s' "$1" | shasum -a 256 | cut -c1-8
+  else printf 'hash-unavailable'; fi
+}
+
 # ---- precheck ---------------------------------------------------------------
 command -v jq   >/dev/null 2>&1 || fail "precheck: jq missing on this box"
 command -v curl >/dev/null 2>&1 || echo "PRECHECK_CURL=NOT-PRESENT"
 [ -f "${ENV_FILE}" ]  || fail "precheck: env store missing at ${ENV_FILE}"
 [ -f "${JSON_FILE}" ] || fail "precheck: json store missing at ${JSON_FILE}"
 jq -e . "${JSON_FILE}" >/dev/null 2>&1 || fail "precheck: json store is not valid JSON (refusing to touch a corrupt file)"
-if grep -qE '^PODBEAN_PODCAST_ID=..*' "${ENV_FILE}"; then
-  echo "PRECHECK_CHANNEL_ID=SET"
-else
-  echo "PRECHECK_CHANNEL_ID=NOT-SET"
-  fail "precheck: PODBEAN_PODCAST_ID is NOT-SET in the env store (box not podcast-provisioned; skip)"
+CID_ENV="$(env_lookup PODBEAN_PODCAST_ID)"
+CID_JSON="$(json_lookup PODBEAN_PODCAST_ID)" || fail "precheck: could not read env.vars from ${JSON_FILE} (cannot tell whether this box is provisioned; failing closed)"
+if [ -n "${CID_ENV}" ] && [ -n "${CID_JSON}" ]; then
+  if [ "${CID_ENV}" = "${CID_JSON}" ]; then CID_SRC="both-agree"; else CID_SRC="both-DISAGREE"; fi
+elif [ -n "${CID_JSON}" ]; then CID_SRC="json"
+elif [ -n "${CID_ENV}" ]; then CID_SRC="env"
+else CID_SRC="none"
 fi
+echo "PRECHECK_CHANNEL_ID_SOURCE=${CID_SRC}"
+if [ "${CID_SRC}" = "none" ]; then
+  echo "PRECHECK_CHANNEL_ID=NOT-SET"
+  fail "precheck: PODBEAN_PODCAST_ID is NOT-SET in EITHER store (env store and openclaw.json env.vars both empty; box not podcast-provisioned; skip)"
+fi
+echo "PRECHECK_CHANNEL_ID=SET"
+if [ "${CID_SRC}" = "both-DISAGREE" ]; then
+  echo "PRECHECK_CHANNEL_ID_ENV_HASH=$(idhash "${CID_ENV}")"
+  echo "PRECHECK_CHANNEL_ID_JSON_HASH=$(idhash "${CID_JSON}")"
+  fail "PODBEAN_PODCAST_ID DISAGREES between the env store and openclaw.json env.vars (fingerprints above; values never printed). The gateway injects the json value at start, so the stores are inconsistent; refusing to guess which channel is live"
+fi
+# json env.vars wins (runtime authority); the env store is the fallback.
+if [ -n "${CID_JSON}" ]; then CHANNEL_ID="${CID_JSON}"; else CHANNEL_ID="${CID_ENV}"; fi
 echo "PRECHECK=OK"
 
 # ---- current-state comparison (drives no-op detection and dry-run report) ---
@@ -370,7 +423,9 @@ fi
 # endpoint is a roster lookup; nothing is published. Token rides in a curl
 # config read from stdin, never argv.
 if [ "${DO_TEST}" = "1" ] && command -v curl >/dev/null 2>&1; then
-  CHANNEL_ID="$(grep -m1 '^PODBEAN_PODCAST_ID=' "${ENV_FILE}" | cut -d= -f2- | sed "s/^'//;s/'\$//;s/^\"//;s/\"\$//")"
+  # CHANNEL_ID was resolved in the precheck from BOTH stores (json env.vars wins,
+  # env store is the fallback). Do NOT re-read only ${ENV_FILE} here: that read
+  # is what false-skipped json-only boxes.
   STAND_URL="${V_URL%/webhook/podbean-publish}/webhook/podcast-standing-check"
   BODY="$(jq -cn --arg l "${V_LAST}" --arg e "${V_EMAIL}" --arg p "${CHANNEL_ID}" '{client_last_name:$l, client_email:$e} + (if $p != "" then {podcast_id:$p} else {} end)')"
   RESP="/tmp/pcr-resp.$$"
@@ -397,46 +452,109 @@ PAYLOAD
 mac_restart_payload() {
 cat <<'RESTART'
 set -u
-OLD_PID="$(launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}')"
-echo "GATEWAY_OLD_PID=${OLD_PID:-none}"
-launchctl kickstart -k "gui/$(id -u)/ai.openclaw.gateway" 2>/dev/null
-rc=$?
-if [ "$rc" -eq 125 ] || [ "$rc" -eq 126 ]; then
-  echo "RESTART_METHOD=stop-fallback (kickstart rc=${rc})"
-  launchctl stop ai.openclaw.gateway 2>/dev/null
-  rc=$?
-else
-  echo "RESTART_METHOD=kickstart"
-fi
-if [ "$rc" -ne 0 ]; then
-  echo "RESTART_METHOD=openclaw-cli-fallback (launchctl rc=${rc})"
-  openclaw gateway restart >/dev/null 2>&1
-  rc=$?
-fi
-[ "$rc" -eq 0 ] || { echo "RESTART=FAIL (rc=${rc})"; exit 1; }
-i=0; NEW_PID=""
-while [ "$i" -lt 12 ]; do
-  sleep 5
-  NEW_PID="$(launchctl list 2>/dev/null | awk '$3=="ai.openclaw.gateway"{print $1}')"
-  case "${NEW_PID}" in ""|-) ;; *) [ "${NEW_PID}" != "${OLD_PID}" ] && break ;; esac
-  i=$((i+1))
-done
-echo "GATEWAY_NEW_PID=${NEW_PID:-none}"
+GW_LABEL="ai.openclaw.gateway"
+GW_HEALTH_URL="http://127.0.0.1:18789/health"
+
+gw_pid() { launchctl list 2>/dev/null | awk -v l="${GW_LABEL}" '$3==l{print $1}'; }
+
+# Did the process ACTUALLY restart? Bounded poll; sets NEW_PID / PID_CHANGED.
+# A gateway that never restarted has NOT loaded the new values, so "something
+# answers the health port" is not sufficient evidence of a successful roll.
+poll_pid() {
+  i=0; NEW_PID=""; PID_CHANGED=0
+  while [ "$i" -lt 12 ]; do
+    sleep 5
+    NEW_PID="$(gw_pid)"
+    case "${NEW_PID}" in
+      ""|-) ;;
+      *) case "${OLD_PID}" in
+           ""|-) PID_CHANGED=1; break ;;
+           *) [ "${NEW_PID}" != "${OLD_PID}" ] && { PID_CHANGED=1; break; } ;;
+         esac ;;
+    esac
+    i=$((i+1))
+  done
+}
+
 # Health needs its OWN bounded poll: the process appears (new PID) seconds
 # before the port binds, so a single probe right after the PID flip can catch
 # the gap and report a false FAIL (observed live on the operator box).
-HEALTH=""
-j=0
-while [ "$j" -lt 12 ]; do
-  HEALTH="$(curl -s -m 5 http://127.0.0.1:18789/health 2>/dev/null || true)"
-  case "${HEALTH}" in *'"ok":true'*) break ;; esac
-  sleep 5
-  j=$((j+1))
-done
-case "${HEALTH}" in
-  *'"ok":true'*) echo "GATEWAY_HEALTH=live"; echo "RESTART=OK" ;;
-  *) echo "GATEWAY_HEALTH=${HEALTH:-none}"; echo "RESTART=FAIL (health check did not return ok:true within the bounded poll)"; exit 1 ;;
-esac
+poll_health() {
+  HEALTH=""; HEALTH_OK=0
+  j=0
+  while [ "$j" -lt 12 ]; do
+    HEALTH="$(curl -s -m 5 "${GW_HEALTH_URL}" 2>/dev/null || true)"
+    case "${HEALTH}" in *'"ok":true'*) HEALTH_OK=1; break ;; esac
+    sleep 5
+    j=$((j+1))
+  done
+}
+
+# SAFE RESTART METHODS ONLY: launchctl kickstart, then a stop fallback that
+# lets launchd relaunch the job. `openclaw gateway restart` is deliberately NOT
+# used here: on 2026-06-08 that exact command took a Mac gateway DOWN and LEFT
+# IT DOWN, and its output was discarded so the failure was invisible. It also
+# adds no capability launchd does not already have -- if launchd owns the job,
+# kickstart restarts it; if launchd does not, the CLI can only start a gateway
+# outside supervision with nothing to relaunch it. The proven fleet reference
+# (~/clawd/fleet-heartbeat/scripts/propagate-rescue-webhook.sh) restarts Macs
+# with launchctl only.
+kickstart_gw() { # echoes rc + any launchctl diagnostic, never a secret
+  KOUT="$(launchctl kickstart -k "gui/$(id -u)/${GW_LABEL}" 2>&1)"; KRC=$?
+  [ -n "${KOUT}" ] && echo "RESTART_LAUNCHCTL_OUT=$(printf '%s' "${KOUT}" | tr '\n' ' ')"
+  return "${KRC}"
+}
+
+OLD_PID="$(gw_pid)"
+echo "GATEWAY_OLD_PID=${OLD_PID:-none}"
+
+kickstart_gw; rc=$?
+if [ "$rc" -eq 0 ]; then
+  echo "RESTART_METHOD=kickstart"
+else
+  # ANY nonzero kickstart rc falls back to stop-and-let-launchd-relaunch. The
+  # old chain only did this for rc 125/126 and routed every other rc (e.g. 3,
+  # "no such service") straight to the gateway-killer CLI path.
+  echo "RESTART_METHOD=stop-fallback (kickstart rc=${rc})"
+  SOUT="$(launchctl stop "${GW_LABEL}" 2>&1)"; rc=$?
+  [ -n "${SOUT}" ] && echo "RESTART_LAUNCHCTL_OUT=$(printf '%s' "${SOUT}" | tr '\n' ' ')"
+  echo "RESTART_STOP_RC=${rc}"
+fi
+
+# Never exit on the restart rc alone: a nonzero rc may still have killed the
+# running gateway, so the box must be verified (and recovered) either way.
+poll_pid
+poll_health
+echo "GATEWAY_NEW_PID=${NEW_PID:-none}"
+echo "GATEWAY_PID_CHANGED=${PID_CHANGED}"
+
+# One bounded recovery kickstart before declaring the box down or unrestarted.
+if [ "${HEALTH_OK}" != "1" ] || [ "${PID_CHANGED}" != "1" ]; then
+  echo "RESTART_RECOVERY=attempting (pid_changed=${PID_CHANGED} health_ok=${HEALTH_OK})"
+  kickstart_gw; rrc=$?
+  echo "RESTART_RECOVERY_RC=${rrc}"
+  poll_pid
+  poll_health
+  echo "GATEWAY_NEW_PID=${NEW_PID:-none}"
+  echo "GATEWAY_PID_CHANGED=${PID_CHANGED}"
+fi
+
+if [ "${HEALTH_OK}" = "1" ] && [ "${PID_CHANGED}" = "1" ]; then
+  echo "GATEWAY_HEALTH=live"
+  echo "RESTART=OK"
+elif [ "${HEALTH_OK}" = "1" ]; then
+  # The gateway answers, but it is the SAME process that was running before:
+  # it never reloaded config, so the five podcast values are NOT live. This
+  # used to be scored RESTART=OK, which reported PASS on an unrolled box.
+  echo "GATEWAY_HEALTH=live"
+  echo "RESTART=FAIL (gateway process never restarted: pid unchanged at ${NEW_PID:-none}; new values are NOT loaded)"
+  exit 1
+else
+  echo "GATEWAY_HEALTH=${HEALTH:-none}"
+  echo "GATEWAY_DOWN=MANUAL-INTERVENTION-REQUIRED"
+  echo "RESTART=FAIL (GATEWAY DOWN - MANUAL INTERVENTION REQUIRED: no ok:true from ${GW_HEALTH_URL} after the restart chain and one recovery kickstart)"
+  exit 1
+fi
 RESTART
 }
 
@@ -551,24 +669,62 @@ prc=\$?
 
 if [ "\${RMODE}" = "real" ]; then
   echo "RESTART_METHOD=compose-force-recreate"
-  ( cd "\${COMPOSE_DIR}" && docker compose up -d --force-recreate 2>&1 | tail -4 )
-  i=0; RUNNING=false
+  # A container that never restarted is still "running", so "running" alone can
+  # never prove a restart. Two independent proofs are REQUIRED here:
+  #   1. docker compose exited 0. Its status is CAPTURED, never piped away.
+  #   2. the container ID CHANGED. --force-recreate always builds a NEW
+  #      container, so an unchanged ID means the OLD container, carrying the OLD
+  #      config, is still the one serving.
+  # Then the new value must be reachable by the new gateway (process env or the
+  # json store inside the NEW container) or the box FAILS.
+  OLD_CID="\$(docker inspect -f '{{.Id}}' "\${CONTAINER}" 2>/dev/null || true)"
+  printf 'RESTART_CONTAINER_OLD_ID=%.12s\n' "\${OLD_CID:-none}"
+  CUP_OUT="/tmp/pcr-compose.\$\$"
+  ( cd "\${COMPOSE_DIR}" && docker compose up -d --force-recreate ) > "\${CUP_OUT}" 2>&1
+  crc=\$?
+  tail -4 "\${CUP_OUT}"; rm -f "\${CUP_OUT}"
+  echo "RESTART_COMPOSE_RC=\${crc}"
+  if [ "\${crc}" -ne 0 ]; then
+    echo "RESTART=FAIL (docker compose up -d --force-recreate exited rc=\${crc}; container NOT recreated, OLD config still live)"
+    echo "RESULT=FAIL"; exit 1
+  fi
+  i=0; RUNNING=false; NEW_CID=""
   while [ "\$i" -lt 12 ]; do
     sleep 5
+    NEW_CID="\$(docker inspect -f '{{.Id}}' "\${CONTAINER}" 2>/dev/null || true)"
     RUNNING="\$(docker inspect -f '{{.State.Running}}' "\${CONTAINER}" 2>/dev/null || echo false)"
-    [ "\${RUNNING}" = "true" ] && break
+    if [ "\${RUNNING}" = "true" ] && [ -n "\${NEW_CID}" ] && [ "\${NEW_CID}" != "\${OLD_CID}" ]; then break; fi
     i=\$((i+1))
   done
-  if [ "\${RUNNING}" = "true" ]; then
-    echo "RESTART=OK"
-    if docker exec -u node "\${CONTAINER}" printenv ${K_URL} >/dev/null 2>&1; then
-      echo "RUNTIME_ENV=${K_URL}=SET"
-    else
-      echo "RUNTIME_ENV=${K_URL}=NOT-SET (json env.vars still applies at gateway load)"
-    fi
-  else
+  printf 'RESTART_CONTAINER_NEW_ID=%.12s\n' "\${NEW_CID:-none}"
+  if [ "\${RUNNING}" != "true" ]; then
     echo "RESTART=FAIL (container not running after bounded poll)"; echo "RESULT=FAIL"; exit 1
   fi
+  if [ -z "\${NEW_CID}" ] || [ "\${NEW_CID}" = "\${OLD_CID}" ]; then
+    echo "RESTART=FAIL (container id unchanged after force-recreate; the OLD container is still running with the OLD config)"
+    echo "RESULT=FAIL"; exit 1
+  fi
+  # Proof the value reached the NEW container. Either load path is sufficient:
+  # the process env (host .env re-exported by the recreate) or the json store
+  # env.vars block the gateway reads at load. NEITHER present means the recreate
+  # did not carry the value (for example a non-persistent /data volume), which
+  # is exactly the silent failure this roll exists to prevent.
+  RUNTIME_OK=0
+  if docker exec -u node "\${CONTAINER}" printenv ${K_URL} >/dev/null 2>&1; then
+    echo "RUNTIME_ENV=${K_URL}=SET"; RUNTIME_OK=1
+  else
+    echo "RUNTIME_ENV=${K_URL}=NOT-SET"
+  fi
+  if docker exec -u node "\${CONTAINER}" sh -c 'jq -e ".env.vars.${K_URL} // empty" /data/.openclaw/openclaw.json' >/dev/null 2>&1; then
+    echo "RUNTIME_ENV_JSON=${K_URL}=SET"; RUNTIME_OK=1
+  else
+    echo "RUNTIME_ENV_JSON=${K_URL}=NOT-SET"
+  fi
+  if [ "\${RUNTIME_OK}" -ne 1 ]; then
+    echo "RESTART=FAIL (new container carries ${K_URL} in NEITHER its process env NOR its json store; the value did not survive the recreate)"
+    echo "RESULT=FAIL"; exit 1
+  fi
+  echo "RESTART=OK"
 fi
 HOST
 )"
@@ -578,7 +734,7 @@ HOST
 # ---------------------------------------------------------------------------
 # main loop: one box at a time, record and continue
 # ---------------------------------------------------------------------------
-PASS_LIST=""; FAIL_LIST=""; SKIP_LIST=""
+PASS_LIST=""; FAIL_LIST=""; SKIP_LIST=""; PARTIAL_LIST=""; GWDOWN_LIST=""
 MODE_LABEL="$([ "${DRY_RUN}" = "1" ] && echo dry || echo real)"
 
 for row in "${ROWS[@]}"; do
@@ -599,6 +755,21 @@ for row in "${ROWS[@]}"; do
       log "box ${slug}: FAIL (payload ok but restart not confirmed)"
       ledger_append "${slug}" "${btype}" "${MODE_LABEL}" "FAIL" "restart-not-confirmed" "${MARKERS}"
       FAIL_LIST="${FAIL_LIST} ${slug}"
+    elif grep -q '^TEST_CALL=FAIL' "${MARKERS}"; then
+      # The wiring test RAN and FAILED. That is the exact symptom this roll
+      # exists to clear (an HTTP 401 means the box is not authorized against the
+      # publish proxy), so it can never be recorded as PASS. A deliberate skip
+      # (TEST_CALL=SKIPPED, from curl missing or --skip-test-call) is NOT a
+      # failure and does not match this branch.
+      test_http="$(grep -m1 '^TEST_HTTP=' "${MARKERS}" | cut -d= -f2- || true)"
+      if [ "${MODE_LABEL}" = "real" ]; then
+        reason="wiring-test-failed (HTTP ${test_http:-none}); values written and verified but box NOT proven working"
+      else
+        reason="wiring-test-failed (HTTP ${test_http:-none}); dry-run, nothing was written"
+      fi
+      log "box ${slug}: PARTIAL (${reason})"
+      ledger_append "${slug}" "${btype}" "${MODE_LABEL}" "PARTIAL" "${reason}" "${MARKERS}"
+      PARTIAL_LIST="${PARTIAL_LIST} ${slug}"
     else
       log "box ${slug}: PASS"
       ledger_append "${slug}" "${btype}" "${MODE_LABEL}" "PASS" "" "${MARKERS}"
@@ -613,6 +784,10 @@ for row in "${ROWS[@]}"; do
     reason="$(grep -m1 '^REMOTE-ERROR:' "${MARKERS}" | sed 's/^REMOTE-ERROR: //' || true)"
     [ -n "${reason}" ] || reason="$(grep -m1 '^RESTART=FAIL' "${MARKERS}" || true)"
     [ -n "${reason}" ] || reason="ssh or payload failure (rc=${rc})"
+    if grep -q '^GATEWAY_DOWN=MANUAL-INTERVENTION-REQUIRED' "${MARKERS}"; then
+      reason="GATEWAY DOWN - MANUAL INTERVENTION REQUIRED :: ${reason}"
+      GWDOWN_LIST="${GWDOWN_LIST} ${slug}"
+    fi
     log "box ${slug}: FAIL (${reason})"
     ledger_append "${slug}" "${btype}" "${MODE_LABEL}" "FAIL" "${reason}" "${MARKERS}"
     FAIL_LIST="${FAIL_LIST} ${slug}"
@@ -625,8 +800,18 @@ echo "==================================================================="
 echo "Podcast publish-proxy roll summary (UTC ${TS})  mode=${MODE_LABEL}"
 echo "  pass: ${PASS_LIST:- none}"
 echo "  skip: ${SKIP_LIST:- none}"
+echo "  partial: ${PARTIAL_LIST:- none}  (stores written, wiring test FAILED, box NOT proven)"
 echo "  fail: ${FAIL_LIST:- none}"
+if [ -n "${GWDOWN_LIST}" ]; then
+  echo "  !! GATEWAY DOWN - MANUAL INTERVENTION REQUIRED:${GWDOWN_LIST}"
+  echo "  !! The gateway on the box(es) above did not answer ok:true after the"
+  echo "  !! restart chain and one recovery kickstart. Get hands on them now."
+fi
 echo "  ledger: ${LEDGER}"
 echo "==================================================================="
-[ -z "${FAIL_LIST}" ] || exit 2
+# PARTIAL is a non-success verdict: it exits nonzero exactly like FAIL, so no
+# caller can read a failed wiring test as a green run. GWDOWN_LIST is a strict
+# subset of FAIL_LIST (every gateway-down box is also appended to FAIL_LIST in
+# the else branch above), so it needs no separate term here.
+[ -z "${FAIL_LIST}${PARTIAL_LIST}" ] || exit 2
 exit 0
