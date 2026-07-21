@@ -22,7 +22,13 @@ assert "Skill 08 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/08-vercel-setup\" ]
 assert "Node.js installed" "command -v node"
 assert "npm installed" "command -v npm"
 assert "jq installed" "command -v jq"
-assert "vercel CLI installed" "command -v vercel"
+# NOT CHECKED, ON PURPOSE — the Vercel CLI.
+# SKILL.md's API-ONLY EXECUTION LOCK (SOVEREIGN) states: "do NOT use the Vercel
+# CLI for setup/auth. Use browser-based account/token creation and API-token
+# verification only." A box installed exactly as documented has no vercel binary,
+# so asserting `command -v vercel` failed this gate permanently on every correct
+# install. The skill's installed condition is the API token, asserted below.
+echo "  — SKIPPED BY DESIGN — Vercel CLI presence (SKILL.md API-ONLY SOVEREIGN LOCK forbids it; not a pass, not a failure)"
 assert "VERCEL_TOKEN set" "[ -n \"$VERCEL_TOKEN\" ]"
 TOKEN_TEST=$(curl -sS -m 10 -H "Authorization: Bearer $VERCEL_TOKEN" "https://api.vercel.com/v2/user" 2>/dev/null)
 warn_only "Vercel token validates" "echo \"$TOKEN_TEST\" | grep -qE '\"user\"|\"username\"|\"email\"'"
