@@ -15,11 +15,10 @@
 # Format:  vX.Y.Z  # reason
 #
 # Snapshot taken against main = 3827d172 (2026-07-21), 574 tags, 5 orphans.
+# v20.0.90 repaid 2026-07-21: it is now an ancestor of main, so G4 requires its
+# removal from this ledger (stale entries would hide future regressions). 4 remain.
 
 v11.16.0  # historical: cut from a branch commit that never landed on main
 v11.20.0  # historical: release bump lost to a rebase collision
 v14.1.1   # historical: cut from a branch commit that never landed on main
 v14.1.2   # historical: cut from a branch commit that never landed on main
-v20.0.90  # pushed by NAME from the shared local tag namespace; resolves to
-          # d3686e7b7 on the unmerged branch behind PR #710. Clears itself when
-          # that PR merges — no operator action needed if it lands.
