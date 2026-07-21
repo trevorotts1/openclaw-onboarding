@@ -1,3 +1,67 @@
+## [v20.0.89]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
+
+`b3e25876` (v14.28.1, 2026-06-28) demoted `real-estate`/`listings` out of the
+universal floor so it would stop landing on generic / coaching / consulting
+boxes. `build-workforce.apply_vertical_packs` was fixed and `department-floor.py`
+agreed. The UPDATE path consulted neither:
+
+    update-skills.sh
+      -> migrate-existing-workforce.sh --apply        (Step 2b)
+         -> detect-stale-artifacts.py                 (verdict derived ONLY from
+            templates/role-library/_index.json)
+         -> make-gap-from-staleness.py
+         -> floor-fill-driver.py --apply              (mkdir'd the department)
+
+`detect-stale-artifacts.classify()` walks EVERY key in the role library and marks
+anything the box has no built copy of `MISSING`. The library ships all 36
+departments, industry-gated ones included, and has no concept of vertical packs,
+declared industries, or owner declines. All five `listings` roles therefore
+classified MISSING, reached the gap-map as their own `kind: "role"` items, and
+`floor-fill-driver.py` created the department for them.
+
+Dropping `kind: "dept"` items in `make-gap-from-staleness.py` never prevented
+this — an absent department is reconstructed implicitly from its ROLE items — yet
+`floor-wipe-fix-guard.yml`'s own header asserted the opposite ("a department that
+is entirely absent was invisible to it"). That false premise hid the defect and
+is corrected here.
+
+Four boxes were found with their ENTIRE 36-department tree created fresh on
+2026-07-20 (`mtime == birthtime`) while running the POST-demotion naming map
+(2.6.2). One of them, `rescue-eddie-otts`, records an OWNER DECLINE of all six
+universal-primary verticals and carries an operator-signed 18-department subset
+floor — it still had all 36. Reproduced offline: a scratch workspace holding only
+`marketing/` comes out of detect -> make-gap -> floor-fill `--apply` with exactly
+the 36-department set observed on those boxes, `listings/` included, with the
+same five role folders in the same order.
+
+FIX: `floor-fill-driver.py` now asks `vertical-derivation-guard.check_add()` —
+the repo's existing refusal primitive, which reads `department-naming-map.json`
+and nothing else — before creating a department that is ABSENT from disk. No
+fourth copy of the industry-department list is introduced; T7 of the new suite
+fails the build if one ever is. Declared-set resolution is fail-closed:
+`--declared-packs`, then `verticalPacks.detectedPacks`, then a `--core-answers`
+re-derivation, then EMPTY.
+
+Scope is deliberately minimal. ONLY absent departments are gated; one already on
+disk is filled exactly as before, and this tool NEVER removes a department —
+cleaning up existing residue stays an owner decision. Canonical/mandatory
+departments and universal-primary verticals are never gated. A refusal is a
+POLICY SKIP reported under `depts_vertical_gated`, rc 0, and is NOT counted as an
+unfilled gap, so it cannot turn every fleet update into
+`WORKFORCE-PROVISIONING INCOMPLETE`.
+
+`23-ai-workforce-blueprint/scripts/test-floor-fill-vertical-gate.sh` (13 checks)
+is the permanent lock, wired into `floor-wipe-fix-guard.yml` as its fifth suite.
+T1 is fail-first: against the pre-fix driver it reports `'listings' WAS created
+on a box that declared no vertical` (10 passed / 3 failed, exit 1), and 13/13
+after. The suite uses only flags the pre-fix driver also accepted, so the
+fail-before is behavioral rather than an argparse error.
+
+BLAST RADIUS, measured read-only before shipping: every reachable box already
+carries `listings` on disk, so no box loses a department and nothing is removed.
+The gate only prevents a future force-add onto a box that never declared the
+vertical.
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
