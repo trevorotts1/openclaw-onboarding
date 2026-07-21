@@ -741,6 +741,115 @@ except Exception:
 # all current blueprints) and after provision_persona_index.
 # ---------------------------------------------------------------------------
 # --- F1 helpers (qmd reconcile robustness) ------------------------------------
+#
+# BOUNDED QMD (v20.0.81). Every `qmd` call used to be unbounded. On a box whose
+# native better-sqlite3 ABI is broken, `qmd` falls through to `bunx @tobilu/qmd`,
+# which takes ~17 MINUTES to download, start and fail. Three sequential calls
+# burned ~50 of one update run's 64 minutes — and because the removes were
+# written as `qmd ... || true`, a call that never completed was indistinguishable
+# from one that succeeded. The updater then printed "removing the collection" for
+# a collection it had not removed.
+#
+# So: every qmd invocation now runs under a hard wall-clock bound, and a call
+# that hits the bound is REPORTED, never swallowed.
+#   * 60s for `collection list` / `collection remove` — measured adequate; these
+#     are metadata operations that take well under a second on a healthy box.
+#   * 600s for `collection add` / `update` — these do real indexing work, so they
+#     get a generous bound, but they are bounded: on an ABI-broken box they route
+#     through the same ~17-minute bunx path as everything else.
+# `timeout` is not present on a stock macOS, so we fall back to gtimeout
+# (coreutils) and then to a pure-POSIX watchdog. Exit 124/137 = timed out.
+_QMD_TIMEOUT_BIN=""
+_QMD_TIMEOUT_RESOLVED=0
+_QMD_TIMEOUTS=0
+_QMD_TIMEOUT_CALLS=""
+_QMD_LIST_TIMEOUT="${QMD_LIST_TIMEOUT:-60}"
+_QMD_INDEX_TIMEOUT="${QMD_INDEX_TIMEOUT:-600}"
+
+_qmd_resolve_timeout_bin() {
+    [ "$_QMD_TIMEOUT_RESOLVED" -eq 1 ] && return 0
+    _QMD_TIMEOUT_RESOLVED=1
+    if command -v timeout >/dev/null 2>&1; then
+        _QMD_TIMEOUT_BIN="timeout"
+    elif command -v gtimeout >/dev/null 2>&1; then
+        _QMD_TIMEOUT_BIN="gtimeout"
+    else
+        _QMD_TIMEOUT_BIN=""
+    fi
+    return 0
+}
+
+# _qmd_watchdog <secs> <cmd...> — portable fallback when no timeout(1) exists.
+# Returns 124 on expiry, mirroring GNU timeout.
+_qmd_watchdog() {
+    local _secs="$1"; shift
+    local _pid _i=0 _rc=0
+    "$@" &
+    _pid=$!
+    while [ "$_i" -lt "$_secs" ]; do
+        kill -0 "$_pid" 2>/dev/null || break
+        sleep 1
+        _i=$((_i + 1))
+    done
+    if kill -0 "$_pid" 2>/dev/null; then
+        kill -TERM "$_pid" 2>/dev/null || true
+        sleep 1
+        kill -KILL "$_pid" 2>/dev/null || true
+        wait "$_pid" 2>/dev/null || true
+        return 124
+    fi
+    wait "$_pid" || _rc=$?
+    return "$_rc"
+}
+
+# _qmd_bounded <secs> <qmd-args...> — run `qmd <args>` under a hard bound.
+# qmd's own stderr is suppressed (every call site already did that); THIS
+# function's timeout notice goes to stderr so a caller's own `>/dev/null`
+# cannot hide it, and so it never pollutes a `$(...)` capture.
+# NEVER aborts a caller under `set -e` — all failure paths are guarded.
+_qmd_bounded() {
+    local _secs="$1"; shift
+    local _rc=0
+    _qmd_resolve_timeout_bin
+    if [ -n "$_QMD_TIMEOUT_BIN" ]; then
+        "$_QMD_TIMEOUT_BIN" "$_secs" qmd "$@" 2>/dev/null || _rc=$?
+    else
+        _qmd_watchdog "$_secs" qmd "$@" 2>/dev/null || _rc=$?
+    fi
+    if [ "$_rc" -eq 124 ] || [ "$_rc" -eq 137 ]; then
+        _QMD_TIMEOUTS=$((_QMD_TIMEOUTS + 1))
+        _QMD_TIMEOUT_CALLS="${_QMD_TIMEOUT_CALLS}'qmd $*' after ${_secs}s; "
+        printf '  ⚠ qmd TIMED OUT after %ss: qmd %s — treated as FAILURE, not success\n' \
+            "$_secs" "$*" >&2
+    fi
+    return "$_rc"
+}
+
+# _qmd_report_timeouts — end-of-block summary. A bounded call that hit its bound
+# is a FAILURE that merely happened to be fast; say so once, on EVERY exit path,
+# so it survives in the run log after the individual notices scroll past.
+_qmd_report_timeouts() {
+    [ "$_QMD_TIMEOUTS" -gt 0 ] || return 0
+    echo "  STATUS: qmd-timeout — ${_QMD_TIMEOUTS} bounded qmd call(s) exceeded their limit: ${_QMD_TIMEOUT_CALLS}"
+    echo "    The qmd persona store was NOT reconciled and its state is UNKNOWN. This is almost"
+    echo "    always a broken better-sqlite3 ABI sending every qmd call through 'bunx @tobilu/qmd'"
+    echo "    (~17 minutes per call). Inventory answers fall back to persona-categories.json (N16)."
+    return 0
+}
+
+# _qmd_remove_collection <name> — bounded remove that never claims success it
+# cannot prove. Returns 124 when the remove timed out (collection may survive).
+_qmd_remove_collection() {
+    local _c="$1" _rc=0
+    _qmd_bounded "$_QMD_LIST_TIMEOUT" collection remove "$_c" >/dev/null || _rc=$?
+    if [ "$_rc" -eq 124 ] || [ "$_rc" -eq 137 ]; then
+        echo "  ⚠ qmd collection remove '$_c' TIMED OUT after ${_QMD_LIST_TIMEOUT}s — the collection"
+        echo "    may STILL EXIST and may still be readable by the agent. NOT reporting it as removed."
+        return 124
+    fi
+    return 0
+}
+
 # _qmd_collection_files_count <collection> — echo the integer "Files:" count qmd
 # reports for the collection, or empty. `qmd collection list` never prints the
 # on-disk source path (which is why the old grep-the-path canonicity test could
@@ -764,7 +873,7 @@ _qmd_collection_files_count() {
     # can NEVER return non-zero and can never abort a caller under
     # `set -e`+`pipefail`, at any call site (the count semantics are unchanged:
     # echo the integer count, or nothing).
-    qmd collection list 2>/dev/null | awk -v want="$_c" '
+    _qmd_bounded "$_QMD_LIST_TIMEOUT" collection list | awk -v want="$_c" '
         index($0, "qmd://" want "/") { inblk=1; next }
         inblk && !got && tolower($0) ~ /files:/ { n=$0; gsub(/[^0-9]/, "", n); val=n; got=1 }
         inblk && index($0, "qmd://") { inblk=0 }
@@ -826,15 +935,16 @@ reconcile_qmd_persona_index() {
     # qmd-abi-broken status and tear down the collection so a query ERRORS
     # (N16 persona-categories.json fallback) rather than silently reading a
     # frozen/empty store.
-    if ! qmd collection list >/dev/null 2>&1; then
+    if ! _qmd_bounded "$_QMD_LIST_TIMEOUT" collection list >/dev/null; then
         echo "  ⚠ qmd present but failing a basic probe (likely a better-sqlite3 ABI break after a Node upgrade) — attempting npm rebuild better-sqlite3"
         _qmd_rebuild_better_sqlite3
-        if qmd collection list >/dev/null 2>&1; then
+        if _qmd_bounded "$_QMD_LIST_TIMEOUT" collection list >/dev/null; then
             echo "  ✓ qmd recovered after npm rebuild better-sqlite3"
         else
             echo "  STATUS: qmd-abi-broken — qmd still failing after rebuild; removing any '$_COLL' collection so inventory queries ERROR → persona-categories.json fallback (N16)"
-            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            _qmd_remove_collection "$_COLL" || true
             rm -f "$_SENTINEL" 2>/dev/null || true
+            _qmd_report_timeouts
             return 0
         fi
     fi
@@ -847,7 +957,7 @@ reconcile_qmd_persona_index() {
     [ -n "$_MD_COUNT" ] || _MD_COUNT=0
 
     local _LIST _HAS_COLL=0 _POINTS_CANON=0
-    _LIST="$(qmd collection list 2>/dev/null || true)"
+    _LIST="$(_qmd_bounded "$_QMD_LIST_TIMEOUT" collection list || true)"
     if printf '%s' "$_LIST" | grep -q "$_COLL"; then
         _HAS_COLL=1
         # Canonical iff the sentinel path == canonical dir AND the live Files:
@@ -865,7 +975,7 @@ reconcile_qmd_persona_index() {
 
     if [ "$_HAS_COLL" -eq 1 ] && [ "$_POINTS_CANON" -eq 0 ]; then
         echo "  → qmd '$_COLL' collection is stale/mispointed or short (sentinel/Files: disagree with canonical $_PERSONAS_DIR) — removing so it can be re-indexed at the canonical path"
-        qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+        _qmd_remove_collection "$_COLL" || true
         rm -f "$_SENTINEL" 2>/dev/null || true
         _HAS_COLL=0
     fi
@@ -874,7 +984,7 @@ reconcile_qmd_persona_index() {
         # RECURSIVE mask: every blueprint is <slug>/persona-blueprint.md one level
         # down — '*.md' (non-recursive) matched 0 files yet `qmd collection add`
         # still exits 0, producing a confident-but-EMPTY store.
-        if qmd collection add "$_PERSONAS_DIR" --name "$_COLL" --mask '**/*.md' >/dev/null 2>&1; then
+        if _qmd_bounded "$_QMD_INDEX_TIMEOUT" collection add "$_PERSONAS_DIR" --name "$_COLL" --mask '**/*.md' >/dev/null; then
             local _FILES
             _FILES="$(_qmd_collection_files_count "$_COLL")"
             if [ "${_FILES:-0}" -gt 0 ] 2>/dev/null; then
@@ -882,18 +992,18 @@ reconcile_qmd_persona_index() {
                 echo "  ✓ qmd '$_COLL' collection (re)indexed at canonical $_PERSONAS_DIR (${_FILES} files indexed, BM25/full-text only — furnace-safe)"
             else
                 echo "  ⚠ qmd '$_COLL' add reported success but indexed ZERO files (an empty store is the worst state — it returns 'No results' instead of erroring) — tearing it down so inventory queries ERROR → persona-categories.json fallback (N16)"
-                qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+                _qmd_remove_collection "$_COLL" || true
                 rm -f "$_SENTINEL" 2>/dev/null || true
             fi
         else
-            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            _qmd_remove_collection "$_COLL" || true
             rm -f "$_SENTINEL" 2>/dev/null || true
             echo "  note: could not (re)create qmd '$_COLL' at canonical path — removed any stale collection so the agent cannot read a frozen store (inventory answers from persona-categories.json per N16)"
         fi
     else
         # Already canonical → refresh its index so newly-added persona dirs
         # surface, then RE-VERIFY Files: > 0 (a bad update can empty the store).
-        qmd update >/dev/null 2>&1 || true
+        _qmd_bounded "$_QMD_INDEX_TIMEOUT" update >/dev/null || true
         local _FILES
         _FILES="$(_qmd_collection_files_count "$_COLL")"
         if [ "${_FILES:-0}" -gt 0 ] 2>/dev/null; then
@@ -901,10 +1011,12 @@ reconcile_qmd_persona_index() {
             echo "  ✓ qmd '$_COLL' collection already canonical at $_PERSONAS_DIR (${_FILES} files) — re-indexed (qmd update; BM25, furnace-safe)"
         else
             echo "  ⚠ qmd '$_COLL' canonical store now indexes ZERO files after update — tearing it down so inventory queries ERROR → persona-categories.json fallback (N16)"
-            qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+            _qmd_remove_collection "$_COLL" || true
             rm -f "$_SENTINEL" 2>/dev/null || true
         fi
     fi
+
+    _qmd_report_timeouts
 }
 
 # ---------------------------------------------------------------------------

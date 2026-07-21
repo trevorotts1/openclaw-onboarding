@@ -1,0 +1,58 @@
+name: qmd bounded-timeout guard
+
+# THE DEFECT THIS LOCKS (v20.0.81): every `qmd` invocation in
+# shared-utils/provision-persona-index.sh was UNBOUNDED. On a box whose native
+# better-sqlite3 ABI is broken, `qmd` falls through to `bunx @tobilu/qmd`, which
+# takes ~17 MINUTES to download, start and then fail. Three sequential calls
+# burned ~50 of one update run's 64 minutes.
+#
+# The silent half was worse than the slow half: the removes were written
+# `qmd collection remove ... || true`, so a call that never completed was
+# indistinguishable from one that succeeded. The updater logged "removing the
+# collection" for a collection it had not removed, and the agent went on reading
+# a store the log said was gone.
+#
+# The suite is hermetic — a stub `qmd` and a stub `npm` are placed on PATH inside
+# a temp dir, so nothing touches the runner's real toolchain, the network, or any
+# fleet box.
+#
+# Assertion 6 is the anti-false-positive control: with a FAST, WORKING qmd stub
+# the run must report NO timeout. A "fix" that quiets the gate by always claiming
+# a timeout fails this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "shared-utils/provision-persona-index.sh"
+      - "tests/unit/qmd-bounded-timeout.test.sh"
+      - ".github/workflows/qmd-bounded-timeout-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "shared-utils/provision-persona-index.sh"
+      - "tests/unit/qmd-bounded-timeout.test.sh"
+      - ".github/workflows/qmd-bounded-timeout-guard.yml"
+
+jobs:
+  qmd-bounded-timeout-guard:
+    name: every qmd call is bounded and a timeout is reported
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the changed shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n shared-utils/provision-persona-index.sh
+          bash -n tests/unit/qmd-bounded-timeout.test.sh
+          echo "OK: syntax checks passed"
+
+      - name: Run the qmd bounded-timeout suite (6 assertions)
+        shell: bash
+        run: |
+          set -uo pipefail
+          chmod +x tests/unit/qmd-bounded-timeout.test.sh
+          bash tests/unit/qmd-bounded-timeout.test.sh
