@@ -1018,29 +1018,44 @@ _cc_resolve_bash4() {
   return 1
 }
 
-# cc_git_sync_to_default_branch <repo_dir> — detached-HEAD-safe replacement for
-# `git pull --ff-only` on the CC checkout (D7). A client CC pinned to a version
-# tag is in DETACHED HEAD, where `git pull --ff-only` aborts ("You are not
-# currently on a branch"), silently freezing the CC at the old tag so the update
-# never lands (observed on multiple client Command Center boxes). Fix: fetch origin's default
-# branch, then re-attach to it via `git checkout -B` (detached) or fast-forward
-# (already on a branch). BOTH paths preserve the client's local patches:
+# cc_git_sync_to_default_branch <repo_dir> — converge every checkout onto the
+# origin default branch, including detached HEADs and boxes left on a feature
+# branch. BOTH paths preserve the box's local commits and patches:
 #   • .env.local / *.db are gitignored — no git op ever touches them.
-#   • logo-config.json / dept-board edits are tracked+locally-modified — `-B` and
-#     `merge --ff-only` carry a clean local mod across the switch and REFUSE
-#     non-destructively on a genuine conflict (same safety as the old ff-only).
-# Deliberately NEVER `git reset --hard` / `checkout -f` / `git clean`. Returns 0
-# on a landed sync, non-zero otherwise (callers WARN + keep the prior checkout).
+#   • a feature branch remains as a reference, while its commits are merged into
+#     local main before main is checked out.
+#   • a divergent local main is merged too; any conflict refuses the update.
+# Deliberately NEVER `git reset --hard` / `checkout -f` / `git clean`.
 cc_git_sync_to_default_branch() {
-  local dir="$1" branch
+  local dir="$1" branch current
   branch="$(git -C "$dir" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
   [[ -n "$branch" ]] || branch="main"
   git -C "$dir" fetch --quiet origin "$branch" >>"$LOG_FILE" 2>&1 || return 1
-  if git -C "$dir" symbolic-ref --quiet HEAD >/dev/null 2>&1; then
-    git -C "$dir" merge --ff-only "origin/$branch" >>"$LOG_FILE" 2>&1
-  else
-    git -C "$dir" checkout -B "$branch" "origin/$branch" >>"$LOG_FILE" 2>&1
+
+  current="$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  if ! git -C "$dir" -c user.name="Command Center Updater" -c user.email="updater@localhost" \
+      merge --no-edit "origin/$branch" >>"$LOG_FILE" 2>&1; then
+    git -C "$dir" merge --abort >/dev/null 2>&1 || true
+    return 1
   fi
+
+  if [[ "$current" != "$branch" ]]; then
+    # Preserve any commits reachable only from an existing local main before
+    # repointing it at the fully-merged current tip.
+    if git -C "$dir" show-ref --verify --quiet "refs/heads/$branch" \
+       && ! git -C "$dir" merge-base --is-ancestor "refs/heads/$branch" HEAD; then
+      if ! git -C "$dir" -c user.name="Command Center Updater" -c user.email="updater@localhost" \
+          merge --no-edit "refs/heads/$branch" >>"$LOG_FILE" 2>&1; then
+        git -C "$dir" merge --abort >/dev/null 2>&1 || true
+        return 1
+      fi
+    fi
+    git -C "$dir" branch -f "$branch" HEAD >>"$LOG_FILE" 2>&1 || return 1
+    git -C "$dir" checkout "$branch" >>"$LOG_FILE" 2>&1 || return 1
+  fi
+
+  [[ "$(git -C "$dir" symbolic-ref --quiet --short HEAD 2>/dev/null || true)" == "$branch" ]] \
+    && git -C "$dir" merge-base --is-ancestor "origin/$branch" HEAD
 }
 
 # cc_route_update_through_canonical_path — the D5 update-only build+restart step.
@@ -1294,9 +1309,9 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # Never returns if the resolved directory is not a validated CC checkout.
   cc_assert_update_only_checkout
   if cc_git_sync_to_default_branch "$DASHBOARD_DIR"; then
-    log "INFO" "phase=6: git sync to origin default branch done (detached-HEAD-safe; local patches preserved)"
+    log "INFO" "phase=6: checkout is on the origin default branch and contains latest origin/main (local commits preserved)"
   else
-    log "WARN" "phase=6: git sync non-clean (detached-HEAD or conflicting local patch) — continuing with existing checkout"
+    fail_install "phase=6: could not converge Command Center checkout onto the latest origin default branch without discarding local work. Existing checkout was not deployed. Resolve the git conflict and re-run."
   fi
   ( cd "$DASHBOARD_DIR" && npm install >>"$LOG_FILE" 2>&1 ) \
     && log "INFO" "phase=6: npm install done" \
@@ -1324,7 +1339,7 @@ if [[ "$UPDATE_ONLY" == "true" ]]; then
   # Kanban-dead fix (BUILD-05) AND the "broken build shipped anyway" gap —
   # a pull-without-a-verified-rebuild is now structurally impossible.
   cc_route_update_through_canonical_path || \
-    log "ERROR" "phase=6 (update-only): CC did not end this update GREEN — see the post-update assertion line above and $LOG_FILE. Not fatal to the rest of the Sunday run (other clients' boxes must not be blocked by one), but this box needs operator attention."
+    fail_install "phase=6 (update-only): Command Center did not end GREEN on the fresh build. A rollback means the update did NOT take effect; refusing to report this box current. See the post-update assertion and $LOG_FILE."
 elif [[ "$(state_get '.commandCenterPhase6Done')" == "true" ]]; then
   log "INFO" "phase=6 dashboard-deploy: already done — skipping"
 else

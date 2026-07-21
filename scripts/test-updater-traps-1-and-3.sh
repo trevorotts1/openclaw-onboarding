@@ -183,8 +183,15 @@ make_checkout() {
   local dir="$1" remote="$2"
   mkdir -p "$dir"
   git -C "$dir" init -q 2>/dev/null
+  git -C "$dir" config user.name Fixture
+  git -C "$dir" config user.email fixture@example.invalid
   git -C "$dir" remote add origin "$remote" 2>/dev/null
   printf '{"name":"mission-control"}\n' > "$dir/package.json"
+  git -C "$dir" add package.json
+  git -C "$dir" commit -qm fixture
+  git -C "$dir" branch -M main
+  git -C "$dir" update-ref refs/remotes/origin/main HEAD
+  git -C "$dir" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
 }
 
 t3_run() {
@@ -215,6 +222,9 @@ EOS
 hdr "TRAP 3 / CASE 1 — CC at NON-CANONICAL path: must NOT clone a second one"
 export _CC_SLUG=acme _CC_COMPANY=Acme _CC_EMAIL=a@b.co FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1
 T3_BOX="$(mktemp -d)"; out="$(t3_run 'make_checkout "$HOME/blackceo-command-center" https://github.com/trevorotts1/blackceo-command-center.git')"
+grep -q 'INSTALLER_INVOKED args=--update-only --app-dir .*blackceo-command-center acme Acme' "$T3_BOX/invocations" \
+  && ok "existing non-canonical checkout refreshed in place via --app-dir" \
+  || bad "non-canonical checkout was not passed to the update-only installer"
 grep -q 'INSTALLER_INVOKED args=acme Acme' "$T3_BOX/invocations" && bad "FULL install invoked — a SECOND CC would be cloned" || ok "no FULL install invoked (no second clone)"
 echo "$out" | grep -q "non-canonical path" && ok "non-canonical checkout detected and reported" || bad "non-canonical path not reported"
 
