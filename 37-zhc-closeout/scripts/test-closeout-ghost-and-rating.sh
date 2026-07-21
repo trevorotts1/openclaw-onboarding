@@ -229,6 +229,85 @@ else
 fi
 
 # ---------------------------------------------------------------------
+# B1-A47 (T0-08): TIGHTENING. The assertion above is satisfied by exactly the
+# defect T0-08 describes -- an HTTP 200 and a Content-Length writing 8.7/pass
+# into the durable ratings, clearing the 8.5 release floor with NO content
+# judgment. Passing B1 therefore proved nothing about content. This asserts the
+# SEPARATION: an HTTP response may gate eligibility, but the durable record must
+# say so, and it must not claim a rubric score.
+# ---------------------------------------------------------------------
+cjD=$(jq -r 'if (.qualityRatings.flow_diagram|has("contentJudged")) then (.qualityRatings.flow_diagram.contentJudged|tostring) else "MISSING" end' "$stateD")
+rsD=$(jq -r '.qualityRatings.flow_diagram.rubricScore // "null"' "$stateD")
+skD=$(jq -r '.qualityRatings.flow_diagram.scoreKind // "MISSING"' "$stateD")
+matD=$(jq -r '.materializationChecks.flow_diagram.materialized // "MISSING"' "$stateD")
+missD=$(jq -r '(.contentJudgeMissing // []) | index("flow_diagram") // "no"' "$stateD")
+info "B1-A47 contentJudged=$cjD rubricScore=$rsD scoreKind=$skD materialized=$matD inContentJudgeMissing=$missD"
+if [[ "$cjD" == "false" && "$rsD" == "null" && "$skD" == "materialization-floor" \
+      && "$matD" == "true" && "$missD" != "no" ]]; then
+  pass "B1-A47: reachability released the artifact but wrote NO rubric score (contentJudged=false, rubricScore=null, scoreKind=materialization-floor), recorded the raw measurement separately, and flagged the missing judgment"
+else
+  fail "B1-A47: materialisation is still masquerading as a content judgment (contentJudged=$cjD rubricScore=$rsD scoreKind=$skD materialized=$matD inMissingList=$missD)"
+fi
+
+# ---------------------------------------------------------------------
+# B1-A47b: the OTHER direction. With a real content judge configured, the
+# durable record must carry the judge's score AS a rubric score, be marked
+# content-judged, and drop out of .contentJudgeMissing. If this direction ever
+# fails, the separation has become a blanket refusal to record any judgment.
+# ---------------------------------------------------------------------
+tmpJ=$(mktemp -d); stateJ="$tmpJ/state.json"
+echo '{ "infographic2Url": "https://kie.ai/flow-diagram.png" }' > "$stateJ"
+ZHC_ASSET_HEAD_CMD='printf "HTTP/2 200\r\nContent-Type: image/png\r\nContent-Length: 48213\r\n\r\n"' \
+  ZHC_ARTIFACT_JUDGE_CMD='printf "{\"score\":9.4,\"qc\":\"pass\",\"note\":\"on-brand, correct flow\"}"' \
+  ZHC_STATE_FILE="$stateJ" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key flow_diagram --state "$stateJ" >/dev/null 2>&1 || true
+cjJ=$(jq -r 'if (.qualityRatings.flow_diagram|has("contentJudged")) then (.qualityRatings.flow_diagram.contentJudged|tostring) else "MISSING" end' "$stateJ")
+rsJ=$(jq -r '.qualityRatings.flow_diagram.rubricScore // "null"' "$stateJ")
+skJ=$(jq -r '.qualityRatings.flow_diagram.scoreKind // "MISSING"' "$stateJ")
+rbJ=$(jq -r '.qualityRatings.flow_diagram.ratedBy // "MISSING"' "$stateJ")
+missJ=$(jq -r '(.contentJudgeMissing // []) | index("flow_diagram") // "no"' "$stateJ")
+info "B1-A47b contentJudged=$cjJ rubricScore=$rsJ scoreKind=$skJ ratedBy=$rbJ inContentJudgeMissing=$missJ"
+if [[ "$cjJ" == "true" && "$rsJ" == "9.4" && "$skJ" == "content-judgment" \
+      && "$rbJ" == "llm-judge" && "$missJ" == "no" ]]; then
+  pass "B1-A47b: a real content judgment IS recorded as a rubric score (rubricScore=9.4, scoreKind=content-judgment, ratedBy=llm-judge) and clears the missing-judgment flag"
+else
+  fail "B1-A47b: a real content judgment was not recorded (contentJudged=$cjJ rubricScore=$rsJ scoreKind=$skJ ratedBy=$rbJ inMissingList=$missJ)"
+fi
+rm -rf "$tmpJ"
+
+# ---------------------------------------------------------------------
+# B1-A47c (B15 opt-in, OFF by default): with ZHC_REQUIRE_CONTENT_JUDGE=1 and no
+# judge configured, a materialisation-only artifact must be HELD. This proves
+# the mandatory-judge behaviour exists and works WITHOUT enabling it, since
+# enabling it fails every unattended closeout until a judge is configured --
+# a live-fleet blast radius that has to be measured first (B15).
+# ---------------------------------------------------------------------
+tmpR=$(mktemp -d); stateR="$tmpR/state.json"
+echo '{ "infographic2Url": "https://kie.ai/flow-diagram.png" }' > "$stateR"
+ZHC_ASSET_HEAD_CMD='printf "HTTP/2 200\r\nContent-Type: image/png\r\nContent-Length: 48213\r\n\r\n"' \
+  ZHC_REQUIRE_CONTENT_JUDGE=1 \
+  ZHC_STATE_FILE="$stateR" ZHC_LOG_FILE="/dev/null" bash "$RATER" --key flow_diagram --state "$stateR" >/dev/null 2>&1 || true
+qcR=$(jq -r '.qualityRatings.flow_diagram.qc // "null"' "$stateR")
+scoreR=$(jq -r '.qualityRatings.flow_diagram.score // "null"' "$stateR")
+info "B1-A47c (ZHC_REQUIRE_CONTENT_JUDGE=1) qc=$qcR score=$scoreR"
+if [[ "$qcR" == "fail" ]] && awk -v s="$scoreR" 'BEGIN{exit !(s+0<8.5)}'; then
+  pass "B1-A47c: with the judge REQUIRED, materialisation alone does NOT clear the release floor (qc=fail, score=$scoreR<8.5)"
+else
+  fail "B1-A47c: ZHC_REQUIRE_CONTENT_JUDGE=1 still released on materialisation alone (qc=$qcR score=$scoreR)"
+fi
+rm -rf "$tmpR"
+
+# ---------------------------------------------------------------------
+# B1-A47d: DEFAULT-OFF proof. Without the flag, behaviour is byte-for-byte
+# today's: a reachable artifact is still released. This is what keeps A47 inside
+# "cannot turn a healthy passing box into a failing one".
+# ---------------------------------------------------------------------
+if [[ "$qcD" == "pass" ]]; then
+  pass "B1-A47d: with ZHC_REQUIRE_CONTENT_JUDGE unset (the default) a reachable artifact is STILL released -- no healthy closeout newly fails"
+else
+  fail "B1-A47d: default behaviour changed -- a reachable artifact was not released"
+fi
+
+# ---------------------------------------------------------------------
 # B1b (FIX-S36-04): a 404'd / expired remote URL must be HELD, not passed.
 #     Before the fix any well-formed URL scored 8.7/pass with zero reachability.
 # ---------------------------------------------------------------------

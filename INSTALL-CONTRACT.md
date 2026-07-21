@@ -386,7 +386,7 @@ The prose `## Prerequisites` sections in `SKILL.md` and `INSTALL.md` stay as the
 
 Neither `required` nor `optional` prereqs ever block INSTALL. Exit code 2 from `check-skill-prereqs.sh` is informational and is treated as "note + continue" by both `install.sh` and `update-skills.sh`.
 
-### Rule 16 schema (v20.0.90)
+### Rule 16 schema (v20.0.91)
 
 `severity` is `required` or `optional`. Nothing else. `warning` and `recommended` are NOT severities.
 

@@ -3,7 +3,7 @@ name: fish-audio-api-reference
 description: Complete working knowledge of the Fish Audio API — text-to-speech generation, voice cloning, real-time streaming audio via WebSocket, and speech-to-text transcription. Installs a full API reference into master files indexed with Gemini Engine for at-query-time lookup.
 ---
 
-# Fish Audio API Reference - Skill 31
+# Fish Audio API Reference - Skill 30
 
 > **TYP Required:** Read this entire SKILL.md before executing any install steps or making any Fish Audio API calls.
 
@@ -184,9 +184,15 @@ If `FISH_AUDIO_API_KEY` or `FISH_AUDIO_VOICE_ID` are missing, the installer writ
 **The agent should:**
 1. Remind the client once per session if status is PENDING
 2. When credentials are provided:
-   - Add `FISH_AUDIO_API_KEY` to `~/.clawdbot/clawdbot.json` env vars
-   - Add `FISH_AUDIO_VOICE_ID` to `~/.clawdbot/clawdbot.json` env vars
-   - Add both to `~/clawd/secrets/.env`
+   - Run **INSTALL.md Step 4** exactly as written. It resolves the canonical
+     secrets store through `lib-shared.sh` (`$SECRETS_ENV` —
+     `~/.openclaw/secrets/.env` on Mac, `/data/.openclaw/secrets/.env` on VPS)
+     and writes `FISH_AUDIO_API_KEY` and `FISH_AUDIO_VOICE_ID` there.
+   - Do **not** hand-write either value into `~/.clawdbot/clawdbot.json` or
+     `~/clawd/secrets/.env`. Those are pre-rename paths;
+     `qc-fish-audio-api-reference.sh` does not read them, so a credential
+     written there is reported absent on a correctly configured box.
+   - Confirm presence only (`SET` / `NOT-SET`) — never print a credential value.
    - Run `python3 ~/.openclaw/scripts/gemini-indexer.py` to re-index
    - Mark entry as Status: COMPLETE in `.pending-setup.md`
 

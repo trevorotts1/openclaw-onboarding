@@ -1,0 +1,60 @@
+name: Installer and handoff contracts guard (A45 / A46 / A47)
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  credential-store:
+    name: A45 — credentials land where the skill's own check reads them (T2-21)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Direction A of this test asserts the DEFECT still fails: a credential
+      # written to the legacy path must be reported ABSENT by the skill's own QC.
+      # If that direction ever stops failing, the test has stopped testing.
+      - name: Both directions per skill, plus the static no-legacy-write check
+        run: bash scripts/test-installer-credential-store.sh
+
+  installer-config-blocks:
+    name: A46 — every configuration block an installer merges must parse (T2-22)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      # Self-test first: prove the checker fails on a trailing comma, on a run of
+      # bare closing braces, on a broken shell-assignment block, and reports
+      # CANNOT-RUN on an empty tree — before its verdict on the repo is trusted.
+      - name: Self-test the checker (5 directions)
+        run: python3 scripts/check-installer-config-blocks.py --self-test
+      - name: Every configuration block parses
+        run: python3 scripts/check-installer-config-blocks.py
+
+  provider-status-contract:
+    name: A46 — skill 39 provider-status producer and consumer share one contract (T2-32)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Path, capability names, state shape, round trip, absent artifact
+        run: bash scripts/test-provider-status-contract.sh
+
+  closeout-rating-separation:
+    name: A47 — materialisation must not write a rubric score (T0-08)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install jq
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq jq
+      # The B1-A47* cases assert BOTH directions: a reachability pass records no
+      # rubric score and flags the missing judgment, a real judge IS recorded as
+      # a rubric score, the opt-in mandatory judge holds, and the default path
+      # still releases so no healthy closeout newly fails.
+      - name: Closeout ghost + rating tests, including the A47 separation cases
+        run: bash 37-zhc-closeout/scripts/test-closeout-ghost-and-rating.sh

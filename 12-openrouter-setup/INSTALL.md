@@ -316,23 +316,29 @@ Agent adds this configuration:
       },
       "thinkingDefault": "medium",
       "models": {
-        },
-        },
-        },
         "openrouter/google/gemini-3.1-pro-preview": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/google/gemini-3-flash-preview": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
-        },
-        },
+        "openrouter/google/gemini-3.1-flash-lite-preview": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
         },
         "openrouter/moonshotai/kimi-k2.6": {
           "params": {
@@ -348,31 +354,41 @@ Agent adds this configuration:
         "openrouter/qwen/qwen3.5-plus-02-15": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/z-ai/glm-5": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/deepseek/deepseek-v3.2": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/deepseek/deepseek-v3.2-speciale": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/deepseek/deepseek-r1-0528:free": {
           "params": {
             "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
+            "reasoning": {
+              "effort": "medium"
+            }
           }
         },
         "openrouter/xiaomi/mimo-v2-omni": {
@@ -381,19 +397,20 @@ Agent adds this configuration:
             "reasoning": true
           }
         },
-        "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
-          "params": {
-            "temperature": 0.3,
-            "reasoning": { "effort": "medium" }
-          }
-        },
         "openrouter/xiaomi/mimo-v2-pro": {
           "params": {
             "temperature": 0.3,
             "reasoning": true
           }
         },
-
+        "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {
+          "params": {
+            "temperature": 0.3,
+            "reasoning": {
+              "effort": "medium"
+            }
+          }
+        }
       }
     }
   }
@@ -405,7 +422,6 @@ Agent uses jq to ADDITIVELY MERGE new models into the existing config (preservin
 ```bash
 # Define the new models as a separate JSON block
 NEW_MODELS='{
-
   "openrouter/google/gemini-3.1-pro-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3-flash-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/google/gemini-3.1-flash-lite-preview": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
@@ -418,8 +434,7 @@ NEW_MODELS='{
   "openrouter/deepseek/deepseek-r1-0528:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
   "openrouter/xiaomi/mimo-v2-omni": {"params": {"temperature": 0.3, "reasoning": true}},
   "openrouter/xiaomi/mimo-v2-pro": {"params": {"temperature": 0.3, "reasoning": true}},
-  "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}},
-
+  "openrouter/nvidia/nemotron-3-super-120b-a12b:free": {"params": {"temperature": 0.3, "reasoning": {"effort": "medium"}}}
 }'
 
 # Additive merge: existing models are preserved, new models are added/updated
@@ -473,17 +488,26 @@ IF validation FAILS:
   ```
 - Agent does NOT proceed
 
-### STEP 8: AGENT RESTARTS OPENCLAW GATEWAY
+### STEP 8: AGENT REQUESTS A GATEWAY RESTART — NOTIFY AND WAIT
 
-Agent restarts the gateway:
+**The agent does NOT restart the gateway.** This step used to instruct the agent
+to run `openclaw gateway restart` itself, which the GATEWAY RESTART PROTOCOL at
+the foot of this same document forbids in the same words. Both were executable
+instructions in one document an agent reads top to bottom, and the one it reached
+first told it to do the thing the footer prohibits. The prohibition exists because
+an autonomous restart drops the session the agent is running in.
 
-```bash
-openclaw gateway restart
-```
+Follow the footer protocol:
 
-Agent waits for gateway to restart (approximately 5-10 seconds).
+1. **STOP.** Do not execute any restart command.
+2. **NOTIFY** the owner, verbatim:
+   "This installation requires an OpenClaw gateway restart to load the OpenRouter
+   configuration. I am not permitted to trigger it."
+3. **INSTRUCT:** "Type `/restart` in Telegram to trigger it."
+4. **WAIT** for the owner to confirm the restart happened. Do not proceed, do not
+   poll in a loop, and do not treat a timeout as a confirmation.
 
-Agent verifies gateway is running:
+Only after the owner confirms, the agent verifies the gateway is running:
 
 ```bash
 openclaw gateway status
