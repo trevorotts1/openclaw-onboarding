@@ -55,6 +55,10 @@ WIRING = [
 
 
 def _run_dir_for(key, run_dir=None):
+    """S9's OWN run dir. Deliberately NOT the per-participant directory the
+    authoring stages share: this one is keyed by ANTHOLOGY id, and
+    gate_engine.py::_s9_run_dir must keep resolving the identical
+    <skill>/state/runs/s9/<safe_anthology_id> path that this runner reads."""
     if run_dir:
         d = Path(run_dir)
     else:
@@ -62,6 +66,20 @@ def _run_dir_for(key, run_dir=None):
         d = SKILL_DIR / "state" / "runs" / STAGE / safe
     (d / "working").mkdir(parents=True, exist_ok=True)
     return d
+
+
+def participant_chapter_path(participant_key):
+    """The frozen chapter's on-disk path inside the ONE canonical per-participant
+    run directory the authoring stages (S1..S8) all share --
+    <skill>/state/runs/participants/<safe_key>/working/chapter.md.
+
+    This used to point at the stage-scoped state/runs/s5/<safe_key>/... . That
+    path only existed while each stage resolved its OWN working directory, which
+    is the same defect that stopped S2 from ever reaching tone authoring. It is a
+    module-level function (not a closure) so the invariant "S9 reads exactly where
+    S5/S6 wrote" is directly testable."""
+    safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (participant_key or "unknown"))
+    return SKILL_DIR / "state" / "runs" / "participants" / safe / "working" / "chapter.md"
 
 
 def _load_request(run_dir):
@@ -219,13 +237,12 @@ def _invoke_wiring(key, run_dir=None):
     resolved_state_dir = str(ledger.default_state_dir())
 
     def _chapter_source(participant_key):
-        """Read a frozen chapter's body from its OWN S5 authoring run dir (the
-        same run_dir convention stage_s5_chapter.py/stage_s6_rewrite.py use:
-        state/runs/s5/<safe_key>/working/chapter.md). A live deployment may
-        instead read the Drive-hosted doc via drive_adapter.py; this local read
+        """Read a frozen chapter's body from the ONE canonical per-participant run
+        dir that stage_s5_chapter.py and stage_s6_rewrite.py write into
+        (state/runs/participants/<safe_key>/working/chapter.md). A live deployment
+        may instead read the Drive-hosted doc via drive_adapter.py; this local read
         is the honest, real implementation available without a network call."""
-        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in participant_key)
-        p = SKILL_DIR / "state" / "runs" / "s5" / safe / "working" / "chapter.md"
+        p = participant_chapter_path(participant_key)
         if not p.is_file():
             return b"", None
         data = p.read_bytes()

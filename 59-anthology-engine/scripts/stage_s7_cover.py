@@ -158,7 +158,17 @@ def _run_dir_for(key, run_dir=None):
         d = Path(run_dir)
     else:
         safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
-        d = SKILL_DIR / "state" / "runs" / STAGE / safe
+        # ONE canonical directory per participant, shared by EVERY authoring stage.
+        # It used to be stage-scoped (state/runs/<STAGE>/<safe>), which meant S2 handed
+        # 54-anthology-writer/anthology-entry.sh an EMPTY directory: run_anthology.py
+        # walks its phases from P0-INTAKE every time and fails closed at the first phase
+        # whose gate artifacts are absent, and those artifacts (working/intake.json,
+        # working/avatar.md) were written by S1 into a DIFFERENT directory. Every stage
+        # now resolves the same path, so later stages read back what earlier ones wrote.
+        # NOTE: "participants" is a fixed literal, never a stage name, so this can never
+        # collide with the anthology-level assembly dir at state/runs/s9/<anthology_id>
+        # that gate_engine.py::_s9_run_dir must keep resolving identically.
+        d = SKILL_DIR / "state" / "runs" / "participants" / safe
     (d / "working").mkdir(parents=True, exist_ok=True)
     return d
 
@@ -622,7 +632,7 @@ def self_test():
 def main(argv=None):
     ap = argparse.ArgumentParser(description="thin dispatcher for stage %s (%s)" % (STAGE, STAGE_NAME))
     ap.add_argument("--%s" % KEY_ARG, dest="key", help="the %s to dispatch" % KEY_ARG)
-    ap.add_argument("--run-dir", help="optional per-participant-per-stage run directory")
+    ap.add_argument("--run-dir", help="optional per-participant run directory")
     ap.add_argument("--apply-pick", dest="apply_pick", action="store_true",
                     help="PHASE B: apply the client's cover pick (requires --choice) and advance to S8")
     ap.add_argument("--choice", help="the client's chosen cover style (a style NAME or KEY) for --apply-pick")

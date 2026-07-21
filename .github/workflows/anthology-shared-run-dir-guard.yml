@@ -1,0 +1,74 @@
+name: anthology-shared-run-dir-guard
+
+# T2-05 — the anthology engine's authoring stages each resolved their OWN working
+# directory (state/runs/<STAGE>/<safe_key>) and then handed it to
+# 54-anthology-writer/anthology-entry.sh. run_anthology.py walks PHASE_ORDER from
+# P0-INTAKE on every invocation and fails closed at the first phase whose required
+# preflight checker rejects the run dir, so a normal S2 dispatch handed Skill 54 an
+# EMPTY directory and stopped at P0-INTAKE — before tone authoring ever began.
+# working/intake.json and working/avatar.md had been written by S1 into a different
+# directory.
+#
+# Guarded by 59-anthology-engine/tests/test_stage_run_dir_shared.py, which drives
+# Skill 54's REAL P0-INTAKE gate in BOTH directions: it must PASS on the shared
+# directory and still FAIL on a directory that lacks the artifact.
+#
+# The existing S9 runner suite is re-run here because it had encoded the defective
+# layout: it seeded frozen chapter bodies at state/runs/s5/<safe>/working/chapter.md.
+# That literal is now state/runs/participants/<safe>/..., so a regression back to a
+# stage-scoped path turns it red too.
+#
+# Hermetic: each stage module's SKILL_DIR is redirected into a tempdir, so nothing
+# is written inside the checkout. No network, no box state.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "59-anthology-engine/scripts/stage_s*.py"
+      - "59-anthology-engine/tests/test_stage_run_dir_shared.py"
+      - "59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py"
+      - "54-anthology-writer/run_anthology.py"
+      - "54-anthology-writer/scripts/prove_aw_intake.py"
+      - ".github/workflows/anthology-shared-run-dir-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "59-anthology-engine/scripts/stage_s*.py"
+      - "59-anthology-engine/tests/test_stage_run_dir_shared.py"
+      - "59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py"
+      - "54-anthology-writer/run_anthology.py"
+      - "54-anthology-writer/scripts/prove_aw_intake.py"
+      - ".github/workflows/anthology-shared-run-dir-guard.yml"
+
+jobs:
+  anthology-shared-run-dir-guard:
+    name: Anthology stages share ONE per-participant run dir (Skill 54's first gate proven both ways)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pytest
+        run: python3 -m pip install --quiet --disable-pip-version-check pytest
+
+      - name: Compile every stage dispatcher and the downstream phase machine
+        run: |
+          set -euo pipefail
+          for f in 59-anthology-engine/scripts/stage_s*.py; do
+            python3 -m py_compile "$f"
+          done
+          python3 -m py_compile 54-anthology-writer/run_anthology.py
+          python3 -m py_compile 59-anthology-engine/tests/test_stage_run_dir_shared.py
+          echo "compile OK"
+
+      - name: Shared run-directory invariant + Skill 54 P0-INTAKE in both directions
+        run: python3 59-anthology-engine/tests/test_stage_run_dir_shared.py
+
+      - name: S9 runner suite (its seeding path is the same invariant)
+        run: python3 -m pytest 59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py -q
