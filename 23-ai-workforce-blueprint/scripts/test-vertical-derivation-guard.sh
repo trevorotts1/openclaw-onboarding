@@ -247,6 +247,72 @@ else
 fi
 
 echo ""
+echo "=== (h): MULTI-PACK departments — attribution must not depend on naming-map order ==="
+# department-naming-map.json declares 'community-management' under BOTH
+# personal-pro-dev AND content-creator (and 'podcast' under both too). The
+# index must therefore not keep only the LAST declaring pack: a personal-pro-dev
+# client that legitimately provisioned community-management as a Phase-2 extra
+# from personal-pro-dev must NOT be reported as a content-creator violation.
+# This is an install-blocking false-FAIL (run-full-install.sh phase=3b treats
+# rc=3 as fail_install), so it is asserted in both directions.
+if python3 - "$GUARD" "$NAMING_MAP" <<'PYEOF'
+import json, sys, importlib.util
+spec = importlib.util.spec_from_file_location("vdg", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+nm = json.load(open(sys.argv[2]))
+idx = m.dept_pack_index(nm)
+cm = idx.get("community-management")
+assert cm is not None, "community-management missing from the dept index"
+assert set(cm["packs"]) >= {"personal-pro-dev", "content-creator"}, cm
+pod = idx.get("podcast")
+assert pod is not None and set(pod["packs"]) >= {"personal-pro-dev", "content-creator"}, pod
+# podcast is universal_primary=true under content-creator -> ANY flag wins.
+assert pod["universal_primary"] is True, pod
+assert cm["universal_primary"] is False, cm
+PYEOF
+then
+  ok "(h0) dept index records EVERY declaring pack for multi-pack depts; universal_primary is OR-ed across packs"
+else
+  bad "(h0) dept index collapsed a multi-pack department to a single pack (naming-map-order dependent)"
+fi
+
+DD=$(mk_departments_dir h marketing community-management)
+BS_PPD='{"verticalPacks":{"detectedPacks":[{"pack":"personal-pro-dev","matchedKeywords":["coach"]}]}}'
+if run_eval "$DD" "$BS_PPD" ""; then
+  ok "(h1) 'community-management' + declared={personal-pro-dev} -> rc=0 (PASS; declared via one of its owning packs)"
+else
+  bad "(h1) FALSE FAIL: community-management is declared by personal-pro-dev but the guard rejected it"
+fi
+
+# Gate must still hold: no owning pack declared -> still a violation.
+if run_eval "$DD" "$BS_EMPTY" ""; then
+  bad "(h2) 'community-management' with an EMPTY declared set should still FAIL but rc=0 (GATE WEAKENED)"
+else
+  ok "(h2) 'community-management' with EMPTY declared set -> rc=3 (FAIL; gate intact for multi-pack depts)"
+fi
+
+# And a pack that owns the dept but was NOT declared must not launder it in.
+BS_SAAS='{"verticalPacks":{"detectedPacks":[{"pack":"saas","matchedKeywords":["saas"]}]}}'
+if run_eval "$DD" "$BS_SAAS" ""; then
+  bad "(h3) 'community-management' with declared={saas} (not an owning pack) should FAIL but rc=0 (GATE WEAKENED)"
+else
+  ok "(h3) 'community-management' with declared={saas} -> rc=3 (FAIL; only OWNING packs can explain it)"
+fi
+
+if python3 "$GUARD" --check-add community-management --declared "personal-pro-dev" --naming-map "$NAMING_MAP" >/dev/null 2>"$TMP/h4.err"; then
+  ok "(h4) --check-add community-management with declared={personal-pro-dev} -> exit 0 (allowed)"
+else
+  bad "(h4) FALSE REFUSAL: --check-add community-management should be allowed when personal-pro-dev is declared"
+fi
+
+if python3 "$GUARD" --check-add community-management --declared "saas" --naming-map "$NAMING_MAP" >/dev/null 2>"$TMP/h5.err"; then
+  bad "(h5) --check-add community-management with declared={saas} should be refused but exited 0 (GATE WEAKENED)"
+else
+  ok "(h5) --check-add community-management with declared={saas} -> exit 1 (refused)"
+fi
+grep -q "VERTICAL_NOT_DECLARED" "$TMP/h5.err" && ok "(h5) multi-pack refusal still carries the named error VERTICAL_NOT_DECLARED" || bad "(h5) multi-pack refusal missing named error"
+
+echo ""
 echo "--------------------------------------------"
 echo "RESULT: $PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ] && { echo "ALL VERTICAL-DERIVATION GUARD TESTS PASSED"; exit 0; } || { echo "VERTICAL-DERIVATION GUARD TEST FAILURES"; exit 1; }
