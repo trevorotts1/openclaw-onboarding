@@ -65,6 +65,7 @@ _mkbox() { # <dir> [<config-json>] [<secrets-line>]
   if [ -n "$cfg" ]; then printf '%s\n' "$cfg" > "$home/.openclaw/openclaw.json"
   else printf '%s\n' '{"agents":{"defaults":{}}}' > "$home/.openclaw/openclaw.json"; fi
   : > "$home/.openclaw/secrets/.env"
+  chmod 600 "$home/.openclaw/secrets/.env"
   [ -n "$secret" ] && printf '%s\n' "$secret" >> "$home/.openclaw/secrets/.env"
   return 0
 }
