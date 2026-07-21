@@ -168,10 +168,9 @@ HOME = os.path.expanduser("~")
 
 _NN_RE = re.compile(r'^\d{1,3}[-_]')
 _ROLE_RE = re.compile(r'^(?:ROLE|role)--')
-# Either historical department-directory decoration: a leading "dept-" or a
-# trailing "-dept" / "_dept". Anchored so an interior "dept" (e.g. the real
-# department id "department-operations") is never mangled.
-_DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
+# The department-directory decoration pattern (leading "dept-" / trailing
+# "-dept"|"_dept", anchored so an interior "dept" is never mangled) now lives
+# with the shared resolver in create_role_workspaces as _DEPT_DECOR_RE.
 
 
 def norm(name: str) -> str:
@@ -188,7 +187,12 @@ def norm(name: str) -> str:
 
 
 def norm_dept(name: str) -> str:
-    """Normalize a department directory NAME or a manifest department ID to one
+    """Delegates to create_role_workspaces.norm_dept — ONE implementation shared
+    by this STALE drain, floor-fill-driver.py's MISSING materializer, and
+    detect-stale-artifacts.py's on-disk presence check, so the three can never
+    disagree about which directory a department id means.
+
+    Normalize a department directory NAME or a manifest department ID to one
     comparable key, so every layout this skill has ever put on disk collapses
     to the same value:
 
@@ -204,11 +208,7 @@ def norm_dept(name: str) -> str:
                                      most of the fleet)
       "sales_ops"    -> "sales-ops" (separator drift)
     """
-    n = str(name or "").strip().lower()
-    n = _DEPT_DECOR_RE.sub('', n)
-    n = n.replace('_', '-')
-    n = re.sub(r'-{2,}', '-', n).strip('-')
-    return n
+    return crw.norm_dept(name)
 
 
 def resolve_dept_dir(workspace: Path, dept_slug: str):
@@ -229,30 +229,13 @@ def resolve_dept_dir(workspace: Path, dept_slug: str):
 
     Returning None is meaningful and MUST be treated as a failure by callers
     draining an in-scope STALE row: a STALE row asserts the artifact is on this
-    box, so an unresolvable department is a detected gap that went unfilled."""
-    departments_root = workspace / "departments"
-    if not departments_root.is_dir():
-        return None
-    bare = departments_root / dept_slug
-    if bare.is_dir():
-        return bare
-    suffixed = departments_root / f"{dept_slug}-dept"
-    if suffixed.is_dir():
-        return suffixed
-    target = norm_dept(dept_slug)
-    if not target:
-        return None
-    try:
-        entries = sorted(departments_root.iterdir())
-    except OSError:
-        return None
-    for e in entries:
-        try:
-            if e.is_dir() and norm_dept(e.name) == target:
-                return e
-        except OSError:
-            continue
-    return None
+    box, so an unresolvable department is a detected gap that went unfilled.
+
+    The probe itself lives in create_role_workspaces.resolve_dept_dir so this
+    drain, floor-fill-driver.py and detect-stale-artifacts.py all share ONE
+    resolver; this wrapper only adapts the workspace ROOT to the departments
+    root the shared helper takes."""
+    return crw.resolve_dept_dir(workspace / "departments", dept_slug)
 
 
 def resolve_workspace(explicit):

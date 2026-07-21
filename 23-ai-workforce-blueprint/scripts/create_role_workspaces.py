@@ -412,6 +412,98 @@ def normalize_dept(dept_slug):
     return _LIBRARY_DEPT_ALIASES.get(key, key)
 
 
+# ── CANONICAL DEPARTMENT-DIRECTORY RESOLUTION ────────────────────────────────
+# ONE resolver, shared by every consumer that has to turn a BARE manifest
+# department id into the department's ACTUAL directory on disk:
+# refresh-stale-roles.py (the STALE-artifact drain) and floor-fill-driver.py
+# (the MISSING-artifact materializer). Both used to assume a layout instead of
+# detecting one, and both were wrong in different ways:
+#
+#   * refresh-stale-roles.py hardcoded `departments/<dept>-dept`, a suffixed
+#     layout live boxes do not use, so it repaired nothing fleet-wide while
+#     reporting success (fixed in v20.0.76).
+#   * floor-fill-driver.py hardcoded the BARE `departments/<dept>` and then
+#     mkdir'd it when absent, so on a case-SENSITIVE filesystem (every Linux
+#     VPS box) a real `Sales/` department made it fabricate a SECOND, empty
+#     `sales/` and materialize the restored roles into the wrong directory,
+#     leaving the real one still short.
+#
+# Living in create_role_workspaces.py — the canonical builder both of those
+# scripts already import — is what keeps them from drifting apart again.
+_DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
+
+
+def norm_dept(name):
+    """Normalize a department directory NAME or a manifest department ID to one
+    comparable key, so every layout this skill has ever put on disk collapses
+    to the same value:
+
+      "sales"        -> "sales"     (the layout live boxes actually use, and
+                                     the one detect-stale-artifacts.py walks)
+      "sales-dept"   -> "sales"     (legacy "-dept"-suffixed layout; three of
+                                     these are real on the operator box)
+      "dept-sales"   -> "sales"     (legacy prefixed layout)
+      "Sales"        -> "sales"     (case drift — a real folder on live boxes;
+                                     an exact-path probe finds it on macOS's
+                                     case-INSENSITIVE volume but MISSES it on
+                                     every case-SENSITIVE Linux box, which is
+                                     most of the fleet)
+      "sales_ops"    -> "sales-ops" (separator drift)
+
+    Deliberately NOT the same function as normalize_dept(): that one maps a
+    dept id onto the role-LIBRARY's dept key (applying content aliases) and is
+    used for library lookups. This one compares ON-DISK directory names.
+    """
+    n = str(name or "").strip().lower()
+    n = _DEPT_DECOR_RE.sub('', n)
+    n = n.replace('_', '-')
+    n = re.sub(r'-{2,}', '-', n).strip('-')
+    return n
+
+
+def resolve_dept_dir(departments_root, dept_slug):
+    """Resolve a BARE manifest department id (e.g. "sales") to the department's
+    ACTUAL directory under `departments_root`, or None when no directory on
+    this box corresponds to it.
+
+    The directory is DETECTED, never assumed:
+
+      1. the bare id            <departments_root>/<dept>
+      2. the "-dept" suffixed   <departments_root>/<dept>-dept
+      3. a normalized scan of the real directory entries (norm_dept), which
+         also absorbs case and separator drift on case-sensitive filesystems.
+
+    Returning None is meaningful and MUST be handled by the caller. For a
+    consumer draining a STALE row it is a detected gap left unfilled (fail
+    loudly). For a materializer filling a MISSING row it means the department
+    genuinely does not exist yet and creating it is correct — but ONLY after
+    this probe has come back empty, never instead of it.
+    """
+    departments_root = Path(departments_root)
+    if not departments_root.is_dir():
+        return None
+    bare = departments_root / dept_slug
+    if bare.is_dir():
+        return bare
+    suffixed = departments_root / f"{dept_slug}-dept"
+    if suffixed.is_dir():
+        return suffixed
+    target = norm_dept(dept_slug)
+    if not target:
+        return None
+    try:
+        entries = sorted(departments_root.iterdir())
+    except OSError:
+        return None
+    for e in entries:
+        try:
+            if e.is_dir() and norm_dept(e.name) == target:
+                return e
+        except OSError:
+            continue
+    return None
+
+
 def _strip_role_decorations(s):
     s = s.replace("**", "").replace("⭐", "").replace("★", "").replace("🌟", "")
     s = re.sub(r"(?i)\bflagship\s+role\b", " ", s)
@@ -2249,7 +2341,16 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
     lib_dir = _resolve_dept_library_dir(dept_slug)
     dept_name = dept_path.name.replace("-dept", "").replace("-", " ").title()
 
-    dept_path.mkdir(parents=True, exist_ok=True)
+    # dry_run must not mutate. This mkdir used to be unconditional, so a
+    # DRY-RUN floor-fill (migrate-existing-workforce.sh Step 2b's non---apply
+    # branch) still created every department directory in the gap-map on disk —
+    # a "report only" pass with a filesystem side effect.
+    if not dry_run:
+        dept_path.mkdir(parents=True, exist_ok=True)
+    elif not dept_path.is_dir():
+        # Nothing to scaffold against and nothing may be created: report the
+        # files a real run WOULD write, without touching the filesystem.
+        return {"files": list(_DEPT_LEVEL_FILES), "sops": 0}
 
     # Dept-level meta files (token-filled from the library when present).
     for fname in _DEPT_LEVEL_FILES:

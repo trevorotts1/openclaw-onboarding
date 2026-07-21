@@ -1,3 +1,122 @@
+## [v20.0.77]  -  2026-07-21  -  FLOOR-MISSING: a role folder the box LOST stayed classified CURRENT, so the whole MISSING repair chain no-op'd
+
+v20.0.76 fixed the STALE half of the artifact-refresh flow — a role whose folder
+is PRESENT but whose content is outdated. This closes the MISSING half: a role
+whose folder is GONE. That is the class the real-world loss belongs to (whole
+specialist role directories stripped from departments by a tree-reshuffling
+pass), and it was the more thoroughly broken of the two, in four places.
+
+**ROOT CAUSE — the detector could not see absence on the path it normally
+takes.** `detect-stale-artifacts.py` has two ways to learn what a box built. The
+fallback scans the workspace for provenance markers, so it only ever reports
+what it can see; absence works correctly there. The FAST PATH,
+`load_built_from_state()`, reads `.workforce-build-state.json`'s
+`artifactProvenance` and **never touches the filesystem at all**. A build record
+is a claim about the past, not an observation of the present — so a role the box
+BUILT and later LOST stayed recorded, matched its manifest `content_sha`, and
+classified `CURRENT`. `MISSING` could not fire for it. `build-workforce.py`
+writes `artifactProvenance` on every build, so the fast path is the NORMAL path
+on a freshly built box: the entire MISSING pipeline was dead there.
+Everything downstream then behaved correctly on empty input —
+`make-gap-from-staleness.py` produced `{}`, `floor-fill-driver.py` had nothing
+to materialize, and the roll reported success over a stripped floor. Measured on
+a fixture: delete a role folder outright and the detector still prints
+`sales/setter CURRENT`, `MISSING=0`, rc 0. `load_built_from_state()` now has its
+claims verified against the tree by `prune_absent_from_disk()` before
+`classify()` trusts them; the same fixture now prints `sales/setter MISSING`,
+rc 10, and the gap-map carries the role through to the materializer. The check
+is deliberately conservative — it only ever REMOVES a claim of presence, it
+skips `persona/*` (a shared pool rendered into each department's
+`governing-personas.md`, not a per-key artifact), and it verifies nothing at all
+when `departments/` is absent, so a box mid-build is never reported as wiped.
+
+**`floor-fill-driver.py` FABRICATED a duplicate department on case drift.** It
+built the department path as the bare manifest id and `mkdir`'d it when that
+path did not exist. On a case-SENSITIVE filesystem — Linux CI and every VPS box
+— a real `Sales/` directory is not `sales/`, so the driver created a SECOND,
+empty `sales/` department and materialized the restored roles into it, leaving
+the real department still short and the tree carrying a bogus duplicate. Proven
+on a case-sensitive volume against the pre-fix driver: one `Sales/` in, two
+department directories out, the role in the wrong one, rc 0. The department
+directory is now DETECTED via the shared `resolve_dept_dir()`, and creating one
+is only reached AFTER that probe comes back empty.
+
+**The driver reported success on every gap it could not fill.** `main()` was
+invoked without `sys.exit()`, so the process exited 0 no matter what — and a
+role with no canonical library content, a builder exception, or a missing
+library SOP source was collected into a report field and otherwise ignored. The
+gap-map contains ONLY slots the detector already PROVED missing, so a slot left
+unfilled is a detected gap left unrepaired. It now returns rc 3 with a loud
+`FAILED` line on stderr. Nothing is ever stubbed, hand-authored, or fabricated
+in place of canonical content — an unfillable slot is reported, not invented.
+
+**And nothing was reading that exit code.** `migrate-existing-workforce.sh`
+Step 2b ran the driver as `python3 ... | tee -a "$LOG" || log "completed with
+warnings"`, which discarded the status twice over: `tee`'s rc masks python3's,
+and the `||` swallowed even that. `FINAL_RC` was then set exclusively from the
+Step 5 `qc-completeness` probe, which measures a per-department materialization
+PERCENTAGE and can read PASS while specific canonical roles the detector named
+are still missing. Step 2b now captures the driver's own rc via `PIPESTATUS[0]`,
+latches it in `FF_UNFILLED`, and overrides a `FINAL_RC` of 0 to 5. That reaches
+`update-skills.sh`, which maps a non-zero migration to `_D2_MIGRATE_STATUS=fail`
+and prints the `WORKFORCE-PROVISIONING INCOMPLETE` block naming floor-fill. NOTE
+for the operator: that latch is deliberately ADVISORY and does not withhold the
+content stamp — a v20.0.10 decision, deliberately left intact here, on the
+grounds that a half-provisioned workforce should not block a box that genuinely
+IS on current skills content. The floor gap is now loud and non-zero at every
+layer that owns it; promoting it to a stamp-gating failure is a policy call for
+the operator, not something this fix took on its own authority.
+
+**ONE resolver, not three.** `resolve_dept_dir()` / `norm_dept()` — introduced in
+v20.0.76 inside `refresh-stale-roles.py` — move to `create_role_workspaces.py`,
+the canonical builder every consumer already imports. `refresh-stale-roles.py`
+keeps its function names as thin wrappers (its 21 assertions re-run unchanged),
+`floor-fill-driver.py` calls it instead of assuming a layout, and
+`detect-stale-artifacts.py` uses it for the presence check behind a guarded
+import with an equivalent local fallback, since that detector is read-only and
+must stay runnable on a bundle without the builder. Three scripts that each
+resolved departments differently now cannot drift apart again.
+
+Also fixed: `scaffold_department()`'s `mkdir` was unconditional, so a DRY-RUN
+floor-fill — Step 2b's non-`--apply` branch — still created every department
+directory in the gap-map on disk. A report-only pass now writes nothing.
+
+`tests/unit/floor-fill-gap.test.sh` grows from 1 scenario to 8 (1 assertion to
+19). Up to now it exercised ONLY `make-gap-from-staleness.py`;
+`floor-fill-driver.py` was never RUN, only `py_compile`d, which is precisely how
+four defects sat in a "tested" script. It now proves the headline loop end to
+end through the same three scripts the update path runs — seed a department from
+the canonical library, record it in `artifactProvenance`, DELETE a role folder,
+and assert it is detected MISSING, reaches the gap-map, is restored, and comes
+back with real library content above the 3072B floor — plus an unfillable gap
+exiting 3 with nothing fabricated, a case-drifted department resolving without
+spawning a duplicate, a healthy box raising no false failure with the tree
+byte-identical after an idempotent re-run, a dry run mutating nothing, and
+static assertions that Step 2b still propagates the driver's rc. `mktemp` now
+honors `TMPDIR` (macOS's bare `mktemp -d` ignores it), so the suite can be
+placed on a case-sensitive volume locally the way it always runs in CI. No test
+was found ENCODING the broken behavior — the defect survived because the driver
+had no behavioral coverage at all. `test-artifact-versioning.sh` T5's
+build-state-only fixture, which has no `departments/` tree, is deliberately
+preserved by the "verify nothing when `departments/` is absent" guard and
+re-runs green unmodified.
+
+Measured with the fixtures on a case-SENSITIVE volume (Linux/CI parity): the new
+suite reports 6 passed / 13 failed against pristine `origin/main`, and 19 passed
+/ 0 failed with the fix. Full regression sweep, all green and unmodified:
+`refresh-stale-roles.test.sh` 21/0, `both-paths-zhe-delivery.test.sh` all
+dimensions, `test-artifact-versioning.sh` 14/0,
+`test-materialize-missing-departments.sh` 14/0,
+`test-naming-map-corruption-fail-closed.sh` all, and
+`qc-assert-repo-consistency.py` 10 dimensions OK.
+
+All 11 version markers rolled v20.0.76 -> v20.0.77 via `scripts/bump-version.sh`.
+`cc-compat.json` `commandCenter.pinnedTag`/`minVersion` UNCHANGED. The Skill 38
+doc self-count advisory remains a pre-existing, non-fatal WARN. No gate or test
+was weakened. No client names, no secret values, no box identifiers, no model
+added, removed, or substituted. No fleet box was modified — repo code and local
+fixtures only.
+
 ## [v20.0.76]  -  2026-07-21  -  D2-PATH: `refresh-stale-roles.py` looked for departments in a layout no box uses, then reported success
 
 The artifact-refresh-queue consumer is the repair step that refills a
