@@ -1,9 +1,14 @@
 #!/usr/bin/env bash
 # bump-version.sh — atomically bump the OpenClaw version across ALL files.
 #
-# The problem this solves: "the version" is encoded in 11 separate markers
-# (across 10 files — README.md carries 2). Drift is mathematically guaranteed
+# The problem this solves: "the version" is encoded in 10 separate markers
+# (across 9 files — README.md carries 2). Drift is mathematically guaranteed
 # unless one tool updates all of them in one shot.
+#
+# WHAT THIS SCRIPT MUST NEVER ROLL: a MEASUREMENT artifact. A version marker
+# says "this file ships in release X". A measurement says "I ran a check and
+# this is what I observed". Rolling the second kind forges evidence — see the
+# _qc-summary.md removal in the coverage history below.
 #
 # SINGLE SOURCE OF TRUTH: the drift-checked marker SET is enumerated ONCE in
 # scripts/version-markers.json. That manifest is ALSO read by the repo-consistency
@@ -33,6 +38,27 @@
 #                                   v16.2.9 while skill-version.txt was v16.2.16
 #                                   because nothing rolled the frontmatter field.
 #                                   Now rolled + drift-checked here.
+#   T0-07 (this change): 10 markers — REMOVED the role-library
+#                                   _qc-summary.md heading. It was never a
+#                                   release marker; it is the recorded RESULT of
+#                                   a Stage-2 quality-control run. Rolling it
+#                                   restamped a frozen "244 / 244 — ALL PASS"
+#                                   verdict, measured once on 2026-06-09 at
+#                                   v11.0.1, onto every subsequent release: by
+#                                   v20.0.85 the heading read v20.0.85 against a
+#                                   sibling index declaring 438 roles across 36
+#                                   departments, and the artifact renewed that
+#                                   false certification automatically on every
+#                                   single release. Every version gate stayed
+#                                   green the whole time, because the marker DID
+#                                   agree with /version — the number it agreed on
+#                                   was simply meaningless.
+#                                   That file is now rewritten ONLY by a real
+#                                   quality-control run, which must write the
+#                                   observed count and the real timestamp.
+#                                   Enforced by
+#                                   scripts/qc-assert-qc-summary-provenance.py.
+#                                   DO NOT RE-ADD IT HERE.
 #
 # VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29;
 #   extended 2026-07-05 FIX-XC-13c to ALSO cover INSTALL.md):
@@ -80,7 +106,7 @@ fi
 # shared SSOT manifest, which the repo-consistency gate also reads. If someone
 # adds/removes a marker in one place but not the other, this guard aborts before
 # any file is touched, so the manifest and this script can never silently diverge.
-BUMP_CHECKED_MARKERS=11
+BUMP_CHECKED_MARKERS=10
 MARKERS_MANIFEST="$SCRIPT_DIR/version-markers.json"
 if [ -f "$MARKERS_MANIFEST" ]; then
   MANIFEST_MARKER_COUNT=$(python3 -c "import json,sys; print(len(json.load(open(sys.argv[1]))['markers']))" "$MARKERS_MANIFEST" 2>/dev/null || echo "")
@@ -91,13 +117,14 @@ if [ -f "$MARKERS_MANIFEST" ]; then
   fi
 fi
 
-# ─── The 11 version-marker locations (relative to repo root) ─────────────────
+# ─── The 10 version-marker locations (relative to repo root) ─────────────────
 #     (enumerated as the SSOT in scripts/version-markers.json — keep in lockstep)
+# NOT HERE, DELIBERATELY: the role-library _qc-summary.md heading. See T0-07 in
+# the coverage history above — it is a measurement, not a release marker.
 F_VERSION="$REPO_ROOT/version"
 F_INSTALL="$REPO_ROOT/install.sh"
 F_SKILL_VERSION="$REPO_ROOT/23-ai-workforce-blueprint/skill-version.txt"
 F_INDEX_JSON="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_index.json"
-F_QC_SUMMARY="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_qc-summary.md"
 F_README="$REPO_ROOT/README.md"
 F_UPDATE_SKILLS="$REPO_ROOT/update-skills.sh"
 F_DIRECT_TO_AGENT="$REPO_ROOT/DIRECT-TO-AGENT-UPDATE-MESSAGE.md"
@@ -125,9 +152,6 @@ read_current() {
   else
     V_INDEX="MISSING"
   fi
-  V_QC=$(grep -oE 'Role Library v[0-9]+\.[0-9]+\.[0-9]+' "$F_QC_SUMMARY" 2>/dev/null | head -1 | sed 's/Role Library //' || echo "MISSING")
-  [ -z "$V_QC" ] && V_QC="MISSING"
-
   # New trackers (v10.14.34) — guards must not abort under set -e
   if [ -f "$F_README" ]; then
     V_README=$(grep -oE 'this repo at v[0-9]+\.[0-9]+\.[0-9]+' "$F_README" 2>/dev/null | head -1 | sed 's/this repo at //' || echo "MISSING")
@@ -224,7 +248,6 @@ print_state() {
   printf "  %-50s %s\n" "install.sh ONBOARDING_VERSION" "$V_INSTALL"
   printf "  %-50s %s\n" "23-ai-workforce-blueprint/skill-version.txt" "$V_SKILL"
   printf "  %-50s %s\n" "templates/role-library/_index.json [version]" "$V_INDEX"
-  printf "  %-50s %s\n" "templates/role-library/_qc-summary.md heading" "$V_QC"
   printf "  %-50s %s\n" "README.md (this repo at vX.Y.Z)" "$V_README"
   printf "  %-50s %s\n" "README.md (Current Version: vX.Y.Z)" "$V_README_CURRENT"
   printf "  %-50s %s\n" "update-skills.sh ONBOARDING_VERSION" "$V_UPDATE_SKILLS"
@@ -240,7 +263,6 @@ check_drift() {
   N_INSTALL=$(norm "$V_INSTALL")
   N_SKILL=$(norm "$V_SKILL")
   N_INDEX=$(norm "$V_INDEX")
-  N_QC=$(norm "$V_QC")
   N_README=$(norm "$V_README")
   N_README_CURRENT=$(norm "$V_README_CURRENT")
   N_UPDATE=$(norm "$V_UPDATE_SKILLS")
@@ -248,7 +270,7 @@ check_drift() {
   N_CC_COMPAT=$(norm "$V_CC_COMPAT")
   N_23_SKILL_MD=$(norm "$V_23_SKILL_MD")
   if [ "$N_ROOT" = "$N_INSTALL" ] && [ "$N_ROOT" = "$N_SKILL" ] && \
-     [ "$N_ROOT" = "$N_INDEX" ] && [ "$N_ROOT" = "$N_QC" ] && \
+     [ "$N_ROOT" = "$N_INDEX" ] && \
      [ "$N_ROOT" = "$N_README" ] && [ "$N_ROOT" = "$N_README_CURRENT" ] && \
      [ "$N_ROOT" = "$N_UPDATE" ] && [ "$N_ROOT" = "$N_DIRECT" ] && \
      [ "$N_ROOT" = "$N_CC_COMPAT" ] && [ "$N_ROOT" = "$N_23_SKILL_MD" ]; then
@@ -321,17 +343,15 @@ with open(p, "w") as f:
 PYEOF
 fi
 
-# 5. /_qc-summary.md (heading line)
-if [ -f "$F_QC_SUMMARY" ]; then
-  python3 - <<PYEOF
-import re
-p = "$F_QC_SUMMARY"
-content = open(p).read()
-new = re.sub(r'(Role Library )v[0-9]+\.[0-9]+\.[0-9]+',
-             r'\1' + "$TARGET", content)
-open(p, "w").write(new)
-PYEOF
-fi
+# 5. DELETED (T0-07) — the role-library quality-control summary is NOT rolled.
+#    A release does not re-run quality control, so a release must not restamp a
+#    quality-control result. The removed block rewrote the summary's
+#    "Role Library vX.Y.Z" heading on every bump while the generation date, the
+#    role count and the ALL PASS verdict stayed frozen at a single run from
+#    2026-06-09. That artifact is regenerated ONLY by a real run, which writes
+#    the observed role count and the real timestamp.
+#    scripts/qc-assert-qc-summary-provenance.py fails CI if it is ever restamped
+#    or re-registered as a version marker. Do not add a step 5 back.
 
 # 6. /README.md — roll ONLY the two TRACKED README version markers:
 #    #6 "this repo at vX.Y.Z" and #9 "Current Version: vX.Y.Z". — v10.14.34;

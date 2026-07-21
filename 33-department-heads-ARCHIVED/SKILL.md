@@ -1,116 +1,40 @@
-# Skill 33: Permanent Department Heads
+# ARCHIVED — DO NOT RUN — Skill 33: Permanent Department Heads
 
-## What This Skill Does
+> **This skill is archived. Do not run its installer. Do not follow it as a procedure.**
+>
+> **Successor: Skill 23 — AI Workforce Blueprint (`23-ai-workforce-blueprint/`).**
 
-This skill installs **17 permanent department head agents** into your OpenClaw installation. Each department head is a dedicated agent with its own identity, workspace, and responsibilities. They live inside `agents.list[]` in `~/.openclaw/openclaw.json`, which means they survive restarts, context resets, and gateway reconnects.
+Skill 33 installed seventeen permanent department-head agents into `agents.list[]`.
+That model was replaced. Department workspace creation, SOUL.md generation and the
+registry writes all live in Skill 23 now, and Skill 23 derives the departments from
+the owner interview rather than from a fixed list of seventeen.
 
-## The 17 Departments
+## Why you must not run this
 
-| # | Department ID | Director Role | Model |
-|---|---------------|---------------|-------|
-| 1 | dept-ceo | Chief Executive Officer | Kimi K2.5 |
-| 2 | dept-marketing | Marketing Director | Kimi K2.5 |
-| 3 | dept-sales | Sales Director | GPT-5.4 |
-| 4 | dept-billing | Finance Director | Kimi K2.5 |
-| 5 | dept-support | Support Director | Kimi K2.5 |
-| 6 | dept-operations | Operations Director | Claude Sonnet 4.6 |
-| 7 | dept-creative | Creative Director | Kimi K2.5 |
-| 8 | dept-hr | HR Director | Kimi K2.5 |
-| 9 | dept-legal | Legal Director | Claude Sonnet 4.6 |
-| 10 | dept-it | IT Director | GPT-5.4 |
-| 11 | dept-webdev | Web Development Director | GPT-5.4 |
-| 12 | dept-appdev | App Development Director | GPT-5.4 |
-| 13 | dept-graphics | Graphics Director | Kimi K2.5 |
-| 14 | dept-video | Video Director | Kimi K2.5 |
-| 15 | dept-audio | Audio Director | Kimi K2.5 |
-| 16 | dept-research | Research Director | Kimi K2.5 |
-| 17 | dept-comms | Communications Director | Kimi K2.5 |
+Running `install.sh` in this folder, or following the procedure it used to
+document, writes the superseded seventeen-department model into a live workforce
+that Skill 23 has already built. The result is duplicate and conflicting entries
+in `~/.openclaw/openclaw.json` under `agents.list[]`, and department workspaces
+that no Skill 23 build state knows about.
 
-## How agents.list[] Works
+`install.sh` in this folder refuses to run and exits non-zero. That refusal is
+deliberate. Do not remove it.
 
-Each department head is added as an entry in `~/.openclaw/openclaw.json` under `agents.list[]`. This is OpenClaw's permanent agent registry. Agents in this list:
+## Where each capability went
 
-- **Survive restarts** - They are loaded every time OpenClaw starts
-- **Have unique IDs** - Each agent has a stable identifier (e.g., `dept-marketing`)
-- **Have dedicated workspaces** - Each agent works in `~/clawd/departments/[dept]/`
-- **Can be spawned on demand** - You can talk to any department head at any time
-- **Remember their context** - Their SOUL.md and workspace files persist across sessions
+| Old Skill 33 capability | Where it lives now |
+|---|---|
+| Department workspace creation | `23-ai-workforce-blueprint/scripts/build-workforce.py` — `create_department_workspace()` |
+| SOUL.md generation | `23-ai-workforce-blueprint/scripts/build-workforce.py` — `generate_soul_md()` |
+| `agents.list[]` registry writes | `23-ai-workforce-blueprint/scripts/build-workforce.py` — `add_agent_to_config()` |
+| Department operation protocols | `23-ai-workforce-blueprint/SKILL.md` |
+| Adding one role to an existing department | `23-ai-workforce-blueprint/scripts/add-role.sh` |
 
-## What Gets Created
+## Read instead
 
-### 1. Directory Structure
-```
-~/clawd/departments/
-├── ceo/SOUL.md
-├── marketing/SOUL.md
-├── sales/SOUL.md
-├── billing/SOUL.md
-├── support/SOUL.md
-├── operations/SOUL.md
-├── creative/SOUL.md
-├── hr/SOUL.md
-├── legal/SOUL.md
-├── it/SOUL.md
-├── webdev/SOUL.md
-├── appdev/SOUL.md
-├── graphics/SOUL.md
-├── video/SOUL.md
-├── audio/SOUL.md
-├── research/SOUL.md
-└── comms/SOUL.md
-```
+- `ARCHIVED.md` in this folder — the full archive record and the capability map.
+- `23-ai-workforce-blueprint/SKILL.md` — the live skill.
 
-### 2. Agent Configuration
-17 entries added to `~/.openclaw/openclaw.json` under `agents.list[]`.
-
-### 3. SOUL.md Files
-Each department gets a SOUL.md defining its identity, role, responsibilities, and communication style.
-
-## How to Use Department Heads
-
-### Talk to a Department
-```bash
-sessions_spawn --agent dept-marketing --task "Create a campaign brief for Q2"
-```
-
-### Assign Work Through the CEO
-```
-User: "Launch a new product next month"
-CEO Agent: Spawns Marketing, Sales, Creative directors with coordinated tasks
-```
-
-### Direct Department Queries
-```
-User: "What is the status of the website redesign?"
-WebDev Director: "Currently 70% complete. Design phase done, development in progress."
-```
-
-## After Installation
-
-1. Restart OpenClaw (`/restart` in Telegram)
-2. Test each department head
-3. Set department goals and KPIs
-4. Create a weekly rhythm (Monday goals, Friday reviews)
-
-## Prerequisites
-
-| Prerequisite | Required | Why It Matters |
-|--------------|----------|----------------|
-| OpenClaw installed | MANDATORY | Agents are registered in openclaw.json |
-| Python 3 | MANDATORY | install.sh uses Python to modify JSON config |
-| ~/clawd/ directory | MANDATORY | Department workspaces live here |
-
-## Troubleshooting
-
-**Department head not responding?**
-```bash
-grep "dept-" ~/.openclaw/openclaw.json     # verify agent exists
-ls ~/clawd/departments/[dept]/              # verify workspace exists
-cat ~/clawd/departments/[dept]/SOUL.md      # verify SOUL.md exists
-```
-
-**Need to reset a department?**
-```bash
-rm -rf ~/clawd/departments/[dept]/
-# Re-run install.sh - existing agents are skipped, files are recreated
-```
+The folder is retained only so that older client onboardings that reference
+"Skill 33" in their `MEMORY.md` or `.onboarding-status` files still resolve.
+Nothing here is maintained, and nothing here is to be executed.
