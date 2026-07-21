@@ -1,0 +1,109 @@
+name: QC departments-tree guard
+
+# THE DEFECT THIS LOCKS (v20.0.80): the QC checker measured a DIFFERENT
+# departments tree than the floor-fill repairer writes to, so it reported floor
+# departments MISSING that were present on disk the whole time.
+#
+#   REPAIRER writes   <workspace>/departments
+#                     detect-stale-artifacts.py:326, floor-fill-driver.py:170-171,
+#                     migrate-existing-workforce.sh:138-140
+#   CHECKER read      ~/clawd/zero-human-company/<slug>/departments
+#                     _qc_company_info.py — every candidate was
+#                     zero-human-company-shaped; the live tree was never a
+#                     candidate at all
+#
+# Measured on 18 reachable fleet boxes before the fix: 13 had checker and
+# repairer pointed at different directories, and 10 of those failed the gate with
+# "missing mandatory: funnels" while funnels/ existed in the repairer's tree on
+# every single one. That false failure blocked a real safety improvement (making
+# workforce-provisioning failure withhold the completion stamp), because ~10 of
+# the 28/30 boxes it newly failed were failing for no reason.
+#
+# Two sibling defects in the same resolver are locked here too, both measured on
+# real boxes:
+#   * the non-standard-layout fallback accepted a COMPANY dir as the departments
+#     dir with no test at all (the "Check if it contains role-like subdirs"
+#     comment described a check that was never written);
+#   * the per-company subdir scan resolved symlinks WITHOUT re-applying
+#     _is_template_path(), so a company entry symlinked into the Downloads
+#     template tree made QC audit the shipped TEMPLATE.
+#
+# The suite is hermetic: every scenario builds fixture trees under a sandboxed
+# HOME. It reads and writes no fleet box.
+#
+# Scenario 3 is the anti-false-positive control — a GENUINELY absent department
+# must still be reported MISSING, and must be the ONLY one reported. A "fix" that
+# quiets the gate by loosening it fails this workflow.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/_qc_paths.py"
+      - "23-ai-workforce-blueprint/scripts/_qc_company_info.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/qc-completeness.sh"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
+      - "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - "tests/unit/qc-departments-tree-resolution.test.sh"
+      - ".github/workflows/qc-departments-tree-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/_qc_paths.py"
+      - "23-ai-workforce-blueprint/scripts/_qc_company_info.py"
+      - "23-ai-workforce-blueprint/scripts/department-floor.py"
+      - "23-ai-workforce-blueprint/scripts/qc-completeness.sh"
+      - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/detect-stale-artifacts.py"
+      - "23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh"
+      - "23-ai-workforce-blueprint/department-naming-map.json"
+      - "tests/unit/qc-departments-tree-resolution.test.sh"
+      - ".github/workflows/qc-departments-tree-guard.yml"
+
+jobs:
+  qc-departments-tree-guard:
+    name: QC measures the tree the repairer writes to
+    runs-on: ubuntu-latest
+    env:
+      # detect_platform aborts with "Cannot detect OpenClaw platform" when
+      # neither /data/.openclaw nor ~/.openclaw exists — which is every CI
+      # runner. This is the documented override ("Set OPENCLAW_PLATFORM=mac|vps
+      # to override (e.g. CI static checks)") and floor-wipe-fix-guard.yml
+      # already sets it the same way. Each scenario builds its own fixture tree
+      # under a sandboxed HOME, so this only satisfies the platform probe — it
+      # never points a fixture at a real workspace.
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the changed shell and Python
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 23-ai-workforce-blueprint/scripts/qc-completeness.sh
+          bash -n 23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh
+          bash -n tests/unit/qc-departments-tree-resolution.test.sh
+          python3 -m py_compile \
+            23-ai-workforce-blueprint/scripts/_qc_paths.py \
+            23-ai-workforce-blueprint/scripts/_qc_company_info.py \
+            23-ai-workforce-blueprint/scripts/department-floor.py
+          echo "OK: syntax checks passed"
+
+      - name: "Run the departments-tree resolution suite (7 scenarios, 11 assertions)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          # The GitHub runner filesystem is case-SENSITIVE, so scenario 5
+          # (case-drifted 'Sales' vs 'sales') is a real test here. On a
+          # case-insensitive macOS volume it passes trivially.
+          chmod +x tests/unit/qc-departments-tree-resolution.test.sh
+          bash tests/unit/qc-departments-tree-resolution.test.sh
