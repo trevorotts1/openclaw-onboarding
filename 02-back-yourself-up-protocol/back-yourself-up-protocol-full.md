@@ -625,6 +625,17 @@ Notify the user that the automated backup failed
 Run the backup manually
 Investigate why the automation failed and fix it
 Full Backup Step-by-Step Procedure
+RUNNABLE FORM: scripts/full-backup.sh in this skill folder is the executable
+version of the steps below, and is what the regression suite
+tests/unit/full-backup-prune-after-verify.test.sh actually exercises. Prefer
+running it over transcribing these steps by hand; the prose below remains the
+explanation of what it does and why.
+TWO RULES THIS PROCEDURE NOW ENFORCES, both learned the hard way:
+  1. NOTHING IS DELETED until the new backup exists AND has passed
+     verification. Rotation is the LAST step (Step 16), never the first.
+  2. EVERY copy's exit status is captured. A required item that is missing, or
+     any source that exists but fails to copy, makes the run exit NON-ZERO -
+     it is never reported as a completed backup.
 Step 1: Determine the Backup Directory
 Use the same backup folder detection logic as Part 1. Then ensure the full-backup subfolder exists:
 # Smart backup folder detection (same logic as Part 1)
@@ -644,102 +655,151 @@ fi
 
 # Ensure full-backup subfolder exists - create if it does not
 mkdir -p "$BACKUP_ROOT/full-backup"
-Step 2: Rotate Old Backups
-Before creating a new backup, check if rotation is needed:
+Step 2: Create the New Backup Directory
+ROTATION DOES NOT HAPPEN HERE. Pruning is the DESTRUCTIVE step and it now runs
+LAST, in Step 16, only after the replacement exists and has PASSED verification.
+It used to run FIRST: the oldest backup was deleted before the new directory had
+even been created, so any failure in the copy, disk, or verification steps that
+followed left ONE verified restore point instead of the promised two - during
+exactly the failure window backups exist to cover.
 FULL_BACKUP_DIR="$BACKUP_ROOT/full-backup"
-BACKUP_COUNT=$(ls -d "$FULL_BACKUP_DIR"/full-backup-* 2>/dev/null | wc -l | tr -d ' ')
-
-if [ "$BACKUP_COUNT" -ge 2 ]; then
-    OLDEST=$(ls -d "$FULL_BACKUP_DIR"/full-backup-* 2>/dev/null | head -1)
-    echo "Deleting oldest backup: $OLDEST"
-    rm -rf "$OLDEST"
-fi
-Step 3: Create the New Backup Directory
 TODAY=$(date +%Y-%m-%d)
 NEW_BACKUP="$FULL_BACKUP_DIR/full-backup-$TODAY"
 mkdir -p "$NEW_BACKUP"/{workspace,config,secrets,memory,scripts,skills,projects,data,assets}
-Step 4: Copy Workspace Markdown Files
-# Copy all .md files from the workspace root
-cp ~/clawd/*.md "$NEW_BACKUP/workspace/" 2>/dev/null
-Step 5: Copy Configuration Files
-# Copy the main OpenClaw config
-cp ~/.openclaw/openclaw.json "$NEW_BACKUP/config/" 2>/dev/null
 
-# Copy any other files in the OpenClaw config directory
-cp ~/.openclaw/*.json "$NEW_BACKUP/config/" 2>/dev/null
-cp ~/.openclaw/*.yaml "$NEW_BACKUP/config/" 2>/dev/null
-cp ~/.openclaw/*.yml "$NEW_BACKUP/config/" 2>/dev/null
-cp ~/.openclaw/*.toml "$NEW_BACKUP/config/" 2>/dev/null
+# ---- Copy accounting -------------------------------------------------------
+# EVERY copy's exit status is captured. The previous procedure sent stderr to
+# /dev/null and captured no status at all, so a failed copy - absent source,
+# permissions, a full disk - was invisible and the run still reported a
+# completed backup.
+BACKUP_ERRORS=0
+FAILED_ITEMS=""
 
-# Copy legacy config if it exists
-cp ~/.clawdbot/clawdbot.json "$NEW_BACKUP/config/" 2>/dev/null
-Step 6: Copy Secrets and Credentials
-# Copy secrets directory
-cp -r ~/clawd/secrets/ "$NEW_BACKUP/secrets/" 2>/dev/null
+record_failure() {
+    echo "ERROR: $1"
+    FAILED_ITEMS="$FAILED_ITEMS
+  - $1"
+    BACKUP_ERRORS=$((BACKUP_ERRORS + 1))
+}
 
-# Copy any service account files that live elsewhere
-# (Adjust paths based on actual installation)
-Step 7: Copy Memory Files
-# Copy memory directory (daily logs and master files)
-cp -r ~/clawd/memory/ "$NEW_BACKUP/memory/" 2>/dev/null
+# copy_required <label> <source> <destination>
+#   The source MUST exist and the copy MUST succeed. Either failure aborts the
+#   backup at Step 15.
+copy_required() {
+    label="$1"; src="$2"; dest="$3"
+    if [ ! -e "$src" ]; then
+        record_failure "$label: REQUIRED source is missing ($src)"
+        return 1
+    fi
+    if ! cp -R "$src" "$dest"; then
+        record_failure "$label: copy FAILED ($src -> $dest)"
+        return 1
+    fi
+    echo "  ok   $label"
+}
 
-# Copy master files if they exist in Downloads
-if [ -d "$HOME/Downloads/openclaw-master-files" ]; then
-    cp -r "$HOME/Downloads/openclaw-master-files/" "$NEW_BACKUP/memory/openclaw-master-files/" 2>/dev/null
+# copy_if_present <label> <source> <destination>
+#   For items that legitimately do not exist on every box. An ABSENT source is
+#   noted and is not a failure. A source that DOES exist and fails to copy IS a
+#   failure - that is precisely the case the old `2>/dev/null` discarded.
+copy_if_present() {
+    label="$1"; src="$2"; dest="$3"
+    if [ ! -e "$src" ]; then
+        echo "  --   $label: not present on this box (skipped)"
+        return 0
+    fi
+    if ! cp -R "$src" "$dest"; then
+        record_failure "$label: source EXISTS but the copy FAILED ($src -> $dest)"
+        return 1
+    fi
+    echo "  ok   $label"
+}
+Step 3: Copy Workspace Markdown Files
+# These carry AGENTS.md and TOOLS.md, which Step 15 verifies. Zero .md files in
+# the workspace is a failure, not a silent empty directory.
+WORKSPACE_MD_COUNT=0
+for f in "$HOME"/clawd/*.md; do
+    [ -e "$f" ] || continue
+    if cp "$f" "$NEW_BACKUP/workspace/"; then
+        WORKSPACE_MD_COUNT=$((WORKSPACE_MD_COUNT + 1))
+    else
+        record_failure "workspace file: copy FAILED ($f)"
+    fi
+done
+if [ "$WORKSPACE_MD_COUNT" -eq 0 ]; then
+    record_failure "workspace .md files: none were copied from ~/clawd"
+else
+    echo "  ok   workspace .md files ($WORKSPACE_MD_COUNT file(s))"
 fi
-Step 8: Copy Scripts and Tools
-# Copy custom scripts and tools
-cp -r ~/clawd/bin/ "$NEW_BACKUP/scripts/bin/" 2>/dev/null
-cp -r ~/clawd/scripts/ "$NEW_BACKUP/scripts/scripts/" 2>/dev/null
-cp -r ~/clawd/tools/ "$NEW_BACKUP/scripts/tools/" 2>/dev/null
-Step 9: Copy Skills
-# Copy installed skills
-cp -r ~/.openclaw/skills/ "$NEW_BACKUP/skills/" 2>/dev/null
-Step 10: Export Cron Jobs
-# Export cron job definitions
-openclaw cron list > "$NEW_BACKUP/cron-jobs-export.txt" 2>&1
+Step 4: Copy Configuration Files
+# The main OpenClaw config is REQUIRED - Step 15 verifies it.
+copy_required   "openclaw.json"        "$HOME/.openclaw/openclaw.json"   "$NEW_BACKUP/config/"
 
-# If the command fails, create a note
-if [ $? -ne 0 ]; then
-    echo "NOTE: openclaw cron list command failed. Cron jobs may need to be documented manually." > "$NEW_BACKUP/cron-jobs-export.txt"
+# Additional config files: present on some boxes, absent on others.
+for pattern in "$HOME"/.openclaw/*.json "$HOME"/.openclaw/*.yaml "$HOME"/.openclaw/*.yml "$HOME"/.openclaw/*.toml; do
+    [ -e "$pattern" ] || continue
+    [ "$pattern" = "$HOME/.openclaw/openclaw.json" ] && continue
+    cp "$pattern" "$NEW_BACKUP/config/" || record_failure "config file: copy FAILED ($pattern)"
+done
+
+# Legacy config, if this box still has one.
+copy_if_present "legacy clawdbot.json" "$HOME/.clawdbot/clawdbot.json"   "$NEW_BACKUP/config/"
+Step 5: Copy Secrets and Credentials
+copy_if_present "secrets directory"    "$HOME/clawd/secrets"             "$NEW_BACKUP/secrets/"
+Step 6: Copy Memory Files
+copy_if_present "memory directory"     "$HOME/clawd/memory"              "$NEW_BACKUP/memory/"
+copy_if_present "master files"         "$HOME/Downloads/openclaw-master-files" "$NEW_BACKUP/memory/"
+Step 7: Copy Scripts and Tools
+copy_if_present "bin"                  "$HOME/clawd/bin"                 "$NEW_BACKUP/scripts/"
+copy_if_present "scripts"              "$HOME/clawd/scripts"             "$NEW_BACKUP/scripts/"
+copy_if_present "tools"                "$HOME/clawd/tools"               "$NEW_BACKUP/scripts/"
+Step 8: Copy Skills
+copy_if_present "installed skills"     "$HOME/.openclaw/skills"          "$NEW_BACKUP/skills/"
+Step 9: Export Cron Jobs
+# A failed export is RECORDED, not silently replaced with a reassuring note.
+if openclaw cron list > "$NEW_BACKUP/cron-jobs-export.txt" 2>&1; then
+    echo "  ok   cron export"
+else
+    echo "NOTE: openclaw cron list failed; cron jobs may need documenting manually." \
+        > "$NEW_BACKUP/cron-jobs-export.txt"
+    echo "  --   cron export unavailable (recorded in cron-jobs-export.txt)"
 fi
-Step 11: Copy Project Files (Excluding Bloat)
-# Copy projects, excluding node_modules, .git, caches, and large media
-rsync -a \
-    --exclude='node_modules/' \
-    --exclude='.git/' \
-    --exclude='__pycache__/' \
-    --exclude='.cache/' \
-    --exclude='cache/' \
-    --exclude='tmp/' \
-    --exclude='temp/' \
-    --exclude='.DS_Store' \
-    --exclude='*.mp4' \
-    --exclude='*.mov' \
-    --exclude='*.avi' \
-    --exclude='*.mkv' \
-    --exclude='*.webm' \
-    --exclude='*.mp3' \
-    --exclude='*.wav' \
-    --exclude='*.aac' \
-    --exclude='*.flac' \
-    --exclude='*.log' \
-    ~/clawd/projects/ "$NEW_BACKUP/projects/" 2>/dev/null
-Step 12: Copy Data Files
-# Copy data directory
-cp -r ~/clawd/data/ "$NEW_BACKUP/data/" 2>/dev/null
-Step 13: Copy Small Brand Assets
-# Copy assets but skip files over 5MB
-find ~/clawd/assets/ -type f -size -5M -exec cp --parents {} "$NEW_BACKUP/" \; 2>/dev/null
-
-# Alternative approach if --parents is not available on macOS:
-rsync -a --max-size=5M ~/clawd/assets/ "$NEW_BACKUP/assets/" 2>/dev/null
-Step 14: Generate the Manifest
-Create a file listing everything in the backup:
-# Generate a manifest of all backed-up files
-find "$NEW_BACKUP" -type f | sort > "$NEW_BACKUP/MANIFEST.txt"
-Step 15: Generate Backup Info
-Create a metadata file about this backup:
+Step 10: Copy Project Files (Excluding Bloat)
+if [ -d "$HOME/clawd/projects" ]; then
+    if rsync -a \
+        --exclude='node_modules/' --exclude='.git/' --exclude='__pycache__/' \
+        --exclude='.cache/' --exclude='cache/' --exclude='tmp/' --exclude='temp/' \
+        --exclude='.DS_Store' \
+        --exclude='*.mp4' --exclude='*.mov' --exclude='*.avi' --exclude='*.mkv' \
+        --exclude='*.webm' --exclude='*.mp3' --exclude='*.wav' --exclude='*.aac' \
+        --exclude='*.flac' --exclude='*.log' \
+        "$HOME/clawd/projects/" "$NEW_BACKUP/projects/"; then
+        echo "  ok   projects"
+    else
+        record_failure "projects: rsync FAILED"
+    fi
+else
+    echo "  --   projects: not present on this box (skipped)"
+fi
+Step 11: Copy Data Files
+copy_if_present "data directory"       "$HOME/clawd/data"                "$NEW_BACKUP/data/"
+Step 12: Copy Small Brand Assets
+if [ -d "$HOME/clawd/assets" ]; then
+    if rsync -a --max-size=5M "$HOME/clawd/assets/" "$NEW_BACKUP/assets/"; then
+        echo "  ok   assets (files under 5 MB)"
+    else
+        record_failure "assets: rsync FAILED"
+    fi
+else
+    echo "  --   assets: not present on this box (skipped)"
+fi
+Step 13: Generate the Manifest
+if find "$NEW_BACKUP" -type f | sort > "$NEW_BACKUP/MANIFEST.txt"; then
+    echo "  ok   MANIFEST.txt"
+else
+    record_failure "MANIFEST.txt: could not be generated"
+fi
+Step 14: Generate Backup Info
 cat > "$NEW_BACKUP/BACKUP-INFO.txt" << EOF
 Full Instance Backup
 Date: $(date '+%A, %B %d, %Y')
@@ -757,8 +817,10 @@ Notes:
 - Do not upload to cloud storage without encryption.
 - To restore, follow the restoration procedure in BACK-YOURSELF-UP-PROTOCOL.md
 EOF
-Step 16: Verify the Backup
-# Check that key files exist in the backup
+Step 15: Verify the Backup (this step decides whether the backup is usable)
+A MISSING CRITICAL FILE IS A FAILED BACKUP, NOT A WARNING. A backup you cannot
+restore from is not a backup, and the previous procedure printed a warning here
+and then reported completion anyway.
 MISSING=""
 
 [ ! -f "$NEW_BACKUP/config/openclaw.json" ] && MISSING="$MISSING openclaw.json"
@@ -766,13 +828,40 @@ MISSING=""
 [ ! -f "$NEW_BACKUP/workspace/TOOLS.md" ] && MISSING="$MISSING TOOLS.md"
 
 if [ -n "$MISSING" ]; then
-    echo "WARNING: The following expected files are missing from the backup:$MISSING"
-else
-    echo "Backup verification passed. All critical files present."
+    record_failure "critical file(s) missing from the backup:$MISSING"
 fi
 
-# Report total backup size
+if [ "$BACKUP_ERRORS" -gt 0 ]; then
+    echo ""
+    echo "BACKUP FAILED - $BACKUP_ERRORS problem(s):$FAILED_ITEMS"
+    echo "The incomplete backup is left at $NEW_BACKUP for inspection."
+    echo "NO existing backup was deleted - every previous restore point is intact."
+    exit 1
+fi
+
+echo "Backup verification passed. All critical files present."
 echo "Total backup size: $(du -sh "$NEW_BACKUP" | cut -f1)"
+Step 16: Rotate Old Backups (ONLY after Step 15 passed)
+Now, and only now, is anything deleted. Reaching this line means the new backup
+exists and has been verified, so pruning can never drop the fleet below the
+promised number of good restore points.
+KEEP=2
+ALL_BACKUPS=$(ls -d "$FULL_BACKUP_DIR"/full-backup-* 2>/dev/null | sort)
+TOTAL=$(printf '%s\n' "$ALL_BACKUPS" | sed '/^$/d' | wc -l | tr -d ' ')
+
+if [ "$TOTAL" -gt "$KEEP" ]; then
+    REMOVE=$((TOTAL - KEEP))
+    printf '%s\n' "$ALL_BACKUPS" | sed '/^$/d' | head -"$REMOVE" | while read -r OLD; do
+        if [ "$OLD" = "$NEW_BACKUP" ]; then
+            echo "Refusing to delete the backup just created: $OLD"
+            continue
+        fi
+        echo "Deleting superseded backup: $OLD"
+        rm -rf "$OLD"
+    done
+else
+    echo "No rotation needed ($TOTAL backup(s), keeping $KEEP)."
+fi
 Decision Tree - Full Backup
 FULL BACKUP TRIGGERED (biweekly cron or manual request)
   |
@@ -784,45 +873,48 @@ Step 1: Determine backup root directory
   +-- Neither? --> Create ~/Downloads/openclaw-backups/
   |
   v
-Step 2: Ensure full-backup/ subfolder exists
+Step 2: Ensure full-backup/ subfolder exists, create new backup directory
+  |                                    (full-backup-YYYY-MM-DD/)
+  |   NOTHING IS DELETED HERE. Rotation is the last step, not the first.
   |
   v
-Step 3: Count existing full backups
+Step 3: Copy all items per the inclusion list, CAPTURING each exit status
   |
-  +-- 2 or more exist? --> Delete the oldest one
-  +-- Fewer than 2? --> Continue (no rotation needed)
-  |
-  v
-Step 4: Create new backup directory (full-backup-YYYY-MM-DD/)
-  |
-  v
-Step 5: Copy all items per the inclusion list
-  |
-  +-- Workspace .md files
-  +-- Config files
-  +-- Secrets and credentials
-  +-- Memory files and daily logs
-  +-- Scripts and tools
-  +-- Installed skills
-  +-- Cron job export
+  +-- Workspace .md files          (required: carries AGENTS.md / TOOLS.md)
+  +-- Config files                 (openclaw.json required; others if present)
+  +-- Secrets and credentials      (if present)
+  +-- Memory files and daily logs  (if present)
+  +-- Scripts and tools            (if present)
+  +-- Installed skills             (if present)
+  +-- Cron job export              (failure recorded, not papered over)
   +-- Project files (excluding bloat items)
   +-- Data files
   +-- Small brand assets (under 5 megabytes)
   |
-  v
-Step 6: Generate MANIFEST.txt (list of all files)
+  +-- Any REQUIRED item missing, or any PRESENT source that failed to copy?
+  |       --> record the failure and continue collecting, then FAIL at Step 5
   |
   v
-Step 7: Generate BACKUP-INFO.txt (metadata)
+Step 4: Generate MANIFEST.txt and BACKUP-INFO.txt
   |
   v
-Step 8: Verify critical files are present
+Step 5: Verify critical files are present
   |
-  +-- All critical files present? --> Report success
-  +-- Missing critical files? --> Warn and log which files are missing
+  +-- All critical files present AND zero recorded failures?
+  |       --> continue to rotation
+  +-- Missing critical file OR any recorded failure?
+  |       --> EXIT NON-ZERO. Report the failures. Leave the incomplete backup
+  |           in place for inspection. DELETE NOTHING - every previous restore
+  |           point stays intact.
   |
   v
-Step 9: Report completion
+Step 6: Rotate old backups (DESTRUCTIVE - only reachable after Step 5 passed)
+  |
+  +-- More than 2 backups? --> Delete the oldest, never the one just created
+  +-- 2 or fewer?          --> Nothing to prune
+  |
+  v
+Step 7: Report completion
   |
   +-- If automated: Log the result
   +-- If manual: Notify the user with size and file count
@@ -832,22 +924,25 @@ DONE
 Full Backup Checklist
 [ ] Backup root directory determined (openclaw-backups or backups in ~/Downloads/)
 [ ] full-backup subfolder exists or was created
-[ ] Old backup rotation performed if needed (max 2 versions)
 [ ] New backup directory created with today's date
-[ ] Workspace .md files copied
-[ ] OpenClaw config files copied (~/.openclaw/)
+[ ] NOTHING deleted before the new backup exists and verifies
+[ ] Workspace .md files copied (exit status checked; zero files is a failure)
+[ ] OpenClaw config files copied (~/.openclaw/) - openclaw.json is required
 [ ] Legacy config files copied (if they exist)
 [ ] Secrets and credentials copied (~/clawd/secrets/)
 [ ] Memory files copied (daily logs and master files)
 [ ] Scripts and tools copied (~/clawd/bin/, ~/clawd/scripts/)
 [ ] Installed skills copied
-[ ] Cron jobs exported to text file
+[ ] Cron jobs exported to text file (a failed export is recorded)
 [ ] Project files copied (excluding node_modules, .git, caches, media)
 [ ] Data files copied
 [ ] Brand assets copied (files under 5 megabytes only)
+[ ] Every copy's exit status captured - no copy failure went unrecorded
 [ ] MANIFEST.txt generated
 [ ] BACKUP-INFO.txt generated
-[ ] Verification passed (critical files present)
+[ ] Verification passed (critical files present AND zero recorded failures)
+[ ] Non-zero exit on any failure, with no backup deleted
+[ ] Old backup rotation performed LAST, only after verification (max 2 versions)
 [ ] Total backup size is reasonable (not bloated)
 [ ] Completion reported (to log or to user)
 
