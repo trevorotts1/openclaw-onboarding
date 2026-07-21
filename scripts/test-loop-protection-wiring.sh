@@ -64,11 +64,15 @@ else
     bad "W3 install.sh does not persist all three loop-protection scripts"
 fi
 
-# W4 — update-skills.sh persists all three (in the persistent-copy loop)
-if grep -q 'activate-loop-protection.sh loop-protection-first-proof.sh loop-protection-canary.sh' "$UPDATE"; then
-    ok "W4 update-skills.sh persists activate-loop-protection.sh + loop-protection-first-proof.sh + the loop-protection-canary.sh shim"
+# W4 — update-skills.sh persists the full canonical tree, which includes all
+# three loop-protection entrypoints. Do not reintroduce a filename allowlist.
+if grep -q 'deliver_canonical_scripts_tree "$ONBOARDING_DIR/scripts"' "$UPDATE" \
+   && [ -f "$REPO/scripts/activate-loop-protection.sh" ] \
+   && [ -f "$REPO/scripts/loop-protection-first-proof.sh" ] \
+   && [ -f "$REPO/scripts/loop-protection-canary.sh" ]; then
+    ok "W4 update-skills.sh recursive delivery persists all three loop-protection scripts"
 else
-    bad "W4 update-skills.sh does not persist all three loop-protection scripts"
+    bad "W4 update-skills.sh full-tree delivery does not persist all three loop-protection scripts"
 fi
 
 # W5 — rollout gate exists + defaults HELD

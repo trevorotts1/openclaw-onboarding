@@ -732,7 +732,16 @@ def step_pull_onboarding(paths: dict, repo_root: Path, pinned_tag: str, res: Box
 
 
 def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_cc: bool = False) -> None:
-    """Step 3: fetch + checkout the resolved CC tag."""
+    """Step 3: converge the Command Center checkout to latest origin/main.
+
+    The compatibility tag remains an input to the minimum-version contract, but
+    it is not a deployment target. Checking out that historical tag here used to
+    undo the root updater's successful main refresh and leave every fleet roll
+    detached on stale code. The Command Center's own update.sh is the canonical
+    state-preserving branch/build/health path, so invoke it only when the root
+    updater has not already completed convergence, then independently assert the
+    post-condition.
+    """
     if dry_run:
         res.step_skip("pull-cc")
         return
@@ -743,29 +752,51 @@ def step_pull_cc(paths: dict, cc_tag: str, res: BoxResult, dry_run: bool, force_
         return
 
     try:
-        # git fetch --tags
-        subprocess.run(["git", "-C", str(cc_dir), "fetch", "--tags"],
-                       check=True, capture_output=True, timeout=60)
-
-        # Check for dirty tree
-        dirty = subprocess.run(
-            ["git", "-C", str(cc_dir), "status", "--porcelain"],
-            capture_output=True, text=True, timeout=10
+        subprocess.run(
+            ["git", "-C", str(cc_dir), "fetch", "origin", "main"],
+            check=True, capture_output=True, timeout=60,
         )
-        if dirty.stdout.strip():
-            if force_cc:
-                _warn(f"CC dir has local edits; stashing (--force-cc set)")
-                subprocess.run(["git", "-C", str(cc_dir), "stash"],
-                               check=True, capture_output=True, timeout=15)
-            else:
-                res.step_fail("pull-cc",
-                    f"CC dir has uncommitted changes (use --force-cc to stash). "
-                    f"Changed files:\n{dirty.stdout[:200]}")
+
+        def current_on_main() -> bool:
+            branch = subprocess.run(
+                ["git", "-C", str(cc_dir), "symbolic-ref", "--quiet", "--short", "HEAD"],
+                capture_output=True, text=True, timeout=10,
+            )
+            if branch.returncode != 0 or branch.stdout.strip() != "main":
+                return False
+            ancestry = subprocess.run(
+                ["git", "-C", str(cc_dir), "merge-base", "--is-ancestor", "origin/main", "HEAD"],
+                capture_output=True, timeout=10,
+            )
+            return ancestry.returncode == 0
+
+        if not current_on_main():
+            updater = Path(cc_dir) / "update.sh"
+            if not updater.is_file():
+                res.step_fail(
+                    "pull-cc",
+                    f"Command Center checkout is not current on main and canonical updater is missing: {updater}",
+                )
+                return
+            update_env = {**os.environ, "CC_APP_DIR": str(cc_dir)}
+            update_result = subprocess.run(
+                ["bash", str(updater)], cwd=str(cc_dir), env=update_env,
+                capture_output=True, text=True, timeout=1200,
+            )
+            if update_result.returncode != 0:
+                detail = (update_result.stdout + update_result.stderr).strip()[-300:]
+                res.step_fail(
+                    "pull-cc",
+                    f"canonical Command Center update failed (exit {update_result.returncode}): {detail}",
+                )
                 return
 
-        # git checkout <tag>
-        subprocess.run(["git", "-C", str(cc_dir), "checkout", cc_tag],
-                       check=True, capture_output=True, timeout=30)
+        if not current_on_main():
+            res.step_fail(
+                "pull-cc",
+                f"post-update assertion failed: checkout is not main with latest origin/main (compatibility tag {cc_tag} is not a deploy target)",
+            )
+            return
         res.step_ok("pull-cc")
     except subprocess.CalledProcessError as e:
         res.step_fail("pull-cc", f"git failed (exit {e.returncode}): {e.stderr[:200] if e.stderr else ''}")

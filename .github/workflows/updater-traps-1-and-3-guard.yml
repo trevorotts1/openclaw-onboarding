@@ -36,13 +36,27 @@ on:
     branches: [main]
     paths:
       - "update-skills.sh"
+      - "shared-utils/fleet_refresh_runner.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
       - "scripts/test-updater-traps-1-and-3.sh"
+      - "scripts/test-loop-protection-wiring.sh"
+      - "scripts/setup-weekly-update.sh"
+      - "tests/unit/fleet-refresh-cc-main-convergence.test.py"
+      - "tests/unit/full-update-path-contract.test.sh"
+      - "tests/unit/update-skills-full-scripts-tree.test.sh"
       - ".github/workflows/updater-traps-1-and-3-guard.yml"
   pull_request:
     branches: [main]
     paths:
       - "update-skills.sh"
+      - "shared-utils/fleet_refresh_runner.py"
+      - "32-command-center-setup/scripts/run-full-install.sh"
       - "scripts/test-updater-traps-1-and-3.sh"
+      - "scripts/test-loop-protection-wiring.sh"
+      - "scripts/setup-weekly-update.sh"
+      - "tests/unit/fleet-refresh-cc-main-convergence.test.py"
+      - "tests/unit/full-update-path-contract.test.sh"
+      - "tests/unit/update-skills-full-scripts-tree.test.sh"
       - ".github/workflows/updater-traps-1-and-3-guard.yml"
 
 jobs:
@@ -94,3 +108,12 @@ jobs:
           set -euo pipefail
           bash scripts/test-updater-traps-1-and-3.sh
           echo "updater-traps-1-and-3-guard: PASS"
+
+      - name: Prove the complete root update path
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/update-skills-full-scripts-tree.test.sh
+          python3 tests/unit/fleet-refresh-cc-main-convergence.test.py
+          bash tests/unit/full-update-path-contract.test.sh
+          bash scripts/test-loop-protection-wiring.sh

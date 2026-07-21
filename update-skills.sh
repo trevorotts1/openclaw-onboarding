@@ -20,6 +20,76 @@ if [ -z "$_DETECT_PLATFORM" ]; then
 fi
 export OPENCLAW_PLATFORM="$_DETECT_PLATFORM"
 
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
+
+# ----------------------------------------------------------
+# PRE-BOOTSTRAP SELF-SYNC GUARD
+# ----------------------------------------------------------
+# This must stay above the platform bootstrap. The Mac bootstrap owns the
+# power-resilience check; an old checkout used to reach that check (and exit
+# 78) before it had any chance to fetch the update that made routine updates
+# advisory. Keeping self-sync bootstrap-independent lets an auto-syncing stale
+# checkout refresh and re-exec first. No platform variables or prerequisites
+# beyond git are used here.
+self_sync_guard() {
+  [ "${OPENCLAW_UPDATE_SKIP_SELF_SYNC:-0}" = "1" ] && { echo "  [self-sync] skipped (OPENCLAW_UPDATE_SKIP_SELF_SYNC=1)"; return 0; }
+  [ "${OPENCLAW_UPDATE_SELF_SYNCED:-0}" = "1" ] && { echo "  [self-sync] already re-exec'd from origin/main — proceeding"; return 0; }
+
+  local src="${BASH_SOURCE[0]:-}"
+  case "$src" in
+    ""|bash|sh|-bash|-sh) echo "  [self-sync] running via pipe (no local checkout) — fresh by definition, skipping"; return 0 ;;
+  esac
+  [ -f "$src" ] || { echo "  [self-sync] script path not a regular file — skipping"; return 0; }
+  command -v git >/dev/null 2>&1 || { echo "  [self-sync] git not available — skipping (cannot verify checkout currency)"; return 0; }
+
+  local repo_root origin dirty="" behind="" local_sha remote_sha
+  repo_root="$(cd "$_SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || true)"
+  [ -n "$repo_root" ] || { echo "  [self-sync] not a git checkout — skipping (likely a copied script)"; return 0; }
+  origin="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
+  case "$origin" in
+    *trevorotts1/openclaw-onboarding*) : ;;
+    *) echo "  [self-sync] checkout origin is not the onboarding repo — skipping self-sync"; return 0 ;;
+  esac
+
+  [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] && dirty=1
+  git -C "$repo_root" fetch --quiet origin main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
+  local_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
+  remote_sha="$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)"
+  [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ] && behind=1
+
+  if [ -z "$dirty" ] && [ -z "$behind" ]; then
+    echo "  [self-sync] local checkout is clean and current with origin/main — proceeding"
+    return 0
+  fi
+
+  if [ "${OPENCLAW_UPDATE_AUTO_SYNC:-0}" = "1" ]; then
+    echo "  [self-sync] checkout is $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'BEHIND ' )— OPENCLAW_UPDATE_AUTO_SYNC=1: hard-syncing to origin/main"
+    git -C "$repo_root" fetch origin main
+    git -C "$repo_root" reset --hard origin/main
+    echo "  [self-sync] re-syncing complete — re-exec'ing the intended version before platform bootstrap"
+    OPENCLAW_UPDATE_SELF_SYNCED=1 exec bash "$src" "${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}"
+  fi
+
+  echo "" >&2
+  echo "ERROR (self-sync): refusing to wire from a $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'STALE/BEHIND ' )local checkout." >&2
+  echo "  Checkout: $repo_root" >&2
+  echo "  Local HEAD:  ${local_sha:-unknown}" >&2
+  echo "  origin/main: ${remote_sha:-unknown}" >&2
+  echo "" >&2
+  echo "  Wiring from a stale checkout installs the OLD version. Resolve, then re-run:" >&2
+  echo "    git -C \"$repo_root\" fetch origin main && git -C \"$repo_root\" reset --hard origin/main" >&2
+  echo "  OR run the curl path (always fresh):" >&2
+  echo "    curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash" >&2
+  echo "  OR re-run with auto-sync (destructive — discards local changes):" >&2
+  echo "    OPENCLAW_UPDATE_AUTO_SYNC=1 bash \"$src\"" >&2
+  exit 1
+}
+
+# Capture argv before anything capable of aborting, then self-sync before the
+# platform bootstrap (including the FileVault/power-resilience check).
+SELF_SYNC_ARGS=("$@")
+self_sync_guard
+
 # DEFECT 3 (v13.1.3) — PLATFORM unbound-variable guard.
 # A stale/dirty checkout of this script (pre-fix) referenced a bare $PLATFORM in
 # the stale-artifact detection block (~line 1431 of that version) that was never
@@ -40,7 +110,6 @@ export PLATFORM
 # re-exec below. (Mac power-resilience gate scoping.)
 export OPENCLAW_BOOTSTRAP_MODE=update
 
-_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" 2>/dev/null && pwd || pwd)"
 _PLATFORM_BOOTSTRAP="${_SCRIPT_DIR}/platform/${OPENCLAW_PLATFORM}/bootstrap.sh"
 if [ -f "$_PLATFORM_BOOTSTRAP" ]; then
     # shellcheck source=/dev/null
@@ -240,87 +309,6 @@ EOF
   return 0
 }
 #=== END OPENCLAW-BACKUP-RETENTION-V1 ===
-
-# ----------------------------------------------------------
-# DEFECT 3 (v13.1.3) — SELF-SYNC GUARD (always wire from the intended version).
-# ----------------------------------------------------------
-# When this script is run from a LOCAL git checkout (e.g. the Sunday cron does
-# `bash ~/.../update-skills.sh`), a dirty/stale checkout would run OLD script
-# LOGIC even though the content-download step git-clones fresh files — and the
-# stale logic carried the PLATFORM bug that aborted before the version stamp.
-#
-# This guard runs BEFORE any wiring:
-#   • curl|bash (no local file / not a git tree) → SKIP (fresh by definition).
-#   • local git checkout, clean + up-to-date     → proceed.
-#   • local git checkout, dirty or behind:
-#       - OPENCLAW_UPDATE_AUTO_SYNC=1 → `git fetch origin main` +
-#         `git reset --hard origin/main`, then RE-EXEC this script so the
-#         intended version's logic runs.
-#       - otherwise (default, non-destructive) → FAIL LOUD with exact remediation.
-# Set OPENCLAW_UPDATE_SKIP_SELF_SYNC=1 to bypass (e.g. when intentionally testing
-# a local edit). Re-exec is gated by OPENCLAW_UPDATE_SELF_SYNCED to avoid a loop.
-self_sync_guard() {
-  [ "${OPENCLAW_UPDATE_SKIP_SELF_SYNC:-0}" = "1" ] && { echo "  [self-sync] skipped (OPENCLAW_UPDATE_SKIP_SELF_SYNC=1)"; return 0; }
-  [ "${OPENCLAW_UPDATE_SELF_SYNCED:-0}" = "1" ] && { echo "  [self-sync] already re-exec'd from origin/main — proceeding"; return 0; }
-
-  # Not invoked from a real file (curl|bash → BASH_SOURCE is empty or 'bash')?
-  local src="${BASH_SOURCE[0]:-}"
-  case "$src" in
-    ""|bash|sh|-bash|-sh) echo "  [self-sync] running via pipe (no local checkout) — fresh by definition, skipping"; return 0 ;;
-  esac
-  [ -f "$src" ] || { echo "  [self-sync] script path not a regular file — skipping"; return 0; }
-
-  command -v git >/dev/null 2>&1 || { echo "  [self-sync] git not available — skipping (cannot verify checkout currency)"; return 0; }
-
-  local repo_root
-  repo_root="$(cd "$_SCRIPT_DIR" && git rev-parse --show-toplevel 2>/dev/null || true)"
-  [ -n "$repo_root" ] || { echo "  [self-sync] not a git checkout — skipping (likely a copied script)"; return 0; }
-
-  # Confirm this is the onboarding repo (don't touch an unrelated repo).
-  local origin
-  origin="$(git -C "$repo_root" remote get-url origin 2>/dev/null || true)"
-  case "$origin" in
-    *trevorotts1/openclaw-onboarding*) : ;;
-    *) echo "  [self-sync] checkout origin ($origin) is not the onboarding repo — skipping self-sync"; return 0 ;;
-  esac
-
-  # Determine dirty / behind state vs origin/main.
-  local dirty="" behind=""
-  [ -n "$(git -C "$repo_root" status --porcelain 2>/dev/null)" ] && dirty=1
-  git -C "$repo_root" fetch --quiet origin main 2>/dev/null || echo "  [self-sync] WARN: git fetch failed — currency check may be stale"
-  local local_sha remote_sha
-  local_sha="$(git -C "$repo_root" rev-parse HEAD 2>/dev/null || true)"
-  remote_sha="$(git -C "$repo_root" rev-parse origin/main 2>/dev/null || true)"
-  [ -n "$remote_sha" ] && [ "$local_sha" != "$remote_sha" ] && behind=1
-
-  if [ -z "$dirty" ] && [ -z "$behind" ]; then
-    echo "  [self-sync] local checkout is clean and current with origin/main — proceeding"
-    return 0
-  fi
-
-  if [ "${OPENCLAW_UPDATE_AUTO_SYNC:-0}" = "1" ]; then
-    echo "  [self-sync] checkout is $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'BEHIND ' )— OPENCLAW_UPDATE_AUTO_SYNC=1: hard-syncing to origin/main"
-    git -C "$repo_root" fetch origin main
-    git -C "$repo_root" reset --hard origin/main
-    echo "  [self-sync] re-syncing complete — re-exec'ing the intended version"
-    OPENCLAW_UPDATE_SELF_SYNCED=1 exec bash "$src" "${SELF_SYNC_ARGS[@]+"${SELF_SYNC_ARGS[@]}"}"
-  fi
-
-  # Non-destructive default: fail loud with exact remediation.
-  echo "" >&2
-  echo "ERROR (self-sync): refusing to wire from a $( [ -n "$dirty" ] && printf 'DIRTY ' )$( [ -n "$behind" ] && printf 'STALE/BEHIND ' )local checkout." >&2
-  echo "  Checkout: $repo_root" >&2
-  echo "  Local HEAD:  ${local_sha:-unknown}" >&2
-  echo "  origin/main: ${remote_sha:-unknown}" >&2
-  echo "" >&2
-  echo "  Wiring from a stale checkout installs the OLD version. Resolve, then re-run:" >&2
-  echo "    git -C \"$repo_root\" fetch origin main && git -C \"$repo_root\" reset --hard origin/main" >&2
-  echo "  OR run the curl path (always fresh):" >&2
-  echo "    curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh | bash" >&2
-  echo "  OR re-run with auto-sync (destructive — discards local changes):" >&2
-  echo "    OPENCLAW_UPDATE_AUTO_SYNC=1 bash \"$src\"" >&2
-  exit 1
-}
 
 # ----------------------------------------------------------
 # Update-result notification — OPERATOR-ROUTED, NEVER the client chat.
@@ -1471,15 +1459,72 @@ heal_weekly_cron_updater() {
   done
 }
 
+# >>> CANONICAL-SCRIPTS-DELIVERY-BEGIN
+# Deliver the complete canonical scripts/ tree additively. Canonical paths are
+# authoritative for their own content and modes, while box-local paths absent
+# from the repo are deliberately retained. This matches install.sh's existing
+# merge/add behavior and avoids deleting legitimate local operator tooling.
+deliver_canonical_scripts_tree() {
+  local src_root="$1" dest_root="$2"
+  local src_path rel dest_path failures=0 files=0
+
+  if [ ! -d "$src_root" ]; then
+    echo "FATAL: canonical scripts tree is missing: $src_root" >&2
+    return 1
+  fi
+  if ! mkdir -p "$dest_root"; then
+    echo "FATAL: cannot create scripts destination: $dest_root" >&2
+    return 1
+  fi
+  if ! cp -Rp "$src_root/." "$dest_root/"; then
+    echo "FATAL: recursive canonical scripts delivery failed: $src_root -> $dest_root" >&2
+    return 1
+  fi
+
+  # A successful cp exit alone is not a completeness receipt. Re-read every
+  # canonical entry and prove structure, bytes/symlink targets, and executable
+  # status at the destination before the updater can reach its success stamp.
+  while IFS= read -r -d '' src_path; do
+    rel="${src_path#"$src_root"/}"
+    dest_path="$dest_root/$rel"
+    if [ -L "$src_path" ]; then
+      if [ ! -L "$dest_path" ] || [ "$(readlink "$src_path" 2>/dev/null || true)" != "$(readlink "$dest_path" 2>/dev/null || true)" ]; then
+        echo "FATAL: scripts delivery symlink mismatch: $rel" >&2
+        failures=$((failures + 1))
+      fi
+    elif [ -d "$src_path" ]; then
+      if [ ! -d "$dest_path" ]; then
+        echo "FATAL: scripts delivery directory missing: $rel" >&2
+        failures=$((failures + 1))
+      fi
+    elif [ -f "$src_path" ]; then
+      files=$((files + 1))
+      if [ ! -f "$dest_path" ] || ! cmp -s "$src_path" "$dest_path"; then
+        echo "FATAL: scripts delivery file missing or changed: $rel" >&2
+        failures=$((failures + 1))
+      elif { [ -x "$src_path" ] && [ ! -x "$dest_path" ]; } \
+        || { [ ! -x "$src_path" ] && [ -x "$dest_path" ]; }; then
+        echo "FATAL: scripts delivery executable-bit mismatch: $rel" >&2
+        failures=$((failures + 1))
+      fi
+    else
+      echo "FATAL: unsupported canonical scripts entry type: $rel" >&2
+      failures=$((failures + 1))
+    fi
+  done < <(find "$src_root" -mindepth 1 -print0)
+
+  if [ "$failures" -ne 0 ]; then
+    echo "FATAL: canonical scripts delivery incomplete ($failures mismatch(es)); success stamp withheld" >&2
+    return 1
+  fi
+  echo "  ✓ Full canonical scripts/ tree delivered and verified ($files files; additive, local-only files retained)"
+}
+# <<< CANONICAL-SCRIPTS-DELIVERY-END
+
 # ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
 main() {
-  # DEFECT 3 (v13.1.3): always wire from the intended version. Capture argv for a
-  # possible re-exec, then run the self-sync guard BEFORE any download/wiring.
-  SELF_SYNC_ARGS=("$@")
-  self_sync_guard
-
   # ----------------------------------------------------------
   # SECURITY/PRIVACY (v20.0.9) — MAINTENANCE-SILENT for the WHOLE roll. A fleet
   # roll / skill update is inherently MAINTENANCE: no step may push an internal
@@ -1728,6 +1773,19 @@ main() {
   ONBOARDING_DIR="$EXTRACTED_DIR"
   export ONBOARDING_DIR
 
+  # scripts/ is outside SKILLS_DIR and therefore outside the numbered-skill
+  # content manifest below. Deliver and verify it BEFORE the same-version
+  # content-clean early exit; otherwise a box with current skills but a legacy
+  # 22-file scripts allowlist would incorrectly no-op forever.
+  _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
+  [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
+  if ! deliver_canonical_scripts_tree "$ONBOARDING_DIR/scripts" "$_OC_SCRIPTS_DEST"; then
+    echo "FATAL: updater cannot continue with a partial scripts directory; success stamp withheld" >&2
+    rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+    exit 1
+  fi
+  export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
   # A2: Compute SOURCE manifest from the pulled tree BEFORE the copy loop.
   # This is what the destination must match after install (A3 gate).
   _CONTENT_HASH_SCRIPT="$EXTRACTED_DIR/scripts/skill-content-hash.sh"
@@ -1884,36 +1942,6 @@ _ocs_tree_in_sync() {
     else
       echo "  ⚠ onboarding-state.sh sourced ($_OBS_SHIM) but obs_seed_state is UNDEFINED -- honesty gate disabled for this run (bundle mismatch)."
     fi
-    # Make the gate library + helper scripts available to the running agent at
-    # the canonical ~/.openclaw/scripts/ (where install.sh also lands them).
-    _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
-    [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
-    mkdir -p "$_OC_SCRIPTS_DEST" 2>/dev/null || true
-    # BUG-FIX v13.0.1: ensure-pipeline-crons.sh is ADDED here so it is persisted
-    # to ~/.openclaw/scripts (a path that SURVIVES the temp-clone cleanup at the
-    # "# Cleanup" rm -rf below). The cron-backfill block runs AFTER that cleanup,
-    # so it must NOT depend on $ONBOARDING_DIR (the wiped clone) — it reads the
-    # persistent copy instead. Same reason apply-fleet-standards.sh is here.
-    # install-ceo-intent-gate.sh + verify-routing.sh are persisted here (v16.2.19)
-    # so the intent-gate wire + post-stamp verification below can resolve them after
-    # the temp-clone cleanup, same as apply-routing-fix.sh / apply-fleet-standards.sh.
-    # D20 rename (U93): loop-protection-canary.sh -> loop-protection-first-proof.sh.
-    # BOTH names are persisted here for one release — the old path is now a thin
-    # compatibility shim that execs the new one, so an existing live-box cron
-    # registration still calling the old path keeps resolving after this cleanup.
-    for _s in onboarding-state.sh ghl-mcp-autostart.sh configure-operator-telegram.sh heal-config-shapes.py resume-onboarding.sh apply-fleet-standards.sh apply-routing-fix.sh install-ceo-intent-gate.sh verify-routing.sh repair-model-sovereignty.sh install-hardening.sh ensure-heartbeat-defaults.sh ensure-pipeline-crons.sh diagnose-telegram-config.sh index-model-drift-check.sh orphan-temp-sweep.sh disk-usage-alert.sh pre-july14-embedding-migration-check.sh agent-browser-reaper.sh harden-gws-credential-resilience.sh activate-loop-protection.sh loop-protection-first-proof.sh loop-protection-canary.sh; do
-      [ -f "$ONBOARDING_DIR/scripts/$_s" ] && cp -f "$ONBOARDING_DIR/scripts/$_s" "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
-      [ -f "$_OC_SCRIPTS_DEST/$_s" ] && chmod +x "$_OC_SCRIPTS_DEST/$_s" 2>/dev/null || true
-    done
-    # v17.0.21: persist the onboarding-resume cron PROMPT (a .txt, NOT covered by
-    # the .sh loop above) so install_onboarding_resume_cron can resolve it AFTER
-    # the temp-clone cleanup wipes $ONBOARDING_DIR (same persistence rationale as
-    # resume-onboarding.sh). Resolved via $OC_PERSISTENT_SCRIPTS_DIR at cron time.
-    [ -f "$ONBOARDING_DIR/scripts/resume-onboarding-prompt.txt" ] && \
-      cp -f "$ONBOARDING_DIR/scripts/resume-onboarding-prompt.txt" "$_OC_SCRIPTS_DEST/resume-onboarding-prompt.txt" 2>/dev/null || true
-    # Export the persistent scripts dir so the post-cleanup cron-backfill /
-    # fleet-standards blocks can resolve these scripts after $ONBOARDING_DIR is gone.
-    export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
   else
     echo "  ⚠ onboarding-state.sh not found in pulled repo -- honesty gate disabled for this run (older bundle?)"
   fi
@@ -4375,24 +4403,33 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     fi
   fi
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
+  if cc_is_valid_checkout "$_CC_DIR" && [ ! -f "$_CC_RUN_INSTALL" ]; then
+    echo "FATAL: Command Center exists at $_CC_DIR but the current Skill-32 updater is missing: $_CC_RUN_INSTALL" >&2
+    echo "       Refusing a partial one-repo update." >&2
+    exit 1
+  fi
   if cc_is_valid_checkout "$_CC_DIR" && [ -f "$_CC_RUN_INSTALL" ]; then
     echo ""
     echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
-    # TRAP-3 visibility: run-full-install.sh --update-only refreshes its OWN
-    # hardcoded DASHBOARD_DIR ($HOME/projects/command-center, line 99). When this
-    # box's CC lives elsewhere the installer logs "…/.git not found — skipping
-    # refresh" (run-full-install.sh:1092-1093) and exits 0, so the refresh is a
-    # silent no-op. It does NOT clone on the --update-only path, so nothing is
-    # damaged — but the operator must not read "refreshed" and believe it.
-    if [ "$_CC_DIR" != "$_CC_DIR_CANONICAL" ]; then
-      echo "  ⚠ CC checkout is at $_CC_DIR but run-full-install.sh --update-only only refreshes"
-      echo "    $_CC_DIR_CANONICAL — this refresh will be a NO-OP for this box."
-      echo "    Refresh that checkout directly (installer needs a CC-dir override — see trap3 note)."
-    fi
-    if bash "$_CC_RUN_INSTALL" --update-only "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
-      echo "  ✓ Command Center app refreshed (git pull + npm install + db:push + workspace seed + sync-departments + pm2 restart)"
+    # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
+    # layouts silently refreshed $HOME/projects/command-center instead (or did
+    # nothing). The installer also proves it is on the origin default branch,
+    # contains latest origin/main, and ends on a freshly-built GREEN deployment.
+    if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
+        "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
+      _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+      _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+      [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
+      if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
+         || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
+        echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
+        exit 1
+      fi
+      echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
     else
-      echo "  ⚠ Command Center refresh reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+      echo "FATAL: Command Center refresh failed or rolled back; onboarding content may be current, but this box is NOT fully updated." >&2
+      echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
+      exit 1
     fi
   elif [ -f "$_CC_RUN_INSTALL" ]; then
     # F10 — CC bootstrap on update. The refresh branch above is the path for a
@@ -4453,7 +4490,9 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
         echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
       else
-        echo "  ⚠ Command Center bootstrap reported errors — check $OC_WORKSPACE_DEFAULT/.command-center-install.log"
+        echo "FATAL: Command Center bootstrap failed; refusing to report a complete update." >&2
+        echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run." >&2
+        exit 1
       fi
     elif [ -n "$_CC_SLUG" ]; then
       echo ""

@@ -7,10 +7,10 @@
 # - Installs a cron job that runs every Sunday at 3:00 AM
 # - The cron job downloads the LATEST update-skills.sh from GitHub
 #   (version-proof: always runs the newest script, never a stale local copy)
-# - That script checks GitHub for updates, compares versions,
-#   stages the update, and tells the human what to tell their agent
-# - NO changes are applied automatically by the cron job
-# - The agent follows UPDATE-PLAYBOOK.md to apply changes intelligently
+# - That root updater runs the same complete, content-aware update as a manual
+#   invocation: onboarding content, SOPs, runtime branding/departments, scripts,
+#   provisioning gates, and the Command Center rebuild/health assertion
+# - It does not restart the OpenClaw gateway or auto-notify a client chat
 
 REPO_RAW="https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh"
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
@@ -81,6 +81,11 @@ if ! curl -fsSL --max-time 60 "$UPDATE_SCRIPT_URL" -o "$_UPDATE_TMP" 2>>"$HOME/.
   exit 1
 fi
 bash "$_UPDATE_TMP" >> "$HOME/.openclaw/skills/.update-log" 2>&1
+_UPDATE_RC=$?
+if [ "$_UPDATE_RC" -ne 0 ]; then
+  echo "[$(date '+%Y-%m-%d %H:%M:%S')] ERROR: complete fleet update failed (exit $_UPDATE_RC) — inspect this log; success was not stamped" >> "$HOME/.openclaw/skills/.update-log"
+  exit "$_UPDATE_RC"
+fi
 
 # SILENT-OPERATOR-CRON RULE (chore/silent-operator-crons): updates push SILENTLY.
 # update-skills.sh already wrote the UPDATE PENDING flag into the agent's
@@ -91,11 +96,11 @@ bash "$_UPDATE_TMP" >> "$HOME/.openclaw/skills/.update-log" 2>&1
 #       LaunchAgent boxes a mistimed restart can wedge the gateway DOWN; and
 #   (2) it was only ever a way to FORCE the agent to notice the flag — which the
 #       silent AGENTS.md flag already accomplishes without interrupting anyone.
-# Log the staged-vs-clean outcome only; no restart, no client-facing push.
+# Log the pending-vs-clean outcome only; no restart, no client-facing push.
 if [ -f "$HOME/.openclaw/skills/.update-pending" ]; then
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Update staged — UPDATE PENDING flag is in AGENTS.md; agent will pick it up on its next session (no gateway restart, no client auto-notify)" >> "$HOME/.openclaw/skills/.update-log"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Complete updater finished; an existing UPDATE PENDING flag remains for the agent's next session (no gateway restart, no client auto-notify)" >> "$HOME/.openclaw/skills/.update-log"
 else
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] No update needed" >> "$HOME/.openclaw/skills/.update-log"
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] Complete updater finished successfully (content was current or all update gates passed)" >> "$HOME/.openclaw/skills/.update-log"
 fi
 RESTART_EOF
 chmod +x "$RESTART_SCRIPT"
@@ -140,7 +145,7 @@ echo "Schedule 1: Every Saturday at 11:59 PM"
 echo "  -> Updates OpenClaw CLI to latest version"
 echo ""
 echo "Schedule 2: Every Sunday at 3:00 AM"
-echo "  -> Checks for onboarding updates, stages, and restarts gateway"
+echo "  -> Runs the complete content-aware fleet update without restarting the gateway"
 echo ""
 echo "Source: GitHub (always latest version)"
 echo "Log: $LOG_FILE"
@@ -152,14 +157,12 @@ echo "    2. Logs the new version"
 echo ""
 echo "  Sunday 3:00 AM:"
 echo "    1. Downloads the latest update script from GitHub"
-echo "    2. Checks GitHub for new onboarding versions"
-echo "    3. Compares against your installed version"
-echo "    4. If update available: stages it + writes a SILENT UPDATE PENDING"
-echo "       flag into the agent's AGENTS.md (no gateway restart, no auto-notify)"
-echo "    5. Agent sees the flag on its NEXT session (silent pickup)"
-echo "    6. Agent validates config structure against current OpenClaw docs"
-echo "    7. Agent tells you what changed and asks for approval"
-echo "    8. If you say yes, agent applies the update and runs QC"
+echo "    2. Verifies installed content, not just the version stamp"
+echo "    3. If drift exists, updates onboarding + SOPs + scripts + runtime config"
+echo "    4. Updates, rebuilds, restarts, and health-checks Command Center"
+echo "    5. Runs completeness gates before stamping success"
+echo "    6. Exits nonzero and logs an ERROR if any complete-update stage fails"
+echo "    7. Does not restart the gateway or auto-notify a client chat"
 echo ""
 echo "To force a manual check now:"
 echo "  curl -fsSL $REPO_RAW | bash"
