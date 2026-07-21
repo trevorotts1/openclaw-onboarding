@@ -6755,6 +6755,61 @@ def _chk_sp_no_pitch(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return _sp_delegate("no_pitch", run_dir)
 
 
+SP_TRANSCRIPT_REL = Path("working") / "interview" / "intake_transcript.json"
+
+
+def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """P-SP-INTAKE-TRACE — the intake CONVERSATION gate (AF-INTAKE-BATCH).
+
+    A10 / T0-12. Skill 51 declares that every rule is machine-enforced by a fail-closed
+    prover and never advisory, and then wired this one as advisory and non-gating. So an
+    eight-question batched interaction that afterwards produced a structurally valid
+    intake RECORD passed every preflight and reached a signed certificate: the run
+    supplied its own record as the only evidence of how the intake had been CONDUCTED,
+    and the rule that defines the skill's value was the one rule nothing enforced.
+
+    The transcript is written mechanically, turn by turn, by deck-intake-driver.py's
+    turn-gate (SP_TRANSCRIPT_REL) — a different producer from the deck build being
+    certified. It is REQUIRED here: an ABSENT transcript is a fail, because otherwise
+    the cheapest way to pass a conversation gate is to conduct no recorded conversation.
+
+    DEFERS (no-op) unless intake.json declares deck_type == signature_presentation, so
+    every other deck type takes the identical pre-existing path.
+    """
+    if not _sp_active(run_dir):
+        return ""
+    mod = _sp_prover("intake_trace_check")
+    if mod is None:
+        return ("AF-INTAKE-BATCH: 51-signature-presentation/scripts/intake_trace_check.py "
+                "is not co-located with build_deck.py — the intake-conversation gate cannot "
+                "run for a signature deck (fail-closed; install skill 51 next to the engine).")
+    tpath = Path(run_dir) / SP_TRANSCRIPT_REL
+    if not tpath.is_file():
+        return ("AF-INTAKE-BATCH: no intake transcript at " + str(SP_TRANSCRIPT_REL) +
+                " — a signature-presentation intake must be CONDUCTED choice-first and one "
+                "question per turn, and the turn-gate records that conversation mechanically. "
+                "An absent transcript is not proof of a compliant intake (fail-closed). Run "
+                "the intake through deck-intake-driver.py --signature, or export the "
+                "assistant/owner turns to that path as a JSON list of {\"role\",\"text\"}.")
+    try:
+        raw = tpath.read_text(encoding="utf-8")
+        turns = mod.parse_transcript(raw)
+        if not turns:
+            return ("AF-INTAKE-BATCH: the intake transcript at " + str(SP_TRANSCRIPT_REL) +
+                    " parsed to zero turns (unreadable format) — fail-closed.")
+        result = mod.scan_transcript(turns, mod.load_bank_questions())
+    except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
+        return ("AF-INTAKE-BATCH: the intake-conversation scanner raised " + repr(exc)
+                + " — fail-closed (the conversation gate cannot be skipped).")
+    if result.get("pass"):
+        return ""
+    reasons = "; ".join(
+        str(v.get("reason", "?")) + " @turn " + str(v.get("turn_index", "?"))
+        + ": " + str(v.get("detail", ""))
+        for v in result.get("violations", []))
+    return "AF-INTAKE-BATCH: " + reasons
+
+
 def _chk_sp_claim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """P-SP-CLAIM — the routing/claim gate. Runs for EVERY deck (does NOT defer,
     unlike the three gates above): if the run carries signature-presentation signals
@@ -7242,6 +7297,22 @@ PREFLIGHT_REQUIRED = [
      "deck_type == signature_presentation — non-signature decks behave exactly as before.",
      "Phase 0.15 — Signature Presentation Architect (P-SP-INTAKE, prove_sp_intake)",
      _chk_sp_intake),
+    # A10 / T0-12 — P-SP-INTAKE-TRACE (0.16). The intake CONVERSATION gate. The record
+    # gate above proves the assembled intake LEDGER; this proves the conversation that
+    # produced it was choice-first and one question per turn (AF-INTAKE-BATCH), against
+    # the transcript the driver's turn-gate writes mechanically. Previously advisory and
+    # non-gating while SKILL.md declared every rule fail-closed, so a batched eight-
+    # question dump reached a signed certificate. An ABSENT transcript is a fail — a
+    # conversation gate no one can omit their way past. DEFERS (no-op) unless intake.json
+    # deck_type == signature_presentation.
+    (None,
+     "signature-presentation intake-CONVERSATION gate — the intake was conducted "
+     "choice-first (quick vs in-depth) and one bank question per assistant turn, proven "
+     "against working/interview/intake_transcript.json (AF-INTAKE-BATCH: BATCH-IN-TURN / "
+     "BATCH-BY-QMARKS / NO-CHOICE-OPENER / BANNED-PHRASE). A missing transcript is "
+     "fail-closed. DEFERS (no-op) unless intake.json deck_type == signature_presentation.",
+     "Phase 0.16 — Signature Presentation Architect (P-SP-INTAKE-TRACE, intake_trace_check)",
+     _chk_sp_intake_trace),
     # Signature-Presentation (P-SP-STRUCTURE 4.1) — the SACRED 4-phase structure contract.
     (None,
      "signature-presentation structure gate — >=100 slides, 4-phase floors in contiguous "

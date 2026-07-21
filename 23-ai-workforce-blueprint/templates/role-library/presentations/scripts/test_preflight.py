@@ -3103,9 +3103,36 @@ def _sp_provers():
             build_deck._sp_prover("prove_sp_no_pitch"))
 
 
-def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None):
+# A COMPLIANT intake conversation: choice-first opener, then exactly one bank question
+# per assistant turn. This is the shape deck-intake-driver.py's turn-gate records, and it
+# is what P-SP-INTAKE-TRACE (A10 / T0-12) proves. A signature run dir gets it by default
+# so every other SP fixture stays green against the new gate.
+_SP_CLEAN_TRANSCRIPT = [
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
+    {"role": "owner", "text": "quick"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
+    {"role": "owner", "text": "The Signature Talk"},
+    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?"},
+    {"role": "owner", "text": "the overlooked mid-career expert"},
+]
+# The documented anti-pattern: three bank questions dumped in ONE assistant turn, with no
+# quick-vs-in-depth choice offered first.
+_SP_BATCHED_TRANSCRIPT = [
+    {"role": "assistant", "text": (
+        "What is the title of your Signature Presentation? "
+        "Any specific pain points to address in the avatar section? "
+        "What product(s) will you offer at the end?")},
+    {"role": "owner", "text": "give me whatever you have got and I will get moving"},
+]
+
+
+def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript="clean"):
     """Temp run dir. intake.json carries deck_type=signature_presentation when
-    signature=True (else omitted, so the _chk_sp_* wrappers DEFER)."""
+    signature=True (else omitted, so the _chk_sp_* wrappers DEFER).
+
+    transcript: "clean" (default) writes the compliant one-question-per-turn intake
+    transcript at working/interview/intake_transcript.json; "batched" writes the batched
+    anti-pattern; None writes no transcript at all (the OMISSION case)."""
     rd = Path(tempfile.mkdtemp(prefix="deck_sp_test_"))
     (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
     intake = {"deck_type": "signature_presentation"} if signature else {"interview_confirmed": True}
@@ -3114,6 +3141,10 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None):
         (rd / "working" / "copy" / "sp_intake.json").write_text(json.dumps(sp_intake))
     if sp_structure is not None:
         (rd / "working" / "copy" / "sp_structure.json").write_text(json.dumps(sp_structure))
+    if transcript is not None:
+        turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
+        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+        (rd / "working" / "interview" / "intake_transcript.json").write_text(json.dumps(turns))
     return rd
 
 
@@ -3169,6 +3200,16 @@ def _sp_adversarial_cases(spi, sps, spn):
     # generic path by omitting the magic word -> AF-SP-TYPE-UNDECLARED (fail-closed).
     cases.append(("AF-SP-TYPE-UNDECLARED", "_chk_sp_claim",
                   _sp_run_dir(signature=False, sp_intake=spi._valid_runtime_fixture())))
+    # A10 / T0-12 — INTAKE CONVERSATION (via _chk_sp_intake_trace). Two deliberately
+    # failing shapes, because the seam has two ways to cheat:
+    #   FORGERY:  a batched eight-question dump that afterwards yields a structurally
+    #             valid intake RECORD (which every other SP gate would pass).
+    #   OMISSION: no transcript at all — the cheapest way past a conversation gate is
+    #             to record no conversation, so an absent transcript must also fail.
+    cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
+                  _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="batched")))
+    cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
+                  _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript=None)))
     return cases
 
 
@@ -3188,7 +3229,8 @@ def test_sp_wrappers():
 
     # (a) GOLDEN signature deck — all three wrappers PASS ("").
     gold = _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), sp_structure=sps._valid_fixture())
-    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch"):
+    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                 "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(gold)
         if r != "":
             fails.append(f"SP-GOLDEN: {name} should PASS a valid signature deck, got: {r!r}")
@@ -3196,8 +3238,9 @@ def test_sp_wrappers():
     # (b) DEFER — a NON-signature deck is a no-op for all three wrappers even with garbage
     #     SP artifacts present (they are never read; the deck_type switch defers first).
     nonsig = _sp_run_dir(signature=False, sp_intake={"garbage": True},
-                         sp_structure={"garbage": True})
-    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch"):
+                         sp_structure={"garbage": True}, transcript="batched")
+    for name in ("_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                 "_chk_sp_intake_trace"):
         r = getattr(build_deck, name)(nonsig)
         if r != "":
             fails.append(f"SP-DEFER: {name} must DEFER (return '') for a non-signature deck, got: {r!r}")
@@ -3208,7 +3251,7 @@ def test_sp_wrappers():
         if code not in _af_codes_in(r):
             fails.append(f"SP-ADV: {name} on the {code} fixture should surface {code}, got: {r!r}")
 
-    print(f"SP wrappers (golden + defer + 16 adversarial) -> {'PASS' if not fails else 'FAIL'}")
+    print(f"SP wrappers (golden + defer + 18 adversarial) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 

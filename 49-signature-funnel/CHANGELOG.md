@@ -1,5 +1,36 @@
 # Changelog — Signature Funnel (Skill 49)
 
+## 1.4.0 — 2026-07-21 — A10 / T0-09, T0-11: certificates can no longer mint on self-authored evidence
+
+### Fixed
+- **P3-IMAGES / P4-MEDIA no longer attest on file existence (T0-09).** The two delegated
+  seams used to return `delegated` the moment `media_ledger.json` existed — and the run
+  writes that file, so a phase claiming to prove image generation through Skill 47 and
+  upload through Skill 6 was satisfied by a file its own subject authored, with no provider
+  ever contacted. They now read the ledger's content (every image must carry a real
+  image-provider task id and resolve to a GHL media host) and consult a provider-receipt
+  store. `AF-FUN-DELEG-IMAGES` / `AF-FUN-DELEG-MEDIA`.
+- **`scripts/prove_sf_build.py` proves build COMPLETENESS (T0-11).** The P7 gate verified
+  every page the receipt *supplied* and never checked that all required pages *were*
+  supplied, so a 7-step funnel whose receipt carried 3 pages returned zero violations. The
+  required page-type set is now derived from the locked funnel size (the 3/5/7 matrix in
+  `structure/funnel_structure.json`, the same source P6/P8 use) and any missing page type
+  fails. `AF-FUN-BUILD-PAGESET` / `-SIZE` / `-SIZE-MISMATCH` / `-PREVIEW-PLACEHOLDER`. The
+  orchestrator passes the locked brief size to the prover.
+
+### Added
+- **`scripts/delegation_receipt.py` (new) — the provider-receipt contract.** A delegated
+  tool records one receipt per real provider round-trip (response id, HTTP status, remote
+  id, covered ledger ids); the requirer refuses to attest a phase unless the receipt exists,
+  carries a 2xx status and real ids, covers every ledger row, and — the headline A10
+  property — was **not** stamped by a subject module (an orchestrator or a `prove_*`). The
+  writing side lands first: seams use `validate_if_present()`, receipts are validated
+  strictly whenever present, and the signed certificate records `delegation_receipts:
+  present|absent` so it can never imply provider evidence it does not carry.
+  `AF-FUN-DELEG-RECEIPT-SELF-AUTHORED`.
+- **`scripts/stub_provider_adapter.py` (new).** The only fixture source the self-tests use
+  for receipts, so a test fixture is never authored by the run under test.
+
 ## 1.3.4 — 2026-07-13 — U17/B-U3: copy stage consumes the blended-persona bundle (Skill 6 Blended-Persona Kanban v2)
 
 ### Added

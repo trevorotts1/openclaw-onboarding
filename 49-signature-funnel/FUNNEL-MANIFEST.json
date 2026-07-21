@@ -1,85 +1,153 @@
 {
   "$schema": "https://openclaw.ai/schemas/signature-funnel-manifest/v1",
   "manifest": "signature-funnel-pipeline",
-  "manifest_version": "1.0.0",
+  "manifest_version": "1.0.1",
   "skill": "49-signature-funnel",
   "funnel_type": "signature_funnel",
   "description": "The deterministic phase spine for the Signature Funnel. Each P-phase names its produces_artifact, its thin _chk_sf_* preflight wrapper (DEFERS unless funnel_type == signature_funnel), and its fail-closed gate. The orchestrator run_signature_funnel.py runs this spine IN ORDER with no skips (front-door nonce required) and issues the signed PROCESS-CERTIFICATE only on all-phases-pass. Image gen delegates to Skill 47 (kie_image.py); ALL GHL media + build delegate to Skill 6 (ghl_media.py / ghl_rest_canvas.py). CLIENT runtime uses the client's OWN providers, never Anthropic.",
-
   "front_door": {
     "entry": "signature-funnel-entry.sh",
-    "guards": ["deps", "version", "hash-pin", "bypass-scan", "run-scoped-0600-nonce"],
+    "guards": [
+      "deps",
+      "version",
+      "hash-pin",
+      "bypass-scan",
+      "run-scoped-0600-nonce"
+    ],
     "hash_pin_file": "scripts/SF-PROVER-PIN.sha256",
     "nonce": "the run-scoped 0600 nonce keys the certificate HMAC; a direct orchestrator call without it dies AF-FUN-FRONT-DOOR",
     "rule": "NOTHING generates copy/prompts, calls Kie, touches GHL, or mints a certificate except THROUGH signature-funnel-entry.sh."
   },
-
   "phases": [
-    {"id": "P0-INTAKE", "order": 0, "name": "Intake -> locked brief",
-     "produces_artifact": "brief.json",
-     "chk_wrapper": "_chk_sf_intake",
-     "gate": "prove_sf_intake.py", "py_symbol": "prove_sf_intake.evaluate",
-     "defers_unless": "funnel_type == signature_funnel"},
-    {"id": "P1-COPY", "order": 1, "name": "12-section SACRED copy (all page profiles)",
-     "produces_artifact": "copy_ledger.json",
-     "chk_wrapper": "_chk_sf_copy",
-     "gate": "prove_sf_copy.py", "py_symbol": "prove_sf_copy.verify",
-     "defers_unless": "funnel_type == signature_funnel"},
-    {"id": "P2-PROMPTS", "order": 2, "name": "Image prompts (5,000-19,000 chars)",
-     "produces_artifact": "prompt_ledger.json",
-     "chk_wrapper": "_chk_sf_prompt_floor",
-     "gate": "prove_sf_prompt_floor.py", "py_symbol": "prove_sf_prompt_floor.verify",
-     "defers_unless": "funnel_type == signature_funnel"},
-    {"id": "P3-IMAGES", "order": 3, "name": "Image generation (DELEGATED to Skill 47)",
-     "produces_artifact": "media_ledger.json (image records)",
-     "delegate": "47-kie-image :: kie_image.py (text-to-image default + optional reference_images hook)",
-     "gate": "provenance enforced at P9 (Kie taskId + GHL host)"},
-    {"id": "P4-MEDIA", "order": 4, "name": "GHL media folder + upload (DELEGATED to Skill 6)",
-     "produces_artifact": "media_ledger.json (GHL media URLs)",
-     "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
-     "gate": "GHL-host assertion enforced at P9"},
-    {"id": "P5-HTML", "order": 5, "name": "Per-page HTML fragment assembly",
-     "produces_artifact": "pages/<profile>.fragment.html (one per 3/5/7 matrix page)",
-     "gate": "run_signature_funnel._gate_html_fragments (non-empty fragment per matrix profile; fail-closed)",
-     "py_symbol": "run_signature_funnel._gate_html_fragments"},
-    {"id": "P6-COMPOSE", "order": 6, "name": "3/5/7 funnel step graph + accept/decline branching",
-     "produces_artifact": "funnel_graph.json",
-     "chk_wrapper": "_chk_sf_graph",
-     "gate": "prove_sf_graph.py", "py_symbol": "prove_sf_graph.verify",
-     "defers_unless": "funnel_type == signature_funnel"},
-    {"id": "P7-BUILD", "order": 7, "name": "GHL funnel/page build (DELEGATED to Skill 6)",
-     "produces_artifact": "build_receipt.json (GHL funnel + preview URLs)",
-     "delegate": "06-ghl-install-pages :: ghl_rest_canvas.py / ghl_builder.py",
-     "chk_wrapper": "_chk_sf_build",
-     "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed)",
-     "produces_fab_scorecard": "build/fab-artifact.json (copy_ledger echoed; the >=8.5 copy-substance gate scores this)",
-     "py_symbol": "run_signature_funnel._gate_build"},
-    {"id": "P8-DERIVE", "order": 8, "name": "Derived pages loop (U1/D1/U2/D2/TY)",
-     "produces_artifact": "derived_pages.json (U1/D1/U2/D2/TY ledger)",
-     "gate": "run_signature_funnel._gate_derived_pages (derived set == matrix; U1/D1/U2/D2/TY labels; fail-closed)",
-     "py_symbol": "run_signature_funnel._gate_derived_pages"},
-    {"id": "P9-CERTIFY", "order": 9, "name": "No-pitch + provenance -> signed certificate",
-     "produces_artifact": "PROCESS-CERTIFICATE.json",
-     "chk_wrapper": "_chk_sf_no_pitch",
-     "gate": "prove_sf_no_pitch.py + prove_sf_cert.py",
-     "py_symbol": "prove_sf_no_pitch.evaluate + prove_sf_cert.verify",
-     "defers_unless": "funnel_type == signature_funnel"},
-    {"id": "P10-EMAIL", "order": 10, "name": "Optional 10 promo emails (handoff)",
-     "produces_artifact": "handoff to Email Skill project",
-     "delegate": "Email-Skill-Library (post-downsell, after human approval)",
-     "gate": "out of scope for Skill 49 (hand off brief + copy, receive 10 emails)"}
+    {
+      "id": "P0-INTAKE",
+      "order": 0,
+      "name": "Intake -> locked brief",
+      "produces_artifact": "brief.json",
+      "chk_wrapper": "_chk_sf_intake",
+      "gate": "prove_sf_intake.py",
+      "py_symbol": "prove_sf_intake.evaluate",
+      "defers_unless": "funnel_type == signature_funnel"
+    },
+    {
+      "id": "P1-COPY",
+      "order": 1,
+      "name": "12-section SACRED copy (all page profiles)",
+      "produces_artifact": "copy_ledger.json",
+      "chk_wrapper": "_chk_sf_copy",
+      "gate": "prove_sf_copy.py",
+      "py_symbol": "prove_sf_copy.verify",
+      "defers_unless": "funnel_type == signature_funnel"
+    },
+    {
+      "id": "P2-PROMPTS",
+      "order": 2,
+      "name": "Image prompts (5,000-19,000 chars)",
+      "produces_artifact": "prompt_ledger.json",
+      "chk_wrapper": "_chk_sf_prompt_floor",
+      "gate": "prove_sf_prompt_floor.py",
+      "py_symbol": "prove_sf_prompt_floor.verify",
+      "defers_unless": "funnel_type == signature_funnel"
+    },
+    {
+      "id": "P3-IMAGES",
+      "order": 3,
+      "name": "Image generation (DELEGATED to Skill 47)",
+      "produces_artifact": "media_ledger.json (image records)",
+      "delegate": "47-kie-image :: kie_image.py (text-to-image default + optional reference_images hook)",
+      "gate": "provenance enforced at P9 (Kie taskId + GHL host)"
+    },
+    {
+      "id": "P4-MEDIA",
+      "order": 4,
+      "name": "GHL media folder + upload (DELEGATED to Skill 6)",
+      "produces_artifact": "media_ledger.json (GHL media URLs)",
+      "delegate": "06-ghl-install-pages :: ghl_media.py (ensure_funnel_media_folders + upload_media)",
+      "gate": "GHL-host assertion enforced at P9"
+    },
+    {
+      "id": "P5-HTML",
+      "order": 5,
+      "name": "Per-page HTML fragment assembly",
+      "produces_artifact": "pages/<profile>.fragment.html (one per 3/5/7 matrix page)",
+      "gate": "run_signature_funnel._gate_html_fragments (non-empty fragment per matrix profile; fail-closed)",
+      "py_symbol": "run_signature_funnel._gate_html_fragments"
+    },
+    {
+      "id": "P6-COMPOSE",
+      "order": 6,
+      "name": "3/5/7 funnel step graph + accept/decline branching",
+      "produces_artifact": "funnel_graph.json",
+      "chk_wrapper": "_chk_sf_graph",
+      "gate": "prove_sf_graph.py",
+      "py_symbol": "prove_sf_graph.verify",
+      "defers_unless": "funnel_type == signature_funnel"
+    },
+    {
+      "id": "P7-BUILD",
+      "order": 7,
+      "name": "GHL funnel/page build (DELEGATED to Skill 6)",
+      "produces_artifact": "build_receipt.json (GHL funnel + preview URLs)",
+      "delegate": "06-ghl-install-pages :: ghl_rest_canvas.py / ghl_builder.py",
+      "chk_wrapper": "_chk_sf_build",
+      "gate": "run_signature_funnel._gate_build (FIX-COPY-02: requires the FAB scorecard build/fab-artifact.json — copy echoed from copy_ledger.json — THEN prove_sf_build.py funnel-build QC >= 8.5 + non-empty preview URL per page; fail-closed)",
+      "produces_fab_scorecard": "build/fab-artifact.json (copy_ledger echoed; the >=8.5 copy-substance gate scores this)",
+      "py_symbol": "run_signature_funnel._gate_build"
+    },
+    {
+      "id": "P8-DERIVE",
+      "order": 8,
+      "name": "Derived pages loop (U1/D1/U2/D2/TY)",
+      "produces_artifact": "derived_pages.json (U1/D1/U2/D2/TY ledger)",
+      "gate": "run_signature_funnel._gate_derived_pages (derived set == matrix; U1/D1/U2/D2/TY labels; fail-closed)",
+      "py_symbol": "run_signature_funnel._gate_derived_pages"
+    },
+    {
+      "id": "P9-CERTIFY",
+      "order": 9,
+      "name": "No-pitch + provenance -> signed certificate",
+      "produces_artifact": "PROCESS-CERTIFICATE.json",
+      "chk_wrapper": "_chk_sf_no_pitch",
+      "gate": "prove_sf_no_pitch.py + prove_sf_cert.py",
+      "py_symbol": "prove_sf_no_pitch.evaluate + prove_sf_cert.verify",
+      "defers_unless": "funnel_type == signature_funnel"
+    },
+    {
+      "id": "P10-EMAIL",
+      "order": 10,
+      "name": "Optional 10 promo emails (handoff)",
+      "produces_artifact": "handoff to Email Skill project",
+      "delegate": "Email-Skill-Library (post-downsell, after human approval)",
+      "gate": "out of scope for Skill 49 (hand off brief + copy, receive 10 emails)"
+    }
   ],
-
   "chk_wrappers": {
     "note": "Thin (<=6-line) preflight wrappers appended to the orchestrator's PREFLIGHT_REQUIRED; each DEFERS (returns OK) unless the run's funnel_type == signature_funnel, then shells its prover.",
-    "_chk_sf_intake": {"phase": "P0-INTAKE", "shells": "prove_sf_intake.py"},
-    "_chk_sf_copy": {"phase": "P1-COPY", "shells": "prove_sf_copy.py"},
-    "_chk_sf_prompt_floor": {"phase": "P2-PROMPTS", "shells": "prove_sf_prompt_floor.py"},
-    "_chk_sf_graph": {"phase": "P6-COMPOSE", "shells": "prove_sf_graph.py"},
-    "_chk_sf_build": {"phase": "P7-BUILD", "shells": "prove_sf_build.py"},
-    "_chk_sf_no_pitch": {"phase": "P9-CERTIFY", "shells": "prove_sf_no_pitch.py"}
+    "_chk_sf_intake": {
+      "phase": "P0-INTAKE",
+      "shells": "prove_sf_intake.py"
+    },
+    "_chk_sf_copy": {
+      "phase": "P1-COPY",
+      "shells": "prove_sf_copy.py"
+    },
+    "_chk_sf_prompt_floor": {
+      "phase": "P2-PROMPTS",
+      "shells": "prove_sf_prompt_floor.py"
+    },
+    "_chk_sf_graph": {
+      "phase": "P6-COMPOSE",
+      "shells": "prove_sf_graph.py"
+    },
+    "_chk_sf_build": {
+      "phase": "P7-BUILD",
+      "shells": "prove_sf_build.py"
+    },
+    "_chk_sf_no_pitch": {
+      "phase": "P9-CERTIFY",
+      "shells": "prove_sf_no_pitch.py"
+    }
   },
-
   "delegation_seams": {
     "images": "47-kie-image / kie_image.py (createTask/poll; 16:9 & 2K defaults; image_input reference hook)",
     "ghl_media": "06-ghl-install-pages / ghl_media.py",
@@ -87,104 +155,476 @@
     "emails": "Email-Skill-Library (10 promo emails)",
     "client_provider_rule": "CLIENT runtime tiers the client's OWN configured providers (strongest -> copy+QC; mid -> prompts/HTML/JSON; cheapest -> catalog/poll). NEVER Anthropic on a client box."
   },
-
   "autofail_codes": {
-    "AF-FUN-INTAKE-TYPE": {"trigger": "funnel_type != signature_funnel", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-    "AF-FUN-INTAKE-MISSING": {"trigger": "a required intake answer (by funnel size) is missing/empty", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-    "AF-FUN-INTAKE-SIZE": {"trigger": "funnel_size not in {3,5,7}", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake._resolve_size"},
-    "AF-FUN-INTAKE-OFFER": {"trigger": "offer_token_ledger empty (Q1 offer not declared)", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-    "AF-FUN-INTAKE-REPRESENTATION": {"trigger": "representation (Q8) not explicitly provided", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-    "AF-FUN-INTAKE-TRUTHGATE": {"trigger": "community URL / bonus / founder-text not confirmed (Q16)", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake._resolve_truth_gate"},
-    "AF-FUN-INTAKE-UNLOCKED": {"trigger": "brief not locked (provenance-gated) before generation", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-
-    "AF-FUN-PROFILE-UNKNOWN": {"trigger": "page_type not in the profiles map", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy.verify"},
-    "AF-FUN-SECTION-MISSING": {"trigger": "a required section for the page profile is absent", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy.verify"},
-    "AF-FUN-SECTION-EXTRA": {"trigger": "a page carries a section not allowed by its profile", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy.verify"},
-    "AF-FUN-SECTION-ORDER": {"trigger": "sections duplicated / not ascending / bad id", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy.verify"},
-    "AF-FUN-SEC1-CHARBAND": {"trigger": "Section 1 outside 180-225 stripped chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC1-TITLE": {"trigger": "Section 1 does not contain the product title", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC1-CTA": {"trigger": "Section 1 missing a labeled CTA", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-PAIN-CHARBAND": {"trigger": "a pain section (2/3/4) outside 180-225 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-PAIN-QUESTION": {"trigger": "a pain section is written in question format ('?')", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-PAIN-2ND-PERSON": {"trigger": "a pain section is not in 2nd person (no you/your)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-PAIN-CTA": {"trigger": "a pain section missing a labeled CTA", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC5-WORDS": {"trigger": "Section 5 outside 18-30 words (under-length is as much a hard miss as over-length)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC5-LEAD": {"trigger": "Section 5 does not start 'That's the reason why...'", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC5-CTA": {"trigger": "Section 5 missing its motivational CTA", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC6-WORDS": {"trigger": "Section 6 outside 18-30 words (under-length is as much a hard miss as over-length)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC6-PERSONAS": {"trigger": "Section 6 outside 3-6 personas", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC6-NO-CTA": {"trigger": "Section 6 carries a CTA (forbidden)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC7-WORDS": {"trigger": "Section 7 outside 70-120 words", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC7-BULLETS": {"trigger": "Section 7 outside 5-10 bullets", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-BENEFIT-WORDS": {"trigger": "a benefit section (8/9/10) outside 18-30 words (under-length is as much a hard miss as over-length)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-BENEFIT-NO-CTA": {"trigger": "a benefit section (8/9) carries a CTA (forbidden)", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC10-CTA": {"trigger": "Section 10 missing its inspirational CTA button", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section"},
-    "AF-FUN-SEC11-WORDS": {"trigger": "Section 11 outside 100-150 words", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC11-NO-CTA-BUTTON": {"trigger": "Section 11 carries a CTA button", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC11-STEPS": {"trigger": "Section 11 outside 5-10 steps", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC11-STEPBAND": {"trigger": "a Section 11 step 1-6 outside 89-116 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC11-STEP7": {"trigger": "Section 11 step 7 (CTA) exceeds 170 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC11-REQUIRED-STEPS": {"trigger": "Section 11 missing share/email-bonus/founder-text/community step", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section11"},
-    "AF-FUN-SEC12-WORDS": {"trigger": "Section 12 outside 100-150 words", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section12"},
-    "AF-FUN-SEC12-PARTS": {"trigger": "Section 12 not exactly 6 labeled parts", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section12"},
-    "AF-FUN-SEC12-STRUGGLE": {"trigger": "Section 12 part 2 does not start 'I used to be just like you...'", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section12"},
-    "AF-FUN-SEC8REPL-NAME": {"trigger": "replacement Section 8 name mismatches the profile", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section8_replacement"},
-    "AF-FUN-SEC8REPL-COUNT": {"trigger": "replacement Section 8 not exactly 7 items", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_section8_replacement"},
-    "AF-FUN-TY1-CHARBAND": {"trigger": "Thank-You TY-1 outside 120-180 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_thank_you"},
-    "AF-FUN-TY1-TITLE": {"trigger": "Thank-You TY-1 does not name the product title", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_thank_you"},
-    "AF-FUN-TY2-STEPS": {"trigger": "Thank-You TY-2 outside 4-6 steps", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_thank_you"},
-    "AF-FUN-TY2-STEPBAND": {"trigger": "a Thank-You TY-2 step outside 89-116 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_thank_you"},
-    "AF-FUN-TY3-CHARBAND": {"trigger": "Thank-You TY-3 exceeds 170 chars", "enforced_by": "P1-COPY", "py_symbol": "prove_sf_copy._verify_thank_you"},
-
-    "AF-FUN-PROMPT-FLOOR": {"trigger": "image prompt under 5,000 stripped chars", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-CEILING": {"trigger": "image prompt over 19,000 stripped chars", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-DENSITY": {"trigger": "fewer than 220 distinct words (padding)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-GRADE": {"trigger": "Signature Grade Block not embedded", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-NEGATIVE": {"trigger": "no negative block ('Do not ...') in the prompt", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-EMDASH": {"trigger": "an em/en dash present (model-safety rule)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-TYPO": {"trigger": "text-bearing prompt lacks spelling-lock/words, or non-text prompt lacks 'no text'", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"},
-    "AF-FUN-PROMPT-COVERAGE": {"trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)", "enforced_by": "P2-PROMPTS", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
-    "AF-FUN-IMG-COVERAGE": {"trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_prompt_floor.coverage_violations"},
-
-    "AF-FUN-HTML-FRAGMENT": {"trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page", "enforced_by": "P5-HTML", "py_symbol": "run_signature_funnel._gate_html_fragments"},
-
-    "AF-FUN-GRAPH-SIZE": {"trigger": "funnel_graph funnel_size absent / not in {3,5,7}", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-TYPE": {"trigger": "funnel_graph funnel_type != signature_funnel", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-NODES": {"trigger": "node id set does not match the MASTERDOC §3 matrix for the size", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-EDGE": {"trigger": "an edge references an unknown node or carries an illegal on-label", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-TERMINAL": {"trigger": "thank-you is not the unique terminal, or a non-terminal node is a dead end", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-BRANCH": {"trigger": "an upsell node is missing its accept or decline (one-click) edge", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-    "AF-FUN-GRAPH-REACH": {"trigger": "a node is unreachable from main, or cannot reach thank-you", "enforced_by": "P6-COMPOSE", "py_symbol": "prove_sf_graph.verify"},
-
-    "AF-FUN-BUILD-FAB": {"trigger": "the FAB scorecard build/fab-artifact.json is absent/unreadable or echoes no copy — the >=8.5 copy-substance gate cannot run (fail-closed; FIX-COPY-02)", "enforced_by": "P7-BUILD", "py_symbol": "run_signature_funnel._gate_build"},
-    "AF-FUN-BUILD-MALFORMED": {"trigger": "build_receipt.json absent/unreadable or carries no pages (fail-closed)", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
-    "AF-FUN-BUILD-QC": {"trigger": "build receipt qc_score missing/non-numeric or below the 8.5 floor", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
-    "AF-FUN-BUILD-PREVIEW": {"trigger": "a built page has no non-empty http(s) preview_url", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
-    "AF-FUN-BUILD-TYPE": {"trigger": "build receipt funnel_type != signature_funnel", "enforced_by": "P7-BUILD", "py_symbol": "prove_sf_build.verify"},
-
-    "AF-FUN-DERIVE-LEDGER": {"trigger": "derived_pages.json absent/malformed, wrong derived set, or bad U1/D1/U2/D2/TY label", "enforced_by": "P8-DERIVE", "py_symbol": "run_signature_funnel._gate_derived_pages"},
-
-    "AF-FUN-TY-PITCH": {"trigger": "an offer/product NAME appears on the thank-you page", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-TY-PRICE": {"trigger": "a price/monetary token appears on the thank-you page", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-TY-CTA": {"trigger": "a sale/offer CTA (non-utility) on the thank-you page", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-IMG-PROVENANCE": {"trigger": "missing/placeholder/native Kie taskId", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-IMG-HOST": {"trigger": "media URL does not resolve to a GHL media host", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-OFFER-LEDGER-MISSING": {"trigger": "no offer names to prove absent (fail-closed)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-TY-MISSING": {"trigger": "no thank-you page (cannot prove no-pitch; fail-closed)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-    "AF-FUN-IMG-EMPTY": {"trigger": "no image records (cannot prove provenance; fail-closed)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_no_pitch.evaluate"},
-
-    "AF-FUN-CERT-MISSING": {"trigger": "certificate malformed / missing required field", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.verify"},
-    "AF-FUN-CERT-PHASE-GAP": {"trigger": "phase orders not contiguous 0..N (a phase skipped)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.verify"},
-    "AF-FUN-CERT-PHASE-FAIL": {"trigger": "a phase status != pass / all_phases_pass not true", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.verify"},
-    "AF-FUN-CERT-SIGNATURE": {"trigger": "HMAC signature invalid for the nonce (tamper/forgery)", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.verify"},
-    "AF-FUN-PROCESS-INTEGRITY": {"trigger": "process certificate invalid -> funnel is NOT done", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.verify"},
-    "AF-FUN-FRONT-DOOR": {"trigger": "orchestrator called without the run-scoped front-door nonce", "enforced_by": "front-door", "py_symbol": "run_signature_funnel._check_front_door"},
-
-    "AF-FUN-CANONICAL-BYPASS": {"trigger": "run working files hand-roll GHL REST / mail sender / raw Kie createTask", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_bypass_scan"},
-    "AF-FUN-HASH-PIN": {"trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256", "enforced_by": "front-door", "py_symbol": "signature-funnel-entry.sh:step_hashpin"},
-
-    "AF-FUN-INTAKE-PERSONA-LOG": {"trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed", "enforced_by": "P0-INTAKE", "py_symbol": "prove_sf_intake.evaluate"},
-    "AF-FUN-MODEL-TIER": {"trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"},
-    "AF-FUN-MODEL-NOANTHROPIC": {"trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e", "enforced_by": "P9-CERTIFY", "py_symbol": "prove_sf_cert.evaluate_model_receipt"}
+    "AF-FUN-INTAKE-TYPE": {
+      "trigger": "funnel_type != signature_funnel",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-INTAKE-MISSING": {
+      "trigger": "a required intake answer (by funnel size) is missing/empty",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-INTAKE-SIZE": {
+      "trigger": "funnel_size not in {3,5,7}",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake._resolve_size"
+    },
+    "AF-FUN-INTAKE-OFFER": {
+      "trigger": "offer_token_ledger empty (Q1 offer not declared)",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-INTAKE-REPRESENTATION": {
+      "trigger": "representation (Q8) not explicitly provided",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-INTAKE-TRUTHGATE": {
+      "trigger": "community URL / bonus / founder-text not confirmed (Q16)",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake._resolve_truth_gate"
+    },
+    "AF-FUN-INTAKE-UNLOCKED": {
+      "trigger": "brief not locked (provenance-gated) before generation",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-PROFILE-UNKNOWN": {
+      "trigger": "page_type not in the profiles map",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy.verify"
+    },
+    "AF-FUN-SECTION-MISSING": {
+      "trigger": "a required section for the page profile is absent",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy.verify"
+    },
+    "AF-FUN-SECTION-EXTRA": {
+      "trigger": "a page carries a section not allowed by its profile",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy.verify"
+    },
+    "AF-FUN-SECTION-ORDER": {
+      "trigger": "sections duplicated / not ascending / bad id",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy.verify"
+    },
+    "AF-FUN-SEC1-CHARBAND": {
+      "trigger": "Section 1 outside 180-225 stripped chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC1-TITLE": {
+      "trigger": "Section 1 does not contain the product title",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC1-CTA": {
+      "trigger": "Section 1 missing a labeled CTA",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-PAIN-CHARBAND": {
+      "trigger": "a pain section (2/3/4) outside 180-225 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-PAIN-QUESTION": {
+      "trigger": "a pain section is written in question format ('?')",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-PAIN-2ND-PERSON": {
+      "trigger": "a pain section is not in 2nd person (no you/your)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-PAIN-CTA": {
+      "trigger": "a pain section missing a labeled CTA",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC5-WORDS": {
+      "trigger": "Section 5 outside 18-30 words (under-length is as much a hard miss as over-length)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC5-LEAD": {
+      "trigger": "Section 5 does not start 'That's the reason why...'",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC5-CTA": {
+      "trigger": "Section 5 missing its motivational CTA",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC6-WORDS": {
+      "trigger": "Section 6 outside 18-30 words (under-length is as much a hard miss as over-length)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC6-PERSONAS": {
+      "trigger": "Section 6 outside 3-6 personas",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC6-NO-CTA": {
+      "trigger": "Section 6 carries a CTA (forbidden)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC7-WORDS": {
+      "trigger": "Section 7 outside 70-120 words",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC7-BULLETS": {
+      "trigger": "Section 7 outside 5-10 bullets",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-BENEFIT-WORDS": {
+      "trigger": "a benefit section (8/9/10) outside 18-30 words (under-length is as much a hard miss as over-length)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-BENEFIT-NO-CTA": {
+      "trigger": "a benefit section (8/9) carries a CTA (forbidden)",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC10-CTA": {
+      "trigger": "Section 10 missing its inspirational CTA button",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section"
+    },
+    "AF-FUN-SEC11-WORDS": {
+      "trigger": "Section 11 outside 100-150 words",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC11-NO-CTA-BUTTON": {
+      "trigger": "Section 11 carries a CTA button",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC11-STEPS": {
+      "trigger": "Section 11 outside 5-10 steps",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC11-STEPBAND": {
+      "trigger": "a Section 11 step 1-6 outside 89-116 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC11-STEP7": {
+      "trigger": "Section 11 step 7 (CTA) exceeds 170 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC11-REQUIRED-STEPS": {
+      "trigger": "Section 11 missing share/email-bonus/founder-text/community step",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section11"
+    },
+    "AF-FUN-SEC12-WORDS": {
+      "trigger": "Section 12 outside 100-150 words",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section12"
+    },
+    "AF-FUN-SEC12-PARTS": {
+      "trigger": "Section 12 not exactly 6 labeled parts",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section12"
+    },
+    "AF-FUN-SEC12-STRUGGLE": {
+      "trigger": "Section 12 part 2 does not start 'I used to be just like you...'",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section12"
+    },
+    "AF-FUN-SEC8REPL-NAME": {
+      "trigger": "replacement Section 8 name mismatches the profile",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section8_replacement"
+    },
+    "AF-FUN-SEC8REPL-COUNT": {
+      "trigger": "replacement Section 8 not exactly 7 items",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_section8_replacement"
+    },
+    "AF-FUN-TY1-CHARBAND": {
+      "trigger": "Thank-You TY-1 outside 120-180 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_thank_you"
+    },
+    "AF-FUN-TY1-TITLE": {
+      "trigger": "Thank-You TY-1 does not name the product title",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_thank_you"
+    },
+    "AF-FUN-TY2-STEPS": {
+      "trigger": "Thank-You TY-2 outside 4-6 steps",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_thank_you"
+    },
+    "AF-FUN-TY2-STEPBAND": {
+      "trigger": "a Thank-You TY-2 step outside 89-116 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_thank_you"
+    },
+    "AF-FUN-TY3-CHARBAND": {
+      "trigger": "Thank-You TY-3 exceeds 170 chars",
+      "enforced_by": "P1-COPY",
+      "py_symbol": "prove_sf_copy._verify_thank_you"
+    },
+    "AF-FUN-PROMPT-FLOOR": {
+      "trigger": "image prompt under 5,000 stripped chars",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-CEILING": {
+      "trigger": "image prompt over 19,000 stripped chars",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-DENSITY": {
+      "trigger": "fewer than 220 distinct words (padding)",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-GRADE": {
+      "trigger": "Signature Grade Block not embedded",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-NEGATIVE": {
+      "trigger": "no negative block ('Do not ...') in the prompt",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-EMDASH": {
+      "trigger": "an em/en dash present (model-safety rule)",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-TYPO": {
+      "trigger": "text-bearing prompt lacks spelling-lock/words, or non-text prompt lacks 'no text'",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.evaluate_prompt"
+    },
+    "AF-FUN-PROMPT-COVERAGE": {
+      "trigger": "prompt ledger is missing a required (page_type, section) image slot for the funnel size (partial ledger)",
+      "enforced_by": "P2-PROMPTS",
+      "py_symbol": "prove_sf_prompt_floor.coverage_violations"
+    },
+    "AF-FUN-IMG-COVERAGE": {
+      "trigger": "media ledger is missing a required (page_type, section) image slot for the funnel size (partial image set)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_prompt_floor.coverage_violations"
+    },
+    "AF-FUN-HTML-FRAGMENT": {
+      "trigger": "a pages/<profile>.fragment.html is missing/empty for a matrix page",
+      "enforced_by": "P5-HTML",
+      "py_symbol": "run_signature_funnel._gate_html_fragments"
+    },
+    "AF-FUN-GRAPH-SIZE": {
+      "trigger": "funnel_graph funnel_size absent / not in {3,5,7}",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-TYPE": {
+      "trigger": "funnel_graph funnel_type != signature_funnel",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-NODES": {
+      "trigger": "node id set does not match the MASTERDOC §3 matrix for the size",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-EDGE": {
+      "trigger": "an edge references an unknown node or carries an illegal on-label",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-TERMINAL": {
+      "trigger": "thank-you is not the unique terminal, or a non-terminal node is a dead end",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-BRANCH": {
+      "trigger": "an upsell node is missing its accept or decline (one-click) edge",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-GRAPH-REACH": {
+      "trigger": "a node is unreachable from main, or cannot reach thank-you",
+      "enforced_by": "P6-COMPOSE",
+      "py_symbol": "prove_sf_graph.verify"
+    },
+    "AF-FUN-BUILD-FAB": {
+      "trigger": "the FAB scorecard build/fab-artifact.json is absent/unreadable or echoes no copy — the >=8.5 copy-substance gate cannot run (fail-closed; FIX-COPY-02)",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "run_signature_funnel._gate_build"
+    },
+    "AF-FUN-BUILD-MALFORMED": {
+      "trigger": "build_receipt.json absent/unreadable or carries no pages (fail-closed)",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-BUILD-QC": {
+      "trigger": "build receipt qc_score missing/non-numeric or below the 8.5 floor",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-BUILD-PREVIEW": {
+      "trigger": "a built page has no non-empty http(s) preview_url",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-BUILD-TYPE": {
+      "trigger": "build receipt funnel_type != signature_funnel",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-DERIVE-LEDGER": {
+      "trigger": "derived_pages.json absent/malformed, wrong derived set, or bad U1/D1/U2/D2/TY label",
+      "enforced_by": "P8-DERIVE",
+      "py_symbol": "run_signature_funnel._gate_derived_pages"
+    },
+    "AF-FUN-TY-PITCH": {
+      "trigger": "an offer/product NAME appears on the thank-you page",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-TY-PRICE": {
+      "trigger": "a price/monetary token appears on the thank-you page",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-TY-CTA": {
+      "trigger": "a sale/offer CTA (non-utility) on the thank-you page",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-IMG-PROVENANCE": {
+      "trigger": "missing/placeholder/native Kie taskId",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-IMG-HOST": {
+      "trigger": "media URL does not resolve to a GHL media host",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-OFFER-LEDGER-MISSING": {
+      "trigger": "no offer names to prove absent (fail-closed)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-TY-MISSING": {
+      "trigger": "no thank-you page (cannot prove no-pitch; fail-closed)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-IMG-EMPTY": {
+      "trigger": "no image records (cannot prove provenance; fail-closed)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_no_pitch.evaluate"
+    },
+    "AF-FUN-CERT-MISSING": {
+      "trigger": "certificate malformed / missing required field",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.verify"
+    },
+    "AF-FUN-CERT-PHASE-GAP": {
+      "trigger": "phase orders not contiguous 0..N (a phase skipped)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.verify"
+    },
+    "AF-FUN-CERT-PHASE-FAIL": {
+      "trigger": "a phase status != pass / all_phases_pass not true",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.verify"
+    },
+    "AF-FUN-CERT-SIGNATURE": {
+      "trigger": "HMAC signature invalid for the nonce (tamper/forgery)",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.verify"
+    },
+    "AF-FUN-PROCESS-INTEGRITY": {
+      "trigger": "process certificate invalid -> funnel is NOT done",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.verify"
+    },
+    "AF-FUN-FRONT-DOOR": {
+      "trigger": "orchestrator called without the run-scoped front-door nonce",
+      "enforced_by": "front-door",
+      "py_symbol": "run_signature_funnel._check_front_door"
+    },
+    "AF-FUN-CANONICAL-BYPASS": {
+      "trigger": "run working files hand-roll GHL REST / mail sender / raw Kie createTask",
+      "enforced_by": "front-door",
+      "py_symbol": "signature-funnel-entry.sh:step_bypass_scan"
+    },
+    "AF-FUN-HASH-PIN": {
+      "trigger": "enforcement-core sha256 does not match SF-PROVER-PIN.sha256",
+      "enforced_by": "front-door",
+      "py_symbol": "signature-funnel-entry.sh:step_hashpin"
+    },
+    "AF-FUN-INTAKE-PERSONA-LOG": {
+      "trigger": "persona-selection-log absent or names no registered persona slug (copywriter-persona Step-0 grounding); FIX-XC-02a fail-closed",
+      "enforced_by": "P0-INTAKE",
+      "py_symbol": "prove_sf_intake.evaluate"
+    },
+    "AF-FUN-MODEL-TIER": {
+      "trigger": "model-content-receipt absent or authoring tier is not an execution/content tier (client's own strongest model must write copy); FIX-XC-09e",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.evaluate_model_receipt"
+    },
+    "AF-FUN-MODEL-NOANTHROPIC": {
+      "trigger": "authoring model provider is Anthropic/Claude (client skills never use Anthropic); FIX-XC-09e",
+      "enforced_by": "P9-CERTIFY",
+      "py_symbol": "prove_sf_cert.evaluate_model_receipt"
+    },
+    "AF-FUN-BUILD-PAGESET": {
+      "trigger": "the build receipt does not carry every page type the locked 3/5/7 funnel matrix requires (an under-sized receipt — a 7-step funnel with 3 pages — no longer certifies); A10/T0-11",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-BUILD-SIZE": {
+      "trigger": "the locked funnel size is unresolved (no brief size and no receipt funnel_size), so the required page set cannot be computed (fail-closed); A10/T0-11",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build._resolve_size"
+    },
+    "AF-FUN-BUILD-SIZE-MISMATCH": {
+      "trigger": "the build receipt declares a funnel_size that contradicts the locked brief size (the receipt does not describe this funnel); A10/T0-11",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build._resolve_size"
+    },
+    "AF-FUN-BUILD-PREVIEW-PLACEHOLDER": {
+      "trigger": "a page preview_url resolves to a placeholder/example/loopback host (a caller-authored stand-in is not a built preview); A10/T0-11",
+      "enforced_by": "P7-BUILD",
+      "py_symbol": "prove_sf_build.verify"
+    },
+    "AF-FUN-DELEG-IMAGES": {
+      "trigger": "P3-IMAGES: media ledger carries no image records or an image has no real image-provider task id (file existence is no longer proof of delegated image generation); A10/T0-09",
+      "enforced_by": "P3-IMAGES",
+      "py_symbol": "run_signature_funnel._gate_p3_images"
+    },
+    "AF-FUN-DELEG-MEDIA": {
+      "trigger": "P4-MEDIA: a ledger image does not resolve to a GHL media host (an un-uploaded image is not a delegated upload); A10/T0-09",
+      "enforced_by": "P4-MEDIA",
+      "py_symbol": "run_signature_funnel._gate_p4_media"
+    },
+    "AF-FUN-DELEG-RECEIPT-SELF-AUTHORED": {
+      "trigger": "a delegated-phase provider receipt is present but SELF-AUTHORED by the certificate's own subject (the run stamped its own evidence) — the strongest A10/T0-09 protection; the same validator also rejects a non-2xx status, a placeholder response/remote id, and a ledger row no provider was called for (-STATUS / -ID / -COVERAGE / -MISSING-PHASE / -MALFORMED / -ABSENT)",
+      "enforced_by": "P3-IMAGES/P4-MEDIA",
+      "py_symbol": "delegation_receipt.validate_if_present"
+    }
   }
 }

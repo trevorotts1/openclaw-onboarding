@@ -69,7 +69,18 @@ ALLOWED_FRAMES = ("rulebook", "vault", "quest", "original")
 SP_KEYWORDS = ("signature presentation", "signature-presentation", "signature deck")
 
 # The claim/gate wrappers the engine (Skill 23 build_deck.py) must carry + register.
-WIRE_SYMBOLS = ("_chk_sp_claim", "_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch")
+#
+# A10 / T0-12 — `_chk_sp_intake_trace` joins the required set. SKILL.md declares that
+# every rule is machine-enforced by a fail-closed prover and never advisory, and then
+# declared the intake-trace checker advisory and non-gating. The rule that defines this
+# skill's value — choice-first, one question per turn — was the one rule nothing
+# enforced: an eight-question batched interaction that then produced a structurally
+# valid intake record passed every preflight and reached a signed certificate, because
+# the run supplied its own intake RECORD as the only evidence of how the intake was
+# CONDUCTED. Listing the wrapper here makes --check-wiring refuse an engine that does
+# not carry the gate, so the enforcement cannot silently go missing again.
+WIRE_SYMBOLS = ("_chk_sp_claim", "_chk_sp_intake", "_chk_sp_structure", "_chk_sp_no_pitch",
+                "_chk_sp_intake_trace")
 
 
 # ---- small helpers ----------------------------------------------------------

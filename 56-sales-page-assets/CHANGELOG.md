@@ -1,5 +1,30 @@
 # Changelog — Sales Page Assets (Skill 56)
 
+## 1.5.0 — 2026-07-21 — A10 / T0-09, T0-10: certificates can no longer mint on self-authored evidence
+
+### Fixed
+- **P2-IMAGES no longer attests on file existence (T0-09).** The image seam returned
+  `delegated` the moment `media_ledger.json` existed — a file the run writes. It now
+  requires image records with a real image-provider task id. `AF-SP56-IMAGES-MISSING` /
+  `-IMAGES-PROVENANCE`.
+- **P6-DOCS / P8-DELIVER / P9-HANDOFF reject caller-authored placeholders (T0-10).** The
+  documents phase required only a non-empty list with no document id; delivery required only
+  a subject and a folder link with no send receipt; the build phase required only a preview
+  URL list and a bare number — and the shipped artifact writer fabricated all three
+  in-process with example-domain URLs and a hardcoded 8.7, from which the self-test minted a
+  signed certificate. Every doc/folder/preview link must now be an http(s) URL on a
+  non-placeholder host, and any provider receipt present must hold strictly.
+  `AF-SP56-DOCS-PLACEHOLDER` / `-DELIVER-PLACEHOLDER` / `-BUILD-PLACEHOLDER`.
+
+### Added
+- **`scripts/delegation_receipt.py` + `scripts/stub_provider_adapter.py` (new).** The
+  provider-receipt contract shared with Skill 49: a delegated tool records one receipt per
+  real provider round-trip, and the requirer refuses evidence stamped by a subject module
+  (`AF-SP56-DELEG-RECEIPT-SELF-AUTHORED`). The certificate records `delegation_receipts:
+  present|absent`. The self-test fixture now comes from the provider stub, never from the
+  run under test; the `golden-momentum` reference carries real Docs/Drive/GHL hosts and a
+  provider receipt per delegated call instead of the example-domain placeholders.
+
 ## 1.4.2 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
 
 ### Fixed

@@ -965,7 +965,12 @@ def write_ledgers():
 
 # The P5-P9 artifact-backed gates (FIX-XC-03b) need on-disk build artifacts: a non-empty
 # fragment per page step, a Track-1 Docs manifest, a delivery record, and a build receipt.
-BUILD_ARTIFACT_NAMES = ("pages", "drive_docs.json", "delivery.json", "build_receipt.json")
+# A10 / T0-10: plus delegation_receipts.jsonl — the golden run is the reference for a
+# receipt-BACKED run, so the reference artifacts carry real Docs/Drive/GHL hosts and a
+# provider receipt per delegated call instead of the example-domain placeholders and the
+# hardcoded score this fixture used to enshrine.
+BUILD_ARTIFACT_NAMES = ("pages", "drive_docs.json", "delivery.json", "build_receipt.json",
+                        "delegation_receipts.jsonl")
 
 
 def write_build_artifacts():

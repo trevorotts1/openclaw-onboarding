@@ -1,5 +1,5 @@
 {
-  "manifest_version": 24,
+  "manifest_version": 25,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -840,6 +840,28 @@
         "required": true,
         "checker": "_chk_sp_intake",
         "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      }
+    },
+    {
+      "id": "P-SP-INTAKE-TRACE",
+      "order": 0.16,
+      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/interview/intake_transcript.json",
+      "gate_codes": [
+        "AF-INTAKE-BATCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake_trace",
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
       },
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
@@ -2370,6 +2392,15 @@
       "trigger": "Signature Presentation intake: the 8 Questions + the frame-selection question were not delivered as ONE message block (asked one-per-turn / multiple block ids). DEFERS unless deck_type==signature_presentation.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_sp_intake"
+    },
+    {
+      "code": "AF-INTAKE-BATCH",
+      "stage": "Intake",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "Signature Presentation intake CONVERSATION: the transcript shows two or more bank questions dumped in a single assistant turn (BATCH-IN-TURN), two or more unmatched questions in one turn (BATCH-BY-QMARKS), no quick-vs-in-depth choice in the opening assistant turn (NO-CHOICE-OPENER), or the banned batch anti-pattern phrase (BANNED-PHRASE). An absent/unparseable working/interview/intake_transcript.json is fail-closed. DEFERS unless deck_type==signature_presentation.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_sp_intake_trace"
     },
     {
       "code": "AF-SP-FRAME-UNSET",

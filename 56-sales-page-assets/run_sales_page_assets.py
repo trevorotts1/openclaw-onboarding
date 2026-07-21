@@ -145,21 +145,113 @@ def _fragments_gate(run_dir: Path) -> Tuple[bool, str]:
     return True, f"P5 fragments present + non-empty for all {len(page_steps)} page step(s)"
 
 
+# ---------------------------------------------------------------------------
+# A10 / T0-10 — the delivery, document and build seams.
+#
+# THE DEFECT: the documents phase required only a non-empty list of entries with no
+# document identifier; the delivery phase required only a non-empty subject and a
+# non-empty folder link with no send receipt; the build phase required only a
+# non-empty preview-URL list and a bare number read out of the same file. The
+# shipped artifact writer then fabricated all three IN-PROCESS with example-domain
+# URLs and a hardcoded 8.7, and the self-test minted and validated a signed
+# certificate from exactly that fixture. The certificate asserted that client Docs
+# were created, a folder link was emailed and a page build completed — with no
+# evidence beyond strings the run wrote.
+#
+# THIS RELEASE (writer-before-requirer sequencing):
+#   * a caller-authored PLACEHOLDER can no longer stand in for a real resource: every
+#     doc, folder and preview link must be an http(s) URL on a non-placeholder host.
+#     A genuine Drive/GHL URL always satisfies this, so no run that could certify
+#     before can fail now.
+#   * any provider receipt that IS present must hold strictly, and the certificate
+#     RECORDS whether receipts were present — so it can never be read as a claim that
+#     a document API, a mail send or a remote build was actually contacted.
+#   * the self-test fixture now comes from a PROVIDER STUB, not from the run.
+# NEXT: delegation_receipt.require() replaces validate_if_present() — a document id,
+# a send-receipt id and a remote build id become mandatory — once the delegated
+# skills emit receipts on every path.
+# ---------------------------------------------------------------------------
+PLACEHOLDER_HOSTS = (
+    "example.com", "example.org", "example.net", "example.edu", "invalid",
+    "localhost", "127.0.0.1", "0.0.0.0", "test.com", "changeme.com", "todo.com",
+)
+
+
+def _url_host(url: Any) -> str:
+    from urllib.parse import urlparse
+    if not isinstance(url, str):
+        return ""
+    try:
+        return (urlparse(url.strip()).hostname or "").lower()
+    except (ValueError, TypeError):
+        return ""
+
+
+def _real_url(url: Any) -> Tuple[bool, str]:
+    """(ok, reason). An http(s) URL whose host is not a placeholder host or a
+    subdomain of one. Matched on the parsed HOST, so a genuine vendor domain that
+    merely contains one of these words is never false-failed."""
+    if not isinstance(url, str) or not url.strip().lower().startswith(("http://", "https://")):
+        return False, f"{url!r} is not an http(s) URL"
+    host = _url_host(url)
+    if not host:
+        return False, f"{url!r} has no host"
+    if any(host == ph or host.endswith("." + ph) for ph in PLACEHOLDER_HOSTS):
+        return False, f"{url!r} resolves to placeholder host {host!r}"
+    return True, host
+
+
+def _receipt_seam(run_dir: Path, phase: str, keys: List[str],
+                  content_detail: str) -> Tuple[bool, str]:
+    try:
+        import delegation_receipt
+    except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
+        return False, (f"AF-SP56-DELEG-RECEIPT: delegation_receipt.py is not importable "
+                       f"({exc}) — the delegated seam {phase} cannot be attested")
+    ok, detail, state = delegation_receipt.validate_if_present(
+        run_dir, phase, must_cover=keys or None, af="AF-SP56-DELEG-RECEIPT")
+    if not ok:
+        return False, detail
+    return True, f"{content_detail} :: receipts {state} ({detail})"
+
+
+def _delegation_receipt_state(run_dir: Path) -> str:
+    try:
+        import delegation_receipt
+        return delegation_receipt.store_state(run_dir)
+    except Exception:  # noqa: BLE001 — a certificate field must never break certification
+        return "unknown"
+
+
 def _docs_gate(run_dir: Path) -> Tuple[bool, str]:
-    """P6 — artifact-backed (FIX-XC-03b): the Track-1 client Docs manifest must exist and name
-    at least one client-editable Doc."""
+    """P6 — the Track-1 client Docs manifest must exist and name at least one
+    client-editable Doc, each reachable at a real (non-placeholder) URL."""
     data, err = _load_run_json(run_dir, "drive_docs.json")
     if data is None:
         return False, f"AF-SP56-DOCS-MISSING: {err} (Track-1 client Docs artifact)"
     docs = data.get("docs")
-    if not isinstance(docs, list) or not [d for d in docs if isinstance(d, dict)]:
+    entries = [d for d in docs if isinstance(d, dict)] if isinstance(docs, list) else []
+    if not entries:
         return False, "AF-SP56-DOCS-MISSING: drive_docs.json carries no docs entries"
-    return True, f"P6 Track-1 Docs manifest present ({len(docs)} doc(s))"
+    bad, keys = [], []
+    for i, d in enumerate(entries):
+        who = str(d.get("label") or d.get("name") or f"#{i}")
+        url = d.get("url") or d.get("doc_url") or d.get("link")
+        good, reason = _real_url(url)
+        if not good:
+            bad.append(f"{who}: {reason}")
+        keys.append(str(d.get("doc_id") or d.get("id") or d.get("file_id") or url or who))
+    if bad:
+        return False, (f"AF-SP56-DOCS-PLACEHOLDER: {len(bad)} doc entr(ies) have no real "
+                       f"document URL (e.g. {bad[:2]}) — a caller-authored placeholder is "
+                       "not a created client Doc")
+    return _receipt_seam(run_dir, "P6-DOCS", keys,
+                         f"P6 Track-1 Docs manifest present ({len(entries)} doc(s), real URLs)")
 
 
 def _deliver_gate(run_dir: Path) -> Tuple[bool, str]:
-    """P8 — artifact-backed (FIX-XC-03b): the delivery record must exist with a productionized
-    (non-test) subject and a folder link."""
+    """P8 — the delivery record must exist with a productionized (non-test) subject
+    and a real (non-placeholder) folder link."""
     data, err = _load_run_json(run_dir, "delivery.json")
     if data is None:
         return False, f"AF-SP56-DELIVER-MISSING: {err}"
@@ -168,14 +260,21 @@ def _deliver_gate(run_dir: Path) -> Tuple[bool, str]:
         return False, "AF-SP56-DELIVER-MISSING: delivery.json has no subject"
     if "test" in subject.lower():
         return False, f"AF-SP56-DELIVER-SUBJECT: leftover test subject {subject!r} (productionize it)"
-    if not str(data.get("folder_link", "")).strip():
+    link = data.get("folder_link", "")
+    if not str(link).strip():
         return False, "AF-SP56-DELIVER-MISSING: delivery.json has no folder_link"
-    return True, f"P8 delivery artifact present (subject productionized)"
+    good, reason = _real_url(link)
+    if not good:
+        return False, (f"AF-SP56-DELIVER-PLACEHOLDER: folder_link {reason} — a caller-authored "
+                       "placeholder link was not delivered to anybody")
+    keys = [str(data.get("send_receipt_id") or data.get("message_id") or link)]
+    return _receipt_seam(run_dir, "P8-DELIVER", keys,
+                         "P8 delivery artifact present (subject productionized, real folder link)")
 
 
 def _build_receipt_gate(run_dir: Path) -> Tuple[bool, str]:
-    """P9 — artifact-backed (FIX-XC-03b): a Skill 6 build receipt must exist with non-empty
-    preview URLs and a build QC score >= 8.5 (in addition to the funnel-manifest)."""
+    """P9 — a Skill 6 build receipt must exist with real (non-placeholder) preview
+    URLs and a build QC score >= 8.5 (in addition to the funnel-manifest)."""
     if not (run_dir / "funnel-manifest.json").is_file():
         return False, "AF-SP56-BUILD-RECEIPT: funnel-manifest.json absent (no build to hand off)"
     data, err = _load_run_json(run_dir, "build_receipt.json")
@@ -184,16 +283,58 @@ def _build_receipt_gate(run_dir: Path) -> Tuple[bool, str]:
     urls = data.get("preview_urls")
     if not (isinstance(urls, list) and [u for u in urls if str(u).strip()]):
         return False, "AF-SP56-BUILD-RECEIPT: build_receipt.json carries no non-empty preview_urls"
+    bad = []
+    for u in urls:
+        good, reason = _real_url(u)
+        if not good:
+            bad.append(reason)
+    if bad:
+        return False, (f"AF-SP56-BUILD-PLACEHOLDER: {len(bad)} preview URL(s) are not real "
+                       f"(e.g. {bad[:2]}) — a caller-authored preview proves no page was built")
     try:
         score = float(data.get("qc_score"))
     except (TypeError, ValueError):
         return False, "AF-SP56-BUILD-RECEIPT: build_receipt.json qc_score missing/non-numeric"
     if score < 8.5:
         return False, f"AF-SP56-BUILD-RECEIPT: build QC {score} < 8.5 (fail-closed)"
-    return True, f"P9 build receipt present (QC {score}, {len(urls)} preview url(s))"
+    keys = [str(data.get("remote_build_id") or data.get("funnel_id") or u) for u in urls]
+    return _receipt_seam(run_dir, "P9-HANDOFF", keys,
+                         f"P9 build receipt present (QC {score}, {len(urls)} real preview url(s))")
+
+
+def _images_gate(run_dir: Path) -> Tuple[bool, str]:
+    """P2-IMAGES — A10 / T0-09. The phase used to attest the moment media_ledger.json
+    EXISTED, and the run writes that file. It now requires the ledger to carry image
+    records with a real image-provider task id. The full provenance + per-stage
+    coverage check still runs at P4 (prove_sp_media.py); this only stops the phase
+    that CLAIMS image generation from being satisfied by an empty file."""
+    data, err = _load_run_json(run_dir, "media_ledger.json")
+    if data is None:
+        return False, (f"AF-SP56-IMAGES-MISSING: {err} — Skill 47 kie_image.py (or the "
+                       "client's own image provider) produced nothing")
+    imgs = data.get("images")
+    records = [i for i in imgs if isinstance(i, dict)] if isinstance(imgs, list) else []
+    if not records:
+        return False, ("AF-SP56-IMAGES-MISSING: media_ledger.json carries no image records — "
+                       "an empty ledger is not a delegated image generation")
+    bad, keys = [], []
+    for i, img in enumerate(records):
+        tid = img.get("task_id", img.get("kie_task_id"))
+        norm = str(tid).strip().lower() if tid is not None else ""
+        if tid is None or norm in ("", "native", "placeholder", "none", "null", "n/a", "tbd", "todo"):
+            bad.append(f"{img.get('asset_key', f'#{i}')}={tid!r}")
+        keys.append(str(tid or img.get("asset_key") or f"#{i}"))
+    if bad:
+        return False, (f"AF-SP56-IMAGES-PROVENANCE: {len(bad)} image record(s) carry no real "
+                       f"image-provider task id (e.g. {bad[:3]})")
+    return _receipt_seam(run_dir, "P2-IMAGES", keys,
+                         f"delegated: Skill 47 kie_image.py OR the client's own image provider "
+                         f"({len(records)} record(s) with a provider task id)")
 
 
 def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) -> Tuple[bool, str]:
+    """Retained for seams with no content contract. A10 / T0-09: the image seam no
+    longer uses it — file existence is not proof that a provider ran."""
     if required_file is not None:
         p = run_dir / required_file
         if not p.exists():
@@ -215,8 +356,7 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P1-IMAGE-PLAN", "prove_sp_image_plan.py + prove_sp_prompt_floor.py",
          lambda: _image_plan_suite(run_dir)),
         ("P2-IMAGES", "kie_image.py",
-         lambda: _delegation_seam(run_dir, "media_ledger.json",
-                                  "Skill 47 kie_image.py OR the client's own image provider")),
+         lambda: _images_gate(run_dir)),
         ("P3-COPY", "prove_sp_copy_suite",
          lambda: _copy_suite(run_dir)),
         ("P4-MEDIA", "ghl_media.py + prove_sp_media.py",
@@ -300,6 +440,11 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
         "phases": [{"id": p["id"], "prover": p["prover"], "status": p["status"], "order": p["order"]}
                    for p in phases_attested],
         "all_phases_pass": True,
+        # A10 / T0-09, T0-10 — state, on the signed certificate, whether the delegated
+        # phases were backed by provider receipts. "absent" means they attested on
+        # artifact CONTENT only, so the certificate can never be read as a claim that a
+        # provider, a document API or a mail send was contacted. Covered by the HMAC.
+        "delegation_receipts": _delegation_receipt_state(run_dir),
         "delivery": {"publish": "human-approval-required",
                      "preview_only": True,
                      "two_track": "Track 1 client Docs (editable) + Track 2 build bundle (Skill 6)",
@@ -331,7 +476,7 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
 # machine end-to-end, and assert the certificate is minted + validates; then assert the
 # front-door refusal and the no-skip abort.
 # ---------------------------------------------------------------------------
-def _write_valid_run(rd: Path, nonce: str) -> None:
+def _write_valid_run(rd: Path, nonce: str, *, with_receipts: bool = True) -> None:
     import prove_sp_intake, prove_sp_prompt_floor, prove_sp_bundle  # noqa: E402
     import prove_sp_main_structure, prove_sp_upsell_structure  # noqa: E402
     import prove_sp_highticket_band, prove_sp_bump_band  # noqa: E402
@@ -369,18 +514,45 @@ def _write_valid_run(rd: Path, nonce: str) -> None:
     manifest = prove_sp_bundle._valid_manifest()
     (rd / "funnel-manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
 
-    # P5/P6/P8/P9 artifact-backed gates (FIX-XC-03b) — materialize the build artifacts.
-    _write_build_artifacts(rd, manifest)
+    # P5/P6/P8/P9 artifact-backed gates (FIX-XC-03b) — materialize the build artifacts
+    # through the PROVIDER STUB (A10 / T0-10: the fixture must not be authored by the
+    # run under test).
+    _write_build_artifacts(rd, manifest, with_receipts=with_receipts)
 
     nf = rd / ".spa_run_nonce"
     nf.write_text(nonce, encoding="utf-8")
     os.chmod(nf, 0o600)
 
 
-def _write_build_artifacts(rd: Path, manifest: Dict) -> None:
-    """Create the deterministic P5-P9 artifacts a real run's Skill-6 handoff produces: a
-    non-empty fragment per page step, a Track-1 Docs manifest, a delivery record, and a build
-    receipt. Shared by the orchestrator self-test and (in spirit) the golden reproducer."""
+def _stable_token(kind: str, key: str, n: int) -> str:
+    """Deterministic across processes — Python salts str hashing per run, so a
+    hash()-derived identifier would make the COMMITTED golden fixture churn on
+    every regeneration."""
+    return hashlib.sha256(f"{kind}|{key}".encode("utf-8")).hexdigest()[:n]
+
+
+def _write_build_artifacts(rd: Path, manifest: Dict, *, with_receipts: bool = True) -> None:
+    """Create the deterministic P5-P9 artifacts a real run's Skill-6 handoff produces.
+
+    A10 / T0-10 — this writer used to fabricate the documents, delivery and build
+    artifacts IN-PROCESS with example-domain URLs and a hardcoded 8.7, and the
+    self-test then minted and validated a signed certificate from exactly that
+    fixture: the run authored the evidence it was certified on. The artifacts are
+    now produced through a PROVIDER STUB module (stub_provider_adapter), which also
+    records the delegation receipts — so the fixture comes from a module that is not
+    the run under test, and `recorded_by` never resolves to this orchestrator.
+
+    with_receipts=False produces the artifacts WITHOUT receipts, which is the state
+    every pre-A10 run is in; the transitional seams must still attest it, and the
+    certificate must record delegation_receipts == "absent"."""
+    import delegation_receipt as _dr
+    import stub_provider_adapter as stub
+
+    if with_receipts:
+        # record() appends; a golden example rebuilt twice would otherwise accumulate
+        # duplicate receipt lines. FIXTURE regeneration only.
+        _dr.reset(rd)
+
     steps = manifest.get("steps") or []
     for s in steps:
         fp = s.get("fragment_path") if isinstance(s, dict) else None
@@ -391,17 +563,49 @@ def _write_build_artifacts(rd: Path, manifest: Dict) -> None:
                 f"<section data-zhc-fragment=\"{s.get('asset_key', fp)}\">"
                 f"<h1>{s.get('step_name', 'section')}</h1><p>approved copy injected here</p></section>\n",
                 encoding="utf-8")
-    docs = [{"label": s.get("asset_key", "doc"), "url": f"https://docs.example.com/{s.get('asset_key', 'doc')}"}
-            for s in steps if isinstance(s, dict)]
+
+    # --- P6 documents: real Docs host + a document identifier per Doc ------------
+    docs = []
+    for i, s in enumerate(steps):
+        if not isinstance(s, dict):
+            continue
+        key = s.get("asset_key", f"doc-{i}")
+        doc_id = "1sTub" + _stable_token("doc", key, 22)
+        docs.append({"label": key, "doc_id": doc_id,
+                     "url": f"https://docs.google.com/document/d/{doc_id}/edit"})
+        if with_receipts:
+            stub.emit_one(rd, "P6-DOCS", doc_id, provider="google-docs",
+                          operation="documents.create", covers=[doc_id])
     (rd / "drive_docs.json").write_text(json.dumps({"docs": docs}), encoding="utf-8")
+
+    # --- P8 delivery: real Drive folder link + a send receipt identifier ---------
+    folder_id = "0AStub" + _stable_token("folder", rd.name, 22)
+    send_receipt_id = "<stub-" + _stable_token("send", rd.name, 16) + "@mail.stub>"
     (rd / "delivery.json").write_text(json.dumps({
         "subject": "Your sales page assets are ready",
-        "folder_link": "https://drive.example.com/folder/sales-page-assets"}), encoding="utf-8")
+        "send_receipt_id": send_receipt_id,
+        "folder_link": f"https://drive.google.com/drive/folders/{folder_id}"}), encoding="utf-8")
+    if with_receipts:
+        stub.emit_one(rd, "P8-DELIVER", send_receipt_id, provider="gmail",
+                      operation="messages.send", covers=[send_receipt_id])
+
+    # --- P9 build: real GHL preview hosts + a remote build identifier ------------
+    built = [s for s in steps if isinstance(s, dict) and s.get("fragment_path")]
+    remote_build_id = "fnl_" + _stable_token("build", rd.name, 14)
+    preview_urls = [f"https://app.gohighlevel.com/funnels/preview/{remote_build_id}/{s.get('asset_key')}"
+                    for s in built]
     (rd / "build_receipt.json").write_text(json.dumps({
         "qc_score": 8.7,
-        "preview_urls": [f"https://preview.example.com/{s.get('asset_key')}"
-                         for s in steps if isinstance(s, dict) and s.get("fragment_path")],
+        "remote_build_id": remote_build_id,
+        "preview_urls": preview_urls,
         "built_by": "skill-6-ghl-rest-canvas"}), encoding="utf-8")
+    if with_receipts:
+        stub.emit_one(rd, "P9-HANDOFF", remote_build_id, provider="ghl",
+                      operation="funnels.build", covers=[remote_build_id])
+        stub.emit(rd, "P2-IMAGES",
+                  [im.get("task_id") for im in json.loads(
+                      (rd / "media_ledger.json").read_text(encoding="utf-8")).get("images", [])]
+                  if (rd / "media_ledger.json").is_file() else [])
 
 
 def self_test() -> int:
@@ -455,6 +659,93 @@ def self_test() -> int:
             print("SELF-TEST ok: failing P3 copy gate aborts with NO certificate (fail-closed, no phase skip).")
         else:
             ok = False; print(f"SELF-TEST FAIL: bad run still certified (code={code}).")
+
+        # -------------------------------------------------------------------
+        # A10 / T0-09 + T0-10 — the certification seams.
+        # -------------------------------------------------------------------
+        # (c) The happy-path certificate must RECORD that its delegated phases were
+        #     receipt-backed. A certificate that cannot say so cannot be trusted to
+        #     mean a provider was contacted.
+        cert_obj = json.loads((rd / "PROCESS-CERTIFICATE.json").read_text(encoding="utf-8"))
+        if cert_obj.get("delegation_receipts") == "present":
+            print("SELF-TEST ok: the signed certificate records delegation_receipts=present.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: certificate delegation_receipts is "
+                  f"{cert_obj.get('delegation_receipts')!r}, expected 'present'.")
+
+        # (d) The EXACT T0-10 fixture: caller-authored example-domain document, folder
+        #     and preview URLs with a hardcoded score. Each phase must now refuse it.
+        rd3 = tmp / "run-placeholders"
+        rd3.mkdir()
+        _write_valid_run(rd3, nonce)
+        (rd3 / "drive_docs.json").write_text(json.dumps(
+            {"docs": [{"label": "main", "url": "https://docs.example.com/main"}]}), encoding="utf-8")
+        (rd3 / "delivery.json").write_text(json.dumps(
+            {"subject": "Your sales page assets are ready",
+             "folder_link": "https://drive.example.com/folder/sales-page-assets"}), encoding="utf-8")
+        (rd3 / "build_receipt.json").write_text(json.dumps(
+            {"qc_score": 8.7, "preview_urls": ["https://preview.example.com/main"]}),
+            encoding="utf-8")
+        d_ok, d_detail = _docs_gate(rd3)
+        v_ok, v_detail = _deliver_gate(rd3)
+        b_ok, b_detail = _build_receipt_gate(rd3)
+        if (not d_ok and "AF-SP56-DOCS-PLACEHOLDER" in d_detail
+                and not v_ok and "AF-SP56-DELIVER-PLACEHOLDER" in v_detail
+                and not b_ok and "AF-SP56-BUILD-PLACEHOLDER" in b_detail):
+            print("SELF-TEST ok: caller-authored example-domain doc/folder/preview URLs are "
+                  "refused at P6, P8 and P9 (were all three accepted).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: placeholder URLs still attested — P6={d_ok}/{d_detail} "
+                  f"P8={v_ok}/{v_detail} P9={b_ok}/{b_detail}")
+
+        # (e) P2-IMAGES no longer attests on file existence: an EMPTY ledger the run
+        #     wrote is not a delegated image generation.
+        rd4 = tmp / "run-emptyledger"
+        rd4.mkdir()
+        _write_valid_run(rd4, nonce)
+        (rd4 / "media_ledger.json").write_text(json.dumps({"images": []}), encoding="utf-8")
+        i_ok, i_detail = _images_gate(rd4)
+        if not i_ok and "AF-SP56-IMAGES-MISSING" in i_detail:
+            print("SELF-TEST ok: P2-IMAGES fails closed on an empty media ledger "
+                  "(file existence is no longer proof of delegation).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P2-IMAGES attested an empty ledger: {i_ok} {i_detail}")
+
+        # (f) SELF-AUTHORED RECEIPT — the run stamps its own delivery receipt. The
+        #     subject of a certificate may not author the evidence it is judged on.
+        rd5 = tmp / "run-selfauthored-receipt"
+        rd5.mkdir()
+        _write_valid_run(rd5, nonce, with_receipts=False)
+        import delegation_receipt as _dr  # noqa: E402
+        deliv = json.loads((rd5 / "delivery.json").read_text(encoding="utf-8"))
+        _dr.record(rd5, phase="P8-DELIVER", provider="gmail", operation="messages.send",
+                   provider_response_id="msg-selfauthored", http_status=200,
+                   remote_id=deliv["send_receipt_id"], covers=[deliv["send_receipt_id"]])
+        v_ok, v_detail = _deliver_gate(rd5)
+        if not v_ok and "SELF-AUTHORED" in v_detail:
+            print("SELF-TEST ok: a delivery receipt the ORCHESTRATOR wrote for itself is "
+                  "refused (AF-SP56-DELEG-RECEIPT-SELF-AUTHORED).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: the run certified on a receipt it authored itself: "
+                  f"{v_ok} {v_detail}")
+
+        # (g) A receipt-less run (every pre-A10 run) still attests on artifact content,
+        #     and its certificate says so — no silent claim of provider evidence.
+        rd6 = tmp / "run-noreceipts"
+        rd6.mkdir()
+        _write_valid_run(rd6, nonce, with_receipts=False)
+        code, cert6 = orchestrate(rd6, nonce)
+        if code == EXIT_OK and cert6.get("delegation_receipts") == "absent":
+            print("SELF-TEST ok: a receipt-less run still certifies (writer-before-requirer) "
+                  "and its certificate records delegation_receipts=absent.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: receipt-less run: code={code}, "
+                  f"delegation_receipts={cert6.get('delegation_receipts')!r}.")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

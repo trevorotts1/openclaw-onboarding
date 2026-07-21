@@ -50,6 +50,10 @@ PINNED_FILES=(
   "structure/sales_page_structure.json"
   "structure/labeling-grammar.json"
   "run_sales_page_assets.py"
+  # A10 / T0-09, T0-10 — the delegated-phase receipt contract is enforcement core:
+  # the P-IMAGES/-MEDIA/-DOCS/-DELIVER/-HANDOFF seams call require()/validate_if_present(),
+  # so an unpinned copy could be swapped for a permissive one without tripping the pin.
+  "scripts/delegation_receipt.py"
 )
 
 # Forbidden patterns in a run's working files — a hand-rolled GHL / ImgBB / image / sender bypass.

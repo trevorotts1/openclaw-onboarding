@@ -1,3 +1,44 @@
+## [unreleased]  -  2026-07-21  -  A10: FOUR CERTIFICATION SEAMS THAT MINTED CERTIFICATES ON SELF-AUTHORED EVIDENCE
+
+Finding A10 (findings T0-09 through T0-12): across three skills, the thing being
+judged supplied the proof it was judged by — the same shape as the scorer defect
+fixed in command-center PR #228. Four seams closed. **Version markers deliberately
+left untouched** — the version namespace is contested this session; the serial merge
+train owns the repo version bump and the tag. Per-skill `skill-version.txt` rolled
+(uncontested, owned by this change): 49 → 1.4.0, 51 → 1.1.0, 56 → 1.5.0.
+
+Sequencing: the receipt-WRITING side (`delegation_receipt.py` + `stub_provider_adapter.py`)
+lands with the receipt-REQUIRING side in the SAME change, but the requirers use the
+transitional `validate_if_present()` — receipts are validated strictly whenever present,
+never required yet — so a run that could certify before still certifies, while the seams
+now enforce content and the certificate records whether receipts backed it. No run fails
+on the day this merges.
+
+- **T0-09 — delegated phases proved only that a file the run wrote exists.** Skill 49
+  P3-IMAGES/P4-MEDIA and Skill 56 P2-IMAGES now read ledger CONTENT (real provider task id,
+  GHL media host) and consult a provider-receipt store that refuses evidence stamped by the
+  certificate's own subject. `AF-FUN-DELEG-IMAGES` / `-MEDIA` / `-RECEIPT-SELF-AUTHORED`,
+  `AF-SP56-IMAGES-*` / `-DELEG-RECEIPT-SELF-AUTHORED`.
+- **T0-10 — Skill 56 delivery/document/build phases accepted caller-authored placeholder
+  URLs and a caller-chosen score.** Every doc/folder/preview link must now be an http(s) URL
+  on a non-placeholder host. `AF-SP56-DOCS-PLACEHOLDER` / `-DELIVER-PLACEHOLDER` /
+  `-BUILD-PLACEHOLDER`.
+- **T0-11 — Skill 49 build receipt verified each supplied page but never that all required
+  pages were supplied.** The required page-type set is derived from the locked funnel size;
+  a 7-step funnel with a 3-page receipt now fails. `AF-FUN-BUILD-PAGESET` / `-SIZE` /
+  `-SIZE-MISMATCH`.
+- **T0-12 — the presentation intake-conversation rule was documented fail-closed and wired
+  advisory.** `intake_trace_check.py` (AF-INTAKE-BATCH) is promoted to the required engine
+  preflight `P-SP-INTAKE-TRACE` (`build_deck._chk_sp_intake_trace`, phase 0.16), added to
+  the routing prover's wiring-symbol list and to `51-signature-presentation/verify.sh`, and
+  registered in the presentations PIPELINE-MANIFEST (v24 → v25) + MASTER ruleset with a
+  negative-test probe (batched dump AND absent transcript). A batched eight-question intake
+  that afterwards produced a structurally valid record can no longer reach a certificate; an
+  ABSENT transcript is fail-closed. SKILL.md corrected to stop calling the rule advisory.
+
+Every self-test was falsified against the unfixed code first: all four seams issue a
+certificate on self-authored evidence on origin/main (24135fa) and none do after.
+
 ## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
 
 Two findings from the 2026-07-21 skill review. Different files, same shape: a

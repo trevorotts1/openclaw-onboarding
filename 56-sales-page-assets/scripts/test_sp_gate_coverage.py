@@ -242,6 +242,61 @@ def probe_runner() -> Set[str]:
     return got
 
 
+def probe_delegation() -> Set[str]:
+    """A10 / T0-09, T0-10 — the delegated image + document/delivery/build seams. Drive
+    each to failure:
+      * an EMPTY media ledger the run authored               -> AF-SP56-IMAGES-MISSING
+      * an image record with no provider task id             -> AF-SP56-IMAGES-PROVENANCE
+      * caller-authored example-domain doc/folder/preview URLs
+          -> AF-SP56-DOCS-PLACEHOLDER / -DELIVER-PLACEHOLDER / -BUILD-PLACEHOLDER
+      * a receipt the ORCHESTRATOR stamped for itself -> AF-SP56-DELEG-RECEIPT-SELF-AUTHORED
+    """
+    import delegation_receipt
+    got: Set[str] = set()
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "media_ledger.json").write_text(json.dumps({"images": []}))
+        ok, msg = runner._images_gate(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+        (rd / "media_ledger.json").write_text(json.dumps(
+            {"images": [{"asset_key": "a", "stage": "main", "task_id": "",
+                         "ghl_media_url": "https://storage.msgsndr.com/x.png"}]}))
+        ok, msg = runner._images_gate(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "drive_docs.json").write_text(json.dumps(
+            {"docs": [{"label": "main", "url": "https://docs.example.com/main"}]}))
+        (rd / "delivery.json").write_text(json.dumps(
+            {"subject": "ready", "folder_link": "https://drive.example.com/f"}))
+        (rd / "funnel-manifest.json").write_text(json.dumps({"steps": []}))
+        (rd / "build_receipt.json").write_text(json.dumps(
+            {"qc_score": 8.7, "preview_urls": ["https://preview.example.com/main"]}))
+        for fn in (runner._docs_gate, runner._deliver_gate, runner._build_receipt_gate):
+            ok, msg = fn(rd)
+            if not ok:
+                got |= _codes_from_msg(msg)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        # A receipt stamped recorded_by an orchestrator (a SUBJECT_MODULE) — what a
+        # self-authoring run would emit — must be refused. Written raw so the fixture
+        # carries the forged stamp regardless of who runs this probe.
+        (rd / "delivery.json").write_text(json.dumps(
+            {"subject": "ready", "send_receipt_id": "<m@x>",
+             "folder_link": "https://drive.google.com/drive/folders/abc"}))
+        (rd / delegation_receipt.RECEIPTS_REL).write_text(json.dumps({
+            "phase": "P8-DELIVER", "provider": "gmail", "operation": "messages.send",
+            "provider_response_id": "m-1", "http_status": 200, "remote_id": "<m@x>",
+            "covers": ["<m@x>"], "recorded_by": "run_sales_page_assets",
+            "at": "2026-07-21T00:00:00Z"}) + "\n", encoding="utf-8")
+        ok, msg = runner._deliver_gate(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+    return got
+
+
 PROBES = [
     ("intake", probe_intake),
     ("image_plan", probe_image_plan),
@@ -254,6 +309,7 @@ PROBES = [
     ("bundle", probe_bundle),
     ("cert", probe_cert),
     ("runner", probe_runner),
+    ("delegation", probe_delegation),
 ]
 
 
