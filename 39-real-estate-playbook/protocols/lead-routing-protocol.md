@@ -18,6 +18,23 @@ Each agent entry carries:
 - `active` — whether the agent is currently taking leads
 - `capacity_weight` — relative load for round-robin fairness
 
+## The routing entry point (the only supported path)
+
+Every route goes through **`scripts/route-lead.sh`**:
+
+```bash
+scripts/route-lead.sh --lead <lead.json> --roster <roster.json> [--json]
+```
+
+It runs the protected-attribute detector over the lead **and** the roster
+**before any filtering or scoring**, refuses non-zero (exit 3) on a forbidden
+key, and only then computes the route. Do not route a lead any other way — a
+route computed outside this entry point is a route no gate has examined.
+
+Exit codes: `0` routed (or held for the fallback queue) · `2` bad invocation ·
+`3` REFUSED, a protected-class field was present · `4` roster empty/unfilled,
+the lead is held · `5` the decision could not be appended to the event log.
+
 ## Routing algorithm
 
 1. **Filter to active agents.**

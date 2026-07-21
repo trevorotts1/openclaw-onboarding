@@ -42,7 +42,7 @@ cd ~/.openclaw/skills/40-zhc-public-records-scraper/scripts
 ./03-load-tier1-counties.sh       # validate + index the shipped Tier-1 county configs
 ./04-configure-caps.sh            # record cost/rate/cache caps (env-overridable); honest summary
 # Per-target, before any live run:
-./05-validate-target.sh <slug>    # dry-probe a Tier-1/Tier-3 target (robots + selectors) BEFORE live
+./05-validate-target.sh <slug> --fixture <saved-results-page.html>   # dry-probe a Tier-1/Tier-3 target BEFORE live: robots, a REAL ToS reference, and every selector evaluated against the saved page; writes the validation attestation on a pass
 ./06-build-tier3-config.sh        # (optional) build + validate an operator Tier-3 scraper config
 ./07-update-core-files.sh         # AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers)
 ```
@@ -72,6 +72,8 @@ bash scripts/qc-compliance.sh         # robots respected, ToS referenced per tar
 ```
 
 All three must PASS before the skill is considered installed cleanly (per `../QC-PROTOCOL.md` Rule 5).
+`jq` is REQUIRED for all three: a gate that cannot run its assertions reports that it could not run and exits
+non-zero — it never prints a PASS marker (SK1-30 / T0-54).
 
 ## Where to read next
 

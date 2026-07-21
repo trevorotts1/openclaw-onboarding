@@ -1,5 +1,38 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.0.9] - 2026-07-21 - SK1-30: fair housing gates the ROUTING DECISION, and the audit/install records stop lying
+
+- **T0-52 — a routing entry point (`scripts/route-lead.sh`).** Fair housing was
+  enforced only at the point an event is WRITTEN, which is after the routing
+  decision has already been made: a route computed on a protected attribute was
+  prevented only from being LOGGED with that attribute. `qc-fair-housing.sh` then
+  printed "fair-housing is machine-enforced" on the strength of
+  `grep -qi "never route on"` over a markdown file. There is now ONE entry point
+  that runs the protected-attribute detector over the lead AND the roster before
+  any filtering or scoring, refuses non-zero (exit 3), and only then computes the
+  route. The gate DRIVES it and asserts the refusal, with an empty scoring trace
+  as the proof that the refusal came first.
+- **T0-50 — the keyed-provider miss is exercised.** `qc-no-fabrication.sh` only
+  ever ran with every provider key unset — the easy half of the rule. It now
+  installs a controlled fake transport, sets a credential, and drives lookup,
+  comparables, geocode and the image-metadata path with empty, malformed and
+  explicit no-record responses, asserting an honest gap carrying no record values
+  in every case.
+- **T0-49 — `property-lookup.sh` no longer announces an append that failed.** The
+  F52 event was written by a bare `>>` redirection and the "F52 event appended"
+  line printed unconditionally. It now routes through the checked helper
+  (`lib-re-events.sh :: re_event`, which already returned non-zero on a failed
+  append), prints the line only in the success branch, and exits 3 on failure.
+- **T0-51 — a failed extension copy can no longer emit an installed event.** The
+  copy is fatal on failure, the destination is compared byte-for-byte against the
+  source immediately after, and the durable installed event and the Done banner
+  are both gated on that direct artifact check. The event write status is the
+  install's status.
+
+Tests: `tests/unit/re-routing-fair-housing.test.sh`,
+`tests/unit/records-pipeline-fail-closed.test.sh` (both with mutation proofs);
+CI: `.github/workflows/records-pipeline-fail-closed-guard.yml`.
+
 ## [1.0.6] - 2026-07-05 - Wave-0 hardening: cron payloads, split-brain state, Street View key leak, single core-file writer, GHL wiring
 
 Merge-train `T-39-real-estate`. All changes are scoped to this skill dir (conflict-free). No behavioral change for a correctly-configured box beyond the fixes below; every change is additive or a correctness fix. (Lands as 1.0.6 because the review-skip lib-carrier train independently shipped 1.0.5 to main first; see the 1.0.5 entry below.)

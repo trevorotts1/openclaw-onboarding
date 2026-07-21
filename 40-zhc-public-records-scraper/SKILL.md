@@ -1,6 +1,6 @@
 ---
 name: zhc-public-records-scraper
-version: 1.1.1
+version: 1.2.0
 description: 4-tier public records lookup system — auto-detects and routes queries through cached results, free public APIs, paid data providers, and Playwright scraping as last resort. Enforces cost caps, rate limits, and compliance rules with a public-records-queries.jsonl audit trail.
 ---
 
@@ -36,7 +36,7 @@ Auto-detection routes every query through the tiers in order: **address/ZIP → 
 |---|---|---|
 | **Tier 1** | Curated scrapers for major counties — a config + selectors per county, validated before live use | REAL (config + framework) for the shipped counties below; live retrieval is gated on the operator accepting each target's ToS + robots |
 | **Tier 2** | Platform-adapter FRAMEWORK — one adapter per records-platform VENDOR (e.g. Tyler Technologies), so any county on that vendor reuses the adapter | REAL framework + example adapters; vendor specifics are operator-confirmed |
-| **Tier 3** | Operator-buildable scraper CONFIG — the operator supplies URL + search-form fields + result selectors; the skill VALIDATES the config (a dry probe) before any live run | REAL (config schema + validator) |
+| **Tier 3** | Operator-buildable scraper CONFIG — the operator supplies URL + search-form fields + result selectors; the skill VALIDATES the config before any live run — a dry probe that rejects placeholder selectors and EVALUATES every selector against an operator-supplied saved results page, then writes a content-bound validation attestation | REAL (config schema + validator) |
 | **Tier 4** | HONEST GAP — no online database, or the target blocks automated access | REAL behavior: tell the operator the honest gap; NEVER fabricate a record |
 
 ### Tier 1 counties shipped (curated configs)
@@ -93,7 +93,7 @@ A curated set of 21 major-population counties spanning the largest metros. Each 
 | Control | Default | Env override |
 |---|---|---|
 | Global daily query cap | 200 | `PR_DAILY_CAP` |
-| Per-target rate limit | 1 request / 5s | `PR_PER_TARGET_MIN_INTERVAL_S` |
+| Per-target rate limit | 1 request / 5s, held as an atomic reservation | `PR_PER_TARGET_MIN_INTERVAL_S` |
 | Bulk-op confirm threshold | 25 queries | `PR_BULK_CONFIRM_THRESHOLD` |
 | Estimated cost per query (paid targets) | $0.00 default | `PR_COST_PER_QUERY` |
 | Cache TTL | 30 days | `PR_CACHE_TTL_DAYS` |
@@ -102,7 +102,7 @@ Before any bulk op above the confirm threshold, the skill prints an estimate (qu
 
 ## 30-day cache
 
-Results cache at `<MASTER_FILES_DIR>/public-records-cache/` for `PR_CACHE_TTL_DAYS` (default 30). A cache hit is free + instant and is logged as `cache_hit`. `--force-refresh` bypasses the cache for a single query. The cache key is a hash of (normalized target + query) — no raw address is used as a filename.
+Results cache at `<MASTER_FILES_DIR>/public-records-cache/` for `PR_CACHE_TTL_DAYS` (default 30). A cache hit is free + instant and is logged as `cache_hit`. `--force-refresh` bypasses the cache for a single query. The cache key is a hash of (namespace + normalized target + county FIPS + record type + normalized query) — no raw address is used as a filename. The query is part of the identity: without it, two different addresses in the same county for the same record type collide, and one property's record is served under another's address (see protocols/cache-protocol.md).
 
 ## The `public-records-queries.jsonl` contract (F52)
 

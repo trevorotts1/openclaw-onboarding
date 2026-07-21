@@ -31,9 +31,22 @@ dir).
 
 ## Per-target rate limit
 
-Before fetching a target, the router enforces `PR_PER_TARGET_MIN_INTERVAL_S`
-between requests to that target. If the interval has not elapsed, it waits (logs
-`rate_limit_wait` with the wait seconds) rather than hammering the portal.
+Before fetching a target, the router takes an **atomic reservation** through
+`lib-cost-cap.sh :: rate_wait`: it holds a per-target lock, computes the delay
+from the last ACTUAL request time, sleeps the remainder while still holding the
+reservation, and stamps the timestamp at the **request boundary** — the instant
+before the caller issues the request. It logs `rate_limit_wait` with the seconds
+actually waited. The caller does not sleep again.
+
+**Why it is a reservation (SK1-30 / T2-33).** The old shape computed the delay,
+stamped the timestamp immediately, and left the sleeping to the caller. The
+recorded time was therefore the time the delay was COMPUTED, not the time the
+request was MADE, so the next computation measured from the wrong origin: after
+one waited request the following request measured its gap from the previous
+computation and could fire with zero spacing. The audit log recorded a compliant
+wait for a non-compliant request rate — a terms-of-service exposure on a
+scraping skill. Holding the lock across the sleep also serialises concurrent
+callers instead of letting them race through together.
 
 ## Bulk cost estimate + operator confirmation
 

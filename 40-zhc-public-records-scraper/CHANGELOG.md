@@ -1,5 +1,54 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
+## [1.2.0] - 2026-07-21 - SK1-30: the audit log, the cache key, the rate limiter and the target validator stop reporting what did not happen
+
+- **T0-49 — the audit append is no longer fire-and-forget.** `_emit` was
+  `bash "$EVENTS" pr_event ... >/dev/null 2>&1 || true`: stdout, stderr and the
+  exit code were all discarded, so a failed append was indistinguishable from a
+  successful one — on a log SKILL.md calls "the operator's ground truth". The
+  helper now returns the real status and every call site fails closed on it. The
+  record path STAGES the cache write, requires the append to succeed, and only
+  then publishes; a record that could not be logged is never served or cached.
+- **T1-05 — the cache key carries the query.** The key was
+  `target|fips|record_type`, so two different addresses in the same county for
+  the same record type produced the SAME key: within the cache lifetime a lookup
+  for one property returned the cached, attributed record for a DIFFERENT
+  property, on the fast/free/confident cache-hit path. The writer and the reader
+  agreed because they shared the defect; both now derive the key from one
+  function that includes a canonical normalised query, under a versioned `v2-`
+  namespace so pre-fix entries are unreachable.
+- **T2-33 — the rate limit is an atomic reservation.** The timestamp was stamped
+  when the delay was COMPUTED, not when the request was MADE, so the next
+  computation measured from the wrong origin and back-to-back queries landed
+  inside the configured interval while the audit log recorded a compliant wait.
+  `rate_wait` now takes a per-target lock, sleeps the remainder while holding it,
+  and stamps at the request boundary. The caller no longer sleeps.
+- **T0-53 / T2-34 — the target validator evaluates selectors and attests.** It
+  passed on a COUNT of selector keys, so the shipped template's four
+  `<css-selector-...>` placeholders were certified "safe to use as a live tier
+  target". Placeholder and empty selectors are now failures, every selector is
+  evaluated against an operator-supplied saved results page by
+  `scripts/selector-probe.py` (a selector the probe cannot evaluate is a failure,
+  never a skip), and a pass persists `validated:true` plus a SHA-256 bound to the
+  exact fields validated. Editing the config afterwards invalidates the
+  attestation and the router stops serving the target.
+- **T0-54 — the compliance gate cannot pass without jq.** It printed
+  `RESULT: PASS (skipped — jq unavailable)` and exited 0 having evaluated
+  nothing, on a script INSTALL.md names as required for a clean install. It now
+  reports INCOMPLETE and exits non-zero; the PASS marker is reserved for the
+  branch that actually ran every assertion.
+- **T0-55 — the no-fabrication assertion tests the VALUE.** The predicate was
+  `has("resolved")`, so `{"resolved": true, "county": ...}` for a deliberately
+  unresolvable address satisfied the gate written to catch exactly that. It now
+  asserts `.resolved == false` and that no county/state was invented, is exposed
+  as `qc-no-fabrication.sh assert_honest_gap <json>` so it can be driven
+  independently, and self-proves by requiring a truthy stub to go red.
+
+Tests: `tests/unit/records-pipeline-fail-closed.test.sh` (with mutation proofs on
+the event helper, both cache-key sides separately, the rate-limit stamp order and
+the resolve predicate); CI:
+`.github/workflows/records-pipeline-fail-closed-guard.yml`.
+
 ## [1.1.0] - 2026-07-05 - Enforcement-not-description: wire the compliance + cost gates into query()
 
 Merge-train **T-40-public-records-scraper** (Wave-0). The tiered router documented caps + compliance

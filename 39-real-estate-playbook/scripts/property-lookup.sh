@@ -196,20 +196,39 @@ addr_hash() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' \
     | (shasum -a 256 2>/dev/null || sha256sum) | awk '{print $1}'
 }
+# SK1-30 / T0-49: the event used to be written by a bare `>> "$EVENTS"`
+# redirection and then ANNOUNCED unconditionally — a failed append (unwritable
+# log, full disk, read-only mount) printed "F52 event appended" and the script
+# still exited 0. The checked helper that returns non-zero on a failed append
+# already existed at lib-re-events.sh:re_event and was simply not used here.
+# The lookup now routes through it, prints the appended line ONLY in the success
+# branch, and exits non-zero when the append fails.
 if [ "$DO_LOG" -eq 1 ]; then
   mkdir -p "$MFD" 2>/dev/null || true
-  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   results_json="$(IFS=,; echo "${RESULTS[*]}")"
   a_hash="$(addr_hash "$ADDRESS")"
-  printf '{"ts":"%s","skill":"39-real-estate-playbook","event":"property_lookup","address_hash":"%s","normalized":{"city":%s,"state":%s,"zip":%s},"capabilities":{%s},"available":%d,"honest_gaps":%d}\n' \
-    "$ts" \
+  payload="$(printf '{"address_hash":"%s","normalized":{"city":%s,"state":%s,"zip":%s},"capabilities":{%s},"available":%d,"honest_gaps":%d}' \
     "$a_hash" \
     "$(jq_str "$norm_city")" \
     "$(jq_str "$norm_state")" \
     "$(jq_str "$norm_zip")" \
-    "$results_json" "$avail_count" "$gap_count" >> "$EVENTS"
-  echo ""
-  echo "  F52 event appended: $EVENTS (address recorded as opaque hash; no raw PII)"
+    "$results_json" "$avail_count" "$gap_count")"
+  if command -v re_event >/dev/null 2>&1; then
+    if MASTER_FILES_DIR="$MFD" re_event property_lookup "$payload"; then
+      echo ""
+      echo "  F52 event appended: $EVENTS (address recorded as opaque hash; no raw PII)"
+    else
+      echo "" >&2
+      echo "ERROR: the F52 property_lookup event could NOT be appended to $EVENTS." >&2
+      echo "       The event log is the operator's ground truth for this skill; refusing to" >&2
+      echo "       report a completed lookup that was never recorded. (Use --no-log only when" >&2
+      echo "       you deliberately do not want the lookup audited.)" >&2
+      exit 3
+    fi
+  else
+    echo "ERROR: lib-re-events.sh (re_event) unavailable — cannot append the F52 event." >&2
+    exit 3
+  fi
 fi
 
 if [ "$JSON" -eq 1 ]; then

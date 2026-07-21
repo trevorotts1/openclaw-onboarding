@@ -1,0 +1,143 @@
+name: records pipeline fail-closed guards (Skill 39 + Skill 40)
+
+# WHAT THIS LOCKS. Eight findings in the public-records / real-estate pair, all
+# of the same class — a checker or a step reported a result other than reality:
+#
+#   T0-49  the audit-log append was fire-and-forget in BOTH skills. Skill 40's
+#          `_emit` discarded stdout, stderr and the exit code; Skill 39's
+#          property-lookup.sh redirected straight into the file and printed
+#          "F52 event appended" regardless. SKILL.md calls that log "the
+#          operator's ground truth".
+#   T0-50  the no-fabrication gate only ever ran the KEYLESS branch. The
+#          dangerous branch — a credential PRESENT and the lookup returning
+#          nothing — was never constructed.
+#   T0-51  a failed extension copy still emitted the durable "installed" event
+#          and printed Done.
+#   T0-52  fair housing was enforced at the point an EVENT IS WRITTEN, after the
+#          routing decision had already been made, and the gate certified
+#          "machine-enforced" from a grep over a markdown file.
+#   T0-53  the target validator certified an UNEDITED template as "safe to use
+#          as a live tier target" because it counted selector KEYS.
+#   T0-54  the compliance gate printed "RESULT: PASS" and exited 0 when jq was
+#          missing, having run no assertion at all.
+#   T0-55  the no-fabrication assertion checked that `resolved` EXISTS, not that
+#          it is false — so the exact fabrication it was written to catch
+#          passed it.
+#   T1-05  the cache key omitted the query: one address could be served another
+#          address's attributed record on the cache-hit path.
+#   T2-33  the rate limiter stamped the timestamp before sleeping, so
+#          back-to-back fetches landed inside the configured interval while the
+#          audit log recorded a compliant wait.
+#   T2-34  a passing target validation recorded no attestation at all.
+#
+# ANTI-FALSE-POSITIVE CONTROLS. A "fix" that simply makes everything fail must
+# not pass this workflow. Both suites assert the healthy direction too: a
+# writable audit log still returns the attributed record, a correctly filled
+# config still validates, the compliance gate still exits 0 with jq present, a
+# clean specialty-only lead still routes, and a healthy extension install still
+# exits 0 with the file byte-identical on disk.
+#
+# MUTATION PROOFS are inside the suites: `|| true` restored on the event helper,
+# the query dropped from each cache-key side SEPARATELY, the rate-limit stamp
+# moved back before the sleep, the presence-only `has("resolved")` predicate
+# restored, the fair-housing detector moved below the scoring block, and the
+# keyed-miss branch made to fabricate. Each must be observed changing the
+# result; a suite that stays green under them is hollow.
+#
+# Hermetic: private sandboxes, a stubbed resolver/tier, a fake retrieval hook and
+# a fake transport. No network, no fleet box, no real ~/.openclaw.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "39-real-estate-playbook/**"
+      - "40-zhc-public-records-scraper/**"
+      - "tests/unit/records-pipeline-fail-closed.test.sh"
+      - "tests/unit/re-routing-fair-housing.test.sh"
+      - ".github/workflows/records-pipeline-fail-closed-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "39-real-estate-playbook/**"
+      - "40-zhc-public-records-scraper/**"
+      - "tests/unit/records-pipeline-fail-closed.test.sh"
+      - "tests/unit/re-routing-fair-housing.test.sh"
+      - ".github/workflows/records-pipeline-fail-closed-guard.yml"
+
+jobs:
+  records-pipeline:
+    name: "Skill 39/40: the pipeline fails closed (T0-49/51/53/54/55, T1-05, T2-33/34)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Shell syntax of every changed script
+        shell: bash
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in 39-real-estate-playbook/scripts/*.sh 40-zhc-public-records-scraper/scripts/*.sh \
+                   40-zhc-public-records-scraper/scripts/adapters/*.sh \
+                   tests/unit/records-pipeline-fail-closed.test.sh \
+                   tests/unit/re-routing-fair-housing.test.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f" || { echo "  x syntax: $f"; fail=1; }
+          done
+          python3 -m py_compile 40-zhc-public-records-scraper/scripts/selector-probe.py
+          [ $fail -eq 0 ] && echo "OK: every shell script parses and the selector probe compiles"
+          exit $fail
+
+      - name: The selector probe evaluates, and reports what it cannot evaluate
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat > /tmp/probe-doc.html <<'HTML'
+          <html><body><table id="r"><tbody>
+          <tr class="row" data-id="1"><td class="owner">REDACTED</td></tr>
+          <tr class="row" data-id="2"><td class="owner">REDACTED</td></tr>
+          </tbody></table></body></html>
+          HTML
+          P=40-zhc-public-records-scraper/scripts/selector-probe.py
+          python3 "$P" /tmp/probe-doc.html "tr.row" "td.owner" "#r tbody > tr" \
+            || { echo "FAIL: a matching selector was reported as a miss"; exit 1; }
+          if python3 "$P" /tmp/probe-doc.html "td.no-such-class" >/dev/null; then
+            echo "FAIL: a non-matching selector was reported as a match"; exit 1
+          fi
+          if python3 "$P" /tmp/probe-doc.html "<css-selector-for-each-result-row>" >/dev/null; then
+            echo "FAIL: the unedited template placeholder was accepted as a selector"; exit 1
+          fi
+          if python3 "$P" /tmp/probe-doc.html "tr:first-child" >/dev/null; then
+            echo "FAIL: an unevaluable selector silently passed"; exit 1
+          fi
+          echo "OK: the probe matches what matches, and REPORTS what it cannot evaluate"
+
+      - name: Records pipeline fail-closed suite (with mutation proofs)
+        shell: bash
+        run: bash tests/unit/records-pipeline-fail-closed.test.sh
+
+      - name: Fair-housing routing + keyed-provider-miss suite (with mutation proofs)
+        shell: bash
+        run: bash tests/unit/re-routing-fair-housing.test.sh
+
+      - name: The three shipped Skill 40 gates still pass on a healthy tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash 40-zhc-public-records-scraper/scripts/qc-compliance.sh
+          bash 40-zhc-public-records-scraper/scripts/qc-no-fabrication.sh
+          bash 40-zhc-public-records-scraper/scripts/qc-no-personal-data.sh
+
+      - name: The three shipped Skill 39 gates still pass on a healthy tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash 39-real-estate-playbook/scripts/qc-fair-housing.sh
+          bash 39-real-estate-playbook/scripts/qc-no-fabrication.sh
+          bash 39-real-estate-playbook/scripts/qc-no-personal-data.sh

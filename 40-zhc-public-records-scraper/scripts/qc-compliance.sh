@@ -20,9 +20,19 @@ FAIL=0
 
 echo "=== qc-compliance (Skill 40): behavioral robots + ToS + attribution ==="
 
+# SK1-30 / T0-54: jq is REQUIRED. This branch used to print
+#   RESULT: PASS (skipped — jq unavailable)
+# and exit 0 having evaluated NOTHING — on any box without jq, the compliance
+# gate for a public-records scraper emitted the literal string PASS. INSTALL.md
+# names this script as one of three that must PASS before the skill counts as
+# installed, so a missing utility certified the whole compliance posture.
+# A gate that cannot run reports that it cannot run; it never counts as a pass.
+# (The sibling gate in Skill 39 already handled this correctly by exiting 1.)
 if ! command -v jq >/dev/null 2>&1; then
-  echo "  [WARN] jq not present — behavioral assertions need jq; skipping (CI installs jq)."
-  echo "RESULT: PASS (skipped — jq unavailable)"; exit 0
+  echo "  [FAIL] jq not present — every assertion in this gate needs jq, and lib-records.sh itself hard-requires jq."
+  echo ""
+  echo "RESULT: FAIL (INCOMPLETE — jq unavailable, no compliance assertion could be evaluated). Install jq and re-run."
+  exit 1
 fi
 [ -f "$LIB" ] || { echo "  [FAIL] lib-records.sh not found at $LIB"; exit 1; }
 
@@ -91,21 +101,59 @@ bash "$LIB" ack_tos mock-target "https://county.example/terms" >/dev/null 2>&1 \
   || fail "ToS ack persist/detect flow failed"
 
 # ── 4. attribution required — refuse a record missing source/retrieved_at ─────
-if bash "$LIB" cache_put mock-target 99999 ownership '{"owner":"REDACTED"}' >/dev/null 2>&1; then
+if bash "$LIB" cache_put mock-target 99999 ownership '{"owner":"REDACTED"}' '123 mock st' >/dev/null 2>&1; then
   fail "cache_put ACCEPTED a record with no source/retrieved_at (unattributed)"
 else
   pass "cache_put REFUSES a record missing source + retrieved_at"
 fi
 if bash "$LIB" cache_put mock-target 99999 ownership \
-     '{"owner":"REDACTED","source":"county recorder portal","retrieved_at":"2026-07-05T00:00:00Z"}' >/dev/null 2>&1; then
+     '{"owner":"REDACTED","source":"county recorder portal","retrieved_at":"2026-07-05T00:00:00Z"}' '123 mock st' >/dev/null 2>&1; then
   pass "cache_put accepts a properly attributed record"
 else
   fail "cache_put rejected a properly attributed record"
 fi
 
+# ── 5. cache identity carries the QUERY (SK1-30 / T1-05) ─────────────────────
+# Two different addresses in the SAME county for the SAME record type must not
+# share a cache entry. Before the fix the key was target|fips|rtype only, so the
+# second address was served the first address's attributed record as a cache hit.
+K_A="$(bash "$LIB" cache_key mock-target 99999 ownership '123 Main St, Springfield IL')"
+K_B="$(bash "$LIB" cache_key mock-target 99999 ownership '987 Other Ave, Springfield IL')"
+K_A2="$(bash "$LIB" cache_key mock-target 99999 ownership '123  MAIN ST,  Springfield  IL')"
+if [ -n "$K_A" ] && [ "$K_A" != "$K_B" ]; then
+  pass "cache key differs for two different queries in the same county/record type"
+else
+  fail "cache key COLLIDES across two different queries (one property's record would be served under another's address)"
+fi
+if [ -n "$K_A" ] && [ "$K_A" = "$K_A2" ]; then
+  pass "cache key is stable across case/whitespace variants of the SAME query"
+else
+  fail "cache key is unstable for the same query (every lookup would miss)"
+fi
+# A record cached under one query must not be reachable under another.
+if bash "$LIB" cache_put mock-target 99999 ownership \
+     '{"owner":"REDACTED","source":"county recorder portal","retrieved_at":"2026-07-05T00:00:00Z"}' \
+     '123 Main St, Springfield IL' >/dev/null 2>&1; then
+  if [ -f "$SANDBOX/public-records-cache/v2-$K_A.json" ] && [ ! -f "$SANDBOX/public-records-cache/v2-$K_B.json" ]; then
+    pass "the cached record is reachable ONLY under the query it was written for"
+  else
+    fail "cache entry placement does not follow the query-bound key"
+  fi
+else
+  fail "cache_put refused an attributed record with a query"
+fi
+# The write refuses to run at all without a query — an unqualified entry can
+# never be created by a caller that forgot the new argument.
+if bash "$LIB" cache_put mock-target 99999 ownership \
+     '{"owner":"REDACTED","source":"county recorder portal","retrieved_at":"2026-07-05T00:00:00Z"}' >/dev/null 2>&1; then
+  fail "cache_put ACCEPTED a write with no query (an unqualified, collidable entry)"
+else
+  pass "cache_put REFUSES a write with no query (query is part of the cache identity)"
+fi
+
 echo ""
 if [ "$FAIL" -eq 0 ]; then
-  echo "RESULT: PASS — compliance posture ENFORCED (robots honored, real ToS + persisted ack required, attribution required)."
+  echo "RESULT: PASS — compliance posture ENFORCED (robots honored, real ToS + persisted ack required, attribution required, cache identity query-bound)."
   exit 0
 else
   echo "RESULT: FAIL — a compliance violation was detected above."

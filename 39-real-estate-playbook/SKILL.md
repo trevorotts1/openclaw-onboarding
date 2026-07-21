@@ -44,7 +44,7 @@ This skill is shipped as an MVP. Every component is marked below as **REAL** (wo
 | Seller qualification questions | REAL | `templates/seller-qualification.md` — motivation / timeline / price / occupancy |
 | Showing scheduler (lockbox / MLS rules) | REAL (scaffold) | `protocols/showing-scheduler-protocol.md` + `06-scaffold-showing-scheduler.sh` |
 | State disclosure compliance | REAL (data set) | `references/state-disclosure-matrix.md` — 50-state + DC pointer matrix |
-| Lead routing by agent specialty | REAL | `protocols/lead-routing-protocol.md` + `templates/agent-specialty-roster.template.json` |
+| Lead routing by agent specialty | REAL (coded entry point) | `scripts/route-lead.sh` + `protocols/lead-routing-protocol.md` + `templates/agent-specialty-roster.template.json` |
 | Open-house automation | REAL (scaffold) | `protocols/open-house-automation-protocol.md` |
 | Pre-foreclosure outreach playbook | REAL (scaffold) | `protocols/pre-foreclosure-outreach-protocol.md` — pairs with Skill 40 |
 | Sales-Brain RE extension (additive) | REAL (additive) | `references/sales-brain-real-estate-extension.md` — drop-in, does NOT edit Skill 38 |
@@ -123,13 +123,14 @@ Skill 39 emits one append-only JSONL event log at `<MASTER_FILES_DIR>/real-estat
 | `scripts/06-scaffold-showing-scheduler.sh` | Scaffolds the showing-scheduler state + lockbox/MLS-rules config |
 | `scripts/07-register-crons.sh` | Registers open-house follow-up + post-close anniversary scan crons |
 | `scripts/08-update-core-files.sh` | Appends the AGENTS.md / MEMORY.md / TOOLS.md pointers (idempotent markers) |
+| `scripts/route-lead.sh` | RUNTIME worker and THE lead-routing entry point: runs the protected-attribute detector over the lead AND the roster **before any filtering or scoring**, refuses non-zero (exit 3) on a forbidden key, then computes the route by specialty/availability/area and appends the `lead_route` event |
 | `scripts/property-lookup.sh` | RUNTIME worker (not an install step): resolves provider status, prints AVAILABLE vs HONEST GAP per capability, appends one F52 `property_lookup` event |
 | `scripts/lib-property.sh` | Provider-abstraction library: geocode, lookup, comps, Street View (honest-gap aware; Street View key kept out of the emitted output) |
 | `scripts/lib-re-events.sh` | Append-one-line helper for `real-estate-events.jsonl` (resolves `MASTER_FILES_DIR` from persisted state; loud-fails, no Downloads fallback) |
 | `scripts/lib-ghl-sync.sh` | Fail-soft GHL (via caf) + Command Center write layer: `ghl_tag` / `ghl_opportunity` / `ghl_book` / `cc_move`; HONEST no-op without credentials |
 | `scripts/qc-no-personal-data.sh` | UNIVERSAL-skill identifier gate (zero client/personal data) + PII-free F52 emitter check |
 | `scripts/qc-no-fabrication.sh` | Asserts no script returns invented property data on a provider miss |
-| `scripts/qc-fair-housing.sh` | CODED fail-closed fair-housing gate — refuses any event/payload carrying a protected-class field (also enforced at the `re_event` chokepoint) |
+| `scripts/qc-fair-housing.sh` | CODED fail-closed fair-housing gate — DRIVES `scripts/route-lead.sh` with a protected-attribute payload and requires a refusal before any scoring; the same denylist also guards the `re_event` write chokepoint |
 | `protocols/showing-scheduler-protocol.md` | Lockbox / MLS-rules showing scheduler runtime |
 | `protocols/lead-routing-protocol.md` | Route leads by agent specialty + fair-housing guardrails |
 | `protocols/open-house-automation-protocol.md` | Open-house registration → follow-up automation |

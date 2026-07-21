@@ -67,7 +67,35 @@ _tier3_dir() {
   printf '%s/public-records-tier3' "$mfd"
 }
 
-_emit() { bash "$EVENTS" pr_event "$1" "$2" >/dev/null 2>&1 || true; }
+# _emit <event-type> <json-payload> — append ONE audit line and RETURN ITS REAL
+# STATUS. SK1-30 (T0-49): this used to be
+#   bash "$EVENTS" pr_event "$1" "$2" >/dev/null 2>&1 || true
+# which discarded stdout, stderr AND the exit code, so a failed append was
+# indistinguishable from a successful one. SKILL.md calls this log "the
+# operator's ground truth" and every downstream compliance/cost claim is
+# computed from it, so a lost line is a silent hole in the audit trail.
+# The helper now propagates the failure; every call site fails closed on it.
+_emit() {
+  local _out _rc
+  _out="$(bash "$EVENTS" pr_event "$1" "$2" 2>&1)"; _rc=$?
+  if [ "$_rc" -ne 0 ]; then
+    printf '[skill 40][records] AUDIT APPEND FAILED (event=%s, rc=%s): %s\n' "$1" "$_rc" "$_out" >&2
+    return 1
+  fi
+  return 0
+}
+
+# _audit_fail <query_ref> <target_ref> <event-type> — the ONE outcome a failed
+# audit append is allowed to produce: a blocked, available:false result AND a
+# non-zero return. Never a record, never a cache hit, never exit 0.
+_audit_fail() {
+  local qref="${1:-}" target="${2:-unknown}" ev="${3:-}"
+  printf '[skill 40][records] REFUSING to return a result: the audit event %s could not be appended (the events log is the operator ground truth).\n' "$ev" >&2
+  jq -cn --arg q "$qref" --arg tr "$target" --arg ev "$ev" \
+    '{query_ref:$q, target_ref:$tr, blocked:true, reason:"audit_log_unwritable", event:$ev, available:false}' 2>/dev/null \
+    || printf '{"query_ref":"%s","target_ref":"%s","blocked":true,"reason":"audit_log_unwritable","event":"%s","available":false}\n' "$qref" "$target" "$ev"
+  return 1
+}
 
 # _cc_reflect <status> — SK1-26: opt-in Command Center card move. No-op unless
 # the operator wired a card id (SKILL40_CC_TASK_ID) and lib-command-center.sh is
@@ -175,14 +203,50 @@ robots_disallowed() {
   return 1
 }
 
-# cache_put <target_ref> <county_fips> <record_type> <record_json>
-#   ATTRIBUTION-GATED cache WRITE. Refuses (exit 1, writes nothing) unless the
-#   record carries BOTH source AND retrieved_at — an unattributed result is not a
-#   record. This is the ONLY writer of the cache; a cache_hit is only reachable
-#   because a prior attributed retrieval called cache_put here.
-cache_put() {
-  local target="${1:-}" fips="${2:-}" rtype="${3:-ownership}" rec="${4:-}"
-  [ -n "$target" ] && [ -n "$rec" ] || { echo "cache_put: missing target/record" >&2; return 2; }
+# ---------- cache identity (SK1-30 / T1-05) ----------
+# CACHE_NAMESPACE — bump this whenever the key composition changes. It is part of
+# BOTH the hash input and the on-disk filename, so entries written under an older
+# composition are unreachable under the new one (they can never be served as a
+# hit for a key they were not computed for). v1 = target|fips|rtype (the shape
+# that omitted the query and served one property's record under another's
+# address); v2 = target|fips|rtype|canonical(query).
+CACHE_NAMESPACE="v2"
+
+# _canonical_query <raw query> — the normalised query identity that enters the
+# cache key. Case-folded, punctuation-separated, whitespace-collapsed and
+# trimmed, so "123 Main St, Springfield IL" and "123 MAIN ST,  Springfield  IL"
+# are one identity while two DIFFERENT addresses are never one identity.
+_canonical_query() {
+  printf '%s' "${1:-}" \
+    | tr '[:upper:]' '[:lower:]' \
+    | tr ',;' '  ' \
+    | tr -s '[:space:]' ' ' \
+    | sed -e 's/^ *//' -e 's/ *$//'
+}
+
+# _cache_key <target> <fips> <rtype> <query> — the ONE key composition. Both the
+# writer (cache_stage) and the reader (query) call THIS function; a hash built
+# inline on either side is how the writer and the reader agreed with each other
+# while sharing the same defect (T1-05).
+_cache_key() {
+  printf '%s|%s|%s|%s|%s' "$CACHE_NAMESPACE" "${1:-}" "${2:-}" "${3:-ownership}" "$(_canonical_query "${4:-}")" \
+    | (shasum 2>/dev/null || sha1sum) | awk '{print $1}'
+}
+
+# _cache_file <cache_dir> <key> — namespaced filename. The namespace prefix means
+# a pre-fix entry (bare "<sha>.json") is not reachable under the new scheme even
+# if a hash ever collided.
+_cache_file() { printf '%s/%s-%s.json' "${1:-}" "$CACHE_NAMESPACE" "${2:-}"; }
+
+# cache_stage <target_ref> <county_fips> <record_type> <record_json> <query>
+#   ATTRIBUTION-GATED cache write, STAGED. Validates attribution, writes the
+#   record to a staging file beside the cache entry and echoes BOTH paths
+#   ("<staged>\t<final>"). Nothing is visible to a reader until cache_publish
+#   promotes it — so the audit append can be required to succeed FIRST (T0-49).
+cache_stage() {
+  local target="${1:-}" fips="${2:-}" rtype="${3:-ownership}" rec="${4:-}" q="${5-__UNSET__}"
+  [ -n "$target" ] && [ -n "$rec" ] || { echo "cache_stage: missing target/record" >&2; return 2; }
+  [ "$q" = "__UNSET__" ] && { echo "cache_stage: missing query — the query is part of the cache identity (T1-05); refusing to write an unqualified entry" >&2; return 2; }
   command -v jq >/dev/null 2>&1 || { echo "cache_put: jq required" >&2; return 2; }
   printf '%s' "$rec" | jq -e 'type=="object"' >/dev/null 2>&1 || { echo "cache_put: record is not a JSON object" >&2; return 2; }
   # ATTRIBUTION CONTRACT (SK1-25) — refuse a record whose attribution is missing
@@ -200,13 +264,38 @@ cache_put() {
     echo "cache_put: REFUSED — record attribution invalid (source must be a real, non-placeholder origin and retrieved_at an ISO-8601 timestamp; an unattributed/implausible result is not a record)" >&2
     return 1
   fi
-  local cdir key cfile
+  local cdir key cfile staged
   cdir="$(_cache_dir)" || return 1
   mkdir -p "$cdir" 2>/dev/null || true
-  key="$(printf '%s|%s|%s' "$target" "$fips" "$rtype" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-  cfile="$cdir/$key.json"
-  printf '%s' "$rec" | jq -c '.' > "$cfile" || return 1
-  echo "$cfile"
+  key="$(_cache_key "$target" "$fips" "$rtype" "$q")"   # writer side of the shared key
+  cfile="$(_cache_file "$cdir" "$key")"
+  staged="$cfile.staging.$$"
+  printf '%s' "$rec" | jq -c '.' > "$staged" || { rm -f "$staged" 2>/dev/null || true; return 1; }
+  printf '%s\t%s\n' "$staged" "$cfile"
+}
+
+# cache_publish <staged_path> <final_path> — promote a staged entry. Atomic
+# rename inside the cache dir; a reader never sees a half-written record.
+cache_publish() {
+  local staged="${1:-}" final="${2:-}"
+  [ -n "$staged" ] && [ -n "$final" ] || { echo "cache_publish: missing paths" >&2; return 2; }
+  [ -f "$staged" ] || { echo "cache_publish: staged entry missing: $staged" >&2; return 1; }
+  mv -f "$staged" "$final" || return 1
+  echo "$final"
+}
+
+# cache_discard <staged_path> — drop a staged entry that must never be served.
+cache_discard() { [ -n "${1:-}" ] && rm -f "$1" 2>/dev/null; return 0; }
+
+# cache_put <target_ref> <county_fips> <record_type> <record_json> <query>
+#   Stage + publish in one call (the direct/CLI form). The routed query path uses
+#   cache_stage / cache_publish so the audit append can gate the publish.
+cache_put() {
+  local out staged final
+  out="$(cache_stage "$@")" || return $?
+  staged="$(printf '%s' "$out" | cut -f1)"
+  final="$(printf '%s' "$out" | cut -f2)"
+  cache_publish "$staged" "$final" || { cache_discard "$staged"; return 1; }
 }
 
 # ---------- resolve address/ZIP -> county_fips + state (no fabrication) ----------
@@ -242,13 +331,42 @@ resolve() {
 # AND a valid (non-placeholder http/https) tos_url. A config with validated:false
 # or placeholder URLs is NOT tier-servable — it falls through, forcing the
 # operator through 05-validate-target.sh before any live use.
+
+# config_fields_hash <config.json> — SHA-256 over the EXACT fields a validation
+# attests to (SK1-30 / T2-34). One implementation, used by 05-validate-target.sh
+# when it writes the attestation and by _config_servable when it checks one, so
+# the writer and the reader cannot drift apart. jq -S makes the projection
+# key-order-independent, so a re-serialised config with identical content hashes
+# identically.
+config_fields_hash() {
+  local f="${1:-}"
+  [ -f "$f" ] || return 1
+  command -v jq >/dev/null 2>&1 || return 1
+  jq -S -c '{slug, county_fips, state, portal_url, base_url, search_path, tos_url, selectors, search_form_fields, record_types}' "$f" 2>/dev/null \
+    | (shasum -a 256 2>/dev/null || sha256sum) | awk '{print $1}'
+}
+
 _config_servable() {
   local f="${1:-}"
   [ -f "$f" ] || return 1
   command -v jq >/dev/null 2>&1 || return 1
-  local validated portal tos
+  local validated portal tos att_hash now_hash
   validated="$(jq -r '.validated // false' "$f" 2>/dev/null || echo false)"
   [ "$validated" = "true" ] || return 1
+  # SK1-30 / T2-34: when 05-validate-target.sh wrote an attestation, it is
+  # CONTENT-BOUND — editing the portal, the ToS reference or a selector after the
+  # validation invalidates it, and the config stops being servable until it is
+  # re-validated. A config with NO attestation block is a pre-attestation
+  # (legacy) config and is accepted as before, so this cannot newly fail a box
+  # that was already serving; the tamper path is what closes.
+  att_hash="$(jq -r '.validation.fields_sha256 // empty' "$f" 2>/dev/null || true)"
+  if [ -n "$att_hash" ]; then
+    now_hash="$(config_fields_hash "$f")" || return 1
+    if [ "$att_hash" != "$now_hash" ]; then
+      echo "[skill 40][records] config $f changed since it was validated (attestation hash mismatch) — NOT servable; re-run scripts/05-validate-target.sh" >&2
+      return 1
+    fi
+  fi
   portal="$(jq -r '.portal_url // .base_url // empty' "$f" 2>/dev/null || true)"
   _is_placeholder "$portal" && return 1
   tos="$(jq -r '.tos_url // empty' "$f" 2>/dev/null || true)"
@@ -394,7 +512,8 @@ query() {
   local r fips state county st_abbr
   r="$(resolve "$q")"
   if [ "$(printf '%s' "$r" | jq -r '.resolved' 2>/dev/null)" != "true" ]; then
-    _emit honest_gap "$(printf '{"query_ref":"%s","target_ref":"unknown","reason":"county_unresolved"}' "$qref")"
+    _emit honest_gap "$(printf '{"query_ref":"%s","target_ref":"unknown","reason":"county_unresolved"}' "$qref")" \
+      || { _audit_fail "$qref" unknown honest_gap; return 1; }
     echo "$r" | jq -c '. + {tier:"tier4_honest_gap"}' 2>/dev/null || echo '{"tier":"tier4_honest_gap","reason":"county_unresolved"}'
     return 0
   fi
@@ -409,10 +528,12 @@ query() {
   tname="$(printf '%s' "$t" | jq -r '.tier')"
   target="$(printf '%s' "$t" | jq -r '.target_ref // "unknown"')"
   _emit tier_decision "$(jq -cn --arg q "$qref" --arg tr "$target" --arg tier "$tname" --arg f "$fips" --arg s "$state" --arg reason "$(printf '%s' "$t" | jq -r '.reason')" \
-    '{query_ref:$q, target_ref:$tr, tier:$tier, county_fips:$f, state:$s, reason:$reason}')"
+    '{query_ref:$q, target_ref:$tr, tier:$tier, county_fips:$f, state:$s, reason:$reason}')" \
+    || { _audit_fail "$qref" "$target" tier_decision; return 1; }
 
   if [ "$tname" = "tier4_honest_gap" ]; then
-    _emit honest_gap "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"no_online_db"}')"
+    _emit honest_gap "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"no_online_db"}')" \
+      || { _audit_fail "$qref" "$target" honest_gap; return 1; }
     # HONEST GAP — never fabricate.
     echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, available:false}'
     return 0
@@ -426,13 +547,16 @@ query() {
   #    written by cache_put (attribution-gated), so a hit is already attributed.
   local cdir key cfile
   cdir="$(_cache_dir)" || {
-    _emit honest_gap "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"master_files_unresolved"}')"
+    _emit honest_gap "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"master_files_unresolved"}')" || true
     echo '{"blocked":true,"reason":"master_files_unresolved","tier":"'"$tname"'"}'
-    return 0
+    return 1
   }
   mkdir -p "$cdir" 2>/dev/null || true
-  key="$(printf '%s|%s|%s' "$target" "$fips" "$rtype" | (shasum 2>/dev/null || sha1sum) | awk '{print $1}')"
-  cfile="$cdir/$key.json"
+  # SK1-30 / T1-05: the query is part of the cache identity. The lookup and the
+  # writer BOTH derive it from _cache_key — they can no longer agree on a key
+  # that ignores which property was asked for.
+  key="$(_cache_key "$target" "$fips" "$rtype" "$q")"   # reader side of the shared key
+  cfile="$(_cache_file "$cdir" "$key")"
   if [ "$force" != "true" ] && [ -f "$cfile" ]; then
     local age_days
     if [ "$(uname -s)" = "Darwin" ]; then
@@ -442,13 +566,17 @@ query() {
     fi
     if [ "$age_days" -lt "$PR_CACHE_TTL_DAYS" ]; then
       _emit cache_hit "$(jq -cn --arg q "$qref" --arg tr "$target" --arg rt "$rtype" --argjson age "$age_days" \
-        '{query_ref:$q, target_ref:$tr, record_type:$rt, age_days:$age}')"
+        '{query_ref:$q, target_ref:$tr, record_type:$rt, age_days:$age}')" \
+        || { _audit_fail "$qref" "$target" cache_hit; return 1; }
       jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:true}' "$cfile" 2>/dev/null \
         || cat "$cfile"
       return 0
     fi
   fi
-  [ "$force" = "true" ] && _emit force_refresh "$(jq -cn --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt}')"
+  if [ "$force" = "true" ]; then
+    _emit force_refresh "$(jq -cn --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt}')" \
+      || { _audit_fail "$qref" "$target" force_refresh; return 1; }
+  fi
 
   # 4) COMPLIANCE GATE (binding, runs in query() itself before any live fetch).
   #    For a config-backed target (Tier-1/Tier-3) we know the portal + tos_url:
@@ -464,12 +592,14 @@ query() {
     spath="$(jq -r '.search_path // "/"' "$cfg" 2>/dev/null || echo /)"
     tos="$(jq -r '.tos_url // empty' "$cfg" 2>/dev/null || true)"
     if ! robots_ok "$base" "$spath"; then
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"robots_disallow"}')"
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"robots_disallow"}')" \
+        || { _audit_fail "$qref" "$target" compliance_block; return 1; }
       echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"robots_disallow", available:false}'
       return 0
     fi
     if ! { tos_url_valid "$tos" && tos_ack_present "$target"; }; then
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"tos_unacknowledged"}')"
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"tos_unacknowledged"}')" \
+        || { _audit_fail "$qref" "$target" compliance_block; return 1; }
       echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"tos_unacknowledged", available:false}'
       return 0
     fi
@@ -477,7 +607,8 @@ query() {
 
   # 5) cost cap (per-day) — refuse over the cap (never silent overrun)
   if ! bash "$COSTCAP" under_daily_cap; then
-    _emit cost_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"daily_cap"}')"
+    _emit cost_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"daily_cap"}')" \
+      || { _audit_fail "$qref" "$target" cost_block; return 1; }
     echo '{"blocked":true,"reason":"daily_cap","tier":"'"$tname"'"}'
     return 0
   fi
@@ -488,14 +619,29 @@ query() {
   #    today's counter so the daily cap can actually bite.
   local est waited
   est="$(bash "$COSTCAP" estimate 1 2>/dev/null || true)"
-  [ -n "$est" ] && _emit cost_estimate "$(printf '%s' "$est" | jq -c --arg q "$qref" --arg tr "$target" '. + {query_ref:$q, target_ref:$tr, confirmed:true}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","confirmed":true}' "$qref" "$target")"
-  waited="$(bash "$COSTCAP" rate_wait "$target" 2>/dev/null || echo 0)"
+  if [ -n "$est" ]; then
+    _emit cost_estimate "$(printf '%s' "$est" | jq -c --arg q "$qref" --arg tr "$target" '. + {query_ref:$q, target_ref:$tr, confirmed:true}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","confirmed":true}' "$qref" "$target")" \
+      || { _audit_fail "$qref" "$target" cost_estimate; return 1; }
+  fi
+  # SK1-30 / T2-33: rate_wait now performs the reservation ITSELF — it takes a
+  # per-target lock, sleeps the remaining interval while holding it, and stamps
+  # the timestamp at the REQUEST BOUNDARY (the moment it returns, immediately
+  # before the request below). The caller must NOT sleep again: the old shape
+  # (compute here, stamp there, sleep in the caller) recorded the time the delay
+  # was COMPUTED, so the next computation measured from the wrong origin and
+  # back-to-back queries landed inside the configured interval.
+  waited="$(bash "$COSTCAP" rate_wait "$target")" || {
+    _emit cost_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"rate_reservation_failed"}')" || true
+    echo '{"blocked":true,"reason":"rate_reservation_failed","tier":"'"$tname"'"}'
+    return 1
+  }
   if [ "${waited:-0}" -gt 0 ] 2>/dev/null; then
-    _emit rate_limit_wait "$(jq -cn --arg q "$qref" --arg tr "$target" --argjson w "$waited" '{query_ref:$q, target_ref:$tr, waited_seconds:$w}')"
-    sleep "$waited" 2>/dev/null || true
+    _emit rate_limit_wait "$(jq -cn --arg q "$qref" --arg tr "$target" --argjson w "$waited" '{query_ref:$q, target_ref:$tr, waited_seconds:$w}')" \
+      || { _audit_fail "$qref" "$target" rate_limit_wait; return 1; }
   fi
   bash "$COSTCAP" record_query || {
-    _emit cost_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"cap_state_unresolved"}')"
+    _emit cost_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"cap_state_unresolved"}')" \
+      || { _audit_fail "$qref" "$target" cost_block; return 1; }
     echo '{"blocked":true,"reason":"cap_state_unresolved","tier":"'"$tname"'"}'
     return 0
   }
@@ -517,20 +663,38 @@ query() {
   if [ -n "${SKILL40_RETRIEVE_CMD:-}" ]; then
     local rec put
     if [ "${SKILL40_ALLOW_RETRIEVE_CMD:-0}" != "1" ]; then
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_enabled"}')"
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_enabled"}')" \
+        || { _audit_fail "$qref" "$target" compliance_block; return 1; }
     elif ! command -v "$SKILL40_RETRIEVE_CMD" >/dev/null 2>&1; then
-      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_executable"}')"
+      _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"retrieve_cmd_not_executable"}')" \
+        || { _audit_fail "$qref" "$target" compliance_block; return 1; }
     else
       rec="$(SKILL40_QUERY="$q" SKILL40_TARGET="$target" SKILL40_RTYPE="$rtype" "$SKILL40_RETRIEVE_CMD" 2>/dev/null || true)"
       if [ -n "$rec" ]; then
-        if put="$(cache_put "$target" "$fips" "$rtype" "$rec" 2>/dev/null)"; then
-          _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"
-          jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$put" 2>/dev/null || cat "$put"
+        # SK1-30 / T0-49: STAGE the cache write, require the audit append to
+        # succeed, and only then PUBLISH. A record that could not be logged is
+        # never served and never cached.
+        local staged final
+        if put="$(cache_stage "$target" "$fips" "$rtype" "$rec" "$q" 2>/dev/null)"; then
+          staged="$(printf '%s' "$put" | cut -f1)"
+          final="$(printf '%s' "$put" | cut -f2)"
+          if ! _emit query "$(printf '%s' "$rec" | jq -c --arg q "$qref" --arg tr "$target" --arg rt "$rtype" '{query_ref:$q, target_ref:$tr, record_type:$rt, result_count:1, source:(.source), retrieved_at:(.retrieved_at)}' 2>/dev/null || printf '{"query_ref":"%s","target_ref":"%s","record_type":"%s","result_count":1}' "$qref" "$target" "$rtype")"; then
+            cache_discard "$staged"
+            _audit_fail "$qref" "$target" query
+            return 1
+          fi
+          cache_publish "$staged" "$final" >/dev/null || {
+            cache_discard "$staged"
+            echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"cache_publish_failed", available:false}'
+            return 1
+          }
+          jq -c --arg q "$qref" '. + {query_ref:$q, cache_hit:false, available:true}' "$final" 2>/dev/null || cat "$final"
           _cc_reflect review   # SK1-26: attributed record obtained → move card to review
           return 0
         fi
         # Hook returned an UNATTRIBUTED record → refuse it (never cache/fabricate).
-        _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')"
+        _emit compliance_block "$(jq -cn --arg q "$qref" --arg tr "$target" '{query_ref:$q, target_ref:$tr, reason:"unattributed"}')" \
+          || { _audit_fail "$qref" "$target" compliance_block; return 1; }
         echo "$t" | jq -c --arg q "$qref" '. + {query_ref:$q, blocked:true, reason:"unattributed", available:false}'
         return 0
       fi
@@ -562,11 +726,14 @@ if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
     robots_match) _rule_blocks_path "${1:-/}" "${2:-}"; exit $? ;;
     tos_valid)   tos_url_valid "${1:-}"; exit $? ;;
     config_servable) _config_servable "${1:-}"; exit $? ;;
+    config_fields_hash) config_fields_hash "${1:-}"; exit $? ;;
     ack_tos)     ack_tos "$@" ;;
     tos_ack)     tos_ack_present "${1:-}"; exit $? ;;
     cache_put)   cache_put "$@" ;;
+    cache_key)   _cache_key "${1:-}" "${2:-}" "${3:-ownership}" "${4:-}" ;;
+    canon_query) _canonical_query "${1:-}" ;;
     query)       query "$@" ;;
     -h|--help)   sed -n '1,30p' "$0" ;;
-    *) echo "usage: $0 {resolve <q>|tier <fips> [county] [ST]|robots_ok <base> <path>|robots_match <path> <rule>|tos_valid <url>|ack_tos <target> <url>|tos_ack <target>|cache_put <target> <fips> <type> <json>|query <q> <type> [--force-refresh]}" >&2; exit 2 ;;
+    *) echo "usage: $0 {resolve <q>|tier <fips> [county] [ST]|robots_ok <base> <path>|robots_match <path> <rule>|tos_valid <url>|ack_tos <target> <url>|tos_ack <target>|cache_put <target> <fips> <type> <json> <query>|cache_key <target> <fips> <type> <query>|query <q> <type> [--force-refresh]}" >&2; exit 2 ;;
   esac
 fi
