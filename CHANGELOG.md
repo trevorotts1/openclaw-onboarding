@@ -52,7 +52,7 @@ entry pointed the other way:
 | Skill | Why it stays ungated |
 |---|---|
 | `46-kie-callback-relay` | Not a per-client install: `DEPLOY.md` ships ONE Cloudflare Worker to the **operator's own** account "for the entire operator fleet". Ships no `CORE_UPDATES.md`. |
-| `58-podcast-production-engine`, `59-anthology-engine` | "CANARY, THEN HOLD ... Fleet rollout is HELD at repo-only until the operator gives the explicit OK. **No client box is touched by the build.**" |
+| `58-podcast-production-engine`, `59-anthology-engine` | SKILL.md holds these at prove-on-the-operator-box first: "Fleet rollout is HELD at repo-only until the operator gives the explicit OK. **No client box is touched by the build.**" |
 | `60-zhc-early-warning-system`, `61-loop-protection-system` | Activation gated on `rollout.json` / `OPENCLAW_LOOP_PROTECTION_ROLLOUT`; no-ops with a HELD note until armed. "A repo merge is not a roll." |
 | `62-cinematic-web-funnel-engine` | "This is the skeleton unit ... the front door today correctly and honestly refuses to certify any run, because no phase gate scripts exist yet." |
 
