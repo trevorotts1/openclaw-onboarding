@@ -1,4 +1,4 @@
-# Skill 31 - Fish Audio API Reference
+# Skill 30 - Fish Audio API Reference
 
 **What it does:** Installs the complete Fish Audio API reference into your master files and indexes it with Gemini Engine so your agent knows exactly how to make Fish Audio API calls - podcasts, phone calls, voice generation, and more.
 

@@ -1,4 +1,4 @@
-## [v20.0.91]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
+## [v20.0.92]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
 
 `b3e25876` (v14.28.1, 2026-06-28) demoted `real-estate`/`listings` out of the
 universal floor so it would stop landing on generic / coaching / consulting
@@ -61,6 +61,101 @@ BLAST RADIUS, measured read-only before shipping: every reachable box already
 carries `listings` on disk, so no box loses a department and nothing is removed.
 The gate only prevents a future force-add onto a box that never declared the
 vertical.
+
+## [v20.0.91]  -  2026-07-21  -  A14 / T0-18: THE P4->P5 FUNNEL HANDOFF NOW BINDS THE VERIFIED VERDICT
+
+Merge of PR #712 (agent/a14-handoff-binds-verification). `06-ghl-install-pages/tools/v2_dispatcher.py`
+could return `verified` for a full-funnel build while Skill 44 never received the work: the
+verified state was written first, the P4->P5 handoff was attempted afterward inside
+`try: ... except Exception: pass`, and the artifact was stamped `"mandatory": False`. A handoff
+that failed to persist was silently discarded — the pages existed, the automations silently did
+not, and the ledger said the job was done. The handoff is now persisted BEFORE the verdict, read
+back to confirm it holds what was written, stamped mandatory whenever the task carries at least one
+`build_now` automation, and a persistence failure now FAILS the dispatch with a reason naming how
+many automations would have been lost. `tests/test_v2_dispatcher.py` no longer asserts the defect
+as correct and adds three anti-false-positive cases. Version rolled to v20.0.91.
+
+## [v20.0.90]  -  2026-07-21  -  A45/A46/A47: CREDENTIALS WRITTEN WHERE NOTHING READS THEM, TEN DOCUMENTED CONTRACTS THAT CONTRADICT THE CODE, AND A BYTE COUNT WRITING A RUBRIC SCORE
+
+Three Section A items from the nine-cluster skill review. Every finding was re-verified
+at pristine `origin/main` (`391a92e9`) with file, line and verbatim quote before anything
+was changed.
+
+### A45 / T2-21 — the install wrote the credential where nothing reads it
+
+`30-fish-audio-api-reference/INSTALL.md:62,69` wrote to `~/.clawdbot/clawdbot.json` and
+`~/clawd/secrets/.env`. `08-vercel-setup/INSTALL.md:158-161` searched a hardcoded four-path
+list and fell back at `:226-229` to `~/clawd/secrets/.env`; `10-github-setup/INSTALL.md`
+did the same. Every one of those skills' QC scripts sources `$SECRETS_ENV`, which
+`lib-shared.sh:38-44` defines as `~/.openclaw/secrets/.env` (Mac) or
+`/data/.openclaw/secrets/.env` (VPS) — and `lib-shared.sh:43` already labels `~/clawd` a
+"dead legacy path". **The verification reported the credential ABSENT on a box the owner
+had configured correctly, and the diagnosis pointed at the credential rather than at the
+path.**
+
+All three installers now resolve the store through `lib-shared.sh` — with the exact
+fallback the shipped `qc-*.sh` scripts already carry, so a box without the library behaves
+identically rather than newly failing — perform a one-time read-only migration from the
+legacy paths, write only to the resolved store, and report presence as `SET` / `NOT-SET`,
+never a value.
+
+`scripts/test-installer-credential-store.sh` proves it per skill in **both directions**,
+running each skill's REAL QC inside a throwaway `HOME`. Direction A (credential at the
+legacy path must be reported ABSENT) is asserted first on purpose: a test that only checked
+the happy path would pass against the unfixed repository. Plus a static check that no
+installer still directs a credential WRITE at a legacy store — **5 violations at
+`origin/main`, 0 after**.
+
+### A46 — ten documents that contradict the code beside them
+
+| Finding | The contradiction |
+|---|---|
+| **T1-07** | `39-real-estate-playbook/references/property-providers.md:48` documented the Street View request as a URL containing the key, for the agent to build itself — while `lib-property.sh:143-148` records that this exact construction was **deliberately removed** because a keyed URL attached to a client conversation ships the raw credential. `property-lookup.sh:116` sent the agent to that prose. |
+| **T1-08** | `21-tavily-search-ARCHIVED/qc-tavily-search.sh:24` put the request body — credential included — in `argv`, readable from the process table. Now `--data @-` on standard input. **Measured with a stub curl in a sandboxed HOME:** before, the key is in `argv`; after, `argv` ends at `--data @-`. |
+| **T2-20** | `27-video-editor/QC.md:31-33` required two directories version control cannot ship and no install step creates. The checklist recorded a FAIL on every correct installation. Removed rather than faked with empty directories. |
+| **T2-22** | `12-openrouter-setup/INSTALL.md:293` — the block an agent is told to merge into the LIVE configuration did not parse. The `NEW_MODELS` block at `:407`, fed straight to `jq --argjson`, had the same defect. |
+| **T2-23** | `12-openrouter-setup/INSTALL.md:476-484` ordered a gateway restart that `:623-639` of the same document forbids. |
+| **T2-24** | `16-summarize-youtube/EXAMPLES.md:18-22` "Gemini fallback" ran the default command; `summarize-youtube-full.md:273` chained that command to itself, so the retry was byte-identical to the attempt that had just failed. |
+| **T2-25** | `summarize-youtube-full.md:75-76` claimed a runtime auto-fallback that does not exist anywhere in the skill. Removed; the install now fails closed on the unsupported platform. |
+| **T2-26** | `30-fish-audio-api-reference` labelled itself Skill 31 and told an interrupted install to resume into skill 31 — the memory system. |
+| **T2-31** | The pre-foreclosure protocol named Skill 40's audit log as its record source; `40-.../INSTRUCTIONS.md:89` says that file holds "never raw record contents". Replaced with `public-records-handoff/v1` naming the real source. |
+| **T2-32** | Skill 39's provider-status producer and consumer disagreed on the **path**, the **capability names** and the **state shape** — three mismatches on one contract, so every provider read as unavailable. Pinned in `references/provider-status-contract.md` and validated on both sides. |
+
+**New gate `scripts/check-installer-config-blocks.py` was run over the whole repository
+before being made blocking, as the work list requires.** The first sweep reported 17
+failures, **16 of which were legitimate JSON fragments the checker was mis-calling**. It
+now parses a block as a document OR as a fragment and fails only when neither works. Final
+measurement: **2 failures at `origin/main`** (both the OpenRouter blocks), **0 after**, 1
+skipped and printed.
+
+### A47 / T0-08 — materialisation may gate eligibility, never write a rubric score
+
+`37-zhc-closeout/scripts/qc-rate-artifacts.sh:266,275` wrote `8.7`/`pass` into
+`.qualityRatings` from a **file size** and an **HTTP 200**. `INSTRUCTIONS.md:13` defines
+that field as a 1-10 rubric score and `run-closeout.sh:679` releases on it, so a generic or
+off-brand artifact cleared the 8.5 client-facing floor with no content judgment at all.
+
+Every rating now carries `contentJudged`, `rubricScore` (**null** unless a judge ran),
+`scoreKind` and `basis`; the raw measurement is kept separately in
+`.materializationChecks.<key>`; and every release without a judge is logged `WARN` and
+listed in `.contentJudgeMissing`, so an unattended box's missing judgment is **countable
+instead of invisible**.
+
+**B15 is NOT enabled.** Making the judge mandatory would fail every unattended closeout
+until one is configured. It ships as `ZHC_REQUIRE_CONTENT_JUDGE`, **default 0** — the
+default path is byte-for-byte today's behaviour, and a test asserts exactly that.
+
+**An existing test that encoded the bug as correct was TIGHTENED.** `B1` in
+`test-closeout-ghost-and-rating.sh` asserted only `score>=8.5 && qc==pass` — precisely what
+the defect produced — so it passed against the unfixed rater. Four cases added around it.
+Measured: **3 failures against `origin/main`'s rater, 0 after**; the file goes 14/1 to 15/0.
+
+### CI
+
+`.github/workflows/installer-contracts-guard.yml` runs all four suites. Both new Python
+checkers **self-test before their verdict is trusted**, and CI runs the self-test first, so
+a checker that has stopped detecting anything cannot report green. Every "could not run"
+path exits non-zero and says so; none of them passes by skipping.
 
 ## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
 
@@ -240,6 +335,86 @@ Both suites are hermetic and run in CI via
 `.github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml`.
 
 ---
+## [v20.0.91]  -  2026-07-21  -  FOUR SILENT-FAILURE PATHS IN THE PODCAST ENGINE (T0-19, T0-20, T0-21, T0-22)
+
+**T0-19 — channel scoping failed open.** `podbean_publish.sh` had exactly ONE
+hard stop in its isolation guard (the configured channel not appearing on the
+account) and THREE paths that logged a warning and carried on holding the
+ACCOUNT-WIDE token: the channel listing call failing, the identifier list parsing
+empty, and the scoped-token request failing or returning nothing. On a shared
+account hosting several channels, any of the three could place a client-facing
+episode on a channel that was never proven to be the target.
+
+Every one of those paths is now fatal, and a new `CHANNEL_SCOPE_PROVEN` flag is
+set only on a path that has proven the token can reach the target channel and
+nothing else — the episode-create call refuses to run without it, so a future
+token path cannot silently publish account-wide. `http_request` already retries a
+non-2xx with quadratic backoff, so a network blip is retried before any of this
+becomes a verdict.
+
+**Deliberately NOT in this release:** passing `podcast_id` explicitly on the
+episode-create call, the second half of T0-19's exact fix. That changes the shape
+of a live client-facing request to a third-party API, and it cannot be verified
+from the repository — a rejection would break every publish. It is recorded as a
+Section B item whose measurement is one create call against the operator test
+channel. The wrong-channel property this finding is about is already closed by
+the refusals above: a publish can now only proceed on a proven scoped token or a
+single-channel account.
+
+**T0-20 — an unmeasured master was released as verified.**
+`generate_podcast_audio.sh` ran the EBU R128 measurement with `|| true` and
+treated an unparseable summary as a warning, then logged "SUCCESS, mastered audio
+verified" and exited 0 — while the file's own header contract states that exit 0
+means duration AND loudness are sane. Both are now hard failures.
+
+**T0-21 — the webhook answered before the durable write.** The publish workflow's
+success branch fanned out to three SIBLING nodes in parallel: the notification,
+`Respond — Publish Success`, and `Idempotency — Mark Completed`, the last
+carrying `onError: continueRegularOutput`. The synchronous webhook could return
+an OK asserting a durable successful publish while the idempotency row that
+prevents a DUPLICATE publish never landed. The response is now chained behind the
+completion write and the continue-on-error setting is gone.
+
+> **FLEET ACTION — this one does not complete at merge.** A workflow file in the
+> repository that is never imported changes nothing on the running automation
+> host. The workflow must be redeployed into n8n. The suite here proves the FILE
+> is right, never that the host is running it.
+
+**T0-22 — a broken ledger linkage was indistinguishable from no ledger.**
+`podcast_state.py::_resolve_ledger_file` returned None for both, `_sync_ledger`
+returned immediately on either, and `cmd_advance` never looked at the outcome, so
+a missing, malformed or unreadable job index produced no ledger update, no
+warning, and an advance that reported success while the atomic-claim record was
+left behind. The three states are now distinct — `not_configured`, `synced`,
+`broken` — a broken linkage warns on stderr, the emitted record carries
+`ledger_sync`, and the advance exits non-zero. The committed SQLite transition is
+still reported honestly; what is refused is calling the advance complete while
+its claim record is unreconciled.
+
+**The tests, and that they can fail**
+
+`tests/unit/podcast-engine-fail-closed.test.sh` — 19 checks, hermetic (a fake
+`curl` answering from a scripted table; no network, no Podbean account, no client
+data). Against untouched `origin/main`: **7 passed, 11 FAILED**, including *"an
+episode-create request was sent on an unscoped token (multi-channel account)"* —
+the wrong-channel publish itself. Against this release: 19 passed. The healthy
+single-channel case is asserted in the other direction too: it must still REACH
+the episode-create call, so the fix cannot be "refuse everything".
+
+`tests/unit/podcast-state-ledger-linkage.test.py` — 10 tests driving the REAL CLI
+end to end against a temp database. Against untouched `origin/main`: 6 failures
+and 3 errors. Against this release: 10 passed.
+
+`tests/unit/podbean-publish-workflow-response-ordering.test.py` — 9 tests reading
+the workflow graph with a real JSON parser. Against untouched `origin/main`: 4
+FAILED. Against this release: 9 passed.
+
+All three run in CI via
+`.github/workflows/podcast-engine-fail-closed-guard.yml`, which also compiles
+every embedded Python heredoc separately, because `bash -n` does not parse them.
+
+---
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time

@@ -108,13 +108,74 @@ _llm_judge() {  # <key> <floor_score> <floor_note> -> prints "score<TAB>qc<TAB>n
   return 0
 }
 
-# write_rating <score> <qc:pass|fail> <note>
+# ── T0-08 / A47: MATERIALISATION IS NOT A CONTENT JUDGMENT ───────────────────
+#
+# THE DEFECT. `write_rating 8.7 pass "flow_diagram: image materialized (N bytes)"`
+# and the HTTP-200 branch wrote 8.7/pass straight into .qualityRatings, which
+# INSTRUCTIONS.md:13 and QUALITY-GATE.md define as a 1-10 RUBRIC score. A byte
+# count and an HTTP response therefore cleared the 8.5 release floor with NO
+# content judgment at all, and a generic or off-brand artifact became
+# deliverable to a client. The durable record could not distinguish "a judge
+# read this and scored it" from "the file was larger than 10KB".
+#
+# THE SEPARATION (this change). Materialisation may still gate ELIGIBILITY — a
+# missing, tiny or dead artifact still fails, and a present one is still
+# releasable, so no currently-healthy closeout newly fails. What it may no
+# longer do is CLAIM a rubric score:
+#
+#   .qualityRatings.<key>.contentJudged  false unless an independent judge ran
+#   .qualityRatings.<key>.rubricScore    null   unless an independent judge ran
+#   .qualityRatings.<key>.scoreKind      "materialization-floor" | "structural-qc"
+#                                        | "content-judgment"
+#   .qualityRatings.<key>.basis          what was actually measured
+#   .materializationChecks.<key>         the raw measurement, kept separately
+#   .contentJudgeMissing                 every key released without a judge
+#
+# `score` remains the ELIGIBILITY value the gate in run-closeout.sh reads. It is
+# no longer presented as a rubric score when contentJudged is false.
+#
+# VISIBLY REPORTED, NEVER SILENT. Releasing without a content judge now logs a
+# WARN naming the key and records it in .contentJudgeMissing, so an unattended
+# box's missing judgment is countable instead of invisible.
+#
+# B15 (NOT enabled here). Making an absent judge a HARD FAILURE would fail every
+# unattended closeout until a judge is configured, which is a live-fleet blast
+# radius that must be measured first. It ships as OFF-BY-DEFAULT opt-in:
+# ZHC_REQUIRE_CONTENT_JUDGE=1. Default 0 = today's behaviour exactly.
+ZHC_REQUIRE_CONTENT_JUDGE="${ZHC_REQUIRE_CONTENT_JUDGE:-0}"
+
+# write_materialization <materialized:true|false> <detail>
+# Records WHAT WAS MEASURED, separately from any verdict about content.
+write_materialization() {
+  local materialized="$1" detail="$2" tmp
+  tmp=$(mktemp)
+  if jq \
+      --arg k "$KEY" \
+      --argjson m "$materialized" \
+      --arg d "$detail" \
+      --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '.materializationChecks = (.materializationChecks // {}) |
+       .materializationChecks[$k] = {materialized:$m, detail:$d,
+                                     checkedBy:"qc-rate-artifacts", checkedAt:$at}' \
+      "$STATE_FILE" > "$tmp"; then
+    mv "$tmp" "$STATE_FILE"
+  else
+    rm -f "$tmp"
+    log "ERROR" "failed to write .materializationChecks.$KEY"
+  fi
+}
+
+# write_rating <score> <qc:pass|fail> <note> [basis-kind]
+#   basis-kind: materialization-floor (default) | structural-qc
 write_rating() {
-  local score="$1" qc="$2" note="$3" tmp
+  local score="$1" qc="$2" note="$3" score_kind="${4:-materialization-floor}" tmp
   # SK1-10: on a deterministic PASS, let an independent judge (if configured)
   # replace the floor with a real content score. A judge FAIL downgrades; a judge
   # PASS carries the judge's actual score. Absent/broken judge => floor stands.
   local rated_by="qc-rate-artifacts"
+  local content_judged="false"
+  local rubric_score="null"
+  local basis="$score_kind: $note"
   if [[ "$qc" == "pass" ]]; then
     local verdict
     if verdict="$(_llm_judge "$KEY" "$score" "$note")"; then
@@ -123,9 +184,25 @@ write_rating() {
       qc="${_rest%%$'\t'*}"
       note="${_rest#*$'\t'}"
       rated_by="llm-judge"
+      content_judged="true"
+      rubric_score="$score"
+      score_kind="content-judgment"
       log "INFO" "LLM judge scored $KEY: score=$score qc=$qc"
     fi
   fi
+
+  # A PASS with no content judgment is releasable but must never look judged.
+  if [[ "$qc" == "pass" && "$content_judged" == "false" ]]; then
+    if [[ "$ZHC_REQUIRE_CONTENT_JUDGE" == "1" ]]; then
+      # B15 opt-in. OFF by default; enabling it is a fleet decision.
+      log "ERROR" "ZHC_REQUIRE_CONTENT_JUDGE=1 and no content judge produced a verdict for $KEY — refusing to release on a $score_kind alone"
+      qc="fail"; score="5.0"
+      note="content judge required (ZHC_REQUIRE_CONTENT_JUDGE=1) but ZHC_ARTIFACT_JUDGE_CMD produced no verdict; $score_kind only: $note"
+    else
+      log "WARN" "NO CONTENT JUDGMENT for $KEY — releasing on a $score_kind alone (ZHC_ARTIFACT_JUDGE_CMD unset or produced no verdict). score=$score is an ELIGIBILITY floor, NOT a rubric score."
+    fi
+  fi
+
   tmp=$(mktemp)
   if jq \
       --arg k "$KEY" \
@@ -134,8 +211,17 @@ write_rating() {
       --arg note "$note" \
       --arg rb "$rated_by" \
       --arg at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --argjson cj "$content_judged" \
+      --argjson rs "$rubric_score" \
+      --arg sk "$score_kind" \
+      --arg basis "$basis" \
       '.qualityRatings = (.qualityRatings // {}) |
-       .qualityRatings[$k] = {score:$score, qc:$qc, note:$note, ratedBy:$rb, ratedAt:$at}' \
+       .qualityRatings[$k] = {score:$score, qc:$qc, note:$note, ratedBy:$rb, ratedAt:$at,
+                              contentJudged:$cj, rubricScore:$rs, scoreKind:$sk, basis:$basis} |
+       .contentJudgeMissing = (
+         if ($cj|not) and $qc == "pass"
+         then (((.contentJudgeMissing // []) + [$k]) | unique)
+         else ((.contentJudgeMissing // []) - [$k]) end)' \
       "$STATE_FILE" > "$tmp"; then
     mv "$tmp" "$STATE_FILE"
   else
@@ -144,7 +230,11 @@ write_rating() {
     return 2
   fi
   if [[ "$qc" == "pass" ]]; then
-    log "INFO" "RELEASED $KEY: score=$score qc=$qc (>= $ZHC_QUALITY_MIN) — $note"
+    if [[ "$content_judged" == "true" ]]; then
+      log "INFO" "RELEASED $KEY: CONTENT-JUDGED score=$score qc=$qc (>= $ZHC_QUALITY_MIN) — $note"
+    else
+      log "INFO" "RELEASED $KEY: eligibility floor $score ($score_kind), NOT content-judged — $note"
+    fi
   else
     log "ERROR" "FAILED $KEY: score=$score qc=$qc — $note (run-closeout will regenerate or HOLD; never silent-null)"
   fi
@@ -214,6 +304,7 @@ rate_org_chart() {
   local url html_path img_path
   url=$(state_get '.infographic1Url')
   if [[ -z "$url" || "$url" == "null" ]]; then
+    write_materialization false "org_chart: infographic1Url missing"
     write_rating 2.0 fail "org_chart: infographic1Url missing — no artifact to rate"; return
   fi
   img_path=$(state_get '.infographic1LocalPath')
@@ -233,7 +324,8 @@ rate_org_chart() {
     ZHC_STATE_FILE="$STATE_FILE" ZHC_LOG_FILE="$LOG_FILE" \
       bash "$qc_script" --html-path "$html_path" ${img_path:+--image-path "$img_path"} >>"${LOG_FILE:-/dev/null}" 2>&1 || rc=$?
     case "$rc" in
-      0) write_rating 9.0 pass "org_chart: connector-tree QC passed (Owner→CEO→clusters→depts; no card-grid)"; return ;;
+      0) write_materialization true "org_chart: connector-tree QC passed on $html_path"
+         write_rating 9.0 pass "org_chart: connector-tree QC passed (Owner→CEO→clusters→depts; no card-grid)" structural-qc; return ;;
       1) write_rating 6.0 fail "org_chart: connector-tree QC FAILED (card-grid anti-pattern or connectors absent, rc=1)"; return ;;
       3) write_rating 4.0 fail "org_chart: NO rendered artifact (Playwright/Chromium missing, rc=3)"; return ;;
       *) write_rating 5.0 fail "org_chart: connector-tree QC could not run (rc=$rc)"; return ;;
@@ -247,6 +339,7 @@ rate_flow_diagram() {
   local url
   url=$(state_get '.infographic2Url')
   if [[ -z "$url" || "$url" == "null" ]]; then
+    write_materialization false "flow_diagram: infographic2Url missing"
     write_rating 2.0 fail "flow_diagram: infographic2Url missing — no artifact to rate"; return
   fi
   # The flow diagram is an AI image (KIE.AI). We cannot grade aesthetics
@@ -263,7 +356,8 @@ rate_flow_diagram() {
     if [[ -z "$sz" || "$sz" -lt 1024 ]]; then
       write_rating 4.0 fail "flow_diagram: local file '$local_path' is ${sz:-0} bytes (< 1KB) — empty/error placeholder, not a real image"; return
     fi
-    write_rating 8.7 pass "flow_diagram: image materialized ($sz bytes at $local_path); URL present"; return
+    write_materialization true "flow_diagram: local image $sz bytes at $local_path"
+    write_rating 8.7 pass "flow_diagram: image materialized ($sz bytes at $local_path); URL present — MATERIALISATION ONLY, no content judgment" materialization-floor; return
   fi
   if [[ "$url" =~ ^https?:// ]]; then
     # FIX-S36-04: a well-formed URL is NOT enough — HEAD it and require a live
@@ -272,7 +366,8 @@ rate_flow_diagram() {
     local detail rc
     detail="$(remote_asset_reachable "$url" "image/" 10240)"; rc=$?
     case "$rc" in
-      0) write_rating 8.7 pass "flow_diagram: remote image URL reachable ($detail) — deterministic floor only (reachability, not aesthetics); $url"; return ;;
+      0) write_materialization true "flow_diagram: remote image reachable ($detail) at $url"
+         write_rating 8.7 pass "flow_diagram: remote image URL reachable ($detail) — MATERIALISATION ONLY, no content judgment; $url" materialization-floor; return ;;
       1) write_rating 4.0 fail "flow_diagram: remote image URL UNREACHABLE/invalid ($detail) at $url — dead or non-image link, HOLD"; return ;;
       *) write_rating 5.0 fail "flow_diagram: could not verify remote image URL ($detail) at $url — no reachability proof, HOLD (fail-closed)"; return ;;
     esac
@@ -293,6 +388,7 @@ rate_celebration_video() {
   url=$(state_get '.ghlVideoPublicUrl')
   [[ -z "$url" || "$url" == "null" ]] && url=$(state_get '.celebrationVideoUrl')
   if [[ -z "$url" || "$url" == "null" ]]; then
+    write_materialization false "celebration_video: no url in state"
     write_rating 2.0 fail "celebration_video: no ghlVideoPublicUrl/celebrationVideoUrl — no video to rate"; return
   fi
 
@@ -311,7 +407,8 @@ rate_celebration_video() {
     if [[ -z "$sz" || "$sz" -lt 10240 ]]; then
       write_rating 4.0 fail "celebration_video: local file '$local_path' is ${sz:-0} bytes (< 10KB) — empty/error placeholder, not a real video"; return
     fi
-    write_rating 8.7 pass "celebration_video: video materialized ($sz bytes, .$ext at $local_path) — deterministic floor only (container + size, not motion quality)"; return
+    write_materialization true "celebration_video: local video $sz bytes, .$ext at $local_path"
+    write_rating 8.7 pass "celebration_video: video materialized ($sz bytes, .$ext at $local_path) — MATERIALISATION ONLY, no content judgment" materialization-floor; return
   fi
 
   # No usable local file: the client link is remote. HEAD it (FIX-S36-04 floor).
@@ -319,7 +416,8 @@ rate_celebration_video() {
     local detail rc
     detail="$(remote_asset_reachable "$url" "video/" 10240)"; rc=$?
     case "$rc" in
-      0) write_rating 8.7 pass "celebration_video: remote video URL reachable ($detail) — deterministic floor only (reachability, not motion quality); $url"; return ;;
+      0) write_materialization true "celebration_video: remote video reachable ($detail) at $url"
+         write_rating 8.7 pass "celebration_video: remote video URL reachable ($detail) — MATERIALISATION ONLY, no content judgment; $url" materialization-floor; return ;;
       1) write_rating 4.0 fail "celebration_video: remote video URL UNREACHABLE/invalid ($detail) at $url — dead or non-video link, HOLD"; return ;;
       *) write_rating 5.0 fail "celebration_video: could not verify remote video URL ($detail) at $url — no reachability proof, HOLD (fail-closed)"; return ;;
     esac
@@ -332,6 +430,7 @@ rate_closeout_docs() {
   url=$(state_get '.notionRootPageUrl')
   page_id=$(state_get '.notionCloseoutPageId')
   if [[ -z "$url" || "$url" == "null" ]]; then
+    write_materialization false "closeout_docs: notionRootPageUrl missing"
     write_rating 2.0 fail "closeout_docs: notionRootPageUrl missing — no Notion doc to rate"; return
   fi
   # The Docs rubric's load-bearing requirement is the 9 doctrine sections. The
@@ -346,7 +445,8 @@ rate_closeout_docs() {
   secs=$(state_get '.notionSectionsCreated')
   if [[ -n "$secs" && "$secs" =~ ^[0-9]+$ ]]; then
     if (( secs >= 9 )); then
-      write_rating 8.7 pass "closeout_docs: notion root present + $secs/9 doctrine sections created"; return
+      write_materialization true "closeout_docs: $secs/9 doctrine sections created"
+      write_rating 8.7 pass "closeout_docs: notion root present + $secs/9 doctrine sections created" structural-qc; return
     fi
     write_rating 6.5 fail "closeout_docs: only $secs/9 doctrine sections created — incomplete doc, HOLD"; return
   fi
@@ -354,7 +454,8 @@ rate_closeout_docs() {
   # exists: accept as the deterministic floor (the notion builder's own
   # idempotent section reconciliation is the substance guarantee).
   if [[ "$leg" == "pass" || "$url" =~ ^https?://(www\.)?notion\.so ]]; then
-    write_rating 8.7 pass "closeout_docs: notion root URL present ($url); leg=${leg:-unset}"; return
+    write_materialization true "closeout_docs: notion root URL present ($url); leg=${leg:-unset}"
+    write_rating 8.7 pass "closeout_docs: notion root URL present ($url); leg=${leg:-unset} — MATERIALISATION ONLY, no section count, no content judgment" materialization-floor; return
   fi
   write_rating 5.0 fail "closeout_docs: notionRootPageUrl='$url' does not look like a Notion page and leg status is '${leg:-unset}' — cannot confirm"
 }

@@ -1,0 +1,67 @@
+name: backup-prune-after-verify-guard
+
+# Guards findings T2-08 and T0-24 in the Back Yourself Up Protocol's full-backup
+# procedure. This is the artifact that has to be trustworthy precisely when
+# everything else has failed.
+#
+#   T2-08  Rotation ran FIRST ("Step 2: Rotate Old Backups ... Before creating a
+#          new backup"), deleting the oldest backup at a point where the
+#          replacement did not exist and had certainly not been verified. Any
+#          failure in the copy, disk or verification steps that followed left ONE
+#          verified restore point instead of the promised two.
+#
+#   T0-24  Every copy sent stderr to the null device and captured no exit status,
+#          and a missing critical file printed a warning and continued, so a run
+#          whose copies failed still reported a completed backup.
+#
+# The procedure was prose an agent transcribed by hand, so neither defect could
+# be tested and neither could fail. scripts/full-backup.sh is now the executable
+# form and the suite drives it directly.
+#
+# ANTI-FALSE-POSITIVE CONTROL: a "fix" that simply makes every backup fail must
+# not pass this workflow. The suite asserts the happy path exits 0 with all
+# critical files present AND that rotation still prunes. It also carries a
+# fail-first control that reproduces the PRE-FIX procedure and asserts the two
+# load-bearing legs (non-zero exit, nothing deleted) still discriminate against
+# it — if those controls ever pass, the guard has gone blind.
+#
+# Hermetic: fixture HOMEs in a tempdir. No network, no real backup, no box.
+#
+# Security note: this workflow consumes only repo file content (no untrusted
+# GitHub event fields), so there is no injection surface in the run: blocks.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "02-back-yourself-up-protocol/scripts/full-backup.sh"
+      - "02-back-yourself-up-protocol/back-yourself-up-protocol-full.md"
+      - "tests/unit/full-backup-prune-after-verify.test.sh"
+      - ".github/workflows/backup-prune-after-verify-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "02-back-yourself-up-protocol/scripts/full-backup.sh"
+      - "02-back-yourself-up-protocol/back-yourself-up-protocol-full.md"
+      - "tests/unit/full-backup-prune-after-verify.test.sh"
+      - ".github/workflows/backup-prune-after-verify-guard.yml"
+
+jobs:
+  backup-prune-after-verify-guard:
+    name: Backups prune only after the replacement verifies (T2-08, T0-24)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 02-back-yourself-up-protocol/scripts/full-backup.sh
+          bash -n tests/unit/full-backup-prune-after-verify.test.sh
+          echo "syntax OK"
+
+      - name: Prune-after-verify + captured-copy-status suite
+        shell: bash
+        run: bash tests/unit/full-backup-prune-after-verify.test.sh

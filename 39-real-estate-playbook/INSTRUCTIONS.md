@@ -60,7 +60,7 @@ Fair-housing guardrails (`references/fair-housing-guardrails.md`) apply: never a
 
 ## Pre-foreclosure outreach (pairs with Skill 40)
 
-`protocols/pre-foreclosure-outreach-protocol.md`. When Skill 40 surfaces a Notice-of-Default / pre-foreclosure / tax-delinquency record for a property, Skill 39 runs a CARE-FIRST outreach playbook (empathetic, options-focused, never predatory; honors do-not-contact and state cooling-off rules). Skill 39 NEVER scrapes records itself — it consumes Skill 40's `public-records-queries.jsonl` output. Emits `pre_foreclosure_touch` events and tags `ZHC-pre-foreclosure-prospect`.
+`protocols/pre-foreclosure-outreach-protocol.md`. When Skill 40 surfaces a Notice-of-Default / pre-foreclosure / tax-delinquency record for a property, Skill 39 runs a CARE-FIRST outreach playbook (empathetic, options-focused, never predatory; honors do-not-contact and state cooling-off rules). Skill 39 NEVER scrapes records itself — it consumes the attributed record Skill 40's retrieval path returns (`record_get` in `40-zhc-public-records-scraper/scripts/lib-records.sh`), per the `public-records-handoff/v1` contract in the protocol. It does NOT read `public-records-queries.jsonl`: that is Skill 40's audit log and it deliberately excludes record contents. Emits `pre_foreclosure_touch` events and tags `ZHC-pre-foreclosure-prospect`.
 
 ## Sales-Brain RE extension (the additive hook)
 

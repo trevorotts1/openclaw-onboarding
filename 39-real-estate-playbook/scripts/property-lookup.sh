@@ -26,6 +26,10 @@
 # Usage:
 #   property-lookup.sh --address "123 Main St, Springfield, IL 62701"
 #   property-lookup.sh --address "..." --want comps,street_view
+#
+# CAPABILITY NAMES (provider-status/v1, references/provider-status-contract.md):
+#   geocode · property_lookup · street_view · comps
+#   `lookup` and `streetview` are RETIRED names and are rejected by the validator.
 #   property-lookup.sh --address "..." --json
 #   property-lookup.sh --address "..." --no-log   (skip the F52 event append)
 
@@ -95,10 +99,49 @@ echo "  normalized: street='$norm_street' city='$norm_city' state='$norm_state' 
 echo ""
 
 # ---------- 2. Provider resolution ----------
-cap_state() {  # cap_state capname -> AVAILABLE|HONEST_GAP (reads status JSON, no jq dep)
+# T2-32: the status artifact is governed by references/provider-status-contract.md
+# (`provider-status/v1`) and validated by validate-provider-status.sh, which
+# 02-configure-providers.sh also runs after writing. Validate BEFORE reading —
+# a missing or non-conforming artifact must be REPORTED, never silently
+# collapsed into "every capability is an honest gap". Those are different
+# problems and must not produce the same message.
+VALIDATOR="$_SELF_DIR/validate-provider-status.sh"
+STATUS_USABLE=0
+if [ ! -f "$VALIDATOR" ]; then
+  echo "ERROR: validate-provider-status.sh not found beside this script — cannot verify the provider-status contract." >&2
+  echo "       Refusing to guess at provider availability." >&2
+  exit 2
+fi
+bash "$VALIDATOR" "$STATUS" --quiet
+case "$?" in
+  0) STATUS_USABLE=1 ;;
+  1) # PRESENT but NON-CONFORMING. This cannot arise from the shipped producer,
+     # which validates before reporting success, so it means the artifact was
+     # hand-edited or written by something else. Refuse it — reading a
+     # non-conforming contract artifact is how the three-axis mismatch happened.
+     echo "ERROR: '$STATUS' does not conform to provider-status/v1." >&2
+     echo "       Detail: bash $VALIDATOR '$STATUS'" >&2
+     echo "       Re-run 02-configure-providers.sh. NOT treating this as 'no providers configured'." >&2
+     exit 2 ;;
+  *) # ABSENT. Report it LOUDLY and name the real cause, then continue with
+     # every capability as an honest gap. It stays non-fatal because that is
+     # today's behaviour for an unconfigured box and this item must not turn a
+     # working box into a failing one — but it is no longer SILENT, which is the
+     # actual defect: "the operator configured nothing" and "this skill cannot
+     # find its own status file" used to produce the identical message.
+     echo "WARNING: no provider-status file at '$STATUS'." >&2
+     echo "         Every capability below is reported as an HONEST GAP because the" >&2
+     echo "         status file is MISSING — not because a provider was checked and" >&2
+     echo "         found unconfigured. Run 02-configure-providers.sh to fix this." >&2
+     STATUS_USABLE=0 ;;
+esac
+
+cap_state() {  # cap_state <contract capability name> -> AVAILABLE|HONEST_GAP
   local cap="$1"
-  [ -f "$STATUS" ] || { echo "HONEST_GAP"; return 0; }
-  # pull the "state" that follows "<cap>":{ ... "state":"X"
+  [ "$STATUS_USABLE" -eq 1 ] || { echo "HONEST_GAP"; return 0; }
+  # The artifact has already been validated against the contract, so the shape
+  # below is guaranteed: capabilities.<cap>.state is exactly AVAILABLE or
+  # HONEST_GAP. Capability names are the contract's four and no others.
   local seg; seg="$(tr -d '\n' < "$STATUS" | grep -oE "\"$cap\"[[:space:]]*:[[:space:]]*\{[^}]*\}" | head -1)"
   if echo "$seg" | grep -q '"state"[[:space:]]*:[[:space:]]*"AVAILABLE"'; then echo "AVAILABLE"; else echo "HONEST_GAP"; fi
 }
@@ -113,7 +156,16 @@ for cap in "${WANTS[@]}"; do
   st="$(cap_state "$cap")"
   if [ "$st" = "AVAILABLE" ]; then
     avail_count=$((avail_count+1))
-    echo "  [$cap] AVAILABLE — issue the provider request (see references/property-providers.md → $cap)."
+    if [ "$cap" = "street_view" ]; then
+      # T1-07: never send the agent to prose for the Street View request shape.
+      # The shipped function keeps the key in-process and returns a LOCAL PATH;
+      # a hand-built URL would carry the raw key into the conversation and the
+      # event log, which is exactly what lib-property.sh:143-148 removed.
+      echo "  [$cap] AVAILABLE — call streetview() in scripts/lib-property.sh and attach the returned image_path."
+      echo "      NEVER construct a maps.googleapis.com URL, and never emit the key."
+    else
+      echo "  [$cap] AVAILABLE — issue the provider request (see references/property-providers.md → $cap)."
+    fi
     RESULTS+=("\"$cap\":\"AVAILABLE\"")
   else
     gap_count=$((gap_count+1))

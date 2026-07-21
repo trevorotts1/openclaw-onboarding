@@ -83,11 +83,33 @@ Open Terminal.
 Go to the workspace root that contains `.env`.
 
 ## Step 3
-Install summarize:
+Install summarize.
+
+> **T2-25 — this skill is Mac-only. The server platform is UNSUPPORTED.**
+> `summarize` ships through Homebrew, which is not present on the server
+> platform, and there is **no runtime auto-fallback** — the claim that one exists
+> was documentation with no implementation behind it. Fail closed HERE, at
+> install, rather than silently at first use.
+
 ```bash
+# Refuse the unsupported platform up front. A VPS install of this skill cannot
+# work, and pretending otherwise defers the failure to the first user request.
+if [ -d /data/.openclaw ]; then
+  echo "UNSUPPORTED PLATFORM: 16-summarize-youtube requires the Homebrew-only 'summarize' CLI." >&2
+  echo "There is no runtime fallback in this skill. Do NOT mark this skill installed." >&2
+  exit 1
+fi
+
 brew --version || /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
 brew install steipete/tap/summarize
-summarize --help >/dev/null
+
+# The binary must actually be callable. A missing binary is a failed install,
+# not something a later step recovers from.
+if ! summarize --help >/dev/null 2>&1; then
+  echo "INSTALL FAILED: 'summarize' is not callable after brew install." >&2
+  echo "There is no fallback path. Do NOT mark this skill installed." >&2
+  exit 1
+fi
 ```
 
 ## Step 4

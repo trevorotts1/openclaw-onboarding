@@ -710,6 +710,10 @@ print(json.dumps(d))
 else
 # --------------------------------------------------------------- OAuth 2.0 ----
 ACCESS_TOKEN=""
+# T0-19: set to 1 only on a path that has PROVEN the token can reach the target
+# channel and nothing else. The episode-create call refuses to run without it, so
+# a future edit that adds a new token path cannot silently publish unscoped.
+CHANNEL_SCOPE_PROVEN=0
 if [ "$BROKER_MODE" = "1" ]; then
   # Broker mode: BlackCEO's single Podbean app lives only inside n8n. Ask the
   # broker for a token already SCOPED to this client's Channel ID. No Podbean app
@@ -721,6 +725,9 @@ if [ "$BROKER_MODE" = "1" ]; then
   ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
   RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
   [ -n "$ACCESS_TOKEN" ] || die "podbean broker returned no access_token (ok=${broker_ok:-unknown}); check PODBEAN_BROKER_TOKEN and that the broker workflow is active"
+  # The broker mints per-Channel tokens and refuses channels that are not on the
+  # host account, so a token returned here is scoped by construction.
+  CHANNEL_SCOPE_PROVEN=1
   log "Channel-scoped access token acquired from broker (value not shown)"
 else
   log "requesting a client_credentials access token from BlackCEO's shared Podbean app (local fallback, operator box only)"
@@ -735,32 +742,50 @@ else
   # ---------------------------------------------- isolation: own channel only ---
   # Confirm the configured podcast_id belongs to this account. This is the anti
   # commingling guard: refuse to publish to any channel that is not the target channel.
-  if http_request GET "$PODBEAN_API/podcasts?access_token=${ACCESS_TOKEN}&offset=0&limit=100"; then
-    account_ids="$(printf '%s' "$RESP_BODY" | podcast_ids)"
-    RESP_BODY=""
-    if [ -n "$account_ids" ]; then
-      if ! printf '%s\n' "$account_ids" | grep -qxF "$PODBEAN_PODCAST_ID"; then
-        die "configured PODBEAN_PODCAST_ID is not present on this Podbean account; refusing to publish (isolation guard)"
-      fi
-      # More than one podcast on the account: obtain a token scoped to the target.
-      if [ "$(printf '%s\n' "$account_ids" | grep -c .)" -gt 1 ]; then
-        log "account hosts multiple podcasts; requesting a token scoped to the target channel"
-        if USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/multiplePodcastsToken" \
-             --data-urlencode "grant_type=client_credentials" \
-             --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"; then
-          scoped="$(printf '%s' "$RESP_BODY" | scoped_token "$PODBEAN_PODCAST_ID")"
-          RESP_BODY=""
-          if [ -n "$scoped" ]; then
-            ACCESS_TOKEN="$scoped"
-            log "scoped token acquired for target channel (value not shown)"
-          fi
-        else
-          log "warning: multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}); continuing with the base token"
-        fi
-      fi
+  # T0-19: EVERY scoping failure is fatal. This block had exactly one hard stop —
+  # the configured channel not appearing on the account — and three paths that
+  # logged a warning and carried on holding the ACCOUNT-WIDE token: the listing
+  # call failing, the identifier list parsing empty, and the scoped-token request
+  # failing or returning nothing. On a shared account hosting several channels,
+  # any of those three placed a client-facing episode on a channel that was never
+  # proven to be the target. Targeting must never be a function of which token
+  # happened to survive.
+  #
+  # Note on transients: http_request already retries a non-2xx up to $RETRIES with
+  # quadratic backoff, so a network blip is retried BEFORE it becomes a verdict
+  # here. What reaches these die() calls is a failure that survived the retries.
+  if ! http_request GET "$PODBEAN_API/podcasts?access_token=${ACCESS_TOKEN}&offset=0&limit=100"; then
+    die "could not list podcasts on this account (HTTP ${RESP_CODE:-000}) after ${RETRIES} attempt(s); refusing to publish with an unscoped token (isolation guard)"
+  fi
+  account_ids="$(printf '%s' "$RESP_BODY" | podcast_ids)"
+  RESP_BODY=""
+  if [ -z "$account_ids" ]; then
+    die "podcast listing returned no channel identifiers; the target channel could not be confirmed, refusing to publish (isolation guard)"
+  fi
+  if ! printf '%s\n' "$account_ids" | grep -qxF "$PODBEAN_PODCAST_ID"; then
+    die "configured PODBEAN_PODCAST_ID is not present on this Podbean account; refusing to publish (isolation guard)"
+  fi
+  # More than one podcast on the account: a token scoped to the target is
+  # MANDATORY. Without it the base token can write to any channel on the account.
+  if [ "$(printf '%s\n' "$account_ids" | grep -c .)" -gt 1 ]; then
+    log "account hosts multiple podcasts; requesting a token scoped to the target channel"
+    if ! USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/multiplePodcastsToken" \
+         --data-urlencode "grant_type=client_credentials" \
+         --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"; then
+      die "multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}) on a multi-channel account; refusing to publish with the account-wide token (isolation guard)"
     fi
+    scoped="$(printf '%s' "$RESP_BODY" | scoped_token "$PODBEAN_PODCAST_ID")"
+    RESP_BODY=""
+    if [ -z "$scoped" ]; then
+      die "multiplePodcastsToken returned no token for the target channel on a multi-channel account; refusing to publish with the account-wide token (isolation guard)"
+    fi
+    ACCESS_TOKEN="$scoped"
+    CHANNEL_SCOPE_PROVEN=1
+    log "scoped token acquired for target channel (value not shown)"
   else
-    log "warning: could not list podcasts (HTTP ${RESP_CODE:-000}); continuing (single-podcast apps are already scoped)"
+    # Single channel on the account: the base token cannot reach another channel.
+    CHANNEL_SCOPE_PROVEN=1
+    log "account hosts exactly one podcast; the base token is already scoped to it"
   fi
 fi
 
@@ -812,6 +837,11 @@ if [ -n "$COVER" ]; then
 fi
 
 # ---------------------------------------------------------- create episode ----
+# T0-19: refuse to create an episode on a token whose channel scope was never
+# proven. Every path above either proves it or dies; this is the belt that makes
+# a future token path fail closed instead of publishing account-wide.
+[ "${CHANNEL_SCOPE_PROVEN:-0}" = "1" ] \
+  || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
   --data-urlencode "title=${FINAL_TITLE}"
