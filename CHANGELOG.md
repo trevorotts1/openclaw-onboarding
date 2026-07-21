@@ -1,3 +1,41 @@
+## [v20.0.94]  -  2026-07-21  -  BATCH INTEGRATION: six independent, individually-green fixes landed in one merge train (cinematic-forge delivery, sovereign-lock install gates, memory activator, prereqs declaration, tag-ancestry guard, Agnes visual-media SOP)
+
+Six open PRs — each green on its own gate and free of substantive file overlap —
+were reconciled onto v20.0.93 in a single integration branch. The repo version
+markers and the 06/23 re-stamp churn were kept at main and rolled ONCE here; each
+skill's own CHANGELOG carries the full detail. This entry records the batch.
+
+- **#713 fix(cinematic-forge): deliver the artifact the client asked for (A29).**
+  28-cinematic-forge now certifies that the requested transformations actually
+  shipped (receipt chain + hosted-asset binding). Gate:
+  `tests/unit/cinematic-forge-delivery-gate.test.sh`, workflow
+  `cinematic-forge-delivery-guard.yml`. Skill 28 -> v6.6.0.
+- **#695 fix(qc 08/10): two install gates hard-required the CLI their sovereign
+  lock forbids.** `qc-vercel-setup.sh` and `qc-github-setup.sh` no longer assert
+  the presence of the Vercel / GitHub CLI that each skill's API-ONLY lock
+  prohibits; the forbidden-CLI checks become explicit SKIPPED-BY-DESIGN lines.
+  Regression suite `qc-sovereign-lock-forbidden-cli.test.sh`; workflow
+  `checker-false-fail-guards.yml`. Skills 08 and 10 -> v6.5.9 (bumped during
+  integration: their content changed versus main, so G3 requires the marker move).
+- **#708 fix(memory): the activator is correct, complete and atomic (A36).**
+  `activate-memory-stack.sh` pins the provider the box can actually serve and
+  fails (not "DONE") when no embedding-capable key exists. Test
+  `memory-activator-correct-atomic.test.sh`; workflow `memory-activator-guard.yml`.
+  Skill 31 -> v7.3.0.
+- **#700 fix(prereqs 05/06): declare mandatory skill dependencies the installer
+  could not warn about (T0-40).** 05-ghl-setup and 06-ghl-install-pages now ship
+  `PREREQS.json` declaring their `type=skill` dependencies. Test
+  `prereqs-declared-mandatory-skills.test.sh`; workflow
+  `prereqs-declaration-guard.yml`. Skill 05 -> v6.5.11.
+- **#715 guard(tags): G4 tag-ancestry guard.** A version tag pointing off-main
+  jammed the merge lane and nothing watched for it. `scripts/check-tag-ancestry.py`
+  + `tag-ancestry-guard.yml` enforce that every version tag is an ancestor of main
+  (allowlist `.github/known-orphan-tags.txt`); `scripts/push-version-tag.sh` added.
+- **#720 feat(agnes 3/3): Agnes as an optional visual-media generator.** Additive
+  SOP/role updates to 25-video-creator -> v6.6.1.
+
+---
+
 ## [v20.0.93]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
 
 `b3e25876` (v14.28.1, 2026-06-28) demoted `real-estate`/`listings` out of the
