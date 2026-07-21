@@ -1,3 +1,71 @@
+## [v20.0.89]  -  2026-07-21  -  THREE PLACES SKILL 06 REPORTED A BROWSER STATE THAT DID NOT EXIST (T0-16, T0-17, T2-01)
+
+**T0-16 — a failed browser open printed ENSURED.** `browser_manager.sh:563-565`
+ran the canonical open as `AB --session "$session" open ... || true`, recorded it
+toward the circuit-breaker window, and returned 0. If the browser binary was
+absent, timed out, or returned any non-zero status, the `ensure` verb still
+printed `ENSURED: session=... lock=held ttl=1800s — teardown trap installed.` and
+every later reader, including the breaker ledger, inherited a session state that
+did not exist.
+
+The status is now propagated, the open is recorded ONLY on success, and a failure
+is reported instead of announced. The open targets a REMOTE url, so a bounded
+retry (`AB_OPEN_MAX_ATTEMPTS`, default 3, linear backoff) ships with it —
+promoting this to a hard failure without one would turn a network blip into a
+build abort, which is the failure mode that gets gates disabled.
+
+**T0-17 — the parent tore down the session it said the child owned.**
+`run-detached` called `bm_ensure` in the PARENT shell, backgrounded the command,
+and printed that the detached child owned the lock, lease, TTL and teardown. All
+of them lived in the parent, and the child inherited none of the trap — so when
+the parent reached end of file its EXIT trap tore down the session the child was
+still using. The child now acquires everything itself and the parent prints the
+ownership line only after a readiness handshake. The B1 old-guard refusal still
+runs in the parent first (it acquires no resources), so an old-guard box refuses
+before anything is detached, and a child that cannot acquire the session is
+reported rather than announced.
+
+**T2-01 — live page verification never opened a browser session at all.**
+`ghl_verify`'s live path calls `ghl_builder.render_check`, which drives the
+browser through `browser_cmd`, which REFUSES outside
+`browser_manager.browser_session()`. Nothing acquired one; the builder modules'
+own sessions are closed by the time the separate verification step runs. On
+untouched `origin/main` every live page returned `http = None`, `PASS = False`
+and a `render_errors` entry carrying the singleton refusal — a verdict reached
+without a single navigation, on the ONLY production acceptance path for live page
+verification. `render_check`'s docstring asserted that this caller acquired the
+session; it is corrected here too.
+
+`verify_all` now holds ONE session for the whole loop and `verify_page` brackets
+itself re-entrantly, so a direct caller works and the nested case is a no-op.
+MOCK mode drives an injected fetcher and touches no browser, so it takes no
+session.
+
+**The tests, and that they can fail**
+
+`tests/unit/browser-manager-open-status-and-detach-ownership.test.sh` — 18
+checks, hermetic (fake `agent-browser` on PATH, scratch `TMPDIR` and `HOME`).
+Against untouched `origin/main`: **8 passed, 10 FAILED**, including *"failed open
+printed ENSURED"*, *"failed open recorded 0 opens on the breaker (want 0,
+got 1)"*, *"the child's lease survives the parent's exit (want 1, got 0)"* and
+*"a child that never acquired the session was announced as DETACHED"*. Against
+this release: 18 passed. Mutation — discarding the open status again: 10 passed,
+8 failed.
+
+`tests/unit/ghl-verify-live-browser-session.test.py` — 7 tests driven by a
+controlled fake transport that records every `agent-browser` argv; no browser and
+no network. Against untouched `origin/main`: 4 FAILED on the singleton refusal
+and `http=None`. Against this release: 7 passed. Mutation — replacing the session
+bracket with a bare yield: 4 failures.
+
+The Python suite also asserts the OPPOSITE direction: `render_check` called
+outside the bracket must STILL refuse. The fix is the session, never a weakened
+guard.
+
+Both suites run in CI via `.github/workflows/browser-session-truth-guard.yml`.
+
+---
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
