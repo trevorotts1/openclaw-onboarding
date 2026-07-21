@@ -29,6 +29,14 @@
 # network call decides a verdict (the QC's API probes are warn_only by design),
 # and no real credential is used — the values below are literal test strings.
 #
+# Every secrets file this test writes is chmod 600'd immediately after the write,
+# including the legacy-path files of DIRECTION A. Two reasons, and neither is
+# "to satisfy a gate": the fixture must model what a correct installer does, or
+# it is not reproducing the install it claims to test; and qc-static.yml's
+# chmod-600 invariant is a real security assertion — a .sh that writes a
+# secrets/.env and never restricts it is exactly the defect that check exists to
+# catch, and this file was one. The invariant is not relaxed for test scripts.
+#
 # EXIT: 0 all directions passed · 1 a direction failed · 2 could not run.
 
 set -uo pipefail
@@ -101,7 +109,9 @@ mkdir -p "$H/clawd/secrets" "$H/.clawdbot"
   printf 'FISH_AUDIO_API_KEY=%s\n' "$TEST_FISH_KEY"
   printf 'FISH_AUDIO_VOICE_ID=%s\n' "$TEST_FISH_VOICE"
 } > "$H/clawd/secrets/.env"
+chmod 600 "$H/clawd/secrets/.env"
 printf '{"env":{"vars":{"FISH_AUDIO_API_KEY":"%s"}}}\n' "$TEST_FISH_KEY" > "$H/.clawdbot/clawdbot.json"
+chmod 600 "$H/.clawdbot/clawdbot.json"
 qc_reports_set "$H" 30-fish-audio-api-reference qc-fish-audio-api-reference.sh "FISH_AUDIO_API_KEY set"
 check "DIRECTION A (legacy path — the defect)" ABSENT $?
 
@@ -111,6 +121,7 @@ mkdir -p "$H/.openclaw/secrets"
   printf 'FISH_AUDIO_API_KEY=%s\n' "$TEST_FISH_KEY"
   printf 'FISH_AUDIO_VOICE_ID=%s\n' "$TEST_FISH_VOICE"
 } > "$H/.openclaw/secrets/.env"
+chmod 600 "$H/.openclaw/secrets/.env"
 qc_reports_set "$H" 30-fish-audio-api-reference qc-fish-audio-api-reference.sh "FISH_AUDIO_API_KEY set"
 check "DIRECTION B (canonical store — the fix)" SET $?
 rm -rf "$H"
@@ -124,11 +135,13 @@ echo "── 08-vercel-setup ──"
 H="$(build_sandbox 08-vercel-setup)" || { red "could not build sandbox"; exit 2; }
 mkdir -p "$H/clawd/secrets"
 printf 'VERCEL_TOKEN=%s\n' "$TEST_VERCEL" > "$H/clawd/secrets/.env"
+chmod 600 "$H/clawd/secrets/.env"
 qc_reports_set "$H" 08-vercel-setup qc-vercel-setup.sh "VERCEL_TOKEN set"
 check "DIRECTION A (legacy path — the defect)" ABSENT $?
 
 mkdir -p "$H/.openclaw/secrets"
 printf 'VERCEL_TOKEN=%s\n' "$TEST_VERCEL" > "$H/.openclaw/secrets/.env"
+chmod 600 "$H/.openclaw/secrets/.env"
 qc_reports_set "$H" 08-vercel-setup qc-vercel-setup.sh "VERCEL_TOKEN set"
 check "DIRECTION B (canonical store — the fix)" SET $?
 rm -rf "$H"
@@ -142,11 +155,13 @@ echo "── 10-github-setup ──"
 H="$(build_sandbox 10-github-setup)" || { red "could not build sandbox"; exit 2; }
 mkdir -p "$H/clawd/secrets"
 printf 'GITHUB_TOKEN=%s\n' "$TEST_GITHUB" > "$H/clawd/secrets/.env"
+chmod 600 "$H/clawd/secrets/.env"
 qc_reports_set "$H" 10-github-setup qc-github-setup.sh "GITHUB_TOKEN or GH_TOKEN present"
 check "DIRECTION A (legacy path — the defect)" ABSENT $?
 
 mkdir -p "$H/.openclaw/secrets"
 printf 'GITHUB_TOKEN=%s\n' "$TEST_GITHUB" > "$H/.openclaw/secrets/.env"
+chmod 600 "$H/.openclaw/secrets/.env"
 qc_reports_set "$H" 10-github-setup qc-github-setup.sh "GITHUB_TOKEN or GH_TOKEN present"
 check "DIRECTION B (canonical store — the fix)" SET $?
 rm -rf "$H"
