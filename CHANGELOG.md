@@ -1,3 +1,123 @@
+## [v20.0.88]  -  2026-07-21  -  THE RECORDS PIPELINE STOPS REPORTING WHAT DID NOT HAPPEN: a fire-and-forget audit log, a cache key that served the wrong property, a rate limiter that measured the wrong instant, and a validator that counted placeholder keys
+
+Ten findings across Skill 39 (Real Estate Playbook) and Skill 40 (ZHC Public
+Records Scraper), all of one class — a checker or a step reported a result other
+than reality, and in four cases made the false result durable.
+
+### T0-49 (BLOCKER) — the audit-log append was fire-and-forget in BOTH skills
+
+`40-zhc-public-records-scraper/scripts/lib-records.sh:70` was:
+
+    _emit() { bash "$EVENTS" pr_event "$1" "$2" >/dev/null 2>&1 || true; }
+
+Standard output, standard error and the exit status were all discarded, so a
+failed append was indistinguishable from a successful one. Every audit event in
+the skill routes through that helper, and `SKILL.md` calls the log "the
+operator's ground truth" — every downstream compliance and cost claim is
+computed from it. Skill 39's `property-lookup.sh:158-160` had the same shape by
+a different route: a bare `>>` redirection followed by an unconditional
+`F52 event appended` line and `exit 0`, while the checked helper that returns 2
+on a failed append already existed beside it.
+
+Both now propagate the real status. In Skill 40 the record path STAGES the cache
+write, requires the append to succeed, and only then publishes — a record that
+could not be logged is never served and never cached. In Skill 39 the lookup
+routes through `re_event`, prints the appended line only in the success branch,
+and exits 3 on failure.
+
+### T1-05 (BLOCKER) — one address could be served another address's record
+
+The cache key was `target|county_fips|record_type`. The query — which property
+was actually asked for — was not in it. Two different addresses in the same
+county for the same record type produced the same key, so within the cache
+lifetime a lookup for one property returned the cached, attributed record for a
+different property, on the fast, free, confident cache-hit path. The record
+carried real attribution and a real timestamp, so nothing about it read as
+wrong. The writer and the reader agreed with each other because they shared the
+same defect.
+
+Both sides now derive the key from one function that includes a canonical
+normalised query, under a versioned `v2-` namespace so pre-fix entries cannot be
+reused under the new scheme. Expect a one-off rise in upstream calls while the
+namespace fills — that is the wrong hits becoming misses.
+
+### T0-52 (BLOCKER, legal exposure) — fair housing gated the log line, not the route
+
+The protected-class denylist sat at the point an event is WRITTEN, which is
+after the routing decision has already been made. A route computed on a
+protected attribute was prevented only from being LOGGED with that attribute in
+the payload; the routing itself was never examined. `qc-fair-housing.sh` then
+printed `RESULT: PASS — fair-housing is machine-enforced` on the strength of
+`grep -qi "never route on"` over a markdown file and two `grep -q` calls over a
+shell file.
+
+`39-real-estate-playbook/scripts/route-lead.sh` is now THE routing entry point.
+It runs the detector over the lead AND the roster before any filtering or
+scoring, refuses non-zero (exit 3), and only then computes the route on
+specialty, availability and area. The gate drives it with a protected-attribute
+payload and asserts the refusal, with an empty scoring trace as proof the
+refusal came first — and asserts a clean lead still routes.
+
+### T0-53 / T2-34 — the target validator counted placeholder keys, and attested to nothing
+
+`05-validate-target.sh` passed on `[ "$SELECTORS_N" -gt 0 ]`, a COUNT of keys in
+the config's `selectors` object. The shipped Tier-3 template populates that
+object with four `<css-selector-...>` placeholders, so an unedited template
+counted four selectors and reached "VALIDATION PASS — safe to use as a live tier
+target". A passing validation also wrote nothing, while the template ships
+`"validated": false` and the router only serves `validated:true` — so either the
+target was never usable or the flag was set by hand, in which case it attested
+to nothing.
+
+Placeholder and empty selectors are now failures; every selector is evaluated
+against an operator-supplied saved results page by
+`40-zhc-public-records-scraper/scripts/selector-probe.py`; a selector the probe
+cannot evaluate is reported and FAILS, never silently skipped; and a pass
+persists `validated:true` with a SHA-256 bound to the exact fields validated.
+Editing the config afterwards invalidates the attestation and the router stops
+serving the target.
+
+### T2-33 — the rate limiter measured the wrong instant
+
+`lib-cost-cap.sh` computed the remaining delay, printed it, stamped the
+timestamp immediately, and left the sleeping to the caller. The recorded time
+was the time the delay was COMPUTED, not the time the request was MADE, so the
+next computation measured from the wrong origin: after one waited request, the
+following request could fire with zero spacing while the audit log recorded a
+compliant wait — a terms-of-service exposure on a scraping skill. `rate_wait` is
+now an atomic reservation: it holds a per-target lock, sleeps the remainder
+while holding it, and stamps at the request boundary.
+
+### T0-54 / T0-55 / T0-50 / T0-51 — four gates that could not catch what they exist to catch
+
+- `qc-compliance.sh` printed `RESULT: PASS (skipped — jq unavailable)` and
+  exited 0 having run no assertion, on a script `INSTALL.md` names as required
+  for a clean install. It now reports INCOMPLETE and exits non-zero.
+- The Skill 40 no-fabrication predicate was `has("resolved")`, so
+  `{"resolved": true, "county": …}` for a deliberately unresolvable address
+  satisfied the gate written to catch exactly that. It now asserts the value is
+  false and that no county or state was invented, and self-proves by requiring a
+  truthy stub to go red.
+- The Skill 39 no-fabrication gate ran only with every provider key unset — the
+  easy half of its own stated rule. It now installs a controlled fake transport
+  and drives lookup, comparables, geocode and the image-metadata path with a
+  credential present and empty, malformed and explicit no-record responses.
+- A failed extension copy in `05-install-sales-brain-extension.sh` still emitted
+  the durable `sales_brain_extension_installed` event and printed Done. The copy
+  is fatal, the artifact is compared byte-for-byte immediately after, and both
+  the pointer and the event are gated on that direct check.
+
+### Tests
+
+`tests/unit/records-pipeline-fail-closed.test.sh` (34 assertions) and
+`tests/unit/re-routing-fair-housing.test.sh` (23 assertions), each carrying
+mutation proofs — `|| true` restored on the event helper, the query dropped from
+each cache-key side separately, the rate-limit stamp moved back before the
+sleep, the presence-only predicate restored, the fair-housing detector moved
+below scoring, and the keyed-miss branch made to fabricate — and
+anti-false-positive controls asserting the healthy direction still succeeds.
+CI: `.github/workflows/records-pipeline-fail-closed-guard.yml`.
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
