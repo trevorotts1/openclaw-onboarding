@@ -47,7 +47,7 @@
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v20.0.92"
+BROWSER_MANAGER_VERSION="v20.0.93"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -560,8 +560,40 @@ bm_ensure() {
   trap _bm_teardown EXIT INT TERM HUP
   _bm_start_ttl "$session"
   _bm_pool_ceiling_check           # never exceed AB_MAX_SESSIONS
-  AB --session "$session" open "${GHL_AGENCY_URL:-https://app.convertandflow.com}/" >/dev/null 2>&1 || true
-  _bm_breaker_record_open          # count this open toward the breaker window
+
+  # ── T0-16: the open's exit status IS the session's state ────────────────────
+  # This was `... || true; _bm_breaker_record_open; return 0`. If the browser
+  # binary was absent, timed out, or returned any non-zero status, the failed
+  # open was still counted toward the circuit-breaker window, bm_ensure returned
+  # zero, and the `ensure` verb printed ENSURED. Every later reader — including
+  # the breaker ledger — inherited a session state that did not exist.
+  #
+  # Now: the status is propagated, the open is recorded ONLY on success, and a
+  # failure is reported instead of announced as ensured.
+  #
+  # The retry is deliberate and bounded. The open targets a REMOTE url, so a
+  # transient network condition is a real and frequent failure mode that has
+  # nothing to do with the box; promoting this to a hard failure without a
+  # bounded retry would convert a blip into a build abort. AB() already applies
+  # its own per-call timeout, so the worst case here is
+  # AB_OPEN_MAX_ATTEMPTS * AB_CALL_TIMEOUT plus the backoff.
+  local open_url="${GHL_AGENCY_URL:-https://app.convertandflow.com}/"
+  local open_rc=0 attempt=1 max_attempts="${AB_OPEN_MAX_ATTEMPTS:-3}"
+  while :; do
+    open_rc=0
+    AB --session "$session" open "$open_url" >/dev/null 2>&1 || open_rc=$?
+    [ "$open_rc" -eq 0 ] && break
+    [ "$attempt" -ge "$max_attempts" ] && break
+    echo "WARN: browser open attempt $attempt/$max_attempts failed (exit $open_rc) for session=$session — retrying." >&2
+    sleep "$(( attempt * ${AB_OPEN_RETRY_BASE_S:-2} ))"
+    attempt=$(( attempt + 1 ))
+  done
+  if [ "$open_rc" -ne 0 ]; then
+    echo "FAIL: browser open failed (exit $open_rc) for session=$session after $attempt attempt(s). NOT recording the open toward the breaker window and NOT reporting the session ensured." >&2
+    return "$open_rc"
+  fi
+
+  _bm_breaker_record_open          # count this SUCCESSFUL open toward the breaker window
   return 0
 }
 
@@ -607,10 +639,82 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
     run-detached)
       # Approach 0 graft: launch a build through the manager in a DETACHED subtree
       # that OWNS the lock+lease+TTL+trap, so detach-and-exit is safe (no orphan).
+      #
+      # T0-17: this used to run `bm_ensure` in the PARENT and then print that the
+      # detached child owned the result. It did not. The lock file descriptor, the
+      # lease, the TTL timer, $_BM_SESSION and the EXIT trap were all created in
+      # the parent shell; the child inherited none of the trap. When the parent
+      # reached end of file its EXIT trap ran _bm_teardown and tore down the very
+      # session the child was still using — while the parent's own line claimed
+      # the child owned it.
+      #
+      # Now the child acquires everything itself, and the parent prints the
+      # ownership line only after the child signals readiness. The B1 guard runs
+      # in the parent FIRST, so an old-guard box still refuses before anything is
+      # detached — that check acquires no resources, so it is safe to run here.
       [ "${1:-}" = "--" ] && shift
-      bm_ensure || exit $?    # B1 gate refusal: never detach a build through an old guard
-      ( "$@" ) &
-      echo "DETACHED: pid=$! session=$(bm_session_name) — owns lock+lease+TTL+teardown."
+      bm_require_current_guard || exit $?   # B1: never detach through an old guard
+
+      _bm_ready_dir="$(mktemp -d "${TMPDIR:-/tmp}/bm-detach.XXXXXX")" || {
+        echo "FAIL: could not create the readiness handshake directory." >&2; exit 1; }
+      _bm_ready_file="$_bm_ready_dir/ready"
+
+      (
+        # CHILD — owns lock + lease + TTL + teardown trap for its whole life.
+        # Capture with `|| _rc=$?`, NOT `if ! bm_ensure; then _rc=$?`: inside the
+        # body of an `if !` the `!` has already inverted the status, so $? there
+        # is 0 and the real exit code is lost.
+        _rc=0
+        bm_ensure || _rc=$?
+        if [ "$_rc" -ne 0 ]; then
+          printf 'failed %s\n' "$_rc" > "$_bm_ready_file"
+          exit "$_rc"
+        fi
+        printf 'ready %s\n' "$$" > "$_bm_ready_file"
+        "$@"
+      ) &
+      _bm_child_pid=$!
+
+      # PARENT — bounded wait for the handshake. Never print ownership for a
+      # child that has not got it, and never leave a half-started detach silent.
+      _bm_waited_ms=0
+      _bm_ready_timeout_ms=$(( ${AB_DETACH_READY_TIMEOUT_S:-60} * 1000 ))
+      while :; do
+        if [ -s "$_bm_ready_file" ]; then
+          case "$(cat "$_bm_ready_file" 2>/dev/null)" in
+            ready\ *) break ;;
+            failed\ *)
+              _rc="$(cut -d' ' -f2 "$_bm_ready_file" 2>/dev/null)"
+              echo "FAIL: detached child could not acquire the session (bm_ensure exit ${_rc:-1}). Nothing was detached." >&2
+              wait "$_bm_child_pid" 2>/dev/null || true
+              rm -rf "$_bm_ready_dir"
+              exit "${_rc:-1}"
+              ;;
+          esac
+        fi
+        if ! kill -0 "$_bm_child_pid" 2>/dev/null; then
+          echo "FAIL: detached child exited before signalling readiness. Nothing is holding the session." >&2
+          rm -rf "$_bm_ready_dir"
+          exit 1
+        fi
+        if [ "$_bm_waited_ms" -ge "$_bm_ready_timeout_ms" ]; then
+          echo "FAIL: detached child did not signal readiness within $(( _bm_ready_timeout_ms / 1000 ))s. Killing it rather than reporting a session nobody owns." >&2
+          kill "$_bm_child_pid" 2>/dev/null || true
+          rm -rf "$_bm_ready_dir"
+          exit 1
+        fi
+        # Fractional sleep where the box supports it; whole seconds where it does
+        # not, so a shell without sub-second sleep spins on a timer rather than
+        # on the CPU. The waited counter tracks whichever actually happened.
+        if sleep 0.2 2>/dev/null; then
+          _bm_waited_ms=$(( _bm_waited_ms + 200 ))
+        else
+          sleep 1
+          _bm_waited_ms=$(( _bm_waited_ms + 1000 ))
+        fi
+      done
+      rm -rf "$_bm_ready_dir"
+      echo "DETACHED: pid=$_bm_child_pid session=$(bm_session_name) — the child owns lock+lease+TTL+teardown."
       ;;
     teardown)
       # Best-effort teardown of the canonical session even with no active lease.

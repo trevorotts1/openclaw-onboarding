@@ -122,12 +122,28 @@ run_conformance_battery() {
     RESULT=1
   fi
 
-  echo "  [leg 4/5] fill by ref — positional argv (fill @ref value)"
+  echo "  [leg 4/5] fill by ref — positional argv (fill @ref value), READ-BACK verified"
+  # READ-BACK (not exit status alone). A tool that accepts the fill argv, exits 0
+  # and mutates NOTHING is indistinguishable from a working one if only $? is
+  # checked — and that is precisely the capability Skill 44's Tier-4 fallback and
+  # Skill 6's browser_manager.sh depend on. The written value is read back with
+  # `get value`, which agent-browser 0.27.0 (this skill's pin) prints on stdout
+  # as the bare value; an unfilled element returns empty. The value carries a
+  # per-run nonce so a stale value from an earlier run can never satisfy it.
+  local FILL_VALUE="backstop-conformance-value-$$-${RANDOM}"
+  local READBACK
   if [ -n "$REF1" ]; then
     _tmp="$(mktemp)"
-    agent-browser --headed false fill --session "$session" "@$REF1" "backstop-conformance-value" >"$_tmp" 2>&1
+    agent-browser --headed false fill --session "$session" "@$REF1" "$FILL_VALUE" >"$_tmp" 2>&1
     if [ $? -eq 0 ]; then
-      echo "    OK fill by ref succeeded (@$REF1)"
+      READBACK="$(agent-browser --headed false get value "@$REF1" --session "$session" 2>/dev/null | head -1)"
+      READBACK="${READBACK%$'\r'}"
+      if [ "$READBACK" = "$FILL_VALUE" ]; then
+        echo "    OK fill by ref succeeded and the field READ BACK the written value (@$REF1)"
+      else
+        echo "    FAIL fill by ref reported success but the field did NOT hold the written value (@$REF1): wrote '$FILL_VALUE', read back '$READBACK'"
+        RESULT=1
+      fi
     else
       echo "    FAIL fill by ref FAILED (@$REF1): $(cat "$_tmp")"
       RESULT=1
@@ -155,7 +171,11 @@ run_conformance_battery() {
 }
 
 # build_conformance_stub <bin-dir> <pidfile-path> <state-dir> [break-capability]
-#   break-capability: "" (clean) | open | snapshot | snapshot_stability | fill | close
+#   break-capability: "" (clean) | open | snapshot | snapshot_stability | fill
+#                     | fill_noop | close
+# `fill_noop` is the SILENT one: the stub accepts the fill argv, prints FILLED
+# and exits 0 while mutating nothing. A battery that checks only exit status
+# cannot tell it from a working CLI — leg 4's read-back is what catches it.
 # Writes a fake `agent-browser` into <bin-dir> that mimics just enough of the
 # real CLI's argv shape (positional ref fill, `-i` snapshot with `ref=eN`
 # annotations, a scoped Chromium stand-in on `open`) for run_conformance_battery
@@ -169,12 +189,13 @@ build_conformance_stub() {
   cat > "$bin_dir/agent-browser" <<STUBEOF
 #!/usr/bin/env bash
 PIDFILE="$pidfile"
+STATEDIR="$state_dir"
 BREAK="$brk"
 
 verb=""
 for a in "\$@"; do
   case "\$a" in
-    open|snapshot|fill|close|find) verb="\$a"; break ;;
+    open|snapshot|fill|close|find|get) verb="\$a"; break ;;
   esac
 done
 
@@ -212,7 +233,38 @@ case "\$verb" in
       echo "ERROR: fill capability broken (fixture)" >&2
       exit 1
     fi
+    # Locate the @ref and the value that follows it (positional argv, the shape
+    # ghl_ab_executor.py verified live: fill @eN "value").
+    ref=""; val=""; nextval=0
+    for a in "\$@"; do
+      if [ "\$nextval" = "1" ]; then val="\$a"; nextval=0; continue; fi
+      case "\$a" in
+        @*) ref="\${a#@}"; nextval=1 ;;
+      esac
+    done
+    # BREAK=fill_noop: accept the argv, report success, MUTATE NOTHING. This is
+    # the tool leg 4 could not previously detect.
+    if [ "\$BREAK" != "fill_noop" ] && [ -n "\$ref" ]; then
+      mkdir -p "\$STATEDIR"
+      printf '%s' "\$val" > "\$STATEDIR/\$ref.value"
+    fi
     echo "FILLED"
+    exit 0
+    ;;
+  get)
+    # get value @eN -- mirrors the real CLI: prints the stored value on stdout,
+    # nothing at all for an element that was never filled. (No backticks in this
+    # heredoc: it is UNQUOTED, so backticks would be run at generation time.)
+    ref=""
+    for a in "\$@"; do
+      case "\$a" in
+        @*) ref="\${a#@}" ;;
+      esac
+    done
+    if [ -n "\$ref" ] && [ -f "\$STATEDIR/\$ref.value" ]; then
+      cat "\$STATEDIR/\$ref.value"
+    fi
+    echo ""
     exit 0
     ;;
   close)

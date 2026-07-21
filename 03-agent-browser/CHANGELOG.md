@@ -4,6 +4,16 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.6.3] - July 21, 2026 (T0-25 / T0-26: install the pin, and prove the fill actually filled)
+
+### Fixed
+- **The documented install now reads the version pin and installs that exact version (T0-25).** `INSTALL.md` Step 2 ran a bare `npm install -g agent-browser`, with no reference to `agent-browser-cli.pin` and no step comparing the installed version to it — the pin was read only by `qc-agent-browser.sh` and the pin-bump script, never by the install procedure. On any day the registry default is not the pinned release, a fresh install silently placed an UNPROVEN release on the box while the documented procedure reported the installation good — and `qc-agent-browser.sh` then hard-FAILED that box for a version mismatch the install itself had introduced. Step 2 now reads the pin and installs `agent-browser@$AB_PIN`, refusing to fall back to an unpinned install if the pin file cannot be read, and a new Step 3b compares the installed version to the pin and says explicitly not to re-pin to whatever happens to be installed. This adds no new gate: the installed-vs-pin hard assertion already existed in `qc-agent-browser.sh`; landing fresh installs ON the pin strictly reduces the failures it reports.
+
+### Changed
+- **The conformance battery's fill leg is now READ-BACK verified, and the bundled stub can break silently (T0-26).** Leg 4 checked only the invocation's exit status and never read the input value back, while the bundled clean stub echoed `FILLED` and exited 0 without mutating anything — and `backstop-conformance.test.sh` expected that stub to PASS every leg. A tool that accepts the fill and silently does nothing was therefore indistinguishable from a working one, in the very battery that exists to prove the capability Skill 44's Tier-4 fallback and Skill 6's `browser_manager.sh` depend on. Leg 4 now writes a per-run nonce value and reads it back with `get value`, failing when the field does not hold what was written. The stub performs a real mutation and gains a `fill_noop` break mode — accepts the argv, reports success, mutates nothing — which the suite now asserts MUST fail. Measured: against the pre-fix library the `fill_noop` stub passed the whole battery (rc=0); against the fixed library it fails naming the read-back. Verified no false failure on a healthy box: the full battery against the real pinned CLI (agent-browser 0.27.0) passes all five legs, rc=0.
+
+- **The P3-06 stub CLI performs a real fill too (`scripts/tests/lib-stub-agent-browser.sh`).** That stub had no `fill` verb at all (it fell through to a bare `exit 0`) and its snapshot returned only a heading, so the battery's ref picker selected a non-fillable element. Once leg 4 read the value back, `qc-agent-browser.sh`'s own P3-06 regression run failed on a stub that was never meant to be simulating a broken CLI. The stub's snapshot now includes a textbox, and it implements `fill` (real, keyed mutation) and `get`. The deliberate no-op remains exercised by `build_conformance_stub`'s `fill_noop` break mode, so the leg still bites.
+
 ## [v6.6.2] - July 16, 2026 (merge-train fix: GK-27 tripwire wrongly hard-failed staged/installed runs)
 
 ### Fixed

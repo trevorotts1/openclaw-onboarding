@@ -3,13 +3,20 @@
 #
 # Proves lib-backstop-conformance.sh's run_conformance_battery:
 #   1. PASSES clean (rc=0, all five legs OK) against a well-behaved stub CLI.
-#   2. FAILS -- naming the specific broken leg -- when ANY ONE of the five
+#   2. FAILS -- naming the specific broken leg -- when ANY ONE of the
 #      capabilities the real consumers (Skill 6's browser_manager.sh,
 #      Skill 44's Tier-4 fallback) actually script is stubbed OUT: open,
 #      ref-based snapshot, snapshot-ref STABILITY across calls, fill-by-ref,
-#      and guaranteed close (leaked-process read-back). Each capability is
-#      broken ONE AT A TIME (fail-first, per-leg) -- a battery that only ever
-#      passes or only ever fails is worthless; this proves it discriminates.
+#      a fill that SILENTLY NO-OPS, and guaranteed close (leaked-process
+#      read-back). Each capability is broken ONE AT A TIME (fail-first,
+#      per-leg) -- a battery that only ever passes or only ever fails is
+#      worthless; this proves it discriminates.
+#
+#      The fill_noop case (T0-26) is the one this suite previously blessed: the
+#      bundled clean stub echoed a filled message and exited 0 without mutating
+#      anything, leg 4 checked only exit status, and line 59 below expected that
+#      stub to PASS every leg. The stub now performs a real mutation, leg 4 reads
+#      the value back, and a no-op fill is a distinct break mode that MUST fail.
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -61,6 +68,10 @@ run_case "open capability broken (leg 1)"                 "open"                
 run_case "snapshot capability broken (leg 2)"             "snapshot"            fail "did NOT return any ref-based element"
 run_case "snapshot-ref stability broken (leg 3)"          "snapshot_stability"  fail "NOT stable across repeated snapshots"
 run_case "fill-by-ref capability broken (leg 4)"          "fill"                fail "fill by ref FAILED"
+# THE SILENT ONE. The stub accepts the fill argv, prints FILLED and exits 0 while
+# mutating nothing. Exit status alone cannot tell it from a working CLI -- before
+# leg 4 read the field back, this stub PASSED the whole battery. It must FAIL.
+run_case "fill is a silent NO-OP (leg 4 read-back)"       "fill_noop"           fail "did NOT hold the written value"
 run_case "guaranteed-close leak (leg 5)"                  "close"               fail "leaked pid"
 
 echo ""

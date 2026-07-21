@@ -38,10 +38,12 @@
 #   build_stub_agent_browser <bin-dir> <pidfile-path> [leak_mode:0|1]
 build_stub_agent_browser() {
   local bin_dir="$1" pidfile="$2" leak_mode="${3:-0}"
-  mkdir -p "$bin_dir"
+  local state_dir="${pidfile}.state"
+  mkdir -p "$bin_dir" "$state_dir"
   cat > "$bin_dir/agent-browser" <<STUBEOF
 #!/usr/bin/env bash
 PIDFILE="$pidfile"
+STATEDIR="$state_dir"
 LEAK_MODE="$leak_mode"
 
 # Strip an optional leading "--headed <bool>" global flag so verb dispatch
@@ -57,7 +59,49 @@ case "\$1" in
     disown \$! 2>/dev/null || true
     echo "\$!" > "\$PIDFILE"
     exit 0 ;;
-  snapshot) echo '- heading "Example Domain" [level=1, ref=e1]'; exit 0 ;;
+  snapshot)
+    # A textbox is included so lib-backstop-conformance.sh's ref picker has a
+    # FILLABLE element to select (it prefers a textbox/input line). Before
+    # GK-28/U90's read-back leg the picker fell through to the heading, and a
+    # "fill" against a heading was meaningless -- it only ever passed because
+    # leg 4 checked exit status alone.
+    echo '- heading "Example Domain" [level=1, ref=e1]'
+    echo '- textbox "fill me" [ref=e2]'
+    exit 0 ;;
+  fill)
+    # Performs a REAL mutation, keyed by ref, so the battery's read-back leg
+    # measures something. A stub that accepted the fill and stored nothing is
+    # exactly the no-op the read-back exists to catch -- that case is exercised
+    # deliberately by build_conformance_stub's fill_noop break mode, never
+    # here, where a clean CLI is what is being simulated. (No backticks in this
+    # heredoc: it is UNQUOTED, so they would run at generation time.)
+    ref=""; val=""; nextval=0
+    for a in "\$@"; do
+      if [ "\$nextval" = "1" ]; then val="\$a"; nextval=0; continue; fi
+      case "\$a" in
+        @*) ref="\${a#@}"; nextval=1 ;;
+      esac
+    done
+    if [ -n "\$ref" ]; then
+      mkdir -p "\$STATEDIR"
+      printf '%s' "\$val" > "\$STATEDIR/\$ref.value"
+    fi
+    echo "FILLED"
+    exit 0 ;;
+  get)
+    # get value @eN -- prints the stored value on stdout, nothing for an
+    # element that was never filled (mirrors the real CLI).
+    ref=""
+    for a in "\$@"; do
+      case "\$a" in
+        @*) ref="\${a#@}" ;;
+      esac
+    done
+    if [ -n "\$ref" ] && [ -f "\$STATEDIR/\$ref.value" ]; then
+      cat "\$STATEDIR/\$ref.value"
+    fi
+    echo ""
+    exit 0 ;;
   close)
     if [[ "\$LEAK_MODE" != "1" ]]; then
       [[ -s "\$PIDFILE" ]] && kill -TERM "\$(cat "\$PIDFILE")" 2>/dev/null
