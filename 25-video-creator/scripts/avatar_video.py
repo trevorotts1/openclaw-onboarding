@@ -61,7 +61,11 @@ def avatar_video(script_path: Optional[Path] = None, script_text: Optional[str] 
     print(f"   Background: {background}")
     
     # Load script
-    if script_path and script_path.exists():
+    if script_path is not None and script_text is not None:
+        raise ValueError("Provide exactly one of script_path or script_text, not both")
+    if script_path is not None:
+        if not script_path.is_file():
+            raise FileNotFoundError(f"Script file not found: {script_path}")
         with open(script_path, 'r') as f:
             script = f.read()
     elif script_text:
@@ -74,18 +78,24 @@ def avatar_video(script_path: Optional[Path] = None, script_text: Optional[str] 
         output = Path("avatar_video.mp4")
     
     output.parent.mkdir(parents=True, exist_ok=True)
+
+    if background == 'custom' and background_path is None:
+        raise ValueError("Custom background requires --background-image")
+    if background_path is not None and not background_path.is_file():
+        raise FileNotFoundError(f"Custom background image not found: {background_path}")
     
-    # Try AI provider
+    # Non-local requests must be fulfilled by the selected provider.
     if provider != 'local':
-        try:
-            return _generate_with_provider(
-                script, avatar, background, voice_id, output, provider
-            )
-        except Exception as e:
-            print(f"   AI provider failed: {e}")
-            print("   Falling back to local generation...")
-    
-    # Local fallback - create presentation-style video
+        return _generate_with_provider(
+            script, avatar, background, voice_id, output, provider
+        )
+
+    if voice_id:
+        raise NotImplementedError(
+            "Local avatar voice synthesis is not implemented; "
+            "omit --voice or select an implemented AI avatar provider"
+        )
+    # Explicit local mode creates a presentation-style video.
     return _generate_local(script, avatar, background, background_path, voice_id, output)
 
 
@@ -272,8 +282,9 @@ def list_avatars():
 
 def main():
     parser = argparse.ArgumentParser(description='AI Avatar Video Generator')
-    parser.add_argument('--script', '-s', type=Path, help='Script file path')
-    parser.add_argument('--text', '-t', help='Script text')
+    script_group = parser.add_mutually_exclusive_group()
+    script_group.add_argument('--script', '-s', type=Path, help='Script file path')
+    script_group.add_argument('--text', '-t', help='Script text')
     parser.add_argument('--avatar', '-a', default='professional_female_1',
                        help='Avatar preset or ID')
     parser.add_argument('--background', '-b', default='office_blur',

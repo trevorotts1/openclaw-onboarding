@@ -19,7 +19,7 @@ Add this section:
 - Location: `~/.openclaw/skills/video-creator/`
 - Purpose: generate and assemble videos (for example: text to video, image to video, multi-clip assembly)
 - Primary provider: KIE.ai (uses `KIE_API_KEY`)
-- Output: default is `~/Videos/Output/`
+- Default outputs: text-to-video writes a prompt/timestamp filename in the current working directory; script-to-video writes beside the input script; multi-clip assembly writes `assembled.mp4` in the current working directory.
 ```
 
 ### MEMORY.md

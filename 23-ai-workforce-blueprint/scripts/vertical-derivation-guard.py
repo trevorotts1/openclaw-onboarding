@@ -57,6 +57,54 @@ FAIL CLOSED: no build-state verticalPacks record AND no core_answers supplied
 vertical-specific department found on disk under that condition is a
 violation with unexplained provenance.
 
+RETROACTIVE-RECLASSIFICATION GRANDFATHERING (naming map
+`universal_primary_history`)
+A department can STOP being a universal primary. When it does, every client
+provisioned while it WAS one is holding it legitimately — it was floor, not a
+vertical, on the day it landed. Judging that provisioning by today's
+classification is not a violation detection, it is a clock error, and it is
+install-blocking (run-full-install.sh phase=3b treats rc=3 as fail_install).
+The concrete case: commit b3e25876 (v14.28.1, 2026-06-28) removed
+"universal_primary": true from real-estate/`listings`. BEFORE it,
+apply_vertical_packs PHASE 1 looped over EVERY pack and added that pack's
+primary UNCONDITIONALLY, never consulting _detect_vertical_packs — so every
+client built in that era received `listings` regardless of industry. The fix
+was forward-only; no fleet remediation ever ran.
+
+So a provisioned vertical-specific department is GRANDFATHERED — reported, but
+not a violation — when BOTH hold:
+  1. CLASSIFICATION: the naming map's `universal_primary_history.demotions`
+     carries a WELL-FORMED entry for that exact department id, naming the
+     demoting commit and the UTC instant of the demotion. The entry is IGNORED
+     unless it is complete, names a real vertical-pack department, and that
+     department is NOT still universal_primary today.
+  2. EVIDENCE: at least one WITNESS proves the department was already
+     provisioned BEFORE that instant — see provisioning_witnesses(). No
+     witness -> NOT grandfathered -> still rc=3. Absence of evidence is never
+     a grandfather.
+It is REFUSED outright, whatever the witnesses say, when the build's own
+verticalPacks record names the department in addedDepartments with an
+appliedAt at/after the demotion — a direct record of a post-demotion add beats
+circumstantial pre-dating.
+
+WHY THIS CANNOT BECOME A BLANKET BYPASS
+  - There is NO flag, env var, or CLI option that disables the check. The only
+    lever is a per-department, dated, commit-attributed row in the naming map.
+  - The row's claim is falsifiable against git: `department` must actually have
+    carried universal_primary=true before `demoted_by_commit`.
+  - A row grants nothing on its own — every box must still produce its own
+    dated witness.
+  - It cannot reach a department that was never a universal primary, so the
+    real leak this guard exists to catch (a real-estate set landing on a
+    coaching client: showings / open-house / closing-coordinator /
+    local-market-intelligence / lead-generation) is untouched.
+  - check_add() ignores the table completely: grandfathering never authorizes
+    a NEW materialization, it only explains an OLD one.
+  - Grandfathered departments are inventoried in the receipt and printed on
+    EVERY run, PASS or FAIL. Downgrading a FATAL to silence would be the same
+    disease as a checker that reports success without measuring reality; this
+    downgrades FATAL to LOUD, which is a different thing.
+
 USAGE
   python3 vertical-derivation-guard.py --departments-dir DIR [--build-state PATH]
       [--core-answers PATH] [--naming-map PATH] [--out PATH] [--json]
@@ -66,7 +114,10 @@ USAGE
 
 EXIT CODES (audit mode, mirrors department-floor.py's convention)
   0  PASS — provisioned vertical-specific departments subset declared verticals
+         (a PASS may still carry grandfathered residue + warnings; both are
+         printed and written to the receipt — 0 never means "nothing to see")
   3  FAIL — a provisioned vertical-specific department's pack was not declared
+         and it is not evidenced pre-reclassification residue
   7  cannot resolve a departments dir
 
 EXIT CODES (--check-add mode)
@@ -81,6 +132,7 @@ only write is the receipt file (--out, or the default
 import json
 import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -89,6 +141,30 @@ SCRIPT_DIR = Path(__file__).resolve().parent
 SKILL_DIR = SCRIPT_DIR.parent
 NAMING_MAP = SKILL_DIR / "department-naming-map.json"
 RECEIPT_RELATIVE_PATH = Path("provisioning") / "vertical-derivation.json"
+
+# Every field a universal_primary_history.demotions[] row MUST carry to be
+# honored. A row missing any of these is IGNORED with a warning rather than
+# treated as a wildcard — an incomplete row must never widen the grandfather.
+DEMOTION_REQUIRED_FIELDS = ("department", "pack", "demoted_at", "demoted_by_commit")
+
+# build-state fields that are UPPER BOUNDS on the moment a department was
+# materialized: each one is written at or after the workforce build has already
+# put the department in the client's set, so `field < demoted_at` PROVES the
+# department predates the demotion. Fields that only LOWER-bound the build
+# (interviewCompletedAt, buildStartedAt, buildKickRequestedAt) are deliberately
+# NOT here — the interview finishing before a demotion says nothing about when
+# the departments landed, and using them would grandfather post-demotion adds.
+PROVISIONING_UPPER_BOUND_FIELDS = (
+    # written when every department is done (build-state-schema.json: "the
+    # build-completion timestamp ... the moment every department is done")
+    "buildCompletedAt",
+    # ZHC closeout only starts/finishes after the build has produced the depts
+    "closeoutStartedAt",
+    "closeoutCompletedAt",
+    # Command Center install materializes department folders in its phase 3,
+    # so its completion bounds their existence
+    "commandCenterCompletedAt",
+)
 
 
 def load_naming_map(path=None):
@@ -257,7 +333,251 @@ def provisioned_vertical_departments(departments_dir, dept_idx):
     return out
 
 
-def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_answers=None, naming_map=None):
+def _parse_iso(value):
+    """Parse an ISO-8601 timestamp into an AWARE UTC datetime, or None.
+
+    build-state timestamps in the wild are a mix of 'Z', '+00:00', '-04:00'
+    and bare naive strings (build-workforce.py writes datetime.now().isoformat(),
+    which is naive local time). A naive value is read as UTC — the conservative
+    reading for a witness, since treating a local timestamp as UTC can only
+    move it EARLIER relative to a UTC cutoff for west-of-UTC boxes... which
+    would be the permissive direction, so we additionally never accept a
+    witness that lands within WITNESS_SAFETY_MARGIN of the cutoff.
+    """
+    if not isinstance(value, str) or not value.strip():
+        return None
+    s = value.strip().replace("Z", "+00:00")
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+# A witness must predate the demotion by more than this, so that timezone
+# ambiguity in a naive build-state timestamp (max ±14h in the real world)
+# can never be what turns a violation into a grandfather.
+WITNESS_SAFETY_MARGIN_SECONDS = 14 * 3600
+
+
+def universal_primary_demotions(naming_map, dept_idx=None):
+    """
+    Parse the naming map's `universal_primary_history.demotions` into
+    {dept_id: row}, returning (table, warnings).
+
+    A row is honored ONLY if it is complete and internally consistent. Every
+    rejection is a warning, never a silent drop — a malformed grandfather row
+    is exactly the kind of thing that must not quietly widen a gate.
+    """
+    warnings = []
+    hist = (naming_map or {}).get("universal_primary_history") or {}
+    rows = hist.get("demotions") if isinstance(hist, dict) else None
+    if rows is None:
+        return {}, warnings
+    if not isinstance(rows, list):
+        warnings.append(
+            "DEMOTION_TABLE_MALFORMED: universal_primary_history.demotions is "
+            f"{type(rows).__name__}, expected a list — NO department is grandfathered."
+        )
+        return {}, warnings
+
+    idx = dept_idx if dept_idx is not None else dept_pack_index(naming_map)
+    table = {}
+    for i, row in enumerate(rows):
+        if not isinstance(row, dict):
+            warnings.append(f"DEMOTION_ROW_IGNORED[{i}]: not an object — ignored.")
+            continue
+        missing = [f for f in DEMOTION_REQUIRED_FIELDS if not str(row.get(f) or "").strip()]
+        if missing:
+            warnings.append(
+                f"DEMOTION_ROW_IGNORED[{i}]: missing required field(s) {missing} — ignored "
+                "(an incomplete row is never a wildcard)."
+            )
+            continue
+        did = str(row["department"]).strip()
+        if did in ("*", "all", "ALL") or "*" in did:
+            warnings.append(
+                f"DEMOTION_ROW_IGNORED[{i}]: department '{did}' looks like a wildcard — "
+                "ignored (this table is per-department by design)."
+            )
+            continue
+        meta = idx.get(did)
+        if meta is None:
+            warnings.append(
+                f"DEMOTION_ROW_IGNORED[{i}]: department '{did}' is not declared by any "
+                "vertical pack — ignored (nothing to grandfather)."
+            )
+            continue
+        if meta["universal_primary"]:
+            warnings.append(
+                f"DEMOTION_ROW_IGNORED[{i}]: department '{did}' is STILL universal_primary "
+                "today — ignored (it is already excluded from this gate; the row is stale)."
+            )
+            continue
+        when = _parse_iso(row["demoted_at"])
+        if when is None:
+            warnings.append(
+                f"DEMOTION_ROW_IGNORED[{i}]: demoted_at '{row['demoted_at']}' is not a "
+                "parseable ISO-8601 timestamp — ignored."
+            )
+            continue
+        table[did] = dict(row, _demoted_at_dt=when)
+    return table, warnings
+
+
+def _dir_birth_time(path):
+    """
+    Creation ("birth") time of a directory as a UTC datetime, or None.
+
+    A birth time EARLIER than a cutoff is proof the directory existed before
+    it — a filesystem fact, not a self-report. A birth time LATER than the
+    cutoff proves nothing at all: department folders are re-scaffolded wholesale
+    by fleet refreshes (measured 2026-07-21: three boxes carry 36/36 department
+    dirs sharing one birth date), so a late birth is used as evidence of
+    NOTHING and never disqualifies.
+
+    Python exposes st_birthtime on macOS/BSD but not on Linux, where the guard
+    runs inside the client container. GNU coreutils `stat -c %W` does expose
+    it there (ext4/xfs/overlayfs store a creation time), so that is the
+    fallback: read-only, hard 5s cap, and every failure mode degrades to
+    "no filesystem witness".
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return None
+    bt = getattr(st, "st_birthtime", None)
+    if bt:
+        return datetime.fromtimestamp(float(bt), timezone.utc)
+    try:
+        proc = subprocess.run(["stat", "-c", "%W", str(path)],
+                              capture_output=True, text=True, timeout=5)
+        raw = (proc.stdout or "").strip()
+        secs = int(raw)
+    except (OSError, ValueError, subprocess.SubprocessError):
+        return None
+    if secs <= 0:  # 0 or '-' means the filesystem has no creation time
+        return None
+    return datetime.fromtimestamp(float(secs), timezone.utc)
+
+
+def provisioning_witnesses(dept_id, dept_dirname, departments_dir, build_state, dir_birth_times=None):
+    """
+    Every admissible piece of evidence for "this department was already
+    provisioned by time T", newest-first irrelevant — the caller wants any
+    witness that predates a cutoff.
+
+    Each witness is {source, value (ISO), strength}:
+      direct      — the build's OWN verticalPacks record names this department
+                    in addedDepartments, and appliedAt says when that run
+                    happened. The tightest evidence available.
+      filesystem  — the department directory's creation time.
+      build-window— a build-lifecycle timestamp that is an upper bound on the
+                    materialization of the client's whole department set
+                    (PROVISIONING_UPPER_BOUND_FIELDS). Box-level, not
+                    department-level: it bounds when the SET existed, so it is
+                    the weakest of the three and is labelled as such in the
+                    receipt so cleanup can be prioritized by evidence quality.
+    """
+    out = []
+    bs = build_state if isinstance(build_state, dict) else {}
+    vp = bs.get("verticalPacks")
+    if isinstance(vp, dict):
+        applied = _parse_iso(vp.get("appliedAt"))
+        added_ids = {e.get("id") for e in (vp.get("addedDepartments") or [])
+                     if isinstance(e, dict)}
+        if applied is not None and dept_id in added_ids:
+            out.append({"source": "build-state.verticalPacks.appliedAt "
+                                  "(record names this department in addedDepartments)",
+                        "value": applied.isoformat(), "strength": "direct", "_dt": applied})
+
+    birth = None
+    if dir_birth_times is not None:
+        raw = dir_birth_times.get(dept_dirname)
+        if raw:
+            birth = datetime.fromtimestamp(float(raw), timezone.utc)
+    elif departments_dir is not None:
+        birth = _dir_birth_time(Path(departments_dir) / dept_dirname)
+    if birth is not None:
+        out.append({"source": f"filesystem birth time of departments/{dept_dirname}",
+                    "value": birth.isoformat(), "strength": "filesystem", "_dt": birth})
+
+    for field in PROVISIONING_UPPER_BOUND_FIELDS:
+        dt = _parse_iso(bs.get(field))
+        if dt is not None:
+            out.append({"source": f"build-state.{field}", "value": dt.isoformat(),
+                        "strength": "build-window", "_dt": dt})
+    return out
+
+
+def grandfather_ruling(provisioned_entry, demotion, build_state, departments_dir, dir_birth_times=None):
+    """
+    Decide whether one provisioned vertical-specific department is
+    pre-reclassification residue. Returns (ruling_dict_or_None, refusal_reason_or_None).
+
+    A ruling is only ever produced for a department the demotion table already
+    covers; this function's whole job is the EVIDENCE half.
+    """
+    dept_id = provisioned_entry["id"]
+    cutoff = demotion["_demoted_at_dt"]
+
+    # DISQUALIFIER (beats every witness): the build's own record says THIS
+    # department was added by a run that happened at/after the demotion.
+    bs = build_state if isinstance(build_state, dict) else {}
+    vp = bs.get("verticalPacks")
+    if isinstance(vp, dict):
+        applied = _parse_iso(vp.get("appliedAt"))
+        added_ids = {e.get("id") for e in (vp.get("addedDepartments") or [])
+                     if isinstance(e, dict)}
+        if applied is not None and dept_id in added_ids and applied >= cutoff:
+            return None, (
+                f"POST_DEMOTION_ADD: build-state.verticalPacks records '{dept_id}' as added "
+                f"by a run at {applied.isoformat()}, at/after '{dept_id}' stopped being a "
+                f"universal primary ({cutoff.isoformat()}, commit "
+                f"{demotion['demoted_by_commit'][:8]}) — not pre-reclassification residue."
+            )
+
+    witnesses = provisioning_witnesses(dept_id, provisioned_entry["dir"], departments_dir,
+                                       build_state, dir_birth_times)
+    qualifying = [w for w in witnesses
+                  if (cutoff - w["_dt"]).total_seconds() > WITNESS_SAFETY_MARGIN_SECONDS]
+    if not qualifying:
+        return None, (
+            f"NO_PRE_RECLASSIFICATION_WITNESS: '{dept_id}' stopped being a universal primary at "
+            f"{cutoff.isoformat()} (commit {demotion['demoted_by_commit'][:8]}), but this box "
+            f"offers no evidence it was provisioned before then "
+            f"({len(witnesses)} timestamp(s) examined, none clearing the cutoff) — absence of "
+            f"evidence is never a grandfather."
+        )
+
+    strength_rank = {"direct": 0, "filesystem": 1, "build-window": 2}
+    best = min(qualifying, key=lambda w: (strength_rank.get(w["strength"], 9), w["_dt"]))
+    return {
+        "id": dept_id,
+        "pack": provisioned_entry["pack"],
+        "packs": sorted(provisioned_entry.get("packs") or [provisioned_entry["pack"]]),
+        "dir": provisioned_entry["dir"],
+        "demotedAt": cutoff.isoformat(),
+        "demotedByCommit": demotion["demoted_by_commit"],
+        "demotedInVersion": demotion.get("demoted_in_version", ""),
+        "witness": {k: v for k, v in best.items() if not k.startswith("_")},
+        "allWitnesses": [{k: v for k, v in w.items() if not k.startswith("_")} for w in qualifying],
+        "status": "GRANDFATHERED_PRE_RECLASSIFICATION",
+        "cleanup": demotion.get("cleanup", "OPEN — owner decision; this guard never removes a department."),
+        "reason": (
+            f"GRANDFATHERED_PRE_RECLASSIFICATION: '{dept_id}' was an explicitly-flagged "
+            f"universal primary (shipped to EVERY client regardless of industry) until "
+            f"{cutoff.isoformat()}, commit {demotion['demoted_by_commit'][:8]}"
+            f"{(' / ' + demotion['demoted_in_version']) if demotion.get('demoted_in_version') else ''}. "
+            f"This box evidences provisioning before that: {best['source']} = {best['value']} "
+            f"({best['strength']}). Legitimate when it landed; RESIDUE now — reported, not fatal, "
+            f"never auto-removed."
+        ),
+    }, None
+
+
+def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_answers=None,
+                                 naming_map=None, dir_birth_times=None):
     """
     Compare provisioned vertical-specific departments (disk truth) to
     declared verticals (build-state record, or re-derived from core_answers,
@@ -274,6 +594,10 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
 
     dept_idx = dept_pack_index(nm)
 
+    warnings = []
+    demotions, demotion_warnings = universal_primary_demotions(nm, dept_idx)
+    warnings.extend(demotion_warnings)
+
     declared_from_state, state_source = declared_packs_from_build_state(build_state or {})
     if declared_from_state is not None:
         declared = declared_from_state
@@ -281,6 +605,11 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
     elif core_answers is not None:
         declared = declared_packs_from_core_answers(core_answers, nm)
         declared_source = "core-answers (re-derived; no build-state verticalPacks record)"
+        warnings.append(
+            "NO_DECLARATION_RECORD: build-state carries no verticalPacks.detectedPacks "
+            "record; the declared set was RE-DERIVED from core_answers. The build's own "
+            "audit record is missing and should be restored."
+        )
     else:
         # FAIL CLOSED: no record and no core_answers supplied -> the declared
         # set is EMPTY. Mirrors shared-utils/industry-gate.sh: absence of
@@ -288,25 +617,60 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
         # present on disk is then a violation (unexplained provenance).
         declared = {}
         declared_source = "none (fail-closed empty — no build-state record, no core_answers)"
+        warnings.append(
+            "NO_DECLARATION_RECORD: build-state carries no verticalPacks.detectedPacks "
+            "record and no core_answers were supplied, so the DECLARED set is fail-closed "
+            "EMPTY — every vertical-specific department on disk is unexplained unless it is "
+            "evidenced pre-reclassification residue. This box's declaration record is "
+            "MISSING and must be restored; it is not a pass."
+        )
 
     provisioned = provisioned_vertical_departments(dd, dept_idx)
     violations = []
+    grandfathered = []
     for p in provisioned:
         # A department declared by SEVERAL packs is explained as soon as ANY of
         # its owning packs is declared — see dept_pack_index()'s docstring.
         owning = p.get("packs") or [p["pack"]]
-        if not (set(owning) & set(declared.keys())):
-            owner_desc = f"pack '{p['pack']}'" if len(owning) == 1 else f"packs {sorted(owning)}"
-            violations.append({
-                "id": p["id"],
-                "pack": p["pack"],
-                "packs": sorted(owning),
-                "reason": (
-                    f"VERTICAL_NOT_DECLARED: department '{p['id']}' ({owner_desc}) is "
-                    f"provisioned on disk but none of {sorted(owning)} is in the declared set "
-                    f"({sorted(declared.keys()) or ['none']}) — source: {declared_source}"
-                ),
-            })
+        if set(owning) & set(declared.keys()):
+            continue
+
+        # Undeclared. Before calling it a violation, ask whether it was FLOOR —
+        # not a vertical — on the day it was provisioned. Only departments the
+        # dated demotion table covers can even be asked, and each must produce
+        # its own evidence. See the module docstring.
+        demotion = demotions.get(p["id"])
+        if demotion is not None:
+            ruling, refusal = grandfather_ruling(p, demotion, build_state, dd, dir_birth_times)
+            if ruling is not None:
+                grandfathered.append(ruling)
+                continue
+            grandfather_note = f" GRANDFATHER REFUSED — {refusal}"
+        else:
+            grandfather_note = ""
+
+        owner_desc = f"pack '{p['pack']}'" if len(owning) == 1 else f"packs {sorted(owning)}"
+        violations.append({
+            "id": p["id"],
+            "pack": p["pack"],
+            "packs": sorted(owning),
+            "reason": (
+                f"VERTICAL_NOT_DECLARED: department '{p['id']}' ({owner_desc}) is "
+                f"provisioned on disk but none of {sorted(owning)} is in the declared set "
+                f"({sorted(declared.keys()) or ['none']}) — source: {declared_source}"
+                f"{grandfather_note}"
+            ),
+        })
+
+    if grandfathered:
+        warnings.append(
+            "GRANDFATHERED_RESIDUE: {n} department(s) [{ids}] are on disk from BEFORE they "
+            "were reclassified as industry-gated. They were the universal floor when they "
+            "landed, so they are not force-adds and do not fail this install — but they ARE "
+            "residue. This guard never removes a department; cleanup is a separate owner "
+            "decision and can be driven from this receipt.".format(
+                n=len(grandfathered), ids=", ".join(sorted(g["id"] for g in grandfathered)))
+        )
 
     verdict = "FAIL" if violations else "PASS"
     return {
@@ -316,9 +680,29 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
         "declaredVerticals": [{"pack": k, "matchedKeywords": v} for k, v in sorted(declared.items())],
         "provisionedVerticalDepartments": provisioned,
         "violations": violations,
+        "grandfatheredDepartments": grandfathered,
+        "warnings": warnings,
+        "residueSummary": {
+            "grandfatheredCount": len(grandfathered),
+            "grandfatheredIds": sorted(g["id"] for g in grandfathered),
+            "byWitnessStrength": {
+                s: sorted(g["id"] for g in grandfathered if g["witness"]["strength"] == s)
+                for s in ("direct", "filesystem", "build-window")
+                if any(g["witness"]["strength"] == s for g in grandfathered)
+            },
+            "declarationRecordPresent": declared_from_state is not None,
+            "cleanupOwner": "OWNER DECISION — this guard never removes a department.",
+        },
         "verdict": verdict,
         "reason": (
-            "provisioned ⊆ declared for every vertical-specific department"
+            (
+                "provisioned ⊆ declared for every vertical-specific department"
+                if not grandfathered else
+                "provisioned ⊆ declared for every vertical-specific department, EXCEPT "
+                + str(len(grandfathered)) + " grandfathered pre-reclassification residue "
+                "department(s) [" + ", ".join(sorted(g["id"] for g in grandfathered))
+                + "] — reported, not fatal, NOT cleaned up"
+            )
             if not violations else "; ".join(v["reason"] for v in violations)
         ),
     }
@@ -332,6 +716,15 @@ def _no_departments_dir_verdict(reason):
         "declaredVerticals": [],
         "provisionedVerticalDepartments": [],
         "violations": [],
+        "grandfatheredDepartments": [],
+        "warnings": [],
+        "residueSummary": {
+            "grandfatheredCount": 0,
+            "grandfatheredIds": [],
+            "byWitnessStrength": {},
+            "declarationRecordPresent": False,
+            "cleanupOwner": "OWNER DECISION — this guard never removes a department.",
+        },
         "verdict": "UNKNOWN",
         "reason": reason,
     }
@@ -348,6 +741,14 @@ def check_add(dept_id, declared_packs, naming_map=None):
     Returns (allowed: bool, error_or_None: str). The error string is a NAMED
     error ("VERTICAL_NOT_DECLARED: ...") so a caller/log/receipt can grep it
     reliably, per BINARY acceptance (c)'s "refused with a named error".
+
+    DELIBERATELY IGNORES universal_primary_history. Grandfathering explains a
+    department that is ALREADY on disk from a previous classification era; it
+    is not a licence to materialize one TODAY. A department demoted out of the
+    universal floor is industry-gated from the demotion onward, so adding it
+    now still requires a declaration. Wiring the demotion table in here is how
+    an evidence-based grandfather would quietly become a blanket bypass, so it
+    is not wired in — asserted by test-vertical-derivation-guard.sh case (i5).
     """
     nm = naming_map if naming_map is not None else load_naming_map()
     dept_idx = dept_pack_index(nm)
@@ -418,9 +819,21 @@ def _print_audit_human(verdict):
     print(f"declared verticals    = {[d['pack'] for d in verdict['declaredVerticals']] or ['none']}", file=sys.stderr)
     print(f"provisioned vertical-specific depts = "
           f"{[d['id'] for d in verdict['provisionedVerticalDepartments']] or ['none']}", file=sys.stderr)
+    # Residue and warnings print on EVERY run, PASS included — a clean rc must
+    # never be the reason an operator stops seeing what is actually on disk.
+    for g in verdict.get("grandfatheredDepartments") or []:
+        print(f"GRANDFATHERED RESIDUE: {g['reason']}", file=sys.stderr)
+        print(f"    cleanup: {g['cleanup']}", file=sys.stderr)
+    for w in verdict.get("warnings") or []:
+        print(f"WARNING: {w}", file=sys.stderr)
     if verdict["violations"]:
         for v in verdict["violations"]:
             print(f"VIOLATION: {v['reason']}", file=sys.stderr)
+    summary = verdict.get("residueSummary") or {}
+    if summary.get("grandfatheredCount"):
+        print(f"RESIDUE INVENTORY: {summary['grandfatheredCount']} grandfathered "
+              f"{summary['grandfatheredIds']} by witness strength "
+              f"{summary.get('byWitnessStrength')}", file=sys.stderr)
     print(f"RESULT: {verdict['verdict']} (rc={verdict['rc']})", file=sys.stderr)
 
 
