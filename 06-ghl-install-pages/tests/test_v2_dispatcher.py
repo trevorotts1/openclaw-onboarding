@@ -20,6 +20,7 @@ No real client/operator names, ids, emails, or location-ids appear.
 """
 from __future__ import annotations
 
+import builtins
 import json
 import os
 import sys
@@ -365,7 +366,81 @@ class TestStep0AndFunnelHandoff:
         assert handoff["funnel_template_id"] == "follow-up-funnel"
         ids = [a["automation_id"] for a in handoff["to_build"]]
         assert ids == ["soap-opera-sequence"]            # only build_now=True
+        # T0-18: this assertion used to read `is False`, encoding the defect as
+        # correct. SKILL.md declares the P4->P5 seam a REQUIRED producer-consumer
+        # step for full-funnel work; a task with at least one build_now
+        # automation is exactly that, so the artifact must say so.
+        assert handoff["mandatory"] is True
+        # The verdict must point at the artifact it depends on.
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["skill44_handoff_path"] == handoff_path
+
+    def test_reference_only_link_map_is_not_mandatory(self, tmp_path):
+        # T0-18 anti-false-positive: "mandatory" is the FULL-FUNNEL condition, not
+        # "any link map at all". A map carrying only reference material creates no
+        # build obligation and must not be stamped mandatory.
+        task = dict(FAKE_TASK)
+        task["funnel_template_id"] = "follow-up-funnel"
+        task["linked_automations"] = {
+            "found": True,
+            "automations": [
+                {"automation_id": "seinfeld-daily-sequence", "build_now": False},
+            ],
+        }
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_VERIFIED
+        handoff = json.load(open(os.path.join(tmp_path, "routing", "skill44-handoff.json")))
+        assert handoff["to_build"] == []
         assert handoff["mandatory"] is False
+
+    def test_handoff_persistence_failure_fails_the_dispatch(self, tmp_path, monkeypatch):
+        # T0-18, the load-bearing case. The verified state used to be written
+        # BEFORE the handoff, the handoff was stamped optional, and every
+        # persistence error was swallowed by `except Exception: pass` -- so a
+        # full-funnel task whose handoff could not be persisted returned VERIFIED
+        # while Skill 44 never received the work.
+        task = dict(FAKE_TASK)
+        task["funnel_template_id"] = "follow-up-funnel"
+        task["linked_automations"] = {
+            "found": True,
+            "automations": [
+                {"automation_id": "soap-opera-sequence", "build_now": True},
+            ],
+        }
+
+        real_open = builtins.open
+
+        def _blocked_open(path, mode="r", *a, **kw):
+            # Break ONLY the handoff artifact. Everything else -- including the
+            # task-record the dispatcher must still be able to write in order to
+            # report the failure -- keeps working.
+            if "skill44-handoff.json" in str(path) and "w" in str(mode):
+                raise OSError(28, "No space left on device")
+            return real_open(path, mode, *a, **kw)
+
+        monkeypatch.setattr(builtins, "open", _blocked_open)
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        monkeypatch.undo()
+
+        assert res.state == disp.STATE_FAILED, (
+            "a full-funnel build whose mandatory handoff could not be persisted "
+            "must NOT return verified")
+        assert "HANDOFF PERSISTENCE FAILED" in res.reason
+        # The ledger must agree with the returned verdict -- not say verified.
+        rec = json.load(open(os.path.join(tmp_path, "routing", "task-record.json")))
+        assert rec["state"] == disp.STATE_FAILED
+
+    def test_no_link_map_still_verifies(self, tmp_path):
+        # ANTI-FALSE-POSITIVE: the overwhelming majority of builds carry no
+        # linked_automations at all. They must be completely unaffected -- this is
+        # what keeps the fail-closed handoff from turning healthy boxes red.
+        task = dict(FAKE_TASK)
+        res = disp.dispatch_one(
+            task, str(tmp_path), builder=_builder_ok(), verifier=_fake_verifier(True))
+        assert res.state == disp.STATE_VERIFIED
+        assert not os.path.exists(os.path.join(tmp_path, "routing", "skill44-handoff.json"))
 
 
 # ── FAB-QC build-quality gate (>= 8.5) wired into the verified verdict ───────

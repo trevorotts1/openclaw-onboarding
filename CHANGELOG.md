@@ -1,3 +1,16 @@
+## [v20.0.91]  -  2026-07-21  -  A14 / T0-18: THE P4->P5 FUNNEL HANDOFF NOW BINDS THE VERIFIED VERDICT
+
+Merge of PR #712 (agent/a14-handoff-binds-verification). `06-ghl-install-pages/tools/v2_dispatcher.py`
+could return `verified` for a full-funnel build while Skill 44 never received the work: the
+verified state was written first, the P4->P5 handoff was attempted afterward inside
+`try: ... except Exception: pass`, and the artifact was stamped `"mandatory": False`. A handoff
+that failed to persist was silently discarded — the pages existed, the automations silently did
+not, and the ledger said the job was done. The handoff is now persisted BEFORE the verdict, read
+back to confirm it holds what was written, stamped mandatory whenever the task carries at least one
+`build_now` automation, and a persistence failure now FAILS the dispatch with a reason naming how
+many automations would have been lost. `tests/test_v2_dispatcher.py` no longer asserts the defect
+as correct and adds three anti-false-positive cases. Version rolled to v20.0.91.
+
 ## [v20.0.90]  -  2026-07-21  -  A45/A46/A47: CREDENTIALS WRITTEN WHERE NOTHING READS THEM, TEN DOCUMENTED CONTRACTS THAT CONTRADICT THE CODE, AND A BYTE COUNT WRITING A RUBRIC SCORE
 
 Three Section A items from the nine-cluster skill review. Every finding was re-verified
