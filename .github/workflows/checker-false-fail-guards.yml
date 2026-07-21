@@ -25,8 +25,32 @@ name: checker-false-fail-guards
 #           a genuinely broken citation STILL FAILS, and that an absent
 #           location id STILL FAILS.
 #
-# Both suites are hermetic: fixture HOMEs and staged skill copies in a tempdir.
-# No network, no real box state, nothing outside the checkout is read or written.
+# 2026-07-21 (second wave, findings T2-02 / T2-03): two more checkers in the
+# same class, each measured FAIL-before / PASS-after:
+#
+#   35-social-media-planner/qc-skill35.sh  (T2-02)
+#       ran the repo-only docs/tools/check_lattice_citation.py through a HARD
+#       assert, exactly the Skill 44 defect above. Measured on a staged installed
+#       copy: "27 passed | 1 failed" -- and that one failure was the checker
+#       itself. INSTALL.md requires this script to exit 0, so a CORRECT install
+#       could never complete. Guarded by
+#       tests/unit/qc-skill35-installed-layout.test.sh, which also proves the
+#       repo-layout tripwire still RUNS and still FAILS on a broken citation.
+#
+#   05-ghl-setup/qc-ghl-setup.sh  (T2-03)
+#       resolved the PIT across eleven supported names into $RESOLVED_PIT and
+#       asserted presence against it, then sent the raw canonical
+#       $GOHIGHLEVEL_API_KEY -- empty for any of the other ten names -- as the
+#       bearer token on both live probes. A box with a valid legacy-named token
+#       passed the presence check and then failed both probes with an auth error:
+#       a confident, wrong "your credential is bad". Guarded by
+#       tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh (a stub curl captures
+#       the header), which also proves NO token still FAILS and that no token
+#       value is ever printed.
+#
+# All suites are hermetic: fixture HOMEs, stub binaries and staged skill copies in
+# a tempdir. No network, no real box state, no credential, nothing outside the
+# checkout is read or written.
 
 on:
   push:
@@ -34,25 +58,33 @@ on:
     paths:
       - "31-upgraded-memory-system/qc-upgraded-memory-system.sh"
       - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
+      - "35-social-media-planner/qc-skill35.sh"
+      - "05-ghl-setup/qc-ghl-setup.sh"
       - "docs/tools/check_lattice_citation.py"
       - "docs/lattice-citations.json"
       - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
       - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
+      - "tests/unit/qc-skill35-installed-layout.test.sh"
+      - "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh"
       - ".github/workflows/checker-false-fail-guards.yml"
   pull_request:
     branches: [main]
     paths:
       - "31-upgraded-memory-system/qc-upgraded-memory-system.sh"
       - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
+      - "35-social-media-planner/qc-skill35.sh"
+      - "05-ghl-setup/qc-ghl-setup.sh"
       - "docs/tools/check_lattice_citation.py"
       - "docs/lattice-citations.json"
       - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
       - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
+      - "tests/unit/qc-skill35-installed-layout.test.sh"
+      - "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh"
       - ".github/workflows/checker-false-fail-guards.yml"
 
 jobs:
   checker-false-fail-guards:
-    name: Checker false-fail regression suites (Skill 31 key resolution + Skill 44 layout/PATH)
+    name: Checker false-fail regression suites (Skills 31, 44, 35, 05)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -71,6 +103,10 @@ jobs:
           bash -n 44-convert-and-flow-operator/qc-convert-and-flow.sh
           bash -n tests/unit/qc-upgraded-memory-key-resolution.test.sh
           bash -n tests/unit/qc-convert-and-flow-layout-and-path.test.sh
+          bash -n 35-social-media-planner/qc-skill35.sh
+          bash -n 05-ghl-setup/qc-ghl-setup.sh
+          bash -n tests/unit/qc-skill35-installed-layout.test.sh
+          bash -n tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh
           python3 -m py_compile docs/tools/check_lattice_citation.py
           echo "syntax OK"
 
@@ -85,6 +121,14 @@ jobs:
         env:
           OPENCLAW_PLATFORM: mac
         run: bash tests/unit/qc-convert-and-flow-layout-and-path.test.sh
+
+      - name: Skill 35 — installed-copy layout regression suite (T2-02)
+        shell: bash
+        run: bash tests/unit/qc-skill35-installed-layout.test.sh
+
+      - name: Skill 05 — resolved-PIT reaches the probes regression suite (T2-03)
+        shell: bash
+        run: bash tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh
 
       - name: Assert the absent-checker path is a SKIP, never a silent pass
         shell: bash
@@ -101,4 +145,18 @@ jobs:
             echo "FAIL: the lattice checker is invoked without a presence guard again." >&2
             exit 1
           fi
-          echo "PASS: absent lattice checker remains a visible SKIP; present checker remains a hard assert."
+          if ! grep -q 'SKIP: GK-27 lattice citation tripwire' 35-social-media-planner/qc-skill35.sh; then
+            echo "FAIL: Skill 35's visible SKIP for an absent lattice checker was removed." >&2
+            exit 1
+          fi
+          if grep -qE 'assert .*check_lattice_citation\.py' 35-social-media-planner/qc-skill35.sh \
+             && ! grep -q 'if \[ -f "\$LATTICE_CHECKER" \]' 35-social-media-planner/qc-skill35.sh; then
+            echo "FAIL: Skill 35 invokes the lattice checker without a presence guard again." >&2
+            exit 1
+          fi
+          # The resolved PIT must be folded into the variable the probes send.
+          if ! grep -q 'GOHIGHLEVEL_API_KEY="\$RESOLVED_PIT"' 05-ghl-setup/qc-ghl-setup.sh; then
+            echo "FAIL: the resolved PIT is no longer normalised into GOHIGHLEVEL_API_KEY (T2-03 regressed)." >&2
+            exit 1
+          fi
+          echo "PASS: absent lattice checkers remain visible SKIPs; present checkers remain hard asserts; resolved PIT still reaches the probes."

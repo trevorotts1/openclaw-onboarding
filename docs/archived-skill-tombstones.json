@@ -1,0 +1,37 @@
+{
+  "_note": [
+    "Declared state of every archived skill folder (T2-12). An archived folder that still",
+    "reads as a live installer is a trap: an operator who opens it follows a superseded",
+    "procedure into a live box. tests/unit/archived-skill-tombstones.test.py enforces this",
+    "file: every *-ARCHIVED directory at the repository root must appear here, every entry",
+    "marked tombstoned=true must carry the tombstone banner, name its successor, contain no",
+    "runnable procedure, and have any install.sh in the folder refuse to run with a non-zero",
+    "exit. An entry marked tombstoned=false must say WHY it is still pending -- so an",
+    "un-tombstoned archive is visibly outstanding rather than silently skipped."
+  ],
+  "banner_prefix": "# ARCHIVED — DO NOT RUN",
+  "archived": {
+    "11-superdesign-ARCHIVED": {
+      "tombstoned": false,
+      "successor": "45-design-intelligence-library",
+      "pending": "Not named in T2-12. Its live-installer body is still outstanding; tombstone it in a change that owns this folder."
+    },
+    "13-google-workspace-setup-ARCHIVED": {
+      "tombstoned": true,
+      "successor": "14-google-workspace-integration"
+    },
+    "21-tavily-search-ARCHIVED": {
+      "tombstoned": false,
+      "successor": "03-agent-browser",
+      "pending": "T2-20 owns the live-call content in this folder. Tombstone it there so the two changes do not collide."
+    },
+    "33-department-heads-ARCHIVED": {
+      "tombstoned": true,
+      "successor": "23-ai-workforce-blueprint"
+    },
+    "34-intelligent-staffing-ARCHIVED": {
+      "tombstoned": true,
+      "successor": "23-ai-workforce-blueprint"
+    }
+  }
+}
