@@ -254,7 +254,7 @@ openclaw doctor --fix >/dev/null 2>&1 || true
 NEXT_WAVE="$(oc_next_incomplete_wave 2>/dev/null)"
 
 if [[ -z "$NEXT_WAVE" ]]; then
-  # All 5 waves passed in state file, but overall goal did not pass yet
+  # All 6 waves passed in state file, but overall goal did not pass yet
   # (interview/workforce/closeout still pending). Use resume-onboarding.sh for that.
   log "All waves passed in state file — overall goal not yet met (interview/workforce/closeout pending)"
   log "Deferring to resume-onboarding.sh for remainder of overall goal"
@@ -267,7 +267,7 @@ WAVE_GOAL_PASSED=0
 STRIKES=0
 WAVE_STATUS_SUMMARY=""
 
-if [[ "$NEXT_WAVE" =~ ^[12345]$ ]]; then
+if [[ "$NEXT_WAVE" =~ ^[1-6]$ ]]; then
   log "CHEAP-CHECK: running oc_wave_goal_check $NEXT_WAVE"
   oc_wave_goal_check "$NEXT_WAVE" 2>/dev/null && WAVE_GOAL_PASSED=1
 
@@ -278,7 +278,7 @@ if [[ "$NEXT_WAVE" =~ ^[12345]$ ]]; then
 fi
 
 # ── 3-STRIKE escalation ───────────────────────────────────────────────────────
-if [[ "$NEXT_WAVE" =~ ^[12345]$ ]] && (( STRIKES >= MAX_STRIKES )); then
+if [[ "$NEXT_WAVE" =~ ^[1-6]$ ]] && (( STRIKES >= MAX_STRIKES )); then
   _op_chat="$(resolve_operator_chat_id)"
   log "3-STRIKE ESCALATION: wave $NEXT_WAVE has $STRIKES consecutive check failures — halting loop"
 
@@ -309,7 +309,7 @@ if [[ "$WAVE_GOAL_PASSED" -eq 1 ]]; then
   [[ -z "$_owner_chat" || "$_owner_chat" == "null" ]] && _owner_chat="$(resolve_operator_chat_id)"
   if [[ -n "$_owner_chat" ]] && command -v openclaw >/dev/null 2>&1; then
     openclaw message send --channel telegram -t "$_owner_chat" \
-      -m "✅ Wave ${NEXT_WAVE} of 5 complete — all skills verified. Moving on to the next wave." \
+      -m "✅ Wave ${NEXT_WAVE} of 6 complete — all skills verified. Moving on to the next wave." \
       2>>"$LOG_FILE" || true
     log "Progress ping: Wave $NEXT_WAVE complete"
   fi
@@ -377,13 +377,35 @@ build_wave_prompt() {
   local skills_status="$2"
   local prompt=""
 
+  # SINGLE SOURCE OF TRUTH for the per-wave skill roster.
+  #
+  # These prompts used to re-type each wave's skill list as prose. That made the
+  # watchdog a SECOND copy of the canonical lists in lib-onboarding-state.sh, and
+  # a second copy is a second thing to rot: when skills 11 and 21 were archived,
+  # both copies kept naming them and Wave 2 / Wave 3 were wedged fleet-wide.
+  # Agreement-by-hand is not a mechanism. The roster is now read from the
+  # OC_WAVE<N>_SKILLS variable the gate library already defines (sourced above as
+  # $GATE_LIB) via indirect expansion, so the watchdog CANNOT disagree with the
+  # gate it is driving — there is only one list. Only the per-wave INSTRUCTIONS
+  # (parallel vs sequential, sub-agent dispatch, ordering notes) are written here.
+  #
+  # scripts/qc-assert-wave-list-integrity.py enforces this structurally: every
+  # wave prompt must interpolate its OC_WAVE<N>_SKILLS variable, and no wave
+  # prompt may contain a hardcoded NN-slug skill token.
+  local _roster_var="OC_WAVE${wave}_SKILLS"
+  local _roster="${!_roster_var:-}"
+  # space-separated list -> comma-separated prose
+  _roster="${_roster// /, }"
+  [[ -z "$_roster" ]] && _roster="(roster unavailable — gate library not sourced)"
+
   case "$wave" in
-    1) prompt="[ONBOARDING-WATCHDOG] Wave 1 (FOUNDATION) is incomplete. Skills: ${skills_status}. Wave 1 skills are: 01-teach-yourself-protocol, 02-back-yourself-up-protocol. These are REQUIRED before any other wave. DO THIS NOW: (1) source ~/.openclaw/scripts/onboarding-state.sh; (2) for each Wave 1 skill not qc-passed: read ALL .md files in the skill folder, execute INSTALL.md steps, merge CORE_UPDATES.md, run oc_gate_skill <folder>; (3) loop until both are qc-passed; (4) confirm wave 1 goal: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh will check automatically. Do NOT proceed to Wave 2 until Wave 1 is qc-passed." ;;
-    2) prompt="[ONBOARDING-WATCHDOG] Wave 2 (INDEPENDENT INTEGRATIONS) is incomplete. Skills: ${skills_status}. Wave 2 skills: 03-agent-browser, 04-superpowers, 05-ghl-setup, 06-ghl-install-pages, 07-kie-setup, 08-vercel-setup, 09-context7, 10-github-setup, 12-openrouter-setup, 14-google-workspace-integration. DO THIS NOW: (1) source ~/.openclaw/scripts/onboarding-state.sh; (2) install all not-qc-passed skills in PARALLEL (up to 10 concurrent on Mac, 5 on VPS): for each skill read ALL .md files, execute INSTALL.md, merge CORE_UPDATES.md, run oc_gate_skill <folder>; (3) send owner progress update; (4) once all Wave 2 skills are qc-passed, proceed to Wave 3." ;;
-    3) prompt="[ONBOARDING-WATCHDOG] Wave 3 (CONTENT + SERVICE TOOLS) is incomplete. Skills: ${skills_status}. Wave 3 skills: 15-blackceo-team-management, 16-summarize-youtube, 17-self-improving-agent, 18-proactive-agent, 19-humanizer, 20-youtube-watcher, 24-storyboard-writer, 25-video-creator, 26-caption-creator, 27-video-editor, 28-cinematic-forge, 29-ghl-convert-and-flow, 30-fish-audio-api-reference, 43-graphify-knowledge-graph. DO THIS NOW: install all not-qc-passed skills in parallel (up to 10/5 concurrent). For each skill: read ALL .md files, execute INSTALL.md, merge CORE_UPDATES.md, run oc_gate_skill. Send owner update when wave 3 is complete." ;;
-    4) prompt="[ONBOARDING-WATCHDOG] Wave 4 (INFRASTRUCTURE) is incomplete. Skills: ${skills_status}. Wave 4 skills: 31-upgraded-memory-system, 36-ghl-mcp-setup (SEQUENTIAL — Memory first, then MCP). DO THIS NOW: (1) install 31-upgraded-memory-system (memory architecture must be ready before persona/CC); (2) install 36-ghl-mcp-setup; (3) verify both qc-passed via oc_gate_skill." ;;
-    5) prompt="[ONBOARDING-WATCHDOG] Wave 5 (USER-INTERACTION-AWARE) is incomplete. Skills: ${skills_status}. Wave 5 skills: 22-book-to-persona-coaching-leadership-system, 23-ai-workforce-blueprint, 32-command-center-setup, 35-social-media-planner (SEQUENTIAL). DO THIS NOW via SUB-AGENT DISPATCH: (1) dispatch sub-agent for Skill 22 (persona — interview-pending is a LEGITIMATE park, ask owner if needed); (2) after 22 passes, dispatch sub-agent for Skill 23 (workforce blueprint — surfaces owner interview via triple-fire trigger); (3) after 23, dispatch sub-agent for Skill 32 (command center); (4) dispatch sub-agent for Skill 35 (social planner). Each skill can park at interview-pending — that counts as wave-goal-passed for Wave 5." ;;
-    overall) prompt="[ONBOARDING-WATCHDOG] All 5 waves are complete but the OVERALL GOAL is not yet met. Run: bash ~/.openclaw/scripts/resume-onboarding.sh to check what's still pending (interview, workforce build, closeout). The overall goal requires: all waves verified (done) + interview complete + workforce built (buildCompletedAt set in .workforce-build-state.json) + closeout delivered (closeoutStatus=done). Check each of these and complete any that are missing." ;;
+    1) prompt="[ONBOARDING-WATCHDOG] Wave 1 (FOUNDATION) is incomplete. Skills: ${skills_status}. Wave 1 skills are: ${_roster}. These are REQUIRED before any other wave. DO THIS NOW: (1) source ~/.openclaw/scripts/onboarding-state.sh; (2) for each Wave 1 skill not qc-passed: read ALL .md files in the skill folder, execute INSTALL.md steps, merge CORE_UPDATES.md, run oc_gate_skill <folder>; (3) loop until both are qc-passed; (4) confirm wave 1 goal: bash ~/.openclaw/scripts/watchdog-onboarding-loop.sh will check automatically. Do NOT proceed to Wave 2 until Wave 1 is qc-passed." ;;
+    2) prompt="[ONBOARDING-WATCHDOG] Wave 2 (INDEPENDENT INTEGRATIONS) is incomplete. Skills: ${skills_status}. Wave 2 skills: ${_roster}. DO THIS NOW: (1) source ~/.openclaw/scripts/onboarding-state.sh; (2) install all not-qc-passed skills in PARALLEL (up to 10 concurrent on Mac, 5 on VPS): for each skill read ALL .md files, execute INSTALL.md, merge CORE_UPDATES.md, run oc_gate_skill <folder>; (3) send owner progress update; (4) once all Wave 2 skills are qc-passed, proceed to Wave 3." ;;
+    3) prompt="[ONBOARDING-WATCHDOG] Wave 3 (CONTENT + SERVICE TOOLS) is incomplete. Skills: ${skills_status}. Wave 3 skills: ${_roster}. DO THIS NOW: install all not-qc-passed skills in parallel (up to 10/5 concurrent). For each skill: read ALL .md files, execute INSTALL.md, merge CORE_UPDATES.md, run oc_gate_skill. Send owner update when wave 3 is complete." ;;
+    4) prompt="[ONBOARDING-WATCHDOG] Wave 4 (INFRASTRUCTURE) is incomplete. Skills: ${skills_status}. Wave 4 skills: ${_roster} (SEQUENTIAL — Memory first, then MCP). DO THIS NOW: (1) install them STRICTLY IN THE ORDER LISTED ABOVE — the memory system comes first because the memory architecture must be ready before persona/Command Center, and the GHL MCP layer comes second; (2) verify each is qc-passed via oc_gate_skill before starting the next; (3) do not start Wave 5 until both are qc-passed." ;;
+    5) prompt="[ONBOARDING-WATCHDOG] Wave 5 (USER-INTERACTION-AWARE) is incomplete. Skills: ${skills_status}. Wave 5 skills: ${_roster} (SEQUENTIAL). DO THIS NOW via SUB-AGENT DISPATCH: (1) dispatch sub-agent for Skill 22 (persona — interview-pending is a LEGITIMATE park, ask owner if needed); (2) after 22 passes, dispatch sub-agent for Skill 23 (workforce blueprint — surfaces owner interview via triple-fire trigger); (3) after 23, dispatch sub-agent for Skill 32 (command center); (4) dispatch sub-agent for Skill 35 (social planner). Each skill can park at interview-pending — that counts as wave-goal-passed for Wave 5." ;;
+    6) prompt="[ONBOARDING-WATCHDOG] Wave 6 (EXTENSIONS & DOMAIN VERTICALS) is incomplete. Skills: ${skills_status}. Wave 6 skills: ${_roster}. These ship to every box via the generic skill copy loop but are installed/activated per their own INSTALL.md after the core system is up. DO THIS NOW: (1) source ~/.openclaw/scripts/onboarding-state.sh; (2) install them in ASCENDING SKILL-NUMBER ORDER — several Wave 6 skills name an earlier Wave 6 skill in their own SKILL.md Prerequisites section, and ascending order satisfies every one of those, so read each skill's SKILL.md Prerequisites BEFORE installing it; within that order you may run up to 10 concurrent on Mac, 5 on VPS for skills whose prerequisites are already qc-passed; (3) for each skill read ALL .md files in the skill folder, execute INSTALL.md, merge CORE_UPDATES.md, run oc_gate_skill <folder>; (4) any skill that needs an owner decision or a credential the owner has not supplied may park at interview-pending — surface it via the triple-fire trigger rather than guessing or substituting your own account; (5) send owner progress update when the wave is complete." ;;
+    overall) prompt="[ONBOARDING-WATCHDOG] All 6 waves are complete but the OVERALL GOAL is not yet met. Run: bash ~/.openclaw/scripts/resume-onboarding.sh to check what's still pending (interview, workforce build, closeout). The overall goal requires: all waves verified (done) + interview complete + workforce built (buildCompletedAt set in .workforce-build-state.json) + closeout delivered (closeoutStatus=done). Check each of these and complete any that are missing." ;;
     *) prompt="[ONBOARDING-WATCHDOG] Onboarding state is incomplete. Run: bash ~/.openclaw/scripts/resume-onboarding.sh to check what needs to be done." ;;
   esac
   printf '%s' "$prompt"

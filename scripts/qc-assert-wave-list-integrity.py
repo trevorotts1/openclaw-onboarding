@@ -37,10 +37,16 @@ WHAT THIS GATE ENFORCES
      `-ARCHIVED`) nor by the exact drift signature above (name `X` is absent but
      `X-ARCHIVED` exists, i.e. the skill was retired and the list was not updated).
   3. No skill is listed twice, within a wave or across waves.
-  4. The duplicated wave lists hardcoded in the watchdog prompts
-     (`scripts/watchdog-onboarding-loop.sh`) match the canonical lists exactly.
-     The watchdog carried its own copy of Wave 2 and Wave 3, and that copy drifted
-     in lockstep with the canonical one; a second copy is a second thing to rot.
+  4. The watchdog prompts (`scripts/watchdog-onboarding-loop.sh`) carry NO second
+     copy of the lists at all. The watchdog used to re-type each wave's roster as
+     prose; that copy drifted in lockstep with the canonical one, because two
+     hand-maintained lists agree only until someone edits one of them. This gate
+     originally compared the two copies for equality. Comparing is weaker than
+     making a second copy impossible, so the watchdog now interpolates
+     `${OC_WAVE<N>_SKILLS}` and this check enforces that structurally:
+       4a. every wave prompt must interpolate its own OC_WAVE<N>_SKILLS variable;
+       4b. no wave prompt may contain a hardcoded `NN-slug` skill token.
+     Drift is then not "detected" — it is unrepresentable.
 
 Exit codes:
   0  — every wave-list entry resolves to a real, non-archived skill directory
@@ -72,10 +78,16 @@ import tempfile
 LIB_REL = "lib-onboarding-state.sh"
 WATCHDOG_REL = "scripts/watchdog-onboarding-loop.sh"
 
-WAVE_RE = re.compile(r'^OC_WAVE([1-5])_SKILLS="([^"]*)"', re.MULTILINE)
-CASE_RE = re.compile(r'^\s*([1-5])\)\s*prompt="(.*)"\s*;;\s*$', re.MULTILINE)
+N_WAVES = 6
+
+WAVE_RE = re.compile(r'^OC_WAVE([1-6])_SKILLS="([^"]*)"', re.MULTILINE)
+CASE_RE = re.compile(r'^\s*([1-6])\)\s*prompt="(.*)"\s*;;\s*$', re.MULTILINE)
 # A skill folder reference: two digits, a dash, then a lowercase slug.
 SKILL_TOKEN_RE = re.compile(r"\b(\d{2}-[a-z][a-z0-9]*(?:-[a-z0-9]+)*)\b")
+# The single-source interpolation each watchdog wave prompt must use, and the
+# indirect expansion that binds it to the canonical OC_WAVE<N>_SKILLS lists.
+ROSTER_PLACEHOLDER = "${_roster}"
+INDIRECT_EXPANSION = 'OC_WAVE${wave}_SKILLS'
 
 ARCHIVED_SUFFIX = "-ARCHIVED"
 
@@ -96,20 +108,18 @@ def parse_wave_lists(lib_text: str) -> dict[int, list[str]]:
     return waves
 
 
-def parse_watchdog_lists(watchdog_text: str) -> dict[int, list[str]]:
-    """Extract the skill names hardcoded in each watchdog wave prompt.
+def parse_watchdog_prompts(watchdog_text: str) -> dict[int, str]:
+    """Extract the prose prompt for each wave branch of build_wave_prompt."""
+    return {int(num): prompt for num, prompt in CASE_RE.findall(watchdog_text)}
 
-    The prompts are prose, so we scan each `case` branch for folder-shaped
-    tokens (`NN-slug`) rather than trying to parse the sentence structure.
-    """
-    lists: dict[int, list[str]] = {}
-    for num, prompt in CASE_RE.findall(watchdog_text):
-        found: list[str] = []
-        for tok in SKILL_TOKEN_RE.findall(prompt):
-            if tok not in found:
-                found.append(tok)
-        lists[int(num)] = found
-    return lists
+
+def hardcoded_skill_tokens(prompt: str) -> list[str]:
+    """Folder-shaped tokens (`NN-slug`) literally typed into a watchdog prompt."""
+    found: list[str] = []
+    for tok in SKILL_TOKEN_RE.findall(prompt):
+        if tok not in found:
+            found.append(tok)
+    return found
 
 
 def check(root: str) -> int:
@@ -127,7 +137,7 @@ def check(root: str) -> int:
     if not waves:
         print(f"ENVIRONMENT: no OC_WAVE<N>_SKILLS assignments parsed from {LIB_REL}")
         return 2
-    missing_waves = [n for n in range(1, 6) if n not in waves]
+    missing_waves = [n for n in range(1, N_WAVES + 1) if n not in waves]
     if missing_waves:
         print(f"ENVIRONMENT: wave list(s) not parsed: {missing_waves}")
         return 2
@@ -179,39 +189,64 @@ def check(root: str) -> int:
                     f"present on disk). Fix the name or remove the entry."
                 )
 
-    print("== watchdog prompt lists match the canonical wave lists ==")
+    print("== watchdog prompts carry no second copy of the wave lists ==")
     if not os.path.isfile(watchdog_path):
         print(f"ENVIRONMENT: {WATCHDOG_REL} not found under {root}")
         return 2
 
     with open(watchdog_path, encoding="utf-8") as fh:
-        watchdog_lists = parse_watchdog_lists(fh.read())
+        watchdog_text = fh.read()
+    watchdog_prompts = parse_watchdog_prompts(watchdog_text)
 
-    if not watchdog_lists:
+    if not watchdog_prompts:
         print(f"ENVIRONMENT: no wave prompts parsed from {WATCHDOG_REL}")
         return 2
 
+    # The roster must be resolved FROM the canonical variable, by indirect
+    # expansion on the wave number. Without this line the prompts could
+    # interpolate an unrelated (or empty) variable and still look clean.
+    if INDIRECT_EXPANSION in watchdog_text:
+        _ok(f"watchdog resolves its roster from {INDIRECT_EXPANSION} (single source)")
+    else:
+        _fail(
+            f"watchdog does not derive its roster from the canonical lists — "
+            f"expected the indirect expansion '{INDIRECT_EXPANSION}' in "
+            f"{WATCHDOG_REL}. Without it the prompts are a second, "
+            f"hand-maintained copy that will drift."
+        )
+        fail = 1
+
     for num in sorted(waves):
-        if num not in watchdog_lists:
+        if num not in watchdog_prompts:
             _fail(f"Wave {num}: no watchdog prompt found for this wave")
             fail = 1
             continue
-        canonical = set(waves[num])
-        actual = set(watchdog_lists[num])
-        if canonical == actual:
-            _ok(f"Wave {num}: watchdog prompt lists the same {len(canonical)} skills")
+        prompt = watchdog_prompts[num]
+
+        # 4a — the prompt must interpolate the roster rather than list skills.
+        if ROSTER_PLACEHOLDER not in prompt:
+            _fail(
+                f"Wave {num}: watchdog prompt does not interpolate "
+                f"'{ROSTER_PLACEHOLDER}' — it must render the canonical "
+                f"OC_WAVE{num}_SKILLS list, not restate it."
+            )
+            fail = 1
             continue
-        fail = 1
-        extra = sorted(actual - canonical)
-        absent = sorted(canonical - actual)
-        detail = []
-        if extra:
-            detail.append(f"names the watchdog has but the wave list does not: {extra}")
-        if absent:
-            detail.append(f"names the wave list has but the watchdog does not: {absent}")
-        _fail(
-            f"Wave {num}: watchdog prompt has drifted from OC_WAVE{num}_SKILLS — "
-            + "; ".join(detail)
+
+        # 4b — and it must not restate any skill name literally.
+        hardcoded = hardcoded_skill_tokens(prompt)
+        if hardcoded:
+            _fail(
+                f"Wave {num}: watchdog prompt hardcodes skill name(s) {hardcoded} — "
+                f"a second copy of the wave list. Delete them; "
+                f"'{ROSTER_PLACEHOLDER}' already renders OC_WAVE{num}_SKILLS."
+            )
+            fail = 1
+            continue
+
+        _ok(
+            f"Wave {num}: watchdog prompt renders OC_WAVE{num}_SKILLS "
+            f"({len(waves[num])} skills) with no hardcoded copy"
         )
 
     if fail:
@@ -230,40 +265,55 @@ def check(root: str) -> int:
 # Embedded self-test: proves the gate FAILS on a phantom entry and PASSES clean.
 # ---------------------------------------------------------------------------
 
-_LIB_TMPL = '''#!/usr/bin/env bash
-# fixture
-OC_WAVE1_SKILLS="{w1}"
-OC_WAVE2_SKILLS="{w2}"
-OC_WAVE3_SKILLS="{w3}"
-OC_WAVE4_SKILLS="{w4}"
-OC_WAVE5_SKILLS="{w5}"
-'''
+_LIB_TMPL = "#!/usr/bin/env bash\n# fixture\n" + "".join(
+    'OC_WAVE%d_SKILLS="{w%d}"\n' % (n, n) for n in range(1, N_WAVES + 1)
+)
 
-_WATCHDOG_TMPL = '''#!/usr/bin/env bash
+# A compliant watchdog: resolves the roster by indirect expansion, then
+# interpolates it. No wave list is ever re-typed.
+_WATCHDOG_HEAD = '''#!/usr/bin/env bash
 build_wave_prompt() {{
-  case "$1" in
-    1) prompt="[W] Wave 1 skills: {w1c}. DO THIS NOW: install them." ;;
-    2) prompt="[W] Wave 2 skills: {w2c}. DO THIS NOW: install them." ;;
-    3) prompt="[W] Wave 3 skills: {w3c}. DO THIS NOW: install them." ;;
-    4) prompt="[W] Wave 4 skills: {w4c}. DO THIS NOW: install them." ;;
-    5) prompt="[W] Wave 5 skills: {w5c}. DO THIS NOW: install them." ;;
-  esac
+  local wave="$1"
+  local _roster_var="OC_WAVE${{wave}}_SKILLS"
+  local _roster="${{!_roster_var:-}}"
+  _roster="${{_roster// /, }}"
+  case "$wave" in
+'''
+_WATCHDOG_TAIL = '''  esac
 }}
 '''
 
 
 def _build_fixture(tmp: str, waves: dict[int, list[str]], dirs: list[str],
-                   watchdog: dict[int, list[str]] | None = None) -> str:
+                   watchdog: dict[int, list[str]] | None = None,
+                   omit_indirect: bool = False) -> str:
+    """Build a fixture repo.
+
+    `watchdog` (when given) HARDCODES those skill names into the wave prompts —
+    i.e. it reintroduces the second copy this gate forbids. `omit_indirect`
+    drops the indirect expansion that binds the roster to the canonical lists.
+    """
     root = tempfile.mkdtemp(dir=tmp)
     os.makedirs(os.path.join(root, "scripts"), exist_ok=True)
     for d in dirs:
         os.makedirs(os.path.join(root, d), exist_ok=True)
     with open(os.path.join(root, LIB_REL), "w", encoding="utf-8") as fh:
-        fh.write(_LIB_TMPL.format(**{f"w{n}": " ".join(waves.get(n, [])) for n in range(1, 6)}))
-    wd = watchdog if watchdog is not None else waves
+        fh.write(_LIB_TMPL.format(
+            **{f"w{n}": " ".join(waves.get(n, [])) for n in range(1, N_WAVES + 1)}))
+
+    head = _WATCHDOG_HEAD
+    if omit_indirect:
+        head = head.replace('"OC_WAVE${{wave}}_SKILLS"', '"SOME_OTHER_LIST"')
+    body = head.format()
+    for n in range(1, N_WAVES + 1):
+        if watchdog is not None and n in watchdog:
+            roster = ", ".join(watchdog[n])          # the forbidden second copy
+        else:
+            roster = "${_roster}"
+        body += f'    {n}) prompt="[W] Wave {n} skills: {roster}. DO THIS NOW: install them." ;;\n'
+    body += _WATCHDOG_TAIL.format()
     with open(os.path.join(root, WATCHDOG_REL), "w", encoding="utf-8") as fh:
-        fh.write(_WATCHDOG_TMPL.format(
-            **{f"w{n}c": ", ".join(wd.get(n, [])) for n in range(1, 6)}))
+        fh.write(body)
     return root
 
 
@@ -273,41 +323,55 @@ def self_test() -> int:
     try:
         base = {
             1: ["01-alpha"], 2: ["02-bravo"], 3: ["03-charlie"],
-            4: ["04-delta"], 5: ["05-echo"],
+            4: ["04-delta"], 5: ["05-echo"], 6: ["06-foxtrot"],
         }
-        all_dirs = ["01-alpha", "02-bravo", "03-charlie", "04-delta", "05-echo"]
+        all_dirs = ["01-alpha", "02-bravo", "03-charlie", "04-delta", "05-echo",
+                    "06-foxtrot"]
 
-        cases: list[tuple[str, dict[int, list[str]], list[str], dict | None, int]] = [
-            ("clean lists pass", base, all_dirs, None, 0),
+        cases: list[tuple[str, dict[int, list[str]], list[str], dict | None, bool, int]] = [
+            ("clean lists pass", base, all_dirs, None, False, 0),
             (
                 "PHANTOM entry (listed skill has no folder at all) fails",
                 {**base, 2: ["02-bravo", "11-superdesign"]},
-                all_dirs, None, 1,
+                all_dirs, None, False, 1,
             ),
             (
                 "ARCHIVE-DRIFT entry (folder renamed to -ARCHIVED) fails",
                 {**base, 3: ["03-charlie", "21-tavily-search"]},
-                all_dirs + ["21-tavily-search-ARCHIVED"], None, 1,
+                all_dirs + ["21-tavily-search-ARCHIVED"], None, False, 1,
             ),
             (
                 "entry naming an -ARCHIVED folder directly fails",
                 {**base, 2: ["02-bravo", "11-superdesign-ARCHIVED"]},
-                all_dirs + ["11-superdesign-ARCHIVED"], None, 1,
+                all_dirs + ["11-superdesign-ARCHIVED"], None, False, 1,
             ),
             (
                 "duplicate entry across waves fails",
                 {**base, 3: ["03-charlie", "02-bravo"]},
-                all_dirs, None, 1,
+                all_dirs, None, False, 1,
             ),
             (
-                "watchdog prompt drifted from canonical list fails",
-                base, all_dirs,
-                {**base, 2: ["02-bravo", "99-ghost"]}, 1,
+                "PHANTOM entry in the new Wave 6 fails",
+                {**base, 6: ["06-foxtrot", "77-nonexistent"]},
+                all_dirs, None, False, 1,
+            ),
+            (
+                "watchdog re-typing a wave list (second copy) fails",
+                base, all_dirs, {2: ["02-bravo"]}, False, 1,
+            ),
+            (
+                "watchdog re-typing a list that MATCHES canonical still fails "
+                "(a correct second copy is still a second copy)",
+                base, all_dirs, {3: ["03-charlie"]}, False, 1,
+            ),
+            (
+                "watchdog roster not bound to OC_WAVE<N>_SKILLS fails",
+                base, all_dirs, None, True, 1,
             ),
         ]
 
-        for name, waves, dirs, watchdog, expected in cases:
-            root = _build_fixture(tmp, waves, dirs, watchdog)
+        for name, waves, dirs, watchdog, omit_indirect, expected in cases:
+            root = _build_fixture(tmp, waves, dirs, watchdog, omit_indirect)
             proc = subprocess.run(
                 [sys.executable, os.path.abspath(__file__), "--root", root],
                 capture_output=True, text=True,

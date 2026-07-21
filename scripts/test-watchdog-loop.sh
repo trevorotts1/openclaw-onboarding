@@ -6,13 +6,14 @@
 # All tests use a temp fixture directory; no openclaw CLI required.
 #
 # WHAT IS VERIFIED:
-#   T1: waveGoals block is seeded correctly (5 waves + overall)
+#   T1: waveGoals seeded; all 6 rosters match OC_WAVE<N>_SKILLS CONTENTS
+#   T1b: a wave fails BY NAME when a listed skill's folder is missing
 #   T2: per-wave goal check: wave 1 passes when both skills qc-passed
 #   T3: per-wave goal check: wave 1 fails when a skill is pending
 #   T4: oc_wave_goal_check increments failStrikes on failure
 #   T5: 3-strike threshold: STRIKES >= 3 after 3 consecutive failures
 #   T6: oc_next_incomplete_wave returns the correct wave number
-#   T7: oc_overall_goal_check fails until all 5 waves + workforce state set
+#   T7: oc_overall_goal_check fails until all 6 waves + workforce state set
 #   T8: oc_overall_goal_check passes when all conditions met
 #   T9: KILL CONDITION — install "killed mid-wave": watchdog detects,
 #       finds the incomplete wave, and builds EXACT wave prompt (no vague
@@ -126,27 +127,57 @@ mk_skill "02-back-yourself-up-protocol"
 oc_state_seed "$FIXTURE_SKILLS"
 oc_wave_state_init
 
-T1_RESULT=$(STATE_FILE="$STATE_FILE" python3 - <<'PYEOF'
-import json, os, sys
+# Asserting only that the wave KEYS exist is the vacuous shape that let Wave 2
+# and Wave 3 stay wedged while CI was green. Every wave's seeded roster is
+# compared against the canonical OC_WAVE<N>_SKILLS list CONTENTS, and each list
+# must be non-empty.
+T1_RESULT=$(STATE_FILE="$STATE_FILE" \
+  W1="$OC_WAVE1_SKILLS" W2="$OC_WAVE2_SKILLS" W3="$OC_WAVE3_SKILLS" \
+  W4="$OC_WAVE4_SKILLS" W5="$OC_WAVE5_SKILLS" W6="$OC_WAVE6_SKILLS" python3 - <<'PYEOF'
+import json, os
 sf = os.environ["STATE_FILE"]
 try:
     s = json.load(open(sf))
     wg = s.get("waveGoals", {})
-    assert "wave1" in wg, "wave1 missing"
-    assert "wave2" in wg, "wave2 missing"
-    assert "wave3" in wg, "wave3 missing"
-    assert "wave4" in wg, "wave4 missing"
-    assert "wave5" in wg, "wave5 missing"
     assert "overall" in wg, "overall missing"
+    for n in range(1, 7):
+        key = f"wave{n}"
+        assert key in wg, f"{key} missing"
+        canonical = os.environ[f"W{n}"].split()
+        assert canonical, f"OC_WAVE{n}_SKILLS is EMPTY"
+        seeded = wg[key]["skills"]
+        assert seeded == canonical, (
+            f"{key} roster != OC_WAVE{n}_SKILLS "
+            f"(seeded {len(seeded)}, canonical {len(canonical)})"
+        )
     assert "01-teach-yourself-protocol" in wg["wave1"]["skills"], "wave1 skills wrong"
+    # Wave 6 must actually gate the extension skills, 45 in particular: it is the
+    # documented replacement for the archived 11-superdesign, which WAS gated.
+    assert "45-design-intelligence-library" in wg["wave6"]["skills"], \
+        "wave6 does not gate 45-design-intelligence-library"
     assert wg["wave1"]["status"] == "pending", f"wave1 status not pending: {wg['wave1']['status']}"
     print("ok")
 except Exception as e:
     print(f"fail: {e}")
 PYEOF
 )
-[[ "$T1_RESULT" == "ok" ]] && pass "T1: waveGoals block seeded correctly (5 waves + overall)" \
+[[ "$T1_RESULT" == "ok" ]] && pass "T1: waveGoals seeded, all 6 rosters match OC_WAVE<N>_SKILLS contents" \
   || fail "T1: waveGoals seed: $T1_RESULT"
+
+# ── T1b: a wave fails loudly, BY NAME, when a listed skill's folder is absent ──
+# Proves the gate is real rather than vacuous: Wave 6 names 13 extension skills
+# that no wave verified before, and a box missing one must be told which one.
+mk_skill "45-design-intelligence-library"
+set_skill_status "45-design-intelligence-library" "qc-passed"
+rm -rf "$FIXTURE_SKILLS/45-design-intelligence-library"
+T1B_RC=0
+oc_wave_goal_check 6 2>/dev/null || T1B_RC=$?
+T1B_STATUS="$(oc_wave_skills_status 6 2>/dev/null)"
+if [[ "$T1B_RC" -ne 0 && "$T1B_STATUS" == *"45-design-intelligence-library:MISSING-FOLDER"* ]]; then
+  pass "T1b: wave 6 fails and names the missing skill (MISSING-FOLDER)"
+else
+  fail "T1b: expected wave6 fail naming the missing folder (rc=$T1B_RC status=$T1B_STATUS)"
+fi
 
 # ── T2: wave 1 passes when both skills qc-passed ──────────────────────────────
 set_skill_status "01-teach-yourself-protocol" "qc-passed"
@@ -217,8 +248,8 @@ oc_overall_goal_check 2>/dev/null || T7_RC=$?
   || fail "T7: expected overall goal check to fail (waves not all passed, no workforce state)"
 
 # ── T8: oc_overall_goal_check passes when all conditions met ──────────────────
-# Mark all waves passed in state
-for n in 1 2 3 4 5; do
+# Mark all waves passed in state (all SIX — the overall goal requires wave 6 too)
+for n in 1 2 3 4 5 6; do
   set_wave_status "wave$n" "passed"
 done
 
