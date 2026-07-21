@@ -195,12 +195,18 @@ python3 - "$ACT" "$MUT" <<'MUTPY'
 import sys
 src, dst = sys.argv[1], sys.argv[2]
 s = open(src).read()
+# Restore the PRE-FIX tail verbatim: the status call swallowed by `|| true`, and
+# a DONE banner naming gemini regardless of what this box actually resolved.
 start = s.index('MEM_STATUS=""')
-end = s.index('echo "[activate-memory-stack] DONE', start)
-pre = '''openclaw memory status || true
+prefix_tail = '''openclaw memory status || true
 
+echo ""
+echo "[activate-memory-stack] DONE. Verify the output above shows:"
+echo "  \u2022 Provider: gemini (requested: gemini)"
+echo "  \u2022 Model:    gemini-embedding-2 @3072  (or just 'gemini')"
+echo "  \u2022 Dreaming: 0 3 * * *"
 '''
-open(dst, "w").write(s[:start] + pre + s[end:])
+open(dst, "w").write(s[:start] + prefix_tail)
 MUTPY
 H5="$SANDBOX/box-status-fail-mut"
 _mkbox "$H5" '' "$GEM_LINE"
