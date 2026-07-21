@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.89"
+ONBOARDING_VERSION="v20.0.91"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -118,8 +118,22 @@ if [ -f "$_lib_onboarding_state_self" ]; then
   source "$_lib_onboarding_state_self"
   export OPENCLAW_LIB_ONBOARDING_STATE_SOURCED=1
 fi
-# No-op fallbacks so the rest of install.sh never aborts if the lib is missing.
-command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { :; }
+# Fallbacks so the rest of install.sh never aborts if the lib is missing.
+#
+# v20.0.91 FIX (install-time fail-open): oc_state_seed's fallback used to be
+# `{ :; }` — a no-op that returns 0. Two things followed from that, both bad:
+#   * the dispatch below (Step "seed the per-skill onboarding STATE FILE") tests
+#     `command -v oc_state_seed`, which a stub satisfies just as well as the real
+#     thing, so the `elif` compat-shim branch and the `else` "not seeded" warning
+#     were BOTH unreachable — dead code on every box;
+#   * the stub returned 0, so `oc_state_seed ... && success` printed
+#     "Onboarding state seeded" on a box where the state machine never loaded and
+#     no .onboarding-state.json was ever written. The install log and the disk
+#     disagreed, and the log was the one the operator read.
+# The fallback now FAILS CLOSED (return 1) exactly like its two siblings below,
+# and the dispatch gates on OPENCLAW_LIB_ONBOARDING_STATE_SOURCED (set above only
+# when the real lib was sourced) rather than on mere symbol existence.
+command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { return 1; }
 command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
 command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
 
@@ -135,8 +149,13 @@ if [ -f "$_lib_resume_cron_self" ]; then
   source "$_lib_resume_cron_self"
   export OPENCLAW_LIB_RESUME_CRON_SOURCED=1
 fi
-# No-op fallback so Step 13b never aborts if the lib is missing (older bundle).
-command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
+# Fallback so Step 13b never aborts if the lib is missing (older bundle).
+# v20.0.91: FAILS CLOSED (return 1), was `{ :; }`. The old no-op returned 0 and
+# printed nothing at all, so a bundle missing lib-onboarding-resume-cron.sh
+# sailed through Step 13b with ZERO log output and no resume cron — the box then
+# silently never auto-resumed onboarding. Step 13b's call site now gates on
+# OPENCLAW_LIB_RESUME_CRON_SOURCED and says so out loud when the lib is absent.
+command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { return 1; }
 
 # ── Runtime-compatible SILENT main-session cron helper (fix/cron-flag-skew). ───
 # Guaranteed here at top-level (before any cron-installing function runs). The
@@ -4973,7 +4992,11 @@ PYEOF
 # verification gate, never this prose. Idempotent — re-seeding preserves status.
 # Canonical lib: lib-onboarding-state.sh (sourced at top of install.sh).
 # scripts/onboarding-state.sh is a compat shim that sources the canonical.
-if command -v oc_state_seed >/dev/null 2>&1; then
+# v20.0.91: gate on the SOURCED sentinel, not on `command -v`. The top-of-file
+# fallback defines an oc_state_seed either way, so `command -v` was ALWAYS true
+# and the two branches below could never run. OPENCLAW_LIB_ONBOARDING_STATE_SOURCED
+# is exported only when lib-onboarding-state.sh actually sourced.
+if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" = "1" ] && command -v oc_state_seed >/dev/null 2>&1; then
     # SIGNATURE: oc_state_seed <src_skills_dir> [version]  (lib-onboarding-state.sh).
     # v17.0.21 FIX: args were REVERSED here — the version string ("v17.0.x") was
     # passed as <src_skills_dir>, so the install-time seed pointed at a non-existent
@@ -4981,7 +5004,7 @@ if command -v oc_state_seed >/dev/null 2>&1; then
     # obs_* seed + resume cron then had to do all the work). Correct order below.
     SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
-        || warn "oc_state_seed reported an issue (install continues)"
+        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run scripts/update-skills.sh after fixing."
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
@@ -5946,7 +5969,21 @@ step "Step 13b: Installing onboarding-resume cron (every 30 min — interview ga
 # the SAME SILENT, idempotent, bounded, self-removing installer with no drift. It
 # registers a */30 main-session self-ping (no --channel/--to/--announce); all
 # boundedness lives in scripts/resume-onboarding.sh. See that lib for details.
-install_onboarding_resume_cron
+#
+# v20.0.91: the call is guarded. When lib-onboarding-resume-cron.sh IS present
+# the real installer runs exactly as before — it logs its own success/warn on
+# every path, so nothing is wrapped around it and no healthy box changes
+# behaviour. When the lib is ABSENT the top-of-file fallback returns 1 and this
+# says so, instead of the previous silent no-op that left the box with no resume
+# cron and not one line of log to explain why.
+if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" = "1" ]; then
+    install_onboarding_resume_cron \
+        || warn "install_onboarding_resume_cron reported a failure (install continues)"
+else
+    warn "lib-onboarding-resume-cron.sh NOT FOUND — the onboarding-resume cron was NOT installed."
+    warn "  This box will NOT auto-resume onboarding; skills can stall at pending with nothing to drive them."
+    warn "  Fix: re-run the installer from a complete bundle, or run scripts/update-skills.sh once the lib is present."
+fi
 
 # ----------------------------------------------------------
 # Step 13.4: Install watchdog-onboarding-loop cron (PRD-2.13, every 10 min)

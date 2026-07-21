@@ -1,3 +1,137 @@
+## [v20.0.91]  -  2026-07-21  -  THE INSTALLER PRINTED "ONBOARDING STATE SEEDED" ON A BOX WHERE THE STATE MACHINE NEVER LOADED
+
+Four install-time fail-open sites, all of them shipped to client boxes, all the
+same shape: a failure reported as a success, or not reported at all. The install
+log and the disk disagreed, and the log was the one anybody ever read.
+
+*(Version namespace is contested — v20.0.90 was already tagged when this branch
+was cut. If this lands behind another bump, keep BOTH changelog entries and
+re-bump; nothing here conflicts semantically with any other work in flight.)*
+
+### 1 (BLOCKER) — a no-op fallback made the "not seeded" branches dead code
+
+`install.sh` defined its missing-library fallback as
+`command -v oc_state_seed >/dev/null 2>&1 || oc_state_seed() { :; }`. The two
+lines immediately below it — `oc_onboarding_complete` and `oc_state_summary` —
+already failed CLOSED. This one returned 0.
+
+Two consequences followed, and the second is the one that mattered:
+
+* the dispatch tested `command -v oc_state_seed`, which the fallback satisfies
+  just as well as the real function, so it was **always** true. The compat-shim
+  `elif` and the `else` that warns "honesty state machine not seeded" were
+  **unreachable on every box, on every run, since the fallback was written**;
+* the stub returned 0, so `oc_state_seed ... && success` printed
+  **"Onboarding state seeded"** on a box where the library never loaded and no
+  `.onboarding-state.json` was ever created.
+
+Measured on pristine `origin/main` by running install.sh's own lines with the
+library absent: `SUCCESS: Onboarding state seeded`, rc 0, no state file on disk.
+The message is **byte-identical** to the healthy path. There was no way to tell
+the two apart from the log.
+
+The fallback now returns 1, and the dispatch gates on
+`OPENCLAW_LIB_ONBOARDING_STATE_SOURCED` — exported only when the real library
+actually sourced — instead of on mere symbol existence. Both previously-dead
+branches are reachable again and are covered by tests.
+
+### 2 — the resume-cron installer failed in total silence
+
+Same stub shape at `install_onboarding_resume_cron`, plus a bare call site in
+Step 13b. A bundle missing `lib-onboarding-resume-cron.sh` produced **zero lines
+of output** and no resume cron, so the box never auto-resumed onboarding and
+nothing said why. Measured before the fix: no output at all, rc 0.
+
+The call site is now guarded on `OPENCLAW_LIB_RESUME_CRON_SOURCED` and says so
+loudly when the library is absent. **When the library is present the real
+installer runs exactly as before** — it already logs its own success/warn on
+every path and returns 0 unconditionally, so wrapping its return value would
+have manufactured a *new* false success. Nothing was wrapped around it.
+
+### 3 — a skill could reach qc-passed while UNREGISTERED
+
+`scripts/onboarding-state.sh`'s registration check is `if command -v openclaw`
+with **no else**. When the CLI is off PATH — a cron's minimal PATH is the usual
+way this happens — check (a) contributed no reason at all, so a skill shipping
+neither `CORE_UPDATES.md` nor a `qc-*.sh` collected zero reasons and was marked
+**qc-passed while unregistered**. Measured: gate returned 0 with an empty reason
+string.
+
+This was a fail-open divergence between two copies of the same logic: the
+canonical `oc_skill_registered()` in `lib-onboarding-state.sh` has always done
+`command -v openclaw >/dev/null 2>&1 || return 1`. Registration is unverifiable
+without the CLI, and unverifiable is not verified — the gate now fails with
+`openclaw-cli:absent-cannot-verify-registration`. The function's doc comment,
+which stated the bug as the contract ("skipped if CLI absent"), was corrected.
+
+### 4 — a failed regression write left the stale qc-passed on disk
+
+`oc_state_seed` and `oc_state_set` both ended `2>/dev/null || true`, so both
+returned 0 no matter what happened. The worst case is the **regression** write:
+`oc_gate_skill` calls `oc_state_set <skill> qc-failed` when a gate fails, and if
+that write failed the old `qc-passed` stayed on disk while the caller was told
+the write succeeded. Measured: `oc_state_set 07-demo qc-failed` onto a read-only
+state file returned **rc 0** with `qc-passed` untouched.
+
+Both now report real failures, follow the atomic tempfile + `os.replace` pattern
+already proven in `oc_state_mark_field` (a mid-write exception can no longer
+truncate the live file), and no longer treat a corrupt state file as an empty
+one — the old `except Exception: state = {}` silently discarded every recorded
+status and re-seeded them all to `pending`, which is data loss wearing a seed's
+clothing.
+
+**ABSENT is still not BROKEN.** An absent state file remains normal and quiet
+with rc 0: `oc_state_seed` owns creation and a gate may legitimately run before
+the seed. A **missing source skills directory is also deliberately non-fatal** —
+`oc_state_set` seeds with `$OC_SKILLS_DIR`, whose default
+(`/data/.openclaw/skills`) does not exist on Mac boxes, so failing there would
+newly break every healthy Mac box to catch a misconfiguration that a stderr line
+already names. Only present-but-unreadable, unparseable or unwritable is loud
+and nonzero.
+
+**Fail closed, but do not crash.** This library is sourced by callers running
+`set -euo pipefail`, where a bare nonzero statement ABORTS the caller mid-install
+— a crash is not an acceptable substitute for a swallowed failure. Every call
+site that could now return nonzero was folded into a status variable following
+PR #693's `_sw_ok` / `state-write-failed` pattern: `oc_gate_skill` fails closed
+and names the reason, and `oc_wave_state_init` reports a seed failure on stderr
+without changing its own return contract.
+
+**Changed**
+- `install.sh` — both fallbacks return 1 instead of `{ :; }`; the state-seed
+  dispatch gates on `OPENCLAW_LIB_ONBOARDING_STATE_SOURCED`; Step 13b's call
+  site is guarded and reports a missing library; the seed's failure message now
+  states that nothing was written.
+- `lib-onboarding-state.sh` — `oc_state_seed` and `oc_state_set` return real
+  exit codes, write atomically, and distinguish absent from corrupt;
+  `oc_gate_skill` folds `oc_state_set` into its fail-closed path;
+  `oc_wave_state_init` guards its seed call so it cannot abort a `set -e` caller.
+- `scripts/onboarding-state.sh` — the registration check fails closed when the
+  openclaw CLI is absent; the doc comment no longer documents the defect.
+- `tests/unit/install-state-fail-open.test.sh` — **new.** Twelve behavioural
+  assertions that RUN install.sh's own extracted lines and the real library.
+- `.github/workflows/embedded-python-syntax-guard.yml` — runs the new lock in
+  the existing ONB-STATE job rather than adding a workflow to a saturated queue.
+
+**Falsified against the unfixed code**, which is the only reason to trust it:
+the new test reports **7 failed / 5 passed on pristine `origin/main`
+(3827d172)** and **12 passed / 0 failed** on this branch. The five that pass on
+both are labelled in the file as controls — T3 (a healthy box must still seed,
+or a fix that made every box warn would satisfy the others and be worthless),
+T7 (absent must stay quiet), T1c/T5b (fixture pins) and T9 (`set -e` survival).
+Only the seven that flip prove the defect is gone. The two assertions that need
+a write to genuinely fail probe that denial for real and SKIP loudly under root
+rather than passing vacuously.
+
+**Regression suites run locally, all green:** `onboarding-state-obs-api` 18/18,
+`update-skills-resume-cron` 20/20, `state-mark-field-silent-noop` 12/12,
+`bounded-resume-cron` 21/21, `full-update-path-contract` 25/25,
+`install-doc-consistency` 5/5, `scripts/test-watchdog-loop.sh` 19/19, and the
+embedded-python guard (702 shell files, 644 heredocs, 617 `python3 -c` bodies,
+0 parse failures). `tests/test-ungated-claim-points.sh` reports 30/3 — the same
+three failures, byte-identical, on pristine main; pre-existing and untouched
+here.
+
 ## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
 
 Two findings from the 2026-07-21 skill review. Different files, same shape: a
