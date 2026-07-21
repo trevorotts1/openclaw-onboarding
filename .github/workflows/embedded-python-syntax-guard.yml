@@ -147,3 +147,13 @@ jobs:
         run: |
           set -euo pipefail
           bash tests/unit/state-mark-field-silent-noop.test.sh
+
+      # ONB-STATE-002 rides in this job rather than a workflow of its own: it is
+      # the same file and the same silent-success class as ONB-STATE-001 above,
+      # and the queue is the scarce resource. It runs the real install.sh lines
+      # and the real library — no grepping for strings.
+      - name: install-time fail-open regression lock (ONB-STATE-002)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/install-state-fail-open.test.sh

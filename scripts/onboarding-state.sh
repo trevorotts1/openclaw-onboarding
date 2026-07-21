@@ -170,7 +170,10 @@ PYEOF
 # ── The VERIFICATION GATE for a single skill ─────────────────────────────────
 # obs_verify_skill <folder> [src_dir]
 # Returns 0 (INSTALLED) only if ALL applicable checks pass:
-#   (a) `openclaw skills info <name>` shows Ready/visible (skipped if CLI absent)
+#   (a) `openclaw skills info <name>` shows Ready/visible. If the openclaw CLI is
+#       not on PATH this check FAILS (v20.0.91) — it is not skipped. It used to
+#       be skipped, which meant an UNREGISTERED skill reached qc-passed whenever
+#       the CLI was off PATH (a cron's minimal PATH is the common case).
 #   (b) CORE_UPDATES sentinel present in workspace files (only if skill ships CORE_UPDATES.md)
 #   (c) its qc-*.sh exits 0 (only if it ships one)
 # Side effect: sets the skill's status to qc-passed (0) or qc-failed (non-zero).
@@ -212,6 +215,20 @@ obs_verify_skill() {
     elif ! printf '%s' "$info_out" | grep -qiE 'ready|enabled|visible|installed|name:|path:|details:|source:'; then
       reasons="${reasons}skills-info:not-registered; "
     fi
+  else
+    # v20.0.91 FAIL-OPEN FIX. This `if` had no `else`, so when openclaw was off
+    # PATH check (a) was skipped ENTIRELY and contributed no reason — a skill
+    # that ships neither CORE_UPDATES.md nor a qc-*.sh then collected zero
+    # reasons and was marked qc-passed while UNREGISTERED. The canonical sibling
+    # oc_skill_registered() in lib-onboarding-state.sh has always done
+    # `command -v openclaw >/dev/null 2>&1 || return 1`; this was a fail-open
+    # divergence between two copies of the same logic, and it bit hardest under
+    # cron, whose minimal PATH routinely lacks openclaw.
+    #
+    # Registration is UNVERIFIABLE without the CLI, and unverifiable is not
+    # verified. Fail closed and name the reason so the cause is actionable
+    # rather than mysterious.
+    reasons="${reasons}openclaw-cli:absent-cannot-verify-registration; "
   fi
 
   # (b) CORE_UPDATES sentinel present (only if the skill ships CORE_UPDATES.md)
