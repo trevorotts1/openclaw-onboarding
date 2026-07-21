@@ -1,0 +1,103 @@
+name: cinematic forge delivers the requested artifact (Skill 28)
+
+# WHAT THIS LOCKS. Five findings on one client-facing delivery path:
+#
+#   T0-46  The output gate's contract was "safe to deliver", and EVERY value it
+#          compared against was supplied by its caller. A correctly encoded video
+#          of the wrong length, the wrong aspect ratio, or missing every
+#          requested overlay passed, because the caller passed in the numbers it
+#          wanted checked. The certification was real; what it certified was that
+#          the file is a video.
+#   T0-47  Captions were written to final_video_captioned.mp4 and the logo
+#          overlay to final_video_branded.mp4 — and the upload read
+#          final_video.mp4. The work was performed correctly, verified
+#          correctly, and the un-transformed file shipped. Every stage reported
+#          success and the pipeline's own records said it was delivered.
+#   T0-48  The hosted check was a ranged first-byte request plus a content-type
+#          match on a URL grepped out of the response body. Any reachable video
+#          URL satisfied it — a previous client's asset, a stale upload, an
+#          unrelated file at the same host.
+#   T2-29  The documented hosting fallback for the FINAL VIDEO was an image-only
+#          host, and the quality checklist marked that answer correct.
+#   T2-30  The documented install directory (unprefixed) and the runtime helper
+#          path (prefixed) could not both be right; the checklist's tolerance hid
+#          the mismatch instead of surfacing it.
+#
+# ANTI-FALSE-POSITIVE CONTROLS. A "fix" that just fails everything must not pass
+# here: the suite asserts a valid clip still passes the technical mode, a fully
+# receipted requirement-matching artifact IS certified safe to deliver, and a
+# deliverable with no requested transformations passes with no receipts at all.
+#
+# MUTATION PROOF (inside the suite): the receipt-chain block is removed from a
+# private copy of the gate, and the un-transformed artifact must then be
+# certified again — proving the T0-47 assertions are discriminating.
+#
+# Hermetic: real ffmpeg-generated fixtures in a temp dir. No network, no
+# credentials, no fleet box.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "28-cinematic-forge/**"
+      - "tests/unit/cinematic-forge-delivery-gate.test.sh"
+      - ".github/workflows/cinematic-forge-delivery-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "28-cinematic-forge/**"
+      - "tests/unit/cinematic-forge-delivery-gate.test.sh"
+      - ".github/workflows/cinematic-forge-delivery-guard.yml"
+
+jobs:
+  delivery-gate:
+    name: "Skill 28: the delivered artifact is the requested one (T0-46/47/48, T2-29/30)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg + jq
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg jq
+          ffmpeg -version | head -1
+          jq --version
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 28-cinematic-forge/qc-output.sh
+          bash -n 28-cinematic-forge/qc-cinematic-forge.sh
+          bash -n tests/unit/cinematic-forge-delivery-gate.test.sh
+          echo "OK: every Skill 28 shell file parses"
+
+      - name: Only the delivery mode may say "safe to deliver"
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import sys
+          src = open("28-cinematic-forge/qc-output.sh").read()
+          # Executable lines only, so the explanatory header cannot satisfy this.
+          bare = "\n".join(l for l in src.split("\n") if not l.lstrip().startswith("#"))
+          verdicts = bare.lower().count("safe to deliver")
+          if verdicts != 1:
+              print(f"FAIL: expected exactly 1 executable 'safe to deliver' verdict, found {verdicts}")
+              sys.exit(1)
+          if "--requirements" not in bare:
+              print("FAIL: the gate no longer accepts a delivery-requirements record")
+              sys.exit(1)
+          print("OK: one delivery verdict, and it is reachable only through the requirements record")
+          PY
+
+      - name: Delivery-gate suite (with the mutation proof)
+        shell: bash
+        run: bash tests/unit/cinematic-forge-delivery-gate.test.sh
+
+      - name: The install QC script still runs
+        shell: bash
+        run: bash -n 28-cinematic-forge/qc-cinematic-forge.sh

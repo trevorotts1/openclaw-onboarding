@@ -204,7 +204,7 @@ Wait for answer.
 
 **Media library handling:**
 - If user has GHL/Convert and Flow: Upload via their Private Integration Token (PIT). GHL does NOT use API keys - it uses PITs.
-- If user does NOT have GHL/Convert and Flow: Recommend they set up an imgBB account (free), create an API key, and provide it. imgBB gives permanent image hosting links.
+- If user does NOT have GHL/Convert and Flow: imgBB (free) is fine for **reference images** — it gives permanent image hosting links. It is a REFERENCE-IMAGE host and only that: it hosts still images and animated GIFs, and will not host the final MP4. For the finished video the client needs a VIDEO-CAPABLE store they control (their own object storage or CDN, their site's media library, or a video host they own); ask for that separately at intake so delivery is not blocked at the end.
 - Always prefer GHL/Convert and Flow if available - it keeps everything in one ecosystem.
 
 ### Question 10: Intended Use Case
@@ -432,7 +432,44 @@ After all 14 questions are answered, the agent proceeds through these phases:
 
    **Do NOT start generation until the user confirms.** Once the user confirms the budget, if this job is tracked on the Command Center board, move its task to `in_progress` (see **COMMAND CENTER (KANBAN) INTEGRATION** below). If KIE credits are insufficient, return the task to the orchestrator instead of starting.
 
-4. **Initialize the project state file** (`project-state.json`):
+4. **Write the DELIVERY REQUIREMENTS RECORD — before any generation starts.**
+
+   Everything the delivery gate later checks the finished file against comes from
+   the *approved intake*, not from whatever numbers the caller happens to pass at
+   delivery time. Derive the record the moment the client approves the budget and
+   the brief, and never edit it afterwards:
+
+   ```bash
+   mkdir -p "$PROJECT/final/receipts"
+   cat > "$PROJECT/final/delivery-requirements.json" <<JSON
+   {
+     "approval_ref": "intake-approved-<YYYY-MM-DDTHH:MM:SSZ>",
+     "aspect_ratio": "9:16",
+     "dimensions": "1080x1920",
+     "duration_seconds": 90,
+     "duration_tolerance_seconds": 0.75,
+     "requires_captions": true,
+     "requires_text_overlays": false,
+     "requires_logo": true
+   }
+   JSON
+   ```
+
+   - `aspect_ratio` / `dimensions` / `duration_seconds` come from Questions 3, 4
+     and 8; the three `requires_*` flags come from Questions 8e and 8f. Set a
+     flag `true` only if the client asked for that thing.
+   - `approval_ref` is the client's approval. Without it the delivery gate
+     refuses to certify anything — a requirements record that is not bound to an
+     approval attests to nothing.
+
+   **Why this exists (T0-46).** The output gate's contract is "safe to deliver",
+   and every value it used to compare against was supplied by its own caller. A
+   correctly encoded video of the wrong length, the wrong aspect ratio, or
+   missing every requested overlay passed, because the caller passed in the
+   numbers it wanted checked. The certification was real; what it certified was
+   that the file is a video.
+
+5. **Initialize the project state file** (`project-state.json`):
    ```json
    {
      "project_name": "money-shame-syndrome",
@@ -587,56 +624,138 @@ Audio is generated SEPARATELY from video. VEO's built-in audio is DISCARDED and 
    ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 final_video.mp4
    ```
 
-6. **Run the OUTPUT-QC GATE (MANDATORY — the deliverable may not be sent until this exits 0):**
+6. **Establish the ONE authoritative final artifact, then run the TECHNICAL gate.**
+
    ```bash
-   bash "$SKILL_DIR/qc-output.sh" final_video.mp4 <target_seconds> <WIDTHxHEIGHT>
-   # example for a 90s 9:16 video:
-   bash "$SKILL_DIR/qc-output.sh" final_video.mp4 90 1080x1920
+   # THE authoritative artifact variable. Every later stage reads and advances
+   # THIS; nothing downstream ever names a fixed filename again.
+   FINAL_ARTIFACT="$PROJECT/final/final_video.mp4"
+
+   bash "$SKILL_DIR/qc-output.sh" "$FINAL_ARTIFACT" <target_seconds> <WIDTHxHEIGHT>
+   # example for a 90s 9:16 assembly:
+   bash "$SKILL_DIR/qc-output.sh" "$FINAL_ARTIFACT" 90 1080x1920
    ```
-   `qc-output.sh` checks that the file exists and is non-empty, the resolution matches what was requested, BOTH a video and an audio stream are present, the audio is non-silent (this proves the VEO audio was actually replaced — not silently dropped), and the duration is within 0.75s of target. If it exits non-zero, FIX the problem (re-mix audio, re-trim, or re-render the offending segment) and re-run — never deliver a video that fails this gate. (`$SKILL_DIR` was resolved in Phase 0.)
+
+   In this positional form `qc-output.sh` runs TECHNICAL checks only: the file
+   exists and is non-empty, the resolution matches, BOTH a video and an audio
+   stream are present, the audio is non-silent (proving the VEO audio was
+   actually replaced, not silently dropped), and the duration is within 0.75s of
+   what you told it to expect. It prints, in as many words, that this is **not**
+   a delivery verdict — every number it compared against came from you.
+
+   If it exits non-zero, FIX the problem (re-mix audio, re-trim, or re-render the
+   offending segment) and re-run. **The delivery gate runs after post-production,
+   in Phase 6 — not here.** (`$SKILL_DIR` was resolved in Phase 0.)
 
 ### Phase 5: Text Overlays, Captions, and Logo (Post-Production)
 
-This phase only runs if the user requested text overlays, captions, or logo placement during intake (Questions 8e and 8f).
+This phase only runs if the user requested text overlays, captions, or logo
+placement during intake (Questions 8e and 8f) — that is, if the corresponding
+`requires_*` flag in `final/delivery-requirements.json` is `true`.
 
-1. **Auto-generated captions/subtitles** (if requested):
+**THE RULE THAT MAKES THIS PHASE CORRECT.** Every transformation reads
+`$FINAL_ARTIFACT`, writes a NEW file, and — only if the command SUCCEEDS —
+advances `$FINAL_ARTIFACT` to that new file and writes a receipt. Nothing after
+this phase ever names a fixed filename.
+
+**Why (T0-47).** Captions used to be written to `final_video_captioned.mp4` and
+the logo overlay to `final_video_branded.mp4` — and then Phase 6 uploaded
+`final_video.mp4`. Both transformations read the ORIGINAL file and wrote
+elsewhere; the upload read the original. The work was performed correctly,
+verified correctly, and then the un-transformed file was the one that shipped.
+Every stage reported success, and the pipeline's own records said the client's
+captions and branding had been delivered.
+
+Use this helper for every step in this phase:
+
+```bash
+# apply_step <step-name> <output-path> <ffmpeg args...>
+#   Runs the transformation from the CURRENT $FINAL_ARTIFACT, advances the
+#   variable only on success, and writes the receipt the delivery gate reads.
+apply_step() {
+  local step="$1" out="$2"; shift 2
+  local in="$FINAL_ARTIFACT"
+  local in_sha; in_sha="$(shasum -a 256 "$in" | awk '{print $1}')"
+
+  if ! "$FFMPEG" -y -i "$in" "$@" "$out"; then
+    echo "POST-PRODUCTION FAILED at step '$step' — NOT advancing the final artifact." >&2
+    return 1
+  fi
+  [ -s "$out" ] || { echo "step '$step' produced an empty file" >&2; return 1; }
+
+  local out_sha; out_sha="$(shasum -a 256 "$out" | awk '{print $1}')"
+  mkdir -p "$PROJECT/final/receipts"
+  cat > "$PROJECT/final/receipts/$step.json" <<JSON
+{
+  "step": "$step",
+  "input": "$in",
+  "input_sha256": "$in_sha",
+  "output": "$out",
+  "output_sha256": "$out_sha",
+  "completed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+}
+JSON
+  FINAL_ARTIFACT="$out"          # <-- the ONLY place this variable advances
+  echo "step '$step' applied; final artifact is now $FINAL_ARTIFACT"
+}
+```
+
+1. **Auto-generated captions/subtitles** (if `requires_captions`):
    - Extract audio from the assembled video
-   - Run through Whisper (speech-to-text) to generate subtitle file (.srt)
-   - Burn subtitles onto video with FFmpeg:
+   - Run through Whisper (speech-to-text) to generate the subtitle file (`.srt`)
+   - Burn the subtitles onto the CURRENT artifact:
    ```bash
-   ffmpeg -i final_video.mp4 -vf "subtitles=captions.srt:force_style='FontSize=24,FontName=Arial,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,MarginV=40'" \
-     -c:a copy final_video_captioned.mp4
+   apply_step captions "$PROJECT/final/final_video_captioned.mp4" \
+     -vf "subtitles=captions.srt:force_style='FontSize=24,FontName=Arial,PrimaryColour=&Hffffff,OutlineColour=&H000000,Outline=2,MarginV=40'" \
+     -c:a copy
    ```
 
-2. **Custom text overlays** (title cards, CTAs, lower thirds):
-   - Use FFmpeg drawtext filter for each text element:
+2. **Custom text overlays** (title cards, CTAs, lower thirds — if `requires_text_overlays`):
    ```bash
-   ffmpeg -i final_video.mp4 \
+   apply_step text_overlays "$PROJECT/final/final_video_text.mp4" \
      -vf "drawtext=text='Book Your Free Consultation':fontsize=48:fontcolor=white:borderw=3:bordercolor=black:x=(w-text_w)/2:y=h-120:enable='between(t,85,90)'" \
-     -c:a copy final_video_text.mp4
+     -c:a copy
    ```
-   - Position and timing based on storyboard
-   - User approves text placement before finalizing
+   - Position and timing come from the storyboard
+   - The user approves text placement before finalizing
 
-3. **Logo overlay** (if provided):
-   - Overlay the user's logo PNG (transparent background) using FFmpeg:
+3. **Logo overlay** (if `requires_logo`):
    ```bash
    # Corner watermark (entire video)
-   ffmpeg -i final_video.mp4 -i logo.png \
-     -filter_complex "overlay=W-w-20:20" \
-     -c:a copy final_video_branded.mp4
-   
-   # End card only (last 5 seconds)
-   ffmpeg -i final_video.mp4 -i logo.png \
-     -filter_complex "overlay=(W-w)/2:(H-h)/2:enable='gte(t,85)'" \
-     -c:a copy final_video_branded.mp4
+   apply_step logo "$PROJECT/final/final_video_branded.mp4" \
+     -i logo.png -filter_complex "overlay=W-w-20:20" -c:a copy
+
+   # End card only (last 5 seconds) — use INSTEAD of the watermark, not as well
+   # apply_step logo "$PROJECT/final/final_video_branded.mp4" \
+   #   -i logo.png -filter_complex "overlay=(W-w)/2:(H-h)/2:enable='gte(t,85)'" -c:a copy
    ```
 
 4. **If the user needs a more advanced caption/subtitle skill**, recommend the caption skill or video-editor skill for additional formatting options (animated text, custom fonts, word-by-word highlighting, etc.). Cinematic Forge handles basic overlays; complex motion graphics are a separate workflow.
 
+At the end of this phase, `$FINAL_ARTIFACT` names the file that carries every
+requested transformation, and `final/receipts/` holds one receipt per applied
+step. Both are what Phase 6 delivers and what the delivery gate reads.
+
 ### Phase 6: Upload and Delivery
 
-1. **Upload the finished MP4 to the client's GHL/Convert and Flow Media Library.** Credentials come from the platform-correct secrets file resolved in Phase 0 (`$SECRETS_ENV`): the Private Integration Token is `GOHIGHLEVEL_API_KEY` and the sub-account is `GOHIGHLEVEL_LOCATION_ID`. Pass the location (the v2 endpoint behaves differently for agency vs sub-account tokens — omitting it is fragile), check the HTTP status, parse the returned URL, and retry ONCE on failure before reporting. Never assume the upload succeeded.
+**0. RUN THE DELIVERY GATE — on `$FINAL_ARTIFACT`, after post-production, before the upload.**
+
+```bash
+bash "$SKILL_DIR/qc-output.sh" \
+  --artifact     "$FINAL_ARTIFACT" \
+  --requirements "$PROJECT/final/delivery-requirements.json" \
+  --receipts     "$PROJECT/final/receipts"
+```
+
+This is the only mode that says "safe to deliver". It checks the artifact
+against the requirements record derived from the APPROVED intake — approved
+aspect ratio, approved duration, and every overlay the client actually asked for
+— and requires, for each requested transformation, a receipt whose output hash
+IS this artifact. A file that skipped a transformation, or a transformation
+applied to some other file, cannot pass. If it exits non-zero, fix the pipeline
+and re-run: **do not upload, and do not send a link.**
+
+1. **Upload `$FINAL_ARTIFACT` to the client's GHL/Convert and Flow Media Library.** Credentials come from the platform-correct secrets file resolved in Phase 0 (`$SECRETS_ENV`): the Private Integration Token is `GOHIGHLEVEL_API_KEY` and the sub-account is `GOHIGHLEVEL_LOCATION_ID`. Pass the location (the v2 endpoint behaves differently for agency vs sub-account tokens — omitting it is fragile), check the HTTP status, KEEP THE WHOLE RESPONSE BODY, and retry ONCE on failure before reporting. Never assume the upload succeeded.
    ```bash
    : "${GOHIGHLEVEL_API_KEY:?set GOHIGHLEVEL_API_KEY in $SECRETS_ENV}"
    : "${GOHIGHLEVEL_LOCATION_ID:?set GOHIGHLEVEL_LOCATION_ID in $SECRETS_ENV}"
@@ -646,7 +765,7 @@ This phase only runs if the user requested text overlays, captions, or logo plac
        "https://services.leadconnectorhq.com/medias/upload-file" \
        -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
        -H "Version: 2021-07-28" \
-       -F "file=@final_video.mp4" \
+       -F "file=@$FINAL_ARTIFACT" \
        -F "hosted=true" \
        -F "locationId=$GOHIGHLEVEL_LOCATION_ID" \
        -F "fileProcessingOpts={\"forceReprocess\": true}"
@@ -658,23 +777,46 @@ This phase only runs if the user requested text overlays, captions, or logo plac
      RAW="$(upload_to_ghl)"; CODE="$(printf '%s' "$RAW" | tail -n1)"; BODY="$(printf '%s' "$RAW" | sed '$d')"
    fi
    if [ "$CODE" = "200" ] || [ "$CODE" = "201" ]; then
-     MEDIA_URL="$(printf '%s' "$BODY" | grep -oE 'https://[^"]+' | head -n1)"
-     echo "Hosted video URL: $MEDIA_URL"
+     printf '%s' "$BODY" > "$PROJECT/final/upload-response.json"
    else
      echo "GHL upload FAILED (HTTP $CODE). Response: $BODY" >&2
      # Do not deliver — surface the failure to the operator and stop.
    fi
    ```
 
-   - On success the response carries the permanent URL (typically on `assets.cdn.filesafe.space`). Use the URL parsed from the response — do not hardcode the CDN host.
-   - **Verify the hosted file before sending it** by re-running the output-QC gate with the URL as the 4th argument:
+   - The upload is performed on `$FINAL_ARTIFACT`, the same variable the gate
+     just certified — never on a fixed filename.
+   - **Verify the HOSTED object before sending anything**, by re-running the
+     delivery gate with the saved response:
      ```bash
-     bash "$SKILL_DIR/qc-output.sh" final_video.mp4 <target_seconds> <WIDTHxHEIGHT> "$MEDIA_URL"
+     bash "$SKILL_DIR/qc-output.sh" \
+       --artifact        "$FINAL_ARTIFACT" \
+       --requirements    "$PROJECT/final/delivery-requirements.json" \
+       --receipts        "$PROJECT/final/receipts" \
+       --upload-response "$PROJECT/final/upload-response.json"
      ```
-   - **If the client has no GHL/Convert and Flow:** host the finished MP4 on a real file/video host the client controls (their own storage/CDN, or a video-capable host). **Do NOT use imgBB for the final video — imgBB hosts still images and animated GIFs only and will not host an MP4.** (imgBB is still fine for reference *images* in Q9.)
+     The gate resolves the asset IDENTIFIER the upload returned, requires the
+     response's own filename/size metadata to match the artifact, downloads the
+     object bound to that identifier, and probes it against the same approved
+     requirements. **Why (T0-48):** the old check was a ranged request for the
+     first byte plus a content-type match, on a URL grepped out of the response
+     body — any reachable video URL satisfied it, including a previous client's
+     asset or a stale upload. It confirmed only that the host was up.
+   - Read the link to send from the verified response:
+     ```bash
+     MEDIA_URL="$(jq -r '.url // .fileUrl // .location // .data.url' "$PROJECT/final/upload-response.json")"
+     ```
+   - **If the client has no GHL/Convert and Flow:** host the finished MP4 on a
+     real VIDEO-CAPABLE store the client controls — their own object storage or
+     CDN (S3/R2/GCS + a CDN), their own site's media library, or a video host
+     they own. Verify it exactly the same way: the store's upload response must
+     yield an asset identifier and a URL bound to it, and the gate must download
+     and probe the hosted object. **Never imgBB for the final video** — imgBB
+     hosts still images and animated GIFs only and will not host an MP4. imgBB is
+     a REFERENCE-IMAGE host, and only that (Q9).
 
 2. **Return the link to the user** in the same channel where they started the conversation (Telegram, Slack, etc.):
-   
+
    > "Your video is ready! Here's the link: $MEDIA_URL
    >
    > Watch it and let me know:
@@ -686,8 +828,9 @@ This phase only runs if the user requested text overlays, captions, or logo plac
 3. **Handle revision requests:**
    - User identifies specific segments or issues
    - Re-generate only the affected segments
-   - Re-assemble with FFmpeg
-   - Re-upload and return new link
+   - Re-assemble with FFmpeg, then re-run Phase 5 so `$FINAL_ARTIFACT` and the
+     receipts describe the NEW file
+   - Re-run the delivery gate, re-upload and return the new link
 
 4. **Topaz upscale (after user approves the draft):**
    - Offer 1080p or 4K upgrade

@@ -1,3 +1,95 @@
+## [v20.0.90]  -  2026-07-21  -  CINEMATIC FORGE SHIPPED THE FILE THE CLIENT DID NOT ASK FOR, AND A GATE CALLED IT SAFE TO DELIVER
+
+Five findings on one client-facing delivery path in `28-cinematic-forge`.
+
+### T0-47 (BLOCKER) — the un-transformed file was the one that shipped
+
+`SKILL.md` Phase 5 wrote captions to `final_video_captioned.mp4`:
+
+    ffmpeg -i final_video.mp4 -vf "subtitles=captions.srt:..." -c:a copy final_video_captioned.mp4
+
+and the logo overlay to a third file:
+
+    ffmpeg -i final_video.mp4 -i logo.png -filter_complex "overlay=W-w-20:20" -c:a copy final_video_branded.mp4
+
+Phase 6 then uploaded:
+
+           -F "file=@final_video.mp4" \
+
+Both transformations READ the original and wrote elsewhere; the upload read the
+original, and the delivery verification ran on the original. When a client asked
+for captions or logo placement, the work was performed correctly, verified
+correctly, and the file without it was delivered — every stage reporting success,
+and the pipeline's own records saying it shipped.
+
+Phase 5 now defines ONE authoritative `$FINAL_ARTIFACT` and an `apply_step`
+helper: each transformation reads the current artifact, writes a new file, and
+advances the variable ONLY if the command succeeds, writing a receipt carrying
+the input and output hashes. Phase 6 uploads and verifies that variable. No
+stage names a fixed filename again.
+
+### T0-46 (BLOCKER) — the delivery gate compared the caller's own numbers
+
+`qc-output.sh`'s stated contract was:
+
+    #   exit 0  -> deliverable passed every check; safe to deliver
+
+and every argument it compared against was supplied by the caller. Nothing bound
+the file to the approved intake, so a correctly encoded video of the wrong
+length, the wrong aspect ratio, or missing every requested overlay passed. The
+certification was real; what it certified was that the file is a video.
+
+The gate now has two modes. The positional form runs TECHNICAL probes and states,
+in as many words, that it is **not** a delivery verdict. The DELIVERY mode
+(`--artifact --requirements [--receipts] [--upload-response]`) checks the
+artifact against a delivery-requirements record derived from the approved intake
+BEFORE generation — approved aspect ratio, approved duration, and each requested
+overlay — and requires, for every requested transformation, a receipt whose
+output hash IS the artifact being delivered. A requirements record with no
+`approval_ref` is refused: it attests to nothing. "Safe to deliver" now appears
+exactly once in the executable body of the script, at the end of that mode.
+
+### T0-48 — the hosted check proved only that the host was up
+
+A ranged request for the first byte plus a content-type match, on a URL grepped
+out of the upload response body. Any reachable video URL satisfied it — a
+previous client's asset, a stale upload, an unrelated file at the same host. The
+gate now resolves the asset IDENTIFIER the upload returned, requires the
+response's own filename/size metadata to match the artifact, downloads the object
+bound to that identifier, and probes it against the same approved requirements. A
+response with no identifier, or with nothing to match against, is a failure —
+never a skip.
+
+### T2-29 / T2-30 — two documents that could not both be right
+
+`INSTALL.md` named an image host as the fallback when the media upload is
+unavailable and `QC.md`'s knowledge test marked that answer correct, while
+`SKILL.md` said the opposite for the final artifact — the fallback is reached
+exactly when the primary path failed, so following it either fails or produces a
+link that is not the video. The image host is labelled REFERENCE-IMAGES-ONLY
+everywhere, and the final-video fallback is a video-capable store the client
+controls, verified exactly like the primary path.
+
+`INSTALL.md` directed the operator to an unprefixed `cinematic-forge/` directory
+while `SKILL.md` Phase 0 resolves `28-cinematic-forge/`; `QC.md` tried the
+unprefixed path first and fell back, which is the only reason the checklist
+worked. The prefixed form is canonical in all three now, and `QC.md` resolves it
+once.
+
+### Tests
+
+`tests/unit/cinematic-forge-delivery-gate.test.sh` — 26 assertions on real
+ffmpeg-generated fixtures. A request-wrong but technically valid file (approved
+9:16, delivered 16:9; approved 2s, delivered 5s) is refused; an un-transformed
+artifact is refused and the failure names the missing transformation; a receipt
+whose output is a different file cannot certify this one; an upload response with
+no asset identifier, or with no filename/size to match, is refused. The
+anti-false-positive controls assert that a valid clip still passes the technical
+mode, that a fully receipted requirement-matching artifact IS certified, and that
+a deliverable with no requested transformations passes with no receipts. The
+mutation removes the receipt chain and requires the un-transformed artifact to be
+certified again. CI: `.github/workflows/cinematic-forge-delivery-guard.yml`.
+
 ## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
 
 **T2-07 — three documented entry points named a path that does not exist.**
