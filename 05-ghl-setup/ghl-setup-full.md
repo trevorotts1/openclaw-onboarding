@@ -209,6 +209,10 @@ OPPORTUNITIES:
 
 📋 EXAMPLE: Search and Message a Contact
 
+⛔ REFERENCE ONLY — the send below is a request-shape example, not a step to run.
+It delivers a real message to a real person. Do not execute it as part of setup,
+verification, or any self-test. See SEND VERIFICATION below.
+
 # Search for contact
 curl -X GET "https://services.leadconnectorhq.com/contacts/search?query=john@email.com" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
@@ -247,7 +251,13 @@ AGENTS.md - Add rule to always include Version header
 
 🧪 SELF-TEST: VERIFY GHL IS WORKING
 
-After setup, the AI should run these tests automatically:
+After setup, the AI should run these tests automatically.
+
+⛔ EVERY TEST BELOW IS READ-ONLY. None of them sends a message.
+Sending an SMS or an email from the client's account delivers a real message to
+a real person. That is never part of an automatic test and must never be run to
+"prove setup worked" — see SEND VERIFICATION below, which requires explicit
+operator approval and a designated operator test contact.
 
 TEST 1: Verify Credentials Exist
 echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..."
@@ -271,27 +281,48 @@ EXPECTED: JSON with contacts array (even if empty)
 TEST 4: Verify Version Header Works
 # If you get 400 errors, the Version header is missing!
 
-TEST 5: Test Send SMS
-curl -s -X POST "https://services.leadconnectorhq.com/conversations/messages" \
--H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
--H "Version: 2021-07-28" \
--H "Content-Type: application/json" \
--d '{"type": "SMS", "contactId": "REPLACE_WITH_CONTACT_ID", "message": "Test SMS from AI assistant"}'
-EXPECTED: JSON with messageId confirming delivery
-
-TEST 6: Test Send Email
-curl -s -X POST "https://services.leadconnectorhq.com/conversations/messages" \
--H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
--H "Version: 2021-07-28" \
--H "Content-Type: application/json" \
--d '{"type": "Email", "contactId": "REPLACE_WITH_CONTACT_ID", "subject": "Test Email from AI", "html": "<p>This is a test email from your AI assistant.</p>"}'
-EXPECTED: JSON with messageId confirming delivery
-
-TEST 7: Test Media Library Access
+TEST 5: Test Media Library Access
 curl -s -X GET "https://services.leadconnectorhq.com/medias/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=1" \
 -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
 -H "Version: 2021-07-28"
 EXPECTED: JSON with media files array (proves media library scope works)
+
+That is all 5 automatic tests. There is no test 6 and no test 7.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+⛔ SEND VERIFICATION — OPERATOR APPROVAL REQUIRED, NEVER AUTOMATIC
+
+Sending is NOT part of the setup self-test and is NOT required to call setup
+complete. Setup is proven by the 5 read-only tests above.
+
+An SMS or email sent through /conversations/messages is delivered to a real
+person. A test send from a client's account is an unsolicited message that the
+client did not authorise, sent to a contact who did not opt into it, from a
+number and address the client is accountable for.
+
+If send capability genuinely has to be proven, ALL FOUR conditions must hold
+before a single send call is made:
+
+1. The operator explicitly approved this specific send, in this session. A
+   general "set up GHL" instruction is NOT approval to send.
+2. The destination is a DESIGNATED OPERATOR TEST CONTACT — a contact created
+   for testing and owned by the operator. NEVER a client contact, never a
+   contact discovered by searching the client's contact list, never a real
+   lead or customer.
+3. The operator supplied the test contact's identifier. Do not go looking for
+   one, and never substitute the first identifier a contact search returns.
+4. The send is reported to the operator afterwards, including what was sent and
+   to whom.
+
+If any of the four is not satisfied, do not send. Report that send capability is
+unverified instead. Unverified send capability is a fine outcome; an unsolicited
+message out of a client's account is not.
+
+The request shape is documented in the API reference above and in EXAMPLES.md.
+It is deliberately NOT repeated here as a ready-to-run command, so that no agent
+scanning this self-test section finds a send it can execute.
 
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -305,7 +336,11 @@ After setting up GHL, automatically verify:
 □ Can reach services.leadconnectorhq.com
 □ Can get location info (proves auth works)
 □ Can search contacts (proves permissions work)
+□ Can list the media library (proves media library scope works)
 □ Version header is being sent (no 400 errors)
+
+Nothing on this checklist sends a message, and nothing needs to. Do NOT add a
+send to it.
 
 IF ANY TEST FAILS:
 1. Check API key is correct and not expired

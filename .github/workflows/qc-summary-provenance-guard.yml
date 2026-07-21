@@ -1,0 +1,74 @@
+name: qc-summary-provenance-guard
+
+# Fails the build if a quality-control summary carries a version it was not
+# generated at, asserts a verdict it did not measure, or is registered as a
+# repo-wide version marker.
+#
+# FINDING T0-07. The role-library quality-control summary was listed in
+# scripts/version-markers.json, so scripts/bump-version.sh rewrote its
+# "Role Library vX.Y.Z" heading on every release. Nothing re-ran quality
+# control; only the number moved. The measurement behind it — 244 roles,
+# a blanket pass verdict — was taken once, on 2026-06-09 at v11.0.1, and rode
+# forward through 589 commits onto v20.0.85, against a sibling index declaring
+# 438 roles across 36 departments.
+#
+# Every version gate in the repo passed the entire time, because the marker
+# genuinely DID equal /version. That is precisely why this needs its own gate:
+# the existing checks verified that the number agreed with the release, never
+# that the number meant anything. The artifact drifted because nothing checked
+# the artifact.
+#
+# This gate also fails if the marker is re-registered, which is the mechanism
+# the defect arrived through — a code fix alone would not stop someone adding
+# the marker back and obliging the bumper to roll it again.
+#
+# DELIBERATELY NOT PATH-FILTERED. The rewrite lived in the release bumper, the
+# registration lived in the marker manifest, and the false evidence lived in a
+# skill template — three unrelated paths, any one of which can reintroduce it.
+# The gate is a sub-second scan, so it runs on everything.
+#
+# Security note: this workflow consumes only repo file content (no untrusted
+# GitHub event fields), so there is no injection surface in the run: blocks.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  qc-summary-provenance-guard:
+    name: a QC summary carries only the version it was measured at
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Byte-compile the gate script
+        run: python3 -m py_compile scripts/qc-assert-qc-summary-provenance.py
+
+      - name: Self-test the gate (must fail on a stamped version, pass on a clean artifact)
+        run: python3 scripts/qc-assert-qc-summary-provenance.py --self-test
+
+      - name: Assert no QC summary is stamped with an unearned version (must pass)
+        run: python3 scripts/qc-assert-qc-summary-provenance.py
+
+      - name: Assert a version bump does not rewrite the QC summary (must pass)
+        run: bash tests/unit/qc-summary-not-rolled-by-bumper.test.sh
+
+  ghl-setup-selftest-no-live-send:
+    name: the GHL setup self-test sends nothing from a client account
+    runs-on: ubuntu-latest
+    # FINDING T1-01. 05-ghl-setup/ghl-setup-full.md told the agent to run seven
+    # tests automatically; two of them posted a live SMS and a live email from
+    # the client's own account to a real contact, with no approval step, and
+    # 05-ghl-setup/SKILL.md withheld the setup-complete confirmation until all
+    # seven passed. Documentation is what the agent executes, so this is a real
+    # unsolicited-message path out of a client account, not a docs nit.
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Byte-compile the test
+        run: python3 -m py_compile tests/unit/ghl-setup-selftest-no-live-send.test.py
+
+      - name: Assert the automatic self-test is read-only and the counts agree
+        run: python3 tests/unit/ghl-setup-selftest-no-live-send.test.py
