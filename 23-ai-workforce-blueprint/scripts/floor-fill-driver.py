@@ -38,6 +38,22 @@ SAFETY CONTRACT:
   - dry-run by default; --apply required to mutate.
   - resolves the box's OWN skill-23 install (self-locating: this script lives in
     <skill-23>/scripts/) so it never depends on operator-only tooling.
+  - the department DIRECTORY is DETECTED (crw.resolve_dept_dir), never assumed.
+  - it never fabricates content: a role the canonical library cannot produce is
+    reported as a FAILURE, never stubbed.
+
+EXIT CODES
+  0  every slot in the gap-map is now filled (or was already present).
+  3  at least one slot the gap-map asked for could NOT be materialized —
+     unresolvable department, no canonical library content, a builder error, or
+     a missing library SOP source. The gap-map is a list of gaps the detector
+     already PROVED are missing, so a slot left unfilled is a detected gap that
+     went unrepaired and MUST be loud: migrate-existing-workforce.sh Step 2b
+     propagates this into its own exit status, which trips update-skills.sh's
+     _D2_MIGRATE_STATUS latch and prints the WORKFORCE-PROVISIONING INCOMPLETE
+     block. Returning 0 unconditionally (every release up to v20.0.76) is what
+     let "detected the gap, filled nothing, reported success" ship.
+  2  the gap-file could not be read or parsed.
 """
 import argparse, json, os, re, sys
 from pathlib import Path
@@ -155,18 +171,43 @@ def main():
         ws = vps if Path("/data/.openclaw").is_dir() else (Path.home() / ".openclaw/workspace/departments")
 
     workspace_root = ws.parent  # .../workspace
-    gaps = json.load(open(args.gap_file))
+    try:
+        with open(args.gap_file, encoding="utf-8") as f:
+            gaps = json.load(f)
+    except (OSError, json.JSONDecodeError) as e:
+        print(f"ERROR: could not read gap-file {args.gap_file}: {e}", file=sys.stderr)
+        return 2
 
     report = {"apply": args.apply, "skill_dir": str(SKILL_DIR),
               "roles_created": {}, "roles_skipped_present": {},
-              "roles_no_library": {}, "sops_copied": {}, "dept_scaffold": {}}
+              "roles_no_library": {}, "sops_copied": {}, "sops_no_source": {},
+              "dept_scaffold": {}, "unfilled": 0}
+
+    # Every gap the driver was handed but could not close. The gap-map contains
+    # ONLY slots detect-stale-artifacts.py already proved missing, so a non-zero
+    # count here is a detected gap left unrepaired — the loud-failure trigger.
+    unfilled = 0
 
     for dept, info in gaps.items():
-        dept_dir = ws / dept
         dept_slug = dept
-        if not dept_dir.is_dir():
+        # DETECT the department directory (bare id / legacy "-dept" suffix /
+        # normalized scan absorbing case + separator drift). The old code used
+        # the bare id unconditionally and mkdir'd it on a miss, so a real
+        # `Sales/` on a case-SENSITIVE filesystem produced a SECOND, empty
+        # `sales/` and every restored role landed in the wrong department.
+        dept_dir = crw.resolve_dept_dir(ws, dept_slug)
+        if dept_dir is None:
+            # Genuinely absent on this box. Creating it is correct for a
+            # MISSING-class fill — but only now that the probe came back empty.
+            dept_dir = ws / dept
             if args.apply:
-                dept_dir.mkdir(parents=True, exist_ok=True)
+                try:
+                    dept_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as e:
+                    report["dept_scaffold"][dept] = {"error": f"could not create department dir: {e}"}
+                    n = len(info.get("missing_roles", []) or []) + len(info.get("missing_sops", []) or [])
+                    unfilled += max(n, 1)
+                    continue
         present = existing_role_keys(dept_dir)
         rnums = roster_numbers(dept_slug)
 
@@ -205,29 +246,55 @@ def main():
             report["roles_skipped_present"][dept] = skipped
         if nolib:
             report["roles_no_library"][dept] = nolib
+            # A role the detector proved MISSING that the canonical library
+            # cannot produce is an unfilled gap. It is NEVER stubbed or
+            # hand-authored — it is reported.
+            unfilled += len(nolib)
 
         # --- named-set SOPs missing-only ---
         if info.get("kind") == "named-set" and info.get("missing_sops"):
             dept_key = crw.normalize_dept(dept_slug)
             lib_sops = LIBRARY / dept_key / "sops"
             sops_dir = dept_dir / "sops"
-            copied = []
+            copied, nosrc = [], []
             for fname in info["missing_sops"]:
                 src = lib_sops / fname
                 if not src.exists():
+                    # Detector said this SOP is missing from the box and the
+                    # library has no source for it: unfillable, so it is loud
+                    # rather than a silent `continue`.
+                    nosrc.append(fname)
                     continue
                 dest = sops_dir / fname
                 if dest.exists():
                     continue
-                if args.apply:
-                    sops_dir.mkdir(parents=True, exist_ok=True)
-                    dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
-                copied.append(fname)
+                try:
+                    if args.apply:
+                        sops_dir.mkdir(parents=True, exist_ok=True)
+                        dest.write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+                    copied.append(fname)
+                except OSError as e:
+                    nosrc.append(f"{fname} (ERROR {e})")
             if copied:
                 report["sops_copied"][dept] = {"count": len(copied), "files": copied[:5]}
+            if nosrc:
+                report["sops_no_source"][dept] = nosrc
+                unfilled += len(nosrc)
 
+    report["unfilled"] = unfilled
     print(json.dumps(report, indent=1))
+
+    if unfilled:
+        # LOUD. A repair tool that cannot repair must say so: rc 3 is what
+        # migrate-existing-workforce.sh Step 2b turns into a non-zero migration
+        # exit, which trips update-skills.sh's _D2_MIGRATE_STATUS latch.
+        print(f"FAILED: {unfilled} detected floor gap(s) could NOT be materialized "
+              f"from the canonical library — see roles_no_library / sops_no_source / "
+              f"dept_scaffold.error above. Nothing was stubbed or fabricated.",
+              file=sys.stderr)
+        return 3
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

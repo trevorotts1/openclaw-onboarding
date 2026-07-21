@@ -66,6 +66,45 @@ _DEFAULT_MANIFEST = _SKILL_DIR / "templates" / "role-library" / "_index.json"
 
 HOME = os.path.expanduser("~")
 
+# ONE department-directory resolver for the whole floor pipeline (detector,
+# STALE drain, MISSING materializer) — see create_role_workspaces.resolve_dept_dir.
+# The import is guarded: this detector is READ-ONLY and must stay runnable on a
+# box or fixture where the builder module is absent, so it falls back to an
+# equivalent local probe rather than refusing to run.
+sys.path.insert(0, str(_SCRIPT_DIR))
+try:
+    from create_role_workspaces import resolve_dept_dir as _resolve_dept_dir  # type: ignore
+except Exception:  # pragma: no cover - exercised only on a bundle without the builder
+    _DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
+
+    def _norm_dept_fallback(name):
+        n = str(name or "").strip().lower()
+        n = _DEPT_DECOR_RE.sub('', n)
+        n = n.replace('_', '-')
+        return re.sub(r'-{2,}', '-', n).strip('-')
+
+    def _resolve_dept_dir(departments_root, dept_slug):
+        departments_root = Path(departments_root)
+        if not departments_root.is_dir():
+            return None
+        for cand in (departments_root / dept_slug, departments_root / f"{dept_slug}-dept"):
+            if cand.is_dir():
+                return cand
+        target = _norm_dept_fallback(dept_slug)
+        if not target:
+            return None
+        try:
+            entries = sorted(departments_root.iterdir())
+        except OSError:
+            return None
+        for e in entries:
+            try:
+                if e.is_dir() and _norm_dept_fallback(e.name) == target:
+                    return e
+            except OSError:
+                continue
+        return None
+
 # Provenance HTML-comment marker the build writes into each how-to.md.
 # e.g. <!-- workforce-provenance: source=role-library role-slug=X dept=Y
 #         content_sha=sha256:... content_version=1.0.0 instantiated=... generator=... -->
@@ -206,6 +245,128 @@ def load_built_from_state(workspace):
             norm = key if str(key).startswith("persona/") else f"persona/{key}"
             built_from[norm] = rec["source_content_sha"]
     return built_from, set(built_from.keys()), True
+
+
+# ─── ON-DISK PRESENCE (the fast path is otherwise filesystem-BLIND) ───────────
+#
+# load_built_from_state() reads ONLY .workforce-build-state.json. It never looks
+# at the filesystem. So an artifact the box BUILT and later LOST — a role folder
+# deleted by a tree-reshuffling pass, exactly the loss this detector exists to
+# catch — stays recorded in artifactProvenance and classifies CURRENT. MISSING
+# could never fire for it, the gap-map came back empty, floor-fill-driver.py had
+# nothing to materialize, and the update reported success over a stripped floor.
+#
+# build-workforce.py writes artifactProvenance on every build, so the fast path
+# is the NORMAL path on a freshly built box: the entire MISSING pipeline was dead
+# there. The marker-scan fallback (load_built_from_disk) never had this problem —
+# it only reports what it can see — so this makes the fast path agree with the
+# fallback rather than introducing a new classification.
+#
+# Presence is verified against the department's REAL directory (crw.resolve_dept_dir:
+# bare id / legacy "-dept" suffix / normalized scan absorbing case + separator
+# drift), because an exact-path probe misses a real `Sales/` on every
+# case-sensitive Linux box and would report the whole department LOST.
+
+_NN_PREFIX_RE = re.compile(r'^\d{1,3}[-_]')
+_ROLE_PREFIX_RE = re.compile(r'^(?:ROLE|role)--')
+
+
+def _norm_artifact(name):
+    """Normalize a role/SOP name or on-disk folder/file name to one key."""
+    n = str(name or "").strip()
+    n = _NN_PREFIX_RE.sub('', n)
+    n = _ROLE_PREFIX_RE.sub('', n)
+    if n.endswith(".md"):
+        n = n[:-3]
+    return n.replace('--', '-').lower()
+
+
+def _scan_dept_dir(dept_dir):
+    """Return (role_keys, sop_keys) actually present in a department directory."""
+    roles, sops = set(), set()
+    for base in (dept_dir, dept_dir / "roles"):
+        if not base.is_dir():
+            continue
+        try:
+            entries = list(base.iterdir())
+        except OSError:
+            continue
+        for e in entries:
+            try:
+                if e.is_dir() and ((e / "IDENTITY.md").is_file() or (e / "how-to.md").is_file()):
+                    roles.add(_norm_artifact(e.name))
+                elif e.is_file() and e.suffix == ".md":
+                    roles.add(_norm_artifact(e.name))
+            except OSError:
+                continue
+    sops_dir = dept_dir / "sops"
+    if sops_dir.is_dir():
+        try:
+            for e in sops_dir.iterdir():
+                if e.is_file() and e.suffix == ".md":
+                    sops.add(_norm_artifact(e.name))
+        except OSError:
+            pass
+    return roles, sops
+
+
+def prune_absent_from_disk(workspace, built_from, present_keys, kind):
+    """Drop every recorded key whose artifact is NOT actually on disk, so
+    classify() sees it as MISSING instead of trusting a stale build record.
+
+    Returns (built_from, present_keys, dropped_keys).
+
+    Conservative by construction — it only ever REMOVES a claim of presence, and
+    only when it can positively establish absence:
+      * no departments/ directory at all -> verify nothing (a box mid-build, or
+        a state-file-only fixture, must not be reported as totally wiped).
+      * persona/* keys are skipped: personas are a shared pool rendered into each
+        department's governing-personas.md, not a per-key artifact on disk.
+    """
+    departments_root = Path(workspace) / "departments"
+    if not departments_root.is_dir():
+        return built_from, present_keys, []
+
+    scan_cache = {}
+
+    def dept_scan(dept_id):
+        if dept_id not in scan_cache:
+            d = _resolve_dept_dir(departments_root, dept_id)
+            scan_cache[dept_id] = (d, _scan_dept_dir(d)) if d is not None else (None, (set(), set()))
+        return scan_cache[dept_id]
+
+    dropped = []
+    for key in sorted(set(built_from) | set(present_keys)):
+        if str(key).startswith("persona/"):
+            continue
+        if "/" not in str(key):
+            # department-level artifact: present iff its directory resolves.
+            if _resolve_dept_dir(departments_root, key) is None:
+                dropped.append(key)
+            continue
+        dept_id, artifact = str(key).split("/", 1)
+        dept_dir, (role_keys, sop_keys) = dept_scan(dept_id)
+        if dept_dir is None:
+            # The whole department is gone. Every artifact under it is gone too.
+            dropped.append(key)
+            continue
+        k = _norm_artifact(artifact)
+        this_kind = kind.get(key)
+        if this_kind == "sop":
+            found = k in sop_keys
+        elif this_kind == "role":
+            found = k in role_keys
+        else:
+            # Unknown/orphan key: present if EITHER space has it (never guess it away).
+            found = (k in role_keys) or (k in sop_keys)
+        if not found:
+            dropped.append(key)
+
+    if dropped:
+        gone = set(dropped)
+        built_from = {k: v for k, v in built_from.items() if k not in gone}
+        present_keys = {k for k in present_keys if k not in gone}
+    return built_from, present_keys, dropped
 
 
 def parse_provenance_marker(text):
@@ -398,8 +559,16 @@ def main(argv=None):
 
     built_from, present_keys, found_state = load_built_from_state(workspace)
     untracked = []
+    lost = []
     if found_state:
         source = ".workforce-build-state.json artifactProvenance (fast path)"
+        # The build record is a claim about the past, not an observation of the
+        # present. Verify it against the tree before trusting it, or an artifact
+        # the box built and later LOST classifies CURRENT forever.
+        built_from, present_keys, lost = prune_absent_from_disk(
+            workspace, built_from, present_keys, kind)
+        if lost:
+            source += f" + on-disk presence check ({len(lost)} recorded artifact(s) NOT on disk)"
     else:
         bf_disk, untracked, present_disk = load_built_from_disk(workspace)
         built_from = bf_disk

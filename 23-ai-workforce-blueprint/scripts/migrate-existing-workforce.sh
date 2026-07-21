@@ -130,6 +130,7 @@ fi
 # layout) is skipped gracefully — the floor cannot be materialized without the
 # canonical source, and that is logged rather than failing the migration.
 log "STEP 2b/5: materialize missing floor roles/SOPs (floor-fill)"
+FF_UNFILLED=0
 FF_DETECT="$SKILL_DIR/scripts/detect-stale-artifacts.py"
 FF_INDEX="$SKILL_DIR/templates/role-library/_index.json"
 FF_MAKEGAP="$SKILL_DIR/scripts/make-gap-from-staleness.py"
@@ -157,8 +158,22 @@ if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$F
       fi
       if [ "$MODE" = "--apply" ]; then
         log "  floor-fill: ${FF_GAP_DEPTS} dept(s) with missing floor slots -> materializing (idempotent, skip-existing)"
-        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" --apply 2>&1 | tee -a "$LOG" || \
-          log "  floor-fill: completed with warnings (see log)"
+        # rc capture via PIPESTATUS: `cmd | tee` reports TEE's status, and the
+        # old `|| log "completed with warnings"` then swallowed even that. The
+        # driver's rc 3 means "the detector PROVED these slots missing and I
+        # could not materialize them" — a detected gap left unfilled. That must
+        # reach the migration's own exit status (FF_UNFILLED below), because
+        # update-skills.sh turns a non-zero migration into _D2_MIGRATE_STATUS=fail
+        # and prints the WORKFORCE-PROVISIONING INCOMPLETE block. Silence here is
+        # exactly how a stripped floor survived a "successful" roll.
+        python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" --apply 2>&1 | tee -a "$LOG"
+        FF_RC=${PIPESTATUS[0]}
+        if [ "${FF_RC:-0}" -ne 0 ]; then
+          log "  floor-fill: FAILED (rc ${FF_RC}) — detected floor gap(s) could NOT be materialized from the canonical library; nothing was stubbed. See $LOG"
+          FF_UNFILLED=1
+        else
+          log "  floor-fill: OK — every detected floor gap materialized from the canonical library"
+        fi
       else
         log "  [DRY-RUN] ${FF_GAP_DEPTS} dept(s) have missing floor slots; would run floor-fill-driver.py --apply"
         python3 "$FF_DRIVER" --gap-file "$FF_GAP_JSON" --workspace "$FF_DEPTS_DIR" 2>&1 | tee -a "$LOG" || true
@@ -260,6 +275,19 @@ if [ -x "$QC_SCRIPT" ]; then
 else
   log "qc-completeness.sh missing; cannot finalize"
   FINAL_RC=1
+fi
+
+# Step 2b verdict outranks a PASS from the QC probe. qc-completeness measures a
+# per-department materialization PERCENTAGE and can read PASS while a handful of
+# canonical role folders the detector explicitly proved missing were never
+# restored. Those are DETECTED gaps left UNFILLED, so the migration must not exit
+# 0 on them: update-skills.sh maps a non-zero migration to _D2_MIGRATE_STATUS=fail,
+# which prints the WORKFORCE-PROVISIONING INCOMPLETE block naming floor-fill. A
+# repair pass that could not repair has to say so out loud. rc 5 is distinct from
+# qc-completeness's 2/3/4 so the log says which check failed.
+if [ "${FF_UNFILLED:-0}" -ne 0 ] && [ "$FINAL_RC" -eq 0 ]; then
+  log "FLOOR-FILL: FAIL — detected floor gap(s) went unfilled (see STEP 2b above); overriding QC exit 0 -> 5"
+  FINAL_RC=5
 fi
 
 tg "Migration complete on client=${CLIENT} mode=${MODE}. Final QC exit=${FINAL_RC}. Log: ${LOG}"
