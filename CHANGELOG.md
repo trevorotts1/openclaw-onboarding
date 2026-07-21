@@ -1,3 +1,99 @@
+## [v20.0.86]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
+
+### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
+
+`lib-onboarding-state.sh`'s `oc_state_mark_field` carried a `return` statement
+outside any function inside its Python heredoc:
+
+    try: state=json.load(open(sf))
+    except Exception: return          # <-- 'return' outside function
+
+Python raises `SyntaxError` at **compile** time, before the first statement of
+the module executes. So this never failed *only* on the error path — the whole
+body was rejected every time, and the function **never wrote a field on any
+path, including the perfectly healthy one**. The call site then erased the
+evidence:
+
+    python3 - <<'PYEOF' 2>/dev/null || true
+
+`2>/dev/null` hid the `SyntaxError` and `|| true` forced exit 0. Every caller
+saw success. The function was byte-identical on `main` from the day it was
+written, so it has presumably never worked.
+
+**The consequences were real, and ran in BOTH directions**, because
+`oc_wave_goal_check` reads exactly the fields this function was supposed to
+maintain, and `oc_state_seed` had already written their defaults:
+
+* `coreUpdatesSentinelPresent` stayed at its seeded `false` forever. Wave goal
+  check (c) flags any skill with `hasCoreUpdates` and no sentinel, so **every
+  skill shipping a `CORE_UPDATES.md` failed check (c) permanently** — a false
+  failure that no amount of re-running could clear.
+* `qcExit` stayed at its seeded `null` forever. Check (d) fires only when
+  `qc_exit is not None and qc_exit != 0`, so it **could never fire at all** — a
+  dead check that let a skill whose `qc-*.sh` exited nonzero clear the wave gate.
+
+### Why `bash -n` never caught it, and what now does
+
+`bash -n` does **not** parse heredoc bodies. It validates the shell grammar
+around them and treats the body as opaque text, so a shell script carrying a
+hard-broken Python program passes `bash -n` cleanly. Nothing in this repo looked
+inside those bodies. That — not one bad line — is the actual hole.
+
+`scripts/check-embedded-python-syntax.py` (new) extracts **every** Python
+heredoc and every `python3 -c` body in the repo and compiles each one. Swept
+against `origin/main` at `391a92e9` it scanned 698 shell files, 644 heredocs and
+610 inline bodies, and found **exactly one** failure: the defect above. The
+sweep found no other broken embedded script.
+
+It calls `compile()`, **not** `ast.parse()`. `ast.parse` accepts `return`
+outside a function — that is rejected later, by the symbol-table pass inside
+`compile()` — so a guard built on `ast.parse` would have passed the very defect
+it was written for. The new workflow pins that distinction so the guard cannot
+be quietly weakened back into uselessness.
+
+Sites the extractor cannot faithfully reconstruct (shell words assembled across
+quoting layers) are counted and printed as `UNANALYZABLE` rather than skipped: a
+guard that silently ignores what it cannot parse is the same silent-success bug
+it exists to prevent.
+
+### ABSENT vs CORRUPT — deliberately not the same thing
+
+Removing `|| true` must not turn a legitimate absence into a crash, so the two
+cases are now separated explicitly:
+
+* **Absent** state file → returns 0 quietly. `oc_state_seed` owns creation and a
+  gate may legitimately run before the seed on a fresh box. Documented tolerance,
+  not a swallowed failure.
+* **Present but unreadable, not JSON, or not writable** → the reason is printed
+  to stderr and the function returns 1. No `|| true`, no blanket `2>/dev/null`.
+
+The write is now atomic (temp file + `os.replace`). The old body opened the real
+file in `"w"` mode, truncating it *before* serialising, so an exception midway
+through `json.dump` would have left a half-written state file behind — turning a
+write failure into exactly the corruption this function now refuses to ignore.
+
+### Fail closed, without crashing the caller
+
+`oc_gate_skill` folds every `oc_state_mark_field` result into a `_sw_ok` flag and
+fails the gate with reason `state-write-failed` when a record could not be
+written — a gate that cannot record what it found has not verified anything. The
+results are folded rather than left as bare statements because this library is
+sourced by scripts running `set -euo pipefail` (`update-skills.sh`), where a
+bare nonzero statement would abort the caller mid-gate. A crash is not an
+acceptable substitute for a swallowed failure.
+
+### Coverage
+
+`oc_state_mark_field` had **no test at all** — which is why a permanently broken
+function shipped. `tests/unit/state-mark-field-silent-noop.test.sh` (new) locks
+it with five checks, each of which fails against the pre-fix library (12 passed
+after / 8 failed before): the body compiles; a healthy file has the field
+**read back by value** (not by grepping for the field *name*, which the seeded
+default would satisfy without any write happening); a corrupt file yields rc 1
+plus stderr; an absent file is tolerated at rc 0 and fabricates nothing; and a
+recorded `qcExit=5` really does fail the wave gate that check (d) could never
+reach before.
+
 ## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
 
 ### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist
