@@ -29,7 +29,7 @@ Drains queue items where status == "STALE" and kind is "role", "sop" (D2), or
     library.
   - sop (D2): re-copies the dept-level SOP file bytes from
     templates/role-library/<dept>/sops/<fname> over the client's EXISTING
-    copy under departments/<dept-dir>/sops/<fname> (see refresh_sop()).
+    copy under <resolved-dept-dir>/sops/<fname> (see refresh_sop()).
   - dept (D2): a department's content_sha is a ROLLUP hash over its member
     roles' content_shas (hash-content-manifest.py) — there is no independent
     dept-level file to overwrite. Draining a STALE dept row is a provenance
@@ -46,11 +46,12 @@ Drains queue items where status == "STALE" and kind is "role", "sop" (D2), or
     v19.50.0 via ingest-sop-library.sh + the row-count gate.)
 
 For each in-scope item:
-  1. Parse "<dept>/<role-slug>" from the item's "key".
-  2. Locate the role's EXISTING folder on disk under
-     departments/<dept>-dept/ (idempotent: it must already be there; if
-     it's missing, this is not actually a "stale" case on this box and the
-     item is skipped loudly, never silently, never crashing the drain).
+  1. Parse "<dept>/<role-slug>" from the item's "key" (the dept part is the
+     BARE canonical manifest dept id — e.g. "sales", never "sales-dept").
+  2. RESOLVE the department's ACTUAL directory on disk via resolve_dept_dir()
+     — see that function for why the department directory must be DETECTED
+     rather than assumed. Then locate the role's EXISTING folder under it
+     (idempotent: it must already be there; this script never creates one).
   3. Re-run the SAME library_lookup() + try_library_fill() machinery
      create_role_workspace() itself uses (build-workforce.py's own
      canonical fill path) — real content, identical to what a fresh build
@@ -61,10 +62,37 @@ For each in-scope item:
   5. On success, the item is dropped from the queue (it is no longer
      actionable — the fresh provenance marker now carries the CURRENT
      content_sha, so a re-run of detect-stale-artifacts.py will classify
-     it CURRENT). On failure (poisoned entry: nonexistent path, corrupt
-     row, library miss, fill-too-thin), the item is left in the queue,
-     a loud WARN is printed, and THE DRAIN CONTINUES — one bad row never
-     aborts the update.
+     it CURRENT).
+
+     On failure the item is left in the queue, a loud FAILED line is printed,
+     THE DRAIN CONTINUES (one bad row never aborts it) — and the run is
+     recorded as CONTRACT-FAILED (exit 3), so the caller can act on it.
+     A STALE role row is an assertion by detect-stale-artifacts.py that this
+     box HAS this role and its content is out of date. If this drain cannot
+     resolve the department, cannot find the role folder, or cannot produce
+     usable library content, then a DETECTED gap went UNFILLED — that is a
+     failure, never a benign skip. See "THE SILENT-SUCCESS DEFECT" below.
+
+────────────────────────────────────────────────────────────────────────────
+THE SILENT-SUCCESS DEFECT THIS FILE ALSO FIXES (2026-07-21)
+────────────────────────────────────────────────────────────────────────────
+Until this fix the role branch built its department path as
+`departments/<dept>-dept` — a "-dept"-SUFFIXED layout that live boxes do not
+use. The PRODUCER (detect-stale-artifacts.py) walks the real on-disk tree
+`departments/<dept>` and emits BARE dept ids in its queue keys, so EVERY role
+row this consumer received resolved to a path that does not exist. It then
+logged "WARN SKIPPED ... nothing written" and returned 0 — and because the
+role branch never incremented failed_inscope, and remaining_inscope_stale
+counted only sop/dept rows, the completeness contract reported ok=1. A repair
+tool that reported success for every department while repairing nothing.
+
+Two changes kill that class of bug here:
+  1. The department directory is RESOLVED against what is actually on disk
+     (resolve_dept_dir) instead of being assumed from a hardcoded template.
+  2. Every in-scope row this consumer cannot complete now counts toward
+     failed_inscope and remaining_inscope_stale, so the drain FAILS LOUDLY
+     (exit 3 -> update-skills.sh's _D2_REFRESH_STATUS) instead of returning
+     success while doing nothing.
 
 Fully additive / idempotent / re-runnable: a role already CURRENT is not in
 the queue in the first place (detect-stale-artifacts.py only emits
@@ -82,14 +110,16 @@ CLI
                         what it would refresh/skip but touches nothing.
 
 EXIT CODES
-  0   drain complete, or a benign/legitimate skip — nothing to drain, no
-      queue, everything already CURRENT, an out-of-scope kind/status row, a
-      missing library source, or a missing EXISTING dest (the latter two are
-      floor-fill-driver.py's MISSING job, not this drain's) — a missing/
-      corrupt queue is reported and skipped, never fatal to the caller
-      (update-skills.sh).
-  3   at least one IN-SCOPE sop/dept refresh genuinely failed — a real IO
-      error re-copying a SOP, a malformed in-scope row, or a
+  0   drain complete, or a genuinely benign skip — nothing to drain, no
+      queue, everything already CURRENT, an out-of-scope kind/status row, or
+      a missing library SOP source (that stays floor-fill-driver.py's MISSING
+      job) — a missing/corrupt queue is reported and skipped, never fatal to
+      the caller (update-skills.sh).
+  3   at least one IN-SCOPE role/sop/dept refresh genuinely failed. For a
+      role row that is: an UNRESOLVABLE department directory, a role folder
+      this drain could not find, library content it could not produce, or an
+      exception. For sop/dept rows: a real IO error re-copying a SOP, an
+      unresolvable department directory, a malformed in-scope row, or a
       .workforce-build-state.json restamp write failure (D2). The drain
       still ran to completion (one bad row never aborts it); this code only
       tells the caller the completeness contract was NOT met. Also writes
@@ -138,6 +168,10 @@ HOME = os.path.expanduser("~")
 
 _NN_RE = re.compile(r'^\d{1,3}[-_]')
 _ROLE_RE = re.compile(r'^(?:ROLE|role)--')
+# Either historical department-directory decoration: a leading "dept-" or a
+# trailing "-dept" / "_dept". Anchored so an interior "dept" (e.g. the real
+# department id "department-operations") is never mangled.
+_DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
 
 
 def norm(name: str) -> str:
@@ -151,6 +185,74 @@ def norm(name: str) -> str:
         n = n[:-3]
     n = n.replace('--', '-')
     return n.lower()
+
+
+def norm_dept(name: str) -> str:
+    """Normalize a department directory NAME or a manifest department ID to one
+    comparable key, so every layout this skill has ever put on disk collapses
+    to the same value:
+
+      "sales"        -> "sales"     (the layout live boxes actually use, and
+                                     the one detect-stale-artifacts.py's
+                                     producer walks when it builds the queue)
+      "sales-dept"   -> "sales"     (legacy "-dept"-suffixed layout)
+      "dept-sales"   -> "sales"     (legacy prefixed layout)
+      "Sales"        -> "sales"     (case drift — a real folder on live boxes;
+                                     an exact-path probe finds it on macOS's
+                                     case-INSENSITIVE volume but MISSES it on
+                                     every case-SENSITIVE Linux box, which is
+                                     most of the fleet)
+      "sales_ops"    -> "sales-ops" (separator drift)
+    """
+    n = str(name or "").strip().lower()
+    n = _DEPT_DECOR_RE.sub('', n)
+    n = n.replace('_', '-')
+    n = re.sub(r'-{2,}', '-', n).strip('-')
+    return n
+
+
+def resolve_dept_dir(workspace: Path, dept_slug: str):
+    """Resolve a BARE manifest department id (e.g. "sales") to the department's
+    ACTUAL directory on disk, or None when it cannot be resolved at all.
+
+    The department directory is DETECTED, never assumed. Hardcoding one layout
+    is exactly the defect this replaces: the role branch used to build
+    `departments/<dept>-dept` unconditionally, a layout live boxes do not use,
+    so every role row resolved to a nonexistent path and nothing was ever
+    repaired. Both layouts genuinely exist in the field, so probe for what is
+    really there instead of swapping one hardcode for the other:
+
+      1. the bare id            departments/<dept>
+      2. the "-dept" suffixed   departments/<dept>-dept
+      3. a normalized scan of the real directory entries (norm_dept), which
+         also absorbs case and separator drift on case-sensitive filesystems.
+
+    Returning None is meaningful and MUST be treated as a failure by callers
+    draining an in-scope STALE row: a STALE row asserts the artifact is on this
+    box, so an unresolvable department is a detected gap that went unfilled."""
+    departments_root = workspace / "departments"
+    if not departments_root.is_dir():
+        return None
+    bare = departments_root / dept_slug
+    if bare.is_dir():
+        return bare
+    suffixed = departments_root / f"{dept_slug}-dept"
+    if suffixed.is_dir():
+        return suffixed
+    target = norm_dept(dept_slug)
+    if not target:
+        return None
+    try:
+        entries = sorted(departments_root.iterdir())
+    except OSError:
+        return None
+    for e in entries:
+        try:
+            if e.is_dir() and norm_dept(e.name) == target:
+                return e
+        except OSError:
+            continue
+    return None
 
 
 def resolve_workspace(explicit):
@@ -190,13 +292,28 @@ def find_role_dir(dept_dir: Path, role_slug: str):
 
 
 def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: bool):
-    """Attempt to refresh one STALE role artifact. Returns (ok, detail)."""
-    dept_dir = workspace / "departments" / f"{dept_slug}-dept"
+    """Attempt to refresh one STALE role artifact. Returns (ok, detail).
+
+    ok=False is ALWAYS a genuine failure of this drain's completeness contract,
+    never a benign skip: a STALE role row is detect-stale-artifacts.py asserting
+    that this box HAS this role and its content is out of date, so any inability
+    to complete it is a DETECTED gap left UNFILLED. The caller counts every
+    ok=False toward failed_inscope, which drives exit code 3."""
+    dept_dir = resolve_dept_dir(workspace, dept_slug)
+    if dept_dir is None:
+        return False, (f"UNRESOLVABLE department directory for '{dept_slug}/{role_slug}' — "
+                        f"looked for '{dept_slug}', '{dept_slug}-dept', and any normalized "
+                        f"match under {workspace / 'departments'}; the queue says this role "
+                        f"is STALE on this box but its department is not on disk, so a "
+                        f"DETECTED gap cannot be filled — FAILING loudly, nothing written")
+
     role_dir = find_role_dir(dept_dir, role_slug)
     if role_dir is None:
         return False, (f"no EXISTING role folder for '{dept_slug}/{role_slug}' under "
-                        f"{dept_dir} — not a stale-refresh case on this box (that would "
-                        f"be floor-fill's job); skipped, nothing written")
+                        f"{dept_dir} — the queue says this role is STALE on this box "
+                        f"(so it was tracked as present), but its folder is gone; this "
+                        f"drain never fabricates a role folder (that is floor-fill's "
+                        f"MISSING job) — FAILING loudly so the roll can act on it")
 
     is_ceo = (norm(role_slug) == "master-orchestrator")
     role_name = label or role_slug.replace("-", " ").title()
@@ -204,66 +321,78 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
     # try_library_fill() does the lookup + token-fill + provenance-header stamp
     # + the >=3072B floor check, IDENTICAL to what create_role_workspace() runs
     # for a brand-new role. Returns None on no-match or too-thin (never a stub).
-    filled = crw.try_library_fill(role_name, dept_dir, is_ceo, lib_key=role_slug)
+    #
+    # It derives the LIBRARY dept key from the .name of the path it is handed.
+    # Hand it the CANONICAL manifest dept id from the queue key, not the on-disk
+    # directory, so the lookup can never be thrown off by how this box happens to
+    # have named the folder (case drift, "-dept" suffix, separator drift — all of
+    # which resolve_dept_dir now deliberately tolerates). The filesystem write
+    # below still goes to the REAL resolved directory.
+    filled = crw.try_library_fill(role_name, Path(dept_slug), is_ceo, lib_key=role_slug)
     if filled is None:
         return False, (f"library_fill produced no usable content for "
                         f"'{dept_slug}/{role_slug}' (no library match, or fill below "
-                        f"the 3072B floor) — skipped, existing how-to.md left untouched")
+                        f"the 3072B floor) — the role is queued STALE but cannot be "
+                        f"refilled — FAILING loudly, existing how-to.md left untouched")
 
     how_to = role_dir / "how-to.md"
     if apply_:
         how_to.write_text(filled, encoding="utf-8")
-    return True, f"{dept_slug}/{role_slug} -> {role_dir.name}/how-to.md ({len(filled.encode('utf-8'))}B)"
+    return True, f"{dept_slug}/{role_slug} -> {dept_dir.name}/{role_dir.name}/how-to.md ({len(filled.encode('utf-8'))}B)"
 
 
 def find_dept_dir(workspace: Path, dept_slug: str):
     """Locate an EXISTING department folder for a BARE manifest dept id (e.g.
-    "sales", never "sales-dept"). Tries both on-disk naming conventions this
-    skill has shipped -- the bare id first, then the "-dept" suffixed form
-    refresh_one()'s role lookup assumes -- and falls back to the bare
-    candidate Path if neither exists. Unlike find_role_dir() this never
-    returns None: the sop/dept branches below need the Path itself even when
-    nothing is there yet, so they can do their own .is_dir() / dest-absent
-    check and report exactly where they looked."""
-    departments_root = workspace / "departments"
-    bare = departments_root / dept_slug
-    if bare.is_dir():
-        return bare
-    suffixed = departments_root / f"{dept_slug}-dept"
-    if suffixed.is_dir():
-        return suffixed
-    return bare
+    "sales", never "sales-dept"), falling back to the bare candidate Path when
+    it cannot be resolved. Unlike resolve_dept_dir() this never returns None,
+    so a caller that just needs a Path to report can keep using it. Callers
+    that must DISTINGUISH "resolved" from "not there" (every in-scope drain
+    branch) call resolve_dept_dir() directly and treat None as a failure."""
+    return resolve_dept_dir(workspace, dept_slug) or (workspace / "departments" / dept_slug)
 
 
 def refresh_sop(workspace: Path, dept_slug: str, sop_slug: str, apply_: bool):
     """Attempt to refresh one STALE dept-level SOP artifact (D2) by
     re-copying the canonical file bytes from the role library over the
-    client's EXISTING copy. Returns (ok, detail).
+    client's EXISTING copy. Returns (ok, detail, hard_fail).
 
-    Mirrors refresh_one()'s skip-vs-fail contract: a missing library source
-    or a missing EXISTING dest file is a BENIGN skip (ok=False, no
-    exception raised) — that is floor-fill-driver.py's MISSING job, not this
-    drain's. An OSError raised during the actual read/write is left to
-    PROPAGATE to the caller in main(), which treats that as a genuine
-    in-scope failure (failed_inscope), never a benign skip."""
+    hard_fail distinguishes the two not-ok cases:
+      * hard_fail=True  — the department directory could not be RESOLVED at
+        all. The queue says this box has a STALE SOP in that department and
+        the department is not on disk: a detected gap that cannot be filled,
+        so it counts against the completeness contract (exit 3).
+      * hard_fail=False — a missing library SOP source, or a department that
+        resolves but does not yet carry this SOP file. Those remain
+        floor-fill-driver.py's MISSING job, reported loudly and left queued
+        (pre-existing, deliberate contract — unchanged here).
+
+    An OSError raised during the actual read/write is left to PROPAGATE to the
+    caller in main(), which treats that as a genuine in-scope failure."""
     dept_key = crw.normalize_dept(dept_slug)
     fname = f"{sop_slug}.md"
     src = LIBRARY / dept_key / "sops" / fname
     if not src.is_file():
         return False, (f"no library SOP source at {src} for '{dept_slug}/{sop_slug}' "
-                        f"— skipped, nothing written")
+                        f"— skipped, nothing written"), False
 
-    dept_dir = find_dept_dir(workspace, dept_slug)
+    dept_dir = resolve_dept_dir(workspace, dept_slug)
+    if dept_dir is None:
+        return False, (f"UNRESOLVABLE department directory for '{dept_slug}/{sop_slug}' — "
+                        f"looked for '{dept_slug}', '{dept_slug}-dept', and any normalized "
+                        f"match under {workspace / 'departments'} — FAILING loudly, "
+                        f"nothing written"), True
+
     dest = dept_dir / "sops" / fname
     if not dest.is_file():
         return False, (f"no EXISTING SOP file for '{dept_slug}/{sop_slug}' at {dest} — "
                         f"not a stale-refresh case on this box (that would be "
-                        f"floor-fill's MISSING job); skipped, nothing written")
+                        f"floor-fill's MISSING job); skipped, nothing written"), False
 
     content = src.read_text(encoding="utf-8")
     if apply_:
         dest.write_text(content, encoding="utf-8")
-    return True, f"{dept_slug}/{sop_slug} -> {dept_dir.name}/sops/{fname} ({len(content.encode('utf-8'))}B)"
+    return True, (f"{dept_slug}/{sop_slug} -> {dept_dir.name}/sops/{fname} "
+                  f"({len(content.encode('utf-8'))}B)"), False
 
 
 def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: dict) -> bool:
@@ -385,13 +514,14 @@ def main(argv=None):
         _kind = it.get("kind")
         _status = it.get("status")
 
-        # ── ROLE branch (MOVED VERBATIM from the original single-kind consumer) ──
+        # ── ROLE branch (P2-08; department path resolution + fail-loud, 2026-07-21) ──
         if _kind == "role" and _status == "STALE":
             key = it.get("key", "")
             if not isinstance(key, str) or "/" not in key:
-                print(f"  refresh-stale-roles: WARN malformed key '{key}' in a STALE role row — "
-                      f"skipped loudly, drain continues", file=sys.stderr)
+                print(f"  refresh-stale-roles: FAILED malformed key '{key}' in a STALE role row — "
+                      f"reported loudly, drain continues", file=sys.stderr)
                 skipped += 1
+                failed_inscope += 1
                 remaining_items.append(it)
                 continue
 
@@ -405,8 +535,13 @@ def main(argv=None):
                 refreshed += 1
                 print(f"  refresh-stale-roles: REFRESHED {detail}")
             else:
+                # A STALE role row this drain could not complete is a DETECTED
+                # gap left UNFILLED, never a benign skip. It counts against the
+                # completeness contract (exit 3) so update-skills.sh's
+                # _D2_REFRESH_STATUS latch trips and the roll SAYS SO.
                 skipped += 1
-                print(f"  refresh-stale-roles: WARN SKIPPED {detail}", file=sys.stderr)
+                failed_inscope += 1
+                print(f"  refresh-stale-roles: FAILED {detail}", file=sys.stderr)
                 remaining_items.append(it)  # stays queued for the next run
             continue
 
@@ -422,14 +557,20 @@ def main(argv=None):
                 continue
 
             dept_slug, sop_slug = key.split("/", 1)
+            hard_fail = False
             try:
-                ok, detail = refresh_sop(workspace, dept_slug, sop_slug, args.apply)
+                ok, detail, hard_fail = refresh_sop(workspace, dept_slug, sop_slug, args.apply)
             except OSError as e:  # genuine in-scope IO failure -- counts against the contract
-                ok, detail = False, f"OSError refreshing SOP '{key}': {e}"
+                ok, detail, hard_fail = False, f"OSError refreshing SOP '{key}': {e}", True
                 failed_inscope += 1
             except Exception as e:  # a poisoned entry must NEVER abort the drain
-                ok, detail = False, f"EXCEPTION refreshing SOP '{key}': {e}"
+                ok, detail, hard_fail = False, f"EXCEPTION refreshing SOP '{key}': {e}", True
                 failed_inscope += 1
+            else:
+                if hard_fail:
+                    # Unresolvable department directory -- a detected gap that
+                    # cannot be filled, never a benign skip.
+                    failed_inscope += 1
 
             if ok:
                 refreshed += 1
@@ -443,7 +584,8 @@ def main(argv=None):
                     }
             else:
                 skipped += 1
-                print(f"  refresh-stale-roles: WARN SKIPPED {detail}", file=sys.stderr)
+                _tag = "FAILED" if hard_fail else "WARN SKIPPED"
+                print(f"  refresh-stale-roles: {_tag} {detail}", file=sys.stderr)
                 remaining_items.append(it)  # stays queued for the next run
             continue
 
@@ -451,19 +593,24 @@ def main(argv=None):
         if _kind == "dept" and _status == "STALE":
             key = it.get("key", "")
             if not isinstance(key, str) or not key or "/" in key:
-                print(f"  refresh-stale-roles: WARN malformed key '{key}' in a STALE dept row — "
-                      f"skipped loudly, drain continues", file=sys.stderr)
+                print(f"  refresh-stale-roles: FAILED malformed key '{key}' in a STALE dept row — "
+                      f"reported loudly, drain continues", file=sys.stderr)
                 skipped += 1
                 failed_inscope += 1
                 remaining_items.append(it)
                 continue
 
-            dept_dir = find_dept_dir(workspace, key)
-            if not dept_dir.is_dir():
+            dept_dir = resolve_dept_dir(workspace, key)
+            if dept_dir is None:
+                # The queue says this department is STALE on this box, so it was
+                # tracked as present. An UNRESOLVABLE department directory is a
+                # DETECTED gap that cannot be filled -- fail loudly, never a
+                # silent skip that still reports success.
                 skipped += 1
-                print(f"  refresh-stale-roles: WARN SKIPPED no EXISTING department folder for "
-                      f"'{key}' under {workspace / 'departments'} — not a stale-refresh case on "
-                      f"this box (that would be floor-fill's job); skipped, nothing written",
+                failed_inscope += 1
+                print(f"  refresh-stale-roles: FAILED UNRESOLVABLE department directory for "
+                      f"'{key}' — looked for '{key}', '{key}-dept', and any normalized match "
+                      f"under {workspace / 'departments'}; nothing written",
                       file=sys.stderr)
                 remaining_items.append(it)
                 continue
@@ -514,9 +661,13 @@ def main(argv=None):
         if not _apply_state_restamps(workspace, state_updates["sops"], state_updates["depts"]):
             failed_inscope += len(state_updates["sops"]) + len(state_updates["depts"])
 
+    # "role" belongs here. Omitting it was the second half of the silent-success
+    # defect: with the role branch excluded, a run that failed to refresh EVERY
+    # role on the box still reported remaining_inscope_stale=0 alongside ok=1.
     remaining_inscope_stale = sum(
         1 for it in remaining_items
-        if isinstance(it, dict) and it.get("kind") in ("sop", "dept") and it.get("status") == "STALE"
+        if isinstance(it, dict) and it.get("kind") in ("role", "sop", "dept")
+        and it.get("status") == "STALE"
     )
 
     mode = "" if args.apply else " (DRY-RUN -- pass --apply to write)"
