@@ -1,0 +1,118 @@
+name: browser-session-truth-guard
+
+# Three places in Skill 06 reported a browser state that did not exist
+# (T0-16, T0-17, T2-01). Each has a regression suite here.
+#
+#   T0-16 — browser_manager.sh bm_ensure ran the canonical open as
+#     `AB ... open ... || true`. If the browser binary was absent, timed out, or
+#     returned any non-zero status, the failed open was still counted toward the
+#     circuit-breaker window, bm_ensure returned zero, and the `ensure` verb
+#     printed ENSURED. Guarded by
+#     tests/unit/browser-manager-open-status-and-detach-ownership.test.sh, which
+#     also proves a SUCCESSFUL open still passes and still counts exactly once,
+#     and that the bounded retry really retries (a remote open must not turn a
+#     network blip into a build abort).
+#
+#   T0-17 — the run-detached verb acquired the lock, lease, TTL and EXIT trap in
+#     the PARENT shell and then printed that the detached child owned them. When
+#     the parent reached end of file its trap tore down the session the child was
+#     still using. Same suite: it detaches a child that outlives its parent and
+#     asserts the lease is still on disk after the parent exits, that the CHILD
+#     tears it down when IT exits, and that a child which never acquired the
+#     session is never announced as detached.
+#
+#   T2-01 — ghl_verify's live path never opened a browser_manager.browser_session,
+#     so ghl_builder.browser_cmd refused on the singleton gateway and every live
+#     page came back http=None with no navigation attempted — on the ONLY
+#     production acceptance path for live page verification. Guarded by
+#     tests/unit/ghl-verify-live-browser-session.test.py, which drives the render
+#     through a CONTROLLED FAKE TRANSPORT (no browser, no network), asserts the
+#     preview URL is actually navigated, asserts verify_all holds ONE session for
+#     the whole loop, and — the direction that matters — asserts the singleton
+#     guard is STILL LIVE outside the bracket, so the fix can never be a weakened
+#     guard.
+#
+# Both suites are hermetic: a fake agent-browser on PATH plus scratch TMPDIR/HOME
+# for the shell suite, a patched subprocess transport for the Python suite. No
+# network, no real browser, no box state.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "06-ghl-install-pages/tools/browser_manager.sh"
+      - "06-ghl-install-pages/tools/browser_manager.py"
+      - "06-ghl-install-pages/tools/ghl_verify.py"
+      - "06-ghl-install-pages/tools/ghl_builder.py"
+      - "tests/unit/browser-manager-open-status-and-detach-ownership.test.sh"
+      - "tests/unit/ghl-verify-live-browser-session.test.py"
+      - ".github/workflows/browser-session-truth-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "06-ghl-install-pages/tools/browser_manager.sh"
+      - "06-ghl-install-pages/tools/browser_manager.py"
+      - "06-ghl-install-pages/tools/ghl_verify.py"
+      - "06-ghl-install-pages/tools/ghl_builder.py"
+      - "tests/unit/browser-manager-open-status-and-detach-ownership.test.sh"
+      - "tests/unit/ghl-verify-live-browser-session.test.py"
+      - ".github/workflows/browser-session-truth-guard.yml"
+  workflow_dispatch:
+
+jobs:
+  browser-session-truth:
+    name: Open status + detached ownership + live verification session
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Syntax-check what the suites cover
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 06-ghl-install-pages/tools/browser_manager.sh
+          bash -n tests/unit/browser-manager-open-status-and-detach-ownership.test.sh
+          python3 -m py_compile 06-ghl-install-pages/tools/ghl_verify.py
+          python3 -m py_compile 06-ghl-install-pages/tools/ghl_builder.py
+          python3 -m py_compile 06-ghl-install-pages/tools/browser_manager.py
+          python3 -m py_compile tests/unit/ghl-verify-live-browser-session.test.py
+          echo "syntax OK"
+
+      - name: T0-16 / T0-17 — open status and detached ownership
+        shell: bash
+        timeout-minutes: 8
+        run: bash tests/unit/browser-manager-open-status-and-detach-ownership.test.sh
+
+      - name: T2-01 — live verification holds a managed browser session
+        shell: bash
+        timeout-minutes: 8
+        env:
+          AGENT_BROWSER_HEADED: "false"
+        run: python3 tests/unit/ghl-verify-live-browser-session.test.py
+
+      - name: Assert the fixes are still the fixes, not their descriptions
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A guard that only ever passes has not been observed. These are the
+          # exact lines the three findings named; if any of them comes back, the
+          # suites above must have been changed to tolerate it.
+          if grep -q 'open .*|| true' 06-ghl-install-pages/tools/browser_manager.sh; then
+            echo "FAIL: bm_ensure discards the browser open's exit status again (T0-16)." >&2
+            exit 1
+          fi
+          if ! grep -q 'the child owns lock+lease+TTL+teardown' 06-ghl-install-pages/tools/browser_manager.sh; then
+            echo "FAIL: run-detached no longer states that the CHILD owns the session (T0-17)." >&2
+            exit 1
+          fi
+          if ! grep -q '_live_browser_session' 06-ghl-install-pages/tools/ghl_verify.py; then
+            echo "FAIL: the live verification session bracket was removed (T2-01)." >&2
+            exit 1
+          fi
+          echo "PASS: all three sites still carry their fix."

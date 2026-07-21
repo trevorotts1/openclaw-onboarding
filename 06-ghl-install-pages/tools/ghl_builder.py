@@ -1227,8 +1227,14 @@ def render_check(
 
     SINGLETON BROWSER GATEWAY: must be called inside a
     ``browser_manager.browser_session()`` context — the same requirement as
-    ``browser_cmd``.  Callers in ``ghl_verify.verify_page`` acquire the session
-    before the verify loop.
+    ``browser_cmd``.  ``ghl_verify.verify_all`` opens ONE session and holds it
+    for the whole verify loop; ``ghl_verify.verify_page`` opens its own
+    re-entrant bracket so a direct caller works too and the nested case is a
+    no-op.  Any OTHER caller must supply the context itself — outside one,
+    ``browser_cmd`` raises the singleton refusal and this function turns it into
+    a render error with no HTTP status, which is a verdict reached without a
+    navigation.  (T2-01: this docstring previously asserted that a caller
+    acquired the session when none did.)
     """
     import hashlib
     import shlex

@@ -57,20 +57,60 @@ A ``fetcher`` parameter is injected in tests so NO live call ever happens in CI;
 from __future__ import annotations
 
 import argparse
+import contextlib
 import hashlib
 import json
 import os
 import sys
 import time
 import uuid
-from typing import Any, Callable
+from typing import Any, Callable, Iterator
 
 # Reuse the single source of truth for the real check + the D6 headless prefix.
 _TOOLS_DIR = os.path.dirname(os.path.abspath(__file__))
 if _TOOLS_DIR not in sys.path:
     sys.path.insert(0, _TOOLS_DIR)
 
+import browser_manager  # noqa: E402  (browser_session — the singleton gateway)
 import ghl_builder  # noqa: E402  (render_check, verify_url, browser_cmd, may_publish)
+
+
+# ── SINGLETON BROWSER GATEWAY for the live verification loop (T2-01) ──────────
+# ``ghl_builder.render_check`` drives the headless browser through
+# ``ghl_builder.browser_cmd``, and ``browser_cmd`` calls
+# ``browser_manager.assert_session_active`` — it REFUSES outside an active
+# ``browser_manager.browser_session()``.
+#
+# Nothing on the live verification path acquired one. The builder modules open
+# their own sessions for the BUILD phase and those are closed by the time the
+# separate verification step runs, so every live page came back:
+#
+#     http = None
+#     PASS = False
+#     render_errors = ["render_check exception: RuntimeError: REFUSE (singleton
+#                      gateway): ghl_builder.browser_cmd emitted outside an
+#                      active browser_session() ..."]
+#
+# — a verdict reached without a single navigation being attempted. The sole
+# production acceptance path for live page verification could not succeed, and
+# ``render_check``'s own docstring claimed this caller acquired the session.
+#
+# This bracket is RE-ENTRANT on purpose: ``verify_all`` holds ONE session for
+# the whole loop (the documented shape), and ``verify_page`` brackets itself
+# when it is called directly, so a direct caller works too and the nested case
+# is a no-op rather than a second session or a second teardown line.
+@contextlib.contextmanager
+def _live_browser_session(slug: str = "verify") -> Iterator[str]:
+    """Hold ONE managed browser session across the live verification work.
+
+    Yields the canonical session name. If a session is already active (the
+    ``verify_all`` loop holding it for every page), this yields that one
+    unchanged instead of opening a second."""
+    if browser_manager.session_active():
+        yield browser_manager.session_name(slug)
+        return
+    with browser_manager.browser_session(slug) as name:
+        yield name
 
 # ── model_router integration (Wiring-Map §5.A.4) ─────────────────────────────
 # html/code seam  → select_html_repair_model()  (code-block fix-loop)
@@ -725,64 +765,71 @@ def verify_page(
         }
 
     # LIVE path — the ONLY accepted pass criterion.
-    res = ghl_builder.render_check(
-        preview_url, marker, run_dir=_run_dir, step=step, timeout=45,
-    )
-    render_errors = list(res.get("render_errors") or [])
-    # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
-    # (opt-OUT — defaults ON from the run's approved copy [routing/copy.md /
-    # copy.md / engine copy_ledger.json] unless the page sets copy_fidelity:False).
-    render_errors += _copy_fidelity_errors(page, res, _run_dir)
-    # FIX-XC-03c rendered-<img> gate: manifest cdn_urls for this page MUST appear
-    # in the rendered DOM (opt-in — fires only when a success images/manifest.json
-    # targets this page). Missing → PASS:False, no override.
-    _img_errs, _missing_imgs = _image_gate_errors(page, res, _run_dir)
-    render_errors += _img_errs
-    # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless the
-    # page carries a published url + a JS signal). Re-runs the SEALED render on
-    # the LIVE published url; any console/CSP/pageerror or non-200 there forces
-    # PASS:False. Additive — never clears a preview render_error.
-    _published_errs = _published_csp_errors(
-        page,
-        lambda u, m: ghl_builder.render_check(
-            u, m, run_dir=_run_dir, step=f"{step}-published", timeout=45,
-        ),
-    )
-    render_errors += _published_errs
-    # ── HTML repair seam (Wiring-Map §5.A.4, role='html') ────────────────────────
-    # Primary render check failed with render errors → ask model_router for the
-    # html-role model and attempt a single repair-and-retry pass so a code-block
-    # fix loop can use the identified model to rewrite the failing HTML before
-    # re-checking.  {} return (model_router unavailable) → skip retry entirely,
-    # preserving the existing single-pass behavior.  The retry is not re-published-
-    # CSP-checked (that layer is additive on the primary result only).
-    _html_repair_receipt: dict = {}
-    if render_errors:
-        _html_repair_receipt = select_html_repair_model()
-        if _html_repair_receipt and not _html_repair_receipt.get("error"):
-            try:
-                _res2 = ghl_builder.render_check(
-                    preview_url, marker, run_dir=_run_dir,
-                    step=f"{step}-repair", timeout=45,
-                )
-                _re2 = list(_res2.get("render_errors") or [])
-                _re2 += _copy_fidelity_errors(page, _res2)
-                # Re-fold the rendered-<img> gate against the REPAIRED DOM — a
-                # clean preview repair must never mask a still-missing image.
-                _img_errs2, _missing_imgs2 = _image_gate_errors(page, _res2, _run_dir)
-                _re2 += _img_errs2
-                if not _re2 and _res2.get("ok") and _res2.get("http") == 200:
-                    # Repair attempt cleared all PREVIEW errors — promote repair
-                    # result, but published-CSP failures (from the live PUBLISHED
-                    # url) MUST persist and keep failing the gate. The preview
-                    # repair may clear preview render_errors; it must NEVER clear a
-                    # published-CSP failure. Re-fold the published errors so a real
-                    # published failure can't be masked by a clean preview repair.
-                    res = _res2
-                    render_errors = _re2 + list(_published_errs)
-                    _missing_imgs = _missing_imgs2
-            except Exception:  # noqa: BLE001 — repair must never mask primary verdict
-                pass
+    # T2-01: hold ONE managed browser session across every browser-driven step
+    # below (primary render, published-CSP re-render, repair re-render).
+    # Without it ghl_builder.browser_cmd refuses on the singleton gateway and
+    # the page comes back http=None / PASS=False before a single navigation is
+    # attempted. Re-entrant: when verify_all holds the loop session this is a
+    # no-op and no second session or second teardown line is produced.
+    with _live_browser_session(f"verify-{step}"):
+        res = ghl_builder.render_check(
+            preview_url, marker, run_dir=_run_dir, step=step, timeout=45,
+        )
+        render_errors = list(res.get("render_errors") or [])
+        # P1-4 copy-fidelity: approved copy tokens MUST render in the preview DOM
+        # (opt-OUT — defaults ON from the run's approved copy [routing/copy.md /
+        # copy.md / engine copy_ledger.json] unless the page sets copy_fidelity:False).
+        render_errors += _copy_fidelity_errors(page, res, _run_dir)
+        # FIX-XC-03c rendered-<img> gate: manifest cdn_urls for this page MUST appear
+        # in the rendered DOM (opt-in — fires only when a success images/manifest.json
+        # targets this page). Missing → PASS:False, no override.
+        _img_errs, _missing_imgs = _image_gate_errors(page, res, _run_dir)
+        render_errors += _img_errs
+        # P2b published-CSP: opt-in live-vs-preview CSP/console gate (no-op unless the
+        # page carries a published url + a JS signal). Re-runs the SEALED render on
+        # the LIVE published url; any console/CSP/pageerror or non-200 there forces
+        # PASS:False. Additive — never clears a preview render_error.
+        _published_errs = _published_csp_errors(
+            page,
+            lambda u, m: ghl_builder.render_check(
+                u, m, run_dir=_run_dir, step=f"{step}-published", timeout=45,
+            ),
+        )
+        render_errors += _published_errs
+        # ── HTML repair seam (Wiring-Map §5.A.4, role='html') ────────────────────────
+        # Primary render check failed with render errors → ask model_router for the
+        # html-role model and attempt a single repair-and-retry pass so a code-block
+        # fix loop can use the identified model to rewrite the failing HTML before
+        # re-checking.  {} return (model_router unavailable) → skip retry entirely,
+        # preserving the existing single-pass behavior.  The retry is not re-published-
+        # CSP-checked (that layer is additive on the primary result only).
+        _html_repair_receipt: dict = {}
+        if render_errors:
+            _html_repair_receipt = select_html_repair_model()
+            if _html_repair_receipt and not _html_repair_receipt.get("error"):
+                try:
+                    _res2 = ghl_builder.render_check(
+                        preview_url, marker, run_dir=_run_dir,
+                        step=f"{step}-repair", timeout=45,
+                    )
+                    _re2 = list(_res2.get("render_errors") or [])
+                    _re2 += _copy_fidelity_errors(page, _res2)
+                    # Re-fold the rendered-<img> gate against the REPAIRED DOM — a
+                    # clean preview repair must never mask a still-missing image.
+                    _img_errs2, _missing_imgs2 = _image_gate_errors(page, _res2, _run_dir)
+                    _re2 += _img_errs2
+                    if not _re2 and _res2.get("ok") and _res2.get("http") == 200:
+                        # Repair attempt cleared all PREVIEW errors — promote repair
+                        # result, but published-CSP failures (from the live PUBLISHED
+                        # url) MUST persist and keep failing the gate. The preview
+                        # repair may clear preview render_errors; it must NEVER clear a
+                        # published-CSP failure. Re-fold the published errors so a real
+                        # published failure can't be masked by a clean preview repair.
+                        res = _res2
+                        render_errors = _re2 + list(_published_errs)
+                        _missing_imgs = _missing_imgs2
+                except Exception:  # noqa: BLE001 — repair must never mask primary verdict
+                    pass
     http = res.get("http")
     mird = bool(res.get("marker_in_rendered_dom"))
     # HARD RULE: render_errors != [] OR http != 200 => PASS:False, no override.
@@ -1105,10 +1152,25 @@ def verify_all(
     os.makedirs(os.path.join(run_dir, "scorecard"), exist_ok=True)
 
     # ── ONE PASS: verify every page ───────────────────────────────────────────
-    raw = [
-        verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
-        for p in pages
-    ]
+    # T2-01: in LIVE mode hold ONE managed browser session for the WHOLE loop.
+    # ghl_builder.render_check drives the headless browser through browser_cmd,
+    # which refuses outside browser_manager.browser_session(); the build phase's
+    # own sessions are closed by the time this separate step runs. Before this
+    # bracket existed every live page returned http=None with the singleton
+    # refusal in render_errors and no navigation was ever attempted.
+    # MOCK mode drives an injected fetcher and touches no browser, so it takes
+    # no session — acquiring one there would be theatre.
+    if live:
+        with _live_browser_session("verify"):
+            raw = [
+                verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+                for p in pages
+            ]
+    else:
+        raw = [
+            verify_page(p, run_dir=run_dir, fetcher=fetcher, live=live)
+            for p in pages
+        ]
 
     raw_path = os.path.join(run_dir, RAW_REL)
 
