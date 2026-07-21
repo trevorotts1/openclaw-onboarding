@@ -13,6 +13,11 @@ from typing import List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+SUPPORTED_TRANSITIONS = (
+    'fade', 'slide_left', 'slide_right', 'none',
+)
+
+
 def get_resolution(preset: str) -> Tuple[int, int]:
     """Get dimensions from quality preset."""
     presets = {
@@ -39,9 +44,9 @@ def apply_transition(clip1, clip2, transition_type: str, duration: float = 0.5):
     Returns:
         List of clips with transition applied
     """
-    from moviepy.editor import CompositeVideoClip, concatenate_videoclips
-    from moviepy.video.fx.all import fadein, fadeout
-    
+    if transition_type not in SUPPORTED_TRANSITIONS:
+        raise ValueError(f"Unsupported transition: {transition_type}")
+
     if transition_type == 'none' or duration <= 0:
         return [clip1, clip2]
     
@@ -53,55 +58,16 @@ def apply_transition(clip1, clip2, transition_type: str, duration: float = 0.5):
     
     elif transition_type == 'slide_left':
         # Slide transition
-        from moviepy.video.fx.all import slide_in
+        from moviepy.video.compositing.transitions import slide_in
         clip2 = slide_in(clip2, duration=duration, side='left')
         return [clip1.set_end(clip1.duration - duration), clip2]
     
     elif transition_type == 'slide_right':
-        from moviepy.video.fx.all import slide_in
+        from moviepy.video.compositing.transitions import slide_in
         clip2 = slide_in(clip2, duration=duration, side='right')
         return [clip1.set_end(clip1.duration - duration), clip2]
     
-    elif transition_type == 'wipe':
-        # Wipe effect using mask
-        import numpy as np
-        
-        def wipe_mask(t):
-            """Generate wipe mask."""
-            progress = t / duration
-            mask = np.zeros((clip1.h, clip1.w))
-            cutoff = int(clip1.w * progress)
-            mask[:, :cutoff] = 1
-            return mask
-        
-        # Create transition clip
-        overlap = CompositeVideoClip([
-            clip1.subclip(clip1.duration - duration, clip1.duration),
-            clip2.subclip(0, duration).set_mask(wipe_mask)
-        ], size=clip1.size)
-        
-        return [
-            clip1.subclip(0, clip1.duration - duration),
-            overlap,
-            clip2.subclip(duration)
-        ]
-    
-    elif transition_type in ('zoom_in', 'zoom_out'):
-        # Zoom transition
-        from moviepy.video.fx.all import resize
-        
-        if transition_type == 'zoom_in':
-            clip1_out = clip1.subclip(clip1.duration - duration, clip1.duration)
-            clip1_out = clip1_out.fx(resize, lambda t: 1 + 0.5 * t / duration)
-        else:
-            clip2_in = clip2.subclip(0, duration)
-            clip2_in = clip2_in.fx(resize, lambda t: 1.5 - 0.5 * t / duration)
-            return [clip1, clip2_in, clip2.subclip(duration)]
-        
-        return [clip1.subclip(0, clip1.duration - duration), clip1_out, clip2]
-    
-    # Default: simple fade
-    return [clip1.fadeout(0.5), clip2.fadein(0.5)]
+    raise ValueError(f"Unsupported transition: {transition_type}")
 
 
 def assemble_clips(clip_paths: List[Path], transition: str = 'fade',
@@ -116,7 +82,7 @@ def assemble_clips(clip_paths: List[Path], transition: str = 'fade',
         transition: Transition type between clips
         transition_duration: Length of transition in seconds
         target_duration: Max duration per clip (None = full clip)
-        music: Background music file or genre
+        music: Existing background music file
         output: Output file path
         resolution: Output resolution preset
         fps: Frames per second
@@ -124,11 +90,12 @@ def assemble_clips(clip_paths: List[Path], transition: str = 'fade',
     Returns:
         Path to output video
     """
-    from moviepy.editor import VideoFileClip, concatenate_videoclips, AudioFileClip, CompositeAudioClip
-    from moviepy.audio.fx.all import audio_fadein, audio_fadeout
-    
     if not clip_paths:
         raise ValueError("No input clips provided")
+    if music and not Path(music).is_file():
+        raise FileNotFoundError(f"Requested music file is unavailable: {music}")
+
+    from moviepy.editor import VideoFileClip, concatenate_videoclips
     
     print(f"🎬 Assembling {len(clip_paths)} clips...")
     print(f"   Transition: {transition}")
@@ -137,10 +104,12 @@ def assemble_clips(clip_paths: List[Path], transition: str = 'fade',
     # Load and prepare clips
     target_width, target_height = get_resolution(resolution)
     clips = []
+    failed_inputs = []
     
     for i, path in enumerate(clip_paths):
         if not path.exists():
-            print(f"   ⚠️  Skipping missing file: {path}")
+            print(f"   ✗ Missing requested clip: {path}")
+            failed_inputs.append((path, "file not found"))
             continue
             
         print(f"   Loading: {path.name}")
@@ -160,7 +129,13 @@ def assemble_clips(clip_paths: List[Path], transition: str = 'fade',
             
         except Exception as e:
             print(f"   ✗ Error loading {path}: {e}")
-            continue
+            failed_inputs.append((path, str(e)))
+
+    if failed_inputs:
+        for clip in clips:
+            clip.close()
+        details = "; ".join(f"{path}: {reason}" for path, reason in failed_inputs)
+        raise RuntimeError(f"Cannot assemble all requested clips: {details}")
     
     if not clips:
         raise RuntimeError("No valid clips to assemble")
@@ -234,16 +209,12 @@ def add_background_music(video, music_source: str, volume: float = 0.3):
     # Check if music_source is a file or genre
     music_path = Path(music_source)
     
-    if music_path.exists():
-        # Use provided file
-        music = AudioFileClip(str(music_path))
-    else:
-        # Use built-in genre
-        music = get_music_by_genre(music_source, video.duration)
-    
-    if music is None:
-        print(f"   ⚠️  Could not load music: {music_source}")
-        return video
+    if not music_path.is_file():
+        raise FileNotFoundError(
+            f"Requested music file is unavailable: {music_source}. "
+            "Genre substitution is not supported; provide an audio file path."
+        )
+    music = AudioFileClip(str(music_path))
     
     # Loop or trim music to match video
     if music.duration < video.duration:
@@ -286,14 +257,13 @@ def main():
     parser = argparse.ArgumentParser(description='Assemble multiple video clips')
     parser.add_argument('clips', nargs='+', type=Path, help='Input video files')
     parser.add_argument('--transition', '-t', default='fade',
-                       choices=['fade', 'slide_left', 'slide_right', 'slide_up', 'slide_down',
-                               'wipe', 'zoom_in', 'zoom_out', 'none'],
+                       choices=SUPPORTED_TRANSITIONS,
                        help='Transition type between clips')
     parser.add_argument('--transition-duration', type=float, default=0.5,
                        help='Transition duration in seconds')
     parser.add_argument('--duration', type=float,
                        help='Max duration per clip (seconds)')
-    parser.add_argument('--music', '-m', help='Background music file or genre')
+    parser.add_argument('--music', '-m', help='Background music file')
     parser.add_argument('--output', '-o', type=Path, default='assembled.mp4',
                        help='Output filename')
     parser.add_argument('--resolution', '-r', default='1080p',

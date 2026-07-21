@@ -169,10 +169,17 @@ def main():
     parser.add_argument('--batch', action='store_true', help='Batch process directory')
     
     args = parser.parse_args()
+
+    if args.batch and args.output is not None:
+        print("✗ --output cannot be used with --batch; batch outputs are derived per input")
+        return 2
+    if args.batch and not args.input.is_dir():
+        print("✗ --batch requires a directory input")
+        return 2
     
     try:
         if args.batch and args.input.is_dir():
-            batch_export(args.input, **{
+            results = batch_export(args.input, **{
                 'format': args.format,
                 'quality': args.quality,
                 'codec': args.codec,
@@ -181,6 +188,15 @@ def main():
                 'crop': args.crop,
                 'watermark': args.watermark
             })
+            succeeded = sum(1 for _, success, _ in results if success)
+            failed = len(results) - succeeded
+            print(f"Batch result: {succeeded} succeeded, {failed} failed")
+            if not results:
+                print("✗ Batch export failed; no input files matched the requested pattern")
+                return 1
+            if failed:
+                print("✗ Batch export incomplete; one or more requested files failed")
+                return 1
         else:
             result = export_video(
                 input_path=args.input,

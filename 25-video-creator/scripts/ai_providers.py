@@ -7,6 +7,9 @@ Handles connections to various AI video generation services.
 import os
 import time
 import json
+import math
+import subprocess
+import tempfile
 import requests
 from pathlib import Path
 from typing import Optional, Dict, Any
@@ -66,6 +69,17 @@ class AIProvider:
         Returns:
             Path to generated video
         """
+        if self.provider != 'kieai':
+            unsupported_options = [
+                option for option in ('seed', 'negative_prompt')
+                if kwargs.get(option) is not None
+            ]
+            if unsupported_options:
+                option_list = ', '.join(f"--{option.replace('_', '-')}" for option in unsupported_options)
+                raise ValueError(
+                    f"Provider '{self.provider}' does not support: {option_list}"
+                )
+
         if self.provider == 'kieai':
             return self._generate_kieai(prompt, duration, resolution, style, output, **kwargs)
         elif self.provider == 'runway':
@@ -281,18 +295,102 @@ class AIProvider:
         raise RuntimeError(f"Job polling timeout after {max_attempts} attempts")
     
     def _download_video(self, url: str, output: Path) -> Path:
-        """Download video from URL."""
+        """Download and validate a provider video before publishing it."""
         print(f"   Downloading video...")
-        
+
+        output = Path(output)
+        output.parent.mkdir(parents=True, exist_ok=True)
         response = requests.get(url, stream=True, timeout=120)
         response.raise_for_status()
-        
-        with open(output, 'wb') as f:
-            for chunk in response.iter_content(chunk_size=8192):
-                f.write(chunk)
-        
-        print(f"   Downloaded: {output}")
+
+        content_type = response.headers.get('Content-Type', '').split(';', 1)[0].strip().lower()
+        if not content_type.startswith('video/'):
+            raise RuntimeError(
+                f"Invalid downloaded video: expected video Content-Type, got "
+                f"{content_type or 'missing'}"
+            )
+
+        temp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(
+                mode='wb',
+                dir=output.parent,
+                prefix=f".{output.name}.",
+                suffix='.part',
+                delete=False,
+            ) as temp_file:
+                temp_path = Path(temp_file.name)
+                byte_count = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    if not chunk:
+                        continue
+                    temp_file.write(chunk)
+                    byte_count += len(chunk)
+
+            if byte_count < 1024:
+                raise RuntimeError(
+                    f"Invalid downloaded video: payload is too small ({byte_count} bytes)"
+                )
+
+            self._validate_downloaded_video(temp_path)
+            os.replace(temp_path, output)
+            temp_path = None
+        except Exception as exc:
+            if isinstance(exc, RuntimeError) and str(exc).startswith('Invalid downloaded video:'):
+                raise
+            raise RuntimeError(f"Invalid downloaded video: {exc}") from exc
+        finally:
+            if temp_path is not None:
+                temp_path.unlink(missing_ok=True)
+
+        print(f"   Downloaded and verified: {output}")
         return output
+
+    @staticmethod
+    def _validate_downloaded_video(video_path: Path) -> None:
+        """Require ffprobe to find a video stream with positive duration."""
+        command = [
+            'ffprobe',
+            '-v', 'error',
+            '-show_entries', 'stream=codec_type,duration:format=duration',
+            '-of', 'json',
+            str(video_path),
+        ]
+        try:
+            probe = subprocess.run(
+                command,
+                capture_output=True,
+                text=True,
+                timeout=30,
+                check=False,
+            )
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            raise RuntimeError(f"ffprobe validation unavailable: {exc}") from exc
+
+        if probe.returncode != 0:
+            detail = probe.stderr.strip() or f"ffprobe exited {probe.returncode}"
+            raise RuntimeError(f"ffprobe could not decode video: {detail}")
+
+        try:
+            metadata = json.loads(probe.stdout)
+            video_streams = [
+                stream for stream in metadata.get('streams', [])
+                if stream.get('codec_type') == 'video'
+            ]
+            if not video_streams:
+                raise ValueError("no video stream")
+
+            duration_value = metadata.get('format', {}).get('duration')
+            if duration_value is None:
+                duration_value = next(
+                    (stream.get('duration') for stream in video_streams if stream.get('duration')),
+                    None,
+                )
+            duration = float(duration_value)
+            if not math.isfinite(duration) or duration <= 0:
+                raise ValueError("duration is not positive")
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"ffprobe returned invalid video metadata: {exc}") from exc
     
     def image_to_video(self, image_path: Path, prompt: str = None,
                        duration: int = 5, **kwargs) -> Path:
@@ -308,14 +406,22 @@ class AIProvider:
         Returns:
             Path to generated video
         """
-        # Implementation varies by provider
         if self.provider == 'kieai':
-            return self._image_to_video_kieai(image_path, prompt, duration, **kwargs)
+            generator = getattr(self, '_image_to_video_kieai', None)
         elif self.provider == 'runway':
-            return self._image_to_video_runway(image_path, prompt, duration, **kwargs)
-        else:
-            # Fallback: Use MoviePy for image animation
+            generator = getattr(self, '_image_to_video_runway', None)
+        elif self.provider == 'pika':
+            generator = getattr(self, '_image_to_video_pika', None)
+        elif self.provider == 'local':
             return self._image_to_video_local(image_path, prompt, duration, **kwargs)
+        else:
+            raise ValueError(f"Unknown image-to-video provider: {self.provider}")
+
+        if generator is None:
+            raise NotImplementedError(
+                f"Image-to-video provider '{self.provider}' is not implemented"
+            )
+        return generator(image_path, prompt, duration, **kwargs)
     
     def _image_to_video_local(self, image_path, prompt, duration, **kwargs):
         """Create video from image using MoviePy effects."""

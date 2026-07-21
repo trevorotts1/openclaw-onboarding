@@ -8,7 +8,6 @@ import argparse
 import sys
 from pathlib import Path
 from typing import List, Tuple
-import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -17,13 +16,9 @@ class Transitions:
     """Collection of video transition effects."""
     
     AVAILABLE = [
-        'fade', 'crossfade',
+        'fade',
         'slide_left', 'slide_right', 'slide_up', 'slide_down',
         'wipe_left', 'wipe_right', 'wipe_up', 'wipe_down',
-        'zoom_in', 'zoom_out',
-        'flip_horizontal', 'flip_vertical',
-        'spin',
-        'pixelate',
         'none'
     ]
     
@@ -39,7 +34,7 @@ class Transitions:
     @staticmethod
     def slide(clip1, clip2, direction: str, duration: float = 0.5):
         """Slide transition."""
-        from moviepy.video.fx.all import slide_in
+        from moviepy.video.compositing.transitions import slide_in
         
         sides = {
             'left': 'left',
@@ -120,31 +115,8 @@ class Transitions:
     
     @staticmethod
     def flip(clip1, clip2, axis: str, duration: float = 0.5):
-        """3D flip transition."""
-        from moviepy.video.fx.all import rotate
-        import numpy as np
-        
-        # Simplified flip using rotation
-        def flip_effect(get_frame, t):
-            frame = get_frame(t)
-            progress = t / duration
-            
-            # Scale width to simulate 3D flip
-            if progress < 0.5:
-                scale = np.cos(progress * np.pi)
-            else:
-                scale = np.cos((progress - 0.5) * np.pi)
-            
-            new_width = int(frame.shape[1] * abs(scale))
-            from scipy.ndimage import zoom
-            
-            if axis == 'horizontal':
-                return zoom(frame, (1, abs(scale), 1), order=1)
-            else:
-                return zoom(frame, (abs(scale), 1, 1), order=1)
-        
-        # Apply effect to transition region
-        return Transitions.fade(clip1, clip2, duration)  # Fallback to fade
+        """Reject the unimplemented flip effect instead of substituting a fade."""
+        raise ValueError(f"Unsupported transition: flip_{axis}")
     
     @staticmethod
     def apply_transition(clip1, clip2, transition_type: str, duration: float = 0.5):
@@ -160,10 +132,13 @@ class Transitions:
         Returns:
             List of clips with transition applied
         """
+        if transition_type not in Transitions.AVAILABLE:
+            raise ValueError(f"Unsupported transition: {transition_type}")
+
         if transition_type == 'none' or duration <= 0:
             return [clip1, clip2]
         
-        elif transition_type in ('fade', 'crossfade'):
+        elif transition_type == 'fade':
             return Transitions.fade(clip1, clip2, duration)
         
         elif transition_type.startswith('slide_'):
@@ -174,16 +149,7 @@ class Transitions:
             direction = transition_type.replace('wipe_', '')
             return Transitions.wipe(clip1, clip2, direction, duration)
         
-        elif transition_type.startswith('zoom_'):
-            direction = transition_type.replace('zoom_', '')
-            return Transitions.zoom(clip1, clip2, direction, duration)
-        
-        elif transition_type.startswith('flip_'):
-            axis = transition_type.replace('flip_', '')
-            return Transitions.flip(clip1, clip2, axis, duration)
-        
-        # Default: simple fade
-        return Transitions.fade(clip1, clip2, 0.5)
+        raise ValueError(f"Unsupported transition: {transition_type}")
 
 
 def preview_transition(transition_type: str, duration: float = 2.0, 
@@ -199,6 +165,9 @@ def preview_transition(transition_type: str, duration: float = 2.0,
     Returns:
         Path to preview video
     """
+    if transition_type not in Transitions.AVAILABLE:
+        raise ValueError(f"Unsupported transition: {transition_type}")
+
     from moviepy.editor import ColorClip, concatenate_videoclips
     
     if output is None:
@@ -226,7 +195,7 @@ def list_transitions():
     print("Available transitions:")
     print()
     print("Basic:")
-    print("  fade, crossfade - Smooth fade between clips")
+    print("  fade - Smooth fade between clips")
     print("  none - Hard cut")
     print()
     print("Slide:")
@@ -234,19 +203,14 @@ def list_transitions():
     print()
     print("Wipe:")
     print("  wipe_left, wipe_right, wipe_up, wipe_down")
-    print()
-    print("Zoom:")
-    print("  zoom_in, zoom_out")
-    print()
-    print("3D:")
-    print("  flip_horizontal, flip_vertical")
 
 
 def main():
     parser = argparse.ArgumentParser(description='Video transitions library')
     parser.add_argument('--list', '-l', action='store_true', 
                        help='List available transitions')
-    parser.add_argument('--preview', '-p', help='Preview a transition type')
+    parser.add_argument('--preview', '-p', choices=Transitions.AVAILABLE,
+                       help='Preview a transition type')
     parser.add_argument('--duration', type=float, default=2.0,
                        help='Preview clip duration')
     parser.add_argument('--output', '-o', type=Path,

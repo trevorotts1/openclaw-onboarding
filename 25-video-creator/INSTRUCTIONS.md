@@ -11,12 +11,12 @@ The **Video Creator Skill** generates videos from scratch using AI. Text-to-vide
 ## What It Does
 
 1. **Text-to-Video** - AI generates video from text descriptions
-2. **Script-to-Video** - Converts written scripts into video scenes
+2. **Script-to-Video** - Renders every supported script scene into one complete video sequence
 3. **Image-to-Video** - Animates still images (Ken Burns, pan, zoom)
 4. **Multi-Clip Assembly** - Combines clips with smooth transitions
 5. **AI Avatar** - Creates presenter-style videos with virtual hosts
 6. **Background Music** - Adds and mixes audio tracks
-7. **Template Library** - 5 pre-built templates for common formats
+7. **Template Library** - 7 validated templates for common formats
 
 ---
 
@@ -61,16 +61,21 @@ python3 scripts/text_to_video.py "A serene mountain landscape at sunset, cinemat
 Positional argument: `prompt` (the text description, in quotes).
 Options: `--duration`, `--resolution` (720p/1080p/4k), `--provider` (kieai/runway/pika/mock), `--style` (cinematic/animated/realistic/abstract), `--output`, `--seed`, `--negative-prompt`.
 
+`--seed` and `--negative-prompt` are KIE-only options. Supplying either with Runway, Pika, or mock is rejected with a nonzero exit; those providers never silently discard the option.
+
 ### Script to Video
 
 ```bash
 python3 scripts/script_to_video.py script.txt \
-  --template tutorial \
   --output video.mp4
 ```
 
 Positional argument: `script` (path to the script file).
-Options: `--output`, `--provider`, `--quality` (social/web/broadcast/cinema), `--template`, `--chapters`.
+Options: `--output`, `--provider`, `--quality` (social/web/broadcast/cinema).
+
+Script audio directives `VOICEOVER` and `BGM`, plus chapter/template options, are not currently rendered by this command. If supplied, they are rejected with a nonzero exit; they are never silently discarded. Add required audio afterward with `add_music.py`.
+
+Supported scripts use bracketed scene descriptions plus `TEXT` and `DURATION`. Every requested scene must render successfully before the complete scene video is reported ready. `TRANSITION` and `IMAGE` directives are rejected; apply transitions afterward with `multi_clip_assembly.py`.
 
 ### Image to Video
 
@@ -96,6 +101,9 @@ Positional argument: `video` (path to video file).
 Subcommands: `extract` (extract audio), `remove` (strip audio), `mix` (mix tracks).
 Options: `--music`, `--genre` (upbeat/corporate/calm/epic/lofi/inspirational/tense), `--volume`, `--fade-in`, `--fade-out`, `--voiceover`, `--voice-volume`, `--output`, `--no-loop`.
 
+Requested music and voiceover are required inputs. A missing file or an unavailable built-in genre stops the command with a nonzero exit instead of returning an unchanged video.
+Choose either `--music` or `--genre`; supplying both is rejected because neither request may be silently discarded.
+
 ### Multi-Clip Assembly
 
 ```bash
@@ -105,7 +113,13 @@ python3 scripts/multi_clip_assembly.py clip1.mp4 clip2.mp4 clip3.mp4 \
 ```
 
 Positional argument: `clips` (one or more video files).
-Options: `--transition` (fade/slide_left/slide_right/slide_up/slide_down/wipe/zoom_in/zoom_out/none), `--transition-duration`, `--duration`, `--music`, `--output`, `--resolution`, `--fps`.
+Options: `--transition` (fade/slide_left/slide_right/none), `--transition-duration`, `--duration`, `--music`, `--output`, `--resolution`, `--fps`.
+
+Every positional clip is required; a missing or undecodable clip stops assembly. `--music` must be an existing audio file path.
+
+### Default Output Locations
+
+When `--output` is omitted, text-to-video writes a prompt/timestamp filename in the current working directory, script-to-video writes beside the input script, and multi-clip assembly writes `assembled.mp4` in the current working directory.
 
 ---
 
@@ -135,7 +149,7 @@ Apply the core file updates from `CORE_UPDATES.md`.
 - Output: 8-second AI-generated video clip
 
 - Input: Script file for "How to Make Cold Brew Coffee"
-- Output: Complete video with scenes, transitions, and captions
+- Output: Complete video containing every supported scene and text overlay
 
 ---
 
@@ -165,6 +179,10 @@ Storyboard Writer -> Video Creator -> Caption Creator -> Video Editor
 | tutorial | Education | Steps, instructions, summary |
 | testimonial | Marketing | Quote, person, company |
 | podcast_clip | Audio content | Waveform, captions, branding |
+| event_promo | Events | Event details and description |
+| announcement | Updates | Title, message, and optional duration |
+
+Template input is validated field by field before rendering. Missing required fields, unresolved media, and unsupported directives stop with a nonzero exit. `template_video.py --output PATH` controls the final output path; it is not ignored in favor of template JSON.
 
 ---
 

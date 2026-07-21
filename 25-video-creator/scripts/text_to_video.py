@@ -79,43 +79,7 @@ def text_to_video(prompt, duration=5, resolution="1080p", provider="kieai",
         
     except Exception as e:
         print(f"✗ Generation failed: {e}")
-        # Fallback: Create placeholder video with MoviePy
-        return create_placeholder_video(prompt, duration, resolution, output_path)
-
-
-def create_placeholder_video(prompt, duration, resolution, output_path):
-    """Create a placeholder video when AI generation fails."""
-    try:
-        from moviepy.editor import ColorClip, TextClip, CompositeVideoClip
-        
-        # Parse resolution
-        res_map = {"720p": (1280, 720), "1080p": (1920, 1080), "4k": (3840, 2160)}
-        width, height = res_map.get(resolution, (1920, 1080))
-        
-        # Create background
-        bg = ColorClip(size=(width, height), color=(20, 20, 40)).set_duration(duration)
-        
-        # Add text
-        text = TextClip(
-            f"VIDEO PLACEHOLDER\n\n{prompt[:100]}...\n\n(AI generation unavailable)",
-            fontsize=40,
-            color='white',
-            size=(width-100, None),
-            method='caption',
-            align='center'
-        ).set_duration(duration).set_position('center')
-        
-        # Composite
-        video = CompositeVideoClip([bg, text])
-        video.write_videofile(str(output_path), fps=30, codec='libx264', audio=False)
-        video.close()
-        
-        print(f"✓ Placeholder video saved: {output_path}")
-        return str(output_path)
-        
-    except ImportError:
-        print("✗ MoviePy not installed. Cannot create placeholder.")
-        return None
+        raise RuntimeError(f"{provider} generation failed: {e}") from e
 
 
 def main():
@@ -135,16 +99,20 @@ def main():
     
     args = parser.parse_args()
     
-    result = text_to_video(
-        prompt=args.prompt,
-        duration=args.duration,
-        resolution=args.resolution,
-        provider=args.provider,
-        style=args.style,
-        output=args.output,
-        seed=args.seed,
-        negative_prompt=args.negative_prompt
-    )
+    try:
+        result = text_to_video(
+            prompt=args.prompt,
+            duration=args.duration,
+            resolution=args.resolution,
+            provider=args.provider,
+            style=args.style,
+            output=args.output,
+            seed=args.seed,
+            negative_prompt=args.negative_prompt
+        )
+    except Exception as e:
+        print(f"✗ Error: {e}")
+        return 1
     
     if result:
         print(f"\n🎥 Video ready: {result}")

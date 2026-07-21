@@ -13,7 +13,7 @@ assert(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((
 warn_only(){ if eval "$2" >/dev/null 2>&1; then green "  ✓ PASS — $1"; PASS=$((PASS+1)); else yellow "  ⚠ WARN — $1"; WARN=$((WARN+1)); fi; }
 
 if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
-: "${KIE_API_KEY:=}"; : "${PIKA_API_KEY:=}"; : "${RUNWAY_API_KEY:=}"
+: "${KIE_API_KEY:=}"; : "${PIKA_API_KEY:=}"; : "${RUNWAY_API_KEY:=}"; : "${VIDEO_CREATOR_PROVIDER:=}"
 
 echo ""
 echo "═══ Skill 25 — Video Creator — Install QC ═══"
@@ -21,7 +21,17 @@ echo ""
 assert "Skill 25 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/25-video-creator\" ]"
 assert "FFmpeg installed" "command -v ffmpeg"
 assert "ImageMagick installed" "command -v convert"
-assert "At least one video-gen API key (KIE/Pika/Runway)" "[ -n \"$KIE_API_KEY\" ] || [ -n \"$PIKA_API_KEY\" ] || [ -n \"$RUNWAY_API_KEY\" ]"
+case "$VIDEO_CREATOR_PROVIDER" in
+  kieai) assert "KIE API key configured for selected provider" "[ -n \"$KIE_API_KEY\" ]" ;;
+  pika) assert "Pika API key configured for selected provider" "[ -n \"$PIKA_API_KEY\" ]" ;;
+  runway) assert "Runway API key configured for selected provider" "[ -n \"$RUNWAY_API_KEY\" ]" ;;
+  mock|local) green "  ✓ PASS — Keyless $VIDEO_CREATOR_PROVIDER provider selected"; PASS=$((PASS+1)) ;;
+  "")
+    warn_only "Real-provider features require a matching API key; mock/local remain available" \
+      "[ -n \"$KIE_API_KEY\" ] || [ -n \"$PIKA_API_KEY\" ] || [ -n \"$RUNWAY_API_KEY\" ]"
+    ;;
+  *) red "  ✗ FAIL — Unknown VIDEO_CREATOR_PROVIDER: $VIDEO_CREATOR_PROVIDER"; FAIL=$((FAIL+1)) ;;
+esac
 assert "Python 3 installed" "command -v python3"
 warn_only "ffprobe available" "command -v ffprobe"
 warn_only "Skill 07 (KIE) installed if KIE chosen" "[ -z \"$KIE_API_KEY\" ] || [ -d \"$SKILLS_DIR_DEFAULT/07-kie-setup\" ]"
