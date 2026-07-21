@@ -10,10 +10,20 @@ name: provisioning-completeness gate guard
 # ship placeholder branding, a stale/missing onboarding version stamp, an empty
 # departments.json, and zero personas, and still be reported PASS.
 #
+# The gate's DEPARTMENTS check then closed only half of that: it proves
+# departments.json is a non-empty ARRAY. That file lives in the ZHC company dir,
+# while the role folders it promises live in a DIFFERENT tree (the live
+# departments workspace) — so a box could lose EVERY role folder on disk and
+# still be recorded as a clean, completed roll, because the JSON still listed
+# them. ROLE-FLOOR measures that tree and is gated alongside the other four.
+#
 # This guard runs the hermetic fixture suite (LOCAL FIXTURES ONLY — never a real
 # box) that proves, using run_box's EXACT has_failures verdict expression, that
 # such a box now FLIPS from PASS(before) to FAIL(after), and that a genuinely
-# fully-provisioned box is NOT false-failed.
+# fully-provisioned box is NOT false-failed — including the layouts that a naive
+# floor check would false-FAIL: a SYMLINKED departments workspace, non-canonical
+# role markers, and a fresh box whose empty departments.json is the intended
+# shipped default.
 #
 # Security note: consumes only repo file content + local tmp fixtures (no
 # untrusted GitHub event fields, no network, no ssh, no box), so there is no
@@ -37,7 +47,7 @@ on:
 
 jobs:
   provisioning-completeness-gate-guard:
-    name: VERSION+BRANDING+DEPARTMENTS+PERSONAS gate the roll verdict (no false-FAIL)
+    name: VERSION+BRANDING+DEPARTMENTS+ROLE-FLOOR+PERSONAS gate the roll verdict (no false-FAIL)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo

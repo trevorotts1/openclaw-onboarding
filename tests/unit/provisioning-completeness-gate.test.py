@@ -25,9 +25,34 @@ WHAT IS PROVEN (hermetic — LOCAL FIXTURES ONLY, never a real box):
   (c) empty departments.json           -> BEFORE ok / AFTER FAIL
   (d) empty personas                   -> BEFORE ok / AFTER FAIL
   (e) fully-correct box                -> BEFORE ok / AFTER ok   (NO false-FAIL)
-  (f) per-check breakdown is emitted   (all six check names present)
+  (f) per-check breakdown is emitted   (all seven check names present)
   (g) a legit client whose name merely CONTAINS "Your Company" still PASSES
       (exact-placeholder match, never a substring false-FAIL)
+
+ROLE-FLOOR (the second false-success closer — the roll verdict never checked
+whether the work actually LANDED ON DISK):
+  DEPARTMENTS proves only that departments.json is a non-empty array. That file
+  lives in the ZHC company dir; the role folders it promises live in a DIFFERENT
+  tree (the live departments workspace). So a box could lose EVERY role folder
+  and still record a clean, completed roll. ROLE-FLOOR measures that tree.
+  (i)  role folders DELETED, departments.json intact -> BEFORE ok / AFTER FAIL
+       (this is the case origin/main wrongly PASSES — asserted explicitly)
+  (j)  live departments workspace ENTIRELY absent    -> BEFORE ok / AFTER FAIL
+  (k)  fresh box, EMPTY departments.json             -> ROLE-FLOOR does NOT fire
+       (n/a — the intended shipped default is DEPARTMENTS' call, not a second FAIL)
+  (l)  departments workspace is a SYMLINK            -> PASS (regression guard:
+       several fleet boxes symlink `departments`; a probe that does not follow
+       symlinks reports those healthy boxes as an empty floor)
+  (m)  non-canonical role marker conventions         -> PASS (at least one real
+       build uses governing-personas.md + numbered How-to-NN.md instead of
+       IDENTITY.md; a marker-specific check would false-FAIL a real workforce)
+  (n)  idempotent — running the gate twice yields the identical verdict
+
+TIGHTENED (2026-07-21): scenario (e)'s "fully-correct" fixture previously shipped
+NO role folders at all and still asserted AFTER == ok. That encoded the very
+false-success being fixed here as correct. The good fixture now lays down a real
+department workspace with real role folders, so "fully-correct" means the work
+actually landed on disk.
 
 Run:  python3 tests/unit/provisioning-completeness-gate.test.py -v
 """
@@ -82,8 +107,11 @@ class ProvisioningCompletenessGate(unittest.TestCase):
         self.company_dir = self.master / "zero-human-company" / "acme-co"
         self.cc_dir = self.home / "projects" / "command-center"
         self.personas_dir = self.workspace / "data" / "coaching-personas" / "personas"
+        # The LIVE departments workspace — a DIFFERENT tree from company_dir, which
+        # is exactly why departments.json alone could never prove the floor landed.
+        self.dept_ws = self.workspace / "departments"
         for d in (self.workspace, self.company_dir, self.cc_dir / "config",
-                  self.cc_dir / "public", self.personas_dir):
+                  self.cc_dir / "public", self.personas_dir, self.dept_ws):
             d.mkdir(parents=True, exist_ok=True)
 
         # ── a fully-correct ("good") box ──
@@ -91,6 +119,8 @@ class ProvisioningCompletenessGate(unittest.TestCase):
         self._write_company_name("Acme Robotics")
         self._write_logo({"logoUrl": ""})            # empty logoUrl = text-SVG fallback = OK
         self._write_personas(["clockwork", "profit-first", "traction"])
+        # TIGHTENED: a fully-correct box has the work ON DISK, not merely listed.
+        self._write_role_folders(depts=3, roles_per_dept=4)
         self._env_prev = os.environ.get("FLEET_REFRESH_ROOT")
         os.environ["FLEET_REFRESH_ROOT"] = str(self.tmp)
         self.addCleanup(self._restore_env)
@@ -125,6 +155,23 @@ class ProvisioningCompletenessGate(unittest.TestCase):
     def _clear_personas(self):
         shutil.rmtree(self.personas_dir, ignore_errors=True)
         self.personas_dir.mkdir(parents=True, exist_ok=True)
+
+    def _write_role_folders(self, depts=3, roles_per_dept=4, marker="IDENTITY.md"):
+        """Lay down a real live departments workspace: <ws>/<dept>/<role>/<marker>."""
+        for di in range(depts):
+            dd = self.dept_ws / f"dept-{di}"
+            dd.mkdir(parents=True, exist_ok=True)
+            # department-level marker — must NOT be counted as a role
+            (dd / "governing-personas.md").write_text("# dept persona\n")
+            for ri in range(roles_per_dept):
+                rd = dd / f"{ri:02d}-role-{ri}"
+                rd.mkdir(parents=True, exist_ok=True)
+                (rd / marker).write_text(f"# role {ri}\n")
+
+    def _delete_role_folders(self):
+        """Every role folder GONE — departments.json still lists them all."""
+        shutil.rmtree(self.dept_ws, ignore_errors=True)
+        self.dept_ws.mkdir(parents=True, exist_ok=True)
 
     # ── harness ────────────────────────────────────────────────────────────
     def _seed_good_result(self, onboarding_version=PINNED):
@@ -212,9 +259,104 @@ class ProvisioningCompletenessGate(unittest.TestCase):
     def test_f_breakdown_is_emitted(self):
         res = self._seed_good_result()
         out, err = self._run_gate(res)
-        for name in ("VERSION", "BRANDING", "DEPARTMENTS", "PERSONAS", "SOP", "CC-SERVE"):
+        for name in ("VERSION", "BRANDING", "DEPARTMENTS", "ROLE-FLOOR",
+                     "PERSONAS", "SOP", "CC-SERVE"):
             self.assertIn(name + ":", out["breakdown"], f"{name} missing from breakdown")
         self.assertIn("provisioning-completeness:", err)
+
+    # ── ROLE-FLOOR: the roll verdict measured against DISK ────────────────────
+    def test_i_role_folders_deleted_fails_where_it_previously_passed(self):
+        """THE DEFECT. departments.json still lists 28 departments; every role
+        folder on disk is GONE. origin/main records this as a clean roll."""
+        self._delete_role_folders()
+        res = self._seed_good_result()
+        before, after, out, _ = self._measure("i: role folders DELETED", res, False)
+        self.assertEqual(before, "ok",
+                         "origin/main reported this floor-less box PASS")
+        self.assertEqual(after, "partial", "the gate must flip the box off ok")
+        self.assertFalse(out["checks"]["ROLE-FLOOR"]["ok"])
+        self.assertIn("ROLE-FLOOR", out["failed"])
+        self.assertIn("FLOOR GONE", out["checks"]["ROLE-FLOOR"]["detail"])
+        # DEPARTMENTS still passes — proving the JSON alone cannot see the loss.
+        self.assertTrue(out["checks"]["DEPARTMENTS"]["ok"])
+
+    def test_j_workspace_entirely_absent_fails(self):
+        shutil.rmtree(self.dept_ws, ignore_errors=True)
+        res = self._seed_good_result()
+        _, after, out, _ = self._measure("j: departments ws absent", res, False)
+        self.assertEqual(after, "partial")
+        self.assertIn("ROLE-FLOOR", out["failed"])
+        self.assertIn("NO live departments workspace", out["checks"]["ROLE-FLOOR"]["detail"])
+
+    def test_k_fresh_box_empty_departments_does_not_fire_role_floor(self):
+        """An empty departments.json is the INTENDED shipped default. DEPARTMENTS
+        judges it; ROLE-FLOOR must NOT pile a second failure on a fresh box."""
+        (self.company_dir / "departments.json").write_text("[]")
+        self._delete_role_folders()
+        res = self._seed_good_result()
+        out, _ = self._run_gate(res)
+        self.assertTrue(out["checks"]["ROLE-FLOOR"]["ok"],
+                        "ROLE-FLOOR must be n/a when nothing is declared")
+        self.assertNotIn("ROLE-FLOOR", out["failed"])
+        self.assertIn("n/a", out["checks"]["ROLE-FLOOR"]["detail"])
+
+    def test_l_symlinked_departments_workspace_passes(self):
+        """Several fleet boxes symlink `departments` at the workspace root. A probe
+        that does not follow symlinks reports those healthy boxes as an empty
+        floor — the exact false-FAIL this guards against."""
+        real = self.workspace / "zhc-real" / "departments"
+        real.mkdir(parents=True, exist_ok=True)
+        shutil.rmtree(self.dept_ws, ignore_errors=True)
+        self.dept_ws.symlink_to(real, target_is_directory=True)
+        for ri in range(3):
+            rd = real / "marketing" / f"{ri:02d}-role-{ri}"
+            rd.mkdir(parents=True, exist_ok=True)
+            (rd / "IDENTITY.md").write_text("# role\n")
+        res = self._seed_good_result()
+        _, after, out, _ = self._measure("l: symlinked departments ws", res, True)
+        self.assertEqual(after, "ok", "a symlinked workspace must NOT be false-failed")
+        self.assertTrue(out["checks"]["ROLE-FLOOR"]["ok"])
+
+    def test_m_non_canonical_role_markers_pass(self):
+        """Role markers are NOT uniform across the fleet. A build using
+        governing-personas.md + numbered How-to-NN.md inside each role folder is a
+        REAL workforce and must never be reported as a lost floor."""
+        self._delete_role_folders()
+        for ri in range(4):
+            rd = self.dept_ws / "creative" / f"{ri:02d}-specialist"
+            rd.mkdir(parents=True, exist_ok=True)
+            (rd / "governing-personas.md").write_text("# persona\n")
+            (rd / f"{ri:02d}-How-to-do-the-thing.md").write_text("# how-to\n")
+        res = self._seed_good_result()
+        _, after, out, _ = self._measure("m: non-canonical role markers", res, True)
+        self.assertEqual(after, "ok")
+        self.assertTrue(out["checks"]["ROLE-FLOOR"]["ok"])
+
+    def test_n_role_floor_is_idempotent(self):
+        """Read-only: two consecutive runs over an unchanged box agree exactly."""
+        first, _ = self._run_gate(self._seed_good_result())
+        second, _ = self._run_gate(self._seed_good_result())
+        self.assertEqual(first["checks"]["ROLE-FLOOR"], second["checks"]["ROLE-FLOOR"])
+        self.assertEqual(first["failed"], second["failed"])
+        self._delete_role_folders()
+        bad1, _ = self._run_gate(self._seed_good_result())
+        bad2, _ = self._run_gate(self._seed_good_result())
+        self.assertEqual(bad1["checks"]["ROLE-FLOOR"], bad2["checks"]["ROLE-FLOOR"])
+        self.assertIn("ROLE-FLOOR", bad1["failed"])
+        self.assertIn("ROLE-FLOOR", bad2["failed"])
+
+    def test_o_department_level_markers_are_not_counted_as_roles(self):
+        """A department folder holding ONLY department-level markers is not a
+        staffed department — it must not be mistaken for a surviving floor."""
+        self._delete_role_folders()
+        dd = self.dept_ws / "marketing"
+        dd.mkdir(parents=True, exist_ok=True)
+        for name in ("governing-personas.md", "README.md", "AGENTS.md"):
+            (dd / name).write_text("# dept-level\n")
+        res = self._seed_good_result()
+        _, after, out, _ = self._measure("o: dept-level markers only", res, False)
+        self.assertEqual(after, "partial")
+        self.assertIn("ROLE-FLOOR", out["failed"])
 
     def test_g_legit_name_containing_placeholder_substring_passes(self):
         # EXACT-placeholder match only — a real client named with the substring
