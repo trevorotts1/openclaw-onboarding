@@ -1,4 +1,4 @@
-## [v20.0.86]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
+## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
 
@@ -94,6 +94,119 @@ plus stderr; an absent file is tolerated at rc 0 and fabricates nothing; and a
 recorded `qcExit=5` really does fail the wave gate that check (d) could never
 reach before.
 
+## [v20.0.86]  -  2026-07-21  -  A RETROACTIVE RULE CHANGE WAS BLOCKING 28 OF 30 BOXES: the vertical guard judged pre-2026-06-28 provisioning by the classification that replaced it
+
+Command Center refresh went FATAL at `phase=3b vertical-derivation-guard` (rc=3)
+on **28 of the 30 reachable fleet boxes** (measured 2026-07-21 against real disk
++ real build-state; the 2 that passed are the one genuine real-estate client and
+one box with no workspace at all). The cause was not a provisioning bug.
+
+Commit `b3e25876` (v14.28.1, **2026-06-28T15:26:48Z**) removed
+`"universal_primary": true` from `real-estate` / `listings`. **Before** it,
+`build-workforce.py::apply_vertical_packs` PHASE 1 looped over EVERY vertical
+pack and `_add_dept()`'d that pack's primary **unconditionally** — it never
+consulted `_detect_vertical_packs`:
+
+    # PHASE 1 - universal primaries: one from every pack, always fires.
+    for pack_id, pack in vertical_packs.items():
+        ...
+        if primary and _add_dept(primary, pack_id, " [universal-primary]"):
+
+So every client built between `1691b43e` (2026-06-02, when universal primaries
+were introduced) and `b3e25876` received all **7** primaries — `presentations`,
+`listings`, `scheduling-dispatch`, `logistics-fulfillment`, `engineering`,
+`account-management`, `podcast` — regardless of industry. `listings` was FLOOR
+on the day it landed, not a force-add. The fix was forward-only; no fleet
+remediation ever ran, so `listings` is still on disk on **all 30** reachable
+boxes. The guard (added later) excludes universal primaries using the CURRENT
+naming map, so it reclassified that residue as an undeclared vertical and, since
+`run-full-install.sh` phase=3b treats rc=3 as `fail_install`, blocked the refresh
+fleet-wide.
+
+**The fix is evidence-based grandfathering, not a bypass.**
+`department-naming-map.json` v2.7.0 gains `universal_primary_history.demotions[]`
+— a dated, per-department record naming the demoting commit and instant. A
+provisioned department escapes the violation list only when BOTH hold:
+
+1. **CLASSIFICATION** — a well-formed row covers that exact department id. A row
+   missing `demoted_at`/`demoted_by_commit`/`pack`, naming a wildcard, naming a
+   department that is STILL `universal_primary`, or naming a department no pack
+   declares, is IGNORED **with a warning** — never honored, never dropped
+   silently.
+2. **EVIDENCE** — the box produces its own dated WITNESS that the department was
+   provisioned before that instant: the build's own
+   `verticalPacks.appliedAt` when it names the department (`direct`), the
+   department directory's filesystem birth time (`filesystem`), or a
+   build-lifecycle timestamp that upper-bounds materialization —
+   `buildCompletedAt`, `closeoutStartedAt`, `closeoutCompletedAt`,
+   `commandCenterCompletedAt` (`build-window`). **No witness -> no grandfather
+   -> still rc=3.** Fields that only LOWER-bound the build
+   (`interviewCompletedAt`, `buildStartedAt`) are deliberately excluded: an
+   interview finishing before a demotion says nothing about when the departments
+   landed. A witness must also clear the cutoff by more than a 14h timezone
+   safety margin, so a naive local timestamp can never be what flips a verdict.
+
+And it is refused outright — whatever the witnesses say — when the build's own
+record names the department in `addedDepartments` with an `appliedAt` at/after
+the demotion (`POST_DEMOTION_ADD`): a direct record of a post-demotion add beats
+circumstantial pre-dating.
+
+**Why this cannot become a blanket bypass.** There is no flag, env var, or CLI
+option that disables the check; the only lever is a per-department, dated,
+commit-attributed row whose claim is falsifiable against git. A row grants
+nothing on its own — every box must still produce its own evidence. It cannot
+reach a department that was never a universal primary, so the leak this guard
+exists to catch (`showings` / `open-house` / `closing-coordinator` /
+`local-market-intelligence` / `lead-generation` on a non-real-estate client) is
+untouched. And `check_add()` ignores the table completely: grandfathering
+explains OLD residue, it never authorizes a NEW materialization.
+
+**The residue stays LOUD.** rc=0 no longer means "nothing to see". The verdict,
+the Phase-3b receipt (`$OC_ROOT/workspace/provisioning/vertical-derivation.json`)
+and stderr now carry `grandfatheredDepartments[]` (each with its demoting commit
+and the exact witness + strength that justified it), a `warnings[]` array, and a
+`residueSummary` — and `run-full-install.sh` re-logs all of it at **WARN** into
+the install log on the PASS path, so a cleanup can be driven from data instead of
+a fresh survey. A missing `verticalPacks` record is likewise reported every run
+as `NO_DECLARATION_RECORD` rather than silently absorbed.
+
+**Ruling on the 18 boxes with no `verticalPacks` record** (measured, not
+assumed): a missing declaration record still fails closed for every ordinary
+vertical department — the declared set stays EMPTY and nothing is fabricated.
+But it does NOT block grandfathering, because the Phase-1 universal layer was
+never declaration-gated in the first place: demanding a declaration for a
+department that by construction never had one would demand evidence that never
+existed for any client. The doctrine "absence of information is never permission
+to install" is honored exactly — the guard installs nothing, and the fact being
+established (that `listings` was floor before 2026-06-28) is not absent
+information but the repo's own dated history, corroborated per-box.
+
+MEASURED against real disk + build-state for all 30 reachable boxes, read-only:
+**PASS 21 (was 2), FAIL 9 (was 28), zero regressions** — no box that should fail
+now passes. The 9 that still fail are correct: 5 carry Phase-2 extras that were
+never universal primaries (`client-coaches`, `course-creator`,
+`community-management`, `reviews-management`, `recurring-service`) and are
+unexplained by the available record; 4 carry `listings` with no dated evidence of
+pre-demotion provisioning at all (three had all 36 department folders created
+2026-07-20 with `mtime == birthtime`, one on 2026-06-29 — the day AFTER the
+demotion — and none carries a pre-demotion build timestamp).
+
+- `23-ai-workforce-blueprint/department-naming-map.json` v2.6.2 -> **v2.7.0**:
+  adds `universal_primary_history`
+- `23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py`:
+  `universal_primary_demotions()`, `provisioning_witnesses()`,
+  `grandfather_ruling()`, `_dir_birth_time()` (st_birthtime, with a read-only
+  `stat -c %W` fallback because Python exposes no birth time on Linux, where the
+  guard runs inside the client container); verdict gains
+  `grandfatheredDepartments` / `warnings` / `residueSummary`
+- `32-command-center-setup/scripts/run-full-install.sh` phase=3b: re-logs the
+  residue inventory + warnings at WARN on the PASS path
+- `23-ai-workforce-blueprint/scripts/test-vertical-derivation-guard.sh`:
+  **26 -> 44 checks**. New section (i) pins both directions; cases (c) and (d)
+  were TIGHTENED — they asserted only `rc=3`, which `listings` would now satisfy
+  by luck, so they now assert the NAMED refusal
+  (`NO_PRE_RECLASSIFICATION_WITNESS`) and that the missing declaration record is
+  reported.
 ## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
 
 ### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist
