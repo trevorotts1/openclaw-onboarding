@@ -28,6 +28,18 @@ the 40-stage brand pipeline is structurally unreachable for a book intake, it
 is not merely discouraged by INSTRUCTIONS.md. A machine-readable route signal
 is written to `<run-dir>/route.json` either way.
 
+That route signal is now ACKNOWLEDGEMENT-BASED (T0-28). `book-routed` used to be
+written because a sibling `53-*book*` DIRECTORY existed on disk: no target was
+invoked, the Book skill never saw the intake, and downstream automation read the
+durable route as a completed handoff for a run that had never begun. This module
+now forwards the intake to the target's own intake-accept command
+(`53-*book*/scripts/bw_intake_accept.py`), reads the receipt from that process's
+STDOUT rather than from a file that could be pre-planted, and honours it only
+when the digest the target signed matches the sha256 of the bytes forwarded.
+`book-routed` requires that receipt; otherwise the state is `book-rejected`
+(the target refused), `book-pending` (the target could not be consulted) or
+`book-parked` (no Book skill on this box).
+
 This module's deterministic scheduling core is fully self-tested offline; the LLM
 dispatch itself is the OpenClaw sub-agent seam (client providers only).
 
@@ -596,15 +608,109 @@ def _front_door_reverify() -> List[str]:
     return problems
 
 
-def _detect_book_skill_present(root: Path) -> bool:
+def _find_book_skill_dir(root: Path) -> "Optional[Path]":
     """Dynamic detection of the separate Book skill (53) — never hardcoded."""
     parent = root.parent
     if not parent.is_dir():
-        return False
-    for d in parent.iterdir():
+        return None
+    for d in sorted(parent.iterdir()):
         if d.is_dir() and re.match(r"^53-.*book.*$", d.name, re.IGNORECASE):
-            return True
-    return False
+            return d
+    return None
+
+
+def _detect_book_skill_present(root: Path) -> bool:
+    """Dynamic detection of the separate Book skill (53) — never hardcoded."""
+    return _find_book_skill_dir(root) is not None
+
+
+BOOK_ACCEPT_REL = Path("scripts") / "bw_intake_accept.py"
+BOOK_ACCEPT_TIMEOUT = 60
+
+
+def _request_book_acceptance(root: Path, intake_path: Path,
+                             receipt_out: "Optional[Path]" = None) -> Dict[str, Any]:
+    """Ask the Book skill (53) whether it ACCEPTS this intake, and return what it
+    said. A directory is not an acknowledgement — before this existed, a book
+    intake was recorded as `book-routed` purely because a sibling 53-*book*
+    folder was on disk, no target was ever invoked, and downstream automation
+    read that durable state as a completed handoff for a run that had never
+    started (T0-28).
+
+    The receipt is read from the child's STDOUT, not from a file, so it cannot be
+    satisfied by a pre-planted artifact; and it is only honoured when the digest
+    the target signed matches the sha256 of the bytes this process forwarded.
+
+    Returns a dict with:
+      status   'accepted' | 'rejected' | 'pending'
+      route    the durable route label to record
+      receipt  the target's receipt (accepted only)
+      reason / reasons  why, for the non-accepted outcomes
+    """
+    book_dir = _find_book_skill_dir(root)
+    if book_dir is None:
+        return {"status": "pending", "route": "book-parked",
+                "reason": "no sibling Book skill (53-*book*) is installed on this box"}
+
+    accept_cmd = book_dir / BOOK_ACCEPT_REL
+    if not accept_cmd.is_file():
+        # The skill is installed but exposes no intake-accept command. That is a
+        # real gap, and it is reported as one — never rounded up to 'routed'.
+        return {"status": "pending", "route": "book-pending",
+                "reason": "%s exposes no intake-accept command at %s — nothing can acknowledge "
+                          "this handoff, so it is NOT recorded as routed"
+                          % (book_dir.name, BOOK_ACCEPT_REL.as_posix())}
+
+    try:
+        forwarded = intake_path.read_bytes()
+    except OSError as exc:
+        return {"status": "pending", "route": "book-pending",
+                "reason": "cannot read %s to forward it: %s" % (intake_path, exc)}
+    forwarded_sha = hashlib.sha256(forwarded).hexdigest()
+
+    argv = [sys.executable or "python3", str(accept_cmd), "--intake", str(intake_path),
+            "--from-skill", root.name, "--json"]
+    if receipt_out is not None:
+        argv += ["--receipt-out", str(receipt_out)]
+    try:
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=BOOK_ACCEPT_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        return {"status": "pending", "route": "book-pending",
+                "reason": "%s did not answer within %ss" % (accept_cmd.name, BOOK_ACCEPT_TIMEOUT)}
+    except OSError as exc:
+        return {"status": "pending", "route": "book-pending",
+                "reason": "could not invoke %s: %s" % (accept_cmd, exc)}
+
+    try:
+        receipt = json.loads(proc.stdout)
+    except (ValueError, TypeError):
+        return {"status": "pending", "route": "book-pending",
+                "reason": "%s exited %d and produced no parseable receipt on stdout"
+                          % (accept_cmd.name, proc.returncode),
+                "stderr_tail": (proc.stderr or "").strip()[-400:]}
+
+    if not isinstance(receipt, dict):
+        return {"status": "pending", "route": "book-pending",
+                "reason": "%s produced a receipt that is not an object" % accept_cmd.name}
+
+    if receipt.get("intake_sha256") != forwarded_sha:
+        # A receipt minted for other bytes proves nothing about THIS intake.
+        return {"status": "pending", "route": "book-pending",
+                "reason": "the receipt is bound to a different payload (receipt %r, forwarded %r)"
+                          % (receipt.get("intake_sha256"), forwarded_sha)}
+
+    if proc.returncode == 0 and receipt.get("accepted") is True:
+        return {"status": "accepted", "route": "book-routed", "receipt": receipt}
+
+    if receipt.get("accepted") is False:
+        return {"status": "rejected", "route": "book-rejected",
+                "reasons": receipt.get("reasons", []),
+                "receipt": receipt}
+
+    return {"status": "pending", "route": "book-pending",
+            "reason": "%s exited %d without a definite accept/reject"
+                      % (accept_cmd.name, proc.returncode),
+            "receipt": receipt}
 
 
 def _resolve_repairs(args, run_dir: "Optional[Path]" = None) -> bool:
@@ -651,9 +757,43 @@ def _version_gate(run_dir: Path) -> Tuple[int, Dict[str, Any]]:
         # version=book NEVER reaches the brand pipeline, regardless of whether
         # every other field is otherwise clean — this is a hard route, not a
         # violation to fix and retry into brand dispatch.
-        route = "book-routed" if "AF-AV-BOOK-SKILL-MISSING" not in codes else "book-parked"
-        return 4, {"route": route, "version": "book", "violations": [list(v) for v in violations],
-                    "notes": notes, "book_skill_present": book_present}
+        #
+        # T0-28: `book-routed` used to be written because a sibling 53-*book*
+        # DIRECTORY existed. Nothing was invoked, the target never saw the
+        # intake, and downstream automation read that durable state as a
+        # completed handoff. `book-routed` is now written ONLY when the target
+        # itself returns an acceptance receipt bound to the exact bytes that were
+        # forwarded. Every other outcome is recorded truthfully:
+        #   book-parked   — no Book skill installed on this box
+        #   book-pending  — installed, but it could not be consulted, or answered
+        #                   with something other than a definite accept/reject
+        #   book-rejected — the target was consulted and REFUSED the payload
+        record: Dict[str, Any] = {
+            "version": "book",
+            "violations": [list(v) for v in violations],
+            "notes": notes,
+            "book_skill_present": book_present,
+        }
+        if "AF-AV-BOOK-SKILL-MISSING" in codes or not book_present:
+            record["route"] = "book-parked"
+            record["accepted"] = False
+            record["reason"] = "no resolvable Book skill (53) on this box"
+            return 4, record
+
+        ack = _request_book_acceptance(root, intake_path,
+                                       receipt_out=run_dir / "book-intake-receipt.json")
+        record["route"] = ack["route"]
+        record["accepted"] = ack["status"] == "accepted"
+        record["acknowledgement_status"] = ack["status"]
+        if "receipt" in ack:
+            record["receipt"] = ack["receipt"]
+        if "reason" in ack:
+            record["reason"] = ack["reason"]
+        if "reasons" in ack:
+            record["target_reasons"] = ack["reasons"]
+        if "stderr_tail" in ack:
+            record["target_stderr_tail"] = ack["stderr_tail"]
+        return 4, record
 
     if violations:
         return 2, {"route": "refused", "version": version or None,
@@ -1107,6 +1247,16 @@ def main(argv) -> int:
         print(f"HARD-STOP: version=book -> route={route['route']!r} (see route.json). "
               f"The 40-stage BRAND pipeline is NEVER dispatched for a book intake — "
               f"this is the version gate doing its job, not an error.")
+        if route.get("accepted"):
+            rcp = route.get("receipt") or {}
+            print(f"  ACKNOWLEDGED by {rcp.get('target_skill')} "
+                  f"(receipt {rcp.get('receipt_id')}, intake sha256 "
+                  f"{str(rcp.get('intake_sha256'))[:16]}) — the target accepted this intake.")
+        else:
+            print(f"  NOT ACKNOWLEDGED ({route.get('acknowledgement_status', 'no target consulted')}): "
+                  f"{route.get('reason') or route.get('target_reasons')}")
+            print("  This handoff is NOT recorded as routed. Nothing downstream should treat it "
+                  "as a started book run.")
         return 4
     if vrc != 0:
         print(f"REFUSED: intake/version gate violation(s) — no dispatch (see route.json): "

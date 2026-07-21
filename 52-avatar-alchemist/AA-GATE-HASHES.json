@@ -8,7 +8,7 @@
     "scripts/aa_qc_cert.py": "9afe1f4ca5a433a2f5bcfd7fed081b60793e462e61c5d4c4632fc18c7815c428",
     "scripts/aa_egress_gate.py": "eb3cb92dc9a482a7bc5b81294022188b612e92805f33ea7403e5a8af90d2b480",
     "scripts/aa_links_gate.py": "27cc23e7669cd1ff4aacf7fa1f1bfbad5953a40b428f75f030ce7a675e2265b1",
-    "scripts/aa_director.py": "181bf08449a39b80ba5dbd15fcd5c8849bfd0c46a1203f2d9fa4a68c7c6dd1b9",
+    "scripts/aa_director.py": "0cd582cd8362ec21251debe9413700bfd2b73a3eae3d4a60ec7397757c75ac56",
     "scripts/aa_token_lockstep.py": "aa0ea9226e3abd47c93efd7976e8dfe5e31769686df9c805b6f4584cdc39e41a",
     "entry.sh": "92d575670262deacadc2cbd0a105f50a689efb71be6f2f2e42c9fc74fa53c15e"
   }

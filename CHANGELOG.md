@@ -1,3 +1,62 @@
+## [v20.0.91]  -  2026-07-21  -  A BOOK HANDOFF WAS RECORDED AS ROUTED BECAUSE A DIRECTORY EXISTED (T0-28)
+
+`52-avatar-alchemist/scripts/aa_director.py::_version_gate` decided:
+
+    route = "book-routed" if "AF-AV-BOOK-SKILL-MISSING" not in codes else "book-parked"
+
+and that code came from `aa_intake_gate.verify(intake, book_present)`, where
+`book_present` was `_detect_book_skill_present()` — a glob for a sibling
+`53-*book*` folder. **No target was ever invoked.** Skill 53 never saw the
+intake. The durable `<run-dir>/route.json` that downstream automation reads
+recorded a completed handoff for a book run that had never begun — and the
+forwarded intake would not have satisfied the target's own entry gate anyway.
+
+**The route is now acknowledgement-based.** `aa_director.py` forwards the intake
+to the target's own intake-accept command, reads the receipt from **that
+process's stdout** rather than from a file that could be pre-planted, and honours
+it only when the digest the target signed equals the sha256 of the bytes this
+process forwarded. `route.json` records the truth in four states, with an
+explicit `accepted` boolean:
+
+| route | meaning |
+|---|---|
+| `book-routed` | the target accepted; its receipt is attached |
+| `book-rejected` | the target was consulted and REFUSED; its own `AF-BK-*` reasons are carried through |
+| `book-pending` | the target is present but could not be consulted — no accept command, launch failure, timeout, unparseable answer, or a receipt bound to different bytes |
+| `book-parked` | no Book skill on this box |
+
+**New on the target side:** `53-book-writer/scripts/bw_intake_accept.py`. It
+decides acceptance with **Skill 53's own fail-closed gate**
+(`prove_bw_intake.evaluate`, handoff mode) — never a re-implementation of it —
+and mints a receipt bound to the forwarded bytes. Exit 0 accepted · 2 rejected ·
+3 usage/IO. A failed receipt persist is a hard error, never a quiet acceptance.
+
+**The exit code is unchanged.** Every `version=book` outcome is still the hard
+stop, exit 4; the 40-stage brand pipeline stays structurally unreachable for a
+book intake. What changed is that the durable route no longer claims a handoff
+that did not happen.
+
+**Both columns, measured on the branch** with
+`tests/unit/book-routing-requires-a-receipt.test.py` (hermetic, staged skill
+trees in a tempdir):
+
+    aa_director.py at origin/main  ->   3 passed,  9 failed
+        an incomplete intake was recorded "book-routed"
+        a Skill 53 with NO accept command was recorded "book-routed"
+        a fake target claiming acceptance for OTHER bytes was recorded "book-routed"
+    aa_director.py fixed           ->  12 passed,  0 failed
+
+`52-avatar-alchemist/AA-GATE-HASHES.json` re-pinned for the changed
+`scripts/aa_director.py`; `aa_gate_integrity_check.py --check` PASS on all 11
+pinned gates, and `aa_director.py --self-test` still exits 0.
+
+New CI guard: `.github/workflows/book-routing-receipt-guard.yml`.
+Skill 52 `1.5.2 -> 1.5.3`; Skill 53 `1.1.5 -> 1.1.6`.
+
+Finding T0-28. Work item A23.
+
+---
+
 ## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
 
 **T2-07 — three documented entry points named a path that does not exist.**
