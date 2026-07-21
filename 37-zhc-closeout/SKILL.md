@@ -224,7 +224,7 @@ The renderer lives in `templates/workforce-org-chart/`. See its README for detai
 
 ## Security Note
 
-The Notion page tree is created in the **client's own workspace**, using the client's own `NOTION_API_TOKEN`. We never write to Trevor's Notion. The agent never logs the token — only `${NOTION_API_TOKEN:0:8}...` if a token snippet ever shows up in log output.
+The Notion page tree is created in the **client's own workspace**, using the client's own `NOTION_API_TOKEN`. We never write to Trevor's Notion. The agent never logs the token, and never logs a prefix, suffix or any other substring of it: credential state is reported as `SET` or `NOT-SET` and nothing else. A prefix is still credential material, and terminal transcripts, agent logs and shell history retain every character printed.
 
 The KIE.AI prompts include the company name, owner name, and department list. These are NOT secrets, but treat them as the client's PII — do not include them in CHANGELOG.md examples or in PR descriptions.
 
@@ -233,8 +233,8 @@ The KIE.AI prompts include the company name, owner name, and department list. Th
 After install completes:
 - [ ] `~/.openclaw/skills/37-zhc-closeout/` exists with all listed files
 - [ ] `scripts/run-closeout.sh` is `chmod +x`
-- [ ] `KIE_API_KEY` is set on the container (`printenv KIE_API_KEY | head -c 8` returns non-empty)
-- [ ] `NOTION_API_TOKEN` is set on the container
+- [ ] `KIE_API_KEY` is set on the container — presence only, never the value: `[ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"`
+- [ ] `NOTION_API_TOKEN` is set on the container — presence only, never the value: `[ -n "$NOTION_API_TOKEN" ] && echo "NOTION_API_TOKEN: SET" || echo "NOTION_API_TOKEN: NOT-SET"`
 - [ ] At least ONE closeout trigger cron exists — `openclaw cron list | grep -E 'closeout-resume|workforce-build-resume'` (v12.34.0: triggers are REDUNDANT; the dedicated `closeout-resume` cron needs no owner chat). Run `scripts/qc-closeout-wiring.sh` to assert files+crons+state in one shot; re-run `update-skills.sh` (now backfills all pipeline crons via `scripts/ensure-pipeline-crons.sh`) if it FAILs.
 
 ## Support

@@ -99,13 +99,15 @@ curl -X POST "https://services.leadconnectorhq.com/conversations/messages" \
 
 Here is a complete test sequence you can run to verify everything is connected properly:
 
-**Test 1 - Check that credentials exist:**
+**Test 1 - Check that credentials exist (presence only — never print a value):**
 ```bash
-echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..."
-echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
+[ -n "$GOHIGHLEVEL_API_KEY" ] && echo "GOHIGHLEVEL_API_KEY: SET" || echo "GOHIGHLEVEL_API_KEY: NOT-SET"
+[ -n "$GOHIGHLEVEL_LOCATION_ID" ] && echo "GOHIGHLEVEL_LOCATION_ID: SET" || echo "GOHIGHLEVEL_LOCATION_ID: NOT-SET"
 ```
 
-Expected output: You should see the first 10 characters of your API key and your full Location ID. If either is blank, your credentials are not loaded. Go back to INSTALL.md Step 2.
+Expected output: both lines report `SET`. If either reports `NOT-SET`, your credentials are not loaded. Go back to INSTALL.md Step 2.
+
+Never echo, print or `head` the PIT or the Location ID itself. A prefix is still credential material, and terminal transcripts, agent logs and shell history retain every character printed.
 
 **Test 2 - Test API connection:**
 ```bash

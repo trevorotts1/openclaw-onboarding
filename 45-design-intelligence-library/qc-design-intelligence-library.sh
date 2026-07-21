@@ -5,6 +5,9 @@
 # Top-level repo-owned library files: README.md, INDEX.md (empty seed), DEPARTMENT-BUILD-BRIEF.md (org-builder brief).
 # Client data = {ID}_{name}.md style cards and personal-photo-shoot/{client}/ identity folders ONLY.
 # Category _RULES.md are repo-owned system files and are NEVER client data.
+#
+# PREREQUISITE: python3. Every coded gate this script exercises is python3, so an
+# unavailable runtime is a hard failure, not a skip — see section 6c.
 
 set -e
 
@@ -113,10 +116,44 @@ while IFS= read -r d; do
   ((client_data_count++)) || true
 done < <(find "$LIBRARY_DIR/personal-photo-shoot" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)
 
+# A positive count is NOT automatically a defect. A box that has this skill
+# installed legitimately owns style cards and identity folders (the two-zone
+# contract in INSTALL.md). What must NEVER happen is client identity material
+# being COMMITTED, because a committed file is what ships fleet-wide to every
+# other client's box.
+#
+# SCOPING — why this discriminates on committedness, not on directory location:
+# a location test ("am I in a git checkout / am I under ~/.openclaw/skills?")
+# cannot tell the repository apart from an installed box. Measured read-only on
+# 2026-07-21: 6 of 30 reachable boxes run this skill from a git clone of this
+# repository rooted at <home>/.openclaw/skills, with this very QC script tracked
+# in that clone. A location test would hard-fail those 6 boxes the moment they
+# wrote a style card. Committedness has no such ambiguity: a box-authored card
+# is untracked and never ships; a tracked card ships to everyone.
+committed_client_data=()
+for item in "${client_data_files[@]}"; do
+  # `git ls-files` lists a path only if git tracks it (committed, or staged in
+  # the index). Empty output — including "not a git repository" on an installed
+  # box without git — means the path is box-owned and goes nowhere.
+  tracked="$(git -C "$LIBRARY_DIR" ls-files -- "$item" 2>/dev/null || true)"
+  if [[ -n "$tracked" ]]; then
+    committed_client_data+=("$item")
+  fi
+done
+
 if [[ $client_data_count -eq 0 ]]; then
-  echo "  ✓ No committed client data (style cards, identity profiles) — good"
+  echo "  ✓ No client data present (style cards, identity profiles) — good"
+elif [[ ${#committed_client_data[@]} -gt 0 ]]; then
+  echo "  ✗ FAIL: ${#committed_client_data[@]} client-data path(s) are COMMITTED to version control."
+  echo "         One client's identity material must never ship inside the fleet-wide library."
+  for item in "${committed_client_data[@]}"; do
+    echo "      - ${item#$LIBRARY_DIR/}"
+  done
+  echo "         Untrack them (git rm -r --cached <path>) before this gate can pass."
+  exit 1
 else
-  echo "  ⚠ Warning: $client_data_count potential client-data file(s)/folder(s) found (expected only if the skill is already installed on a box):"
+  echo "  ✓ $client_data_count client-data path(s) present but NOT committed"
+  echo "    (box-owned; expected when the skill is installed on a box):"
   for item in "${client_data_files[@]}"; do
     echo "      - ${item#$LIBRARY_DIR/}"
   done
@@ -179,14 +216,26 @@ trap - EXIT
 # 6c. Validator gate self-tests (SK1-54/55/56): the coded gates were opt-in and
 # previously exercised by NO test. Assert each subcommand's exit-code contract on
 # fixtures so a regression (e.g. the "sales" archetype gap, or the fail-closed consent
-# gate) fails QC. Requires python3 (the gates need it on-box at runtime anyway).
+# gate) fails QC.
+#
+# python3 is a HARD PREREQUISITE of this skill, not an optional extra: every
+# coded gate (route-check, prompt-caps, consent-check) is python3, and the
+# consent gate is the control that refuses a minor's identity material. If the
+# runtime is missing these self-tests cannot run, and a gate that certifies PASS
+# having tested nothing is worse than no gate — so a missing runtime is a hard
+# failure, never a skip. Availability measured read-only across the fleet on
+# 2026-07-21: python3 present on 30 of 30 reachable boxes (6 boxes unreachable).
 echo ""
 echo "[QC] diu_validator.py gate self-tests..."
 VALIDATOR="$SCRIPT_DIR/scripts/diu_validator.py"
 if [[ ! -f "$VALIDATOR" ]]; then
   echo "  ✗ MISSING: scripts/diu_validator.py"; exit 1
 elif ! command -v python3 >/dev/null 2>&1; then
-  echo "  ⚠ python3 unavailable — skipping gate self-tests (gates run on-box at runtime)"
+  echo "  ✗ FAIL: python3 unavailable — it is a REQUIRED prerequisite of Skill 45."
+  echo "         The coded gates (route-check, prompt-caps, consent-check) are python3."
+  echo "         Without the runtime this script would report PASS having tested none of them."
+  echo "         Install python3 on this box, then re-run this QC."
+  exit 1
 else
   GATE_TMP="$(mktemp -d)"
   trap 'rm -rf "$GATE_TMP"' EXIT

@@ -17,13 +17,16 @@ This contract ensures style cards and client identity profiles survive skill re-
 
 ### Step 1: Verify Skill 07 (Kie.ai) is installed
 
+Check that the credential is PRESENT. Never print it — this command reports
+`SET` or `NOT-SET` and emits no characters of the value.
+
 ```bash
-openclaw config get env.vars.KIE_API_KEY
+[ -n "$(openclaw config get env.vars.KIE_API_KEY 2>/dev/null | tr -d '[:space:]' | sed 's/^null$//')" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"
 ```
 
-**If you see a key:** proceed to Step 2.
+**If you see `KIE_API_KEY: SET`:** proceed to Step 2.
 
-**If you see null or "not set":** Skill 07 is not yet installed or the key is not configured. 
+**If you see `KIE_API_KEY: NOT-SET`:** Skill 07 is not yet installed or the key is not configured. 
 - Run Skill 07 first: `bash $OC_ROOT/skills/07-kie-setup/install.sh`
 - Then return to this installer.
 
