@@ -37,7 +37,7 @@ python scripts/multi_clip_assembly.py \
   vacation/day2.mp4 \
   vacation/day3.mp4 \
   --transition fade \
-  --music upbeat \
+  --music audio/upbeat.mp3 \
   --output vacation_montage.mp4
 ```
 
@@ -47,6 +47,7 @@ Using the product showcase template:
 
 ```bash
 # Create product data file
+# Prerequisites: the listed images and audio/upbeat.mp3 must already exist.
 cat > product_data.json << 'EOF'
 {
   "product_name": "EcoBottle Pro",
@@ -59,7 +60,7 @@ cat > product_data.json << 'EOF'
   ],
   "price": "$29.99",
   "call_to_action": "Order Now at ecobottle.com",
-  "music": "upbeat",
+  "music": "audio/upbeat.mp3",
   "duration": 30
 }
 EOF
@@ -96,26 +97,25 @@ python scripts/text_to_video.py "Product logo reveal with dramatic lighting" \
 # Step 4: Assemble with transitions and music
 python scripts/multi_clip_assembly.py \
   intro.mp4 feature1.mp4 feature2.mp4 outro.mp4 \
-  --transition zoom_in \
-  --music epic \
+  --transition fade \
+  --music audio/epic.mp3 \
   --output product_launch.mp4
 ```
 
 ### Promotional Social Video
 
 ```bash
-python scripts/template_video.py social_post --data << 'EOF'
+# Prerequisite: audio/upbeat.mp3 must already exist.
+cat > promotional_social.json << 'EOF'
 {
   "platform": "instagram",
   "headline": "Summer Sale!",
   "subheadline": "Up to 50% Off Everything",
-  "background": "videos/summer_bg.mp4",
-  "text_animations": ["bounce", "slide", "fade"],
   "duration": 15,
-  "music": "upbeat",
-  "cta": "Shop Now →"
+  "music": "audio/upbeat.mp3"
 }
 EOF
+python scripts/template_video.py social_post --data promotional_social.json
 ```
 
 ---
@@ -131,7 +131,7 @@ Create vertical short-form content:
 python scripts/image_to_video.py photo.jpg \
   --motion ken_burns \
   --duration 5 \
-  --resolution 1080x1920 \
+  --resolution 1080p \
   --output reel.mp4
 
 # Add trending audio
@@ -145,7 +145,7 @@ python scripts/add_music.py reel.mp4 \
 ```bash
 # Create from script
 python scripts/script_to_video.py shorts_script.txt \
-  --format vertical \
+  --quality social \
   --output shorts.mp4
 ```
 
@@ -154,21 +154,17 @@ Script format (`shorts_script.txt`):
 SCENE 1: [Bold text "3 Tips for Better Sleep" on gradient background]
 TEXT: 3 Tips for Better Sleep
 DURATION: 2s
-BGM: calm
 
 SCENE 2: [Dark bedroom with soft lighting]
 TEXT: 1. Keep it cool (65°F)
-VOICEOVER: First, keep your bedroom cool around 65 degrees
 DURATION: 3s
 
 SCENE 3: [Person putting phone away]
 TEXT: 2. No screens 1hr before bed
-VOICEOVER: Second, avoid screens one hour before bedtime
 DURATION: 3s
 
 SCENE 4: [Peaceful meditation scene]
 TEXT: 3. Try meditation
-VOICEOVER: And third, practice meditation to calm your mind
 DURATION: 3s
 
 SCENE 5: [Subscribe animation]
@@ -179,22 +175,17 @@ DURATION: 2s
 ### LinkedIn Professional Content
 
 ```bash
-python scripts/template_video.py social_post --data << 'EOF'
+# Prerequisite: audio/corporate.mp3 must already exist.
+cat > linkedin_post.json << 'EOF'
 {
   "platform": "linkedin",
   "headline": "5 Leadership Lessons",
-  "bullet_points": [
-    "Lead by example",
-    "Communicate clearly",
-    "Empower your team",
-    "Embrace failure",
-    "Never stop learning"
-  ],
-  "style": "corporate",
+  "subheadline": "Lead by example, communicate clearly, and empower your team.",
   "duration": 45,
-  "music": "corporate"
+  "music": "audio/corporate.mp3"
 }
 EOF
+python scripts/template_video.py social_post --data linkedin_post.json
 ```
 
 ---
@@ -204,7 +195,8 @@ EOF
 ### Tutorial Video
 
 ```bash
-python scripts/template_video.py tutorial --data << 'EOF'
+# Prerequisite: audio/calm.mp3 must already exist.
+cat > tutorial_data.json << 'EOF'
 {
   "title": "Python Basics: Variables",
   "instructor": "Jane Smith",
@@ -212,12 +204,11 @@ python scripts/template_video.py tutorial --data << 'EOF'
     {
       "heading": "What are Variables?",
       "content": "Variables are containers for storing data values.",
-      "visual": "animated_diagram",
       "duration": 30
     },
     {
       "heading": "Creating Variables",
-      "code": "x = 5\nname = 'John'",
+      "content": "Assign a value with syntax such as x = 5 or name = 'Ada'.",
       "duration": 45
     },
     {
@@ -226,9 +217,10 @@ python scripts/template_video.py tutorial --data << 'EOF'
       "duration": 60
     }
   ],
-  "music": "calm"
+  "music": "audio/calm.mp3"
 }
 EOF
+python scripts/template_video.py tutorial --data tutorial_data.json
 ```
 
 ### Online Course Promo
@@ -240,11 +232,14 @@ for i in {1..5}; do
     --duration 3 --output course_clip_$i.mp4
 done
 
-# Assemble with voiceover
+# Assemble, then attach the required audio tracks
 python scripts/multi_clip_assembly.py course_clip_*.mp4 \
-  --transition slide \
+  --transition fade \
+  --output course_preview_silent.mp4
+
+python scripts/add_music.py course_preview_silent.mp4 \
   --voiceover narration/course_intro.mp3 \
-  --music calm \
+  --music audio/calm.mp3 \
   --output course_preview.mp4
 ```
 
@@ -261,8 +256,7 @@ python scripts/multi_clip_assembly.py \
   demos/dashboard.mp4 \
   demos/features.mp4 \
   --transition fade \
-  --text "Easy Setup|Powerful Dashboard|Rich Features" \
-  --music corporate \
+  --music audio/corporate.mp3 \
   --output app_demo.mp4
 ```
 
@@ -270,7 +264,8 @@ python scripts/multi_clip_assembly.py \
 
 ```bash
 # Generate product showcase from images
-python scripts/template_video.py product_showcase --data << 'EOF'
+# Prerequisite: every product image listed below must already exist.
+cat > product_showcase.json << 'EOF'
 {
   "product_name": "Smart Home Hub",
   "images": [
@@ -279,7 +274,6 @@ python scripts/template_video.py product_showcase --data << 'EOF'
     "product/in_use.jpg",
     "product/app_interface.jpg"
   ],
-  "voiceover_script": "Meet the Smart Home Hub...",
   "features": [
     "Voice Control",
     "Automated Routines",
@@ -289,6 +283,7 @@ python scripts/template_video.py product_showcase --data << 'EOF'
   "duration": 60
 }
 EOF
+python scripts/template_video.py product_showcase --data product_showcase.json
 ```
 
 ---
@@ -298,43 +293,35 @@ EOF
 ### Audiogram for Social Media
 
 ```bash
-python scripts/template_video.py podcast_clip --data << 'EOF'
+# Prerequisite: podcast/episode45_clip.mp3 must already exist.
+cat > podcast_clip.json << 'EOF'
 {
   "audio_file": "podcast/episode45_clip.mp3",
   "quote_text": "The key to success is consistency, not intensity.",
   "speaker": "Guest Name",
   "podcast_name": "The Business Show",
-  "episode": 45,
-  "visualizer_style": "waveform",
-  "background": "gradient_blue",
   "duration": 30
 }
 EOF
+python scripts/template_video.py podcast_clip --data podcast_clip.json
 ```
 
-### Full Episode with Chapters
+### Full Episode from a Script
 
 ```bash
-python scripts/script_to_video.py podcast_script.txt --chapters
+python scripts/script_to_video.py podcast_script.txt --quality web --output podcast_video.mp4
 ```
 
-Script with chapters:
+Script format:
 ```
-CHAPTER: Introduction
 SCENE 1: [Show logo animation]
-AUDIO: podcast/intro.mp3
 DURATION: 15s
 
-CHAPTER: Main Topic
 SCENE 2: [Display chapter title card]
 TEXT: Marketing Strategies 2024
-AUDIO: podcast/segment1.mp3
 DURATION: 600s
-VISUAL: animated_waveform
 
-CHAPTER: Key Takeaways
 SCENE 3: [Bullet points appearing]
-AUDIO: podcast/outro.mp3
 DURATION: 60s
 ```
 
@@ -371,12 +358,11 @@ Thank you for your attention!
 ### Personalized Sales Videos
 
 ```bash
-# Batch create personalized videos
-for customer in customers/*.csv; do
+# Render pre-personalized scripts (one script per recipient)
+for script in personalized_scripts/*.txt; do
   python scripts/avatar_video.py \
-    --script templates/sales_pitch.txt \
-    --variables "$customer" \
-    --output "personalized/$(basename $customer .csv).mp4"
+    --script "$script" \
+    --output "personalized/$(basename "$script" .txt).mp4"
 done
 ```
 
@@ -399,8 +385,7 @@ for script in "$INPUT_DIR"/*.txt; do
   
   python scripts/script_to_video.py "$script" \
     --output "$OUTPUT_DIR/$filename.mp4" \
-    --quality web \
-    --template social_post
+    --quality web
 done
 
 echo "Batch processing complete!"
@@ -441,17 +426,17 @@ ffmpeg -i "$VIDEO" -vf "crop=iw:iw/2,scale=1280:640" twitter_version.mp4
 ### A/B Testing Different Intros
 
 ```bash
-# Create 3 versions of intro
-for i in {1..3}; do
-  python scripts/text_to_video.py "Version $i: Product intro variation" \
-    --style "variation_$i" \
-    --output "ab_test/intro_v$i.mp4"
+# Create versions using supported style presets
+for style in cinematic animated realistic; do
+  python scripts/text_to_video.py "Product intro variation in $style style" \
+    --style "$style" \
+    --output "ab_test/intro_$style.mp4"
   
   # Combine with common content
   python scripts/multi_clip_assembly.py \
-    "ab_test/intro_v$i.mp4" \
+    "ab_test/intro_$style.mp4" \
     content/main_message.mp4 \
-    --output "ab_test/final_v$i.mp4"
+    --output "ab_test/final_$style.mp4"
 done
 ```
 
@@ -469,7 +454,7 @@ YEAR=$(date +%Y)
 
 1. **Start Small**: Test with 5-10 second clips before creating full videos
 2. **Use Templates**: Templates ensure consistency across your brand
-3. **Preview First**: Use `--preview` flag to check before final export
+3. **Preview Transitions**: Use `python scripts/transitions.py --preview fade` before final assembly
 4. **Organize Assets**: Keep images, audio, and scripts in structured folders
 5. **Batch Similar Tasks**: Group operations to save time
 6. **Quality vs Speed**: Use `--quality web` for drafts, `--quality cinema` for final

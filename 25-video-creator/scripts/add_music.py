@@ -4,6 +4,8 @@ Add Music and Audio
 Add background music, mix audio levels, and apply audio effects.
 """
 
+from __future__ import annotations
+
 import argparse
 import os
 import sys
@@ -41,6 +43,12 @@ def add_music(video_path: Path, music_source: Optional[str] = None,
     
     if not video_path.exists():
         raise FileNotFoundError(f"Video not found: {video_path}")
+    if music_source and genre:
+        raise ValueError("Choose either music_source or genre, not both")
+    if music_source and not Path(music_source).is_file():
+        raise FileNotFoundError(f"Requested music file not found: {music_source}")
+    if voiceover and not voiceover.is_file():
+        raise FileNotFoundError(f"Requested voiceover file not found: {voiceover}")
     
     print(f"🎵 Adding music to video...")
     print(f"   Video: {video_path}")
@@ -64,17 +72,20 @@ def add_music(video_path: Path, music_source: Optional[str] = None,
     if music_source or genre:
         music = load_music(music_source, genre, video_duration, loop)
         
-        if music:
-            # Apply effects
-            music = music.fx(volumex, volume)
-            music = music.fx(audio_fadein, fade_in)
-            music = music.fx(audio_fadeout, fade_out)
-            
-            audio_tracks.append(music)
-            print(f"   Added music (volume: {volume})")
+        if music is None:
+            source = music_source or f"genre '{genre}'"
+            raise RuntimeError(f"Requested music is unavailable: {source}")
+
+        # Apply effects
+        music = music.fx(volumex, volume)
+        music = music.fx(audio_fadein, fade_in)
+        music = music.fx(audio_fadeout, fade_out)
+
+        audio_tracks.append(music)
+        print(f"   Added music (volume: {volume})")
     
     # Add voiceover
-    if voiceover and voiceover.exists():
+    if voiceover:
         voice = AudioFileClip(str(voiceover))
         voice = voice.fx(volumex, voice_volume)
         voice = voice.fx(audio_fadein, 0.2).fx(audio_fadeout, 0.5)
@@ -82,8 +93,8 @@ def add_music(video_path: Path, music_source: Optional[str] = None,
         print(f"   Added voiceover (volume: {voice_volume})")
     
     if not audio_tracks:
-        print("⚠️  No audio to add")
-        return video_path
+        video.close()
+        raise RuntimeError("No requested audio could be attached")
     
     # Mix audio
     if len(audio_tracks) == 1:
@@ -140,8 +151,7 @@ def load_music(music_source: Optional[str], genre: Optional[str],
                 music = concatenate_audioclips([music] * loops)
             
             return music.subclip(0, duration)
-        else:
-            print(f"   Music file not found: {music_source}")
+        raise FileNotFoundError(f"Requested music file not found: {music_source}")
     
     # Try genre
     if genre:
@@ -287,11 +297,12 @@ def remove_audio(video_path: Path, output: Optional[Path] = None) -> Path:
 def main():
     parser = argparse.ArgumentParser(description='Add music and audio to video')
     parser.add_argument('video', type=Path, help='Input video file')
-    parser.add_argument('--music', '-m', help='Background music file')
-    parser.add_argument('--genre', '-g', 
-                       choices=['upbeat', 'corporate', 'calm', 'epic', 
-                               'lofi', 'inspirational', 'tense'],
-                       help='Music genre from library')
+    music_selection = parser.add_mutually_exclusive_group()
+    music_selection.add_argument('--music', '-m', help='Background music file')
+    music_selection.add_argument('--genre', '-g',
+                                 choices=['upbeat', 'corporate', 'calm', 'epic',
+                                          'lofi', 'inspirational', 'tense'],
+                                 help='Music genre from library')
     parser.add_argument('--volume', type=float, default=0.3,
                        help='Music volume 0-1 (default: 0.3)')
     parser.add_argument('--fade-in', type=float, default=1.0,
