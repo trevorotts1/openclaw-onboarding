@@ -1,3 +1,90 @@
+## [v20.0.84]  -  2026-07-21  -  TWO SILENT-SUCCESS CHECKERS: a run with ZERO deliverables recorded "done", and an impersonation guard blind to the inbox preheader
+
+Both defects are the same class — a checker reporting a result other than
+reality, with the false result made **durable**.
+
+### ONB-46-001 (BLOCKER) — Skill 46 wrote a permanent `done` marker for a run that produced nothing
+
+`46-kie-callback-relay/box-kv-poller.js::_kieRecordInfoFallback` hard-coded
+
+    const marker = { taskId, submitId, status: 'done', resultUrls: safeUrls, code: 200, ... }
+
+on a Kie `state === 'success'`, **no matter how many result URLs survived the host
+allowlist** — including zero. The callback-KV path roughly 90 lines above already
+enforced exactly the rule the fallback skipped:
+
+    // Fix 35: a 200 with zero surviving (allowlisted) URLs is NOT a success -- there is
+    // no file to download. Report it as an allowlist rejection, never as 'done'.
+
+So the correct behaviour was already written, in the same file, and one branch
+ignored it. The marker is durable (`.kie/done/<taskId>.json`, create-if-absent),
+so a generation run that produced nothing was recorded complete **permanently**:
+on resume `_readDoneMarker` short-circuits the slide as already finished and
+nothing downstream can tell the difference.
+
+**Fix — the rule now has ONE implementation, not two branches of one rule.**
+Both paths call the new `KieKvPoller._resolveOutcome(rawUrls, code, taskId, source)`;
+neither decides its own status, so they cannot diverge again. A provider
+"success" with zero allowlisted URLs is `failed`, announced with a LOUD, distinctly
+tagged `console.error` — `EMPTY-RESULT` when the provider carried nothing,
+`ALLOWLIST-MISMATCH` when it carried URLs that were all dropped. Never a silent
+skip; never `done`.
+
+`kie-slide-submitter.js` gets the same treatment for the second copy of "is this
+slide really done?": the fresh-wait path and the resume path both call the new
+`_reconcileDoneStatus(status, localPath, slideId)`, so a marker left on disk by a
+pre-fix poller is reconciled to `failed` instead of re-entering a run as a success.
+
+### ONB-50-001 (HIGH) — the email impersonation guard never scanned the preheader
+
+`50-email-engine/tools/prove-email.py` built the `AF-EMAIL-PERSONA-NAMED` scan as
+
+    scan = " ".join([body] + (subjects if isinstance(subjects, list) else []))
+
+`previews` — a **required, recipient-visible** field, the inbox **preheader** that
+a recipient reads before opening — was never scanned. A real public figure's name
+placed there cleared the prover, and the pass was then sealed into the signed
+process certificate: the impersonation happened AND the certificate attested it
+had been checked.
+
+**The audit found five unscanned free-text fields, not one.** The guard now scans
+`COPY_FIELDS = subjects, previews, body, ctas, sections, disruptive_elements,
+founder_name`. `founder_name` becomes the recipient-visible **From line**
+(`attributes.fromName` in `tools/emit_build_plan.py`); it had been covered only
+*transitively*, via the signature gate forcing the founder name into the scanned
+body. The failure message now names the offending field.
+
+**A new drift gate stops the next one.** `_schema_copy_coverage()` re-derives every
+free-text property from `schema/email.schema.json` and FAILS if one is in neither
+`COPY_FIELDS` nor `COPY_EXEMPT_FIELDS`. A guard written against an outdated schema
+is exactly what produced this defect. If the schema cannot be read the check
+**reports that and fails** — it never counts as a pass. `_flatten_text` json-dumps
+an unrecognised value shape rather than dropping it, for the same reason.
+
+### Tests
+
+- `46-kie-callback-relay/test/security.test.mjs` — six new sections (57 assertions
+  total). **10 of them fail against the pre-fix tree**, including
+  `zero downloadable URLs -> failed, never 'done' (got done)` and
+  `the DURABLE marker on disk is not 'done' (got done)`.
+- `50-email-engine/tools/prove-email.py --self-test` — seven new fixtures covering a
+  persona name in `previews`, `ctas`, `sections`, `disruptive_elements`, the
+  sequence-level `founder_name` and `subjects`, plus the schema-vs-guard coverage
+  gate. Against the pre-fix prover **five of the seven fields are unguarded**.
+- Anti-false-positive controls in both: a fallback WITH a real allowlisted URL must
+  still resolve `done`, the KV path must be unregressed, and clean copy in every
+  scanned field must still PASS. A "fix" that simply fails everything cannot pass.
+- The impersonation fixtures register an obviously-synthetic sentinel name into the
+  guard's own pattern list rather than committing a real public figure's name.
+- New CI workflow `.github/workflows/silent-success-guards.yml` runs both suites,
+  asserts the outcome rule has exactly one implementation, proves the schema drift
+  gate really fails on an unguarded field and really reports an unreadable schema,
+  and re-checks `ENGINE-PIN.sha256`.
+
+### Also
+
+- Re-pinned `50-email-engine/ENGINE-PIN.sha256` over the changed enforcement set.
+- Skill versions: 46 `1.1.1 -> 1.1.2`, 50 `1.1.3 -> 1.1.4`.
 ## [v20.0.83]  -  2026-07-21  -  THE VERTICAL GUARD BLAMED THE WRONG PACK: a department declared by TWO packs was judged by whichever one the naming map listed LAST
 
 `vertical-derivation-guard.py`'s `dept_pack_index()` built a `dept_id -> pack`

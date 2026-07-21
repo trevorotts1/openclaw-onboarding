@@ -16,7 +16,9 @@
 #   * Buyer-type -> email# -> framework map (12-email) + landing-page map (10-email).
 #   * Sequence lengths — landing=10, high-ticket/buyer-type=12; slots contiguous.
 #   * Objective validity — exactly one of the 4 objectives.
-#   * Persona-style validity + NEVER named/quoted.
+#   * Persona-style validity + NEVER named/quoted — in ANY recipient-visible
+#     field (subjects, previews/preheader, body, ctas, sections, disruptive
+#     elements, founder/From name), not just the body.
 #   * Subject count (exactly 2), preview count (C&F=1 / HT=2), subject char band,
 #     first-name placement, word band (150-300, 3-B < 150), CTA count, formatting,
 #     founder signature (no placeholder), high-ticket disruptive element.
@@ -41,6 +43,7 @@
 """Fail-closed deterministic floor prover for the Email Engine (Skill 50)."""
 
 import argparse
+import contextlib
 import json
 import re
 import sys
@@ -143,6 +146,30 @@ _PERSONA_NAME_RES = [re.compile(p, re.I) for p in (
     r"\bt\.?\s*d\.?\s+jakes\b", r"\btony\s+robbins\b", r"\btoni\s+morrison\b",
 )]
 
+# ---- impersonation-guard scope (ONB-50-001) ---------------------------------
+# EVERY field on an email record whose text a RECIPIENT can read. The
+# AF-EMAIL-PERSONA-NAMED guard scans ALL of them: a real person's name in ANY of
+# these reaches a human, so a guard that scanned only body+subjects left the
+# inbox PREHEADER (`previews`) — a REQUIRED, recipient-visible field — unguarded,
+# and the pass was then sealed into the signed process certificate.
+#
+# Which of these actually reach a recipient is provable from the deploy emitter
+# tools/emit_build_plan.py: subjects -> subject + ab.subject_b, previews ->
+# ab.preview_text (the preheader), body -> attributes.body/html, founder_name ->
+# attributes.fromName (the From line). ctas / sections / disruptive_elements are
+# free-text COPY on the same contract and are scanned too — an unscanned free-text
+# field is exactly how this defect happened.
+COPY_FIELDS = (
+    "subjects", "previews", "body", "ctas",
+    "sections", "disruptive_elements", "founder_name",
+)
+# Free-text schema properties that are deliberately NOT recipient copy. Listed
+# explicitly (with the reason) so a NEW free-text field cannot land in the
+# contract unscanned and unnoticed — see _schema_copy_coverage().
+COPY_EXEMPT_FIELDS = {
+    "sequence_id": "internal catalog id; never rendered to a recipient",
+}
+
 
 # ---- small helpers ----------------------------------------------------------
 def _nonempty_str(v):
@@ -179,6 +206,87 @@ def _render_subject(subject):
 
 def _has_persona_name(text):
     return any(rx.search(text or "") for rx in _PERSONA_NAME_RES)
+
+
+def _flatten_text(value):
+    """Flatten one field's value into scannable strings.
+
+    Fail-closed on SHAPE: a value the guard does not recognise is json-dumped
+    rather than skipped, so an unexpected shape can never make the guard quietly
+    scan nothing and report a pass it never performed.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value]
+    if isinstance(value, (list, tuple)):
+        out = []
+        for item in value:
+            out.extend(_flatten_text(item))
+        return out
+    return [json.dumps(value, default=str, ensure_ascii=False)]
+
+
+def _persona_named_fields(email, resolved=None):
+    """Names of the RECIPIENT-VISIBLE fields that carry a persona person's name.
+
+    ONB-50-001: this scans every field in COPY_FIELDS — not just body+subjects —
+    so a real public figure's name in the inbox preheader (`previews`), a CTA, a
+    framework section, a disruptive element or the From name is caught. `resolved`
+    supplies already-resolved values (e.g. the founder name inherited from the
+    sequence level) so an inherited value is scanned too.
+    """
+    resolved = resolved or {}
+    hits = []
+    for field in COPY_FIELDS:
+        value = resolved[field] if field in resolved else email.get(field)
+        if any(_has_persona_name(t) for t in _flatten_text(value)):
+            hits.append(field)
+    return hits
+
+
+def _schema_copy_coverage(schema_path=None):
+    """Re-derive the recipient-visible field list from schema/email.schema.json.
+
+    Returns (ok, message). A free-text property (string, or array-of-string,
+    with no closed enum) that is in neither COPY_FIELDS nor COPY_EXEMPT_FIELDS is
+    a COVERAGE GAP — a guard written against an outdated schema is precisely how
+    ONB-50-001 happened. If the schema cannot be read this returns ok=False with
+    the reason: a check that cannot run REPORTS that, it never counts as a pass.
+    """
+    path = Path(schema_path) if schema_path else \
+        Path(__file__).resolve().parent.parent / "schema" / "email.schema.json"
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:                      # unreadable/missing/invalid
+        return False, "schema coverage check COULD NOT RUN (%s): %s" % (path, exc)
+
+    props = schema.get("properties")
+    if not isinstance(props, dict) or not props:
+        return False, "schema coverage check COULD NOT RUN: no properties in %s" % path
+
+    free_text = set()
+    for name, spec in props.items():
+        if not isinstance(spec, dict):
+            continue
+        if spec.get("type") == "string" and "enum" not in spec:
+            free_text.add(name)
+        elif spec.get("type") == "array":
+            items = spec.get("items") or {}
+            if isinstance(items, dict) and items.get("type") == "string" and "enum" not in items:
+                free_text.add(name)
+
+    unguarded = sorted(free_text - set(COPY_FIELDS) - set(COPY_EXEMPT_FIELDS))
+    if unguarded:
+        return False, ("impersonation guard does not scan free-text schema field(s): %s "
+                       "(add to COPY_FIELDS, or to COPY_EXEMPT_FIELDS with a reason)"
+                       % ", ".join(unguarded))
+    missing = sorted(set(COPY_FIELDS) - set(props))
+    if missing:
+        return False, ("COPY_FIELDS names field(s) absent from the schema: %s "
+                       "(the guard is scanning a stale contract)" % ", ".join(missing))
+    return True, "guard covers every free-text schema field (%d scanned, %d exempt)" % (
+        len(COPY_FIELDS), len(COPY_EXEMPT_FIELDS))
 
 
 def _sequence_type(obj):
@@ -310,11 +418,16 @@ def evaluate_email(email, ctx):
         fails.append((AF_PERSONA_INVALID,
                       "%s: persona_style %r is not one of the 12 canonical styles" % (tag, persona)))
 
-    # --- persona NEVER named/quoted (AF-EMAIL-PERSONA-NAMED) ---
-    scan = " ".join([body] + (subjects if isinstance(subjects, list) else []))
-    if _has_persona_name(scan):
+    # --- persona NEVER named/quoted, in ANY recipient-visible field
+    #     (AF-EMAIL-PERSONA-NAMED). ONB-50-001: this used to scan only body +
+    #     subjects, so a real public figure's name in the inbox preheader
+    #     (`previews`) cleared the prover and was sealed into the signed process
+    #     certificate. The scope is now COPY_FIELDS, re-derived from the schema. ---
+    named_fields = _persona_named_fields(email, {"founder_name": founder})
+    if named_fields:
         fails.append((AF_PERSONA_NAMED,
-                      "%s: a persona person is named/quoted in the copy (tone only, never the name)" % tag))
+                      "%s: a persona person is named/quoted in %s "
+                      "(tone only, never the name)" % (tag, "/".join(named_fields))))
 
     # --- subject count exactly 2 (AF-EMAIL-SUBJECT-COUNT) ---
     if not (isinstance(subjects, list) and len(subjects) == 2 and all(_nonempty_str(s) for s in subjects)):
@@ -633,6 +746,22 @@ def _emit(source, kind, failures, as_json):
 # =============================================================================
 FOUNDER = "Morgan Vale"
 
+# The impersonation fixtures must NOT ship a real public figure's name in a field
+# this repo then carries around. They register an obviously-synthetic sentinel
+# into the guard's own pattern list instead, so the assertion still exercises the
+# REAL guard on a name the guard is configured to treat as a match.
+SENTINEL_PERSONA = "Fauxsimile Testpersona"
+_SENTINEL_RE = re.compile(r"\bfauxsimile\s+testpersona\b", re.I)
+
+
+@contextlib.contextmanager
+def _sentinel_persona_registered():
+    _PERSONA_NAME_RES.append(_SENTINEL_RE)
+    try:
+        yield
+    finally:
+        _PERSONA_NAME_RES.remove(_SENTINEL_RE)
+
 
 def _make_body(target_words, founder=FOUNDER, cta="[Book your strategic assessment ->]", extra_emojis=0):
     fwords = len(_words(founder))
@@ -786,6 +915,42 @@ def self_test():
     e = _valid_email(); e["body"] = e["body"].replace(FOUNDER, "As Tony Robbins says, " + FOUNDER)
     check_fail("persona-named", e, AF_PERSONA_NAMED)
 
+    # ---- ONB-50-001: the impersonation guard covers EVERY recipient-visible
+    #      field, not just body + subjects. `previews` is the inbox preheader —
+    #      the one line a recipient reads before opening — and it was unscanned.
+    #      An obviously-synthetic sentinel name stands in for a real public figure.
+    with _sentinel_persona_registered():
+        e = _valid_email(); e["previews"] = ["Why %s changed everything" % SENTINEL_PERSONA]
+        check_fail("persona-named-previews", e, AF_PERSONA_NAMED)
+
+        e = _valid_email(); e["ctas"] = ["[Get the %s playbook ->]" % SENTINEL_PERSONA]
+        check_fail("persona-named-ctas", e, AF_PERSONA_NAMED)
+
+        e = _valid_email(); e["framework"] = "pas"
+        e["sections"] = ["Problem", "%s agitates it" % SENTINEL_PERSONA, "Solution"]
+        check_fail("persona-named-sections", e, AF_PERSONA_NAMED)
+
+        hg = _ht12_ledger()
+        hg["emails"][0]["disruptive_elements"] = ["%s Value Inversion" % SENTINEL_PERSONA]
+        check_fail("persona-named-disruptive", hg, AF_PERSONA_NAMED)
+
+        # founder_name becomes the recipient-visible From line (emit_build_plan ->
+        # attributes.fromName), including when INHERITED from the sequence level.
+        lg = _landing_ledger(); lg["founder_name"] = SENTINEL_PERSONA
+        check_fail("persona-named-from-line", lg, AF_PERSONA_NAMED)
+
+        e = _valid_email(); e["subjects"] = ["{{contact.first_name}}, what %s never says out loud"
+                                             % SENTINEL_PERSONA,
+                                             "Everyone booked it but you last call now"]
+        check_fail("persona-named-subjects", e, AF_PERSONA_NAMED)
+
+        # NO false positive: clean copy in every one of those same fields passes.
+        e = _valid_email()
+        e["previews"] = ["Tease the core value without repeating the subject"]
+        e["ctas"] = ["[Read the full story ->]"]
+        e["sections"] = ["Problem", "Agitate", "Solution"]
+        check_pass("persona-clean-all-fields", e)
+
     e = _valid_email(); e["subjects"] = ["only one subject line here now"]
     check_fail("subject-count", e, AF_SUBJECT_COUNT)
 
@@ -885,6 +1050,21 @@ def self_test():
         {"role": "user", "kind": "answer", "msg_id": "u1"},
     ]
     check_pass("intake-ledger-oneblock", it2)
+
+    # ---- ONB-50-001 coverage gate: the guard's field list is re-derived from
+    #      schema/email.schema.json. A new free-text field on the contract that
+    #      nobody added to COPY_FIELDS fails HERE, loudly — a guard written
+    #      against an outdated schema is what produced this defect. A schema that
+    #      cannot be read REPORTS that; it never counts as a pass.
+    cov_ok, cov_msg = _schema_copy_coverage()
+    ok = ok and cov_ok
+    print("  [%s] COVERAGE  %-22s -> %s" % ("PASS" if cov_ok else "MISS",
+                                            "schema-vs-guard", cov_msg))
+    # The guard must be scanning MORE than the two fields it used to.
+    scope_ok = {"body", "subjects", "previews"} <= set(COPY_FIELDS)
+    ok = ok and scope_ok
+    print("  [%s] COVERAGE  %-22s -> COPY_FIELDS = %s"
+          % ("PASS" if scope_ok else "MISS", "previews-in-scope", ", ".join(COPY_FIELDS)))
 
     print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1

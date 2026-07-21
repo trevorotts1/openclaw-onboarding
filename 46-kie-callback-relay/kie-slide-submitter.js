@@ -372,13 +372,7 @@ class KieSlideSubmitter {
         localPath = await this._downloadFirst(done.resultUrls, slide.targetPath);
       }
 
-      // Fix 35: 'done' means a real file on disk. A status of 'done' with no downloadable
-      // file (download failed, or a 200 that yielded zero allowlisted URLs) is a failure --
-      // never report a slide complete when there is nothing rendered on disk.
-      if (status === 'done' && !(localPath && fs.existsSync(localPath))) {
-        console.warn(`[kie-submit] slide ${slide.slideId}: status 'done' but no file on disk -- marking failed`);
-        status = 'failed';
-      }
+      status = this._reconcileDoneStatus(status, localPath, slide.slideId);
 
       // Update registry with the reconciled final status
       const reg = this._readRegistry(slide.submitId) || {};
@@ -390,10 +384,14 @@ class KieSlideSubmitter {
                status, resultUrls: done.resultUrls, localPath, code: done.code };
     }));
 
-    // Merge already-done slides
+    // Merge already-resolved slides. ONB-46-001: these come straight off a DURABLE
+    // marker, so they are reconciled through the SAME rule as the fresh-wait path --
+    // a marker left on disk by a pre-fix poller ('done' with zero result URLs) must
+    // not re-enter the run as a success just because it was written earlier.
     const alreadyDone = submitted.map(s => ({
       slideId: s.slideId, submitId: s.submitId, taskId: s.taskId,
-      status: s.done.status, resultUrls: s.done.resultUrls || [],
+      status: this._reconcileDoneStatus(s.done.status, s.targetPath, s.slideId),
+      resultUrls: s.done.resultUrls || [],
       localPath: s.targetPath, code: s.done.code
     }));
 
@@ -404,6 +402,25 @@ class KieSlideSubmitter {
     console.log(`[kie-submit] deck complete: ${success} done, ${failed} failed/timeout`);
 
     return allResults;
+  }
+
+  /**
+   * THE SINGLE "is this slide really done?" RULE (fix 35 + ONB-46-001).
+   *
+   * 'done' means a real rendered file on disk. A status of 'done' with no downloadable
+   * file -- download failed, or a provider "success" that yielded zero allowlisted URLs,
+   * including a marker written by a pre-ONB-46-001 poller and still durable on this box --
+   * is a FAILURE. Both the fresh-wait path and the resume/already-resolved path reconcile
+   * through here, so the two branches of this one rule cannot diverge.
+   *
+   * @returns {'done'|'failed'|string} the reconciled status (never silently upgraded)
+   */
+  _reconcileDoneStatus(status, localPath, slideId) {
+    if (status === 'done' && !(localPath && fs.existsSync(localPath))) {
+      console.warn(`[kie-submit] slide ${slideId}: status 'done' but no file on disk -- marking failed`);
+      return 'failed';
+    }
+    return status;
   }
 
   // --- Rate limiter (token bucket, 20 per 10s) ---

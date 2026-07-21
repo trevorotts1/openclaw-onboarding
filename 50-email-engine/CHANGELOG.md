@@ -1,5 +1,43 @@
 # Changelog — Skill 50 (email-engine)
 
+## 1.1.4 — 2026-07-21 — ONB-50-001: the impersonation guard was blind to the inbox preheader
+
+### Fixed
+- **`prove-email.py` — `AF-EMAIL-PERSONA-NAMED` never scanned `previews`.** The
+  guard built its scan string from `body` + `subjects` only, so a real public
+  figure's name placed in the **preheader — the one line a recipient reads before
+  opening the email** — cleared the prover and was then attested as checked on the
+  signed process certificate. `previews` is a REQUIRED, recipient-visible field
+  (`schema/email.schema.json`) and is emitted to the deploy plan as
+  `ab.preview_text` by `tools/emit_build_plan.py`.
+- **The whole gap is closed, not just the named field.** The audit found FIVE
+  unscanned free-text fields, not one. The guard now scans `COPY_FIELDS` =
+  `subjects, previews, body, ctas, sections, disruptive_elements, founder_name`.
+  `founder_name` is the recipient-visible **From line**
+  (`attributes.fromName`); it was previously covered only *transitively* (the
+  signature gate forces the founder into the body, and the body was scanned) —
+  it is now scanned directly, including when inherited from the sequence level.
+- **The failure names the field**: `a persona person is named/quoted in previews`
+  rather than a generic "in the copy", so the violation is actionable.
+- **Shape can no longer cause a silent skip**: `_flatten_text` json-dumps a value
+  whose shape the guard does not recognise instead of dropping it, so the guard
+  can never report a pass on a field it did not actually read.
+
+### Added
+- **`_schema_copy_coverage()` — a drift gate on the guard's own field list.** The
+  self-test re-derives every free-text property from `schema/email.schema.json`
+  and FAILS if one is in neither `COPY_FIELDS` nor `COPY_EXEMPT_FIELDS` (which
+  records `sequence_id` with its reason). A guard written against an outdated
+  schema is exactly what produced ONB-50-001. If the schema cannot be read the
+  check REPORTS that and fails — it never counts as a pass.
+- **Seven new self-test fixtures** covering a persona name in `previews`, `ctas`,
+  `sections`, `disruptive_elements`, the sequence-level `founder_name` and
+  `subjects`, plus a clean-copy control that must NOT trip. The impersonation
+  fixtures register an obviously-synthetic sentinel name into the guard's own
+  pattern list rather than shipping a real public figure's name.
+- Re-pinned `ENGINE-PIN.sha256` over the changed enforcement set
+  (`prove-email.py` + `run_email_engine.py` + `EMAIL-MANIFEST.json`).
+
 ## 1.1.3 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
 
 ### Fixed

@@ -1,0 +1,183 @@
+name: silent-success guards (ONB-46-001 / ONB-50-001)
+
+# THE TWO DEFECTS THIS LOCKS. Both are silent-success class: a checker reported a
+# result other than reality, and the false result was made DURABLE.
+#
+# ONB-46-001 (BLOCKER) — 46-kie-callback-relay/box-kv-poller.js
+#   `_kieRecordInfoFallback` hard-coded `status: 'done'` on a provider
+#   `state === 'success'` no matter how many result URLs survived the host
+#   allowlist. A run that produced NOTHING was permanently recorded complete, and
+#   the marker is durable, so the resume path counted the slide finished forever
+#   after. The callback-KV path ~90 lines above already enforced exactly the rule
+#   the fallback skipped. Both paths now resolve through ONE `_resolveOutcome`.
+#
+# ONB-50-001 (HIGH) — 50-email-engine/tools/prove-email.py
+#   The AF-EMAIL-PERSONA-NAMED impersonation guard built its scan from
+#   `body` + `subjects` only. A real public figure's name in `previews` — the
+#   inbox PREHEADER, a required recipient-visible field — cleared the prover and
+#   was then attested as checked on the signed process certificate. The guard now
+#   scans COPY_FIELDS, and the self-test re-derives that list from
+#   schema/email.schema.json so a new free-text field cannot enter the contract
+#   unguarded.
+#
+# ANTI-FALSE-POSITIVE CONTROLS (a "fix" that just makes everything fail must not
+# pass this workflow): the Skill 46 suite asserts a fallback WITH a real
+# allowlisted URL still resolves `done` and the KV path is unregressed; the
+# Skill 50 self-test asserts clean copy in every scanned field still PASSES.
+#
+# Hermetic: stubbed fetch/KV, temp workspaces, stdlib-only Python. No network,
+# no live Kie, no live Worker, no fleet box is touched.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "46-kie-callback-relay/**"
+      - "50-email-engine/tools/prove-email.py"
+      - "50-email-engine/schema/email.schema.json"
+      - "50-email-engine/EMAIL-MANIFEST.json"
+      - ".github/workflows/silent-success-guards.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "46-kie-callback-relay/**"
+      - "50-email-engine/tools/prove-email.py"
+      - "50-email-engine/schema/email.schema.json"
+      - "50-email-engine/EMAIL-MANIFEST.json"
+      - ".github/workflows/silent-success-guards.yml"
+
+jobs:
+  onb-46-001:
+    name: "ONB-46-001: a run with zero deliverables is never marked done"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run the Skill 46 security + outcome-rule suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          node 46-kie-callback-relay/test/security.test.mjs
+
+      - name: The outcome rule has exactly ONE implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          node - <<'NODE'
+          const fs = require('fs');
+          const f  = '46-kie-callback-relay/box-kv-poller.js';
+          // Strip comments so only executable code is measured.
+          const bare = fs.readFileSync(f, 'utf8')
+            .replace(/\/\*[\s\S]*?\*\//g, '')
+            .replace(/^[ \t]*\/\/.*$/gm, '');
+          const delegations = (bare.match(/this\._resolveOutcome\(/g) || []).length;
+          const literals    = (bare.match(/status:\s*'done'/g) || []).length;
+          if (delegations !== 2) {
+            console.error(`FAIL: expected 2 delegations to _resolveOutcome, found ${delegations}`);
+            process.exit(1);
+          }
+          if (literals !== 1) {
+            console.error(`FAIL: expected exactly 1 executable status:'done' literal ` +
+                          `(inside _resolveOutcome), found ${literals} — a path re-inlined the rule`);
+            process.exit(1);
+          }
+          console.log('OK: both resolution paths delegate; one status:\'done\' literal, inside the shared rule');
+          NODE
+
+  onb-50-001:
+    name: "ONB-50-001: the impersonation guard covers every recipient-visible field"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the prover
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile 50-email-engine/tools/prove-email.py
+          echo "OK: prove-email.py compiles"
+
+      - name: Run the prover self-test (includes the schema-vs-guard coverage gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 50-email-engine/tools/prove-email.py --self-test
+
+      - name: The guard scans previews, and the schema drift gate really fails
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import importlib.util, json, pathlib, re, sys, tempfile
+
+          root = pathlib.Path("50-email-engine")
+          spec = importlib.util.spec_from_file_location("pe", root / "tools/prove-email.py")
+          pe = importlib.util.module_from_spec(spec)
+          spec.loader.exec_module(pe)
+
+          fail = 0
+
+          # 1. previews is in scope at all.
+          if "previews" not in pe.COPY_FIELDS:
+              print("FAIL: previews is not in COPY_FIELDS"); fail = 1
+
+          # 2. The guard FIRES on a name in previews (synthetic sentinel; no real
+          #    public figure's name is committed anywhere in this repo's fixtures).
+          pe._PERSONA_NAME_RES.append(re.compile(r"\bfauxsimile\s+testpersona\b", re.I))
+          e = pe._valid_email()
+          e["previews"] = ["Why Fauxsimile Testpersona changed everything"]
+          codes = [c for c, _ in pe.evaluate(e)]
+          if pe.AF_PERSONA_NAMED not in codes:
+              print("FAIL: a persona name in previews did NOT trip the guard:", codes); fail = 1
+
+          # 3. ANTI-FALSE-POSITIVE: clean copy still passes.
+          if pe.evaluate(pe._valid_email()):
+              print("FAIL: clean copy tripped the guard"); fail = 1
+
+          # 4. The schema drift gate must REALLY fail on an unguarded new field --
+          #    a gate that cannot fail is the defect class this workflow exists for.
+          schema = json.loads((root / "schema/email.schema.json").read_text())
+          schema["properties"]["postscript"] = {"type": "string", "description": "synthetic"}
+          with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False) as fh:
+              json.dump(schema, fh); tmp = fh.name
+          ok, msg = pe._schema_copy_coverage(tmp)
+          if ok:
+              print("FAIL: the coverage gate PASSED an unguarded free-text field"); fail = 1
+          else:
+              print("OK: coverage gate fails on an unguarded field ->", msg)
+
+          # 5. A schema it cannot read REPORTS that; it never counts as a pass.
+          ok, msg = pe._schema_copy_coverage("/nonexistent/email.schema.json")
+          if ok:
+              print("FAIL: the coverage gate PASSED with an unreadable schema"); fail = 1
+          else:
+              print("OK: unreadable schema is reported, not passed ->", msg)
+
+          sys.exit(fail)
+          PY
+
+      - name: Enforcement hash pin matches the pinned head
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 50-email-engine
+          computed="$(cat tools/prove-email.py run_email_engine.py EMAIL-MANIFEST.json | sha256sum | awk '{print $1}')"
+          pinned="$(tr -d ' \t\n' < ENGINE-PIN.sha256)"
+          if [ "$computed" != "$pinned" ]; then
+            echo "FAIL: ENGINE-PIN.sha256 drift — computed $computed, pinned $pinned"
+            echo "Fix: re-pin after any edit to prove-email.py / run_email_engine.py / EMAIL-MANIFEST.json"
+            exit 1
+          fi
+          echo "OK: enforcement hash matches the pinned head ($pinned)"
