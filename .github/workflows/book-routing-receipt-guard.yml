@@ -1,0 +1,73 @@
+name: book-routing-receipt-guard
+
+# T0-28 — a book handoff was recorded as ROUTED because a DIRECTORY existed.
+#
+# 52-avatar-alchemist/scripts/aa_director.py::_version_gate decided
+#     route = "book-routed" if "AF-AV-BOOK-SKILL-MISSING" not in codes else "book-parked"
+# from a glob for a sibling 53-*book* folder. No target was ever invoked, Skill 53
+# never saw the intake, and the durable <run-dir>/route.json that downstream
+# automation reads recorded a completed handoff for a run that had never begun.
+#
+# `book-routed` now requires an acceptance receipt returned by the target's own
+# intake-accept command (53-*book*/scripts/bw_intake_accept.py), read from that
+# process's STDOUT rather than from a file that could be pre-planted, and honoured
+# only when the digest the target signed matches the sha256 of the forwarded bytes.
+#
+# Guarded by tests/unit/book-routing-requires-a-receipt.test.py, which drives all
+# five outcomes: accepted, rejected, pending (no accept command), pending (a
+# receipt bound to different bytes), and parked (no Skill 53 at all).
+#
+# Hermetic: staged skill trees in a tempdir. No network, no box state.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "52-avatar-alchemist/scripts/aa_director.py"
+      - "52-avatar-alchemist/AA-GATE-HASHES.json"
+      - "53-book-writer/scripts/bw_intake_accept.py"
+      - "53-book-writer/scripts/prove_bw_intake.py"
+      - "tests/unit/book-routing-requires-a-receipt.test.py"
+      - ".github/workflows/book-routing-receipt-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "52-avatar-alchemist/scripts/aa_director.py"
+      - "52-avatar-alchemist/AA-GATE-HASHES.json"
+      - "53-book-writer/scripts/bw_intake_accept.py"
+      - "53-book-writer/scripts/prove_bw_intake.py"
+      - "tests/unit/book-routing-requires-a-receipt.test.py"
+      - ".github/workflows/book-routing-receipt-guard.yml"
+
+jobs:
+  book-routing-receipt-guard:
+    name: Book routing needs a target receipt (52 -> 53), not a directory
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Compile the caller, the target and the suite
+        run: |
+          set -euo pipefail
+          python3 -m py_compile 52-avatar-alchemist/scripts/aa_director.py
+          python3 -m py_compile 53-book-writer/scripts/bw_intake_accept.py
+          python3 -m py_compile tests/unit/book-routing-requires-a-receipt.test.py
+          echo "compile OK"
+
+      - name: Skill 53 — intake-accept self-test (accept, reject, wrong version, unreadable)
+        run: python3 53-book-writer/scripts/bw_intake_accept.py --self-test
+
+      - name: Skill 52 — the pinned-gate hashes still match the shipped files
+        run: python3 52-avatar-alchemist/scripts/aa_gate_integrity_check.py --check
+
+      - name: Routing decision requires the target's receipt (all five outcomes)
+        run: python3 tests/unit/book-routing-requires-a-receipt.test.py
+
+      - name: Skill 52 — foreman self-test (dispatch loop unchanged)
+        run: python3 52-avatar-alchemist/scripts/aa_director.py --self-test

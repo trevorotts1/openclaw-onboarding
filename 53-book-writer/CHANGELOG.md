@@ -1,5 +1,25 @@
 # Changelog — Skill 53 (book-writer)
 
+## 1.1.6 — 2026-07-21 — T0-28: this skill can now ACKNOWLEDGE a routed intake
+
+### Added
+- **`scripts/bw_intake_accept.py`** — the target side of the 52 -> 53 route, and the
+  reason `book-routed` can mean something. Skill 52 previously decided a book intake was
+  routed because a sibling `53-*book*` directory existed; this skill was never consulted.
+  This command is that consultation: it reads the forwarded intake, decides acceptance
+  with **this skill's own fail-closed gate** (`prove_bw_intake.evaluate`, handoff mode —
+  never a re-implementation of it), and emits a machine-readable receipt on stdout.
+- The receipt carries the sha256 of the **exact forwarded bytes**, this skill's name and
+  version, the decider, and a receipt id, so a caller that forwards one payload cannot
+  satisfy itself with a receipt minted for another. `--receipt-out` also persists it; a
+  failed persist is a hard error (exit 3), never a quiet acceptance.
+- Refusals are reasoned, not silent: `AF-BK-ACCEPT-UNREADABLE` (unparseable bytes),
+  `AF-BK-ACCEPT-WRONG-VERSION` (a brand intake, which belongs to Skill 52), and
+  `AF-BK-ACCEPT-REJECTED` carrying the underlying `AF-BK-*` codes.
+- Exit 0 accepted · 2 rejected · 3 usage/IO. `--self-test` covers all five outcomes and
+  proves two different payloads never share a digest.
+
+
 ## 1.1.5 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
 
 ### Fixed

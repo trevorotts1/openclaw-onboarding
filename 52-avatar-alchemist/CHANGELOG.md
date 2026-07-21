@@ -1,5 +1,39 @@
 # Changelog — Skill 52 (Avatar Alchemist)
 
+## 1.5.3 — 2026-07-21 — T0-28: book routing is acknowledgement-based, not directory-based
+
+### Fixed
+- **`book-routed` was written because a DIRECTORY existed.** `scripts/aa_director.py::_version_gate`
+  decided `route = "book-routed" if "AF-AV-BOOK-SKILL-MISSING" not in codes else "book-parked"`,
+  and that code came from `aa_intake_gate.verify(intake, book_present)` where `book_present`
+  was a glob for a sibling `53-*book*` folder. **No target was ever invoked.** Skill 53
+  never saw the intake. The durable `<run-dir>/route.json` that downstream automation reads
+  recorded a completed handoff for a book run that had never begun — and the forwarded
+  intake would not have satisfied the target's own entry gate anyway.
+- `aa_director.py` now forwards the intake to the target's own intake-accept command
+  (`53-*book*/scripts/bw_intake_accept.py`), reads the receipt from **that process's
+  stdout** rather than from a file that could be pre-planted, and honours it only when the
+  digest the target signed equals the sha256 of the bytes this process forwarded.
+- `route.json` now records the truth in four states, with an explicit `accepted` boolean:
+  `book-routed` (target accepted, receipt attached), `book-rejected` (target refused,
+  its own `AF-BK-*` reasons carried through), `book-pending` (target present but not
+  consultable — no accept command, launch failure, timeout, unparseable answer, or a
+  receipt bound to different bytes), `book-parked` (no Book skill on this box).
+- The exit code is unchanged: every `version=book` outcome remains the hard stop, exit 4.
+  What changed is that the durable route no longer claims a handoff that did not happen.
+- `AA-GATE-HASHES.json` re-pinned for the changed `scripts/aa_director.py`.
+
+### Proof
+`tests/unit/book-routing-requires-a-receipt.test.py`, hermetic (staged skill trees in a
+tempdir). Measured on the branch:
+
+    aa_director.py at origin/main  ->   3 passed,  9 failed
+        an incomplete intake was recorded "book-routed"
+        a Skill 53 with NO accept command was recorded "book-routed"
+        a fake target claiming acceptance for other bytes was recorded "book-routed"
+    aa_director.py fixed           ->  12 passed,  0 failed
+
+
 ## 1.5.0 — 2026-07-05 — Wave-2 floor alignment + repairs default flip (train W2-52-avatar)
 
 Train **W2-52-avatar**. Fix IDs: **FIX-XC-04g** (R2), **FIX-AVATAR-04** (R3), **FIX-AVATAR-05**.
