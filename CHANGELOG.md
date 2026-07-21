@@ -1,3 +1,32 @@
+## [v20.0.92]  -  2026-07-21  -  SKILL 63: AGNES IMAGE 2.1 FLASH ENDPOINT REFERENCE
+
+New skill `63-agnes-image` — the endpoint reference for the Agnes AI synchronous
+image model. Agents told to "use the Agnes image skill" now have the exact call:
+text-to-image and image-to-image via one `POST https://apihub.agnes-ai.com/v1/images/generations`
+(model `agnes-image-2.1-flash`) that returns the finished image in the SAME
+response (`data[0].url` or `data[0].b64_json`) — no task polling, unlike KIE.ai
+(Skill 07) or the separate Agnes VIDEO endpoint. The reference documents the
+required `model`/`prompt`/`size` fields, the `1K`/`2K`/`3K`/`4K` size tiers
+crossed with aspect `ratio`, the full ratio×tier output-dimension table (16:9 2K
+= `2624x1472`), and the two gotchas (`response_format` lives in `extra_body`, not
+the top level; image-to-image needs no `tags`). Rate limits are keyed off the
+account tier with HTTP 429 as the live ceiling (unverified vendor cells are
+flagged, never hardcoded as fabricated numbers), and the skill REFERENCES the
+existing fleet credential `AGNES_AI_API_KEY` (SET/NOT-SET only — value never
+printed). Ships the full kie-setup file set (SKILL/INSTRUCTIONS/EXAMPLES/INSTALL/
+CORE_UPDATES/QC + full reference + `.skill` package), a `PREREQS.json` using the
+enforceable `{"skill":...}` check form (not the silently-ignored `skillId`
+form), and a `qc-agnes-image.sh` that fails closed on a corrupted reference doc
+(proven to exit 1 when the endpoint line is removed).
+
+Wired so onboarding actually verifies it: added to `OC_WAVE2_SKILLS` in
+`lib-onboarding-state.sh` (independent API integrations, alongside its KIE.ai
+sibling) and to the matching Wave 2 prompt in the watchdog, keeping the
+wave-list-integrity gate green (canonical list == watchdog list). README skill
+counts (62→63 total, 57→58 active) + inventory row and install.sh prose counts
+updated so the SKILLS-COUNT consistency gate stays green. Version rolled to
+v20.0.92.
+
 ## [v20.0.91]  -  2026-07-21  -  A14 / T0-18: THE P4->P5 FUNNEL HANDOFF NOW BINDS THE VERIFIED VERDICT
 
 Merge of PR #712 (agent/a14-handoff-binds-verification). `06-ghl-install-pages/tools/v2_dispatcher.py`

@@ -1,0 +1,29 @@
+{
+  "skill": "63-agnes-image",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 63."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 63."
+    },
+    {
+      "id": "agnes-api-key",
+      "type": "credential",
+      "label": "Agnes AI API Key (existing fleet credential)",
+      "check": { "envVar": "AGNES_AI_API_KEY" },
+      "severity": "required",
+      "satisfy": "AGNES_AI_API_KEY is the EXISTING fleet credential the agnes / agnes-2.0-flash model already uses against apihub.agnes-ai.com/v1. Confirm it is SET (never print the value). If absent, ask the operator to add AGNES_AI_API_KEY to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.AGNES_AI_API_KEY \"$AGNES_AI_API_KEY\". Do NOT mint a new key."
+    }
+  ]
+}
