@@ -720,20 +720,44 @@ def _link_ledger(job_id: str, job_key: str, ledger_dir: str) -> None:
     _atomic_write(_jobindex_path(job_id), json.dumps(payload))
 
 
+class LedgerLinkageError(Exception):
+    """The job index EXISTS but its ledger linkage cannot be resolved.
+
+    T0-22: this used to be indistinguishable from "no ledger is configured".
+    Both returned None, `_sync_ledger` returned immediately, no warning was
+    emitted, and the advance reported success — while the intake ledger, which
+    is the atomic-claim mechanism, was never updated. A job that never had an
+    index is a legitimate no-op; a job whose index is present but malformed,
+    unreadable, or missing its job_key is a BROKEN LINKAGE and must be loud."""
+
+
 def _resolve_ledger_file(job_id: str) -> str | None:
+    """Return the ledger path, or None when no ledger is configured for this job.
+
+    Raises LedgerLinkageError when the linkage exists but is broken."""
     idx = _jobindex_path(job_id)
     if not os.path.exists(idx):
+        # Not configured: this job never came through the webhook intake layer.
         return None
     try:
         with open(idx, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        job_key = data.get("job_key")
-        ledger_dir = data.get("ledger_dir") or resolve_ledger_dir()
-        if not job_key:
-            return None
-        return os.path.join(ledger_dir, job_key + ".json")
-    except (OSError, ValueError):
-        return None
+    except (OSError, ValueError) as exc:
+        raise LedgerLinkageError(
+            f"job index {idx} exists but could not be read or parsed: {exc}"
+        ) from exc
+    if not isinstance(data, dict):
+        raise LedgerLinkageError(
+            f"job index {idx} exists but does not contain an object"
+        )
+    job_key = data.get("job_key")
+    if not job_key:
+        raise LedgerLinkageError(
+            f"job index {idx} exists but carries no job_key; the ledger record "
+            f"for this job cannot be located"
+        )
+    ledger_dir = data.get("ledger_dir") or resolve_ledger_dir()
+    return os.path.join(ledger_dir, job_key + ".json")
 
 
 def _atomic_write(path: str, text: str) -> None:
@@ -750,14 +774,28 @@ def _atomic_write(path: str, text: str) -> None:
         pass
 
 
-def _sync_ledger(job_id: str, status: str, queue_state: str) -> None:
-    """Best-effort lockstep: mirror the SQLite status onto the intake-ledger record
-    the webhook layer created. SQLite is the queryable source of truth; the ledger
-    is the atomic-claim mechanism. Missing ledger is non-fatal (warn to stderr).
-    Read-modify-write preserves fields the webhook layer owns."""
-    ledger_file = _resolve_ledger_file(job_id)
+def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
+    """Mirror the SQLite status onto the intake-ledger record the webhook layer
+    created. SQLite is the queryable source of truth; the ledger is the atomic-claim
+    mechanism. Read-modify-write preserves fields the webhook layer owns.
+
+    Returns one of:
+      "not_configured" — no job index for this job; nothing to mirror (a no-op the
+                         skill documents, e.g. a job that never came through the
+                         webhook intake layer);
+      "synced"         — the ledger record was written;
+      "broken"         — the linkage exists but could not be resolved or written.
+
+    T0-22: every one of those three used to be an unconditional `return None`,
+    so a broken linkage produced no update, no warning, and an advance that
+    reported success. The caller now consumes this value."""
+    try:
+        ledger_file = _resolve_ledger_file(job_id)
+    except LedgerLinkageError as exc:
+        sys.stderr.write(f"warning: ledger linkage broken for {job_id}: {exc}\n")
+        return "broken"
     if not ledger_file:
-        return
+        return "not_configured"
     if queue_state == "aged_out":
         ledger_state = "aged_out"
     else:
@@ -772,7 +810,11 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> None:
         record["sqlite_job_id"] = job_id
         _atomic_write(ledger_file, json.dumps(record, indent=2))
     except (OSError, ValueError) as exc:
-        sys.stderr.write(f"warning: ledger sync skipped for {job_id}: {exc}\n")
+        sys.stderr.write(
+            f"warning: ledger sync FAILED for {job_id} at {ledger_file}: {exc}\n"
+        )
+        return "broken"
+    return "synced"
 
 
 # ---------------------------------------------------------------------------
@@ -954,8 +996,24 @@ def cmd_advance(conn, args):
         conn.execute("ROLLBACK")
         raise
 
-    _sync_ledger(args.job_id, to_status, _load_job(conn, args.job_id)["queue_state"])
-    _emit(args, {"job_id": args.job_id, "from": frm, "to": to_status})
+    # T0-22: the ledger is the atomic-claim mechanism. A broken linkage means the
+    # claim record is now out of step with the state machine, so the advance is
+    # reported with what actually happened and the command exits non-zero. The
+    # SQLite transition itself is already committed and is reported honestly —
+    # this does not claim the transition did not happen, it refuses to call the
+    # advance complete while its claim record is unreconciled.
+    ledger_sync = _sync_ledger(
+        args.job_id, to_status, _load_job(conn, args.job_id)["queue_state"]
+    )
+    _emit(args, {"job_id": args.job_id, "from": frm, "to": to_status,
+                 "ledger_sync": ledger_sync})
+    if ledger_sync == "broken":
+        raise LedgerLinkageError(
+            f"the {frm} -> {to_status} transition for {args.job_id} was committed to "
+            f"SQLite, but its intake-ledger record could not be resolved or written. "
+            f"The atomic-claim record is out of step with the state machine; this "
+            f"advance is NOT complete. Repair the job index / ledger, then re-run."
+        )
 
 
 def cmd_output(conn, args):

@@ -451,7 +451,19 @@ fi
 # Measure the integrated loudness of the master with EBU R128 and confirm it lands
 # inside the doctrine band (with a small measurement tolerance).
 R128_LOG="$WORKDIR/r128_verify.log"
-ffmpeg -hide_banner -nostats -i "$OUTPUT_MP3" -af ebur128 -f null - </dev/null 2>"$R128_LOG" || true
+# T0-20: the measurement's exit status IS part of the verdict. This was
+# `... || true`, so a failed ffmpeg run left an empty/partial log, the parse
+# returned NA, the NA branch below only warned, and the script reached
+# "SUCCESS, mastered audio verified" and exited 0 — releasing an UNMEASURED
+# master to a client feed with a success record behind it. The header contract
+# at the top of this file states that exit 0 means duration AND loudness are
+# sane, so an unmeasurable master must fail, not warn.
+R128_RC=0
+ffmpeg -hide_banner -nostats -i "$OUTPUT_MP3" -af ebur128 -f null - </dev/null 2>"$R128_LOG" || R128_RC=$?
+if [[ "$R128_RC" -ne 0 ]]; then
+  err "loudness measurement failed (ffmpeg -af ebur128 exit ${R128_RC}); the master is UNMEASURED and cannot be reported verified. Log: $R128_LOG"
+  exit 1
+fi
 MEASURED_LUFS="$(python3 - "$R128_LOG" <<'PYEOF'
 import re, sys
 raw = open(sys.argv[1], "r", encoding="utf-8", errors="replace").read()
@@ -462,7 +474,10 @@ PYEOF
 )"
 
 if [[ "$MEASURED_LUFS" == "NA" ]]; then
-  warn "could not measure integrated loudness of the master; ffprobe duration check passed"
+  # T0-20: an unparseable summary is an UNMEASURED master, not a measured-and-fine
+  # one. A duration check says nothing about loudness.
+  err "could not parse an integrated-loudness summary from the EBU R128 measurement; the master is UNMEASURED and cannot be reported verified. Log: $R128_LOG"
+  exit 1
 else
   if python3 - "$MEASURED_LUFS" "$LUFS_VERIFY_LOW" "$LUFS_VERIFY_HIGH" <<'PYEOF'
 import sys

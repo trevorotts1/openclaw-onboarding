@@ -1,0 +1,133 @@
+name: podcast-engine-fail-closed-guard
+
+# Four silent-failure paths in the podcast engine (T0-19, T0-20, T0-21, T0-22).
+# Each was a place the engine continued past a genuine error and reported success.
+#
+#   T0-19 — podbean_publish.sh's isolation guard had ONE hard stop and THREE
+#     paths that warned and carried on holding the ACCOUNT-WIDE token. On a
+#     shared account hosting several channels that could place a client-facing
+#     episode on a channel never proven to be the target. Guarded by
+#     tests/unit/podcast-engine-fail-closed.test.sh, which drives the real script
+#     through a fake curl and asserts NO episode-create request is sent in any of
+#     the four refusal cases — and that a healthy single-channel account still
+#     reaches the episode-create call, so the fix is not "refuse everything".
+#
+#   T0-20 — generate_podcast_audio.sh ran the EBU R128 measurement with `|| true`
+#     and treated an unparseable summary as a warning, then reported the master
+#     verified. Same suite, in two parts: it first proves BEHAVIOURALLY that the
+#     two conditions the fix keys on are real (ffmpeg really exits non-zero on an
+#     unmeasurable file; an empty log really parses to NA), then asserts on the
+#     shipped source that neither escape hatch survived.
+#
+#   T0-21 — the publish workflow's success branch answered the webhook in
+#     PARALLEL with the completion write, and the completion node carried
+#     continue-on-error, so a caller could be told the publish succeeded while
+#     the idempotency row that prevents a duplicate publish never landed. Guarded
+#     by tests/unit/podbean-publish-workflow-response-ordering.test.py as a graph
+#     property read with a real JSON parser.
+#     ** FLEET ACTION: a workflow file in this repository that is never imported
+#        changes nothing on the running automation host. This suite proves the
+#        FILE is right, never that the host is running it. **
+#
+#   T0-22 — podcast_state.py could not tell "no ledger configured" from "the
+#     linkage is broken"; both were silent and the advance reported success while
+#     the atomic-claim record was never updated. Guarded by
+#     tests/unit/podcast-state-ledger-linkage.test.py, which drives the REAL CLI
+#     end to end in both directions against a temp database.
+#
+# All three suites are hermetic: fake curl on PATH, scratch HOME/TMPDIR, temp
+# SQLite. No network, no Podbean account, no client data.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "58-podcast-production-engine/scripts/podbean_publish.sh"
+      - "58-podcast-production-engine/scripts/generate_podcast_audio.sh"
+      - "58-podcast-production-engine/scripts/podcast_state.py"
+      - "58-podcast-production-engine/config/n8n/podbean-publish.workflow.json"
+      - "tests/unit/podcast-engine-fail-closed.test.sh"
+      - "tests/unit/podcast-state-ledger-linkage.test.py"
+      - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - ".github/workflows/podcast-engine-fail-closed-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "58-podcast-production-engine/scripts/podbean_publish.sh"
+      - "58-podcast-production-engine/scripts/generate_podcast_audio.sh"
+      - "58-podcast-production-engine/scripts/podcast_state.py"
+      - "58-podcast-production-engine/config/n8n/podbean-publish.workflow.json"
+      - "tests/unit/podcast-engine-fail-closed.test.sh"
+      - "tests/unit/podcast-state-ledger-linkage.test.py"
+      - "tests/unit/podbean-publish-workflow-response-ordering.test.py"
+      - ".github/workflows/podcast-engine-fail-closed-guard.yml"
+  workflow_dispatch:
+
+jobs:
+  podcast-engine-fail-closed:
+    name: Channel scoping + loudness + webhook ordering + ledger linkage
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ffmpeg
+        shell: bash
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      - name: Syntax-check the scripts, their embedded Python, and the suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 58-podcast-production-engine/scripts/podbean_publish.sh
+          bash -n 58-podcast-production-engine/scripts/generate_podcast_audio.sh
+          bash -n tests/unit/podcast-engine-fail-closed.test.sh
+          python3 -m py_compile 58-podcast-production-engine/scripts/podcast_state.py
+          python3 -m py_compile tests/unit/podcast-state-ledger-linkage.test.py
+          python3 -m py_compile tests/unit/podbean-publish-workflow-response-ordering.test.py
+          python3 -c 'import json; json.load(open("58-podcast-production-engine/config/n8n/podbean-publish.workflow.json"))'
+          # `bash -n` does NOT parse heredoc bodies. The generator embeds Python
+          # in `python3 - <<PYEOF` blocks; compile each body on its own.
+          python3 - <<'EXTRACT'
+          import re, pathlib, sys
+          f = "58-podcast-production-engine/scripts/generate_podcast_audio.sh"
+          pat = re.compile(r"<<-?'?(\w+)'?")
+          lines = pathlib.Path(f).read_text().split("\n")
+          i = n = 0
+          failed = False
+          while i < len(lines):
+              m = pat.search(lines[i])
+              if m and ("python3 " in lines[i] or "python " in lines[i]):
+                  tag = m.group(1); body = []; i += 1
+                  while i < len(lines) and lines[i].strip() != tag:
+                      body.append(lines[i]); i += 1
+                  n += 1
+                  try:
+                      compile("\n".join(body), f"{f}#heredoc{n}", "exec")
+                  except SyntaxError as e:
+                      print(f"FAIL {f} heredoc#{n}: {e}"); failed = True
+              i += 1
+          print(f"compiled {n} embedded Python heredoc(s)")
+          sys.exit(1 if failed or n == 0 else 0)
+          EXTRACT
+          echo "syntax OK"
+
+      - name: T0-19 / T0-20 — channel scoping and loudness fail closed
+        shell: bash
+        timeout-minutes: 10
+        run: bash tests/unit/podcast-engine-fail-closed.test.sh
+
+      - name: T0-22 — a broken ledger linkage is not a clean advance
+        shell: bash
+        timeout-minutes: 8
+        run: python3 tests/unit/podcast-state-ledger-linkage.test.py
+
+      - name: T0-21 — the success response is downstream of the completion write
+        shell: bash
+        timeout-minutes: 5
+        run: python3 tests/unit/podbean-publish-workflow-response-ordering.test.py
