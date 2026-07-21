@@ -485,7 +485,7 @@ oc_onboarding_complete() {
 #
 # WAVE SKILL ASSIGNMENTS (mirrors the 5-wave install plan in install.sh):
 #   Wave 1 (FOUNDATION):    01, 02
-#   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,12,14,63
+#   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,12,14
 #   Wave 3 (CONTENT/SVC):   15,16,17,18,19,20,24,25,26,27,28,29,30,43
 #   (11 and 21 were archived in v12.26.0 — see "ARCHIVED skills" note below.)
 #   Wave 4 (INFRASTRUCTURE):31,36
