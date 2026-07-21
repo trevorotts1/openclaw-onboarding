@@ -365,14 +365,10 @@ class KieSlideSubmitter {
         { timeoutMs, kieApiKey: this.kieApiKey }
       );
 
-      // Download image if done and has URLs
-      let localPath = slide.targetPath;
-      let status    = done.status;
-      if (done.status === 'done' && done.resultUrls?.length && slide.targetPath) {
-        localPath = await this._downloadFirst(done.resultUrls, slide.targetPath);
-      }
-
-      status = this._reconcileDoneStatus(status, localPath, slide.slideId);
+      // Fresh wait: always re-download, because this task just completed and the
+      // result URLs are the authoritative bytes for it.
+      const { status, localPath } = await this._resolveSlideOutcome(
+        done, slide.targetPath, slide.slideId, { alwaysDownload: true });
 
       // Update registry with the reconciled final status
       const reg = this._readRegistry(slide.submitId) || {};
@@ -384,15 +380,22 @@ class KieSlideSubmitter {
                status, resultUrls: done.resultUrls, localPath, code: done.code };
     }));
 
-    // Merge already-resolved slides. ONB-46-001: these come straight off a DURABLE
-    // marker, so they are reconciled through the SAME rule as the fresh-wait path --
-    // a marker left on disk by a pre-fix poller ('done' with zero result URLs) must
-    // not re-enter the run as a success just because it was written earlier.
-    const alreadyDone = submitted.map(s => ({
-      slideId: s.slideId, submitId: s.submitId, taskId: s.taskId,
-      status: this._reconcileDoneStatus(s.done.status, s.targetPath, s.slideId),
-      resultUrls: s.done.resultUrls || [],
-      localPath: s.targetPath, code: s.done.code
+    // Merge already-resolved (RESUMED) slides. T0-58: this branch used to assign
+    // `localPath: s.targetPath` from the INTENDED path and never re-enter the
+    // download path, so a resumed run -- precisely the case where the previous run
+    // was interrupted and the file may be absent -- asserted a local path for a
+    // file that was not there. Both branches now resolve through the SAME helper:
+    // the local path comes from an existence test, and a 'done' marker whose file
+    // is missing re-enters the download path before any status is reported.
+    const alreadyDone = await Promise.all(submitted.map(async s => {
+      const { status, localPath } = await this._resolveSlideOutcome(
+        s.done, s.targetPath, s.slideId, { alwaysDownload: false });
+      return {
+        slideId: s.slideId, submitId: s.submitId, taskId: s.taskId,
+        status,
+        resultUrls: s.done.resultUrls || [],
+        localPath, code: s.done.code
+      };
     }));
 
     const allResults = [...alreadyDone, ...waitResults];
@@ -421,6 +424,55 @@ class KieSlideSubmitter {
       return 'failed';
     }
     return status;
+  }
+
+  /**
+   * THE SINGLE "what actually happened to this slide?" RULE (T0-58).
+   *
+   * Wraps _reconcileDoneStatus with the two things the resume path used to skip:
+   *
+   *   1. RECOVERY. A 'done' marker carrying result URLs whose file is not on disk
+   *      re-enters the DOWNLOAD path instead of being reported complete. A resumed
+   *      run is exactly the case where the file may be absent -- the previous run
+   *      was interrupted -- and it was the branch that skipped the check.
+   *   2. HONEST PATH. localPath is derived from an EXISTENCE TEST, never asserted
+   *      from the intended target path. A slide that produced no file reports
+   *      localPath: null, so no consumer can read an intent as an artifact.
+   *
+   * `alwaysDownload` distinguishes the two callers without changing either one's
+   * meaning: the fresh-wait path just completed a paid task and re-downloads
+   * unconditionally (unchanged behaviour); the resume path downloads only what is
+   * missing, so a complete deck costs no extra fetches.
+   *
+   * A 'done' marker with NO result URLs has nothing to recover from -- that is the
+   * pre-ONB-46-001 durable-marker case -- and reconciles to 'failed'.
+   *
+   * @returns {Promise<{status: string, localPath: string|null}>}
+   */
+  async _resolveSlideOutcome(done, targetPath, slideId, opts = {}) {
+    const marker = done || {};
+    const urls   = marker.resultUrls || [];
+    let status   = marker.status;
+    let localPath = targetPath || null;
+
+    const alreadyOnDisk = !!(targetPath && fs.existsSync(targetPath));
+    const needsFetch = status === 'done' && urls.length > 0 && !!targetPath
+      && (opts.alwaysDownload === true || !alreadyOnDisk);
+
+    if (needsFetch) {
+      if (!alreadyOnDisk && opts.alwaysDownload !== true) {
+        console.warn(`[kie-submit] slide ${slideId}: resumed marker says 'done' but ` +
+                     `${targetPath} is absent -- re-entering the download path`);
+      }
+      localPath = await this._downloadFirst(urls, targetPath);
+    }
+
+    status = this._reconcileDoneStatus(status, localPath, slideId);
+
+    // Never hand back a path to a file that is not there.
+    if (!(localPath && fs.existsSync(localPath))) localPath = null;
+
+    return { status, localPath };
   }
 
   // --- Rate limiter (token bucket, 20 per 10s) ---

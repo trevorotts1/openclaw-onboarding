@@ -40,8 +40,10 @@ if [[ -z "$INPUT" || -z "$OUTPUT" ]]; then
 fi
 
 BASENAME=$(basename "$INPUT" | sed 's/\.[^.]*$//')
-TEMP_DIR="/tmp/caption_$(date +%s)"
-mkdir -p "$TEMP_DIR"
+TEMP_DIR="$(mktemp -d "/tmp/caption_XXXXXX")"
+# The transcript gate below exits early on a caption-free transcription; clean up
+# the scratch directory on every exit path rather than only the success path.
+trap 'rm -rf "$TEMP_DIR"' EXIT
 
 echo "Transcribing audio with Whisper (model: $MODEL)..."
 whisper "$INPUT" --model "$MODEL" --output_format srt --output_dir "$TEMP_DIR"
@@ -49,13 +51,21 @@ whisper "$INPUT" --model "$MODEL" --output_format srt --output_dir "$TEMP_DIR"
 SRT_FILE="$TEMP_DIR/${BASENAME}.srt"
 
 if [[ ! -f "$SRT_FILE" ]]; then
-  echo "Error: Transcription failed"
+  echo "Error: Transcription failed" >&2
   exit 1
 fi
 
-echo "Applying caption style: $STYLE..."
-
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# T0-59: the transcription tool writes an SRT even when it recognises no speech.
+# Gate on CONTENT (timing cues + caption text), not on the file existing, so a
+# caption-free run fails here with a named error instead of reaching the burn-in
+# filter and being announced as "Created".
+# shellcheck source=lib-caption-guard.sh
+source "$SCRIPT_DIR/lib-caption-guard.sh"
+assert_srt_has_cues "$SRT_FILE" "$INPUT"
+
+echo "Applying caption style: $STYLE..."
 
 case $STYLE in
   minimal)
@@ -71,10 +81,9 @@ case $STYLE in
     python3 "$SCRIPT_DIR/animated_captions.py" --input "$INPUT" --srt "$SRT_FILE" --output "$OUTPUT"
     ;;
   *)
-    echo "Unknown style: $STYLE"
+    echo "Unknown style: $STYLE" >&2
     exit 1
     ;;
 esac
 
-rm -rf "$TEMP_DIR"
 echo "Created: $OUTPUT"

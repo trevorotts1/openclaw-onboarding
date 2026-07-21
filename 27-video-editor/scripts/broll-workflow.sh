@@ -99,14 +99,35 @@ echo "  'Abstract technology background, flowing data visualization'"
 echo "  'Urban cityscape, dynamic movement, business district'"
 echo ""
 
-# Create placeholder files for B-roll
-for i in $(seq 1 $NUM_BROLL); do
-  touch "$TEMP_DIR/broll_$i.mp4"
-done
+# T0-62: this used to `touch` a zero-byte .mp4 at every destination path and then
+# print a ready-to-run merge command pointing straight at them. A missed slot or a
+# failed generation was therefore indistinguishable from a real clip at the point
+# the merge read it. Declare the expected inputs in a MANIFEST instead — nothing is
+# created at the destination paths, so a missing clip is missing, and merge-broll.sh
+# aborts with AF-MERGE-INPUT-MISSING rather than merging an empty file.
+MANIFEST="$TEMP_DIR/broll-manifest.json"
+python3 - "$MANIFEST" "$TEMP_DIR" "$NUM_BROLL" "$INPUT" "$OUTPUT" <<'PYTHON_EOF'
+import json, sys
+manifest_path, temp_dir, num_broll, main_input, final_output = sys.argv[1:6]
+n = int(num_broll)
+json.dump({
+    "schema": "broll-workflow-expected-inputs-v1",
+    "main_video": main_input,
+    "final_output": final_output,
+    "expected_broll": [
+        {"slot": i, "path": f"{temp_dir}/broll_{i}.mp4", "status": "awaiting-generation"}
+        for i in range(1, n + 1)
+    ],
+    "note": ("These paths are DECLARED, not created. Drop the real generated clip at "
+             "each path. merge-broll.sh probes every input and refuses a missing, "
+             "zero-byte or non-video file."),
+}, open(manifest_path, "w"), indent=2)
+PYTHON_EOF
 
-echo "Place your KIE.AI-generated B-roll files here:"
+echo "Expected B-roll inputs declared in: $MANIFEST"
+echo "Place your KIE.AI-generated B-roll files at these paths (nothing is staged for you):"
 for i in $(seq 1 $NUM_BROLL); do
-  echo "  - $TEMP_DIR/broll_$i.mp4"
+  echo "  - $TEMP_DIR/broll_$i.mp4   (not yet present)"
 done
 echo ""
 
@@ -119,6 +140,15 @@ if [[ "$AUTO_INSERT" == true ]]; then
   
   BROLL_FILES=$(for i in $(seq 1 $NUM_BROLL); do echo -n "$TEMP_DIR/broll_$i.mp4,"; done | sed 's/,$//')
   
+  echo "  # rehearse first — probes every input and every timestamp, renders nothing:"
+  echo "  $SCRIPT_DIR/merge-broll.sh \\"
+  echo "    --main \"$INPUT\" \\"
+  echo "    --broll \"$BROLL_FILES\" \\"
+  echo "    --insert-at \"$INSERT_TIMES\" \\"
+  echo "    --output \"$OUTPUT\" \\"
+  echo "    --dry-run"
+  echo ""
+  echo "  # then render:"
   echo "  $SCRIPT_DIR/merge-broll.sh \\"
   echo "    --main \"$INPUT\" \\"
   echo "    --broll \"$BROLL_FILES\" \\"

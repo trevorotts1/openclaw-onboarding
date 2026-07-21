@@ -13,6 +13,26 @@ the Email Engine's regression anchor (mirrors `51-signature-presentation/example
 - `emails.json` — the 10-email copy ledger (PASSES the prove-email sequence gate); carries a signed `process_certificate` authorizing the DRAFT-ONLY handoff.
 - `working/` — the run-dir mirror: `copy/brief.json`, `copy/emails.json`, `deploy/approval.json` (human approval), `deploy/build-plan.json` (the emitted DRAFT-ONLY Skill-44 plan), `prover_results.json` (captured PASS), `checkpoints/process_manifest.json`.
 - `delivery/PROCESS-CERTIFICATE.{json,md}` — issued by `run_email_engine.py` after the full P1->P4 pass.
+- `working/checkpoints/.cert-hmac-key` — the run-scoped signing material for **this fixture's** certificate.
+
+### Why the signing key ships with this example (T0-64)
+
+The certificate is HMAC-signed against a key that a genuine run mints inside its
+own run directory (`run_email_engine.py:_cert_key`), and `_verify_process_certificate`
+fails closed when that key is absent. This example previously shipped **without**
+either a signature or a key, so the artifact the skill offers as its reference proof
+would have been **rejected by the skill's own deploy-time verifier** — and nothing in
+the verification path ever checked it, which is why it survived.
+
+`verify.sh` now authenticates this certificate through the same code path the deploy
+gate uses (`run_email_engine.py --verify-certificate`), so a reference artifact that
+drifts out of contract is caught. That check can only exist if the fixture's key ships
+with the fixture.
+
+`.cert-hmac-key` here is **fixture material, not a credential**: it is a random value
+scoped to this example directory, it authenticates nothing outside it, it grants access
+to no service, account, client or box, and no real run ever reads it. A real run mints
+its own key, 0600, in its own run directory, and that key is never committed.
 - `broken-variants/` — 5 deliberately-broken inputs, each tripping ONE distinct AF, with `REJECTION-RESULTS.json` capturing the fail-closed proof.
 
 ## Reproduce

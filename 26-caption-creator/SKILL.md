@@ -21,6 +21,20 @@ This skill is intentionally simple and reliable. It is built on:
 - `Scripts/generate-captions.sh` - transcribe with Whisper, then burn captions into a new video
 - `Scripts/export-srt.sh` - export a properly named SRT file (respects `--output`)
 - `Scripts/animated_captions.py` - creates an animated style using FFmpeg drawtext
+- `Scripts/lib-caption-guard.sh` - the one "is this transcript real?" rule, shared by both shell entry points
+- `test/test-caption-content-gate.sh` - the empty-transcription failure contract (both directions)
+
+## Empty transcriptions fail; they are not rendered
+
+Whisper writes a subtitle file even when it recognises no speech. Every entry
+point therefore checks the transcript's **content** — at least one timing cue and
+at least one line of caption text — not whether a file appeared. A transcription
+that yields nothing exits **3** with `AF-CAPTION-EMPTY-TRANSCRIPTION`, renders
+nothing and announces nothing.
+
+Usual causes: silent or near-silent audio, an unsupported spoken language, or a
+model too small to recognise the speech. Fix the audio or pass a larger
+`--model`, then re-run.
 
 ## Requirements
 

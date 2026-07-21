@@ -26,8 +26,13 @@ ls ~/.openclaw/skills/caption-creator/Scripts/
 - [ ] `generate-captions.sh` exists
 - [ ] `export-srt.sh` exists
 - [ ] `animated_captions.py` exists
+- [ ] `lib-caption-guard.sh` exists
 
-**Pass criteria:** All 8 items above are present. No missing files.
+`lib-caption-guard.sh` is the shared "is this transcript real?" rule (T0-59).
+Both `generate-captions.sh` and `export-srt.sh` `source` it, so an install
+missing this file cannot run either script. `qc-caption-creator.sh` asserts it.
+
+**Pass criteria:** All 10 items above are present. No missing files.
 
 ---
 

@@ -97,6 +97,31 @@ See `INSTALL.md` for step-by-step setup.
 - Read `BROLL-WORKFLOW.md` for the full, detailed SOP.
 - Use `./scripts/broll-workflow.sh` to stage a project folder, analyze the video, extract audio, and print suggested insertion points.
 
+### Merge inputs are probed before anything renders
+
+`merge-broll.sh` validates every input before it does any work: each of `--main`
+and every `--broll` clip must be a non-empty file that `ffprobe` reports a video
+stream for, and every `--insert-at` value must be a non-negative number inside the
+main video's duration. A failure exits non-zero with a named error
+(`AF-MERGE-INPUT-MISSING`, `AF-MERGE-INPUT-EMPTY`, `AF-MERGE-INPUT-NOT-VIDEO`,
+`AF-MERGE-TIMESTAMP-RANGE`, `AF-MERGE-ARITY`, `AF-MERGE-PREREQ-MISSING`) and
+renders nothing.
+
+`broll-workflow.sh` declares the expected B-roll paths in a
+`broll-manifest.json` rather than creating empty files at them, so a clip you have
+not generated yet is genuinely absent instead of being a zero-byte `.mp4` the merge
+would read.
+
+Rehearse before you render:
+
+```bash
+./scripts/merge-broll.sh --main talking-head.mp4 --broll "b1.mp4,b2.mp4" \
+  --insert-at "12,38" --output final.mp4 --dry-run
+```
+
+`--dry-run` runs every probe and every timestamp check, prints the merge plan and
+exits without rendering.
+
 ## Notes about analysis output
 
 `analyze-video.sh` relies on PySceneDetect.

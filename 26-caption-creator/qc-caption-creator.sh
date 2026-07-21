@@ -16,6 +16,13 @@ echo ""
 echo "═══ Skill 26 — Caption Creator — Install QC ═══"
 echo ""
 assert "Skill 26 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/26-caption-creator\" ]"
+# T0-59: both shell entry points now `source` Scripts/lib-caption-guard.sh for the
+# shared transcript-content rule. An install missing it cannot run either script,
+# so its presence is a hard requirement, not a nicety. Skills are installed by
+# copying the whole directory (install.sh / update-skills.sh), so this file lands
+# together with the scripts that source it — a box is never left holding one
+# without the other.
+assert "Transcript guard present (Scripts/lib-caption-guard.sh)" "[ -f \"$SKILLS_DIR_DEFAULT/26-caption-creator/Scripts/lib-caption-guard.sh\" ]"
 assert "FFmpeg installed" "command -v ffmpeg"
 assert "FFmpeg supports drawtext filter" "ffmpeg -filters 2>&1 | grep -qE 'drawtext'"
 warn_only "ffprobe available" "command -v ffprobe"

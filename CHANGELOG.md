@@ -537,6 +537,174 @@ sleep, the presence-only predicate restored, the fair-housing detector moved
 below scoring, and the keyed-miss branch made to fabricate — and
 anti-false-positive controls asserting the healthy direction still succeeds.
 CI: `.github/workflows/records-pipeline-fail-closed-guard.yml`.
+## [v20.0.91]  -  2026-07-21  -  SEVEN CHECKERS THAT REPORTED SOMETHING OTHER THAN REALITY: captions with no captions, a storyboard error that exits zero, a ban rule proven by the banned character, an unprobed merge, an unreadable brief that PASSES, and a reference certificate the skill's own verifier would reject
+
+Section A items **A37, A38, A39, A40, A41, A42** of the skill-review fix
+programme. Findings T0-58, T0-59, T0-60, T0-61, T0-62, T0-63, T0-64, T2-36,
+T2-38. Every one adds a failure where the code continued past a genuine error,
+or corrects a predicate; none can turn a currently-passing healthy box into a
+failing one, and each is proven in **both** directions with an explicit
+anti-false-fail control.
+
+### T0-59 (A37) — the caption skill validated its transcript by file existence
+
+`26-caption-creator/Scripts/generate-captions.sh` checked `[[ ! -f "$SRT_FILE" ]]`.
+Whisper writes a subtitle file even when it recognises no speech, so silent
+audio, an unsupported language, or a transcription that yields nothing all
+passed the check, reached the burn-in filter, and printed `Created: <output>` —
+a video announced as captioned with **no captions in it**, and no signal to the
+operator.
+
+All three entry points (`generate-captions.sh`, `export-srt.sh`,
+`animated_captions.py`) now resolve through one shared rule,
+`Scripts/lib-caption-guard.sh`: at least one timing cue **and** at least one line
+of caption text under a cue. A caption-free transcription exits **3** with
+`AF-CAPTION-EMPTY-TRANSCRIPTION`, renders nothing and announces nothing.
+
+`Scripts/lib-caption-guard.sh` is a hard prerequisite: both shell entry points
+`source` it, so an install missing it cannot run either script.
+`qc-caption-creator.sh` asserts its presence and `QC.md` lists it. Skills are
+installed by copying the whole directory (`install.sh` / `update-skills.sh`), so
+the file lands together with the scripts that source it — no box is ever left
+holding one without the other. Proven in both directions: PASS with the file
+present, non-zero exit with it removed.
+
+Measured on the pre-fix scripts, 9 assertions of
+`26-caption-creator/test/test-caption-content-gate.sh` fail — including the
+literal `Created: .../out-empty.mp4` for a video with no captions. All 15 pass
+after, and the two anti-false-fail controls (a real transcription still
+succeeds) pass in **both** states.
+
+### T0-60 (A38) — the storyboard generator exited zero after failing
+
+`24-storyboard-writer/scripts/create_storyboard.py` printed
+`Error: Unknown model '...'` to **stdout**, returned `None`, and the process
+exited **0** having written no file. Any caller that branches on the exit code
+proceeded believing a storyboard existed. A duration of 0 wrote a storyboard
+with an empty segment list, also at exit 0.
+
+Failures now raise a named `StoryboardError`, `main()` prints it on **stderr**
+and returns 2, and the clip count is asserted greater than zero **before** any
+file is written. `--duration 3` against an 8-second model still produces one
+segment — pinned by a test so a future tightening cannot start rejecting a
+legitimate short request.
+
+### T0-61 (A39) — the em-dash check passed precisely when the banned character was present
+
+`19-humanizer/qc-humanizer.sh:19` read
+`grep -qE 'em dash|—' AGENTS.md SOUL.md`. The pattern alternated the **rule
+phrase** with the **banned character itself**, so a workspace containing an em
+dash anywhere in unrelated prose satisfied the check with no ban rule installed
+at all. The state the check exists to detect was the state that made it pass.
+It also read `SOUL.md`, which `19-humanizer/CORE_UPDATES.md` lists under
+"Non-relevant (do not edit)" — the skill was checked for a rule in a file it is
+forbidden to write.
+
+The literal character is gone from the pattern and the file set is now
+AGENTS.md + TOOLS.md, the two files `CORE_UPDATES.md` authorises. The check
+stays `warn_only`; promoting it to an assertion is B4 and is deliberately not
+bundled here, so this cannot move any verdict in either direction.
+
+### T0-62 + T2-36 (A40) — an unprobed merge, and a documented safety flag that did not exist
+
+`27-video-editor/scripts/merge-broll.sh` checked only that its four arguments
+were non-empty: no existence check, no size check, no media probe.
+`scripts/broll-workflow.sh` `touch`ed a **zero-byte `.mp4`** at each destination
+path and printed a ready-to-run merge command pointing straight at them, so a
+missed placeholder or a failed generation surfaced as a corrupt deliverable
+rather than an error where the empty input was read.
+
+Separately, `INSTRUCTIONS.md` and `QC.md` both present `--dry-run` as the safety
+rehearsal before an irreversible render, and the parser answered
+`Unknown option: --dry-run`.
+
+Now: every input must be a non-empty file with a decodable video stream, and
+every insertion point must be a non-negative number inside the main video's
+duration — enforced before any work, with named errors
+(`AF-MERGE-INPUT-MISSING` / `-EMPTY` / `-NOT-VIDEO`, `AF-MERGE-TIMESTAMP-RANGE`,
+`AF-MERGE-ARITY`, `AF-MERGE-PREREQ-MISSING`). `--dry-run` runs the probes and
+the timestamp validation, prints the plan and exits without rendering. The
+workflow declares expected inputs in a `broll-manifest.json` instead of
+fabricating empty files at the merge destinations.
+
+**Found while proving the anti-false-fail control:** the merge's happy path had
+never worked. `keep_main_audio=${KEEP_AUDIO}` interpolated the shell's `true`
+into a Python heredoc, raising `NameError: name 'true' is not defined` on
+**every** default-mode merge. Fixed in the same change — it can only turn a
+crash into a working run.
+
+### T0-63 + T0-64 + T2-38 (A41) — the email engine's own proofs
+
+* **T0-63.** `tools/prove-email.py` discarded a supplied `--brief` that was
+  missing, unreadable or malformed, producing the same `None` as a brief that was
+  never supplied — and returned **PASS**. The comment above that block states the
+  brief is the only source that can authorise a client-exact override, so a run
+  believed to be bound to a locked brief was never bound to one and the prover
+  certified it. It now emits a named USAGE failure and exit 3, mirroring the
+  handling the same function already applied to its primary input six lines above.
+  Measured: pre-fix `--brief /nope/nope.json` exits **0** with
+  `RESULT: PASS`; post-fix it exits **3**.
+
+* **T0-64.** `examples/golden-landing-10/delivery/PROCESS-CERTIFICATE.json` — the
+  artifact the skill ships as its reference proof — carried **no signature field**
+  and no signing material, so it would have been rejected by the skill's own
+  deploy-time verifier, and `verify.sh` never exercised it, which is why it
+  survived. The certificate is reissued through the engine's own issuer
+  (`_write_certificate`) under the current contract; its `certificate_sha` is
+  **byte-identical** to the shipped one, confirming the run identity is unchanged
+  and only the missing contract fields were added. `run_email_engine.py` gains
+  `--verify-certificate RUN_DIR` — the same code path the deploy gate uses — and
+  `verify.sh` now calls it. CI additionally strips the signature, and separately
+  the key, from a copy and requires both to be rejected.
+
+  The fixture's `working/checkpoints/.cert-hmac-key` ships with it. It is fixture
+  material, not a credential: a random value scoped to that example directory,
+  authenticating nothing outside it, granting access to no service, account,
+  client or box. A real run mints its own 0600 key in its own run directory and
+  that key is never committed. Without it the shipped artifact cannot be
+  authenticated at all, and the only alternative is a weaker check in `verify.sh`
+  than the deploy gate applies — which is the defect being fixed.
+
+* **T2-38.** `intake/email-intake-questions.json` describes itself as "the
+  authoritative spec that prove-email.py loads for the intake gate". Nothing
+  loaded it; the required field tuple was hardcoded, so editing the declared
+  authority changed nothing. The set is now derived from the contract at import,
+  and a contract that cannot be read is a USAGE failure — never a silent fallback.
+  The derived set is **identical** to the tuple it replaces, so no brief that
+  passed yesterday fails today.
+
+`ENGINE-PIN.sha256` re-pinned for the `prove-email.py` /
+`run_email_engine.py` edits.
+
+### T0-58 (A42) — a resumed slide asserted a path for a file that was not there
+
+`46-kie-callback-relay/kie-slide-submitter.js`. The status half of this finding
+was already closed by `d3a07d14`; the rest reproduced. The resumed branch still
+assigned `localPath: s.targetPath` from the **intended** path rather than an
+existence test, and never re-entered the download path — on the one branch where
+the file is most likely to be absent, because the previous run was interrupted.
+
+Both branches now resolve through one `_resolveSlideOutcome` helper: the local
+path comes from an existence test (`null` when the file is not there), and a
+`done` marker carrying result URLs whose file is missing **re-enters the download
+path** before any status is reported. A genuinely complete resumed slide is
+unchanged and costs no extra fetch — asserted, so the fix cannot make a healthy
+deck re-download.
+
+**A test was tightened, not added around.** The existing suite asserted
+`(src.match(/this\._reconcileDoneStatus\(/g) || []).length === 2` — a count of
+occurrences in the **source text**, which passed whenever two call sites existed
+regardless of what either did with the result, and which would turn red on a
+refactor that made the rule *more* shared. It is replaced by driving
+`submitDeck()` down both paths and asserting the reported outcome.
+
+### CI
+
+New `.github/workflows/content-pipeline-fail-closed-guard.yml` — five jobs, each
+running the constructed **failing** condition as well as the healthy one, plus
+directed regression checks: the literal em dash must not return to the humanizer
+pattern, and the b-roll workflow must not go back to `touch`ing empty files at
+the merge destinations.
 
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 

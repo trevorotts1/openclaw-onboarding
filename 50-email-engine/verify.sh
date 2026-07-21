@@ -13,6 +13,14 @@
 #   3. emit_build_plan.py --selftest       (DRAFT-ONLY build-plan emitter)
 #   4. email-library/register.py --check   (paired files + built index + coverage)
 #   5. golden reproduce                    (prove-email PASS on the golden brief + emails)
+#   5b. golden certificate authenticates   (T0-64: the SHIPPED reference artifact is put
+#                                           through the deploy-time contract — all phases
+#                                           pass + certificate_sha recomputes + HMAC
+#                                           signature verifies. It previously carried no
+#                                           signature at all, would have been rejected by
+#                                           the skill's own verifier, and nothing checked)
+#   5c. brief usage failures               (T0-63: a supplied-but-unreadable --brief is a
+#                                           USAGE failure, never a silent PASS)
 #   6. broken-variants reject              (each trips its distinct AF, exit 2)
 #
 # Usage:  bash 50-email-engine/verify.sh
@@ -59,6 +67,7 @@ echo "== Skill 50 (Email Engine) :: verify.sh =="
 run "prove-email.py --self-test"        "$PY" "$TOOLS/prove-email.py" --self-test
 run "run_email_engine.py --self-test"   "$PY" "$SKILL_DIR/run_email_engine.py" --self-test
 run "test_department_routing.py"        "$PY" "$SKILL_DIR/test_department_routing.py"
+run "test_intake_contract_authority.py" "$PY" "$SKILL_DIR/test_intake_contract_authority.py"
 run "email_matcher_cli.py --selftest"   "$PY" "$TOOLS/email_matcher_cli.py" --selftest
 run "emit_build_plan.py --selftest"     "$PY" "$TOOLS/emit_build_plan.py" --selftest
 run "email-library/register.py --check" "$PY" "$LIB/register.py" --check
@@ -66,6 +75,37 @@ run "email-library/register.py --check" "$PY" "$LIB/register.py" --check
 # 5) golden reproduce — the brief + the 10-email ledger both PASS.
 run "golden brief PASS"  "$PY" "$TOOLS/prove-email.py" "$GOLDEN/brief.json" --kind intake
 run "golden emails PASS" "$PY" "$TOOLS/prove-email.py" "$GOLDEN/emails.json" --kind sequence
+
+# 5b) T0-64 — the SHIPPED reference certificate must satisfy the same contract the
+# deploy gate applies. This is the check whose absence let an unsigned artifact ship.
+run "golden certificate authenticates" \
+    "$PY" "$SKILL_DIR/run_email_engine.py" --verify-certificate "$GOLDEN"
+
+# expect_usage "<label>" <args...> — passes iff the prover returns the USAGE exit
+# code (3) AND says USAGE. A silent PASS here is the T0-63 defect.
+expect_usage() {
+    local label="$1"; shift
+    local out rc
+    out="$("$PY" "$TOOLS/prove-email.py" "$@" 2>&1)"; rc=$?
+    if [ "$rc" -eq 3 ] && printf '%s' "$out" | grep -q 'USAGE'; then
+        printf '  [PASS] usage  %s\n' "$label"
+    else
+        printf '  [FAIL] usage  %s (rc=%s, expected exit 3 + a USAGE failure)\n' "$label" "$rc"
+        printf '%s\n' "$out" | sed 's/^/         /'
+        fails=$((fails + 1))
+    fi
+}
+
+# 5c) T0-63 — a SUPPLIED brief that cannot be read or parsed is a usage failure,
+# not the same silent `None` as "no brief was supplied".
+BRIEF_TMP="$(mktemp "${TMPDIR:-/tmp}/email-verify-brief.XXXXXX")"
+printf '{ this is not json' > "$BRIEF_TMP"
+expect_usage "missing --brief path"    "$GOLDEN/emails.json" --kind sequence --brief "$GOLDEN/no-such-brief.json"
+expect_usage "unparseable --brief"     "$GOLDEN/emails.json" --kind sequence --brief "$BRIEF_TMP"
+rm -f "$BRIEF_TMP"
+# ANTI-FALSE-FAIL CONTROL: a readable brief is unaffected.
+run "readable --brief still PASSES" \
+    "$PY" "$TOOLS/prove-email.py" "$GOLDEN/emails.json" --kind sequence --brief "$GOLDEN/brief.json"
 
 # 6) broken-variants reject — each trips its distinct AF (fail-closed proof).
 BV="$GOLDEN/broken-variants"

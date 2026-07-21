@@ -932,10 +932,27 @@ def main(argv=None):
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run built-in gate self-tests (P1 selection + unmapped-checker) and exit")
+    # T0-64: the shipped reference artifact is what a new operator or agent copies.
+    # It has to be authenticatable by the SAME rule the deploy gate applies, and
+    # something has to actually apply it. This is the seam verify.sh calls.
+    ap.add_argument("--verify-certificate", dest="verify_certificate", metavar="RUN_DIR",
+                    help="authenticate RUN_DIR/delivery/PROCESS-CERTIFICATE.json against the "
+                         "deploy-time contract (all_phases_pass + certificate_sha recomputes + "
+                         "HMAC signature) and exit; nonzero when it fails")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
+
+    if args.verify_certificate:
+        cert_dir = Path(args.verify_certificate).resolve()
+        if not cert_dir.is_dir():
+            print("FATAL: --verify-certificate run dir not found: %s" % cert_dir, file=sys.stderr)
+            return EXIT_USAGE
+        ok, msg = _verify_process_certificate(cert_dir)
+        print("== process certificate :: %s ==" % cert_dir)
+        print(("RESULT: PASS — %s" if ok else "RESULT: FAIL — %s") % msg)
+        return EXIT_PASS if ok else EXIT_GATE
 
     manifest = _load_manifest()
     if args.plan:

@@ -355,11 +355,107 @@ await section('kie-slide-submitter: a durable "done" marker with no file is reco
      "a 'done' status with a real file stays done (no over-fail)");
   ok(s._reconcileDoneStatus('failed', real, 'slide1') === 'failed',
      'a failed status is never upgraded by the presence of a file');
+});
 
-  // Both branches (fresh wait AND resume/already-resolved) must delegate.
-  const src = fs.readFileSync(path.join(skillDir, 'kie-slide-submitter.js'), 'utf8');
-  const delegations = (src.match(/this\._reconcileDoneStatus\(/g) || []).length;
-  ok(delegations === 2, `both result paths delegate to _reconcileDoneStatus (found ${delegations})`);
+// =============================================================================
+// T0-58 — the RESUME path must reconcile against disk, not against intent.
+//
+// TIGHTENED (was: a regex counting `this._reconcileDoneStatus(` occurrences in the
+// source and asserting the count was 2). That assertion measured the SHAPE OF THE
+// TEXT, not the behaviour: it passed whenever two call sites existed, regardless of
+// what either one did with the result, and it turned red on a refactor that made the
+// rule MORE shared rather than less. It is replaced below by driving submitDeck()
+// down BOTH paths and asserting the reported outcome, which is the thing the finding
+// is about. QUALITY-CONTROL rule E4: read what a test asserts, not whether it passes.
+// =============================================================================
+await section('kie-slide-submitter: a RESUMED slide is reconciled against disk (T0-58)', async () => {
+  // Drive the resume branch: a registry row with a taskId plus a durable done
+  // marker puts the slide into `submitted`, which is the already-resolved path.
+  // No new slides are submitted, so no network is touched.
+  const seedResume = (doneMarker, { writeFile }) => {
+    const ws = tmpWorkspace();
+    const target = path.join(ws, 'out', 'slide1.png');
+    fs.mkdirSync(path.join(ws, '.kie', 'registry'), { recursive: true });
+    fs.mkdirSync(path.join(ws, '.kie', 'done'), { recursive: true });
+    fs.writeFileSync(path.join(ws, '.kie', 'registry', 'sub-1.json'), JSON.stringify({
+      submitId: 'sub-1', label: 'deck1_slide1', deckId: 'deck1', slideId: 'slide1',
+      taskId: 'task-1', targetPath: target, submittedAt: '2026-07-05T00:00:00.000Z'
+    }));
+    fs.writeFileSync(path.join(ws, '.kie', 'done', 'task-1.json'), JSON.stringify(doneMarker));
+    if (writeFile) {
+      fs.mkdirSync(path.dirname(target), { recursive: true });
+      fs.writeFileSync(target, 'png-bytes');
+    }
+    const s = new KieSlideSubmitter({ clientSlug: SLUG, kieApiKey: 'k', workspaceDir: ws });
+    return { s, ws, target,
+             slides: [{ deckId: 'deck1', slideId: 'slide1', prompt: 'p', targetPath: target }] };
+  };
+
+  // 1. THE FINDING. A durable 'done' marker whose file is absent and which carries
+  //    no recoverable URL must NOT be counted complete, and must NOT report a path.
+  {
+    const { s, slides } = seedResume(
+      { status: 'done', resultUrls: [], code: 200 }, { writeFile: false });
+    const [r] = await s.submitDeck(slides, { callbackThreshold: 99 });
+    ok(r.status === 'failed', "resumed 'done' with no file on disk -> failed (not counted complete)");
+    ok(r.localPath === null,
+       'resumed slide reports localPath null, not the intended target path');
+  }
+
+  // 2. RECOVERY. A durable 'done' marker whose file is absent but which carries a
+  //    result URL re-enters the DOWNLOAD path instead of reporting completion.
+  {
+    const { s, target, slides } = seedResume(
+      { status: 'done', resultUrls: ['https://example.invalid/slide1.png'], code: 200 },
+      { writeFile: false });
+    let fetched = 0;
+    s._downloadFirst = async (urls, dest) => {
+      fetched++;
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.writeFileSync(dest, 'recovered-bytes');
+      return dest;
+    };
+    const [r] = await s.submitDeck(slides, { callbackThreshold: 99 });
+    ok(fetched === 1, 'resumed slide with a missing file re-entered the download path');
+    ok(r.status === 'done' && r.localPath === target, 'recovered slide reports done with a real path');
+    ok(fs.existsSync(target), 'the recovered file is on disk');
+  }
+
+  // 3. ANTI-FALSE-FAIL CONTROL. A genuinely complete resumed slide is unchanged and
+  //    costs no extra fetch -- the fix must not make a healthy deck re-download.
+  {
+    const { s, target, slides } = seedResume(
+      { status: 'done', resultUrls: ['https://example.invalid/slide1.png'], code: 200 },
+      { writeFile: true });
+    let fetched = 0;
+    s._downloadFirst = async () => { fetched++; return null; };
+    const [r] = await s.submitDeck(slides, { callbackThreshold: 99 });
+    ok(r.status === 'done', 'a complete resumed slide still reports done');
+    ok(r.localPath === target, 'a complete resumed slide reports its real path');
+    ok(fetched === 0, 'a complete resumed slide is not re-downloaded');
+  }
+
+  // 4. Both branches resolve through the ONE helper, asserted behaviourally: the
+  //    fresh-wait path gets the same treatment.
+  {
+    const { s, target, slides } = seedResume(
+      { status: 'done', resultUrls: [], code: 200 }, { writeFile: false });
+    // Remove the done marker so the slide takes the fresh-WAIT branch instead.
+    // submitDeck builds its own poller, so the stub goes on the prototype and is
+    // restored immediately afterwards.
+    fs.rmSync(path.join(s.doneDir, 'task-1.json'));
+    const origWait = KieKvPoller.prototype.waitForTask;
+    KieKvPoller.prototype.waitForTask = async () => ({ status: 'done', resultUrls: [], code: 200 });
+    let results;
+    try {
+      results = await s.submitDeck(slides, { callbackThreshold: 99 });
+    } finally {
+      KieKvPoller.prototype.waitForTask = origWait;
+    }
+    ok(results[0].status === 'failed', "fresh-wait 'done' with no file -> failed (same rule)");
+    ok(results[0].localPath === null, 'fresh-wait path also reports localPath null');
+    ok(!fs.existsSync(target), 'nothing was written for a slide that produced no file');
+  }
 });
 
 // ── summary ───────────────────────────────────────────────────────────────────

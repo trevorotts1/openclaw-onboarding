@@ -59,9 +59,17 @@ if [[ ! -f "$GENERATED_SRT" ]]; then
 fi
 
 if [[ -z "$GENERATED_SRT" || ! -f "$GENERATED_SRT" ]]; then
-  echo "Error: Whisper did not produce an SRT file."
+  echo "Error: Whisper did not produce an SRT file." >&2
   exit 1
 fi
+
+# T0-59: existence is not content. Whisper writes an SRT even when it recognises
+# no speech; exporting that empty file hands a caption-free transcript to every
+# downstream consumer. Gate on timing cues + caption text before publishing it.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-caption-guard.sh
+source "$SCRIPT_DIR/lib-caption-guard.sh"
+assert_srt_has_cues "$GENERATED_SRT" "$INPUT"
 
 mv -f "$GENERATED_SRT" "$OUTPUT"
 
