@@ -82,21 +82,37 @@ command -v agent-browser >/dev/null 2>&1 && echo "agent-browser: installed" || e
 
 ## Step 2 - Install agent-browser (only if missing)
 
-If NOT installed, run:
+**INSTALL THE PIN, NEVER A BARE `npm install -g agent-browser`.** This skill
+records a known-good, proven CLI version in `agent-browser-cli.pin` (see
+`CLI-VERSION-PIN.md` for why, and for the bump procedure). A bare install
+resolves to whatever the registry currently calls latest, so on any day the
+registry default is not the pinned release, a fresh install silently places an
+UNPROVEN release on the box — and `qc-agent-browser.sh` then hard-FAILS that box
+for a version mismatch it was the install that introduced.
+
+Read the pin and install exactly that version:
 ```bash
-npm install -g agent-browser
+AB_SKILL_DIR="$HOME/.openclaw/skills/03-agent-browser"
+[ -d "/data/.openclaw/skills/03-agent-browser" ] && AB_SKILL_DIR="/data/.openclaw/skills/03-agent-browser"
+AB_PIN="$(tr -d '[:space:]' < "$AB_SKILL_DIR/agent-browser-cli.pin")"
+[ -n "$AB_PIN" ] || { echo "REFUSING: agent-browser-cli.pin is missing or empty at $AB_SKILL_DIR"; exit 1; }
+echo "Installing pinned agent-browser version: $AB_PIN"
+npm install -g "agent-browser@$AB_PIN"
 agent-browser install
 ```
 
-**If the above fails with a permissions error**, try:
+If the pin file cannot be read, STOP and report it. Do not fall back to an
+unpinned install — an unproven CLI is the defect this pin exists to prevent.
+
+**If the above fails with a permissions error**, try (still pinned):
 ```bash
-sudo npm install -g agent-browser
+sudo npm install -g "agent-browser@$AB_PIN"
 ```
 
 If `sudo` is not available or still fails, tell the user:
 "The agent-browser install requires npm global permissions. Please ask your system admin or run the terminal as Administrator (Windows) or with sudo (Mac/Linux)."
 
-Do NOT proceed to Step 3 until `npm install -g agent-browser` completes without error.
+Do NOT proceed to Step 3 until `npm install -g "agent-browser@$AB_PIN"` completes without error.
 
 ## Step 3 - Verify agent-browser works
 
@@ -104,6 +120,26 @@ Run:
 ```bash
 agent-browser --help | head -20
 ```
+
+### Step 3b - Verify the INSTALLED version equals the pin
+
+Help output and reference tokens do not tell you WHICH version is installed.
+Compare it to the pin explicitly:
+```bash
+AB_INSTALLED="$(agent-browser --version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+if [ "$AB_INSTALLED" = "$AB_PIN" ]; then
+  echo "OK — installed agent-browser $AB_INSTALLED matches the pin"
+else
+  echo "MISMATCH — installed '$AB_INSTALLED', pinned '$AB_PIN'"
+fi
+```
+
+On MISMATCH, do NOT proceed and do NOT re-pin to whatever is installed. Either
+re-run Step 2 to land the pinned version, or — if the newer release is genuinely
+wanted — prove it on the operator's own box first and bump the pin through
+`scripts/bump-agent-browser-cli-pin.sh <new-version> "<reason>"`, which updates
+`agent-browser-cli.pin` and `CLI-VERSION-PIN.md` together. `qc-agent-browser.sh`
+asserts this same comparison, so a mismatch left here fails QC later anyway.
 
 ## Step 4 - Smoke test a simple browser session
 
