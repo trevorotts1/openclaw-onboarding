@@ -62,27 +62,60 @@ EX_CONFIG_UNREADABLE = 2
 # --------------------------------------------------------------------------
 # Fixture builders
 # --------------------------------------------------------------------------
-def _make_db(tmp, departments, with_type_column=False, with_agents_table=True):
-    """departments: list of dicts {slug, name, agent_name?, agent_role?}."""
+def _make_db(tmp, departments, with_structural_default=False, with_agents_table=True,
+             with_archived_columns=True):
+    """Builds a mission-control.db with the REAL Command Center `workspaces`
+    schema (blackceo-command-center src/lib/db/schema.ts + migration 095).
+
+    NOTE — there is deliberately NO `type` column here, because the real schema
+    has none: neither schema.ts's CREATE TABLE nor ANY migration adds one (the
+    only `ALTER TABLE workspaces` migrations add user_md, company_id, sort_order,
+    head_agent_id, original_slug, description, archived_at, archived_reason).
+    An earlier fixture in this file created a synthetic `type` column and asserted
+    that main/system rows were excluded through it — a test that could only ever
+    pass against a schema no box has, while the structural row that DOES exist on
+    every box went unmodelled and unnoticed. See
+    test_structural_default_workspace_row_is_excluded_on_the_real_schema.
+
+    departments: list of dicts {slug, name, agent_name?, agent_role?,
+                                sort_order?, archived_at?}.
+    with_structural_default: also insert the schema's own FK DEFAULT target row
+                             exactly as src/lib/db/seed.ts writes it.
+    """
     db_path = Path(tmp) / "mission-control.db"
     conn = sqlite3.connect(db_path)
-    type_col = ", type TEXT" if with_type_column else ""
+    archived_cols = ", archived_at TEXT, archived_reason TEXT" if with_archived_columns else ""
     conn.executescript(f"""
         CREATE TABLE companies (id TEXT PRIMARY KEY, name TEXT, slug TEXT, industry TEXT, config TEXT);
         CREATE TABLE workspaces (id TEXT PRIMARY KEY, name TEXT, slug TEXT UNIQUE,
-            description TEXT, icon TEXT, company_id TEXT{type_col});
+            description TEXT, icon TEXT, company_id TEXT, user_md TEXT,
+            sort_order INTEGER DEFAULT 1000, head_agent_id TEXT{archived_cols},
+            created_at TEXT, updated_at TEXT);
     """)
     if with_agents_table:
         conn.executescript("""
-            CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT,
-                role TEXT, is_master INTEGER DEFAULT 0);
+            CREATE TABLE agents (id TEXT PRIMARY KEY, workspace_id TEXT DEFAULT 'default',
+                name TEXT, role TEXT, is_master INTEGER DEFAULT 0);
         """)
+    if with_structural_default:
+        # Byte-for-byte the row src/lib/db/seed.ts inserts to satisfy
+        # `agents.workspace_id TEXT DEFAULT 'default' REFERENCES workspaces(id)`:
+        # sentinel sort_order 50000, created BEFORE any real department.
+        conn.execute(
+            "INSERT INTO workspaces (id, name, slug, description, sort_order, created_at, updated_at) "
+            "VALUES ('default', 'General', 'default', "
+            "'Structural default workspace (schema DEFAULT target)', 50000, ?, ?)",
+            ("2026-07-20T01:00:00.000Z", "2026-07-20T01:00:00.000Z"),
+        )
     for i, d in enumerate(departments):
-        cols = ["id", "name", "slug", "description", "icon", "company_id"]
-        vals = [d["slug"], d["name"], d["slug"], "", "📁", "test-co"]
-        if with_type_column:
-            cols.append("type")
-            vals.append(d.get("type", "department"))
+        cols = ["id", "name", "slug", "description", "icon", "company_id", "sort_order",
+                "created_at", "updated_at"]
+        vals = [d["slug"], d["name"], d["slug"], "", "📁", "test-co",
+                d.get("sort_order", 1000 + i),
+                "2026-07-20T01:01:17.000Z", "2026-07-20T01:01:17.000Z"]
+        if with_archived_columns and d.get("archived_at"):
+            cols += ["archived_at", "archived_reason"]
+            vals += [d["archived_at"], d.get("archived_reason", "declined")]
         placeholders = ",".join("?" * len(cols))
         conn.execute(f"INSERT INTO workspaces ({','.join(cols)}) VALUES ({placeholders})", vals)
         if with_agents_table and (d.get("agent_name") or d.get("agent_role")):
@@ -242,20 +275,169 @@ def test_departments_seeded_but_config_unreadable_is_hard_fail():
         assert "Marketing" in (res.stdout + res.stderr)
 
 
-def test_main_system_type_rows_are_excluded_when_type_column_present():
-    """Schema-tolerant: when a `type` column exists on workspaces, main/system
-    pseudo-workspaces are not departments and must not be checked."""
+# --------------------------------------------------------------------------
+# 3b. STRUCTURAL-ROW EXCLUSION — the install-blocking false-fail.
+#
+# TIGHTENED (2026-07-21): this block replaces
+# test_main_system_type_rows_are_excluded_when_type_column_present, which
+# ENCODED THE BUG AS CORRECT. That test built a synthetic `type` column, then
+# asserted the guard's `if has_type and row['type'] in ('main','system')` branch
+# excluded a main/system row through it — and passed. But the real Command
+# Center `workspaces` table has no `type` column at all, so on every real box
+# has_type was False, the branch was dead, and the structural `default` row was
+# counted as a department with no runtime: a HARD FAIL of run-full-install.sh's
+# install-blocking Phase 6e2 gate on EVERY box on this schema. A green test
+# suite was proving a code path no box ever executes. The fixture below models
+# the schema boxes actually have.
+# --------------------------------------------------------------------------
+def test_structural_default_workspace_row_is_excluded_on_the_real_schema():
+    """A healthy box: the structural `default` row (seed.ts's FK DEFAULT target)
+    plus real departments that ALL have runtimes must PASS.
+
+    This is the exact shape that hard-failed Phase 6e2 on every box before the
+    fix — the guard reported `default`/'General' as a department with no
+    matching runtime."""
     depts = [
-        {"slug": "main", "name": "Main", "type": "main"},
-        {"slug": "marketing", "name": "Marketing", "type": "department"},
+        {"slug": "marketing", "name": "Marketing"},
+        {"slug": "sales", "name": "Sales"},
+        {"slug": "graphics", "name": "Graphics"},
     ]
     with tempfile.TemporaryDirectory() as tmp:
-        db_path = _make_db(tmp, depts, with_type_column=True)
-        # Only marketing has a runtime; "main" would fail if it were checked.
+        db_path = _make_db(tmp, depts, with_structural_default=True)
+        config_path = _make_config(tmp, ["dept-marketing", "dept-sales", "dept-graphics"])
+        res = _run(db_path, config_path)
+        assert res.returncode == EX_OK, (
+            "structural 'default' workspace row was counted as a department "
+            f"(exit {res.returncode})\n{res.stdout}\n{res.stderr}")
+        assert "3/3" in res.stdout, f"expected 3 real departments checked:\n{res.stdout}"
+
+
+def test_structural_default_exclusion_is_reported_not_silent():
+    """A skipped row must be VISIBLY reported, never silently folded into the
+    pass count."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, [{"slug": "marketing", "name": "Marketing"}],
+                           with_structural_default=True)
+        config_path = _make_config(tmp, ["dept-marketing"])
+        res = _run(db_path, config_path)
+        out = res.stdout + res.stderr
+        assert "EXCLUDED" in out, f"exclusion was silent:\n{out}"
+        assert "structural-default-workspace" in out, f"reason not reported:\n{out}"
+        assert "1/1" in res.stdout, f"excluded row must not inflate the checked count:\n{res.stdout}"
+
+
+def test_structural_default_exclusion_appears_in_json_report():
+    """Phase 6e2 parses --json; the exclusion must be machine-visible there too."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, [{"slug": "marketing", "name": "Marketing"}],
+                           with_structural_default=True)
+        config_path = _make_config(tmp, ["dept-marketing"])
+        res = _run(db_path, config_path, "--json")
+        payload = json.loads(res.stdout)
+        assert payload["ok"] is True, payload
+        assert payload["checked"] == 1, payload
+        reasons = [x["reason"] for x in payload["excluded"]]
+        assert "structural-default-workspace" in reasons, payload
+
+
+def test_structural_default_present_but_real_department_orphaned_still_fails():
+    """THE ANTI-REGRESSION: excluding the structural row must NOT blunt the
+    guard. A genuinely orphaned real department alongside it still fails
+    closed, is named, and the excluded structural row is NOT named as a
+    mismatch."""
+    depts = [
+        {"slug": "marketing", "name": "Marketing"},
+        {"slug": "listings", "name": "Listings"},   # no runtime entry
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts, with_structural_default=True)
+        config_path = _make_config(tmp, ["dept-marketing"])
+        res = _run(db_path, config_path)
+        assert res.returncode == EX_MISMATCH, (
+            f"real orphan department did not fail closed (exit {res.returncode})"
+            f"\n{res.stdout}\n{res.stderr}")
+        out = res.stdout + res.stderr
+        assert "Listings" in out, f"orphan not named:\n{out}"
+        assert "1/2" in out, f"expected exactly 1 of 2 real departments flagged:\n{out}"
+        assert "! General" not in out, f"structural row reported as a mismatch:\n{out}"
+
+
+def test_workspace_named_default_is_the_only_slug_the_exclusion_matches():
+    """The exclusion is keyed on the ONE reserved identifier the schema declares.
+    A department whose slug merely CONTAINS 'default' is still checked, so the
+    exclusion cannot be widened into a hole."""
+    depts = [{"slug": "default-ops", "name": "Default Ops"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts, with_structural_default=True)
+        config_path = _make_config(tmp, [])  # no runtime for default-ops
+        res = _run(db_path, config_path)
+        assert res.returncode == EX_MISMATCH, (
+            f"'default-ops' was wrongly swallowed by the structural exclusion "
+            f"(exit {res.returncode})\n{res.stdout}\n{res.stderr}")
+        assert "Default Ops" in (res.stdout + res.stderr)
+
+
+# --------------------------------------------------------------------------
+# 3c. ARCHIVED-ROW EXCLUSION (migration 095 soft-archive).
+# --------------------------------------------------------------------------
+def test_archived_department_is_excluded():
+    """A soft-archived department (archived_at IS NOT NULL) is off the board;
+    its runtime is legitimately absent and must not fail the gate."""
+    depts = [
+        {"slug": "marketing", "name": "Marketing"},
+        {"slug": "legal", "name": "Legal", "archived_at": "2026-07-20T02:00:00.000Z"},
+    ]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts, with_structural_default=True)
         config_path = _make_config(tmp, ["dept-marketing"])
         res = _run(db_path, config_path)
         assert res.returncode == EX_OK, f"exit {res.returncode}\n{res.stdout}\n{res.stderr}"
-        assert "1/1" in res.stdout
+        assert "1/1" in res.stdout, res.stdout
+        out = res.stdout + res.stderr
+        assert "archived" in out, f"archived exclusion was silent:\n{out}"
+
+
+def test_unarchived_department_with_no_runtime_still_fails():
+    """Anti-regression on the archived filter: archived_at NULL means LIVE, and
+    a live department with no runtime must still fail closed."""
+    depts = [{"slug": "legal", "name": "Legal", "archived_at": None}]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts, with_structural_default=True)
+        config_path = _make_config(tmp, [])
+        res = _run(db_path, config_path)
+        assert res.returncode == EX_MISMATCH, (
+            f"live department with no runtime did not fail (exit {res.returncode})"
+            f"\n{res.stdout}\n{res.stderr}")
+        assert "Legal" in (res.stdout + res.stderr)
+
+
+def test_db_predating_archived_at_migration_still_works():
+    """Schema tolerance: a DB from before migration 095 has no archived_at
+    column at all. The guard must still run (and still exclude the structural
+    row) rather than erroring on a missing column."""
+    depts = [{"slug": "marketing", "name": "Marketing"}]
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, depts, with_structural_default=True,
+                           with_archived_columns=False)
+        config_path = _make_config(tmp, ["dept-marketing"])
+        res = _run(db_path, config_path)
+        assert res.returncode == EX_OK, f"exit {res.returncode}\n{res.stdout}\n{res.stderr}"
+        assert "1/1" in res.stdout, res.stdout
+
+
+def test_real_workspaces_schema_has_no_type_column():
+    """Pins WHY the old `type`-based exclusion was dead code: the fixture models
+    the real schema, and the real schema has no `type` column. If Command Center
+    ever adds one, this fails and the exclusion strategy gets re-examined
+    deliberately instead of silently."""
+    with tempfile.TemporaryDirectory() as tmp:
+        db_path = _make_db(tmp, [{"slug": "marketing", "name": "Marketing"}])
+        conn = sqlite3.connect(db_path)
+        cols = [r[1] for r in conn.execute("PRAGMA table_info(workspaces)")]
+        conn.close()
+        assert "type" not in cols, (
+            "fixture drifted from the real Command Center workspaces schema")
+        assert "archived_at" in cols and "sort_order" in cols, cols
 
 
 # --------------------------------------------------------------------------
