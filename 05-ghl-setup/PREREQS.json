@@ -16,6 +16,22 @@
       "check": { "envVar": "GOHIGHLEVEL_LOCATION_ID" },
       "severity": "required",
       "satisfy": "Add GOHIGHLEVEL_LOCATION_ID=<your location id> to ~/.openclaw/secrets/.env, then: openclaw config set env.vars.GOHIGHLEVEL_LOCATION_ID \"$GOHIGHLEVEL_LOCATION_ID\". On a VPS/Docker box, run the config set inside the container as user node (docker exec -u node ...) and use /data/.openclaw/secrets/.env."
+    },
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 - Teach Yourself Protocol (TYP)",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "optional",
+      "satisfy": "Install Skill 01 (01-teach-yourself-protocol) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory under 'You MUST have these installed first: 1. Teach Yourself Protocol (TYP) - Skill 01'. It is in the same onboarding package; re-run the installer or install Skill 01 on its own."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 - Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "optional",
+      "satisfy": "Install Skill 02 (02-back-yourself-up-protocol) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory under 'You MUST have these installed first: 2. Back Yourself Up Protocol - Skill 02'. It is in the same onboarding package; re-run the installer or install Skill 02 on its own."
     }
   ]
 }

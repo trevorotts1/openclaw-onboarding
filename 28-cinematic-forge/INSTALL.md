@@ -67,7 +67,7 @@ The agent needs access to these services. API keys should be stored in the agent
 |---------|----------|------------|
 | **KIE.ai** | Video, image, voice, music, SFX generation | https://kie.ai/api-key |
 | **GHL/Convert and Flow** | Media library upload (preferred) | Private Integration Token (PIT) from GHL settings |
-| **imgBB** (fallback) | Image/media hosting if no GHL | https://api.imgbb.com/ - create free account |
+| **imgBB** (optional) | REFERENCE IMAGES ONLY — still images and animated GIFs; it cannot host the final MP4 | https://api.imgbb.com/ - create free account |
 
 **Important:** GHL/Convert and Flow does NOT use "API keys" - the correct term is **Private Integration Token (PIT)**. The agent should use this terminology with users.
 
@@ -91,10 +91,19 @@ These models must be available on the KIE.ai account:
 2. Run:
 
 ```bash
-ls -la ~/.openclaw/skills/cinematic-forge/
+# Mac
+ls -la ~/.openclaw/skills/28-cinematic-forge/
+# VPS
+ls -la /data/.openclaw/skills/28-cinematic-forge/
 ```
 
-3. You should see files like `SKILL.md`, `INSTALL.md`, `README.md`, and `CORE_UPDATES.md`.
+3. You should see files like `SKILL.md`, `INSTALL.md`, `README.md`, `CORE_UPDATES.md`, `qc-cinematic-forge.sh` and `qc-output.sh`.
+
+**The directory name is `28-cinematic-forge`, with the numeric prefix, everywhere.**
+That is the name in the repository, the name SKILL.md's Phase 0 resolves
+(`$SKILL_DIR`), and the name this document and QC.md use. An install performed
+into an unprefixed `cinematic-forge/` puts the skill where the runtime does not
+look for its helper scripts.
 
 If you do not see that folder, re-run the onboarding installer for this package so the skill is copied into `~/.openclaw/skills/`.
 
@@ -104,7 +113,7 @@ If you do not see that folder, re-run the onboarding installer for this package 
 
 > Teach yourself this skill
 
-2. Paste the full contents of `~/.openclaw/skills/cinematic-forge/SKILL.md`.
+2. Paste the full contents of `~/.openclaw/skills/28-cinematic-forge/SKILL.md`.
 
 The agent should follow Teach Yourself Protocol (TYP): discover all `.md` files in the folder, read them, then summarize pointers into the allowed core files.
 
@@ -122,6 +131,13 @@ Verify the required API keys are present.
 
 Minimum expectation:
 - KIE.ai key is present and you can access VEO, Nano Banana Pro, ElevenLabs, and Suno via KIE.ai
+
+**Dependencies for the delivery gate.** `qc-output.sh`'s technical mode needs
+`ffmpeg`/`ffprobe` only. Its DELIVERY mode additionally needs `jq` (it reads the
+delivery-requirements record, the post-production receipts and the upload
+response as structured data) and `curl` (it downloads the hosted object). A
+missing dependency is reported and exits non-zero — the gate never skips a check
+and reports a pass.
 
 ### Step 5: Test with a simple video
 
@@ -156,7 +172,15 @@ The agent should:
 **GHL upload fails:**
 - Verify the Private Integration Token (PIT) is valid
 - Check that the PIT has media upload permissions
-- Fallback: use imgBB for hosting
+- Fallback for the FINAL VIDEO: a video-capable store the client controls — their
+  own object storage or CDN (S3/R2/GCS behind a CDN), their site's media library,
+  or a video host they own. Verify it the same way: the store's upload response
+  must carry an asset identifier and a URL bound to it, and
+  `qc-output.sh --upload-response …` must download and probe the hosted object.
+- **NOT imgBB.** imgBB is a REFERENCE-IMAGE host: it serves still images and
+  animated GIFs and will not host an MP4. The fallback is reached exactly when
+  the primary path failed, so naming a host that cannot serve the artifact either
+  fails or produces a link that is not the video.
 
 **Agent skips the Teach Yourself Protocol prerequisite:**
 - This is a hard requirement - Cinematic Forge references TYP concepts throughout

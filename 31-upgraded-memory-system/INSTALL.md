@@ -400,14 +400,30 @@ The script:
   `/data/.openclaw` on VPS).
 - Canonicalizes `GEMINI_API_KEY` in `secrets/.env` (from
   `GOOGLE_API_KEY` / `GOOGLE_GEMINI_API_KEY` if needed).
-- Runs `openclaw config validate` and prints `openclaw memory status`.
+- Applies BOTH mutations (the canonical block and the shared-corpus attachment)
+  to a **staging file in the configuration directory**, validates the staged
+  file, writes a **timestamped backup**, and only then replaces the live
+  `openclaw.json` by an atomic same-directory rename. The live file is the
+  original or the fully updated one at every instant — never a partial.
+- Runs `openclaw config validate` (restoring the backup and exiting non-zero if
+  it fails) and then **verifies** `openclaw memory status`: its exit code and
+  output are a postcondition, not a printout.
 - Is idempotent — re-running on an already-activated box is a no-op.
 
-**Success criteria** — `openclaw memory status` must show:
-- `Provider: gemini (requested: gemini)`
-- `Model: gemini-embedding-2` (or just `gemini`)
-- `Dreaming: 0 3 * * *`
+**Success criteria — the script now checks these itself and exits non-zero if
+they do not hold.** It prints the provider THIS box resolved, so the criteria
+are not a fixed expectation you check by eye:
 - `openclaw config validate` exits clean.
+- `openclaw memory status` exits 0 and does not report `Provider: none`.
+- The status output names the embedding provider the box actually resolved
+  (Gemini when a usable Google key is present, else OpenAI, else OpenRouter).
+  A box with no embedding-capable key at all is a FAILURE, not a DONE — Layer 4
+  cannot run without one.
+- The applied configuration carries `agents.defaults.memory.autoCapture`,
+  `agents.defaults.memory.autoRecall` and the `agents.defaults.activeMemory`
+  block, which SKILL.md marks REQUIRED for Layer 8. (Before SK1-31 the script
+  applied neither, so the only supported activation path could not produce the
+  state the skill declares mandatory.)
 
 ---
 
@@ -438,9 +454,23 @@ unless the script can't be used; the script is the source of truth):
       }
     }
   },
-  "memory": {"backend": "builtin"}
+  "memory": {"backend": "builtin"},
+  "agents": {
+    "defaults": {
+      "memory": {"autoCapture": true, "autoRecall": true},
+      "activeMemory": {
+        "enabled": true,
+        "flushIntervalMinutes": 30,
+        "contextInjection": {"memoryWiki": true, "cognee": true}
+      }
+    }
+  }
 }
 ```
+
+(The `agents.defaults.memory` and `agents.defaults.activeMemory` objects above
+are merged into the same `agents.defaults` node as `memorySearch`; they are shown
+separately here only to keep the reference block readable.)
 
 **Do NOT try** `openclaw config set agents.defaults.memorySearch.provider gemini`
 on 2026.5.20+ — it returns `Invalid input` because the parent path doesn't

@@ -1,5 +1,20 @@
 # Changelog — video-creator (Skill 25)
 
+## [6.6.1] - 2026-07-21 — feat: document Agnes Video 2.0 as an optional alternative generator
+
+### Added
+- **Agnes Video 2.0 documented as an OPTIONAL alternative generator** in `SKILL.md`. KIE.ai (VEO)
+  stays the default/primary provider (`--provider kieai`); Runway, Pika, mock, and local are
+  unchanged (additive only — no existing instruction reworded or downgraded). Agnes ships as its own
+  skill (model `agnes-video-v2.0`, asynchronous create+poll at
+  `https://apihub.agnes-ai.com/v1/videos` → `/agnesapi?video_id=…`); there is deliberately **no
+  `--provider agnes` flag** — the raw Agnes clip is brought back into this skill for assembly/export.
+- **Tier behavior is operator-set, not hardcoded.** The SOP reads the box's Agnes plan from an
+  operator-set config value (e.g. `AGNES_TIER`) and treats HTTP 429 backoff + the account console as
+  the live rate-limit source of truth, because Agnes publishes quotas as non-contractual, mutable
+  reference values. Notes that paid tiers do not raise image/video throughput. Credential
+  `AGNES_AI_API_KEY` (already provisioned fleet-wide) is checked SET/NOT-SET only, never printed.
+
 ## [6.6.0] - 2026-07-21 — fix: fail closed on unmet requests (no silent substitution, dropping, or partial output)
 
 ### Fixed (root cause — the skill reported success while delivering something other than what was requested)
