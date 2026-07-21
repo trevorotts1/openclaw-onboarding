@@ -5,7 +5,7 @@
       "id": "skill-01-typ",
       "type": "skill",
       "label": "Skill 01 — Teach Yourself Protocol",
-      "check": { "skillId": 1 },
+      "check": { "skill": "01-teach-yourself-protocol" },
       "severity": "required",
       "satisfy": "Complete Skill 01 (teach-yourself-protocol) before installing Skill 07."
     },
@@ -13,16 +13,16 @@
       "id": "skill-02-backup",
       "type": "skill",
       "label": "Skill 02 — Back Yourself Up Protocol",
-      "check": { "skillId": 2 },
+      "check": { "skill": "02-back-yourself-up-protocol" },
       "severity": "required",
       "satisfy": "Complete Skill 02 (back-yourself-up-protocol) before installing Skill 07."
     },
     {
       "id": "kie-account",
-      "type": "service-account",
+      "type": "manual",
       "label": "Kie.ai Account (app.kie.ai)",
-      "check": { "url": "https://app.kie.ai" },
-      "severity": "required",
+      "check": { "note": "Operator-verified: an account must exist at https://app.kie.ai. Machine enforcement of this dependency is carried by the required kie-api-key credential below." },
+      "severity": "optional",
       "satisfy": "Create a free account at https://app.kie.ai. Load credits (pay-as-you-go) before running any generation tasks. Minimum $5 credit recommended for initial testing."
     },
     {
@@ -35,10 +35,10 @@
     },
     {
       "id": "kie-credits",
-      "type": "service-balance",
+      "type": "manual",
       "label": "Kie.ai Credits (non-zero balance)",
-      "check": { "note": "Verify via GET https://api.kie.ai/api/v1/account/balance with Authorization: Bearer $KIE_API_KEY" },
-      "severity": "warning",
+      "check": { "note": "Operator-verified: a live balance cannot be proven offline. Verify via GET https://api.kie.ai/api/v1/account/balance with Authorization: Bearer $KIE_API_KEY" },
+      "severity": "optional",
       "satisfy": "Top up credits at https://app.kie.ai/billing. A zero-credit account returns HTTP 402 on all generation tasks. Minimum recommended: $5 for initial setup verification (one smoke-test image ~$0.04–$0.10)."
     }
   ]

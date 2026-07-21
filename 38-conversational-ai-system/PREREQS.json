@@ -18,14 +18,6 @@
       "satisfy": "Install Skill 10 (GitHub Setup) first. It is in the same onboarding package; re-run the installer or install Skill 10 on its own."
     },
     {
-      "id": "skill-19",
-      "type": "skill",
-      "label": "Skill 19 - Cloudflare Setup",
-      "check": { "skill": "19-cloudflare-setup" },
-      "severity": "required",
-      "satisfy": "Install Skill 19 (Cloudflare Setup) first. It is in the same onboarding package; re-run the installer or install Skill 19 on its own."
-    },
-    {
       "id": "skill-29",
       "type": "skill",
       "label": "Skill 29 - GHL Convert and Flow",
@@ -46,7 +38,7 @@
       "type": "skill",
       "label": "Skill 46 - Kie Callback Relay",
       "check": { "skill": "46-kie-callback-relay" },
-      "severity": "recommended",
+      "severity": "optional",
       "satisfy": "Install Skill 46 (Kie Callback Relay) to route async Kie image jobs via callback instead of polling for the U-11 hero visual. Recommended, not required; without it the generator polls with a 120s timeout."
     },
     {
