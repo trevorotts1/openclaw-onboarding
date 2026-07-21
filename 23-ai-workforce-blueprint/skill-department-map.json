@@ -734,6 +734,16 @@
       "execution_sops": []
     },
     {
+      "skill": "64",
+      "slug": "agnes-video",
+      "name": "agnes-video",
+      "client_facing": false,
+      "description": "Setup/reference: Agnes AI Video V2.0 asynchronous video endpoint (text-to-video, image-to-video, keyframe animation; independent Wave-3 API integration, existing AGNES_AI_API_KEY credential).",
+      "dept_owner": "openclaw-maintenance",
+      "intent_triggers": [],
+      "execution_sops": []
+    },
+    {
       "skill": "06",
       "slug": "ghl-install-pages",
       "name": "ghl-install-pages",
