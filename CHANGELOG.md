@@ -1,3 +1,101 @@
+## [v20.0.78]  -  2026-07-21  -  RETIRED-FILE RECONCILE: canonical deletions never reached the staging tree or the strays inside the skill search path
+
+A file DELETED from the canonical library stopped being deleted somewhere
+between the repo and the boxes. Commit `34e4b6a3` (2026-07-05) replaced seven
+bare-named graphics SOPs with enhanced `SOP--`-prefixed versions. Six of the
+seven were byte-identical twins, but `chief-design-officer-sops.md` was the
+SUPERSEDED 17,221-byte predecessor of a file that was ENHANCED to 22,496 bytes
+in that same commit. Boxes still carry it. A department agent enumerating its
+SOPs can read the dead one and follow instructions the library retired two
+weeks ago.
+
+**What is NOT broken, and was not touched.** `~/.openclaw/skills/<NN-skill-name>/`
+is replaced WHOLESALE on every update — `rm -rf "$SKILLS_DIR/$SKILL_NAME"` then
+`cp -r "${SKILL_DIR%/}" "$SKILLS_DIR/"` — so a deleted file really is gone
+there. Measured across 30 reachable boxes: the live role-library is 913 files
+with ZERO orphans on every one of them. That path is correct and this release
+changes nothing about it.
+
+**ROOT CAUSE — the staging checkout is a merge, and it is permanent.**
+`install.sh` copies the fresh archive over `$OC_CONFIG/onboarding` with
+`cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/"* "$ONBOARDING_DIR/"`. That
+directory is durable — it also holds `.onboarding-state.json`, `version`, the
+install lock — so it is never wiped, and a merge-copy has no way to remove a
+file whose source no longer exists. Every file canonical has ever deleted is
+still in it: one box's `onboarding/.../graphics/sops` holds 43 files where the
+live tree holds 36. Step 5 then installs skills FROM that tree with its own
+additive per-item copy (`mkdir -p "$SKILLS_DIR/$SKILL_NAME"`, then `cp -r`
+per entry, no `rm -rf`), so re-running the installer can RE-SEED a dead file
+into the live, agent-readable skill tree. Two more surfaces the wholesale
+replace never visits because they are not `<NN-skill-name>` directories:
+`skills/onboarding/`, `skills/openclaw-onboarding/`, and
+`skills/templates/role-library/`. One box carries
+`~/.openclaw/skills/onboarding/.../chief-design-officer-sops.md` — 17,221
+bytes, dated Jun 22 — sitting in the path agents read.
+
+Measured 2026-07-21 across 30 boxes: 755 orphan instances, 369 of them in
+agent-reachable trees, 207 of those MISLEADING (superseded content still
+readable). Zero in the live canonical directory.
+
+**The mechanism is an ALLOWLIST, because this deletes files on client
+machines.** "Remove anything not in `_index.json`" is a blacklist in disguise —
+a client-authored file is also not in `_index.json`, and that rule would eat
+client work. `gen-retired-artifacts-ledger.py` walks git history over
+`templates/role-library/**.md` and writes `_retired.json`: for every path the
+library once shipped and no longer does, it records the path plus EVERY
+`content_sha` that path ever carried, hashed by `hash-content-manifest.py`'s
+own `normalize_canonical()` so a re-stamped provenance or `**Last updated:**`
+header still matches while a real edit does not. Forty retired artifacts across
+eleven departments, derived as `(ever-present - present-at-HEAD)` rather than
+from `--diff-filter=D`, which also catches deletions that landed inside merge
+commits — that is how the eighth retired SOP,
+`presentations/sops/deck-discovery-strategist-sops.md`, is found.
+
+`reconcile-orphan-library-files.py` never enumerates a directory and decides
+what to keep. It LOOKS FOR that closed list and ignores everything else. A file
+is quarantined only when its path ENDS WITH a recorded `lib_path`
+(`templates/role-library/<dept>/…/<file>.md`, five or more components) AND its
+`content_sha` is one the ledger records AND the path is absent from the live
+manifest. Anything else is kept: a locally modified retired file is a CONFLICT,
+reported loudly at rc 4 and never removed; an unreadable file or a symlink is
+UNDECIDABLE, rc 4, never followed; a file that matches no ledger path is never
+examined at all. Two things it cannot reach by SHAPE rather than by rule — a
+client's materialized workforce under `workspace/departments/`, whose paths
+contain no `templates/role-library/` for any entry to match, and cold backups
+(`skills.bak*`, `skills-backup-*`, `backups/`, `openclaw-backups/`,
+`master-files/`, `updater-src-*`), which are pruned from the walk before any
+file in them is looked at because they are rollback material.
+
+**Dry-run is the default and stays the default.** Both call sites — in
+`install.sh` immediately after the merge-copy, and in `update-skills.sh` after
+the artifact-refresh drain — REPORT and touch nothing unless
+`OPENCLAW_RECONCILE_ORPHANS=apply` is set for that run. Even then removal is a
+MOVE into `<oc-root>/.orphan-quarantine/<UTC-timestamp>/` with a
+`manifest.json` recording every original path and sha; `--restore <batch>`
+puts them back and refuses to clobber a file that reappeared. An unusable
+ledger or manifest is rc 2 with zero deletions — never a guess, never a silent
+success. A second run is a no-op. Nothing depends on the box being current: the
+ledger carries every sha each retired path ever had, so a box many versions
+behind reconciles as precisely as a current one.
+
+`test-reconcile-orphan-library-files.sh` (75 assertions, hermetic, CI suite 12)
+reproduces the additive merge-copy first so the reproduction can never become
+theater, then proves each of the above — including that a client-authored file
+in the same directory is untouched in dry-run AND under `--apply`, that a
+same-basename file in a different department is never mistaken for a match,
+that all four cold-backup copies survive, and that both call sites still
+default to dry-run. `retired-artifacts-ledger-guard.yml` runs
+`gen-retired-artifacts-ledger.py --check` with full history: delete a library
+file without regenerating the ledger and CI fails, because an unrecorded
+deletion is one no box can ever act on.
+
+**What this does not protect against.** It cannot remove a dead canonical file
+whose bytes a client has edited — that is reported as a CONFLICT for a human,
+by design. It cannot reach retired files outside
+`23-ai-workforce-blueprint/templates/role-library/`; widening the tracked tree
+is a one-constant change plus a regeneration. And it cannot fix a box that
+never runs an update.
+
 ## [v20.0.77]  -  2026-07-21  -  FLOOR-MISSING: a role folder the box LOST stayed classified CURRENT, so the whole MISSING repair chain no-op'd
 
 v20.0.76 fixed the STALE half of the artifact-refresh flow — a role whose folder
