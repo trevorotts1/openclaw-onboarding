@@ -1,3 +1,86 @@
+## [v20.0.80]  -  2026-07-21  -  QC MEASURED THE WRONG DEPARTMENTS TREE: the checker audited a directory the repairer never writes to
+
+`qc-completeness.sh` reported `missing mandatory: funnels` on boxes where
+`funnels/` was present on disk. The gate was not wrong about funnels — it was
+looking in the wrong directory.
+
+**ROOT CAUSE — checker and repairer resolved two different trees.** The
+floor-fill repair pipeline reads and writes exactly one departments tree:
+
+    detect-stale-artifacts.py:326      departments_root = Path(workspace) / "departments"
+    floor-fill-driver.py:170-171       /data/.openclaw/workspace/departments  (VPS/Docker)
+                                       $HOME/.openclaw/workspace/departments  (Mac)
+    migrate-existing-workforce.sh:138-140  FF_WS_ROOT/departments
+
+`_qc_company_info.py`, which resolves the tree `qc-completeness.sh` audits, had
+no candidate of that shape at all — every entry in its candidate list and its
+parent-scan list was `zero-human-company`-shaped, so it resolved
+`~/clawd/zero-human-company/<slug>/departments`. On a box where the repairer had
+materialized a department into the workspace tree, the checker was auditing a
+stale legacy copy and reporting a department missing that the repairer had
+already restored. A checker that does not measure the tree the repairer
+maintains cannot audit the repair.
+
+Measured read-only across 18 reachable boxes before the fix: **13 had the
+checker and the repairer pointed at different directories**, and on **10** of
+those the gate failed — 8 reporting `missing mandatory: funnels`, 2 unable to
+resolve any tree at all. `funnels/` existed in the repairer's tree on **all 18**.
+That false failure was blocking a real safety improvement: a proposed gate making
+workforce-provisioning failure withhold the completion stamp measured 28/30 boxes
+newly failing, ~10 of them purely from this false miss.
+
+**Two sibling defects in the same resolver, both measured on live boxes.**
+
+1. **A company dir was accepted AS the departments dir with no test at all.** The
+   non-standard-layout fallback carried the comment "Check if it contains
+   role-like subdirs directly" above an unconditional assignment — the check was
+   never written. One box's company dir held a single role folder plus
+   `departments.json`, so QC measured a 2-entry "departments tree" and declared
+   the entire 23-department mandatory floor missing. Now guarded by
+   `looks_like_departments_dir()`: at least two real subdirectories and no
+   `how-to.md` directly inside (that file marks a single DEPARTMENT dir, never a
+   departments root) — the same shape test `department-floor.py` already applied.
+   It is REJECT-only: it can turn a wrong answer into a loud "no workforce",
+   never a missing department into a present one.
+
+2. **The template guard was defeated by a symlink.** `_is_template_path()` was
+   applied to the PARENT of the per-company scan but never re-applied to the
+   RESOLVED CHILD. A box whose company entry is a symlink into
+   `~/Downloads/openclaw-master-files/...` resolved straight past the guard, and
+   QC audited the shipped TEMPLATE instead of the client's own workforce — the
+   exact outcome the v12.9.4 header promised was impossible ("guard every
+   candidate ... so a Downloads path can never win over a real one").
+
+**Also fixed: `department-floor.resolve_departments_dir()` read a key that does
+not exist.** It asked `detect_platform` for `workspace_root` / `clawd_root`;
+`get_openclaw_paths()` has only ever returned `workspace`. That expression
+evaluated to `None` on every box in the fleet, so the resolver silently fell back
+to `~/clawd` — the same wrong-tree defect, in the checker
+`qc-assert-workspace-departments-built.sh` depends on.
+
+**The rule now lives in one place.** `23-ai-workforce-blueprint/scripts/_qc_paths.py`
+holds `live_departments_dir()` — precedence byte-identical to
+floor-fill-driver.py:170-171, the presence of `/data/.openclaw` deciding — and
+`looks_like_departments_dir()`. Both `_qc_company_info.py` and
+`department-floor.py` import them, so the checker and the repairer cannot drift
+apart again. One rule covers every box type: the `/data` branch for VPS/Docker on
+the data volume, the `$HOME` branch for Mac and for Docker running as `node`
+(`/home/node/.openclaw` IS `$HOME/.openclaw` for that user).
+
+**Nothing was loosened.** The live tree wins only when it EXISTS; a box that
+never grew one still falls through to the older `zero-human-company` layouts
+rather than being told its workforce is missing. `tests/unit/qc-departments-tree-resolution.test.sh`
+ships 7 scenarios / 11 assertions, hermetic under a sandboxed HOME, touching no
+fleet box. Scenario 3 is the anti-false-positive control: a GENUINELY absent
+department must still be reported missing, and must be the ONLY one reported —
+it was tightened after it passed vacuously against pristine `origin/main` (the
+broken resolver found nothing, so all 23 mandatory departments read as missing
+and funnels happened to be among them; a test a broken resolver satisfies proves
+nothing). Measured on a case-SENSITIVE APFS volume, the layout that hid the
+PR #680/#681 bugs on macOS: **4 passed / 7 failed against pristine origin/main,
+11 passed / 0 failed with the fix.** The two pre-existing failures in
+`d5-dept-activation-floor-gate.test.sh` and `test-gate-company-dir-resolution.sh`
+are unchanged by this release (verified identical on both sides).
 ## [v20.0.79]  -  2026-07-21  -  ROLL VERDICT: a box could lose EVERY role folder on disk and still be recorded as a clean, completed roll
 
 The roll-level verdict gate added in PR #677
