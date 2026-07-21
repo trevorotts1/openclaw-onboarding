@@ -1,7 +1,7 @@
 ---
 name: email-engine
 description: The Email Engine — a governed skill + Email Superlibrary that SELECTS the right framework, GENERATES corpus-faithful email copy, QCs it against fail-closed provers, and hands a DRAFT-ONLY deploy plan to the Convert & Flow (GoHighLevel) operator. Owns the reusable IP — 13 email frameworks, 12 persona styles, the buyer-type -> email# -> framework map, the 4 sequence objectives, the 10-email landing-page promo sequence and the 12-email buyer-type / high-ticket-appointment sequences — and gates every one of those SACRED structures with a deterministic, model-free floor prover (prove-email.py). Runs P1 SELECT -> P2 GENERATE -> P3 QC -> P4 DEPLOY through one canonical entry (email-engine-entry.sh) with a deps/bypass/hash-pin/nonce gate; nothing is ever sent without explicit human approval.
-version: 1.1.3
+version: 1.1.4
 ---
 
 # Email Engine (Skill 50)
@@ -71,7 +71,7 @@ All from `SOURCE-EMAIL-CORPUS.md`. Each is a deterministic measurer with a named
 | Sequence length | landing-page = 10 emails; high-ticket / buyer-type = 12 emails; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
 | Objective validity | exactly one of promotional / abandoned-cart / upsell / downsell | `AF-EMAIL-OBJECTIVE-INVALID` |
 | Persona-style validity | if set, one of the 12 canonical styles | `AF-EMAIL-PERSONA-INVALID` |
-| Persona never named | NEVER name/quote the referenced person (tone only, 100% original) | `AF-EMAIL-PERSONA-NAMED` |
+| Persona never named | NEVER name/quote the referenced person (tone only, 100% original) — scanned in EVERY recipient-visible field: subjects, **previews (the inbox preheader)**, body, ctas, sections, disruptive_elements and founder_name (the From line) | `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |
 | Preview count | Convert&Flow master = 1 line; high-ticket = 2 (the sequence declares which) | `AF-EMAIL-PREVIEW-COUNT` |
 | Word band | 150-300 words, EXCEPT the 3-B Plan (< 150). A logged client-exact override wins over the default band | `AF-EMAIL-WORDBAND` |
