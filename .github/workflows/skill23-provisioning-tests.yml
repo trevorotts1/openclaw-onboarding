@@ -100,6 +100,25 @@ name: Skill-23 provisioning tests
 #                                           programmatically excises the sentinel-
 #                                           bounded wiring block and confirms the
 #                                           contract file stops being produced.
+#  12. test-reconcile-orphan-library-files.sh — canonical DELETIONS reach the
+#                                           trees the updater's wholesale skill
+#                                           replace never touches (the durable
+#                                           $OC_CONFIG/onboarding staging tree
+#                                           merge-copied by install.sh, and
+#                                           strays inside the skill search path),
+#                                           WITHOUT it ever being possible to
+#                                           remove client-authored content.
+#                                           Reproduces the additive merge-copy,
+#                                           then proves: dry-run is the default;
+#                                           a client-authored file is never
+#                                           touched; a locally-modified retired
+#                                           file is a CONFLICT, not an orphan;
+#                                           removal QUARANTINES (restorable) and
+#                                           never unlinks; cold backups are never
+#                                           walked; a materialized workforce is
+#                                           structurally unreachable; an unusable
+#                                           ledger is rc 2 with zero deletions;
+#                                           and both call sites stay dry-run.
 #
 # All are hermetic: each builds its own mktemp sandbox and pins
 # ROLE_LIBRARY_PATH to the in-repo skill dir, so they exercise the REPO (the
@@ -125,7 +144,7 @@ on:
 
 jobs:
   skill23-provisioning-tests:
-    name: Skill-23 provisioning tests (11 hermetic suites)
+    name: Skill-23 provisioning tests (12 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -155,6 +174,7 @@ jobs:
             test-vertical-derivation-guard.sh
             test-u109-floor-wipe-regression.sh
             test-u110-optout-caller-wiring.sh
+            test-reconcile-orphan-library-files.sh
           )
           rc=0
           for s in "${SUITES[@]}"; do

@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.77"
+ONBOARDING_VERSION="v20.0.78"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.77 - safe_json_edit
+# v20.0.78 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3344,6 +3344,60 @@ else:
     fi
   else
     echo "  (refresh-stale-roles.py not found or python3 unavailable -- skipping artifact-refresh-queue drain; older bundle)"
+  fi
+
+  # ----------------------------------------------------------
+  # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21). Canonical DELETIONS reach the
+  # live skill dir -- `rm -rf "$SKILLS_DIR/$SKILL_NAME"` + `cp -r` above is a
+  # WHOLESALE replace, and it is measured clean (role-library = 913 files, ZERO
+  # orphans, on all 30 reachable boxes). They do NOT reach three other trees:
+  #   1. $OC_CONFIG/onboarding -- the PERSISTENT staging checkout, merge-copied
+  #      by install.sh:3165 (`cp -r .../openclaw-onboarding-main/* $ONBOARDING_DIR/`)
+  #      into a durable dir that also holds client state and is never wiped.
+  #   2. skills installed FROM that dirty staging tree by install.sh:3193-3205,
+  #      which is additive too (no rm -rf), so a re-run can RE-SEED dead files.
+  #   3. strays inside the skill search path the wholesale replace never visits
+  #      because they are not <NN-skill-name> dirs: skills/onboarding/,
+  #      skills/openclaw-onboarding/, skills/templates/role-library/.
+  # Measured 2026-07-21: 755 orphan instances across 30 boxes, 369 in
+  # agent-reachable trees, 207 of those MISLEADING (a superseded 17,221-byte
+  # SOP still readable next to its 22,496-byte replacement).
+  #
+  # DRY-RUN IS THE DEFAULT and stays the default: this step REPORTS what it
+  # would quarantine and touches nothing. Removal is opt-in per box via
+  # OPENCLAW_RECONCILE_ORPHANS=apply, and even then it MOVES files to
+  # <oc-root>/.orphan-quarantine/<ts>/ (restorable), never unlinks. The tool
+  # can only act on a file whose path AND content_sha are both recorded in
+  # templates/role-library/_retired.json (generated from git history,
+  # CI-gated) -- a client-authored file matches neither, a locally-modified
+  # dead file matches only the path and is reported as a CONFLICT.
+  # Cold backups (skills.bak*, backups/, updater-src-*) are pruned from the
+  # walk: they are rollback material, deleting them would be the bug.
+  #
+  # ADVISORY ONLY -- it never withholds the version stamp. An orphan is a
+  # cleanliness/read-hazard finding about trees the updater does not own; a
+  # box that is otherwise fully current must not be held back by one.
+  # ----------------------------------------------------------
+  RECONCILE_ORPHANS="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/reconcile-orphan-library-files.py"
+  if [ -f "$RECONCILE_ORPHANS" ] && command -v python3 >/dev/null 2>&1; then
+    echo ""
+    _RO_ROOT="$(dirname "$SKILLS_DIR")"
+    # rc 10 = orphans found in dry-run, rc 4 = a conflict/undecidable file was
+    # reported and skipped, rc 2 = unusable ledger/manifest (nothing touched).
+    # None of those is an update failure, and none is swallowed either -- the
+    # tool's full report, including its own RECONCILE_STATUS line, is printed.
+    if [ "${OPENCLAW_RECONCILE_ORPHANS:-report}" = "apply" ]; then
+      echo "  Reconciling RETIRED library files (OPENCLAW_RECONCILE_ORPHANS=apply -> quarantine)..."
+      python3 "$RECONCILE_ORPHANS" --root "$SKILLS_DIR" --root "$_RO_ROOT/onboarding" \
+        --apply 2>&1 | tee -a "$LOG_FILE" || true
+    else
+      echo "  Reconciling RETIRED library files (REPORT-ONLY; set OPENCLAW_RECONCILE_ORPHANS=apply to quarantine)..."
+      python3 "$RECONCILE_ORPHANS" --root "$SKILLS_DIR" --root "$_RO_ROOT/onboarding" \
+        2>&1 | tee -a "$LOG_FILE" || true
+    fi
+    unset _RO_ROOT
+  else
+    echo "  (reconcile-orphan-library-files.py not found or python3 unavailable -- skipping retired-file reconcile; older bundle)"
   fi
 
   # ----------------------------------------------------------

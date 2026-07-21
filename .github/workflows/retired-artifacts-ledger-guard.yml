@@ -1,0 +1,68 @@
+name: Retired-artifacts ledger guard
+
+# Keeps templates/role-library/_retired.json in lockstep with git history.
+#
+# WHY THIS GATE EXISTS
+# Canonical DELETIONS only reach a client box for files the box can PROVE were
+# canonical: reconcile-orphan-library-files.py may quarantine a file only when
+# BOTH its path and its content_sha are recorded in _retired.json. That ledger
+# is generated from git history by gen-retired-artifacts-ledger.py.
+#
+# So the moment someone deletes a role-library file WITHOUT regenerating the
+# ledger, that file becomes permanently unremovable on every box — the exact
+# defect this whole mechanism exists to close, silently re-opened. This job
+# fails the PR until the ledger records the deletion.
+#
+# fetch-depth: 0 is REQUIRED — the generator reads `git log` over the tracked
+# tree, and the default shallow checkout has no history to read.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - "23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py"
+      - "23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+      - ".github/workflows/retired-artifacts-ledger-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/templates/role-library/**"
+      - "23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py"
+      - "23-ai-workforce-blueprint/scripts/hash-content-manifest.py"
+      - ".github/workflows/retired-artifacts-ledger-guard.yml"
+
+jobs:
+  retired-ledger-in-sync:
+    name: _retired.json matches git history
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo with full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify the retired-artifacts ledger is in sync
+        shell: bash
+        run: |
+          set +e
+          set -uo pipefail
+          python3 23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py --check
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "" >&2
+            echo "A canonical role-library file was deleted (or restored) without" >&2
+            echo "regenerating the retired-artifacts ledger. Until the ledger records" >&2
+            echo "it, no box can ever remove that file — it stays readable forever in" >&2
+            echo "the staging tree and in every stray copy inside the skill search path." >&2
+            echo "" >&2
+            echo "Fix:" >&2
+            echo "  python3 23-ai-workforce-blueprint/scripts/gen-retired-artifacts-ledger.py" >&2
+            echo "  git add 23-ai-workforce-blueprint/templates/role-library/_retired.json" >&2
+          fi
+          exit "$rc"

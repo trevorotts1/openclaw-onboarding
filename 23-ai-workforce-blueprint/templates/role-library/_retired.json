@@ -1,0 +1,510 @@
+{
+  "schema": "openclaw/retired-artifacts@2",
+  "generated_at": "2026-07-21T05:44:13.146017+00:00",
+  "source_ref": "4b01ae4e3a3486be22fc98c54d5002d445637268",
+  "tracked_trees": [
+    "23-ai-workforce-blueprint/templates/role-library"
+  ],
+  "algo": {
+    "content_sha": "sha256 over hash-content-manifest.py normalize_canonical()"
+  },
+  "counts": {
+    "artifacts": 40,
+    "sops": 8,
+    "roles": 32,
+    "departments": 11
+  },
+  "artifacts": [
+    {
+      "lib_path": "templates/role-library/_stage1_drafts/openclaw-maintenance/system-health--uptime-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/_stage1_drafts/openclaw-maintenance/system-health--uptime-specialist.md",
+      "dept": "_stage1_drafts",
+      "file": "system-health--uptime-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:0d99efa1933586e609ac3bab29f6c325d432498f14520331dced0dd6fcdb3a48"
+      ],
+      "retired_in": "1cc78bd6be4ed43f8170b76dcab0b2ac45ed70cf",
+      "retired_at": "2026-06-13T03:10:39-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/account-management/director-of-account-management.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/account-management/director-of-account-management.md",
+      "dept": "account-management",
+      "file": "director-of-account-management.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:5b1a806f61170a3bce255bb871e0831498f546480e41400b19820f9b5366e80b"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/client-experience-booking/booking-coordinator.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/client-experience-booking/booking-coordinator.md",
+      "dept": "client-experience-booking",
+      "file": "booking-coordinator.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:1db769045a833558c178d583550875030e229f2efd7b38ec2be5b1f25986219f"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/client-experience-booking/client-onboarding-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/client-experience-booking/client-onboarding-specialist.md",
+      "dept": "client-experience-booking",
+      "file": "client-onboarding-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:1f22d52a51300516f3a52889d8a15637fa9545ff73fe42013b740d9ec2b9264e"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/engineering/director-of-engineering.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/engineering/director-of-engineering.md",
+      "dept": "engineering",
+      "file": "director-of-engineering.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:a0758baa9abeee1b674b9ad7d5b827025c621c6b2aeff1394016d959cc2f5635"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/engineering/qa-engineer.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/engineering/qa-engineer.md",
+      "dept": "engineering",
+      "file": "qa-engineer.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:20208068ea09266bb3916299ae84921a5e2568d9c19522aaefe3ad21ae6568f4"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/engineering/systems-engineer.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/engineering/systems-engineer.md",
+      "dept": "engineering",
+      "file": "systems-engineer.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:d3db37614ffdaa29b790b18296621044b2642ffd7748eb4badc3c6ed31e030e3"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/fish-audio/FISH-AUDIO-STRATEGIC-PLAN.md",
+      "dept": "fish-audio",
+      "file": "FISH-AUDIO-STRATEGIC-PLAN.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:69223eb3fba8178ce884f175e9e00a32e01b0602bb35b312c2b9c54d172d1a53"
+      ],
+      "retired_in": "4256e87e4364c9c0049c4e3302bb42ea55790be0",
+      "retired_at": "2026-06-18T00:50:51-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/fish-audio/FISH-AUDIO-TAGS-MASTER.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/fish-audio/FISH-AUDIO-TAGS-MASTER.md",
+      "dept": "fish-audio",
+      "file": "FISH-AUDIO-TAGS-MASTER.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:ec744770fcac658c3b6864dc08f960a165f615a60cb4582699a6a09b420d87f9"
+      ],
+      "retired_in": "4256e87e4364c9c0049c4e3302bb42ea55790be0",
+      "retired_at": "2026-06-18T00:50:51-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/founding-member-concierge/concierge-lead.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/founding-member-concierge/concierge-lead.md",
+      "dept": "founding-member-concierge",
+      "file": "concierge-lead.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:22d81388b83e6710b4e0f5ca575ec25dbb4c739a70935dcec222f378a3557719"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/founding-member-concierge/director-of-founding-member-concierge.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/founding-member-concierge/director-of-founding-member-concierge.md",
+      "dept": "founding-member-concierge",
+      "file": "director-of-founding-member-concierge.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:b7ae8905800133122f8ac08fe594fdd3bcf27e366742c1162dd5f753b489d84b"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/founding-member-concierge/membership-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/founding-member-concierge/membership-specialist.md",
+      "dept": "founding-member-concierge",
+      "file": "membership-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:8bd151315ee29bf2e63da7ba74c71fd60a2172f8f73fdd99a54896c2a9ed1ba0"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--asset-provenance-librarian.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--asset-provenance-librarian.md",
+      "dept": "graphics",
+      "file": "ROLE--asset-provenance-librarian.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:289a66e7e49854f3e2fc350f3f566f7e4ad11b2672fe4a02a3450af97bc71066"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--brand-systems-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--brand-systems-specialist.md",
+      "dept": "graphics",
+      "file": "ROLE--brand-systems-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:bfcecb30442b0c209628377746f14115b85de19d3eb18841163e193ba52d35af"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--deck-systems-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--deck-systems-specialist.md",
+      "dept": "graphics",
+      "file": "ROLE--deck-systems-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:cdf052ffc12d55ed25e17689b766aacaabcebdaff66284c11cf0ecb72aeed63d",
+        "sha256:0ce227cd0e0412c196afdaa5467e993dd1bf2f511d3c9ff3db2ee78944d06d0e"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--design-producer.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--design-producer.md",
+      "dept": "graphics",
+      "file": "ROLE--design-producer.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:24bdc9ff5667693de58db0db6a1021463efcdb273c25e09371ee26bcc11351f3"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--fidelity-tester.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--fidelity-tester.md",
+      "dept": "graphics",
+      "file": "ROLE--fidelity-tester.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:769569808b8deefef70de8e9a2ced8290a4e60190d5f0a241c28ba21c2516a87",
+        "sha256:45a1332fad4e08372ffcd163ecf3cfe259ec1f4e36eb64128ce58f8d9fbf1f41"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--generation-operator.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--generation-operator.md",
+      "dept": "graphics",
+      "file": "ROLE--generation-operator.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:3827ed8405457a002983d47f0b0b374752148cbb05e5c493dd82031addd19133"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--likeness-rights-officer.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--likeness-rights-officer.md",
+      "dept": "graphics",
+      "file": "ROLE--likeness-rights-officer.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:1f1076a010f48dcd98462e4b59a170069e2d690f0c9de593d883a199bbd06be3",
+        "sha256:996c529156ed17bdda7ccb32db37e9a95a8f296e6ade698571669d2d85330cba"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--motion-systems-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--motion-systems-specialist.md",
+      "dept": "graphics",
+      "file": "ROLE--motion-systems-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:0cbbe4a689525de825bdd657f5844379b53877d9f40fa2fde6fd950bbffba0b1"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--photo-shoot-director.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--photo-shoot-director.md",
+      "dept": "graphics",
+      "file": "ROLE--photo-shoot-director.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:781ca99cbb796a8be1da51d35d687a8e0ba6e88eedebf4b432653b30a702e4e5",
+        "sha256:1aa7f8938ee1d87e8c9312e1978ed01386f47d965b6a66456566d7435c940bfe"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--render-dispatcher.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--render-dispatcher.md",
+      "dept": "graphics",
+      "file": "ROLE--render-dispatcher.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:52d597d4870b4635bb1678f9ab0d1d27e25f319a4755fae5c6ebd596d76b8ba0"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--style-analyst.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--style-analyst.md",
+      "dept": "graphics",
+      "file": "ROLE--style-analyst.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:93b4315c7a31d5120ab28f97cead3b78410c7f69799cabfeb13221f636dc490e",
+        "sha256:c77ba3da9767a6b5f7b88f294dde173f24c4d45b083490386529ab422d816ba1",
+        "sha256:64fb28698fd221ebe2f94310b0269da81c5a5cf0d7a03e2001fe681800584046"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--style-librarian.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--style-librarian.md",
+      "dept": "graphics",
+      "file": "ROLE--style-librarian.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:ef0b09ebe0674c8ac89ee2778de2c923e6713cc644b4b082154f050211feb344",
+        "sha256:c5b3b3e497648b6eb37f2824a447c092f827e4302deb7ca4b5760f29a0306c0b"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/ROLE--style-steward.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/ROLE--style-steward.md",
+      "dept": "graphics",
+      "file": "ROLE--style-steward.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:fe2790684bf5d69c86a40a4e64bf885960c53c2d412c6c36a08c93cd520527e5"
+      ],
+      "retired_in": null,
+      "retired_at": null
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/chief-design-officer-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/chief-design-officer-sops.md",
+      "dept": "graphics",
+      "file": "chief-design-officer-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:fe89c47d9233bf77e8eb56da2f0d297cf3ba76fd68512636c5783a9b5737f148",
+        "sha256:37566ec6c5426a89a74f030d0acee7d9b165797cc0cd65485328de23c33c50fc"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/deck-systems-specialist-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/deck-systems-specialist-sops.md",
+      "dept": "graphics",
+      "file": "deck-systems-specialist-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:736bbf7311e9d13b8540a8c4ebef2ad3089dcd2e2b75ec4284c5fa7ddf967fbf",
+        "sha256:4eb66f0cad8436a641c53429b574945d6a955ac236487197dbf1b3df778a4fdd"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/fidelity-tester-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/fidelity-tester-sops.md",
+      "dept": "graphics",
+      "file": "fidelity-tester-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:bb4617921eebaec35d48c7fb26c631a3fe0d2afa515abe102cd1c19d375f8eb3",
+        "sha256:90111133b9e945ce2cb260322cec59fd184bc22b9dff82dd9966203be1d7ed22"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/generation-operator-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/generation-operator-sops.md",
+      "dept": "graphics",
+      "file": "generation-operator-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:959059a2b6d035ad70a614b059b3c8826b7d847040e70c1c526cd8a1a6a05164"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/healer-graphics-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/healer-graphics-sops.md",
+      "dept": "graphics",
+      "file": "healer-graphics-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:067559bcd5d21b7b80ccf78d34765c8ffa6158702f66f91dff2144e07b857f3c"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/photo-shoot-director-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/photo-shoot-director-sops.md",
+      "dept": "graphics",
+      "file": "photo-shoot-director-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:ccf120d7aaaadcdf92b323bf3bebf551383d4d96ab7e3d3cd2c3e5d38532c890"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/graphics/sops/style-analyst-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/graphics/sops/style-analyst-sops.md",
+      "dept": "graphics",
+      "file": "style-analyst-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:695961c6568d3d28b35b468931e52b791212ae2a8ce243be152810a68ec14e29",
+        "sha256:40893b559c6ef13c3a7205fb4ebb656be71292c637a41547b2316961853d5d1c"
+      ],
+      "retired_in": "34e4b6a3ab5205f7df590132b1353178cdde93ed",
+      "retired_at": "2026-07-05T11:33:49-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/launch-operations/director-of-launch-operations.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/launch-operations/director-of-launch-operations.md",
+      "dept": "launch-operations",
+      "file": "director-of-launch-operations.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:a428fd688a2dda8fdc5228793c2f37bca59dc3d86c8d6c3e1271949fc93f6447"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/launch-operations/go-to-market-specialist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/launch-operations/go-to-market-specialist.md",
+      "dept": "launch-operations",
+      "file": "go-to-market-specialist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:e8970273ff63ea9d7f3920599e18b6f3a7dd26a5dc4042a68a78c41206fa8cc8"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/launch-operations/launch-manager.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/launch-operations/launch-manager.md",
+      "dept": "launch-operations",
+      "file": "launch-manager.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:ef082e04181919bb006fca5163ddf4ad1ac45a0a8a003796858dfd125bb96d96"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/legal-compliance/qc-specialist---legal.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/legal-compliance/qc-specialist---legal.md",
+      "dept": "legal-compliance",
+      "file": "qc-specialist---legal.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:6207e75a791d76510d89b87db599955fbeddcf0fed2d8b5f65ba2c2fd3dfab66"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/listings/director-of-listings.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/listings/director-of-listings.md",
+      "dept": "listings",
+      "file": "director-of-listings.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:d6d12281a6fb68cd3e8016e375488059ae807b6cd9a0ff672cc9fdf886acaf33"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/listings/listing-creator.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/listings/listing-creator.md",
+      "dept": "listings",
+      "file": "listing-creator.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:239ec6657b652629051dba2574e99f2b4c10195cb0e1455270d7aebc2bf889ee"
+      ],
+      "retired_in": "d47d2fd2904b006fcd9c90f5dcfe9a55bc59e3f3",
+      "retired_at": "2026-06-19T03:23:57-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/presentations/deck-discovery-strategist.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/deck-discovery-strategist.md",
+      "dept": "presentations",
+      "file": "deck-discovery-strategist.md",
+      "kind": "role",
+      "content_shas": [
+        "sha256:7ab39a9ad7f7b5d6e7e73d4d5146a15eed5bd1f8302033372c8f201e0cea1919"
+      ],
+      "retired_in": "f5942a6867316b41cda71111a5a5e79ec1be081a",
+      "retired_at": "2026-06-12T14:00:15-04:00"
+    },
+    {
+      "lib_path": "templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",
+      "repo_path": "23-ai-workforce-blueprint/templates/role-library/presentations/sops/deck-discovery-strategist-sops.md",
+      "dept": "presentations",
+      "file": "deck-discovery-strategist-sops.md",
+      "kind": "sop",
+      "content_shas": [
+        "sha256:fd210b029d320e75bd88dd46a12d5cdf93ed54005bfa2a22cecb614a3f40974d"
+      ],
+      "retired_in": "f5942a6867316b41cda71111a5a5e79ec1be081a",
+      "retired_at": "2026-06-12T14:00:15-04:00"
+    }
+  ]
+}

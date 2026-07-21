@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.77"
+ONBOARDING_VERSION="v20.0.78"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3166,6 +3166,41 @@ cp -r "$TEMP_EXTRACT/openclaw-onboarding-main/"* "$ONBOARDING_DIR/"
 rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
 
 success "Extracted to $ONBOARDING_DIR"
+
+# ----------------------------------------------------------
+# RETIRED-LIBRARY-FILE RECONCILE (2026-07-21) -- the ROOT-CAUSE surface.
+# The copy above is a MERGE into a PERSISTENT directory ($OC_CONFIG/onboarding,
+# set at the ONBOARDING_DIR assignment above). It also holds client state, so
+# it is never wiped -- which means every file canonical has ever DELETED is
+# still sitting in it. Measured 2026-07-21 on one box:
+# onboarding/.../graphics/sops = 43 files vs the live tree's 36. Step 5 below
+# then installs skills FROM this tree with an additive per-item copy, so a dead
+# file here can be RE-SEEDED into the live, agent-readable skill tree.
+#
+# Reconciling here, before Step 5 reads the tree, is what stops the
+# accumulation at its source. DRY-RUN by default: it REPORTS and touches
+# nothing unless OPENCLAW_RECONCILE_ORPHANS=apply, and even then it MOVES to
+# <oc-root>/.orphan-quarantine/<ts>/ rather than unlinking. It can only act on
+# a file whose path AND content_sha are BOTH recorded in
+# templates/role-library/_retired.json; anything else -- client-authored,
+# locally modified, unrecognized -- is kept. Never fatal to the install.
+# ----------------------------------------------------------
+_RECONCILE_ORPHANS="$ONBOARDING_DIR/23-ai-workforce-blueprint/scripts/reconcile-orphan-library-files.py"
+if [ -f "$_RECONCILE_ORPHANS" ] && command -v python3 >/dev/null 2>&1; then
+    if [ "${OPENCLAW_RECONCILE_ORPHANS:-report}" = "apply" ]; then
+        note "Reconciling RETIRED library files in the staging tree (apply -> quarantine)..."
+        OPENCLAW_SKILL23_DIR="$ONBOARDING_DIR/23-ai-workforce-blueprint" \
+          python3 "$_RECONCILE_ORPHANS" --root "$ONBOARDING_DIR" \
+          --quarantine-root "$OC_CONFIG" --apply 2>&1 || true
+    else
+        note "Reconciling RETIRED library files in the staging tree (REPORT-ONLY; set OPENCLAW_RECONCILE_ORPHANS=apply to quarantine)..."
+        OPENCLAW_SKILL23_DIR="$ONBOARDING_DIR/23-ai-workforce-blueprint" \
+          python3 "$_RECONCILE_ORPHANS" --root "$ONBOARDING_DIR" \
+          --quarantine-root "$OC_CONFIG" 2>&1 || true
+    fi
+else
+    note "(reconcile-orphan-library-files.py not present in this bundle -- skipping retired-file reconcile)"
+fi
 
 SKILL_COUNT=$(discover_skills "$ONBOARDING_DIR")
 success "Skills found: $SKILL_COUNT"
