@@ -1,3 +1,36 @@
+## [v20.0.96]  -  2026-07-21  -  BATCH INTEGRATION: the three PRs deferred at v20.0.95 landed in one merge train (Skill-25 contract suite wired, A10 four certification seams, anthology shared run directory)
+
+The three PRs v20.0.95 recorded as DEFERRED (#718, #719, #711) were reconciled onto
+v20.0.95 in a single integration branch and now land. Each merge is `--no-ff`
+(preserving the PR-branch commit identities); boilerplate/version/CHANGELOG churn was
+kept at main and the repo version rolled ONCE here. Each skill's own CHANGELOG carries
+the full detail; this entry records the batch.
+
+- **#718 ci: wire the Skill-25 video-creator contract suite into CI.** On today's main
+  three of the four checks #718 originally proposed were already wired by guards that
+  landed after the branch forked (prereqs-schema-guard runs qc-prereqs-json.sh as a HARD
+  gate + runtime enforcement test; checker-false-fail-guards wires check_lattice_citation;
+  embedded-python-syntax-guard wires the embedded-python residue check), so only the one
+  check still unwired anywhere on main lands: `unwired-checks-guard.yml` runs the 93 Skill-25
+  contract tests (PR #686's 16 blockers) with the ffmpeg + ImageMagick + pinned
+  moviepy==1.0.3 provisioning the suite needs, a JUnit executed-count floor of 93, and a
+  red-proof self-test. No shared script or guard was duplicated or reverted.
+- **#719 fix(49/51/56): A10 — four certification seams that minted on self-authored
+  evidence.** Delegated phases now read ledger CONTENT and consult a provider-receipt
+  store that refuses evidence stamped by the certificate's own subject (T0-09); placeholder
+  URLs/scores are rejected (T0-10); the required page-set is derived from the locked funnel
+  size (T0-11); and the Skill-51 intake-conversation rule is promoted from advisory to the
+  required engine preflight P-SP-INTAKE-TRACE (`build_deck._chk_sp_intake_trace`,
+  PIPELINE-MANIFEST v24 -> v25, MASTER ruleset + negative-test probe) (T0-12). 49 -> 1.4.0,
+  51 -> 1.1.0, 56 -> 1.5.0 (frontmatter aligned). CANONICAL-RENDERER-PIN.sha256 regenerated
+  to the reviewed renderer; sync_check IN SYNC, test_preflight ALL PASS.
+- **#711 fix(59-anthology-engine): one durable run directory across S0..S8.** The second
+  authoring stage could never reach tone authoring because each stage resolved its own run
+  directory; the stages now share one canonical run directory so S9 reads the chapters S5/S6
+  wrote. `anthology-shared-run-dir-guard.yml` added (with a pytest-install step so its S9
+  test executes). Skill 59 is rollout-HELD — this is repo-only and does NOT roll 59 to the
+  fleet. 59 -> 0.1.10 (frontmatter aligned).
+
 ## [v20.0.95]  -  2026-07-21  -  BATCH INTEGRATION: seven reconciled fixes landed in one merge train (fail-closed install state, single-roster watchdog + Wave 6, design-library + credential gates, PREREQS schema enforcement, Agnes image/video reference skills, book-routing receipt)
 
 Seven open PRs were hand-reconciled onto v20.0.94 in a single integration branch.
