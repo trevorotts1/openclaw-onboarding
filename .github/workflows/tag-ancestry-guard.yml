@@ -1,0 +1,63 @@
+name: Tag ancestry guard
+
+# ── PRD 2.2 Guard G4: every v11+ annotated version tag must be ON main ────────
+#
+# Companion to G1/G2/G3 in version-consistency.yml.
+#
+#   G1 — /version bumped  -> a matching ANNOTATED tag must exist.
+#   G2 — a tag exists     -> CHANGELOG.md must document it.
+#   G4 — a tag exists     -> it must point at a commit that is ON main.   <-- here
+#
+# G1 and G2 both treat "the tag exists" as proof a version shipped, but neither
+# ever checks WHERE the tag points. Tags are cut on a machine whose local tag
+# namespace is shared by many concurrent agents, so `git push origin vX.Y.Z`
+# can resolve the NAME to another agent's unmerged branch commit and publish
+# that. The tag then looks released while its content is not on main — and
+# because G2 trusts it, G2 starts demanding a CHANGELOG entry that only exists
+# on the unmerged branch, turning main AND every open PR red. That is a merge
+# lane outage caused by one mis-typed push; G4 is what notices.
+#
+# TRIGGERS — deliberately NOT pull_request.
+# Tag ancestry is a property of the tag set and main, never of a PR's diff:
+# a PR cannot introduce or repair an orphaned tag, so gating PRs on it would
+# add a check to every open PR that no PR author could act on. It runs where
+# the condition can actually change: when main moves, and when a tag is pushed.
+#
+# Security note: consumes only repo content and git metadata — no untrusted
+# event fields — so there is no injection surface in the run: block.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  check-tag-ancestry:
+    name: G4 — every v11+ annotated version tag must point at a commit on main
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure origin/main is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          # On a tag push the checkout lands detached with no main branch ref,
+          # so fetch it explicitly rather than letting the guard exit 2.
+          git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --short refs/remotes/origin/main
+
+      - name: Verify every v11+ annotated version tag is an ancestor of main
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-tag-ancestry.py --main-ref refs/remotes/origin/main
