@@ -67,6 +67,30 @@ oc_state_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 #   Seed/refresh .onboarding-state.json. Every non-archived numbered skill in
 #   <src_skills_dir> gets an entry at status=pending IF it has no entry yet.
 #   Existing entries are PRESERVED (never downgraded) — idempotent.
+#
+#   Returns 0 when the state file was written. Returns 1 when it could NOT be
+#   written — python3 missing, the target path unwritable, or the parent
+#   directory unusable.
+#
+#   ABSENT vs BROKEN (same doctrine as oc_state_mark_field below):
+#     * ABSENT state file  -> NORMAL, and this function's whole job. Seed OWNS
+#       creation; a first run has nothing to read and that is not a failure.
+#     * PRESENT but the write FAILS -> a REAL failure. The reason is printed to
+#       stderr and rc 1 is returned.
+#
+#   v20.0.9x FIX. The heredoc used to end `2>/dev/null || true`, so this
+#   function returned 0 unconditionally — including when it wrote nothing at
+#   all. install.sh's call site is
+#       oc_state_seed ... && success "Onboarding state seeded" || warn ...
+#   so a seed that never happened printed the seeded line. `|| true` is gone
+#   and the write is now atomic (tempfile + os.replace): a failure mid-write no
+#   longer leaves a truncated state file behind, i.e. it cannot turn a write
+#   failure into the corruption this file refuses to ignore elsewhere.
+#
+#   KNOWN AND DELIBERATELY UNCHANGED HERE: an existing state file that is
+#   present but unparseable is still reset to {} rather than reported. That is a
+#   separate behaviour change (it removes the only self-heal path for a corrupt
+#   file) and it is not folded into this fix.
 # ------------------------------------------------------------
 oc_state_seed() {
   local src_dir="$1"
@@ -74,12 +98,18 @@ oc_state_seed() {
   mkdir -p "$(dirname "$ONBOARDING_STATE_FILE")" 2>/dev/null || true
 
   SRC_DIR="$src_dir" VERSION="$version" STATE_FILE="$ONBOARDING_STATE_FILE" \
-  NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null || true
-import json, os, re
+  NOW="$(oc_state_now)" python3 - <<'PYEOF'
+import json, os, re, sys, tempfile
 src    = os.environ["SRC_DIR"]
 ver    = os.environ["VERSION"]
 sf     = os.environ["STATE_FILE"]
 now    = os.environ["NOW"]
+
+
+def fail(msg):
+    sys.stderr.write("oc_state_seed: %s\n" % msg)
+    raise SystemExit(1)
+
 
 state = {}
 if os.path.isfile(sf):
@@ -116,7 +146,27 @@ if os.path.isdir(src):
             e["hasCoreUpdates"] = has_core
             e["hasQcScript"] = has_qc
 
-json.dump(state, open(sf, "w"), indent=2)
+# Atomic replace — never truncate the live file before the new content exists.
+target_dir = os.path.dirname(os.path.abspath(sf)) or "."
+tmp_path = None
+try:
+    fd, tmp_path = tempfile.mkstemp(dir=target_dir, prefix=".onboarding-state.", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, sf)
+    tmp_path = None
+except OSError as exc:
+    fail("could not write state file %s: %s" % (sf, exc))
+finally:
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+raise SystemExit(0)
 PYEOF
 }
 
@@ -124,15 +174,49 @@ PYEOF
 # oc_state_set <skill_name> <status> [error]
 #   Advance a skill's status. Refuses to DOWNGRADE qc-passed → lower unless the
 #   new status is qc-failed (a re-run that regressed). Records timestamp.
+#
+#   Returns 0 when the status was recorded. Returns 1 when it was NOT — the
+#   state file could not be seeded, python3 is unavailable, or the write failed.
+#
+#   v20.0.9x FIX. The heredoc used to end `2>/dev/null || true`, which made the
+#   most consequential write in the state machine unfailable. The regression
+#   path is what this cost: `oc_gate_skill` records a re-run that REGRESSED with
+#     oc_state_set <skill> qc-failed <reason>
+#   and that write is the ONLY thing that clears a stale `qc-passed`. When it
+#   was swallowed, the old `qc-passed` stayed on disk and every reader —
+#   oc_state_summary, oc_gate_summary, the watchdog's wave goal check — went on
+#   reporting a skill as verified while the run that proved otherwise had
+#   already finished. `|| true` is gone, the write is atomic, and the failure
+#   reason is printed to stderr.
+#
+#   This lib is sourced by scripts running `set -euo pipefail`, so the two
+#   internal call sites (oc_gate_skill's tail, and the seed below) fold a
+#   nonzero return into an explicit branch rather than leaving a bare failing
+#   statement that would ABORT the caller mid-install.
 # ------------------------------------------------------------
 oc_state_set() {
   local skill="$1" status="$2" err="${3:-}"
-  [ -f "$ONBOARDING_STATE_FILE" ] || oc_state_seed "$OC_SKILLS_DIR"
+  if [ ! -f "$ONBOARDING_STATE_FILE" ]; then
+    # Guarded, not bare: oc_state_seed can now fail, and this lib is sourced
+    # under `set -euo pipefail`.
+    oc_state_seed "$OC_SKILLS_DIR" || {
+      printf 'oc_state_set: could not seed %s — %s/%s NOT recorded\n' \
+        "$ONBOARDING_STATE_FILE" "$skill" "$status" >&2
+      return 1
+    }
+  fi
   SKILL="$skill" STATUS="$status" ERR="$err" STATE_FILE="$ONBOARDING_STATE_FILE" \
-  NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
+  NOW="$(oc_state_now)" python3 - <<'PYEOF'
+import json, os, sys, tempfile
 sf=os.environ["STATE_FILE"]; skill=os.environ["SKILL"]; st=os.environ["STATUS"]
 err=os.environ["ERR"]; now=os.environ["NOW"]
+
+
+def fail(msg):
+    sys.stderr.write("oc_state_set: %s\n" % msg)
+    raise SystemExit(1)
+
+
 order={"pending":0,"downloaded":1,"wired":2,"qc-failed":2,"interview-pending":2,"qc-passed":3}
 try: state=json.load(open(sf))
 except Exception: state={"skills":{}}
@@ -144,7 +228,28 @@ if st=="qc-failed" or order.get(st,0)>=order.get(cur,0):
     e["status"]=st
 e["updatedAt"]=now
 if err: e["lastError"]=err
-json.dump(state,open(sf,"w"),indent=2)
+
+# Atomic replace — never truncate the live file before the new content exists.
+target_dir = os.path.dirname(os.path.abspath(sf)) or "."
+tmp_path = None
+try:
+    fd, tmp_path = tempfile.mkstemp(dir=target_dir, prefix=".onboarding-state.", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, sf)
+    tmp_path = None
+except OSError as exc:
+    fail("could not write state file %s: %s" % (sf, exc))
+finally:
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+raise SystemExit(0)
 PYEOF
 }
 
@@ -410,11 +515,24 @@ oc_gate_skill() {
     ok=0; reason="${reason:+$reason,}state-write-failed"
   fi
 
+  # oc_state_set can now report a real write failure. Neither call below may be
+  # left bare: this lib is sourced under `set -euo pipefail`, where a bare
+  # nonzero statement ABORTS the caller mid-gate.
   if [ "$ok" -eq 1 ]; then
-    oc_state_set "$folder" qc-passed
+    # A pass that cannot be RECORDED is not a pass — the next reader would see
+    # the previous (lower) status and the caller would have been told 0.
+    oc_state_set "$folder" qc-passed || {
+      printf 'oc_gate_skill: %s passed but qc-passed could not be written to %s — reporting FAIL\n' \
+        "$folder" "$ONBOARDING_STATE_FILE" >&2
+      return 1
+    }
     return 0
   else
-    oc_state_set "$folder" qc-failed "$reason"
+    # The regression write is the one that clears a stale qc-passed. If it does
+    # not land, say so loudly — the on-disk status is now KNOWN to be wrong.
+    oc_state_set "$folder" qc-failed "$reason" || \
+      printf 'oc_gate_skill: %s FAILED (%s) and qc-failed could not be written to %s — the stale status on disk is NOT corrected\n' \
+        "$folder" "${reason:-unknown}" "$ONBOARDING_STATE_FILE" >&2
     return 1
   fi
 }
@@ -527,7 +645,15 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 #   Idempotent — only seeds; never clobbers existing wave status.
 # ------------------------------------------------------------
 oc_wave_state_init() {
-  [ -f "$ONBOARDING_STATE_FILE" ] || oc_state_seed "${OC_SKILLS_DIR:-$OC_CONFIG/skills}"
+  # Guarded, not bare: oc_state_seed can now fail, and this lib is sourced under
+  # `set -euo pipefail`. Without the seed there is no file to init wave goals in.
+  if [ ! -f "$ONBOARDING_STATE_FILE" ]; then
+    oc_state_seed "${OC_SKILLS_DIR:-$OC_CONFIG/skills}" || {
+      printf 'oc_wave_state_init: could not seed %s — wave goals NOT initialised\n' \
+        "$ONBOARDING_STATE_FILE" >&2
+      return 1
+    }
+  fi
   W1="$OC_WAVE1_SKILLS" W2="$OC_WAVE2_SKILLS" W3="$OC_WAVE3_SKILLS" \
   W4="$OC_WAVE4_SKILLS" W5="$OC_WAVE5_SKILLS" \
   STATE_FILE="$ONBOARDING_STATE_FILE" NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null || true

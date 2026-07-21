@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v20.0.87"
+ONBOARDING_VERSION="v20.0.90"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -113,13 +113,26 @@ fi
 # Canonical file: lib-onboarding-state.sh (sourced by both platforms).
 # ----------------------------------------------------------
 _lib_onboarding_state_self="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-onboarding-state.sh"
+# DID THE LIBRARY ACTUALLY LOAD? Deliberately a plain shell variable and NOT the
+# exported OPENCLAW_LIB_ONBOARDING_STATE_SOURCED below: an exported flag is
+# inherited from whatever invoked install.sh, and bash does not carry the
+# functions across with it, so a stale `=1` in the environment would assert a
+# library that is not present. This one records this file's own source attempt.
+_oc_state_lib_loaded=0
 if [ -f "$_lib_onboarding_state_self" ]; then
   # shellcheck source=/dev/null
   source "$_lib_onboarding_state_self"
+  _oc_state_lib_loaded=1
   export OPENCLAW_LIB_ONBOARDING_STATE_SOURCED=1
 fi
-# No-op fallbacks so the rest of install.sh never aborts if the lib is missing.
-command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { :; }
+# Fallbacks so the rest of install.sh never aborts if the lib is missing.
+#
+# THEY MUST FAIL CLOSED. `oc_state_seed() { :; }` returned 0, and its call site
+# reads `oc_state_seed ... && success "Onboarding state seeded" || warn ...`, so
+# a box whose state library never loaded printed "Onboarding state seeded" on
+# every install. The two fallbacks below it already fail closed (rc 1, and
+# zeroed counters); this one now matches them.
+command -v oc_state_seed          >/dev/null 2>&1 || oc_state_seed()          { echo "oc_state_seed: lib-onboarding-state.sh never loaded — onboarding state NOT seeded" >&2; return 1; }
 command -v oc_onboarding_complete >/dev/null 2>&1 || oc_onboarding_complete() { return 1; }
 command -v oc_state_summary       >/dev/null 2>&1 || oc_state_summary()       { OC_VERIFIED=0; OC_TOTAL=0; OC_FAILED_LIST=""; OC_PENDING_LIST=""; OC_INTERVIEW_LIST=""; }
 
@@ -135,8 +148,16 @@ if [ -f "$_lib_resume_cron_self" ]; then
   source "$_lib_resume_cron_self"
   export OPENCLAW_LIB_RESUME_CRON_SOURCED=1
 fi
-# No-op fallback so Step 13b never aborts if the lib is missing (older bundle).
-command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
+# Fallback so Step 13b never aborts if the lib is missing (older bundle).
+#
+# FAILS CLOSED, and it is the ONLY signal Step 13b can have. The old
+# `{ :; }` stub also defeated `command -v install_onboarding_resume_cron`
+# (always true once the stub exists), so nothing could distinguish "the shared
+# lib installed the cron" from "no lib, nothing happened" — and Step 13b's call
+# site was bare, printing not one character either way. A box that silently
+# skipped this cron never self-resumes onboarding. Step 13b now branches on the
+# return code; see the call site for the operator-visible warning.
+command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { echo "install_onboarding_resume_cron: lib-onboarding-resume-cron.sh never loaded — resume cron NOT installed" >&2; return 1; }
 
 # ── Runtime-compatible SILENT main-session cron helper (fix/cron-flag-skew). ───
 # Guaranteed here at top-level (before any cron-installing function runs). The
@@ -4973,7 +4994,13 @@ PYEOF
 # verification gate, never this prose. Idempotent — re-seeding preserves status.
 # Canonical lib: lib-onboarding-state.sh (sourced at top of install.sh).
 # scripts/onboarding-state.sh is a compat shim that sources the canonical.
-if command -v oc_state_seed >/dev/null 2>&1; then
+# BRANCH ON WHETHER THE LIBRARY LOADED, NOT ON `command -v oc_state_seed`.
+# `command -v` was ALWAYS true here — the fallback block near the top of this
+# script defines oc_state_seed unconditionally when the lib is absent — so this
+# `if` could never be false and BOTH branches below it were dead code: the
+# compat-shim fallback never ran, and the "not seeded" warning could never
+# print. _oc_state_lib_loaded is set from the actual source attempt.
+if [ "${_oc_state_lib_loaded:-0}" = "1" ]; then
     # SIGNATURE: oc_state_seed <src_skills_dir> [version]  (lib-onboarding-state.sh).
     # v17.0.21 FIX: args were REVERSED here — the version string ("v17.0.x") was
     # passed as <src_skills_dir>, so the install-time seed pointed at a non-existent
@@ -5946,7 +5973,16 @@ step "Step 13b: Installing onboarding-resume cron (every 30 min — interview ga
 # the SAME SILENT, idempotent, bounded, self-removing installer with no drift. It
 # registers a */30 main-session self-ping (no --channel/--to/--announce); all
 # boundedness lives in scripts/resume-onboarding.sh. See that lib for details.
-install_onboarding_resume_cron
+#
+# GUARDED, not bare. The real implementation returns 0 on every path by design
+# (it is best-effort and must never abort an installer running under
+# `set -euo pipefail`), so a healthy box takes the silent path below and this
+# reads exactly as it did before. The nonzero case is reachable ONLY from the
+# fail-closed fallback stub — i.e. the shared lib never loaded — and that is
+# precisely the state the old bare call reported with total silence.
+if ! install_onboarding_resume_cron; then
+    warn "onboarding-resume cron NOT installed — lib-onboarding-resume-cron.sh did not load (incomplete bundle). This box will NOT self-resume onboarding. Re-run update-skills.sh once the bundle is complete."
+fi
 
 # ----------------------------------------------------------
 # Step 13.4: Install watchdog-onboarding-loop cron (PRD-2.13, every 10 min)

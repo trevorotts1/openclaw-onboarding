@@ -202,6 +202,22 @@ obs_verify_skill() {
   # oc_skill_registered() in lib-onboarding-state.sh: require a positive
   # registration signal AND check negative signals against SPECIFIC phrases
   # only (never a bare "error" substring).
+  #
+  # FAIL CLOSED WHEN THE CLI IS NOT REACHABLE. This `if` used to have no `else`,
+  # so check (a) was skipped ENTIRELY whenever `openclaw` was not on PATH — the
+  # normal condition under a cron's minimal PATH. A skill that was never
+  # registered then collected no reason at all, and if it also shipped no
+  # CORE_UPDATES.md and no qc-*.sh, obs_verify_skill fell straight through to
+  # `obs_set_status qc-passed` and returned 0. Registration was asserted by
+  # nothing. The canonical implementation of this same check,
+  # oc_skill_registered() in lib-onboarding-state.sh, has always done
+  # `command -v openclaw >/dev/null 2>&1 || return 1` — this was a fail-open
+  # divergence between two copies of one rule, and the copies now agree.
+  #
+  # ABSENT vs BROKEN: there is no benign "absent" here. The gate's entire job is
+  # to confirm the runtime can see the skill. With no runtime to ask, the answer
+  # is not "yes" and it is not "nothing to check" — it is UNVERIFIED, which this
+  # gate reports as a failure with a reason that names the cause.
   if command -v openclaw >/dev/null 2>&1; then
     local info_out
     info_out="$(openclaw skills info "$skill_name" 2>/dev/null || true)"
@@ -212,6 +228,8 @@ obs_verify_skill() {
     elif ! printf '%s' "$info_out" | grep -qiE 'ready|enabled|visible|installed|name:|path:|details:|source:'; then
       reasons="${reasons}skills-info:not-registered; "
     fi
+  else
+    reasons="${reasons}skills-info:openclaw-cli-not-on-path; "
   fi
 
   # (b) CORE_UPDATES sentinel present (only if the skill ships CORE_UPDATES.md)

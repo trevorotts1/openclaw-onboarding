@@ -1,0 +1,124 @@
+name: onboarding-state fail-closed guard (ONB-STATE-002)
+
+# THE FOUR DEFECTS THIS LOCKS. All one class: a function returned 0 for work it
+# had not done, and a caller printed or recorded success on the strength of it.
+# They were found during the ONB-STATE-001 sweep (PR #693) and deliberately left
+# out of that diff to keep it reviewable.
+#
+# ONB-STATE-002a (CRITICAL) — install.sh, the oc_state_seed fallback
+#   `command -v oc_state_seed >/dev/null 2>&1 || oc_state_seed() { :; }` defined
+#   a stub that returns 0. Two consequences, both live. The seed call site reads
+#   `oc_state_seed ... && success "Onboarding state seeded" || warn`, so a box
+#   whose state library never loaded printed the seeded line every install. And
+#   because the stub is defined unconditionally, `command -v oc_state_seed` at
+#   the dispatch was ALWAYS true, so the compat-shim fallback and the "not
+#   seeded" warning below it were unreachable — dead code guarding the exact
+#   failure the stub was creating. The stub now fails closed and the dispatch
+#   branches on whether the library actually loaded.
+#
+# ONB-STATE-002b (CRITICAL) — install.sh, the resume-cron fallback
+#   Same shape: a `{ :; }` stub that also defeated `command -v`, plus a BARE
+#   call site at Step 13b that printed nothing on any outcome. A box that
+#   silently skipped the onboarding-resume cron never self-resumes onboarding
+#   and said so nowhere.
+#
+# ONB-STATE-002c (CRITICAL) — scripts/onboarding-state.sh, obs_verify_skill
+#   `if command -v openclaw` with NO `else`. Registration check (a) was skipped
+#   ENTIRELY when the CLI was off PATH — the normal condition under a cron's
+#   minimal PATH — so a never-registered skill that ships no CORE_UPDATES.md and
+#   no qc script fell through to `obs_set_status qc-passed` and returned 0. The
+#   canonical copy of this same rule, oc_skill_registered() in
+#   lib-onboarding-state.sh, has always done `|| return 1`. Two copies of one
+#   rule disagreed, and the copy that ran under cron was the fail-open one.
+#
+# ONB-STATE-002d (CRITICAL) — lib-onboarding-state.sh, oc_state_seed/oc_state_set
+#   Both heredocs ended `2>/dev/null || true`. oc_state_set's qc-failed write is
+#   the ONLY thing that clears a stale qc-passed after a regression; when it was
+#   swallowed the old qc-passed stayed on disk and every reader went on calling
+#   the skill verified. Both now return nonzero and print why, and both write
+#   atomically so a failed write cannot leave a truncated state file behind.
+#
+# THE SET -E CONSTRAINT. This library is sourced by scripts running
+# `set -euo pipefail`. A bare nonzero return would ABORT the installer mid-run —
+# a crash is not an acceptable substitute for a swallowed failure. Every newly
+# failable call is folded into an explicit branch, the same way oc_gate_skill
+# already folds state-write health into `_sw_ok`. T1c/T3b/T10a pin that.
+#
+# ANTI-FALSE-POSITIVE CONTROLS. A "fix" that just makes everything fail must not
+# pass this workflow. The suite carries four healthy-path controls — T2 (a real
+# seed is still reported seeded and really written), T4 (the real cron installer
+# is still invoked and a healthy box gets no false warning), T6 (a genuinely
+# registered skill still verifies), T9 (seed + both status writes return 0 and
+# the qc-failed regression really overwrites qc-passed on disk). All four PASS
+# against pre-fix main, so they cannot be satisfied by breaking the gate.
+#
+# Measured against pristine main (71eb3b59): 13 passed / 7 FAILED, exit 1.
+# Against the fix: 20 passed / 0 failed, exit 0.
+#
+# Hermetic: temp HOME and temp workspaces, a stub `openclaw` written into a temp
+# bin, stdlib-only Python. No network, no real CLI, no fleet box is touched.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "lib-onboarding-state.sh"
+      - "scripts/onboarding-state.sh"
+      - "tests/unit/onboarding-state-fail-closed.test.sh"
+      - "tests/unit/onboarding-state-fail-closed-vacuity.sh"
+      - ".github/workflows/onboarding-state-fail-closed-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "lib-onboarding-state.sh"
+      - "scripts/onboarding-state.sh"
+      - "tests/unit/onboarding-state-fail-closed.test.sh"
+      - "tests/unit/onboarding-state-fail-closed-vacuity.sh"
+      - ".github/workflows/onboarding-state-fail-closed-guard.yml"
+
+jobs:
+  onb-state-002:
+    name: "ONB-STATE-002: no state function reports work it did not do"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Shell syntax of every file under test
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in install.sh lib-onboarding-state.sh scripts/onboarding-state.sh \
+                   tests/unit/onboarding-state-fail-closed.test.sh; do
+            bash -n "$f"
+            echo "OK: bash -n $f"
+          done
+
+      - name: Run the fail-closed suite
+        shell: bash
+        run: bash tests/unit/onboarding-state-fail-closed.test.sh
+
+      - name: The suite is not vacuous — it must FAIL against the pre-fix tree
+        shell: bash
+        run: bash tests/unit/onboarding-state-fail-closed-vacuity.sh
+
+      - name: Every embedded Python program still compiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-embedded-python-syntax.py
+
+      - name: The obs_* compatibility API suite is unregressed
+        shell: bash
+        run: bash tests/unit/onboarding-state-obs-api.test.sh
+
+      - name: The resume-cron contract suite is unregressed
+        shell: bash
+        run: bash tests/unit/update-skills-resume-cron.test.sh

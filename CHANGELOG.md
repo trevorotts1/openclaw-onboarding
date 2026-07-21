@@ -1,3 +1,134 @@
+## [v20.0.90]  -  2026-07-21  -  FOUR FUNCTIONS THAT REPORTED WORK THEY HAD NOT DONE: two no-op stubs that also killed the `command -v` tests guarding them, a registration check with no `else`, and both state writes swallowed
+
+### ONB-STATE-002 (CRITICAL x4) — the fail-open patterns left out of the ONB-STATE-001 diff
+
+Found during the `oc_state_mark_field` sweep (PR #693, v20.0.87) and deliberately
+left unfixed there to keep that diff reviewable. All four are one class: **a
+function returned 0 for work it had not done, and a caller printed or recorded
+success on the strength of it.**
+
+**002a — `install.sh`: the `oc_state_seed` fallback stub, and the two dead branches behind it.**
+
+    command -v oc_state_seed >/dev/null 2>&1 || oc_state_seed() { :; }
+
+`{ :; }` returns 0. The seed call site reads
+
+    oc_state_seed ... && success "Onboarding state seeded" || warn ...
+
+so a box whose state library never loaded printed **"Onboarding state seeded"**
+on every install, for a state file that was never created. Worse, the stub is
+defined *unconditionally*, so `command -v oc_state_seed` at the dispatch was
+**always true** — the `elif` compat-shim fallback and the `else` "not seeded"
+warning below it were **unreachable code**, guarding the exact failure the stub
+was manufacturing. Its two siblings on the next lines already failed closed
+(`return 1`, and zeroed counters); only this one did not.
+
+The stub now prints why and returns 1, and the dispatch branches on
+`_oc_state_lib_loaded` — a plain shell variable set from this file's own
+`source` attempt. Deliberately **not** the exported
+`OPENCLAW_LIB_ONBOARDING_STATE_SOURCED`: an exported flag is inherited from
+whatever invoked `install.sh` and bash does not carry the functions across with
+it, so a stale `=1` in the environment would assert a library that is not there.
+Both fallback branches are reachable for the first time.
+
+**002b — `install.sh`: the resume-cron stub, and a call site that said nothing either way.**
+
+Same shape, and the same defeat of `command -v`. Step 13b's call site was
+**bare** — `install_onboarding_resume_cron` on a line by itself — so a box that
+silently skipped the onboarding-resume cron printed not one character. That box
+never self-resumes onboarding. The stub now fails closed and Step 13b branches,
+warning by name. The shipped implementation returns 0 on every path by design,
+so a healthy box takes the silent path exactly as before.
+
+**002c — `scripts/onboarding-state.sh`: a registration check with no `else`.**
+
+`obs_verify_skill`'s check (a) sat inside `if command -v openclaw` with no
+`else`, so it was **skipped entirely** whenever the CLI was off PATH — the
+normal condition under a cron's minimal PATH. A never-registered skill collected
+no reason at all, and if it also shipped no `CORE_UPDATES.md` and no `qc-*.sh`
+it fell straight through to `obs_set_status qc-passed` and returned 0.
+Registration was asserted by nothing. The canonical copy of this same rule,
+`oc_skill_registered()` in `lib-onboarding-state.sh`, has always done
+`command -v openclaw >/dev/null 2>&1 || return 1`. Two copies of one rule
+disagreed, and the copy that runs under cron was the fail-open one. They now
+agree, and the reason names the cause: `skills-info:openclaw-cli-not-on-path`.
+
+**002d — `lib-onboarding-state.sh`: both state writes ended `2>/dev/null || true`.**
+
+`oc_state_seed` and `oc_state_set` could not report a failure. The cost lands on
+the regression path: `oc_gate_skill` records a re-run that regressed with
+`oc_state_set <skill> qc-failed <reason>`, and **that write is the only thing
+that clears a stale `qc-passed`**. When it was swallowed, the old `qc-passed`
+stayed on disk and every reader — `oc_state_summary`, `oc_gate_summary`, the
+watchdog's wave goal check — went on reporting the skill verified while the run
+that proved otherwise had already finished. Both now return nonzero and print
+the reason, and both write **atomically** (tempfile + `os.replace`): the old
+bodies opened the live file in `"w"` mode, which truncates before serialising,
+so a mid-write failure would have turned a write error into the corruption this
+file refuses to ignore elsewhere.
+
+**The `set -e` constraint, and why nothing here can abort an installer.**
+This library is sourced by scripts running `set -euo pipefail`. A bare nonzero
+return would ABORT the caller mid-run — a crash is not an acceptable substitute
+for a swallowed failure. Every newly failable call is folded into an explicit
+branch, the same way `oc_gate_skill` already folds state-write health into
+`_sw_ok`: `oc_gate_skill`'s tail, `oc_state_set`'s internal seed, and
+`oc_wave_state_init`'s internal seed. `oc_gate_skill` fails **closed** when a
+pass cannot be recorded — a pass the next reader will not see is not a pass.
+
+**ABSENT is not BROKEN, and they are not collapsed.** A state file that does not
+exist yet is legitimate (seed owns creation; a gate may run pre-seed), and
+`oc_state_mark_field` still returns 0 quietly for it. A file that is present but
+unwritable is loud and nonzero. Only the second changed.
+
+### Verification
+
+`tests/unit/onboarding-state-fail-closed.test.sh` — 20 behavioural checks that
+RUN the real blocks (install.sh's fragments are lifted by content anchors, not
+line numbers). Measured both ways:
+
+* against pristine `main` (71eb3b59): **13 passed / 7 FAILED, exit 1**
+* against the fix: **20 passed / 0 failed, exit 0**
+
+Four of the checks are anti-false-positive controls that PASS on pre-fix main —
+T2 (a real seed is still reported seeded and really written), T4 (the real cron
+installer is still invoked, and a healthy box gets no false warning), T6 (a
+genuinely registered skill still verifies), T9 (seed + both writes return 0, and
+the `qc-failed` regression really overwrites `qc-passed` on disk). A fix that
+merely made everything fail cannot satisfy them.
+
+`tests/unit/onboarding-state-fail-closed-vacuity.sh` reconstructs all four
+defects in a scratch copy and asserts the suite REJECTS it — it reproduces
+pristine main's exact 13/7 split. Each reconstruction edit asserts it matched
+something, so an anchor that moves fails loudly instead of silently no-opping.
+
+New workflow `.github/workflows/onboarding-state-fail-closed-guard.yml` runs the
+suite, the vacuity gate, the embedded-python compiler, and the two neighbouring
+suites (`onboarding-state-obs-api`, `update-skills-resume-cron`) which were
+verified unchanged at 18/18 and 20/20 on both trees.
+
+### Known fail-open patterns found in these files and deliberately NOT fixed here
+
+Stated rather than bundled, because each is a behaviour change that deserves its
+own decision:
+
+* `oc_state_seed` (and `obs_seed_state`) still reset an existing state file that
+  is present but unparseable to `{}` instead of reporting it. That silently
+  discards every `qc-passed` on the box; fixing it also removes the only
+  self-heal path for a corrupt file.
+* `oc_wave_state_init`'s own heredoc still ends `2>/dev/null || true`, as does
+  `obs_gate_summary`'s internal seed.
+* `obs_set_status` returns **0** when `python3` is missing — the same swallowed
+  write as 002d, in the `obs_*` copy.
+* `oc_state_seed` silently seeds zero skills when `<src_skills_dir>` is not a
+  directory. That is the exact shape of the v17.0.21 arg-reversal bug, and it is
+  still undetectable from the return code.
+* `update-skills.sh` carries its own `install_onboarding_resume_cron() { :; }`
+  no-op stub (a fifth instance of 002b's pattern); its call site is already
+  guarded, so it does not currently produce a false success.
+
+No client names, ids or secrets appear on any changed line.
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
