@@ -4,6 +4,43 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v6.5.10] - July 21, 2026 — fix: the automatic self-test sent live SMS and email from the client's account
+
+### Removed
+- **Tests 5 and 6 (live SMS send, live email send) deleted from the automatic
+  self-test in `ghl-setup-full.md`.** The guide said "After setup, the AI should
+  run these tests automatically" and then listed seven tests, two of which
+  `POST`ed a real message through `/conversations/messages` from the client's own
+  account to a contact identifier the agent was instructed to substitute, with
+  the expected result stated as "JSON with messageId confirming delivery".
+  `SKILL.md` completed the instruction by withholding the setup-complete
+  confirmation until all seven passed. An agent following the skill literally
+  therefore sent two unsolicited messages out of a client account, to a real
+  contact, as a side effect of being asked to set up an integration. There was no
+  approval step, no dry-run mode and no sandbox scoping. (Finding T1-01.)
+
+### Changed
+- The media-library check renumbered from TEST 7 to TEST 5. All five remaining
+  self-tests are read-only.
+- `SKILL.md` self-test count corrected from 7 to 5 in both places that stated it
+  (the "What This Skill Covers" bullet and the "Important Rules" gate), plus a new
+  rule forbidding a test send from a client account outright.
+
+### Added
+- A **SEND VERIFICATION** section in `ghl-setup-full.md`. Send capability is still
+  documented, but it is not part of setup and is not required to call setup
+  complete. Proving it requires all four of: explicit operator approval for that
+  specific send in that session; a designated operator test contact, never a
+  client contact; an identifier supplied by the operator rather than discovered
+  by searching the client's contacts; and a report afterwards. The section
+  deliberately carries no ready-to-run command.
+- A caution on the "Search and Message a Contact" example marking it
+  reference-only, since it sits next to the self-test and carries a runnable send.
+- `tests/unit/ghl-setup-selftest-no-live-send.test.py` (repo root) — fails if any
+  numbered self-test is a send, if the checklist references one, if the numbering
+  is not contiguous, or if a self-test count claimed in `SKILL.md` disagrees with
+  the number of tests that actually exist. Wired into CI.
+
 ## [v6.5.9] - July 1, 2026 — docs: unified 11-alias GHL LOCATION-PIT resolver
 
 ### Changed

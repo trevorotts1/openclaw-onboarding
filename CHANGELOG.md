@@ -1,4 +1,4 @@
-## [v20.0.89]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
+## [v20.0.91]  -  2026-07-21  -  THE UPDATE PATH RE-CREATED INDUSTRY-GATED DEPARTMENTS ON EVERY BOX, ON EVERY UPDATE: the floor-fill chain was driven by the role library, which knows nothing about verticals
 
 `b3e25876` (v14.28.1, 2026-06-28) demoted `real-estate`/`listings` out of the
 universal floor so it would stop landing on generic / coaching / consulting
@@ -62,6 +62,121 @@ carries `listings` on disk, so no box loses a department and nothing is removed.
 The gate only prevents a future force-add onto a box that never declared the
 vertical.
 
+## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
+
+Two findings from the 2026-07-21 skill review. Different files, same shape: a
+
+*(Branch cut at v20.0.85 and re-bumped four times — #691 took v20.0.85, #692/#686
+took v20.0.86, #693 took v20.0.87, #696/#698 took v20.0.88 — landing on v20.0.89.
+Every one of those releases restamped the quality-control summary, three of them
+arriving as a merge conflict on the branch that removes the restamping. The defect
+demonstrated itself four times while being fixed.)*
+
+### T0-07 (BLOCKER) — the version bumper rewrote the quality-control summary
+
+`23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` was registered
+in `scripts/version-markers.json` as a repo-wide version marker, so
+`scripts/bump-version.sh` rewrote its `Role Library vX.Y.Z` heading on every
+release. Nothing re-ran quality control. Only the number moved.
+
+The measurement behind that file was taken **once** — 2026-06-09, at repo
+version **v11.0.1**, commit `5c4075a5`, covering **244 roles across 19
+departments**. Over the **508 commits** that followed, the heading advanced to
+v20.0.86 while the generation date, the role count and the `ALL PASS` verdict
+never moved. At that same anchor the sibling `_index.json` declared **438 roles
+across 36 departments**.
+
+So the artifact read as a current, comprehensive ALL-PASS certification of a
+library it had never been run against — and it renewed that claim automatically
+on every single release. It was restamped twice more during the review that
+produced this fix, including once while this branch was open.
+
+**Every version gate in the repository passed the entire time**, because the
+marker genuinely did equal `/version`. The number it agreed on was simply
+meaningless. That is the whole lesson: the existing checks verified that the
+artifact's version matched the release, and nothing whatsoever checked the
+artifact.
+
+**Changed**
+- `scripts/bump-version.sh` — the rewrite step is deleted, and the marker is
+  removed from the read, print and drift-check paths. `BUMP_CHECKED_MARKERS`
+  11 → 10.
+- `scripts/version-markers.json` — marker entry removed, `count` 11 → 10, plus a
+  `_never_register` note recording why a measurement is not a version marker.
+- `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` — dropped
+  from `_VERSION_MARKERS_FALLBACK`, the inline mirror of the manifest.
+- `scripts/release.sh` — no longer stages the summary as part of a release.
+- `.github/workflows/version-consistency.yml` — marker inventory comment
+  corrected to 10.
+
+**The artifact itself** was rewritten honestly. No verdict was invented to
+replace the one removed, and no role count was written that was not measured.
+It now records `not-measured`, names the run it does have (v11.0.1, 2026-06-09,
+244 roles, 19 departments), and reports the inventory actually counted at this
+commit — 36 department directories, 450 role documents on disk, 438 declared by
+the index — explicitly labelled an inventory rather than a quality result, with
+the 450-vs-438 disagreement recorded rather than resolved. The historical
+per-department PASS table was removed rather than carried forward; it described
+19 departments that no longer describe this tree.
+
+### T1-01 (BLOCKER) — the GHL setup self-test sent live SMS and email from a client account
+
+`05-ghl-setup/ghl-setup-full.md` said "After setup, the AI should run these
+tests automatically", then listed seven tests. Tests 5 and 6 `POST`ed a real SMS
+and a real email through `/conversations/messages`, from the client's own
+account, to a contact identifier the agent was told to substitute — expected
+result: "JSON with messageId confirming delivery". `05-ghl-setup/SKILL.md:95`
+completed the instruction: do not tell the user GHL is set up until all seven
+pass.
+
+Documentation is what the agent executes. This was a real unsolicited-message
+path out of a client account, with no approval step, no dry run and no sandbox.
+
+**Changed**
+- Both live sends deleted from the automatic self-test. The media-library check
+  renumbered 7 → 5; all five remaining tests are read-only.
+- `SKILL.md` — both self-test count claims corrected 7 → 5, plus an explicit
+  rule forbidding a test send from a client account.
+- New **SEND VERIFICATION** section: send capability is still documented, but it
+  is not part of setup and not required to call setup complete. Proving it
+  requires explicit operator approval for that specific send, a designated
+  operator test contact (never a client contact), an operator-supplied
+  identifier, and a report afterwards. It deliberately carries no ready-to-run
+  command.
+- `05-ghl-setup/skill-version.txt` v6.5.9 → v6.5.10.
+
+### Guards — the durable half
+
+The summary drifted for months because nothing checked the artifact.
+
+- **`scripts/qc-assert-qc-summary-provenance.py`** (new) — every QC summary must
+  carry a provenance block (measurement status, the repo version measured at,
+  when, and how many roles were observed); its `Role Library vX.Y.Z` token must
+  equal the version it was measured at; an artifact whose status is
+  `not-measured` may not assert a pass verdict; a recorded version may not be
+  newer than `/version` (but may be older, so a genuine run does not create a
+  false-failure treadmill as the repo moves on); and no QC summary may be
+  re-registered as a version marker in either the manifest or the inline
+  fallback. Also pins the manifest's `count` to its own list and to
+  `BUMP_CHECKED_MARKERS`. 11 embedded self-test cases.
+- **`tests/unit/qc-summary-not-rolled-by-bumper.test.sh`** (new) — runs the real
+  `bump-version.sh` against a fixture repo and asserts the summary is
+  byte-identical afterwards *and* that all ten remaining markers still roll and
+  `--check` still agrees. Behavioural, not a source-text match.
+- **`tests/unit/ghl-setup-selftest-no-live-send.test.py`** (new) — no numbered
+  self-test may be a send, the checklist may not reference one, numbering must
+  be contiguous, and every count claim in `SKILL.md` must equal the number of
+  tests that exist.
+- **`.github/workflows/qc-summary-provenance-guard.yml`** (new) wires all three.
+
+### Measured, pre-fix vs post-fix, at `391a92e9`
+
+| Check | Before | After |
+|---|---|---|
+| A version bump leaves the QC summary untouched | FAIL — heading rewritten to the release version | PASS — byte-identical |
+| QC summary provenance | FAIL — no provenance block; registered as a marker in two places | PASS |
+| GHL automatic self-test contains no live send | FAIL — TEST 5 and TEST 6 are sends | PASS — 5 read-only tests |
+| All other version markers still roll, `--check` agrees | PASS | PASS |
 ## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
 
 **T2-07 — three documented entry points named a path that does not exist.**

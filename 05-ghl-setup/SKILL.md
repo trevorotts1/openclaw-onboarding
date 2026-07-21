@@ -64,7 +64,7 @@ These are the most common mistakes AI agents make with GHL. Read these carefully
 - The required headers for every API request (Authorization + Version)
 - Common operations: searching contacts, creating contacts, sending SMS, sending email, calendar booking, managing opportunities
 - Example curl commands you can copy and use right away
-- A 7-step self-test to verify everything is working before claiming setup is done
+- A 5-step, entirely read-only self-test to verify everything is working before claiming setup is done. It does not send anything — proving send capability is a separate, operator-approved step against a designated operator test contact
 - What to add to your core files (AGENTS.md, TOOLS.md, MEMORY.md) after setup
 - **Unified 11-alias LOCATION-PIT resolver** — the single `GOHIGHLEVEL_API_KEY`
   canonical name plus 10 accepted aliases; the resolver searches all 11 across
@@ -92,5 +92,6 @@ After setup, test these three things first because they are used the most:
 
 - Never use the built-in GHL node in n8n (a workflow tool) - it is too limited. Always use HTTP Request nodes instead.
 - GHL has rate limits: 100 requests per minute for most operations. Do not blast it with hundreds of calls at once.
-- Do NOT tell the user "GHL is set up" until all 7 self-tests in the full guide pass successfully.
+- Do NOT tell the user "GHL is set up" until all 5 self-tests in the full guide pass successfully.
+- NEVER send an SMS or an email from a client's account to test that setup worked. All 5 self-tests are read-only, and setup is complete without a send. A send delivers a real message to a real person; it requires explicit operator approval against a designated operator test contact, never a client contact. See SEND VERIFICATION in the full guide.
 - After setup, only add summaries and file paths to your core files - not the full documentation.

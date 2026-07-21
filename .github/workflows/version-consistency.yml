@@ -3,15 +3,20 @@ name: Version consistency
 # Fails the build if version markers disagree (authoritative gate: scripts/bump-version.sh --check).
 # Triggered on every push to main and every PR targeting main.
 #
-# The authoritative version marker source is scripts/version-markers.json (11 markers total),
+# The authoritative version marker source is scripts/version-markers.json (10 markers total),
 # verified by scripts/bump-version.sh --check. This workflow delegates to that gate and no longer
 # re-implements its own marker logic.
 #
-# For reference, the 11 markers include:
+# For reference, the 10 markers include:
 #   /version, /install.sh ONBOARDING_VERSION=, /update-skills.sh ONBOARDING_VERSION=,
 #   /23-ai-workforce-blueprint/skill-version.txt, /_index.json [version],
-#   /_qc-summary.md heading, /README.md markers (2), /DIRECT-TO-AGENT-UPDATE-MESSAGE.md,
+#   /README.md markers (2), /DIRECT-TO-AGENT-UPDATE-MESSAGE.md,
 #   and others as defined in scripts/version-markers.json.
+#
+# T0-07: the role-library quality-control summary heading used to be marker #6. It was
+# removed — it records a MEASUREMENT, not the release it ships in, and rolling it
+# restamped a frozen ALL PASS verdict onto every release. Its provenance is now enforced
+# by .github/workflows/qc-summary-provenance-guard.yml instead.
 #
 # PRD 2.2 retro-tag guards (added v11.7.0):
 #  G1 (version-without-tag): on push to main, the current /version must have
