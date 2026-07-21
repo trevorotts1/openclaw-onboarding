@@ -18,7 +18,11 @@ MIRROR-ONLY, no Airtable, no network), the REAL confirm_order board action
 compile + sha byte-identity re-proof. The ONLY test double is the model router
 (stage_s9_assembly_logic._default_router) -- every ae-01..ae-06 model call. Frozen
 chapter bodies are written where the runner's chapter_source reads them
-(state/runs/s5/<safe>/working/chapter.md) and torn down afterwards.
+(state/runs/participants/<safe>/working/chapter.md) and torn down afterwards.
+That literal used to read state/runs/s5/<safe>/... -- i.e. this suite ENCODED
+the stage-scoped working directory that stopped S2 from ever reaching tone
+authoring. It is now the one canonical per-participant directory every authoring
+stage resolves, so a regression back to a stage-scoped path turns this red.
 
 GATE B (now FIXED, and proven here): the runner's assembly Gate B call used to
 shell qc-tier1-anthology.py with --anthology-id/--manuscript, args that script's
@@ -131,10 +135,13 @@ def _safe(pk):
 
 def _write_frozen_bodies():
     """Drop each frozen chapter body where the runner's chapter_source reads it
-    (SKILL_DIR/state/runs/s5/<safe>/working/chapter.md). Returns the dirs to remove."""
+    (SKILL_DIR/state/runs/participants/<safe>/working/chapter.md). Returns the dirs
+    to remove. The literal is deliberately spelled out rather than taken from
+    stage_s9_assembly.participant_chapter_path(): the fixture must not be produced
+    by the code under test."""
     made = []
     for pk in KEYS:
-        d = SKILL_DIR / "state" / "runs" / "s5" / _safe(pk)
+        d = SKILL_DIR / "state" / "runs" / "participants" / _safe(pk)
         (d / "working").mkdir(parents=True, exist_ok=True)
         (d / "working" / "chapter.md").write_bytes(BODIES[pk])
         made.append(d)
@@ -233,9 +240,10 @@ class _Sandbox:
     def __exit__(self, *exc):
         for d in self.body_dirs:
             shutil.rmtree(d, ignore_errors=True)
-        # best-effort: leave no empty state/runs/s5 scaffolding behind (rmdir only
-        # succeeds while a directory is empty, so this never removes a dir in use).
-        for leftover in (SKILL_DIR / "state" / "runs" / "s5",
+        # best-effort: leave no empty state/runs/participants scaffolding behind
+        # (rmdir only succeeds while a directory is empty, so this never removes a
+        # dir in use).
+        for leftover in (SKILL_DIR / "state" / "runs" / "participants",
                          SKILL_DIR / "state" / "runs", SKILL_DIR / "state"):
             try:
                 leftover.rmdir()
@@ -414,7 +422,7 @@ def _make_final_router(order, seen):
 def _gate_b_chapter_source(pk):
     """Read a frozen body exactly where the runner's own chapter_source reads it, so a
     test can re-run assembly Gate B over the REAL compiled manuscript out-of-band."""
-    p = SKILL_DIR / "state" / "runs" / "s5" / _safe(pk) / "working" / "chapter.md"
+    p = SKILL_DIR / "state" / "runs" / "participants" / _safe(pk) / "working" / "chapter.md"
     data = p.read_bytes()
     return data, hashlib.sha256(data).hexdigest()
 

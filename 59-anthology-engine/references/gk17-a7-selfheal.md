@@ -51,7 +51,7 @@ run directory -- the participant's ledger row already exists (step 1, above, was
 synchronous and already committed) but the board card is **never created**, and
 nothing surfaces the failure: the webhook caller already got `200 routed`, and the
 only thing that would show the failure is a `stage-spawn.log` file under
-`state/runs/s0/<key>/` that no automated process reads.
+`state/runs/participants/<key>/` that no automated process reads.
 
 **The only pre-existing recovery** was the once-daily `mc_board.py reconcile` tick
 (wired via `anthology-smoke-test.py`'s `reconcile_board()` step, "finding A2",
