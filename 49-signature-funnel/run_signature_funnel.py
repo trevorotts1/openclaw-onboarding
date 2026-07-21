@@ -71,7 +71,12 @@ def _shell_prover(script: str, args: List[str]) -> Tuple[bool, str]:
 
 def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) -> Tuple[bool, str]:
     """A phase that is delegated to another skill. If a prerequisite artifact is named it
-    MUST exist (fail-closed); otherwise the seam is attested as delegated."""
+    MUST exist (fail-closed); otherwise the seam is attested as delegated.
+
+    A10 / T0-09 — file EXISTENCE is no longer accepted as proof of delegation on its own.
+    This helper remains for seams with no content contract; the image/media seams now go
+    through _gate_p3_images / _gate_p4_media, which read the ledger's content and consult
+    the provider-receipt store."""
     if required_file is not None:
         p = run_dir / required_file
         if not p.exists():
@@ -79,10 +84,120 @@ def _delegation_seam(run_dir: Path, required_file: Optional[str], label: str) ->
     return True, f"delegated: {label}"
 
 
+# ---------------------------------------------------------------------------
+# A10 / T0-09 — the delegated image + media seams.
+#
+# THE DEFECT: P3-IMAGES and P4-MEDIA attested "delegated" the moment
+# media_ledger.json EXISTED. The run writes that file, so the phase claiming to
+# prove image generation through Skill 47 and upload through Skill 6 was
+# satisfied by a file its own subject authored — with no provider ever contacted.
+#
+# THE FIX, IN TWO LANDINGS (sequencing: writer before requirer):
+#   (this release) the seams read the ledger's CONTENT — every image record must
+#     carry a real provider task id (P3) and resolve to a GHL media host (P4) —
+#     and any provider receipt that IS present must hold, strictly. Both content
+#     rules already gate P9 via prove_sf_no_pitch, so no run that could certify
+#     before can fail now: this only moves the truth forward to the phase that
+#     claims it, and kills "the file exists, therefore a provider ran".
+#   (next)         delegation_receipt.require() replaces validate_if_present()
+#     once Skill 47 / Skill 6 emit a receipt on every path. The certificate
+#     records which of the two states applied, so it can never imply
+#     provider-backed delegation it does not have.
+# ---------------------------------------------------------------------------
+_GHL_HOST_FINGERPRINTS = ("gohighlevel", "leadconnector", "leadconnectorhq", "msgsndr",
+                          "highlevel", "storage.googleapis.com/highlevel")
+_BAD_TASK_IDS = frozenset({"", "native", "placeholder", "none", "null", "n/a", "tbd", "todo"})
+
+
+def _ledger_images(run_dir: Path) -> Tuple[Optional[List[Dict]], str]:
+    p = run_dir / "media_ledger.json"
+    if not p.exists():
+        return None, "media_ledger.json absent"
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+    except (ValueError, OSError) as exc:
+        return None, f"media_ledger.json unreadable ({exc})"
+    imgs = data.get("images") if isinstance(data, dict) else None
+    if not isinstance(imgs, list) or not imgs:
+        return None, "media_ledger.json carries no non-empty 'images' array"
+    return [i for i in imgs if isinstance(i, dict)], ""
+
+
+def _image_key(img: Dict) -> str:
+    """The identifier a provider receipt must cover for this ledger row."""
+    return str(img.get("kie_task_id") or img.get("task_id")
+               or f"{img.get('page_type', '?')}/{img.get('section', '?')}")
+
+
+def _receipt_seam(run_dir: Path, phase: str, keys: List[str], label: str,
+                  content_detail: str) -> Tuple[bool, str]:
+    try:
+        import delegation_receipt
+    except ImportError as exc:  # noqa: BLE001 — a missing contract module is fail-closed
+        return False, (f"AF-FUN-DELEG-RECEIPT: delegation_receipt.py is not importable "
+                       f"({exc}) — the delegated seam {phase} cannot be attested")
+    ok, detail, state = delegation_receipt.validate_if_present(
+        run_dir, phase, must_cover=keys, af="AF-FUN-DELEG-RECEIPT")
+    if not ok:
+        return False, detail
+    return True, f"delegated: {label} :: {content_detail} :: receipts {state} ({detail})"
+
+
+def _gate_p3_images(run_dir: Path) -> Tuple[bool, str]:
+    """P3-IMAGES — every ledger image must name a real image-provider task id."""
+    imgs, err = _ledger_images(run_dir)
+    if imgs is None:
+        return False, f"AF-FUN-DELEG-IMAGES: {err} (Skill 47 kie_image.py produced nothing)"
+    bad = []
+    for img in imgs:
+        tid = img.get("kie_task_id", img.get("task_id"))
+        norm = str(tid).strip().lower() if tid is not None else ""
+        if tid is None or norm in _BAD_TASK_IDS:
+            bad.append(f"{img.get('page_type', '?')}/{img.get('section', '?')}={tid!r}")
+    if bad:
+        return False, (f"AF-FUN-DELEG-IMAGES: {len(bad)} image record(s) carry no real "
+                       f"image-provider task id (e.g. {bad[:3]}) — an image nothing was "
+                       "generated for is not a delegated result")
+    return _receipt_seam(run_dir, "P3-IMAGES", [_image_key(i) for i in imgs],
+                         "Skill 47 kie_image.py (text-to-image + reference_images hook)",
+                         f"{len(imgs)} image record(s) carry a provider task id")
+
+
+def _gate_p4_media(run_dir: Path) -> Tuple[bool, str]:
+    """P4-MEDIA — every ledger image must resolve to a GHL media host."""
+    imgs, err = _ledger_images(run_dir)
+    if imgs is None:
+        return False, f"AF-FUN-DELEG-MEDIA: {err} (Skill 6 ghl_media.py uploaded nothing)"
+    bad = []
+    for img in imgs:
+        url = str(img.get("media_url", img.get("ghl_media_url", img.get("url", "")))).strip()
+        hay = url.lower()
+        if not hay.startswith(("http://", "https://")) or not any(
+                fp in hay for fp in _GHL_HOST_FINGERPRINTS):
+            bad.append(f"{img.get('page_type', '?')}/{img.get('section', '?')}={url!r}")
+    if bad:
+        return False, (f"AF-FUN-DELEG-MEDIA: {len(bad)} image record(s) do not resolve to a "
+                       f"GHL media host (e.g. {bad[:3]}) — an un-uploaded image is not a "
+                       "delegated upload")
+    return _receipt_seam(run_dir, "P4-MEDIA", [_image_key(i) for i in imgs],
+                         "Skill 6 ghl_media.py (media folder + upload)",
+                         f"{len(imgs)} image record(s) on a GHL media host")
+
+
 def _sha256_file(path: Path) -> str:
     if not path.exists():
         return ""
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _delegation_receipt_state(run_dir: Path) -> str:
+    """'present' / 'absent' / 'malformed' — recorded on the certificate so a reader
+    can tell whether the delegated phases were receipt-backed (A10 / T0-09)."""
+    try:
+        import delegation_receipt
+        return delegation_receipt.store_state(run_dir)
+    except Exception:  # noqa: BLE001 — a certificate field must never break certification
+        return "unknown"
 
 
 def _brief_size(run_dir: Path) -> Optional[int]:
@@ -299,10 +414,22 @@ def _gate_build(run_dir: Path) -> Tuple[bool, str]:
     if not has_copy:
         return False, ("AF-FUN-BUILD-FAB: FAB artifact echoes NO copy — an un-echoed build "
                        "cannot be proven non-thin (fail-closed).")
-    ok, detail = _shell_prover("prove_sf_build.py", ["--receipt", str(run_dir / "build_receipt.json")])
+    # A10 / T0-11: hand the prover the LOCKED brief size so it can compute the
+    # required page-type set. Without it a 7-step funnel whose receipt supplies 3
+    # pages returned zero violations. An unresolved size is fail-closed HERE rather
+    # than letting the prover fall back to whatever the receipt declares about itself.
+    size = _brief_size(run_dir)
+    if size is None:
+        return False, ("AF-FUN-BUILD-SIZE: brief funnel_size unresolved — the required "
+                       "page-type set cannot be computed, so build completeness cannot be "
+                       "proven (fail-closed)")
+    ok, detail = _shell_prover("prove_sf_build.py",
+                               ["--receipt", str(run_dir / "build_receipt.json"),
+                                "--funnel-size", str(size)])
     if not ok:
         return False, detail
-    return True, f"FAB scorecard present ({len(pages)} page(s), copy echoed) + {detail}"
+    return True, (f"FAB scorecard present ({len(pages)} page(s), copy echoed) + "
+                  f"{size}-step page set complete + {detail}")
 
 
 # Phase spine — ids + order MUST match prove_sf_cert.EXPECTED_PHASES.
@@ -315,9 +442,9 @@ def _phase_gates(run_dir: Path) -> List[Tuple[str, str, Callable[[], Tuple[bool,
         ("P2-PROMPTS", "prove_sf_prompt_floor.py",
          lambda: _gate_p2_prompts(run_dir)),
         ("P3-IMAGES", "kie_image.py",
-         lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 47 kie_image.py (text-to-image + reference_images hook)")),
+         lambda: _gate_p3_images(run_dir)),
         ("P4-MEDIA", "ghl_media.py",
-         lambda: _delegation_seam(run_dir, "media_ledger.json", "Skill 6 ghl_media.py (media folder + upload)")),
+         lambda: _gate_p4_media(run_dir)),
         ("P5-HTML", "html_fragments",
          lambda: _gate_html_fragments(run_dir)),
         ("P6-COMPOSE", "prove_sf_graph.py",
@@ -409,6 +536,11 @@ def orchestrate(run_dir: Path, nonce: str) -> Tuple[int, Dict]:
         "phases": [{"id": p["id"], "prover": p["prover"], "status": p["status"], "order": p["order"]}
                    for p in phases_attested],
         "all_phases_pass": True,
+        # A10 / T0-09 — state, on the signed certificate, whether the delegated phases
+        # were backed by provider receipts. "absent" means the delegated seams attested
+        # on ledger CONTENT only; the certificate can then never be read as a claim that
+        # a provider was contacted. Covered by the HMAC, so it cannot be edited after.
+        "delegation_receipts": _delegation_receipt_state(run_dir),
         "delivery": {"publish": "human-approval-required",
                      "preview_only": True,
                      "email_offer": "P10 optional handoff to the Email Skill project after downsell approval"},
@@ -486,6 +618,14 @@ def _write_valid_run(rd: Path, nonce: str, size: int = 3) -> None:
     nf = rd / ".sf_run_nonce"
     nf.write_text(nonce, encoding="utf-8")
     os.chmod(nf, 0o600)
+
+
+def _stub_provider_emit(run_dir: Path, phase: str, remote_ids: List[str]) -> None:
+    """Obtain delegation receipts from a PROVIDER STUB module (A10 / T0-09) instead of
+    writing them here. Receipts written from this module would be stamped
+    `run_signature_funnel` and refused — which is the property the self-test proves."""
+    import stub_provider_adapter
+    stub_provider_adapter.emit(run_dir, phase, remote_ids)
 
 
 def self_test() -> int:
@@ -623,6 +763,122 @@ def self_test() -> int:
             print("SELF-TEST ok: P7 fails closed when the FAB scorecard echoes no copy.")
         else:
             ok = False; print(f"SELF-TEST FAIL: P7 accepted an empty-copy FAB scorecard: {g_ok} {g_detail}")
+
+        # -------------------------------------------------------------------
+        # A10 / T0-09 + T0-11 — the certification seams.
+        # -------------------------------------------------------------------
+        # (j) P3-IMAGES no longer attests on file existence: a ledger the run wrote
+        #     with NO provider task ids is not a delegated image generation.
+        rdj = tmp / "run-noprovenance"
+        rdj.mkdir()
+        _write_valid_run(rdj, nonce)
+        led = json.loads((rdj / "media_ledger.json").read_text(encoding="utf-8"))
+        for im in led["images"]:
+            im["kie_task_id"] = ""
+        (rdj / "media_ledger.json").write_text(json.dumps(led), encoding="utf-8")
+        g_ok, g_detail = _gate_p3_images(rdj)
+        if not g_ok and "AF-FUN-DELEG-IMAGES" in g_detail:
+            print("SELF-TEST ok: P3-IMAGES fails closed on a ledger with no provider task ids "
+                  "(file existence is no longer proof of delegation).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P3-IMAGES attested a ledger with no provenance: {g_ok} {g_detail}")
+
+        # (k) P4-MEDIA no longer attests on file existence: an off-host URL is not an upload.
+        rdk = tmp / "run-offhost"
+        rdk.mkdir()
+        _write_valid_run(rdk, nonce)
+        led = json.loads((rdk / "media_ledger.json").read_text(encoding="utf-8"))
+        led["images"][0]["media_url"] = "https://cdn.somewhere-else.test/hero.png"
+        (rdk / "media_ledger.json").write_text(json.dumps(led), encoding="utf-8")
+        g_ok, g_detail = _gate_p4_media(rdk)
+        if not g_ok and "AF-FUN-DELEG-MEDIA" in g_detail:
+            print("SELF-TEST ok: P4-MEDIA fails closed on an off-host media URL.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: P4-MEDIA attested an off-host media URL: {g_ok} {g_detail}")
+
+        # (l) SELF-AUTHORED RECEIPT — the run stamps its own provider receipt. The
+        #     subject of a certificate may not author the evidence it is judged on,
+        #     so the seam must REFUSE it (and must not be more permissive than the
+        #     absent case, which is the whole shape of the A10 defect).
+        rdl = tmp / "run-selfauthored-receipt"
+        rdl.mkdir()
+        _write_valid_run(rdl, nonce)
+        import delegation_receipt as _dr  # noqa: E402
+        led = json.loads((rdl / "media_ledger.json").read_text(encoding="utf-8"))
+        for im in led["images"]:
+            # written from THIS module -> recorded_by == run_signature_funnel
+            _dr.record(rdl, phase="P3-IMAGES", provider="kie", operation="createTask",
+                       provider_response_id="kie-resp-selfauthored", http_status=200,
+                       remote_id=_image_key(im), covers=[_image_key(im)])
+        g_ok, g_detail = _gate_p3_images(rdl)
+        if not g_ok and "SELF-AUTHORED" in g_detail:
+            print("SELF-TEST ok: a receipt the ORCHESTRATOR wrote for itself is refused "
+                  "(AF-FUN-DELEG-RECEIPT-SELF-AUTHORED).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: the run certified on a receipt it authored itself: "
+                  f"{g_ok} {g_detail}")
+
+        # (m) A STUB PROVIDER's receipt — evidence from a module that is not the run
+        #     under test — is accepted, and the certificate records it as present.
+        rdm = tmp / "run-stub-receipt"
+        rdm.mkdir()
+        _write_valid_run(rdm, nonce)
+        led = json.loads((rdm / "media_ledger.json").read_text(encoding="utf-8"))
+        _stub_provider_emit(rdm, "P3-IMAGES", [_image_key(i) for i in led["images"]])
+        _stub_provider_emit(rdm, "P4-MEDIA", [_image_key(i) for i in led["images"]])
+        g_ok, g_detail = _gate_p3_images(rdm)
+        g_ok4, g_detail4 = _gate_p4_media(rdm)
+        if g_ok and g_ok4 and "receipts verified" in g_detail and "receipts verified" in g_detail4:
+            print("SELF-TEST ok: provider-stub receipts verify at P3 and P4 "
+                  "(fixture produced by a stub, never by the run under test).")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: stub-provider receipts not verified: "
+                  f"P3={g_ok}/{g_detail} P4={g_ok4}/{g_detail4}")
+        if _delegation_receipt_state(rdm) == "present" and _delegation_receipt_state(rd) == "absent":
+            print("SELF-TEST ok: the certificate records delegation_receipts present/absent "
+                  "(a certificate cannot imply provider evidence it does not carry).")
+        else:
+            ok = False
+            print("SELF-TEST FAIL: delegation_receipts certificate state is wrong "
+                  f"(stub={_delegation_receipt_state(rdm)}, plain={_delegation_receipt_state(rd)}).")
+
+        # (n) A receipt that covers only SOME of the ledger's rows does not attest the
+        #     rest — omission inside a receipt store is still omission.
+        rdn = tmp / "run-partial-receipt"
+        rdn.mkdir()
+        _write_valid_run(rdn, nonce)
+        led = json.loads((rdn / "media_ledger.json").read_text(encoding="utf-8"))
+        _stub_provider_emit(rdn, "P3-IMAGES", [_image_key(led["images"][0])])
+        g_ok, g_detail = _gate_p3_images(rdn)
+        if not g_ok and "COVERAGE" in g_detail:
+            print("SELF-TEST ok: a receipt covering 1 of N ledger rows fails coverage.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: partial receipt coverage attested: {g_ok} {g_detail}")
+
+        # (o) T0-11 — a 7-step funnel whose build receipt supplies 3 pages must abort at
+        #     P7 with AF-FUN-BUILD-PAGESET and mint NO certificate. This is the exact
+        #     shape the finding proved returned zero violations.
+        rdo = tmp / "run-undersized-build"
+        rdo.mkdir()
+        _write_valid_run(rdo, nonce, size=7)
+        rcpt = json.loads((rdo / "build_receipt.json").read_text(encoding="utf-8"))
+        rcpt["pages"] = [p for p in rcpt["pages"]
+                         if p.get("page_type") in ("main", "upsell", "thank-you")]
+        (rdo / "build_receipt.json").write_text(json.dumps(rcpt), encoding="utf-8")
+        code, manifesto = orchestrate(rdo, nonce)
+        aborted_p7 = isinstance(manifesto, dict) and manifesto.get("aborted_at") == "P7-BUILD"
+        if code == EXIT_GATE_FAIL and not (rdo / "PROCESS-CERTIFICATE.json").exists() and aborted_p7:
+            print("SELF-TEST ok: a 7-step funnel with a 3-page build receipt aborts at P7 "
+                  "(AF-FUN-BUILD-PAGESET), NO certificate.")
+        else:
+            ok = False
+            print(f"SELF-TEST FAIL: incomplete funnel build still certified (code={code}, "
+                  f"aborted_at={manifesto.get('aborted_at') if isinstance(manifesto, dict) else '?'}).")
 
         print("SELF-TEST RESULT:", "PASS (exit 0)" if ok else "FAIL (exit 1)")
         return 0 if ok else 1

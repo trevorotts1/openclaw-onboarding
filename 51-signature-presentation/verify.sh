@@ -46,10 +46,15 @@ run() {
 
 echo "== Skill 51 (Signature Presentation) :: verify.sh =="
 
-# 1) The four fail-closed SP provers — built-in self-test fixtures.
+# 1) The five fail-closed SP provers — built-in self-test fixtures.
 #    prove_sp_routing is the claim/routing gate (AF-SP-TYPE-UNDECLARED) that closes
 #    the "omit deck_type to skip every SP gate" bypass.
-for p in prove_sp_routing prove_sp_intake prove_sp_structure prove_sp_no_pitch; do
+#    A10 / T0-12: intake_trace_check is the intake-CONVERSATION gate (AF-INTAKE-BATCH).
+#    It was self-tested only in a separate CI job while this script — the skill's own
+#    verification leg — never exercised it, and it was wired as advisory. It is now a
+#    required preflight in the engine (_chk_sp_intake_trace), so verify.sh must fail
+#    when its fixtures do not hold.
+for p in prove_sp_routing prove_sp_intake prove_sp_structure prove_sp_no_pitch intake_trace_check; do
     if [ -f "$SP_SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SP_SCRIPTS/$p.py" --self-test
     else

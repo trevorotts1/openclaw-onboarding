@@ -184,9 +184,15 @@ def probe_graph() -> Set[str]:
 
 
 def probe_build() -> Set[str]:
+    """A10 / T0-11: each build case is now (receipt, locked_funnel_size) — the
+    completeness gate needs the size the brief locked, not whatever the receipt
+    says about itself. Passing the tuple straight to verify() would make every
+    fixture read as MALFORMED and silently drop the QC / PREVIEW / TYPE codes
+    this probe exists to trigger."""
     got: Set[str] = set()
     for _name, _expected, builder in build._violation_cases():
-        v, _ = build.verify(builder())
+        receipt, size = builder()
+        v, _ = build.verify(receipt, funnel_size=size)
         got |= _codes(v)
     return got
 
@@ -251,6 +257,52 @@ def probe_runner() -> Set[str]:
     return got
 
 
+def probe_delegation() -> Set[str]:
+    """A10 / T0-09 — the delegated image + media seams. Drive each to failure:
+      * an EMPTY/no-provenance ledger the run authored              -> AF-FUN-DELEG-IMAGES
+      * an off-host media URL                                       -> AF-FUN-DELEG-MEDIA
+      * a receipt the ORCHESTRATOR stamped for itself     -> AF-FUN-DELEG-RECEIPT-SELF-AUTHORED
+    The self-authored case is the headline: it proves the seam refuses evidence the
+    certificate's own subject wrote, so the fixture is minted through the provider
+    stub, then a self-authored receipt is forced on top."""
+    import stub_provider_adapter  # noqa: F401  (imported for parity with the run path)
+    import delegation_receipt
+    got: Set[str] = set()
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        # no provenance -> AF-FUN-DELEG-IMAGES
+        (rd / "media_ledger.json").write_text(json.dumps(
+            {"images": [{"page_type": "main", "section": "1", "kie_task_id": "",
+                         "media_url": "https://storage.gohighlevel.com/x.png"}]}))
+        ok, msg = runner._gate_p3_images(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+        # off-host -> AF-FUN-DELEG-MEDIA (task id present so P3 would pass)
+        (rd / "media_ledger.json").write_text(json.dumps(
+            {"images": [{"page_type": "main", "section": "1", "kie_task_id": "kie-1",
+                         "media_url": "https://cdn.somewhere-else.test/x.png"}]}))
+        ok, msg = runner._gate_p4_media(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+    with tempfile.TemporaryDirectory() as td:
+        rd = Path(td)
+        (rd / "media_ledger.json").write_text(json.dumps(
+            {"images": [{"page_type": "main", "section": "1", "kie_task_id": "kie-1",
+                         "media_url": "https://storage.gohighlevel.com/x.png"}]}))
+        # A receipt stamped recorded_by an orchestrator (a SUBJECT_MODULE) — exactly what a
+        # self-authoring run would emit — must be refused. Written as a raw line so the fixture
+        # carries the forged stamp regardless of who runs this probe.
+        (rd / delegation_receipt.RECEIPTS_REL).write_text(json.dumps({
+            "phase": "P3-IMAGES", "provider": "kie", "operation": "createTask",
+            "provider_response_id": "kie-resp-x", "http_status": 200, "remote_id": "kie-1",
+            "covers": ["kie-1"], "recorded_by": "run_signature_funnel", "at": "2026-07-21T00:00:00Z",
+        }) + "\n", encoding="utf-8")
+        ok, msg = runner._gate_p3_images(rd)
+        if not ok:
+            got |= _codes_from_msg(msg)
+    return got
+
+
 PROBES = [
     ("intake", probe_intake),
     ("copy", probe_copy),
@@ -260,6 +312,7 @@ PROBES = [
     ("no_pitch", probe_no_pitch),
     ("cert", probe_cert),
     ("runner", probe_runner),
+    ("delegation", probe_delegation),
 ]
 
 
