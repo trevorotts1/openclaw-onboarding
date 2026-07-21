@@ -152,13 +152,25 @@ Agent action - run before anything else:
 STEP 1: CHECK FOR EXISTING VERCEL ACCOUNT AND TOKEN
 
 Agent action:
-1. Check environment variables for existing VERCEL_TOKEN across all known
-   secrets locations:
+1. RESOLVE the canonical secrets store, then read the token from it. Do not
+   search a hardcoded list — none of the four paths this step used to search
+   (`~/clawd/secrets/.env`, `~/.openclaw/.env`, `~/.env`, `~/secrets/.env`) is
+   the store `qc-vercel-setup.sh` reads. That check sources `$SECRETS_ENV`,
+   which `lib-shared.sh:38-44` defines as `~/.openclaw/secrets/.env` on Mac and
+   `/data/.openclaw/secrets/.env` on VPS.
 
-   SECRETS_FILE=""
-   for f in ~/clawd/secrets/.env ~/.openclaw/.env ~/.env ~/secrets/.env; do
-     if [ -f "$f" ]; then SECRETS_FILE="$f"; break; fi
-   done
+   SKILLS_DIR="$HOME/.openclaw/skills"; [ -d /data/.openclaw/skills ] && SKILLS_DIR=/data/.openclaw/skills
+   [ -f "$SKILLS_DIR/lib-shared.sh" ] && . "$SKILLS_DIR/lib-shared.sh"
+   if ! command -v resolve_platform_paths >/dev/null 2>&1; then
+     resolve_platform_paths() {
+       if [ -d /data/.openclaw ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env"
+       else export SECRETS_ENV="$HOME/.openclaw/secrets/.env"; fi
+     }
+   fi
+   resolve_platform_paths
+   SECRETS_FILE="$SECRETS_ENV"
+   echo "Canonical secrets store: $SECRETS_FILE"
+   [ -f "$SECRETS_FILE" ] && . "$SECRETS_FILE" 2>/dev/null || true
 
    Also check: ~/.openclaw/openclaw.json and the $VERCEL_TOKEN env var.
 
@@ -218,23 +230,52 @@ Agent action:
 STEP 4: STORE TOKEN IN ENVIRONMENT
 
 Agent action:
-1. Locate or create secrets file using multi-env check:
-   SECRETS_FILE=""
-   for f in ~/clawd/secrets/.env ~/.openclaw/.env ~/.env ~/secrets/.env; do
-     if [ -f "$f" ]; then SECRETS_FILE="$f"; break; fi
+1. RESOLVE the canonical secrets store and create it if absent. Never fall back
+   to `~/clawd/secrets/.env` — that is the dead legacy workspace path
+   (`lib-shared.sh:43` labels it "dead legacy path — read-only migration only")
+   and `qc-vercel-setup.sh` does not read it.
+
+   SKILLS_DIR="$HOME/.openclaw/skills"; [ -d /data/.openclaw/skills ] && SKILLS_DIR=/data/.openclaw/skills
+   [ -f "$SKILLS_DIR/lib-shared.sh" ] && . "$SKILLS_DIR/lib-shared.sh"
+   if ! command -v resolve_platform_paths >/dev/null 2>&1; then
+     resolve_platform_paths() {
+       if [ -d /data/.openclaw ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env"
+       else export SECRETS_ENV="$HOME/.openclaw/secrets/.env"; fi
+     }
+   fi
+   resolve_platform_paths
+   SECRETS_FILE="$SECRETS_ENV"
+   mkdir -p "$(dirname "$SECRETS_FILE")" && touch "$SECRETS_FILE" && chmod 600 "$SECRETS_FILE"
+
+2. MIGRATION READ (one-time, read-only). If a legacy store still holds the token
+   and the canonical store does not, carry it across once. Nothing is ever
+   written back to the legacy path.
+
+   for LEGACY in "$HOME/clawd/secrets/.env" "$HOME/.openclaw/.env" "$HOME/.env" "$HOME/secrets/.env"; do
+     [ -f "$LEGACY" ] && [ "$LEGACY" != "$SECRETS_FILE" ] || continue
+     if grep -q '^VERCEL_TOKEN=' "$LEGACY" 2>/dev/null && ! grep -q '^VERCEL_TOKEN=' "$SECRETS_FILE" 2>/dev/null; then
+       grep '^VERCEL_TOKEN=' "$LEGACY" >> "$SECRETS_FILE"
+       echo "migrated VERCEL_TOKEN from a legacy store to $SECRETS_FILE"
+     fi
    done
-   if [ -z "$SECRETS_FILE" ]; then
-     SECRETS_FILE=~/clawd/secrets/.env
-     mkdir -p ~/clawd/secrets
+
+3. Add or update the token line in the RESOLVED store, replacing any existing
+   line rather than appending a duplicate:
+
+   TMP="$(mktemp)"
+   grep -v '^VERCEL_TOKEN=' "$SECRETS_FILE" 2>/dev/null > "$TMP" || true
+   printf 'VERCEL_TOKEN=%s\n' "<TOKEN>" >> "$TMP"
+   mv "$TMP" "$SECRETS_FILE" && chmod 600 "$SECRETS_FILE"
+
+4. Verify PRESENCE only — never print the token value:
+
+   if grep -q '^VERCEL_TOKEN=.' "$SECRETS_FILE"; then
+     echo "VERCEL_TOKEN: SET in $SECRETS_FILE"
+   else
+     echo "VERCEL_TOKEN: NOT-SET in $SECRETS_FILE — STOP, qc-vercel-setup.sh will fail"
    fi
 
-2. Add or update the token line:
-   VERCEL_TOKEN=<TOKEN>
-
-3. Verify the line was written:
-   grep "VERCEL_TOKEN" "$SECRETS_FILE"
-
-4. Export to current shell session:
+5. Export to current shell session:
    export VERCEL_TOKEN=<TOKEN>
 
 STEP 5: UPDATE CORE DOCUMENTATION FILES

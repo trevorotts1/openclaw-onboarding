@@ -1,3 +1,85 @@
+## [v20.0.90]  -  2026-07-21  -  A45/A46/A47: CREDENTIALS WRITTEN WHERE NOTHING READS THEM, TEN DOCUMENTED CONTRACTS THAT CONTRADICT THE CODE, AND A BYTE COUNT WRITING A RUBRIC SCORE
+
+Three Section A items from the nine-cluster skill review. Every finding was re-verified
+at pristine `origin/main` (`391a92e9`) with file, line and verbatim quote before anything
+was changed.
+
+### A45 / T2-21 — the install wrote the credential where nothing reads it
+
+`30-fish-audio-api-reference/INSTALL.md:62,69` wrote to `~/.clawdbot/clawdbot.json` and
+`~/clawd/secrets/.env`. `08-vercel-setup/INSTALL.md:158-161` searched a hardcoded four-path
+list and fell back at `:226-229` to `~/clawd/secrets/.env`; `10-github-setup/INSTALL.md`
+did the same. Every one of those skills' QC scripts sources `$SECRETS_ENV`, which
+`lib-shared.sh:38-44` defines as `~/.openclaw/secrets/.env` (Mac) or
+`/data/.openclaw/secrets/.env` (VPS) — and `lib-shared.sh:43` already labels `~/clawd` a
+"dead legacy path". **The verification reported the credential ABSENT on a box the owner
+had configured correctly, and the diagnosis pointed at the credential rather than at the
+path.**
+
+All three installers now resolve the store through `lib-shared.sh` — with the exact
+fallback the shipped `qc-*.sh` scripts already carry, so a box without the library behaves
+identically rather than newly failing — perform a one-time read-only migration from the
+legacy paths, write only to the resolved store, and report presence as `SET` / `NOT-SET`,
+never a value.
+
+`scripts/test-installer-credential-store.sh` proves it per skill in **both directions**,
+running each skill's REAL QC inside a throwaway `HOME`. Direction A (credential at the
+legacy path must be reported ABSENT) is asserted first on purpose: a test that only checked
+the happy path would pass against the unfixed repository. Plus a static check that no
+installer still directs a credential WRITE at a legacy store — **5 violations at
+`origin/main`, 0 after**.
+
+### A46 — ten documents that contradict the code beside them
+
+| Finding | The contradiction |
+|---|---|
+| **T1-07** | `39-real-estate-playbook/references/property-providers.md:48` documented the Street View request as a URL containing the key, for the agent to build itself — while `lib-property.sh:143-148` records that this exact construction was **deliberately removed** because a keyed URL attached to a client conversation ships the raw credential. `property-lookup.sh:116` sent the agent to that prose. |
+| **T1-08** | `21-tavily-search-ARCHIVED/qc-tavily-search.sh:24` put the request body — credential included — in `argv`, readable from the process table. Now `--data @-` on standard input. **Measured with a stub curl in a sandboxed HOME:** before, the key is in `argv`; after, `argv` ends at `--data @-`. |
+| **T2-20** | `27-video-editor/QC.md:31-33` required two directories version control cannot ship and no install step creates. The checklist recorded a FAIL on every correct installation. Removed rather than faked with empty directories. |
+| **T2-22** | `12-openrouter-setup/INSTALL.md:293` — the block an agent is told to merge into the LIVE configuration did not parse. The `NEW_MODELS` block at `:407`, fed straight to `jq --argjson`, had the same defect. |
+| **T2-23** | `12-openrouter-setup/INSTALL.md:476-484` ordered a gateway restart that `:623-639` of the same document forbids. |
+| **T2-24** | `16-summarize-youtube/EXAMPLES.md:18-22` "Gemini fallback" ran the default command; `summarize-youtube-full.md:273` chained that command to itself, so the retry was byte-identical to the attempt that had just failed. |
+| **T2-25** | `summarize-youtube-full.md:75-76` claimed a runtime auto-fallback that does not exist anywhere in the skill. Removed; the install now fails closed on the unsupported platform. |
+| **T2-26** | `30-fish-audio-api-reference` labelled itself Skill 31 and told an interrupted install to resume into skill 31 — the memory system. |
+| **T2-31** | The pre-foreclosure protocol named Skill 40's audit log as its record source; `40-.../INSTRUCTIONS.md:89` says that file holds "never raw record contents". Replaced with `public-records-handoff/v1` naming the real source. |
+| **T2-32** | Skill 39's provider-status producer and consumer disagreed on the **path**, the **capability names** and the **state shape** — three mismatches on one contract, so every provider read as unavailable. Pinned in `references/provider-status-contract.md` and validated on both sides. |
+
+**New gate `scripts/check-installer-config-blocks.py` was run over the whole repository
+before being made blocking, as the work list requires.** The first sweep reported 17
+failures, **16 of which were legitimate JSON fragments the checker was mis-calling**. It
+now parses a block as a document OR as a fragment and fails only when neither works. Final
+measurement: **2 failures at `origin/main`** (both the OpenRouter blocks), **0 after**, 1
+skipped and printed.
+
+### A47 / T0-08 — materialisation may gate eligibility, never write a rubric score
+
+`37-zhc-closeout/scripts/qc-rate-artifacts.sh:266,275` wrote `8.7`/`pass` into
+`.qualityRatings` from a **file size** and an **HTTP 200**. `INSTRUCTIONS.md:13` defines
+that field as a 1-10 rubric score and `run-closeout.sh:679` releases on it, so a generic or
+off-brand artifact cleared the 8.5 client-facing floor with no content judgment at all.
+
+Every rating now carries `contentJudged`, `rubricScore` (**null** unless a judge ran),
+`scoreKind` and `basis`; the raw measurement is kept separately in
+`.materializationChecks.<key>`; and every release without a judge is logged `WARN` and
+listed in `.contentJudgeMissing`, so an unattended box's missing judgment is **countable
+instead of invisible**.
+
+**B15 is NOT enabled.** Making the judge mandatory would fail every unattended closeout
+until one is configured. It ships as `ZHC_REQUIRE_CONTENT_JUDGE`, **default 0** — the
+default path is byte-for-byte today's behaviour, and a test asserts exactly that.
+
+**An existing test that encoded the bug as correct was TIGHTENED.** `B1` in
+`test-closeout-ghost-and-rating.sh` asserted only `score>=8.5 && qc==pass` — precisely what
+the defect produced — so it passed against the unfixed rater. Four cases added around it.
+Measured: **3 failures against `origin/main`'s rater, 0 after**; the file goes 14/1 to 15/0.
+
+### CI
+
+`.github/workflows/installer-contracts-guard.yml` runs all four suites. Both new Python
+checkers **self-test before their verdict is trusted**, and CI runs the self-test first, so
+a checker that has stopped detecting anything cannot report green. Every "could not run"
+path exits non-zero and says so; none of them passes by skipping.
+
 ## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
 
 Two findings from the 2026-07-21 skill review. Different files, same shape: a
