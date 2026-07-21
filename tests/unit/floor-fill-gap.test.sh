@@ -56,6 +56,16 @@ MIG="$SCRIPTS/migrate-existing-workforce.sh"
 DET="$SCRIPTS/detect-stale-artifacts.py"
 IDX="$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/_index.json"
 
+# The canonical builder resolves OpenClaw's platform paths at CALL time and
+# aborts with "Cannot detect OpenClaw platform" when neither /data/.openclaw nor
+# ~/.openclaw exists — which is every CI runner. OPENCLAW_PLATFORM is the
+# documented override for exactly this case ("Set OPENCLAW_PLATFORM=mac|vps to
+# override (e.g. CI static checks)"), and floor-wipe-fix-guard.yml already sets
+# it the same way for its suites. Every scenario below passes an explicit
+# --workspace, so this only satisfies the builder's platform probe; it never
+# points any fixture at a real workspace. Respect an existing value.
+export OPENCLAW_PLATFORM="${OPENCLAW_PLATFORM:-mac}"
+
 PASSED=0
 FAILED=0
 ok()  { echo "  PASS: $*"; PASSED=$((PASSED+1)); }
@@ -129,8 +139,11 @@ mkdir -p "$WS/departments"
 cat > "$TMP/seed-gap.json" <<JSON
 {"sales": {"kind": "roster", "missing_roles": ["$R1", "$R2"]}}
 JSON
-python3 "$FFD" --gap-file "$TMP/seed-gap.json" --workspace "$WS/departments" --apply >/dev/null 2>&1 \
-  || fail "could not seed the fixture department from the canonical library"
+if ! python3 "$FFD" --gap-file "$TMP/seed-gap.json" --workspace "$WS/departments" --apply >"$TMP/seed.out" 2>"$TMP/seed.err"; then
+  echo "--- seed stdout ---"; tail -20 "$TMP/seed.out"
+  echo "--- seed stderr ---"; tail -20 "$TMP/seed.err"
+  fail "could not seed the fixture department from the canonical library"
+fi
 python3 - "$IDX" "$WS" "$R1" "$R2" <<'PY' || fail "could not write the fixture build-state"
 import json, sys
 idx, ws, r1, r2 = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
