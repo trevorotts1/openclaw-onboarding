@@ -5,7 +5,7 @@
 # ============================================================
 
 set -u
-PASS=0; FAIL=0; WARN=0
+PASS=0; FAIL=0; WARN=0; SKIP=0
 
 # Source shared library if reachable
 LIB="$(dirname "$0")/../lib-shared.sh"
@@ -69,9 +69,31 @@ echo "  Platform: ${OPENCLAW_PLATFORM:-unknown}"
 # skill owns (posting rail, Gap C weekly landing page, the reciprocal
 # inbound-ownership cross-reference, the Graphics image-handoff gate) still
 # cites real, unchanged ground truth. See docs/tools/check_lattice_citation.py.
+#
+# LAYOUT NOTE (the false-fail this closes, T2-02): this is a REPO-integrity
+# check, not a runtime/installed-skill check. It needs
+# docs/tools/check_lattice_citation.py + docs/lattice-citations.json, which live
+# at the repo root as SIBLINGS of 35-social-media-planner/, not inside it. From a
+# plain repo checkout the parent IS that repo root and the checker is found. On a
+# CLIENT BOX the skill installs to ~/.openclaw/skills/35-social-media-planner/,
+# so the parent is ~/.openclaw/skills -- which has no docs/ directory at all. The
+# checker was invoked unconditionally there and python3 exited 2 ("can't open
+# file"), hard-FAILING every correctly installed box forever instead of reporting
+# drift -- and INSTALL.md Step "run qc-skill35.sh" requires exit 0, so a correct
+# install could never be completed. It now SKIPS VISIBLY (counted as a skip,
+# never as a pass) when the checker is absent, and hard-asserts exactly as before
+# when it is present -- the same "absent skips cleanly" convention
+# 03-agent-browser/qc-agent-browser.sh and
+# 44-convert-and-flow-operator/qc-convert-and-flow.sh already use.
 REPO_ROOT_LATTICE="$(cd "$(dirname "$0")/.." && pwd)"
-assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
-  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 35-social-media-planner -q"
+LATTICE_CHECKER="$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py"
+if [ -f "$LATTICE_CHECKER" ]; then
+  assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+    "python3 \"$LATTICE_CHECKER\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 35-social-media-planner -q"
+else
+  echo "  SKIP: GK-27 lattice citation tripwire — checker not present in this layout (docs/tools/check_lattice_citation.py not found under $REPO_ROOT_LATTICE; installed-skill layout, not a repo checkout)"
+  SKIP=$((SKIP+1))
+fi
 echo "  Date:     $(date)"
 echo ""
 
@@ -201,7 +223,7 @@ assert "INSTALL.md Step 9 directs cron registration (not HEARTBEAT.md write) (Fi
 
 echo ""
 echo "═══════════════════════════════════════════════"
-echo "  Result: $PASS passed | $FAIL failed | $WARN warnings"
+echo "  Result: $PASS passed | $FAIL failed | $WARN warnings | $SKIP skipped"
 echo "═══════════════════════════════════════════════"
 SCORE=$(python3 -c "print(round(($PASS * 10) / ($PASS + $FAIL + 0.001), 1))" 2>/dev/null || echo "?")
 echo "  Approx score: ${SCORE}/10 (excludes warnings)"

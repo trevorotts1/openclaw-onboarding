@@ -1,3 +1,181 @@
+## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
+
+Two findings from the 2026-07-21 skill review. Different files, same shape: a
+
+*(Branch cut at v20.0.85 and re-bumped four times — #691 took v20.0.85, #692/#686
+took v20.0.86, #693 took v20.0.87, #696/#698 took v20.0.88 — landing on v20.0.89.
+Every one of those releases restamped the quality-control summary, three of them
+arriving as a merge conflict on the branch that removes the restamping. The defect
+demonstrated itself four times while being fixed.)*
+
+### T0-07 (BLOCKER) — the version bumper rewrote the quality-control summary
+
+`23-ai-workforce-blueprint/templates/role-library/_qc-summary.md` was registered
+in `scripts/version-markers.json` as a repo-wide version marker, so
+`scripts/bump-version.sh` rewrote its `Role Library vX.Y.Z` heading on every
+release. Nothing re-ran quality control. Only the number moved.
+
+The measurement behind that file was taken **once** — 2026-06-09, at repo
+version **v11.0.1**, commit `5c4075a5`, covering **244 roles across 19
+departments**. Over the **508 commits** that followed, the heading advanced to
+v20.0.86 while the generation date, the role count and the `ALL PASS` verdict
+never moved. At that same anchor the sibling `_index.json` declared **438 roles
+across 36 departments**.
+
+So the artifact read as a current, comprehensive ALL-PASS certification of a
+library it had never been run against — and it renewed that claim automatically
+on every single release. It was restamped twice more during the review that
+produced this fix, including once while this branch was open.
+
+**Every version gate in the repository passed the entire time**, because the
+marker genuinely did equal `/version`. The number it agreed on was simply
+meaningless. That is the whole lesson: the existing checks verified that the
+artifact's version matched the release, and nothing whatsoever checked the
+artifact.
+
+**Changed**
+- `scripts/bump-version.sh` — the rewrite step is deleted, and the marker is
+  removed from the read, print and drift-check paths. `BUMP_CHECKED_MARKERS`
+  11 → 10.
+- `scripts/version-markers.json` — marker entry removed, `count` 11 → 10, plus a
+  `_never_register` note recording why a measurement is not a version marker.
+- `23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py` — dropped
+  from `_VERSION_MARKERS_FALLBACK`, the inline mirror of the manifest.
+- `scripts/release.sh` — no longer stages the summary as part of a release.
+- `.github/workflows/version-consistency.yml` — marker inventory comment
+  corrected to 10.
+
+**The artifact itself** was rewritten honestly. No verdict was invented to
+replace the one removed, and no role count was written that was not measured.
+It now records `not-measured`, names the run it does have (v11.0.1, 2026-06-09,
+244 roles, 19 departments), and reports the inventory actually counted at this
+commit — 36 department directories, 450 role documents on disk, 438 declared by
+the index — explicitly labelled an inventory rather than a quality result, with
+the 450-vs-438 disagreement recorded rather than resolved. The historical
+per-department PASS table was removed rather than carried forward; it described
+19 departments that no longer describe this tree.
+
+### T1-01 (BLOCKER) — the GHL setup self-test sent live SMS and email from a client account
+
+`05-ghl-setup/ghl-setup-full.md` said "After setup, the AI should run these
+tests automatically", then listed seven tests. Tests 5 and 6 `POST`ed a real SMS
+and a real email through `/conversations/messages`, from the client's own
+account, to a contact identifier the agent was told to substitute — expected
+result: "JSON with messageId confirming delivery". `05-ghl-setup/SKILL.md:95`
+completed the instruction: do not tell the user GHL is set up until all seven
+pass.
+
+Documentation is what the agent executes. This was a real unsolicited-message
+path out of a client account, with no approval step, no dry run and no sandbox.
+
+**Changed**
+- Both live sends deleted from the automatic self-test. The media-library check
+  renumbered 7 → 5; all five remaining tests are read-only.
+- `SKILL.md` — both self-test count claims corrected 7 → 5, plus an explicit
+  rule forbidding a test send from a client account.
+- New **SEND VERIFICATION** section: send capability is still documented, but it
+  is not part of setup and not required to call setup complete. Proving it
+  requires explicit operator approval for that specific send, a designated
+  operator test contact (never a client contact), an operator-supplied
+  identifier, and a report afterwards. It deliberately carries no ready-to-run
+  command.
+- `05-ghl-setup/skill-version.txt` v6.5.9 → v6.5.10.
+
+### Guards — the durable half
+
+The summary drifted for months because nothing checked the artifact.
+
+- **`scripts/qc-assert-qc-summary-provenance.py`** (new) — every QC summary must
+  carry a provenance block (measurement status, the repo version measured at,
+  when, and how many roles were observed); its `Role Library vX.Y.Z` token must
+  equal the version it was measured at; an artifact whose status is
+  `not-measured` may not assert a pass verdict; a recorded version may not be
+  newer than `/version` (but may be older, so a genuine run does not create a
+  false-failure treadmill as the repo moves on); and no QC summary may be
+  re-registered as a version marker in either the manifest or the inline
+  fallback. Also pins the manifest's `count` to its own list and to
+  `BUMP_CHECKED_MARKERS`. 11 embedded self-test cases.
+- **`tests/unit/qc-summary-not-rolled-by-bumper.test.sh`** (new) — runs the real
+  `bump-version.sh` against a fixture repo and asserts the summary is
+  byte-identical afterwards *and* that all ten remaining markers still roll and
+  `--check` still agrees. Behavioural, not a source-text match.
+- **`tests/unit/ghl-setup-selftest-no-live-send.test.py`** (new) — no numbered
+  self-test may be a send, the checklist may not reference one, numbering must
+  be contiguous, and every count claim in `SKILL.md` must equal the number of
+  tests that exist.
+- **`.github/workflows/qc-summary-provenance-guard.yml`** (new) wires all three.
+
+### Measured, pre-fix vs post-fix, at `391a92e9`
+
+| Check | Before | After |
+|---|---|---|
+| A version bump leaves the QC summary untouched | FAIL — heading rewritten to the release version | PASS — byte-identical |
+| QC summary provenance | FAIL — no provenance block; registered as a marker in two places | PASS |
+| GHL automatic self-test contains no live send | FAIL — TEST 5 and TEST 6 are sends | PASS — 5 read-only tests |
+| All other version markers still roll, `--check` agrees | PASS | PASS |
+## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
+
+**T2-07 — three documented entry points named a path that does not exist.**
+`23-ai-workforce-blueprint/SKILL.md:497` documented `bash add-role.sh`,
+`32-command-center-setup/SKILL.md:241,244` documented `bash sync-extensions.sh
+--converge`, and `22-book-to-persona-coaching-leadership-system/SKILL.md:284`
+documented `bash add-persona-from-source.sh`. All three scripts ship under the
+skill's own `scripts/` directory. An agent that follows the documented line gets
+`No such file or directory`, so the role, the converge or the persona never
+happens — and for skill 32 the converge is described as mandatory in the same
+document, eleven lines below a block that already used the correct path, so a
+newly added department is left unmaterialised. The third site was not in the
+finding; the new check found it.
+
+**T2-12 — three archived skill folders still read as live installers.**
+`33-department-heads-ARCHIVED/SKILL.md` opened as an active installer for
+seventeen permanent department heads, with no archive banner and no successor.
+`34-intelligent-staffing-ARCHIVED/SKILL.md` still declared that it extends Skill
+23 and depends on Skill 33. `13-google-workspace-setup-ARCHIVED` deferred parts
+of its own procedure to a skill number and a helper script that do not exist
+here. Following any of them reintroduces the superseded seventeen-department
+model into a workforce Skill 23 has already built, or creates a Google Cloud
+service-account key file that nothing reads.
+
+**What changed**
+
+- the three documented paths now name the shipped scripts
+- `SKILL.md` and `INSTALL.md` in the three archived folders are tombstones: an
+  `ARCHIVED — DO NOT RUN` banner, the successor named, the capability map, and
+  no runnable procedure left in the file
+- `33` and `34`'s `install.sh` refuse to run: they print why, name the successor
+  and exit 1, writing nothing. The old implementations were removed deliberately
+  — they are in git history and `ARCHIVED.md` maps every capability — because
+  leaving 190 and 416 lines of dead installer under an early exit would have left
+  the trap in place
+- `docs/archived-skill-tombstones.json` declares the state of EVERY archived
+  folder. `11-superdesign-ARCHIVED` and `21-tavily-search-ARCHIVED` are recorded
+  as still pending with the reason, so an outstanding archive is visible rather
+  than silently skipped
+
+**The checks, and that they can fail**
+
+`docs/tools/check_documented_entrypoints.py` resolves every documented
+bash/sh/python entry point inside a fenced block in any `NN-*/SKILL.md`. Runtime
+paths (`~/…`, `/…`, `$VAR/…`) and placeholders are out of scope: they name a
+location on a box, not a file this repository ships. Against untouched
+`origin/main` at `391a92e9` it exits 1 and names all four sites; against this
+release it exits 0 across 29 documented entry points.
+
+`tests/unit/documented-entrypoint-paths.test.py` — 7 tests, both directions.
+Reverting `SKILL.md:497` to `bash add-role.sh` turns it red.
+
+`tests/unit/archived-skill-tombstones.test.py` — 14 tests. It EXECUTES each
+tombstoned `install.sh` under a throwaway `HOME` and requires a non-zero exit
+that says `REFUSED`, names the successor and leaves `HOME` empty. Replacing 33's
+installer with `exit 0` turns it red; restoring 33's live installer body turns it
+red on four assertions; a new `*-ARCHIVED` folder the manifest does not declare
+turns it red.
+
+Both suites are hermetic and run in CI via
+`.github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml`.
+
+---
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time

@@ -1,6 +1,7 @@
 {
-  "_comment": "SINGLE SOURCE OF TRUTH for the repo-wide version markers that must ALL equal /version. Read by BOTH scripts/bump-version.sh (--check drift guard) and 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py (VERSION-MARKERS dimension) so the two can never disagree on WHICH markers, or HOW MANY, track the repo version. To add or remove a marker, edit THIS file (and mirror the same change in bump-version.sh's roll logic + BUMP_CHECKED_MARKERS); bump-version.sh fails loudly at startup if its checked-marker count ever diverges from this manifest's count. Paths are relative to the repo root. Only markers that track /version in LOCKSTEP belong here; markers that track an INDEPENDENT skill version (e.g. other skills' SKILL.md version:, or per-skill skill-version.txt files) are deliberately excluded.",
-  "count": 11,
+  "_comment": "SINGLE SOURCE OF TRUTH for the repo-wide version markers that must ALL equal /version. Read by BOTH scripts/bump-version.sh (--check drift guard) and 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py (VERSION-MARKERS dimension) so the two can never disagree on WHICH markers, or HOW MANY, track the repo version. To add or remove a marker, edit THIS file (and mirror the same change in bump-version.sh's roll logic + BUMP_CHECKED_MARKERS, and in the _VERSION_MARKERS_FALLBACK list inside qc-assert-repo-consistency.py); bump-version.sh fails loudly at startup if its checked-marker count ever diverges from this manifest's count, and scripts/qc-assert-qc-summary-provenance.py fails if 'count' diverges from the length of 'markers'. Paths are relative to the repo root. Only markers that track /version in LOCKSTEP belong here; markers that track an INDEPENDENT skill version (e.g. other skills' SKILL.md version:, or per-skill skill-version.txt files) are deliberately excluded.",
+  "_never_register": "A MEASUREMENT artifact is NOT a version marker and must never be listed here. A marker asserts 'this file ships in release X'; a measurement asserts 'I ran a check and observed Y'. Registering a measurement obliges bump-version.sh to roll it, which restamps a result that was never re-measured. That is what happened to 23-ai-workforce-blueprint/templates/role-library/_qc-summary.md (finding T0-07): registered as a marker, it carried a frozen '244 / 244 - ALL PASS' verdict from one run on 2026-06-09 at v11.0.1 forward onto every release through v20.0.85, against a sibling index declaring 438 roles. Every version gate passed the whole time, because the marker genuinely did equal /version. It was removed here, and scripts/qc-assert-qc-summary-provenance.py now fails CI if it is re-added.",
+  "count": 10,
   "markers": [
     {
       "id": "/version",
@@ -29,12 +30,6 @@
       "file": "23-ai-workforce-blueprint/templates/role-library/_index.json",
       "type": "json",
       "key": "version"
-    },
-    {
-      "id": "_qc-summary.md",
-      "file": "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md",
-      "type": "regex",
-      "pattern": "Role Library v([0-9]+\\.[0-9]+\\.[0-9]+)"
     },
     {
       "id": "README this-repo-at",
