@@ -1,0 +1,25 @@
+# Known orphaned version tags — OUTSTANDING DEBT, NOT AN ALLOWLIST
+#
+# Every tag listed here points at a commit that is NOT an ancestor of main.
+# They are exempt from G4 (scripts/check-tag-ancestry.py) only because they
+# predate that guard. Resolving an orphan requires deleting/re-cutting the
+# remote tag, which is a force operation on shared history and therefore an
+# OPERATOR decision — it is deliberately not automated.
+#
+# RULES
+#   * Adding a line here is NOT a way to silence G4. A new orphan means a tag
+#     was mis-pushed; fix the push, do not extend this file.
+#   * G4 fails if a tag here is no longer orphaned, so the list must SHRINK as
+#     debt is repaid. It can never rot into a blanket exemption.
+#
+# Format:  vX.Y.Z  # reason
+#
+# Snapshot taken against main = 3827d172 (2026-07-21), 574 tags, 5 orphans.
+
+v11.16.0  # historical: cut from a branch commit that never landed on main
+v11.20.0  # historical: release bump lost to a rebase collision
+v14.1.1   # historical: cut from a branch commit that never landed on main
+v14.1.2   # historical: cut from a branch commit that never landed on main
+v20.0.90  # pushed by NAME from the shared local tag namespace; resolves to
+          # d3686e7b7 on the unmerged branch behind PR #710. Clears itself when
+          # that PR merges — no operator action needed if it lands.
