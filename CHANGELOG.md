@@ -1,3 +1,50 @@
+## [v20.0.95]  -  2026-07-21  -  BATCH INTEGRATION: seven reconciled fixes landed in one merge train (fail-closed install state, single-roster watchdog + Wave 6, design-library + credential gates, PREREQS schema enforcement, Agnes image/video reference skills, book-routing receipt)
+
+Seven open PRs were hand-reconciled onto v20.0.94 in a single integration branch.
+The competing fail-closed onboarding-state cluster was resolved with #717 as the
+base; #709 was CLOSED as superseded (its tests are coupled to #717's dropped
+install.sh Step-13b design and do not pass against #717's implementation, so they
+were not force-salvaged). Boilerplate/version/CHANGELOG/README re-stamp churn was
+kept at main and the repo version rolled ONCE here; each skill's own CHANGELOG
+carries the full detail. This entry records the batch. #718, #719, and #711 are
+DEFERRED: #718's newly-wired Skill-25 contract suite finds 16 pre-existing
+blockers; #719 changed the canonical presentations renderer (build_deck.py)
+without regenerating CANONICAL-RENDERER-PIN.sha256, so the pin-integrity gate
+correctly fails (needs a deliberate re-pin + review, then re-land); #711's
+shared-run-dir wiring is incomplete.
+
+- **#717 fix(install): four install-time fail-open sites reported success on
+  failure.** `oc_state_seed` / `oc_state_set` / `oc_gate_skill` now report real
+  write failures (atomic tempfile writes; the reset-to-`{}` data-loss path is
+  closed); `install.sh` fallbacks fail closed and dispatch on
+  `OPENCLAW_LIB_ONBOARDING_STATE_SOURCED`; `scripts/onboarding-state.sh`
+  `obs_verify_skill` fails closed when the CLI is absent
+  (`openclaw-cli:absent-cannot-verify-registration`). ONB-STATE-002 lock added to
+  `embedded-python-syntax-guard.yml`.
+- **#694 fix(waves): single-source watchdog roster + terminal Wave 6.**
+  `build_wave_prompt` renders `${!OC_WAVE<N>_SKILLS}` (no second copy);
+  `OC_WAVE6_SKILLS` gates skills 44-57; regex widened `^[1-6]$`;
+  `scripts/qc-assert-wave-list-integrity.py` forbids hardcoded NN-slug tokens.
+  Wave-6 additions hand-merged onto #717's guarded-seed `oc_wave_state_init`.
+- **#697 fix(gates): three fail-open checks certified success while finding the
+  defect (T1-02, T0-06, T1-03).** Design-library gate fails hard without python3;
+  credential checks in docs are presence-only (SET/NOT-SET). 05 -> v6.5.12,
+  22 -> v6.19.3, 37 -> v12.14.18.
+- **#716 fix(prereqs): PREREQS.json schema enforcement wired into CI.**
+  `qc-prereqs-json.sh` fail-closes on unknown types and validates
+  `{id,type,label,check,severity}` (Rules 16a/16b/16c); `check-skill-prereqs.sh`
+  learns skillId; `prereqs-schema-guard.yml`. 07 -> v6.6.3, 38 -> v1.9.3.
+  `45-design/PREREQS.json` reconciled to #716's schema with #697's python3 prereq.
+- **#721 feat(63-agnes-image): Agnes Image 2.1 Flash endpoint reference.** Wave 2;
+  existing `AGNES_AI_API_KEY` (SET/NOT-SET). Registered in README / install.sh /
+  skill-department-map (infra reference form). Watchdog/roster hunks dropped.
+- **#722 feat(64-agnes-video): Agnes Video V2.0 endpoint reference.** Wave 3;
+  same treatment; registration completed.
+- **#714 fix(52/53): a book handoff was recorded as ROUTED because a directory
+  existed.** `aa_director._version_gate` now requires Skill 53's byte-matching
+  intake receipt; `book-routing-receipt-guard.yml`. 52 -> 1.5.3, 53 -> 1.1.6
+  (frontmatter aligned).
+
 ## [v20.0.94]  -  2026-07-21  -  BATCH INTEGRATION: six independent, individually-green fixes landed in one merge train (cinematic-forge delivery, sovereign-lock install gates, memory activator, prereqs declaration, tag-ancestry guard, Agnes visual-media SOP)
 
 Six open PRs — each green on its own gate and free of substantive file overlap —
