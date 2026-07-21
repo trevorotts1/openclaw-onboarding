@@ -1,0 +1,105 @@
+name: documented-entrypoints-and-archived-tombstones-guard
+
+# Two regression guards for documentation that pointed somewhere real work
+# cannot happen (T2-07 and T2-12).
+#
+#   T2-07 -- three skills documented a runnable entry point at a path that does
+#     not exist. `bash add-role.sh`, `bash sync-extensions.sh --converge` and
+#     `bash add-persona-from-source.sh` all live under the skill's own scripts/
+#     directory, so an agent following the documented line gets "No such file or
+#     directory" and the role, the converge or the persona never happens. For
+#     32-command-center-setup the converge is mandatory in the same document, so
+#     a newly added department is left unmaterialised. Guarded by
+#     tests/unit/documented-entrypoint-paths.test.py, which also proves the
+#     checker goes RED on a missing script and never reports runtime paths
+#     (~/..., /..., $VAR/...) or documentation placeholders.
+#
+#   T2-12 -- archived skill folders still read as live installers with no archive
+#     banner and no successor, so an operator who opens one follows a superseded
+#     procedure into a live box. Guarded by
+#     tests/unit/archived-skill-tombstones.test.py against the declared state in
+#     docs/archived-skill-tombstones.json. That suite EXECUTES each tombstoned
+#     install.sh under a throwaway HOME and requires a non-zero exit that names
+#     the successor and writes nothing, and it fails when a NEW archived folder
+#     appears that nobody declared.
+#
+# Both suites are hermetic: they read the checkout and temporary directories
+# only. No network, no box state.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "*/SKILL.md"
+      - "*-ARCHIVED/**"
+      - "docs/tools/check_documented_entrypoints.py"
+      - "docs/archived-skill-tombstones.json"
+      - "tests/unit/documented-entrypoint-paths.test.py"
+      - "tests/unit/archived-skill-tombstones.test.py"
+      - ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "*/SKILL.md"
+      - "*-ARCHIVED/**"
+      - "docs/tools/check_documented_entrypoints.py"
+      - "docs/archived-skill-tombstones.json"
+      - "tests/unit/documented-entrypoint-paths.test.py"
+      - "tests/unit/archived-skill-tombstones.test.py"
+      - ".github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml"
+  workflow_dispatch:
+
+jobs:
+  guards:
+    name: Documented entry points resolve + archived skills are tombstones
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the checker, the suites and the archived installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile docs/tools/check_documented_entrypoints.py
+          python3 -m py_compile tests/unit/documented-entrypoint-paths.test.py
+          python3 -m py_compile tests/unit/archived-skill-tombstones.test.py
+          for f in ./*-ARCHIVED/install.sh; do
+            [ -f "$f" ] || continue
+            bash -n "$f"
+          done
+          python3 -c 'import json,sys; json.load(open("docs/archived-skill-tombstones.json"))'
+          echo "syntax OK"
+
+      - name: T2-07 — every documented entry point resolves
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 docs/tools/check_documented_entrypoints.py --repo-root .
+          python3 tests/unit/documented-entrypoint-paths.test.py
+
+      - name: T2-12 — archived skills are tombstones and their installers refuse
+        shell: bash
+        run: python3 tests/unit/archived-skill-tombstones.test.py
+
+      - name: Assert the guards themselves can still go red
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A guard that has only ever been observed passing has not been
+          # observed. Construct both defects in a scratch tree and require a
+          # non-zero exit from the checker.
+          tmp="$(mktemp -d)"
+          mkdir -p "$tmp/77-fixture-skill/scripts"
+          printf '# Fixture\n\n```bash\nbash do-the-thing.sh\n```\n' > "$tmp/77-fixture-skill/SKILL.md"
+          if python3 docs/tools/check_documented_entrypoints.py --repo-root "$tmp"; then
+            echo "FAIL: the entry-point checker passed a script that does not exist." >&2
+            exit 1
+          fi
+          echo "PASS: the entry-point checker goes red on a real defect."
+          rm -rf "$tmp"

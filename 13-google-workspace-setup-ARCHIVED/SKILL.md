@@ -1,97 +1,39 @@
+# ARCHIVED — DO NOT RUN — Skill 13: Google Workspace Setup
 
-## 🔴 GOOGLE ACCOUNT ROUTING + PLAYWRIGHT PERSISTENCE (SOVEREIGN)
-- Ask account type first: Google Workspace (custom domain) or regular Gmail.
-- Workspace path: use Workspace setup flow.
-- Gmail path: use Gmail OAuth flow.
-- Do not force Workspace-only setup for Gmail users.
-- If browser automation is used, Playwright must use `launchPersistentContext(userDataDir)`.
-- Never use regular `launch()` for onboarding automation.
+> **This skill is archived. Do not run its installer. Do not follow it as a procedure.**
+>
+> **Successor: Skill 14 — Google Workspace Integration (`14-google-workspace-integration/`).**
 
-# Google Workspace Setup - SKILL.md
+Skill 13 walked an operator through a Google Cloud project, six enabled APIs, a
+service account, a downloaded JSON key and Domain-Wide Delegation, at install
+time. That install-time OAuth dance is no longer how the fleet reaches Google.
 
-## What This Skill Is About
+## Why you must not run this
 
-This skill connects your AI agent to Google's tools - Gmail, Google Calendar,
-Google Drive, Google Docs, and Google Sheets. Once connected, your AI can read
-your emails, check your calendar, open and edit documents, and work with
-spreadsheets on your behalf.
+Following this procedure creates a Google Cloud project and a downloaded service
+account key on a box that does not need either, and leaves long-lived key
+material on disk. The routing rule this file used to open with — ask Workspace
+versus Gmail, then branch — no longer has a live branch to route to. The file
+also deferred parts of its own work to a skill number and a helper script that do
+not exist in this repository, so an agent that followed it would stall partway
+through with nothing to run.
 
-The connection works through something called a "service account" - think of it
-as a special login that your AI uses to access your Google account. You create
-this login inside Google Cloud Platform (GCP), give it permission to act on your
-behalf, and then your AI can do the rest.
+## Where each capability went
 
-## When to Use This Skill
+| Old Skill 13 capability | Where it lives now |
+|---|---|
+| Google Workspace onboarding for the agent | `14-google-workspace-integration/` — the live skill |
+| Gmail send and read | `claude_ai_Gmail` MCP server, authenticated per session |
+| Google Calendar events | `claude_ai_Google_Calendar` MCP server; appointments via Skill 29 |
+| Google Drive file operations | `claude_ai_Google_Drive` MCP server |
+| Google Docs and Sheets editing | MCP tools directly — no install step |
+| Workspace OAuth tokens | Per-session MCP authentication, not an install-time key file |
 
-- Setting up Google API access for the first time
-- Creating a new Google Cloud Platform project for OpenClaw
-- Creating a service account (the special login your AI uses)
-- Enabling the required Google APIs (Gmail, Calendar, Drive, Docs, Sheets, People)
-- Setting up Domain-Wide Delegation (required for Google Workspace business accounts)
-- Configuring OAuth scopes (the specific permissions your AI gets)
-- Troubleshooting "Access denied" or "401" errors when your AI tries to use Google services
-- Moving from personal Gmail access to Google Workspace business account access
+## Read instead
 
-## What This Skill Covers
+- `ARCHIVED.md` in this folder — the full archive record and the capability map.
+- `14-google-workspace-integration/SKILL.md` — the live skill.
 
-1. **Creating a Google Cloud project** - Where to go, what to click, what to name it
-2. **Enabling 6 core APIs** - Gmail, Calendar, Drive, Docs, Sheets, and People (Contacts)
-3. **Creating a service account** - The special login your AI will use
-4. **Generating and securing the JSON key file** - The password file for the service account
-5. **Domain-Wide Delegation setup** - Required for Google Workspace (business) accounts, done in both the GCP Console and the Google Admin Console
-6. **OAuth scopes** - The specific permissions to grant (Gmail, Calendar, Drive, Docs, Sheets, Contacts)
-7. **OpenClaw configuration** - Where to put the key file and environment variables
-8. **Testing the connection** - How to verify everything works
-9. **Troubleshooting** - Common errors and how to fix them
-10. **Security notes** - How to keep your setup safe
-
-## Files in This Folder and Reading Order
-
-1. **SKILL.md** - You are here. Start here for the overview.
-2. **google-workspace-setup-full.md** - The complete setup guide with every step explained. Read this to execute the setup.
-3. **INSTRUCTIONS.md** - Step-by-step execution instructions.
-4. **INSTALL.md** - Installation-specific notes.
-5. **EXAMPLES.md** - Example configurations and usage patterns.
-6. **CORE_UPDATES.md** - What to add to your core workspace files after setup.
-7. **google-workspace-setup.skill** - Skill metadata file.
-
-## Prerequisites
-
-- The Teach Yourself Protocol (TYP) must be installed first. If TYP is not in your
-  AGENTS.md or TOOLS.md, stop and install TYP before proceeding.
-- You need Google Workspace admin access (for business accounts) OR a personal
-  Google account (for personal Gmail).
-- OpenClaw must already be installed and running.
-- You need access to both the Google Cloud Console (console.cloud.google.com) and
-  the Google Admin Console (admin.google.com) if using a Workspace account.
-
-## Key Things the AI Agent Needs to Know
-
-- **Two different setups exist.** Personal Gmail uses OAuth (through the GOG CLI tool).
-  Google Workspace business accounts use a service account with Domain-Wide Delegation.
-  Never mix these up - using the wrong method will always fail.
-
-- **Detect existing setup before starting.** If Gmail or Google Workspace is already configured, tell the user: "We've already detected that this has already been set up for you. Did you want to add an additional Gmail account or Google Workspace account?" If they say yes, run the add-account path. If they say no, skip this skill and continue onboarding.
-
-- **Domain-Wide Delegation requires two steps.** First, enable it on the service account
-  in the GCP Console. Second, authorize the scopes in the Google Admin Console. Missing
-  either step causes "Access denied" errors.
-
-- **The JSON key file is like a password.** Store it securely (usually in ~/clawd/secrets/).
-  Set file permissions to 600 so only the owner can read it. Never share it or commit it
-  to version control.
-
-- **Scopes must match exactly.** The scopes you authorize in the Admin Console must match
-  what the agent requests in code. If the agent requests a scope that is not authorized,
-  it gets a 401 error. The six core scopes are: gmail.modify, calendar, drive, documents,
-  spreadsheets, and contacts.readonly.
-
-- **Always use full scopes, not readonly variants alone.** Requesting documents.readonly
-  by itself often fails. Request both drive and documents together for reliable access.
-
-- **The service account impersonates a real user.** When accessing Workspace resources,
-  the service account acts as a specific user (like admin@yourdomain.com). This user
-  email must be specified in the configuration.
-
-- **Test after setup.** Ask the AI to check Gmail or Calendar. If it works, the setup
-  is complete. If it gets errors, check the troubleshooting section in the full guide.
+The folder is retained only so that older client onboardings that reference
+"Skill 13" in their `MEMORY.md` or `.onboarding-status` files still resolve.
+Nothing here is maintained, and nothing here is to be executed.

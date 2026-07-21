@@ -238,10 +238,10 @@ The `add-department.sh` is the CANONICAL path for adding departments. The CC das
 
 ```bash
 # Full converge — run after EVERY add
-bash sync-extensions.sh --converge [--verbose] [--dry-run]
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge [--verbose] [--dry-run]
 
 # Fast mode — for Sunday cron (skips renders if no delta)
-bash sync-extensions.sh --converge --fast
+bash 32-command-center-setup/scripts/sync-extensions.sh --converge --fast
 ```
 
 Converge validates `_index.json` invariants, refreshes build-state, re-renders ORG-CHART.md, and re-syncs the CC dashboard. **FAIL LOUD** if CC sync fails.
