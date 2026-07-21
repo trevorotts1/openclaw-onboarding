@@ -663,7 +663,7 @@ def evaluate(skill_dir):
 #   SKILLS-COUNT  install.sh active-skill count == README count == actual skill
 #                 dir tree (the recurring install.sh/README/tree drift).
 #   VERSION       every version marker across the repo agrees. The marker SET is
-#                 the shared SSOT scripts/version-markers.json (currently 11
+#                 the shared SSOT scripts/version-markers.json (currently 10
 #                 markers), the SAME manifest bump-version.sh rolls + drift-checks.
 #
 # DESIGN — mirror the build, never re-derive it. ORG-CHART / ROUTING / CC / DREAMING
@@ -740,9 +740,12 @@ _VERSION_MARKERS_FALLBACK = [
     {"id": "_index.json version",
      "file": "23-ai-workforce-blueprint/templates/role-library/_index.json",
      "type": "json", "key": "version"},
-    {"id": "_qc-summary.md",
-     "file": "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md",
-     "type": "regex", "pattern": "Role Library v([0-9]+\\.[0-9]+\\.[0-9]+)"},
+    # DELIBERATELY ABSENT (T0-07): the role-library quality-control summary. It
+    # was a registered marker, so bump-version.sh rolled its heading on every
+    # release while the measurement behind it — 244 roles, ALL PASS, taken once
+    # on 2026-06-09 at v11.0.1 — never moved. A measurement is not a release
+    # marker. scripts/qc-assert-qc-summary-provenance.py fails if it reappears
+    # here or in scripts/version-markers.json.
     {"id": "README this-repo-at", "file": "README.md", "type": "regex",
      "pattern": "this repo at v([0-9]+\\.[0-9]+\\.[0-9]+)"},
     {"id": "README Current-Version", "file": "README.md", "type": "regex",
