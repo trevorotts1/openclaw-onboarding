@@ -56,3 +56,39 @@ Scripts live in `scripts/`.
 - Pika uses: `PIKA_API_KEY`
 
 If you do not have keys, use `--provider mock` (text) or `--provider local` (image).
+
+---
+
+## Optional alternative generator: Agnes Video 2.0
+
+**KIE.ai (VEO) stays the default/primary video provider for this skill** (`--provider kieai`); the
+Runway, Pika, mock, and local paths are unchanged. Agnes Video 2.0 is an **additional option** an
+agent MAY choose for the raw clip — it adds a path, it does not replace or reword anything above.
+
+Agnes ships as its **own skill** (the same way KIE.ai setup is its own skill, Skill 07). This skill's
+`scripts/` generators are not modified, so there is **no `--provider agnes` flag**. To use Agnes,
+generate the raw clip with the Agnes Video skill, then bring the resulting `.mp4` back into this skill
+for assembly, audio mixing, resize/crop, and export.
+
+- **Model / endpoint:** `agnes-video-v2.0`, `POST https://apihub.agnes-ai.com/v1/videos` — asynchronous:
+  create the task, then poll `GET https://apihub.agnes-ai.com/agnesapi?video_id=<VIDEO_ID>`.
+- **Source of truth for the delivered clip** is the response `seconds`, `size`, and
+  `metadata.size_mapping` — never the requested `width`/`height`/`num_frames` (Agnes normalizes them).
+- **Credential:** the fleet already provisions `AGNES_AI_API_KEY` (endpoint `apihub.agnes-ai.com/v1`).
+  Confirm it is **SET** before choosing Agnes — never print or echo the value. If it is not set, stay
+  on the default `--provider kieai` (VEO) path.
+
+### Tier behavior — operator-set, never hardcoded
+
+Which Agnes plan a box is on (free / enterprise / a paid Token Plan) is an **account property this SOP
+cannot know statically**. Read it from an **operator-set config value** (for example `AGNES_TIER`, via
+`openclaw config get AGNES_TIER`) and do **not** bake per-tier image/video limits into skill logic:
+
+- Agnes publishes its quotas as **non-contractual, mutable reference values** and names the account
+  console as the final authority, so a hardcoded ceiling would be fabricated data.
+- Where a limit is **unverified**, respect the **account's own rate limiting**: treat an HTTP `429`
+  (with exponential backoff) and the console's Usage / Billing page as the live ceiling, not a number
+  written in this doc.
+- Cost note (evidence-backed): for **image/video** workloads the paid Token Plan tiers do **not** raise
+  media throughput — only the text-request quota scales with tier — so paying up buys no extra video
+  volume for this skill's use case.
