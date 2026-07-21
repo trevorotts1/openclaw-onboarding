@@ -6,9 +6,25 @@
 ## Location & key
 
 - Cache dir: `<MASTER_FILES_DIR>/public-records-cache/`.
-- Cache key: a hash of `(normalized target slug + county FIPS + record type)`.
+- Cache key: a hash of
+  `(namespace + normalized target slug + county FIPS + record type + normalized query)`.
   The raw address is NEVER used as a filename — only the hash. This keeps the
   cache directory free of raw PII.
+- **The query is part of the identity (SK1-30 / T1-05).** Until this fix the key
+  was target + FIPS + record type only, so two different addresses in the same
+  county for the same record type produced the SAME key: within the cache
+  lifetime, a lookup for one property returned the cached, attributed record for
+  a DIFFERENT property, on the fast/free/confident cache-hit path. The writer and
+  the reader agreed with each other because they shared the same defect; both now
+  derive the key from one function, `lib-records.sh :: _cache_key`.
+- **Namespace version:** entries are written as `v2-<hash>.json`. Pre-fix entries
+  (`<hash>.json`, computed without the query) are not reachable under the new
+  scheme and are simply never served again. Expect a one-off rise in upstream
+  calls while the new namespace fills — that is the wrong hits becoming misses.
+- The normalised query identity is case-folded, comma/semicolon-separated,
+  whitespace-collapsed and trimmed: `123 Main St, Springfield IL` and
+  `123  MAIN ST,  Springfield  IL` are one identity; two different addresses
+  never are.
 
 ## TTL & hits
 

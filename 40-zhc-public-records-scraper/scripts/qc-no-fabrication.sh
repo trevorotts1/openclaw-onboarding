@@ -15,6 +15,37 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB="$SCRIPT_DIR/lib-records.sh"
 FAIL=0
 
+# assert_honest_gap <json> — the resolve() no-fabrication predicate, as ONE
+# reusable, independently drivable function (SK1-30 / T0-55).
+#
+# It used to be `has("resolved")`. A response of
+#   {"resolved": true, "county": "...", "state": "..."}
+# for a deliberately unresolvable address satisfied that: the gate asserted the
+# PRESENCE of the field whose VALUE is the entire finding, so the exact failure
+# it was written to catch passed it. The predicate now asserts the VALUE is
+# false AND that no county/state was invented alongside it.
+#
+# Exit 0 = honest gap; 1 = a fabricated resolution. Driven directly by
+# tests/unit/records-pipeline-fail-closed.test.sh with a truthy stub, so the
+# predicate is observed going RED and not only green.
+assert_honest_gap() {
+  local json="${1:-}"
+  command -v jq >/dev/null 2>&1 || { echo "assert_honest_gap: jq required" >&2; return 2; }
+  printf '%s' "$json" | jq -e 'type=="object"' >/dev/null 2>&1 \
+    || { echo "assert_honest_gap: not a JSON object: $json" >&2; return 1; }
+  printf '%s' "$json" | jq -e 'has("resolved")' >/dev/null 2>&1 \
+    || { echo "assert_honest_gap: no explicit resolved field: $json" >&2; return 1; }
+  printf '%s' "$json" | jq -e '.resolved == false' >/dev/null 2>&1 \
+    || { echo "assert_honest_gap: resolved is not false — the router claimed to resolve an unresolvable query: $json" >&2; return 1; }
+  printf '%s' "$json" | jq -e '((.county_fips // "") == "") and ((.state // "") == null or (.state // "") == "") and ((.county_name // "") == null or (.county_name // "") == "")' >/dev/null 2>&1 \
+    || { echo "assert_honest_gap: an honest gap carries populated county/state fields (invented location): $json" >&2; return 1; }
+  return 0
+}
+
+if [ "${1:-}" = "assert_honest_gap" ]; then
+  assert_honest_gap "${2:-}"; exit $?
+fi
+
 echo "=== qc-no-fabrication (Skill 40): tier-4 honest-gap floor ==="
 [ -f "$LIB" ] || { echo "FAIL: lib-records.sh not found at $LIB"; exit 1; }
 
@@ -35,13 +66,22 @@ if command -v jq >/dev/null 2>&1; then
     echo "  [FAIL] tier(empty) did not return an honest gap: $T2"; FAIL=1
   fi
 
-  # resolve(garbage) must NOT fabricate coordinates/county — must say resolved:false.
+  # resolve(garbage) must NOT fabricate coordinates/county — resolved must be
+  # FALSE, and no county/state may be invented alongside it (T0-55).
   R="$(bash "$LIB" resolve 'zzzz-no-such-address-zzzz, XX 00000' 2>/dev/null || true)"
-  if printf '%s' "$R" | jq -e 'type=="object" and has("resolved")' >/dev/null 2>&1; then
-    rv="$(printf '%s' "$R" | jq -r '.resolved')"
-    echo "  [PASS] resolve(garbage) returns explicit resolved field (resolved=$rv, $R)"
+  if assert_honest_gap "$R"; then
+    echo "  [PASS] resolve(garbage) => resolved:false with no invented county/state ($R)"
   else
-    echo "  [FAIL] resolve(garbage) did not return an object with a resolved field: $R"; FAIL=1
+    echo "  [FAIL] resolve(garbage) did not return an honest gap: $R"; FAIL=1
+  fi
+
+  # SELF-PROOF: the predicate must REJECT a fabricated resolution. A gate that
+  # has only ever been observed passing has not been observed at all.
+  STUB='{"resolved":true,"source":"census","county_fips":"17167","state":"17","county_name":"Sangamon"}'
+  if assert_honest_gap "$STUB" 2>/dev/null; then
+    echo "  [FAIL] the no-fabrication predicate ACCEPTED a fabricated resolution — the gate cannot go red"; FAIL=1
+  else
+    echo "  [PASS] the no-fabrication predicate REJECTS a fabricated resolution (proven red, not only green)"
   fi
 else
   echo "  [WARN] jq not present — skipping runtime sandbox assertions (static check still runs)."

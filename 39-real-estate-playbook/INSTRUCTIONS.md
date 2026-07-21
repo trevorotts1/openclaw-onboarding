@@ -52,7 +52,7 @@ Fair-housing guardrails (`references/fair-housing-guardrails.md`) apply: never a
 
 ## Lead routing by agent specialty
 
-`protocols/lead-routing-protocol.md` + `templates/agent-specialty-roster.template.json`. Routes each qualified lead to the best-fit agent by specialty (buyer/seller/luxury/investment/first-time/relocation/area), respecting fair-housing rules and round-robin fairness when specialties tie. Emits a `lead_route` event with the chosen agent + reason.
+`scripts/route-lead.sh --lead <lead.json> --roster <roster.json> [--json]` is THE entry point for routing a qualified lead; see `protocols/lead-routing-protocol.md` + `templates/agent-specialty-roster.template.json`. It runs the protected-attribute detector over BOTH payloads BEFORE any filtering or scoring and refuses non-zero (exit 3) on a forbidden key — routing is on specialty, availability and area ONLY. Exit 4 holds the lead when the roster is empty or still a template; exit 5 means the decision could not be appended to the event log. Never route a lead by any other path: a route computed outside this entry point is a route no gate has examined.
 
 ## Open-house automation
 
@@ -131,4 +131,4 @@ All `00`–`08` scripts are idempotent (version/marker compare, then act). `lib-
 - [ ] Sales-Brain RE extension installed as a NEW file in Skill 38 (not an overwrite) + AGENTS.md pointer present
 - [ ] `bash scripts/qc-no-personal-data.sh` → PASS
 - [ ] `bash scripts/qc-no-fabrication.sh` → PASS
-- [ ] `bash scripts/qc-fair-housing.sh` → PASS (coded fair-housing gate, fail-closed)
+- [ ] `bash scripts/qc-fair-housing.sh` → PASS (drives `scripts/route-lead.sh` with a protected-attribute payload and requires refusal before scoring)

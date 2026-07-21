@@ -13,6 +13,7 @@
     "address": "<form-field-name-or-fill-instruction>",
     "parcel_or_apn": "<form-field-name-or-fill-instruction>"
   },
+  "selector_fixture": "<path-to-a-saved-results-page.html-from-this-portal>",
   "selectors": {
     "result_row": "<css-selector-for-each-result-row>",
     "owner": "<css-selector>",
@@ -20,5 +21,5 @@
     "amount": "<css-selector-optional>"
   },
   "validated": false,
-  "notes": "Run scripts/05-validate-target.sh --tier3 <this-file> before live use. If validation fails, treat the target as a Tier-4 honest gap. NEVER fabricate records."
+  "notes": "Run scripts/05-validate-target.sh --tier3 <this-file> --fixture <saved-results-page.html> before live use. Validation REJECTS placeholder selectors and evaluates every selector against that saved page; a selector that matches nothing, or that the probe cannot evaluate, is a FAILURE. On a pass the validator writes validated:true plus a validation.fields_sha256 attestation bound to the exact fields it checked — editing this file afterwards invalidates it and the router stops serving the target until it is re-validated. If validation fails, treat the target as a Tier-4 honest gap. NEVER fabricate records."
 }

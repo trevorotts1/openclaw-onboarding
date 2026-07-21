@@ -6,7 +6,11 @@
 #   estimate <batch_size>           -> prints a JSON cost+time estimate (for bulk confirm)
 #   under_daily_cap                 -> exit 0 if today's count < PR_DAILY_CAP, else 1
 #   record_query                    -> increment today's per-day counter
-#   rate_wait <target_ref>          -> sleep so the per-target min interval is honored
+#   rate_wait <target_ref>          -> take an atomic per-target reservation: sleep
+#                                      the remaining interval WHILE HOLDING it and
+#                                      stamp the timestamp at the request boundary.
+#                                      Prints the seconds waited. The caller must
+#                                      NOT sleep again.
 #
 # Caps (env-overridable):
 #   PR_DAILY_CAP=200  PR_PER_TARGET_MIN_INTERVAL_S=5  PR_BULK_CONFIRM_THRESHOLD=25
@@ -89,21 +93,72 @@ record_query() {
   printf '%s\n' "$(( ${n:-0} + 1 ))" > "$cf"
 }
 
+# rate_wait <target_ref> — ATOMIC per-target reservation (SK1-30 / T2-33).
+#
+# The old shape computed the remaining delay, PRINTED it, stamped the timestamp
+# immediately, and left the sleeping to the caller. The recorded time was
+# therefore the time the delay was COMPUTED, not the time the request was made,
+# so the next computation measured from the wrong origin: after one waited
+# request, the following request measured its gap from the previous
+# COMPUTATION and could fire with zero spacing. The audit log recorded a
+# compliant wait for a non-compliant request rate — a terms-of-service exposure
+# on a scraping skill.
+#
+# The reservation is now one indivisible step:
+#   1. take a per-target lock (mkdir is atomic on every POSIX filesystem),
+#   2. compute the delay from the last ACTUAL request time,
+#   3. sleep the remainder WHILE HOLDING the reservation (so a concurrent
+#      caller queues behind it instead of racing through),
+#   4. stamp the timestamp at the REQUEST BOUNDARY — the instant before this
+#      function returns and the caller issues the request,
+#   5. release the lock.
+# It prints the seconds actually waited, for the rate_limit_wait audit event.
+# The caller must NOT sleep again.
+#
+# Lock staleness: a lock older than (interval + 60)s is treated as abandoned
+# (a killed process) and reclaimed, so a crash can never wedge a target.
 rate_wait() {
-  local target="${1:-default}" lf last now diff d
+  local target="${1:-default}" lf lockdir last now diff d safe waited=0 tries=0 max_tries lock_age
   d="$(_cache_dir)" || return 1
-  lf="$d/.last-fetch-$(printf '%s' "$target" | tr -c 'A-Za-z0-9_-' '_')"
   mkdir -p "$d" 2>/dev/null || true
+  safe="$(printf '%s' "$target" | tr -c 'A-Za-z0-9_-' '_')"
+  lf="$d/.last-fetch-$safe"
+  lockdir="$d/.rate-lock-$safe"
+  max_tries=$(( PR_PER_TARGET_MIN_INTERVAL_S * 4 + 60 ))
+
+  while ! mkdir "$lockdir" 2>/dev/null; do
+    lock_age=0
+    if [ -d "$lockdir" ]; then
+      case "$(uname -s)" in
+        Darwin) lock_age=$(( $(date +%s) - $(stat -f %m "$lockdir" 2>/dev/null || date +%s) )) ;;
+        *)      lock_age=$(( $(date +%s) - $(stat -c %Y "$lockdir" 2>/dev/null || date +%s) )) ;;
+      esac
+    fi
+    if [ "$lock_age" -gt $(( PR_PER_TARGET_MIN_INTERVAL_S + 60 )) ]; then
+      echo "[skill 40][cost-cap] reclaiming a stale rate reservation for $target (age ${lock_age}s)" >&2
+      rmdir "$lockdir" 2>/dev/null || true
+      continue
+    fi
+    tries=$(( tries + 1 ))
+    if [ "$tries" -ge "$max_tries" ]; then
+      echo "[skill 40][cost-cap] could not acquire the rate reservation for $target within ${max_tries}s — refusing the request rather than bypassing the interval." >&2
+      return 1
+    fi
+    sleep 1
+  done
+
   now="$(date +%s)"
   last=0; [ -f "$lf" ] && last="$(tr -d '[:space:]' < "$lf" 2>/dev/null || echo 0)"
   diff=$(( now - ${last:-0} ))
-  if [ "$diff" -lt "$PR_PER_TARGET_MIN_INTERVAL_S" ] && [ "${last:-0}" -gt 0 ]; then
-    local wait=$(( PR_PER_TARGET_MIN_INTERVAL_S - diff ))
-    echo "$wait"   # caller logs rate_limit_wait + sleeps (kept side-effect-light here)
-  else
-    echo "0"
+  if [ "${last:-0}" -gt 0 ] && [ "$diff" -lt "$PR_PER_TARGET_MIN_INTERVAL_S" ]; then
+    waited=$(( PR_PER_TARGET_MIN_INTERVAL_S - diff ))
+    sleep "$waited"
   fi
+  # REQUEST BOUNDARY: stamp now, release, return — the caller issues the request
+  # on the very next statement.
   printf '%s\n' "$(date +%s)" > "$lf"
+  rmdir "$lockdir" 2>/dev/null || true
+  echo "$waited"
 }
 
 if [ "${BASH_SOURCE[0]:-}" = "${0:-}" ]; then
