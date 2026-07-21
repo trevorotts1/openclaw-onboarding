@@ -101,8 +101,33 @@ def load_naming_map(path=None):
 
 
 def dept_pack_index(nm):
-    """dept_id -> {"pack": pack_id, "universal_primary": bool} for every
-    department declared inside any vertical_packs[*].auto_add_departments."""
+    """dept_id -> {"pack": first_pack_id, "packs": [all_pack_ids],
+    "universal_primary": bool} for every department declared inside any
+    vertical_packs[*].auto_add_departments.
+
+    A department id MAY be declared by MORE THAN ONE pack (the naming map
+    really does this: `community-management` is declared by both
+    personal-pro-dev and content-creator; `podcast` by both personal-pro-dev
+    and content-creator). An earlier version of this index kept only the LAST
+    declaring pack, which made attribution depend on naming-map key order and
+    produced install-blocking FALSE FAILS: a personal-pro-dev client whose
+    interview legitimately declared personal-pro-dev, provisioned
+    `community-management` as a Phase-2 extra from THAT pack, was reported as
+    a content-creator violation because content-creator happens to be
+    declared later in the map.
+
+    So `packs` carries EVERY declaring pack, and the ownership questions are
+    answered set-wise:
+      - allowed  <=> ANY owning pack is declared (mirrors build-workforce
+        apply_vertical_packs Phase 2, which adds the dept from whichever
+        matched pack declares it);
+      - universal_primary <=> ANY owning pack flags it universal_primary
+        (mirrors Phase 1, which adds it to EVERY client from the flagging
+        pack — so it is genuinely floor, not a vertical, once any pack
+        flags it).
+    `pack` is retained as the FIRST declaring pack for receipt/back-compat
+    readability; correctness decisions must use `packs`.
+    """
     packs = nm.get("vertical_packs") or {}
     idx = {}
     for pack_id, pack in packs.items():
@@ -114,7 +139,18 @@ def dept_pack_index(nm):
             did = dept.get("id")
             if not did:
                 continue
-            idx[did] = {"pack": pack_id, "universal_primary": bool(dept.get("universal_primary"))}
+            entry = idx.get(did)
+            if entry is None:
+                idx[did] = {
+                    "pack": pack_id,
+                    "packs": [pack_id],
+                    "universal_primary": bool(dept.get("universal_primary")),
+                }
+            else:
+                if pack_id not in entry["packs"]:
+                    entry["packs"].append(pack_id)
+                # ANY declaring pack flagging it universal_primary makes it floor.
+                entry["universal_primary"] = entry["universal_primary"] or bool(dept.get("universal_primary"))
     return idx
 
 
@@ -217,7 +253,7 @@ def provisioned_vertical_departments(departments_dir, dept_idx):
         did, meta = hit
         if meta["universal_primary"]:
             continue
-        out.append({"id": did, "dir": name, "pack": meta["pack"]})
+        out.append({"id": did, "dir": name, "pack": meta["pack"], "packs": list(meta["packs"])})
     return out
 
 
@@ -256,13 +292,18 @@ def evaluate_vertical_derivation(departments_dir=None, build_state=None, core_an
     provisioned = provisioned_vertical_departments(dd, dept_idx)
     violations = []
     for p in provisioned:
-        if p["pack"] not in declared:
+        # A department declared by SEVERAL packs is explained as soon as ANY of
+        # its owning packs is declared — see dept_pack_index()'s docstring.
+        owning = p.get("packs") or [p["pack"]]
+        if not (set(owning) & set(declared.keys())):
+            owner_desc = f"pack '{p['pack']}'" if len(owning) == 1 else f"packs {sorted(owning)}"
             violations.append({
                 "id": p["id"],
                 "pack": p["pack"],
+                "packs": sorted(owning),
                 "reason": (
-                    f"VERTICAL_NOT_DECLARED: department '{p['id']}' (pack '{p['pack']}') is "
-                    f"provisioned on disk but pack '{p['pack']}' is not in the declared set "
+                    f"VERTICAL_NOT_DECLARED: department '{p['id']}' ({owner_desc}) is "
+                    f"provisioned on disk but none of {sorted(owning)} is in the declared set "
                     f"({sorted(declared.keys()) or ['none']}) — source: {declared_source}"
                 ),
             })
@@ -314,11 +355,15 @@ def check_add(dept_id, declared_packs, naming_map=None):
     if meta is None or meta["universal_primary"]:
         return True, None
     declared_set = set(declared_packs or [])
-    if meta["pack"] in declared_set:
+    owning = meta.get("packs") or [meta["pack"]]
+    # Allowed as soon as ANY owning pack is declared (multi-pack departments).
+    if set(owning) & declared_set:
         return True, None
+    owner_desc = (f"vertical pack '{owning[0]}'" if len(owning) == 1
+                  else f"vertical packs {sorted(owning)}")
     return False, (
         f"VERTICAL_NOT_DECLARED: refusing to add department '{dept_id}' — it belongs to "
-        f"vertical pack '{meta['pack']}', which the interview did not declare "
+        f"{owner_desc}, which the interview did not declare "
         f"(declared packs: {sorted(declared_set) or ['none']})."
     )
 
