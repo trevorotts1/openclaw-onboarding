@@ -385,8 +385,9 @@ oc_onboarding_complete() {
 #
 # WAVE SKILL ASSIGNMENTS (mirrors the 5-wave install plan in install.sh):
 #   Wave 1 (FOUNDATION):    01, 02
-#   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,11,12,14
-#   Wave 3 (CONTENT/SVC):   15,16,17,18,19,20,21,24,25,26,27,28,29,30,43
+#   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,12,14
+#   Wave 3 (CONTENT/SVC):   15,16,17,18,19,20,24,25,26,27,28,29,30,43
+#   (11 and 21 were archived in v12.26.0 — see "ARCHIVED skills" note below.)
 #   Wave 4 (INFRASTRUCTURE):31,36
 #   Wave 5 (USER-INTERACT): 22,23,32,35
 #
@@ -405,9 +406,18 @@ oc_onboarding_complete() {
 # ============================================================
 
 # Canonical wave skill lists (match 5-wave install plan in install.sh).
+#
+# ARCHIVED skills are NEVER listed here. A wave passes only when every skill it
+# names is present on disk (goal condition (b) above), so naming a folder that
+# does not exist wedges that wave permanently on every box. Skills 11
+# (superdesign) and 21 (tavily-search) were archived to `11-superdesign-ARCHIVED`
+# / `21-tavily-search-ARCHIVED` in v12.26.0 (commit 0e53c677) but were left in
+# Wave 2 / Wave 3 here, which is exactly that failure. Enforced by
+# scripts/qc-assert-wave-list-integrity.sh — every name below must resolve to a
+# real, non-ARCHIVED skill directory.
 OC_WAVE1_SKILLS="01-teach-yourself-protocol 02-back-yourself-up-protocol"
-OC_WAVE2_SKILLS="03-agent-browser 04-superpowers 05-ghl-setup 06-ghl-install-pages 07-kie-setup 08-vercel-setup 09-context7 10-github-setup 11-superdesign 12-openrouter-setup 14-google-workspace-integration"
-OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improving-agent 18-proactive-agent 19-humanizer 20-youtube-watcher 21-tavily-search 24-storyboard-writer 25-video-creator 26-caption-creator 27-video-editor 28-cinematic-forge 29-ghl-convert-and-flow 30-fish-audio-api-reference 43-graphify-knowledge-graph"
+OC_WAVE2_SKILLS="03-agent-browser 04-superpowers 05-ghl-setup 06-ghl-install-pages 07-kie-setup 08-vercel-setup 09-context7 10-github-setup 12-openrouter-setup 14-google-workspace-integration"
+OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improving-agent 18-proactive-agent 19-humanizer 20-youtube-watcher 24-storyboard-writer 25-video-creator 26-caption-creator 27-video-editor 28-cinematic-forge 29-ghl-convert-and-flow 30-fish-audio-api-reference 43-graphify-knowledge-graph"
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 

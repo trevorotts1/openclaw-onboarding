@@ -1226,7 +1226,8 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         EXAMPLES.md
         CORE_UPDATES.md
         github-setup.skill
-    11-superdesign/
+    11-superdesign-ARCHIVED/          # ARCHIVED - replaced by 45-design-intelligence-library
+        ARCHIVED.md
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
@@ -1302,7 +1303,8 @@ Replace `[MASTER_FILES_FOLDER]` with the actual path from step 3.
         youtube-watcher-full.md
         youtube-watcher.skill
         upstream-original/
-    21-tavily-search/
+    21-tavily-search-ARCHIVED/        # ARCHIVED - replaced by 03-agent-browser + 09-context7
+        ARCHIVED.md
         SKILL.md
         INSTALL.md
         INSTRUCTIONS.md
@@ -1761,8 +1763,8 @@ All skill folders are located inside:
 | 8 | Vercel Setup (API/browser) | 08-vercel-setup |
 | 9 | Context7 Setup (API/browser) | 09-context7 |
 | 10 | GitHub / Git Setup (API + git config) | 10-github-setup |
-| 11 | SuperDesign Instructions Setup | 11-superdesign |
-| 12 | Google Workspace Setup (branch: Workspace vs Gmail) | 13-google-workspace-setup |
+| 11 | SuperDesign Instructions Setup (ARCHIVED — replaced by 45-design-intelligence-library) | 11-superdesign-ARCHIVED |
+| 12 | Google Workspace Setup (ARCHIVED — branch: Workspace vs Gmail) | 13-google-workspace-setup-ARCHIVED |
 | 13 | Google Workspace Integration | 14-google-workspace-integration |
 | 14 | BlackCEO Team Management Setup | 15-blackceo-team-management |
 | 15 | Summarize YouTube Setup | 16-summarize-youtube |
@@ -1770,7 +1772,7 @@ All skill folders are located inside:
 | 17 | Proactive Agent | 18-proactive-agent |
 | 18 | Humanizer | 19-humanizer |
 | 19 | YouTube Watcher | 20-youtube-watcher |
-| 20 | Tavily Search | 21-tavily-search |
+| 20 | Tavily Search (ARCHIVED — replaced by 03-agent-browser + 09-context7) | 21-tavily-search-ARCHIVED |
 | 21 | Book To Persona & Coaching & Leadership System | 22-book-to-persona-coaching-leadership-system |
 | 22 | AI Workforce Blueprint | 23-ai-workforce-blueprint |
 | 23 | Storyboard Writer | 24-storyboard-writer |
@@ -1923,26 +1925,27 @@ Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-a"
 ```
 
-**Agent B (Skills 08-11):**
+**Agent B (Skills 08-10):**
 ```
 sessions_spawn with task:
-"Install skills 08, 09, 10, 11 from ~/.openclaw/onboarding/.
+"Install skills 08, 09, 10 from ~/.openclaw/onboarding/.
 For each skill: Read ALL .md files first, then execute installation steps exactly.
-Skills: 08-vercel-setup, 09-context7, 10-github-setup, 11-superdesign.
+Skills: 08-vercel-setup, 09-context7, 10-github-setup.
+NOTE: Skip skill 11 (SuperDesign) - it is ARCHIVED.
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-b"
 ```
 
-**Agent C (Skills 12, 14-21):**
+**Agent C (Skills 12, 14-20):**
 ```
 sessions_spawn with task:
-"Install skills 12, 14, 15, 16, 17, 18, 19, 20, 21 from ~/.openclaw/onboarding/.
+"Install skills 12, 14, 15, 16, 17, 18, 19, 20 from ~/.openclaw/onboarding/.
 For each skill: Read ALL .md files first, then execute installation steps exactly.
 Skills: 12-openrouter-setup, 14-google-workspace-integration, 15-blackceo-team-management, 
 16-summarize-youtube, 17-self-improving-agent, 18-proactive-agent, 19-humanizer, 
-20-youtube-watcher, 21-tavily-search.
-NOTE: Skip skill 13 (Google Workspace Setup) - it is ARCHIVED.
+20-youtube-watcher.
+NOTE: Skip skill 13 (Google Workspace Setup) and skill 21 (Tavily Search) - both are ARCHIVED.
 Report after each skill: 'Skill XX complete - QC passed' or 'Skill XX failed - [reason]'.
 Write status to ~/.openclaw/onboarding/.onboarding-status after each skill."
 label: "wave2-agent-c"
@@ -2198,9 +2201,9 @@ done
 wait
 ```
 
-#### Spawn Wave 2 - Agent B (Skills 08-11)
+#### Spawn Wave 2 - Agent B (Skills 08-10)
 ```bash
-for skill in "08-vercel-setup" "09-context7" "10-github-setup" "11-superdesign"; do
+for skill in "08-vercel-setup" "09-context7" "10-github-setup"; do
   num=${skill%%-*}
   openclaw agent spawn \
     --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
@@ -2209,9 +2212,9 @@ done
 wait
 ```
 
-#### Spawn Wave 2 - Agent C (Skills 12-21)
+#### Spawn Wave 2 - Agent C (Skills 12-20)
 ```bash
-for skill in "12-openrouter-setup" "14-google-workspace-integration" "15-blackceo-team-management" "16-summarize-youtube" "17-self-improving-agent" "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
+for skill in "12-openrouter-setup" "14-google-workspace-integration" "15-blackceo-team-management" "16-summarize-youtube" "17-self-improving-agent" "18-proactive-agent" "19-humanizer" "20-youtube-watcher"; do
   num=${skill%%-*}
   openclaw agent spawn \
     --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \
@@ -2220,9 +2223,9 @@ done
 wait
 ```
 
-#### Spawn Wave 2 - Agent D (Skills 18-21)
+#### Spawn Wave 2 - Agent D (Skills 18-20)
 ```bash
-for skill in "18-proactive-agent" "19-humanizer" "20-youtube-watcher" "21-tavily-search"; do
+for skill in "18-proactive-agent" "19-humanizer" "20-youtube-watcher"; do
   num=${skill%%-*}
   openclaw agent spawn \
     --task "Install skill $num from ~/.openclaw/onboarding/$skill. Follow Teach Yourself Protocol. Report completion status." \

@@ -1,3 +1,72 @@
+## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
+
+### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist
+
+`lib-onboarding-state.sh` defines the five canonical install waves, and a wave
+passes only when every skill it names satisfies the per-wave goal. Goal condition
+(b), stated in that same file:
+
+    (b) Each skill's folder is present on disk in $OC_SKILLS_DIR
+
+`OC_WAVE2_SKILLS` named `11-superdesign` and `OC_WAVE3_SKILLS` named
+`21-tavily-search`. **Neither folder exists.** v12.26.0 (commit `0e53c677`)
+archived both skills by renaming their folders to `11-superdesign-ARCHIVED` and
+`21-tavily-search-ARCHIVED`, and `install.sh` explicitly refuses to copy any
+`*ARCHIVED*` folder into the live skill tree:
+
+    # Skip archived skills
+    case "$SKILL_NAME" in
+        *ARCHIVED*) note "Skipped (archived): $SKILL_NAME"; continue ;;
+
+So neither `11-superdesign` nor `11-superdesign-ARCHIVED` ever lands in
+`$OC_SKILLS_DIR`, condition (b) is false forever, and **Wave 2 and Wave 3 could
+never pass on any box in the fleet** — with the onboarding watchdog re-firing and
+taking a strike on every cycle, indefinitely.
+
+This was a documented intent that was never executed. The archive commit updated
+README.md, install.sh, update-skills.sh, cc-compat.json and the version markers,
+and its CHANGELOG entry even recorded the outcome it believed it had produced:
+
+    "Install waves updated: Wave 2 drops from 11 to 10 skills (11-superdesign
+     removed); Wave 3 drops from 15 to 14 skills (21-tavily-search removed)."
+
+It never touched `lib-onboarding-state.sh`. Both skills were **archived, not
+renamed-in-place** — they have replacements (Skill 45 for 11; Skills 03 + 09 for
+21), and the other three archived skills (13, 33, 34) appear in no wave list — so
+the correct fix is removal from the waves, not repointing at the `-ARCHIVED`
+folder. Wave 2 is now 10 skills and Wave 3 is now 14, exactly as the v12.26.0
+CHANGELOG said they should have been.
+
+**Also corrected — the same two stale names in every other live copy:**
+- `scripts/watchdog-onboarding-loop.sh` — the Wave 2 and Wave 3 resume prompts
+  carried their own hardcoded duplicate of each list and told the agent, every
+  cycle, to install two folders that are not there.
+- `Start Here.md` — three executable `openclaw agent spawn` loops, two
+  `sessions_spawn` task blocks, the repo folder tree, and the skill index table.
+
+`CHANGELOG.md` history and `ledgers/evidence/` artifacts are left as written —
+they are records of what happened, not live configuration.
+
+### The guard — this class cannot recur
+
+New `scripts/qc-assert-wave-list-integrity.py`, wired into
+`.github/workflows/wave-list-integrity-guard.yml` and into `qc-static.yml`. It
+fails the build when a wave list names a folder that does not exist, names an
+`-ARCHIVED` skill, lists a skill twice, or has drifted from the duplicate lists
+hardcoded in the watchdog prompts. It carries a `--self-test` that proves it
+fails on a phantom entry, on the exact archive-rename signature, on a direct
+`-ARCHIVED` reference, on a duplicate, and on watchdog drift — and passes clean.
+
+The guard is **deliberately not path-filtered**. The commit that caused this
+defect renamed skill folders and never touched `lib-onboarding-state.sh`, so any
+`paths:` filter scoped to the lib or the gate script would have let it through.
+
+**Tightened an existing check that was asserting nothing.** `qc-static.yml`
+"PRD-2.13" tested only that the strings `OC_WAVE1_SKILLS`..`OC_WAVE5_SKILLS`
+appeared somewhere in the file — never what those lists contained. That is why CI
+stayed green across every run while two waves were wedged fleet-wide. It now also
+resolves every entry to a real, non-archived skill directory ("PRD-2.13b").
+
 ## [v20.0.84]  -  2026-07-21  -  TWO SILENT-SUCCESS CHECKERS: a run with ZERO deliverables recorded "done", and an impersonation guard blind to the inbox preheader
 
 Both defects are the same class — a checker reporting a result other than

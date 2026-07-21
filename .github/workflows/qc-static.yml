@@ -2183,6 +2183,17 @@ jobs:
                   print(f"  ✓ lib-onboarding-state.sh contains: {tok}")
           sys.exit(fail)
 
+      # PRD-2.13 above only proves the OC_WAVE<N>_SKILLS *variable names* appear
+      # as substrings — it never looked at what those lists CONTAIN. That blind
+      # spot is why the wave lists could name `11-superdesign` and
+      # `21-tavily-search` for months after both folders were renamed to
+      # `-ARCHIVED`, wedging Wave 2 and Wave 3 on every box while this check
+      # stayed green. Tightened: the lists must also resolve to real skills.
+      - name: "PRD-2.13b: wave lists reference real, non-archived skill folders"
+        run: |
+          python3 scripts/qc-assert-wave-list-integrity.py --self-test
+          python3 scripts/qc-assert-wave-list-integrity.py
+
       # AF3: local-candidate-loop guard
       # Catch any Python file that adds a rogue local ~/clawd candidate loop
       # (roots.extend / inline list item of the form HOME/"clawd"... or
