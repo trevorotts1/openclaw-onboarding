@@ -1235,10 +1235,81 @@ def dispatch_one(
         return DispatchResult(task_id, STATE_FAILED, rec["reason"],
                               evidence_root=evidence_root, record_path=rp)
 
+    # ── COMPLETE-FUNNEL HANDOFF (P4->P5) — WRITTEN BEFORE THE VERDICT ────────
+    # The funnel pages verified. If STEP 0 attached linked follow-up automations
+    # (task['linked_automations'], from the funnel->automation link map), the
+    # handoff artifact is what tells the orchestrator / Skill-44 (caf) agent to
+    # build each build_now automation.
+    #
+    # T0-18 — WHY THIS RUNS HERE AND FAILS CLOSED. SKILL.md declares this seam a
+    # required producer-consumer step for full-funnel work, but in code it was
+    # stamped "mandatory": False, written AFTER the verified state had already
+    # been recorded, and wrapped in `except Exception: pass`. A full-funnel task
+    # whose handoff could not be persisted returned VERIFIED while Skill 44 never
+    # received the work — the pages exist, the automations silently do not, and
+    # the ledger says the job is done.
+    #
+    # Now: persisted FIRST, read back, and a failure FAILS the dispatch.
+    # This cannot false-fail a healthy box. Every path that reaches this point
+    # has already called _rec_write -> _write_record, which writes
+    # routing/task-record.json under evidence_root and creates routing/ via
+    # makedirs. So both the evidence root and the routing directory are PROVEN
+    # writable before a single byte of the handoff is attempted; a failure here
+    # means the evidence root genuinely broke mid-build, which is exactly the
+    # case that must not be reported as verified.
+    _handoff_path = None
+    _la = task.get("linked_automations")
+    if isinstance(_la, dict) and _la.get("automations"):
+        _to_build = [a for a in _la["automations"] if a.get("build_now")]
+        # "Mandatory" is the FULL-FUNNEL condition: at least one automation the
+        # build is on the hook for. A link map carrying only reference material
+        # is recorded but is not a blocking producer-consumer obligation.
+        _mandatory = bool(_to_build)
+        handoff = {
+            "from": "06-ghl-install-pages (P4 funnel build)",
+            "to": "44-convert-and-flow-operator (P5 automation build)",
+            "funnel_template_id": task.get("funnel_template_id"),
+            "recommended": True, "mandatory": _mandatory,
+            "to_build": _to_build,
+            "reference_only": [a for a in _la["automations"] if not a.get("build_now")],
+            "note": "Each to_build automation should be dispatched to Skill 44 as its "
+                    "own build (PLAN MODE + QC). Overridable/ignorable per flexibility.",
+            "ts": _ts(),
+        }
+        try:
+            _routing_dir = os.path.join(evidence_root, "routing")
+            os.makedirs(_routing_dir, exist_ok=True)
+            _handoff_path = os.path.join(_routing_dir, "skill44-handoff.json")
+            with open(_handoff_path, "w", encoding="utf-8") as _fh:
+                json.dump(handoff, _fh, indent=2)
+            # READ BACK. A write that silently produced nothing usable is the
+            # same failure as no write at all, and this artifact is the only
+            # thing standing between a verified funnel and automations that
+            # never get built.
+            with open(_handoff_path, "r", encoding="utf-8") as _fh:
+                _persisted = json.load(_fh)
+            if [a.get("automation_id") for a in _persisted.get("to_build", [])] != \
+               [a.get("automation_id") for a in _to_build]:
+                raise ValueError("handoff read-back does not match what was written")
+        except Exception as exc:  # noqa: BLE001 — persistence is now load-bearing
+            rec.update({"state": STATE_FAILED, "build_duration_s": duration,
+                        "fab_qc": _fab, "fab_artifact": _fab_emit,
+                        "skill6_convergence": _convergence_result,
+                        "reason": "P4->P5 HANDOFF PERSISTENCE FAILED: the funnel pages "
+                                  f"verified but routing/skill44-handoff.json could not be "
+                                  f"written or read back ({type(exc).__name__}: {exc}). "
+                                  f"{len(_to_build)} automation(s) would never reach Skill 44. "
+                                  "Refusing to return verified — a build whose mandatory "
+                                  "downstream handoff was lost is NOT done."})
+            rp = _rec_write(rec)
+            return DispatchResult(task_id, STATE_FAILED, rec["reason"],
+                                  evidence_root=evidence_root, record_path=rp)
+
     # Tag the ledger as authoritative:false + verdict_source pointer so callers
     # know the single authoritative verdict lives in the scorecard, not here.
     rec.update({
         "state": STATE_VERIFIED,
+        "skill44_handoff_path": _handoff_path,
         "fab_qc": _fab,
         "fab_artifact": _fab_emit,
         "skill6_convergence": _convergence_result,
@@ -1252,32 +1323,6 @@ def dispatch_one(
                   "FAIL is reported, never massaged)",
     })
     rp = _rec_write(rec)
-
-    # ── COMPLETE-FUNNEL HANDOFF (P4->P5) ──────────────────────────────────────
-    # The funnel pages verified. If STEP 0 attached linked follow-up automations
-    # (task['linked_automations'], from the funnel->automation link map), persist a
-    # handoff artifact so the orchestrator / Skill-44 (caf) agent can build each
-    # build_now automation. RECOMMENDED, never mandatory; this is the documented
-    # P4->P5 seam (SKILL.md "Full-Funnel Pipeline Integration"). Advisory: a failure
-    # here never downgrades the verified verdict.
-    try:
-        la = task.get("linked_automations")
-        if isinstance(la, dict) and la.get("automations"):
-            handoff = {
-                "from": "06-ghl-install-pages (P4 funnel build)",
-                "to": "44-convert-and-flow-operator (P5 automation build)",
-                "funnel_template_id": task.get("funnel_template_id"),
-                "recommended": True, "mandatory": False,
-                "to_build": [a for a in la["automations"] if a.get("build_now")],
-                "reference_only": [a for a in la["automations"] if not a.get("build_now")],
-                "note": "Each to_build automation should be dispatched to Skill 44 as its "
-                        "own build (PLAN MODE + QC). Overridable/ignorable per flexibility.",
-                "ts": _ts(),
-            }
-            json.dump(handoff, open(os.path.join(evidence_root, "routing",
-                      "skill44-handoff.json"), "w", encoding="utf-8"), indent=2)
-    except Exception:  # noqa: BLE001 — handoff persistence is advisory glue
-        pass
 
     return DispatchResult(task_id, STATE_VERIFIED, rec["reason"], verify=summary,
                           evidence_root=evidence_root, record_path=rp)

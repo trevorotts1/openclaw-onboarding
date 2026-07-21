@@ -4,6 +4,15 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v20.0.90] - 2026-07-21 - T0-18: the P4->P5 handoff now binds the verified verdict
+
+### Fixed
+- **A full-funnel build could return `verified` while Skill 44 never received the work.** `tools/v2_dispatcher.py` wrote the verified state to the task record FIRST, then attempted the P4->P5 handoff inside `try: ... except Exception: pass`, and stamped the artifact `"mandatory": False` — while SKILL.md declares that seam a required producer-consumer step for full-funnel work. Any failure to persist `routing/skill44-handoff.json` was discarded: the pages existed, the automations silently did not, and the ledger said the job was done. The handoff is now persisted BEFORE the verdict, read back to confirm it holds what was written, stamped mandatory whenever the task carries at least one `build_now` automation, and a persistence failure FAILS the dispatch with a reason naming how many automations would have been lost. The verified record also carries `skill44_handoff_path`, so the verdict points at the artifact it depends on.
+- This cannot fail a healthy box. Every path reaching that point has already called `_rec_write` -> `_write_record`, which writes `routing/task-record.json` under the evidence root and creates `routing/` via `makedirs` — so both the evidence root and the routing directory are proven writable before a byte of the handoff is attempted. Builds with no `linked_automations` at all, which is the overwhelming majority, are untouched.
+
+### Changed
+- **`tests/test_v2_dispatcher.py` no longer asserts the defect as correct.** The existing handoff test asserted `handoff["mandatory"] is False` — encoding the bug. It now asserts `is True` for a full-funnel task, and three cases were added: a reference-only link map is NOT mandatory, a build with no link map still verifies and writes no artifact (both anti-false-positive), and a handoff whose write fails returns FAILED with the record agreeing. Measured against the pre-fix dispatcher, that last case reports `assert 'verified' == 'FAILED'`.
+
 ## [v19.62.0] - 2026-07-18 - U24 (B-U10) rebuild: sweep_base false-alarm fix, real cron installer, broken doc snippet
 
 > Note: `skill-version.txt` (v20.0.69) is repo-locked (rolled by
