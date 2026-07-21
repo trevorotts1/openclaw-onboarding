@@ -2170,7 +2170,7 @@ jobs:
           lib = open("lib-onboarding-state.sh").read()
           required = [
               "OC_WAVE1_SKILLS", "OC_WAVE2_SKILLS", "OC_WAVE3_SKILLS",
-              "OC_WAVE4_SKILLS", "OC_WAVE5_SKILLS",
+              "OC_WAVE4_SKILLS", "OC_WAVE5_SKILLS", "OC_WAVE6_SKILLS",
               "waveGoals", "failStrikes", "lastCheckedAt", "passedAt",
               "allWavesVerified", "interviewComplete", "workforceBuilt", "closeoutDelivered",
           ]

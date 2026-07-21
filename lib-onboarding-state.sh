@@ -483,13 +483,15 @@ oc_onboarding_complete() {
 #     }
 #   }
 #
-# WAVE SKILL ASSIGNMENTS (mirrors the 5-wave install plan in install.sh):
+# WAVE SKILL ASSIGNMENTS (mirrors the install plan in install.sh):
 #   Wave 1 (FOUNDATION):    01, 02
 #   Wave 2 (INTEGRATIONS):  03,04,05,06,07,08,09,10,12,14
 #   Wave 3 (CONTENT/SVC):   15,16,17,18,19,20,24,25,26,27,28,29,30,43
 #   (11 and 21 were archived in v12.26.0 — see "ARCHIVED skills" note below.)
 #   Wave 4 (INFRASTRUCTURE):31,36
 #   Wave 5 (USER-INTERACT): 22,23,32,35
+#   Wave 6 (EXTENSIONS):    44,45,47,48,49,50,51,52,53,54,55,56,57
+#   (46 and 58-62 are deliberately NOT gated — see the OC_WAVE6_SKILLS note.)
 #
 # PER-WAVE GOAL DEFINITION (all must hold for wave to pass):
 #   (a) All skills in the wave have status=qc-passed (or interview-pending for Wave 5)
@@ -498,7 +500,7 @@ oc_onboarding_complete() {
 #   (d) Each skill's qc-*.sh (if present) has recorded qcExit=0
 #
 # OVERALL GOAL (all must hold):
-#   (i)   all 5 waves passed
+#   (i)   all 6 waves passed
 #   (ii)  interviewComplete = true in workforce-build-state.json
 #   (iii) workforce built (department-floor.py would exit 0 — checked by proxy:
 #         buildCompletedAt is set in workforce-build-state.json)
@@ -521,6 +523,75 @@ OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improv
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 
+# Wave 6 — EXTENSIONS & DOMAIN VERTICALS (skills 44-62).
+#
+# WHY A SIXTH WAVE, AND WHY IT IS TERMINAL
+# ----------------------------------------
+# Skills 44-62 are copied to every box unconditionally by the generic `[0-9]*/`
+# loop in install.sh (only `*ARCHIVED*` is skipped), but until this list existed
+# they appeared in NO wave — so nothing verified they had been installed. The
+# per-wave goal check was the ONLY live per-skill verification path: the other
+# candidate, oc_onboarding_complete, is never called by any caller (install.sh
+# defines a `return 1` stub for it and nothing else references it), so for skills
+# 44-62 "installed" was asserted by nothing at all.
+#
+# These skills land in a SIXTH wave rather than being folded into Waves 1-5 for
+# two reasons, both load-bearing:
+#
+#   1. DEPENDENCY ORDER. A terminal wave satisfies every prerequisite by
+#      construction. Several of these skills depend on skills spread across the
+#      earlier waves (e.g. 45-design-intelligence-library requires 07-kie-setup,
+#      which is in Wave 2 — and Wave 2 runs in PARALLEL, so 45 could not go there
+#      without creating an intra-wave ordering violation that 11-superdesign, the
+#      skill 45 replaced, never had). Placing them after Wave 5 means no
+#      per-skill prerequisite reasoning is required and none can be violated.
+#
+#   2. NO REGRESSION TO A PASSING WAVE. Adding entries to an existing wave can
+#      only ever turn a passing wave into a failing one. Waves 1 and 5 are the
+#      only waves with any passing box in the live fleet, so leaving all six
+#      existing lists byte-identical means no box can lose a wave it holds today.
+#
+# Wave 6 is EXTENSIONS, matching the name Start Here.md already gives it
+# ("Wave 6 — Extensions & domain verticals").
+#
+# WHAT IS DELIBERATELY *NOT* IN THIS LIST
+# ---------------------------------------
+# 44-62 is nineteen folders; six of them are EXCLUDED on the same principle that
+# keeps ARCHIVED skills out of the lists above — a wave must name only skills
+# that can actually reach qc-passed on an ordinary client box. Gating a skill
+# that is designed not to activate would wedge Wave 6 fleet-wide, which is the
+# same defect as the phantom entries, just pointed the other way:
+#
+#   46-kie-callback-relay        Not a per-client install. DEPLOY.md ships ONE
+#                                Cloudflare Worker to the OPERATOR's own account
+#                                "for the entire operator fleet", and the relay is
+#                                only engaged for decks over a size threshold.
+#                                It also ships no CORE_UPDATES.md.
+#   58-podcast-production-engine SKILL.md: "CANARY, THEN HOLD ... Fleet rollout is
+#   59-anthology-engine          HELD at repo-only until the operator gives the
+#                                explicit OK. No client box is touched by the
+#                                build." A box without these is the DOCUMENTED
+#                                CORRECT STATE, not a defect.
+#   60-zhc-early-warning-system  Files ship everywhere, but activation is gated on
+#   61-loop-protection-system    rollout.json / OPENCLAW_LOOP_PROTECTION_ROLLOUT
+#                                and no-ops with a HELD note until the operator
+#                                arms it ("A repo merge is not a roll.").
+#   62-cinematic-web-funnel-engine  SKILL.md: "This is the skeleton unit ... the
+#                                front door today correctly and honestly refuses
+#                                to certify any run, because no phase gate scripts
+#                                exist yet."
+#
+# Those six stay ungated until the operator lifts the HOLD (58-61), the skeleton
+# is finished (62), or the relay is modelled as operator infrastructure rather
+# than a client skill (46). Add them here at that point — not before.
+#
+# ORDERING WITHIN THE WAVE: several entries name an earlier Wave 6 skill as a
+# prerequisite (49 and 56 need 47; 50 and 56 need 44). Ascending skill-number
+# order satisfies every one of those, which is why the watchdog prompt tells the
+# agent to install this wave in ascending order and to read each skill's
+# SKILL.md Prerequisites section first.
+OC_WAVE6_SKILLS="44-convert-and-flow-operator 45-design-intelligence-library 47-movie-producer 48-facebook-ad-generator 49-signature-funnel 50-email-engine 51-signature-presentation 52-avatar-alchemist 53-book-writer 54-anthology-writer 55-product-bio 56-sales-page-assets 57-social-media-in-a-box"
+
 # ------------------------------------------------------------
 # oc_wave_state_init
 #   Seed the waveGoals block in the state file if not present.
@@ -529,7 +600,7 @@ OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-b
 oc_wave_state_init() {
   [ -f "$ONBOARDING_STATE_FILE" ] || oc_state_seed "${OC_SKILLS_DIR:-$OC_CONFIG/skills}"
   W1="$OC_WAVE1_SKILLS" W2="$OC_WAVE2_SKILLS" W3="$OC_WAVE3_SKILLS" \
-  W4="$OC_WAVE4_SKILLS" W5="$OC_WAVE5_SKILLS" \
+  W4="$OC_WAVE4_SKILLS" W5="$OC_WAVE5_SKILLS" W6="$OC_WAVE6_SKILLS" \
   STATE_FILE="$ONBOARDING_STATE_FILE" NOW="$(oc_state_now)" python3 - <<'PYEOF' 2>/dev/null || true
 import json, os
 sf = os.environ["STATE_FILE"]
@@ -538,7 +609,7 @@ try:    state = json.load(open(sf))
 except Exception: state = {}
 wg = state.setdefault("waveGoals", {})
 
-for num, key in enumerate(["wave1","wave2","wave3","wave4","wave5"], 1):
+for num, key in enumerate(["wave1","wave2","wave3","wave4","wave5","wave6"], 1):
     env_key = f"W{num}"
     skills = os.environ.get(env_key, "").split()
     if key not in wg:
@@ -774,10 +845,10 @@ ov = wg.setdefault("overall", {"status":"pending","allWavesVerified":False,
                                 "workspaceMaterialized":False,
                                 "closeoutDelivered":False})
 
-# (i) all 5 waves passed
+# (i) all 6 waves passed
 all_waves = all(
     wg.get(f"wave{n}", {}).get("status") == "passed"
-    for n in range(1, 6)
+    for n in range(1, 7)
 )
 ov["allWavesVerified"] = all_waves
 
@@ -817,7 +888,7 @@ PYEOF
 
 # ------------------------------------------------------------
 # oc_next_incomplete_wave
-#   Print the wave number (1-5) of the FIRST wave that is not passed,
+#   Print the wave number (1-6) of the FIRST wave that is not passed,
 #   or empty string if all waves passed.
 # ------------------------------------------------------------
 oc_next_incomplete_wave() {
@@ -827,7 +898,7 @@ import json, os
 try:    state = json.load(open(os.environ["STATE_FILE"]))
 except Exception: print("1"); raise SystemExit
 wg = state.get("waveGoals", {})
-for n in range(1, 6):
+for n in range(1, 7):
     k = f"wave{n}"
     if wg.get(k, {}).get("status") != "passed":
         print(n); raise SystemExit
@@ -854,18 +925,33 @@ PYEOF
 # oc_wave_skills_status <wave_num>
 #   Print a compact summary of skill statuses for the given wave.
 #   E.g.: "01-teach-yourself-protocol:qc-passed 02-back-yourself-up-protocol:pending"
+#
+#   This string is what the watchdog puts in front of the agent as "Skills: ...",
+#   so it must explain why the wave it accompanies is failing. It used to read the
+#   state file ONLY, which meant a skill whose FOLDER had gone missing still
+#   printed ":qc-passed" — the wave failed goal condition (b) while the message
+#   describing it said everything was fine, giving the agent nothing to act on.
+#   Disk is checked here too, and reported first, because a missing folder is the
+#   condition the agent must fix before any status can mean anything.
 # ------------------------------------------------------------
 oc_wave_skills_status() {
   local wave_num="$1"
   [ -f "$ONBOARDING_STATE_FILE" ] || return 0
-  WAVE_KEY="wave${wave_num}" STATE_FILE="$ONBOARDING_STATE_FILE" python3 - <<'PYEOF' 2>/dev/null
+  WAVE_KEY="wave${wave_num}" STATE_FILE="$ONBOARDING_STATE_FILE" \
+  OC_SKILLS_DIR="${OC_SKILLS_DIR:-$OC_CONFIG/skills}" python3 - <<'PYEOF' 2>/dev/null
 import json, os
 try:    state = json.load(open(os.environ["STATE_FILE"]))
 except Exception: raise SystemExit
 wg = state.get("waveGoals", {})
 skills = wg.get(os.environ["WAVE_KEY"], {}).get("skills", [])
 sk = state.get("skills", {})
-parts = [f"{s}:{sk.get(s,{}).get('status','pending')}" for s in skills]
+sdir = os.environ.get("OC_SKILLS_DIR", "")
+parts = []
+for s in skills:
+    if sdir and not os.path.isdir(os.path.join(sdir, s)):
+        parts.append(f"{s}:MISSING-FOLDER")
+        continue
+    parts.append(f"{s}:{sk.get(s,{}).get('status','pending')}")
 print(" ".join(parts))
 PYEOF
 }

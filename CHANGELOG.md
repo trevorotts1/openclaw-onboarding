@@ -1,3 +1,110 @@
+## [v20.0.91]  -  2026-07-21  -  SKILLS 44-62 WERE VERIFIED BY NOTHING: add a sixth install wave, and make the watchdog's copy of the wave lists structurally impossible
+
+### The gap
+
+The five wave lists in `lib-onboarding-state.sh` covered 32 skills. **Skills
+44-62 appeared in no wave at all**, so the per-wave goal check never looked at
+them. That check was the only live per-skill verification path: the other
+candidate, `oc_onboarding_complete`, is referenced by nothing — `install.sh`
+defines a `return 1` stub for it and no caller exists anywhere in the repo. For
+nineteen skills, "installed" was asserted by nothing.
+
+The sharpest case: `45-design-intelligence-library` is the documented
+replacement for `11-superdesign` (README.md, `Start Here.md`), and
+`11-superdesign` *was* in Wave 2. The replacement inherited none of the
+verification its predecessor had.
+
+### Measured before changing anything
+
+A read-only probe of all 36 registry boxes (30 reachable; 6 unreachable and
+skipped) established:
+
+- **All 19 folders are present on 30/30 reachable boxes.** No box lacks any of
+  them, including boxes whose stale `skills/version` marker reads v11.x — that
+  marker is not maintained (mtime months older than the skill folders beside
+  it) and is not evidence of release lag. The "boxes may legitimately lack
+  newer skills" risk is empirically empty.
+- **0/30 boxes have these skills at `qc-passed`**; 516 of 570 box-skill pairs
+  are not tracked in the state file at all.
+- **The wave subsystem is already dormant fleet-wide:** 28/30 boxes have no
+  `waveGoals` block seeded, and only two wave-passes exist across the entire
+  reachable fleet.
+
+So adding entries to Waves 1 or 5 would have destroyed the only two live
+wave-passes. Waves 1-5 are therefore left **byte-identical**, and the new
+skills go in a terminal Wave 6. **Zero boxes newly fail a wave they hold
+today, and zero boxes lose an overall-goal pass** (none had one).
+
+### Wave 6 — EXTENSIONS (13 skills)
+
+`OC_WAVE6_SKILLS` = 44, 45, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57.
+
+A terminal wave satisfies every prerequisite by construction. That matters
+concretely: `45-design-intelligence-library` requires Skill 07, which sits in
+the **parallel** Wave 2, so 45 could not be dropped into Wave 2 beside its
+predecessor without creating an intra-wave ordering violation that
+`11-superdesign` never had.
+
+**Six of the nineteen are deliberately NOT gated** — gating a skill designed
+not to activate would wedge Wave 6 fleet-wide, the same defect as a phantom
+entry pointed the other way:
+
+| Skill | Why it stays ungated |
+|---|---|
+| `46-kie-callback-relay` | Not a per-client install: `DEPLOY.md` ships ONE Cloudflare Worker to the **operator's own** account "for the entire operator fleet". Ships no `CORE_UPDATES.md`. |
+| `58-podcast-production-engine`, `59-anthology-engine` | "CANARY, THEN HOLD ... Fleet rollout is HELD at repo-only until the operator gives the explicit OK. **No client box is touched by the build.**" |
+| `60-zhc-early-warning-system`, `61-loop-protection-system` | Activation gated on `rollout.json` / `OPENCLAW_LOOP_PROTECTION_ROLLOUT`; no-ops with a HELD note until armed. "A repo merge is not a roll." |
+| `62-cinematic-web-funnel-engine` | "This is the skeleton unit ... the front door today correctly and honestly refuses to certify any run, because no phase gate scripts exist yet." |
+
+A box without those six is in the **correct** state, not a defective one.
+
+### The watchdog's duplicate list is now unrepresentable, not merely compared
+
+`scripts/watchdog-onboarding-loop.sh` re-typed all five rosters as prose inside
+`build_wave_prompt`. v20.0.85 added a gate that compared the two copies for
+equality. Comparing is weaker than removing: the prompts now resolve the roster
+from the canonical variable by indirect expansion
+(`OC_WAVE${wave}_SKILLS`) and interpolate `${_roster}`, so there is only one
+list. `qc-assert-wave-list-integrity.py` enforces the structure instead of the
+equality — every wave prompt must interpolate the roster, and **no wave prompt
+may contain a hardcoded `NN-slug` token at all**.
+
+That tightened gate immediately caught a second copy the equality check had
+been blind to: the Wave 4 prompt still named `31-upgraded-memory-system` and
+`36-ghl-mcp-setup` in its numbered instruction steps. Fixed here.
+
+### A failing wave now says which skill and why
+
+`oc_wave_skills_status` read the state file only, so a skill whose **folder had
+gone missing** still printed `:qc-passed` — the wave failed goal condition (b)
+while the message describing it to the agent said everything was fine. It now
+checks disk and reports `:MISSING-FOLDER` first.
+
+### Tests
+
+- `qc-assert-wave-list-integrity.py --self-test`: 6 cases -> **9**. New: a
+  phantom entry in Wave 6; a watchdog that re-types a roster; a watchdog whose
+  re-typed roster **matches** canonical (a correct second copy is still a
+  second copy); a roster not bound to `OC_WAVE<N>_SKILLS`.
+- `scripts/test-watchdog-loop.sh`: 19 -> **20**. T1 asserted only that the wave
+  *keys* existed — the same vacuous shape that let Waves 2 and 3 stay wedged
+  while CI was green. It now compares every seeded roster against the canonical
+  list **contents** and requires each to be non-empty. New T1b proves the gate
+  is not vacuous: remove a listed skill's folder and Wave 6 fails **naming it**.
+- `qc-static.yml` PRD-2.13 token list now includes `OC_WAVE6_SKILLS`.
+
+### Files
+
+- `lib-onboarding-state.sh` — `OC_WAVE6_SKILLS`; wave loops 1-5 -> 1-6;
+  `oc_wave_skills_status` disk check.
+- `scripts/watchdog-onboarding-loop.sh` — single-source rosters; Wave 6 prompt;
+  wave-number regexes widened to `^[1-6]$`.
+- `scripts/qc-assert-wave-list-integrity.py` — structural single-source check.
+- `scripts/test-watchdog-loop.sh`, `.github/workflows/qc-static.yml`,
+  `install.sh` (AGENTS.md wave plan), `Start Here.md`.
+
+No client names, no secret values, no Anthropic model ids.
+
 ## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
 
 **T2-07 — three documented entry points named a path that does not exist.**

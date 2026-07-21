@@ -5056,7 +5056,9 @@ When the owner says any of these names, they mean the same system. The same Priv
 
 **Phase A: Parallel Install — dependency-aware waves (Timeout: 1800s / 30 minutes per wave)**
 
-The 57 active skills install in 5 dependency-aware waves, not by number order.
+The active skills install in 6 dependency-aware waves, not by number order.
+The canonical, machine-checked roster for each wave is OC_WAVE<N>_SKILLS in
+lib-onboarding-state.sh — the per-wave goal check and the watchdog read that file.
 Sub-agents within a wave run in parallel (up to maxConcurrent in openclaw.json).
 A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
@@ -5104,7 +5106,37 @@ A wave cannot start until the previous wave's QC has all skills at 8.5+.
 
 N2 ENFORCEMENT: These four skills install via SUB-AGENTS like every other skill. The orchestrator coordinates the wait/dispatch handoff via the triple-fire trigger (N22) for user-interaction steps, then dispatches the install sub-agent. Concurrency cap stays Mac=10 / VPS=5 (these dispatch one at a time, well under cap). NO orchestrator-direct installation.
 
-**Wave 1 + 4 + 5 are sequential. Waves 2 + 3 are massively parallel.**
+**Wave 6 — EXTENSION SKILLS (parallel within ascending skill-number order — 13 skills in this wave):**
+- 44-convert-and-flow-operator
+- 45-design-intelligence-library  (the documented replacement for the ARCHIVED 11-superdesign; requires Skill 07 Kie.ai from Wave 2)
+- 47-movie-producer
+- 48-facebook-ad-generator
+- 49-signature-funnel  (needs 47)
+- 50-email-engine  (needs 44)
+- 51-signature-presentation
+- 52-avatar-alchemist
+- 53-book-writer
+- 54-anthology-writer
+- 55-product-bio
+- 56-sales-page-assets  (needs 44 and 47)
+- 57-social-media-in-a-box
+
+INSTALL IN ASCENDING SKILL-NUMBER ORDER — that order satisfies every intra-wave
+prerequisite above. Read each skill's SKILL.md Prerequisites section BEFORE
+installing it. A skill that needs an owner decision, or a credential the owner
+has not supplied, parks at interview-pending — surface it via the triple-fire
+trigger. NEVER substitute an operator account for a missing client credential.
+
+NOT IN THIS WAVE, DELIBERATELY: 46-kie-callback-relay (ONE Cloudflare Worker
+deployed once to the OPERATOR's own account for the entire fleet — not a
+per-client install), 58-podcast-production-engine, 59-anthology-engine,
+60-zhc-early-warning-system and 61-loop-protection-system (fleet rollout is HELD
+at repo-only until the operator's explicit OK — "a repo merge is not a roll"),
+and 62-cinematic-web-funnel-engine (skeleton unit — its front door correctly
+refuses to certify any run because no phase-gate scripts exist yet). A box
+without these is in the CORRECT state. Do not install them to "fix" a wave.
+
+**Wave 1 + 4 + 5 are sequential. Waves 2 + 3 + 6 are massively parallel.**
 
 ### 🔴🔴🔴 NO-SHORTCUT RULE FOR EVERY SUB-AGENT (HARD ENFORCEMENT)
 
