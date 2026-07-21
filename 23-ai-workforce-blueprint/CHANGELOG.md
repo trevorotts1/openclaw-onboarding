@@ -3,6 +3,66 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v20.0.88] - 2026-07-21 - fix(floor-fill): the UPDATE path re-created industry-gated departments on every box, on every update
+
+PR #692 grandfathered `listings` as pre-2026-06-28 residue, which unblocked the
+guard. It did not explain four boxes whose ENTIRE 36-department tree was created
+fresh on 2026-07-20 (`mtime == birthtime`) while running the POST-demotion naming
+map (2.6.2) — `listings` included. Those were not residue. They were being
+re-created, live, by the update path.
+
+ROOT CAUSE — the fill chain never consulted the naming map at all:
+
+    update-skills.sh
+      -> migrate-existing-workforce.sh --apply           (Step 2b)
+         -> detect-stale-artifacts.py                    (verdict from
+            templates/role-library/_index.json ONLY)
+         -> make-gap-from-staleness.py                   (every MISSING role
+            becomes a gap item)
+         -> floor-fill-driver.py --apply                 (mkdir'd the department)
+
+`detect-stale-artifacts.classify()` walks EVERY key in the role library and marks
+anything the box has no built copy of `MISSING`. The role library ships all 36
+departments, industry-gated ones included, and has no concept of vertical packs,
+declared industries, or owner declines. So all five `listings` roles classified
+MISSING, reached the gap-map as their own `kind: "role"` items, and the driver
+created the department for them.
+
+`make-gap-from-staleness.py` dropping `kind: "dept"` items never prevented this —
+the department is reconstructed implicitly from its ROLE items — yet
+`floor-wipe-fix-guard.yml`'s own header asserted the opposite ("a department that
+is entirely absent was invisible to it"). That false premise is corrected in the
+workflow.
+
+Observed impact: `listings` present on 30/30 reachable boxes, including
+`rescue-eddie-otts`, whose build-state records an OWNER DECLINE of all six
+universal-primary verticals and an operator-signed 18-department subset floor —
+it still carried all 36.
+
+THE FIX — `floor-fill-driver.py` now asks `vertical-derivation-guard.check_add()`
+(the repo's existing refusal primitive, which reads `department-naming-map.json`
+and nothing else) before creating a department that is ABSENT from disk. No new
+list of industry departments is introduced anywhere; T7 of the new suite fails
+the build if one ever is. Declared-set resolution is fail-closed and mirrors the
+guard's own audit path: `--declared-packs`, then
+`verticalPacks.detectedPacks`, then a `--core-answers` re-derivation, then EMPTY.
+
+SCOPE, deliberately minimal:
+- ONLY absent departments are gated. A department already on disk is filled
+  exactly as before. This tool NEVER removes a department — cleaning up existing
+  residue stays an owner decision.
+- Canonical/mandatory departments and universal-primary verticals are never
+  gated (`check_add` allows all of them).
+- A refusal is a POLICY SKIP reported under `depts_vertical_gated`, rc 0, and is
+  NOT counted as an unfilled gap — it must not turn every fleet update into
+  `WORKFORCE-PROVISIONING INCOMPLETE`.
+
+`scripts/test-floor-fill-vertical-gate.sh` (13 checks) is the permanent lock and
+is wired into `floor-wipe-fix-guard.yml` as its fifth suite. T1 is fail-first:
+against the pre-fix driver it reports `'listings' WAS created on a box that
+declared no vertical`. Its invocation uses only flags the pre-fix driver also
+accepted, so the fail-before is behavioral, not an argparse error.
+
 ## [v20.0.86] - 2026-07-21 - fix(vertical-guard): pre-2026-06-28 provisioning is no longer judged by the classification that replaced it
 
 `vertical-derivation-guard.py` excluded universal-primary departments using the

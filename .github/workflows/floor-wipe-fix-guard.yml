@@ -7,14 +7,26 @@ name: Floor-wipe fix guard (P2-06)
 # unreadable — the enforced floor stays the full 22 mandatory + 6
 # universal-primary = 28, never a silent drop to 22. That closed the
 # BUILD-TIME defect. It did nothing for a box that was BUILT before the fix
-# landed and is still missing whole departments TODAY ("the wipe"), because
-# the existing update-path floor-fill (migrate-existing-workforce.sh Step 2b
-# -> floor-fill-driver.py, v16.0.2) only ever fills missing ROLES/SOPS inside
-# a department that ALREADY EXISTS on disk — a department that is entirely
-# absent was invisible to it (make-gap-from-staleness.py deliberately drops
-# "dept"-kind items; proven by tests/unit/floor-fill-gap.test.sh).
+# landed and is still missing whole departments TODAY ("the wipe").
 #
-# This gate runs the four suites this unit ships:
+# CORRECTION (2026-07-21) — this header previously claimed the update-path
+# floor-fill "only ever fills missing ROLES/SOPS inside a department that
+# ALREADY EXISTS on disk — a department that is entirely absent was invisible
+# to it (make-gap-from-staleness.py deliberately drops 'dept'-kind items)".
+# That was FALSE and it hid a live fleet defect for three weeks. Dropping
+# `kind: "dept"` items never mattered: an absent department is reconstructed
+# implicitly from its own `kind: "role"` MISSING items (keyed "<dept>/<slug>"),
+# and floor-fill-driver.py mkdir's the department for them. Because the
+# detect-stale verdict is derived ONLY from templates/role-library/_index.json —
+# which ships EVERY department, industry-gated ones included, and has no
+# vertical-pack concept — the update path re-created the industry-gated
+# real-estate `listings` department on every box on every update, on boxes
+# running the POST-demotion naming map, and on a box whose owner had explicitly
+# declined the vertical set. floor-fill-driver.py now consults
+# vertical-derivation-guard.check_add() before creating an ABSENT department;
+# test-floor-fill-vertical-gate.sh (suite 5 below) is the permanent lock.
+#
+# This gate runs the five suites this unit ships:
 #
 #   1. test-naming-map-corruption-fail-closed.sh — PERMANENT regression for
 #      the (d)/(e) break-it requirement ("corrupt a test copy of the naming
@@ -55,13 +67,32 @@ name: Floor-wipe fix guard (P2-06)
 #      embedded join_verification claim — so a DRIFT verdict downgrades
 #      overall_armed and the probe's exit code even though the on-disk floor
 #      is met.
+#   5. test-floor-fill-vertical-gate.sh — the INDUSTRY GATE regression lock
+#      (see the CORRECTION above). T1 is the fail-first reproduction: an
+#      industry-gated department that is ABSENT from disk is no longer created
+#      on a box whose build record declares no matching vertical, and the
+#      refusal carries the guard's named VERTICAL_NOT_DECLARED error. T2-T7
+#      pin the gate's scope so the fix can never become a floor regression:
+#      a DECLARED box still gets the department, mandatory canonical depts and
+#      universal-primary verticals are never gated, a department already on
+#      disk is still filled and NEVER removed (removal is an owner decision,
+#      not this tool's), a gated skip is rc 0 (a policy skip must not fail
+#      every fleet update), and the driver hard-codes no department list of
+#      its own — the naming map, via the guard, stays the single source. Its
+#      invocation deliberately uses only flags the PRE-fix driver also
+#      accepted, so the fail-before is a real behavioral difference and not an
+#      argparse error.
 #
-# All four are hermetic: mktemp sandboxes, and every non-decline-testing
-# scenario pins --build-state-file to a neutral {} record so the verdict
-# never depends on whatever real client build-state happens to exist on the
-# box running the suite (verified live on the operator's own box, which
-# carries real prior declines that would otherwise silently change the
-# expected department set). No corrupted file is ever written to the real
+# All five are hermetic: mktemp sandboxes, and no scenario can be judged
+# against whatever real client build-state happens to exist on the box running
+# the suite (verified live on the operator's own box, which carries real prior
+# declines that would otherwise silently change the expected department set).
+# Suites 1-4 pin --build-state-file to a neutral {} record for that; suite 5
+# instead drops its own .workforce-build-state.json fixture beside its sandbox
+# workspace, which is the FIRST candidate the industry gate's resolver reads —
+# deliberately, so its command line stays identical to the pre-fix driver's and
+# its fail-before is behavioral rather than an argparse error.
+# No corrupted file is ever written to the real
 # repo checkout — the naming-map corruption test monkeypatches the imported
 # module's NAMING_MAP constant onto a private tmp copy; the regression-lock
 # test injects its bug into a scratch copy placed and removed (trap) beside
@@ -78,6 +109,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
       - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py"
+      - "23-ai-workforce-blueprint/scripts/test-floor-fill-vertical-gate.sh"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh"
@@ -95,6 +128,8 @@ on:
       - "23-ai-workforce-blueprint/scripts/department-floor.py"
       - "23-ai-workforce-blueprint/scripts/materialize-missing-departments.py"
       - "23-ai-workforce-blueprint/scripts/floor-fill-driver.py"
+      - "23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py"
+      - "23-ai-workforce-blueprint/scripts/test-floor-fill-vertical-gate.sh"
       - "23-ai-workforce-blueprint/scripts/create_role_workspaces.py"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments.sh"
       - "23-ai-workforce-blueprint/scripts/test-materialize-missing-departments-join.sh"
@@ -109,7 +144,7 @@ on:
 
 jobs:
   floor-wipe-fix-guard:
-    name: P2-06 floor-wipe fix (4 hermetic suites)
+    name: P2-06 floor-wipe fix (5 hermetic suites)
     runs-on: ubuntu-latest
     env:
       OPENCLAW_PLATFORM: mac
@@ -169,8 +204,18 @@ jobs:
           fi
 
           echo "======================================================================"
+          echo "RUN: 23-ai-workforce-blueprint/scripts/test-floor-fill-vertical-gate.sh"
+          echo "======================================================================"
+          if bash 23-ai-workforce-blueprint/scripts/test-floor-fill-vertical-gate.sh; then
+            echo "PASS: test-floor-fill-vertical-gate.sh"
+          else
+            echo "FAIL: test-floor-fill-vertical-gate.sh exited non-zero" >&2
+            rc=1
+          fi
+
+          echo "======================================================================"
           if [ "$rc" -eq 0 ]; then
-            echo "ALL 4 P2-06 FLOOR-WIPE-FIX SUITES PASSED"
+            echo "ALL 5 P2-06 FLOOR-WIPE-FIX SUITES PASSED"
           else
             echo "ONE OR MORE P2-06 FLOOR-WIPE-FIX SUITES FAILED" >&2
           fi
