@@ -47,9 +47,21 @@ grep -q '_U6D_CC_CONFIG_FAIL' "$UPDATE_SH" && grep -q 'Command Center runtime co
   && ok "branding/departments failure withholds the version stamp" \
   || bad "branding/departments reconciliation is not stamp-gating"
 
-grep -q '_PROVISIONING_HARD_CHECKS = ("VERSION", "BRANDING", "DEPARTMENTS", "PERSONAS")' "$RUNNER" \
-  && ok "fleet provisioning verdict hard-gates version, branding, departments, and personas" \
-  || bad "provisioning-completeness hard verdict missing"
+# Every name below MUST stay in _PROVISIONING_HARD_CHECKS. Asserted per-name over
+# the whole tuple block (which legitimately wraps across lines) rather than as one
+# literal line, so a reformat cannot break the contract — but DROPPING a gate
+# still fails it. ROLE-FLOOR is the disk-measured floor gate: DEPARTMENTS proves
+# only that departments.json is a non-empty array, and that file lives in a
+# different tree from the role folders it promises, so without ROLE-FLOOR a box
+# could lose every role folder and still record a clean, completed roll.
+_PHC_BLOCK="$(sed -n '/_PROVISIONING_HARD_CHECKS = (/,/)/p' "$RUNNER")"
+_PHC_MISSING=""
+for _phc in '"VERSION"' '"BRANDING"' '"DEPARTMENTS"' '"PERSONAS"' '"ROLE-FLOOR"'; do
+  printf '%s' "$_PHC_BLOCK" | grep -qF -- "$_phc" || _PHC_MISSING="$_PHC_MISSING $_phc"
+done
+[ -n "$_PHC_BLOCK" ] && [ -z "$_PHC_MISSING" ] \
+  && ok "fleet provisioning verdict hard-gates version, branding, departments, personas, and the on-disk role floor" \
+  || bad "provisioning-completeness hard verdict missing:${_PHC_MISSING:- (tuple not found)}"
 grep -q 'QC_COMPLETENESS_SCRIPT=.*qc-completeness.sh' "$UPDATE_SH" \
   && ok "root updater reaches post-update workforce completeness QC" \
   || bad "root updater does not invoke workforce completeness QC"
