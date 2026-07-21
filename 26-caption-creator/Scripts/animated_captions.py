@@ -9,6 +9,13 @@ Important: drawtext treats ':' as an option separator, so caption text must be e
 import argparse
 import subprocess
 import re
+import sys
+
+# T0-59: the animated path parsed the same subtitle file and proceeded on an
+# empty cue list, producing a video with a no-op filter chain that was then
+# announced as created. Exit code 3 == AF-CAPTION-EMPTY-TRANSCRIPTION, matching
+# CAPTION_EMPTY_TRANSCRIPTION_EXIT in Scripts/lib-caption-guard.sh.
+EMPTY_TRANSCRIPTION_EXIT = 3
 
 
 def parse_srt(srt_file):
@@ -61,6 +68,23 @@ def main():
 
     captions = parse_srt(args.srt)
 
+    # T0-59: reject an empty cue list here too. A cue whose text is blank draws
+    # nothing, so it is not a caption and must not be counted as one.
+    renderable = [(s, e, t) for (s, e, t) in captions if t.strip()]
+    if not renderable:
+        print(
+            "Error: AF-CAPTION-EMPTY-TRANSCRIPTION — %s parsed to %d cue(s) and %d "
+            "renderable caption(s)." % (args.srt, len(captions), len(renderable)),
+            file=sys.stderr,
+        )
+        print(
+            "  Burning in an empty cue list would produce a video announced as "
+            "captioned with no captions in it. Nothing was rendered.",
+            file=sys.stderr,
+        )
+        return EMPTY_TRANSCRIPTION_EXIT
+    captions = renderable
+
     # Create FFmpeg filter complex for animated captions
     filter_parts = []
 
@@ -94,7 +118,8 @@ def main():
 
     subprocess.run(cmd, check=True)
     print(f"Created: {args.output}")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

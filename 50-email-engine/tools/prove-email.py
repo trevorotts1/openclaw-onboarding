@@ -119,8 +119,41 @@ LANDING_MAP = {
 SEQ_LENGTHS = {"landing_page_10": 10, "high_ticket_12": 12, "buyer_type_12": 12}
 PREVIEW_EXPECTED = {"landing_page_10": 2, "buyer_type_12": 1, "high_ticket_12": 2}
 
-REQUIRED_BRIEF = ("objective", "buyer_type", "offer", "brand_voice",
-                  "sequence_position", "founder_name")
+# ---- required brief fields — DERIVED FROM THE INTAKE CONTRACT (T2-38) --------
+# intake/email-intake-questions.json:6 describes itself as "the authoritative spec
+# that prove-email.py loads for the intake gate". It was not loaded by anything:
+# this tuple was hardcoded, so editing the declared authority changed nothing and
+# the two could drift apart with no signal. The contract is now the source, and a
+# contract that cannot be read is a USAGE FAILURE — never a silent fallback to a
+# built-in list, which is the defect class this whole change set exists to remove.
+_INTAKE_CONTRACT = Path(__file__).resolve().parent.parent / "intake" / "email-intake-questions.json"
+
+
+def _load_required_brief(contract_path=None):
+    """Return (required_field_tuple, error_message_or_None) from the intake contract.
+
+    A required field is a questions[] entry with required:true; its brief key is
+    `storeOn` (falling back to `id`), which is where the runtime records the answer.
+    """
+    p = Path(contract_path or _INTAKE_CONTRACT)
+    try:
+        doc = json.loads(p.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return (), "intake contract unreadable/unparseable at %s: %s" % (p, exc)
+    questions = doc.get("questions")
+    if not isinstance(questions, list) or not questions:
+        return (), "intake contract at %s declares no questions[] array" % p
+    fields = tuple(
+        str(q.get("storeOn") or q.get("id"))
+        for q in questions
+        if isinstance(q, dict) and q.get("required") is True and (q.get("storeOn") or q.get("id"))
+    )
+    if not fields:
+        return (), "intake contract at %s declares no required questions" % p
+    return fields, None
+
+
+REQUIRED_BRIEF, REQUIRED_BRIEF_ERROR = _load_required_brief()
 
 # ---- regexes ----------------------------------------------------------------
 _MERGE_RE = re.compile(r"\{\{.*?\}\}")
@@ -651,6 +684,11 @@ def evaluate_intake(rec):
     if not isinstance(answers, dict):
         fails.append((AF_BRIEF_INCOMPLETE, "no answers object on the brief"))
         answers = {}
+    # T2-38: a library caller that imported this module without going through
+    # prove() must not grade a brief against an empty required set.
+    if REQUIRED_BRIEF_ERROR:
+        fails.append((AF_BRIEF_INCOMPLETE,
+                      "cannot evaluate the brief: %s" % REQUIRED_BRIEF_ERROR))
     missing = [f for f in REQUIRED_BRIEF if not _nonempty_str(str(answers.get(f, "")))]
     if missing:
         fails.append((AF_BRIEF_INCOMPLETE, "missing/empty brief fields: %s" % ", ".join(missing)))
@@ -697,6 +735,12 @@ def decide_exit(failures):
 
 # ---- runner -----------------------------------------------------------------
 def prove(path, as_json=False, kind=None, brief_path=None):
+    # T2-38: the intake contract is the declared authority for the required brief
+    # fields. If it cannot be read, the prover does not know what it is proving —
+    # report that and stop, rather than grading against a stale built-in list.
+    if REQUIRED_BRIEF_ERROR:
+        _emit(str(path), "?", [("USAGE", REQUIRED_BRIEF_ERROR)], as_json)
+        return EXIT_USAGE
     p = Path(path)
     if not p.is_file():
         _emit(str(p), "?", [("USAGE", "file not found: %s" % p)], as_json)
@@ -708,14 +752,29 @@ def prove(path, as_json=False, kind=None, brief_path=None):
         return EXIT_USAGE
     # The LOCKED brief (when supplied) is the ONLY source that can authorize a
     # client-exact override on the authored emails (FIX-XC-12a).
+    #
+    # T0-63: a SUPPLIED brief that is missing, unreadable or malformed used to
+    # produce the same `None` as a brief that was never supplied, so evaluation
+    # continued and the prover returned PASS. A run believed to be bound to a
+    # locked brief was never bound to one, and the prover certified it. Handle it
+    # exactly as the primary target's read failure is handled six lines above —
+    # a named usage failure and the usage exit code. `None` is now reserved for
+    # the case where no brief was supplied at all.
     brief = None
     if brief_path:
         bp = Path(brief_path)
-        if bp.is_file():
-            try:
-                brief = json.loads(bp.read_text(encoding="utf-8"))
-            except (ValueError, OSError):
-                brief = None
+        if not bp.is_file():
+            _emit(str(p), "?",
+                  [("USAGE", "--brief was supplied but the file does not exist: %s" % bp)],
+                  as_json)
+            return EXIT_USAGE
+        try:
+            brief = json.loads(bp.read_text(encoding="utf-8"))
+        except (ValueError, OSError) as exc:
+            _emit(str(p), "?",
+                  [("USAGE", "--brief %s cannot be read/parsed: %s" % (bp, exc))],
+                  as_json)
+            return EXIT_USAGE
     k = kind or _detect_kind(obj)
     failures = evaluate(obj, kind=k, brief=brief)
     _emit(str(p), k, failures, as_json)

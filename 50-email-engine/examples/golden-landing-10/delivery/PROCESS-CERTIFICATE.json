@@ -13,6 +13,7 @@
   "verified_phases": 4,
   "all_phases_pass": true,
   "deploy_mode": "draft-only",
+  "canonical_persona": null,
   "steps": [
     {
       "phase_id": "P1-SELECT",
@@ -39,6 +40,11 @@
       "ok": true
     }
   ],
+  "overrides": {
+    "source": null,
+    "values": {}
+  },
   "certificate_sha": "6f9a350763e582616264c796dc122bc10636ba0423a2ffc17f9dac541d463f57",
-  "certified_at": "2026-07-02T08:58:53.132577+00:00"
+  "certificate_sig": "e6180ecac8eedfe32701404ab0e2a857befc572e2b6b5633fab6032bc4e5bc6c",
+  "certified_at": "2026-07-21T11:05:29.849906+00:00"
 }

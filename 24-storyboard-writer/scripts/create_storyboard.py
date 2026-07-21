@@ -45,21 +45,50 @@ def generate_segment_prompt(topic, segment_num, total_segments, style="neutral")
     else:
         return prompts["middle"][segment_num % len(prompts["middle"])]
 
+class StoryboardError(Exception):
+    """A named, non-recoverable storyboard failure.
+
+    T0-60: the failure branch used to print to stdout, return None and let the
+    process exit 0, so a caller that branches on the exit code proceeded as if a
+    storyboard file existed. Every failure now raises, main() prints it on stderr
+    and exits non-zero.
+    """
+
+
 def create_storyboard(duration, model_id, topic, style="neutral"):
-    """Create a complete storyboard"""
-    
+    """Create a complete storyboard.
+
+    Raises StoryboardError when the model is unknown or the requested duration
+    yields no clips. Never returns a storyboard with an empty segment list.
+    """
+
     model = get_model(model_id)
     if not model:
-        print(f"Error: Unknown model '{model_id}'")
-        print(f"Available: {', '.join(list_models())}")
-        return None
-    
+        raise StoryboardError(
+            f"AF-STORYBOARD-UNKNOWN-MODEL: unknown model '{model_id}'. "
+            f"Available: {', '.join(list_models())}"
+        )
+
     # Calculate segments
     clip_duration = model["durations"][0]
+    if clip_duration <= 0:
+        raise StoryboardError(
+            f"AF-STORYBOARD-EMPTY: model '{model_id}' declares a clip duration of "
+            f"{clip_duration}s; a storyboard cannot be segmented against it"
+        )
     num_clips = duration // clip_duration
     if duration % clip_duration > 0:
         num_clips += 1
-    
+
+    # T0-60: a zero clip count writes a storyboard with no segments. Assert the
+    # count BEFORE any file is written, so no empty artifact is ever emitted.
+    if num_clips <= 0:
+        raise StoryboardError(
+            f"AF-STORYBOARD-EMPTY: duration {duration}s against model '{model_id}' "
+            f"({clip_duration}s per clip) yields {num_clips} clips — a storyboard "
+            f"needs at least one segment. Request a duration of at least 1 second."
+        )
+
     cost_info = calculate_cost(model_id, duration)
     
     # Generate segments
@@ -139,16 +168,22 @@ def main():
     args = parser.parse_args()
     
     print(f"Creating storyboard for {args.duration}s {args.topic} video using {args.model}...")
-    
-    storyboard = create_storyboard(args.duration, args.model, args.topic, args.style)
-    
-    if storyboard:
-        export_to_json(storyboard, f"{args.output}.json")
-        export_to_markdown(storyboard, f"{args.output}.md")
-        
-        print("\n✅ Storyboard created!")
-        print(f"Segments: {storyboard['calculations']['num_segments']}")
-        print(f"Estimated cost: ${storyboard['calculations']['estimated_total_cost']}")
+
+    try:
+        storyboard = create_storyboard(args.duration, args.model, args.topic, args.style)
+    except StoryboardError as exc:
+        # T0-60: error text on STDERR and a non-zero exit, so a caller that
+        # branches on the exit code never proceeds believing a storyboard exists.
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+
+    export_to_json(storyboard, f"{args.output}.json")
+    export_to_markdown(storyboard, f"{args.output}.md")
+
+    print("\n✅ Storyboard created!")
+    print(f"Segments: {storyboard['calculations']['num_segments']}")
+    print(f"Estimated cost: ${storyboard['calculations']['estimated_total_cost']}")
+    return 0
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

@@ -6,7 +6,7 @@
 - **All phases pass:** True
 - **Deploy mode:** DRAFT-ONLY (nothing sends without explicit human approval)
 - **Certificate SHA:** `6f9a350763e582616264c796dc122bc10636ba0423a2ffc17f9dac541d463f57`
-- **Certified at:** 2026-07-02T08:58:53.132577+00:00
+- **Certified at:** 2026-07-21T11:05:29.849906+00:00
 
 | Phase | Name | Verified |
 |---|---|---|

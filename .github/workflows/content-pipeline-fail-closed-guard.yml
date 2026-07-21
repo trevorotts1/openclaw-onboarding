@@ -1,0 +1,255 @@
+name: content-pipeline fail-closed guards (T0-59/60/61/62/63/64, T2-36/38)
+
+# SEVEN CHECKERS THAT REPORTED SOMETHING OTHER THAN REALITY. Every job below runs
+# the constructed FAILING condition as well as the healthy one, because a gate that
+# has only ever been observed passing has not been observed at all — and a "fix"
+# that simply makes everything fail is not a fix either. Each suite therefore
+# carries an explicit anti-false-fail control.
+#
+#   T0-59  26-caption-creator   validated the transcript by FILE EXISTENCE, so silent
+#                               audio produced a video announced as captioned with no
+#                               captions in it.
+#   T0-60  24-storyboard-writer printed its unknown-model error to STDOUT and exited
+#                               ZERO having written nothing.
+#   T0-61  19-humanizer         the em-dash check alternated the rule phrase with the
+#                               BANNED CHARACTER, so it passed precisely when the
+#                               character it bans was present.
+#   T0-62  27-video-editor      merge-broll.sh checked only that four arguments were
+#                               non-empty; the guided workflow stages zero-byte .mp4
+#                               placeholders and hands it their paths.
+#   T2-36  27-video-editor      two documents require --dry-run; the parser rejected it.
+#   T0-63  50-email-engine      a supplied-but-unreadable --brief produced the same
+#                               None as "no brief supplied", and the prover said PASS.
+#   T0-64  50-email-engine      the shipped golden certificate carried no signature and
+#                               would have been rejected by the skill's own verifier;
+#                               nothing in the verification path ever checked it.
+#   T2-38  50-email-engine      the intake contract declared itself authoritative and
+#                               no executable read it.
+#
+# Hermetic: stubbed transcription/render binaries, temp workspaces, a fake HOME for
+# the workspace-reading gate, stdlib-only Python. No network, no fleet box.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "19-humanizer/**"
+      - "24-storyboard-writer/**"
+      - "26-caption-creator/**"
+      - "27-video-editor/**"
+      - "50-email-engine/**"
+      - "lib-shared.sh"
+      - ".github/workflows/content-pipeline-fail-closed-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "19-humanizer/**"
+      - "24-storyboard-writer/**"
+      - "26-caption-creator/**"
+      - "27-video-editor/**"
+      - "50-email-engine/**"
+      - "lib-shared.sh"
+      - ".github/workflows/content-pipeline-fail-closed-guard.yml"
+
+jobs:
+  captions-and-storyboards:
+    name: "T0-59/T0-60: captions gated on content, storyboard failures exit non-zero"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the shell entry points
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 26-caption-creator/Scripts/generate-captions.sh
+          bash -n 26-caption-creator/Scripts/export-srt.sh
+          bash -n 26-caption-creator/Scripts/lib-caption-guard.sh
+          bash -n 26-caption-creator/test/test-caption-content-gate.sh
+          echo "OK: shell syntax"
+
+      - name: Compile the Python entry points
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile 26-caption-creator/Scripts/animated_captions.py
+          python3 -m py_compile 24-storyboard-writer/scripts/create_storyboard.py
+          echo "OK: python compiles"
+
+      - name: T0-59 — the caption gate fails on an empty transcription and passes on a real one
+        shell: bash
+        run: bash 26-caption-creator/test/test-caption-content-gate.sh
+
+      - name: T0-60 — the storyboard failure path exits non-zero on stderr, and real runs still work
+        shell: bash
+        run: python3 24-storyboard-writer/test/test_storyboard_failure_contract.py
+
+  humanizer-predicate:
+    name: "T0-61: the em-dash check is not satisfied by an em dash"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 19-humanizer/qc-humanizer.sh
+          bash -n 19-humanizer/test/test-humanizer-rule-check.sh
+          echo "OK: shell syntax"
+
+      - name: The predicate is proven in BOTH directions
+        shell: bash
+        run: bash 19-humanizer/test/test-humanizer-rule-check.sh
+
+      - name: The banned character is not in the pattern
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A directed check for the exact regression: reintroducing the literal
+          # em dash into the check's pattern is what made the gate inverted.
+          if grep -n "grep .*em[ -]\?dash.*—\|—.*em[ -]\?dash" 19-humanizer/qc-humanizer.sh; then
+            echo "FAIL: the literal em-dash character is back in the check's pattern (T0-61)"
+            exit 1
+          fi
+          echo "OK: the check matches rule language only"
+
+  video-editor-merge:
+    name: "T0-62/T2-36: merge inputs are probed and --dry-run exists"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install FFmpeg (the skill's declared requirement)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          ffprobe -version | head -n 1
+
+      - name: Syntax-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 27-video-editor/scripts/merge-broll.sh
+          bash -n 27-video-editor/scripts/broll-workflow.sh
+          bash -n 27-video-editor/test/test-merge-input-validation.sh
+          echo "OK: shell syntax"
+
+      - name: The workflow's embedded manifest writer compiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The heredoc body is Python; extract and compile it separately so a
+          # syntax error inside it cannot hide behind `bash -n`.
+          awk '/^python3 - "\$MANIFEST"/{flag=1;next} /^PYTHON_EOF$/{flag=0} flag' \
+            27-video-editor/scripts/broll-workflow.sh > /tmp/manifest_writer.py
+          test -s /tmp/manifest_writer.py
+          python3 -m py_compile /tmp/manifest_writer.py
+          echo "OK: the manifest writer compiles"
+
+      - name: Bad inputs abort with named errors; real merges still run
+        shell: bash
+        run: bash 27-video-editor/test/test-merge-input-validation.sh
+
+      - name: The workflow stages no zero-byte placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          if grep -nE '^\s*touch "\$TEMP_DIR/broll_' 27-video-editor/scripts/broll-workflow.sh; then
+            echo "FAIL: the workflow is creating empty files at the merge destination paths again (T0-62)"
+            exit 1
+          fi
+          echo "OK: expected inputs are declared, not fabricated"
+
+  email-engine-proofs:
+    name: "T0-63/T0-64/T2-38: the email-engine proofs hold"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 50-email-engine/verify.sh
+          python3 -m py_compile 50-email-engine/tools/prove-email.py
+          python3 -m py_compile 50-email-engine/run_email_engine.py
+          python3 -m py_compile 50-email-engine/test_intake_contract_authority.py
+          echo "OK"
+
+      - name: T2-38 — the intake contract is authoritative in both directions
+        shell: bash
+        run: python3 50-email-engine/test_intake_contract_authority.py
+
+      - name: The whole Skill 50 verification gate (includes T0-63 and T0-64)
+        shell: bash
+        run: bash 50-email-engine/verify.sh
+
+      - name: T0-64 — the certificate check REALLY fails on an unsigned artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A gate observed only passing has not been observed. Strip the signature
+          # from a COPY of the golden run dir and require a non-zero exit.
+          cp -r 50-email-engine/examples/golden-landing-10 /tmp/golden-unsigned
+          python3 - <<'PY'
+          import json, pathlib
+          p = pathlib.Path("/tmp/golden-unsigned/delivery/PROCESS-CERTIFICATE.json")
+          body = json.loads(p.read_text())
+          body.pop("certificate_sig", None)
+          p.write_text(json.dumps(body, indent=2))
+          PY
+          if python3 50-email-engine/run_email_engine.py --verify-certificate /tmp/golden-unsigned; then
+            echo "FAIL: an unsigned certificate authenticated (T0-64)"
+            exit 1
+          fi
+          echo "OK: an unsigned certificate is rejected"
+          # And with the key removed, which is exactly the shipped-artifact defect.
+          rm -rf /tmp/golden-nokey && cp -r 50-email-engine/examples/golden-landing-10 /tmp/golden-nokey
+          rm -f /tmp/golden-nokey/working/checkpoints/.cert-hmac-key
+          if python3 50-email-engine/run_email_engine.py --verify-certificate /tmp/golden-nokey; then
+            echo "FAIL: a certificate with no signing key authenticated (T0-64)"
+            exit 1
+          fi
+          echo "OK: an unkeyed certificate is rejected"
+
+      - name: The enforcement hash pin matches the pinned head
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 50-email-engine
+          computed="$(cat tools/prove-email.py run_email_engine.py EMAIL-MANIFEST.json | sha256sum | awk '{print $1}')"
+          pinned="$(tr -d ' \t\n' < ENGINE-PIN.sha256)"
+          if [ "$computed" != "$pinned" ]; then
+            echo "FAIL: ENGINE-PIN.sha256 drift — computed $computed, pinned $pinned"
+            exit 1
+          fi
+          echo "OK: enforcement hash matches the pinned head"
+
+  kie-resume-reconciliation:
+    name: "T0-58: a resumed slide is reconciled against disk"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: The Skill 46 suite, including the resume-path outcome rule
+        shell: bash
+        run: node 46-kie-callback-relay/test/security.test.mjs

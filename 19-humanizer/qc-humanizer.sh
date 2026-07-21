@@ -16,7 +16,20 @@ echo ""
 echo "═══ Skill 19 — Humanizer — Install QC ═══"
 echo ""
 assert "Skill 19 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/19-humanizer\" ]"
-warn_only "AGENTS.md or SOUL.md bans em dashes" "grep -qE 'em dash|—' \"$WORKSPACE/AGENTS.md\" \"$WORKSPACE/SOUL.md\" 2>/dev/null"
+# T0-61 — INVERTED PREDICATE, FIXED.
+#   Was: grep -qE 'em dash|—' over AGENTS.md + SOUL.md.
+#   The pattern alternated the RULE PHRASE with the BANNED CHARACTER ITSELF, so a
+#   workspace file containing an em dash anywhere in unrelated prose satisfied the
+#   check with no ban rule installed at all — the exact state the check exists to
+#   detect was the state that made it pass. The literal character is gone from the
+#   pattern: this now matches RULE LANGUAGE ONLY.
+#   The file set is also corrected. 19-humanizer/CORE_UPDATES.md lists AGENTS.md and
+#   TOOLS.md as the files this skill may write and SOUL.md under "Non-relevant (do
+#   not edit)", so the check no longer reads a file the skill is forbidden to install
+#   its rule into.
+#   Still warn_only: promoting it to an assertion is B10/B4 territory and is
+#   deliberately NOT bundled here, so this change cannot move the verdict.
+warn_only "AGENTS.md or TOOLS.md carries the em-dash ban rule" "grep -qiE 'em[[:space:]-]?dash(es)?' \"$WORKSPACE/AGENTS.md\" \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
 warn_only "AGENTS.md or SOUL.md bans AI-tell phrases" "grep -qiE 'as an AI|large language model|AI tell|humaniz' \"$WORKSPACE/AGENTS.md\" \"$WORKSPACE/SOUL.md\" 2>/dev/null"
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
