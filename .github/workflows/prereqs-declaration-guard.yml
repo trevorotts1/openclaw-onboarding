@@ -1,0 +1,82 @@
+name: prereqs-declaration-guard
+
+# Guards finding T0-40: the machine-readable prerequisites must declare the skill
+# dependencies their SKILL.md calls mandatory, and every declaration must
+# actually RESOLVE through the real checker.
+#
+# THE GAP. shared-utils/check-skill-prereqs.sh -- invoked by install.sh and
+# update-skills.sh -- can only warn about prerequisites represented in
+# PREREQS.json. 06-ghl-install-pages declared ONE (Skill 05) while its SKILL.md
+# names three more as mandatory (Skills 01, 02, 03); 05-ghl-setup declared two
+# credentials and no skill entries while its SKILL.md says "You MUST have these
+# installed first: 1. Teach Yourself Protocol - Skill 01, 2. Back Yourself Up
+# Protocol - Skill 02". A selective or drifted installation got a CLEAN
+# prerequisite result while mandatory dependencies were absent.
+#
+# WHY THE SUITE DRIVES THE REAL CHECKER RATHER THAN GREPPING FOR IDS. A
+# declaration that cannot resolve is a fabricated artifact, not a fix. The
+# `{"skillId": N}` form used by 07-kie-setup is exactly that: check_skill() reads
+# check["skill"], so a skillId entry reports UNMET even when the dependency IS
+# installed (measured). The suite therefore asserts, for every entry, that the
+# dependency PRESENT resolves as satisfied and the dependency ABSENT is reported
+# unmet by name -- a no-op entry fails the first leg, a broken one fails the
+# second.
+#
+# NON-BLOCKING BY CONSTRUCTION. The new entries are severity "optional".
+# INSTALL-CONTRACT.md Rule 16: "Neither `required` nor `optional` prereqs ever
+# block INSTALL" -- exit 2 is informational and both installers treat it as
+# note-and-continue. Unmet entries of both severities are reported identically,
+# so the installer gains the warning it could not previously emit without any
+# ability to fail a healthy box.
+#
+# Hermetic: fixture skill trees in a tempdir. No network, no box state.
+#
+# Security note: this workflow consumes only repo file content (no untrusted
+# GitHub event fields), so there is no injection surface in the run: blocks.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "05-ghl-setup/PREREQS.json"
+      - "06-ghl-install-pages/PREREQS.json"
+      - "shared-utils/check-skill-prereqs.sh"
+      - "scripts/qc-prereqs-json.sh"
+      - "tests/unit/prereqs-declared-mandatory-skills.test.sh"
+      - ".github/workflows/prereqs-declaration-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "05-ghl-setup/PREREQS.json"
+      - "06-ghl-install-pages/PREREQS.json"
+      - "shared-utils/check-skill-prereqs.sh"
+      - "scripts/qc-prereqs-json.sh"
+      - "tests/unit/prereqs-declared-mandatory-skills.test.sh"
+      - ".github/workflows/prereqs-declaration-guard.yml"
+
+jobs:
+  prereqs-declaration-guard:
+    name: Declared-mandatory dependencies are present and resolvable (T0-40)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n shared-utils/check-skill-prereqs.sh
+          bash -n scripts/qc-prereqs-json.sh
+          bash -n tests/unit/prereqs-declared-mandatory-skills.test.sh
+          python3 -c "import json; json.load(open('05-ghl-setup/PREREQS.json')); json.load(open('06-ghl-install-pages/PREREQS.json'))"
+          echo "syntax OK"
+
+      - name: Declared-mandatory dependency suite
+        shell: bash
+        run: bash tests/unit/prereqs-declared-mandatory-skills.test.sh

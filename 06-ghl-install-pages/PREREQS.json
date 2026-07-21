@@ -8,6 +8,30 @@
       "check": { "skill": "05-ghl-setup" },
       "severity": "required",
       "satisfy": "Install Skill 05 (GHL Setup) first. It is in the same onboarding package; re-run the installer or install Skill 05 on its own."
+    },
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 - Teach Yourself Protocol (TYP)",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "optional",
+      "satisfy": "Install Skill 01 (01-teach-yourself-protocol) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'Teach Yourself Protocol (TYP) must be learned first (skill 01)'. It is in the same onboarding package; re-run the installer or install Skill 01 on its own."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 - Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "optional",
+      "satisfy": "Install Skill 02 (02-back-yourself-up-protocol) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'Backup Protocol must be learned first (skill 02)'. It is in the same onboarding package; re-run the installer or install Skill 02 on its own."
+    },
+    {
+      "id": "skill-03-agent-browser",
+      "type": "skill",
+      "label": "Skill 03 - agent-browser (PRIMARY browser engine)",
+      "check": { "skill": "03-agent-browser" },
+      "severity": "optional",
+      "satisfy": "Install Skill 03 (03-agent-browser) into ~/.openclaw/skills (/data/.openclaw/skills on a VPS/Docker box). SKILL.md declares it mandatory: 'agent-browser must be installed (skill 03) - PRIMARY browser engine'. Without it every page build falls back to the Playwright engine, which SKILL.md documents as the fallback for known-hard flows only."
     }
   ]
 }
