@@ -70,6 +70,9 @@ export OC_SKILL_NAME="$SKILL_NAME"
 export OC_SKILLS_DIR="$SKILLS_DIR"
 export OC_CONFIG_FILE="${OC_CONFIG_FILE:-}"
 export OC_STATE_FILE="${STATE_FILE:-}"
+# Exported so type="state" prereqs can expand "$OC_ROOT/..." in their stateFile
+# path. Empty OC_ROOT leaves an unresolvable path, which fails CLOSED (unmet).
+export OC_ROOT="${OC_ROOT:-}"
 
 python3 <<'PYEOF'
 import json
@@ -153,11 +156,86 @@ def check_credential(check_def):
     return bool(search_env_var(env_var))
 
 
+def _skill_id_to_folder(skill_id):
+    """Resolve a numeric skill id (7) to its installed folder ('07-kie-setup').
+
+    Skill folders are named '<zero-padded-number>-<slug>'. Matching is done on
+    the parsed integer prefix so 7, 07 and 007 all resolve identically.
+    """
+    if not SKILLS_DIR or not os.path.isdir(SKILLS_DIR):
+        return ""
+    try:
+        want = int(skill_id)
+    except (TypeError, ValueError):
+        return ""
+    for entry in sorted(os.listdir(SKILLS_DIR)):
+        if not os.path.isdir(os.path.join(SKILLS_DIR, entry)):
+            continue
+        prefix = entry.split("-", 1)[0]
+        if prefix.isdigit() and int(prefix) == want:
+            return entry
+    return ""
+
+
 def check_skill(check_def):
-    skill_folder = check_def.get("skill", "")
-    if not skill_folder or not SKILLS_DIR:
+    """A skill dependency is satisfied when its folder exists in SKILLS_DIR.
+
+    Two declaration forms are accepted and BOTH are enforced:
+      {"skill": "07-kie-setup"}  -- canonical, explicit folder name
+      {"skillId": 7}             -- numeric id, resolved to the folder above
+    Before v12.11.0 only "skill" was implemented, so every {"skillId": N}
+    dependency evaluated to a constant False -- it reported UNMET even when the
+    dependency was installed, and therefore enforced nothing at all.
+    """
+    if not SKILLS_DIR:
         return False
-    return os.path.isdir(os.path.join(SKILLS_DIR, skill_folder))
+    skill_folder = check_def.get("skill", "")
+    if skill_folder and os.path.isdir(os.path.join(SKILLS_DIR, skill_folder)):
+        return True
+    if "skillId" in check_def:
+        resolved = _skill_id_to_folder(check_def.get("skillId"))
+        if resolved and os.path.isdir(os.path.join(SKILLS_DIR, resolved)):
+            return True
+    return False
+
+
+def check_state(check_def):
+    """Assert a JSON field inside an onboarding/build state file.
+
+    check: {"stateFile": "$OC_ROOT/workspace/x.json", "field": "a.b", "equals": true}
+    Fails CLOSED: a missing file, missing field or unreadable JSON is UNMET.
+    """
+    raw_path = check_def.get("stateFile", "")
+    field = check_def.get("field", "")
+    if not raw_path or not field:
+        return False
+    path = os.path.expanduser(os.path.expandvars(raw_path))
+    if "$" in path or not os.path.isfile(path):
+        return False
+    try:
+        with open(path) as f:
+            state = json.load(f)
+    except Exception:
+        return False
+    node = state
+    for part in field.split("."):
+        if not isinstance(node, dict) or part not in node:
+            return False
+        node = node[part]
+    if "equals" in check_def:
+        return node == check_def["equals"]
+    return bool(node)
+
+
+def check_manual(check_def):
+    """Operator-verified fact that no offline check can prove (an external
+    account exists, a paid balance is non-zero).
+
+    Always reported as an advisory line, never counted as unmet. The CI lint
+    (scripts/qc-prereqs-json.sh) forces severity="optional" on type="manual" so
+    a REQUIRED dependency can never hide behind an unverifiable type.
+    """
+    return True
 
 
 def check_binary(check_def):
@@ -248,7 +326,12 @@ CHECKERS = {
     "binary": check_binary,
     "config": check_config,
     "mcp": check_mcp,
+    "state": check_state,
+    "manual": check_manual,
 }
+
+# Types that are reported for visibility but never counted as unmet.
+ADVISORY_TYPES = {"manual"}
 
 # ---- Run checks ------------------------------------------------------------
 unmet = []
@@ -263,7 +346,23 @@ for prereq in prereqs:
 
     checker = CHECKERS.get(p_type)
     if checker is None:
-        print(f"[prereq][{SKILL_NAME}][warn] unknown prereq type: {p_type} (id={p_id})", file=sys.stderr)
+        # FAIL CLOSED. Before v12.11.0 this branch did `continue`, so a prereq
+        # carrying an unknown or missing "type" was dropped on the floor: the
+        # dependency was declared, never checked, and the skill still exited 0.
+        # An unverifiable declaration is now surfaced as unmet (exit 2 is
+        # informational to install.sh/update-skills.sh -- it blocks nothing).
+        print(
+            f"[prereq][{SKILL_NAME}][{p_severity}] {p_id} :: {p_label} :: "
+            f"UNVERIFIABLE (unknown prereq type '{p_type}'; valid: "
+            f"{', '.join(sorted(CHECKERS))}) :: {p_satisfy}"
+        )
+        unmet.append({
+            "id": p_id,
+            "type": p_type,
+            "label": p_label,
+            "severity": p_severity,
+            "satisfy": p_satisfy,
+        })
         continue
 
     try:
@@ -271,6 +370,10 @@ for prereq in prereqs:
     except Exception as e:
         print(f"[prereq][{SKILL_NAME}][warn] checker error for {p_id}: {e}", file=sys.stderr)
         satisfied = False  # treat as unmet but non-fatal
+
+    if p_type in ADVISORY_TYPES:
+        print(f"[prereq][{SKILL_NAME}][advisory] {p_id} :: {p_label} :: {p_satisfy}")
+        continue
 
     if not satisfied:
         unmet.append({

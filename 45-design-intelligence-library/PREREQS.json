@@ -1,14 +1,23 @@
 {
+  "skill": "45-design-intelligence-library",
+  "version": "1.1.0",
+  "lastUpdated": "2026-07-21",
   "prerequisites": [
     {
-      "skillId": 7,
-      "skillName": "kie-setup",
-      "required": true,
-      "envVar": "KIE_API_KEY",
-      "description": "Skill 07 provides credentials for image generation via Kie.ai endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7). Required for all DIU image generation, photo shoot, and deck-imagery work.",
-      "satisfy": "Run Skill 07 installer: bash $OC_ROOT/skills/07-kie-setup/install.sh"
+      "id": "skill-07-kie",
+      "type": "skill",
+      "label": "Skill 07 — Kie Setup",
+      "check": { "skill": "07-kie-setup" },
+      "severity": "required",
+      "satisfy": "Run the Skill 07 installer: bash $OC_ROOT/skills/07-kie-setup/install.sh. Skill 07 provides credentials for image generation via Kie.ai endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), required for all DIU image generation, photo shoot and deck-imagery work."
+    },
+    {
+      "id": "kie-api-key",
+      "type": "credential",
+      "label": "Kie.ai API Key",
+      "check": { "envVar": "KIE_API_KEY" },
+      "severity": "required",
+      "satisfy": "Add KIE_API_KEY=<your key> to ~/.openclaw/secrets/.env (chmod 600), then: openclaw config set env.vars.KIE_API_KEY \"$KIE_API_KEY\". Get your API key from app.kie.ai > Settings > API Keys."
     }
-  ],
-  "version": "1.0.0",
-  "lastUpdated": "2026-06-12"
+  ]
 }

@@ -39,8 +39,20 @@ REPO_ROOT = os.environ["OC_REPO_ROOT"]
 VERBOSE = os.environ.get("OC_VERBOSE", "0") == "1"
 
 REQUIRED_FIELDS = {"id", "type", "label", "check", "severity"}
-VALID_TYPES = {"credential", "skill", "binary", "config", "mcp"}
+# Must stay in lockstep with CHECKERS in shared-utils/check-skill-prereqs.sh.
+# A type the checker cannot execute is a declaration that enforces nothing.
+VALID_TYPES = {"credential", "skill", "binary", "config", "mcp", "state", "manual"}
 VALID_SEVERITIES = {"required", "optional"}
+# The check-key each type must populate for the runtime checker to do any work.
+# type="skill" accepts either form; both are implemented.
+REQUIRED_CHECK_KEYS = {
+    "credential": ("envVar",),
+    "skill": ("skill", "skillId"),
+    "binary": ("binary",),
+    "config": ("jsonPath",),
+    "mcp": ("server",),
+    "state": ("stateFile",),
+}
 
 errors = []
 warnings = []
@@ -91,6 +103,39 @@ def check_prereqs_json(path):
         check = prereq.get("check", {})
         if isinstance(check, dict) and len(check) == 0:
             errors.append(f"{rel}: {p_id}: 'check' object is empty -- must have exactly one key")
+
+        # Rule 16a: the check object must carry the key its type's runtime
+        # checker actually reads. A {"skillId": N} under a checker that only
+        # read check["skill"] evaluated to a constant False -- declared,
+        # never enforced. This rule makes that unshippable.
+        if isinstance(check, dict) and p_type in REQUIRED_CHECK_KEYS:
+            wanted = REQUIRED_CHECK_KEYS[p_type]
+            if not any(check.get(k) not in (None, "") for k in wanted):
+                errors.append(
+                    f"{rel}: {p_id}: type '{p_type}' requires one of "
+                    f"{list(wanted)} in 'check' (got {sorted(check.keys())}) -- "
+                    f"the runtime checker would enforce nothing"
+                )
+
+        # Rule 16b: a type="skill" dependency naming a folder must name a
+        # folder that exists. A dangling reference is permanently UNMET and
+        # can never be satisfied by any operator action.
+        if p_type == "skill" and isinstance(check, dict):
+            folder = check.get("skill", "")
+            if folder and not os.path.isdir(os.path.join(REPO_ROOT, folder)):
+                errors.append(
+                    f"{rel}: {p_id}: skill dependency '{folder}' does not exist "
+                    f"in the repo -- unsatisfiable, permanently UNMET"
+                )
+
+        # Rule 16c: type="manual" is unverifiable by definition, so it may
+        # never carry severity="required" -- otherwise a required dependency
+        # hides behind a check that can never fail.
+        if p_type == "manual" and p_severity != "optional":
+            errors.append(
+                f"{rel}: {p_id}: type 'manual' must have severity 'optional' "
+                f"(got '{p_severity}') -- an unverifiable prereq cannot be required"
+            )
 
     if VERBOSE:
         print(f"  OK  {rel} ({len(prereqs)} prereqs)")

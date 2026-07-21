@@ -1,3 +1,88 @@
+## [v20.0.90]  -  2026-07-21  -  A DECLARED SKILL DEPENDENCY COULD BE SILENTLY UNENFORCED, AND THE LINT THAT WOULD HAVE CAUGHT IT WAS WIRED INTO NO WORKFLOW
+
+`PREREQS.json` is the executable mirror of a skill's prerequisites (Rule 16). Three
+separate defects meant a dependency could be declared in that file and enforce
+nothing — in two of the three cases the checker still exited **0**.
+
+### The measurement
+
+Driving the real `shared-utils/check-skill-prereqs.sh` against fixture skills, with
+the dependency present and absent:
+
+| case | declaration | dependency | expected | main |
+|------|-------------|-----------|----------|------|
+| A1 | `type: skill`, `check: {"skillId": 7}` | PRESENT | satisfied, rc 0 | **UNMET, rc 2** |
+| A2 | `type: skill`, `check: {"skillId": 7}` | ABSENT | unmet, rc 2 | unmet, rc 2 |
+| C  | entry with no `type` field | ABSENT | unmet, rc 2 | **rc 0 — silent pass** |
+| D  | `type: state`, condition FALSE | ABSENT | unmet, rc 2 | **rc 0 — silent pass** |
+
+A1 and A2 return the same answer whichever way reality goes: `check_skill()` read
+only `check["skill"]`, so every `{"skillId": N}` entry evaluated to a constant
+`False`. It reported UNMET while the dependency was installed, and carried zero
+information in either direction.
+
+C and D are worse. `CHECKERS.get(p_type)` returning `None` did `continue` — an
+unknown or missing `type` was dropped on the floor and the skill exited 0. That is
+how `45-design-intelligence-library` declared a **required** dependency on Skill 07
+that was never once checked, and how `32-command-center-setup`'s **required**
+`interview-complete` gate evaluated to nothing.
+
+### The inventory
+
+15 `PREREQS.json` files, 37 prereq entries, all in this repo (`blackceo-command-center`
+has none). 12 entries declare `type: skill`; **2 of them** (both in `07-kie-setup`,
+the file being used as the worked example) used the unimplemented `{"skillId": N}`
+shape. **3 entries** carried an invalid severity: `warning` (`07-kie-setup`),
+`recommended` (`38-conversational-ai-system`), and one entry with no severity at all
+(`45-design-intelligence-library`). **4 entries** carried a `type` the checker cannot
+execute: `service-account`, `service-balance`, `state`, and one missing entirely.
+
+`scripts/qc-prereqs-json.sh` would have caught most of this. It was referenced by
+**no workflow**, and it had been exiting 1 with **7 violations** against main the
+whole time. INSTALL-CONTRACT.md Rule 16 claimed it ran "in CI". It did not.
+
+### The fix
+
+`check_skill()` now accepts **both** `{"skill": "<folder>"}` and `{"skillId": N}`,
+resolving the numeric id against the folder's integer prefix, so a dependency
+declared either way is genuinely enforced. Unknown and missing `type` values now
+fail **CLOSED**: the entry is reported UNMET instead of skipped. `state` gained a
+real implementation (`stateFile` / `field` / `equals`, fail-closed on a missing file
+or unresolved `$OC_ROOT`), so `32-command-center-setup`'s interview gate is enforced
+for the first time. A new `manual` type covers facts no offline check can prove — an
+external account, a paid balance — and the lint forces `severity: optional` on it so
+a required dependency can never hide behind an unverifiable check.
+
+Exit 2 stays informational. `install.sh` and `update-skills.sh` both treat it as
+"note + continue", so nothing here can block an install.
+
+All 15 manifests were normalised to the canonical `{"skill": "<folder>"}` form —
+`skillId` support exists so an out-of-tree manifest is enforced rather than silently
+mis-evaluated, not so new files can use it.
+
+`38-conversational-ai-system` declared a required dependency on `19-cloudflare-setup`.
+**That skill does not exist** — folder 19 is `19-humanizer`, and the string appears
+nowhere else in the repo. It was permanently UNMET and unsatisfiable by any operator
+action. The real requirement, `CLOUDFLARE_API_TOKEN`, was already declared in the
+same file as a required credential and is machine-checked, so the phantom entry is
+removed and enforcement is unchanged.
+
+### The gate
+
+`.github/workflows/prereqs-schema-guard.yml` (new) runs the schema lint and a
+paired-direction enforcement test on every change to a `PREREQS.json` or either
+script. `scripts/test-prereqs-schema-enforcement.sh` (new) drives the **real**
+checker, never a mock, and asserts both halves: dependency present must report
+satisfied, dependency absent must name it unmet. A checker hard-coded to `False`
+passes the absent half and fails the present half — which is exactly how the
+`skillId` bug behaved, so the test cannot be satisfied by re-introducing it.
+
+Falsified against unfixed main before being trusted: **5 of 14 assertions passed**
+on `origin/main`, **14 of 14** after. The lint gained three rules that main did not
+have — a `type: skill` check must carry `skill` or `skillId`; a named skill folder
+must exist; `type: manual` may not be `required` — and the repo-wide lint went from
+**7 violations / exit 1** to **0 violations / exit 0**.
+
 ## [v20.0.89]  -  2026-07-21  -  A RELEASE STAMPED AN UNEARNED "ALL PASS" ONTO A QUALITY-CONTROL SUMMARY, AND A SETUP SELF-TEST SENT LIVE MESSAGES OUT OF A CLIENT ACCOUNT
 
 Two findings from the 2026-07-21 skill review. Different files, same shape: a

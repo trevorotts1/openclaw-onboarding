@@ -1,0 +1,68 @@
+name: prereqs-schema-guard
+
+# Fails the build if a declared skill prerequisite would not actually be
+# enforced at runtime.
+#
+# scripts/qc-prereqs-json.sh already existed but was wired into NO workflow, and
+# it had been failing with 7 violations against main the whole time. Meanwhile
+# shared-utils/check-skill-prereqs.sh implemented only the {"skill": "<folder>"}
+# form of a skill dependency, so 07-kie-setup's {"skillId": N} entries evaluated
+# to a constant False (UNMET even when installed) and 45-design-intelligence-
+# library's typeless entry fell through an `unknown prereq type` branch that did
+# `continue` — declared, never checked, exit 0.
+#
+# This workflow runs the lint AND a paired-direction enforcement test that
+# drives the real checker with the dependency present and absent.
+#
+# Security note: consumes only repo file content, no untrusted GitHub event
+# fields, so there is no injection surface in the run: blocks.
+
+on:
+  push:
+    paths:
+      - '**/PREREQS.json'
+      - shared-utils/check-skill-prereqs.sh
+      - scripts/qc-prereqs-json.sh
+      - scripts/test-prereqs-schema-enforcement.sh
+      - .github/workflows/prereqs-schema-guard.yml
+  pull_request:
+    paths:
+      - '**/PREREQS.json'
+      - shared-utils/check-skill-prereqs.sh
+      - scripts/qc-prereqs-json.sh
+      - scripts/test-prereqs-schema-enforcement.sh
+      - .github/workflows/prereqs-schema-guard.yml
+
+jobs:
+  prereqs-schema-guard:
+    name: PREREQS.json schema lint + runtime enforcement test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the gate scripts
+        run: |
+          bash -n scripts/qc-prereqs-json.sh
+          bash -n scripts/test-prereqs-schema-enforcement.sh
+          bash -n shared-utils/check-skill-prereqs.sh
+
+      - name: Compile-check the embedded Python (compile, not ast.parse)
+        run: |
+          python3 - <<'PY'
+          import re, sys
+          for path in ("scripts/qc-prereqs-json.sh", "shared-utils/check-skill-prereqs.sh"):
+              src = open(path).read()
+              blocks = re.findall(r"<<'PYEOF'\n(.*?)\nPYEOF", src, re.S)
+              if not blocks:
+                  sys.exit(f"{path}: no embedded python block found")
+              for block in blocks:
+                  compile(block, path, "exec")
+              print(f"OK {path} ({len(blocks)} python block(s) compiled)")
+          PY
+
+      - name: Runtime enforcement test (dependency present AND absent)
+        run: bash scripts/test-prereqs-schema-enforcement.sh
+
+      - name: PREREQS.json schema lint (must pass)
+        run: bash scripts/qc-prereqs-json.sh --verbose

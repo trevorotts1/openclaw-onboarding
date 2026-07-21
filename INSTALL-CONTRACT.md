@@ -386,6 +386,26 @@ The prose `## Prerequisites` sections in `SKILL.md` and `INSTALL.md` stay as the
 
 Neither `required` nor `optional` prereqs ever block INSTALL. Exit code 2 from `check-skill-prereqs.sh` is informational and is treated as "note + continue" by both `install.sh` and `update-skills.sh`.
 
+### Rule 16 schema (v20.0.90)
+
+`severity` is `required` or `optional`. Nothing else. `warning` and `recommended` are NOT severities.
+
+`type` must be one the runtime checker can execute, and `check` must carry the key that checker reads:
+
+| `type`       | `check` key(s)                        | satisfied when                                    |
+|--------------|---------------------------------------|---------------------------------------------------|
+| `credential` | `envVar`                              | the var resolves in any env store                 |
+| `skill`      | `skill` (folder) **or** `skillId` (N)  | the skill folder exists in `SKILLS_DIR`            |
+| `binary`     | `binary`, optional `minVersion`        | the binary is on `PATH` at that version            |
+| `config`     | `jsonPath`                            | the dotted path in `openclaw.json` is truthy       |
+| `mcp`        | `server`                              | `mcp.servers.<server>` is present                  |
+| `state`      | `stateFile`, `field`, optional `equals`| the JSON field matches                            |
+| `manual`     | `note`                                | never — advisory only, so `severity` MUST be `optional` |
+
+Two forms of a skill dependency are accepted and both are enforced: `{"skill": "07-kie-setup"}` (canonical, preferred) and `{"skillId": 7}`. A `type` outside this table now fails CLOSED — the entry is reported UNMET rather than skipped, because an unverifiable declaration that exits 0 is worse than no declaration at all. A `type: skill` entry naming a folder that does not exist in the repo is rejected by CI: it is permanently UNMET and no operator action can satisfy it.
+
+Enforced by `.github/workflows/prereqs-schema-guard.yml`, which runs both `scripts/qc-prereqs-json.sh` (schema lint) and `scripts/test-prereqs-schema-enforcement.sh` (drives the real checker with each dependency present AND absent).
+
 ---
 
 ## Self-audit (recite before declaring any skill done)
