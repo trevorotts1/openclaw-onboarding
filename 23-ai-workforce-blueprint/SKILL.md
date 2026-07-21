@@ -16,7 +16,7 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
-version: 20.0.88
+version: 20.0.89
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
@@ -494,7 +494,7 @@ When the owner says "add a `<X>` specialist to `<dept>`":
 
 ```bash
 # 1. Add the role (creates files + inserts agent row + updates _index.json)
-bash add-role.sh --dept <slug> --role "<X Specialist>"
+bash 23-ai-workforce-blueprint/scripts/add-role.sh --dept <slug> --role "<X Specialist>"
 
 # 2. REQUIRED: Fill how-to.md from the role-library template (REMOVE the [PENDING] marker)
 #    Template: 23-ai-workforce-blueprint/templates/role-library/<dept>/<role>/how-to.md
