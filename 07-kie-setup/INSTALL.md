@@ -203,12 +203,16 @@ TEST 1: Reload environment and verify API key is loaded.
 
     source ~/clawd/secrets/.env 2>/dev/null || source ~/.openclaw/.env 2>/dev/null || true
 
-22. Run:
+22. Run this PRESENCE-ONLY check. It prints SET or NOT-SET and never emits any
+    character of the key — the same pattern qc-kie-setup.sh uses:
 
-    echo $KIE_API_KEY | head -c 10
+    [ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"
 
-    Verify output shows the first 10 characters of the API key.
-    If blank, the key was not saved correctly. Return to Step 4.
+    Verify output is `KIE_API_KEY: SET`.
+    If it is `KIE_API_KEY: NOT-SET`, the key was not saved correctly. Return to Step 4.
+
+    Do NOT echo, print, head, cut or otherwise emit the key itself. Terminal
+    transcripts, agent logs and shell history retain every character printed.
 
 TEST 2: Check credit balance.
 

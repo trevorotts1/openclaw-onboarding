@@ -1,3 +1,125 @@
+## [v20.0.86]  -  2026-07-21  -  THREE FAIL-OPEN CHECKS CLOSED: client data could ship fleet-wide with a warning, a gate passed with nothing tested, and eight documented steps printed credential characters
+
+### T1-02 (HIGH) — detected client data was a warning, and the run was then certified ready for every box
+
+`45-design-intelligence-library/qc-design-intelligence-library.sh:116-122` found
+client identity material inside the library, printed it as a warning, and fell
+through — with no exit and no failure flag — to the unconditional banner at
+`:244-246`:
+
+    [QC] ✓ All checks passed. Design Intelligence Library (v...)
+    [QC] Ready for installation on boxes
+
+Every other failing check in that script exits. This one did not. The gate exists
+specifically to stop one client's identity material from being committed into a
+library that installs on every other client's box, so a positive detection being
+laundered into "ready for installation on boxes" is the exact mechanism by which
+one client's material reaches another client's box.
+
+**The scoping question, and why the obvious answer is wrong.** The script's own
+warning text says a positive count is expected when the skill is already installed
+on a box, so the hard failure had to be scoped to avoid rejecting an installed copy
+for holding the client data it is supposed to hold. The obvious scoping — "am I in
+a git checkout / am I under the skills directory?" — **does not work**, and shipping
+it would have false-failed real boxes. Measured read-only across the fleet on
+2026-07-21: **6 of 30 reachable boxes run this skill from a git clone of this very
+repository**, rooted at `<home>/.openclaw/skills`, with `remote.origin.url` pointing
+at `openclaw-onboarding` and (on 4 of the 6) this QC script itself tracked in that
+clone. A location test cannot tell those boxes apart from the repository.
+
+The gate therefore discriminates on **committedness**, not on location: a
+client-data path that `git ls-files` reports as tracked — committed, or staged in
+the index — is a path that ships fleet-wide, and is now a hard failure listing every
+offending path. A box-authored style card is untracked, ships nowhere, and passes
+with an explicit present-but-not-committed report. On a box without git the query
+returns nothing and the run passes, so the failure direction is always the safe one.
+
+### T0-06 (BLOCKER) — the gate skipped its own self-tests when the runtime was missing, then reported success
+
+`qc-design-intelligence-library.sh:188-189` treated an unavailable `python3` as a
+**skip**:
+
+    ⚠ python3 unavailable — skipping gate self-tests (gates run on-box at runtime)
+
+and then fell through to the same unconditional pass banner. Every coded gate this
+script exercises is `python3` — `route-check`, `prompt-caps`, and the `consent-check`
+that refuses a minor's identity material — so on a box without the runtime the
+script certified PASS having tested none of them. A gate that cannot fail is worse
+than no gate, because it is trusted.
+
+An unavailable runtime is now a hard failure that names the missing prerequisite,
+and `python3` is declared a required `binary` prerequisite in
+`45-design-intelligence-library/PREREQS.json` with a satisfy step, in the schema
+`shared-utils/check-skill-prereqs.sh` already consumes.
+
+**This change was flagged as one that may false-fail a healthy box, so it was
+measured before it shipped, not after.** Read-only probe of all 36 roster boxes on
+2026-07-21: `python3` present on **30 of 30 reachable boxes**, and Skill 45 installed
+on all 30. Six boxes were unreachable and are recorded as unmeasured, not assumed:
+`rescue-jill-bulluck`, `rescue-leanne-dolce`, `rescue-barret-matthews`,
+`rescue-erin-garrett`, `rescue-talaya-kelley`, `rescue-christy-staples`. If any of
+those six lacks the runtime it will now fail this gate and needs `python3` installed;
+that is a known, bounded gap rather than an unknown one.
+
+### T1-03 (HIGH) — eight documented verification steps printed credential characters
+
+Eight steps across five skills proved a credential was present by **emitting part of
+its value** — a "first ten characters" echo, an eight-character prefix, or a `grep` of
+a secrets file that prints the whole matching assignment line. Every one of these runs
+inside an agent session, and terminal transcripts, agent logs, chat captures and shell
+history retain whatever is emitted. A prefix is still credential material.
+
+| Skill | Site | Was |
+|---|---|---|
+| `07-kie-setup` | `INSTALL.md` | `echo $KIE_API_KEY \| head -c 10` |
+| `22-book-to-persona-coaching-leadership-system` | `SKILL.md` | `grep GOOGLE_API_KEY secrets/.env` |
+| `22-book-to-persona-coaching-leadership-system` | `SKILL.md` | `grep OLLAMA_API_KEY secrets/.env` |
+| `37-zhc-closeout` | `SKILL.md` security note | `${NOTION_API_TOKEN:0:8}...` |
+| `37-zhc-closeout` | `SKILL.md` post-install checklist | `printenv KIE_API_KEY \| head -c 8` |
+| `45-design-intelligence-library` | `INSTALL.md` | `openclaw config get env.vars.KIE_API_KEY`, then "if you see a key" |
+| `05-ghl-setup` | `INSTALL.md` | `echo $GOHIGHLEVEL_API_KEY \| head -c 10` |
+| `05-ghl-setup` | `EXAMPLES.md` | `echo $GOHIGHLEVEL_API_KEY \| head -c 10` |
+| `05-ghl-setup` | `QC.md` functional check | "Echo a masked token prefix" |
+
+All eight now report `SET` or `NOT-SET` and nothing else, reusing the presence-only
+pattern these same skills already ship in their own gates
+(`07-kie-setup/qc-kie-setup.sh:21-22` and
+`22-book-to-persona-coaching-leadership-system/qc-book-to-persona-coaching-leadership-system.sh:66-67`).
+No third pattern was invented. The GHL location identifier is treated the same way:
+it identifies a client sub-account, so it is reported as present, not printed.
+
+This stops future exposure. It does not remediate characters already written into
+existing transcripts.
+
+### Tests — both defects reproduce against the pre-fix tree
+
+`tests/unit/design-library-gate-fails-closed.test.sh` (19 assertions) and
+`tests/unit/credential-presence-only-docs.test.sh` (48 assertions), wired into CI by
+`.github/workflows/design-library-and-credential-disclosure-guards.yml`.
+
+No existing test had to be tightened, because no existing test exercised either
+branch — the client-data branch and the runtime-skip branch were asserted by nothing.
+
+The credential test **executes the shipped markdown** rather than checking that a
+variable name appears in a file: it extracts the presence-check command lines out of
+the documents as published, runs each one against a unique sentinel credential value
+with the credential present and absent, and asserts the sentinel appears in no byte of
+stdout, no byte of stderr, and in no process listing across 200 rounds of execution.
+
+Every capability in these tests is itself controlled, because a check that cannot
+fail proves nothing:
+
+- the pre-fix gate is derived from the pinned commit `391a92e9` and CI asserts it
+  **exits 0** on the same committed-client-data fixture the fixed gate rejects;
+- the leak detector is replayed against the three pre-fix value-emitting shapes and
+  must catch all three;
+- the process-table sampler must fire on a deliberately planted control process
+  carrying the sentinel on its command line;
+- an installed box holding its own client data must still PASS, in both the
+  no-git shape and the measured runs-from-a-clone shape;
+- the clean repository state must still PASS, and a box with `python3` must still
+  PASS with its validator self-tests actually executing.
+
 ## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
 
 ### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist

@@ -23,7 +23,7 @@ Enables the agent to connect to Convert and Flow (GoHighLevel) using the correct
 - [ ] QC fails if the installer asks for an “API key” without first checking for a Private Integration Token or if it ignores an already-present token.
 
 ## 5. Functional Checks
-- [ ] Echo a masked token prefix and the location ID from the environment to confirm values load correctly.
+- [ ] Confirm the PIT and the location ID load from the environment using a PRESENCE-ONLY check that reports `SET` or `NOT-SET` and emits no character of either value. Never echo a token prefix: a prefix is still credential material, and terminal transcripts, agent logs and shell history retain it.
 - [ ] Run a lightweight contacts or locations request against `https://services.leadconnectorhq.com` with Authorization and Version headers and confirm a structured JSON response.
 - [ ] If only token is present and location is missing, test the documented location lookup flow and verify the location can be discovered automatically.
 - [ ] Ask the agent what GHL auth uses. Expected answer: Private Integration Token, not legacy API key terminology.

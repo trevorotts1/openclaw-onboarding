@@ -7,8 +7,16 @@
       "envVar": "KIE_API_KEY",
       "description": "Skill 07 provides credentials for image generation via Kie.ai endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7). Required for all DIU image generation, photo shoot, and deck-imagery work.",
       "satisfy": "Run Skill 07 installer: bash $OC_ROOT/skills/07-kie-setup/install.sh"
+    },
+    {
+      "id": "python3-runtime",
+      "type": "binary",
+      "label": "python3 runtime",
+      "check": { "binary": "python3" },
+      "severity": "required",
+      "satisfy": "Install python3 (Mac: it ships with the Command Line Tools, or `brew install python`; Debian/Ubuntu container: `apt-get install -y python3`). Every coded gate in this skill — scripts/diu_validator.py route-check, prompt-caps and consent-check — is python3, and qc-design-intelligence-library.sh fails hard without it rather than certifying PASS untested."
     }
   ],
-  "version": "1.0.0",
-  "lastUpdated": "2026-06-12"
+  "version": "1.1.0",
+  "lastUpdated": "2026-07-21"
 }

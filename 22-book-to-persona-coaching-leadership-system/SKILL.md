@@ -57,8 +57,10 @@ All dependencies must be installed and verified before running the pipeline.
 | mobi | MOBI file extraction | `pip3 install mobi` | `python3 -c "import mobi; print('PASS')"` |
 | lxml | XML parsing (ebooklib uses this) | `pip3 install lxml` | `python3 -c "import lxml; print('PASS')"` |
 | Calibre (ebook-convert) | Kindle format conversion | Mac: `brew install --cask calibre`<br>Linux: `sudo apt-get install calibre` | `ebook-convert --version` |
-| GOOGLE_API_KEY env var | Gemini Engine | Add to `secrets/.env` (in your agent workspace) | `grep GOOGLE_API_KEY secrets/.env` |
-| Ollama Cloud (preferred) or OpenRouter (fallback) | Phase 1 extraction | Ollama: `OLLAMA_API_KEY` in env or `models.providers.ollama.apiKey` in openclaw.json. Fallback: OpenRouter via `OPENROUTER_API_KEY` | `grep OLLAMA_API_KEY secrets/.env` or check openclaw.json |
+| GOOGLE_API_KEY env var | Gemini Engine | Add to `secrets/.env` (in your agent workspace) | `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" \|\| echo "GOOGLE_API_KEY: NOT-SET"` |
+| Ollama Cloud (preferred) or OpenRouter (fallback) | Phase 1 extraction | Ollama: `OLLAMA_API_KEY` in env or `models.providers.ollama.apiKey` in openclaw.json. Fallback: OpenRouter via `OPENROUTER_API_KEY` | `[ -n "$OLLAMA_API_KEY" ] && echo "OLLAMA_API_KEY: SET" \|\| echo "OLLAMA_API_KEY: NOT-SET"` |
+
+> **Credential verification is presence-only.** These checks report `SET` or `NOT-SET` and emit no character of any key — the same pattern `qc-book-to-persona-coaching-leadership-system.sh` uses. Never `grep`, `echo`, `cat` or `head` a secrets file to confirm a credential: the matching line carries the value, and terminal transcripts, agent logs and shell history retain it.
 
 **One-line install for all pip packages:**
 ```bash

@@ -268,10 +268,18 @@ The agent must include both headers in every GHL API call. No exceptions.
 
 The agent must run all four tests sequentially and report results:
 
-**Test 1 - Verify credentials are loaded:**
-Execute: `echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..." && echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"`
-Expected: First 10 characters of API key and full Location ID displayed
-Failure: Credentials not found in environment
+**Test 1 - Verify credentials are loaded (presence only — never print a value):**
+Execute:
+```
+[ -n "$GOHIGHLEVEL_API_KEY" ] && echo "GOHIGHLEVEL_API_KEY: SET" || echo "GOHIGHLEVEL_API_KEY: NOT-SET"
+[ -n "$GOHIGHLEVEL_LOCATION_ID" ] && echo "GOHIGHLEVEL_LOCATION_ID: SET" || echo "GOHIGHLEVEL_LOCATION_ID: NOT-SET"
+```
+Expected: both lines report `SET`
+Failure: either line reports `NOT-SET` — credentials not found in environment
+
+Never echo, print, `head` or otherwise emit the PIT or the Location ID. A ten-character
+prefix is still credential material, and terminal transcripts, agent logs and shell
+history retain every character printed.
 
 **Test 2 - Test API connection (get location info):**
 Execute:
