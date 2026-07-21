@@ -7,8 +7,19 @@ Run this after installation to verify the skill is installed, the dependencies e
 ## Section 1: File Structure + Version Check
 
 ```bash
-SKILL_DIR="$HOME/.openclaw/skills/cinematic-forge"
-[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
+# ONE resolver, the PREFIXED directory, matching the repository, INSTALL.md and
+# SKILL.md's Phase 0. The old two-step fallback (unprefixed first, prefixed
+# second) is what let a mis-placed install pass this checklist while the runtime
+# looked somewhere else for the helper scripts (T2-30).
+if [ -d /data/.openclaw/skills/28-cinematic-forge ]; then
+  SKILL_DIR="/data/.openclaw/skills/28-cinematic-forge"     # VPS
+else
+  SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"     # Mac
+fi
+
+[ -d "$SKILL_DIR" ] \
+  && echo "PASS: skill dir $SKILL_DIR" \
+  || echo "FAIL: no 28-cinematic-forge directory — the skill is not installed where the runtime looks"
 
 echo "Using skill dir: $SKILL_DIR"
 
@@ -60,7 +71,7 @@ fi
 **Expected env vars / credentials:**
 - `KIE_API_KEY` for KIE.ai generation
 - GHL / Convert and Flow Private Integration Token for uploads: `GOHIGHLEVEL_API_KEY` (a PIT) + `GOHIGHLEVEL_LOCATION_ID`
-- Optional fallback (reference images only): `IMGBB_API_KEY`
+- Optional, REFERENCE IMAGES ONLY: `IMGBB_API_KEY` — imgBB serves still images and animated GIFs and will not host the final MP4
 - Optional for reference-video analysis: one of `GEMINI_API_KEY` or `OPENAI_API_KEY`
 
 ```bash
@@ -71,7 +82,7 @@ for var in KIE_API_KEY GOHIGHLEVEL_API_KEY GOHIGHLEVEL_LOCATION_ID IMGBB_API_KEY
 done
 ```
 
-**Pass criteria:** `ffmpeg`, `curl`, and `KIE_API_KEY` are present. Upload credentials must exist for either GHL or imgBB.
+**Pass criteria:** `ffmpeg`, `curl`, `jq` and `KIE_API_KEY` are present, and the client has a VIDEO-CAPABLE destination for the finished MP4 — GHL/Convert and Flow, or a store they control. imgBB does not satisfy this: it cannot host the deliverable.
 
 ---
 
@@ -106,10 +117,27 @@ The agent should answer these correctly without inventing details.
 **Q9.** Where are text overlays and logos added?
 > **Expected:** In post-production with FFmpeg, not inside VEO.
 
-**Q10.** What is the fallback if GHL media upload is not available?
-> **Expected:** imgBB.
+**Q10.** What is the fallback if GHL media upload is not available for the FINAL VIDEO?
+> **Expected:** a video-capable store the client controls — their own object
+> storage or CDN, their site's media library, or a video host they own — verified
+> the same way (asset identifier from the upload response, then download and
+> probe the hosted object). **NOT imgBB:** imgBB hosts still images and animated
+> GIFs only and will not host an MP4. imgBB is for reference images.
 
-**Pass criteria:** 10/10 answers correct.
+**Q11.** What does the delivery gate check the finished file against?
+> **Expected:** the delivery-requirements record derived from the APPROVED
+> intake before generation (approved aspect ratio, approved duration, and each
+> requested overlay), plus a post-production receipt per requested
+> transformation whose output hash is the artifact being delivered — never
+> numbers supplied by the caller at delivery time.
+
+**Q12.** Which file is uploaded when the client asked for captions and a logo?
+> **Expected:** `$FINAL_ARTIFACT` — the variable that each post-production step
+> advances only after its command succeeds. Never a fixed filename: reading a
+> fixed `final_video.mp4` is how the un-transformed file used to ship while every
+> stage reported success.
+
+**Pass criteria:** 12/12 answers correct.
 
 ---
 
@@ -175,27 +203,63 @@ ffprobe -v error -show_entries stream=width,height -of csv=p=0 "$PROJECT_DIR/fin
 
 ### 4.4 Output-QC gate self-test (`qc-output.sh`)
 
-This verifies the delivery gate actually enforces the rules. It spends no credits.
+This verifies the gate actually enforces its rules, in BOTH directions. It spends
+no credits.
 
 ```bash
-SKILL_DIR="$HOME/.openclaw/skills/cinematic-forge"
-[ -d "$SKILL_DIR" ] || SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
-[ -d /data/.openclaw/skills/28-cinematic-forge ] && SKILL_DIR="/data/.openclaw/skills/28-cinematic-forge"
+if [ -d /data/.openclaw/skills/28-cinematic-forge ]; then
+  SKILL_DIR="/data/.openclaw/skills/28-cinematic-forge"
+else
+  SKILL_DIR="$HOME/.openclaw/skills/28-cinematic-forge"
+fi
 QC="$SKILL_DIR/qc-output.sh"
+W="$(mktemp -d)"
 
-# A) 1080x1920, 2s, SILENT black clip (no audio stream) -> must FAIL (exit 1)
-ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -t 2 /tmp/qc_silent.mp4 >/dev/null 2>&1
-bash "$QC" /tmp/qc_silent.mp4 2 1080x1920; echo "silent clip exit=$?  (expected 1)"
+# A) TECHNICAL mode — a silent black clip must FAIL (exit 1)
+ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -t 2 "$W/silent.mp4" >/dev/null 2>&1
+bash "$QC" "$W/silent.mp4" 2 1080x1920; echo "silent clip exit=$?  (expected 1)"
 
-# B) 1080x1920, 2s, with a sine tone -> must PASS (exit 0)
+# B) TECHNICAL mode — a clip with a sine tone must PASS (exit 0), and must say
+#    IN AS MANY WORDS that this is not a delivery verdict.
 ffmpeg -y -f lavfi -i "color=c=black:size=1080x1920:rate=30" -f lavfi -i "sine=frequency=440:duration=2" \
-  -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest /tmp/qc_tone.mp4 >/dev/null 2>&1
-bash "$QC" /tmp/qc_tone.mp4 2 1080x1920; echo "tone clip exit=$?  (expected 0)"
+  -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/tone.mp4" >/dev/null 2>&1
+bash "$QC" "$W/tone.mp4" 2 1080x1920; echo "tone clip exit=$?  (expected 0)"
+
+# C) DELIVERY mode — the client asked for captions and a logo, and the file
+#    carries NEITHER. It must FAIL, naming the missing transformation. This is
+#    the case the old gate passed: it only ever compared caller-supplied numbers.
+cat > "$W/reqs.json" <<JSON
+{"approval_ref":"qc-selftest","aspect_ratio":"9:16","dimensions":"1080x1920",
+ "duration_seconds":2,"requires_captions":true,"requires_logo":true}
+JSON
+bash "$QC" --artifact "$W/tone.mp4" --requirements "$W/reqs.json" --receipts "$W/receipts"
+echo "un-transformed artifact exit=$?  (expected 1 — the receipts are missing)"
+
+# D) DELIVERY mode — the same file WITH a receipt chain that ends at it must
+#    PASS. (Anti-false-positive: a gate that fails everything enforces nothing.)
+mkdir -p "$W/receipts"
+SHA="$(shasum -a 256 "$W/tone.mp4" | awk '{print $1}')"
+for step in captions logo; do
+  printf '{"step":"%s","output":"%s","output_sha256":"%s"}\n' "$step" "$W/tone.mp4" "$SHA" > "$W/receipts/$step.json"
+done
+bash "$QC" --artifact "$W/tone.mp4" --requirements "$W/reqs.json" --receipts "$W/receipts"
+echo "receipted artifact exit=$?  (expected 0)"
+
+# E) DELIVERY mode — a request-WRONG file (approved 9:16, delivered 16:9) must
+#    FAIL even though it is a perfectly valid video.
+ffmpeg -y -f lavfi -i "color=c=black:size=1920x1080:rate=30" -f lavfi -i "sine=frequency=440:duration=2" \
+  -t 2 -c:v libx264 -pix_fmt yuv420p -c:a aac -shortest "$W/wrong.mp4" >/dev/null 2>&1
+bash "$QC" --artifact "$W/wrong.mp4" --requirements "$W/reqs.json" --receipts "$W/receipts"
+echo "wrong aspect ratio exit=$?  (expected 1)"
+
+rm -rf "$W"
 ```
 
-**Pass criteria:** the silent clip exits **1**, the tone clip exits **0**. The agent must see `qc-output.sh` exit 0 on the real deliverable before sending any link (enforced in Phase 4 and Phase 6).
-
----
+**Pass criteria:** A exits **1**, B exits **0** and prints that it is not a
+delivery verdict, C exits **1**, D exits **0**, E exits **1**. The agent must see
+the DELIVERY mode exit 0 on the real deliverable — after post-production, before
+the upload — and again with `--upload-response` after the upload, before sending
+any link.
 
 ## Section 5: Optional Live API Checks
 
@@ -219,7 +283,7 @@ curl -s \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | python3 -m json.tool | head -20
 ```
 
-**Expected:** Valid JSON for the location. If GHL is unavailable, imgBB may be used as fallback instead.
+**Expected:** Valid JSON for the location. If GHL is unavailable, the final video goes to a video-capable store the client controls — never imgBB, which cannot host an MP4.
 
 ---
 
@@ -236,7 +300,10 @@ Fail the skill if any of these happen:
 - Agent puts logos or on-screen text inside VEO instead of post-production
 - Agent upscales with Topaz before draft approval
 - Agent fails to maintain `project-state.json` after each completed step
-- Agent delivers the final video without `qc-output.sh` exiting 0 (the output-QC gate is mandatory)
+- Agent delivers the final video without `qc-output.sh` **delivery mode** exiting 0 (the technical mode is not a delivery verdict)
+- Agent uploads a fixed filename instead of `$FINAL_ARTIFACT`, so a requested caption/overlay/logo pass is dropped from the delivered file
+- Agent sends a link without re-running the gate with `--upload-response` against the returned asset identifier
+- Agent points the final-video fallback at imgBB
 
 **Pass criteria:** Zero anti-patterns triggered.
 
