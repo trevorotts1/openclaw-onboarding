@@ -360,6 +360,24 @@ def resolve_departments_dir():
     # the same lib/ detect_platform and that returns a working company_dir.
     for libp in (SKILL_DIR.parent / "shared-utils", SKILL_DIR / "shared-utils", SKILL_DIR / "lib"):
         sys.path.insert(0, str(libp))
+
+    # v20.0.79: the LIVE tree the repair pipeline maintains wins outright.
+    # _qc_paths.live_departments_dir() is the ONE definition of that rule
+    # (same precedence as floor-fill-driver.py:170-171), shared with
+    # _qc_company_info.py so this checker and the repairer can never resolve
+    # different trees. Without it a box with BOTH a legacy ~/clawd company tree
+    # and a live workspace tree audited the legacy one and reported present
+    # departments missing.
+    try:
+        from _qc_paths import live_departments_dir as _live_dd  # type: ignore
+        _live = _live_dd()
+        if _live.is_dir():
+            return _live
+    except ImportError:
+        # Partial bundle without _qc_paths.py — fall through to the layouts
+        # below rather than fail the gate.
+        pass
+
     zhc_root = None
     workspace = None
     try:
@@ -374,7 +392,15 @@ def resolve_departments_dir():
             zhc_root = paths.get("company_root")
             if zhc_root and not Path(zhc_root).is_dir():
                 zhc_root = None
-        workspace = paths.get("workspace_root") or paths.get("clawd_root")
+        # v20.0.79: detect_platform.get_openclaw_paths() returns "workspace".
+        # It has NEVER returned "workspace_root" or "clawd_root", so this line
+        # evaluated to None on every box and the fallback below silently used
+        # ~/clawd instead of the real workspace — the same wrong-tree defect
+        # this release fixes in _qc_company_info.py. Read the real key, and
+        # keep the old names as harmless aliases.
+        workspace = (paths.get("workspace")
+                     or paths.get("workspace_root")
+                     or paths.get("clawd_root"))
     except Exception:
         pass
     if not zhc_root:

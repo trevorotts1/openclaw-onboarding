@@ -75,12 +75,48 @@ def _is_template_path(p: Path) -> bool:
     except Exception:
         return False
 
+
+# ── v20.0.79: THE LIVE TREE — the one the REPAIRER actually maintains ────────
+# The floor-fill repair pipeline reads and writes exactly ONE departments tree:
+#
+#     detect-stale-artifacts.py:326  departments_root = Path(workspace) / "departments"
+#     floor-fill-driver.py:170-171   /data/.openclaw/workspace/departments  (VPS/Docker)
+#                                    $HOME/.openclaw/workspace/departments  (Mac)
+#     migrate-existing-workforce.sh:138-140  FF_WS_ROOT/departments
+#
+# Every candidate in this resolver was zero-human-company-shaped, so QC NEVER
+# considered that tree. On a box whose live tree is <workspace>/departments the
+# checker measured a DIFFERENT directory than the repairer wrote to and reported
+# floor departments "missing" that were present on disk the whole time — measured
+# on 13 of 18 reachable boxes, 10 of which the gate failed outright.
+#
+# A checker that does not measure the repairer's tree cannot audit the repair, so
+# when the live tree exists it IS the tree under audit. The zero-human-company
+# candidates below remain the fallback for older boxes that never grew one.
+# Both helpers live in _qc_paths.py so this checker, department-floor.py and the
+# repair pipeline share ONE definition and can never drift apart again.
+# script_dir is already on sys.path (inserted above).
+from _qc_paths import live_departments_dir as _live_departments_dir  # noqa: E402
+from _qc_paths import looks_like_departments_dir as _looks_like_departments_dir  # noqa: E402
+
 zhc_root = None
+departments_dir = None
+departments_json = None
+
+# Priority 0: the LIVE tree the repairer maintains. When it exists it wins
+# outright — see _live_departments_dir() above.
+_live = _live_departments_dir()
+if _live.is_dir() and not _is_template_path(_live):
+    _live_resolved = _live.resolve()
+    _ws = _live_resolved.parent
+    zhc_root = str(_ws)
+    departments_dir = str(_live_resolved)
+    departments_json = str(_ws / "departments.json")
 
 # Priority 1: detect_platform's already-resolved active company dir.
 # Reject if the resolved path is inside the template tree.
 company_dir = paths.get("company_dir")
-if company_dir:
+if company_dir and not zhc_root:
     cdp = Path(company_dir).resolve()
     if cdp.is_dir() and not _is_template_path(cdp):
         zhc_root = str(cdp)
@@ -146,8 +182,20 @@ if not zhc_root:
                      if d.is_dir() and not d.name.startswith(("_", "."))),
                     key=lambda d: d.stat().st_mtime, reverse=True
                 )
-                if subdirs:
-                    zhc_root = str(subdirs[0].resolve())
+                # v20.0.79: re-apply the template guard to the RESOLVED CHILD.
+                # The _is_template_path() check above tests the PARENT only, and
+                # this branch resolved the child straight past it: a per-company
+                # entry that is a SYMLINK into the Downloads template tree (a
+                # real, measured layout on a live box) made QC audit the shipped
+                # TEMPLATE instead of the client's own workforce. The v12.9.4
+                # header promises "guard every candidate" — this child was the
+                # one candidate that was never guarded.
+                for d in subdirs:
+                    rd = d.resolve()
+                    if not _is_template_path(rd):
+                        zhc_root = str(rd)
+                        break
+                if zhc_root:
                     break
 
 # v12.9.4 FAIL-LOUD GUARD: if resolution returned no zhc_root, check whether
@@ -180,21 +228,28 @@ if not zhc_root:
         }))
         sys.exit(0)
 
-# Resolve departments dir — follow symlinks
-departments_dir = None
-departments_json = None
-if zhc_root:
+# Resolve departments dir — follow symlinks.
+# Skipped entirely when Priority 0 already resolved the live tree.
+if zhc_root and not departments_dir:
     # Standard layout: <company_root>/departments/
     dept_candidate = Path(zhc_root) / "departments"
     if dept_candidate.resolve().is_dir():
         departments_dir = str(dept_candidate.resolve())
         departments_json = str(Path(zhc_root) / "departments.json")
     else:
-        # Non-standard: zhc_root itself may be the departments dir
-        if Path(zhc_root).resolve().is_dir():
-            # Check if it contains role-like subdirs directly
-            departments_dir = str(Path(zhc_root).resolve())
-            departments_json = str(Path(zhc_root).parent / "departments.json")
+        # Non-standard: zhc_root itself may BE the departments dir — but ONLY
+        # when it actually looks like one. v20.0.79: this branch previously
+        # assigned unconditionally (the "Check if it contains role-like subdirs
+        # directly" comment described a check that was never written), so a
+        # company dir with no departments/ became the departments root and the
+        # whole floor read as missing. _looks_like_departments_dir() is that
+        # missing check. When it says no, we report NO departments dir rather
+        # than a wrong one — qc-completeness.sh then exits NO_WORKFORCE_FOUND
+        # instead of emitting a fabricated floor verdict over the wrong tree.
+        zp = Path(zhc_root).resolve()
+        if _looks_like_departments_dir(zp):
+            departments_dir = str(zp)
+            departments_json = str(zp.parent / "departments.json")
 
 print(json.dumps({
     "company_root": zhc_root,
