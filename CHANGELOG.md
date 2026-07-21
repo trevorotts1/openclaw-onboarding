@@ -85,6 +85,14 @@ All three entry points (`generate-captions.sh`, `export-srt.sh`,
 of caption text under a cue. A caption-free transcription exits **3** with
 `AF-CAPTION-EMPTY-TRANSCRIPTION`, renders nothing and announces nothing.
 
+`Scripts/lib-caption-guard.sh` is a hard prerequisite: both shell entry points
+`source` it, so an install missing it cannot run either script.
+`qc-caption-creator.sh` asserts its presence and `QC.md` lists it. Skills are
+installed by copying the whole directory (`install.sh` / `update-skills.sh`), so
+the file lands together with the scripts that source it — no box is ever left
+holding one without the other. Proven in both directions: PASS with the file
+present, non-zero exit with it removed.
+
 Measured on the pre-fix scripts, 9 assertions of
 `26-caption-creator/test/test-caption-content-gate.sh` fail — including the
 literal `Created: .../out-empty.mp4` for a video with no captions. All 15 pass
