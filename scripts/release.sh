@@ -197,10 +197,13 @@ echo "[4/6] Staging changed files ..."
 # v14.0.1: two of those markers live inside the 06-ghl-install-pages/ skill dir,
 # so bump-version.sh also rolls 06-ghl-install-pages/skill-version.txt to keep CI
 # guard G3 green — stage it here too (closes the recurring G3-on-06 release gap).
+# T0-07: the role-library _qc-summary.md was staged here too, back when
+# bump-version.sh rolled it. It is no longer a version marker and a release no
+# longer touches it — a quality-control summary changes only when a real run
+# regenerates it, which is its own commit, not a release side-effect.
 git add version install.sh update-skills.sh CHANGELOG.md \
   "23-ai-workforce-blueprint/skill-version.txt" \
   "23-ai-workforce-blueprint/templates/role-library/_index.json" \
-  "23-ai-workforce-blueprint/templates/role-library/_qc-summary.md" \
   README.md \
   DIRECT-TO-AGENT-UPDATE-MESSAGE.md \
   "06-ghl-install-pages/tools/browser_manager.sh" \
