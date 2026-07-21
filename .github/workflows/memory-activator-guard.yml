@@ -1,0 +1,109 @@
+name: memory activator is correct, complete and atomic (Skill 31)
+
+# WHAT THIS LOCKS. Three findings in the ONLY supported activation path for the
+# memory substrate every agent on the box reads and writes through:
+#
+#   T2-27  The canonical configuration the script applied did NOT contain
+#          `agents.defaults.memory.autoCapture` / `autoRecall` or the documented
+#          `agents.defaults.activeMemory` block — the settings SKILL.md:14 marks
+#          "REQUIRED ... This is NOT optional". The only supported activation
+#          path could not produce the state the skill declares mandatory: the
+#          layer reported active and captured nothing.
+#
+#   T2-28  The script rewrote the LIVE openclaw.json twice, non-atomically,
+#          BEFORE validating, with no backup. An interruption between the two
+#          writes, or a validation failure after them, left the box holding a
+#          configuration that was never validated and could not be restored.
+#          This is the file the gateway reads at start.
+#
+#   T0-45  `openclaw memory status || true` discarded the verification command's
+#          exit status, so the script could not distinguish a healthy memory
+#          stack from one that cannot start — and then printed a DONE banner
+#          whose stated success criteria named Gemini even on the branch that
+#          resolved NO provider at all.
+#
+# ANTI-FALSE-POSITIVE CONTROLS. The suite asserts the healthy direction as well:
+# a box with a usable key completes with exit 0, an OpenAI-only box is told its
+# provider is openai (and the configuration pins openai, not gemini), and an
+# interrupted run leaves either the original or the fully updated configuration
+# — both parseable.
+#
+# MUTATION PROOF (inside the suite): `|| true` restored on the status call. The
+# same failing runtime must then print DONE and exit 0, proving the assertions
+# are discriminating rather than vacuous.
+#
+# Hermetic: a private HOME, a fake `openclaw` on PATH, `env -i` so a credential
+# in the runner's environment cannot influence the result. No network, no fleet
+# box, no real ~/.openclaw.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/**"
+      - "tests/unit/memory-activator-correct-atomic.test.sh"
+      - ".github/workflows/memory-activator-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/**"
+      - "tests/unit/memory-activator-correct-atomic.test.sh"
+      - ".github/workflows/memory-activator-guard.yml"
+
+jobs:
+  memory-activator:
+    name: "Skill 31: the activator is correct, complete and atomic (T0-45, T2-27, T2-28)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 31-upgraded-memory-system/scripts/activate-memory-stack.sh
+          bash -n 31-upgraded-memory-system/qc-upgraded-memory-system.sh
+          bash -n 31-upgraded-memory-system/validate.sh
+          bash -n tests/unit/memory-activator-correct-atomic.test.sh
+          echo "OK: every Skill 31 shell file parses"
+
+      - name: The live configuration is written by exactly ONE statement
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import re, sys
+          src = open("31-upgraded-memory-system/scripts/activate-memory-stack.sh").read()
+          # Strip comments so only executable code is measured.
+          bare = "\n".join(l for l in src.split("\n") if not l.lstrip().startswith("#"))
+          # Both Python mutations must target the STAGED file, never the live one.
+          if 'python3 - "$OC_CONFIG"' in bare:
+              print("FAIL: a configuration mutation still targets the LIVE openclaw.json")
+              sys.exit(1)
+          staged_targets = bare.count('python3 - "$OC_STAGED"')
+          if staged_targets != 2:
+              print(f"FAIL: expected 2 staged mutations, found {staged_targets}")
+              sys.exit(1)
+          installs = len(re.findall(r'mv -f "\$OC_STAGED" "\$OC_CONFIG"', bare))
+          if installs != 1:
+              print(f"FAIL: expected exactly 1 atomic install of the staged file, found {installs}")
+              sys.exit(1)
+          if 'openclaw memory status || true' in bare:
+              print("FAIL: the runtime status call is still swallowed by '|| true'")
+              sys.exit(1)
+          print("OK: both mutations are staged; one atomic install; the status call is checked")
+          PY
+
+      - name: Activator suite (with the mutation proof)
+        shell: bash
+        run: bash tests/unit/memory-activator-correct-atomic.test.sh
+
+      - name: The corpus embed-once invariant is unregressed
+        shell: bash
+        run: bash tests/unit/memory-corpus-no-defaults-extrapaths.test.sh

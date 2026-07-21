@@ -194,9 +194,29 @@ else
 fi
 export EMBED_PROVIDER EMBED_MODEL EMBED_DIM GEMINI_OK
 
-# ─── 2. Deep-merge the canonical memory block into openclaw.json ─────────────
+# ─── 2. STAGE both configuration mutations into ONE temporary file ───────────
+#
+# SK1-30 / T2-28 — WHY A STAGING FILE. The two mutations below (the canonical
+# memory block, then the corpus attachment) each used to rewrite the LIVE
+# openclaw.json in place, and `openclaw config validate` ran afterwards. An
+# interruption between the two writes, or a validation failure after them, left
+# the box holding a configuration that was never validated and could not be
+# restored. This is the file the gateway reads at start.
+#
+# Both mutations now apply to a staging copy in the SAME directory as the live
+# config (so the final replace is an atomic same-filesystem rename). The staged
+# file is validated, a timestamped backup of the original is written, and only
+# then is the staged file moved into place. If the runtime validator rejects the
+# result, the backup is restored and the run exits non-zero.
+OC_STAGED="$OC_ROOT/.openclaw.json.staging.$$"
+OC_BACKUP="$OC_ROOT/openclaw.json.bak.$(date -u +%Y%m%dT%H%M%SZ)"
+cleanup_staged() { [ -f "$OC_STAGED" ] && rm -f "$OC_STAGED" 2>/dev/null || true; }
+trap cleanup_staged EXIT
+
+cp "$OC_CONFIG" "$OC_STAGED"
+
 EMBED_PROVIDER="$EMBED_PROVIDER" EMBED_MODEL="$EMBED_MODEL" EMBED_DIM="$EMBED_DIM" GEMINI_OK="$GEMINI_OK" \
-python3 - "$OC_CONFIG" <<'PYEOF'
+python3 - "$OC_STAGED" <<'PYEOF'
 import json
 import os
 import sys
@@ -257,10 +277,32 @@ if EMBED_PROVIDER:
     if EMBED_PROVIDER == "gemini":
         _ms_canon["fallback"] = "openai"
 
+# SK1-30 / T2-27 — the REQUIRED Layer-8 settings. SKILL.md:14 states
+# "ACTIVE MEMORY IS REQUIRED - Layer 8 (Active Memory) requires memory-core with
+# autoCapture: true and autoRecall: true. This is NOT optional", and SKILL.md's
+# "Active Memory Configuration (Layer 8)" block documents the activeMemory
+# object beside it. Neither was in the configuration this script applied, so the
+# only supported activation path could not produce the state the skill declares
+# mandatory: the layer reported active and captured nothing.
+_MEMORY_REQUIRED = {
+    "autoCapture": True,
+    "autoRecall": True,
+}
+_ACTIVE_MEMORY_REQUIRED = {
+    "enabled": True,
+    "flushIntervalMinutes": 30,
+    "contextInjection": {
+        "memoryWiki": True,
+        "cognee": True,
+    },
+}
+
 CANONICAL = {
     "agents": {
         "defaults": {
             "memorySearch": _ms_canon,
+            "memory": _MEMORY_REQUIRED,
+            "activeMemory": _ACTIVE_MEMORY_REQUIRED,
             # v10.x.6 recovery knob: hard agent-turn timeout in SECONDS. Schema
             # confirmed against dist 2026.5.20 (agents.defaults.timeoutSeconds,
             # number().int().positive().optional()). 600s = 10 min: generous
@@ -354,14 +396,42 @@ for _a in cfg.get("agents", {}).get("list", []) or []:
     if isinstance(_a, dict):
         _heal_ms(_a.get("memorySearch"), f"agents.list[{_a.get('id','?')}].memorySearch")
 
+# POSTCONDITION on the staged file: the settings the skill declares mandatory
+# must be present in what we are about to install. This is asserted here, on the
+# staged copy, so a merge that silently failed to apply them can never reach the
+# live configuration.
+_d = cfg.get("agents", {}).get("defaults", {})
+_missing = []
+if _d.get("memory", {}).get("autoCapture") is not True:
+    _missing.append("agents.defaults.memory.autoCapture")
+if _d.get("memory", {}).get("autoRecall") is not True:
+    _missing.append("agents.defaults.memory.autoRecall")
+if _d.get("activeMemory", {}).get("enabled") is not True:
+    _missing.append("agents.defaults.activeMemory.enabled")
+if cfg.get("plugins", {}).get("entries", {}).get("memory-core", {}).get("enabled") is not True:
+    _missing.append("plugins.entries.memory-core.enabled")
+if cfg.get("memory", {}).get("backend") != "builtin":
+    _missing.append("memory.backend=builtin")
+if _missing:
+    print("[activate-memory-stack] FATAL: the staged configuration is missing required "
+          "Layer-8 settings: " + ", ".join(_missing), file=sys.stderr)
+    raise SystemExit(1)
+
 after = json.dumps(cfg, sort_keys=True)
 
+# The staged file is always written (the corpus step below merges into the SAME
+# file); whether anything actually CHANGED versus the live config is decided
+# once, at the replace step, so an unchanged run is still a clean no-op.
+cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 if before == after:
-    print("[activate-memory-stack] config already canonical — no-op")
+    print("[activate-memory-stack] canonical memory block already present — no change")
 else:
-    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print("[activate-memory-stack] config merged → " + str(cfg_path))
+    print("[activate-memory-stack] canonical memory block staged")
 PYEOF
+if [ $? -ne 0 ]; then
+  echo "ERROR: staging the canonical memory block failed — the live configuration was NOT touched." >&2
+  exit 1
+fi
 
 # ─── 2b. Attach the shared master-files corpus to the MAIN agent ONLY ────────
 # Why: the corpus must be embedded ONCE, into a single index, not unioned into
@@ -395,7 +465,7 @@ if [ -n "${CORPUS_DIR:-}" ] && [ -d "$CORPUS_DIR" ]; then
   # relative to the workspace dir, which breaks ~/… paths).
   CORPUS_DIR="$(cd "$CORPUS_DIR" && pwd)"
   echo "[activate-memory-stack] attaching shared corpus to MAIN agent only: $CORPUS_DIR"
-  OC_CORPUS_DIR="$CORPUS_DIR" python3 - "$OC_CONFIG" <<'PYEOF'
+  OC_CORPUS_DIR="$CORPUS_DIR" python3 - "$OC_STAGED" <<'PYEOF'
 import json
 import os
 import sys
@@ -437,14 +507,41 @@ else:
     paths.append(corpus)
 
 after = json.dumps(cfg, sort_keys=True)
+cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
 if before == after:
-    print("[activate-memory-stack] corpus attachment already canonical — no-op")
+    print("[activate-memory-stack] corpus attachment already canonical — no change")
 else:
-    cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-    print("[activate-memory-stack] corpus attached to agents.list[main].memorySearch.extraPaths")
+    print("[activate-memory-stack] corpus staged onto agents.list[main].memorySearch.extraPaths")
 PYEOF
+  if [ $? -ne 0 ]; then
+    echo "ERROR: staging the corpus attachment failed — the live configuration was NOT touched." >&2
+    exit 1
+  fi
 else
   echo "[activate-memory-stack] no shared master-files corpus found — skipping corpus attach (no-op)"
+fi
+
+# ─── 2c. Validate the STAGED file, back up, then replace atomically ──────────
+if ! python3 -c 'import json,sys; json.load(open(sys.argv[1]))' "$OC_STAGED"; then
+  echo "ERROR: the staged configuration is not valid JSON — the live configuration was NOT touched." >&2
+  exit 1
+fi
+
+if cmp -s "$OC_CONFIG" "$OC_STAGED"; then
+  echo "[activate-memory-stack] configuration already canonical — no write needed (no-op)"
+  rm -f "$OC_STAGED"
+else
+  cp -p "$OC_CONFIG" "$OC_BACKUP" || {
+    echo "ERROR: could not write the backup $OC_BACKUP — refusing to replace the live configuration without one." >&2
+    exit 1
+  }
+  # Same-directory rename: the live file is either the original or the fully
+  # updated one, never a partial write, at every instant.
+  mv -f "$OC_STAGED" "$OC_CONFIG" || {
+    echo "ERROR: could not install the staged configuration; the original is intact at $OC_CONFIG (backup: $OC_BACKUP)." >&2
+    exit 1
+  }
+  echo "[activate-memory-stack] configuration replaced atomically → $OC_CONFIG (backup: $OC_BACKUP)"
 fi
 
 # ─── 3. Chown back to the OpenClaw runtime user (VPS container only) ─────────
@@ -453,20 +550,114 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$OC_SECRETS" 2>/dev/null || true
 fi
 
-# ─── 4. Validate + report ────────────────────────────────────────────────────
+# ─── 4. Validate + verify the RUNTIME postconditions ─────────────────────────
 echo ""
 echo "[activate-memory-stack] running: openclaw config validate"
 if ! openclaw config validate; then
-  echo "ERROR: openclaw config validate failed — see output above" >&2
+  echo "ERROR: openclaw config validate failed — see output above." >&2
+  if [ -f "$OC_BACKUP" ]; then
+    cp -p "$OC_BACKUP" "$OC_CONFIG" && \
+      echo "ERROR: restored the pre-activation configuration from $OC_BACKUP." >&2
+  fi
+  exit 1
+fi
+
+# SK1-30 / T0-45 — WHY THIS IS NO LONGER `|| true`.
+#
+# This used to be:
+#     openclaw memory status || true
+#     echo "[activate-memory-stack] DONE. Verify the output above shows:"
+#     echo "  • Provider: gemini (requested: gemini)"
+# The verification command's failure was discarded, so the script could not
+# distinguish a healthy memory stack from one that cannot start — and it then
+# printed a completion banner whose stated success criteria named Gemini even on
+# the branch (step 1b) that resolved NO provider at all. The operator was told to
+# confirm output the run may never have been able to produce, and the run had
+# already declared DONE.
+#
+# The status call is now a real postcondition: its output and exit code are
+# captured, a non-zero exit is fatal, and the criteria printed below are
+# generated from the provider this box actually resolved.
+echo ""
+echo "[activate-memory-stack] running: openclaw memory status"
+MEM_STATUS=""
+MEM_RC=0
+MEM_STATUS="$(openclaw memory status 2>&1)" || MEM_RC=$?
+printf '%s\n' "$MEM_STATUS"
+if [ "$MEM_RC" -ne 0 ]; then
+  echo "" >&2
+  echo "ERROR: 'openclaw memory status' exited $MEM_RC — the memory stack did not come up." >&2
+  echo "       The configuration is installed at $OC_CONFIG (backup: ${OC_BACKUP:-none})," >&2
+  echo "       but activation has NOT been verified, so this run is NOT done." >&2
+  exit 1
+fi
+
+if [ -z "$(printf '%s' "$MEM_STATUS" | tr -d '[:space:]')" ]; then
+  echo "" >&2
+  echo "ERROR: 'openclaw memory status' produced no output — the activation postcondition" >&2
+  echo "       could not be evaluated. A check that cannot run is not a pass." >&2
+  exit 1
+fi
+
+# Resolve what the postcondition should be. EMBED_PROVIDER is what step 1b
+# decided this box can serve; when it is empty the box has no embedding-capable
+# key and the existing provider was deliberately left untouched, so we read the
+# provider from the installed configuration instead of asserting a hard-coded one.
+RESOLVED_PROVIDER="$EMBED_PROVIDER"
+RESOLVED_MODEL="$EMBED_MODEL"
+if [ -z "$RESOLVED_PROVIDER" ]; then
+  RESOLVED_PROVIDER="$(python3 -c '
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+ms = cfg.get("agents", {}).get("defaults", {}).get("memorySearch", {}) or {}
+print(ms.get("provider") or "")
+' "$OC_CONFIG" 2>/dev/null || true)"
+  RESOLVED_MODEL="$(python3 -c '
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    raise SystemExit
+ms = cfg.get("agents", {}).get("defaults", {}).get("memorySearch", {}) or {}
+print(ms.get("model") or "")
+' "$OC_CONFIG" 2>/dev/null || true)"
+fi
+
+STATUS_LC="$(printf '%s' "$MEM_STATUS" | tr '[:upper:]' '[:lower:]')"
+
+# A provider reported as literally "none" is the cycled-then-cleared state this
+# skill exists to prevent — it is a failure whatever else the output says.
+if printf '%s' "$STATUS_LC" | grep -Eq 'provider[^a-z0-9]+none'; then
+  echo "" >&2
+  echo "ERROR: the memory runtime reports Provider: none — the embedding index is dead." >&2
+  exit 1
+fi
+
+if [ -n "$RESOLVED_PROVIDER" ]; then
+  if printf '%s' "$STATUS_LC" | grep -qF "$(printf '%s' "$RESOLVED_PROVIDER" | tr '[:upper:]' '[:lower:]')"; then
+    echo "[activate-memory-stack] postcondition OK: the runtime reports the resolved provider '$RESOLVED_PROVIDER'."
+  else
+    echo "" >&2
+    echo "ERROR: this box resolved the embedding provider '$RESOLVED_PROVIDER', but" >&2
+    echo "       'openclaw memory status' does not report it. Activation did not take." >&2
+    exit 1
+  fi
+else
+  echo "" >&2
+  echo "ERROR: no embedding provider is resolvable for this box (no Gemini/OpenAI/OpenRouter" >&2
+  echo "       key found in any store, and none configured), so Layer 4 cannot run." >&2
+  echo "       Add an embedding-capable key and re-run — this script is idempotent." >&2
   exit 1
 fi
 
 echo ""
-echo "[activate-memory-stack] running: openclaw memory status"
-openclaw memory status || true
-
-echo ""
-echo "[activate-memory-stack] DONE. Verify the output above shows:"
-echo "  • Provider: gemini (requested: gemini)"
-echo "  • Model:    gemini-embedding-2 @3072  (or just 'gemini')"
-echo "  • Dreaming: 0 3 * * *"
+echo "[activate-memory-stack] DONE — verified. This box resolved:"
+echo "  • Provider: $RESOLVED_PROVIDER"
+if [ -n "$RESOLVED_MODEL" ]; then
+  echo "  • Model:    $RESOLVED_MODEL${EMBED_DIM:+ @$EMBED_DIM}"
+fi
+echo "  • Dreaming: enabled (plugins.entries.memory-core.config.dreaming.enabled)"
+echo "  • Active Memory: autoCapture + autoRecall + activeMemory.enabled are set"
