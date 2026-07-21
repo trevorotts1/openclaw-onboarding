@@ -262,6 +262,33 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install the system video tooling the suite actually needs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # FFmpeg and ImageMagick are not optional here — they are the exact
+          # system prerequisites 25-video-creator/INSTALL.md Step 1 mandates
+          # ("Ubuntu / Debian: sudo apt-get install -y ffmpeg imagemagick").
+          # Three of the 93 tests reach them for real, so a runner without them
+          # is a runner that cannot run the suite the workflow claims to run:
+          #   * test_provider_contracts.py::test_download_accepts_real_decodable_
+          #     positive_duration_video shells out to the `ffmpeg` binary to build
+          #     a genuine, decodable fixture clip — no ffmpeg, FileNotFoundError.
+          #   * test_qc_contracts.py's two cases invoke qc-video-creator.sh, whose
+          #     Rule-driven install QC hard-asserts `command -v ffmpeg` and
+          #     `command -v convert` (ImageMagick). Missing tooling -> the skill's
+          #     own QC exits 1 -> the contract that mock/local and a keyed real
+          #     provider both pass QC cannot be satisfied.
+          # Installing them is the same class of act as pinning moviepy below:
+          # provisioning the documented runtime so the real tests run for real.
+          # It is never a skip and never a gate change — all 93 still execute and
+          # must pass.
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg imagemagick
+          command -v ffmpeg  >/dev/null || { echo "ffmpeg did not install"; exit 1; }
+          command -v convert >/dev/null || { echo "ImageMagick (convert) did not install"; exit 1; }
+          ffmpeg -version | head -1
+
       - name: Install the pinned runtime the suite actually needs
         shell: bash
         run: |
