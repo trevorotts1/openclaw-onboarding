@@ -20,10 +20,16 @@ echo "═══ Skill 10 — GitHub Setup — Install QC ═══"
 echo ""
 assert "Skill 10 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/10-github-setup\" ]"
 assert "git installed" "command -v git"
-assert "gh CLI installed" "command -v gh"
 assert "git user.email configured" "git config --global user.email | grep -qE '@'"
 assert "git user.name configured"  "[ -n \"\$(git config --global user.name)\" ]"
-assert "gh authenticated"          "gh auth status 2>&1 | grep -qiE 'logged in|active account'"
+# NOT CHECKED, ON PURPOSE — the GitHub CLI (gh).
+# SKILL.md's API-ONLY EXECUTION LOCK (SOVEREIGN) states: "do NOT use GitHub CLI
+# (gh) for setup/auth." A box installed exactly as documented has no gh, so
+# asserting `command -v gh` and `gh auth status` failed this gate permanently on
+# every correct install and pushed operators to install the very tool the lock
+# forbids. There is nothing to check here: the skill's authentication surface is
+# the Personal Access Token, asserted below.
+echo "  — SKIPPED BY DESIGN — GitHub CLI presence/auth (SKILL.md API-ONLY SOVEREIGN LOCK forbids gh; not a pass, not a failure)"
 warn_only "GITHUB_TOKEN or GH_TOKEN present" "[ -n \"$GITHUB_TOKEN\" ] || [ -n \"$GH_TOKEN\" ]"
 warn_only "jq installed" "command -v jq"
 echo ""

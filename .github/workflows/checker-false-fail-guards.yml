@@ -25,8 +25,8 @@ name: checker-false-fail-guards
 #           a genuinely broken citation STILL FAILS, and that an absent
 #           location id STILL FAILS.
 #
-# 2026-07-21 (second wave, findings T2-02 / T2-03): two more checkers in the
-# same class, each measured FAIL-before / PASS-after:
+# 2026-07-21 (second wave, findings T2-02 / T2-03 / T2-19): three more checkers
+# in the same class, each measured FAIL-before / PASS-after:
 #
 #   35-social-media-planner/qc-skill35.sh  (T2-02)
 #       ran the repo-only docs/tools/check_lattice_citation.py through a HARD
@@ -48,6 +48,16 @@ name: checker-false-fail-guards
 #       the header), which also proves NO token still FAILS and that no token
 #       value is ever printed.
 #
+#   10-github-setup/qc-github-setup.sh and 08-vercel-setup/qc-vercel-setup.sh  (T2-19)
+#       hard-asserted a command-line tool each skill's own API-ONLY EXECUTION
+#       LOCK (SOVEREIGN) forbids -- `gh` (presence and auth) and `vercel`. A box
+#       installed EXACTLY as the skill prescribes has neither binary, so both
+#       gates failed permanently on every correct install and fed a non-zero QC
+#       exit into the wave gate. Guarded by
+#       tests/unit/qc-sovereign-lock-forbidden-cli.test.sh, which also proves
+#       each gate STILL FAILS on a genuine defect (absent skill folder, absent
+#       git identity, unset VERCEL_TOKEN, absent jq).
+#
 # All suites are hermetic: fixture HOMEs, stub binaries and staged skill copies in
 # a tempdir. No network, no real box state, no credential, nothing outside the
 # checkout is read or written.
@@ -60,12 +70,17 @@ on:
       - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
       - "35-social-media-planner/qc-skill35.sh"
       - "05-ghl-setup/qc-ghl-setup.sh"
+      - "10-github-setup/qc-github-setup.sh"
+      - "10-github-setup/SKILL.md"
+      - "08-vercel-setup/qc-vercel-setup.sh"
+      - "08-vercel-setup/SKILL.md"
       - "docs/tools/check_lattice_citation.py"
       - "docs/lattice-citations.json"
       - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
       - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
       - "tests/unit/qc-skill35-installed-layout.test.sh"
       - "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh"
+      - "tests/unit/qc-sovereign-lock-forbidden-cli.test.sh"
       - ".github/workflows/checker-false-fail-guards.yml"
   pull_request:
     branches: [main]
@@ -74,17 +89,22 @@ on:
       - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
       - "35-social-media-planner/qc-skill35.sh"
       - "05-ghl-setup/qc-ghl-setup.sh"
+      - "10-github-setup/qc-github-setup.sh"
+      - "10-github-setup/SKILL.md"
+      - "08-vercel-setup/qc-vercel-setup.sh"
+      - "08-vercel-setup/SKILL.md"
       - "docs/tools/check_lattice_citation.py"
       - "docs/lattice-citations.json"
       - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
       - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
       - "tests/unit/qc-skill35-installed-layout.test.sh"
       - "tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh"
+      - "tests/unit/qc-sovereign-lock-forbidden-cli.test.sh"
       - ".github/workflows/checker-false-fail-guards.yml"
 
 jobs:
   checker-false-fail-guards:
-    name: Checker false-fail regression suites (Skills 31, 44, 35, 05)
+    name: Checker false-fail regression suites (Skills 31, 44, 35, 05, 10, 08)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -107,6 +127,9 @@ jobs:
           bash -n 05-ghl-setup/qc-ghl-setup.sh
           bash -n tests/unit/qc-skill35-installed-layout.test.sh
           bash -n tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh
+          bash -n 10-github-setup/qc-github-setup.sh
+          bash -n 08-vercel-setup/qc-vercel-setup.sh
+          bash -n tests/unit/qc-sovereign-lock-forbidden-cli.test.sh
           python3 -m py_compile docs/tools/check_lattice_citation.py
           echo "syntax OK"
 
@@ -129,6 +152,27 @@ jobs:
       - name: Skill 05 — resolved-PIT reaches the probes regression suite (T2-03)
         shell: bash
         run: bash tests/unit/qc-ghl-setup-legacy-alias-probe.test.sh
+
+      - name: Skills 08 and 10 — sovereign-lock forbidden-CLI regression suite (T2-19)
+        shell: bash
+        run: bash tests/unit/qc-sovereign-lock-forbidden-cli.test.sh
+
+      - name: Assert neither gate re-requires the CLI its own skill forbids
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Belt-and-suspenders on the sovereign lock. The behavioural proof is
+          # the suite above; this catches a re-introduction at review time.
+          if grep -qE '^[[:space:]]*assert .*command -v gh' 10-github-setup/qc-github-setup.sh \
+             || grep -qE '^[[:space:]]*assert .*gh auth status' 10-github-setup/qc-github-setup.sh; then
+            echo "FAIL: qc-github-setup.sh hard-asserts the GitHub CLI, which SKILL.md's SOVEREIGN lock forbids." >&2
+            exit 1
+          fi
+          if grep -qE '^[[:space:]]*assert .*command -v vercel' 08-vercel-setup/qc-vercel-setup.sh; then
+            echo "FAIL: qc-vercel-setup.sh hard-asserts the Vercel CLI, which SKILL.md's SOVEREIGN lock forbids." >&2
+            exit 1
+          fi
+          echo "PASS: neither install gate requires a CLI its own sovereign lock forbids."
 
       - name: Assert the absent-checker path is a SKIP, never a silent pass
         shell: bash
