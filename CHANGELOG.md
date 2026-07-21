@@ -1,4 +1,4 @@
-## [v20.0.81]  -  2026-07-21  -  EVERY `qmd` CALL WAS UNBOUNDED: ~50 of one update run's 64 minutes spent waiting on calls that then failed silently
+## [v20.0.82]  -  2026-07-21  -  EVERY `qmd` CALL WAS UNBOUNDED: ~50 of one update run's 64 minutes spent waiting on calls that then failed silently
 
 `shared-utils/provision-persona-index.sh` invoked `qmd` eleven times without a
 timeout anywhere. On a box whose native `better-sqlite3` ABI is broken by a Node
@@ -53,6 +53,124 @@ Locked by `tests/unit/qmd-bounded-timeout.test.sh` (6 assertions) and
 Assertion 6 is the anti-false-positive control: with a fast, working `qmd` the
 run must report **no** timeout, so a "fix" that quiets the gate by always
 claiming a timeout fails the workflow.
+## [v20.0.81]  -  2026-07-21  -  THREE CHECKERS THAT FALSE-FAILED HEALTHY BOXES — one of them an install-blocking gate that failed EVERY box on the current schema
+
+A client box was diagnosed where **4 of 4 reported defects were checker
+artifacts and zero real defects existed**. Three of those checkers are fixed
+here. Every fix satisfies both halves of the rule: it must still FAIL on a real
+defect, and it must never PASS by skipping silently.
+
+### 1. `guard-department-runtime-parity.py` — INSTALL-BLOCKING, failed every box
+
+`32-command-center-setup/scripts/guard-department-runtime-parity.py` excluded
+non-department rows with:
+
+    if has_type and row['type'] in ('main', 'system'):
+
+The Command Center `workspaces` table **has no `type` column** — not in
+`src/lib/db/schema.ts`'s CREATE TABLE and not added by any migration (the only
+`ALTER TABLE workspaces` migrations add `user_md`, `company_id`, `sort_order`,
+`head_agent_id`, `original_slug`, `description`, `archived_at`,
+`archived_reason`). `has_type` was therefore False on every real box and the
+entire exclusion was dead code.
+
+Consequence: the **structural `default` workspace row** was counted as a real
+department with no runtime entry, producing `DEPARTMENT-RUNTIME-PARITY FAIL`.
+Because `run-full-install.sh` Phase 6e2 treats this guard as a hard,
+`fail_install()`-ing gate, that false failure blocked the install on **every box
+on this schema**.
+
+That row is provably not a department. Command Center's own seed
+(`src/lib/db/seed.ts`) inserts it with the comment *"carries no client/demo
+content — it is the schema's own DEFAULT target, **not a department**"*, solely
+so `agents.workspace_id TEXT DEFAULT 'default' REFERENCES workspaces(id)` has a
+FOREIGN KEY target on a fresh database. It carries sentinel `sort_order 50000`,
+is created ~77 seconds before the real departments, has no directory on disk,
+and appears in no floor manifest.
+
+**Fix.** The dead `type` branch is removed and replaced with an exclusion keyed
+on the identifier the schema actually reserves: `id`/`slug == 'default'`. The
+`id` is the load-bearing signal because the FOREIGN KEY declaration makes the
+literal string `'default'` part of the schema — the row cannot be renamed
+without breaking the first agent INSERT. The `sort_order 50000` sentinel is
+reported as corroborating evidence but is deliberately **not** the decision key:
+`sort_order` is a display-ordering column any board reorder may legitimately
+rewrite. Soft-archived departments (`archived_at IS NOT NULL`, migration 095) are
+also excluded — an archived row is off the board and its runtime is legitimately
+absent.
+
+**Not silent.** Every excluded row is printed BY NAME with its reason on every
+run, and appears in the `--json` payload Phase 6e2 parses. An excluded row never
+inflates the checked count. A genuine orphan department still fails closed
+(`test_structural_default_present_but_real_department_orphaned_still_fails`), and
+a department whose slug merely *contains* "default" is still checked
+(`test_workspace_named_default_is_the_only_slug_the_exclusion_matches`).
+
+**A test encoded the bug as correct.** `test_main_system_type_rows_are_excluded_when_type_column_present`
+built a synthetic `type` column, asserted the dead branch excluded a
+`main`/`system` row through it, and passed — a green test proving a code path no
+box ever executes, while the structural row that exists on every box went
+unmodelled. It is replaced by a fixture that models the real schema and eight
+new cases. Suite: 17 -> 25 tests; 6 of the new cases fail against the previous
+guard.
+
+### 2. `qc-upgraded-memory-system.sh` — read the wrong env
+
+`31-upgraded-memory-system/qc-upgraded-memory-system.sh:27` asserted:
+
+    [ -n "$GEMINI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ]
+
+reading only its own shell env, which is empty in the non-interactive shell the
+harness uses, while the key is configured in `openclaw.json`'s `env` block where
+the gateway reads it. A fully-configured box reported `Layer 4 ... FAIL`.
+
+**Fix.** Resolution now mirrors the rest of the system (`lib-shared.sh`
+`read_ghl_pit` / `read_ghl_location_id`): process env (which already includes
+`secrets/.env`) -> `openclaw.json` `env.vars.<NAME>` -> `openclaw.json`
+`env.<NAME>`. **Presence only** — the helper's python exits 0/1 and prints
+nothing, so no key value can reach stdout, stderr, a log, or a process listing.
+A genuinely missing key still FAILS.
+
+### 3. `qc-convert-and-flow.sh` — repo-only path + bare-PATH CLI assumption
+
+`44-convert-and-flow-operator/qc-convert-and-flow.sh:106-108` computed
+`REPO_ROOT_LATTICE="$(cd "$SKILL44_DIR/.." && pwd)"` and ran
+`docs/tools/check_lattice_citation.py` unconditionally. In the source repo the
+skill sits at the repo root so `..` resolves; on a client box the skill installs
+to `~/.openclaw/skills/44-convert-and-flow-operator`, so `..` is
+`~/.openclaw/skills`, which has no `docs/` directory — python3 exited 2 ("can't
+open file") and the gate was permanently red on every client box.
+
+**Fix.** The check now SKIPS with a visible `SKIP: ... checker not present in
+this layout` line (counted as a skip, never as a pass) when the checker is
+absent, and hard-asserts exactly as before when it is present — the same "absent
+skips cleanly" convention `03-agent-browser/qc-agent-browser.sh` already uses. A
+genuinely broken citation still FAILS.
+
+Second artifact in the same script: the `GOHIGHLEVEL_LOCATION_ID present in
+openclaw.json env.vars` check shelled out to `openclaw config get`, which is not
+on a bare non-interactive PATH. It now reads the config file directly (exactly
+what `openclaw config get` reads), with the CLI as a fallback, so the assertion
+is about the CONFIG's content rather than CLI discoverability; a genuinely absent
+value still FAILS. A documented PATH bootstrap also appends the standard
+login-shell bin directories that exist. It deliberately does **not** add this
+skill's own `convert-and-flow-cli` install directory — Section A asserts
+`caf`/`convertandflow`/`ghl` resolve ON PATH, and adding their install dir would
+make those three assertions tautological.
+
+### Regression coverage
+
+- `32-command-center-setup/scripts/test_guard_department_runtime_parity.py`
+  25 hermetic cases (was 17), wired into the existing
+  `department-runtime-parity-guard` workflow.
+- `tests/unit/qc-upgraded-memory-key-resolution.test.sh` — 5 cases.
+- `tests/unit/qc-convert-and-flow-layout-and-path.test.sh` — 7 cases.
+- New workflow `.github/workflows/checker-false-fail-guards.yml` runs the two
+  shell suites plus an assertion that the absent-checker path stays a visible
+  SKIP and the present-checker path stays a hard assert.
+
+Also updated: `scripts/probe/p207-general-task-catchall-probe.py` unpacks
+`load_departments()`'s new 4-tuple (its 9-scenario suite still passes).
 
 ## [v20.0.80]  -  2026-07-21  -  QC MEASURED THE WRONG DEPARTMENTS TREE: the checker audited a directory the repairer never writes to
 

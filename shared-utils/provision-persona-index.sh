@@ -742,7 +742,7 @@ except Exception:
 # ---------------------------------------------------------------------------
 # --- F1 helpers (qmd reconcile robustness) ------------------------------------
 #
-# BOUNDED QMD (v20.0.81). Every `qmd` call used to be unbounded. On a box whose
+# BOUNDED QMD (v20.0.82). Every `qmd` call used to be unbounded. On a box whose
 # native better-sqlite3 ABI is broken, `qmd` falls through to `bunx @tobilu/qmd`,
 # which takes ~17 MINUTES to download, start and fail. Three sequential calls
 # burned ~50 of one update run's 64 minutes — and because the removes were

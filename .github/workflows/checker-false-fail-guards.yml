@@ -1,0 +1,104 @@
+name: checker-false-fail-guards
+
+# Regression guards for checkers that reported a result other than reality.
+#
+# 2026-07-21: a client box was diagnosed where 4 of 4 reported defects turned out
+# to be CHECKER ARTIFACTS and zero real defects existed. Two of the checkers
+# involved are guarded here (the third, guard-department-runtime-parity.py, has
+# its own workflow: department-runtime-parity-guard.yml):
+#
+#   31-upgraded-memory-system/qc-upgraded-memory-system.sh
+#       asserted the embedding key from its OWN shell env only, which is empty in
+#       the non-interactive shell the harness uses, while the key is configured in
+#       openclaw.json. A fully-configured box FAILED. Guarded by
+#       tests/unit/qc-upgraded-memory-key-resolution.test.sh, which also proves an
+#       absent key STILL FAILS and that no key VALUE is ever printed.
+#
+#   44-convert-and-flow-operator/qc-convert-and-flow.sh
+#       (a) ran docs/tools/check_lattice_citation.py at a repo-only relative path,
+#           so on a client box (~/.openclaw/skills/44-...) the checker file did not
+#           exist and python3 exited 2 -- a permanently-red gate; and
+#       (b) shelled out to `openclaw config get`, which is not on a bare
+#           non-interactive PATH. Guarded by
+#           tests/unit/qc-convert-and-flow-layout-and-path.test.sh, which also
+#           proves the absent checker is a VISIBLE SKIP (never a silent pass), that
+#           a genuinely broken citation STILL FAILS, and that an absent
+#           location id STILL FAILS.
+#
+# Both suites are hermetic: fixture HOMEs and staged skill copies in a tempdir.
+# No network, no real box state, nothing outside the checkout is read or written.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/qc-upgraded-memory-system.sh"
+      - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
+      - "docs/tools/check_lattice_citation.py"
+      - "docs/lattice-citations.json"
+      - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
+      - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
+      - ".github/workflows/checker-false-fail-guards.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "31-upgraded-memory-system/qc-upgraded-memory-system.sh"
+      - "44-convert-and-flow-operator/qc-convert-and-flow.sh"
+      - "docs/tools/check_lattice_citation.py"
+      - "docs/lattice-citations.json"
+      - "tests/unit/qc-upgraded-memory-key-resolution.test.sh"
+      - "tests/unit/qc-convert-and-flow-layout-and-path.test.sh"
+      - ".github/workflows/checker-false-fail-guards.yml"
+
+jobs:
+  checker-false-fail-guards:
+    name: Checker false-fail regression suites (Skill 31 key resolution + Skill 44 layout/PATH)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the checkers and their suites
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n 31-upgraded-memory-system/qc-upgraded-memory-system.sh
+          bash -n 44-convert-and-flow-operator/qc-convert-and-flow.sh
+          bash -n tests/unit/qc-upgraded-memory-key-resolution.test.sh
+          bash -n tests/unit/qc-convert-and-flow-layout-and-path.test.sh
+          python3 -m py_compile docs/tools/check_lattice_citation.py
+          echo "syntax OK"
+
+      - name: Skill 31 — Layer 4 credential resolution regression suite
+        shell: bash
+        run: bash tests/unit/qc-upgraded-memory-key-resolution.test.sh
+
+      - name: Skill 44 — installed-layout + bare-PATH regression suite
+        # OPENCLAW_PLATFORM is unset on GitHub runners; the suite pins it per-run
+        # for the live-mode cases, and the static cases do not read it. Set it
+        # here too so the whole job runs under one documented platform.
+        env:
+          OPENCLAW_PLATFORM: mac
+        run: bash tests/unit/qc-convert-and-flow-layout-and-path.test.sh
+
+      - name: Assert the absent-checker path is a SKIP, never a silent pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Belt-and-suspenders on the governing rule: a skipped check must be
+          # visibly reported as skipped and must never be counted as a pass.
+          if ! grep -q 'SKIP: GK-27 lattice citation tripwire' 44-convert-and-flow-operator/qc-convert-and-flow.sh; then
+            echo "FAIL: the visible SKIP for an absent lattice checker was removed." >&2
+            exit 1
+          fi
+          if grep -qE 'assert .*check_lattice_citation\.py' 44-convert-and-flow-operator/qc-convert-and-flow.sh \
+             && ! grep -q 'if \[ -f "\$LATTICE_CHECKER" \]' 44-convert-and-flow-operator/qc-convert-and-flow.sh; then
+            echo "FAIL: the lattice checker is invoked without a presence guard again." >&2
+            exit 1
+          fi
+          echo "PASS: absent lattice checker remains a visible SKIP; present checker remains a hard assert."

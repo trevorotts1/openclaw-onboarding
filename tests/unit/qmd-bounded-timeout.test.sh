@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/qmd-bounded-timeout.test.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# THE DEFECT THIS LOCKS (v20.0.81): every `qmd` invocation in
+# THE DEFECT THIS LOCKS (v20.0.82): every `qmd` invocation in
 # shared-utils/provision-persona-index.sh was UNBOUNDED. On a box whose native
 # better-sqlite3 ABI is broken, `qmd` falls through to `bunx @tobilu/qmd`, which
 # takes ~17 MINUTES to download, start and then fail. Three sequential calls

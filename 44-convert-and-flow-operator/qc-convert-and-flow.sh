@@ -69,6 +69,29 @@ live_warn() {
   fi
 }
 
+# ── PATH bootstrap (non-interactive-shell fix) ───────────────────────────────
+# WHY: the live checks below shell out to `openclaw`. A non-interactive shell
+# (the install harness, cron, `ssh box 'cmd'`) starts with a bare PATH that omits
+# the directories OpenClaw installs into, so `openclaw ...` was "command not
+# found" and its check FAILED on a fully-provisioned box -- the same check PASSED
+# the moment the operator's login-shell PATH was in play. Appending the standard
+# login-shell bin directories that actually exist restores the operator-shell
+# view without inventing one.
+#
+# DELIBERATELY NOT ADDED: "$CAF_DIR" / "$TOOLS_ROOT/convert-and-flow-cli", this
+# skill's own install directory. Section A asserts `caf`/`convertandflow`/`ghl`
+# RESOLVE ON PATH -- putting their install dir on PATH here would make those
+# three assertions tautologically true and destroy a real check. Appending (not
+# prepending) also means a PATH the caller set on purpose still wins.
+for _pd in /opt/homebrew/bin /usr/local/bin "$HOME/.local/bin" "$HOME/bin" "$HOME/.npm-global/bin"; do
+  case ":$PATH:" in
+    *":$_pd:"*) ;;
+    *) [ -d "$_pd" ] && PATH="$PATH:$_pd" ;;
+  esac
+done
+export PATH
+unset _pd
+
 # ── Resolve the skill's own directory (works when run from any CWD) ───────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SKILL44_DIR="$SCRIPT_DIR"
@@ -84,6 +107,44 @@ else
 fi
 CAF_DIR="$TOOLS_ROOT/convert-and-flow-cli"
 SKILL38_DIR="$MASTER_FILES_DIR/38-conversational-ai-system"
+if [ "$PLATFORM" = "mac" ]; then
+  OC_CONFIG_JSON="${OPENCLAW_CONFIG_JSON:-$HOME/.openclaw/openclaw.json}"
+else
+  OC_CONFIG_JSON="${OPENCLAW_CONFIG_JSON:-/data/.openclaw/openclaw.json}"
+fi
+
+# Presence check for an openclaw.json env var. PRESENCE ONLY -- never reads,
+# prints, echoes, or logs the VALUE (the python exits 0/1 and emits nothing).
+# Reads the config FILE, which is exactly what `openclaw config get` reads, so
+# the assertion is about the CONFIG's content and no longer about whether a CLI
+# happens to be on PATH. Falls back to the CLI when the file cannot be located
+# (an unusual OPENCLAW_HOME); a genuinely absent var still FAILS either way.
+oc_config_env_var_is_set() {
+  local _name="$1" _j
+  for _j in "$OC_CONFIG_JSON" "$HOME/.openclaw/openclaw.json" "/data/.openclaw/openclaw.json"; do
+    [ -n "$_j" ] && [ -f "$_j" ] || continue
+    if python3 -c '
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(1)
+name = sys.argv[2]
+env = cfg.get("env") or {}
+if not isinstance(env, dict):
+    sys.exit(1)
+vars_ = env.get("vars")
+val = vars_.get(name) if isinstance(vars_, dict) else None
+if not (isinstance(val, str) and val.strip()):
+    val = env.get(name)
+sys.exit(0 if isinstance(val, str) and val.strip() else 1)
+' "$_j" "$_name" >/dev/null 2>&1; then
+      return 0
+    fi
+  done
+  command -v openclaw >/dev/null 2>&1 || return 1
+  openclaw config get "env.vars.$_name" >/dev/null 2>&1
+}
 
 echo "══════════════════════════════════════════════"
 echo "  Skill 44 QC — Convert and Flow Operator"
@@ -103,9 +164,28 @@ echo "── Section S: Static branch checks ──"
 # docs/CONTENT-CONVERSATION-LATTICE.md and that this skill's owned edge (the
 # Skill 3 backstop-rail citation in its own frontmatter description) still
 # cites real, unchanged ground truth. See docs/tools/check_lattice_citation.py.
+#
+# LAYOUT NOTE (the false-fail this closes): this is a REPO-integrity check, not
+# a runtime/installed-skill check. It needs docs/tools/check_lattice_citation.py
+# + docs/lattice-citations.json, which live at the repo root as SIBLINGS of
+# 44-convert-and-flow-operator/, not inside it. From a plain repo checkout
+# SKILL44_DIR's parent IS that repo root and the checker is found. On a CLIENT
+# BOX the skill installs to ~/.openclaw/skills/44-convert-and-flow-operator/, so
+# the parent is ~/.openclaw/skills -- which has no docs/ directory at all. The
+# checker was invoked unconditionally there and python3 exited 2 ("can't open
+# file"), hard-FAILING every client-box run forever instead of reporting drift.
+# It now SKIPS VISIBLY (counted as a skip, never as a pass) when the checker is
+# absent, and hard-asserts exactly as before when it is present -- the same
+# "absent skips cleanly" convention 03-agent-browser/qc-agent-browser.sh uses.
 REPO_ROOT_LATTICE="$(cd "$SKILL44_DIR/.." && pwd)"
-assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
-  "python3 \"$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 44-convert-and-flow-operator -q"
+LATTICE_CHECKER="$REPO_ROOT_LATTICE/docs/tools/check_lattice_citation.py"
+if [ -f "$LATTICE_CHECKER" ]; then
+  assert "SKILL.md pointer to docs/CONTENT-CONVERSATION-LATTICE.md + this skill's owned edge citations still hold (GK-27 drift tripwire)" \
+    "python3 \"$LATTICE_CHECKER\" --repo-root \"$REPO_ROOT_LATTICE\" --skill 44-convert-and-flow-operator -q"
+else
+  echo "  SKIP: GK-27 lattice citation tripwire — checker not present in this layout (docs/tools/check_lattice_citation.py not found under $REPO_ROOT_LATTICE; installed-skill layout, not a repo checkout)"
+  SKIP=$((SKIP+1))
+fi
 
 assert "tools/engine/setup.py present" \
   "[ -f \"$SKILL44_DIR/tools/engine/setup.py\" ]"
@@ -203,7 +283,7 @@ assert "INSTALL.md handles installed-with-missing-prereqs (no fabricated success
 
 # v1.0.9 — live-box: prove the wired env is actually inherited + caf reaches GHL.
 live_assert "GOHIGHLEVEL_LOCATION_ID present in openclaw.json env.vars (gateway-inherited)" \
-  "openclaw config get env.vars.GOHIGHLEVEL_LOCATION_ID >/dev/null 2>&1"
+  "oc_config_env_var_is_set GOHIGHLEVEL_LOCATION_ID"
 live_assert "verify-ghl-live.sh exits 0 (caf reaches GHL) or 2 (missing-prereqs) — never 1" \
   "bash \"$CAF_DIR/engine/verify-ghl-live.sh\" >/dev/null 2>&1; rc=\$?; [ \"\$rc\" -eq 0 ] || [ \"\$rc\" -eq 2 ]"
 
