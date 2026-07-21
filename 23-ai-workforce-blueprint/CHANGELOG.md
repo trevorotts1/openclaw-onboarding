@@ -3,6 +3,42 @@
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
 
+## [v20.0.86] - 2026-07-21 - fix(vertical-guard): pre-2026-06-28 provisioning is no longer judged by the classification that replaced it
+
+`vertical-derivation-guard.py` excluded universal-primary departments using the
+CURRENT `department-naming-map.json`. Commit `b3e25876` (v14.28.1, 2026-06-28)
+removed `universal_primary` from `real-estate`/`listings`, and before that commit
+`apply_vertical_packs` PHASE 1 added every pack's primary to every client
+unconditionally — so `listings` was universal FLOOR for every client built
+between `1691b43e` (2026-06-02) and `b3e25876`. The forward-only fix left that
+residue on disk fleet-wide, and the guard then read it as an undeclared vertical:
+Command Center refresh went FATAL (rc=3 -> `fail_install`) on 28 of 30 reachable
+boxes.
+
+Adds `universal_primary_history.demotions[]` to the naming map (v2.6.2 ->
+v2.7.0): a dated, per-department, commit-attributed record of every
+`universal_primary` flag that was later removed. The guard grandfathers a
+department ONLY when a well-formed row covers that exact id AND the box produces
+its own dated witness (`verticalPacks.appliedAt` naming the dept = `direct`;
+department-directory birth time = `filesystem`; `buildCompletedAt` /
+`closeoutStartedAt` / `closeoutCompletedAt` / `commandCenterCompletedAt` =
+`build-window`) predating the demotion by more than a 14h timezone safety margin.
+No witness -> still rc=3. A build record naming the dept as added at/after the
+demotion refuses the grandfather outright (`POST_DEMOTION_ADD`). Malformed,
+wildcard, still-universal, and unknown-department rows are ignored WITH a
+warning. `check_add()` ignores the table entirely — grandfathering never
+authorizes a new add.
+
+Residue is never silenced: `grandfatheredDepartments[]` (with witness +
+strength), `warnings[]` (incl. `NO_DECLARATION_RECORD`) and `residueSummary` go
+into the Phase-3b receipt and stderr on EVERY run, and `run-full-install.sh`
+re-logs them at WARN on the PASS path.
+
+Tests: `test-vertical-derivation-guard.sh` 26 -> 44 checks; cases (c)/(d)
+tightened from bare `rc=3` to the named refusal + missing-record report. Measured
+read-only across all 30 reachable boxes: PASS 21 (was 2), FAIL 9 (was 28), no box
+that should fail now passes.
+
 ## [v19.67.0] - 2026-07-12 - feat(skill23): P4-02 step 7 — synergy blend directive gains the TASK-persona slot (backfilled by U14)
 
 Merge commit `7dde7c5f` ("Merge P4-02: synergy directive task slot into main"), feature commit `57bacf5d`. The dual-persona content system combines a PERSONA SIDE (audience voice + topic expertise, from W7) with a TASK SIDE (the persona matched to the work) — the task side was computed and returned in the bundle but never reached the writer's instruction. `persona_blend.py::build_blend_directive` gains a fourth synergy slot: a `task_persona_pid=` arg appends "The task-side persona is **W** — apply ITS process and decision method to execute the work," content-gated so it never fires when the task persona is the same id as voice/topic (already covered). `build_bundle` reorders so `build_task_personas` runs before the directive is composed; the primary (first non-mechanical) task persona populates slot 4. Bundle shape, confirm-gate, audience resolution, and the back-compat `persona_id` mirror are unchanged. Tests: `23-ai-workforce-blueprint/scripts/test-p4-02-synergy-directive.py` (10 fail-first checks). Existing W7 matcher suite stays 46/46. Ref: P4-02.

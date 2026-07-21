@@ -1644,6 +1644,33 @@ else
     if [[ "$VG_RC" -eq 0 ]]; then
       state_set '.commandCenterPhase3bDone = true'
       log "INFO" "phase=3b vertical-derivation-guard: PASS — provisioned vertical-specific departments all declared by the interview (receipt: $OC_ROOT/workspace/provisioning/vertical-derivation.json)"
+      # A PASS is not automatically a clean bill of health. The guard reports
+      # (a) departments grandfathered as pre-reclassification residue — legitimate
+      # when they landed, still residue now — and (b) a MISSING declaration record.
+      # Both are surfaced here at WARN so they land in the install log, not only in
+      # the receipt: downgrading a FATAL to silence is the failure mode this guard
+      # exists to avoid.
+      VG_RESIDUE="$(printf '%s' "$VG_OUT" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+except (json.JSONDecodeError, ValueError):
+    sys.exit(0)
+for g in d.get("grandfatheredDepartments") or []:
+    w = g.get("witness") or {}
+    print("GRANDFATHERED|%s (pack %s) — universal floor until %s (commit %s); evidence: %s = %s [%s]"
+          % (g.get("id"), g.get("pack"), g.get("demotedAt"), (g.get("demotedByCommit") or "")[:8],
+             w.get("source"), w.get("value"), w.get("strength")))
+for warn in d.get("warnings") or []:
+    print("WARN|%s" % warn)
+' 2>/dev/null)"
+      if [[ -n "$VG_RESIDUE" ]]; then
+        while IFS= read -r _vg_line; do
+          [[ -z "$_vg_line" ]] && continue
+          log "WARN" "phase=3b vertical-derivation-guard: ${_vg_line#*|}"
+        done <<< "$VG_RESIDUE"
+        log "WARN" "phase=3b vertical-derivation-guard: the above is REPORTED, NOT REMEDIATED — no department was added or removed. Cleanup is an owner decision and can be driven from $OC_ROOT/workspace/provisioning/vertical-derivation.json (residueSummary)."
+      fi
     elif [[ "$VG_RC" -eq 3 ]]; then
       VG_REASON="$(printf '%s' "$VG_OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("; ".join(v["reason"] for v in d.get("violations", [])) or "unknown violation")' 2>/dev/null)"
       fail_install "phase=3b: vertical-derivation-guard found a vertical-specific department provisioned without a matching interview declaration — ${VG_REASON:-see $LOG_FILE}"
