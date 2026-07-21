@@ -1,0 +1,149 @@
+name: embedded-python syntax guard (ONB-STATE-001)
+
+# THE DEFECT THIS LOCKS — silent-success class, and the reason it survived.
+#
+# lib-onboarding-state.sh's `oc_state_mark_field` carried
+# `except Exception: return` inside its python heredoc: a `return` outside any
+# function. Python raises SyntaxError at COMPILE time, before the first
+# statement runs, so the function NEVER wrote a field on ANY path — including
+# the healthy one — while `2>/dev/null || true` on the call site hid the error
+# and forced exit 0. Every caller saw success. It was byte-identical on main
+# from the day the function was written.
+#
+# WHY NOTHING CAUGHT IT. `bash -n` does not parse heredoc bodies. It checks the
+# shell grammar AROUND a heredoc and treats the body as opaque text, so a shell
+# script carrying a hard-broken Python program passes `bash -n` cleanly. No
+# check in this repo looked inside those bodies. That is the actual hole: not
+# one bad line, but a whole class of embedded code that nothing compiled.
+#
+# WHAT THIS GUARD DOES. scripts/check-embedded-python-syntax.py extracts EVERY
+# python heredoc and every `python3 -c` body across the repo and compiles each
+# one. On origin/main at the time this was written it found the defect above and
+# exactly one other thing: nothing. 1 failure repo-wide, now 0.
+#
+# It calls compile(), NOT ast.parse(). ast.parse ACCEPTS `return` outside a
+# function — those are rejected later, by the symbol-table pass inside
+# compile(). A guard built on ast.parse would have passed the very defect it was
+# written for. The self-test below pins that distinction so the guard cannot be
+# quietly weakened back into uselessness.
+#
+# ANTI-FALSE-POSITIVE / ANTI-VACUITY CONTROLS. A guard that fails on everything
+# is as useless as one that passes everything, and a guard that silently skips
+# what it cannot parse is the same silent-success bug it exists to prevent. So
+# the self-test asserts BOTH directions on fixtures: a broken body must FAIL and
+# a healthy body must PASS. Sites the extractor genuinely cannot reconstruct are
+# counted and printed as UNANALYZABLE — never dropped, never counted as passing.
+#
+# Runs on EVERY push and PR, unscoped by path: the whole point is that a broken
+# embedded script anywhere must not reach main again.
+#
+# Hermetic: stdlib-only Python, no network, no fleet box, read-only over the
+# checkout.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  embedded-python-syntax:
+    name: "ONB-STATE-001: every embedded Python program compiles"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The guard itself compiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile scripts/check-embedded-python-syntax.py
+
+      - name: Self-test — the guard FAILS on a broken body and PASSES on a healthy one
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIX="$(mktemp -d)"
+
+          # (1) The exact defect shape: `return` outside a function, behind the
+          #     `2>/dev/null || true` that hides it at runtime.
+          cat > "$FIX/broken.sh" <<'SH'
+          #!/usr/bin/env bash
+          mark() {
+            python3 - <<'PYEOF' 2>/dev/null || true
+          import json
+          try: state = json.load(open("x"))
+          except Exception: return
+          PYEOF
+          }
+          SH
+
+          if python3 scripts/check-embedded-python-syntax.py --root "$FIX" >"$FIX/out.txt" 2>&1; then
+            echo "VACUOUS GUARD: it did not flag a 'return' outside a function." >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          fi
+          grep -q "'return' outside function" "$FIX/out.txt" || {
+            echo "Guard failed, but not for the expected reason:" >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ broken heredoc is caught"
+
+          # (2) ast.parse() would MISS that. Pin the distinction: if this ever
+          #     stops holding, the guard has been weakened back to useless.
+          python3 - <<'PY'
+          import ast, sys
+          src = 'try:\n    x = 1\nexcept Exception: return\n'
+          try:
+              ast.parse(src)
+          except SyntaxError:
+              sys.exit("ast.parse now rejects this; the guard's compile() rationale needs review")
+          try:
+              compile(src, "<t>", "exec")
+          except SyntaxError:
+              print("  ✓ compile() catches what ast.parse() misses")
+          else:
+              sys.exit("compile() no longer catches 'return' outside function — guard is unsound")
+          PY
+
+          # (3) A healthy repo must PASS, or the guard is just a red light.
+          rm -rf "$FIX"; FIX="$(mktemp -d)"
+          cat > "$FIX/healthy.sh" <<'SH'
+          #!/usr/bin/env bash
+          mark() {
+            python3 - <<'PYEOF'
+          import json, sys
+          try:
+              state = json.load(open("x"))
+          except OSError:
+              sys.exit(1)
+          PYEOF
+            python3 -c 'import json; print(json.dumps({"ok": True}))'
+          }
+          SH
+          python3 scripts/check-embedded-python-syntax.py --root "$FIX" >"$FIX/out.txt" 2>&1 || {
+            echo "FALSE POSITIVE: the guard rejected a healthy body." >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ healthy heredoc and python -c both pass"
+          rm -rf "$FIX"
+
+      - name: Every embedded Python program in the repo compiles
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-embedded-python-syntax.py --root . --verbose
+
+      - name: oc_state_mark_field regression lock
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/state-mark-field-silent-noop.test.sh
