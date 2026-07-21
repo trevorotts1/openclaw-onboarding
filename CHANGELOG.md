@@ -1,3 +1,69 @@
+## [v20.0.76]  -  2026-07-21  -  D2-PATH: `refresh-stale-roles.py` looked for departments in a layout no box uses, then reported success
+
+The artifact-refresh-queue consumer is the repair step that refills a
+department's role docs from the canonical role library when a roll detects them
+as stale. Its role branch built the department path as
+`departments/<dept>-dept` — a `-dept`-SUFFIXED layout live boxes do not use.
+The PRODUCER that writes the queue (`detect-stale-artifacts.py`) walks the real
+on-disk tree `departments/<dept>` and puts BARE department ids in its queue
+keys, so every role row this consumer received resolved to a path that does not
+exist. It logged `WARN SKIPPED ... nothing written` for each one and returned 0.
+
+It reported success while repairing nothing, and two things made that silence
+airtight: the role branch never incremented `failed_inscope` (the only input to
+`ok_contract`), and `remaining_inscope_stale` counted `sop`/`dept` rows only —
+so a run that failed to refresh every role on the box still printed
+`DRAIN_STATUS ok=1 failed_inscope=0 remaining_inscope_stale=0` and wrote a
+receipt saying `ok: true`. `update-skills.sh`'s `_D2_REFRESH_STATUS` latch, which
+exists precisely to withhold the completion stamp on this failure, never tripped.
+
+Two changes close it. (1) The department directory is now RESOLVED against what
+is actually on disk by the new `resolve_dept_dir()`, not assumed from a
+template: the bare id first, then the legacy `-dept` suffixed form, then a
+normalized scan of the real directory entries. BOTH layouts genuinely exist in
+the field (the operator box carries 71 bare directories and 3 suffixed ones), so
+this detects the layout instead of swapping one hardcode for the other. The
+normalized scan also absorbs case drift — a real `Sales` folder against the
+manifest's `sales` id, which an exact-path probe finds on macOS's
+case-insensitive volume but MISSES on every case-sensitive Linux box.
+`refresh_one()` also now hands `try_library_fill()` the canonical manifest
+department id rather than the on-disk directory, so the library lookup can never
+be thrown off by how a box happened to name the folder. (2) Every in-scope row
+the drain cannot complete — an unresolvable department, a role folder it cannot
+find, library content it cannot produce, a malformed in-scope row — now counts
+toward `failed_inscope` AND `remaining_inscope_stale`, prints `FAILED` rather
+than `SKIPPED`, and returns rc 3. A detected gap that goes unfilled is a
+failure the roll can act on, never a benign skip. The `sop` branch gains the
+same loud failure for an unresolvable department; its documented
+missing-library-source / missing-dest skips are deliberately unchanged (those
+stay `floor-fill-driver.py`'s MISSING job). No gate was weakened and no
+department, role folder, or sibling file is ever fabricated or clobbered.
+
+The refill machinery underneath the path bug turned out to be sound: with the
+path resolved, the very first unsuffixed-layout fixture pulled 50564 bytes of
+real library content into `how-to.md` with the CURRENT `content_sha` stamped.
+
+`tests/unit/refresh-stale-roles.test.sh` grows from 6 to 10 scenarios (11 to 21
+assertions): the unsuffixed layout resolving and actually refilling above the
+3072B floor, an unresolvable department failing loudly with rc 3 /
+`DRAIN_STATUS ok=0` / `ok: false` in the receipt, a healthy box draining rc 0
+with out-of-scope persona and MISSING rows raising no false failure and
+`IDENTITY.md`/`SOUL.md`/`MEMORY.md` byte-identical afterwards, and a
+case-drifted department folder still resolving. Scenarios 1/2/5 deliberately
+KEEP their `-dept`-suffixed fixture as the back-compat column. Scenario 4's
+expectation changed from rc 0 to rc 3 — that assertion was the thing that froze
+"detected a gap, wrote nothing, reported success" in as the correct contract;
+the drain still must not ABORT, and that half is unchanged and still asserted.
+Measured against the pre-fix script the new suite reports 11 passed / 10 failed;
+with the fix, 21 passed / 0 failed. `tests/probe/test-p208-sop-role-provisioning-probe.sh`
+re-runs green unmodified at 10 passed / 0 failed.
+
+All 11 version markers rolled v20.0.75 -> v20.0.76 via `scripts/bump-version.sh`.
+`cc-compat.json` `commandCenter.pinnedTag`/`minVersion` UNCHANGED. The Skill 38
+doc self-count advisory remains a pre-existing, non-fatal WARN. No client names,
+no secret values, no box identifiers, no model added, removed, or substituted.
+No fleet box was modified — repo code and local fixtures only.
+
 ## [v20.0.74]  -  2026-07-20  -  APPDIR-01: the Command Center `--update-only` false green is closed
 
 `32-command-center-setup/scripts/run-full-install.sh` could deploy **nothing**

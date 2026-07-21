@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.75"
+ONBOARDING_VERSION="v20.0.76"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.75 - safe_json_edit
+# v20.0.76 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3310,12 +3310,21 @@ else:
   # library_lookup()/try_library_fill() path create_role_workspace() uses for
   # a brand-new role, then re-stamps the provenance marker with the CURRENT
   # content_sha so a future detect-stale-artifacts.py run classifies it
-  # CURRENT. SOP/dept/persona rows and MISSING/ORPHAN/UNTRACKED rows are left
-  # in the queue untouched (out of this consumer's scope). A poisoned row
-  # (nonexistent role path, corrupt JSON, no library match) is skipped with a
-  # loud WARN and left queued -- it never aborts the update. Best-effort:
-  # any failure here is swallowed (`|| true`) so a missing/broken consumer
-  # tool can never fail the update itself.
+  # CURRENT. It resolves the department directory against what is ACTUALLY on
+  # disk (both the bare `departments/<dept>` layout live boxes use and the
+  # legacy `-dept` suffixed form) -- assuming one layout was the 2026-07-21
+  # defect that made this step repair nothing on every box while reporting
+  # success. persona rows and MISSING/ORPHAN/UNTRACKED rows are left in the
+  # queue untouched (out of this consumer's scope).
+  #
+  # A poisoned row (nonexistent role path, corrupt JSON, no library match) is
+  # left queued and never ABORTS the drain -- later rows still drain. But it
+  # is NOT swallowed: since 2026-07-21 any in-scope row the drain could not
+  # complete is a DETECTED gap left UNFILLED, so the consumer exits 3 and the
+  # `if PIPE; then` capture below trips _D2_REFRESH_STATUS. That latch feeds
+  # the pre-stamp gate, which withholds the completion stamp and exits 1. A
+  # repair step that cannot repair must say so loudly. A MISSING consumer
+  # tool (older bundle) is still a benign skip -- see the else branch.
   # ----------------------------------------------------------
   REFRESH_CONSUMER="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/refresh-stale-roles.py"
   if [ -f "$REFRESH_CONSUMER" ] && command -v python3 >/dev/null 2>&1; then
