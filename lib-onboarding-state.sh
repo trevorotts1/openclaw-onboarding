@@ -152,22 +152,104 @@ PYEOF
 # oc_state_mark_field <skill> <field> <json_value>
 #   Set an arbitrary field (registered/coreUpdatesSentinelPresent/qcExit).
 #   json_value is raw JSON: true / false / 0 / "\"text\"" / null
+#
+#   Returns 0 when the field was recorded (or when there is legitimately
+#   nothing to record). Returns 1 when the state file EXISTS but could not be
+#   read, parsed or rewritten -- see the ABSENT-vs-CORRUPT note below.
+#
+#   v20.0.86 FIX. This function never worked. Its body carried
+#   `except Exception: return` -- a `return` outside any function -- so python
+#   raised SyntaxError at COMPILE time, before the first statement ran. The
+#   field was therefore NEVER written on ANY path, including the healthy one,
+#   and `2>/dev/null || true` on the call site hid the error and forced rc 0.
+#   `bash -n` does not parse heredoc bodies, so nothing caught it.
+#
+#   The consequences were real, and in BOTH directions, because
+#   oc_wave_goal_check reads exactly these fields back:
+#     * coreUpdatesSentinelPresent stayed at its seeded `false` forever, so
+#       check (c) reported a missing sentinel for every skill shipping
+#       CORE_UPDATES.md -- a permanent FALSE FAILURE that no re-run could clear.
+#     * qcExit stayed at its seeded `null` forever, so check (d)
+#       (`qc_exit is not None and qc_exit != 0`) could never fire -- a
+#       permanently DEAD check that let a nonzero qc script pass the wave gate.
+#
+#   ABSENT vs CORRUPT -- these are deliberately NOT the same thing:
+#     * ABSENT state file  -> NORMAL. oc_state_seed owns creation, and a gate
+#       may legitimately run before the seed on a fresh box. There is nothing to
+#       record yet, so this returns 0 quietly. This is a documented tolerance,
+#       not a swallowed failure.
+#     * PRESENT but unreadable / not JSON / not writable -> a REAL failure. The
+#       reason is printed to stderr and rc 1 is returned. There is no `|| true`
+#       and no blanket `2>/dev/null`: if we cannot record what the gate found,
+#       the caller MUST be able to see that.
 # ------------------------------------------------------------
 oc_state_mark_field() {
   local skill="$1" field="$2" val="$3"
+  # ABSENT is normal -- nothing to record yet. See the note above.
   [ -f "$ONBOARDING_STATE_FILE" ] || return 0
   SKILL="$skill" FIELD="$field" VAL="$val" STATE_FILE="$ONBOARDING_STATE_FILE" \
-  python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
-sf=os.environ["STATE_FILE"]; skill=os.environ["SKILL"]; field=os.environ["FIELD"]
-raw=os.environ["VAL"]
-try: val=json.loads(raw)
-except Exception: val=raw
-try: state=json.load(open(sf))
-except Exception: return
-e=state.setdefault("skills",{}).setdefault(skill,{"status":"pending"})
-e[field]=val
-json.dump(state,open(sf,"w"),indent=2)
+  python3 - <<'PYEOF'
+import json, os, sys, tempfile
+
+sf    = os.environ["STATE_FILE"]
+skill = os.environ["SKILL"]
+field = os.environ["FIELD"]
+raw   = os.environ["VAL"]
+
+
+def fail(msg):
+    sys.stderr.write("oc_state_mark_field: %s\n" % msg)
+    raise SystemExit(1)
+
+
+# The value is raw JSON (true / false / 0 / null / "text"). A bare string that
+# is not valid JSON is stored verbatim -- that is the documented contract.
+try:
+    val = json.loads(raw)
+except ValueError:
+    val = raw
+
+# The file exists (the shell checked). If it cannot be read or is not JSON,
+# that is corruption, and corruption must be LOUD -- never treated as absence.
+try:
+    with open(sf, encoding="utf-8") as fh:
+        state = json.load(fh)
+except OSError as exc:
+    fail("state file exists but cannot be read: %s: %s" % (sf, exc))
+except ValueError as exc:
+    fail("state file is present but not valid JSON: %s: %s" % (sf, exc))
+
+if not isinstance(state, dict):
+    fail("state file is present but its top level is %s, not a JSON object: %s"
+         % (type(state).__name__, sf))
+
+entry = state.setdefault("skills", {}).setdefault(skill, {"status": "pending"})
+entry[field] = val
+
+# Atomic replace. The old body opened the real file in "w" mode, which
+# TRUNCATES before serialising -- an exception midway through json.dump would
+# have left a half-written state file behind, i.e. turned a write failure into
+# the corruption this function now refuses to ignore.
+target_dir = os.path.dirname(os.path.abspath(sf)) or "."
+tmp_path = None
+try:
+    fd, tmp_path = tempfile.mkstemp(dir=target_dir, prefix=".onboarding-state.", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, sf)
+    tmp_path = None
+except OSError as exc:
+    fail("could not write state file %s: %s" % (sf, exc))
+finally:
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+raise SystemExit(0)
 PYEOF
 }
 
@@ -248,24 +330,36 @@ PYEOF
 #   Records registered / coreUpdatesSentinelPresent / qcExit and sets status to
 #   qc-passed or qc-failed. Returns 0 on pass, 1 on fail.
 #   Interview-pending skills are NOT auto-gated here — caller decides.
+#
+#   v20.0.86: oc_state_mark_field can now report a real state-write failure
+#   (rc 1) instead of silently pretending to have recorded the result. Every
+#   call below folds that into _sw_ok rather than leaving a bare failing
+#   statement, for two reasons:
+#     * this lib is sourced by scripts that run `set -euo pipefail`
+#       (update-skills.sh), where a bare nonzero statement would ABORT the
+#       caller mid-gate — a crash is not an acceptable substitute for a
+#       swallowed failure;
+#     * a gate whose findings cannot be recorded has not verified anything, so
+#       it FAILS CLOSED with reason `state-write-failed` instead of passing.
 # ------------------------------------------------------------
 oc_gate_skill() {
   local folder="$1"
   local ok=1 reason=""
+  local _sw_ok=1          # state-write health; 0 once any field failed to record
 
   # (a) registration
   if oc_skill_registered "$folder"; then
-    oc_state_mark_field "$folder" registered true
+    oc_state_mark_field "$folder" registered true || _sw_ok=0
   else
-    oc_state_mark_field "$folder" registered false
+    oc_state_mark_field "$folder" registered false || _sw_ok=0
     ok=0; reason="not-registered"
   fi
 
   # (b) CORE_UPDATES sentinel
   if oc_core_sentinel_present "$folder"; then
-    oc_state_mark_field "$folder" coreUpdatesSentinelPresent true
+    oc_state_mark_field "$folder" coreUpdatesSentinelPresent true || _sw_ok=0
   else
-    oc_state_mark_field "$folder" coreUpdatesSentinelPresent false
+    oc_state_mark_field "$folder" coreUpdatesSentinelPresent false || _sw_ok=0
     ok=0; reason="${reason:+$reason,}core-sentinel-missing"
   fi
 
@@ -302,12 +396,18 @@ oc_gate_skill() {
   if [ -n "$qc" ] && [ -f "$qc" ]; then
     local qc_rc=0
     bash "$qc" >/dev/null 2>&1 || qc_rc=$?
-    oc_state_mark_field "$folder" qcExit "$qc_rc"
+    oc_state_mark_field "$folder" qcExit "$qc_rc" || _sw_ok=0
     if [ "$qc_rc" -ne 0 ]; then
       ok=0; reason="${reason:+$reason,}qc-exit-$qc_rc"
     fi
   else
-    oc_state_mark_field "$folder" qcExit "null"
+    oc_state_mark_field "$folder" qcExit "null" || _sw_ok=0
+  fi
+
+  # A gate that could not RECORD what it found has not verified anything.
+  # Fail closed and name the reason rather than report a pass we cannot back up.
+  if [ "$_sw_ok" -eq 0 ]; then
+    ok=0; reason="${reason:+$reason,}state-write-failed"
   fi
 
   if [ "$ok" -eq 1 ]; then
