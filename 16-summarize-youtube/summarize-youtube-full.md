@@ -72,8 +72,19 @@ export PATH="$HOME/.local/bin:$PATH"
 yt-dlp --version  # verify
 ```
 
-The skill's runtime logic will detect the missing `summarize` binary and
-auto-fall-back to the yt-dlp + agent-LLM pipeline.
+> **UNSUPPORTED on this platform — there is no runtime auto-fallback.** This
+> document previously stated that the skill's runtime logic detects the missing
+> `summarize` binary and auto-falls-back to the yt-dlp + agent-LLM pipeline. No
+> such detection and no such fallback exists anywhere in this skill. Nothing
+> handled the unsupported platform; the document merely explained why it should.
+>
+> `summarize` is a Homebrew-only, Mac-only CLI and the install path at
+> INSTALL.md Step 3 uses Homebrew, which is not present on the server platform.
+> Until a real fallback entry point ships, the VPS path is UNSUPPORTED and the
+> install FAILS CLOSED at install time rather than silently at first use.
+>
+> The yt-dlp command above installs the transcript extractor only. It does not
+> make this skill work on a VPS, and no part of the skill calls it.
 
 **What to expect:**
 - You will see download progress messages
@@ -269,8 +280,11 @@ The summarize tool has a smart fallback system. This ensures it keeps working ev
 
 **Example execution with fallback:**
 ```bash
-# Try OpenAI first, fallback to Gemini if needed
-summarize "https://youtu.be/dQw4w9WgXcQ" --youtube auto --length short || summarize "https://youtu.be/dQw4w9WgXcQ" --youtube auto --length short
+# Try OpenAI first, then FALL BACK TO GEMINI by naming the second provider.
+# The retry must differ from the attempt that failed — a byte-identical retry
+# re-runs the unavailable provider and fails the same way.
+summarize "https://youtu.be/dQw4w9WgXcQ" --youtube auto --length short \
+  || summarize "https://youtu.be/dQw4w9WgXcQ" --youtube auto --length short --provider gemini
 ```
 
 The `||` symbol means "if the first command fails, run the second command."

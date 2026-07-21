@@ -52,13 +52,25 @@ git config --global --get credential.helper
 
 ## 4. Secret storage checks
 
+Check the CANONICAL store — the same file `qc-github-setup.sh` reads. Presence
+only; never print a token value.
+
 ```bash
-grep -n '^GITHUB_TOKEN=' ~/clawd/secrets/.env 2>/dev/null
-grep -n '^GITHUB_USERNAME=' ~/clawd/secrets/.env 2>/dev/null
+SKILLS_DIR="$HOME/.openclaw/skills"; [ -d /data/.openclaw/skills ] && SKILLS_DIR=/data/.openclaw/skills
+[ -f "$SKILLS_DIR/lib-shared.sh" ] && . "$SKILLS_DIR/lib-shared.sh"
+command -v resolve_platform_paths >/dev/null 2>&1 || resolve_platform_paths() {
+  if [ -d /data/.openclaw ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env"
+  else export SECRETS_ENV="$HOME/.openclaw/secrets/.env"; fi
+}
+resolve_platform_paths
+echo "Canonical secrets store: $SECRETS_ENV"
+for k in GITHUB_TOKEN GITHUB_USERNAME; do
+  if grep -q "^${k}=." "$SECRETS_ENV" 2>/dev/null; then echo "$k: SET"; else echo "$k: NOT-SET"; fi
+done
 ```
 
-- [ ] `GITHUB_TOKEN` exists in secrets storage
-- [ ] `GITHUB_USERNAME` exists in secrets storage
+- [ ] `GITHUB_TOKEN` reports SET in the canonical store
+- [ ] `GITHUB_USERNAME` reports SET in the canonical store
 - [ ] Token starts with `ghp_`
 - [ ] Token is not written into repo docs or committed files
 
@@ -68,7 +80,8 @@ grep -n '^GITHUB_USERNAME=' ~/clawd/secrets/.env 2>/dev/null
 
 ### 5A. Login test
 ```bash
-source ~/clawd/secrets/.env 2>/dev/null || true
+# $SECRETS_ENV was resolved in section 4 above — the canonical store.
+set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a
 curl -s -H "Authorization: Bearer $GITHUB_TOKEN" https://api.github.com/user | jq -r '.login'
 ```
 

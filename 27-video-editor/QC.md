@@ -28,9 +28,12 @@ for r in platform-specs.md ffmpeg-vs-moviepy.md kie-ai-models.md; do
   [ -f "$SKILL_DIR/references/$r" ] && echo "PASS: references/$r" || echo "FAIL: references/$r missing"
 done
 
-# Check reserved folders exist
-[ -d "$SKILL_DIR/brand-templates" ] && echo "PASS: brand-templates/ exists" || echo "FAIL: brand-templates/ missing"
-[ -d "$SKILL_DIR/examples" ] && echo "PASS: examples/ exists" || echo "FAIL: examples/ missing"
+# NOTE (T2-20): the two "reserved" folders brand-templates/ and examples/ used to
+# be checked here. Version control cannot ship an empty directory and no install
+# step created them, so this check recorded a FAIL on every correct installation
+# and taught operators to disregard the document. Neither folder holds anything
+# and no script reads either one, so the requirement is removed rather than
+# faked by creating empty directories to satisfy a count.
 ```
 
 **Pass criteria:** All files print PASS. Zero FAIL lines.

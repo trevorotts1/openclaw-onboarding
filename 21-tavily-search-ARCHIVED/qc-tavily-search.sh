@@ -20,8 +20,18 @@ echo "═══ Skill 21 — Tavily Search — Install QC ═══"
 echo ""
 assert "Skill 21 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/21-tavily-search\" ]"
 assert "TAVILY_API_KEY set" "[ -n \"$TAVILY_API_KEY\" ]"
+# T1-08: the request body carries the API key. Passing it with -d put the whole
+# body — credential included — into this process's argv, where any local process
+# could read it from the process table for the lifetime of the request. Nothing
+# is printed and no document tells anyone to print anything; the exposure is the
+# invocation itself, which is why a documentation review would not find it.
+# `--data @-` reads the body from standard input instead, so the key never
+# appears in argv. The heredoc is unquoted so $TAVILY_API_KEY still expands.
 RESP=$(curl -sS -m 10 -X POST "https://api.tavily.com/search" -H "Content-Type: application/json" \
-  -d "{\"api_key\":\"$TAVILY_API_KEY\",\"query\":\"openclaw test\",\"max_results\":1}" 2>/dev/null)
+  --data @- <<JSON 2>/dev/null
+{"api_key":"$TAVILY_API_KEY","query":"openclaw test","max_results":1}
+JSON
+)
 warn_only "Tavily API responds" "echo \"$RESP\" | grep -qE 'results|answer'"
 warn_only "TOOLS.md references Tavily" "grep -qi 'tavily' \"$WORKSPACE/TOOLS.md\" 2>/dev/null"
 echo ""

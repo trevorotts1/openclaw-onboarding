@@ -42,8 +42,43 @@ Then re-run `scripts/02-configure-providers.sh` to refresh the status JSON.
 - This is intentional: a UNIVERSAL skill cannot ship licensed MLS access or paid
   property-data keys. It ships the contract + the honest-gap discipline.
 
-## Street View image generation (request shape)
-When `street_view` is AVAILABLE, the agent issues a Google Street View Static API
-GET against the geocoded lat/long (or address) with the operator's key. Document:
-`https://maps.googleapis.com/maps/api/streetview?size=600x400&location=<lat,lng>&key=<GOOGLE_STREET_VIEW_API_KEY>`.
-The image is the REAL exterior; the agent never fakes or AI-generates a building.
+## Street View image (server-side byte fetch — NEVER a keyed URL)
+
+**The agent does not construct a Street View URL.** It calls the shipped
+function, which keeps the key in-process and returns a LOCAL FILE PATH.
+
+> This section previously documented the request shape as
+> `https://maps.googleapis.com/maps/api/streetview?...&key=<KEY>` for the agent
+> to issue itself. `scripts/lib-property.sh:143-148` records that this exact
+> construction was deliberately removed from the implementation, because a keyed
+> URL attached to a client conversation or written into the event log ships the
+> raw credential with it. A hardened implementation that nothing routes to is not
+> a fix, so the reference is now the contract the code implements.
+
+**Entry point:** `streetview <lat,lon> [output-path]` in
+`scripts/lib-property.sh`.
+
+**Contract:**
+
+1. **No key → honest gap.** With `GOOGLE_MAPS_API_KEY` unset the function returns
+   `{"available":false,"source":"none","reason":"GOOGLE_MAPS_API_KEY not set"}`.
+   It never fabricates or AI-generates a building.
+2. **Metadata probe first.** The free Street View *metadata* endpoint is probed
+   before any image quota is spent. Any status other than `OK` is an honest gap —
+   never a blank or substituted tile.
+3. **Bytes fetched server-side.** The image is fetched inside the process to a
+   local file. The key is used only in that in-process request.
+4. **Local path emitted, never a URL.** On success the function returns
+   `{"available":true,"source":"google_streetview","image_path":"…","bytes":N,"content_type":"…"}`.
+   There is **no `url` field and no key** in the output, by design.
+
+**What the agent does with it:** attach the file at `image_path`. Do not
+reconstruct a URL from the coordinates, do not paste a `maps.googleapis.com`
+link into a conversation or an event record, and do not put the key anywhere a
+message, a log line or a task comment can carry it.
+
+```bash
+# correct usage — the caller attaches the returned image_path
+. "$SKILL_DIR/scripts/lib-property.sh"
+streetview "37.4220,-122.0841" "$MFD/street-view/<opaque-ref>.jpg"
+```
