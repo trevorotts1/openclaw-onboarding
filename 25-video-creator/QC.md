@@ -154,11 +154,11 @@ Answer these to confirm the agent understands the skill. All answers are in the 
 | 2 | Which two core OpenClaw files is this skill allowed to update? | `TOOLS.md` and `MEMORY.md` only |
 | 3 | What flag lets you run `text_to_video.py` without any API key? | `--provider mock` |
 | 4 | What are the three optional AI provider environment variables? | `KIE_API_KEY`, `RUNWAY_API_KEY`, `PIKA_API_KEY` |
-| 5 | What are the five built-in templates? | `product_showcase`, `social_post`, `tutorial`, `testimonial`, `podcast_clip` |
+| 5 | What are the seven built-in templates? | `product_showcase`, `social_post`, `tutorial`, `testimonial`, `podcast_clip`, `event_promo`, `announcement` |
 | 6 | What is the correct workflow order for this skill within the Video Skills Suite? | Storyboard Writer → Video Creator → Caption Creator → Video Editor |
 | 7 | Where should the agent instruct the user to trigger a gateway restart? | The user must type `/restart` in Telegram — the agent must NEVER trigger it autonomously |
 | 8 | What subcommands does `add_music.py` support beyond the default mix? | `extract` (extract audio) and `remove` (strip audio) |
-| 9 | What is the default output directory for videos? | `~/Videos/Output/` |
+| 9 | Where do primary commands write when `--output` is omitted? | Text-to-video uses a prompt/timestamp filename in the current working directory; script-to-video writes beside the input script; multi-clip assembly writes `assembled.mp4` in the current working directory. |
 | 10 | Which script is used to verify the installation itself? | `scripts/test_installation.py` |
 
 **Pass criteria:** Agent answers all 10 correctly without referencing files mid-answer.

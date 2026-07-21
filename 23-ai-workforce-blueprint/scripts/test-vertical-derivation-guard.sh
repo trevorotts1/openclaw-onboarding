@@ -129,6 +129,24 @@ if echo "$VIOL_JSON" | python3 -c "import json,sys; v=json.load(sys.stdin); asse
 else
   bad "(c) violation JSON missing the expected named-error / id / pack fields"
 fi
+# TIGHTENED (was: only asserted rc!=0). 'listings' is now covered by the dated
+# universal_primary_history table, so "still FAILs" is no longer self-evident —
+# it FAILs because this fixture offers no evidence of PRE-reclassification
+# provisioning. Assert that REASON, not just the exit code: a future change that
+# loosened the witness rule would keep rc=3 here by luck, and this assertion is
+# what would catch it.
+if echo "$VIOL_JSON" | python3 -c "
+import json,sys
+v=json.load(sys.stdin)
+r=v['violations'][0]['reason']
+assert 'GRANDFATHER REFUSED' in r, r
+assert 'NO_PRE_RECLASSIFICATION_WITNESS' in r, r
+assert not v.get('grandfatheredDepartments'), v.get('grandfatheredDepartments')
+" 2>/dev/null; then
+  ok "(c) force-add of 'listings' with no pre-reclassification evidence is refused a grandfather BY NAME (NO_PRE_RECLASSIFICATION_WITNESS), not merely rc=3"
+else
+  bad "(c) 'listings' force-add did not carry the explicit grandfather-refusal reason"
+fi
 # The receipt file itself must be written and must show the FAIL verdict + violation.
 # (the guard reads build-state from the real default path when --build-state
 # is omitted, so pin an explicit empty-declared build-state FILE here — never
@@ -158,6 +176,19 @@ if run_eval "$DD" "" ""; then
   bad "(d) 'listings' on disk with NO declared-source at all should FAIL (fail-closed) but rc=0"
 else
   ok "(d) 'listings' on disk with NO build-state record and NO core_answers -> rc=3 (fail-closed, absence != permission)"
+fi
+# TIGHTENED: a missing declaration record must be REPORTED, not silently
+# absorbed into the verdict. Assert the named warning exists on this path.
+D_JSON=$(run_eval "$DD" "" "" 2>&1 1>/dev/null | tail -1)
+if echo "$D_JSON" | python3 -c "
+import json,sys
+v=json.load(sys.stdin)
+assert any('NO_DECLARATION_RECORD' in w for w in v.get('warnings',[])), v.get('warnings')
+assert v['residueSummary']['declarationRecordPresent'] is False, v['residueSummary']
+" 2>/dev/null; then
+  ok "(d) missing verticalPacks record is REPORTED as NO_DECLARATION_RECORD + residueSummary.declarationRecordPresent=false (never silently absorbed)"
+else
+  bad "(d) missing declaration record was not reported in warnings/residueSummary"
 fi
 
 echo ""
@@ -311,6 +342,237 @@ else
   ok "(h5) --check-add community-management with declared={saas} -> exit 1 (refused)"
 fi
 grep -q "VERTICAL_NOT_DECLARED" "$TMP/h5.err" && ok "(h5) multi-pack refusal still carries the named error VERTICAL_NOT_DECLARED" || bad "(h5) multi-pack refusal missing named error"
+
+echo ""
+echo "=== (i): RETROACTIVE-RECLASSIFICATION GRANDFATHERING (universal_primary_history) ==="
+# b3e25876 (v14.28.1, 2026-06-28T15:26:48Z) removed universal_primary=true from
+# real-estate/'listings'. Before it, apply_vertical_packs PHASE 1 added EVERY
+# pack's primary to EVERY client unconditionally, so pre-2026-06-28 clients hold
+# 'listings' as FLOOR, not as a force-added vertical. Judging that provisioning
+# by today's classification is a clock error, and it is install-blocking.
+# These cases pin BOTH halves: the grandfather fires on evidence, and it stays
+# unreachable without it.
+
+# i0 — the demotion table itself must be well-formed and self-consistent with
+# the live naming map, or nothing below means anything.
+if python3 - "$GUARD" "$NAMING_MAP" <<'PYEOF'
+import json, sys, importlib.util
+spec = importlib.util.spec_from_file_location("vdg", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+nm = json.load(open(sys.argv[2]))
+table, warns = m.universal_primary_demotions(nm)
+assert not warns, f"live naming map produced demotion-table warnings: {warns}"
+assert "listings" in table, f"listings missing from the demotion table: {sorted(table)}"
+row = table["listings"]
+assert row["pack"] == "real-estate", row
+assert row["demoted_by_commit"].startswith("b3e25876"), row
+idx = m.dept_pack_index(nm)
+# The row's premise: listings must NOT be universal_primary today (else stale).
+assert idx["listings"]["universal_primary"] is False, idx["listings"]
+# And the 6 that ARE still universal primaries must NOT be in the table.
+for did in ("engineering", "podcast", "presentations", "scheduling-dispatch",
+            "logistics-fulfillment", "account-management"):
+    assert idx[did]["universal_primary"] is True, (did, idx[did])
+    assert did not in table, f"{did} is still universal_primary but appears in the demotion table"
+PYEOF
+then
+  ok "(i0) demotion table is well-formed and self-consistent with the live naming map (listings demoted by b3e25876; the 6 surviving primaries are absent from it)"
+else
+  bad "(i0) demotion table is malformed or contradicts the live naming map"
+fi
+
+# i1 — THE UNBLOCK: a pre-reclassification box holding 'listings', with NO
+# verticalPacks record at all (the fleet-majority shape), PASSES on evidence.
+DD_PRE=$(mk_departments_dir i1 marketing sales listings)
+BS_PRE='{"buildCompletedAt":"2026-06-20T05:23:46Z","closeoutCompletedAt":"2026-06-21T00:00:00Z"}'
+if run_eval "$DD_PRE" "$BS_PRE" ""; then
+  ok "(i1) pre-2026-06-28 box with 'listings' and no declaration record -> rc=0 (grandfathered on a dated witness)"
+else
+  bad "(i1) pre-reclassification 'listings' still FAILs — the retroactive-rule-change block is not lifted"
+fi
+I1_JSON=$(run_eval "$DD_PRE" "$BS_PRE" "" 2>&1 1>/dev/null | tail -1)
+if echo "$I1_JSON" | python3 -c "
+import json,sys
+v=json.load(sys.stdin)
+g=v['grandfatheredDepartments']
+assert len(g)==1 and g[0]['id']=='listings', g
+assert g[0]['demotedByCommit'].startswith('b3e25876'), g[0]
+assert g[0]['witness']['source'].startswith('build-state.buildCompletedAt'), g[0]['witness']
+assert g[0]['witness']['strength']=='build-window', g[0]['witness']
+assert 'GRANDFATHERED_PRE_RECLASSIFICATION' in g[0]['reason'], g[0]['reason']
+assert not v['violations'], v['violations']
+assert any('GRANDFATHERED_RESIDUE' in w for w in v['warnings']), v['warnings']
+assert any('NO_DECLARATION_RECORD' in w for w in v['warnings']), v['warnings']
+assert v['residueSummary']['grandfatheredIds']==['listings'], v['residueSummary']
+assert 'grandfathered' in v['reason'], v['reason']
+" 2>/dev/null; then
+  ok "(i1) the PASS is LOUD: grandfathered dept named with its demoting commit + witness, residueSummary populated, GRANDFATHERED_RESIDUE + NO_DECLARATION_RECORD warnings, verdict reason says 'grandfathered'"
+else
+  bad "(i1) grandfathered residue is not fully reported on the PASS path"
+fi
+
+# i2 — a box whose ONLY evidence postdates the reclassification gets nothing.
+DD_POST=$(mk_departments_dir i2 marketing listings)
+BS_POST='{"buildCompletedAt":"2026-07-15T00:00:00Z","closeoutCompletedAt":"2026-07-16T00:00:00Z"}'
+if run_eval "$DD_POST" "$BS_POST" ""; then
+  bad "(i2) post-reclassification 'listings' from an undeclared pack should stay rc=3 but PASSED (GATE WEAKENED)"
+else
+  ok "(i2) post-reclassification 'listings' from an undeclared pack -> rc=3 (FATAL; no pre-demotion witness)"
+fi
+
+# i3 — the DISQUALIFIER outranks circumstantial pre-dating: the build's own
+# record naming 'listings' as added by a POST-demotion run must FAIL even though
+# buildCompletedAt predates the demotion. Without this, one stale box-level
+# timestamp would launder a genuine post-demotion force-add.
+DD_MIX=$(mk_departments_dir i3 marketing listings)
+BS_MIX='{"buildCompletedAt":"2026-06-20T05:23:46Z","verticalPacks":{"detectedPacks":[],"addedDepartments":[{"id":"listings","pack":"real-estate"}],"appliedAt":"2026-07-10T12:00:00Z"}}'
+if run_eval "$DD_MIX" "$BS_MIX" ""; then
+  bad "(i3) 'listings' RECORDED as added 2026-07-10 (post-demotion) should stay rc=3 but PASSED (GATE WEAKENED)"
+else
+  ok "(i3) build record naming 'listings' as a post-demotion add -> rc=3, even with a pre-demotion buildCompletedAt present"
+fi
+I3_JSON=$(run_eval "$DD_MIX" "$BS_MIX" "" 2>&1 1>/dev/null | tail -1)
+echo "$I3_JSON" | grep -q "POST_DEMOTION_ADD" \
+  && ok "(i3) refusal names POST_DEMOTION_ADD (direct record beats circumstantial pre-dating)" \
+  || bad "(i3) post-demotion add refusal missing the POST_DEMOTION_ADD named reason"
+
+# i4 — the grandfather CANNOT reach a department that was never a universal
+# primary, however old the box is. These are the real-estate/coaching leaks the
+# guard exists to catch.
+for NEVER in showings closing-coordinator lead-generation client-coaches course-creator; do
+  DD_N=$(mk_departments_dir "i4-$NEVER" marketing "$NEVER")
+  if run_eval "$DD_N" "$BS_PRE" ""; then
+    bad "(i4) '$NEVER' (never a universal primary) on a pre-2026-06-28 box should stay rc=3 but PASSED (GATE WEAKENED)"
+  else
+    ok "(i4) '$NEVER' (never a universal primary) from an undeclared pack -> rc=3 even with a pre-demotion witness"
+  fi
+done
+
+# i5 — grandfathering never authorizes a NEW add. check_add() must ignore the
+# demotion table entirely; this is the single edit that would turn an
+# evidence-based grandfather into a blanket bypass.
+if python3 "$GUARD" --check-add listings --declared "sales-ops" --naming-map "$NAMING_MAP" >/dev/null 2>"$TMP/i5.err"; then
+  bad "(i5) --check-add listings with real-estate undeclared must STILL be refused (grandfathering must not leak into the add path) but exited 0"
+else
+  ok "(i5) --check-add listings still refused despite listings being in universal_primary_history (grandfather explains old residue, never permits a new add)"
+fi
+grep -q "VERTICAL_NOT_DECLARED" "$TMP/i5.err" \
+  && ok "(i5) add-path refusal still carries VERTICAL_NOT_DECLARED" \
+  || bad "(i5) add-path refusal lost its named error"
+
+# i6 — a MALFORMED / OVERREACHING demotion row must be IGNORED and WARNED, never
+# honored. Each of these rows, if honored, would widen the gate.
+if python3 - "$GUARD" "$NAMING_MAP" "$TMP" <<'PYEOF'
+import json, os, sys, importlib.util
+spec = importlib.util.spec_from_file_location("vdg", sys.argv[1])
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+base = json.load(open(sys.argv[2]))
+tmp = sys.argv[3]
+
+good = {"department": "listings", "pack": "real-estate",
+        "demoted_at": "2026-06-28T15:26:48Z", "demoted_by_commit": "b3e25876"}
+bad_rows = {
+    "missing demoted_by_commit": {k: v for k, v in good.items() if k != "demoted_by_commit"},
+    "missing demoted_at":        {k: v for k, v in good.items() if k != "demoted_at"},
+    "wildcard department":       dict(good, department="*"),
+    "still universal_primary":   dict(good, department="engineering", pack="saas"),
+    "not a pack department":     dict(good, department="marketing", pack="real-estate"),
+    "unparseable demoted_at":    dict(good, demoted_at="last tuesday"),
+    "not an object":             "listings",
+}
+for label, row in bad_rows.items():
+    nm = json.loads(json.dumps(base))
+    nm["universal_primary_history"] = {"demotions": [row]}
+    table, warns = m.universal_primary_demotions(nm)
+    assert table == {}, f"{label}: honored a bad row -> {table}"
+    assert warns, f"{label}: dropped a bad row SILENTLY (no warning)"
+
+# demotions[] itself not a list -> nothing grandfathered, loud warning
+nm = json.loads(json.dumps(base))
+nm["universal_primary_history"] = {"demotions": "all"}
+table, warns = m.universal_primary_demotions(nm)
+assert table == {} and any("DEMOTION_TABLE_MALFORMED" in w for w in warns), (table, warns)
+
+# and end-to-end: a bad row cannot rescue a pre-dated 'listings'
+nm = json.loads(json.dumps(base))
+nm["universal_primary_history"] = {"demotions": [dict(good, department="*")]}
+dd = os.path.join(tmp, "i6-departments"); os.makedirs(os.path.join(dd, "listings"), exist_ok=True)
+v = m.evaluate_vertical_derivation(departments_dir=dd,
+                                   build_state={"buildCompletedAt": "2026-06-20T00:00:00Z"},
+                                   naming_map=nm)
+assert v["rc"] == 3, v
+assert not v["grandfatheredDepartments"], v["grandfatheredDepartments"]
+assert any("DEMOTION_ROW_IGNORED" in w for w in v["warnings"]), v["warnings"]
+PYEOF
+then
+  ok "(i6) malformed/overreaching demotion rows (missing commit, missing date, wildcard, still-universal, non-pack dept, unparseable date, non-object, non-list table) are ALL ignored WITH a warning and grandfather nothing"
+else
+  bad "(i6) a malformed or overreaching demotion row was honored, or dropped silently"
+fi
+
+# i7 — a witness must clear the cutoff by more than the timezone safety margin,
+# so a naive local timestamp written near the demotion can never be what flips a
+# violation into a grandfather.
+DD_EDGE=$(mk_departments_dir i7 marketing listings)
+BS_EDGE='{"buildCompletedAt":"2026-06-28T14:00:00Z"}'
+if run_eval "$DD_EDGE" "$BS_EDGE" ""; then
+  bad "(i7) a witness 1h26m before the cutoff is inside the timezone safety margin and must NOT grandfather, but PASSED"
+else
+  ok "(i7) a witness inside the timezone safety margin does not grandfather -> rc=3 (naive-timestamp ambiguity cannot flip the verdict)"
+fi
+
+# i8 — the grandfather must not fire when the department is legitimately
+# DECLARED: a real real-estate client passes through the declaration path, with
+# an EMPTY residue inventory (nothing to clean up).
+DD_RE2=$(mk_departments_dir i8 "${RE_DEPTS[@]}")
+if run_eval "$DD_RE2" "$BS_RE" ""; then
+  ok "(i8) genuine real-estate client (real-estate declared) -> rc=0, unchanged by this feature"
+else
+  bad "(i8) REGRESSION: declared real-estate client no longer passes"
+fi
+I8_JSON=$(run_eval "$DD_RE2" "$BS_RE" "" 2>&1 1>/dev/null | tail -1)
+if echo "$I8_JSON" | python3 -c "
+import json,sys
+v=json.load(sys.stdin)
+assert v['grandfatheredDepartments']==[], v['grandfatheredDepartments']
+assert v['residueSummary']['grandfatheredCount']==0, v['residueSummary']
+assert not any('GRANDFATHERED_RESIDUE' in w for w in v['warnings']), v['warnings']
+" 2>/dev/null; then
+  ok "(i8) a DECLARED department is never routed through the grandfather (residue inventory empty for the real real-estate client)"
+else
+  bad "(i8) declared real-estate client was wrongly reported as grandfathered residue"
+fi
+
+# i9 — the RECEIPT is the cleanup driver: it must carry the residue inventory,
+# and the human stderr must print it even on a PASS.
+RECEIPT_I9="$TMP/receipt-i9.json"
+BS_I9_FILE="$TMP/bs-i9.json"
+printf '%s' "$BS_PRE" > "$BS_I9_FILE"
+python3 "$GUARD" --departments-dir "$DD_PRE" --build-state "$BS_I9_FILE" --naming-map "$NAMING_MAP" \
+  --out "$RECEIPT_I9" >/dev/null 2>"$TMP/i9.stderr"
+I9_RC=$?
+if [ "$I9_RC" -eq 0 ] && [ -f "$RECEIPT_I9" ] && python3 -c "
+import json
+r=json.load(open('$RECEIPT_I9'))
+assert r['verdict']=='PASS' and r['rc']==0, (r['verdict'], r['rc'])
+g=r['grandfatheredDepartments']
+assert len(g)==1 and g[0]['id']=='listings', g
+assert g[0]['witness']['value'] and g[0]['demotedAt'], g[0]
+assert r['residueSummary']['grandfatheredIds']==['listings'], r['residueSummary']
+assert r['residueSummary']['declarationRecordPresent'] is False, r['residueSummary']
+assert r['warnings'], r['warnings']
+assert r['schemaVersion'] and r['generatedAt'] and r['source']
+"; then
+  ok "(i9) receipt at --out carries grandfatheredDepartments + witness + residueSummary + warnings on a rc=0 run (cleanup is data-driven, no fresh survey needed)"
+else
+  bad "(i9) receipt missing the residue inventory on the PASS path"
+fi
+grep -q "GRANDFATHERED RESIDUE" "$TMP/i9.stderr" \
+  && ok "(i9) human output prints GRANDFATHERED RESIDUE on stderr even when rc=0 (a clean exit is never silent)" \
+  || bad "(i9) rc=0 run printed nothing about the grandfathered residue"
+grep -q "RESIDUE INVENTORY" "$TMP/i9.stderr" \
+  && ok "(i9) human output prints the RESIDUE INVENTORY summary line" \
+  || bad "(i9) rc=0 run printed no residue inventory summary"
 
 echo ""
 echo "--------------------------------------------"

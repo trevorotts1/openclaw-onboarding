@@ -24,6 +24,15 @@ if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || t
 : "${GOHIGHLEVEL_API_KEY:=}"; : "${GOHIGHLEVEL_LOCATION_ID:=}"
 # 11-alias fallback resolver — passes on pre-v12 boxes where the PIT is stored under a legacy name
 RESOLVED_PIT="${GOHIGHLEVEL_API_KEY:-${GHL_API_KEY:-${GHL_PIT:-${GHL_TOKEN:-${GHL_PRIVATE_INTEGRATION_TOKEN:-${PRIVATE_INTEGRATION_TOKEN:-${GHL_PRIVATE_TOKEN:-${PIT_TOKEN:-${GHL_PIT_TOKEN:-${GOHIGHLEVEL_LOCATION_PIT:-${GHL_LOCATION_PIT:-}}}}}}}}}}}"
+# NORMALISE (T2-03): the presence assertion below tests $RESOLVED_PIT, but both
+# live probes send $GOHIGHLEVEL_API_KEY. On a pre-v12 box holding a perfectly
+# valid PIT under any of the other ten legacy names, the presence check PASSED
+# and then both probes sent an EMPTY bearer token -- a confident, wrong
+# diagnosis that the credential is bad. Fold the resolved value back into the
+# canonical variable here, immediately after resolution, so the token that was
+# actually found is the token that is actually sent. Never echoed: presence and
+# prefix are asserted, the value itself is never printed.
+GOHIGHLEVEL_API_KEY="$RESOLVED_PIT"
 
 echo ""
 echo "═══ Skill 05 — GHL Setup — Install QC ═══"

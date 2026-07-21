@@ -1,25 +1,17 @@
 SCENE 1: [Animated logo reveal on dark background]
 TEXT: [Your Brand Here]
 DURATION: 3s
-TRANSITION: fade
 
 SCENE 2: [Modern office workspace with laptop]
-VOICEOVER: Welcome to our new product launch.
 TEXT: Introducing the Future
 DURATION: 4s
-BGM: upbeat
-TRANSITION: slide_left
 
 SCENE 3: [Close-up of product features]
-VOICEOVER: Designed for professionals who demand excellence.
 TEXT: Premium Features
 DURATION: 5s
-TRANSITION: zoom_in
 
 SCENE 4: [Happy customers using product]
-VOICEOVER: Join thousands of satisfied customers worldwide.
 DURATION: 4s
-TRANSITION: fade
 
 SCENE 5: [Call to action screen]
 TEXT: Get Started Today
