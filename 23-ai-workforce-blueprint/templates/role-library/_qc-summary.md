@@ -19,11 +19,11 @@ across 19 departments.
 
 It was also registered as a repo-wide **version marker**, so
 `scripts/bump-version.sh` rewrote the version out of its heading on every
-release. Nothing re-ran quality control; only the number moved. Across 508
-commits since that run the heading advanced from v11.0.1 to v20.0.86 while the
-generation date, the role count and the blanket pass verdict stayed exactly
-where the 2026-06-09 run had left them. It was restamped twice more during the
-review that produced this fix.
+release. Nothing re-ran quality control; only the number moved. Across more than
+500 commits since that run the heading advanced from v11.0.1 to v20.0.87 while
+the generation date, the role count and the blanket pass verdict stayed exactly
+where the 2026-06-09 run had left them. It was restamped three more times during
+the review that produced this fix — twice on the branch that removed it.
 
 The result was an artifact that read as a current, comprehensive certification of
 a library it had never been run against — and that renewed that claim
