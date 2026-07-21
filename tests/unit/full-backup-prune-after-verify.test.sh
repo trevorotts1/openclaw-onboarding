@@ -166,6 +166,11 @@ HOME_PERM="$TMP/home-perm"
 build_home "$HOME_PERM" 1
 mkdir -p "$HOME_PERM/clawd/secrets"
 printf 'secret-fixture\n' > "$HOME_PERM/clawd/secrets/.env"
+# 0600 even for a synthetic fixture: the repo's chmod-600 coverage gate requires
+# every .sh that writes secrets/.env to also restrict it, and a test fixture is
+# not an excuse to model the insecure shape. The value is a placeholder string,
+# never a real credential.
+chmod 600 "$HOME_PERM/clawd/secrets/.env"
 chmod 000 "$HOME_PERM/clawd/secrets"
 R="$(run_backup "$HOME_PERM")"; RC="${R%%|*}"; OUT="${R#*|}"
 chmod -R u+rwX "$HOME_PERM/clawd/secrets" 2>/dev/null
