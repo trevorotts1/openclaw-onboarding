@@ -62,6 +62,69 @@ carries `listings` on disk, so no box loses a department and nothing is removed.
 The gate only prevents a future force-add onto a box that never declared the
 vertical.
 
+## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
+
+**T2-07 — three documented entry points named a path that does not exist.**
+`23-ai-workforce-blueprint/SKILL.md:497` documented `bash add-role.sh`,
+`32-command-center-setup/SKILL.md:241,244` documented `bash sync-extensions.sh
+--converge`, and `22-book-to-persona-coaching-leadership-system/SKILL.md:284`
+documented `bash add-persona-from-source.sh`. All three scripts ship under the
+skill's own `scripts/` directory. An agent that follows the documented line gets
+`No such file or directory`, so the role, the converge or the persona never
+happens — and for skill 32 the converge is described as mandatory in the same
+document, eleven lines below a block that already used the correct path, so a
+newly added department is left unmaterialised. The third site was not in the
+finding; the new check found it.
+
+**T2-12 — three archived skill folders still read as live installers.**
+`33-department-heads-ARCHIVED/SKILL.md` opened as an active installer for
+seventeen permanent department heads, with no archive banner and no successor.
+`34-intelligent-staffing-ARCHIVED/SKILL.md` still declared that it extends Skill
+23 and depends on Skill 33. `13-google-workspace-setup-ARCHIVED` deferred parts
+of its own procedure to a skill number and a helper script that do not exist
+here. Following any of them reintroduces the superseded seventeen-department
+model into a workforce Skill 23 has already built, or creates a Google Cloud
+service-account key file that nothing reads.
+
+**What changed**
+
+- the three documented paths now name the shipped scripts
+- `SKILL.md` and `INSTALL.md` in the three archived folders are tombstones: an
+  `ARCHIVED — DO NOT RUN` banner, the successor named, the capability map, and
+  no runnable procedure left in the file
+- `33` and `34`'s `install.sh` refuse to run: they print why, name the successor
+  and exit 1, writing nothing. The old implementations were removed deliberately
+  — they are in git history and `ARCHIVED.md` maps every capability — because
+  leaving 190 and 416 lines of dead installer under an early exit would have left
+  the trap in place
+- `docs/archived-skill-tombstones.json` declares the state of EVERY archived
+  folder. `11-superdesign-ARCHIVED` and `21-tavily-search-ARCHIVED` are recorded
+  as still pending with the reason, so an outstanding archive is visible rather
+  than silently skipped
+
+**The checks, and that they can fail**
+
+`docs/tools/check_documented_entrypoints.py` resolves every documented
+bash/sh/python entry point inside a fenced block in any `NN-*/SKILL.md`. Runtime
+paths (`~/…`, `/…`, `$VAR/…`) and placeholders are out of scope: they name a
+location on a box, not a file this repository ships. Against untouched
+`origin/main` at `391a92e9` it exits 1 and names all four sites; against this
+release it exits 0 across 29 documented entry points.
+
+`tests/unit/documented-entrypoint-paths.test.py` — 7 tests, both directions.
+Reverting `SKILL.md:497` to `bash add-role.sh` turns it red.
+
+`tests/unit/archived-skill-tombstones.test.py` — 14 tests. It EXECUTES each
+tombstoned `install.sh` under a throwaway `HOME` and requires a non-zero exit
+that says `REFUSED`, names the successor and leaves `HOME` empty. Replacing 33's
+installer with `exit 0` turns it red; restoring 33's live installer body turns it
+red on four assertions; a new `*-ARCHIVED` folder the manifest does not declare
+turns it red.
+
+Both suites are hermetic and run in CI via
+`.github/workflows/documented-entrypoints-and-archived-tombstones-guard.yml`.
+
+---
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
