@@ -56,6 +56,20 @@ WHAT IS *NOT* A FAILURE:
     reconcile. Mirrors the WARN-and-continue convention every other Phase-6x
     sub-script in run-full-install.sh already uses for a not-yet-provisioned
     dependency.
+  - the STRUCTURAL `default` workspace row. It is not a department and never
+    was: blackceo-command-center's own seed (src/lib/db/seed.ts) inserts it
+    with the comment "carries no client/demo content -- it is the schema's own
+    DEFAULT target, not a department", solely so that
+    `agents.workspace_id TEXT DEFAULT 'default' REFERENCES workspaces(id)`
+    (src/lib/db/schema.ts) has a FOREIGN KEY target on a fresh database. It has
+    no directory on disk and appears in no floor manifest. Counting it as a
+    department made this gate FAIL every box on this schema (see the
+    STRUCTURAL-ROW EXCLUSION note on load_departments()).
+  - SOFT-ARCHIVED departments (`workspaces.archived_at IS NOT NULL`, migration
+    095). An archived row is off the board by design -- its runtime is
+    legitimately absent, so demanding one is a false failure.
+  Both exclusions are REPORTED BY NAME on every run. A skipped row is never
+  silently folded into the pass count.
 
 WHAT *IS* A HARD FAILURE:
   - one or more departments have a board row but no matching runtime entry
@@ -92,6 +106,27 @@ TAG = "[guard-department-runtime-parity]"
 EX_OK = 0
 EX_MISMATCH = 1
 EX_CONFIG_UNREADABLE = 2
+
+# ── STRUCTURAL-ROW IDENTITY ──────────────────────────────────────────────────
+# The literal id/slug the Command Center schema reserves for its own FOREIGN KEY
+# DEFAULT target. This is the LOAD-BEARING signal, and the reason it is the one
+# we key on: `agents.workspace_id TEXT DEFAULT 'default' REFERENCES
+# workspaces(id)` and `tasks.workspace_id TEXT DEFAULT 'default' REFERENCES
+# workspaces(id)` (blackceo-command-center src/lib/db/schema.ts) make the string
+# 'default' part of the schema itself -- a workspaces row with that id MUST
+# exist or the very first agent INSERT dies with SQLITE_CONSTRAINT_FOREIGNKEY.
+# seed.ts creates exactly that row (`INSERT OR IGNORE INTO workspaces (id, name,
+# slug, ...) VALUES ('default', 'General', 'default', ...)`) and documents it as
+# "the schema's own DEFAULT target, not a department".
+STRUCTURAL_WORKSPACE_ID = "default"
+
+# The sort_order sentinel seed.ts stamps on that same row (50000, vs the
+# schema DEFAULT of 1000 every real department carries) is CORROBORATING
+# evidence only -- it is reported when present but is deliberately NOT the
+# decision key: sort_order is a display-ordering column that any board reorder,
+# drag-and-drop, or future seed tweak may legitimately rewrite, whereas the id
+# cannot change without breaking the FOREIGN KEY the schema declares.
+STRUCTURAL_SORT_ORDER_SENTINEL = 50000
 
 # PRD 1.3 / 1.5: import the SAME shared DB resolver + canonical slug mapper
 # every other Skill 32 script uses, so this guard can never see a different
@@ -215,9 +250,29 @@ def load_agent_ids(config_path):
     return True, ids, None
 
 
+def is_structural_default_row(row_id, slug):
+    """True when this workspaces row is the schema's own FOREIGN KEY DEFAULT
+    target rather than a department.
+
+    See STRUCTURAL_WORKSPACE_ID above for why `id` (with `slug` accepted as the
+    equivalent signal, since seed.ts writes both as 'default' and the column is
+    UNIQUE) is the robust discriminator and sort_order is not.
+
+    Deliberately NARROW: it matches the one reserved identifier the schema
+    itself declares, so a genuine department can never be swallowed by it --
+    seed-workspaces.py derives every department slug from departments.json /
+    the on-disk department folder name, and 'default' is not a department in
+    any floor manifest.
+    """
+    rid = str(row_id).strip().lower() if row_id is not None else ""
+    sl = str(slug).strip().lower() if slug is not None else ""
+    return rid == STRUCTURAL_WORKSPACE_ID or sl == STRUCTURAL_WORKSPACE_ID
+
+
 def load_departments(db_path):
     """
-    Returns (found: bool, departments: list[dict], note: str | None).
+    Returns (found: bool, departments: list[dict], note: str | None,
+             excluded: list[dict]).
 
     found=False   -- mission-control.db itself does not exist (nothing to check).
     found=True, departments=[]  -- DB exists but `workspaces` table is missing/
@@ -227,9 +282,30 @@ def load_departments(db_path):
          "agents": [{"name": ..., "role": ...}, ...]}  (agents list may be
         empty when the dashboard `agents` table doesn't exist / has no rows
         for this workspace yet -- role/name variants are simply skipped then).
+    excluded  -- every workspaces row that is NOT a department, with the reason.
+                 Always reported by the caller; never silently dropped.
+
+    STRUCTURAL-ROW EXCLUSION (the false-fail this closes):
+      This function previously excluded non-department rows with
+      `if has_type and row['type'] in ('main', 'system')`. The Command Center
+      `workspaces` table has NO `type` column -- not in src/lib/db/schema.ts and
+      not added by any migration (the only ALTER TABLE workspaces migrations add
+      user_md, company_id, sort_order, head_agent_id, original_slug, description,
+      archived_at, archived_reason). `has_type` was therefore False on every real
+      box and the whole exclusion was dead code, so the structural 'default' row
+      seed.ts creates to satisfy `agents.workspace_id DEFAULT 'default'`'s
+      FOREIGN KEY was counted as a department with no runtime -- failing this
+      gate, which run-full-install.sh Phase 6e2 treats as install-blocking, on
+      EVERY box on this schema. The dead `type` branch is gone; the structural
+      row is excluded by the identifier the schema actually reserves.
+
+    ARCHIVED EXCLUSION: `workspaces.archived_at IS NOT NULL` (migration 095) is
+      the soft-archive marker for a department that is off the board. Its runtime
+      is legitimately absent, so it is excluded here (schema-tolerantly: DBs
+      predating migration 095 have no such column and are unaffected).
     """
     if not db_path or not os.path.isfile(db_path):
-        return False, [], f"mission-control.db not found (checked: {db_path or '<none>'})"
+        return False, [], f"mission-control.db not found (checked: {db_path or '<none>'})", []
 
     try:
         conn = sqlite3.connect(db_path)
@@ -238,10 +314,13 @@ def load_departments(db_path):
         ws_cols = [r[1] for r in conn.execute("PRAGMA table_info(workspaces)")]
         if not ws_cols:
             conn.close()
-            return True, [], "workspaces table not found in mission-control.db (nothing seeded yet)"
+            return True, [], "workspaces table not found in mission-control.db (nothing seeded yet)", []
 
-        has_type = "type" in ws_cols
-        select_cols = ["id", "name", "slug"] + (["type"] if has_type else [])
+        has_archived = "archived_at" in ws_cols
+        has_sort_order = "sort_order" in ws_cols
+        select_cols = (["id", "name", "slug"]
+                       + (["archived_at"] if has_archived else [])
+                       + (["sort_order"] if has_sort_order else []))
         rows = conn.execute(f"SELECT {', '.join(select_cols)} FROM workspaces").fetchall()
 
         # Schema-tolerant join to the DASHBOARD's `agents` table (NOT openclaw.json
@@ -266,20 +345,41 @@ def load_departments(db_path):
                     })
         conn.close()
     except sqlite3.Error as e:
-        return False, [], f"mission-control.db read error: {e}"
+        return False, [], f"mission-control.db read error: {e}", []
 
     departments = []
+    excluded = []
     for row in rows:
-        if has_type and row["type"] in ("main", "system"):
-            continue
         ws_id = row["id"]
+        slug = row["slug"] or ""
+        name = row["name"] or slug or ws_id
+        sort_order = row["sort_order"] if has_sort_order else None
+
+        if is_structural_default_row(ws_id, slug):
+            detail = ("schema FOREIGN KEY DEFAULT target "
+                      "(agents.workspace_id DEFAULT 'default'), created by "
+                      "blackceo-command-center src/lib/db/seed.ts -- not a department")
+            if sort_order == STRUCTURAL_SORT_ORDER_SENTINEL:
+                detail += f"; sort_order sentinel {STRUCTURAL_SORT_ORDER_SENTINEL} confirms it"
+            excluded.append({"id": ws_id, "slug": slug, "name": name,
+                             "reason": "structural-default-workspace", "detail": detail})
+            continue
+
+        archived_at = row["archived_at"] if has_archived else None
+        if archived_at is not None and str(archived_at).strip() != "":
+            excluded.append({"id": ws_id, "slug": slug, "name": name,
+                             "reason": "archived",
+                             "detail": f"workspaces.archived_at={archived_at!r} "
+                                       f"(soft-archived, off the board)"})
+            continue
+
         departments.append({
             "id": ws_id,
-            "slug": row["slug"] or "",
-            "name": row["name"] or row["slug"] or ws_id,
+            "slug": slug,
+            "name": name,
             "agents": agents_by_ws.get(ws_id, []),
         })
-    return True, departments, None
+    return True, departments, None, excluded
 
 
 def check_parity(departments, agent_ids):
@@ -326,14 +426,45 @@ def main(argv=None):
     db_path = _resolve_db_path(args.db)
     config_path = _resolve_config_path(args.config, args.oc_root)
 
-    found_db, departments, db_note = load_departments(db_path)
+    found_db, departments, db_note, excluded = load_departments(db_path)
+
+    # --json is the contract run-full-install.sh Phase 6e2 parses. Every exit
+    # path must emit parseable JSON under it -- a plain-text line here reaches
+    # that caller as "<unparseable guard output>".
+    def _emit_json(checked, mismatches, note=None):
+        payload = {
+            "checked": checked,
+            "mismatches": mismatches,
+            "excluded": excluded,
+            "ok": not mismatches,
+        }
+        if note:
+            payload["note"] = note
+        print(json.dumps(payload, indent=2))
 
     if not found_db:
-        print(f"{TAG} SKIP: {db_note} -- nothing to reconcile yet (not a failure)")
+        if args.json:
+            _emit_json(0, [], note=db_note)
+        else:
+            print(f"{TAG} SKIP: {db_note} -- nothing to reconcile yet (not a failure)")
         return EX_OK
 
+    # Report every excluded row BY NAME before any verdict. An excluded row is
+    # never folded into the pass count and is never silent -- a reader must be
+    # able to see exactly which rows this guard declined to check, and why.
+    if excluded and not args.json:
+        for x in excluded:
+            print(f"{TAG} EXCLUDED (not a department): {x['name']} "
+                  f"(id={x['id']!r}, slug={x['slug']!r}) -- {x['reason']}: {x['detail']}")
+        # stdout is block-buffered when piped; the verdict below goes to stderr.
+        # Flush so the exclusions always read BEFORE the verdict they precede.
+        sys.stdout.flush()
+
     if not departments:
-        print(f"{TAG} PASS: {db_note or '0 departments seeded onto the board yet'} -- nothing to reconcile")
+        if args.json:
+            _emit_json(0, [], note=db_note or "0 departments seeded onto the board yet")
+        else:
+            print(f"{TAG} PASS: {db_note or '0 departments seeded onto the board yet'} -- nothing to reconcile")
         return EX_OK
 
     ok, agent_ids, cfg_err = load_agent_ids(config_path)
@@ -352,6 +483,7 @@ def main(argv=None):
         print(json.dumps({
             "checked": checked,
             "mismatches": mismatches,
+            "excluded": excluded,
             "ok": not mismatches,
         }, indent=2))
     elif mismatches:

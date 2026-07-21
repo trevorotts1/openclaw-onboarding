@@ -126,7 +126,12 @@ def check_general_task_runtime(db_path, config_path, oc_root):
     resolved_db = db_path or guard._resolve_db_path(None)
     resolved_config = config_path or guard._resolve_config_path(None, oc_root)
 
-    found_db, departments, db_note = guard.load_departments(resolved_db)
+    # load_departments returns a 4-tuple: the 4th element lists the workspaces
+    # rows that are NOT departments (the structural 'default' FK-DEFAULT target
+    # and soft-archived rows) with the reason each was excluded. This probe only
+    # looks for the general-task row, which is never one of those, so the list is
+    # bound and ignored rather than dropped silently.
+    found_db, departments, db_note, _excluded = guard.load_departments(resolved_db)
     if not found_db:
         return {
             "workspace_row_present": False,
