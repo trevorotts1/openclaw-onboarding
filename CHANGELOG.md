@@ -1,3 +1,68 @@
+## [v20.0.89]  -  2026-07-21  -  THE MEMORY ACTIVATOR APPLIED NEITHER REQUIRED SETTING, REWROTE THE LIVE CONFIG TWICE BEFORE VALIDATING, AND PRINTED DONE OVER A RUNTIME IT NEVER CHECKED
+
+Three findings in `31-upgraded-memory-system/scripts/activate-memory-stack.sh` —
+the ONLY supported activation path for the memory substrate every agent on the
+box reads and writes through.
+
+### T2-27 (BLOCKER) — the only supported activation path could not produce the mandatory state
+
+`31-upgraded-memory-system/SKILL.md:14`:
+
+    > ACTIVE MEMORY IS REQUIRED - Layer 8 (Active Memory) requires memory-core
+    > with `autoCapture: true` and `autoRecall: true`. This is NOT optional.
+
+The configuration the script applied contained the plugin entry, the dreaming
+setting and the backend — and neither required setting, nor the `activeMemory`
+block SKILL.md documents beside them. The layer reported active and captured
+nothing. Both are now in the canonical block, and the script asserts them as
+postconditions on the staged file before installing it.
+
+### T2-28 (BLOCKER) — two in-place writes to the live config, before validation, with no backup
+
+The canonical merge and the corpus attachment each rewrote the LIVE
+`openclaw.json` in place, and `openclaw config validate` ran afterwards. An
+interruption between the two writes, or a validation failure after them, left
+the box holding a configuration that was never validated and could not be
+restored. This is the file the gateway reads at start.
+
+Both mutations now apply to a staging file in the configuration directory. The
+staged file is JSON-validated and postcondition-checked, a timestamped backup of
+the original is written, and the install is a single atomic same-directory
+rename — so the live file is the original or the fully updated one at every
+instant, never a partial. A rejection from `openclaw config validate` restores
+the backup and exits non-zero.
+
+### T0-45 — the verification was discarded, and the banner named a provider the run may never have selected
+
+    openclaw memory status || true
+
+    echo "[activate-memory-stack] DONE. Verify the output above shows:"
+    echo "  • Provider: gemini (requested: gemini)"
+
+The verification command's failure was thrown away, so the script could not
+distinguish a healthy memory stack from one that cannot start. It then printed a
+completion banner whose stated success criteria named Gemini even on the branch
+that resolved NO provider at all — the operator was told to confirm output the
+run could never produce, and the run had already declared DONE.
+
+The status call now captures its output and exit code; a non-zero exit is fatal;
+`Provider: none` is a failure; the output must name the provider this box
+actually resolved (read from the installed configuration when no key-derived
+provider was chosen); and the printed criteria are generated from that provider.
+A box with no embedding-capable key at all is now a failure rather than a DONE,
+because Layer 4 cannot run without one.
+
+### Tests
+
+`tests/unit/memory-activator-correct-atomic.test.sh` — 22 assertions including a
+real interruption (the activator is killed the instant its staging file appears,
+and the live configuration must be the original or the fully updated one, and
+parseable either way), a validator-rejection restore, and the `|| true` mutation
+proof: with the pre-fix line restored the same failing runtime prints DONE and
+exits 0. CI: `.github/workflows/memory-activator-guard.yml`, which additionally
+asserts structurally that no mutation targets the live file and that exactly one
+statement installs the staged one.
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
