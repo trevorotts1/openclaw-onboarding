@@ -17,7 +17,11 @@ echo "═══ Skill 19 — Humanizer — Install QC ═══"
 echo ""
 assert "Skill 19 folder present" "[ -d \"$SKILLS_DIR_DEFAULT/19-humanizer\" ]"
 # T0-61 — INVERTED PREDICATE, FIXED.
-#   Was: grep -qE 'em dash|—' over AGENTS.md + SOUL.md.
+#   Was: an alternation of the phrase 'em dash' with the em-dash CHARACTER itself,
+#   searched over AGENTS.md + SOUL.md. (The character is deliberately not quoted
+#   here: the CI regression check greps this file for it, and a comment carrying
+#   it would trip that check — a false positive of exactly the kind this fix is
+#   about not creating.)
 #   The pattern alternated the RULE PHRASE with the BANNED CHARACTER ITSELF, so a
 #   workspace file containing an em dash anywhere in unrelated prose satisfied the
 #   check with no ban rule installed at all — the exact state the check exists to
