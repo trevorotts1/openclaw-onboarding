@@ -1,3 +1,58 @@
+## [v20.0.82]  -  2026-07-21  -  EVERY `qmd` CALL WAS UNBOUNDED: ~50 of one update run's 64 minutes spent waiting on calls that then failed silently
+
+`shared-utils/provision-persona-index.sh` invoked `qmd` eleven times without a
+timeout anywhere. On a box whose native `better-sqlite3` ABI is broken by a Node
+major bump, `qmd` does not fail fast — it falls through to
+`bunx @tobilu/qmd`, which downloads, starts, and only then errors, taking
+**~17 minutes per call**. Three sequential calls on the ABI-broken path burned
+**~50 of one run's 64 minutes** before the updater had done any work.
+
+**The silent half was worse than the slow half.** Every teardown was written
+
+    qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+
+so a call that never completed was indistinguishable from one that succeeded.
+The run printed
+
+    STATUS: qmd-abi-broken - ... removing any 'coaching-personas' collection
+    so inventory queries ERROR -> persona-categories.json fallback (N16)
+
+for a collection it had not removed. The whole point of that teardown is to make
+inventory queries ERROR so the agent falls back to `persona-categories.json`
+instead of reading a frozen store — and the log asserted the teardown had
+happened while the store was still there and still readable.
+
+**THE FIX — bounded, and loud when the bound is hit.**
+
+* `_qmd_bounded <secs> <args...>` wraps every `qmd` invocation. `collection
+  list` and `collection remove` get **60s** (measured adequate — these are
+  metadata operations that take well under a second on a healthy box);
+  `collection add` and `update` get **600s** because they do real indexing work,
+  but they are bounded too: on an ABI-broken box they route through the same
+  ~17-minute `bunx` path as everything else.
+* `timeout(1)` is not present on a stock macOS, so the wrapper resolves
+  `timeout` -> `gtimeout` -> a pure-POSIX watchdog fallback. Exit 124/137 is
+  treated as timeout on all three paths.
+* A timed-out call is **reported**, never swallowed: a per-call notice on stderr
+  (so a caller's own `>/dev/null` cannot hide it, and it never pollutes a
+  `$(...)` capture), and an end-of-block `STATUS: qmd-timeout` summary emitted on
+  **every** exit path, including the early `qmd-abi-broken` return.
+* `_qmd_remove_collection` replaces the bare `remove ... || true` sites and
+  refuses to report a removal it cannot prove: on timeout it says the collection
+  **may still exist and may still be readable by the agent**.
+* The helpers cannot abort a caller under `set -e` + `pipefail` — every failure
+  path is guarded, preserving the v16.2.13 SIGPIPE-safety contract.
+
+Measured with a stubbed slow `qmd` (25s per call), same fixture both sides:
+**before 125s with zero timeout reporting, after 9s with all three timeouts
+reported** and no success claimed.
+
+Locked by `tests/unit/qmd-bounded-timeout.test.sh` (6 assertions) and
+`.github/workflows/qmd-bounded-timeout-guard.yml`. The suite is hermetic — stub
+`qmd` and stub `npm` on `PATH` inside a temp dir, no network and no fleet box.
+Assertion 6 is the anti-false-positive control: with a fast, working `qmd` the
+run must report **no** timeout, so a "fix" that quiets the gate by always
+claiming a timeout fails the workflow.
 ## [v20.0.81]  -  2026-07-21  -  THREE CHECKERS THAT FALSE-FAILED HEALTHY BOXES — one of them an install-blocking gate that failed EVERY box on the current schema
 
 A client box was diagnosed where **4 of 4 reported defects were checker
