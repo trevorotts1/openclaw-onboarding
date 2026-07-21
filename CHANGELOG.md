@@ -1,3 +1,83 @@
+## [v20.0.90]  -  2026-07-21  -  FOUR SILENT-FAILURE PATHS IN THE PODCAST ENGINE (T0-19, T0-20, T0-21, T0-22)
+
+**T0-19 — channel scoping failed open.** `podbean_publish.sh` had exactly ONE
+hard stop in its isolation guard (the configured channel not appearing on the
+account) and THREE paths that logged a warning and carried on holding the
+ACCOUNT-WIDE token: the channel listing call failing, the identifier list parsing
+empty, and the scoped-token request failing or returning nothing. On a shared
+account hosting several channels, any of the three could place a client-facing
+episode on a channel that was never proven to be the target.
+
+Every one of those paths is now fatal, and a new `CHANNEL_SCOPE_PROVEN` flag is
+set only on a path that has proven the token can reach the target channel and
+nothing else — the episode-create call refuses to run without it, so a future
+token path cannot silently publish account-wide. `http_request` already retries a
+non-2xx with quadratic backoff, so a network blip is retried before any of this
+becomes a verdict.
+
+**Deliberately NOT in this release:** passing `podcast_id` explicitly on the
+episode-create call, the second half of T0-19's exact fix. That changes the shape
+of a live client-facing request to a third-party API, and it cannot be verified
+from the repository — a rejection would break every publish. It is recorded as a
+Section B item whose measurement is one create call against the operator test
+channel. The wrong-channel property this finding is about is already closed by
+the refusals above: a publish can now only proceed on a proven scoped token or a
+single-channel account.
+
+**T0-20 — an unmeasured master was released as verified.**
+`generate_podcast_audio.sh` ran the EBU R128 measurement with `|| true` and
+treated an unparseable summary as a warning, then logged "SUCCESS, mastered audio
+verified" and exited 0 — while the file's own header contract states that exit 0
+means duration AND loudness are sane. Both are now hard failures.
+
+**T0-21 — the webhook answered before the durable write.** The publish workflow's
+success branch fanned out to three SIBLING nodes in parallel: the notification,
+`Respond — Publish Success`, and `Idempotency — Mark Completed`, the last
+carrying `onError: continueRegularOutput`. The synchronous webhook could return
+an OK asserting a durable successful publish while the idempotency row that
+prevents a DUPLICATE publish never landed. The response is now chained behind the
+completion write and the continue-on-error setting is gone.
+
+> **FLEET ACTION — this one does not complete at merge.** A workflow file in the
+> repository that is never imported changes nothing on the running automation
+> host. The workflow must be redeployed into n8n. The suite here proves the FILE
+> is right, never that the host is running it.
+
+**T0-22 — a broken ledger linkage was indistinguishable from no ledger.**
+`podcast_state.py::_resolve_ledger_file` returned None for both, `_sync_ledger`
+returned immediately on either, and `cmd_advance` never looked at the outcome, so
+a missing, malformed or unreadable job index produced no ledger update, no
+warning, and an advance that reported success while the atomic-claim record was
+left behind. The three states are now distinct — `not_configured`, `synced`,
+`broken` — a broken linkage warns on stderr, the emitted record carries
+`ledger_sync`, and the advance exits non-zero. The committed SQLite transition is
+still reported honestly; what is refused is calling the advance complete while
+its claim record is unreconciled.
+
+**The tests, and that they can fail**
+
+`tests/unit/podcast-engine-fail-closed.test.sh` — 19 checks, hermetic (a fake
+`curl` answering from a scripted table; no network, no Podbean account, no client
+data). Against untouched `origin/main`: **7 passed, 11 FAILED**, including *"an
+episode-create request was sent on an unscoped token (multi-channel account)"* —
+the wrong-channel publish itself. Against this release: 19 passed. The healthy
+single-channel case is asserted in the other direction too: it must still REACH
+the episode-create call, so the fix cannot be "refuse everything".
+
+`tests/unit/podcast-state-ledger-linkage.test.py` — 10 tests driving the REAL CLI
+end to end against a temp database. Against untouched `origin/main`: 6 failures
+and 3 errors. Against this release: 10 passed.
+
+`tests/unit/podbean-publish-workflow-response-ordering.test.py` — 9 tests reading
+the workflow graph with a real JSON parser. Against untouched `origin/main`: 4
+FAILED. Against this release: 9 passed.
+
+All three run in CI via
+`.github/workflows/podcast-engine-fail-closed-guard.yml`, which also compiles
+every embedded Python heredoc separately, because `bash -n` does not parse them.
+
+---
+
 ## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
 
 ### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time

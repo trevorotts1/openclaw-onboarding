@@ -743,8 +743,7 @@
           }
         },
         "options": {}
-      },
-      "onError": "continueRegularOutput"
+      }
     },
     {
       "id": "d6b095a8-6243-4ccf-9d69-4fa13f55a33d",
@@ -889,7 +888,6 @@
       "main": [
         [
           { "node": "Gmail — Success Notification", "type": "main", "index": 0 },
-          { "node": "Respond — Publish Success", "type": "main", "index": 0 },
           { "node": "Idempotency — Mark Completed", "type": "main", "index": 0 }
         ],
         [
@@ -899,6 +897,7 @@
         ]
       ]
     },
+    "Idempotency — Mark Completed": { "main": [[{ "node": "Respond — Publish Success", "type": "main", "index": 0 }]] },
     "Podbean — Publish Episode": { "main": [[{ "node": "IF — Episode Created Successfully", "type": "main", "index": 0 }]] },
     "Webhook — Receive Podcast Payload": { "main": [[{ "node": "Guard — Validate Required Payload Fields", "type": "main", "index": 0 }]] },
     "Guard — Validate Required Payload Fields": { "main": [[{ "node": "IF — Entry Guard Passed", "type": "main", "index": 0 }]] },
