@@ -1,3 +1,65 @@
+## [v20.0.90]  -  2026-07-21  -  THE ANTHOLOGY PIPELINE COULD NEVER REACH ITS SECOND STAGE: nine stages, nine different working directories (T2-05)
+
+Every stage dispatcher in `59-anthology-engine/scripts/` resolved its **own**
+working directory:
+
+    d = SKILL_DIR / "state" / "runs" / STAGE / safe        # s0, s1, s2, ... s8
+
+and then handed exactly that directory to the downstream authoring core:
+
+    bash 54-anthology-writer/anthology-entry.sh --run-dir <that dir> --upto <PHASE>
+
+`54-anthology-writer/run_anthology.py::run()` walks `PHASE_ORDER` from `P0-INTAKE`
+on **every** invocation and fails closed at the first phase whose required
+preflight checker rejects the run directory. The artifacts those early gates read
+— `working/intake.json`, written only by `stage_s1_avatar._write_intake_bridge`,
+and `working/avatar.md`, written by the S1 Layer-1 call — landed in the **S1**
+directory. So a normal S2 dispatch handed Skill 54 an **empty** directory and
+stopped at `P0-INTAKE`, before tone authoring began. Every later stage had the
+same shape, and `stage_s9_assembly.py` read frozen chapters from a hardcoded
+`state/runs/s5/<safe>/working/chapter.md`.
+
+**The fix:** one canonical per-participant directory,
+`state/runs/participants/<safe_key>`, resolved identically by `s0` through `s8`,
+and read by the new module-level `stage_s9_assembly.participant_chapter_path()`.
+`"participants"` is a fixed literal and never a stage name, so it cannot collide
+with the anthology-level assembly directory at `state/runs/s9/<anthology_id>`
+that `gate_engine.py::_s9_run_dir` must keep resolving identically — S9's own
+`_run_dir_for` is deliberately unchanged.
+
+**Both columns, measured on the branch** with
+`59-anthology-engine/tests/test_stage_run_dir_shared.py`:
+
+    stage scripts at origin/main  ->  0 passed, 5 failed
+        "the authoring stages resolve 9 different working directories for one key"
+        "Skill 54's P0-INTAKE gate rejected the S2 run dir: missing working/intake.json"
+    stage scripts fixed           ->  5 passed, 0 failed
+
+The suite drives Skill 54's **real** `P0-INTAKE` gate (`run_anthology._chk_intake`,
+which shells the real `prove_aw_intake.py`) in **both** directions: it must pass on
+the shared directory and still fail on a directory that lacks the artifact. It is
+hermetic — each stage module's `SKILL_DIR` is redirected into a tempdir, so nothing
+is written inside the checkout, and no network is used.
+
+**A test that encoded the defect was tightened, not deleted.**
+`59-anthology-engine/tests/test_s9_assembly_runner_confirm_order.py` seeded frozen
+chapter bodies at `state/runs/s5/<safe>/working/chapter.md` — the stage-scoped
+layout — and was green throughout. Its three path literals now read
+`state/runs/participants/<safe>/...` and its module docstring records which literal
+it used to carry, so a regression back to a stage-scoped path turns that suite red
+as well. The literal is deliberately spelled out rather than imported from
+`participant_chapter_path()`: the fixture must not be produced by the code under
+test.
+
+Full engine suite after the change: **171 passed**.
+
+New CI guard: `.github/workflows/anthology-shared-run-dir-guard.yml`.
+Skill 59 `skill-version.txt` 0.1.9 -> 0.1.10.
+
+Finding T2-05. Work item A24.
+
+---
+
 ## [v20.0.88]  -  2026-07-21  -  DOCUMENTED ENTRY POINTS THAT DO NOT EXIST, AND ARCHIVED SKILLS THAT STILL READ AS LIVE INSTALLERS (T2-07, T2-12)
 
 **T2-07 — three documented entry points named a path that does not exist.**
