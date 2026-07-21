@@ -1,3 +1,63 @@
+## [v20.0.87]  -  2026-07-21  -  TWO INSTALL GATES HARD-REQUIRED THE COMMAND-LINE TOOL THEIR OWN SOVEREIGN LOCK FORBIDS
+
+`10-github-setup/SKILL.md:14-15` and `08-vercel-setup/SKILL.md:14-16` each open
+with an **API-ONLY EXECUTION LOCK (SOVEREIGN)**:
+
+    - For this onboarding package, do NOT use GitHub CLI (gh) for setup/auth.
+    - For this onboarding package, do NOT use the Vercel CLI for setup/auth.
+      Use browser-based account/token creation and API-token verification only.
+
+Both install gates nevertheless hard-asserted the forbidden binary:
+
+    qc-github-setup.sh:23  assert "gh CLI installed"     "command -v gh"
+    qc-github-setup.sh:26  assert "gh authenticated"     "gh auth status ..."
+    qc-vercel-setup.sh:25  assert "vercel CLI installed" "command -v vercel"
+
+A box installed **exactly as each skill prescribes** has neither binary. Both
+gates therefore failed permanently on every correct install and fed a non-zero
+quality-control exit into the wave gate — and the remedy an operator reaches for
+(install the forbidden tool) defeats the lock the skill was written to enforce.
+
+**The three assertions are removed.** In their place each gate prints one
+explicit `SKIPPED BY DESIGN` line naming the lock. That line increments neither
+the pass counter nor the warning counter: a check that is not run must say so
+visibly and must never be counted as a pass.
+
+**Credential validation is deliberately untouched.** `GITHUB_TOKEN`/`GH_TOKEN`
+presence stays warn-only and the Vercel live-token probe stays warn-only.
+Promoting either to a hard assertion is a verdict change in the *failing*
+direction and needs a fleet measurement first; it is not in this change.
+
+**Both columns, measured on the branch:**
+
+    gates at origin/main + the new suite  ->  4 passed, 4 failed
+        T1 FAIL  "gh CLI installed" and "gh authenticated" on a correct install
+        T5 FAIL  "vercel CLI installed" on a correct install
+    gates fixed      + the new suite      ->  8 passed, 0 failed
+
+`tests/unit/qc-sovereign-lock-forbidden-cli.test.sh` is hermetic — a fixture
+`HOME` and a PATH sandbox in a tempdir, with `gh` and `vercel` absent **by
+construction** and a stubbed `curl`, so no network and no box state is touched.
+It proves the gates still fail on a genuine defect, each by name:
+
+| Case | Condition | Expected |
+|---|---|---|
+| T1 | Skill 10, correct install, `gh` absent | exit 0 |
+| T2 | Skill 10, skill folder missing | exit 1, names `Skill 10 folder present` |
+| T3 | Skill 10, no global git identity | exit 1, names `git user.email configured` |
+| T4 | Skill 10, static: `gh` not hard-asserted | pass |
+| T5 | Skill 08, correct install, `vercel` absent | exit 0 |
+| T6 | Skill 08, `VERCEL_TOKEN` unset | exit 1, names `VERCEL_TOKEN set` |
+| T7 | Skill 08, `jq` absent | exit 1, names `jq installed` |
+| T8 | Skill 08, static: `vercel` not hard-asserted | pass |
+
+Wired into `.github/workflows/checker-false-fail-guards.yml`, which already owns
+this defect class (a checker reporting something other than reality).
+
+Finding T2-19. Work item A28.
+
+---
+
 ## [v20.0.86]  -  2026-07-21  -  A RETROACTIVE RULE CHANGE WAS BLOCKING 28 OF 30 BOXES: the vertical guard judged pre-2026-06-28 provisioning by the classification that replaced it
 
 Command Center refresh went FATAL at `phase=3b vertical-derivation-guard` (rc=3)
