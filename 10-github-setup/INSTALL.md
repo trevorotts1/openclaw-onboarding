@@ -126,23 +126,46 @@ GITHUB SETUP - INSTALLATION GUIDE
 ══════════════════════════════════════════════════════════════════
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-STEP 0: LOCATE SECRETS FILE (MULTI-ENV CHECK)
+STEP 0: RESOLVE THE CANONICAL SECRETS STORE
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Before doing anything else, identify where secrets are stored on this machine.
-Run this check and store the result in $SECRETS_FILE for use in later steps:
+Before doing anything else, RESOLVE where secrets belong on this machine. Do not
+search a hardcoded list. This step used to walk
+`~/clawd/secrets/.env ~/.openclaw/.env ~/.env ~/secrets/.env` and fall back to
+the first of them — none of which is the store `qc-github-setup.sh` reads. That
+check sources `$SECRETS_ENV`, which `lib-shared.sh:38-44` defines as
+`~/.openclaw/secrets/.env` on Mac and `/data/.openclaw/secrets/.env` on VPS.
+Writing the token anywhere else means the verification reports it absent on a
+box where the owner supplied it correctly.
 
-  SECRETS_FILE=""
-  for f in ~/clawd/secrets/.env ~/.openclaw/.env ~/.env ~/secrets/.env; do
-    if [ -f "$f" ]; then SECRETS_FILE="$f"; break; fi
-  done
-  if [ -z "$SECRETS_FILE" ]; then
-    SECRETS_FILE=~/clawd/secrets/.env
-    mkdir -p ~/clawd/secrets
+  SKILLS_DIR="$HOME/.openclaw/skills"; [ -d /data/.openclaw/skills ] && SKILLS_DIR=/data/.openclaw/skills
+  [ -f "$SKILLS_DIR/lib-shared.sh" ] && . "$SKILLS_DIR/lib-shared.sh"
+  if ! command -v resolve_platform_paths >/dev/null 2>&1; then
+    resolve_platform_paths() {
+      if [ -d /data/.openclaw ]; then export SECRETS_ENV="/data/.openclaw/secrets/.env"
+      else export SECRETS_ENV="$HOME/.openclaw/secrets/.env"; fi
+    }
   fi
-  echo "Secrets file: $SECRETS_FILE"
+  resolve_platform_paths
+  SECRETS_FILE="$SECRETS_ENV"
+  mkdir -p "$(dirname "$SECRETS_FILE")" && touch "$SECRETS_FILE" && chmod 600 "$SECRETS_FILE"
+  echo "Canonical secrets store: $SECRETS_FILE"
 
-Use $SECRETS_FILE for all read/write operations in subsequent steps.
+  # MIGRATION READ (one-time, read-only): if a legacy store still holds a value
+  # and the canonical store does not, carry it across once. Nothing is ever
+  # written back to a legacy path.
+  for LEGACY in "$HOME/clawd/secrets/.env" "$HOME/.openclaw/.env" "$HOME/.env" "$HOME/secrets/.env"; do
+    [ -f "$LEGACY" ] && [ "$LEGACY" != "$SECRETS_FILE" ] || continue
+    for k in GITHUB_TOKEN GITHUB_USERNAME; do
+      if grep -q "^${k}=" "$LEGACY" 2>/dev/null && ! grep -q "^${k}=" "$SECRETS_FILE" 2>/dev/null; then
+        grep "^${k}=" "$LEGACY" >> "$SECRETS_FILE"
+        echo "migrated $k from a legacy store to $SECRETS_FILE"
+      fi
+    done
+  done
+
+Use $SECRETS_FILE for all read/write operations in subsequent steps. Report
+credential presence as SET / NOT-SET — never print a token value.
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 STEP 1: CHECK FOR EXISTING GITHUB TOKEN

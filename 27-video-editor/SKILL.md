@@ -53,12 +53,10 @@ See `INSTALL.md` for step-by-step setup.
 │   ├── broll-workflow.sh     # Guided end-to-end B-roll workflow
 │   ├── broll_merge.py        # Python helper used by merge-broll.sh
 │   └── text-overlay.py       # Optional: add a basic text overlay
-├── references/
-│   ├── platform-specs.md
-│   ├── ffmpeg-vs-moviepy.md
-│   └── kie-ai-models.md
-├── brand-templates/          # Reserved for templates (currently empty)
-└── examples/                 # Reserved for example configs (currently empty)
+└── references/
+    ├── platform-specs.md
+    ├── ffmpeg-vs-moviepy.md
+    └── kie-ai-models.md
 ```
 
 ## Quick start (most common workflow)
