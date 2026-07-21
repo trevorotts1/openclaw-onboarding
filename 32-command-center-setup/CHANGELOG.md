@@ -1,5 +1,23 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.46 — 2026-07-21 — phase=3b now REPORTS the pre-reclassification residue it stops failing on
+
+`vertical-derivation-guard.py` gained evidence-based grandfathering for
+departments that were universal FLOOR when they were provisioned and were later
+reclassified as industry-gated (`listings`, demoted by `b3e25876` on
+2026-06-28). That lifted an install-blocking rc=3 on 28 of 30 reachable boxes —
+but a `rc=0` that hides what is actually on disk would just be the same failure
+in the other direction.
+
+So phase=3b now parses the guard's JSON on the PASS path and re-logs, at
+**WARN**, every grandfathered department (with its demoting commit and the exact
+witness that justified it) plus every guard warning — including
+`NO_DECLARATION_RECORD` when the box carries no `verticalPacks` record — and
+closes with an explicit "REPORTED, NOT REMEDIATED" line pointing at
+`$OC_ROOT/workspace/provisioning/vertical-derivation.json` so cleanup can be
+driven from the receipt instead of a fresh fleet survey. The rc=3 `fail_install`
+path is unchanged; nothing is added or removed from any box.
+
 ## v12.9.43 — 2026-07-20 — SOP V2 library ingestion is now safe to run on EVERY roll (idempotent, non-clobbering, fail-loud)
 
 The updater synced FILES but never populated the SOP DATABASE. A box could run

@@ -35,11 +35,6 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     Returns:
         Path to generated video
     """
-    from moviepy.editor import ImageClip, TextClip, CompositeVideoClip, AudioFileClip
-    from moviepy.video.fx.all import resize, scroll
-    from moviepy.audio.fx.all import audio_fadein, audio_fadeout, volumex
-    import numpy as np
-    
     if not image_path.exists():
         raise FileNotFoundError(f"Image not found: {image_path}")
     
@@ -54,20 +49,19 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
     
     output.parent.mkdir(parents=True, exist_ok=True)
     
-    # Try AI provider first if not local
+    # Non-local requests must be fulfilled by the selected provider.
     if provider != 'local':
-        try:
-            config = load_config()
-            ai = AIProvider(provider, config.get('video_providers', {}))
-            return ai.image_to_video(
-                image_path=image_path,
-                prompt=f"{motion} motion effect",
-                duration=int(duration),
-                output=output
-            )
-        except Exception as e:
-            print(f"   AI provider failed: {e}")
-            print("   Falling back to local processing...")
+        config = load_config()
+        ai = AIProvider(provider, config.get('video_providers', {}))
+        return ai.image_to_video(
+            image_path=image_path,
+            prompt=f"{motion} motion effect",
+            duration=int(duration),
+            output=output
+        )
+
+    from moviepy.editor import ImageClip, AudioFileClip
+    from moviepy.audio.fx.all import audio_fadein, audio_fadeout, volumex
     
     # Local processing with MoviePy
     clip = ImageClip(str(image_path))
@@ -102,8 +96,7 @@ def image_to_video(image_path: Path, output: Optional[Path] = None,
         clip = clip.set_duration(duration)
         
     else:
-        # Default to ken burns
-        clip = apply_ken_burns(clip, duration)
+        raise ValueError(f"Unknown motion effect: {motion}")
     
     # Add music if provided
     if music:

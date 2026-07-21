@@ -3,10 +3,13 @@
 Create videos from scratch using AI models and basic editing tools.
 """
 
-__version__ = "1.0.0"
-__author__ = "OpenClaw"
-
 from pathlib import Path
+
+_skill_version = (
+    Path(__file__).resolve().parent.parent / "skill-version.txt"
+).read_text(encoding="utf-8").strip()
+__version__ = _skill_version[1:] if _skill_version.startswith("v") else _skill_version
+__author__ = "OpenClaw"
 
 # Core imports
 from .ai_providers import AIProvider

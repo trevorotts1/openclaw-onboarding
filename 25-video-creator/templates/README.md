@@ -1,139 +1,57 @@
 # Video Templates
 
-Pre-built templates for common video types. Use with `template_video.py`.
-
-## Usage
+Use a validated JSON data file with `template_video.py`:
 
 ```bash
-python scripts/template_video.py TEMPLATE_NAME --data template.json
+python scripts/template_video.py TEMPLATE_NAME \
+  --data client-data.json \
+  --output final-video.mp4
 ```
 
-## Available Templates
+`--output` is honored as the final output path. Unknown fields, missing required fields, missing media files, and unavailable requested music fail before rendering.
 
-### product_showcase
-Highlight reel for products. Perfect for e-commerce and marketing.
+The bundled JSON files are illustrative legacy samples, not ready-to-render assets. Copy one, remove any fields not listed in the exact schemas below, and replace every sample media path with an existing local client-owned file before running it.
 
-```bash
-python scripts/template_video.py product_showcase --data templates/product_showcase.json
-```
+## Exact validated schemas
 
-**Required fields:**
-- `product_name` - Product name
-- `images` - Array of image paths
-- `features` - Array of feature strings
+### `product_showcase`
 
-**Optional fields:**
-- `tagline` - Product tagline
-- `price` - Price string
-- `call_to_action` - CTA text
-- `music` - Background music genre
-- `duration` - Total duration in seconds
+- Required: `product_name` (string), `images` (non-empty list of existing image paths), `features` (non-empty list of strings)
+- Optional: `tagline`, `price`, `call_to_action`, `duration`, `music`
+- `music`, when present, must be an existing local audio file path.
 
----
+### `social_post`
 
-### social_post
-Optimized for social media platforms.
+- Required: `headline` (string)
+- Optional: `subheadline`, `platform`, `duration`, `music`
+- `platform` must be `instagram`, `tiktok`, `reels`, `youtube`, `twitter`, or `linkedin`.
+- `music`, when present, must be an existing local audio file path.
 
-```bash
-python scripts/template_video.py social_post --data templates/social_post.json
-```
+### `tutorial`
 
-**Required fields:**
-- `headline` - Main headline
+- Required: `title` (string), `sections` (non-empty list)
+- Every section requires only `heading` (string), `content` (string), and `duration` (positive number).
+- Optional top-level fields: `instructor`, `music`
+- `music`, when present, must be an existing local audio file path.
 
-**Optional fields:**
-- `subheadline` - Secondary text
-- `platform` - instagram, tiktok, youtube, twitter, linkedin
-- `background` - Background image or video
-- `duration` - Length in seconds
-- `music` - Background music
-- `cta` - Call to action text
+### `testimonial`
 
----
+- Required: `quote`, `author`
+- Optional: `title`, `company`, `duration`
 
-### tutorial
-Educational/instructional video format.
+### `podcast_clip`
 
-```bash
-python scripts/template_video.py tutorial --data templates/tutorial.json
-```
+- Required: `audio_file` (existing local audio file path)
+- Optional: `quote_text`, `speaker`, `podcast_name`, `duration`
 
-**Required fields:**
-- `title` - Tutorial title
-- `sections` - Array of section objects with:
-  - `heading` - Section title
-  - `content` - Section content
-  - `duration` - Section length
+### `event_promo`
 
-**Optional fields:**
-- `instructor` - Instructor name
-- `music` - Background music
-- `outro` - Outro text
+- Required: `event_name`, `date`, `location`, `description`
+- No optional fields are currently accepted.
 
----
+### `announcement`
 
-### testimonial
-Customer testimonial/review video.
+- Required: `title`, `message`
+- Optional: `duration`
 
-```bash
-python scripts/template_video.py testimonial --data templates/testimonial.json
-```
-
-**Required fields:**
-- `quote` - Testimonial text
-- `author` - Person's name
-
-**Optional fields:**
-- `title` - Author's title
-- `company` - Company name
-- `rating` - Star rating (1-5)
-- `duration` - Length in seconds
-- `background` - Background style
-
----
-
-### podcast_clip
-Audiogram for podcast promotion.
-
-```bash
-python scripts/template_video.py podcast_clip --data templates/podcast_clip.json
-```
-
-**Required fields:**
-- `audio_file` - Path to audio clip
-
-**Optional fields:**
-- `quote_text` - Quote to display
-- `speaker` - Speaker name
-- `podcast_name` - Podcast title
-- `episode` - Episode number
-- `visualizer_style` - Audio visualization type
-- `logo` - Podcast logo image
-
----
-
-## Creating Custom Templates
-
-1. Copy an existing template JSON
-2. Modify fields as needed
-3. Run with your custom template file
-
-## Template Data Format
-
-All templates use JSON format:
-
-```json
-{
-  "field_name": "value",
-  "array_field": ["item1", "item2"],
-  "nested_object": {
-    "key": "value"
-  }
-}
-```
-
-## Tips
-
-- Use absolute paths or paths relative to execution directory
-- Test with short durations first
-- All templates support the `music` field for background audio
+Only `product_showcase`, `social_post`, and `tutorial` accept `music`. A genre name is not a media file and is rejected; supply an existing local audio path.

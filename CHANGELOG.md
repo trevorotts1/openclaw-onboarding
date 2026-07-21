@@ -1,3 +1,212 @@
+## [v20.0.87]  -  2026-07-21  -  A STATE-WRITING FUNCTION THAT NEVER ONCE RAN: `oc_state_mark_field` was a SyntaxError behind `|| true`, and nothing in the repo compiled embedded Python
+
+### ONB-STATE-001 (BLOCKER) — the function never wrote a field on ANY path, and reported success every time
+
+`lib-onboarding-state.sh`'s `oc_state_mark_field` carried a `return` statement
+outside any function inside its Python heredoc:
+
+    try: state=json.load(open(sf))
+    except Exception: return          # <-- 'return' outside function
+
+Python raises `SyntaxError` at **compile** time, before the first statement of
+the module executes. So this never failed *only* on the error path — the whole
+body was rejected every time, and the function **never wrote a field on any
+path, including the perfectly healthy one**. The call site then erased the
+evidence:
+
+    python3 - <<'PYEOF' 2>/dev/null || true
+
+`2>/dev/null` hid the `SyntaxError` and `|| true` forced exit 0. Every caller
+saw success. The function was byte-identical on `main` from the day it was
+written, so it has presumably never worked.
+
+**The consequences were real, and ran in BOTH directions**, because
+`oc_wave_goal_check` reads exactly the fields this function was supposed to
+maintain, and `oc_state_seed` had already written their defaults:
+
+* `coreUpdatesSentinelPresent` stayed at its seeded `false` forever. Wave goal
+  check (c) flags any skill with `hasCoreUpdates` and no sentinel, so **every
+  skill shipping a `CORE_UPDATES.md` failed check (c) permanently** — a false
+  failure that no amount of re-running could clear.
+* `qcExit` stayed at its seeded `null` forever. Check (d) fires only when
+  `qc_exit is not None and qc_exit != 0`, so it **could never fire at all** — a
+  dead check that let a skill whose `qc-*.sh` exited nonzero clear the wave gate.
+
+### Why `bash -n` never caught it, and what now does
+
+`bash -n` does **not** parse heredoc bodies. It validates the shell grammar
+around them and treats the body as opaque text, so a shell script carrying a
+hard-broken Python program passes `bash -n` cleanly. Nothing in this repo looked
+inside those bodies. That — not one bad line — is the actual hole.
+
+`scripts/check-embedded-python-syntax.py` (new) extracts **every** Python
+heredoc and every `python3 -c` body in the repo and compiles each one. Swept
+against `origin/main` at `391a92e9` it scanned 698 shell files, 644 heredocs and
+610 inline bodies, and found **exactly one** failure: the defect above. The
+sweep found no other broken embedded script.
+
+It calls `compile()`, **not** `ast.parse()`. `ast.parse` accepts `return`
+outside a function — that is rejected later, by the symbol-table pass inside
+`compile()` — so a guard built on `ast.parse` would have passed the very defect
+it was written for. The new workflow pins that distinction so the guard cannot
+be quietly weakened back into uselessness.
+
+Sites the extractor cannot faithfully reconstruct (shell words assembled across
+quoting layers) are counted and printed as `UNANALYZABLE` rather than skipped: a
+guard that silently ignores what it cannot parse is the same silent-success bug
+it exists to prevent.
+
+### ABSENT vs CORRUPT — deliberately not the same thing
+
+Removing `|| true` must not turn a legitimate absence into a crash, so the two
+cases are now separated explicitly:
+
+* **Absent** state file → returns 0 quietly. `oc_state_seed` owns creation and a
+  gate may legitimately run before the seed on a fresh box. Documented tolerance,
+  not a swallowed failure.
+* **Present but unreadable, not JSON, or not writable** → the reason is printed
+  to stderr and the function returns 1. No `|| true`, no blanket `2>/dev/null`.
+
+The write is now atomic (temp file + `os.replace`). The old body opened the real
+file in `"w"` mode, truncating it *before* serialising, so an exception midway
+through `json.dump` would have left a half-written state file behind — turning a
+write failure into exactly the corruption this function now refuses to ignore.
+
+### Fail closed, without crashing the caller
+
+`oc_gate_skill` folds every `oc_state_mark_field` result into a `_sw_ok` flag and
+fails the gate with reason `state-write-failed` when a record could not be
+written — a gate that cannot record what it found has not verified anything. The
+results are folded rather than left as bare statements because this library is
+sourced by scripts running `set -euo pipefail` (`update-skills.sh`), where a
+bare nonzero statement would abort the caller mid-gate. A crash is not an
+acceptable substitute for a swallowed failure.
+
+### Coverage
+
+`oc_state_mark_field` had **no test at all** — which is why a permanently broken
+function shipped. `tests/unit/state-mark-field-silent-noop.test.sh` (new) locks
+it with five checks, each of which fails against the pre-fix library (12 passed
+after / 8 failed before): the body compiles; a healthy file has the field
+**read back by value** (not by grepping for the field *name*, which the seeded
+default would satisfy without any write happening); a corrupt file yields rc 1
+plus stderr; an absent file is tolerated at rc 0 and fabricates nothing; and a
+recorded `qcExit=5` really does fail the wave gate that check (d) could never
+reach before.
+
+## [v20.0.86]  -  2026-07-21  -  A RETROACTIVE RULE CHANGE WAS BLOCKING 28 OF 30 BOXES: the vertical guard judged pre-2026-06-28 provisioning by the classification that replaced it
+
+Command Center refresh went FATAL at `phase=3b vertical-derivation-guard` (rc=3)
+on **28 of the 30 reachable fleet boxes** (measured 2026-07-21 against real disk
++ real build-state; the 2 that passed are the one genuine real-estate client and
+one box with no workspace at all). The cause was not a provisioning bug.
+
+Commit `b3e25876` (v14.28.1, **2026-06-28T15:26:48Z**) removed
+`"universal_primary": true` from `real-estate` / `listings`. **Before** it,
+`build-workforce.py::apply_vertical_packs` PHASE 1 looped over EVERY vertical
+pack and `_add_dept()`'d that pack's primary **unconditionally** — it never
+consulted `_detect_vertical_packs`:
+
+    # PHASE 1 - universal primaries: one from every pack, always fires.
+    for pack_id, pack in vertical_packs.items():
+        ...
+        if primary and _add_dept(primary, pack_id, " [universal-primary]"):
+
+So every client built between `1691b43e` (2026-06-02, when universal primaries
+were introduced) and `b3e25876` received all **7** primaries — `presentations`,
+`listings`, `scheduling-dispatch`, `logistics-fulfillment`, `engineering`,
+`account-management`, `podcast` — regardless of industry. `listings` was FLOOR
+on the day it landed, not a force-add. The fix was forward-only; no fleet
+remediation ever ran, so `listings` is still on disk on **all 30** reachable
+boxes. The guard (added later) excludes universal primaries using the CURRENT
+naming map, so it reclassified that residue as an undeclared vertical and, since
+`run-full-install.sh` phase=3b treats rc=3 as `fail_install`, blocked the refresh
+fleet-wide.
+
+**The fix is evidence-based grandfathering, not a bypass.**
+`department-naming-map.json` v2.7.0 gains `universal_primary_history.demotions[]`
+— a dated, per-department record naming the demoting commit and instant. A
+provisioned department escapes the violation list only when BOTH hold:
+
+1. **CLASSIFICATION** — a well-formed row covers that exact department id. A row
+   missing `demoted_at`/`demoted_by_commit`/`pack`, naming a wildcard, naming a
+   department that is STILL `universal_primary`, or naming a department no pack
+   declares, is IGNORED **with a warning** — never honored, never dropped
+   silently.
+2. **EVIDENCE** — the box produces its own dated WITNESS that the department was
+   provisioned before that instant: the build's own
+   `verticalPacks.appliedAt` when it names the department (`direct`), the
+   department directory's filesystem birth time (`filesystem`), or a
+   build-lifecycle timestamp that upper-bounds materialization —
+   `buildCompletedAt`, `closeoutStartedAt`, `closeoutCompletedAt`,
+   `commandCenterCompletedAt` (`build-window`). **No witness -> no grandfather
+   -> still rc=3.** Fields that only LOWER-bound the build
+   (`interviewCompletedAt`, `buildStartedAt`) are deliberately excluded: an
+   interview finishing before a demotion says nothing about when the departments
+   landed. A witness must also clear the cutoff by more than a 14h timezone
+   safety margin, so a naive local timestamp can never be what flips a verdict.
+
+And it is refused outright — whatever the witnesses say — when the build's own
+record names the department in `addedDepartments` with an `appliedAt` at/after
+the demotion (`POST_DEMOTION_ADD`): a direct record of a post-demotion add beats
+circumstantial pre-dating.
+
+**Why this cannot become a blanket bypass.** There is no flag, env var, or CLI
+option that disables the check; the only lever is a per-department, dated,
+commit-attributed row whose claim is falsifiable against git. A row grants
+nothing on its own — every box must still produce its own evidence. It cannot
+reach a department that was never a universal primary, so the leak this guard
+exists to catch (`showings` / `open-house` / `closing-coordinator` /
+`local-market-intelligence` / `lead-generation` on a non-real-estate client) is
+untouched. And `check_add()` ignores the table completely: grandfathering
+explains OLD residue, it never authorizes a NEW materialization.
+
+**The residue stays LOUD.** rc=0 no longer means "nothing to see". The verdict,
+the Phase-3b receipt (`$OC_ROOT/workspace/provisioning/vertical-derivation.json`)
+and stderr now carry `grandfatheredDepartments[]` (each with its demoting commit
+and the exact witness + strength that justified it), a `warnings[]` array, and a
+`residueSummary` — and `run-full-install.sh` re-logs all of it at **WARN** into
+the install log on the PASS path, so a cleanup can be driven from data instead of
+a fresh survey. A missing `verticalPacks` record is likewise reported every run
+as `NO_DECLARATION_RECORD` rather than silently absorbed.
+
+**Ruling on the 18 boxes with no `verticalPacks` record** (measured, not
+assumed): a missing declaration record still fails closed for every ordinary
+vertical department — the declared set stays EMPTY and nothing is fabricated.
+But it does NOT block grandfathering, because the Phase-1 universal layer was
+never declaration-gated in the first place: demanding a declaration for a
+department that by construction never had one would demand evidence that never
+existed for any client. The doctrine "absence of information is never permission
+to install" is honored exactly — the guard installs nothing, and the fact being
+established (that `listings` was floor before 2026-06-28) is not absent
+information but the repo's own dated history, corroborated per-box.
+
+MEASURED against real disk + build-state for all 30 reachable boxes, read-only:
+**PASS 21 (was 2), FAIL 9 (was 28), zero regressions** — no box that should fail
+now passes. The 9 that still fail are correct: 5 carry Phase-2 extras that were
+never universal primaries (`client-coaches`, `course-creator`,
+`community-management`, `reviews-management`, `recurring-service`) and are
+unexplained by the available record; 4 carry `listings` with no dated evidence of
+pre-demotion provisioning at all (three had all 36 department folders created
+2026-07-20 with `mtime == birthtime`, one on 2026-06-29 — the day AFTER the
+demotion — and none carries a pre-demotion build timestamp).
+
+- `23-ai-workforce-blueprint/department-naming-map.json` v2.6.2 -> **v2.7.0**:
+  adds `universal_primary_history`
+- `23-ai-workforce-blueprint/scripts/vertical-derivation-guard.py`:
+  `universal_primary_demotions()`, `provisioning_witnesses()`,
+  `grandfather_ruling()`, `_dir_birth_time()` (st_birthtime, with a read-only
+  `stat -c %W` fallback because Python exposes no birth time on Linux, where the
+  guard runs inside the client container); verdict gains
+  `grandfatheredDepartments` / `warnings` / `residueSummary`
+- `32-command-center-setup/scripts/run-full-install.sh` phase=3b: re-logs the
+  residue inventory + warnings at WARN on the PASS path
+- `23-ai-workforce-blueprint/scripts/test-vertical-derivation-guard.sh`:
+  **26 -> 44 checks**. New section (i) pins both directions; cases (c) and (d)
+  were TIGHTENED — they asserted only `rc=3`, which `listings` would now satisfy
+  by luck, so they now assert the NAMED refusal
+  (`NO_PRE_RECLASSIFICATION_WITNESS`) and that the missing declaration record is
+  reported.
 ## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
 
 ### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist
