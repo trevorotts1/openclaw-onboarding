@@ -110,15 +110,27 @@ def neutralise_expansions(text):
 
 
 def skip_command_substitution(text, i):
-    """Given text[i:] starting at '$(', return index just past the balanced ')'.
+    """`i` is the index OF the '(' in `$(`. Return the index just past its ')'.
 
     Quote-aware: parens inside '...' or "..." do not count toward the depth,
     otherwise a python snippet like `[l.strip() for l in xs]` nested in a
     command substitution closes the substitution early and corrupts everything
     downstream. Returns None if the parens never balance.
+
+    OFF-BY-ONE THIS FIXED (do not re-introduce). Every one of the four callers
+    passes the index of the '(' -- `skip_command_substitution(text, k + 1)`
+    where `text[k] == '$'`. This function used to start scanning at `i + 1`,
+    i.e. one char PAST the opening paren, so `depth` never reached 1: the first
+    ')' drove it to -1, the `depth == 0` return never fired, and the scan ran
+    off the end and returned None for EVERY well-formed `$( ... )` in the repo.
+    None propagates as "unanalyzable", which is why 58 `python3 -c` bodies --
+    every one of them written as `VAR="$(python3 -c '...')"` -- were printed as
+    UNANALYZABLE and never compiled. A broken body at any of those 58 sites
+    could not fail this guard. Starting at `i` makes the loop see the '(' and
+    count it.
     """
     depth = 0
-    k = i + 1  # at '('
+    k = i  # `i` is the index of the '(' itself; the loop must see it to count it
     quote = None
     while k < len(text):
         c = text[k]
@@ -477,6 +489,10 @@ def main():
         description="Syntax-check Python embedded in shell heredocs and `python -c`.")
     ap.add_argument("--root", default=".", help="repo root to scan (default: cwd)")
     ap.add_argument("--verbose", action="store_true", help="list unanalyzable sites too")
+    ap.add_argument(
+        "--max-unanalyzable", type=int, default=None,
+        help="fail if MORE than N sites could not be reconstructed (coverage ratchet; "
+             "omit to keep the historical behaviour of reporting them without failing)")
     args = ap.parse_args()
 
     root = os.path.abspath(args.root)
@@ -510,7 +526,26 @@ def main():
         for f in unanalyzable:
             print(f"  {f.path}:{f.line}  {f.detail}")
 
+    # Coverage ratchet. An unanalyzable site is NOT compiled, so a broken body
+    # there cannot fail this guard -- exactly the hole that let 58 sites go
+    # unchecked. With --max-unanalyzable the residue can never silently grow.
+    over_ceiling = (
+        args.max_unanalyzable is not None
+        and stats["unanalyzable"] > args.max_unanalyzable
+    )
+    if over_ceiling:
+        print(f"\nFAIL - {stats['unanalyzable']} unanalyzable site(s) exceeds the "
+              f"--max-unanalyzable ceiling of {args.max_unanalyzable}.")
+        if not args.verbose:
+            for f in unanalyzable:
+                print(f"  {f.path}:{f.line}  {f.detail}")
+        print("An unanalyzable site is never compiled, so a SyntaxError there cannot fail\n"
+              "this guard. Rewrite the call site so the body can be reconstructed, or teach\n"
+              "the extractor the new shape. Raising the ceiling re-opens the hole.")
+
     if not findings:
+        if over_ceiling:
+            return 1
         print("\nPASS - every embedded Python program compiles.")
         return 0
 

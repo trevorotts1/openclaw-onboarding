@@ -72,7 +72,7 @@ These two edges are part of the same G+K.1 relationship map and are documented h
 | Edge | Ground truth | Tag |
 |---|---|---|
 | **Skill 35 -> Skill 44** (posting rail) | `35-social-media-planner/INSTALL.md:240` | VERIFIED |
-| **Skill 35 -> Skill 6** (weekly landing page) | Skill 35 `CHANGELOG.md:59` (Gap C) -- the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty); matcher exists at `06-ghl-install-pages/tools/funnel_matcher.py` + `funnel_matcher_cli.py` | VERIFIED |
+| **Skill 35 -> Skill 6** (weekly landing page) | Skill 35 `CHANGELOG.md:72` (Gap C) -- the weekly campaign step MAY invoke Skill 6's `funnel_matcher.py --match` when the client supplies no static link; a client-provided link ALWAYS wins (sovereignty); matcher exists at `06-ghl-install-pages/tools/funnel_matcher.py` + `funnel_matcher_cli.py` | VERIFIED |
 | **Skill 35 -> Skill 38** (inbound conversations) | `38-conversational-ai-system/SKILL.md:35`; reciprocal `35-social-media-planner/SKILL.md:131` | VERIFIED |
 | **Skill 38 -> Skill 44** (workflow builds + runtime) | `38-conversational-ai-system/SKILL.md:33` and `:55` | VERIFIED |
 | **Skill 6 -> Skill 44** (full-funnel seam) | `06-ghl-install-pages/SKILL.md:81-99` | VERIFIED |

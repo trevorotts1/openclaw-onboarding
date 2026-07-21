@@ -1,0 +1,358 @@
+name: unwired-checks guard (Skill 25 contracts, PREREQS.json, lattice citations)
+
+# THE DEFECT CLASS THIS CLOSES — checks that EXIST and CANNOT FIRE.
+#
+# Three verification assets were sitting in this repo fully written, fully
+# working, and invoked by NO workflow. A check nothing runs is not a check; it
+# is a comment. Worse, each one had a paper trail implying it was enforced, so
+# the absence read as coverage:
+#
+#   1. 25-video-creator/tests/ — 93 contract tests. These are the tests behind
+#      PR #686's 16 blockers (transition aliasing, silent missing audio,
+#      provider contracts, template/script contracts). They ran on a laptop
+#      once. Nothing re-ran them, so every one of those 16 regressions was
+#      free to come back on the next commit.
+#
+#   2. scripts/qc-prereqs-json.sh — INSTALL-CONTRACT.md Rule 16 states in
+#      writing that a `required` prereq with no actionable `satisfy` string is
+#      "caught by scripts/qc-prereqs-json.sh in CI". It was not in CI. It was
+#      not anywhere. And it exits 1 on main today with 7 violations.
+#
+#   3. docs/tools/check_lattice_citation.py + its 13-case unit test — the
+#      U89/GK-27 drift tripwire for the relationship lattice. Only Skill 38's
+#      own qc script called the checker, and only for Skill 38; the other four
+#      owning skills were unchecked, and the unit test that asserts all five
+#      pass ran nowhere. Skill 35's E2 citation had already drifted
+#      (CHANGELOG.md:59 -> :72) and nothing said a word.
+#
+# WHAT EACH JOB DOES, AND WHY IT IS SHAPED THAT WAY.
+#
+# Anti-vacuity is the whole point of this file, so every gate here is paired
+# with a step that CONSTRUCTS a real violation and requires a red. A wired
+# check that still cannot fail is worse than an unwired one: it converts
+# "nobody is looking" into "somebody is looking and it is fine".
+#
+#   Skill 25 — the suite needs MoviePy v1: 25-video-creator/INSTALL.md says so
+#   explicitly ("MoviePy v2 removed moviepy.editor, so you must pin MoviePy to
+#   v1"), and 6 of the 93 tests render real frames through
+#   moviepy.editor.ColorClip to prove two advertised transitions are not
+#   byte-identical. Under MoviePy v2 those 6 die on ModuleNotFoundError. They
+#   are NOT skipped here — skipping the only tests that measure rendering would
+#   reproduce the very defect they were written for. moviepy==1.0.3 is pinned
+#   and all 93 run for real. A JUnit floor asserts at least 93 tests actually
+#   EXECUTED, so a collection error can never present as green.
+#
+#   PREREQS.json — RATCHET, not a hard gate, and this is a deliberate,
+#   measured choice. On main the script reports exactly 7 violations, in four
+#   OTHER skills' manifests:
+#     38-conversational-ai-system  skill-46      severity 'recommended'
+#     07-kie-setup                 kie-account   type 'service-account'
+#     07-kie-setup                 kie-credits   type 'service-balance'
+#     07-kie-setup                 kie-credits   severity 'warning'
+#     45-design-intelligence-library [index 0]   legacy pre-Rule-16 shape
+#                                                (missing all 5 fields)
+#     45-design-intelligence-library [index 0]   empty 'check' object
+#     32-command-center-setup      interview-complete  type 'state'
+#   Wiring that red would redden every PR in the repo for defects no PR
+#   introduced. Fixing them here was rejected for two measured reasons:
+#     (a) BLAST RADIUS. These are not cosmetic. shared-utils/check-skill-prereqs.sh
+#         dispatches on `type` through a 5-entry CHECKERS table; 'service-account',
+#         'service-balance' and 'state' are not in it, so those entries print
+#         "unknown prereq type" and are SKIPPED at runtime on every fleet box.
+#         Re-typing them changes what gets evaluated during install on live
+#         boxes, and 45's entry has no field the runtime can check at all. That
+#         is a decision about four other skills' install behaviour, not a lint fix.
+#     (b) version-consistency.yml guard G3 fails any PR that edits a file inside
+#         XX-<name>/ without bumping that skill's skill-version.txt. Fixing the 7
+#         would drag four skill-version bumps into a CI-wiring PR.
+#   So: --baseline 7. An 8th violation is RED. Fixing violations without
+#   lowering the baseline is also RED, so the number cannot rot upward
+#   unnoticed. The 7 are named above and moved to the operator as a decision.
+#
+#   Lattice citations — the drift found on main (Skill 35 E2 cited
+#   35-social-media-planner/CHANGELOG.md:59 for `funnel_matcher.py --match`;
+#   the text now lives at :72) is fixed in this same change, in BOTH places
+#   that carried the stale number: docs/lattice-citations.json and the edge
+#   table in docs/CONTENT-CONVERSATION-LATTICE.md. All five owning skills now
+#   pass, so the gate is green on merge and any future drift is red.
+#   This gate is line-pinned BY DESIGN — that is what a drift tripwire is. When
+#   a cited line moves, the fix is to update the manifest and the edge table to
+#   the new ground truth, exactly as done here. It must never be "fixed" by
+#   loosening the citation.
+#
+# DELIBERATELY UNSCOPED BY PATH. No `paths:` filters. A citation can drift from
+# an edit to any cited file, a PREREQS.json violation can appear in any skill
+# folder, and a mis-typed path filter is itself a check that cannot fire — the
+# exact class of bug this workflow exists to close. Both jobs are hermetic and
+# cheap: stdlib-only for the gates job, one pinned pip install for Skill 25.
+#
+# Hermetic: no network beyond pip, no fleet box, no credentials, read-only over
+# the checkout apart from throwaway fixtures it creates and deletes itself.
+#
+# Security note: consumes only repo file content. No GitHub event fields
+# (PR title/body, branch names, commit messages) reach any run: block, so there
+# is no workflow-injection surface here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  contract-and-citation-gates:
+    name: "PREREQS.json ratchet + lattice citation tripwire (all 5 owning skills)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: The checkers themselves parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n scripts/qc-prereqs-json.sh
+          python3 -m py_compile docs/tools/check_lattice_citation.py
+          python3 -m py_compile docs/tools/test_check_lattice_citation.py
+          python3 -c 'import json; json.load(open("docs/lattice-citations.json"))'
+          echo "syntax OK"
+
+      # ── Rule 16: PREREQS.json ────────────────────────────────────────────
+      - name: "Rule 16 — PREREQS.json violations do not exceed the recorded baseline"
+        shell: bash
+        env:
+          PREREQS_VIOLATION_BASELINE: "7"
+        run: |
+          set -euo pipefail
+          bash scripts/qc-prereqs-json.sh --baseline "$PREREQS_VIOLATION_BASELINE"
+
+      - name: "Ratchet self-test — an 8th violation must go RED"
+        shell: bash
+        env:
+          PREREQS_VIOLATION_BASELINE: "7"
+        run: |
+          set -euo pipefail
+          # Genuine violation, in the REAL checkout, not a mocked tree: a new
+          # skill folder whose manifest declares severity=required with no
+          # `satisfy` string — the precise Rule 16 breach the script exists to
+          # catch. It must push the count to 8 and turn the ratchet red.
+          FIXTURE="zz-prereqs-ratchet-selftest"
+          cleanup() { rm -rf "${GITHUB_WORKSPACE:-.}/$FIXTURE"; }
+          trap cleanup EXIT
+          mkdir -p "$FIXTURE"
+          cat > "$FIXTURE/PREREQS.json" <<'JSON'
+          {
+            "skill": "zz-prereqs-ratchet-selftest",
+            "prerequisites": [
+              {
+                "id": "no-satisfy-string",
+                "type": "credential",
+                "label": "A required prereq with no actionable satisfy string",
+                "check": { "envVar": "ZZ_SELFTEST_VAR" },
+                "severity": "required",
+                "satisfy": ""
+              }
+            ]
+          }
+          JSON
+          if bash scripts/qc-prereqs-json.sh --baseline "$PREREQS_VIOLATION_BASELINE" >out.txt 2>&1; then
+            echo "VACUOUS RATCHET: a NEW Rule 16 violation did not fail the gate." >&2
+            cat out.txt >&2
+            rm -f out.txt
+            exit 1
+          fi
+          grep -q "exceeds the recorded baseline" out.txt || {
+            echo "Failed, but not on the ratchet:" >&2
+            cat out.txt >&2
+            rm -f out.txt
+            exit 1
+          }
+          echo "  ✓ a new Rule 16 violation turns the ratchet red"
+          rm -f out.txt
+
+          # And the un-ratcheted default contract is untouched: any violation
+          # at all still exits 1. (It does today — that is the 7.)
+          if bash scripts/qc-prereqs-json.sh >/dev/null 2>&1; then
+            echo "The default (no --baseline) mode passed while violations exist." >&2
+            exit 1
+          fi
+          echo "  ✓ default mode still fails on any violation"
+
+      # ── U89/GK-27: lattice citation tripwire ─────────────────────────────
+      - name: "Every lattice citation still points at real, unchanged ground truth"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # All five owning skills, not just Skill 38. Previously only Skill 38's
+          # own qc script called this checker, so drift in the other four was
+          # invisible — and that is exactly where the drift was.
+          for skill in \
+            03-agent-browser \
+            06-ghl-install-pages \
+            35-social-media-planner \
+            38-conversational-ai-system \
+            44-convert-and-flow-operator
+          do
+            python3 docs/tools/check_lattice_citation.py --repo-root . --skill "$skill"
+          done
+
+      - name: "The tripwire's own unit suite (incl. all-5-against-this-checkout)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 12 unittest cases; the last one sub-tests all five skills in
+          # skill_pointers against THIS checkout. It failed on main before the
+          # Skill 35 E2 line number was corrected in this same change.
+          python3 docs/tools/test_check_lattice_citation.py -v
+
+      - name: "Tripwire self-test — a drifted citation must go RED"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Move a cited line number by one in a COPY of the manifest. The cited
+          # substring is no longer on that line, which is precisely what "drift"
+          # means, and the checker must refuse to pass.
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          python3 - "$TMP/drifted.json" <<'PY'
+          import json, sys
+          m = json.load(open("docs/lattice-citations.json"))
+          moved = 0
+          for edge in m["edges"]:
+              if edge["id"] != "E2-weekly-landing-page":
+                  continue
+              for c in edge["citations"]:
+                  if "line" in c:
+                      c["line"] += 1
+                      moved += 1
+          if moved != 1:
+              sys.exit(f"self-test fixture stale: expected 1 line citation on "
+                       f"E2-weekly-landing-page, moved {moved}")
+          json.dump(m, open(sys.argv[1], "w"), indent=2)
+          PY
+          if python3 docs/tools/check_lattice_citation.py \
+               --repo-root . --skill 35-social-media-planner \
+               --manifest "$TMP/drifted.json" >"$TMP/out.txt" 2>&1; then
+            echo "VACUOUS TRIPWIRE: a drifted citation still passed." >&2
+            cat "$TMP/out.txt" >&2
+            exit 1
+          fi
+          grep -q "DRIFT" "$TMP/out.txt" || {
+            echo "Failed, but not on drift detection:" >&2
+            cat "$TMP/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ a drifted citation turns the tripwire red"
+
+  skill25-contract-tests:
+    name: "Skill 25 — all 93 video-creator contract tests (PR #686's 16 blockers)"
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install the pinned runtime the suite actually needs
+        shell: bash
+        run: |
+          set -euo pipefail
+          # MoviePy v1 is not a preference. 25-video-creator/INSTALL.md pins
+          # moviepy==1.0.3 because the scripts import `moviepy.editor`, which v2
+          # deleted. Six of the 93 tests render real frames through
+          # moviepy.editor.ColorClip to prove two advertised transitions are not
+          # byte-identical; under v2 they raise ModuleNotFoundError. The correct
+          # fix is the pin, never a skip — those six are the only tests that
+          # measure rendering at all.
+          python3 -m pip install --upgrade pip
+          python3 -m pip install "moviepy==1.0.3" numpy requests pytest
+          python3 -c 'from moviepy.editor import ColorClip; print("moviepy.editor import OK")'
+
+      - name: Run the 93 contract tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pytest 25-video-creator/tests -q --junitxml=skill25-report.xml
+
+      - name: "Anti-vacuity — at least 93 tests actually EXECUTED"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A green pytest that collected nothing is the silent-success bug in a
+          # different hat. Read the JUnit XML structurally (no log scraping) and
+          # require the floor the suite shipped with.
+          python3 - <<'PY'
+          import sys, xml.etree.ElementTree as ET
+          root = ET.parse("skill25-report.xml").getroot()
+          suites = [root] if root.tag == "testsuite" else list(root)
+          total = sum(int(s.get("tests", 0)) for s in suites)
+          errors = sum(int(s.get("errors", 0)) for s in suites)
+          failures = sum(int(s.get("failures", 0)) for s in suites)
+          skipped = sum(int(s.get("skipped", 0)) for s in suites)
+          executed = total - skipped
+          print(f"collected={total} executed={executed} failures={failures} "
+                f"errors={errors} skipped={skipped}")
+          if errors or failures:
+              sys.exit("Skill 25 contract tests reported failures/errors.")
+          if executed < 93:
+              sys.exit(f"Only {executed} Skill 25 contract tests executed; the suite "
+                       f"ships 93. Tests were removed, skipped or failed to collect. "
+                       f"If tests were intentionally retired, lower this floor in the "
+                       f"same change and say why.")
+          print(f"  OK  {executed} contract tests executed (floor 93)")
+          PY
+
+      - name: "Suite self-test — a real Skill 25 defect must go RED"
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Re-advertise `slide_left` in Transitions.AVAILABLE. That is the exact
+          # PR #686 defect: four slide directions were advertised while
+          # concatenate_videoclips(method="compose") re-centred every clip and
+          # dropped the position animation, so a caller asking for slide_left
+          # silently got something else. The suite must catch it.
+          #
+          # The defect is injected into a THROWAWAY COPY and reached through the
+          # suite's own SKILL25_ROOT hook (see 25-video-creator/tests/conftest.py),
+          # so the checkout is never mutated.
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          cp -R 25-video-creator "$TMP/25-video-creator"
+          python3 - "$TMP/25-video-creator/scripts/transitions.py" <<'PY'
+          import sys
+          p = sys.argv[1]
+          src = open(p).read()
+          old = ("    AVAILABLE = [\n"
+                 "        'fade',\n"
+                 "        'wipe_left', 'wipe_right', 'wipe_up', 'wipe_down',\n"
+                 "        'none'\n"
+                 "    ]")
+          if src.count(old) != 1:
+              sys.exit("self-test fixture stale: Transitions.AVAILABLE no longer has "
+                       "the expected shape; update this injection so the red-proof "
+                       "keeps proving something.")
+          open(p, "w").write(src.replace(old, old.replace(
+              "        'none'\n", "        'slide_left',\n        'none'\n")))
+          print("injected: slide_left re-advertised in Transitions.AVAILABLE")
+          PY
+          if SKILL25_ROOT="$TMP/25-video-creator" \
+             python3 -m pytest 25-video-creator/tests -q >"$TMP/out.txt" 2>&1; then
+            echo "VACUOUS SUITE: re-advertising an unimplemented transition passed." >&2
+            tail -40 "$TMP/out.txt" >&2
+            exit 1
+          fi
+          grep -q "test_every_advertised_transition_is_implemented_or_rejected" "$TMP/out.txt" || {
+            echo "Suite failed, but not on the injected transition defect:" >&2
+            tail -40 "$TMP/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ the Skill 25 suite goes red on a real transition-aliasing defect"

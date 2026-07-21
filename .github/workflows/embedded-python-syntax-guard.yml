@@ -34,6 +34,22 @@ name: embedded-python syntax guard (ONB-STATE-001)
 # a healthy body must PASS. Sites the extractor genuinely cannot reconstruct are
 # counted and printed as UNANALYZABLE — never dropped, never counted as passing.
 #
+# THE RESIDUE THAT WAS STILL DARK (fixed here). "Reported, not dropped" is honest
+# but it is not coverage: an UNANALYZABLE site is never compiled, so a broken
+# body there could not fail this guard. On main that residue was 58 `python3 -c`
+# bodies — and it was not 58 exotic call sites, it was ONE off-by-one.
+# skip_command_substitution() started its scan one character PAST the '(' it was
+# handed, so `depth` never reached 1 and every well-formed `$( ... )` in the repo
+# returned None. Every `VAR="$(python3 -c '...')"` — the ordinary shape — went
+# uncompiled. Fixing that one index took the residue 58 -> 0 and raised the
+# discovered `-c` body count 617 -> 648, with 0 new parse failures.
+#
+# Two locks were added so the hole cannot silently reopen:
+#   * a self-test fixture whose BROKEN body sits inside `VAR="$(python3 -c ...)"`
+#     — the exact shape that was invisible — plus a healthy twin that must pass;
+#   * `--max-unanalyzable 0` on the repo-wide run, so a newly unreconstructable
+#     call site is a red build and a deliberate decision, not a silent hole.
+#
 # Runs on EVERY push and PR, unscoped by path: the whole point is that a broken
 # embedded script anywhere must not reach main again.
 #
@@ -136,11 +152,104 @@ jobs:
           echo "  ✓ healthy heredoc and python -c both pass"
           rm -rf "$FIX"
 
-      - name: Every embedded Python program in the repo compiles
+      - name: 'Regression lock — a broken body inside VAR="$(python3 -c ...)" must FAIL'
         shell: bash
         run: |
           set -euo pipefail
-          python3 scripts/check-embedded-python-syntax.py --root . --verbose
+          # THE SHAPE THAT WAS INVISIBLE. 58 `python3 -c` bodies on main were
+          # written as `VAR="$(python3 -c '...')"`. skip_command_substitution()
+          # was handed the index of '(' but started scanning at index+1, so the
+          # opening paren was never counted, the balance never closed, and every
+          # such site came back UNANALYZABLE — reported, but NOT compiled. A
+          # SyntaxError at any of those 58 sites could not fail this guard.
+          #
+          # This step reconstructs that exact shape with the original defect
+          # (`return` outside a function) inside it and requires a RED. If the
+          # off-by-one is ever reintroduced, this step is what catches it.
+          FIX="$(mktemp -d)"
+          cat > "$FIX/nested_broken.sh" <<'SH'
+          #!/usr/bin/env bash
+          read_asset() {
+            local ASSET_URL
+            ASSET_URL="$(python3 -c 'import json,sys
+          try:
+              v = json.load(open(sys.argv[1])).get("asset_url","")
+          except Exception: return
+          print(v)' "$MANIFEST_PATH" 2>/dev/null || true)"
+            echo "$ASSET_URL"
+          }
+          SH
+          if python3 scripts/check-embedded-python-syntax.py --root "$FIX" --verbose >"$FIX/out.txt" 2>&1; then
+            echo "REGRESSION: a broken python -c body nested in \$( ) did not fail the guard." >&2
+            echo "This is the 58-site blind spot reopening. Check skip_command_substitution()." >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          fi
+          grep -q "'return' outside function" "$FIX/out.txt" || {
+            echo "Guard failed, but not for the expected reason:" >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          grep -q "unanalyzable (reported)  : 0" "$FIX/out.txt" || {
+            echo "The nested body was counted UNANALYZABLE instead of being compiled:" >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ broken body nested in \$( ) is reconstructed AND caught"
+
+          # Anti-false-positive twin: the identical shape, healthy, must PASS.
+          rm -rf "$FIX"; FIX="$(mktemp -d)"
+          cat > "$FIX/nested_healthy.sh" <<'SH'
+          #!/usr/bin/env bash
+          read_asset() {
+            local ASSET_URL
+            ASSET_URL="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1])).get("asset_url",""))' "$MANIFEST_PATH" 2>/dev/null || true)"
+            echo "$ASSET_URL"
+          }
+          SH
+          python3 scripts/check-embedded-python-syntax.py --root "$FIX" --max-unanalyzable 0 >"$FIX/out.txt" 2>&1 || {
+            echo "FALSE POSITIVE: the guard rejected a healthy nested body." >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ healthy body nested in \$( ) passes and is fully reconstructed"
+          rm -rf "$FIX"
+
+      - name: Coverage ratchet — the --max-unanalyzable ceiling itself can go red
+        shell: bash
+        run: |
+          set -euo pipefail
+          # A ceiling that cannot fire is not a ceiling. Construct a site the
+          # extractor genuinely cannot reconstruct (backtick substitution inside
+          # the -c word) and require --max-unanalyzable 0 to reject it.
+          FIX="$(mktemp -d)"
+          cat > "$FIX/unreconstructable.sh" <<'SH'
+          #!/usr/bin/env bash
+          v=$(python3 -c "import json; print(json.load(open('`echo f.json`'))['k'])")
+          echo "$v"
+          SH
+          if python3 scripts/check-embedded-python-syntax.py --root "$FIX" --max-unanalyzable 0 >"$FIX/out.txt" 2>&1; then
+            echo "VACUOUS CEILING: an unreconstructable site did not trip --max-unanalyzable 0." >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          fi
+          grep -q "exceeds the --max-unanalyzable ceiling" "$FIX/out.txt" || {
+            echo "Failed, but not on the coverage ceiling:" >&2
+            cat "$FIX/out.txt" >&2
+            exit 1
+          }
+          echo "  ✓ the coverage ceiling fires on a genuinely unreconstructable site"
+          rm -rf "$FIX"
+
+      - name: Every embedded Python program in the repo compiles (and ALL are analyzable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --max-unanalyzable 0: the residue on main is 0 after the
+          # skip_command_substitution() fix. Anything that pushes it above 0 is a
+          # call site nothing compiles — a hole, not a footnote. Raise this
+          # number only as a recorded, argued decision.
+          python3 scripts/check-embedded-python-syntax.py --root . --verbose --max-unanalyzable 0
 
       - name: oc_state_mark_field regression lock
         shell: bash

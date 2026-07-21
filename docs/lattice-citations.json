@@ -22,7 +22,7 @@
       "label": "Skill 35 -> Skill 6 (Gap C: optional themed weekly landing page via funnel_matcher; client-provided link ALWAYS wins)",
       "owner_skill": "35-social-media-planner",
       "citations": [
-        { "file": "35-social-media-planner/CHANGELOG.md", "line": 59, "must_contain": "funnel_matcher.py --match" }
+        { "file": "35-social-media-planner/CHANGELOG.md", "line": 72, "must_contain": "funnel_matcher.py --match" }
       ]
     },
     {
