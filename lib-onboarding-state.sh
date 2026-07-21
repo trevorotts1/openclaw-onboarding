@@ -517,7 +517,7 @@ oc_onboarding_complete() {
 # real, non-ARCHIVED skill directory.
 OC_WAVE1_SKILLS="01-teach-yourself-protocol 02-back-yourself-up-protocol"
 OC_WAVE2_SKILLS="03-agent-browser 04-superpowers 05-ghl-setup 06-ghl-install-pages 07-kie-setup 08-vercel-setup 09-context7 10-github-setup 12-openrouter-setup 14-google-workspace-integration"
-OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improving-agent 18-proactive-agent 19-humanizer 20-youtube-watcher 24-storyboard-writer 25-video-creator 26-caption-creator 27-video-editor 28-cinematic-forge 29-ghl-convert-and-flow 30-fish-audio-api-reference 43-graphify-knowledge-graph"
+OC_WAVE3_SKILLS="15-blackceo-team-management 16-summarize-youtube 17-self-improving-agent 18-proactive-agent 19-humanizer 20-youtube-watcher 24-storyboard-writer 25-video-creator 26-caption-creator 27-video-editor 28-cinematic-forge 29-ghl-convert-and-flow 30-fish-audio-api-reference 64-agnes-video 43-graphify-knowledge-graph"
 OC_WAVE4_SKILLS="31-upgraded-memory-system 36-ghl-mcp-setup"
 OC_WAVE5_SKILLS="22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner"
 

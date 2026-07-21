@@ -1,0 +1,29 @@
+{
+  "skill": "64-agnes-video",
+  "prerequisites": [
+    {
+      "id": "skill-01-typ",
+      "type": "skill",
+      "label": "Skill 01 — Teach Yourself Protocol",
+      "check": { "skill": "01-teach-yourself-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 01 (01-teach-yourself-protocol) before installing Skill 64."
+    },
+    {
+      "id": "skill-02-backup",
+      "type": "skill",
+      "label": "Skill 02 — Back Yourself Up Protocol",
+      "check": { "skill": "02-back-yourself-up-protocol" },
+      "severity": "required",
+      "satisfy": "Complete Skill 02 (02-back-yourself-up-protocol) before installing Skill 64."
+    },
+    {
+      "id": "agnes-api-key",
+      "type": "credential",
+      "label": "Agnes AI API Key (AGNES_AI_API_KEY)",
+      "check": { "envVar": "AGNES_AI_API_KEY" },
+      "severity": "required",
+      "satisfy": "AGNES_AI_API_KEY is fleet-provisioned infrastructure (the same key backs the registered agnes/agnes-2.0-flash model on the boxes). This skill only REFERENCES it — verify SET/NOT-SET with `openclaw config get AGNES_AI_API_KEY` and NEVER print the value. If NOT-SET, escalate to the operator as an infrastructure gap; do not invent or substitute a key."
+    }
+  ]
+}
