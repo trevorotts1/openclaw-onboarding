@@ -54,6 +54,9 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Install pytest
+        run: python3 -m pip install --quiet --disable-pip-version-check pytest
+
       - name: Compile every stage dispatcher and the downstream phase machine
         run: |
           set -euo pipefail
