@@ -1336,10 +1336,149 @@ def step_persona_grounding_health(
 # FAIL (the unprovisioned state) but is reported distinctly from a placeholder.
 PLACEHOLDER_COMPANY_NAMES = frozenset({"your company", "your company name"})
 
-# The four checks that GATE the verdict. SOP + CC-SERVE are REPORTED in the
+# The checks that GATE the verdict. SOP + CC-SERVE are REPORTED in the
 # breakdown but stay gated where they already were (embedding-health / build-cc)
 # — this ADDS verification, it never removes a gate.
-_PROVISIONING_HARD_CHECKS = ("VERSION", "BRANDING", "DEPARTMENTS", "PERSONAS")
+_PROVISIONING_HARD_CHECKS = ("VERSION", "BRANDING", "DEPARTMENTS", "PERSONAS",
+                             "ROLE-FLOOR")
+
+# ── ROLE-FLOOR: the live departments workspace ────────────────────────────────
+# DEPARTMENTS reads departments.json, which lives in the ZHC company dir
+# (master_files/zero-human-company/<slug>/). The role folders it promises live in
+# a COMPLETELY DIFFERENT tree — the live departments workspace. Verifying only the
+# JSON is why a box could lose every role folder on disk and still be recorded as
+# a clean, completed roll.
+#
+# Fallback candidate list, probed only AFTER the runner's own path authority
+# (paths["workspace"]) — same set the fleet floor-prover probes, because those are
+# the layouts that actually exist on the fleet. Measured 2026-07-21 across the 30
+# reachable boxes, every one resolves to one of:
+#     ~/.openclaw/workspace/departments      /data/.openclaw/workspace/departments
+#     ~/clawd/departments                    /data/clawd/departments
+# The two /data/clawd + ~/clawd forms are LEGACY trees that paths["workspace"]
+# does NOT derive, so omitting them here would false-FAIL real, healthy boxes.
+_DEPT_WS_CANDIDATES = (
+    "~/clawd/departments",
+    "~/.openclaw/workspace/departments",
+    "~/.openclaw/workspace/zero-human-company/departments",
+    "/data/.openclaw/workspace/departments",
+    "/data/.openclaw/workspace/zero-human-company/departments",
+    "/data/clawd/departments",
+)
+
+# Hard ceiling on the role scan so an enormous / looped tree cannot stall a roll.
+_ROLE_SCAN_MAX_ENTRIES = 20000
+
+# Files that live at DEPARTMENT level and are therefore NOT a role. Everything
+# else is counted, deliberately: role markers are NOT uniform across the fleet
+# (canonical boxes use IDENTITY.md, others how-to.md, and at least one build uses
+# governing-personas.md + numbered How-to-NN.md), so this check is convention-
+# AGNOSTIC on purpose. A marker-specific test would false-FAIL a real workforce.
+_DEPT_LEVEL_MD = frozenset({
+    "governing-personas.md", "readme.md", "agents.md", "heartbeat.md",
+    "memory.md", "soul.md", "tools.md", "identity.md", "how-to.md",
+    "org-chart.md", "_sops.md",
+})
+
+
+def _resolve_departments_workspace(paths: dict, pp: dict) -> Optional[Path]:
+    """
+    Resolve the LIVE departments workspace — the tree that actually holds role
+    folders. Never raises; returns None only when NO candidate exists on disk.
+
+    Order: the runner's own path authority first (so the gate reads the same tree
+    every other check in this module reads), then the company dir, then the fleet
+    fallback layouts. Path.is_dir() FOLLOWS symlinks by design — on several fleet
+    boxes `departments` IS a symlink (e.g. -> workspaces/command-center, or ->
+    zero-human-company/<brand>/departments), and a non-following probe reports
+    those healthy boxes as empty.
+
+    In fixture mode (FLEET_REFRESH_ROOT set) the absolute ~ and /data candidates
+    are SKIPPED so a test can never accidentally resolve — and pass against — the
+    real live workspace of the machine running the test.
+    """
+    workspace = Path(paths.get("workspace") or "/nonexistent")
+    ordered: list[Path] = [
+        workspace / "departments",
+        workspace / "zero-human-company" / "departments",
+    ]
+    company_dir = pp.get("company_dir")
+    if company_dir:
+        ordered.append(Path(company_dir) / "departments")
+    if not os.environ.get("FLEET_REFRESH_ROOT", "").strip():
+        ordered += [Path(os.path.expanduser(c)) for c in _DEPT_WS_CANDIDATES]
+
+    seen: set[str] = set()
+    for cand in ordered:
+        key = str(cand)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            if cand.is_dir():
+                return cand
+        except OSError:
+            continue
+    return None
+
+
+def _count_role_artifacts(ws: Path) -> tuple[int, int]:
+    """
+    Count (department_dirs, role_artifacts) under the live departments workspace.
+
+    A ROLE ARTIFACT is either:
+      * a sub-directory of <dept>/ (or <dept>/roles/) holding at least one .md
+        file — covers <dept>/<role>/IDENTITY.md, <dept>/<role>/how-to.md,
+        <dept>/NN-<role>/governing-personas.md, and <dept>/roles/<role>/*.md; or
+      * a .md file directly under <dept>/ whose name is not a department-level
+        marker — covers the flat <dept>/<role>.md layout.
+
+    Deliberately PERMISSIVE. This is a floor-LOSS detector, not a completeness
+    audit: completeness is what qc-completeness.sh and the floor-prover measure.
+    Erring permissive is what keeps it from false-failing the many legitimate
+    on-fleet layouts. Never raises.
+    """
+    dept_dirs = 0
+    roles = 0
+    budget = _ROLE_SCAN_MAX_ENTRIES
+    try:
+        entries = sorted(ws.iterdir())
+    except OSError:
+        return 0, 0
+    for dept in entries:
+        try:
+            if not dept.is_dir():
+                continue
+        except OSError:
+            continue
+        dept_dirs += 1
+        for base in (dept, dept / "roles"):
+            try:
+                if base is not dept and not base.is_dir():
+                    continue
+                children = sorted(base.iterdir())
+            except OSError:
+                continue
+            for child in children:
+                budget -= 1
+                if budget <= 0:
+                    return dept_dirs, roles
+                try:
+                    if child.is_dir():
+                        for grand in child.iterdir():
+                            budget -= 1
+                            if grand.name.lower().endswith(".md") and grand.is_file():
+                                roles += 1
+                                break
+                            if budget <= 0:
+                                return dept_dirs, roles
+                    elif (base is dept
+                          and child.name.lower().endswith(".md")
+                          and child.name.lower() not in _DEPT_LEVEL_MD):
+                        roles += 1
+                except OSError:
+                    continue
+    return dept_dirs, roles
 
 
 def _prov_read_json(path) -> Optional[Any]:
@@ -1450,7 +1589,7 @@ def step_provisioning_completeness(
     """
     Step 8d: the provisioning-completeness gate (false-success closer).
 
-    HARD-GATES the box on four provisioning invariants SOP coverage never proved,
+    HARD-GATES the box on five provisioning invariants SOP coverage never proved,
     and REPORTS the two already-gated-elsewhere signals so the operator sees a
     full per-check breakdown:
 
@@ -1464,6 +1603,13 @@ def step_provisioning_completeness(
                           fallback (useLogoUrl renders the company name) and is
                           NOT failed; only a missing/broken logo file fails.
       DEPTS     (GATE)  — departments.json exists and is a NON-EMPTY array.
+      ROLE-FLOOR(GATE)  — when departments.json declares >=1 department, the LIVE
+                          departments workspace must exist on disk AND hold >=1
+                          role artifact. departments.json lives in the ZHC company
+                          dir; the role folders live in a different tree, so DEPTS
+                          alone let a box lose EVERY role folder and still record a
+                          clean roll. Zero declared departments = n/a (the fresh-box
+                          default), never a second failure on top of DEPTS.
       PERSONAS  (GATE)  — coaching-personas/personas holds >=1 persona dir with a
                           persona-blueprint.md (same definition the drift probe uses).
       SOP       (report)— mirrors res.steps["embedding-health"] (Index-3 CC SOP
@@ -1522,6 +1668,45 @@ def step_provisioning_completeness(
     else:
         checks.append(("DEPARTMENTS", True, f"{len(depts)} departments"))
 
+    # ── ROLE-FLOOR (gate) — the DEPARTMENTS claim, measured against DISK ───────
+    # DEPARTMENTS above proves only that a JSON file LISTS departments. It reads
+    # the ZHC company dir; the role folders it promises live in a different tree
+    # entirely. Without this check a box whose every role folder is GONE still
+    # records a clean, completed roll, because the JSON still lists them.
+    #
+    # Scoped as a floor-LOSS detector, on purpose:
+    #   * declared_departments == 0  -> n/a. An empty/absent departments.json is
+    #     the INTENDED shipped default on a fresh box; that state is DEPARTMENTS'
+    #     to judge, and this check must never pile a second failure onto it.
+    #   * workspace unresolvable, or zero role artifacts anywhere -> FAIL.
+    #   * >= 1 role artifact -> PASS, and the count is reported so erosion is
+    #     VISIBLE without being gated here (per-department completeness belongs to
+    #     the floor-prover / qc-completeness, which measure the manifest floor).
+    # It looks ONLY at role folders: never at packages (the presentation-deps
+    # failures are a different defect) and never at a hardcoded department or file
+    # count (the floor manifest is regenerated as the floor legitimately changes).
+    declared = len(depts) if isinstance(depts, list) else 0
+    if declared == 0:
+        checks.append(("ROLE-FLOOR", True,
+                       "n/a — no departments declared (fresh box default)"))
+    else:
+        dept_ws = _resolve_departments_workspace(paths, pp)
+        if dept_ws is None:
+            checks.append(("ROLE-FLOOR", False,
+                           "NO live departments workspace on disk — "
+                           f"{declared} departments declared in departments.json"))
+        else:
+            on_disk, role_count = _count_role_artifacts(dept_ws)
+            if role_count == 0:
+                checks.append(("ROLE-FLOOR", False,
+                               f"FLOOR GONE — 0 role artifacts under {dept_ws} "
+                               f"({on_disk} department dirs on disk, "
+                               f"{declared} declared in departments.json)"))
+            else:
+                checks.append(("ROLE-FLOOR", True,
+                               f"{role_count} role artifacts across {on_disk} "
+                               f"department dirs ({dept_ws})"))
+
     # ── PERSONAS (gate) ───────────────────────────────────────────────────────
     pdir = pp.get("personas_dir")
     persona_count = 0
@@ -1557,7 +1742,7 @@ def step_provisioning_completeness(
     for (n, ok, d) in checks:
         (_ok if ok else _err)(f"    {n}: {'ok' if ok else 'FAIL'} — {d}")
 
-    # ── Verdict: the FOUR hard gates only (SOP + CC-SERVE are reported) ────────
+    # ── Verdict: the FIVE hard gates only (SOP + CC-SERVE are reported) ───────
     failed = [(n, d) for (n, ok, d) in checks
               if n in _PROVISIONING_HARD_CHECKS and not ok]
     result = {
@@ -1749,8 +1934,8 @@ def run_box(
 
     # Step 8d (false-success closer): provisioning-completeness — always runs
     # (read-only; reflects LIVE box state). GATING: VERSION + BRANDING +
-    # DEPARTMENTS + PERSONAS must all be present, else the box is flipped off
-    # "ok" with a per-check breakdown. SOP + CC-serving are reported here but
+    # DEPARTMENTS + ROLE-FLOOR + PERSONAS must all be present, else the box is
+    # flipped off "ok" with a per-check breakdown. SOP + CC-serving are reported but
     # stay gated where they already were (embedding-health / build-cc). A gate-
     # internal exception is FAIL-CLOSED — an unverifiable box must never look
     # PASS.

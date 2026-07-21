@@ -1,3 +1,92 @@
+## [v20.0.79]  -  2026-07-21  -  ROLL VERDICT: a box could lose EVERY role folder on disk and still be recorded as a clean, completed roll
+
+The roll-level verdict gate added in PR #677
+(`shared-utils/fleet_refresh_runner.py::step_provisioning_completeness`) decided
+a box's DEPARTMENTS verdict by checking **only that `departments.json` is a
+non-empty array.** It never verified that a single role folder exists on disk:
+
+```python
+depts = _prov_read_json(pp.get("departments_json"))
+if not isinstance(depts, list):
+    checks.append(("DEPARTMENTS", False, "departments.json missing/not-a-list ..."))
+elif len(depts) == 0:
+    checks.append(("DEPARTMENTS", False, "departments.json is an EMPTY array"))
+else:
+    checks.append(("DEPARTMENTS", True, f"{len(depts)} departments"))
+```
+
+`departments.json` lives in the ZHC company dir
+(`master_files/zero-human-company/<slug>/`). The role folders it promises live
+in a COMPLETELY DIFFERENT tree — the live departments workspace. So a box could
+lose its entire department floor, every role folder gone, and still be reported
+`ok`, because a JSON file in another tree still listed the departments that were
+supposed to be there. This is the same silent-success family as PR #680
+(`refresh-stale-roles` hardcoded `-dept` path) and PR #681 (the MISSING-detection
+chain that never touched the filesystem). #681 made floor loss VISIBLE; nothing
+yet made it FATAL.
+
+**The fix — ROLE-FLOOR, a fifth hard gate that measures the tree.** When
+`departments.json` declares at least one department, the live departments
+workspace must exist on disk AND hold at least one role artifact. Zero role
+artifacts anywhere, or no resolvable workspace, now FAILS the box.
+
+**Why it does not false-FAIL healthy boxes.** A check that fires on a healthy box
+is worse than the weak check it replaces — it gets bypassed, and then nothing is
+enforced. Four deliberate scoping decisions, each forced by measured fleet
+reality rather than assumption:
+
+* **Resolution order.** The runner's own path authority (`paths["workspace"]`)
+  first, then the company dir, then the fleet fallback layouts. Measured
+  2026-07-21 across the 30 reachable boxes, every one resolves to one of
+  `~/.openclaw/workspace/departments`, `/data/.openclaw/workspace/departments`,
+  `~/clawd/departments`, `/data/clawd/departments`. The two `clawd` forms are
+  LEGACY trees `paths["workspace"]` does not derive; omitting them would
+  false-FAIL real boxes. This is the same wrong-tree trap that makes
+  `qc-completeness.sh` report `funnels` missing when it is present on disk.
+* **Symlinks are followed.** On several fleet boxes `departments` IS a symlink
+  (`-> workspaces/command-center`, `-> zero-human-company/<brand>/departments`).
+  A non-following probe reports those healthy boxes as an empty floor — measured
+  and confirmed while building this gate.
+* **Role markers are not assumed.** Canonical boxes mark a role with
+  `IDENTITY.md`, others with `how-to.md`, and at least one real build uses
+  `governing-personas.md` + numbered `How-to-NN.md`. The check is convention-
+  AGNOSTIC: any sub-directory of `<dept>/` (or `<dept>/roles/`) holding a `.md`
+  counts, as does a flat `<dept>/<role>.md`. Department-level markers
+  (`governing-personas.md`, `README.md`, `AGENTS.md`, ...) do not.
+* **No magic numbers, and no scope creep.** It consumes no hardcoded department
+  or file count — the floor manifest is regenerated as the floor legitimately
+  changes. It is a floor-LOSS detector, not a completeness audit: per-department
+  completeness stays with the floor-prover and `qc-completeness.sh`. It looks
+  only at role folders, never at packages, so the presentation-deps failures are
+  untouched. An empty/absent `departments.json` is the INTENDED shipped default
+  on a fresh box, so ROLE-FLOOR reports `n/a` there and never piles a second
+  failure onto DEPARTMENTS' existing call.
+
+**BLAST RADIUS — measured, not estimated.** The shipping resolver + counter were
+run read-only on every box in `box-registry.json` (36 boxes; nothing written to
+any box). **0 of the 30 reachable boxes newly fail.** All 30 resolve a
+departments workspace and hold hundreds of role artifacts (min 481, max 1727).
+The 6 unreachable boxes were skipped and recorded (`leanne-dolce`,
+`rescue-barret-matthews`, `rescue-christy-staples`, `rescue-erin-garrett`,
+`rescue-jill-bulluck`, `rescue-talaya-kelley`) — the same 6 skipped in the Jul-20
+roll. 30 + 6 = 36.
+
+**Tests** (`tests/unit/provisioning-completeness-gate.test.py`, hermetic fixtures
+only — never a real box; both columns measured with `run_box`'s exact
+`has_failures` expression). New: role folders DELETED while `departments.json`
+still lists them -> `ok` BEFORE / `partial` AFTER; workspace entirely absent;
+fresh box with empty `departments.json` -> ROLE-FLOOR does not fire; SYMLINKED
+workspace passes; non-canonical role markers pass; department-level markers alone
+do not count as a floor; idempotent across two runs. **Tightened:** the existing
+"fully-correct box" fixture previously shipped NO role folders at all and still
+asserted `AFTER == ok` — it encoded the very false-success being fixed here as
+correct, and now lays down a real departments workspace. Against `origin/main`
+the suite is 8 red (4 failures, 4 errors); on this branch 17/17 green.
+
+**Decisive:** can a box lose all its role folders and still be recorded as a
+clean completed roll? **NO.** Non-empty `departments.json` + no floor -> ROLE-FLOOR
+FAIL; empty or missing `departments.json` -> DEPARTMENTS FAIL (unchanged).
+
 ## [v20.0.78]  -  2026-07-21  -  RETIRED-FILE RECONCILE: canonical deletions never reached the staging tree or the strays inside the skill search path
 
 A file DELETED from the canonical library stopped being deleted somewhere
