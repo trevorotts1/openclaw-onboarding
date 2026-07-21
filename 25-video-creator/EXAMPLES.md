@@ -97,7 +97,7 @@ python scripts/text_to_video.py "Product logo reveal with dramatic lighting" \
 # Step 4: Assemble with transitions and music
 python scripts/multi_clip_assembly.py \
   intro.mp4 feature1.mp4 feature2.mp4 outro.mp4 \
-  --transition slide_left \
+  --transition fade \
   --music audio/epic.mp3 \
   --output product_launch.mp4
 ```
@@ -234,7 +234,7 @@ done
 
 # Assemble, then attach the required audio tracks
 python scripts/multi_clip_assembly.py course_clip_*.mp4 \
-  --transition slide_left \
+  --transition fade \
   --output course_preview_silent.mp4
 
 python scripts/add_music.py course_preview_silent.mp4 \

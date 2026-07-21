@@ -113,7 +113,9 @@ python3 scripts/multi_clip_assembly.py clip1.mp4 clip2.mp4 clip3.mp4 \
 ```
 
 Positional argument: `clips` (one or more video files).
-Options: `--transition` (fade/slide_left/slide_right/none), `--transition-duration`, `--duration`, `--music`, `--output`, `--resolution`, `--fps`.
+Options: `--transition` (fade/none), `--transition-duration`, `--duration`, `--music`, `--output`, `--resolution`, `--fps`.
+
+Only transitions whose rendered frames actually differ per requested variant are offered. `slide_*` is not offered here: MoviePy's compose-mode concatenation re-centers every clip and discards the slide animation, so every direction rendered identical frames. Requesting one is rejected with a nonzero exit rather than silently delivering a different effect. `transitions.py` offers the frame-verified `wipe_left/right/up/down` effects.
 
 Every positional clip is required; a missing or undecodable clip stops assembly. `--music` must be an existing audio file path.
 

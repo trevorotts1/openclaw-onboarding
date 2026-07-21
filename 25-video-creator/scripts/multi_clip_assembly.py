@@ -13,8 +13,13 @@ from typing import List, Optional, Tuple
 sys.path.insert(0, str(Path(__file__).parent))
 
 
+# `slide_*` is deliberately not advertised here.  Assembly concatenates with
+# concatenate_videoclips(method="compose"), which re-applies
+# set_position('center') to every clip and discards the position animation
+# slide_in installs, so slide_left and slide_right rendered byte-identical
+# output and the requested direction was never delivered.
 SUPPORTED_TRANSITIONS = (
-    'fade', 'slide_left', 'slide_right', 'none',
+    'fade', 'none',
 )
 
 
@@ -55,17 +60,6 @@ def apply_transition(clip1, clip2, transition_type: str, duration: float = 0.5):
         clip1 = clip1.fadeout(duration)
         clip2 = clip2.fadein(duration)
         return [clip1, clip2]
-    
-    elif transition_type == 'slide_left':
-        # Slide transition
-        from moviepy.video.compositing.transitions import slide_in
-        clip2 = slide_in(clip2, duration=duration, side='left')
-        return [clip1.set_end(clip1.duration - duration), clip2]
-    
-    elif transition_type == 'slide_right':
-        from moviepy.video.compositing.transitions import slide_in
-        clip2 = slide_in(clip2, duration=duration, side='right')
-        return [clip1.set_end(clip1.duration - duration), clip2]
     
     raise ValueError(f"Unsupported transition: {transition_type}")
 

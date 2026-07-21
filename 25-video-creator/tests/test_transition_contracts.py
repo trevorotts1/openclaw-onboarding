@@ -16,18 +16,29 @@ def test_every_advertised_transition_is_implemented_or_rejected(load_script):
     unsupported = {
         "crossfade", "zoom_in", "zoom_out", "flip_horizontal",
         "flip_vertical", "spin", "pixelate",
+        # slide_* renders identically in every direction under
+        # concatenate_videoclips(method="compose"), which re-centers each clip
+        # and drops slide_in's position animation.
+        "slide_left", "slide_right", "slide_up", "slide_down",
     }
     assert unsupported.isdisjoint(transitions.Transitions.AVAILABLE)
 
     with pytest.raises(ValueError, match="Unsupported transition"):
         transitions.Transitions.apply_transition(DummyClip(), DummyClip(), "pixelate")
 
+    for direction in ("left", "right", "up", "down"):
+        with pytest.raises(ValueError, match="Unsupported transition"):
+            transitions.Transitions.apply_transition(
+                DummyClip(), DummyClip(), f"slide_{direction}"
+            )
+
 
 def test_assembly_never_aliases_an_unknown_transition_to_fade(load_script):
     assembly = load_script("multi_clip_assembly")
 
-    with pytest.raises(ValueError, match="Unsupported transition"):
-        assembly.apply_transition(DummyClip(), DummyClip(), "slide_up")
+    for name in ("slide_up", "slide_left", "slide_right", "wipe", "zoom_in"):
+        with pytest.raises(ValueError, match="Unsupported transition"):
+            assembly.apply_transition(DummyClip(), DummyClip(), name)
 
 
 def real_frame_signature(parts):
@@ -52,39 +63,53 @@ def real_color_clips():
     )
 
 
-@pytest.mark.parametrize("transition_name", ["slide_left", "slide_right"])
-def test_every_retained_assembly_effect_is_distinct_from_fade(
-    load_script, transition_name
-):
-    assembly = load_script("multi_clip_assembly")
-    fade_a, fade_b = real_color_clips()
-    effect_a, effect_b = real_color_clips()
-    fade = real_frame_signature(assembly.apply_transition(fade_a, fade_b, "fade", 0.25))
-    effect = real_frame_signature(
-        assembly.apply_transition(effect_a, effect_b, transition_name, 0.25)
-    )
-    assert effect != fade
+def _signature_of(apply, transition_name):
+    clip_a, clip_b = real_color_clips()
+    return real_frame_signature(apply(clip_a, clip_b, transition_name, 0.25))
 
 
 @pytest.mark.parametrize(
     "transition_name",
-    [
-        "slide_left", "slide_right", "slide_up", "slide_down",
-        "wipe_left", "wipe_right", "wipe_up", "wipe_down",
-    ],
+    ["wipe_left", "wipe_right", "wipe_up", "wipe_down"],
 )
 def test_every_retained_library_effect_is_distinct_from_fade(
     load_script, transition_name
 ):
     transitions = load_script("transitions")
-    fade_a, fade_b = real_color_clips()
-    effect_a, effect_b = real_color_clips()
-    fade = real_frame_signature(
-        transitions.Transitions.apply_transition(fade_a, fade_b, "fade", 0.25)
-    )
-    effect = real_frame_signature(
-        transitions.Transitions.apply_transition(
-            effect_a, effect_b, transition_name, 0.25
+    apply = transitions.Transitions.apply_transition
+    assert _signature_of(apply, transition_name) != _signature_of(apply, "fade")
+
+
+# Distinctness from `fade` alone is not enough: four advertised slide directions
+# once rendered byte-identical frames to one another while each still differed
+# from fade, so a requested direction was silently replaced by a different one.
+# Every advertised variant must render distinctly from EVERY other variant.
+def test_no_two_advertised_library_effects_render_identically(load_script):
+    transitions = load_script("transitions")
+    apply = transitions.Transitions.apply_transition
+    rendered = {}
+    for name in transitions.Transitions.AVAILABLE:
+        if name == "none":
+            continue
+        signature = _signature_of(apply, name)
+        collision = rendered.get(signature)
+        assert collision is None, (
+            f"advertised transitions {collision!r} and {name!r} render identical "
+            "frames; a caller asking for one silently receives the other"
         )
-    )
-    assert effect != fade
+        rendered[signature] = name
+
+
+def test_no_two_advertised_assembly_effects_render_identically(load_script):
+    assembly = load_script("multi_clip_assembly")
+    rendered = {}
+    for name in assembly.SUPPORTED_TRANSITIONS:
+        if name == "none":
+            continue
+        signature = _signature_of(assembly.apply_transition, name)
+        collision = rendered.get(signature)
+        assert collision is None, (
+            f"advertised transitions {collision!r} and {name!r} render identical "
+            "frames; a caller asking for one silently receives the other"
+        )
+        rendered[signature] = name

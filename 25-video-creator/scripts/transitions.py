@@ -15,9 +15,16 @@ sys.path.insert(0, str(Path(__file__).parent))
 class Transitions:
     """Collection of video transition effects."""
     
+    # Only effects whose rendered frames actually differ per requested variant
+    # are advertised.  `slide_*` is intentionally absent: MoviePy's
+    # concatenate_videoclips(method="compose") re-applies set_position('center')
+    # to every clip (moviepy/video/compositing/concatenate.py:98), which discards
+    # the position animation slide_in installs.  All four directions therefore
+    # rendered identical frames, so the direction the caller asked for could not
+    # be delivered.  Advertising them again requires a real composite-based
+    # implementation plus a per-direction distinctness test.
     AVAILABLE = [
         'fade',
-        'slide_left', 'slide_right', 'slide_up', 'slide_down',
         'wipe_left', 'wipe_right', 'wipe_up', 'wipe_down',
         'none'
     ]
@@ -33,21 +40,8 @@ class Transitions:
     
     @staticmethod
     def slide(clip1, clip2, direction: str, duration: float = 0.5):
-        """Slide transition."""
-        from moviepy.video.compositing.transitions import slide_in
-        
-        sides = {
-            'left': 'left',
-            'right': 'right',
-            'up': 'top',
-            'down': 'bottom'
-        }
-        
-        side = sides.get(direction, 'left')
-        clip2 = slide_in(clip2, duration=duration, side=side)
-        
-        # Overlap clips during transition
-        return [clip1.set_end(clip1.duration - duration), clip2]
+        """Reject the unimplemented slide effect instead of ignoring direction."""
+        raise ValueError(f"Unsupported transition: slide_{direction}")
     
     @staticmethod
     def wipe(clip1, clip2, direction: str, duration: float = 0.5):
@@ -141,10 +135,6 @@ class Transitions:
         elif transition_type == 'fade':
             return Transitions.fade(clip1, clip2, duration)
         
-        elif transition_type.startswith('slide_'):
-            direction = transition_type.replace('slide_', '')
-            return Transitions.slide(clip1, clip2, direction, duration)
-        
         elif transition_type.startswith('wipe_'):
             direction = transition_type.replace('wipe_', '')
             return Transitions.wipe(clip1, clip2, direction, duration)
@@ -197,9 +187,6 @@ def list_transitions():
     print("Basic:")
     print("  fade - Smooth fade between clips")
     print("  none - Hard cut")
-    print()
-    print("Slide:")
-    print("  slide_left, slide_right, slide_up, slide_down")
     print()
     print("Wipe:")
     print("  wipe_left, wipe_right, wipe_up, wipe_down")
