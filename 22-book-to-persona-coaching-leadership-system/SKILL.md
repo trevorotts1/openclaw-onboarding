@@ -283,7 +283,7 @@ When the owner says "add a book persona named after `<Author>`" or "add `<Title>
 
 ```bash
 # 1. Add the persona from source (book PDF, video, etc.)
-bash add-persona-from-source.sh --source <path-or-url> \
+bash 22-book-to-persona-coaching-leadership-system/scripts/add-persona-from-source.sh --source <path-or-url> \
   [--title "<Book Title>"] [--author "<Author Name>"]
 
 # 2. REQUIRED: Verify domain and perspective tags are non-empty
