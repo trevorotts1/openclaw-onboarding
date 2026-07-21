@@ -1,4 +1,4 @@
-## [v20.0.83]  -  2026-07-21  -  TWO SILENT-SUCCESS CHECKERS: a run with ZERO deliverables recorded "done", and an impersonation guard blind to the inbox preheader
+## [v20.0.84]  -  2026-07-21  -  TWO SILENT-SUCCESS CHECKERS: a run with ZERO deliverables recorded "done", and an impersonation guard blind to the inbox preheader
 
 Both defects are the same class — a checker reporting a result other than
 reality, with the false result made **durable**.
@@ -85,6 +85,63 @@ an unrecognised value shape rather than dropping it, for the same reason.
 
 - Re-pinned `50-email-engine/ENGINE-PIN.sha256` over the changed enforcement set.
 - Skill versions: 46 `1.1.1 -> 1.1.2`, 50 `1.1.3 -> 1.1.4`.
+## [v20.0.83]  -  2026-07-21  -  THE VERTICAL GUARD BLAMED THE WRONG PACK: a department declared by TWO packs was judged by whichever one the naming map listed LAST
+
+`vertical-derivation-guard.py`'s `dept_pack_index()` built a `dept_id -> pack`
+map by plain assignment while walking every pack:
+
+    idx[did] = {"pack": pack_id, "universal_primary": bool(dept.get("universal_primary"))}
+
+`department-naming-map.json` really does declare the same department id under
+more than one pack — `community-management` under BOTH `personal-pro-dev` and
+`content-creator`, and `podcast` under both as well. Plain assignment means the
+LAST pack in map order silently wins, so a department's owner was decided by
+JSON key ordering rather than by ownership.
+
+**This was an install-blocking false FAIL.** `run-full-install.sh` phase=3b
+treats the guard's rc=3 as `fail_install`. A coaching client whose interview
+legitimately declared `personal-pro-dev`, and whose `community-management`
+department was added by `apply_vertical_packs` Phase 2 **from that very pack**
+(build-state records `community-management <- pack personal-pro-dev`), was
+reported as:
+
+    VERTICAL_NOT_DECLARED: department 'community-management' (pack 'content-creator')
+    is provisioned on disk but pack 'content-creator' is not in the declared set
+    (['personal-pro-dev', 'ecommerce'])
+
+— a healthy, correctly-provisioned box failing its Command Center refresh over a
+department it was entitled to. Confirmed against a real fleet box whose
+build-state attributes the department to `personal-pro-dev`.
+
+The collision cut the other way too: `podcast` is `universal_primary=true` under
+`content-creator` but `false` under `personal-pro-dev`, so map order decided
+whether it was gated at all.
+
+**THE FIX — ownership is a SET, not a last-write.**
+
+* `dept_pack_index()` now accumulates **every** declaring pack into `packs`, and
+  OR-s `universal_primary` across them. `pack` is kept as the first declaring
+  pack for receipt readability only; all decisions use `packs`.
+* A provisioned department is explained when **ANY** owning pack is declared —
+  matching `apply_vertical_packs` Phase 2, which adds the department from
+  whichever matched pack declares it. `universal_primary` is true when **ANY**
+  pack flags it, matching Phase 1, which adds it to every client from the
+  flagging pack.
+* `check_add()` applies the same set semantics, and its named
+  `VERTICAL_NOT_DECLARED` error now names every owning pack.
+
+**THE GATE IS NOT WEAKENED.** Only an *owning* pack can explain a department: a
+declared pack that does not own it still refuses. New tests (h0-h5) assert both
+directions — `community-management` PASSES with `personal-pro-dev` declared, and
+still FAILS with an empty declared set and with an unrelated (`saas`) declared
+set, both in audit mode and via `--check-add`. All 15 pre-existing assertions
+(a-g) still pass: 15/15 before, 22/22 after.
+
+**SCOPE.** This fixes a false FAIL only. It does NOT clear the separate,
+genuine finding that pre-v14.28.1 boxes carry a `listings` department from the
+era when it was flagged `universal_primary` (flag removed in `b3e25876`,
+v14.28.1) — that is real provisioning residue on non-real-estate clients and is
+remediated by removing the department, not by changing this guard.
 
 ## [v20.0.82]  -  2026-07-21  -  EVERY `qmd` CALL WAS UNBOUNDED: ~50 of one update run's 64 minutes spent waiting on calls that then failed silently
 
