@@ -58,7 +58,7 @@ on:
 
 jobs:
   department-runtime-parity-guard:
-    name: guard-department-runtime-parity.py regression suite (17 hermetic cases)
+    name: guard-department-runtime-parity.py regression suite (25 hermetic cases)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo

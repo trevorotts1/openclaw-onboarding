@@ -1,7 +1,7 @@
 # OpenClaw Onboarding — Unified (Mac + VPS)
 <!-- PRD 2.1 unified repo — branch prd-2.1-unified-repo -->
 
-> **Version:** see `/version` - this repo at v20.0.80.
+> **Version:** see `/version` - this repo at v20.0.85.
 >
 > **NOTE (v20.0.59) — Skill 6 U71 (GK-09): clear the WAF/edge 403 on `verify-imported` (CODE tier); LIVE snapshot chain run still owed to the operator.** Fixes the browser User-Agent `verify-imported` sends to `services.leadconnectorhq.com` — it was previously reusing an unrelated Kie-CDN UA constant with a malformed Chrome build string; now a dedicated `CAF_BROWSER_UA`, ported byte-for-byte from the proven-live Podcast gate. Adds a Firebase-JWT internal-rail fallback (same proven Podcast-gate pattern) gated on the CLIENT's own Firebase refresh token — never a shared operator token, per the binding 2026-07-14 per-client ruling on U69/U70/U71. Both scripts' offline self-tests now exercise the new fallback ladder end-to-end and pass. The LIVE tier — running `verify-imported` against the real template location and completing the cut → import → verify-imported → provision-custom-values chain for the first time — needs a live client/operator-owned GHL credential and is operator-gated, not run from an offline repo build; it gates GK-07 (U69) and GK-08 (U70). No client names, no secret values, no Anthropic models. See [CHANGELOG.md](CHANGELOG.md).
 >
@@ -125,7 +125,7 @@
 
 **A complete onboarding package for setting up a fully operational OpenClaw agent on Mac mini or Hostinger Docker VPS.**
 
-**Current Version: v20.0.80** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
+**Current Version: v20.0.85** - See [CHANGELOG.md](CHANGELOG.md) for the full per-release history.
 The Presentations department ships a deterministic deck-build pipeline: `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`build_deck.py`, `kie_generate.py`, `slides.schema.json`, `test_preflight.py`, `sync_check.py`) plus the slide-craft SOP set in `universal-sops/presentation-slide-craft/` (`PIPELINE-MANIFEST.json`, `SOP-SLIDE-05-PROCESS-MANIFEST.md`, `SOP-SLIDE-06-EXTENSION-AND-SYNC.md`).
 
 This is the **unified repo** for both platforms (PRD 2.1). Platform-specific files live in `platform/mac/` and `platform/vps/`. The `install.sh` auto-detects Mac vs VPS, or accepts `OPENCLAW_PLATFORM=mac|vps`.

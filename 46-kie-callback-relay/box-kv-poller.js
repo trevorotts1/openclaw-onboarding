@@ -139,32 +139,10 @@ class KieKvPoller {
           console.warn(`[kie-poller] submitId mismatch for task ${taskId} -- dropping`);
           continue;
         }
-        // Validate result URLs against allowlist
-        const safeUrls = this._filterSafeUrls(kvResult.resultUrls || []);
-        // Fix 35: a 200 with zero surviving (allowlisted) URLs is NOT a success -- there is
-        // no file to download. Report it as an allowlist rejection, never as 'done'.
-        let status, extra = {};
-        if (kvResult.code !== 200) {
-          status = 'failed';
-        } else if (safeUrls.length === 0) {
-          status = 'failed';
-          const rawUrlCount = (kvResult.resultUrls || []).length;
-          extra  = { reason: 'allowlist-rejected', rawUrlCount };
-          if (rawUrlCount > 0) {
-            // A code-200 callback that CARRIED result URLs yet had EVERY one dropped is almost
-            // always a stale/misconfigured KIE_RESULT_HOSTS allowlist, not a genuine failure --
-            // and left unnoticed it fails every slide fleet-wide. Make it LOUD (error, distinct
-            // tag) so monitoring pages on it and the operator sets KIE_RESULT_HOSTS to the real host.
-            console.error(`[kie-poller] ALLOWLIST-MISMATCH task ${taskId}: code 200 carried ` +
-              `${rawUrlCount} result URL(s) but ALL were rejected by the allowlist ` +
-              `(KIE_RESULT_HOSTS=${KIE_RESULT_HOSTS.join(',')}). Verify the real Kie CDN host from ` +
-              `a live callback and set the KIE_RESULT_HOSTS env var.`);
-          } else {
-            console.warn(`[kie-poller] task ${taskId}: code 200 but callback carried 0 URLs -- marking failed`);
-          }
-        } else {
-          status = 'done';
-        }
+        // Fix 35 / ONB-46-001: the ONE shared outcome rule -- a "success" with zero
+        // downloadable URLs is NOT done. Both resolution paths call _resolveOutcome.
+        const { status, resultUrls: safeUrls, extra } =
+          this._resolveOutcome(kvResult.resultUrls, kvResult.code, taskId, 'callback-kv');
         const marker = { taskId, submitId, status, resultUrls: safeUrls, code: kvResult.code,
                          receivedAt: kvResult.receivedAt, source: 'callback-kv', ...extra };
         this._writeDoneMarker(taskId, marker);
@@ -259,11 +237,16 @@ class KieKvPoller {
             try { resultJson = JSON.parse(resultJson); } catch (_) {}
           }
           const resultUrls = this._extractResultJsonUrls(resultJson);
-          const safeUrls   = this._filterSafeUrls(resultUrls);
-          const marker      = { taskId, submitId, status: 'done', resultUrls: safeUrls, code: 200,
-                                fallbackPolledAt: new Date().toISOString(), source: 'kie-poll' };
+          // ONB-46-001: this branch used to hard-code status:'done' regardless of how many
+          // URLs survived -- a run that produced NOTHING was permanently recorded complete
+          // while the KV path ~90 lines above already refused exactly that. Both paths now
+          // resolve through the SAME _resolveOutcome, so the rule cannot diverge again.
+          const { status, resultUrls: safeUrls, extra } =
+            this._resolveOutcome(resultUrls, 200, taskId, 'kie-poll');
+          const marker = { taskId, submitId, status, resultUrls: safeUrls, code: 200,
+                           fallbackPolledAt: new Date().toISOString(), source: 'kie-poll', ...extra };
           this._writeDoneMarker(taskId, marker);
-          console.log(`[kie-poller] task ${taskId} resolved via Kie fallback poll`);
+          console.log(`[kie-poller] task ${taskId} resolved via Kie fallback poll: ${status}`);
           return marker;
         }
 
@@ -290,6 +273,55 @@ class KieKvPoller {
     this._writeDoneMarker(taskId, marker);
     console.error(`[kie-poller] task ${taskId} timed out after 10 minutes of fallback polling`);
     return marker;
+  }
+
+  /**
+   * THE SINGLE OUTCOME RULE (fix 35 + ONB-46-001).
+   *
+   * "Did this task actually produce something we can download?" is asked in exactly
+   * ONE place. A provider-side success that yields ZERO allowlisted URLs is NOT done:
+   * there is no file to fetch, so recording it as complete would permanently, durably
+   * mark a run that produced nothing as finished. Every resolution path (the callback
+   * KV read AND the Kie recordInfo fallback) MUST route its status through here --
+   * the ONB-46-001 defect was one branch honouring this rule and the other ignoring
+   * it, so the rule now has no second copy to drift from.
+   *
+   * Failure is LOUD (console.error, distinct tag) and NEVER silent: a status this
+   * function cannot justify as 'done' is returned as 'failed', never skipped.
+   *
+   * @param {string[]|undefined} rawUrls -- result URLs as reported, pre-allowlist
+   * @param {number} code    -- provider result code (200 == provider-side success)
+   * @param {string} taskId  -- for the log line
+   * @param {string} source  -- 'callback-kv' | 'kie-poll' (for the log line)
+   * @returns {{status: 'done'|'failed', resultUrls: string[], extra: object}}
+   */
+  _resolveOutcome(rawUrls, code, taskId, source) {
+    const raw      = Array.isArray(rawUrls) ? rawUrls : [];
+    const safeUrls = this._filterSafeUrls(raw);
+
+    if (code !== 200) {
+      return { status: 'failed', resultUrls: safeUrls, extra: {} };
+    }
+
+    if (safeUrls.length === 0) {
+      if (raw.length > 0) {
+        // A code-200 result that CARRIED URLs yet had EVERY one dropped is almost always a
+        // stale/misconfigured KIE_RESULT_HOSTS allowlist, not a genuine failure -- and left
+        // unnoticed it fails every slide fleet-wide. Distinct LOUD tag so monitoring pages
+        // on it and the operator sets KIE_RESULT_HOSTS to the real host.
+        console.error(`[kie-poller] ALLOWLIST-MISMATCH task ${taskId} (${source}): code 200 carried ` +
+          `${raw.length} result URL(s) but ALL were rejected by the allowlist ` +
+          `(KIE_RESULT_HOSTS=${KIE_RESULT_HOSTS.join(',')}). Verify the real Kie CDN host from ` +
+          `a live callback and set the KIE_RESULT_HOSTS env var.`);
+      } else {
+        console.error(`[kie-poller] EMPTY-RESULT task ${taskId} (${source}): reported success but ` +
+          `carried 0 result URL(s) -- the run produced nothing, marking failed (NEVER 'done')`);
+      }
+      return { status: 'failed', resultUrls: [],
+               extra: { reason: 'allowlist-rejected', rawUrlCount: raw.length } };
+    }
+
+    return { status: 'done', resultUrls: safeUrls, extra: {} };
   }
 
   /** Extract URLs from a Kie recordInfo resultJson structure */

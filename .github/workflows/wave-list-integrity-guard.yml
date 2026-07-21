@@ -1,0 +1,40 @@
+name: wave-list-integrity-guard
+
+# Fails the build if any install wave in lib-onboarding-state.sh names a skill
+# folder that does not exist, names an ARCHIVED skill, lists a skill twice, or
+# has drifted from the duplicate wave lists hardcoded in the watchdog prompts.
+#
+# A wave passes only when every skill it names is present on disk (per-wave goal
+# condition (b) in lib-onboarding-state.sh). A wave list that names a folder that
+# does not exist therefore can NEVER pass — on any box, on any run — and the
+# onboarding watchdog takes a strike every cycle. v12.26.0 (0e53c677) archived
+# skills 11 and 21 by renaming their folders but never updated the wave lists,
+# wedging Wave 2 and Wave 3 fleet-wide until this gate landed.
+#
+# DELIBERATELY NOT PATH-FILTERED. The commit that caused the original defect
+# renamed skill folders and did NOT touch lib-onboarding-state.sh, so any
+# `paths:` filter scoped to the lib or the gate script would have let it through
+# unchecked. Skill folders are added, renamed and archived routinely, and every
+# one of those changes can invalidate a wave list. The gate is a sub-second
+# Python scan, so it runs on everything.
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  wave-list-integrity-guard:
+    name: install wave lists reference real skills
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Byte-compile the gate script
+        run: python3 -m py_compile scripts/qc-assert-wave-list-integrity.py
+
+      - name: Self-test the gate (must fail on a phantom entry, pass on a clean list)
+        run: python3 scripts/qc-assert-wave-list-integrity.py --self-test
+
+      - name: Assert every wave-list entry resolves to a real skill (must pass)
+        run: python3 scripts/qc-assert-wave-list-integrity.py

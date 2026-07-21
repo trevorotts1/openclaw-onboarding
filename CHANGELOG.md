@@ -1,3 +1,391 @@
+## [v20.0.85]  -  2026-07-21  -  WAVE 2 AND WAVE 3 COULD NEVER PASS ON ANY BOX: the install waves named two skill folders that had been archived away
+
+### T2-18 (BLOCKER) — the wave lists referenced skills that do not exist
+
+`lib-onboarding-state.sh` defines the five canonical install waves, and a wave
+passes only when every skill it names satisfies the per-wave goal. Goal condition
+(b), stated in that same file:
+
+    (b) Each skill's folder is present on disk in $OC_SKILLS_DIR
+
+`OC_WAVE2_SKILLS` named `11-superdesign` and `OC_WAVE3_SKILLS` named
+`21-tavily-search`. **Neither folder exists.** v12.26.0 (commit `0e53c677`)
+archived both skills by renaming their folders to `11-superdesign-ARCHIVED` and
+`21-tavily-search-ARCHIVED`, and `install.sh` explicitly refuses to copy any
+`*ARCHIVED*` folder into the live skill tree:
+
+    # Skip archived skills
+    case "$SKILL_NAME" in
+        *ARCHIVED*) note "Skipped (archived): $SKILL_NAME"; continue ;;
+
+So neither `11-superdesign` nor `11-superdesign-ARCHIVED` ever lands in
+`$OC_SKILLS_DIR`, condition (b) is false forever, and **Wave 2 and Wave 3 could
+never pass on any box in the fleet** — with the onboarding watchdog re-firing and
+taking a strike on every cycle, indefinitely.
+
+This was a documented intent that was never executed. The archive commit updated
+README.md, install.sh, update-skills.sh, cc-compat.json and the version markers,
+and its CHANGELOG entry even recorded the outcome it believed it had produced:
+
+    "Install waves updated: Wave 2 drops from 11 to 10 skills (11-superdesign
+     removed); Wave 3 drops from 15 to 14 skills (21-tavily-search removed)."
+
+It never touched `lib-onboarding-state.sh`. Both skills were **archived, not
+renamed-in-place** — they have replacements (Skill 45 for 11; Skills 03 + 09 for
+21), and the other three archived skills (13, 33, 34) appear in no wave list — so
+the correct fix is removal from the waves, not repointing at the `-ARCHIVED`
+folder. Wave 2 is now 10 skills and Wave 3 is now 14, exactly as the v12.26.0
+CHANGELOG said they should have been.
+
+**Also corrected — the same two stale names in every other live copy:**
+- `scripts/watchdog-onboarding-loop.sh` — the Wave 2 and Wave 3 resume prompts
+  carried their own hardcoded duplicate of each list and told the agent, every
+  cycle, to install two folders that are not there.
+- `Start Here.md` — three executable `openclaw agent spawn` loops, two
+  `sessions_spawn` task blocks, the repo folder tree, and the skill index table.
+
+`CHANGELOG.md` history and `ledgers/evidence/` artifacts are left as written —
+they are records of what happened, not live configuration.
+
+### The guard — this class cannot recur
+
+New `scripts/qc-assert-wave-list-integrity.py`, wired into
+`.github/workflows/wave-list-integrity-guard.yml` and into `qc-static.yml`. It
+fails the build when a wave list names a folder that does not exist, names an
+`-ARCHIVED` skill, lists a skill twice, or has drifted from the duplicate lists
+hardcoded in the watchdog prompts. It carries a `--self-test` that proves it
+fails on a phantom entry, on the exact archive-rename signature, on a direct
+`-ARCHIVED` reference, on a duplicate, and on watchdog drift — and passes clean.
+
+The guard is **deliberately not path-filtered**. The commit that caused this
+defect renamed skill folders and never touched `lib-onboarding-state.sh`, so any
+`paths:` filter scoped to the lib or the gate script would have let it through.
+
+**Tightened an existing check that was asserting nothing.** `qc-static.yml`
+"PRD-2.13" tested only that the strings `OC_WAVE1_SKILLS`..`OC_WAVE5_SKILLS`
+appeared somewhere in the file — never what those lists contained. That is why CI
+stayed green across every run while two waves were wedged fleet-wide. It now also
+resolves every entry to a real, non-archived skill directory ("PRD-2.13b").
+
+## [v20.0.84]  -  2026-07-21  -  TWO SILENT-SUCCESS CHECKERS: a run with ZERO deliverables recorded "done", and an impersonation guard blind to the inbox preheader
+
+Both defects are the same class — a checker reporting a result other than
+reality, with the false result made **durable**.
+
+### ONB-46-001 (BLOCKER) — Skill 46 wrote a permanent `done` marker for a run that produced nothing
+
+`46-kie-callback-relay/box-kv-poller.js::_kieRecordInfoFallback` hard-coded
+
+    const marker = { taskId, submitId, status: 'done', resultUrls: safeUrls, code: 200, ... }
+
+on a Kie `state === 'success'`, **no matter how many result URLs survived the host
+allowlist** — including zero. The callback-KV path roughly 90 lines above already
+enforced exactly the rule the fallback skipped:
+
+    // Fix 35: a 200 with zero surviving (allowlisted) URLs is NOT a success -- there is
+    // no file to download. Report it as an allowlist rejection, never as 'done'.
+
+So the correct behaviour was already written, in the same file, and one branch
+ignored it. The marker is durable (`.kie/done/<taskId>.json`, create-if-absent),
+so a generation run that produced nothing was recorded complete **permanently**:
+on resume `_readDoneMarker` short-circuits the slide as already finished and
+nothing downstream can tell the difference.
+
+**Fix — the rule now has ONE implementation, not two branches of one rule.**
+Both paths call the new `KieKvPoller._resolveOutcome(rawUrls, code, taskId, source)`;
+neither decides its own status, so they cannot diverge again. A provider
+"success" with zero allowlisted URLs is `failed`, announced with a LOUD, distinctly
+tagged `console.error` — `EMPTY-RESULT` when the provider carried nothing,
+`ALLOWLIST-MISMATCH` when it carried URLs that were all dropped. Never a silent
+skip; never `done`.
+
+`kie-slide-submitter.js` gets the same treatment for the second copy of "is this
+slide really done?": the fresh-wait path and the resume path both call the new
+`_reconcileDoneStatus(status, localPath, slideId)`, so a marker left on disk by a
+pre-fix poller is reconciled to `failed` instead of re-entering a run as a success.
+
+### ONB-50-001 (HIGH) — the email impersonation guard never scanned the preheader
+
+`50-email-engine/tools/prove-email.py` built the `AF-EMAIL-PERSONA-NAMED` scan as
+
+    scan = " ".join([body] + (subjects if isinstance(subjects, list) else []))
+
+`previews` — a **required, recipient-visible** field, the inbox **preheader** that
+a recipient reads before opening — was never scanned. A real public figure's name
+placed there cleared the prover, and the pass was then sealed into the signed
+process certificate: the impersonation happened AND the certificate attested it
+had been checked.
+
+**The audit found five unscanned free-text fields, not one.** The guard now scans
+`COPY_FIELDS = subjects, previews, body, ctas, sections, disruptive_elements,
+founder_name`. `founder_name` becomes the recipient-visible **From line**
+(`attributes.fromName` in `tools/emit_build_plan.py`); it had been covered only
+*transitively*, via the signature gate forcing the founder name into the scanned
+body. The failure message now names the offending field.
+
+**A new drift gate stops the next one.** `_schema_copy_coverage()` re-derives every
+free-text property from `schema/email.schema.json` and FAILS if one is in neither
+`COPY_FIELDS` nor `COPY_EXEMPT_FIELDS`. A guard written against an outdated schema
+is exactly what produced this defect. If the schema cannot be read the check
+**reports that and fails** — it never counts as a pass. `_flatten_text` json-dumps
+an unrecognised value shape rather than dropping it, for the same reason.
+
+### Tests
+
+- `46-kie-callback-relay/test/security.test.mjs` — six new sections (57 assertions
+  total). **10 of them fail against the pre-fix tree**, including
+  `zero downloadable URLs -> failed, never 'done' (got done)` and
+  `the DURABLE marker on disk is not 'done' (got done)`.
+- `50-email-engine/tools/prove-email.py --self-test` — seven new fixtures covering a
+  persona name in `previews`, `ctas`, `sections`, `disruptive_elements`, the
+  sequence-level `founder_name` and `subjects`, plus the schema-vs-guard coverage
+  gate. Against the pre-fix prover **five of the seven fields are unguarded**.
+- Anti-false-positive controls in both: a fallback WITH a real allowlisted URL must
+  still resolve `done`, the KV path must be unregressed, and clean copy in every
+  scanned field must still PASS. A "fix" that simply fails everything cannot pass.
+- The impersonation fixtures register an obviously-synthetic sentinel name into the
+  guard's own pattern list rather than committing a real public figure's name.
+- New CI workflow `.github/workflows/silent-success-guards.yml` runs both suites,
+  asserts the outcome rule has exactly one implementation, proves the schema drift
+  gate really fails on an unguarded field and really reports an unreadable schema,
+  and re-checks `ENGINE-PIN.sha256`.
+
+### Also
+
+- Re-pinned `50-email-engine/ENGINE-PIN.sha256` over the changed enforcement set.
+- Skill versions: 46 `1.1.1 -> 1.1.2`, 50 `1.1.3 -> 1.1.4`.
+## [v20.0.83]  -  2026-07-21  -  THE VERTICAL GUARD BLAMED THE WRONG PACK: a department declared by TWO packs was judged by whichever one the naming map listed LAST
+
+`vertical-derivation-guard.py`'s `dept_pack_index()` built a `dept_id -> pack`
+map by plain assignment while walking every pack:
+
+    idx[did] = {"pack": pack_id, "universal_primary": bool(dept.get("universal_primary"))}
+
+`department-naming-map.json` really does declare the same department id under
+more than one pack — `community-management` under BOTH `personal-pro-dev` and
+`content-creator`, and `podcast` under both as well. Plain assignment means the
+LAST pack in map order silently wins, so a department's owner was decided by
+JSON key ordering rather than by ownership.
+
+**This was an install-blocking false FAIL.** `run-full-install.sh` phase=3b
+treats the guard's rc=3 as `fail_install`. A coaching client whose interview
+legitimately declared `personal-pro-dev`, and whose `community-management`
+department was added by `apply_vertical_packs` Phase 2 **from that very pack**
+(build-state records `community-management <- pack personal-pro-dev`), was
+reported as:
+
+    VERTICAL_NOT_DECLARED: department 'community-management' (pack 'content-creator')
+    is provisioned on disk but pack 'content-creator' is not in the declared set
+    (['personal-pro-dev', 'ecommerce'])
+
+— a healthy, correctly-provisioned box failing its Command Center refresh over a
+department it was entitled to. Confirmed against a real fleet box whose
+build-state attributes the department to `personal-pro-dev`.
+
+The collision cut the other way too: `podcast` is `universal_primary=true` under
+`content-creator` but `false` under `personal-pro-dev`, so map order decided
+whether it was gated at all.
+
+**THE FIX — ownership is a SET, not a last-write.**
+
+* `dept_pack_index()` now accumulates **every** declaring pack into `packs`, and
+  OR-s `universal_primary` across them. `pack` is kept as the first declaring
+  pack for receipt readability only; all decisions use `packs`.
+* A provisioned department is explained when **ANY** owning pack is declared —
+  matching `apply_vertical_packs` Phase 2, which adds the department from
+  whichever matched pack declares it. `universal_primary` is true when **ANY**
+  pack flags it, matching Phase 1, which adds it to every client from the
+  flagging pack.
+* `check_add()` applies the same set semantics, and its named
+  `VERTICAL_NOT_DECLARED` error now names every owning pack.
+
+**THE GATE IS NOT WEAKENED.** Only an *owning* pack can explain a department: a
+declared pack that does not own it still refuses. New tests (h0-h5) assert both
+directions — `community-management` PASSES with `personal-pro-dev` declared, and
+still FAILS with an empty declared set and with an unrelated (`saas`) declared
+set, both in audit mode and via `--check-add`. All 15 pre-existing assertions
+(a-g) still pass: 15/15 before, 22/22 after.
+
+**SCOPE.** This fixes a false FAIL only. It does NOT clear the separate,
+genuine finding that pre-v14.28.1 boxes carry a `listings` department from the
+era when it was flagged `universal_primary` (flag removed in `b3e25876`,
+v14.28.1) — that is real provisioning residue on non-real-estate clients and is
+remediated by removing the department, not by changing this guard.
+
+## [v20.0.82]  -  2026-07-21  -  EVERY `qmd` CALL WAS UNBOUNDED: ~50 of one update run's 64 minutes spent waiting on calls that then failed silently
+
+`shared-utils/provision-persona-index.sh` invoked `qmd` eleven times without a
+timeout anywhere. On a box whose native `better-sqlite3` ABI is broken by a Node
+major bump, `qmd` does not fail fast — it falls through to
+`bunx @tobilu/qmd`, which downloads, starts, and only then errors, taking
+**~17 minutes per call**. Three sequential calls on the ABI-broken path burned
+**~50 of one run's 64 minutes** before the updater had done any work.
+
+**The silent half was worse than the slow half.** Every teardown was written
+
+    qmd collection remove "$_COLL" >/dev/null 2>&1 || true
+
+so a call that never completed was indistinguishable from one that succeeded.
+The run printed
+
+    STATUS: qmd-abi-broken - ... removing any 'coaching-personas' collection
+    so inventory queries ERROR -> persona-categories.json fallback (N16)
+
+for a collection it had not removed. The whole point of that teardown is to make
+inventory queries ERROR so the agent falls back to `persona-categories.json`
+instead of reading a frozen store — and the log asserted the teardown had
+happened while the store was still there and still readable.
+
+**THE FIX — bounded, and loud when the bound is hit.**
+
+* `_qmd_bounded <secs> <args...>` wraps every `qmd` invocation. `collection
+  list` and `collection remove` get **60s** (measured adequate — these are
+  metadata operations that take well under a second on a healthy box);
+  `collection add` and `update` get **600s** because they do real indexing work,
+  but they are bounded too: on an ABI-broken box they route through the same
+  ~17-minute `bunx` path as everything else.
+* `timeout(1)` is not present on a stock macOS, so the wrapper resolves
+  `timeout` -> `gtimeout` -> a pure-POSIX watchdog fallback. Exit 124/137 is
+  treated as timeout on all three paths.
+* A timed-out call is **reported**, never swallowed: a per-call notice on stderr
+  (so a caller's own `>/dev/null` cannot hide it, and it never pollutes a
+  `$(...)` capture), and an end-of-block `STATUS: qmd-timeout` summary emitted on
+  **every** exit path, including the early `qmd-abi-broken` return.
+* `_qmd_remove_collection` replaces the bare `remove ... || true` sites and
+  refuses to report a removal it cannot prove: on timeout it says the collection
+  **may still exist and may still be readable by the agent**.
+* The helpers cannot abort a caller under `set -e` + `pipefail` — every failure
+  path is guarded, preserving the v16.2.13 SIGPIPE-safety contract.
+
+Measured with a stubbed slow `qmd` (25s per call), same fixture both sides:
+**before 125s with zero timeout reporting, after 9s with all three timeouts
+reported** and no success claimed.
+
+Locked by `tests/unit/qmd-bounded-timeout.test.sh` (6 assertions) and
+`.github/workflows/qmd-bounded-timeout-guard.yml`. The suite is hermetic — stub
+`qmd` and stub `npm` on `PATH` inside a temp dir, no network and no fleet box.
+Assertion 6 is the anti-false-positive control: with a fast, working `qmd` the
+run must report **no** timeout, so a "fix" that quiets the gate by always
+claiming a timeout fails the workflow.
+## [v20.0.81]  -  2026-07-21  -  THREE CHECKERS THAT FALSE-FAILED HEALTHY BOXES — one of them an install-blocking gate that failed EVERY box on the current schema
+
+A client box was diagnosed where **4 of 4 reported defects were checker
+artifacts and zero real defects existed**. Three of those checkers are fixed
+here. Every fix satisfies both halves of the rule: it must still FAIL on a real
+defect, and it must never PASS by skipping silently.
+
+### 1. `guard-department-runtime-parity.py` — INSTALL-BLOCKING, failed every box
+
+`32-command-center-setup/scripts/guard-department-runtime-parity.py` excluded
+non-department rows with:
+
+    if has_type and row['type'] in ('main', 'system'):
+
+The Command Center `workspaces` table **has no `type` column** — not in
+`src/lib/db/schema.ts`'s CREATE TABLE and not added by any migration (the only
+`ALTER TABLE workspaces` migrations add `user_md`, `company_id`, `sort_order`,
+`head_agent_id`, `original_slug`, `description`, `archived_at`,
+`archived_reason`). `has_type` was therefore False on every real box and the
+entire exclusion was dead code.
+
+Consequence: the **structural `default` workspace row** was counted as a real
+department with no runtime entry, producing `DEPARTMENT-RUNTIME-PARITY FAIL`.
+Because `run-full-install.sh` Phase 6e2 treats this guard as a hard,
+`fail_install()`-ing gate, that false failure blocked the install on **every box
+on this schema**.
+
+That row is provably not a department. Command Center's own seed
+(`src/lib/db/seed.ts`) inserts it with the comment *"carries no client/demo
+content — it is the schema's own DEFAULT target, **not a department**"*, solely
+so `agents.workspace_id TEXT DEFAULT 'default' REFERENCES workspaces(id)` has a
+FOREIGN KEY target on a fresh database. It carries sentinel `sort_order 50000`,
+is created ~77 seconds before the real departments, has no directory on disk,
+and appears in no floor manifest.
+
+**Fix.** The dead `type` branch is removed and replaced with an exclusion keyed
+on the identifier the schema actually reserves: `id`/`slug == 'default'`. The
+`id` is the load-bearing signal because the FOREIGN KEY declaration makes the
+literal string `'default'` part of the schema — the row cannot be renamed
+without breaking the first agent INSERT. The `sort_order 50000` sentinel is
+reported as corroborating evidence but is deliberately **not** the decision key:
+`sort_order` is a display-ordering column any board reorder may legitimately
+rewrite. Soft-archived departments (`archived_at IS NOT NULL`, migration 095) are
+also excluded — an archived row is off the board and its runtime is legitimately
+absent.
+
+**Not silent.** Every excluded row is printed BY NAME with its reason on every
+run, and appears in the `--json` payload Phase 6e2 parses. An excluded row never
+inflates the checked count. A genuine orphan department still fails closed
+(`test_structural_default_present_but_real_department_orphaned_still_fails`), and
+a department whose slug merely *contains* "default" is still checked
+(`test_workspace_named_default_is_the_only_slug_the_exclusion_matches`).
+
+**A test encoded the bug as correct.** `test_main_system_type_rows_are_excluded_when_type_column_present`
+built a synthetic `type` column, asserted the dead branch excluded a
+`main`/`system` row through it, and passed — a green test proving a code path no
+box ever executes, while the structural row that exists on every box went
+unmodelled. It is replaced by a fixture that models the real schema and eight
+new cases. Suite: 17 -> 25 tests; 6 of the new cases fail against the previous
+guard.
+
+### 2. `qc-upgraded-memory-system.sh` — read the wrong env
+
+`31-upgraded-memory-system/qc-upgraded-memory-system.sh:27` asserted:
+
+    [ -n "$GEMINI_API_KEY" ] || [ -n "$GOOGLE_API_KEY" ]
+
+reading only its own shell env, which is empty in the non-interactive shell the
+harness uses, while the key is configured in `openclaw.json`'s `env` block where
+the gateway reads it. A fully-configured box reported `Layer 4 ... FAIL`.
+
+**Fix.** Resolution now mirrors the rest of the system (`lib-shared.sh`
+`read_ghl_pit` / `read_ghl_location_id`): process env (which already includes
+`secrets/.env`) -> `openclaw.json` `env.vars.<NAME>` -> `openclaw.json`
+`env.<NAME>`. **Presence only** — the helper's python exits 0/1 and prints
+nothing, so no key value can reach stdout, stderr, a log, or a process listing.
+A genuinely missing key still FAILS.
+
+### 3. `qc-convert-and-flow.sh` — repo-only path + bare-PATH CLI assumption
+
+`44-convert-and-flow-operator/qc-convert-and-flow.sh:106-108` computed
+`REPO_ROOT_LATTICE="$(cd "$SKILL44_DIR/.." && pwd)"` and ran
+`docs/tools/check_lattice_citation.py` unconditionally. In the source repo the
+skill sits at the repo root so `..` resolves; on a client box the skill installs
+to `~/.openclaw/skills/44-convert-and-flow-operator`, so `..` is
+`~/.openclaw/skills`, which has no `docs/` directory — python3 exited 2 ("can't
+open file") and the gate was permanently red on every client box.
+
+**Fix.** The check now SKIPS with a visible `SKIP: ... checker not present in
+this layout` line (counted as a skip, never as a pass) when the checker is
+absent, and hard-asserts exactly as before when it is present — the same "absent
+skips cleanly" convention `03-agent-browser/qc-agent-browser.sh` already uses. A
+genuinely broken citation still FAILS.
+
+Second artifact in the same script: the `GOHIGHLEVEL_LOCATION_ID present in
+openclaw.json env.vars` check shelled out to `openclaw config get`, which is not
+on a bare non-interactive PATH. It now reads the config file directly (exactly
+what `openclaw config get` reads), with the CLI as a fallback, so the assertion
+is about the CONFIG's content rather than CLI discoverability; a genuinely absent
+value still FAILS. A documented PATH bootstrap also appends the standard
+login-shell bin directories that exist. It deliberately does **not** add this
+skill's own `convert-and-flow-cli` install directory — Section A asserts
+`caf`/`convertandflow`/`ghl` resolve ON PATH, and adding their install dir would
+make those three assertions tautological.
+
+### Regression coverage
+
+- `32-command-center-setup/scripts/test_guard_department_runtime_parity.py`
+  25 hermetic cases (was 17), wired into the existing
+  `department-runtime-parity-guard` workflow.
+- `tests/unit/qc-upgraded-memory-key-resolution.test.sh` — 5 cases.
+- `tests/unit/qc-convert-and-flow-layout-and-path.test.sh` — 7 cases.
+- New workflow `.github/workflows/checker-false-fail-guards.yml` runs the two
+  shell suites plus an assertion that the absent-checker path stays a visible
+  SKIP and the present-checker path stays a hard assert.
+
+Also updated: `scripts/probe/p207-general-task-catchall-probe.py` unpacks
+`load_departments()`'s new 4-tuple (its 9-scenario suite still passes).
+
 ## [v20.0.80]  -  2026-07-21  -  QC MEASURED THE WRONG DEPARTMENTS TREE: the checker audited a directory the repairer never writes to
 
 `qc-completeness.sh` reported `missing mandatory: funnels` on boxes where

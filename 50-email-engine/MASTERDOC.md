@@ -48,7 +48,7 @@ The same mapping governs the Convert & Flow master 12-email sequence and the Hig
 
 ## C. THE 12 PERSONA STYLES (for high-ticket / Upsell-2 emails)
 
-**Rule (SACRED):** NEVER mention the person's name or quote them; adopt their communication patterns / tone / rhetoric while keeping content **100% original** (`AF-EMAIL-PERSONA-NAMED` if the person is named or quoted; `AF-EMAIL-PERSONA-INVALID` if `persona_style` is not one of the 12). NEVER repeat a style within one campaign; acknowledge previous purchases positively; keep the voice cohesive across the sequence; select by audience / objection.
+**Rule (SACRED):** NEVER mention the person's name or quote them; adopt their communication patterns / tone / rhetoric while keeping content **100% original** (`AF-EMAIL-PERSONA-NAMED` if the person is named or quoted in ANY recipient-visible field — subjects, previews/preheader, body, ctas, sections, disruptive_elements, founder/From name; `AF-EMAIL-PERSONA-INVALID` if `persona_style` is not one of the 12). NEVER repeat a style within one campaign; acknowledge previous purchases positively; keep the voice cohesive across the sequence; select by audience / objection.
 
 1. **Les Brown** — motivational; passionate, personal storytelling, call-and-response, "you have the power to...", challenges-as-temporary.
 2. **Lisa Nichols ("No Matter What!")** — vulnerable, nurturing, self-worth as foundation; "confidence muscle" metaphors; tough love + compassion.
@@ -149,7 +149,7 @@ The GoHighLevel CRM master sequence, mapped to the four buyer types by the same 
 | Landing map | 10-email slot framework matches Section E | `AF-EMAIL-SEQUENCE-MAP` |
 | Sequence length | landing = 10; high-ticket / buyer-type = 12; slots contiguous 1..N | `AF-EMAIL-SEQUENCE-LENGTH` |
 | Objective | exactly one of promotional / abandoned-cart / upsell / downsell | `AF-EMAIL-OBJECTIVE-INVALID` |
-| Persona-style | if set, one of the 12; NEVER named / quoted | `AF-EMAIL-PERSONA-INVALID` / `AF-EMAIL-PERSONA-NAMED` |
+| Persona-style | if set, one of the 12; NEVER named / quoted in ANY recipient-visible field (subjects, previews/preheader, body, ctas, sections, disruptive_elements, founder/From name) | `AF-EMAIL-PERSONA-INVALID` / `AF-EMAIL-PERSONA-NAMED` |
 | Subject count | exactly 2 (A/B), both non-empty | `AF-EMAIL-SUBJECT-COUNT` |
 | Preview count | Convert & Flow master = 1; landing / high-ticket = 2 | `AF-EMAIL-PREVIEW-COUNT` |
 | Word band | **150-300 words**, EXCEPT the 3-B Plan (**<150**); a logged client-exact override wins | `AF-EMAIL-WORDBAND` |
