@@ -1,5 +1,5 @@
 # QC Checklist - Skill 10: GitHub Setup
-**Version:** v6.5.6
+**Version:** v6.5.8
 
 Run this after installation. Every section must pass before you mark GitHub setup complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `github-setup-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `skill-version.txt` returns `v6.5.8`
 - [ ] `github-setup-full.md` is non-empty
 
 ---
