@@ -1,3 +1,13 @@
+## [v20.0.98]  -  2026-07-22  -  FIX: workforce advisory no longer implies a COMPLETED interview is missing
+
+The workforce floor-fill advisory hard-coded "workforce below floor / interview-incomplete"
+regardless of the box's actual interview state. On established clients (interviewComplete=true,
+buildCompletedAt set, closeout done) whose only issue was a role/SOP FLOOR gap, this made them
+look like they had skipped the AI-workforce interview — causing repeated false "redo the
+interview" alarms. The advisory (which already NEVER withholds the stamp and NEVER re-runs the
+interview) now reads the box's own .workforce-build-state.json: when interviewComplete=true it
+states "interview COMPLETE (respected)" and frames the issue as a floor-fill advisory only.
+
 ## [v20.0.97]  -  2026-07-22  -  FIX: SOP-library ingest post-population assert raced the live Command Center WAL DB (fleet-wide PARTIAL / stale-stamp bug)
 
 update-skills.sh Step U6c runs 32-command-center-setup/scripts/ingest-sop-library.sh,

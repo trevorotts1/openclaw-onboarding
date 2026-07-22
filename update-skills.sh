@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.97"
+ONBOARDING_VERSION="v20.0.98"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.97 - safe_json_edit
+# v20.0.98 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3624,7 +3624,18 @@ if isinstance(n, int) and n > 0:
   # NEVER withhold the content stamp. The POST-stamp qc-completeness run
   # (QC_COMPLETENESS_RC) and the onboarding-resume cron drive these to completion.
   if [ "${_D2_MIGRATE_STATUS:-ok}" != "ok" ]; then
-    _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - workforce floor-fill (migrate-existing-workforce.sh): workforce below floor / interview-incomplete — see $LOG_FILE\n"
+    # v20.0.98: NEVER imply the interview is unfinished when the box's own state
+    # records it as complete. A completed-interview box (interviewComplete=true)
+    # that trips this is a role/SOP FLOOR-fill matter, not an interview matter —
+    # the old "/ interview-incomplete" wording caused established clients (built
+    # workforce, closeout done) to look like they had skipped the interview.
+    _WF_STATE_FILE="${OC_WORKSPACE:-$HOME/.openclaw/workspace}/.workforce-build-state.json"
+    _IV_DONE="$(jq -r '.interviewComplete // false' "$_WF_STATE_FILE" 2>/dev/null || echo false)"
+    if [ "$_IV_DONE" = "true" ]; then
+      _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - workforce floor-fill (migrate-existing-workforce.sh): interview COMPLETE (respected) — one or more departments are below the role/SOP floor; advisory only, does NOT withhold the stamp and does NOT re-run the interview — see $LOG_FILE\n"
+    else
+      _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - workforce floor-fill (migrate-existing-workforce.sh): workforce below floor (interview not yet marked complete for this box) — see $LOG_FILE\n"
+    fi
   fi
   if [ "${_D5_ACTIVATION_PASS:-1}" -ne 1 ]; then
     _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - dept-agent activation (D5, materialize-dept-agents.sh): incomplete${_D5_NOTLIVE_DETAIL:+ — ${_D5_NOTLIVE_DETAIL}}\n"
