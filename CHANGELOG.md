@@ -1,3 +1,15 @@
+## [v20.0.99]  -  2026-07-22  -  PERMANENT STAMP FIX: optional persona/qmd step can no longer abort the updater before the version-stamp write
+
+ROOT CAUSE of the fleet-wide stale-stamp bug: update-skills.sh writes the .onboarding-version
+stamp LAST (step A3). shared-utils/provision-persona-index.sh (Step U6b, which runs before A3)
+called `_qmd_rebuild_better_sqlite3` as a BARE statement under `set -euo pipefail`, so a failed
+better-sqlite3 ABI rebuild (e.g. on a box with a bumped Node) returned non-zero and aborted the
+ENTIRE updater one step before the stamp write. Content landed; the stamp stayed stale — in both
+directions — making the version file unreliable fleet-wide. FIX: `_qmd_rebuild_better_sqlite3 || true`
+so a failed rebuild DEGRADES (re-probe -> N16 persona-categories.json fallback) instead of aborting.
+An optional-tooling failure can no longer prevent the stamp from being written; only a genuine
+CONTENT failure (the anti-lie content-gate) blocks the stamp, as intended.
+
 ## [v20.0.98]  -  2026-07-22  -  FIX: workforce advisory no longer implies a COMPLETED interview is missing
 
 The workforce floor-fill advisory hard-coded "workforce below floor / interview-incomplete"

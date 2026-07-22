@@ -937,7 +937,14 @@ reconcile_qmd_persona_index() {
     # frozen/empty store.
     if ! _qmd_bounded "$_QMD_LIST_TIMEOUT" collection list >/dev/null; then
         echo "  ⚠ qmd present but failing a basic probe (likely a better-sqlite3 ABI break after a Node upgrade) — attempting npm rebuild better-sqlite3"
-        _qmd_rebuild_better_sqlite3
+        # v20.0.99 PERMANENT STAMP FIX: this call was BARE under `set -euo pipefail`,
+        # so a failed better-sqlite3 rebuild returned non-zero and aborted the ENTIRE
+        # updater HERE — one step before the A3 version-stamp write. Result: content
+        # landed but the box kept a stale .onboarding-version stamp (the fleet-wide
+        # stale-stamp bug). Guard it: a failed rebuild must DEGRADE (re-probe below →
+        # N16 persona-categories.json fallback), never abort. An optional-tooling
+        # failure can no longer prevent the stamp from being written.
+        _qmd_rebuild_better_sqlite3 || true
         if _qmd_bounded "$_QMD_LIST_TIMEOUT" collection list >/dev/null; then
             echo "  ✓ qmd recovered after npm rebuild better-sqlite3"
         else
