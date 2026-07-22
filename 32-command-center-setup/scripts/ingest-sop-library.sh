@@ -152,7 +152,23 @@ python3 "$SCRIPT_DIR/ingest-sop-library.py" "$CLIENT" "$JSONL" "$DB"
 # actually reached the manifest's canonical population. This is the difference
 # between a green update and a green LIE.
 # ----------------------------------------------------------------------------
-FINAL_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+# WAL-checkpoint + bounded retry before the ro population read. A live Command
+# Center (next-server) keeps this DB open in WAL mode and may not have
+# checkpointed the just-committed ingest, so a bare ?mode=ro read can race and
+# see 0/stale rows — falsely aborting a genuinely-successful ingest before the
+# stamp write (observed fleet-wide). Best-effort checkpoint (tolerate lock
+# contention) then re-read, up to a few times. The assert below is UNCHANGED:
+# it still FATALs on a real short-fall after the retries — a green LIE is still
+# refused, only the false negative is fixed.
+FINAL_COUNT=0
+for _sop_try in 1 2 3 4 5 6; do
+  sqlite3 "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+  FINAL_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+  if [ "${FINAL_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+    break
+  fi
+  sleep 2
+done
 if [ "${FINAL_COUNT:-0}" -lt "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
   echo "[sop-library] FATAL: post-ingest population is $FINAL_COUNT rows, BELOW the canonical $CANONICAL_SOP_COUNT." >&2
   echo "[sop-library] The ingest did NOT land. DB backup retained at $BACKUP." >&2

@@ -1,3 +1,15 @@
+## [v20.0.97]  -  2026-07-22  -  FIX: SOP-library ingest post-population assert raced the live Command Center WAL DB (fleet-wide PARTIAL / stale-stamp bug)
+
+update-skills.sh Step U6c runs 32-command-center-setup/scripts/ingest-sop-library.sh,
+whose post-ingest population assert read the `sops` count via `?mode=ro` while the live
+pm2 next-server (Command Center) held the DB open in WAL mode. On boxes running the
+Command Center the read raced the un-checkpointed WAL, saw 0/stale rows, and FATAL-aborted
+(exit 7) via `set -e` BEFORE the U6d config reconcile and A3 manifest/version-stamp write —
+leaving the box PARTIAL with a stale version stamp even though the ingest succeeded. Fix:
+best-effort `PRAGMA wal_checkpoint(TRUNCATE)` + a bounded re-read loop before the assert.
+The assert is UNCHANGED — it still FATALs on a genuine short-fall; only the false negative
+is removed. (skill 32 -> v12.9.48)
+
 ## [v20.0.96]  -  2026-07-21  -  BATCH INTEGRATION: the three PRs deferred at v20.0.95 landed in one merge train (Skill-25 contract suite wired, A10 four certification seams, anthology shared run directory)
 
 The three PRs v20.0.95 recorded as DEFERRED (#718, #719, #711) were reconciled onto
