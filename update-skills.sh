@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.100"
+ONBOARDING_VERSION="v20.0.101"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.100 - safe_json_edit
+# v20.0.101 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4231,6 +4231,54 @@ PYEOF
     bash "$_ENSURE_HB" 2>&1 || true
   else
     echo "  ℹ ensure-heartbeat-defaults.sh not in bundle — skipping"
+  fi
+
+  # ----------------------------------------------------------
+  # Built-in per-turn tool-loop detector: ENSURE tools.loopDetection.enabled=true
+  # (v20.0.101). OpenClaw ships this key OFF by default — tools.loopDetection.enabled
+  # defaults to false (docs.openclaw.ai/tools/loop-detection) — so the per-turn
+  # loop detector is disabled on every box out of the box. With it OFF a model that
+  # falls into a repeated (tool, args, result) loop runs UNSUPERVISED; the runaway
+  # model loop that motivated this fix ran ~46 minutes. With it ON, OpenClaw watches
+  # the rolling tool-call history every turn and ABORTS a repeated (tool,args,result)
+  # loop (plus a post-compaction guard) in seconds. This step corrects the default to
+  # ON, fleet-wide, on every roll.
+  #
+  # SAFETY-ADDITIVE + NON-FATAL. It uses the validated CLI writer
+  # `openclaw config set` — NEVER a root file edit of openclaw.json (writing the
+  # config as root freezes the box). OpenClaw itself performs the atomic,
+  # schema-validated, single-key write, so it touches ONLY tools.loopDetection.enabled
+  # — no models, no routing (primary/fallbacks), no credentials, and no other key is
+  # read, reordered, or clobbered. Idempotent: when the key is already true this is a
+  # read-only no-op (no write, so the conditional gateway-restart gate below does not
+  # fire). GUARDED for old versions: `openclaw config set` validates its own input and
+  # exits non-zero if the key is unknown on an older build (or the value is invalid),
+  # in which case we DEGRADE to a logged note and CONTINUE — this must NEVER block the
+  # roll or the version stamp (same convention as the other ensure-* steps here and
+  # the v20.0.99/100 "an optional step must never abort before the stamp" fixes; note
+  # this step runs AFTER the stamp, so it structurally cannot withhold it either).
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Ensuring built-in per-turn tool-loop detector is ON (tools.loopDetection.enabled=true)..."
+  if command -v openclaw >/dev/null 2>&1; then
+    _LD_CUR="$(openclaw config get tools.loopDetection.enabled 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ "$_LD_CUR" = "true" ]; then
+      echo "  ✓ tools.loopDetection.enabled already true — no change (idempotent no-op)"
+    elif openclaw config set tools.loopDetection.enabled true >>"$LOG_FILE" 2>&1; then
+      _LD_NOW="$(openclaw config get tools.loopDetection.enabled 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_LD_NOW" = "true" ]; then
+        echo "  ✓ tools.loopDetection.enabled set to true — per-turn tool-loop detector now ON"
+      else
+        echo "  ✓ tools.loopDetection.enabled write applied (read-back inconclusive; see $LOG_FILE)"
+      fi
+    else
+      echo "  ℹ Could not set tools.loopDetection.enabled — this OpenClaw build may not support the key"
+      echo "    (older version) or rejected the value. Skipping; update continues. Enable it manually with"
+      echo "    'openclaw config set tools.loopDetection.enabled true' once on a supported build."
+      echo "    Reference: docs.openclaw.ai/tools/loop-detection"
+    fi
+  else
+    echo "  ℹ openclaw CLI not on PATH — skipping loopDetection enablement (update continues)."
   fi
 
   # ----------------------------------------------------------

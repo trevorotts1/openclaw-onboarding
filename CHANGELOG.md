@@ -1,3 +1,35 @@
+## [v20.0.101]  -  2026-07-23  -  SAFETY: updater now ENABLES the built-in per-turn tool-loop detector (tools.loopDetection.enabled=true) on every roll
+
+ROOT CAUSE: OpenClaw ships the built-in per-turn tool-loop detector OFF by default —
+`tools.loopDetection.enabled` defaults to `false` (docs.openclaw.ai/tools/loop-detection). With it OFF
+the per-turn loop detector never runs, so a model that falls into a repeated (tool, args, result) loop
+runs UNSUPERVISED: the runaway model loop that motivated this fix ran ~46 minutes before a human caught
+it. When enabled, OpenClaw watches the rolling tool-call history EVERY turn and aborts a repeated
+(tool,args,result) loop — plus a post-compaction guard that aborts a loop that persists after a
+context-overflow compaction — in seconds. Every box was exposed because nothing corrected the shipped
+default.
+
+FIX: update-skills.sh now ENSURES `tools.loopDetection.enabled = true` on every roll, in the post-stamp
+idempotent config-wiring cluster (next to the fleet-standards / heartbeat-defaults / Skill 60+61
+loop-protection steps). It is SAFETY-ADDITIVE and strictly bounded:
+
+  - Uses the validated CLI writer `openclaw config set tools.loopDetection.enabled true` — NEVER a root
+    file edit of openclaw.json (writing the config as root freezes the box). OpenClaw performs the
+    atomic, schema-validated, single-key write, touching ONLY `tools.loopDetection.enabled`. No models,
+    no routing (primary/fallbacks), no credentials, and no other key is read, reordered, or clobbered.
+    (Model catalog / routing changes are a SEPARATE, unauthorized decision and are deliberately NOT
+    touched here.)
+  - Idempotent: a pre-read of the key skips the write entirely when it is already `true`, so a re-run is
+    a read-only no-op and the conditional gateway-restart gate does not fire on a no-op.
+  - GUARDED for old versions + NON-FATAL: `openclaw config set` validates its own input and exits
+    non-zero if the key is unknown on an older build (or the value is invalid); in that case the step
+    DEGRADES to a logged note and CONTINUES. It also self-skips when the `openclaw` CLI is absent. It
+    can NEVER block the roll — and, running AFTER the A3 version-stamp write, it structurally cannot
+    withhold the stamp (same "an optional step must never abort before the stamp" principle as the
+    v20.0.99/v20.0.100 stamp fixes).
+
+No content-integrity gate was weakened; no model/credential config was changed. v20.0.100 -> v20.0.101.
+
 ## [v20.0.100]  -  2026-07-22  -  STAMP-FIX SWEEP: four more "an optional/env step aborts the updater before the stamp" bugs closed (same class as the qmd fix)
 
 A fleet roll to v20.0.99 surfaced several more instances of the SAME bug class the qmd fix (v20.0.99)
