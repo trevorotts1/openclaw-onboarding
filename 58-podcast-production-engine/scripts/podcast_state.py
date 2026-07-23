@@ -1350,6 +1350,104 @@ def _emit(args, obj, force_json=False):
 
 
 # ---------------------------------------------------------------------------
+# Episode roster — atomic write + timestamped backups (U046)
+# ---------------------------------------------------------------------------
+
+class RosterWriteError(Exception):
+    """Raised when the roster cannot be written atomically (e.g. disk full).
+    The original roster is never corrupted: the write goes to a temp file that
+    is fsynced and renamed over the target only on success."""
+
+
+def _rotate_roster_backups(roster_path: str, keep: int = 5) -> None:
+    """Keep the last `keep` timestamped backups of the roster, newest first.
+
+    Backups are named `<roster>.bak.<epoch>.json`. After adding a new backup,
+    any beyond `keep` are removed (oldest first). Never raises — a backup
+    rotation failure must not block the write."""
+    bak_dir = os.path.dirname(roster_path) or "."
+    base = os.path.basename(roster_path)
+    try:
+        backups = sorted(
+            (f for f in os.listdir(bak_dir)
+             if f.startswith(base + ".bak.") and f.endswith(".json")),
+            reverse=True,  # newest (highest epoch) first
+        )
+        for old in backups[keep:]:
+            try:
+                os.remove(os.path.join(bak_dir, old))
+            except OSError:
+                pass  # best-effort cleanup
+    except OSError:
+        pass  # listdir failed — skip rotation entirely
+
+
+def write_roster(roster_path: str, entries: list, *, keep_backups: int = 5) -> None:
+    """Write the episode roster atomically with a timestamped backup.
+
+    F46: the roster was previously written in-place, so a write interrupted
+    mid-stream (crash, disk full) corrupted it with no recovery path. This:
+      1. backs up the EXISTING roster (if any) to `<roster>.bak.<epoch>.json`,
+         keeping the last `keep_backups` (default 5) for manual recovery;
+      2. writes the new content to a temp file in the SAME directory;
+      3. fsyncs the temp file (bytes durable before the rename);
+      4. atomically renames it over the target (POSIX rename is atomic).
+
+    An interrupted write can never corrupt the roster: either the rename
+    happened (new content, old backed up) or it did not (old content intact).
+    Raises RosterWriteError on failure; the original is never left torn.
+    """
+    # 1. Back up the existing roster before overwriting.
+    if os.path.exists(roster_path):
+        epoch = int(time.time())
+        backup = f"{roster_path}.bak.{epoch}.json"
+        try:
+            with open(roster_path, "rb") as src, open(backup, "wb") as dst:
+                dst.write(src.read())
+                dst.flush()
+                os.fsync(dst.fileno())
+            _rotate_roster_backups(roster_path, keep=keep_backups)
+        except OSError:
+            pass  # backup is best-effort; the atomic write below is the guarantee
+
+    # 2-4. Atomic write: temp file → fsync → rename.
+    tmp = f"{roster_path}.tmp.{secrets.token_hex(6)}"
+    try:
+        payload = json.dumps({"entries": entries}, indent=2)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            os.write(fd, payload.encode("utf-8"))
+            os.fsync(fd)  # AC: bytes durable before the rename
+        finally:
+            os.close(fd)
+        os.replace(tmp, roster_path)  # atomic on POSIX
+    except OSError as exc:
+        # Clean up the temp file on failure; the original is untouched.
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise RosterWriteError(f"could not write roster {roster_path}: {exc}") from exc
+
+
+def read_roster(roster_path: str) -> list:
+    """Read the episode roster. Returns the entries list.
+
+    Raises FileNotFoundError if the roster does not exist, or
+    json.JSONDecodeError / RosterWriteError if it is corrupt. Callers decide
+    how to handle those (the backup copies written by write_roster are the
+    manual-recovery path)."""
+    with open(roster_path, "r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or "entries" not in data:
+        raise RosterWriteError(f"roster {roster_path} is not a valid roster object")
+    entries = data["entries"]
+    if not isinstance(entries, list):
+        raise RosterWriteError(f"roster {roster_path} 'entries' is not a list")
+    return entries
+
+
+# ---------------------------------------------------------------------------
 # Argument parsing
 # ---------------------------------------------------------------------------
 
