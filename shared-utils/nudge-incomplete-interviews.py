@@ -27,11 +27,16 @@ import json
 import os
 import re
 import sys
+import tempfile
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
+
+# U049: canonical schema version for .workforce-build-state.json
+WF_STATE_SCHEMA_VERSION = 2
 
 
 # OPERATOR chat IDs — MUST match install.sh OPERATOR_CHAT_IDS exactly.
@@ -241,11 +246,99 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
         return False
 
 
+
+def migrate_workforce_build_state(state_path: Path, current_version: int = WF_STATE_SCHEMA_VERSION) -> bool:
+    """
+    Migrate .workforce-build-state.json to the current schema version (U049).
+    Returns True if migration succeeded or was unnecessary; False on hard failure.
+
+    Transform v1 -> v2:
+      - Stamp schemaVersion = current.
+      - Normalize interviewComplete to boolean.
+      - Ensure required keys (ownerName, ownerChat, companySlug, buildCompletedAt,
+        closeoutStatus) exist with None defaults.
+    """
+    if not state_path.is_file():
+        return True  # nothing to migrate
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        print(f"migrate_workforce_build_state: cannot read {state_path}: {exc}", file=sys.stderr)
+        return False
+    if not raw.strip():
+        return True  # empty file, nothing to migrate
+    try:
+        state = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        print(f"migrate_workforce_build_state: corrupt JSON: {state_path}: {exc}", file=sys.stderr)
+        ts = str(int(time.time()))
+        corrupt_path = Path(str(state_path) + f".corrupt-{ts}")
+        try:
+            state_path.rename(corrupt_path)
+            print(f"migrate_workforce_build_state: quarantined corrupt file to {corrupt_path}", file=sys.stderr)
+        except OSError as exc2:
+            print(f"migrate_workforce_build_state: could not quarantine: {exc2}", file=sys.stderr)
+        return False
+    if not isinstance(state, dict):
+        print(f"migrate_workforce_build_state: top level is {type(state).__name__}, not a dict: {state_path}", file=sys.stderr)
+        return False
+    file_ver = state.get("schemaVersion")
+    if file_ver is None:
+        file_ver = 1
+    else:
+        try:
+            file_ver = int(file_ver)
+        except (TypeError, ValueError):
+            print(f"migrate_workforce_build_state: schemaVersion is not an integer ({repr(state['schemaVersion'])}): {state_path}", file=sys.stderr)
+            return False
+    if file_ver > current_version:
+        print(f"migrate_workforce_build_state: schemaVersion {file_ver} > current {current_version} -- refusing: {state_path}", file=sys.stderr)
+        return False
+    if file_ver == current_version:
+        return True  # already current
+    # --- v1 -> v2 migration ---
+    state["schemaVersion"] = current_version
+    ic = state.get("interviewComplete")
+    if isinstance(ic, str):
+        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
+    state.setdefault("ownerName", None)
+    state.setdefault("ownerChat", None)
+    state.setdefault("companySlug", None)
+    state.setdefault("buildCompletedAt", None)
+    state.setdefault("closeoutStatus", None)
+    # Atomic write
+    target_dir = state_path.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(dir=str(target_dir), prefix=".workforce-build-state.", suffix=".tmp")
+    tmp_p = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_p, state_path)
+        tmp_p = None
+    except OSError as exc:
+        print(f"migrate_workforce_build_state: could not write: {exc}", file=sys.stderr)
+        return False
+    finally:
+        if tmp_p and tmp_p.exists():
+            try:
+                tmp_p.unlink()
+            except OSError:
+                pass
+    print(f"migrate_workforce_build_state: migrated v{file_ver} -> v{current_version}: {state_path}", file=sys.stderr)
+    return True
+
+
 def read_build_state(state_path: Path) -> dict:
     """
-    Read .workforce-build-state.json. Returns {} if not found or invalid.
+    Read .workforce-build-state.json. Migrates on read (U049).
+    Returns {} if not found or unreadable.
     PRD-2.15: build state is the PRIMARY source of interview progress data.
     """
+    # U049: migrate before reading
+    migrate_workforce_build_state(state_path)
     try:
         return json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
@@ -306,6 +399,9 @@ def record_nudge_sent_state(state_path: Path, nudge_key: str) -> None:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
         return
+
+    # Stamp schema version on every write (U049)
+    state.setdefault("schemaVersion", WF_STATE_SCHEMA_VERSION)
 
     sent = list(state.get("nudges_sent") or [])
     if nudge_key not in sent:
@@ -391,6 +487,7 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                             _s["interviewStalledAt"] = datetime.now(_tz.utc).strftime(
                                 "%Y-%m-%dT%H:%M:%SZ"
                             )
+                            _s.setdefault("schemaVersion", WF_STATE_SCHEMA_VERSION)
                             state_path.write_text(_json.dumps(_s, indent=2))
                             print(
                                 f"  Company {company.name}: nudges exhausted at {hours_idle:.1f}h idle — "

@@ -35,9 +35,94 @@ TEMPLATE_COMPANY_NAME = "Your Company"
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SAFE_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+# U049: canonical schema version for .workforce-build-state.json
+WF_STATE_SCHEMA_VERSION = 2
+
 
 class ReconcileError(RuntimeError):
     """An unsafe or incomplete reconciliation state."""
+
+def _migrate_workforce_build_state(state_path):
+    """
+    Migrate .workforce-build-state.json to the current schema version (U049).
+    Returns True if migration succeeded or was unnecessary; raises ReconcileError
+    on corruption/version-mismatch.
+    """
+    import time as _time
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReconcileError(f"cannot read workforce build state: {exc}") from exc
+    if not raw.strip():
+        return True  # empty, nothing to migrate
+    try:
+        state = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # Corrupted JSON -- quarantine
+        ts = str(int(_time.time()))
+        corrupt_path = Path(str(state_path) + f".corrupt-{ts}")
+        try:
+            state_path.rename(corrupt_path)
+        except OSError:
+            pass
+        raise ReconcileError(
+            f".workforce-build-state.json is corrupt JSON (quarantined to {corrupt_path}): {exc}"
+        ) from exc
+    if not isinstance(state, dict):
+        raise ReconcileError(".workforce-build-state.json is not a JSON object")
+    file_ver = state.get("schemaVersion")
+    if file_ver is None:
+        file_ver = 1
+    else:
+        try:
+            file_ver = int(file_ver)
+        except (TypeError, ValueError):
+            raise ReconcileError(
+                f"schemaVersion is not an integer ({repr(state.get('schemaVersion'))})"
+            )
+    if file_ver > WF_STATE_SCHEMA_VERSION:
+        raise ReconcileError(
+            f"schemaVersion {file_ver} is newer than current {WF_STATE_SCHEMA_VERSION}; "
+            "refusing to parse with older reader"
+        )
+    if file_ver == WF_STATE_SCHEMA_VERSION:
+        return True  # already current
+    # --- v1 -> v2 migration ---
+    state["schemaVersion"] = WF_STATE_SCHEMA_VERSION
+    ic = state.get("interviewComplete")
+    if isinstance(ic, str):
+        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
+    state.setdefault("ownerName", None)
+    state.setdefault("ownerChat", None)
+    state.setdefault("companySlug", None)
+    state.setdefault("buildCompletedAt", None)
+    state.setdefault("closeoutStatus", None)
+    # Atomic write
+    target_dir = state_path.parent
+    target_dir.mkdir(parents=True, exist_ok=True)
+    fd, tmp_name = tempfile.mkstemp(
+        dir=str(target_dir), prefix=".workforce-build-state.", suffix=".tmp")
+    tmp_p = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_p, state_path)
+        tmp_p = None
+    except OSError as exc:
+        raise ReconcileError(f"could not write migrated state: {exc}") from exc
+    finally:
+        if tmp_p and tmp_p.exists():
+            try:
+                tmp_p.unlink()
+            except OSError:
+                pass
+    sys.stderr.write(
+        f"[cc-runtime] migrated .workforce-build-state.json v{file_ver} -> v{WF_STATE_SCHEMA_VERSION}\n"
+    )
+    return True
+
 
 
 def _load_json(path: Path, *, missing: Any = None, empty: Any = None) -> Any:
@@ -308,8 +393,15 @@ def reconcile(
             "writes": "0",
         }
 
+    # U049: migrate the workforce build state before reading
+    wf_state_path = workspace / ".workforce-build-state.json"
+    if wf_state_path.is_file():
+        try:
+            _migrate_workforce_build_state(wf_state_path)
+        except ReconcileError as exc:
+            print(f"[cc-runtime] WARN: {exc}", file=sys.stderr)
     state_payload = _load_json(
-        workspace / ".workforce-build-state.json", missing={}, empty={}
+        wf_state_path, missing={}, empty={}
     )
     if not isinstance(state_payload, dict):
         raise ReconcileError(".workforce-build-state.json is not a JSON object")
