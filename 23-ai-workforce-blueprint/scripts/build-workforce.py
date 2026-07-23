@@ -7039,6 +7039,20 @@ def add_agent_to_config(config, dept_id, dept_info):
         # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
         "mc-route__route_task",
         "exec",
+        # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow
+        # is a HARD allowlist in OpenClaw: any tool not named here is stripped from
+        # the CEO, INCLUDING the tools its plugins call. active-memory calls
+        # memory_search + memory_get; omitting them made the plugin's tool calls
+        # resolve to nothing → "No callable tools remain after resolving explicit
+        # tool allowlist." Admit the plugin + operational tools the CEO needs to
+        # FUNCTION; the production tools stay DENIED (CEO_TOOL_DENY) and routing
+        # stays behavioral DOCTRINE. Additive — G7 still passes (exec + route tool
+        # present). KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+        "memory_search",
+        "memory_get",
+        "cron",
+        "gateway",
+        "nodes",
     ]
     # GHL MCP is registered under BOTH ids on live boxes: ghl-community-mcp AND
     # the legacy alias ghl-mcp. Deny ALL tools from both, by provider. The glob
