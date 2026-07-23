@@ -41,7 +41,8 @@
       "gates": [
         "45-design-intelligence-library/scripts/diu_validator.py prompt-band",
         "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",
-        "63-agnes-image/prove_agnes_image_prompt_floor.py"
+        "63-agnes-image/prove_agnes_image_prompt_floor.py",
+        "scripts/qc_gip_agnes_prompt_band.py"
       ],
       "logo_rule": "image-to-image ONLY (never text-to-image)",
       "style_ref_directive": "MANDATORY",
