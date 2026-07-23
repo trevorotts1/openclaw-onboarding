@@ -1,3 +1,8 @@
+## [v21.0.2]  -  2026-07-23  -  July-23-Fixes Batch 2: Shared-utils orphan detection
+
+Units: U006
+- U006 — Detect and quarantine stale shared-utils orphans left by additive merge-copy in update-skills.sh
+
 ## [v21.0.1]  -  2026-07-23  -  July-23-Fixes Batch 1: Graphics department enforcement gates
 
 Units: U137, U138, U139
