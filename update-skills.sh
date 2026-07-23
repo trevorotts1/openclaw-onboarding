@@ -2341,6 +2341,24 @@ _ocs_tree_in_sync() {
   fi
 
   # ----------------------------------------------------------
+  # U008: PRE-FLIGHT SPEND/BUDGET CHECK (U008).
+  # Gate before any paid-API step (persona embedding, QC gates).
+  # Controlled by OPENCLAW_ORG_SPEND_LIMIT. Default (unset): no-op.
+  # ----------------------------------------------------------
+  _SPEND_BUDGET_OK=1
+  check_spend_budget || _SPEND_BUDGET_OK=0
+  if [ "$_SPEND_BUDGET_OK" = "0" ]; then
+    echo "  ✗ PRE-FLIGHT SPEND GATE FAILED — remaining budget below threshold."
+    echo "     To override: unset OPENCLAW_ORG_SPEND_LIMIT or set a lower threshold."
+    echo "     Proceeding with WARN (non-fatal for optional checks)."
+    # U008 design: WARN by default, GATE when OPENCLAW_ORG_SPEND_GATE=1.
+    if [ "${OPENCLAW_ORG_SPEND_GATE:-0}" = "1" ]; then
+      echo "FATAL: OPENCLAW_ORG_SPEND_GATE=1 and spend budget below threshold — refusing to proceed with paid-API steps." >&2
+      exit 1
+    fi
+  fi
+
+  # ----------------------------------------------------------
   # UNIFIED COMPLETENESS-GATE LATCHES (D3/D4/D5 convergence). Initialized here,
   # BEFORE Step U6b, so every latch is set -u safe no matter which branch below
   # runs. PASS values by default (0 / "ok" / 1) -- flipped to FAIL only on a

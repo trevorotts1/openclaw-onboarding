@@ -536,6 +536,27 @@ elif [ "$HAS_INTERVIEW_ANSWERS" = true ] && [ "$HAS_DEPARTMENTS_DIR" = false ]; 
   INTERVIEW_STATE="STATE B - INTERVIEW IN PROGRESS"
 fi
 
+# U007: Missing-departments edge case warning.
+# If departments/ is absent but .workforce-build-state.json says
+# interviewComplete: true, surface the anomaly explicitly.
+if [ "$HAS_DEPARTMENTS_DIR" = false ] && [ -f "$WORKSPACE_ROOT/.workforce-build-state.json" ] && command -v python3 >/dev/null 2>&1; then
+  _U007_IV_DONE="$(python3 -c "
+import json
+try:
+    with open('$WORKSPACE_ROOT/.workforce-build-state.json') as f:
+        d = json.load(f)
+    print('true' if d.get('interviewComplete') else 'false')
+except Exception:
+    print('false')
+" 2>/dev/null || echo false)"
+  if [ "$_U007_IV_DONE" = "true" ]; then
+    echo "  ⚠ U007: departments/ directory is MISSING but .workforce-build-state.json" >&3
+    echo "     reports interviewComplete=true. Role staleness cannot be checked" >&3
+    echo "     against a missing department tree. Restore departments/ from backup" >&3
+    echo "     or re-run the workforce build to re-create the missing directory." >&3
+  fi
+fi
+
 # ── Active Memory verification ──
 ACTIVE_MEMORY_STATUS="NOT CONFIGURED"
 if [ -f "$OPENCLAW_CONFIG" ] && command -v python3 &>/dev/null; then
