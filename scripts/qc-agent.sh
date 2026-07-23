@@ -40,6 +40,12 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
+# U073 (STAGE 1): shared assert/warn/verdict helpers. The final verdict routes
+# through qc_verdict (behavior-preserving — QC_FAIL_ON_WARN is NOT set here,
+# so the exit code still depends only on the FAIL counter, exactly as before).
+# shellcheck source=../lib-qc-shared.sh
+. "$ROOT/lib-qc-shared.sh"
+
 SKILL_DIR="$ROOT/$SKILL"
 
 PASS=0
@@ -159,4 +165,9 @@ cat <<EOF
 EOF
 
 # Exit codes: 0 = PASS, 1 = FAIL (any check), 2 = misuse / can't find skill
+# U073 (STAGE 1): verdict routed through the shared helper. QC_WARN stays 0
+# (this agent has no warn-only checks) and QC_FAIL_ON_WARN is NOT set, so the
+# exit code depends only on QC_FAIL — byte-for-byte the pre-U073 behavior.
+QC_PASS=$PASS QC_FAIL=$FAIL QC_WARN=0
+qc_verdict "qc-agent:$SKILL" >/dev/null
 [ $FAIL -eq 0 ] && exit 0 || exit 1
