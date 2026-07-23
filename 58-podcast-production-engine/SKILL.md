@@ -573,3 +573,51 @@ workflows the operator must re-import.** A merge that changes a workflow JSON wi
 corresponding manual re-import leaves the running instance out of sync with the repository —
 the workflow on disk is the source of truth, and the fleet is correct only when the instance
 matches.
+
+---
+
+## Operating contract — Podbean hosting and distribution integration
+
+The podcast production engine depends on the Podbean hosting and distribution platform
+to publish episodes and make them available to listeners via RSS. This section defines
+the credential types, allowed capabilities, and operating boundaries for that integration.
+
+### Credential types
+
+| Credential | Source | Scope |
+|---|---|---|
+| `PODBEAN_CLIENT_ID` | n8n credential vault (BlackCEO app) | Fleet-wide shared Podbean OAuth app identifier |
+| `PODBEAN_CLIENT_SECRET` | n8n credential vault (BlackCEO app) | Fleet-wide shared Podbean OAuth app secret |
+| `PODBEAN_CHANNEL_ID` (`PODBEAN_PODCAST_ID`) | Per-client secret store | Client-specific Podbean channel (show) identifier |
+
+### Allowed capability
+
+| Capability | Description | Owner |
+|---|---|---|
+| `podcast:episode:publish` | Create a new podcast episode on the client's channel and publish it | audio-post-producer (Step 15) |
+| `podcast:episode:upload` | Upload audio media file to Podbean for a given episode | audio-post-producer (Step 15) |
+| `podcast:episode:query` | Read episode metadata, permalink, and publish status | director-of-podcast (post-publish verification) |
+
+### Operating boundary
+
+1. All Podbean operations MUST route through the n8n Podbean Broker
+   (`podbean-broker.workflow.json`), which mints Channel-scoped access tokens.
+   Direct Podbean API calls from the client box are FORBIDDEN.
+2. The Podbean OAuth app credentials (`client_id`/`client_secret`) are BlackCEO's
+   single shared app and NEVER leave the n8n instance. A client box holds only
+   the broker webhook URL, a low-privilege shared token, and its own
+   `PODBEAN_CHANNEL_ID`.
+3. The broker returns a Channel-scoped Podbean access token; the client box uses
+   it to upload audio and create the episode synchronously so it captures the
+   permalink in the same request/response cycle (Step 15/16).
+4. A compromised client box CANNOT leak the Podbean app credentials because they
+   are never present on the box.
+5. The Podbean publish workflow (`podbean-publish.workflow.json`) is a read-only
+   reference export of the live full-publish workflow. It is NEVER imported from
+   this repository — the live instance is the source of truth for that workflow.
+6. THIS ENGINE publishes episodes ONLY to the named client's own Podbean channel
+   (per `PODBEAN_CHANNEL_ID`). Never substitute, borrow, or default to another
+   client's channel — the N0 no-co-mingling rule applies.
+7. The `agents/_shared/TOOLS.md` registry entry is the canonical reference for
+   credential type names and capability strings. Any change to this contract
+   MUST be reflected in that registry.
