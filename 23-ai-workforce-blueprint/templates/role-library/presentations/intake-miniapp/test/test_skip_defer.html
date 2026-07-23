@@ -1,0 +1,24 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="robots" content="noindex"><title>U057 Test</title><style>*{box-sizing:border-box}body{font:14px/1.5 monospace;max-width:720px;margin:24px auto;padding:0 18px}h1{font-size:18px}.pass{color:#1f9d55}.fail{color:#c0392b;font-weight:bold}.case{margin:8px 0;padding:8px 12px;border:1px solid #ccc;border-radius:6px}.case.pass{border-color:#1f9d55;background:#f0fff5}.case.fail{border-color:#c0392b;background:#fff5f5}</style></head><body><h1>U057 Skip/Defer Tests</h1><div id="o"></div><script>
+var f=0,t=0;function l(h){document.getElementById("o").innerHTML+=h+"\n"}
+var N="intake_skip_defer",S=3600;
+function g(){var c=(document.cookie||"").split(";");for(var i=0;i<c.length;i++){var e=c[i].trim();if(e.indexOf(N+"=")===0)return e.substring(N.length+1)==="1"}return false}
+function s(){document.cookie=N+"=1; max-age="+S+"; path=/; SameSite=Lax"}
+function x(){document.cookie=N+"=0; max-age=0; path=/; SameSite=Lax"}
+x();
+function T(id,cond,passMsg,failMsg){t++;var d=document.createElement("div");try{if(cond){d.className="case pass";l("[PASS] Test "+id+": "+passMsg)}else{d.className="case fail";f++;l("[FAIL] Test "+id+": "+failMsg)}}catch(e){d.className="case fail";f++;l("[FAIL] Test "+id+" threw: "+e.message)}document.body.appendChild(d)}
+T(1,!g(),"No cookie set -> false","Expected false");
+T(2,(s(),g()),"Set then get -> true","Expected true after set");
+T(3,(x(),!g()),"Clear then get -> false","Expected false after clear");
+T(4,N==="intake_skip_defer","SKIP_COOKIE_NAME correct","Wrong name");
+T(5,S===3600,"SKIP_COOKIE_SECONDS is 3600","Wrong value");
+s();T(6,document.cookie.indexOf(N)>=0,"Cookie present in document.cookie","Not found");x();
+s();s();T(7,(g(),x(),true),"Double-set idempotent","Double-set broke");
+x();x();T(8,(!g()),"Double-clear safe","Double-clear broke");
+s();document.cookie="intake_skip=maybe; path=/; SameSite=Lax";var ok=g();x();document.cookie="intake_skip=0; max-age=0; path=/; SameSite=Lax";
+T(9,ok,"Exact name match (not substring)","Substring confusion");
+var old=S;S=0;s();var r=g();S=old;x();
+T(10,!r,"Mutation: S=0 causes expiry","Still true with S=0");
+var sum=document.createElement("div");sum.style.cssText="margin-top:20px;padding:12px;font-size:16px;";
+if(f===0){sum.textContent="ALL "+t+" TESTS PASSED";sum.style.color="#1f9d55"}else{sum.textContent=f+" OF "+t+" FAILED";sum.style.color="#c0392b"}
+document.body.appendChild(sum);
+</script></body></html>
