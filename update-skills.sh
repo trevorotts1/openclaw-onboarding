@@ -1925,6 +1925,36 @@ _ocs_tree_in_sync() {
   [ -z "$_OC_TREE_MISSING" ] && [ -z "$_OC_TREE_DIFFERS" ]
 }
 
+# U007: u007_missing_departments_warning <workspace-dir>
+#   Emit an explicit warning when <workspace>/departments is ABSENT but
+#   <workspace>/.workforce-build-state.json has interviewComplete=true. The
+#   role-staleness drain checks role docs against the departments/ tree; with no
+#   departments/ it silently skips, so a completed-interview box that lost its
+#   departments/ directory (usually an accidental deletion) would be invisible.
+#   This makes the anomaly loud. Advisory only — never fails, never returns
+#   non-zero, never withholds the stamp. When departments/ IS present (or the
+#   interview is not complete, or there is no state file) this is a silent no-op,
+#   so the staleness result and exit code are unchanged (AC#3).
+u007_missing_departments_warning() {
+  local _ws="${1:-$HOME/.openclaw/workspace}"
+  local _depts="$_ws/departments"
+  local _state="$_ws/.workforce-build-state.json"
+  local _iv_done
+  [ -d "$_depts" ] && return 0          # departments present -> nothing to warn about
+  [ -f "$_state" ] || return 0          # no build state -> interview never ran here
+  _iv_done="$(jq -r '.interviewComplete // false' "$_state" 2>/dev/null || echo false)"
+  [ "$_iv_done" = "true" ] || return 0  # interview not complete -> absence is expected
+  echo ""
+  echo "  ! WARNING (U007): departments/ directory is MISSING at $_depts"
+  echo "    but .workforce-build-state.json has interviewComplete=true. Role"
+  echo "    staleness could NOT be checked (no departments to check against) — the"
+  echo "    drain above skipped silently. This usually means departments/ was"
+  echo "    accidentally deleted on a box whose interview is already complete."
+  echo "    Restore the departments/ tree (re-run onboarding/wiring) so role"
+  echo "    staleness can be verified. Advisory only — does not withhold the stamp."
+  return 0
+}
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -3446,6 +3476,19 @@ else:
   else
     echo "  (refresh-stale-roles.py not found or python3 unavailable -- skipping artifact-refresh-queue drain; older bundle)"
   fi
+
+  # ----------------------------------------------------------
+  # U007: MISSING-DEPARTMENTS ANOMALY WARNING. The role-staleness drain above
+  # checks role docs against the departments/ tree. If that directory is absent
+  # while .workforce-build-state.json says interviewComplete=true, the drain has
+  # no departments to check against and SILENTLY skips — the anomaly is invisible
+  # (a completed-interview box with no departments on disk is almost always an
+  # accidental deletion, not a legitimate state). Surface it explicitly so it is
+  # never mistaken for "nothing to do". Advisory only: this never withholds the
+  # stamp and never fails the update — it only makes the invisible visible.
+  # AC#3: when departments/ IS present this is a no-op (no warning, same
+  # staleness result and exit code as before).
+  u007_missing_departments_warning "${OC_WORKSPACE:-$HOME/.openclaw/workspace}"
 
   # ----------------------------------------------------------
   # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21). Canonical DELETIONS reach the
