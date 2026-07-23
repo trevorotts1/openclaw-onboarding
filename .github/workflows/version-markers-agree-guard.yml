@@ -1,0 +1,13 @@
+name: version-markers-agree-guard
+on:
+  push: {branches: [main]}
+  pull_request: {branches: [main]}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/qc-assert-version-markers-agree.sh
+      - run: bash scripts/qc-assert-version-markers-agree.sh --self-test
+      - run: bash scripts/qc-assert-version-markers-agree.sh
+      - run: bash scripts/tests/test-version-markers-agree.sh
