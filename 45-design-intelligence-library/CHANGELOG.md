@@ -84,7 +84,7 @@ the routing rule could never both be satisfied as written.
 
 ### Added
 - **`scripts/diu_validator.py`** (Python stdlib, zero third-party deps) — the binding gates were prose-only; this makes three MECHANICAL (mirrors Skill 47's deterministic-gate pattern): [FIX-XC-03h]
-  - `prompt-caps` — enforces SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 char caps (MODEL-SPECS tier table); over-cap = hard exit 3 (`AF-DIU-PROMPT-CAP`).
+  - `prompt-caps` — enforces SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 char caps (MODEL-SPECS tier table); over-cap = hard exit 3 (`AF-DIU-PROMPT-CAP`).
   - `route-check` — the SOP-DIU-611 §D.1 routing interlock as code: audience/webinar/funnel/virtual-event decks cannot run on the Rotation Engine (exit 2, `AF-DIU-ROUTING-INTERLOCK`).
   - `fidelity` — TEST-PROTOCOL §5 receipt (avg ≥4.0, no dim <3, zero hard-rule violations) appended to `working/checkpoints/diu_fidelity_receipts.json`, plus a per-(card,dimension) 3-strike counter → CDO escalation (exit 5, `AF-DIU-3-STRIKE`).
   - SKILL.md gains a "Binding enforcement — coded gates" section + a `scripts/` inventory entry.
@@ -105,7 +105,7 @@ the routing rule could never both be satisfied as written.
 ## [v1.2.1] - 2026-06-14 - fix: negative-prompting long-budget cap-lift note
 
 ### Changed
-- **`library/_system/NEGATIVE-PROMPTING-SOP.md` (v1.0 to v1.1):** documented the long-budget exception to the "10 strongest" inline-negative cap. On a LONG-tier GPT-Image 2 prompt (the up-to-18,000-character budget, for example the Presentations slide-image-creator path, slide-image-creator SOP 9.8), the 10-strongest cap is LIFTED: with that much room the full defect-mapped negative block fits and prompt pollution is not a concern at this length, so every required negative class is stated rather than a top-ten selection. The cap still applies on SHORT and MEDIUM prompts and the small-budget endpoints (Seedream). The positive-twin pairing rule and the no-contradiction audit still apply with full force when the cap is lifted. This is the design-library half of the v12.7.1 image-prompt hardening that wires this negative system into the Presentations prompt-writer.
+- **`library/_system/NEGATIVE-PROMPTING-SOP.md` (v1.0 to v1.1):** documented the long-budget exception to the "10 strongest" inline-negative cap. On a LONG-tier GPT-Image 2 prompt (the up-to-19,000-character budget, for example the Presentations slide-image-creator path, slide-image-creator SOP 9.8), the 10-strongest cap is LIFTED: with that much room the full defect-mapped negative block fits and prompt pollution is not a concern at this length, so every required negative class is stated rather than a top-ten selection. The cap still applies on SHORT and MEDIUM prompts and the small-budget endpoints (Seedream). The positive-twin pairing rule and the no-contradiction audit still apply with full force when the cap is lifted. This is the design-library half of the v12.7.1 image-prompt hardening that wires this negative system into the Presentations prompt-writer.
 
 ## [v1.1.0] - 2026-06-12 - feat: full DIU role set — 8 remaining specialists + ROLE-- files
 
