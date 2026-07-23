@@ -6,9 +6,6 @@
   <meta name="robots" content="noindex, nofollow" />
   <title>Presentation Intake</title>
   <style>
-    /* One question per screen. No external assets — everything inline so the
-       Pages deploy is a single static file. Theme-aware (respects the client's
-       light/dark preference). */
     :root {
       --bg: #f7f7f8; --card: #ffffff; --ink: #1c1c22; --muted: #6b6b78;
       --line: #e6e6ee; --accent: #f2b134; --accent-ink: #1c1c22;
@@ -23,81 +20,49 @@
     }
     * { box-sizing: border-box; }
     html, body { margin: 0; padding: 0; }
-    body {
-      background: var(--bg); color: var(--ink);
-      font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-      min-height: 100vh; display: flex; flex-direction: column;
-      -webkit-font-smoothing: antialiased;
-    }
+    body { background: var(--bg); color: var(--ink); font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; min-height: 100vh; display: flex; flex-direction: column; -webkit-font-smoothing: antialiased; }
     .bar { height: 4px; background: var(--line); position: sticky; top: 0; z-index: 5; }
     .bar > i { display: block; height: 100%; width: 0%; background: var(--accent); transition: width .35s ease; }
-    main {
-      flex: 1; width: 100%; max-width: 640px; margin: 0 auto;
-      padding: clamp(20px, 5vw, 48px) clamp(18px, 5vw, 32px);
-      display: flex; flex-direction: column; justify-content: center;
-    }
+    main { flex: 1; width: 100%; max-width: 640px; margin: 0 auto; padding: clamp(20px, 5vw, 48px) clamp(18px, 5vw, 32px); display: flex; flex-direction: column; justify-content: center; }
     .step { color: var(--muted); font-size: 13px; letter-spacing: .04em; text-transform: uppercase; margin-bottom: 14px; }
-    .card {
-      background: var(--card); border: 1px solid var(--line); border-radius: 18px;
-      padding: clamp(20px, 5vw, 34px); box-shadow: var(--shadow);
-    }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 18px; padding: clamp(20px, 5vw, 34px); box-shadow: var(--shadow); }
     .prompt { font-size: clamp(20px, 4.5vw, 27px); font-weight: 650; line-height: 1.3; margin: 0 0 10px; }
     .help { color: var(--muted); font-size: 15px; margin: 0 0 22px; }
-    textarea, input[type="number"], input[type="text"] {
-      width: 100%; background: transparent; color: var(--ink);
-      border: 1.5px solid var(--line); border-radius: 12px; padding: 13px 14px;
-      font: inherit; resize: vertical; min-height: 52px;
-    }
+    textarea, input[type="number"], input[type="text"] { width: 100%; background: transparent; color: var(--ink); border: 1.5px solid var(--line); border-radius: 12px; padding: 13px 14px; font: inherit; resize: vertical; min-height: 52px; }
     textarea { min-height: 120px; }
     textarea:focus, input:focus { outline: none; border-color: var(--accent); }
     .opts { display: flex; flex-direction: column; gap: 10px; }
-    .opt {
-      text-align: left; background: transparent; color: var(--ink);
-      border: 1.5px solid var(--line); border-radius: 12px; padding: 15px 16px;
-      font: inherit; cursor: pointer; transition: border-color .15s, background .15s;
-    }
+    .opt { text-align: left; background: transparent; color: var(--ink); border: 1.5px solid var(--line); border-radius: 12px; padding: 15px 16px; font: inherit; cursor: pointer; transition: border-color .15s, background .15s; }
     .opt:hover { border-color: var(--accent); }
     .opt[aria-pressed="true"] { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, transparent); }
     .row { display: flex; gap: 12px; align-items: center; margin-top: 22px; flex-wrap: wrap; }
-    button.primary {
-      background: var(--accent); color: var(--accent-ink); border: none;
-      border-radius: 12px; padding: 13px 26px; font: inherit; font-weight: 650;
-      cursor: pointer; min-width: 120px;
-    }
+    button.primary { background: var(--accent); color: var(--accent-ink); border: none; border-radius: 12px; padding: 13px 26px; font: inherit; font-weight: 650; cursor: pointer; min-width: 120px; }
     button.primary:disabled { opacity: .45; cursor: not-allowed; }
-    button.ghost {
-      background: transparent; color: var(--muted); border: 1.5px solid var(--line);
-      border-radius: 12px; padding: 13px 18px; font: inherit; cursor: pointer;
-    }
+    button.ghost { background: transparent; color: var(--muted); border: 1.5px solid var(--line); border-radius: 12px; padding: 13px 18px; font: inherit; cursor: pointer; }
     .msg { min-height: 20px; font-size: 14px; margin-top: 12px; }
     .msg.err { color: var(--err); }
     .msg.ok { color: var(--ok); }
     .center { text-align: center; }
     .big { font-size: clamp(24px, 5vw, 34px); font-weight: 720; margin: 10px 0; }
-    .code {
-      font-variant-numeric: tabular-nums; letter-spacing: .3em; font-size: 22px;
-      background: var(--line); padding: 8px 14px; border-radius: 10px; display: inline-block;
-    }
+    .code { font-variant-numeric: tabular-nums; letter-spacing: .3em; font-size: 22px; background: var(--line); padding: 8px 14px; border-radius: 10px; display: inline-block; }
     footer { text-align: center; color: var(--muted); font-size: 12px; padding: 18px; }
-    .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent);
-      border-radius: 50%; animation: sp 0.8s linear infinite; margin: 30px auto; }
+    .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: sp 0.8s linear infinite; margin: 30px auto; }
     @keyframes sp { to { transform: rotate(360deg); } }
     .hidden { display: none !important; }
+    .skip-banner { background: var(--accent); color: var(--accent-ink); text-align: center; padding: 12px 16px; font-size: 14px; font-weight: 600; }
+    .skip-banner button { margin-left: 12px; background: transparent; color: inherit; border: 1px solid currentColor; border-radius: 50%; width: 22px; height: 22px; cursor: pointer; font-weight: 700; line-height: 1; vertical-align: middle; }
+    .dash-tile { flex: 1; min-width: 150px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+    .dash-tile-title { font-weight: 650; font-size: 14px; margin-bottom: 4px; }
+    .dash-tile-subtitle { color: var(--muted); font-size: 13px; }
   </style>
 </head>
 <body>
   <div class="bar"><i id="progress"></i></div>
-  <main id="app">
-    <div class="spin" id="loader"></div>
-  </main>
+  <main id="app"><div class="spin" id="loader"></div></main>
   <footer>Your answers are saved as you go — you can close this and come back to the same link.</footer>
-
   <script>
   (function () {
     "use strict";
-
-    // ---- config + token --------------------------------------------------
-    // Token is the last path segment of /s/<token>. API is same-origin /api.
     var API = (window.__INTAKE_API_BASE__ || "") + "/api";
     var token = (function () {
       var m = location.pathname.match(/\/s\/([0-9a-f]{32})/i);
@@ -105,20 +70,21 @@
       var q = new URLSearchParams(location.search).get("t");
       return q || "";
     })();
-
+    var SKIP_COOKIE_NAME = "intake_skip_defer";
+    var SKIP_COOKIE_SECONDS = 3600;
+    function getSkipCookie() {
+      var cookies = (document.cookie || "").split(";");
+      for (var ci = 0; ci < cookies.length; ci++) {
+        var c = cookies[ci].trim();
+        if (c.indexOf(SKIP_COOKIE_NAME + "=") === 0) return c.substring(SKIP_COOKIE_NAME.length + 1) === "1";
+      }
+      return false;
+    }
+    function setSkipCookie() { document.cookie = SKIP_COOKIE_NAME + "=1; max-age=" + SKIP_COOKIE_SECONDS + "; path=/; SameSite=Lax"; }
+    function clearSkipCookie() { document.cookie = SKIP_COOKIE_NAME + "=0; max-age=0; path=/; SameSite=Lax"; }
     var app = document.getElementById("app");
     var bar = document.getElementById("progress");
-
-    var state = {
-      questions: [],
-      progress: null,
-      answered: [],
-      requiresConfirm: false,
-      confirmCode: "",
-      selected: null,
-    };
-
-    // ---- tiny helpers ----------------------------------------------------
+    var state = { questions: [], progress: null, answered: [], requiresConfirm: false, confirmCode: "", selected: null };
     function el(tag, attrs, kids) {
       var e = document.createElement(tag);
       attrs = attrs || {};
@@ -143,17 +109,17 @@
         return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
       });
     }
-
-    // ---- boot ------------------------------------------------------------
     function boot() {
-      if (!token) return fatal("This intake link is missing its code. Please use the exact link you were sent.");
+      if (!token && getSkipCookie()) return showSkippedDashboard();
+      if (!token) return showLockedGate();
       api("/sessions/" + token).then(function (res) {
         if (!res.ok) {
-          if (res.status === 410) return fatal("This intake link has expired. Ask for a fresh link.");
-          if (res.status === 404) return fatal("We couldn't find this intake. Please check your link.");
+          if (res.status === 410) { if (getSkipCookie()) return showSkippedDashboard(); return fatal("This intake link has expired. Ask for a fresh link.", true); }
+          if (res.status === 404) { if (getSkipCookie()) return showSkippedDashboard(); return fatal("Could not find this intake. Please check your link.", true); }
           if (res.status === 409) return done(true);
-          return fatal(res.body && res.body.error ? res.body.error : "Something went wrong loading your intake.");
+          return fatal(res.body && res.body.error ? res.body.error : "Something went wrong loading your intake.", true);
         }
+        clearSkipCookie();
         state.questions = res.body.questions || [];
         state.progress = res.body.progress;
         state.answered = res.body.answered || [];
@@ -162,63 +128,43 @@
         if (state.requiresConfirm && !state.confirmCode) return askConfirm();
         if (res.body.status === "complete" || (state.progress && state.progress.complete)) return maybeComplete();
         render();
-      }).catch(function () { fatal("Network problem. Please check your connection and reload."); });
+      }).catch(function () {
+        if (getSkipCookie()) return showSkippedDashboard();
+        fatal("Network problem. Please check your connection and reload.", false);
+      });
     }
-
     function currentQuestion() {
       var cid = state.progress && state.progress.current_id;
       if (!cid) return null;
-      for (var i = 0; i < state.questions.length; i++) {
-        if (state.questions[i].id === cid) return state.questions[i];
-      }
+      for (var i = 0; i < state.questions.length; i++) if (state.questions[i].id === cid) return state.questions[i];
       return null;
     }
-
-    // ---- confirmation code (optional, high-trust) ------------------------
     function askConfirm() {
       clear();
       var input = el("input", { type: "text", inputmode: "numeric", maxlength: "6", placeholder: "6-digit code" });
       var msg = el("div", { class: "msg" });
       var go = el("button", { class: "primary", text: "Continue" });
-      go.onclick = function () {
-        state.confirmCode = input.value.trim();
-        if (!/^\d{6}$/.test(state.confirmCode)) { msg.className = "msg err"; msg.textContent = "Enter the 6-digit code you were given."; return; }
-        state.requiresConfirm = false; render();
-      };
-      app.appendChild(el("div", { class: "card" }, [
-        el("h1", { class: "prompt", text: "Enter your access code" }),
-        el("p", { class: "help", text: "You were given a 6-digit code in chat. It keeps this intake private to you." }),
-        input, el("div", { class: "row" }, [go]), msg,
-      ]));
+      go.onclick = function () { state.confirmCode = input.value.trim(); if (!/^\d{6}$/.test(state.confirmCode)) { msg.className = "msg err"; msg.textContent = "Enter the 6-digit code you were given."; return; } state.requiresConfirm = false; render(); };
+      app.appendChild(el("div", { class: "card" }, [el("h1", { class: "prompt", text: "Enter your access code" }), el("p", { class: "help", text: "You were given a 6-digit code in chat. It keeps this intake private to you." }), input, el("div", { class: "row" }, [go]), msg]));
     }
-
-    // ---- render one question --------------------------------------------
     function render() {
       var q = currentQuestion();
       if (!q) return maybeComplete();
       state.selected = null;
       clear();
-
       var stepText = "Question " + ((state.progress.current_index || 0) + 1) + " of " + state.progress.total;
       var card = el("div", { class: "card" });
       card.appendChild(el("h1", { class: "prompt", text: q.prompt }));
       if (q.help) card.appendChild(el("p", { class: "help", text: q.help }));
-
       var inputWrap = el("div");
       var getValue;
-
       var kind = q.kind || "text";
       if (kind === "enum" && (q.allowed_values || []).length) {
         var opts = el("div", { class: "opts" });
         (q.allowed_values || []).forEach(function (v) {
           var label = (q.value_labels && q.value_labels[v]) || v;
           var b = el("button", { class: "opt", "aria-pressed": "false", text: label });
-          b.onclick = function () {
-            state.selected = v;
-            Array.prototype.forEach.call(opts.children, function (c) { c.setAttribute("aria-pressed", "false"); });
-            b.setAttribute("aria-pressed", "true");
-            next.disabled = false;
-          };
+          b.onclick = function () { state.selected = v; Array.prototype.forEach.call(opts.children, function (c) { c.setAttribute("aria-pressed", "false"); }); b.setAttribute("aria-pressed", "true"); next.disabled = false; };
           opts.appendChild(b);
         });
         inputWrap.appendChild(opts);
@@ -227,12 +173,7 @@
         var yn = el("div", { class: "opts" });
         [["true", "Yes"], ["false", "No"]].forEach(function (pair) {
           var b = el("button", { class: "opt", "aria-pressed": "false", text: pair[1] });
-          b.onclick = function () {
-            state.selected = pair[0];
-            Array.prototype.forEach.call(yn.children, function (c) { c.setAttribute("aria-pressed", "false"); });
-            b.setAttribute("aria-pressed", "true");
-            next.disabled = false;
-          };
+          b.onclick = function () { state.selected = pair[0]; Array.prototype.forEach.call(yn.children, function (c) { c.setAttribute("aria-pressed", "false"); }); b.setAttribute("aria-pressed", "true"); next.disabled = false; };
           yn.appendChild(b);
         });
         inputWrap.appendChild(yn);
@@ -249,95 +190,128 @@
         getValue = function () { return ta.value.trim(); };
       }
       card.appendChild(inputWrap);
-
       var msg = el("div", { class: "msg" });
       var next = el("button", { class: "primary", text: "Next" });
       var row = el("div", { class: "row" }, [next]);
-      // Optional questions can be skipped to their default.
       if (q.required === false) {
         var skip = el("button", { class: "ghost", text: "Skip" });
         skip.onclick = function () { submit(q, q.default != null ? String(q.default) : "", msg, next); };
         row.appendChild(skip);
       }
-      next.disabled = q.required !== false; // enabled once an answer exists
-      next.onclick = function () {
-        var val = getValue();
-        if ((val === null || val === undefined || val === "") && q.required !== false) { return; }
-        submit(q, val == null ? "" : String(val), msg, next);
-      };
-
-      card.appendChild(row);
-      card.appendChild(msg);
+      next.disabled = q.required !== false;
+      next.onclick = function () { var val = getValue(); if ((val === null || val === undefined || val === "") && q.required !== false) return; submit(q, val == null ? "" : String(val), msg, next); };
+      card.appendChild(row); card.appendChild(msg);
       app.appendChild(el("div", {}, [el("div", { class: "step", text: stepText }), card]));
     }
-
-    // ---- submit one answer ----------------------------------------------
     function submit(q, value, msg, next) {
-      next.disabled = true;
-      msg.className = "msg"; msg.textContent = "Saving…";
+      next.disabled = true; msg.className = "msg"; msg.textContent = "Saving…";
       var payload = { question_id: q.id, value: value };
       if (state.confirmCode) payload.confirm_code = state.confirmCode;
-      api("/sessions/" + token + "/answers", { method: "POST", body: JSON.stringify(payload) })
-        .then(function (res) {
-          if (!res.ok) {
-            msg.className = "msg err";
-            msg.textContent = (res.body && res.body.error) || "That answer wasn't accepted. Please try again.";
-            next.disabled = false;
-            // If the server says we're out of order, resync from the server.
-            if (res.status === 409) return boot();
-            return;
-          }
-          state.progress = res.body.progress;
-          if (state.answered.indexOf(q.id) === -1) state.answered.push(q.id);
-          setBar(state.progress);
-          if (state.progress.complete) return maybeComplete();
-          render();
-        })
-        .catch(function () { msg.className = "msg err"; msg.textContent = "Network problem — retry."; next.disabled = false; });
+      api("/sessions/" + token + "/answers", { method: "POST", body: JSON.stringify(payload) }).then(function (res) {
+          if (!res.ok) { msg.className = "msg err"; msg.textContent = (res.body && res.body.error) || "That answer was not accepted. Please try again."; next.disabled = false; if (res.status === 409) return boot(); return; }
+          state.progress = res.body.progress; if (state.answered.indexOf(q.id) === -1) state.answered.push(q.id); setBar(state.progress);
+          if (state.progress.complete) return maybeComplete(); render();
+        }).catch(function () { msg.className = "msg err"; msg.textContent = "Network problem — retry."; next.disabled = false; });
     }
-
-    // ---- completion ------------------------------------------------------
     function maybeComplete() {
       clear();
       var card = el("div", { class: "card center" });
-      card.appendChild(el("h1", { class: "prompt", text: "That's everything — ready to send?" }));
+      card.appendChild(el("h1", { class: "prompt", text: "Ready to send?" }));
       card.appendChild(el("p", { class: "help", text: "Review is optional. When you send, your presentation team picks it up and may follow up with a question or two." }));
       var go = el("button", { class: "primary", text: "Send my answers" });
       var msg = el("div", { class: "msg" });
       go.onclick = function () {
         go.disabled = true; msg.textContent = "Sending…";
         api("/sessions/" + token + "/complete", { method: "POST", body: "{}" }).then(function (res) {
-          if (!res.ok) {
-            msg.className = "msg err";
-            msg.textContent = (res.body && res.body.error) || "Couldn't send — please try again.";
-            if (res.status === 409 && res.body && res.body.missing) return boot();
-            go.disabled = false; return;
-          }
+          if (!res.ok) { msg.className = "msg err"; msg.textContent = (res.body && res.body.error) || "Could not send — please try again."; if (res.status === 409 && res.body && res.body.missing) return boot(); go.disabled = false; return; }
           done(false);
         }).catch(function () { msg.className = "msg err"; msg.textContent = "Network problem — retry."; go.disabled = false; });
       };
       card.appendChild(el("div", { class: "row", style: "justify-content:center" }, [go]));
-      card.appendChild(msg);
-      app.appendChild(card);
+      card.appendChild(msg); app.appendChild(card);
     }
-
     function done(already) {
-      clear();
-      bar.style.width = "100%";
+      clear(); clearSkipCookie(); bar.style.width = "100%";
       app.appendChild(el("div", { class: "card center" }, [
-        el("div", { class: "big", text: already ? "You're all set" : "Thank you!" }),
+        el("div", { class: "big", text: already ? "You are all set" : "Thank you!" }),
         el("p", { class: "help", text: "Your answers are in. Your presentation team has everything they need to start — you can close this tab." }),
       ]));
     }
-
-    function fatal(text) {
+    function fatal(text, showSkip) {
       clear();
-      app.appendChild(el("div", { class: "card center" }, [
-        el("div", { class: "big", text: "Hmm." }),
-        el("p", { class: "help", text: text }),
-      ]));
+      var kids = [el("div", { class: "big", text: "Hmm." }), el("p", { class: "help", text: text })];
+      if (showSkip) {
+        var row = el("div", { class: "row", style: "justify-content:center; gap:12px;" });
+        var skipBtn = el("button", { class: "primary", text: "Skip for now" });
+        skipBtn.onclick = function () { setSkipCookie(); showSkippedDashboard(); };
+        row.appendChild(skipBtn);
+        var retryBtn = el("button", { class: "ghost", text: "Try again" });
+        retryBtn.onclick = function () { window.location.reload(); };
+        row.appendChild(retryBtn);
+        kids.push(row);
+        kids.push(el("p", { class: "help", style: "font-size:13px;", text: "Skip lets you access the dashboard for 1 hour. A reminder banner will stay until your interview is complete." }));
+      }
+      app.appendChild(el("div", { class: "card center" }, kids));
     }
-
+    function showLockedGate() {
+      clear();
+      var kids = [el("div", { class: "big", text: "Welcome" }), el("p", { class: "help", text: "You need an intake link to complete your interview. If you have one, paste the full link and press Enter." }), el("input", { type: "text", id: "skip-token-input", placeholder: "Paste your intake link or token...", style: "margin-top:8px;" })];
+      var row = el("div", { class: "row", style: "justify-content:center; gap:12px; margin-top:16px;" });
+      var goBtn = el("button", { class: "primary", text: "Continue to interview" });
+      goBtn.onclick = function () {
+        var raw = document.getElementById("skip-token-input").value.trim();
+        if (!raw) return;
+        var m = raw.match(/\/s\/([0-9a-f]{32})/i);
+        if (m) { window.location.href = "/s/" + m[1]; return; }
+        if (/^[0-9a-f]{32}$/i.test(raw)) { window.location.href = "/s/" + raw; return; }
+        var msg = document.getElementById("locked-gate-msg");
+        if (msg) { msg.textContent = "That does not look like a valid link or token. Try again."; msg.className = "msg err"; }
+      };
+      row.appendChild(goBtn);
+      var skipBtn = el("button", { class: "ghost", text: "Skip for now" });
+      skipBtn.onclick = function () { setSkipCookie(); showSkippedDashboard(); };
+      row.appendChild(skipBtn);
+      kids.push(row);
+      kids.push(el("div", { id: "locked-gate-msg", class: "msg", style: "margin-top:12px;" }));
+      kids.push(el("p", { class: "help", style: "font-size:12px; margin-top:16px;", text: "Skipping lets you access the dashboard for 1 hour. A reminder will stay until your interview is complete." }));
+      app.appendChild(el("div", { class: "card center" }, kids));
+      var inp = document.getElementById("skip-token-input");
+      if (inp) inp.focus();
+    }
+    function showSkippedDashboard() {
+      clear(); bar.style.width = "100%";
+      var banner = el("div", { class: "skip-banner" });
+      banner.appendChild(el("span", { text: "Your interview is not complete. Dashboard access is limited." }));
+      var closeBtn = el("button", { "aria-label": "Dismiss" });
+      closeBtn.innerHTML = "&times;";
+      closeBtn.onclick = function () { banner.style.display = "none"; };
+      banner.appendChild(closeBtn);
+      app.appendChild(banner);
+      var card = el("div", { class: "card center" });
+      card.appendChild(el("div", { class: "big", text: "Dashboard (Limited Access)" }));
+      card.appendChild(el("p", { class: "help", text: "Interview skipped - access expires in 1 hour. When ready, complete your interview for full access." }));
+      var btnRow = el("div", { class: "row", style: "justify-content:center; gap:12px; margin-top:20px;" });
+      var startBtn = el("button", { class: "primary", text: "Start interview" });
+      startBtn.onclick = function () { clearSkipCookie(); if (token) window.location.reload(); else showLockedGate(); };
+      btnRow.appendChild(startBtn);
+      var dismissBtn = el("button", { class: "ghost", text: "Dismiss for now" });
+      dismissBtn.onclick = function () { banner.style.display = "none"; };
+      btnRow.appendChild(dismissBtn);
+      card.appendChild(btnRow); app.appendChild(card);
+      var stub = el("div", { style: "max-width:640px; margin:20px auto; padding:0 18px;" });
+      stub.appendChild(el("h2", { style: "font-size:18px; font-weight:650; color:var(--muted); margin-bottom:10px;", text: "Available panels" }));
+      var tileRow = el("div", { style: "display:flex; flex-wrap:wrap; gap:12px;" });
+      tileRow.appendChild(makeTile("System status", "All systems operational"));
+      tileRow.appendChild(makeTile("Recent activity", "No recent activity"));
+      tileRow.appendChild(makeTile("Message center", "No new messages"));
+      stub.appendChild(tileRow); app.appendChild(stub);
+    }
+    function makeTile(title, subtitle) {
+      var t = el("div", { class: "dash-tile" });
+      t.appendChild(el("div", { class: "dash-tile-title", text: title }));
+      t.appendChild(el("div", { class: "dash-tile-subtitle", text: subtitle }));
+      return t;
+    }
     boot();
   })();
   </script>
