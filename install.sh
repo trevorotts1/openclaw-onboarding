@@ -3420,10 +3420,7 @@ if [ -f "$_PROVISION_HELPER" ]; then
     # (40/54) converge to the canonical 54.
     reconcile_persona_assets "$SKILLS_DIR/22-book-to-persona-coaching-leadership-system" "$COACHING_DB_DIR" "$OC_WORKSPACE"
     provision_persona_index "$PERSONA_INDEX_MANIFEST" "$COACHING_DB_DIR"
-    # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
-    # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
-    # never read a frozen "March" cache. Both-paths parity with update-skills.sh.
-    reconcile_qmd_persona_index "$COACHING_DB_DIR"
+    # qmd persona indexing removed (2026-07-23) — replaced by Google/OpenAI embeddings via persona-selector-v2.py
     # FIX 4 (cascade): on a fresh install the SET is always "new" (_SET_CHANGED=1),
     # so re-wire governing-personas.md + bust stickiness. Static/idempotent; the
     # full workforce build also authors these, so this is belt-and-suspenders.
@@ -4179,7 +4176,7 @@ try:
     defaults = agents.setdefault('defaults', {})
     ms = defaults.setdefault('memorySearch', {})
     ms['enabled']  = True
-    # Sources: "memory" reads MEMORY.md + memory/ files; "qmd" reads cross-agent transcripts
+    # qmd persona indexing removed (2026-07-23) — sources pinned to "memory" only
     ms.setdefault('sources', ["memory"])
 
     # ── v13.2.1 CONDITIONAL embedding default ────────────────────────────────
