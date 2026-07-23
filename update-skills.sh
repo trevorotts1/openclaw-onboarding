@@ -1925,6 +1925,66 @@ _ocs_tree_in_sync() {
   [ -z "$_OC_TREE_MISSING" ] && [ -z "$_OC_TREE_DIFFERS" ]
 }
 
+# U008: u008_preflight_spend_check
+#   Pre-flight budget guard run BEFORE the paid-API steps (persona embedding,
+#   QC gates, floor-fill). The updater previously never checked whether the
+#   operator's org had enough spend budget left, so a fleet-wide roll could
+#   burn through a depleted budget mid-run with no warning.
+#
+#   Configuration (env vars):
+#     OPENCLAW_ORG_SPEND_LIMIT      the minimum budget (USD) the org should have
+#                                   before running paid steps. Default 100.
+#     OPENCLAW_ORG_SPEND_REMAINING  the org's current remaining budget (USD), if
+#                                   known. When unset/empty the check is a no-op
+#                                   (a box with no budget tracking is not falsely
+#                                   flagged — the updater cannot query the org's
+#                                   balance itself).
+#     OPENCLAW_SPEND_GATE           "1" to GATE (return 1 so the caller can abort
+#                                   the paid steps) when below the limit; any
+#                                   other value (default) only WARNS and returns 0
+#                                   so a low budget never bricks an update.
+#
+#   Return: 0 = proceed (budget ok, unknown, or warn-only); 1 = below limit AND
+#   OPENCLAW_SPEND_GATE=1 (caller should skip the paid steps). Never crashes.
+u008_preflight_spend_check() {
+  local _limit="${OPENCLAW_ORG_SPEND_LIMIT:-100}"
+  local _remaining="${OPENCLAW_ORG_SPEND_REMAINING:-}"
+  local _gate="${OPENCLAW_SPEND_GATE:-0}"
+
+  # No budget figure to check against -> nothing to guard (not a failure).
+  [ -n "$_remaining" ] || return 0
+
+  # Both values must be numeric (optionally fractional) to compare. A
+  # non-numeric value is treated as "unknown" -> no-op, never a crash and never a
+  # false warning (awk would coerce "abc" to 0 and falsely fire).
+  case "$_remaining" in *[!0-9.]*|"") return 0 ;; esac
+  case "$_limit" in *[!0-9.]*|"") return 0 ;; esac
+
+  # Compare remaining < limit numerically (bc for fractional USD; fall back to
+  # awk if bc is absent).
+  local _below=""
+  if command -v bc >/dev/null 2>&1; then
+    _below="$(printf '%s < %s\n' "$_remaining" "$_limit" 2>/dev/null | bc 2>/dev/null || echo "")"
+  fi
+  if [ -z "$_below" ]; then
+    _below="$(awk -v r="$_remaining" -v l="$_limit" 'BEGIN{print (r<l)?1:0}' 2>/dev/null || echo "")"
+  fi
+  [ "$_below" = "1" ] || return 0   # budget is at/above the limit -> proceed silently
+
+  echo ""
+  echo "  ⚠️  PRE-FLIGHT SPEND CHECK (U008): remaining org budget \$${_remaining} is BELOW"
+  echo "    the configured threshold \$${_limit} (OPENCLAW_ORG_SPEND_LIMIT). Paid steps"
+  echo "    (persona embedding, QC gates, floor-fill) may trigger API spend."
+  if [ "$_gate" = "1" ]; then
+    echo "    OPENCLAW_SPEND_GATE=1 — GATING: paid-API steps will be SKIPPED this run."
+    echo "    Raise OPENCLAW_ORG_SPEND_LIMIT or top up the budget, then re-run."
+    return 1
+  fi
+  echo "    Advisory only (set OPENCLAW_SPEND_GATE=1 to gate). Proceeding — especially"
+  echo "    review before any fleet-wide roll."
+  return 0
+}
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -2250,6 +2310,19 @@ _ocs_tree_in_sync() {
   _WORKFORCE_INCOMPLETE_NOTES=""  # workforce-provisioning advisories -- surfaced, NEVER stamp-gating
 
   # ----------------------------------------------------------
+  # U008: PRE-FLIGHT SPEND CHECK. Runs BEFORE the first paid-API step (U6b
+  # persona embedding, and the QC gates / floor-fill that follow). Warns (or,
+  # with OPENCLAW_SPEND_GATE=1, gates) when the org's remaining budget is below
+  # OPENCLAW_ORG_SPEND_LIMIT, so a depleted budget is never burned through
+  # silently — especially important for fleet-wide rolls. When no budget figure
+  # is configured the check is a no-op (AC#3: runs with sufficient/unknown budget
+  # proceed unchanged, no new warning, same exit code).
+  _U008_SKIP_PAID_STEPS=0
+  if ! u008_preflight_spend_check; then
+    _U008_SKIP_PAID_STEPS=1
+  fi
+
+  # ----------------------------------------------------------
   # Step U6b: Provision prebuilt persona index + wire GHL funnel catalog
   # (v14.25.0) — mirrors install.sh Step 6b so update-only boxes receive
   # the section-tagged canonical persona DB and catalog path vars identically to a
@@ -2286,7 +2359,15 @@ _ocs_tree_in_sync() {
   [ -d "/data/.openclaw" ] && _U6B_WS="/data/.openclaw/workspace"
   _U6B_SK22="$SKILLS_DIR/22-book-to-persona-coaching-leadership-system"
 
-  if [ -f "$_U6B_MANIFEST" ] && [ -f "$_U6B_HELPER" ]; then
+  if [ "$_U008_SKIP_PAID_STEPS" = "1" ]; then
+    # U008 budget GATE (OPENCLAW_SPEND_GATE=1 + remaining budget below the
+    # limit): skip the paid persona-embedding step. This is a legitimate
+    # budget-driven skip, NOT a content failure, so _U6B_PERSONA_FAIL is NOT set
+    # and the content stamp is NOT withheld. The onboarding-resume cron re-runs
+    # this once the budget is restored.
+    _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }persona-index provisioning SKIPPED by the U008 pre-flight spend gate (remaining budget below OPENCLAW_ORG_SPEND_LIMIT)"
+    echo "  ⚠️  Persona-index provisioning SKIPPED by the U008 pre-flight spend gate (paid step deferred until budget is restored)"
+  elif [ -f "$_U6B_MANIFEST" ] && [ -f "$_U6B_HELPER" ]; then
     # shellcheck source=/dev/null
     source "$_U6B_HELPER"
     # PRE-ROLL PERSONA-SET TRIAD (fail-closed backstop). Before shipping the
