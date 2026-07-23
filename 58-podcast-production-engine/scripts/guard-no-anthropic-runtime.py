@@ -36,7 +36,7 @@
 #          screen is STRICTER: the dashboard is a dumb read-only view, so ANY
 #          model-provider SDK import, ANY generation-endpoint host, or ANY
 #          pipeline-script invocation / process spawn FAILS. better-sqlite3
-#          (the read-only mirror driver) is explicitly allowed.
+#          (the CC dashboard's SQLite driver) is explicitly allowed.
 #
 # ALLOWLIST POLICY. config/anthropic-guard-allow.json may exempt a DOC file
 #          explicitly marked non-runtime from JOB 1. An allowlist entry that
@@ -121,7 +121,7 @@ _ANTHROPIC_PATTERNS = [
 ]
 
 # --- DASHBOARD stricter screen: no model-provider SDK, no generation endpoint,
-#     no pipeline invocation. better-sqlite3 is explicitly allowed. -----------
+#     no pipeline invocation. better-sqlite3 (CC dashboard SQLite driver) is explicitly allowed. -----------
 _DASH_PROVIDER_IMPORT = [
     ("openai-sdk", re.compile(r"""(?:from|require\(|import)\s*["']openai["']|@ai-sdk/openai|new\s+OpenAI\b""", re.I)),
     ("google-genai-sdk", re.compile(r"@google/generative-ai|google\.generativeai|@google-cloud/aiplatform", re.I)),

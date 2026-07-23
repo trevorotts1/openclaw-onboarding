@@ -8,7 +8,7 @@
 # This is the additive department-refresh flow extracted into ONE sourceable
 # entry point so install.sh / update-skills.sh call it instead of inlining the
 # two-step migrate + staleness-detect sequence. It is the workspace twin of
-# reconcile_qmd_persona_index (qmd store) and rewire_on_persona_set_change
+# (now-removed qmd store) and rewire_on_persona_set_change
 # (governing-personas.md) — those refresh derived artifacts; THIS refreshes the
 # department tree itself.
 #

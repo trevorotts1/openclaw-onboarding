@@ -112,16 +112,25 @@ if need "$RFI" "D18"; then
   clean "$_D18" && pass "D18: CC board built on install (db:seed) + synced on update (sync-departments), reachable both paths, gated by prove-zhe"
 fi
 
-echo "── D19: qmd persona-store reconcile on both paths ──"
+echo "── D19: qmd persona-store removed (2026-07-23) ──"
 _D19=$FAILS
 if need "$QMD" "D19"; then
-  grep -q 'reconcile_qmd_persona_index()' "$QMD" \
-    || fail "D19-def: reconcile_qmd_persona_index() definition missing from shared-utils/provision-persona-index.sh"
-  grep -q 'reconcile_qmd_persona_index' "$INSTALL" \
-    || fail "D19-install: reconcile_qmd_persona_index not invoked in install.sh"
-  grep -q 'reconcile_qmd_persona_index' "$UPDATE" \
-    || fail "D19-update: reconcile_qmd_persona_index not invoked in update-skills.sh"
-  clean "$_D19" && pass "D19: reconcile_qmd_persona_index defined + invoked on both paths"
+  # qmd was replaced by Google/OpenAI embeddings. The reconcile_qmd_persona_index
+  # function and all _qmd_ helpers have been gutted. Calls in install.sh and
+  # update-skills.sh have been replaced with archive comments.
+  if grep -q 'reconcile_qmd_persona_index()' "$QMD" 2>/dev/null; then
+    fail "D19-def: reconcile_qmd_persona_index() still defined in provision-persona-index.sh — should be removed (qmd replaced by embeddings)"
+  fi
+  if grep -q '^\s*reconcile_qmd_persona_index ' "$INSTALL" 2>/dev/null; then
+    fail "D19-install: reconcile_qmd_persona_index still called in install.sh"
+  fi
+  if grep -q '^\s*reconcile_qmd_persona_index ' "$UPDATE" 2>/dev/null; then
+    fail "D19-update: reconcile_qmd_persona_index still called in update-skills.sh"
+  fi
+  # Verify the archive comment exists (proof the removal was intentional)
+  grep -q 'qmd provisioning removed' "$QMD" \
+    || fail "D19-archive: no qmd-removal archive comment in provision-persona-index.sh"
+  clean "$_D19" && pass "D19: qmd persona-store removed — replaced by Google/OpenAI embeddings"
 fi
 
 echo
