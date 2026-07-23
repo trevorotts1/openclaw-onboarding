@@ -77,6 +77,33 @@ PIPELINE (5 phases, 15 producers + 6 QC agents)
 
   Full spec: \$SKILL_DIR/INSTRUCTIONS.md
 
+GOOGLE SHEET CONTENT CALENDAR (manual webhook sequence)
+  This orchestrator does NOT create or populate the client's Google Sheet. Sheet
+  creation and row-logging happen through two n8n webhooks on
+  main.blackceoautomations.com, driven by the master orchestrator / publisher
+  agent (see SKILL.md "Media Delivery Contract" + INSTALL.md Step 7, and the
+  workflow definitions in config/n8n/):
+
+    1) ONCE, at install (first run only) — create the sheet:
+         curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-sheet-create" \\
+           -H "Content-Type: application/json" \\
+           -d '{"brandName":"<brand>","clientEmail":"<email>","idempotencyKey":"<key>"}'
+       -> returns {sheetUrl, sheetId, sheetName}; store sheetId in MEMORY.md.
+       Never call this again for an existing client (idempotencyKey reconciles
+       a create-then-crash rerun).
+
+    2) EVERY publish cycle — log each content row (after media is uploaded to
+       the GHL CDN and you have the CDN url):
+         curl -s -X POST "https://main.blackceoautomations.com/webhook/social-planner-row-append" \\
+           -H "Content-Type: application/json" \\
+           -d '{"sheetId":"<content_sheet_id>","row":{"Week Of":"...","Theme of the Week":"...","Core Content":"...","Image URL":"=IMAGE(\\"https://assets.cdn.filesafe.space/...\\", 1)","Notes":"<CDN url>"}}'
+       Image cells MUST be =IMAGE("url", 1) formula strings (not raw URLs); the
+       webhook writes them with valueInputOption=USER_ENTERED and sizes the
+       image column (~108px) and row (~133px). If a webhook call fails, log to
+       ~/.openclaw/data/skill35/content-log.jsonl and retry next cycle.
+
+  These calls are issued by the publishing agent at runtime, not by this script.
+
 EXAMPLES
   $SCRIPT_NAME --topic "Delegating to AI without losing control" \\
                --platforms "linkedin,medium,x,wordpress" --schedule auto
@@ -661,6 +688,15 @@ fi
 # invokes this script (per N5 + Skill 23's L255-L267 convention). This
 # script writes the per-phase prompt files and a state-tracking journal,
 # then signals "ready" so the orchestrator can pick them up.
+#
+# NOTE (Google Sheet): this orchestrator intentionally does NOT create or
+# populate the client's Google Sheet content calendar. That is done by the
+# master orchestrator / publisher agent via the two social-planner n8n webhooks
+# (social-planner-sheet-create once at install, social-planner-row-append every
+# cycle) — see the "GOOGLE SHEET CONTENT CALENDAR" block in --help, SKILL.md
+# "Media Delivery Contract", INSTALL.md Step 7, and config/n8n/. Keeping sheet
+# writes out of this script avoids double-creating sheets and keeps the webhook
+# contract in one place.
 
 JOURNAL="$WORKDIR/journal.log"
 echo "[$RUN_ID] cycle queued at $(date -u +%Y-%m-%dT%H:%M:%SZ)" >>"$JOURNAL"

@@ -45,6 +45,34 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 - [ ] No em dashes in the comment
 - [ ] No misspellings in the comment
 
+## Media Hosting (every image, video, and audio file — MANDATORY gate)
+
+All media delivered to a client MUST live on a permanent host. The only approved permanent host is the client's own **GHL Media Library CDN** (`https://assets.cdn.filesafe.space/...`) — see SKILL.md "Media Delivery Contract". Ephemeral file hosts expire and break every downstream post, sheet cell, and newsletter that references them.
+
+- [ ] Every media URL is a GHL CDN link (`https://assets.cdn.filesafe.space/[LOCATION_ID]/media/...`)
+- [ ] **REJECT any `tmpfiles.org` URL** (including `https://tmpfiles.org/...` and its `https://tmp.ninja/...` download mirror). tmpfiles.org links expire after ~60 days and MUST NEVER be logged to a sheet, embedded in a post, or sent to the owner. If a URL is a tmpfiles.org link, re-upload the file to the GHL Media Library and use the returned CDN `url` instead.
+- [ ] No other ephemeral/anonymous host is used (e.g. file.io, transfer.sh, 0x0.st, catbox.moe, litterbox, tmp.ninja) — GHL CDN only
+- [ ] Media was uploaded with the SKILL.md upload command (no `-F "hosted=true"` — that field returns HTTP 400)
+
+**Programmatic rejection check (run against any URL before it is logged or posted):**
+```bash
+# FAIL-CLOSED: reject ephemeral hosts. Exit 1 if any banned host is present.
+_url="$1"
+case "$_url" in
+  *tmpfiles.org*|*tmp.ninja*|*file.io*|*transfer.sh*|*0x0.st*|*catbox.moe*|*litterbox*)
+    echo "QC FAIL: ephemeral host rejected ($_url). Re-upload to GHL Media Library and use the assets.cdn.filesafe.space CDN url." >&2
+    exit 1
+    ;;
+  *assets.cdn.filesafe.space*)
+    echo "QC PASS: permanent GHL CDN host ($_url)."
+    ;;
+  *)
+    echo "QC FAIL: non-GHL media host ($_url). Upload to the client's GHL Media Library first." >&2
+    exit 1
+    ;;
+esac
+```
+
 ## Images (every image)
 
 - [ ] Image prompt is appropriate for the client's brand and target audience
@@ -86,6 +114,12 @@ QC runs BEFORE any content is scheduled. Nothing goes to GHL until all checks pa
 - [ ] Sheet URL stored in MEMORY.md
 - [ ] Client has edit access to the created sheet
 - [ ] Fallback documented if webhook fails (template link provided to client)
+
+## Google Sheet Image Rendering (critical — images must actually display)
+
+- [ ] Image cells use `=IMAGE()` formula — every image URL written to a cell is wrapped as `=IMAGE("https://...", 1)`, never a raw URL string (raw URLs render as unclickable text, not an image)
+- [ ] Image columns ≥100px wide, data rows ≥130px tall — the column holding images is at least 100px wide and each data row is at least 130px tall, so the `=IMAGE()` render is visible and not clipped to a sliver
+- [ ] Image URLs inside the `=IMAGE()` formula are permanent GHL CDN links (`assets.cdn.filesafe.space`), not tmpfiles.org or any ephemeral host (see Media Hosting above)
 
 ## Blog Post
 

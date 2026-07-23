@@ -1,5 +1,25 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.18 - 2026-07-23 — Fix: review findings — GHL upload 400, tmpfiles.org QC gate, QC completeness, n8n workflow JSON, image production path, sheet docs, wire.sh clarity
+
+Builds on v2.9.17 (=IMAGE() rendering). Addresses the seven findings from the Skill 35 review.
+
+### Fixed
+- **CRITICAL — GHL upload returned HTTP 400.** The Media Delivery Contract curl sent `-F "hosted=true"` alongside the multipart `file=@`, which the `medias/upload-file` endpoint rejects. Removed `-F "hosted=true"` from the SKILL.md upload command (no scripts referenced it) and added an explicit "Do NOT send hosted=true" note. (Finding 1)
+- **HIGH — ephemeral image hosting.** tmpfiles.org links expire after ~60 days and silently break every sheet `=IMAGE()` cell, post, and newsletter. Added a fail-closed "Media Hosting" QC gate to QC.md that REJECTS tmpfiles.org (and other ephemeral hosts: file.io, transfer.sh, 0x0.st, catbox.moe, litterbox, tmp.ninja) with a runnable rejection check, and documented in SKILL.md that all media MUST be on the permanent GHL CDN. (Finding 2)
+
+### Added
+- **QC completeness — image rendering checks.** Added a "Google Sheet Image Rendering" section to QC.md: "Image cells use =IMAGE() formula" and "Image columns ≥100px wide, data rows ≥130px tall" (plus a permanent-host check). (Finding 3)
+- **n8n workflow JSON.** Skill 35 referenced the `social-planner-sheet-create` and `social-planner-row-append` webhooks but no workflow JSON existed in the repo. The live workflows could not be exported (operator/Maria boxes unreachable), so added reconstructed-from-contract placeholders under `config/n8n/` (`social-planner-sheet-create.json`, `social-planner-row-append.json`, `README.md`) documenting the expected node graph, payload contracts, `=IMAGE()`/`USER_ENTERED` handling, and 108px/133px sizing — with instructions to replace via a real `n8n export`. (Finding 4)
+- **Image production path.** Documented the three production paths (kie.ai direct = default; Agnes Skill 63/64 = opt-in; Graphics department handoff = Section 19a gate) in a decision table with working curl examples in `references/playbook.md` Section 8, plus a discoverability pointer in SKILL.md Phase 2. (Finding 5)
+- **Sheet handling in the orchestrator.** Documented the manual webhook call sequence (sheet-create once at install, row-append every cycle) in `run-publishing-cycle.sh` --help and a NOTE comment, clarifying the orchestrator intentionally does not create/populate sheets. (Finding 6)
+
+### Changed
+- **wire.sh clarity.** Added a header comment clarifying that wire.sh is credential-name migration ONLY (M4) and explaining why it must keep the `wire.sh` filename (the update-skills.sh wiring loop auto-invokes `wire.sh > install.sh > scripts/install.sh`; renaming would stop the M4 migration running on fleet updates). No behavior change. (Finding 7)
+
+### Version
+- skill-version.txt v2.9.17 -> v2.9.18; SKILL.md frontmatter version v2.9.17 -> v2.9.18.
+
 ## v2.9.17 - 2026-07-23 — Fix: Google Sheet image rendering — =IMAGE() formulas + row/column sizing
 
 ### Fixed

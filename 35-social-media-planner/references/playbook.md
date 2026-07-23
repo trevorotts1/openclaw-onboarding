@@ -621,6 +621,73 @@ When writing content for any platform, follow this process:
 
 ## 8. Image Production (kie.ai)
 
+### Image Production Path — which producer do I use? (read this FIRST)
+
+There are exactly THREE ways an image for this skill gets produced. Pick ONE per asset, in this priority order. Every path ends the same way: the finished file is uploaded to the client's GHL Media Library (SKILL.md Media Delivery Contract) and the returned permanent CDN `url` is what gets logged/posted — never a generator-hosted or tmpfiles.org link.
+
+| # | Path | When to use | Producer | Credential | Gate before it counts |
+|---|------|-------------|----------|------------|------------------------|
+| 1 | **kie.ai direct** (DEFAULT) | The skill's own pipeline produces the asset and no Agnes/Graphics override is in play. This is the normal weekly path. | kie.ai — Ideogram V3 DESIGN for any text/headline image (every Section-18 deliverable); Nano Banana 2/Pro only for non-text imagery (Section 8 routing table). | `KIE_API_KEY` | `pregen_prompt_gate.py check` (Section 8a) BEFORE the paid call; Section 19 post-gen QC after. |
+| 2 | **Agnes (Skill 63 image / Skill 64 video)** | The request explicitly names Agnes ("generate this with Agnes"), OR an upstream skill/operator routes the asset to Agnes, OR kie.ai is unavailable and Agnes is the configured fallback. Agnes is OPT-IN, never the silent default. | Skill 63 `agnes-image-2.1-flash` (synchronous text-to-image / image-to-image) for stills; Skill 64 `agnes-video-v2.0` (async create-task → poll) for video segments. | `AGNES_AI_API_KEY` (existing fleet credential) | Same `pregen_prompt_gate.py check` routing rule still applies (text-overlay assets must not be routed to a non-text-rendering model); then upload to GHL CDN. |
+| 3 | **Graphics department handoff** | A human/department supplies the finished asset instead of this skill generating it. The Image Generator step is REPLACED, not skipped. | Graphics department (external) — the skill only receives + QC-gates the file. | none (no generation call) | Section 19a input-quality gate: REJECT any graphics-department asset lacking a SOP-GIP-02 QC receipt scoring >= 8.5 (`pregen_prompt_gate.py check --asset-source graphics-department --qc-receipt-file <job>/qc/image_qc_report.json`). |
+
+**Decision rule:** if nobody named Agnes and no Graphics asset was handed in, you are on Path 1 (kie.ai direct). Do not invent an Agnes or Graphics path to avoid a generation step.
+
+**Working examples:**
+
+Path 1 — kie.ai direct (default, text-overlay daily image):
+```bash
+# 1) Gate the prompt BEFORE spending the paid call (Section 8a)
+python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
+  --prompt-file working/prompts/day1-primary.txt \
+  --model ideogram-v3-design \
+  --platform instagram --ratio 4:5 --pixels 1080x1350 \
+  --text-overlay "Three Moves That Doubled Our Pipeline" \
+  --brand-colors "#0B3D2E,#F5EFE0,#C9A24B" \
+  --avoid-list-file working/compiled-negatives.txt
+# 2) Generate via kie.ai (Ideogram V3 DESIGN for text-led images), save to working/images/day1.png
+# 3) Upload to GHL CDN (SKILL.md Media Delivery Contract — NO -F "hosted=true")
+curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+  -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" -H "Version: 2021-07-28" \
+  -F "file=@working/images/day1.png"
+# -> use the returned url (assets.cdn.filesafe.space/...) everywhere
+```
+
+Path 2 — Agnes image (Skill 63, only when Agnes is named/routed; synchronous):
+```bash
+curl -s -X POST "https://apihub.agnes-ai.com/v1/images/generations" \
+  -H "Authorization: Bearer $AGNES_AI_API_KEY" -H "Content-Type: application/json" \
+  -d '{
+    "model": "agnes-image-2.1-flash",
+    "prompt": "Photoreal lifestyle background, warm morning light, no text",
+    "size": "2K",
+    "aspect_ratio": "4:5",
+    "extra_body": {"response_format": "url"}
+  }'
+# response_format MUST be inside extra_body (Skill 63). Download the returned URL,
+# then re-upload to GHL CDN — never log the Agnes-hosted URL directly.
+```
+
+Path 2 — Agnes video (Skill 64, async create-task → poll):
+```bash
+TASK=$(curl -s -X POST "https://apihub.agnes-ai.com/v1/videos/generations" \
+  -H "Authorization: Bearer $AGNES_AI_API_KEY" -H "Content-Type: application/json" \
+  -d '{"model": "agnes-video-v2.0", "prompt": "...", "num_frames": 81}' \
+  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
+# num_frames must satisfy the 8n+1 rule (Skill 64). Poll GET .../videos/generations/$TASK
+# until status=succeeded, download the .mp4, then upload to GHL CDN.
+```
+
+Path 3 — Graphics department handoff (no generation; gate the supplied asset):
+```bash
+python3 ~/.openclaw/skills/35-social-media-planner/scripts/pregen_prompt_gate.py check \
+  --prompt-file working/prompts/day1-primary.txt \
+  --asset-source graphics-department \
+  --qc-receipt-file working/jobs/day1/qc/image_qc_report.json \
+  --model ideogram-v3-design --platform instagram --ratio 4:5 --pixels 1080x1350
+# exit 0 only if the SOP-GIP-02 receipt scores >= 8.5 (Section 19a); then upload to GHL CDN.
+```
+
 ### Image Generation Models
 
 **Model routing rule (P3-05 fix — read this before picking a model):** every image this skill produces carries a baked text/headline overlay (Section 18) — there is no non-text image type in this playbook. Section 45's own documented routing rule
