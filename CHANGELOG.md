@@ -1,3 +1,8 @@
+## [v21.0.5]  -  2026-07-23  -  July-23-Fixes Batch 5: U096 verification stamp
+
+Units: U096
+- U096 — Verified fix: `cc_route_update_through_canonical_path || fail_install` guard (commit 41f4689f) ensures a failed CC update fails the install instead of silently converting to success. Guard present at L1341-1342 of `32-command-center-setup/scripts/run-full-install.sh`. Verified against git history and source code. Acceptance criteria met.
+
 ## [v21.0.4]  -  2026-07-23  -  July-23-Fixes Batch 4: Pre-flight spend/cost check
 
 Units: U008
