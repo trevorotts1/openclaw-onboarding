@@ -530,3 +530,46 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 
 If the repo is not updated, it is not done. A sub-agent's claim of done is a hypothesis until
 independently verified.
+
+## n8n workflow deployment (manual — fleet action)
+
+The n8n workflow files in `config/n8n/` are **NOT auto-deployed** to the n8n host. A merge or
+commit that changes a workflow JSON file on disk does NOT update the running workflow on the
+n8n instance. The repo holds the source of truth; the running instance must be manually
+reconciled. This is a known deployment gap, not a temporary condition: the n8n management API
+key on this fleet has historically failed to authenticate for writes (`AUTHENTICATION_ERROR`),
+so automated import via the n8n API is not available.
+
+**Every n8n workflow change in this repository is a fleet action requiring manual redeployment by
+the operator.** The process for each affected workflow:
+
+1. Open the n8n instance (production URL: `https://main.blackceoautomations.com`).
+2. Navigate to **Workflows** and locate the workflow by name (match against the README in
+   `config/n8n/`).
+3. If the workflow already exists on the instance: deactivate it, export a backup, then delete
+   it from the instance.
+4. **Workflows → Import from File** → select the updated `.workflow.json` file from
+   `58-podcast-production-engine/config/n8n/`.
+5. Re-attach any named credentials (credential references in the JSON use placeholder IDs that
+   must be re-mapped to the instance's actual credentials after import).
+6. Verify the webhook paths and environment variables per the instructions in
+   `config/n8n/README.md`.
+7. Activate the workflow.
+
+**Workflows subject to this manual deployment process:**
+
+| Workflow file | Live workflow name | Purpose |
+|---|---|---|
+| `podbean-broker.workflow.json` | Podbean Broker | Mints Channel-scoped Podbean access tokens for client boxes |
+| `podbean-publish.workflow.json` | create podcast episode from openclaw | Sanitized read-only reference export of the live full-publish workflow (not imported; audit reference only) |
+
+Detailed per-workflow import instructions, credential setup, and contract documentation live in
+`58-podcast-production-engine/config/n8n/README.md`. That README is the authoritative source for
+credential mapping and environment variable requirements; this section documents the existence
+and scope of the deployment gap.
+
+**A build agent that modifies any file under `config/n8n/` MUST note in its commit message which
+workflows the operator must re-import.** A merge that changes a workflow JSON without a
+corresponding manual re-import leaves the running instance out of sync with the repository —
+the workflow on disk is the source of truth, and the fleet is correct only when the instance
+matches.
