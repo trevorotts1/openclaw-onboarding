@@ -11,6 +11,13 @@
 
 set -u  # NOT -e — we want to keep running after failures, then report all at the end
 
+# U073 (STAGE 1): shared assert/warn/verdict helpers. The verdict at the end of
+# this script routes through qc_verdict (behavior-preserving — QC_FAIL_ON_WARN
+# is NOT set here, so warnings stay non-fatal until STAGE 2 promotes them).
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=../lib-qc-shared.sh
+. "$ROOT/lib-qc-shared.sh"
+
 PASS=0
 FAIL=0
 WARN=0
@@ -1060,7 +1067,12 @@ if [ "$WARN" -gt 0 ]; then
   echo
 fi
 
-if [ "$FAIL" -eq 0 ]; then
+# U073 (STAGE 1): the verdict consults BOTH counters via the shared helper.
+# QC_FAIL_ON_WARN is deliberately NOT set here, so a run with warnings but
+# zero failures still exits 0 — exactly the pre-U073 behavior. STAGE 2 will
+# opt individual gates into warning-failure one check at a time.
+QC_PASS=$PASS QC_FAIL=$FAIL QC_WARN=$WARN
+if qc_verdict "system-integrity"; then
   green "ALL CHECKS PASSED ✓"
   exit 0
 else
