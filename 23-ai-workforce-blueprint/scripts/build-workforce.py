@@ -3855,31 +3855,26 @@ def _verify_departments_against_dashboard_config() -> None:
         except Exception:
             return  # Best-effort only - never block on a parsing issue
 
-# Model assignments per department type
-# Creative/content departments use Kimi (fast, good for writing)
-# Technical departments use GPT 5.4 (strong at code and systems)
-# Legal/operations use MiniMax M3 via the client's own Ollama Cloud (careful,
-# precise reasoning). Anthropic is NEVER pinned for a client agent (operator-only,
-# cost-prohibitive); clients run on models they actually have, Ollama Cloud first.
-DEFAULT_MODEL_ASSIGNMENTS = {
-    "creative": "ollama/kimi-k2.6:cloud",
-    "marketing": "ollama/kimi-k2.6:cloud",
-    "graphics": "ollama/kimi-k2.6:cloud",
-    "video": "ollama/kimi-k2.6:cloud",
-    "audio": "ollama/kimi-k2.6:cloud",
-    "research": "ollama/kimi-k2.6:cloud",
-    "comms": "ollama/kimi-k2.6:cloud",
-    "ceo": "ollama/kimi-k2.6:cloud",
-    "sales": "openai-codex/gpt-5.4",
-    "it": "openai-codex/gpt-5.4",
-    "webdev": "openai-codex/gpt-5.4",
-    "appdev": "openai-codex/gpt-5.4",
-    "operations": "ollama/minimax-m3:cloud",
-    "legal": "ollama/minimax-m3:cloud",
-    "support": "ollama/kimi-k2.6:cloud",
-    "billing": "ollama/kimi-k2.6:cloud",
-    "hr": "ollama/kimi-k2.6:cloud",
-}
+# -- Department model identity (U135 -- July 23 canonical chain) --
+# July 23 fleet config update: department agent identities MUST go through the
+# canonical model resolution chain (resolve_dept_agent_model() -> capability-class
+# layer -> select_model.py tier cascade) rather than hardcoding a model name.
+# The old DEFAULT_MODEL_ASSIGNMENTS dict (which pinned ollama/minimax-m3:cloud
+# for operations/COO-legal, openai-codex/gpt-5.4 for sales/webdev/appdev, and
+# ollama/kimi-k2.6:cloud for others) was removed in U135 because those model
+# ids do NOT resolve on the July 23 provider configuration.
+#
+# Resolution priority for every department agent (see add_agent_to_config):
+#   0. Layer-0 explicit pin on an existing openclaw.json entry (never clobbered)
+#   1. Capability-class cascade: dept-model-suitability.json tier + the box's
+#      AVAILABLE models via resolve_role_model()
+#   2. Legacy dept-default cascade: _resolve_dept_default_model() -> select_model.py
+#
+# Single source of truth for tier chains: shared-utils/select_model.py.
+# The operations (COO) department resolves to the mid tier via
+# dept-model-suitability.json, which maps to ollama/minimax-m*:cloud primary
+# with openrouter/xiaomi/mimo-v*-pro as fallback -- version-agnostic wildcards
+# that auto-resolve on any July 23 box.
 
 
 # ============================================================
@@ -5928,9 +5923,10 @@ def determine_specialists(dept_id, dept_info, interview_answers):
                 'type': role_type,
                 # Route specialists through the SAME model selector the department
                 # director uses (resolves to kimi-k2.6+/deepseek), floored at the
-                # fleet-standard default. Never the deprecated moonshot/kimi-k2.5 -
-                # that hardcode caused fleet-wide "Unknown model" on routed dept-agent
-                # calls (directors were already fixed; specialists were missed).
+                # July 23 fleet-standard default via the canonical chain.
+                # Never a hardcoded model id -- that caused fleet-wide "Unknown model"
+                # on routed dept-agent calls (directors were already fixed;
+                # specialists were missed).
                 'model': _resolve_director_model(dept_id) or 'ollama/kimi-k2.6:cloud',
                 'reason': f'From suggested roles for {dept_id}, type={role_type} based on activity signals'
             })
@@ -6870,11 +6866,11 @@ def add_agent_to_config(config, dept_id, dept_info):
     if agent_id in existing_ids:
         return False  # Already exists, skip
 
-    # v9.6.1: Use the canonical model selector chain instead of the stale
-    # DEFAULT_MODEL_ASSIGNMENTS dict (which still references moonshot/kimi-k2.5).
-    # The selector picks Ollama Kimi 2.6+ first, with fallbacks.
+    # U135 (July 23): Use the canonical model resolution chain instead of any
+    # hardcoded model name. resolve_dept_agent_model() drives the capability-class
+    # cascade, which selects from the box's AVAILABLE models (never a fixed id).
     # If select_model.py is unreachable at install time, fall back to a
-    # safe default that Anthropic-strips and matches v9.5.x policy.
+    # safe default that Anthropic-strips and matches the July 23 fleet config.
     #
     # N31 FIX (v11.1.0): model MUST be an object {primary, fallbacks:[...]},
     # NEVER a bare string. Bare strings bypass all fallback chains - if Ollama
