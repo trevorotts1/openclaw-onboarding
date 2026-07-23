@@ -1,3 +1,8 @@
+## [v21.0.4]  -  2026-07-23  -  July-23-Fixes Batch 4: Pre-flight spend/cost check
+
+Units: U008
+- U008 — Pre-flight org budget guard before paid-API steps (embedding, QC gates, floor-fill)
+
 ## [v21.0.3]  -  2026-07-23  -  July-23-Fixes Batch 3: Missing-departments edge case warning
 
 Units: U007
