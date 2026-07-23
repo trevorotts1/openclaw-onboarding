@@ -780,13 +780,31 @@ def _resolve_ledger_file(job_id: str) -> str | None:
 
 
 def _atomic_write(path: str, text: str) -> None:
+    """Write text to path atomically: temp file + fsync + rename.
+
+    U043: fsync the temp file before rename so the data hits stable storage
+    before the directory entry is updated. Also fsync the directory after
+    rename so the rename itself is durable. A crash at any point leaves
+    either the old file or the new file — never a partial write."""
     d = os.path.dirname(path)
     if d and not os.path.isdir(d):
         os.makedirs(d, mode=0o700, exist_ok=True)
     tmp = path + ".tmp." + secrets.token_hex(6)
     with open(tmp, "w", encoding="utf-8") as fh:
         fh.write(text)
+        fh.flush()
+        os.fsync(fh.fileno())
     os.replace(tmp, path)
+    # fsync the directory so the rename is durable.
+    if d:
+        try:
+            dir_fd = os.open(d, os.O_RDONLY)
+            try:
+                os.fsync(dir_fd)
+            finally:
+                os.close(dir_fd)
+        except OSError:
+            pass
     try:
         os.chmod(path, 0o600)
     except OSError:
@@ -928,11 +946,20 @@ def cmd_create(conn, args):
     ).fetchone()
     if existing:
         job_id = existing["job_id"]
-        _append_event(conn, job_id, None, None, "duplicate submission (idempotent no-op)")
-        _touch(conn, job_id)
-        if args.job_key:
-            _link_ledger(job_id, args.job_key, resolve_ledger_dir(args.ledger_dir))
-            _sync_ledger(job_id, _load_job(conn, job_id)["status"], _load_job(conn, job_id)["queue_state"])
+        # U043: wrap the idempotent no-op in a transaction so the event + touch
+        # + ledger re-sync are atomic (a crash mid-way cannot leave a partial
+        # duplicate-handling record).
+        conn.execute("BEGIN IMMEDIATE")
+        try:
+            _append_event(conn, job_id, None, None, "duplicate submission (idempotent no-op)")
+            _touch(conn, job_id)
+            if args.job_key:
+                _link_ledger(job_id, args.job_key, resolve_ledger_dir(args.ledger_dir))
+                _sync_ledger(job_id, _load_job(conn, job_id)["status"], _load_job(conn, job_id)["queue_state"])
+            conn.execute("COMMIT")
+        except Exception:
+            conn.execute("ROLLBACK")
+            raise
         _emit(args, {"job_id": job_id, "status": "duplicate", "fingerprint": fingerprint})
         return
 
@@ -959,6 +986,21 @@ def cmd_create(conn, args):
             (job_id, json.dumps(payload, ensure_ascii=False), ts),
         )
         _append_event(conn, job_id, None, "received", "job created from intake payload")
+
+        # U043: link the ledger and sync state INSIDE the transaction, BEFORE
+        # COMMIT. A crash between the SQLite write and the ledger write can no
+        # longer leave the roster with a job that has no ledger evidence. If the
+        # ledger sync is broken, we ROLLBACK the job creation entirely.
+        if args.job_key:
+            _link_ledger(job_id, args.job_key, resolve_ledger_dir(args.ledger_dir))
+        ledger_sync = _sync_ledger(job_id, "received", "none")
+        if ledger_sync == "broken":
+            raise LedgerLinkageError(
+                f"job creation for {job_id} was rolled back because its intake-ledger "
+                f"record could not be resolved or written. Repair the job index / "
+                f"ledger, then re-run."
+            )
+
         conn.execute("COMMIT")
     except sqlite3.IntegrityError:
         conn.execute("ROLLBACK")
@@ -978,9 +1020,6 @@ def cmd_create(conn, args):
         conn.execute("ROLLBACK")
         raise
 
-    if args.job_key:
-        _link_ledger(job_id, args.job_key, resolve_ledger_dir(args.ledger_dir))
-    _sync_ledger(job_id, "received", "none")
     _emit(args, {"job_id": job_id, "status": "received", "fingerprint": fingerprint})
 
 
@@ -1044,29 +1083,30 @@ def cmd_advance(conn, args):
 
         if to_status == "complete":
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
+
+        # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT. A crash
+        # between the SQLite write and the ledger write can no longer leave the
+        # roster advanced without ledger evidence: if the ledger sync is broken,
+        # we ROLLBACK the SQLite transition and raise. If a crash occurs after
+        # the ledger write but before COMMIT, SQLite WAL recovery rolls back the
+        # uncommitted transition — the ledger is ahead (recoverable on the next
+        # advance), never behind.
+        ledger_sync = _sync_ledger(args.job_id, to_status, row["queue_state"])
+        if ledger_sync == "broken":
+            raise LedgerLinkageError(
+                f"the {frm} -> {to_status} transition for {args.job_id} was rolled back "
+                f"because its intake-ledger record could not be resolved or written. "
+                f"The atomic-claim record must be in lockstep with the state machine; "
+                f"repair the job index / ledger, then re-run."
+            )
+
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
 
-    # T0-22: the ledger is the atomic-claim mechanism. A broken linkage means the
-    # claim record is now out of step with the state machine, so the advance is
-    # reported with what actually happened and the command exits non-zero. The
-    # SQLite transition itself is already committed and is reported honestly —
-    # this does not claim the transition did not happen, it refuses to call the
-    # advance complete while its claim record is unreconciled.
-    ledger_sync = _sync_ledger(
-        args.job_id, to_status, _load_job(conn, args.job_id)["queue_state"]
-    )
     _emit(args, {"job_id": args.job_id, "from": frm, "to": to_status,
                  "ledger_sync": ledger_sync})
-    if ledger_sync == "broken":
-        raise LedgerLinkageError(
-            f"the {frm} -> {to_status} transition for {args.job_id} was committed to "
-            f"SQLite, but its intake-ledger record could not be resolved or written. "
-            f"The atomic-claim record is out of step with the state machine; this "
-            f"advance is NOT complete. Repair the job index / ledger, then re-run."
-        )
 
 
 def cmd_output(conn, args):
@@ -1129,11 +1169,18 @@ def cmd_hold(conn, args):
         # Operator-only note; service name never reaches the client surface.
         _append_event(conn, args.job_id, frm, "queued_credit_out",
                       f"held on credit-out (service={args.service}); resume_stage={frm}")
+        # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
+        ledger_sync = _sync_ledger(args.job_id, "queued_credit_out", "held")
+        if ledger_sync == "broken":
+            raise LedgerLinkageError(
+                f"the hold for {args.job_id} was rolled back because its intake-ledger "
+                f"record could not be resolved or written. Repair the job index / "
+                f"ledger, then re-run."
+            )
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    _sync_ledger(args.job_id, "queued_credit_out", "held")
     _emit(args, {"job_id": args.job_id, "held": True, "resume_stage": frm,
                  "queue_deadline": iso(deadline)})
 
@@ -1155,11 +1202,18 @@ def cmd_resume(conn, args):
         )
         _append_event(conn, args.job_id, "queued_credit_out", target,
                       "credit restored; resumed from queue")
+        # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
+        ledger_sync = _sync_ledger(args.job_id, target, "resumed")
+        if ledger_sync == "broken":
+            raise LedgerLinkageError(
+                f"the resume for {args.job_id} was rolled back because its intake-ledger "
+                f"record could not be resolved or written. Repair the job index / "
+                f"ledger, then re-run."
+            )
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    _sync_ledger(args.job_id, target, "resumed")
     _emit(args, {"job_id": args.job_id, "resumed_to": target})
 
 
@@ -1179,11 +1233,18 @@ def cmd_fail(conn, args):
         _append_event(conn, args.job_id, frm, "failed", f"failed at step: {args.step}")
         # Payload deleted on failure after the engine's founder notification (Section 10.2).
         conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (args.job_id,))
+        # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
+        ledger_sync = _sync_ledger(args.job_id, "failed", row["queue_state"])
+        if ledger_sync == "broken":
+            raise LedgerLinkageError(
+                f"the fail for {args.job_id} was rolled back because its intake-ledger "
+                f"record could not be resolved or written. Repair the job index / "
+                f"ledger, then re-run."
+            )
         conn.execute("COMMIT")
     except Exception:
         conn.execute("ROLLBACK")
         raise
-    _sync_ledger(args.job_id, "failed", row["queue_state"])
     _emit(args, {"job_id": args.job_id, "status": "failed", "failed_step": args.step})
 
 
@@ -1211,11 +1272,18 @@ def cmd_sweep_aged_out(conn, args):
                           f"aged out after {QUEUE_HOLD_DAYS}-day credit-out maximum")
             # Purge the held payload immediately at age-out (Section 10.3).
             conn.execute("DELETE FROM podcast_job_payloads WHERE job_id = ?", (job_id,))
+            # U043: sync the ledger INSIDE the transaction, BEFORE COMMIT.
+            ledger_sync = _sync_ledger(job_id, "failed", "aged_out")
+            if ledger_sync == "broken":
+                conn.execute("ROLLBACK")
+                sys.stderr.write(
+                    f"warning: age-out for {job_id} rolled back — ledger linkage broken\n"
+                )
+                continue  # skip this job; it stays held for the next sweep
             conn.execute("COMMIT")
         except Exception:
             conn.execute("ROLLBACK")
             raise
-        _sync_ledger(job_id, "failed", "aged_out")
         dropped.append(job_id)
     # Founder notification is engine-side; emit a machine line the cron can act on.
     _emit(args, {"aged_out_count": len(dropped), "aged_out_jobs": dropped})
