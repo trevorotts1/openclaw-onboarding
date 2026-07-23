@@ -4245,21 +4245,32 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   # collide, but the inconsistency was a latent bug.
   #
   # Resolution:
-  #   - U001 retired the system crontab via mutex, so cron(8) no longer
-  #     fires any Sunday update on any box.
+  #   - U001's retire_legacy_sunday_crontab removes the system crontab
+  #     entry via mutex, so cron(8) no longer fires any Sunday update on
+  #     any box.
   #   - U003 confirms that the OpenClaw cron below is the ONE surviving
   #     mechanism, with an EXPLICIT America/New_York timezone.
   #
   #   Single mechanism -> no collision, deterministic timezone, and the
-  #   self-heal below (heal_weekly_cron_updater) repoints any stale
-  #   on-disk cron scripts to the canonical root updater URL, so every
-  #   box converges to this same path.
+  #   self-heal heal_weekly_cron_updater (defined above at line 1468)
+  #   repoints any stale on-disk cron scripts to the canonical root
+  #   updater URL, so every box converges to this same path.
   #
   #   If the crontab is ever re-added (new box provision, operator manual
-  #   edit), the verification gate checks for duplicates:
-  #       crontab -l | grep '0 3 \* \* 0'    # expect: no match (retired)
-  #       openclaw cron list | grep weekly-onboarding-update  # expect: one
+  #   edit), the U001-U003 duplicate-detection gate below calls
+  #   retire_legacy_sunday_crontab to remove it again and WARNs the owner.
   #
+  # ----------------------------------------------------------
+  # U001-U003 DUPLICATE-DETECTION GATE: even though retire_legacy_sunday_crontab
+  # runs at main() entry (above), someone could re-add a legacy Sunday crontab
+  # entry after the lock is taken but before this cron registration. Re-detect
+  # and re-retire to guarantee no collision at 03:00 ET on Sunday.
+  # ----------------------------------------------------------
+  if detect_legacy_sunday_crontab; then
+    echo "  [crontab] WARNING: legacy Sunday '0 3 * * 0' crontab entry detected during update path — re-retiring"
+    retire_legacy_sunday_crontab
+  fi
+
   # Ensure the Sunday weekly update-check cron exists (idempotent)
   # Existing clients on pre-v9.2.0 won't have it; running the updater
   # backfills it.
