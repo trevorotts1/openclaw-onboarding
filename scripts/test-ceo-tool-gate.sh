@@ -37,7 +37,12 @@ _bad()  { printf '[test-ceo-tool-gate] FAIL  %s\n' "$*" >&2; FAILS=$((FAILS+1));
 EXPECT_DENY="apply_patch browser canvas edit ghl-community-mcp__* ghl-mcp__* image process write"
 # mc-route__route_task = the SHIPPED routing tool (scripts/mc-route.sh impl).
 # Its presence is what lets verify-routing.sh G7 clear the INTERIM-exec warning.
-EXPECT_ALLOW="discord exec mc-route__route_task message read sessions_history sessions_list sessions_send slack telegram web_fetch web_search"
+# FABLE-5: the allow list ALSO carries the plugin/operational tools the CEO needs
+# to function (memory_search/memory_get for active-memory, cron/gateway/nodes) —
+# an explicit per-agent tools.allow is a HARD allowlist, so omitting them stripped
+# the plugin's tool calls ("No callable tools remain ..."). Keep sorted to match
+# the lib's sorted CEO_GATE_ALLOW_TOOLS.
+EXPECT_ALLOW="cron discord exec gateway mc-route__route_task memory_get memory_search message nodes read sessions_history sessions_list sessions_send slack telegram web_fetch web_search"
 EXPECT_MCP="ghl-community-mcp ghl-mcp"
 
 # ── 1. lib-ceo-tool-gate.sh is the reference; extract its canonical sets ───────

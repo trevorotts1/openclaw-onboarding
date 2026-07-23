@@ -315,6 +315,15 @@ _CEO_TOOL_ALLOW = [
     # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "mc-route__route_task",
     "exec",
+    # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow is
+    # a HARD allowlist: any tool not named here is stripped from the CEO, including
+    # the tools its plugins call. active-memory needs memory_search + memory_get;
+    # without them the plugin's tool calls resolve to nothing → "No callable tools
+    # remain after resolving explicit tool allowlist." Admit the plugin + operational
+    # tools; production tools stay DENIED and routing stays behavioral DOCTRINE.
+    # Additive — G7 still passes. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+    "memory_search", "memory_get",
+    "cron", "gateway", "nodes",
 ]
 _CEO_MCP_DENY = {
     "ghl-community-mcp": {"deny": ["*"]},

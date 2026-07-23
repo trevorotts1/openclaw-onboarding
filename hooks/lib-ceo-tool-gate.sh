@@ -68,12 +68,31 @@ CEO_GATE_DENY_TOOLS=(
 # restrict-only and cannot be un-denied by the hook. exec is retired outright ONLY
 # once the reflex migrates route-presentation.sh onto mc-route__route_task
 # (AGENTS.md + apply-*.sh — see docs/MC-ROUTE.md "Follow-ups for other owners").
+#
+# FABLE-5 FIX — PLUGIN / OPERATIONAL TOOLS (the over-restrictive-allowlist bug):
+# The original list carried ONLY routing/conversation tools. Because OpenClaw
+# resolves an explicit per-agent `tools.allow` as a HARD allowlist, ANY tool not
+# named here was stripped from the CEO — including the tools its PLUGINS call.
+# active-memory calls `memory_search` + `memory_get`; with neither in the allow
+# list the plugin's tool calls resolved to nothing and the gateway errored
+# "No callable tools remain after resolving explicit tool allowlist." The fix is
+# to admit the plugin + operational tools the CEO legitimately needs to FUNCTION
+# (memory, cron scheduling, gateway/node introspection) while the PRODUCTION tools
+# stay DENIED below — routing-to-departments remains behavioral DOCTRINE (AGENTS.md
+# / SOUL.md), not a tool-removal. This is additive: the deny list is untouched, so
+# verify-routing.sh G7 still PASSES (exec + mc-route__route_task both present).
 CEO_GATE_ALLOW_TOOLS=(
   "read" "web_fetch" "web_search"
   "message" "telegram" "slack" "discord"
   "sessions_send" "sessions_list" "sessions_history"
   "mc-route__route_task"
   "exec"
+  # Plugin tools — active-memory (and the memory layer generally) needs these to
+  # recall/persist. Without them the plugin's tool calls resolve to nothing.
+  "memory_search" "memory_get"
+  # Operational tools the orchestrator needs to run itself (schedule heartbeats,
+  # introspect the gateway/nodes) — NOT production content tools.
+  "cron" "gateway" "nodes"
 )
 
 # GHL MCP servers to deny by provider in the GATED posture (both live ids).
