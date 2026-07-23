@@ -47,6 +47,10 @@
 # Idempotent: re-running for the same dept OVERWRITES that dept's decision object.
 set -euo pipefail
 
+# Rate-limit gate (U056)
+RECD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$RECD_SCRIPT_DIR/lib-interview-rate-limit.sh"
+
 # ── Parse flags ──────────────────────────────────────────────────────────────
 DEPT=""
 DECISION=""
@@ -108,6 +112,12 @@ if [ ! -f "$STATE" ]; then
   echo "ERROR: state file does not exist at $STATE" >&2
   exit 1
 fi
+
+# Rate-limit check
+RL_SESSION="${SESSION:-}"
+if [ -z "$RL_SESSION" ]; then RL_SESSION="${BY:-}"; fi
+if [ -z "$RL_SESSION" ]; then RL_SESSION="$(interview_session_id)"; fi
+check_interview_rate_limit "dept-decision:${RL_SESSION}" || exit 1
 
 # ── Validate --dept against the canonical id list + recorded customs ──────────
 # Issue #2: a decline keyed by a display name ("Video") or an underscore variant
