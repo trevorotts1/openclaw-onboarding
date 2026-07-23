@@ -79,14 +79,21 @@ fi
 echo "[sop-library] client=$CLIENT  tag=$TAG"
 
 # ----------------------------------------------------------------------------
-# ALREADY-POPULATED SKIP GATE (v20.1.0). A box already at/above the manifest's
-# canonical population is left COMPLETELY untouched: no download, no backup, no
-# write, no network I/O at all. This is what makes the step safe to run on
-# EVERY update of EVERY box:
+# ALREADY-POPULATED SKIP GATE (v20.1.0 + U079). A box already at/above the
+# manifest's canonical population is left COMPLETELY untouched: no download, no
+# backup, no write, no network I/O at all. This is what makes the step safe to
+# run on EVERY update of EVERY box:
 #   - a healthy box (library already ingested) is never clobbered or re-ingested,
 #     and its client-authored SOPs are never at risk;
 #   - a re-run is free and provably idempotent;
 #   - only an under-populated box does any work.
+#
+# U079: Verify canonical MEMBERSHIP, not just total population. A database
+# holding at least the threshold number of rows from ANY source (e.g. client-
+# authored SOPs, starter seeds, or a different library version) must NOT satisfy
+# the skip check. Sample a fixed set of canonical identifiers from the manifest
+# and require their presence before taking the skip branch.
+#
 # SOP_LIB_FORCE=1 overrides (operator escape hatch for a genuine re-ingest).
 # ----------------------------------------------------------------------------
 CURRENT_COUNT="$(sqlite3 "file:${DB}?mode=ro" \
@@ -97,8 +104,57 @@ else
   CURRENT_COUNT=0
 fi
 echo "[sop-library] db=$DB  current sops rows=$CURRENT_COUNT  canonical=$CANONICAL_SOP_COUNT"
+
+# U079: Read canonical sample slugs from manifest as VALID JSON (fallback to []).
+# NOTE: _mf prints a Python repr for non-scalars (single-quoted), which is not
+# valid JSON — so read the list with a dedicated json.dumps to keep it parseable.
+CANONICAL_SAMPLE_SLUGS="[]"
+if [ -f "$SOP_LIB_MANIFEST" ] && command -v python3 >/dev/null 2>&1; then
+  CANONICAL_SAMPLE_SLUGS="$(python3 -c 'import json,sys
+try:
+    v=json.load(open(sys.argv[1])).get("canonical_sample_slugs") or []
+    print(json.dumps(v))
+except Exception:
+    print("[]")' "$SOP_LIB_MANIFEST" 2>/dev/null || echo "[]")"
+fi
+
+# U079: Canonical membership check — verify sample slugs are present
+CANONICAL_MEMBERSHIP_OK="true"
 if [ "${SOP_LIB_FORCE:-0}" != "1" ] && [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
-  echo "[sop-library] SKIP — this box already holds $CURRENT_COUNT sops rows (>= canonical $CANONICAL_SOP_COUNT)."
+  # Only check membership if we're considering the skip branch
+  if [ "$CANONICAL_SAMPLE_SLUGS" != "[]" ] && command -v python3 >/dev/null 2>&1; then
+    # Check if sample slugs exist in the database
+    MISSING_COUNT="$(python3 -c '
+import json, sqlite3, sys
+try:
+    slugs = json.loads(sys.argv[1])
+    if not slugs:
+        print(0)
+        sys.exit(0)
+    db = sqlite3.connect(f"file:{sys.argv[2]}?mode=ro", uri=True)
+    cursor = db.cursor()
+    missing = 0
+    for slug in slugs:
+        # Check both slug column and id column (sop_<slug>)
+        cursor.execute("SELECT 1 FROM sops WHERE slug = ? OR id = ? LIMIT 1", (slug, f"sop_{slug}"))
+        if cursor.fetchone() is None:
+            missing += 1
+    print(missing)
+except Exception as e:
+    print(len(json.loads(sys.argv[1])) if sys.argv[1] != "[]" else 0)
+' "$CANONICAL_SAMPLE_SLUGS" "$DB" 2>/dev/null || echo 0)"
+
+    if [ "${MISSING_COUNT:-0}" -gt 0 ]; then
+      CANONICAL_MEMBERSHIP_OK="false"
+      echo "[sop-library] WARNING: $MISSING_COUNT canonical sample slug(s) missing from database."
+      echo "[sop-library] Row count ($CURRENT_COUNT) meets threshold, but canonical membership check FAILED."
+      echo "[sop-library] This database may hold rows from a different source. Proceeding with download."
+    fi
+  fi
+fi
+
+if [ "${SOP_LIB_FORCE:-0}" != "1" ] && [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null && [ "$CANONICAL_MEMBERSHIP_OK" = "true" ]; then
+  echo "[sop-library] SKIP — this box already holds $CURRENT_COUNT sops rows (>= canonical $CANONICAL_SOP_COUNT) and canonical membership verified."
   echo "[sop-library] Nothing downloaded, nothing written, DB untouched. (SOP_LIB_FORCE=1 to re-ingest anyway.)"
   echo "[sop-library] downloaded 0 SOP records (skipped — already populated)"
   exit 0

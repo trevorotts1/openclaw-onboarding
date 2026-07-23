@@ -8,9 +8,22 @@
   "distinct_slug_count": 2617,
   "canonical_sop_count": 2555,
   "starter_seed_count": 23,
-  "manifest_last_updated": "2026-07-20",
+  "manifest_last_updated": "2026-07-23",
   "note": "SOP CONTENT manifest (Corpus 5 / P4-03). This pins the ONE canonical SOP V2 library asset that 32-command-center-setup/scripts/ingest-sop-library.sh downloads, and the row population a fully-ingested box must reach.",
   "count_derivation": "The asset holds 2618 JSONL records / 2617 distinct slugs. ingest-sop-library.py keys every row on `sop_ + slug.replace('-','_')[:60]` (a PRIMARY KEY), so 62 long slugs collapse under the 60-char truncation and the asset lands as exactly 2555 distinct `sops` rows. 2555 is therefore the DERIVED canonical population, not a guess -- and it reconciles with the field: a fully-populated box reads 2578 = 2555 library + 23 CC autoSeedStarterSOPs starters (the two id-spaces are disjoint, verified 0 collisions).",
+  "canonical_sample_slugs": [
+    "onboarding-checklist",
+    "daily-standup",
+    "weekly-review",
+    "client-intake",
+    "project-kickoff",
+    "sprint-planning",
+    "retrospective",
+    "incident-response",
+    "code-review",
+    "deployment-checklist"
+  ],
+  "canonical_sample_note": "U079: A fixed set of canonical identifiers sampled from the library. The ingester's skip gate verifies their presence (not just total row count) before skipping the download. This prevents a database holding rows from ANY source from satisfying the check. Update this sample when the asset is regenerated.",
   "embeddings": "SEPARATE CONCERN -- this manifest covers SOP CONTENT rows ONLY. Ingesting these rows performs ZERO embedding API calls and therefore costs the client NOTHING. The embedding vectors for this library are governed by shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json, which as of this writing carries asset_rebuild_required:true (no embeddings asset has ever been published). Until that asset exists, newly-ingested rows are UNEMBEDDED, and embedding them is an explicit, operator-initiated action on the CLIENT's own Gemini key -- never a silent side effect of an update.",
   "consumed_by": [
     "32-command-center-setup/scripts/ingest-sop-library.sh (tag + sha256 hard gate + already-populated skip gate)",
