@@ -58,6 +58,13 @@ ONBOARDING_STATE_FILE="${ONBOARDING_STATE_FILE:-$OC_CONFIG/.onboarding-state.jso
 ONBOARDING_INTERVIEW_SKILLS="${ONBOARDING_INTERVIEW_SKILLS:-22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner}"
 
 # ------------------------------------------------------------
+# WORKFORCE BUILD STATE SCHEMA VERSION (U049)
+#   Version 1 = legacy (no schemaVersion field).
+#   Version 2 = current.
+# ------------------------------------------------------------
+WORKFORCE_BUILD_STATE_SCHEMA_VERSION=2
+
+# ------------------------------------------------------------
 # oc_state_now — UTC ISO8601 timestamp
 # ------------------------------------------------------------
 oc_state_now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
@@ -1117,4 +1124,164 @@ for s in skills:
     parts.append(f"{s}:{sk.get(s,{}).get('status','pending')}")
 print(" ".join(parts))
 PYEOF
+}
+
+
+# ============================================================
+# U049 - WORKFORCE BUILD-STATE SCHEMA VERSIONING + MIGRATION
+# ============================================================
+
+oc_wf_state_read() {
+  local wf_file="${1:-}"
+  [ ! -f "$wf_file" ] && return 0
+  local _rc=0
+  WF_FILE="$wf_file" \
+  CURRENT_VERSION="$WORKFORCE_BUILD_STATE_SCHEMA_VERSION" \
+  python3 - <<'PYEOF' || _rc=$?
+import json, os, sys, time
+wf = os.environ["WF_FILE"]
+current = int(os.environ["CURRENT_VERSION"])
+def fail(msg):
+    sys.stderr.write("oc_wf_state_read: %s\n" % msg)
+    raise SystemExit(1)
+def _migrate(state, path, cur_ver):
+    changed = False
+    ic = state.get("interviewComplete")
+    if not isinstance(ic, bool):
+        if ic is None or ic == "" or ic == "false" or ic == "no" or ic == "0" or ic is False:
+            state["interviewComplete"] = False
+        else: state["interviewComplete"] = True
+        changed = True
+    for k, d in [("ownerName",""),("ownerChat",""),("companyName",""),("companySlug",""),("buildCompletedAt",None),("closeoutStatus","pending"),("interviewProgress",{})]:
+        if k not in state: state[k]=d; changed=True
+    if not state.get("companySlug") and state.get("clientSlug"): state["companySlug"]=state["clientSlug"]; changed=True
+    state["schemaVersion"]=cur_ver; changed=True
+    if changed:
+        td=os.path.dirname(os.path.abspath(path)) or "."
+        import tempfile as _tf
+        fd,tp=_tf.mkstemp(dir=td,prefix=".workforce-build-state.",suffix=".tmp")
+        try:
+            with os.fdopen(fd,"w",encoding="utf-8") as fh: json.dump(state,fh,indent=2); fh.flush(); os.fsync(fh.fileno())
+            os.replace(tp,path)
+            sys.stderr.write("oc_wf_state_migrate: migrated v1 -> v%d and wrote %s (%d keys)\n" % (cur_ver,path,len(state)))
+        except OSError as exc: fail("could not write: %s" % exc)
+        finally:
+            if os.path.exists(tp):
+                try: os.unlink(tp)
+                except OSError: pass
+    return state
+try:
+    with open(wf,encoding="utf-8") as fh: state=json.load(fh)
+except OSError as exc: fail("cannot read: %s" % exc)
+except ValueError as exc:
+    ts=str(int(time.time())); cp="%s.corrupt-%s"%(wf,ts)
+    try: os.rename(wf,cp)
+    except OSError: pass
+    fail("CORRUPT JSON: quarantined to %s" % cp)
+if not isinstance(state,dict): fail("not a JSON object")
+sv=state.get("schemaVersion")
+if sv is None: _migrate(state,wf,current)
+elif isinstance(sv,int) and sv>current: fail("schemaVersion=%d > current=%d" % (sv,current))
+json.dump(state,sys.stdout)
+raise SystemExit(0)
+PYEOF
+  [ "$_rc" -ne 0 ] && return 1
+  return 0
+}
+
+oc_wf_state_migrate() {
+  local wf_file="${1:-}"
+  [ ! -f "$wf_file" ] && return 0
+  local _rc=0
+  WF_FILE="$wf_file" \
+  CURRENT_VERSION="$WORKFORCE_BUILD_STATE_SCHEMA_VERSION" \
+  python3 - <<'PYEOF' || _rc=$?
+import json, os, sys, time
+wf=os.environ["WF_FILE"]; current=int(os.environ["CURRENT_VERSION"])
+def fail(msg):
+    sys.stderr.write("oc_wf_state_migrate: %s\n" % msg)
+    raise SystemExit(1)
+def _migrate(state,path,cur_ver):
+    changed=False
+    ic=state.get("interviewComplete")
+    if not isinstance(ic,bool):
+        if ic is None or ic=="" or ic=="false" or ic=="no" or ic=="0" or ic is False: state["interviewComplete"]=False
+        else: state["interviewComplete"]=True
+        changed=True
+    for k,d in [("ownerName",""),("ownerChat",""),("companyName",""),("companySlug",""),("buildCompletedAt",None),("closeoutStatus","pending"),("interviewProgress",{})]:
+        if k not in state: state[k]=d; changed=True
+    if not state.get("companySlug") and state.get("clientSlug"): state["companySlug"]=state["clientSlug"]; changed=True
+    state["schemaVersion"]=cur_ver; changed=True
+    if changed:
+        td=os.path.dirname(os.path.abspath(path)) or "."
+        import tempfile as _tf
+        fd,tp=_tf.mkstemp(dir=td,prefix=".workforce-build-state.",suffix=".tmp")
+        try:
+            with os.fdopen(fd,"w",encoding="utf-8") as fh: json.dump(state,fh,indent=2); fh.flush(); os.fsync(fh.fileno())
+            os.replace(tp,path)
+            sys.stderr.write("oc_wf_state_migrate: migrated v1 -> v%d and wrote %s (%d keys)\n" % (cur_ver,path,len(state)))
+        except OSError as exc: fail("could not write: %s" % exc)
+        finally:
+            if os.path.exists(tp):
+                try: os.unlink(tp)
+                except OSError: pass
+    return state
+try:
+    with open(wf,encoding="utf-8") as fh: state=json.load(fh)
+except OSError as exc: fail("cannot read: %s" % exc)
+except ValueError as exc:
+    ts=str(int(time.time())); cp="%s.corrupt-%s"%(wf,ts)
+    try: os.rename(wf,cp)
+    except OSError: pass
+    fail("CORRUPT JSON: quarantined to %s" % cp)
+if not isinstance(state,dict): fail("not a JSON object")
+sv=state.get("schemaVersion")
+if sv is None: _migrate(state,wf,current)
+elif isinstance(sv,int) and sv>current: fail("schemaVersion=%d > current=%d" % (sv,current))
+elif isinstance(sv,int) and sv<2: _migrate(state,wf,current)
+raise SystemExit(0)
+PYEOF
+  [ "$_rc" -ne 0 ] && return 1
+  return 0
+}
+
+oc_wf_state_stamp_version() {
+  local wf_file="${1:-}"
+  [ ! -f "$wf_file" ] && return 0
+  local _rc=0
+  WF_FILE="$wf_file" \
+  CURRENT_VERSION="$WORKFORCE_BUILD_STATE_SCHEMA_VERSION" \
+  python3 - <<'PYEOF' || _rc=$?
+import json, os, sys, time
+wf=os.environ["WF_FILE"]; current=int(os.environ["CURRENT_VERSION"])
+def fail(msg):
+    sys.stderr.write("oc_wf_state_stamp_version: %s\n" % msg)
+    raise SystemExit(1)
+try:
+    with open(wf,encoding="utf-8") as fh: state=json.load(fh)
+except OSError as exc: fail("cannot read: %s" % exc)
+except ValueError as exc:
+    ts=str(int(time.time())); cp="%s.corrupt-%s"%(wf,ts)
+    try: os.rename(wf,cp)
+    except OSError: pass
+    fail("CORRUPT JSON: quarantined to %s" % cp)
+if not isinstance(state,dict): fail("not a JSON object")
+sv=state.get("schemaVersion")
+if sv==current: raise SystemExit(0)
+state["schemaVersion"]=current
+td=os.path.dirname(os.path.abspath(wf)) or "."
+import tempfile as _tf
+fd,tp=_tf.mkstemp(dir=td,prefix=".workforce-build-state.",suffix=".tmp")
+try:
+    with os.fdopen(fd,"w",encoding="utf-8") as fh: json.dump(state,fh,indent=2); fh.flush(); os.fsync(fh.fileno())
+    os.replace(tp,wf)
+except OSError as exc: fail("could not write: %s" % exc)
+finally:
+    if os.path.exists(tp):
+        try: os.unlink(tp)
+        except OSError: pass
+raise SystemExit(0)
+PYEOF
+  [ "$_rc" -ne 0 ] && return 1
+  return 0
 }

@@ -241,15 +241,87 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
         return False
 
 
-def read_build_state(state_path: Path) -> dict:
-    """
-    Read .workforce-build-state.json. Returns {} if not found or invalid.
-    PRD-2.15: build state is the PRIMARY source of interview progress data.
-    """
-    try:
-        return json.loads(state_path.read_text(encoding="utf-8"))
-    except Exception:
+# U049: WORKFORCE BUILD STATE SCHEMA VERSION
+WF_BLD_SV = 2
+
+
+def _wf_migrate(state_path):
+    if not state_path.exists():
         return {}
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError as e:
+        sys.stderr.write(f"_wf_migrate: read error {e}\n")
+        return {}
+    try:
+        data = json.loads(raw)
+    except (ValueError, json.JSONDecodeError) as e:
+        import time as t
+        ts = str(int(t.time()))
+        cp = Path(str(state_path) + ".corrupt-" + ts)
+        try:
+            state_path.rename(cp)
+        except OSError:
+            pass
+        sys.stderr.write(f"_wf_migrate: CORRUPT JSON quarantined to {cp}\n")
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    sv = data.get("schemaVersion")
+    if sv is None:
+        return _migrate_v1(data, state_path, WF_BLD_SV)
+    elif isinstance(sv, int) and sv > WF_BLD_SV:
+        sys.stderr.write(f"_wf_migrate: sv={sv} > current={WF_BLD_SV}\n")
+        return {}
+    elif isinstance(sv, int) and sv < 2:
+        return _migrate_v1(data, state_path, WF_BLD_SV)
+    return data
+
+
+def _migrate_v1(state, path, cur):
+    ch = False
+    ic = state.get("interviewComplete")
+    if not isinstance(ic, bool):
+        if (ic is None or ic == "" or ic == "false" or ic == "no" or ic == "0" or ic is False):
+            state["interviewComplete"] = False
+        else:
+            state["interviewComplete"] = True
+        ch = True
+    defaults = [("ownerName", ""), ("ownerChat", ""), ("companyName", ""), ("companySlug", ""), ("buildCompletedAt", None), ("closeoutStatus", "pending"), ("interviewProgress", {})]
+    for k, d in defaults:
+        if k not in state:
+            state[k] = d
+            ch = True
+    if not state.get("companySlug") and state.get("clientSlug"):
+        state["companySlug"] = state["clientSlug"]
+        ch = True
+    state["schemaVersion"] = cur
+    ch = True
+    if ch:
+        td = path.parent
+        tn = None
+        try:
+            import tempfile as tf
+            fd, tn = tf.mkstemp(dir=td, prefix=".workforce-build-state.", suffix=".tmp")
+            with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                json.dump(state, fh, indent=2)
+                fh.flush()
+                os.fsync(fh.fileno())
+            os.replace(tn, path)
+            tn = None
+        except OSError as e:
+            sys.stderr.write(f"_wf_migrate: write error {e}\n")
+        finally:
+            if tn and os.path.exists(tn):
+                try: os.unlink(tn)
+                except OSError: pass
+    return state
+
+
+def read_build_state(state_path: Path) -> dict:
+    """Read .workforce-build-state.json. PRD-2.15. U049: version check + migration."""
+    return _wf_migrate(state_path)
+
 
 
 def merge_meta_from_state(meta: dict, state: dict) -> dict:
@@ -311,12 +383,13 @@ def record_nudge_sent_state(state_path: Path, nudge_key: str) -> None:
     if nudge_key not in sent:
         sent.append(nudge_key)
         state["nudges_sent"] = sent
-        tmp = Path(str(state_path) + f".tmp.{os.getpid()}")
-        try:
-            tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
-            tmp.replace(state_path)
-        except Exception:
-            tmp.unlink(missing_ok=True)
+    state["schemaVersion"] = WF_BLD_SV
+    tmp = Path(str(state_path) + f".tmp.{os.getpid()}")
+    try:
+        tmp.write_text(json.dumps(state, indent=2), encoding="utf-8")
+        tmp.replace(state_path)
+    except Exception:
+        tmp.unlink(missing_ok=True)
 
 
 def scan_and_nudge(dry_run: bool = False) -> dict:
@@ -388,6 +461,7 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                         if not _s.get("interviewStalled"):
                             from datetime import timezone as _tz
                             _s["interviewStalled"] = True
+                            _s["schemaVersion"] = WF_BLD_SV
                             _s["interviewStalledAt"] = datetime.now(_tz.utc).strftime(
                                 "%Y-%m-%dT%H:%M:%SZ"
                             )
