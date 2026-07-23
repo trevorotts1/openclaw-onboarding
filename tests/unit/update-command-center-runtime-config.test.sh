@@ -166,12 +166,69 @@ else
   bad "first reconciliation failed"
 fi
 
+echo "Scenario F: an empty logo with no build-state identity NEVER blocks (stamp fix)"
+# Real departments + a real, already-established company name, an EMPTY logo, and
+# a build-state that carries ONLY a slug (no companyName). Pre-fix this raised
+# IDENTITY UNRESOLVED (rc=1) purely because the logo could not be resolved from
+# build-state — a BRANDING gap aborting the run one step before the stamp. The
+# logo must instead be derived from the real company name already on disk, and
+# the reconciler must SUCCEED (rc=0).
+F="$TMP/f"
+mkdir -p "$F/workspace" "$F/master/zero-human-company/fixture-company" \
+  "$F/command-center/config" "$F/command-center/public"
+cat > "$F/master/zero-human-company/fixture-company/departments.json" <<'JSON'
+[
+  {"id":"dept-ceo","slug":"ceo","name":"CEO"},
+  {"id":"dept-operations","slug":"operations","name":"Operations"}
+]
+JSON
+cp "$F/master/zero-human-company/fixture-company/departments.json" \
+  "$F/command-center/config/departments.json"
+cat > "$F/command-center/config/company-config.json" <<'JSON'
+{"companyName":"Established Fixture Brand","industry":"retained","custom":"keep-me"}
+JSON
+printf '{}\n' > "$F/command-center/public/logo-config.json"
+cat > "$F/workspace/.workforce-build-state.json" <<'JSON'
+{"companySlug":"fixture-company"}
+JSON
+cp "$F/command-center/config/company-config.json" "$F/company.before.f"
+if run_reconciler "$F" && python3 - \
+  "$F/command-center/config/company-config.json" \
+  "$F/command-center/public/logo-config.json" \
+  "$F/company.before.f" <<'PY'
+import json, sys
+company = json.load(open(sys.argv[1]))
+logo = json.load(open(sys.argv[2]))
+before = json.load(open(sys.argv[3]))
+# Real company name must be preserved byte-identical (never re-derived/clobbered).
+assert company["companyName"] == before["companyName"]
+assert company["custom"] == "keep-me"
+# Logo derived from the on-disk real name (advisory branding population), not
+# blocking, and NOT fabricating a company name.
+assert logo["logoUrl"].startswith("data:image/svg+xml,")
+assert "Your%20Company" not in logo["logoUrl"]
+PY
+then
+  ok "empty logo + slug-only build-state succeeds (logo derived from real name; stamp not blocked)"
+else
+  bad "empty logo incorrectly blocked the reconciler or altered the company name"
+fi
+
 if grep -q 'Step U6d: Command Center runtime configuration reconciliation' "$UPDATER" \
   && grep -q '_U6D_CC_CONFIG_FAIL' "$UPDATER" \
   && grep -q 'reconcile_command_center_runtime.py' "$UPDATER"; then
   ok "root updater invokes and gates the reconciler"
 else
   bad "root updater wiring/gate is incomplete"
+fi
+
+# The U6d content gate must assert departments + non-placeholder companyName,
+# but must NOT hard-assert a non-empty logoUrl (that would let a branding gap
+# withhold the version stamp — the bug this fix closes).
+if grep -q 'ADVISORY branding gap' "$UPDATER"; then
+  ok "U6d treats an empty logoUrl as advisory (does not block the stamp)"
+else
+  bad "U6d still hard-blocks on an empty logoUrl"
 fi
 
 echo "RESULT pass=$PASS fail=$FAIL"

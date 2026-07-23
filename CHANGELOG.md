@@ -1,3 +1,50 @@
+## [v20.0.100]  -  2026-07-22  -  STAMP-FIX SWEEP: four more "an optional/env step aborts the updater before the stamp" bugs closed (same class as the qmd fix)
+
+A fleet roll to v20.0.99 surfaced several more instances of the SAME bug class the qmd fix (v20.0.99)
+addressed: a non-content, optional/environment condition returning non-zero and aborting the updater
+one step before the A3 version-stamp write, leaving a stale stamp fleet-wide. Four fixes:
+
+  FIX A — EMPTY LOGO is now ADVISORY, never a stamp blocker. update-skills.sh Step U6d ran
+    shared-utils/reconcile_command_center_runtime.py and then asserted a non-empty `logo.logoUrl`.
+    On a box with no logo yet, the reconciler raised IDENTITY UNRESOLVED (rc=1) — or the inline
+    assert failed — purely because the logo could not be resolved from build-state, withholding the
+    version stamp. A missing/empty logo is a BRANDING gap, NOT a content-integrity failure.
+    reconcile_command_center_runtime.py now requires a resolved identity only for the company NAME;
+    the logo is best-effort (an explicit URL, else a text mark of the VERIFIED name already on
+    disk) and its post-write check only WARNs. update-skills.sh U6d asserts departments +
+    companyName != "Your Company" (content gates, unchanged) and treats an empty logoUrl as advisory.
+
+  FIX B — ROOT-OWNED scripts/ dir no longer hard-aborts the whole run. deliver_canonical_scripts_tree
+    returned 1 (fatal) when the node-user `cp` into a root:root $OC_ROOT/scripts failed "Permission
+    denied", exiting before content/stamp on ~6 VPS boxes. It now self-heals writable-but-unwritable
+    perms, and on a genuinely un-writable destination DEGRADES (rc 2) with a LOUD, ACTIONABLE chown
+    instruction while the run PROCEEDS to content + stamp. A cp failure on a WRITABLE dest stays
+    fatal (rc 1) — a real delivery failure, not an ownership quirk. The box-side chown is applied in
+    the Reroll phase.
+
+  FIX C — INTERVIEW mislabel corrected (false-negative #2). run-closeout.sh set
+    closeoutStatus="blocked-interview-incomplete" whenever interviewQc.status != pass, even for a
+    COMPLETED interview (interviewComplete=true, buildCompletedAt set) — a QC gap, not an incomplete
+    interview. It now gates the wording on the ACTUAL interviewComplete flag: interviewComplete=true
+    -> new "blocked-qc-pending" status; only interviewComplete!=true keeps "blocked-interview-incomplete".
+    The interviewQc HARD GATE (STUCK_QC_FAILED, QC != pass still blocks closeout) is unchanged. The new
+    status is added to the build-state schema enum and recognized by the relayers
+    (closeout-readiness-watchdog.sh, fleet-stuck-clients.sh, resume-closeout-cron.sh) and the
+    resume-workforce-build.sh state-preservation list so behavior is identical, only accurately labeled.
+
+  FIX D — SHARED OC_ROOT resolver (wrong-tree root cause / false-negative #3). Eight scripts each
+    re-implemented the /data/.openclaw-else-$HOME/.openclaw detection. New shared-utils/resolve-oc-root.sh
+    is the single source of truth; run-closeout.sh, resume-closeout-cron.sh, fleet-stuck-clients.sh,
+    closeout-readiness-watchdog.sh, migrate-existing-workforce.sh, backfill-per-dept-healer.sh,
+    materialize-dept-agents.sh, and update-skills.sh now source it (each keeping a byte-identical inline
+    fallback for older bundles). It computes the SAME OC_ROOT every script computed before — centralized,
+    not changed — so a stale/duplicate .openclaw root can never make siblings read different
+    .workforce-build-state.json copies. New test: tests/unit/resolve-oc-root.test.sh.
+
+No content-integrity gate was weakened: departments, non-placeholder companyName, the scripts
+byte/mode completeness verification on a WRITABLE dest, and the interviewQc hard gate all still
+block. v20.0.99 -> v20.0.100.
+
 ## [v20.0.99]  -  2026-07-22  -  PERMANENT STAMP FIX: optional persona/qmd step can no longer abort the updater before the version-stamp write
 
 ROOT CAUSE of the fleet-wide stale-stamp bug: update-skills.sh writes the .onboarding-version

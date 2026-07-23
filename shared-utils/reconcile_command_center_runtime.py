@@ -334,9 +334,17 @@ def reconcile(
         )
 
     identity = _resolve_identity(state_payload, zhc_config)
-    if (needs_name or needs_logo) and not identity["name"]:
+    # Company NAME is a CONTENT-integrity check: an unresolved real company name
+    # (the exact "Your Company" placeholder still standing) must still fail loud.
+    # A LOGO, by contrast, is a BRANDING nicety — an empty/missing logoUrl is a
+    # branding gap, NOT a content-integrity failure, and must NEVER abort the
+    # reconciler (which would withhold the version stamp one step later). This is
+    # the same "an OPTIONAL step aborts the updater before the stamp" bug class
+    # as the qmd fix. So only `needs_name` requires a resolved identity here;
+    # `needs_logo` degrades to advisory below.
+    if needs_name and not identity["name"]:
         raise ReconcileError(
-            "IDENTITY UNRESOLVED: placeholder/empty branding remains and no legitimate provisioning identity exists"
+            "IDENTITY UNRESOLVED: exact placeholder company name remains and no legitimate provisioning identity exists"
         )
 
     next_company = dict(company)
@@ -350,13 +358,23 @@ def reconcile(
         if not str(next_company.get("brandPrimaryColor") or "").strip():
             next_company["brandPrimaryColor"] = identity["primary"]
 
+    logo_applied = False
     if needs_logo:
-        resolved_logo = identity["logo_url"] or _identity_logo_data_url(
-            identity["name"], identity["primary"]
+        # Best-effort BRANDING population. Prefer an explicitly recorded logo URL;
+        # otherwise a deterministic text mark of a VERIFIED name — the provisioning
+        # identity, or the real (non-placeholder) company name already present in
+        # company-config. We never INVENT a name for the mark: if none is
+        # resolvable we leave the logo empty and warn (an advisory branding gap),
+        # rather than fabricating a mark or aborting the run.
+        logo_name = identity["name"] or _real_name(next_company.get("companyName"))
+        resolved_logo = identity["logo_url"] or (
+            _identity_logo_data_url(logo_name, identity["primary"]) if logo_name else ""
         )
-        next_logo["logoUrl"] = resolved_logo
-        if not str(next_company.get("logoUrl") or "").strip():
-            next_company["logoUrl"] = resolved_logo
+        if resolved_logo:
+            next_logo["logoUrl"] = resolved_logo
+            if not str(next_company.get("logoUrl") or "").strip():
+                next_company["logoUrl"] = resolved_logo
+            logo_applied = True
 
     writes: List[Tuple[Path, Any]] = []
     if needs_departments:
@@ -384,13 +402,25 @@ def reconcile(
         raise ReconcileError("post-write assertion failed: departments.json remains empty/invalid")
     if not isinstance(final_company, dict) or final_company.get("companyName") == TEMPLATE_COMPANY_NAME:
         raise ReconcileError("post-write assertion failed: exact company placeholder remains")
-    if not isinstance(final_logo, dict) or not str(final_logo.get("logoUrl") or "").strip():
-        raise ReconcileError("post-write assertion failed: logo-config.json remains empty")
+    # Logo is ADVISORY: an empty logoUrl is a branding gap, never a stamp
+    # blocker. Departments + companyName are the content-integrity gates; the
+    # logo only ever warns.
+    logo_ok = isinstance(final_logo, dict) and bool(str(final_logo.get("logoUrl") or "").strip())
+    if not logo_ok:
+        print(
+            "[cc-runtime] WARN: logo-config.json has no logoUrl — branding gap only, "
+            "not a content-integrity failure; proceeding.",
+            file=sys.stderr,
+        )
 
+    if needs_logo:
+        logo_state = "applied" if logo_applied else "advisory-empty"
+    else:
+        logo_state = "preserved"
     return {
         "departments": "populated" if needs_departments else "preserved",
         "company_name": "applied" if needs_name else "preserved",
-        "logo": "applied" if needs_logo else "preserved",
+        "logo": logo_state,
         "writes": str(len(writes)),
     }
 

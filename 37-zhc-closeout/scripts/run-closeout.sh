@@ -32,8 +32,22 @@
 
 set -u
 
-# ---- platform detection (VPS first, Mac fallback) ----
-if [[ -d /data/.openclaw ]]; then
+# ---- platform detection (VPS first, Mac fallback) — via the shared resolver ----
+# FIX (false-negative #3): the /data-else-HOME .openclaw detection is centralized
+# in shared-utils/resolve-oc-root.sh so sibling ZHC scripts can never drift to
+# different roots and read different .workforce-build-state.json copies. Falls
+# back to the identical inline logic if the shared file is absent (older bundle).
+_OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+if declare -F resolve_oc_root >/dev/null 2>&1; then
+  if _oc_root_resolved="$(resolve_oc_root)"; then
+    OC_ROOT="$_oc_root_resolved"
+  else
+    echo "[run-closeout] no OpenClaw root found; aborting" >&2
+    exit 1
+  fi
+elif [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
 elif [[ -d "$HOME/.openclaw" ]]; then
   OC_ROOT="$HOME/.openclaw"
@@ -164,15 +178,30 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
   fi
   if [[ "$_early_qc" != "pass" ]]; then
-    _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
+    # FIX (false-negative #2): distinguish a QC GAP from an actually-incomplete
+    # interview. When the owner HAS completed the interview (interviewComplete
+    # =true) but interviewQc has not yet passed, this is a QC-PENDING state, NOT
+    # an incomplete interview — labeling it "blocked-interview-incomplete" sent
+    # operators chasing a finished interview. The interviewQc HARD GATE itself is
+    # unchanged (QC != pass still blocks closeout); ONLY the status label + prose
+    # are corrected. buildCompletedAt is already set here, so the interview is
+    # done as far as the build is concerned.
+    _early_interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
+    if [[ "$_early_interview_complete" == "true" ]]; then
+      _early_block_status="blocked-qc-pending"
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py to reach status=pass. NOT an incomplete interview."
+    else
+      _early_block_status="blocked-interview-incomplete"
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
+    fi
     log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
     # SK1-12: pass client-derived strings via jq --arg, never string-interpolate
     # them into the jq program. _early_block_reason embeds .interviewQc.status
     # (state-file data); a value containing a double-quote or jq syntax would
     # otherwise corrupt the state write or inject into the filter.
     _tmp_s=$(mktemp)
-    jq --arg reason "$_early_block_reason" \
-      '.closeoutStatus = "blocked-interview-incomplete" | .closeoutBlockReason = $reason' \
+    jq --arg reason "$_early_block_reason" --arg status "$_early_block_status" \
+      '.closeoutStatus = $status | .closeoutBlockReason = $reason' \
       "$STATE_FILE" > "$_tmp_s" && mv "$_tmp_s" "$STATE_FILE" || rm -f "$_tmp_s"
     _TS_EARLY=$(now_iso)
     _tmp_b=$(mktemp)
@@ -260,9 +289,20 @@ if [[ "$_qc_status" != "pass" ]]; then
   fi
 fi
 if [[ "$_qc_status" != "pass" ]]; then
-  _block_reason="interviewQc.status=${_qc_status} (not pass) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+  # FIX (false-negative #2): as in the early gate, a QC gap with a COMPLETE
+  # interview (interviewComplete=true) is a QC-PENDING state, not an incomplete
+  # interview. buildCompletedAt is already set (checked above), so the interview
+  # finished. Correct the status label/prose; the QC hard gate is unchanged.
+  _interview_complete=$(state_get '.interviewComplete')
+  if [[ "$_interview_complete" == "true" ]]; then
+    _block_status="blocked-qc-pending"
+    _block_reason="interviewQc.status=${_qc_status} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py and ensure status=pass. NOT an incomplete interview."
+  else
+    _block_status="blocked-interview-incomplete"
+    _block_reason="interviewQc.status=${_qc_status} (not pass) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+  fi
   log "ERROR" "BLOCKED: $_block_reason"
-  state_set ".closeoutStatus = \"blocked-interview-incomplete\" | .closeoutBlockReason = \"$_block_reason\""
+  state_set ".closeoutStatus = \"$_block_status\" | .closeoutBlockReason = \"$_block_reason\""
   # Write closeoutBlockers entry so the operator surface (fleet-stuck-clients.sh) shows it
   _TS=$(now_iso)
   state_set "

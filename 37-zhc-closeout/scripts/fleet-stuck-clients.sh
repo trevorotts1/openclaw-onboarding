@@ -56,8 +56,20 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ---- platform detection ----
-if [[ -d /data/.openclaw ]]; then
+# ---- platform detection — via the shared resolver (false-negative #3 fix) ----
+# Centralized /data-else-HOME .openclaw detection; identical inline fallback if
+# the shared file is absent. See shared-utils/resolve-oc-root.sh.
+_OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+if declare -F resolve_oc_root >/dev/null 2>&1; then
+  if _oc_root_resolved="$(resolve_oc_root)"; then
+    OC_ROOT="$_oc_root_resolved"
+  else
+    echo "[fleet-stuck-clients] no OpenClaw root found" >&2
+    exit 1
+  fi
+elif [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
 elif [[ -d "$HOME/.openclaw" ]]; then
   OC_ROOT="$HOME/.openclaw"
@@ -139,7 +151,7 @@ elif not build_done:
         print(f"STUCK_PRE_CLOSEOUT\tpre-closeout\tattempts={resume_att}\t{qc_status}\t{','.join(bc)}")
 else:
     if closeout_st in ('blocked-floor-incomplete','blocked-libraries-incomplete',
-                       'blocked-interview-incomplete','failed'):
+                       'blocked-interview-incomplete','blocked-qc-pending','failed'):
         bc = blockers or [f"closeout:{closeout_st}"]
         print(f"STUCK_CLOSEOUT_BLOCKED\tcloseout-blocked\t—\t{qc_status}\t{','.join(bc)}")
 PYEOF

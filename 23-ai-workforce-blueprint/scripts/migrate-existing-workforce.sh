@@ -27,9 +27,23 @@ case "$MODE" in
   *) MODE="--dry-run" ;;
 esac
 
+# OC_ROOT (false-negative #3 fix): centralized /data-else-HOME .openclaw
+# detection via the shared resolver. This script never fatals on a missing
+# root — it defaults to $HOME/.openclaw exactly as the prior inline logic did.
+# Identical inline fallback if the shared file is absent (older bundle).
+_OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[ -f "$_OC_ROOT_RESOLVER" ] && source "$_OC_ROOT_RESOLVER"
+if declare -F resolve_oc_root >/dev/null 2>&1; then
+  OC_ROOT="$(resolve_oc_root || true)"
+  [ -n "$OC_ROOT" ] || OC_ROOT="$HOME/.openclaw"
+else
+  OC_ROOT="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+fi
+
 TS="$(date +%Y%m%d-%H%M%S)"
-LOG_DIR="$HOME/.openclaw/logs"
-[ -d "/data/.openclaw" ] && LOG_DIR="/data/.openclaw/logs"
+LOG_DIR="$OC_ROOT/logs"
 mkdir -p "$LOG_DIR"
 LOG="$LOG_DIR/migrate-${CLIENT}-${TS}.log"
 
@@ -135,8 +149,7 @@ FF_DETECT="$SKILL_DIR/scripts/detect-stale-artifacts.py"
 FF_INDEX="$SKILL_DIR/templates/role-library/_index.json"
 FF_MAKEGAP="$SKILL_DIR/scripts/make-gap-from-staleness.py"
 FF_DRIVER="$SKILL_DIR/scripts/floor-fill-driver.py"
-FF_WS_ROOT="$HOME/.openclaw/workspace"
-[ -d "/data/.openclaw" ] && FF_WS_ROOT="/data/.openclaw/workspace"
+FF_WS_ROOT="$OC_ROOT/workspace"
 FF_DEPTS_DIR="$FF_WS_ROOT/departments"
 if [ -f "$FF_DETECT" ] && [ -f "$FF_INDEX" ] && [ -f "$FF_MAKEGAP" ] && [ -f "$FF_DRIVER" ] && \
    { [ -d "$FF_DEPTS_DIR" ] || [ -f "$FF_WS_ROOT/.workforce-build-state.json" ]; } && \

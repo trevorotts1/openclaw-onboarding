@@ -276,9 +276,10 @@
         "failed",
         "blocked-floor-incomplete",
         "blocked-libraries-incomplete",
-        "blocked-interview-incomplete"
+        "blocked-interview-incomplete",
+        "blocked-qc-pending"
       ],
-      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending \u2192 generating \u2192 sent \u2192 done. failed = retries exhausted; resume cron will retry. partial = soft-only failures (video/notion); blocked-* = build prerequisites not met. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate. PRD-2.8: seven per-deliverable fields in closeoutDeliverables track individual leg completion; closeoutStatus is the aggregate. blocked-interview-incomplete = interviewQc.status != pass (v12.3.12 watchdog gate)."
+      "description": "Skill 37 ZHC Closeout status. Set by Skill 23 master orchestrator to 'pending' the moment buildCompletedAt is written. Skill 37 transitions pending \u2192 generating \u2192 sent \u2192 done. failed = retries exhausted; resume cron will retry. partial = soft-only failures (video/notion); blocked-* = build prerequisites not met. Added in v10.14.17. NOTE (v10.15.8): the master orchestrator MUST NOT write buildCompletedAt or set closeoutStatus=pending until roleLibraryStatus == done AND sopLibraryStatus == done. The library gate runs BEFORE the closeout gate. PRD-2.8: seven per-deliverable fields in closeoutDeliverables track individual leg completion; closeoutStatus is the aggregate. blocked-interview-incomplete = interviewQc.status != pass AND the interview is NOT complete (interviewComplete != true). blocked-qc-pending = interviewQc.status != pass but interviewComplete == true (a QC verdict gap on a FINISHED interview, not an incomplete interview) - added to stop the false-negative that reported completed interviews as 'interview incomplete'."
     },
     "closeoutDeliverables": {
       "type": "object",

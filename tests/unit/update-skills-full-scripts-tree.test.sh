@@ -70,6 +70,42 @@ else
   grep -q 'FATAL:' "$WORK/missing.out" && ok "missing canonical tree fails loudly" || bad "missing tree failure was not loud"
 fi
 
+# A destination the node user genuinely cannot create/write is an OWNERSHIP/env
+# quirk (the ≈6 root:root VPS boxes) that must DEGRADE (rc 2 + a loud actionable
+# chown instruction), NEVER fatal-abort the whole run before the version stamp.
+# Reproduced WITHOUT root by making a path component a regular file (ENOTDIR):
+# mkdir -p cannot create the dest and the best-effort self-heal cannot fix it,
+# so the helper must degrade rather than abort.
+BLOCKER="$WORK/blocker-file"
+printf 'not a directory\n' > "$BLOCKER"
+UNWRITABLE="$BLOCKER/scripts"
+deliver_canonical_scripts_tree "$SRC" "$UNWRITABLE" > "$WORK/perms.out" 2>&1
+_perms_rc=$?
+if [ "$_perms_rc" -eq 2 ]; then
+  ok "un-creatable destination degrades (rc=2), does not fatal-abort the run"
+else
+  bad "un-creatable destination returned rc=$_perms_rc (expected 2 = deferred degrade)"
+fi
+if grep -q 'ACTION REQUIRED' "$WORK/perms.out" && grep -q 'chown -R' "$WORK/perms.out"; then
+  ok "perms degrade emits an actionable chown instruction"
+else
+  bad "perms degrade did not name the required chown"
+fi
+if ! grep -q 'FATAL:' "$WORK/perms.out"; then
+  ok "perms degrade is a WARN, never a FATAL"
+else
+  bad "perms degrade wrongly printed FATAL"
+fi
+
+# The caller must treat rc 2 as a non-fatal DEFERRED delivery (proceed to the
+# stamp), and reserve the exit-1 abort for a real fatal (rc 1).
+if grep -q 'OC_SCRIPTS_DELIVERY_DEFERRED' "$UPDATE_SH" \
+   && grep -q '_SCRIPTS_RC" -eq 1' "$UPDATE_SH"; then
+  ok "root update path degrades on an ownership quirk (rc 2) and only aborts on a real fatal (rc 1)"
+else
+  bad "root update path does not distinguish deferred (rc 2) from fatal (rc 1)"
+fi
+
 if grep -q 'deliver_canonical_scripts_tree "$ONBOARDING_DIR/scripts" "$_OC_SCRIPTS_DEST"' "$UPDATE_SH"; then
   ok "root update path invokes full-tree delivery"
 else

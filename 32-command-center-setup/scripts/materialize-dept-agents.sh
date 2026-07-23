@@ -51,8 +51,20 @@ if [[ "$(id -u)" == "0" ]]; then
   exit 1
 fi
 
-# ─── Platform detection ──────────────────────────────────────────────────────
-if [[ -d /data/.openclaw ]]; then
+# ─── Platform detection — via the shared resolver (false-negative #3 fix) ─────
+# Centralized /data-else-HOME .openclaw detection; identical inline fallback if
+# the shared file is absent. See shared-utils/resolve-oc-root.sh.
+_OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+if declare -F resolve_oc_root >/dev/null 2>&1; then
+  if _oc_root_resolved="$(resolve_oc_root)"; then
+    OC_ROOT="$_oc_root_resolved"
+  else
+    echo "[materialize-dept-agents] FATAL: no OpenClaw root found at /data/.openclaw or \$HOME/.openclaw" >&2
+    exit 1
+  fi
+elif [[ -d /data/.openclaw ]]; then
   OC_ROOT="/data/.openclaw"
 elif [[ -d "$HOME/.openclaw" ]]; then
   OC_ROOT="$HOME/.openclaw"

@@ -754,7 +754,7 @@ if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
   # later/terminal state (do not clobber generating/sent/done/partial/blocked-*).
   if jq --arg now "$_now_bc" '
         .buildCompletedAt = $now
-        | (if ((.closeoutStatus // "") | IN("generating","partial","sent","done","failed","blocked-floor-incomplete","blocked-libraries-incomplete","blocked-interview-incomplete")) then . else .closeoutStatus = "pending" end)
+        | (if ((.closeoutStatus // "") | IN("generating","partial","sent","done","failed","blocked-floor-incomplete","blocked-libraries-incomplete","blocked-interview-incomplete","blocked-qc-pending")) then . else .closeoutStatus = "pending" end)
       ' "$STATE_FILE" > "$_tmp_bc" 2>/dev/null; then
     mv "$_tmp_bc" "$STATE_FILE"
     # Refresh local copies so the dirty recompute below sees the new values.

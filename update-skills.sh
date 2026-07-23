@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v20.0.99"
+ONBOARDING_VERSION="v20.0.100"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v20.0.99 - safe_json_edit
+# v20.0.100 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -790,6 +790,20 @@ safe_json_edit() {
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
 
+  # OC_ROOT resolver (false-negative #3 fix): reuse the SHARED /data-else-HOME
+  # .openclaw detector so this orchestrator resolves the SAME root as the ZHC/
+  # dept scripts. Located from the freshly-extracted / installed tree; every use
+  # below keeps its identical inline fallback if the shared file is unavailable
+  # in this context (so behavior is unchanged either way).
+  local _cand _OC_ROOT_RESOLVER=""
+  for _cand in \
+    "${EXTRACTED_DIR:-}/shared-utils/resolve-oc-root.sh" \
+    "${SKILLS_DIR:-}/shared-utils/resolve-oc-root.sh"; do
+    if [ -n "$_cand" ] && [ -f "$_cand" ]; then _OC_ROOT_RESOLVER="$_cand"; break; fi
+  done
+  # shellcheck source=/dev/null
+  [ -n "$_OC_ROOT_RESOLVER" ] && source "$_OC_ROOT_RESOLVER"
+
   # --- Resolve CANON_DIR (box's own default agent workspace) ---------------
   # Precedence mirrors obs_resolve_workspace / install.sh Step 10:
   #   per-agent main override -> agents.defaults.workspace -> ~/.openclaw/workspace.
@@ -820,7 +834,10 @@ PYEOF
   # Final fallback: the canonical OpenClaw default for this box. (Clawd is dead;
   # only fall back to ~/clawd as an absolute last resort if it is the workspace.)
   if [ -z "$CANON_DIR" ]; then
-    if [ -d "/data/.openclaw" ]; then
+    local _oc_r
+    if declare -F resolve_oc_root >/dev/null 2>&1 && _oc_r="$(resolve_oc_root)"; then
+      CANON_DIR="$_oc_r/workspace"
+    elif [ -d "/data/.openclaw" ]; then
       CANON_DIR="/data/.openclaw/workspace"
     else
       CANON_DIR="$HOME/.openclaw/workspace"
@@ -872,8 +889,13 @@ PYEOF
   # Scan the workspaces dir tree for agent-shaped dirs. The canonical default
   # parent is .openclaw/ (or /data/.openclaw); also scan the workspace's own
   # departments/ + agents/ trees where role workspaces live.
-  local OC_ROOT="$HOME/.openclaw"
-  [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+  local OC_ROOT
+  if declare -F resolve_oc_root >/dev/null 2>&1 && OC_ROOT="$(resolve_oc_root)"; then
+    :
+  else
+    OC_ROOT="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && OC_ROOT="/data/.openclaw"
+  fi
   local _scan
   for _scan in \
       "$OC_ROOT/workspaces" \
@@ -1469,16 +1491,48 @@ deliver_canonical_scripts_tree() {
   local src_path rel dest_path failures=0 files=0
 
   if [ ! -d "$src_root" ]; then
+    # A MISSING SOURCE is a real content failure (nothing to deliver): fatal.
     echo "FATAL: canonical scripts tree is missing: $src_root" >&2
     return 1
   fi
-  if ! mkdir -p "$dest_root"; then
-    echo "FATAL: cannot create scripts destination: $dest_root" >&2
-    return 1
+
+  # A ROOT-OWNED / otherwise-unwritable destination is an OWNERSHIP quirk (≈6 VPS
+  # boxes carry $OC_ROOT/scripts owned root:root, so the node-user cp fails
+  # "Permission denied"), NOT a content mismatch. Pre-fix this returned 1 and the
+  # caller exited BEFORE the content/version-stamp write — the "optional/env step
+  # aborts the updater before the stamp" bug class. It must instead: try to
+  # self-heal the perms, and if it genuinely cannot write, DEGRADE with a LOUD,
+  # ACTIONABLE chown instruction (return 2) so the run proceeds to the stamp.
+  # A cp failure on a WRITABLE dest stays fatal (return 1) — that is a real
+  # delivery failure, not an ownership quirk.
+  local _owner_hint
+  _owner_hint="$(id -un 2>/dev/null || printf '%s' "${USER:-node}")"
+  _scripts_perms_degrade() {
+    echo "WARN: canonical scripts/ could not be written to: $dest_root" >&2
+    echo "WARN: this is an OWNERSHIP quirk (destination not writable by $_owner_hint — likely owned root:root), NOT a content failure." >&2
+    echo "WARN: the updater will PROCEED so an ownership quirk cannot block skills content + the version stamp; scripts/ delivery is DEFERRED." >&2
+    echo "WARN: ACTION REQUIRED on this box:  sudo chown -R $_owner_hint \"$dest_root\"   then re-run the updater to complete scripts/ delivery." >&2
+  }
+
+  if ! mkdir -p "$dest_root" 2>/dev/null; then
+    # Best-effort self-heal of the parent, then retry once.
+    chmod u+rwx "$(dirname "$dest_root")" 2>/dev/null || true
+    if ! mkdir -p "$dest_root" 2>/dev/null; then
+      _scripts_perms_degrade
+      return 2
+    fi
   fi
-  if ! cp -Rp "$src_root/." "$dest_root/"; then
-    echo "FATAL: recursive canonical scripts delivery failed: $src_root -> $dest_root" >&2
-    return 1
+  if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+    # Best-effort self-heal (only succeeds if we own the tree), then retry.
+    chmod -R u+rwx "$dest_root" 2>/dev/null || true
+    if ! cp -Rp "$src_root/." "$dest_root/" 2>/dev/null; then
+      if [ ! -w "$dest_root" ]; then
+        _scripts_perms_degrade
+        return 2
+      fi
+      echo "FATAL: recursive canonical scripts delivery failed: $src_root -> $dest_root" >&2
+      return 1
+    fi
   fi
 
   # A successful cp exit alone is not a completeness receipt. Re-read every
@@ -1779,10 +1833,20 @@ main() {
   # 22-file scripts allowlist would incorrectly no-op forever.
   _OC_SCRIPTS_DEST="$HOME/.openclaw/scripts"
   [ -d "/data/.openclaw" ] && _OC_SCRIPTS_DEST="/data/.openclaw/scripts"
-  if ! deliver_canonical_scripts_tree "$ONBOARDING_DIR/scripts" "$_OC_SCRIPTS_DEST"; then
+  # rc 0 = delivered+verified; rc 1 = real fatal (missing source / genuine
+  # delivery failure on a writable dest); rc 2 = OWNERSHIP quirk (dest not
+  # writable). Only rc 1 withholds the stamp. rc 2 DEGRADES: a root-owned
+  # scripts dir must not fatal-abort the whole run one step before content +
+  # stamp — the chown is surfaced loudly and applied box-side in the Reroll.
+  _SCRIPTS_RC=0
+  deliver_canonical_scripts_tree "$ONBOARDING_DIR/scripts" "$_OC_SCRIPTS_DEST" || _SCRIPTS_RC=$?
+  if [ "$_SCRIPTS_RC" -eq 1 ]; then
     echo "FATAL: updater cannot continue with a partial scripts directory; success stamp withheld" >&2
     rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
     exit 1
+  elif [ "$_SCRIPTS_RC" -eq 2 ]; then
+    export OC_SCRIPTS_DELIVERY_DEFERRED=1
+    echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
 
@@ -2568,16 +2632,25 @@ except Exception:
 cc=sys.argv[1]
 deps=json.load(open(cc+"/config/departments.json"))
 company=json.load(open(cc+"/config/company-config.json"))
-logo=json.load(open(cc+"/public/logo-config.json"))
+# CONTENT-integrity assertions ONLY: departments must be populated and the
+# exact "Your Company" placeholder must be gone. The logo is intentionally NOT
+# asserted here — an empty logoUrl is a BRANDING gap, not a content failure,
+# and must never withhold the version stamp (the "optional step aborts the
+# updater before the stamp" bug class). Logo is checked advisory-only below.
 assert isinstance(deps,list) and len(deps)>0
-assert company.get("companyName") != "Your Company"
-assert isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()' \
+assert company.get("companyName") != "Your Company"' \
         "$_U6D_CC_DIR" >>"$LOG_FILE" 2>&1; then
       _U6D_CC_CONFIG_FAIL=1
-      _U6D_CC_CONFIG_NOTE="reconciler returned success but independent assertion found empty departments, exact placeholder companyName, or empty logoUrl"
+      _U6D_CC_CONFIG_NOTE="reconciler returned success but independent assertion found empty departments or the exact placeholder companyName"
       echo "  ✗ Command Center runtime config STILL incomplete after reconciliation — refusing update success."
+    elif python3 -c 'import json,sys
+cc=sys.argv[1]
+logo=json.load(open(cc+"/public/logo-config.json"))
+sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) else 1)' \
+        "$_U6D_CC_DIR" >>"$LOG_FILE" 2>&1; then
+      echo "  ✓ Command Center runtime config populated and verified (departments non-empty; branding non-placeholder; logo present)."
     else
-      echo "  ✓ Command Center runtime config populated and verified (departments non-empty; branding non-placeholder; logo non-empty)."
+      echo "  ⚠ Command Center runtime config verified (departments non-empty; branding non-placeholder); logoUrl is empty — ADVISORY branding gap, NOT blocking the version stamp."
     fi
   fi
 

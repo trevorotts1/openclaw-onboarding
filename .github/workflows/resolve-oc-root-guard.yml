@@ -1,0 +1,65 @@
+name: Shared OC_ROOT resolver guard
+
+# false-negative #3 fix: the /data-else-HOME .openclaw detection is centralized
+# in shared-utils/resolve-oc-root.sh. This guard proves the resolver matches the
+# documented (pre-refactor) behavior AND that every migrated script still sources
+# the one shared resolver while retaining a byte-identical inline fallback — so
+# no two scripts can drift to different .openclaw roots (and read different
+# .workforce-build-state.json copies).
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - shared-utils/resolve-oc-root.sh
+      - tests/unit/resolve-oc-root.test.sh
+      - update-skills.sh
+      - 37-zhc-closeout/scripts/run-closeout.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
+      - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh
+      - 32-command-center-setup/scripts/backfill-per-dept-healer.sh
+      - 32-command-center-setup/scripts/materialize-dept-agents.sh
+      - .github/workflows/resolve-oc-root-guard.yml
+  push:
+    branches: [main]
+    paths:
+      - shared-utils/resolve-oc-root.sh
+      - tests/unit/resolve-oc-root.test.sh
+      - update-skills.sh
+      - 37-zhc-closeout/scripts/run-closeout.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
+      - 37-zhc-closeout/scripts/fleet-stuck-clients.sh
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh
+      - 32-command-center-setup/scripts/backfill-per-dept-healer.sh
+      - 32-command-center-setup/scripts/materialize-dept-agents.sh
+      - .github/workflows/resolve-oc-root-guard.yml
+
+jobs:
+  resolve-oc-root:
+    name: Shared resolver equivalence + wiring
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax checks (resolver + every wired script)
+        run: |
+          set -euo pipefail
+          for f in \
+            shared-utils/resolve-oc-root.sh \
+            tests/unit/resolve-oc-root.test.sh \
+            update-skills.sh \
+            37-zhc-closeout/scripts/run-closeout.sh \
+            37-zhc-closeout/scripts/resume-closeout-cron.sh \
+            37-zhc-closeout/scripts/fleet-stuck-clients.sh \
+            23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh \
+            23-ai-workforce-blueprint/scripts/migrate-existing-workforce.sh \
+            32-command-center-setup/scripts/backfill-per-dept-healer.sh \
+            32-command-center-setup/scripts/materialize-dept-agents.sh; do
+            bash -n "$f"
+          done
+
+      - name: Resolver equivalence + wiring test
+        run: bash tests/unit/resolve-oc-root.test.sh

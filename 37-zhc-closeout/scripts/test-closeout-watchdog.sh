@@ -259,20 +259,55 @@ if [[ -f "$RUN_CLOSEOUT" ]]; then
   run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
 
   cs=$(read_state_field '.closeoutStatus')
-  if [[ "$cs" == "blocked-interview-incomplete" ]]; then
-    pass "T4a: closeoutStatus=blocked-interview-incomplete (gate refused QC fail)"
+  # false-negative #2 fix: the interview HERE IS complete (interviewComplete=true)
+  # — a QC-fail is a QC gap, NOT an incomplete interview, so the status must be
+  # blocked-qc-pending, never blocked-interview-incomplete.
+  if [[ "$cs" == "blocked-qc-pending" ]]; then
+    pass "T4a: closeoutStatus=blocked-qc-pending (QC gap on a COMPLETE interview — not mislabeled interview-incomplete)"
   else
-    fail "T4a: closeoutStatus='$cs' (expected blocked-interview-incomplete)"
+    fail "T4a: closeoutStatus='$cs' (expected blocked-qc-pending for interviewComplete=true + QC fail)"
   fi
 
   blocker=$(read_state_field '.closeoutBlockers[0].class')
   if [[ "$blocker" == "STUCK_QC_FAILED" ]]; then
-    pass "T4b: closeoutBlockers entry class=STUCK_QC_FAILED written"
+    pass "T4b: closeoutBlockers entry class=STUCK_QC_FAILED written (real QC gate intact)"
   else
     fail "T4b: closeoutBlockers class='$blocker' (expected STUCK_QC_FAILED)"
   fi
 else
   skip_test "T4: run-closeout.sh not found at $RUN_CLOSEOUT"
+fi
+
+echo ""
+
+# ════════════════════════════════════════════════════════════
+# T4c: an ACTUALLY-incomplete interview (interviewComplete=false) + QC fail
+# still reports blocked-interview-incomplete — the preserved branch.
+# ════════════════════════════════════════════════════════════
+echo "T4c: QC fail with interviewComplete=false stays blocked-interview-incomplete"
+if [[ -f "$RUN_CLOSEOUT" ]]; then
+  write_state "{
+    \"version\": 1,
+    \"interviewComplete\": false,
+    \"buildCompletedAt\": \"$(hours_ago_iso 1)\",
+    \"ownerChat\": 12345,
+    \"companyName\": \"IncompleteCo\",
+    \"agentName\": \"TestAgent\",
+    \"departments\": [],
+    \"interviewQc\": {\"status\": \"fail\"},
+    \"closeoutStatus\": \"pending\"
+  }"
+
+  run_script bash "$RUN_CLOSEOUT" >/dev/null 2>&1 || true
+
+  cs=$(read_state_field '.closeoutStatus')
+  if [[ "$cs" == "blocked-interview-incomplete" ]]; then
+    pass "T4c: closeoutStatus=blocked-interview-incomplete (interview genuinely incomplete)"
+  else
+    fail "T4c: closeoutStatus='$cs' (expected blocked-interview-incomplete for interviewComplete=false)"
+  fi
+else
+  skip_test "T4c: run-closeout.sh not found at $RUN_CLOSEOUT"
 fi
 
 echo ""

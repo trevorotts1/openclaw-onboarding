@@ -45,8 +45,20 @@
 
 set -u
 
-# ---- platform detection ----
-if [[ -d /data/.openclaw ]]; then
+# ---- platform detection — via the shared resolver (false-negative #3 fix) ----
+# Centralized /data-else-HOME .openclaw detection; identical inline fallback if
+# the shared file is absent. See shared-utils/resolve-oc-root.sh.
+_OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+# shellcheck source=/dev/null
+[[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+if declare -F resolve_oc_root >/dev/null 2>&1; then
+  if _oc_root_resolved="$(resolve_oc_root)"; then
+    OC_ROOT="$_oc_root_resolved"
+  else
+    echo "[resume-closeout-cron] no OpenClaw root found; aborting" >&2
+    exit 0
+  fi
+elif [[ -d /data/.openclaw ]]; then
   OC_ROOT=/data/.openclaw
 elif [[ -d "$HOME/.openclaw" ]]; then
   OC_ROOT="$HOME/.openclaw"
@@ -323,7 +335,7 @@ MAX_STALL_PASSES="${ZHC_CLOSEOUT_MAX_STALL_PASSES:-4}"
 # interview QC awaiting a human verdict.
 _is_human_or_stuck_blocker() {
   case "$closeout_status" in
-    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|blocked-wiring-incomplete|failed|partial)
+    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|blocked-qc-pending|blocked-wiring-incomplete|failed|partial)
       return 0 ;;
   esac
   local _notion_leg; _notion_leg=$(state_get '.closeoutLegStatus.notion')

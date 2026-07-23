@@ -36,9 +36,22 @@
 # .closeoutWatchdogCronUuid by ensure-pipeline-crons.sh _register_command_cron.
 set -uo pipefail
 
-# ── Platform detection ───────────────────────────────────────────────────────
+# ── Platform detection — via the shared resolver (false-negative #3 fix) ──────
+# A pre-set OC_ROOT override is still honored (this caller's own semantics);
+# only the /data-else-HOME detection is centralized. Identical inline fallback
+# if the shared file is absent. See shared-utils/resolve-oc-root.sh.
 if [[ -z "${OC_ROOT:-}" ]]; then
-  if [[ -d /data/.openclaw ]]; then
+  _OC_ROOT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/resolve-oc-root.sh"
+  # shellcheck source=/dev/null
+  [[ -f "$_OC_ROOT_RESOLVER" ]] && source "$_OC_ROOT_RESOLVER"
+  if declare -F resolve_oc_root >/dev/null 2>&1; then
+    if _oc_root_resolved="$(resolve_oc_root)"; then
+      OC_ROOT="$_oc_root_resolved"
+    else
+      echo "[closeout-readiness-watchdog] no OpenClaw root found; aborting" >&2
+      exit 0
+    fi
+  elif [[ -d /data/.openclaw ]]; then
     OC_ROOT=/data/.openclaw
   elif [[ -d "${HOME}/.openclaw" ]]; then
     OC_ROOT="${HOME}/.openclaw"
@@ -425,7 +438,7 @@ elif [[ (-z "$build_completed_at" || "$build_completed_at" == "null") ]]; then
 else
   # buildCompletedAt set - check closeout
   case "${closeout_status:-}" in
-    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|failed)
+    blocked-floor-incomplete|blocked-libraries-incomplete|blocked-interview-incomplete|blocked-qc-pending|failed)
       if (( closeout_age_hours >= ZHC_STUCK_CLOSEOUT_HOURS )); then
         STUCK_CLASS="STUCK_CLOSEOUT_BLOCKED"
         STUCK_REASON="closeoutStatus=${closeout_status} for ${closeout_age_hours}h (threshold: ${ZHC_STUCK_CLOSEOUT_HOURS}h)"
