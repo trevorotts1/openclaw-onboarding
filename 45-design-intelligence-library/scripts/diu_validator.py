@@ -100,8 +100,10 @@ runs on any box with a stock Python 3.
 
 import argparse
 import json
+import os
 import re
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -764,6 +766,327 @@ def cmd_prompt_band(args) -> int:
 
 
 # ---------------------------------------------------------------------------
+# 5) SELF-TEST — smoke-test every gate in one command.
+# ---------------------------------------------------------------------------
+def cmd_self_test(_args) -> int:
+    """Run a self-contained smoke test of every enforcement gate.
+    Returns 0 when all tests pass, non-zero on the first failure."""
+    failures = []
+
+    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
+    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
+    if TIER_CAPS != expected:
+        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
+    else:
+        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
+
+    # (b) Prompt-band max for text_bearing_long is 19000.
+    try:
+        bands = load_bands()
+        tbl = bands.get("text_bearing_long")
+        if tbl is None:
+            failures.append("text_bearing_long band missing from prompt-bands.json")
+        elif tbl.get("max") != 19000:
+            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
+        elif tbl.get("min") != 5000:
+            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
+        else:
+            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
+    except(Exception) as exc:  # noqa: BLE001
+        failures.append(f"prompt-bands load failed: {exc}")
+
+    # (c) Text-bearing bands never route to nano-banana-2.
+    for bid, band in bands.items():
+        if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
+            failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
+    print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
+
+    # (d) prompt-caps: a 19,500-char "long" prompt must be over cap.
+    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
+    if cap_rc != 3:
+        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
+    else:
+        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
+
+    # (e) prompt-caps: a 18,500-char "long" prompt must pass.
+    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
+    if cap_rc2 != 0:
+        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
+    else:
+        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
+
+    # (f) route-check: a "webinar deck" must be rejected.
+    rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
+    if rc_rc != 2:
+        failures.append(f"route-check: 'webinar deck' should exit 2, got {rc_rc}")
+    else:
+        print("SELF-TEST OK: route-check rejects webinar deck (exit 2).")
+
+    # (g) route-check: a "brand deck" must pass.
+    rc_rc2 = cmd_route_check(_FakeArgs(deck_kind="brand deck"))
+    if rc_rc2 != 0:
+        failures.append(f"route-check: 'brand deck' should exit 0, got {rc_rc2}")
+    else:
+        print("SELF-TEST OK: route-check passes brand deck (exit 0).")
+
+    # (h) prompt-band: a 1,000-char text_bearing_long prompt must fail the floor.
+    pb_rc = cmd_prompt_band(_FakeArgs(
+        band="text_bearing_long", prompt="x" * 1000))
+    if pb_rc != 3:
+        failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
+    else:
+        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
+
+    # (i) consent-check: a missing identity file must fail closed.
+    with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as tf:
+        tf.write(b"")
+        tmpf = tf.name
+    try:
+        os.unlink(tmpf)
+        cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
+        if cc_rc != 4:
+            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+        else:
+            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+    finally:
+        pass
+
+    if failures:
+        print("\nSELF-TEST FAILURES:", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print("\nSELF-TEST ALL PASSED.")
+    return 0
+
+
+class _FakeArgs:
+    """Lightweight namespace for self-test argument simulation."""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+        self.__dict__.setdefault("prompt_file", None)
+        self.__dict__.setdefault("bands_file", None)
+        self.__dict__.setdefault("copy", [])
+        self.__dict__.setdefault("style_ref", False)
+        self.__dict__.setdefault("run_dir", None)
+
+
+# ---------------------------------------------------------------------------
+# 5) SELF-TEST -- smoke-test every gate in one command.
+# ---------------------------------------------------------------------------
+def cmd_self_test(_args) -> int:
+    """Run a self-contained smoke test of every enforcement gate.
+    Returns 0 when all tests pass, non-zero on the first failure."""
+    failures = []
+
+    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
+    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
+    if TIER_CAPS != expected:
+        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
+    else:
+        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
+
+    # (b) Prompt-band max for text_bearing_long is 19000.
+    try:
+        bands = load_bands()
+        tbl = bands.get("text_bearing_long")
+        if tbl is None:
+            failures.append("text_bearing_long band missing from prompt-bands.json")
+        elif tbl.get("max") != 19000:
+            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
+        elif tbl.get("min") != 5000:
+            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
+        else:
+            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
+    except(Exception) as exc:  # noqa: BLE001
+        failures.append(f"prompt-bands load failed: {exc}")
+
+    # (c) Text-bearing bands never route to nano-banana-2.
+    for bid, band in bands.items():
+        if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
+            failures.append(
+                f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
+    print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
+
+    # (d) prompt-caps: a 19,500-char "long" prompt must be over cap.
+    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
+    if cap_rc != 3:
+        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
+    else:
+        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
+
+    # (e) prompt-caps: a 18,500-char "long" prompt must pass.
+    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
+    if cap_rc2 != 0:
+        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
+    else:
+        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
+
+    # (f) route-check: a "webinar deck" must be rejected.
+    rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
+    if rc_rc != 2:
+        failures.append(f"route-check: 'webinar deck' should exit 2, got {rc_rc}")
+    else:
+        print("SELF-TEST OK: route-check rejects webinar deck (exit 2).")
+
+    # (g) route-check: a "brand deck" must pass.
+    rc_rc2 = cmd_route_check(_FakeArgs(deck_kind="brand deck"))
+    if rc_rc2 != 0:
+        failures.append(f"route-check: 'brand deck' should exit 0, got {rc_rc2}")
+    else:
+        print("SELF-TEST OK: route-check passes brand deck (exit 0).")
+
+    # (h) prompt-band: a 1,000-char text_bearing_long prompt must fail the floor.
+    pb_rc = cmd_prompt_band(_FakeArgs(
+        band="text_bearing_long", prompt="x" * 1000))
+    if pb_rc != 3:
+        failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
+    else:
+        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
+
+    # (i) consent-check: a missing identity file must fail closed.
+    with tempfile.NamedTemporaryFile(suffix=".md", delete=False) as tf:
+        tf.write(b"")
+        tmpf = tf.name
+    try:
+        os.unlink(tmpf)
+        cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
+        if cc_rc != 4:
+            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+        else:
+            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+    finally:
+        pass
+
+    if failures:
+        print("\nSELF-TEST FAILURES:", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print("\nSELF-TEST ALL PASSED.")
+    return 0
+
+
+class _FakeArgs:
+    """Lightweight namespace for self-test argument simulation."""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+        self.__dict__.setdefault("prompt_file", None)
+        self.__dict__.setdefault("bands_file", None)
+        self.__dict__.setdefault("copy", [])
+        self.__dict__.setdefault("style_ref", False)
+        self.__dict__.setdefault("run_dir", None)
+
+
+# ---------------------------------------------------------------------------
+# 5) SELF-TEST — smoke-test every gate in one command.
+# ---------------------------------------------------------------------------
+def cmd_self_test(_args) -> int:
+    """Run a self-contained smoke test of every enforcement gate.
+    Returns 0 when all tests pass, non-zero on the first failure."""
+    failures = []
+
+    # (a) Caps are correct: SHORT=500, MEDIUM=2800, LONG=19000.
+    expected = {"SHORT": 500, "MEDIUM": 2800, "LONG": 19000}
+    if TIER_CAPS != expected:
+        failures.append(f"TIER_CAPS mismatch: {TIER_CAPS} != {expected}")
+    else:
+        print("SELF-TEST OK: TIER_CAPS correct (SHORT=500, MEDIUM=2800, LONG=19000).")
+
+    # (b) Prompt-band max for text_bearing_long is 19000.
+    try:
+        bands = load_bands()
+        tbl = bands.get("text_bearing_long")
+        if tbl is None:
+            failures.append("text_bearing_long band missing from prompt-bands.json")
+        elif tbl.get("max") != 19000:
+            failures.append(f"text_bearing_long.max != 19000 (got {tbl.get('max')})")
+        elif tbl.get("min") != 5000:
+            failures.append(f"text_bearing_long.min != 5000 (got {tbl.get('min')})")
+        else:
+            print("SELF-TEST OK: text_bearing_long band floor=5000, max=19000.")
+    except(Exception) as exc:  # noqa: BLE001
+        failures.append(f"prompt-bands load failed: {exc}")
+
+    # (c) Text-bearing bands never route to nano-banana-2.
+    for bid, band in bands.items():
+        if _is_text_bearing(band) and "nano-banana-2" in band.get("endpoints", []):
+            failures.append(f"{bid}: nano-banana-2 in endpoints on text-bearing band (GK-20).")
+    print("SELF-TEST OK: no text-bearing band routes to nano-banana-2 (GK-20 reconciled).")
+
+    # (d) prompt-caps: a 19,500-char long prompt must be over cap.
+    cap_rc = cmd_prompt_caps(_FakeArgs(prompt="x" * 19500, tier="LONG"))
+    if cap_rc != 3:
+        failures.append(f"prompt-caps: 19,500-char LONG prompt should exit 3, got {cap_rc}")
+    else:
+        print("SELF-TEST OK: prompt-caps catches 19,500-char LONG over-cap (exit 3).")
+
+    # (e) prompt-caps: a 18,500-char long prompt must pass.
+    cap_rc2 = cmd_prompt_caps(_FakeArgs(prompt="x" * 18500, tier="LONG"))
+    if cap_rc2 != 0:
+        failures.append(f"prompt-caps: 18,500-char LONG prompt should exit 0, got {cap_rc2}")
+    else:
+        print("SELF-TEST OK: prompt-caps passes 18,500-char LONG prompt.")
+
+    # (f) route-check: a webinar deck must be rejected.
+    rc_rc = cmd_route_check(_FakeArgs(deck_kind="webinar deck"))
+    if rc_rc != 2:
+        failures.append(f"route-check: 'webinar deck' should exit 2, got {rc_rc}")
+    else:
+        print("SELF-TEST OK: route-check rejects webinar deck (exit 2).")
+
+    # (g) route-check: a brand deck must pass.
+    rc_rc2 = cmd_route_check(_FakeArgs(deck_kind="brand deck"))
+    if rc_rc2 != 0:
+        failures.append(f"route-check: 'brand deck' should exit 0, got {rc_rc2}")
+    else:
+        print("SELF-TEST OK: route-check passes brand deck (exit 0).")
+
+    # (h) prompt-band: a 1,000-char text_bearing_long prompt must fail the floor.
+    pb_rc = cmd_prompt_band(_FakeArgs(
+        band="text_bearing_long", prompt="x" * 1000))
+    if pb_rc != 3:
+        failures.append(f"prompt-band: 1,000-char text_bearing_long prompt should exit 3 (floor), got {pb_rc}")
+    else:
+        print("SELF-TEST OK: prompt-band floor rejects 1,000-char text_bearing_long prompt.")
+
+    # (i) consent-check: a missing identity file must fail closed.
+    import tempfile as _tf
+    import os as _os
+    with _tf.NamedTemporaryFile(suffix=".md", delete=False) as tf:
+        tf.write(b"")
+        tmpf = tf.name
+    try:
+        _os.unlink(tmpf)
+        cc_rc = cmd_consent_check(_FakeArgs(identity_file=tmpf))
+        if cc_rc != 4:
+            failures.append(f"consent-check: missing IDENTITY file should exit 4, got {cc_rc}")
+        else:
+            print("SELF-TEST OK: consent-check fails closed on missing IDENTITY file (exit 4).")
+    finally:
+        pass
+
+    if failures:
+        print("\nSELF-TEST FAILURES:", file=sys.stderr)
+        for f in failures:
+            print(f"  - {f}", file=sys.stderr)
+        return 1
+    print("\nSELF-TEST ALL PASSED.")
+    return 0
+
+
+class _FakeArgs:
+    """Lightweight namespace for self-test argument simulation."""
+    def __init__(self, **kw):
+        self.__dict__.update(kw)
+        self.__dict__.setdefault("prompt_file", None)
+        self.__dict__.setdefault("bands_file", None)
+        self.__dict__.setdefault("copy", [])
+        self.__dict__.setdefault("style_ref", False)
+        self.__dict__.setdefault("run_dir", None)
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
@@ -817,6 +1140,9 @@ def main(argv=None) -> int:
                     help="a hard-rule violation description (repeatable); any one "
                          "fails the whole test")
     fd.set_defaults(func=cmd_fidelity)
+
+    st = sub.add_parser("self-test", help="smoke-test every enforcement gate")
+    st.set_defaults(func=cmd_self_test)
 
     args = ap.parse_args(argv)
     return args.func(args)
