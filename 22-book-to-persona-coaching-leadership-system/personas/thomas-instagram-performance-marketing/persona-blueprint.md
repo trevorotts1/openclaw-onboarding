@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** July 6 at 7:56 AM
 **Gemini Index:** thomas-instagram-performance-marketing
-**Index Location:** ./qmd-index/
+**Index Location:** Managed by persona-selector-v2.py (canonical SET: persona-categories.json)
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

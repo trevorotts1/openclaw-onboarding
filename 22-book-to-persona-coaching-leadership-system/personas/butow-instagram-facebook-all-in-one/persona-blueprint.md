@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** July 6
 **Gemini Index:** butow-instagram-facebook-all-in-one
-**Index Location:** ./qmd-index/
+**Index Location:** Managed by persona-selector-v2.py (canonical SET: persona-categories.json)
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

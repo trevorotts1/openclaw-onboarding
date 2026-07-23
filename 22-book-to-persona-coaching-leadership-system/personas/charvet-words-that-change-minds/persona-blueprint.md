@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** July 4 at 5:58 PM
 **Gemini Index:** charvet-words-that-change-minds
-**Index Location:** ./qmd-index/
+**Index Location:** Managed by persona-selector-v2.py (canonical SET: persona-categories.json)
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

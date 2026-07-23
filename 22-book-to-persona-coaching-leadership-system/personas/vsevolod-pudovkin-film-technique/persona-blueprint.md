@@ -3,7 +3,7 @@
 **Version:** 1.0.0
 **Built:** June 24 at 8:09 AM
 **Gemini Index:** vsevolod-pudovkin-film-technique
-**Index Location:** ./qmd-index/
+**Index Location:** Managed by persona-selector-v2.py (canonical SET: persona-categories.json)
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PASS
