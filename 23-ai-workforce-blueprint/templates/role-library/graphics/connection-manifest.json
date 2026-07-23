@@ -1,7 +1,7 @@
 {
   "_comment": "Connection-manifest for the Graphics department. verify-wiring.sh reads this file and checks each required cfg_key. Advisory (required:false) entries are documentation-only hooks verify-wiring.sh reports but never gates on.",
   "dept": "graphics",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "connection_points": [
     {
       "name": "gip-prompt-authoring-route",
@@ -30,6 +30,22 @@
       "cfg_key": "env.vars.GOHIGHLEVEL_LOCATION_ID",
       "cfg_key_aliases": ["env.vars.GHL_LOCATION_ID"],
       "required": true
+    },
+    {
+      "name": "gip-prompt-band-enforcement",
+      "description": "Per decision GK-D2 (extended to Agnes skills 63/64): every GPT-image-2 and Agnes Image prompt must fall within 5,000-19,000 stripped chars (5,000 is the HARD FLOOR, 19,000 is the MAX — stays 6,000 chars clear of the 25,000 API cap). Enforced by diu_validator.py prompt-band (GIP) and prove_agnes_image_prompt_floor.py (Agnes). Logo prompts MUST use image-to-image (never text-to-image). Style-reference-only directive is MANDATORY whenever reference images are attached. Advisory (required:false) — enforced structurally via the Prompt Author -> Prompt QC Specialist -> Generation Operator SOP-DIU-601 chain + the deterministic gate scripts, not via openclaw.json.",
+      "cfg_key": "roleLibrary.graphics.gipPromptBand",
+      "floor": 5000,
+      "ceiling": 19000,
+      "api_cap": 25000,
+      "gates": [
+        "45-design-intelligence-library/scripts/diu_validator.py prompt-band",
+        "45-design-intelligence-library/scripts/prove_gip_prompt_floor.py",
+        "63-agnes-image/prove_agnes_image_prompt_floor.py"
+      ],
+      "logo_rule": "image-to-image ONLY (never text-to-image)",
+      "style_ref_directive": "MANDATORY",
+      "required": false
     }
   ]
 }
