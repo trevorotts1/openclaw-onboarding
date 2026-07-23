@@ -1,5 +1,5 @@
 #!/bin/bash
-# qc-system-integrity.sh — v9.6.2
+# qc-system-integrity.sh — v9.6.3 (U076: integrity gate warnings promoted/categorized)
 #
 # Executable runner for SYSTEM-DIAGNOSTIC-CHECKLIST.md.
 # Runs the 9 check sections + cross-cutting checks. Exits 0 only when all green.
@@ -11,6 +11,9 @@
 
 set -u  # NOT -e — we want to keep running after failures, then report all at the end
 
+# U076 (v9.6.3): FAIL (symlink drift, legacy tree, missing MC DB),
+# N/A (prereq not met — explicit skip), WARN (SOP stubs, governance gaps).
+
 # U073 (STAGE 1): shared assert/warn/verdict helpers. The verdict at the end of
 # this script routes through qc_verdict (behavior-preserving — QC_FAIL_ON_WARN
 # is NOT set here, so warnings stay non-fatal until STAGE 2 promotes them).
@@ -21,8 +24,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS=0
 FAIL=0
 WARN=0
+NA=0
 FAILURES=()
 WARNINGS=()
+NARESULTS=()
 
 red()    { printf "\033[31m%s\033[0m\n" "$1"; }
 green()  { printf "\033[32m%s\033[0m\n" "$1"; }
@@ -52,6 +57,14 @@ warn_check() {
     WARN=$((WARN+1))
     WARNINGS+=("$id|$desc|$remedy")
   fi
+}
+
+# U076: na_result — prereq not met, explicit skip (not a warning)
+na_result() {
+  local id="$1"; local desc="$2"; local reason="${3:-}"
+  blue "  N/A $id  $desc — skip: $reason"
+  NA=$((NA+1))
+  NARESULTS+=("$id|$desc|$reason")
 }
 
 # ─── platform detect ─────────────────────────────────────────────────────────
@@ -94,7 +107,7 @@ COMPANY_DIR=${COMPANY_DIR%/}
 
 echo
 blue "══════════════════════════════════════════════════"
-blue "  OpenClaw System Integrity Check — v9.6.2"
+blue "  OpenClaw System Integrity Check — v9.6.3"
 blue "══════════════════════════════════════════════════"
 echo "Platform:   $PLATFORM"
 echo "Workspace:  $WORKSPACE"
@@ -153,13 +166,13 @@ if [ -d "$COMPANY_DIR/departments" ]; then
     red "  ✗ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (pre-v9.6.1 bug)"; FAIL=$((FAIL+1))
     FAILURES+=("2.3|Files copied instead of symlinked|Re-run build-workforce.py — v9.6.1+ uses symlinks")
   elif [ "$COPIED" = "0" ] && [ "$SYMLINKED" = "0" ]; then
-    yellow "  ⚠ 2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"; WARN=$((WARN+1))
+    na_result "2.3" "No AGENTS/TOOLS/USER.md found in any dept" "build may be incomplete - no files to check"
   else
-    yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (drift detected)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Mixed symlinks and copies|Delete the copies, re-run build")
+    red "  ✗ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected)"; FAIL=$((FAIL+1))
+    FAILURES+=("2.3|Mixed symlinks and copies (drift)|Delete the copies, re-run build")
   fi
 else
-  yellow "  ⚠ 2.3  No departments folder to check"; WARN=$((WARN+1))
+  na_result "2.3" "No departments folder to check" "company not built yet (CHECK 1.1 owns this)"
 fi
 # 2.4 — dept directors in agents.list[]
 # H2: inject via env var — OCJSON path must not be shell-expanded inside a Python string literal
@@ -212,7 +225,7 @@ if [ -d "$COMPANY_DIR/departments" ]; then
   if [ "$SOPS_TOTAL" -gt 0 ] && [ "$SOPS_WITH_RULE" = "$SOPS_TOTAL" ]; then
     green "  ✓ 2.7  All $SOPS_TOTAL SOPs contain the 'no guessing' rule"; PASS=$((PASS+1))
   elif [ "$SOPS_TOTAL" = "0" ]; then
-    yellow "  ⚠ 2.7  No SOPs found to check"; WARN=$((WARN+1))
+    na_result "2.7" "No SOPs found to check" "no SOP files in departments - workforce not yet built"
   else
     yellow "  ⚠ 2.7  Only $SOPS_WITH_RULE / $SOPS_TOTAL SOPs contain the rule"; WARN=$((WARN+1))
     WARNINGS+=("2.7|Some SOPs missing no-guessing rule|Re-run populate-sops-from-manifest.py")
@@ -436,7 +449,8 @@ if [ -n "$CC_DB" ]; then
     fi
   fi
 else
-  yellow "  ⚠ 7.0  Mission Control DB not found — Skill 32 may not be installed"; WARN=$((WARN+1))
+  red "  ✗ 7.0  Mission Control DB not found — Skill 32 may not be installed"; FAIL=$((FAIL+1))
+  FAILURES+=("7.0|Mission Control DB not found at expected paths|Run: install Skill 32 (Command Center setup)")
 fi
 warn_check "7.5" "Kanban dashboard reachable at localhost:4000" \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000 2>/dev/null)\" = '200' ]" \
@@ -691,9 +705,7 @@ if [[ -n "$PROVIDER_INVARIANT_SCRIPT" ]]; then
     fi
   fi
 else
-  yellow "  ⚠ X.8  qc-assert-provider-capability-invariants.sh not found — skipping provider invariant check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.8|qc-assert-provider-capability-invariants.sh missing|Update openclaw-onboarding to v12.14.0+")
+  na_result "X.8" "qc-assert-provider-capability-invariants.sh not found" "gate not installed yet - update openclaw-onboarding to v12.14.0+"
 fi
 
 # ─── CHECK X.9: Ollama provider platform standard (v12.21.0) ────────────────
@@ -739,9 +751,7 @@ if [[ -n "$OLLAMA_PLATFORM_SCRIPT" ]]; then
     fi
   fi
 else
-  yellow "  ⚠ X.9  qc-assert-ollama-provider-platform.sh not found — skipping Ollama platform check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.9|qc-assert-ollama-provider-platform.sh missing|Update openclaw-onboarding to v12.21.0+")
+  na_result "X.9" "qc-assert-ollama-provider-platform.sh not found" "gate not installed yet - update openclaw-onboarding to v12.21.0+"
 fi
 
 # ─── CHECK X.10: No client names in repo files (v12.22.0) ───────────────────
@@ -777,9 +787,7 @@ if [[ -n "$NO_CLIENT_NAMES_SCRIPT" ]]; then
     done <<< "$NO_CLIENT_NAMES_OUT"
   fi
 else
-  yellow "  ⚠ X.10 qc-assert-no-client-names.sh not found — skipping client-name check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.10|qc-assert-no-client-names.sh missing|Update openclaw-onboarding to v12.22.0+")
+  na_result "X.10" "qc-assert-no-client-names.sh not found" "gate not installed yet - update openclaw-onboarding to v12.22.0+"
 fi
 
 # ─── CHECK X.11: Workspace department materialization (v12.23.0) ────────────
@@ -859,8 +867,7 @@ if [[ -n "$WORKSPACE_SHELL_SCRIPT" ]]; then
         esac
       done <<< "$WORKSPACE_SHELL_OUT" ;;
     4)
-      yellow "  ⚠ X.11 No materialized workspace found yet (workforce not built — see CHECK 1.1)"; WARN=$((WARN+1))
-      WARNINGS+=("X.11|No workspace departments dir resolved (workforce not built yet)|Run Skill 23 build; this becomes a hard-fail once a workspace exists") ;;
+      na_result "X.11" "No materialized workspace found yet" "workforce not built (CHECK 1.1 owns this); becomes a hard-fail once a workspace exists" ;;
     *)
       # FAIL-CLOSED CATCH-ALL: an UNKNOWN non-zero rc is a gate this consumer has not
       # been taught. It must never be downgraded to a WARN — a WARN does not change
@@ -881,9 +888,7 @@ if [[ -n "$WORKSPACE_SHELL_SCRIPT" ]]; then
       fi ;;
   esac
 else
-  yellow "  ⚠ X.11 qc-assert-workspace-departments-built.sh not found — skipping workspace-shell check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.11|qc-assert-workspace-departments-built.sh missing|Update openclaw-onboarding to v12.23.0+")
+  na_result "X.11" "qc-assert-workspace-departments-built.sh not found" "gate not installed yet - update openclaw-onboarding to v12.23.0+"
 fi
 
 # ─── CHECK X.12: Repo consistency + artifact coverage (complete check) ────────
@@ -938,9 +943,7 @@ if [[ -n "$CONSISTENCY_GATE" ]]; then
   esac
   rm -f "$_cg_tmp"
 else
-  yellow "  ⚠ X.12 qc-assert-repo-consistency.py not found — skipping repo-consistency check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.12|qc-assert-repo-consistency.py missing|Update openclaw-onboarding to the version that ships the repo-consistency gate")
+  na_result "X.12" "qc-assert-repo-consistency.py not found" "gate not installed yet - update openclaw-onboarding"
 fi
 
 # ─── CHECK X.13: GHL MCP supervision standard (v12.22.0) ─────────────────────
@@ -977,9 +980,7 @@ if [[ -n "$GHL_SUP_SCRIPT" ]]; then
     done <<< "$GHL_SUP_OUT"
   fi
 else
-  yellow "  ⚠ X.13 qc-assert-ghl-mcp-supervised.sh not found — skipping GHL MCP supervision check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.13|qc-assert-ghl-mcp-supervised.sh missing|Update openclaw-onboarding to v12.22.0+")
+  na_result "X.13" "qc-assert-ghl-mcp-supervised.sh not found" "gate not installed yet - update openclaw-onboarding to v12.22.0+"
 fi
 
 # ─── CHECK X.14: Platform-facts stamp in AGENTS.md (W7.4) ───────────────────
@@ -1028,9 +1029,7 @@ if [[ -n "$PLATFORM_FACTS_SCRIPT" ]]; then
       WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh failed unexpectedly (rc=$PLATFORM_FACTS_RC)|Run: bash scripts/qc-assert-platform-facts-stamped.sh for details") ;;
   esac
 else
-  yellow "  ⚠ X.14 qc-assert-platform-facts-stamped.sh not found — skipping platform-facts check"
-  WARN=$((WARN+1))
-  WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh missing|Update openclaw-onboarding to the version that ships W7.4")
+  na_result "X.14" "qc-assert-platform-facts-stamped.sh not found" "gate not installed yet - update openclaw-onboarding"
 fi
 
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
@@ -1041,6 +1040,7 @@ blue "════════════════════════�
 echo "  Passed:   $PASS"
 [ "$WARN" -gt 0 ] && yellow "  Warnings: $WARN" || echo "  Warnings: $WARN"
 [ "$FAIL" -gt 0 ] && red "  Failures: $FAIL" || echo "  Failures: $FAIL"
+[ "$NA" -gt 0 ] && echo "  N/A:      $NA" || echo "  N/A:      $NA"
 echo
 
 if [ "$FAIL" -gt 0 ]; then
@@ -1067,10 +1067,21 @@ if [ "$WARN" -gt 0 ]; then
   echo
 fi
 
-# U073 (STAGE 1): the verdict consults BOTH counters via the shared helper.
-# QC_FAIL_ON_WARN is deliberately NOT set here, so a run with warnings but
-# zero failures still exits 0 — exactly the pre-U073 behavior. STAGE 2 will
-# opt individual gates into warning-failure one check at a time.
+if [ "$NA" -gt 0 ]; then
+  blue "NOT APPLICABLE (N/A) - skipped because prerequisites were not met:"
+  for n in "${NARESULTS[@]}"; do
+    nid=$(echo "$n" | cut -d'|' -f1)
+    ndesc=$(echo "$n" | cut -d'|' -f2)
+    nreason=$(echo "$n" | cut -d'|' -f3)
+    echo "  [$nid] $ndesc"
+    [ -n "$nreason" ] && echo "       -> $nreason"
+  done
+  echo
+fi
+# U073 (STAGE 1) + U076: the verdict consults BOTH counters via the shared helper.
+# QC_FAIL_ON_WARN is deliberately NOT set. U076 moves three warn-only sites
+# into the failure path directly (symlink drift, legacy trees, missing MC DB) and
+# converts not-applicable warns to explicit N/A skips. Remaining warnings stay non-fatal.
 QC_PASS=$PASS QC_FAIL=$FAIL QC_WARN=$WARN
 if qc_verdict "system-integrity"; then
   green "ALL CHECKS PASSED ✓"
