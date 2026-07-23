@@ -3601,6 +3601,26 @@ if isinstance(n, int) and n > 0:
       [[ "$skill_name" == "__TREE_SHA__" ]] && continue
       case "$skill_name" in *ARCHIVED*) continue ;; esac
 
+      # --only filter in A3 gate: when --only is set, only check the target
+      # skill(s). Non-target skills may have drifted since the last full run,
+      # and that drift must not produce a false A3 failure for THIS --only run.
+      if [ -n "$ONLY_SKILLS" ]; then
+        _a3_skill_prefix=$(echo "$skill_name" | cut -d'-' -f1)
+        _a3_match="false"
+        _a3_ifs_save=$IFS; IFS=','
+        for _a3_want in $ONLY_SKILLS; do
+          _a3_want_trimmed=$(echo "$_a3_want" | tr -d '[:space:]')
+          if [ "$_a3_skill_prefix" = "$_a3_want_trimmed" ]; then
+            _a3_match="true"
+            break
+          fi
+        done
+        IFS=$_a3_ifs_save
+        if [ "$_a3_match" != "true" ]; then
+          continue
+        fi
+      fi
+
       dest_digest=$(echo "$DEST_MANIFEST" | grep "^${skill_name}|" | cut -d'|' -f2 | head -1 || true)
       if [ -z "$dest_digest" ]; then
         echo "    [A3] MISMATCH: $skill_name — present in source but NOT in destination" >&2
