@@ -248,6 +248,7 @@ That file is the master instruction file. It contains:
 | 64-agnes-video | **Agnes Video V2.0 (v1.0.0)** — the endpoint reference and asynchronous workflow for the Agnes AI video-generation model `agnes-video-v2.0` on the `apihub.agnes-ai.com` gateway. Covers text-to-video, image-to-video, and keyframe animation via the create-task / poll-result async pattern, the `num_frames` 8n+1 rule, resolution tiers, and reading the returned size/seconds/metadata as the source of truth. A REFERENCE (not a new-account installer): the fleet already carries the `AGNES_AI_API_KEY` credential (SET/NOT-SET only, value never printed). As Skill 30 (Fish Audio) is the operating manual for text-to-speech, this is for text-to-video. Installed in Wave 3 alongside the content + service tools. |
 **Total: 64 numbered skill folders** (01–64) — **59 active + 5 archived** (11, 13, 21, 33, 34). This matches the live skill tree on `main`.
 
+
 > **Note:** The Voice Call Plugin (`@openclaw/voice-call`) is installed separately via `openclaw plugins install @openclaw/voice-call`. It is NOT part of the onboarding skill sequence — installing it as a skill caused double-install conflicts.
 
 ---
