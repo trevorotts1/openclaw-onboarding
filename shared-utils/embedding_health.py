@@ -1147,7 +1147,7 @@ def check_cc_sop_index(
     # THE BLIND SPOT THIS CLOSES. Every leg above checks INTERNAL CONSISTENCY --
     # "do the embeddings match the rows?" -- and a box whose `sops` table holds
     # nothing but the CC boot-seed demo fixture is perfectly self-consistent. So
-    # a box carrying 24 rows where the canonical library is 2555 reported
+    # a box carrying 24 rows where the canonical library is 2617 reported
     # `overall: pass` while its semantic SOP search covered 0.9% of the corpus.
     # That false-green is precisely what let the never-wired-into-the-updater
     # SOP ingestion survive unnoticed. Consistency is not coverage: this leg

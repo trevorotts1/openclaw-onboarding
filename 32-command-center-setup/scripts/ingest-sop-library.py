@@ -11,7 +11,7 @@ Safe to re-run: every write is INSERT OR REPLACE / INSERT OR IGNORE,
 keyed off stable IDs derived from each SOP's slug. Used by Skill 32's
 fresh install AND by client update flows that ship a refreshed library.
 """
-import sqlite3, json, os, secrets, sys
+import sqlite3, json, os, secrets, sys, hashlib
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -186,7 +186,25 @@ with open(JSONL) as f:
         slug = sop.get("slug", "")
         if not slug:
             continue
-        sop_id = "sop_" + slug.replace("-", "_")[:60]
+        # U119 (same as U078): collision-resistant deterministic identifier. The
+        # old 60-char truncation caused 26 collision groups covering 88 slugs,
+        # collapsing to 26 surviving identifiers — 62 records silently destroyed
+        # (INSERT OR REPLACE on the colliding PRIMARY KEY). A full sha256 hash of
+        # the slug is collision-resistant and deterministic, so every distinct
+        # slug lands as a distinct row and the canonical count reconciles with the
+        # asset's distinct-slug count.
+        sop_id = "sop_" + hashlib.sha256(slug.encode()).hexdigest()
+
+        # U119: explicit collision detection — abort rather than silently replace.
+        # If this sop_id already exists with a DIFFERENT slug, that's a hash
+        # collision (astronomically unlikely with sha256, but checked anyway so a
+        # future regression can never silently destroy a record again).
+        existing = db.execute("SELECT slug FROM sops WHERE id = ?", (sop_id,)).fetchone()
+        if existing and existing[0] != slug:
+            print(f"  FATAL: hash collision detected — sop_id={sop_id} maps to both "
+                  f"slug={existing[0]!r} and slug={slug!r}. Aborting.", file=sys.stderr)
+            sys.exit(1)
+
         slug_to_id[slug] = sop_id
         deps_pending.append((sop_id, slug, sop.get("dependencies_upstream", [])))
         data = {

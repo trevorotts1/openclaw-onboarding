@@ -3,7 +3,7 @@
 # Introduced in onboarding v10.13.29 (Skill 32 v6.6.0) — Mac mirror of
 # the VPS v10.14.37 release that introduced the library.
 #
-# Downloads the canonical 2,555-SOP V2 library from this repo's release
+# Downloads the canonical 2,617-SOP V2 library from this repo's release
 # asset and ingests it into the local mission-control.db. Applies
 # migration 028 (V2 schema additions) if not already applied.
 #
@@ -48,7 +48,7 @@ TAG="${2:-$(_mf release_tag v10.13.29)}"
 REPO="trevorotts1/openclaw-onboarding"
 ASSET="$(_mf asset sops-library-v2.jsonl.gz)"
 EXPECTED_SHA256="$(_mf sha256 '')"
-CANONICAL_SOP_COUNT="$(_mf canonical_sop_count 2555)"
+CANONICAL_SOP_COUNT="$(_mf canonical_sop_count 2617)"
 URL="https://github.com/${REPO}/releases/download/${TAG}/${ASSET}"
 
 # Resolve mission-control.db (mirror add-department.sh:115-126, Mac FIRST) so this
@@ -97,7 +97,7 @@ else
   CURRENT_COUNT=0
 fi
 echo "[sop-library] db=$DB  current sops rows=$CURRENT_COUNT  canonical=$CANONICAL_SOP_COUNT"
-if [ "${SOP_LIB_FORCE:-0}" != "1" ] && [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+if [ "${SOP_LIB_FORCE:-0}" != "1" ] && [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2617}" ] 2>/dev/null; then
   echo "[sop-library] SKIP — this box already holds $CURRENT_COUNT sops rows (>= canonical $CANONICAL_SOP_COUNT)."
   echo "[sop-library] Nothing downloaded, nothing written, DB untouched. (SOP_LIB_FORCE=1 to re-ingest anyway.)"
   echo "[sop-library] downloaded 0 SOP records (skipped — already populated)"
@@ -164,12 +164,12 @@ FINAL_COUNT=0
 for _sop_try in 1 2 3 4 5 6; do
   sqlite3 "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
   FINAL_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
-  if [ "${FINAL_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+  if [ "${FINAL_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2617}" ] 2>/dev/null; then
     break
   fi
   sleep 2
 done
-if [ "${FINAL_COUNT:-0}" -lt "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+if [ "${FINAL_COUNT:-0}" -lt "${CANONICAL_SOP_COUNT:-2617}" ] 2>/dev/null; then
   echo "[sop-library] FATAL: post-ingest population is $FINAL_COUNT rows, BELOW the canonical $CANONICAL_SOP_COUNT." >&2
   echo "[sop-library] The ingest did NOT land. DB backup retained at $BACKUP." >&2
   echo "[sop-library] This box's SOP library is INCOMPLETE — do not treat this update as successful." >&2

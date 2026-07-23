@@ -2545,7 +2545,7 @@ except Exception:
   # `sops` rows -- 23 of them the CC boot-seed demo fixture (autoSeedStarterSOPs
   # / STARTER_SOPS) plus 1 manual, with `SELECT COUNT(*) FROM sops WHERE source
   # IS NOT NULL` = 0, i.e. NOTHING was ever ingested from any file. A correctly
-  # populated box holds 2578 (2555 library + 23 starters). 24/2578 means
+  # populated box holds 2640 (2617 library + 23 starters). 24/2640 means
   # semantic SOP search covered 0.9% of the corpus while the box reported pass.
   #
   # WHY THE EXISTING WIRING DID NOT COVER IT. run-full-install.sh phase 6i DOES
@@ -2569,9 +2569,9 @@ except Exception:
   #     `sop_<slug>` primary key, INSERT OR IGNORE elsewhere) and DELETES
   #     nothing, so even a forced re-run cannot duplicate a row or drop a
   #     client SOP.
-  #   - STARTER SEED PRESERVED. The 23 CC starters and the 2555 library rows
+  #   - STARTER SEED PRESERVED. The 23 CC starters and the 2617 library rows
   #     occupy disjoint id-spaces (verified: 0 collisions), which is exactly why
-  #     a populated box reads 2578 and not 2555.
+  #     a populated box reads 2640 and not 2617.
   #   - SLUG IS NOT A BLOCKER. The client slug only scopes `client_template_vars`
   #     rows; the SOP rows themselves are global. So unlike phase 6i, a box with
   #     no resolvable slug still gets its library -- it falls back rather than
@@ -2595,13 +2595,13 @@ except Exception:
 
   # Canonical population from the manifest (single source of truth shared with
   # the ingester and embedding_health.py's coverage leg).
-  _U6C_CANON=2555
+  _U6C_CANON=2617
   if [ -f "$_U6C_MANIFEST" ] && command -v python3 >/dev/null 2>&1; then
     _U6C_CANON="$(python3 -c 'import json,sys
 try:
-    print(int(json.load(open(sys.argv[1])).get("canonical_sop_count") or 2555))
+    print(int(json.load(open(sys.argv[1])).get("canonical_sop_count") or 2617))
 except Exception:
-    print(2555)' "$_U6C_MANIFEST" 2>/dev/null || echo 2555)"
+    print(2617)' "$_U6C_MANIFEST" 2>/dev/null || echo 2617)"
   fi
 
   # Resolve the SAME mission-control.db every other Skill-32 script resolves,
@@ -2633,8 +2633,8 @@ except Exception:
   else
     _U6C_BEFORE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
     echo "  → SOP library: db=$_U6C_DB  rows=$_U6C_BEFORE  canonical=$_U6C_CANON"
-    if [ "${_U6C_BEFORE:-0}" -ge "${_U6C_CANON:-2555}" ] 2>/dev/null; then
-      # Healthy box (e.g. an already-rolled client at 2578). Touch NOTHING.
+    if [ "${_U6C_BEFORE:-0}" -ge "${_U6C_CANON:-2617}" ] 2>/dev/null; then
+      # Healthy box (e.g. an already-rolled client at 2640). Touch NOTHING.
       echo "  ✓ SOP library already at/above canonical population ($_U6C_BEFORE >= $_U6C_CANON) — no download, no write, DB untouched."
     else
       # Slug scopes client_template_vars only; the SOP rows are global, so a
@@ -2662,7 +2662,7 @@ except Exception:
         if [ -f "$_U6C_ASSERT_PY" ] && command -v python3 >/dev/null 2>&1; then
           python3 "$_U6C_ASSERT_PY" --db "$_U6C_DB" --min-total "$_U6C_CANON" --min-role-library 0 >>"$LOG_FILE" 2>&1 || _U6C_ASSERT_RC=$?
         fi
-        if [ "${_U6C_AFTER:-0}" -lt "${_U6C_CANON:-2555}" ] 2>/dev/null || [ "$_U6C_ASSERT_RC" -ne 0 ]; then
+        if [ "${_U6C_AFTER:-0}" -lt "${_U6C_CANON:-2617}" ] 2>/dev/null || [ "$_U6C_ASSERT_RC" -ne 0 ]; then
           _U6C_SOPLIB_FAIL=1
           _U6C_SOPLIB_NOTE="SOP library ingest reported success but the table is STILL under-populated ($_U6C_AFTER rows < canonical $_U6C_CANON, row-count gate rc=$_U6C_ASSERT_RC) — refusing to call this update complete"
           echo "  ✗ SOP library STILL under-populated after ingest ($_U6C_AFTER < $_U6C_CANON, gate rc=$_U6C_ASSERT_RC)"
@@ -3811,7 +3811,7 @@ if isinstance(n, int) and n > 0:
   #   - _U6C_SOPLIB_FAIL: SOP V2 library CONTENT population (U6c) -- the ingester
   #     is missing, failed, or ran and left the `sops` table below the manifest's
   #     canonical population. A box whose SOP database is a demo fixture must
-  #     never be stamped as current: that is the 24-of-2578 defect this closes.
+  #     never be stamped as current: that is the 24-of-2640 defect this closes.
   #   - _U6D_CC_CONFIG_FAIL: Command Center runtime departments + branding (U6d)
   #     could not be sourced from this box's legitimate Skill-23 identity, failed
   #     to write, or independently re-asserted as empty/placeholder afterward.
