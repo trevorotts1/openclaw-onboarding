@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+case "$1" in
+  jlist) echo "${FAKE_PM2_JLIST:-[]}" ;;
+  delete) echo "PM2-DELETE-CALLED" ;;
+esac

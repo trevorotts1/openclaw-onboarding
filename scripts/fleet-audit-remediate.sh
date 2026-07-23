@@ -13,7 +13,7 @@ WORKSPACE="${OC_ROOT}/workspace"; SKILLS_DIR="${OC_ROOT}/skills"
 SCRIPTS_DIR="${OC_ROOT}/scripts"; BUILD_STATE="${WORKSPACE}/.workforce-build-state.json"
 _APPLY=0; while [[ $# -gt 0 ]]; do case "$1" in --apply) _APPLY=1 ;; --audit-only) : ;; esac; shift; done
 declare -a _FINDINGS=()
-_finding() { local id="$1" s="$2" d="$3" t f="false"; t=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null); [[ "$s" == "FIXED" ]] && f="true"; _FINDINGS+=("{\"id\":\"${id}\",\"status\":\"${s}\",\"detail\":$(printf '%s' "$d" | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))" 2>/dev/null || printf '"%s"' "$d"),\"fixed\":${f},\"checked_at\":\"${t}\"}"); }
+_finding() { local id="$1" s="$2" d="$3" t f="false"; t=$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null); [[ "$s" == "FIXED" ]] && f="true"; _FINDINGS+=("{\"id\":\"${id}\",\"status\":\"${s}\",\"detail\":$(printf '%s' "$d" | python3 -c "import sys,json;print(json.dumps(sys.stdin.read()))" 2>/dev/null || printf '"%s"' "$d"),\"fixed\":${f},\"checked_at\":\"${t}\"}"); _log "${s}: ${d}"; }
 _log() { echo "[fleet-audit] $*"; }
 _fix() { echo "[fleet-audit] FIX: $*"; }
 
