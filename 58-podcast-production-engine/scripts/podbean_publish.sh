@@ -927,6 +927,7 @@ fi
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
+  --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"
   --data-urlencode "title=${FINAL_TITLE}"
   --data-urlencode "content=${DESCRIPTION}"
   --data-urlencode "status=${PUBLISH_STATUS}"
