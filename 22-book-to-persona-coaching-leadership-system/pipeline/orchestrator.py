@@ -2737,7 +2737,7 @@ At the end, rate your output on the 6 dimensions specified in your instructions.
 **Version:** 1.0.0
 **Built:** {datetime.datetime.now().strftime('%B %-d at %-I:%M %p')}
 **Gemini Index:** {folder}
-**Index Location:** ./qmd-index/
+**Index Location:** ../data/coaching-personas/gemini-index.sqlite (canonical embedding store)
 **Coaching Mode:** BUILT
 **Task Mode:** BUILT
 **QC Status:** QC_PENDING

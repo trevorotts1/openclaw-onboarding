@@ -5,7 +5,7 @@
   "version": "2.1.0",
   "author": "BlackCEO / Trevor Otts",
   "requires": {
-    "bins": ["qmd", "python3"],
+    "bins": ["python3"],
     "python": ["pdfplumber"],
     "shared_utils": ["select_model.py"]
   },
@@ -18,5 +18,5 @@
     "selector": "shared-utils/select_model.py",
     "forbidden_prefixes": ["anthropic/", "claude-"]
   },
-  "tags": ["personas", "coaching", "agent-governance", "pdf", "pipeline", "qmd"]
+  "tags": ["personas", "coaching", "agent-governance", "pdf", "pipeline"]
 }
