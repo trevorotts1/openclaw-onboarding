@@ -1576,9 +1576,138 @@ deliver_canonical_scripts_tree() {
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
 
 # ----------------------------------------------------------
+# U001 — Dual Sunday cron mutex + legacy crontab retirement
+#
+# Two Sunday update mechanisms can fire at the same instant on
+# Eastern-timezone boxes: the OpenClaw cron `weekly-onboarding-update`
+# (0 3 * * 0 America/New_York) and a legacy Unix crontab entry
+# (0 3 * * 0, system-local timezone). With no mutual exclusion, two
+# concurrent update-skills.sh processes race. acquire_update_lock is
+# the FIRST action in main(): a second concurrent invocation exits
+# immediately with a distinct "LOCK HELD" result instead of running
+# the update. retire_legacy_sunday_crontab removes the colliding
+# crontab entry (with backup + owner notification) so both mechanisms
+# cannot stay silently active.
+# ----------------------------------------------------------
+UPDATE_LOCK_PATH="/tmp/openclaw-update.lock"
+UPDATE_LOCK_FD=""
+UPDATE_LOCK_PID_FILE=""
+
+# Acquire the global update lock; MUST be the first call in main().
+# Prefers flock(1) where available; on hosts without it (e.g. macOS)
+# falls back to an atomic O_EXCL lock file holding the owner PID, with
+# stale-lock recovery when the recorded PID is no longer running.
+# Returns 0 with the lock held; exits 1 if another live instance
+# holds it (distinct "LOCK HELD" message, never a double-execute).
+acquire_update_lock() {
+  if command -v flock >/dev/null 2>&1; then
+    exec {UPDATE_LOCK_FD}>"$UPDATE_LOCK_PATH" || {
+      echo "FATAL: cannot open lock file $UPDATE_LOCK_PATH" >&2
+      exit 1
+    }
+    if ! flock -n "$UPDATE_LOCK_FD"; then
+      echo "LOCK HELD: another update-skills.sh instance is already running (lock: $UPDATE_LOCK_PATH)" >&2
+      exit 1
+    fi
+    echo "  [lock] acquired $UPDATE_LOCK_PATH (flock)"
+    return 0
+  fi
+
+  # Portable fallback: atomic mkdir (O_EXCL semantics) + PID liveness.
+  UPDATE_LOCK_PID_FILE="$UPDATE_LOCK_PATH/pid"
+  if mkdir "$UPDATE_LOCK_PATH" 2>/dev/null; then
+    echo "$$" > "$UPDATE_LOCK_PID_FILE"
+    echo "  [lock] acquired $UPDATE_LOCK_PATH (pid $$)"
+    return 0
+  fi
+  local holder
+  holder="$(cat "$UPDATE_LOCK_PID_FILE" 2>/dev/null || true)"
+  if [ -n "$holder" ] && kill -0 "$holder" 2>/dev/null; then
+    echo "LOCK HELD: another update-skills.sh instance is already running (pid $holder, lock: $UPDATE_LOCK_PATH)" >&2
+    exit 1
+  fi
+  # Stale lock: recorded owner is dead — take over.
+  rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || true
+  if mkdir "$UPDATE_LOCK_PATH" 2>/dev/null; then
+    echo "$$" > "$UPDATE_LOCK_PID_FILE"
+    echo "  [lock] cleared stale lock (dead pid ${holder:-unknown}); acquired $UPDATE_LOCK_PATH (pid $$)"
+    return 0
+  fi
+  echo "FATAL: cannot create lock directory $UPDATE_LOCK_PATH (permissions or path error)" >&2
+  exit 1
+}
+
+# Release the update lock on exit (wired via trap in main).
+release_update_lock() {
+  if [ -n "$UPDATE_LOCK_FD" ]; then
+    flock -u "$UPDATE_LOCK_FD" 2>/dev/null || true
+    return 0
+  fi
+  if [ -n "$UPDATE_LOCK_PID_FILE" ] && [ "$(cat "$UPDATE_LOCK_PID_FILE" 2>/dev/null || true)" = "$$" ]; then
+    rm -rf "$UPDATE_LOCK_PATH" 2>/dev/null || true
+  fi
+}
+
+# Detect a legacy Unix crontab entry `0 3 * * 0` (system-local timezone)
+# that collides with the OpenClaw cron weekly-onboarding-update
+# (0 3 * * 0 America/New_York). Returns 0 when at least one such entry
+# exists, 1 otherwise.
+detect_legacy_sunday_crontab() {
+  crontab -l 2>/dev/null | grep -Eq '^[[:space:]]*0[[:space:]]+3[[:space:]]+\*[[:space:]]+\*[[:space:]]+(0|7|0,6)([[:space:]]|$)'
+}
+
+# Retire the legacy Sunday crontab entry that collides with the OpenClaw
+# weekly-onboarding-update cron: backs up the current crontab, removes
+# every `0 3 * * 0` line, reinstalls the filtered crontab, and prints an
+# owner notification. The OpenClaw cron (America/New_York) remains the
+# sole Sunday update mechanism.
+retire_legacy_sunday_crontab() {
+  if ! command -v crontab >/dev/null 2>&1; then
+    return 0
+  fi
+  if ! detect_legacy_sunday_crontab; then
+    echo "  [crontab] no legacy Sunday '0 3 * * 0' crontab entry found — nothing to retire"
+    return 0
+  fi
+  local backup tmp
+  backup="${HOME}/.crontab.bak-dual-sunday-$(date +%Y%m%d-%H%M%S)"
+  tmp="$(mktemp "${TMPDIR:-/tmp}/crontab-u001.XXXXXX" 2>/dev/null)" || {
+    echo "  [crontab] WARNING: mktemp failed — legacy Sunday crontab entry NOT retired; both update mechanisms may fire at 3:00 AM" >&2
+    return 0
+  }
+  if ! crontab -l > "$backup" 2>/dev/null; then
+    echo "  [crontab] WARNING: could not back up crontab to $backup — legacy entry NOT retired" >&2
+    rm -f "$tmp" 2>/dev/null || true
+    return 0
+  fi
+  grep -Ev '^[[:space:]]*0[[:space:]]+3[[:space:]]+\*[[:space:]]+\*[[:space:]]+(0|7|0,6)([[:space:]]|$)' "$backup" > "$tmp" || true
+  if crontab "$tmp" 2>/dev/null; then
+    echo "  [crontab] RETIRED legacy Sunday '0 3 * * 0' crontab entry (backup: $backup)"
+    echo "  [crontab] OWNER NOTICE: the system crontab Sunday update was removed to prevent a"
+    echo "  [crontab] double-run with the OpenClaw weekly-onboarding-update cron (0 3 * * 0 America/New_York)."
+    echo "  [crontab] The OpenClaw cron is now the sole Sunday update mechanism. Restore from the"
+    echo "  [crontab] backup with 'crontab $backup' if you intentionally ran both."
+  else
+    echo "  [crontab] WARNING: failed to reinstall filtered crontab — original left intact (backup: $backup)" >&2
+  fi
+  rm -f "$tmp" 2>/dev/null || true
+}
+
+# ----------------------------------------------------------
 # Main update logic
 # ----------------------------------------------------------
 main() {
+  # ----------------------------------------------------------
+  # U001 — MUTEX (MUST stay the first action in main): take the global
+  # update lock before anything else runs, then retire any legacy
+  # Sunday crontab entry that would double-fire with the OpenClaw cron.
+  # ----------------------------------------------------------
+  acquire_update_lock
+  trap release_update_lock EXIT
+  retire_legacy_sunday_crontab
+
+  # ----------------------------------------------------------
+  # SECURITY/PRIVACY (v20.0.9) — MAINTENANCE-SILENT for the WHOLE roll. A fleet
   # ----------------------------------------------------------
   # SECURITY/PRIVACY (v20.0.9) — MAINTENANCE-SILENT for the WHOLE roll. A fleet
   # roll / skill update is inherently MAINTENANCE: no step may push an internal
@@ -4126,6 +4255,41 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   date -u +%Y-%m-%dT%H:%M:%SZ > "$SKILLS_DIR/.last-update-check" 2>/dev/null || true
 
   # ----------------------------------------------------------
+  # U001-U003 SUNDAY TIMEZONE UNIFICATION (2026-07-23)
+  #
+  # Before this fix, two mechanisms could fire concurrently at 03:00 on
+  # ET boxes: (a) a system crontab entry `0 3 * * 0` running in the
+  # system's LOCAL timezone, and (b) this OpenClaw cron entry running in
+  # America/New_York.  On ET they collided; on PT/UTC they did not
+  # collide, but the inconsistency was a latent bug.
+  #
+  # Resolution:
+  #   - U001's retire_legacy_sunday_crontab removes the system crontab
+  #     entry via mutex, so cron(8) no longer fires any Sunday update on
+  #     any box.
+  #   - U003 confirms that the OpenClaw cron below is the ONE surviving
+  #     mechanism, with an EXPLICIT America/New_York timezone.
+  #
+  #   Single mechanism -> no collision, deterministic timezone, and the
+  #   self-heal heal_weekly_cron_updater (defined above at line 1468)
+  #   repoints any stale on-disk cron scripts to the canonical root
+  #   updater URL, so every box converges to this same path.
+  #
+  #   If the crontab is ever re-added (new box provision, operator manual
+  #   edit), the U001-U003 duplicate-detection gate below calls
+  #   retire_legacy_sunday_crontab to remove it again and WARNs the owner.
+  #
+  # ----------------------------------------------------------
+  # U001-U003 DUPLICATE-DETECTION GATE: even though retire_legacy_sunday_crontab
+  # runs at main() entry (above), someone could re-add a legacy Sunday crontab
+  # entry after the lock is taken but before this cron registration. Re-detect
+  # and re-retire to guarantee no collision at 03:00 ET on Sunday.
+  # ----------------------------------------------------------
+  if detect_legacy_sunday_crontab; then
+    echo "  [crontab] WARNING: legacy Sunday '0 3 * * 0' crontab entry detected during update path — re-retiring"
+    retire_legacy_sunday_crontab
+  fi
+
   # Ensure the Sunday weekly update-check cron exists (idempotent)
   # Existing clients on pre-v9.2.0 won't have it; running the updater
   # backfills it.
