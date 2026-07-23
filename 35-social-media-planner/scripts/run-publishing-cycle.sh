@@ -229,7 +229,13 @@ cc_call() {
 # posts were created, or posts were planned but none created. The posting step
 # (master orchestrator, Phase 5) MUST emit publish-receipts.json with at least:
 #   {"connected_accounts": N, "planned_posts": N, "created_posts": N,
-#    "posts": [{"platform": "...", "post_id": "...", "url": "...", "tier": N}]}
+#    "posts": [{"platform": "...", "post_id": "...", "url": "...", "tier": N,
+#               "readback": {"id": "<post_id>"}}]}
+# U128: counters alone are three numbers from the same pipeline — an empty
+# posts array with created_posts=N used to pass. Now each post must carry an
+# immutable receipt (non-empty post_id + url), the array length must match
+# created_posts, and at least one post must carry a read-back record proving it
+# was read back from the remote platform.
 verify_receipts() {
   local rfile="$1"
   [ -d "$rfile" ] && rfile="$rfile/publish-receipts.json"
@@ -254,6 +260,47 @@ if planned > 0 and created <= 0:
     sys.stderr.write(f"[Skill35] QC FAIL: {planned} post(s) planned but 0 created.\n"); sys.exit(6)
 if created < planned:
     sys.stderr.write(f"[Skill35] QC WARN: created {created} < planned {planned} (partial publish).\n")
+
+# U128: per-post immutable receipts. Counters alone are three numbers from the
+# same pipeline — a receipt can declare created_posts=N with an empty posts
+# array and pass. Require one immutable receipt PER post: each must carry a
+# non-empty remote post_id and url, the array length must match created, and at
+# least one post must carry a read-back record proving it was read back from the
+# remote platform. These requirements only apply when posts were actually
+# created — a genuine no-op cycle (nothing planned, nothing created) is still a
+# clean pass.
+if created > 0:
+    posts = d.get("posts")
+    if not isinstance(posts, list):
+        sys.stderr.write("[Skill35] QC FAIL: receipts carry no 'posts' array — counters alone cannot prove a single post exists.\n"); sys.exit(6)
+    if len(posts) < created:
+        sys.stderr.write(f"[Skill35] QC FAIL: {created} post(s) declared but only {len(posts)} per-post receipt(s) present.\n"); sys.exit(6)
+    for i, post in enumerate(posts):
+        if not isinstance(post, dict):
+            sys.stderr.write(f"[Skill35] QC FAIL: posts[{i}] is not an object.\n"); sys.exit(6)
+        pid = str(post.get("post_id", "") or "").strip()
+        url = str(post.get("url", "") or "").strip()
+        if not pid:
+            sys.stderr.write(f"[Skill35] QC FAIL: posts[{i}] has no remote post_id — the receipt is not immutable.\n"); sys.exit(6)
+        if not url:
+            sys.stderr.write(f"[Skill35] QC FAIL: posts[{i}] has no url — the post cannot be located on the platform.\n"); sys.exit(6)
+
+    # Read at least one back from the remote platform. The posting step records
+    # the read-back (readback.id matching post_id) when it confirms the post
+    # exists on the platform. Require at least one post to carry a valid
+    # read-back record — proof that the pipeline did not just declare success.
+    readback_ok = False
+    for post in posts:
+        if not isinstance(post, dict):
+            continue
+        rb = post.get("readback")
+        pid = str(post.get("post_id", "") or "").strip()
+        if isinstance(rb, dict) and str(rb.get("id", "") or "").strip() == pid and pid:
+            readback_ok = True
+            break
+    if not readback_ok:
+        sys.stderr.write("[Skill35] QC FAIL: no post carries a read-back record from the remote platform — success was declared, not verified.\n"); sys.exit(6)
+
 print(f"[Skill35] receipts OK: planned={planned} created={created} connected={connected}")
 PYEOF
 }
