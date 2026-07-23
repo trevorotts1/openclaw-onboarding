@@ -290,3 +290,50 @@ document:
 *This guide is generated for {{COMPANY_NAME}} by the AI Workforce Blueprint
 (Skill 23). It is regenerated whenever the department's roster changes so it
 always matches the specialists you actually have.*
+
+---
+
+## 8. Image-Prompt Rules (MANDATORY -- all Graphics image prompts)
+
+Every image prompt authored in this department for GPT-image-2 (Kie.ai) or Agnes
+Image 2.1 Flash (Skill 63) must obey these SACRED rules:
+
+### 8.1 Character Band: 5,000-19,000
+
+- **FLOOR: 5,000 characters (stripped).** A prompt below 5,000 chars is a thin
+  stub -- NOT submitted, NOT rendered. Re-author.
+- **CEILING: 19,000 characters (stripped).** The GPT-image-2 / Agnes API accepts
+  up to 25,000 chars; the 19,000 cap leaves ~6,000 chars of headroom. Never
+  exceed 19,000.
+- **Valid range: 5,000-19,000.** Stripped length only -- whitespace never counts.
+
+Enforcement runs through the GIP Prompt QC pipeline (`prompt-author-graphics.md`
+-> `qc-specialist-prompt-graphics.md` -> `diu_validator.py prompt-band`) for
+the Graphics Image Protocol bands, plus `63-agnes-image/prove_agnes_image_prompt_floor.py`
+for Agnes-routed prompts. Both gates share the same 5,000-floor / 19,000-ceiling
+DNA -- originally from the Presentations 9,000-char floor, ported to graphics
+(GK-D2) and extended to Agnes (skills 63/64).
+
+### 8.2 Image-to-Image for Logos
+
+When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
+or any existing brand image, you MUST use IMAGE-TO-IMAGE generation. Provide the
+logo as a reference image (`input_urls` for GPT-Image 2 I2I, `extra_body.image[]`
+for Agnes I2I). Text-to-image logo generation is PROHIBITED -- a T2I model cannot
+render a specific logo accurately.
+
+### 8.3 Style-Reference-Only Directive (MANDATORY)
+
+Whenever ANY reference image is attached for style guidance (logos, brand
+images, mood boards, style cards), the prompt MUST carry the style-reference-only
+directive: "Use the attached images only as style reference for color grading,
+lighting, and composition -- do not copy their subjects, faces, or text." This
+directive is mandatory per MODEL-SPECS section 4 and applies equally to
+GPT-Image 2 I2I, Nano Banana 2, and Agnes Image I2I.
+
+### 8.4 Gates
+
+- GIP: `python3 45-design-intelligence-library/scripts/diu_validator.py prompt-band --band <band> --prompt-file <path>`
+- GIP CI prover: `python3 45-design-intelligence-library/scripts/prove_gip_prompt_floor.py --self-test`
+- Agnes-specific: `python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file <prompt.txt>`
+- Both exit non-zero on violation -- an agent cannot narrate past a hard gate.

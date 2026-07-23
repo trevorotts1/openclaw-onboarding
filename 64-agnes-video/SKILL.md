@@ -36,6 +36,24 @@ Think of it as the operating manual for one endpoint family — like Skill 30
 - You need to know the exact create-task parameters, the poll endpoint, the
   `num_frames` rule, the resolution tiers, or how to read the true output size.
 
+## Image-Prompt Character Band for Image-to-Video Inputs
+
+When generating images that will be fed as inputs to Agnes Video (image-to-video
+or keyframe animation), the image-generation prompt that produces those input
+images must obey the same band as the Agnes Image skill: **5,000–19,000 stripped
+characters** (per decision GK-D2, extended to skills 63/64). The deterministic
+gate is `63-agnes-image/prove_agnes_image_prompt_floor.py`.
+
+When those input images involve the client's LOGO or existing brand image, use
+IMAGE-TO-IMAGE generation (provide the logo as reference), never text-to-image.
+The same style-reference-only directive is MANDATORY whenever reference images
+are attached for style (MODEL-SPECS section 4).
+
+Agnes Video itself has a separate prompt for the video generation (focused on
+animation/motion, typically much shorter). The 5,000–19,000 band applies to the
+IMAGE-generation prompt that produces the input frame(s), not to the video
+prompt itself.
+
 ## Prerequisites
 
 - Teach Yourself Protocol (TYP) must be learned first (Skill 01).

@@ -39,6 +39,59 @@ model (for example the KIE.ai / Nano Banana Pro default in Skill 07, or the
 Presentations GPT-Image-2 pin). Only reach for Agnes Image when the request
 names Agnes, or an upstream skill routes to it.
 
+## Image-Prompt Character Band (MANDATORY -- 5,000-19,000)
+
+Per decision GK-D2 (extended to Agnes skills 63/64), every image prompt authored
+for GPT-image-2 OR Agnes Image 2.1 Flash must fall within the SACRED band:
+
+- **FLOOR: 5,000 characters (stripped)** -- a prompt below 5,000 chars is a thin
+  stub, NOT submitted, NOT rendered. 5,000 is the HARD MINIMUM.
+- **CEILING: 19,000 characters (stripped)** -- the API accepts up to 25,000 chars;
+  the 19,000 cap leaves ~6,000 chars of headroom to stay well clear of the
+  endpoint's truncation boundary. Do NOT exceed 19,000.
+- **Valid range: 5,000-19,000.**
+
+Enforcement: `prove_agnes_image_prompt_floor.py` (shipped in this folder) is the
+deterministic gate. It checks stripped character count (whitespace never counts),
+rejects below 5,000 (`AF-AGNES-PROMPT-FLOOR`, exit 2), rejects above 19,000
+(`AF-AGNES-PROMPT-CEILING`, exit 2), and exits 0 only when the prompt clears both
+gates. Run it as a preflight before any paid API call:
+
+```
+python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file working/prompts/<id>.txt
+```
+
+A QA version with self-tests (suitable for CI) runs with `--self-test`.
+
+This band applies whenever the target endpoint is GPT-image-2 (T2I or I2I) or
+Agnes Image 2.1 Flash. It does NOT apply to shorter-cap endpoints such as
+Seedream 4.5 (3,000-char cap) or Ideogram V3 (5,000-char cap) -- those carry
+their own bands in `45-design-intelligence-library/library/_system/prompt-bands.json`.
+
+## Image-to-Image for Logos (MANDATORY)
+
+When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
+or any existing brand image, you MUST use IMAGE-TO-IMAGE generation -- provide the
+logo as a reference image via `extra_body.image[]` (Agnes) or `input_urls`
+(Kie.ai GPT-Image 2 I2I). Text-to-image generation of a logo is PROHIBITED: a
+text-to-image model cannot render a specific client's logo accurately and will
+invent a lookalike instead. The prove-agnes gate checks for this:
+
+```
+python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file prompt.txt --logo
+```
+
+When a logo reference triggers an I2I call, the style-reference-only directive is
+MANDATORY (MODEL-SPECS section 4): "Use the attached images only as style
+reference for color grading, lighting, and composition -- do not copy their
+subjects, faces, or text." The gate checks this with `--style-ref`.
+
+## Style-Reference-Only Directive (MANDATORY when reference images attached)
+
+Whenever ANY reference image is attached for style guidance (not just logos), the
+prompt MUST carry the style-reference-only directive verbatim. Pass `--style-ref`
+to the gate to enforce this check.
+
 ## Prerequisites
 
 - Teach Yourself Protocol (TYP) must be learned first (Skill 01).
@@ -88,6 +141,11 @@ names Agnes, or an upstream skill routes to it.
    the endpoint responds.
 5. **EXAMPLES.md** — copy-paste curl examples for common tasks.
 6. **CORE_UPDATES.md** — what to add to AGENTS.md, TOOLS.md, and MEMORY.md.
+7. **prove_agnes_image_prompt_floor.py** — the deterministic prompt-band
+   enforcement gate: checks every prompt against the 5,000–19,000-char band,
+   enforces the image-to-image-for-logos rule, and verifies the mandatory
+   style-reference-only directive. Run before any paid API call to Agnes Image or
+   GPT-image-2. Self-tests with `--self-test` for CI.
 
 ## Critical Things to Know
 
@@ -112,3 +170,13 @@ names Agnes, or an upstream skill routes to it.
   daily quotas apply; on the free/default tier only requests-per-minute apply.
   Treat a 429 as the authority and back off. The full tier table (with its
   confirmed and unverified cells) is in `agnes-image-full.md`.
+- **Prompt length must be 5,000–19,000 characters (stripped).** Never submit a
+  prompt below 5,000 chars (thin stub) or above 19,000 chars (stays clear of the
+  API's 25,000-char max with ~6,000 chars of headroom). Run the deterministic
+  gate before any paid call: `python3 63-agnes-image/prove_agnes_image_prompt_floor.py
+  --file <prompt.txt>`. A prompt under 5,000 chars or over 19,000 chars is NOT
+  submitted — re-author first.
+- **Logo requests MUST use image-to-image.** When a prompt involves the client's
+  logo, wordmark, or existing brand image, use I2I (pass the logo as a reference
+  image via `extra_body.image[]`), never text-to-image. Add the mandatory
+  style-reference-only directive whenever reference images are attached.
