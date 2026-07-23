@@ -2372,11 +2372,10 @@ except Exception:
         _PIDX_SKIP_WARNINGS="${_PIDX_SKIP_WARNINGS:+$_PIDX_SKIP_WARNINGS; }${_U6B_QN} client-local persona(s) need a delta re-embed with the client's own key (see $_U6B_REEMBED_QUEUE) — index re-download could not carry their vectors over"
         echo "  ⚠️  ${_U6B_QN} client-local persona(s) queued for delta re-embed (client's OWN key) — $_U6B_REEMBED_QUEUE"
       fi
-      # FIX 1 (BREAK 1): pipeline OWNS the qmd persona store — repoint/re-index it
-      # at the canonical personas dir (BM25 only, furnace-safe) so the agent can
-      # never read a frozen "March" cache. Runs AFTER reconcile + provision so the
+      # qmd provisioning removed 2026-07-23.  The qmd tool (better-sqlite3 backed)
+      # was replaced by Google/OpenAI embeddings. Runs AFTER reconcile + provision so the
       # canonical dir holds the current blueprints.
-      reconcile_qmd_persona_index "$_U6B_COACHING_DB_DIR"
+      # reconcile_qmd_persona_index call removed — inventory answers from persona-categories.json per N16.
       # FIX 4 (cascade): if reconcile_persona_assets detected the SET grew
       # (_SET_CHANGED=1), re-wire matching + Command Center + the dept persona
       # reflex (governing-personas.md refresh + stickiness bust). Static/idempotent.
