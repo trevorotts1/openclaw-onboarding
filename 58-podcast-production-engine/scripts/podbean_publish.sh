@@ -271,6 +271,40 @@ ledger_field() {
   json_field "$key" < "$file"
 }
 
+# U035: verify the integrity checksum embedded in a roster/ledger JSON record.
+# Returns 0 (true) when the record passes verification or has no _checksum yet
+# (backward-compatible with pre-U035 records that have never been written with
+# the checksum). Returns 1 (false) on a checksum mismatch, which the caller
+# must treat as a hard failure -- the record is corrupt or truncated.
+verify_ledger_checksum() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  python3 -c '
+import hashlib, json, sys, hmac
+try:
+    with open(sys.argv[1], "r") as fh:
+        raw = fh.read()
+except Exception:
+    sys.exit(1)
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+cs = data.get("_checksum") if isinstance(data, dict) else None
+if cs is None:
+    # pre-U035 record: no checksum field yet, skip verification
+    sys.exit(0)
+# Recompute: drop _checksum, sort keys, SHA-256
+obj = {k: v for k, v in data.items() if k != "_checksum"}
+canonical = json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+if not hmac.compare_digest(cs, actual):
+    sys.stderr.write("podbean_publish: ledger checksum MISMATCH for " + sys.argv[1] + ": expected " + cs[:16] + "... got " + actual[:16] + "... (corruption or truncation suspected)\n")
+    sys.exit(1)
+sys.exit(0)
+' "$file"
+}
+
 # Print the podcast ids owned by the account, one per line. Reads a
 # GET /v1/podcasts json body on stdin.
 podcast_ids() {
@@ -567,6 +601,13 @@ jstr() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${1:-}"; 
 # Ledger-driven skip: the single most important guard for Step 15. A crash and
 # resume inside one job must never create a second Podbean episode.
 if [ -n "$LEDGER" ]; then
+  # U035: verify the integrity checksum before trusting the ledger contents.
+  # A corrupt or truncated ledger file must not be silently used.
+  if ! verify_ledger_checksum "$LEDGER"; then
+    log "LEDGER CHECKSUM VERIFICATION FAILED for ${LEDGER}: the roster file may be corrupted or truncated"
+    emit_result "{\"status\":\"checksum_error\",\"reason\":\"ledger_checksum_mismatch\",\"idempotent_skip\":false,\"ledger\":$(jstr "$LEDGER")}"
+    exit 1
+  fi
   existing_permalink="$(ledger_field "$LEDGER" podbean_permalink || true)"
   ledger_state="$(ledger_field "$LEDGER" state || true)"
   if [ -n "$existing_permalink" ] && [ "$existing_permalink" != "None" ]; then
@@ -589,7 +630,45 @@ fi
 [ -n "$TITLE" ] || { usage; die "--title is required"; }
 [ -f "$AUDIO" ] || die "audio file not found: $AUDIO"
 if [ -n "$COVER" ] && [ ! -f "$COVER" ]; then die "cover file not found: $COVER"; fi
-case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, premium, or private" ;; esac
+# ------------------------------------------------------------------ metadata bounds --
+# U037: Pre-flight bounds checks for Podbean field limits.
+# Reject over-length or invalid fields before the API call so the operator
+# gets a clear actionable message instead of a cryptic API rejection.
+readonly PODBEAN_SHOW_NOTES_MAX_LENGTH=4000
+readonly PODBEAN_EPISODE_TYPE_VALID=(full trailer bonus)
+
+# Episode type (--type) validated against the allowed set of display types
+# (public|premium|private, the Podbean visibility field) plus episode types
+# (full|trailer|bonus, the Podbean episode_type field).
+_EP_TYPE_VALID_PATTERN="^(public|premium|private|full|trailer|bonus)$"
+if [[ ! "$EP_TYPE" =~ $_EP_TYPE_VALID_PATTERN ]]; then
+  die "--type must be one of public, premium, private, full, trailer, bonus; got '${EP_TYPE}'"
+fi
+
+# Show notes / description length: Podbean rejects content over 4000 chars.
+# Check before any API call so over-length is caught early with a clear message.
+if [ "${#DESCRIPTION}" -gt "$PODBEAN_SHOW_NOTES_MAX_LENGTH" ]; then
+  die "show notes / description is ${#DESCRIPTION} characters; Podbean limit is ${PODBEAN_SHOW_NOTES_MAX_LENGTH} characters. Trim the description before publishing."
+fi
+
+# Episode type vs Podbean API type: if --type is one of full|trailer|bonus it
+# is an episode_type, which maps to the Podbean episode_type field. For
+# broker/local mode the script sends the value as the API 'type' field, which
+# also accepts the episode_type values (Podbean's API maps episode_type to type
+# when set). In proxy mode episode_type is hardcoded to "full" server-side and
+# this flag is excluded from the payload, so an episode_type value here is
+# informational only (passed through for proxy metadata). No action is needed
+# beyond validation; the value flows through to the API call unchanged.
+case "$EP_TYPE" in
+  full|trailer|bonus)
+    log "pre-flight: episode type '${EP_TYPE}' passed bounds check (episode_type)"
+    ;;
+  public|premium|private)
+    log "pre-flight: episode type '${EP_TYPE}' passed bounds check (visibility type)"
+    ;;
+esac
+
+log "pre-flight: description length ${#DESCRIPTION} chars (limit ${PODBEAN_SHOW_NOTES_MAX_LENGTH}) — passed"
 
 # Credentials are checked for presence only; values are never printed.
 # The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.
