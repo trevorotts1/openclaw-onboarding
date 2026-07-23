@@ -86,6 +86,11 @@ If any source is missing, **STOP** and surface the gap via the triple-fire trigg
 **Outputs:** `article-draft.md`, `image-prompts.json`, generated images, `video-script.md`, audio files, thumbnails
 
 ```
+0. (Before image/video generation) Agnes vs. Kie.ai choice — if the client has BOTH Agnes (Skill 63/64)
+   AND Kie.ai installed, offer the owner a choice: "I see you have Agnes. Because you have Agnes,
+   would you like to use Agnes to create your videos and images, or would you prefer to stick with
+   Kie.ai?" Route all generation calls based on the answer. If only one provider is installed, skip.
+   See playbook.md Section 8 "Step 0 — Agnes vs. Kie.ai choice".
 1. Writer drafts → Editor refines
 2. Image Prompt Engineer writes prompts → Image Generator produces images
 3. (If video) Video Script Writer drafts → Audio Generator voices it → Thumbnail Designer makes the preview
