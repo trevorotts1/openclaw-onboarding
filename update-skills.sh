@@ -4597,10 +4597,23 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     fi
   fi
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
+  #
+  # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):
+  # The .onboarding-version stamp was written ABOVE this point and certifies
+  # that skills CONTENT is current. Command Center infrastructure steps below
+  # are ADVISORY: they do not invalidate the content stamp. The exit-code
+  # contract is therefore:
+  #   exit 0 = skills content current, CC infrastructure refreshed/bootstrapped
+  #   exit 1 = stamp WITHHELD (content mismatch, manifest failure, etc.)
+  #   exit 2 = skills content current, CC infrastructure INCOMPLETE (advisory)
+  # Fleet drivers read exit 2 as "box has current skills; CC needs attention."
+  # This contract is asserted by U002 and structuralized by U005.
+  #
   if cc_is_valid_checkout "$_CC_DIR" && [ ! -f "$_CC_RUN_INSTALL" ]; then
     echo "FATAL: Command Center exists at $_CC_DIR but the current Skill-32 updater is missing: $_CC_RUN_INSTALL" >&2
     echo "       Refusing a partial one-repo update." >&2
-    exit 1
+    echo "       ADVISORY: skills CONTENT is current (stamp written); CC refresh deferred." >&2
+    exit 2
   fi
   if cc_is_valid_checkout "$_CC_DIR" && [ -f "$_CC_RUN_INSTALL" ]; then
     echo ""
@@ -4617,13 +4630,15 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
          || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
         echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
-        exit 1
+        echo "       ADVISORY: skills CONTENT is current (stamp written); CC ancestry is not on origin/$_CC_DEFAULT." >&2
+        exit 2
       fi
       echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
     else
-      echo "FATAL: Command Center refresh failed or rolled back; onboarding content may be current, but this box is NOT fully updated." >&2
+      echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
       echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
-      exit 1
+      echo "       exit 2 = skills content CURRENT (.onboarding-version stamp written), CC web-app refresh INCOMPLETE (advisory per U002/U005)." >&2
+      exit 2
     fi
   elif [ -f "$_CC_RUN_INSTALL" ]; then
     # F10 — CC bootstrap on update. The refresh branch above is the path for a
@@ -4684,9 +4699,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       if bash "$_CC_RUN_INSTALL" "$_CC_SLUG" "$_CC_COMPANY" "$_CC_EMAIL" >>"$LOG_FILE" 2>&1; then
         echo "  ✓ Command Center bootstrapped (clone + npm install + db:push + workspace seed + sync-departments + pm2 start)"
       else
-        echo "FATAL: Command Center bootstrap failed; refusing to report a complete update." >&2
+        echo "FATAL: Command Center bootstrap failed; skills content is current but CC web-app was not bootstrapped." >&2
         echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run." >&2
-        exit 1
+        echo "       ADVISORY: skills CONTENT is current (stamp written); CC bootstrap deferred." >&2
+        exit 2
       fi
     elif [ -n "$_CC_SLUG" ]; then
       echo ""
