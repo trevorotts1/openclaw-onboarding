@@ -33,6 +33,34 @@ check_dependencies() {
 }
 check_dependencies
 
+# ── U008: PRE-FLIGHT SPEND/BUDGET CHECK ────────────────────────────────────
+# Checks remaining org budget before paid-API steps (persona embedding, QC
+# gates). Controlled by OPENCLAW_ORG_SPEND_LIMIT (USD cents). Default (unset):
+# no-op. GATE mode when OPENCLAW_ORG_SPEND_GATE=1, otherwise WARN only.
+# -----------------------------------------------------------------------------
+_spend_budget_ok=1
+if [ -n "${OPENCLAW_ORG_SPEND_LIMIT:-}" ]; then
+  _spend_remaining=""
+  _spend_source=""
+  # 1) openclaw CLI
+  if command -v openclaw >/dev/null 2>&1; then
+    _spend_remaining="$(openclaw org spend 2>/dev/null || true)"
+    [ -n "$_spend_remaining" ] && { _spend_remaining="$(printf '%s' "$_spend_remaining" | tr -dc '0-9')"; _spend_source="openclaw org spend"; }
+  fi
+  # 2) budget tracking file
+  [ -z "$_spend_remaining" ] && [ -f "/data/.openclaw/.org-budget-remaining" ] && { _spend_remaining="$(cat /data/.openclaw/.org-budget-remaining 2>/dev/null | tr -d '[:space:]' | tr -dc '0-9' || true)"; _spend_source="/data/.openclaw/.org-budget-remaining"; }
+  [ -z "$_spend_remaining" ] && [ -f "$HOME/.openclaw/.org-budget-remaining" ] && { _spend_remaining="$(cat "$HOME/.openclaw/.org-budget-remaining" 2>/dev/null | tr -d '[:space:]' | tr -dc '0-9' || true)"; _spend_source="$HOME/.openclaw/.org-budget-remaining"; }
+  if [ -n "$_spend_remaining" ] && [ "$_spend_remaining" -lt "$OPENCLAW_ORG_SPEND_LIMIT" ] 2>/dev/null; then
+    echo "  * PRE-FLIGHT SPEND GATE: remaining budget ($_spend_remaining) < threshold ($OPENCLAW_ORG_SPEND_LIMIT, source: $_spend_source)" >&3
+    if [ "${OPENCLAW_ORG_SPEND_GATE:-0}" = "1" ]; then
+      echo "FATAL: OPENCLAW_ORG_SPEND_GATE=1 and spend budget below threshold -- refusing to proceed." >&3
+      exit 1
+    fi
+  else
+    [ -n "$_spend_remaining" ] && echo "  [spend-check] OK: remaining budget ($_spend_remaining) >= threshold ($OPENCLAW_ORG_SPEND_LIMIT)" >&3
+  fi
+fi
+
 # ── LOG FILE ──
 LOG_FILE="$HOME/.openclaw/skills/.update-log"
 mkdir -p "$(dirname "$LOG_FILE")"

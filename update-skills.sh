@@ -1350,6 +1350,102 @@ preclear_2026_7_1() {
 # <<< TRAP1-PRECLEAR-END
 
 # ----------------------------------------------------------
+# U008: Pre-flight spend/cost check
+# ----------------------------------------------------------
+# Checks whether the operator's org has sufficient spend budget before any
+# step that may trigger paid API calls (persona embedding, QC gates, etc.).
+# Controlled by OPENCLAW_ORG_SPEND_LIMIT (env var, integer in USD cents).
+# When the limit is unset the check is a no-op. When set, we try to read the
+# remaining budget from available sources and WARN or GATE when below the
+# configured threshold of remaining budget.
+#
+# Exit codes:
+#   0 -- check completed: spend OK, threshold not configured, or spend
+#        could not be determined (fail-open for safety)
+#   1 -- remaining budget below configured threshold (GATE)
+# ----------------------------------------------------------
+check_spend_budget() {
+  local threshold="${OPENCLAW_ORG_SPEND_LIMIT:-}"
+
+  # No limit configured -> no gate. This is the default -- the check is
+  # opt-in. Boxes that have never set OPENCLAW_ORG_SPEND_LIMIT proceed
+  # unchanged.
+  if [ -z "$threshold" ]; then
+    return 0
+  fi
+
+  # Validate threshold is a non-negative integer.
+  case "$threshold" in
+    ''|*[!0-9]*)
+      echo "  [spend-check] WARN: OPENCLAW_ORG_SPEND_LIMIT is not a valid non-negative integer ($threshold) -- spend gate skipped" >&2
+      return 0
+      ;;
+  esac
+
+  local remaining=""
+  local source_label=""
+
+  # --- Resolve remaining budget from available sources ---
+
+  # 1) openclaw CLI (org spend subcommand -- canonical source).
+  if [ -z "$remaining" ] && command -v openclaw >/dev/null 2>&1; then
+    remaining="$(openclaw org spend 2>/dev/null || true)"
+    if [ -n "$remaining" ]; then
+      # Strip any non-numeric prefix/suffix (e.g. "$" or " USD").
+      remaining="$(printf '%s' "$remaining" | tr -dc '0-9')"
+      [ -n "$remaining" ] && source_label="openclaw org spend"
+    fi
+  fi
+
+  # 2) Budget tracking file (written by fleet-wide budget daemon or
+  #    operator cron).
+  if [ -z "$remaining" ]; then
+    local _budget_file=""
+    [ -f "/data/.openclaw/.org-budget-remaining" ] && _budget_file="/data/.openclaw/.org-budget-remaining"
+    [ -z "$_budget_file" ] && [ -f "$HOME/.openclaw/.org-budget-remaining" ] && _budget_file="$HOME/.openclaw/.org-budget-remaining"
+    if [ -n "$_budget_file" ]; then
+      remaining="$(cat "$_budget_file" 2>/dev/null | tr -d '[:space:]' | tr -dc '0-9' || true)"
+      [ -n "$remaining" ] && source_label="budget tracking file ($_budget_file)"
+    fi
+  fi
+
+  # 3) Could not determine spend -- fail OPEN (proceed) so a missing
+  #    budget source never blocks a roll. The operator gets a visible
+  #    warning in the log.
+  if [ -z "$remaining" ]; then
+    echo "  [spend-check] WARN: could not determine remaining org budget (threshold: $threshold) -- proceeding, verify budget manually" >&2
+    return 0
+  fi
+
+  # --- Gate decision ---
+  if [ "$remaining" -lt "$threshold" ] 2>/dev/null; then
+    echo "" >&2
+    echo "  ============================================================" >&2
+    echo "  ## PRE-FLIGHT SPEND GATE -- BUDGET BELOW THRESHOLD" >&2
+    echo "  ##" >&2
+    echo "  ##   threshold (OPENCLAW_ORG_SPEND_LIMIT): $threshold (USD cents)" >&2
+    echo "  ##   remaining budget                    : $remaining (USD cents)" >&2
+    echo "  ##   source                              : $source_label" >&2
+    echo "  ##" >&2
+    echo "  ## This update may trigger paid API calls (persona embedding," >&2
+    echo "  ## QC gates). Proceeding with insufficient budget could" >&2
+    echo "  ## result in failed operations or unexpected charges." >&2
+    echo "  ##" >&2
+    echo "  ## To override, set a lower threshold:" >&2
+    echo "  ##   export OPENCLAW_ORG_SPEND_LIMIT=<lower_value>" >&2
+    echo "  ## To skip the check entirely:" >&2
+    echo "  ##   unset OPENCLAW_ORG_SPEND_LIMIT" >&2
+    echo "  ============================================================" >&2
+    echo "" >&2
+    return 1
+  fi
+
+  echo "  [spend-check] OK: remaining budget ($remaining) >= threshold ($threshold, source: $source_label) -- proceeding"
+  return 0
+}
+# <<< U008-SPEND-CHECK-END
+
+# ----------------------------------------------------------
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
@@ -2217,6 +2313,25 @@ _ocs_tree_in_sync() {
       else
         echo "  ⚠ Skill 47: could not refresh VIDEO-PIPELINE-MANIFEST.json at $S47_MANIFEST_DEST (see $LOG_FILE) — load_manifest() falls back to the universal-sops sibling walk-up"
       fi
+    fi
+  fi
+
+  # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # U008: PRE-FLIGHT SPEND/BUDGET CHECK.
+  # Gate before any paid-API step (persona embedding, QC gates).
+  # Controlled by OPENCLAW_ORG_SPEND_LIMIT. Default (unset): no-op.
+  # ----------------------------------------------------------
+  _SPEND_BUDGET_OK=1
+  check_spend_budget || _SPEND_BUDGET_OK=0
+  if [ "$_SPEND_BUDGET_OK" = "0" ]; then
+    echo "  * PRE-FLIGHT SPEND GATE FAILED -- remaining budget below threshold."
+    echo "     To override: unset OPENCLAW_ORG_SPEND_LIMIT or set a lower threshold."
+    echo "     Proceeding with WARN (non-fatal for optional checks)."
+    # U008 design: WARN by default, GATE when OPENCLAW_ORG_SPEND_GATE=1.
+    if [ "${OPENCLAW_ORG_SPEND_GATE:-0}" = "1" ]; then
+      echo "FATAL: OPENCLAW_ORG_SPEND_GATE=1 and spend budget below threshold -- refusing to proceed with paid-API steps." >&2
+      exit 1
     fi
   fi
 
