@@ -4236,6 +4236,30 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   date -u +%Y-%m-%dT%H:%M:%SZ > "$SKILLS_DIR/.last-update-check" 2>/dev/null || true
 
   # ----------------------------------------------------------
+  # U001-U003 SUNDAY TIMEZONE UNIFICATION (2026-07-23)
+  #
+  # Before this fix, two mechanisms could fire concurrently at 03:00 on
+  # ET boxes: (a) a system crontab entry `0 3 * * 0` running in the
+  # system's LOCAL timezone, and (b) this OpenClaw cron entry running in
+  # America/New_York.  On ET they collided; on PT/UTC they did not
+  # collide, but the inconsistency was a latent bug.
+  #
+  # Resolution:
+  #   - U001 retired the system crontab via mutex, so cron(8) no longer
+  #     fires any Sunday update on any box.
+  #   - U003 confirms that the OpenClaw cron below is the ONE surviving
+  #     mechanism, with an EXPLICIT America/New_York timezone.
+  #
+  #   Single mechanism -> no collision, deterministic timezone, and the
+  #   self-heal below (heal_weekly_cron_updater) repoints any stale
+  #   on-disk cron scripts to the canonical root updater URL, so every
+  #   box converges to this same path.
+  #
+  #   If the crontab is ever re-added (new box provision, operator manual
+  #   edit), the verification gate checks for duplicates:
+  #       crontab -l | grep '0 3 \* \* 0'    # expect: no match (retired)
+  #       openclaw cron list | grep weekly-onboarding-update  # expect: one
+  #
   # Ensure the Sunday weekly update-check cron exists (idempotent)
   # Existing clients on pre-v9.2.0 won't have it; running the updater
   # backfills it.
