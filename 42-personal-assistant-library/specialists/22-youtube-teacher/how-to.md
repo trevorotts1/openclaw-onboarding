@@ -3,11 +3,11 @@
 **Department:** YouTube Teacher / Curator (22-youtube-teacher)
 **Reports to:** Master Orchestrator
 **Role type:** specialist
-**Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
+**Persona:** {{ASSIGNED_PERSONA}} v1.0
 **Version:** 1.0
-**Last updated:** {{GENERATION_DATE}}
-**Industry:** {{COMPANY_INDUSTRY}}
-**Generated for:** {{COMPANY_NAME}}
+**Last updated:** 2026-07-23
+**Industry:** technology and professional services
+**Generated for:** the company
 
 ---
 
@@ -408,4 +408,4 @@ For this role, the authoritative sources are:
 
 | Date | Change | Author |
 |------|--------|--------|
-| {{GENERATION_DATE}} | Initial creation — 6 role files + 4 SOPs + QC | Specialist 22 Sub-Agent |
+| 2026-07-23 | Initial creation — 6 role files + 4 SOPs + QC | Specialist 22 Sub-Agent |

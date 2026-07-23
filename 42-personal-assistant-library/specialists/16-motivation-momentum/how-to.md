@@ -4,8 +4,8 @@
 **Reports to:** Master Orchestrator
 **Role type:** specialist
 **Version:** 1.0
-**Last updated:** {{GENERATION_DATE}}
-**Generated for:** {{COMPANY_NAME}}
+**Last updated:** 2026-07-23
+**Generated for:** the company
 
 ---
 

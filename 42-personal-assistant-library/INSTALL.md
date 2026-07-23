@@ -70,8 +70,8 @@ find "$DEST" -type f -name '*.md' -print0 | while IFS= read -r -d '' f; do
     -e "s|{{ROLE_TITLE}}|$ROLE_TITLE|g" \
     -e "s|{{COMMUNICATION_STYLE}}|$COMMUNICATION_STYLE|g" \
     -e "s|{{COMPANY_NAME}}|$COMPANY_NAME|g" \
-    -e "s|{{COMPANY_INDUSTRY}}|$COMPANY_INDUSTRY|g" \
-    -e "s|{{GENERATION_DATE}}|$GENERATION_DATE|g" \
+    -e "s|technology and professional services|$COMPANY_INDUSTRY|g" \
+    -e "s|2026-07-23|$GENERATION_DATE|g" \
     -e "s|{{WORKSPACE_PATH}}|$WORKSPACE_PATH|g" \
     -e "s|{{INBOX_TOOL}}|$INBOX_TOOL|g" \
     -e "s|{{CALENDAR_TOOL}}|$CALENDAR_TOOL|g" \

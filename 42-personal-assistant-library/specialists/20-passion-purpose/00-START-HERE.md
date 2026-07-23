@@ -1,6 +1,6 @@
 # Passion & Purpose Finder — Director Role
 
-**Token:** {{TOKEN}} | **Department:** Passion & Purpose | **Role ID:** PP-01 | **Version:** 1.0 | **Last Updated:** {{GENERATION_DATE}}
+**Token:** {{TOKEN}} | **Department:** Passion & Purpose | **Role ID:** PP-01 | **Version:** 1.0 | **Last Updated:** 2026-07-23
 
 ---
 

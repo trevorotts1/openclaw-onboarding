@@ -3,11 +3,11 @@
 **Department:** Inbox Manager (01-inbox-manager)
 **Reports to:** Master Orchestrator
 **Role type:** specialist
-**Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
+**Persona:** {{ASSIGNED_PERSONA}} v1.0
 **Version:** 1.0
-**Last updated:** {{GENERATION_DATE}}
-**Industry:** {{COMPANY_INDUSTRY}}
-**Generated for:** {{COMPANY_NAME}}
+**Last updated:** 2026-07-23
+**Industry:** technology and professional services
+**Generated for:** the company
 
 ---
 

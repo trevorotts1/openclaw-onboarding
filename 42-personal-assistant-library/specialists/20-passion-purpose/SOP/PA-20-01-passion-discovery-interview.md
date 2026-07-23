@@ -5,7 +5,7 @@
 - **Owner:** Passion & Purpose Finder
 - **Department:** Passion & Purpose
 - **Version:** 1.0
-- **Last Updated:** {{GENERATION_DATE}}
+- **Last Updated:** 2026-07-23
 - **Cycle:** DMAIC — Define & Measure Phase
 - **Token:** {{TOKEN}}
 

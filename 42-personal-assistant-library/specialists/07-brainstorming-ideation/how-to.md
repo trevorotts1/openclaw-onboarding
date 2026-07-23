@@ -3,10 +3,10 @@
 **Department:** Brainstorming & Ideation Partner (07-brainstorming-ideation)
 **Reports to:** Master Orchestrator
 **Role type:** specialist
-**Persona:** {{ASSIGNED_PERSONA}} v{{ASSIGNED_PERSONA_VERSION}}
+**Persona:** {{ASSIGNED_PERSONA}} v1.0
 **Version:** 1.0
 **Last updated:** 2026-06-02
-**Generated for:** {{TOKEN}}
+**Generated for:** the company
 
 ---
 

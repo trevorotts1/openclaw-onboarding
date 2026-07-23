@@ -2,7 +2,7 @@
 
 **Department:** Task & Priority Manager (04)
 **Version:** 1.0
-**Last updated:** {{GENERATION_DATE}}
+**Last updated:** 2026-07-23
 
 ---
 

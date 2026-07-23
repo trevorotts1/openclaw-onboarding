@@ -233,7 +233,7 @@ All placeholders follow the canonical token format — no literal client data in
 - {{COMMUNICATION_TOOL}} — messaging/delivery system
 - {{INBOX_TOOL}} — inbox/message monitoring system
 - {{CELEBRATION_ARCHIVE_FOLDER}} — path to the wins archive in {{DOCS_TOOL}}
-- {{GENERATION_DATE}} — date this department was generated
+- 2026-07-23 — date this department was generated
 
 ---
 

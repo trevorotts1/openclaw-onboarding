@@ -4,7 +4,7 @@
 **Role type:** specialist
 **Version:** 1.0
 **Last updated:** 2026-06-02
-**Generated for:** {{TOKEN}}
+**Generated for:** the company
 
 ---
 

@@ -4,7 +4,7 @@
 **SOP Count:** 4
 **Version:** 1.0
 **Token:** {{TOKEN}}
-**Last Updated:** {{GENERATION_DATE}}
+**Last Updated:** 2026-07-23
 
 ---
 

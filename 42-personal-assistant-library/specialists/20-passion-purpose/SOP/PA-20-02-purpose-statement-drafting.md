@@ -1,7 +1,7 @@
 # SOP PA-20-02: Purpose Statement Drafting
 
 **SOP ID:** PA-20-02 | **Dept:** Passion & Purpose | **Cycle:** DMAIC — Analyze & Improve
-**Version:** 1.0 | **Updated:** {{GENERATION_DATE}} | **Token:** {{TOKEN}}
+**Version:** 1.0 | **Updated:** 2026-07-23 | **Token:** {{TOKEN}}
 
 ---
 

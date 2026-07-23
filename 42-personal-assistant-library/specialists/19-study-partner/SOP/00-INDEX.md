@@ -3,7 +3,7 @@
 **Department:** 19  --  Study Partner
 **Voice:** Warm PA  --  conversational, encouraging, supportive
 **Token:** {{TOKEN}}
-**Last updated:** {{GENERATION_DATE}}
+**Last updated:** 2026-07-23
 
 ---
 

@@ -1,7 +1,7 @@
 # SOP PA-20-03: Passion-to-Action Bridge
 
 **SOP ID:** PA-20-03 | **Dept:** Passion & Purpose | **Cycle:** DMAIC — Improve
-**Version:** 1.0 | **Updated:** {{GENERATION_DATE}} | **Token:** {{TOKEN}}
+**Version:** 1.0 | **Updated:** 2026-07-23 | **Token:** {{TOKEN}}
 
 ---
 

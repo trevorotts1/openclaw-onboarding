@@ -3,7 +3,7 @@
 **Department:** Errands & Purchases (13-errands-purchases)  
 **Total SOPs:** 4  
 **Format:** DMAIC (Define, Measure, Analyze, Improve, Control)  
-**Last updated:** {{GENERATION_DATE}}  
+**Last updated:** 2026-07-23  
 
 ---
 

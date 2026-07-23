@@ -51,9 +51,9 @@ Every shipped file uses `{{TOKEN}}`-style placeholders only -- no real names, em
 | `{{ROLE_TITLE}}` | The specialist's role title |
 | `{{COMMUNICATION_STYLE}}` | Owner's preferred tone |
 | `{{COMPANY_NAME}}` / `{{CLIENT_NAME}}` / `{{CLIENT_NAME_2}}` | Owner's company |
-| `{{COMPANY_INDUSTRY}}` / `{{INDUSTRY_VERTICAL}}` | Owner's industry |
+| `technology and professional services` / `{{INDUSTRY_VERTICAL}}` | Owner's industry |
 | `{{DEPARTMENT_SLUG}}` | Department slug (`personal-assistant`) |
-| `{{GENERATION_DATE}}` | Materialization date (today) |
+| `2026-07-23` | Materialization date (today) |
 | `{{WORKSPACE_PATH}}` / `{{COMPANY_LIBRARY_PATH}}` | Owner's workspace root (`~/.openclaw/workspace` or `/data/.openclaw/workspace`) |
 | `{{INBOX_TOOL}}` / `{{EMAIL_TOOL}}` | Owner's email tool (Gmail, Outlook, …) |
 | `{{CALENDAR_TOOL}}` | Owner's calendar tool |
@@ -65,7 +65,7 @@ Every shipped file uses `{{TOKEN}}`-style placeholders only -- no real names, em
 | `{{SEARCH_TOOL}}` / `{{DEEP_SEARCH_TOOL}}` | Owner's research/search tool |
 | `{{RECORDING_TOOL}}` / `{{ZOOM_TOOL}}` / `{{VIDEO_TOOL}}` | Meeting-recording / video tool |
 | `{{FINANCIAL_TOOL}}` / `{{METRICS_DASHBOARD}}` | Owner's finance/metrics tool |
-| `{{BOOK_PERSONA_MATRIX}}` / `{{ASSIGNED_PERSONA}}` / `{{ASSIGNED_PERSONA_VERSION}}` | Skill 22 persona integration (see §5; graceful-degrade if Skill 22 absent) |
+| `{{BOOK_PERSONA_MATRIX}}` / `{{ASSIGNED_PERSONA}}` / `v1.0` | Skill 22 persona integration (see §5; graceful-degrade if Skill 22 absent) |
 | `{{COACH_NAME}}` / `{{THERAPIST_NAME}}` | Named coaching/support persona (owner's choice) |
 | `{{CRISIS_LINE}}` | Region-appropriate crisis line (defaults to the public resources in SKILL.md Scope & Safety) |
 | `{{OWNER_RECOVERY_EMAIL}}` / `{{PAYMENT_CARD_REF}}` / `{{CREDIT_CARD_1}}` / `{{BANK_NAME_1}}` / `{{PRIMARY_CHECKING}}` / `{{KEYCHAIN_ACCOUNT}}` / … | Life-Admin & Personal-Finance specialist fields — **pointers/labels only, NEVER the actual secret**. The Life-Admin (14) and Personal-Finance (11) specialists carry a long tail of account/subscription/utility label tokens; fill from the owner's own records at deploy time. |

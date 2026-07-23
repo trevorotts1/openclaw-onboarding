@@ -3,7 +3,7 @@
 **Department:** YouTube Teacher / Curator (22-youtube-teacher)  
 **Total SOPs:** 4  
 **Format:** DMAIC (Define, Measure, Analyze, Improve, Control)  
-**Last updated:** {{GENERATION_DATE}}  
+**Last updated:** 2026-07-23  
 
 ---
 

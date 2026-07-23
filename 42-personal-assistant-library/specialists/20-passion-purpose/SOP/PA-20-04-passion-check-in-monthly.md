@@ -1,7 +1,7 @@
 # SOP PA-20-04: Passion Check-In (Monthly)
 
 **SOP ID:** PA-20-04 | **Dept:** Passion & Purpose | **Cycle:** DMAIC — Control
-**Version:** 1.0 | **Updated:** {{GENERATION_DATE}} | **Token:** {{TOKEN}}
+**Version:** 1.0 | **Updated:** 2026-07-23 | **Token:** {{TOKEN}}
 
 ---
 

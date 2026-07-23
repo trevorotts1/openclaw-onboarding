@@ -3,7 +3,7 @@
 **Department:** Inbox Manager (01-inbox-manager)  
 **Total SOPs:** 8  
 **Format:** DMAIC (Define, Measure, Analyze, Improve, Control)  
-**Last updated:** {{GENERATION_DATE}}  
+**Last updated:** 2026-07-23  
 
 ---
 

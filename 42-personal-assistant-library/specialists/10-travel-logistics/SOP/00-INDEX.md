@@ -3,7 +3,7 @@
 **Department:** Travel & Logistics Coordinator (10-travel-logistics)
 **Total SOPs:** 5
 **Format:** DMAIC (Define, Measure, Analyze, Improve, Control)
-**Last updated:** {{GENERATION_DATE}}
+**Last updated:** 2026-07-23
 
 ---
 

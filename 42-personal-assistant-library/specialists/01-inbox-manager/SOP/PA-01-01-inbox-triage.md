@@ -1,6 +1,6 @@
 # SOP PA-01-01: Inbox Triage
 
-**SOP:** PA-01-01 | **Specialist:** 01-inbox-manager | **Version:** 2.0 | **Updated:** {{GENERATION_DATE}}
+**SOP:** PA-01-01 | **Specialist:** 01-inbox-manager | **Version:** 2.0 | **Updated:** 2026-07-23
 
 ---
 
