@@ -85,6 +85,7 @@ WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), em
 
 ### Phase 2: Content Creation
 1. Writer + Editor: Draft → refine article.
+1a. **Agnes vs. Kie.ai choice (MANDATORY when both are installed):** If the client has BOTH Agnes (Skill 63 `agnes-image-2.1-flash` / Skill 64 `agnes-video-v2.0`) AND Kie.ai installed, the skill MUST offer the owner a choice before any image/video generation begins. Ask: "I see you have Agnes. Because you have Agnes, would you like to use Agnes to create your videos and images, or would you prefer to stick with Kie.ai?" Route all generation calls for this cycle based on the owner's answer. If only one provider is installed, skip this step. Full choice logic: `references/playbook.md` Section 8 "Step 0 — Agnes vs. Kie.ai choice".
 2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via Ideogram V3 DESIGN for any text/headline image and Nano Banana 2/Pro for non-text imagery only; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Full decision table + working curl examples: `references/playbook.md` Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
 3. Video Script Writer: Script video/podcast.
 4. Video Producer: 
@@ -272,6 +273,31 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
 **Permanent hosting only — NO ephemeral file hosts.** Every media URL this skill logs, embeds, or sends MUST be a permanent GHL CDN link (`https://assets.cdn.filesafe.space/[LOCATION_ID]/media/...`). Ephemeral/anonymous hosts — **tmpfiles.org** (and its `tmp.ninja` download mirror), file.io, transfer.sh, 0x0.st, catbox.moe, litterbox — are BANNED: their links expire (tmpfiles.org after ~60 days) and silently break every sheet `=IMAGE()` cell, social post, and newsletter that references them. If a generation or handoff step ever returns a tmpfiles.org URL, re-upload that file to the client's GHL Media Library and use the returned CDN `url` instead — never log the ephemeral link. QC.md "Media Hosting" carries the fail-closed rejection check.
 
 **If GHL upload fails:** retry once after 30 seconds. If still failing, notify owner via Telegram that media is queued for retry, log the error, and do NOT send the raw file attachment.
+
+### IMAGE PRODUCTION PATH (enforcement)
+
+This is the ONLY valid sequence for any image delivered by this skill. Every image follows these steps in order — no step is skippable and no alternative hosting is acceptable:
+
+1. **Generate** the image via the configured production path (playbook.md Section 8: kie.ai direct, Agnes, or Graphics department handoff).
+2. **Upload** the generated file to the client's GHL Media Library via `medias/upload-file`:
+   ```bash
+   curl -X POST "https://services.leadconnectorhq.com/medias/upload-file" \
+     -H "Authorization: Bearer [from secrets/.env: GOHIGHLEVEL_API_KEY]" \
+     -H "Version: 2021-07-28" \
+     -F "file=@/path/to/file.png" \
+     -F "fileProcessingOpts={\"forceReprocess\": true}"
+   ```
+   Do NOT send `-F "hosted=true"` — GHL rejects this with HTTP 400.
+3. **Capture** the CDN URL from the upload response body's `url` field. This is a permanent URL of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`.
+4. **Use** this captured CDN URL everywhere the image is referenced:
+   - In GHL Social Planner `mediaUrls` arrays (playbook.md Section 17)
+   - In Google Sheets `=IMAGE("url", 1)` formulas (playbook.md Section 25)
+   - In blog post embedded images
+   - In email newsletter `<img>` tags
+   - In podcast cover art references
+   - In ANY other surface that references a media asset
+
+**Generator-hosted intermediate URLs are NEVER the final URL.** If the generating service (kie.ai, Agnes) returns a hosted URL, download the file and re-upload it through steps 2-4 above. The ONLY URL that may appear in a `mediaUrls` array, `=IMAGE()` cell, or any logged/linked surface is a GHL CDN URL.
 
 ## Variable Reference
 - `[from identity.md: brand name]`, `[from identity.md: brand voice]`

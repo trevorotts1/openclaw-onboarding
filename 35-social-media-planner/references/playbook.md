@@ -623,6 +623,21 @@ When writing content for any platform, follow this process:
 
 ### Image Production Path — which producer do I use? (read this FIRST)
 
+#### Step 0 — Agnes vs. Kie.ai choice (MANDATORY when both are installed)
+
+Before picking any production path, check whether the client has BOTH Agnes (Skill 63 `agnes-image-2.1-flash` / Skill 64 `agnes-video-v2.0`) AND Kie.ai installed. If both are present, the skill MUST offer the owner a choice — it MUST NOT silently default to Kie.ai when Agnes is available.
+
+> "I see you have Agnes. Because you have Agnes, would you like to use Agnes to create your videos and images, or would you prefer to stick with Kie.ai?"
+
+Wait for the owner's answer, then route every generation call accordingly:
+- **Owner chooses Agnes** → all image/video assets this cycle go through Path 2 (Agnes), and kie.ai becomes the fallback only when Agnes is unavailable.
+- **Owner chooses Kie.ai** → Path 1 (kie.ai direct) remains the default, as normal.
+- **Owner doesn't answer** (heartbeat timeout) → Path 1 (kie.ai direct) proceeds as the default.
+
+If only one provider is installed (Kie.ai only, or Agnes only), skip this choice — there is nothing to offer — and proceed directly to the decision table.
+
+#### Path decision table
+
 There are exactly THREE ways an image for this skill gets produced. Pick ONE per asset, in this priority order. Every path ends the same way: the finished file is uploaded to the client's GHL Media Library (SKILL.md Media Delivery Contract) and the returned permanent CDN `url` is what gets logged/posted — never a generator-hosted or tmpfiles.org link.
 
 | # | Path | When to use | Producer | Credential | Gate before it counts |
@@ -1786,10 +1801,12 @@ Body:
   "status": "scheduled",
   "scheduledAt": "2026-04-06T13:00:00.000Z",
   "summary": "One of Seven: [Post content here with full zones, pitch, cliffhanger]\n\nSend us a message to schedule your conversation with a [Brand Name] specialist — the link is also in the comments.",
-  "mediaUrls": ["https://storage.kie.ai/generated/image-day1-4x5.png"],
+  "mediaUrls": ["https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[filename]"],
   "tags": ["social-media-planner", "week-14", "day-1"]
 }
 ```
+
+> **CRITICAL — mediaUrls MUST contain a GHL CDN URL.** Every image is first uploaded to the client's GHL Media Library via `medias/upload-file` (see SKILL.md Media Delivery Contract). The returned permanent CDN URL (`https://assets.cdn.filesafe.space/...`) is what goes into `mediaUrls`. Generator-hosted links (`storage.kie.ai`, `storage.example.com`) are NEVER used directly — they are intermediate only. If a generator returns a hosted URL, re-upload that file to GHL and use the CDN `url` from the upload response instead. Ephemeral/anonymous hosts (tmpfiles.org, file.io, transfer.sh, 0x0.st, catbox.moe) are BANNED per the Media Delivery Contract.
 
 The `mediaUrls` field attaches the image to the post. GHL renders the post with the image on the platform. The image and content travel together. Never post content without its image.
 
@@ -1808,13 +1825,13 @@ Body:
   "scheduledAt": "2026-04-10T13:00:00.000Z",
   "summary": "[Carousel caption with swipe CTA, a PRIMARY 'send us a message' DM CTA, and the 'link is also in the comments' backup directive]",
   "mediaUrls": [
-    "https://storage.kie.ai/generated/carousel-slide1.png",
-    "https://storage.kie.ai/generated/carousel-slide2.png",
-    "https://storage.kie.ai/generated/carousel-slide3.png",
-    "https://storage.kie.ai/generated/carousel-slide4.png",
-    "https://storage.kie.ai/generated/carousel-slide5.png",
-    "https://storage.kie.ai/generated/carousel-slide6.png",
-    "https://storage.kie.ai/generated/carousel-slide7.png"
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide1-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide2-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide3-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide4-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide5-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide6-filename]",
+    "https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[carousel-slide7-filename]"
   ],
   "tags": ["social-media-planner", "week-14", "carousel"]
 }
@@ -1838,7 +1855,7 @@ Body:
   "status": "scheduled",
   "scheduledAt": "2026-04-06T13:00:00.000Z",
   "summary": "[Video post caption with a PRIMARY 'send us a message' DM CTA and the 'link is also in the comments' backup directive]",
-  "mediaUrls": ["https://storage.example.com/video-day1-9x16.mp4"],
+  "mediaUrls": ["https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[video-filename]"],
   "tags": ["social-media-planner", "week-14", "video", "day-1"]
 }
 ```
@@ -2299,9 +2316,11 @@ All content cells use text wrapping so the truncated preview (200 chars + "...")
 **Image Display in Cells:**
 When logging images, the AI uses the Google Sheets =IMAGE() function to display the image inline:
 ```
-=IMAGE("https://example.com/image.png", 1)
+=IMAGE("https://assets.cdn.filesafe.space/[GHL_LOCATION_ID]/media/[filename]", 1)
 ```
 Mode 1 fits the image within the cell while maintaining aspect ratio. Image cells are pre-sized for each ratio.
+
+> **CRITICAL — =IMAGE() URLs MUST be GHL CDN URLs.** The URL inside `=IMAGE()` must be a permanent GHL CDN link (`https://assets.cdn.filesafe.space/...`), never a generator-hosted or ephemeral URL. Generator-hosted links (kie.ai, example.com) and ephemeral hosts (tmpfiles.org, file.io) silently expire and break every sheet cell referencing them. Upload to the client's GHL Media Library first (SKILL.md Media Delivery Contract), then use the returned CDN `url` in the formula.
 
 **Content Truncation & Assembly:**
 The AI writes the FULL assembled post (all zones combined into one flowing piece) into the "Full Post " column. The content is truncated to approximately 100-120 characters (roughly 2-3 lines of visible text at the cell's font size). The cell uses text wrapping with a fixed row height, so the text wraps naturally but never shows more than 2-3 lines. Anything beyond that is hidden by the cell boundary. The user clicks the cell to see the full content in the formula bar.
