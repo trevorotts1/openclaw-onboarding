@@ -187,7 +187,7 @@ canonical index (see docs/EMBEDDINGS.md — never any other path):
 
 ---
 
-## PERSONA-INVENTORY HARD RULE (N16) — answer from the SET, never from qmd
+## PERSONA-INVENTORY HARD RULE (N16) — answer from the SET
 
 When asked **"what / how many / which / new personas do I have?"**, the answer is
 read ONLY from the SET file `persona-categories.json` (the matcher's ground truth):
@@ -196,18 +196,14 @@ read ONLY from the SET file `persona-categories.json` (the matcher's ground trut
 python3 -c 'import json;d=json.load(open("persona-categories.json"));print(len(d["personas"]),"personas");print("\n".join(sorted(d["personas"])))'
 ```
 
-**NEVER answer persona-inventory questions from `qmd` / the `coaching-personas`
-collection.** `qmd` is a declared bin of this skill and is convenient to reach for
-conversationally, but its collection is a cache that can be **frozen at a stale
-snapshot** (it was pointed at the immutable skill-bundled `personas/` folder on
-some boxes). That is exactly what produced the false **"no new personas since
-March"** answer in June 2026 while the SET and the gemini index were already
-current at 54. The install/update pipeline now repoints + re-indexes qmd at the
-canonical store automatically (`reconcile_qmd_persona_index` in
-`shared-utils/provision-persona-index.sh`), but the **SET is canonical for counts**
-— always answer inventory from `persona-categories.json`.
+**ALWAYS answer persona-inventory questions from the canonical SET file
+(`persona-categories.json`).** The SET is the authoritative source of truth for
+all persona counts and listings — it is kept current by the pipeline's Phase 6
+registration and is what `persona-selector-v2.py` reads as its persona universe.
+Other stores (embeddings index, skill-bundled snapshots) are caches that can
+fall out of sync; the SET is canonical for counts.
 
-To ADD a persona end-to-end (blueprint + SET + index + manifest + qmd + re-wire),
+To ADD a persona end-to-end (blueprint + SET + index + manifest + re-wire),
 follow `../23-ai-workforce-blueprint/ADDING-PERSONAS.md` — skipping a step ships a
 persona that is matchable-but-vector-less or one the agent never mentions.
 
