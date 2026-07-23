@@ -271,6 +271,40 @@ ledger_field() {
   json_field "$key" < "$file"
 }
 
+# U035: verify the integrity checksum embedded in a roster/ledger JSON record.
+# Returns 0 (true) when the record passes verification or has no _checksum yet
+# (backward-compatible with pre-U035 records that have never been written with
+# the checksum). Returns 1 (false) on a checksum mismatch, which the caller
+# must treat as a hard failure -- the record is corrupt or truncated.
+verify_ledger_checksum() {
+  local file="$1"
+  [ -f "$file" ] || return 0
+  python3 -c '
+import hashlib, json, sys, hmac
+try:
+    with open(sys.argv[1], "r") as fh:
+        raw = fh.read()
+except Exception:
+    sys.exit(1)
+try:
+    data = json.loads(raw)
+except Exception:
+    sys.exit(1)
+cs = data.get("_checksum") if isinstance(data, dict) else None
+if cs is None:
+    # pre-U035 record: no checksum field yet, skip verification
+    sys.exit(0)
+# Recompute: drop _checksum, sort keys, SHA-256
+obj = {k: v for k, v in data.items() if k != "_checksum"}
+canonical = json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+if not hmac.compare_digest(cs, actual):
+    sys.stderr.write("podbean_publish: ledger checksum MISMATCH for " + sys.argv[1] + ": expected " + cs[:16] + "... got " + actual[:16] + "... (corruption or truncation suspected)\n")
+    sys.exit(1)
+sys.exit(0)
+' "$file"
+}
+
 # Print the podcast ids owned by the account, one per line. Reads a
 # GET /v1/podcasts json body on stdin.
 podcast_ids() {
@@ -567,6 +601,13 @@ jstr() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "${1:-}"; 
 # Ledger-driven skip: the single most important guard for Step 15. A crash and
 # resume inside one job must never create a second Podbean episode.
 if [ -n "$LEDGER" ]; then
+  # U035: verify the integrity checksum before trusting the ledger contents.
+  # A corrupt or truncated ledger file must not be silently used.
+  if ! verify_ledger_checksum "$LEDGER"; then
+    log "LEDGER CHECKSUM VERIFICATION FAILED for ${LEDGER}: the roster file may be corrupted or truncated"
+    emit_result "{\"status\":\"checksum_error\",\"reason\":\"ledger_checksum_mismatch\",\"idempotent_skip\":false,\"ledger\":$(jstr "$LEDGER")}"
+    exit 1
+  fi
   existing_permalink="$(ledger_field "$LEDGER" podbean_permalink || true)"
   ledger_state="$(ledger_field "$LEDGER" state || true)"
   if [ -n "$existing_permalink" ] && [ "$existing_permalink" != "None" ]; then
@@ -927,7 +968,6 @@ fi
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
-  --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"
   --data-urlencode "title=${FINAL_TITLE}"
   --data-urlencode "content=${DESCRIPTION}"
   --data-urlencode "status=${PUBLISH_STATUS}"
