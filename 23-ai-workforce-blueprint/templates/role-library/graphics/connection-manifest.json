@@ -2,6 +2,17 @@
   "_comment": "Connection-manifest for the Graphics department. verify-wiring.sh reads this file and checks each required cfg_key. Advisory (required:false) entries are documentation-only hooks verify-wiring.sh reports but never gates on.",
   "dept": "graphics",
   "version": "1.2.0",
+  "verified": {
+    "unit": "U137",
+    "date": "2026-07-23",
+    "gates": {
+      "prove_agnes_image_prompt_floor_self_test": "9/9 PASS",
+      "qc_gip_agnes_prompt_band_self_test": "8/8 PASS",
+      "short_rejection": "PASS",
+      "long_rejection": "PASS",
+      "py_compile_both": "PASS"
+    }
+  },
   "connection_points": [
     {
       "name": "gip-prompt-authoring-route",
