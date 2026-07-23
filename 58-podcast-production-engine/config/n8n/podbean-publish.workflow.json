@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: explicit workflow version + schema-validation marker. The validator in scripts/validate_n8n_workflow.py checks this field plus the required n8n structure (nodes, connections) before the workflow is imported."
+  },
   "id": "TkL0rn2SH3q32SeB",
   "name": "create podcast episode from openclaw",
   "description": null,
