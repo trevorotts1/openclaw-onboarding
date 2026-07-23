@@ -39,6 +39,7 @@
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -55,6 +56,10 @@ from datetime import datetime, timedelta, timezone
 DEFAULT_DB_REL = os.path.join(".openclaw", "podcast-engine", "podcast-engine.db")
 DEFAULT_LEDGER_REL = os.path.join(".openclaw", "state", "podcast-engine", "intake-ledger")
 DEFAULT_JOBINDEX_REL = os.path.join(".openclaw", "state", "podcast-engine", "job-index")
+
+# U035: key name for the integrity checksum embedded in each roster/ledger record.
+# SHA-256 of the canonical JSON (sorted keys, no whitespace) excluding this field.
+ROSTER_CHECKSUM_KEY = "_checksum"
 
 QUEUE_HOLD_DAYS = 60          # credit-out queue maximum hold (SPEC credit_out_queue)
 PII_TOMBSTONE_DAYS = 90       # scrub PII this long after the terminal event (Section 10.2)
@@ -774,6 +779,29 @@ def _atomic_write(path: str, text: str) -> None:
         pass
 
 
+def verify_checksum(raw: str) -> None:
+    """U035: Verify the integrity checksum embedded in a roster/ledger record.
+    Raises ValueError if the checksum is present and does not match.
+    Pre-U035 records without a _checksum field pass silently.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ValueError("ledger record is not valid JSON")
+    if not isinstance(data, dict):
+        raise ValueError("ledger record is not a JSON object")
+    cs = data.get(ROSTER_CHECKSUM_KEY)
+    if cs is None:
+        return
+    obj = {k: v for k, v in data.items() if k != ROSTER_CHECKSUM_KEY}
+    canonical = json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(cs, actual):
+        raise ValueError(
+            f"ledger checksum MISMATCH: expected {cs[:16]}... got {actual[:16]}..."
+        )
+
+
 def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
     """Mirror the SQLite status onto the intake-ledger record the webhook layer
     created. SQLite is the queryable source of truth; the ledger is the atomic-claim
@@ -804,10 +832,21 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
         record = {}
         if os.path.exists(ledger_file):
             with open(ledger_file, "r", encoding="utf-8") as fh:
-                record = json.load(fh)
+                raw = fh.read()
+            # U035: verify the integrity checksum before trusting the record
+            # contents. A corrupt or truncated file is detected here.
+            record = json.loads(raw)
+            if isinstance(record, dict) and ROSTER_CHECKSUM_KEY in record:
+                verify_checksum(raw)
         record["state"] = ledger_state
         record["updated_at"] = iso(now_utc())
         record["sqlite_job_id"] = job_id
+        # U035: embed an integrity checksum so truncation / corruption is
+        # detected on the next read. Drop a pre-existing _checksum so the
+        # compute is of content only.
+        record.pop(ROSTER_CHECKSUM_KEY, None)
+        raw_for_checksum = json.dumps(record, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        record[ROSTER_CHECKSUM_KEY] = hashlib.sha256(raw_for_checksum.encode("utf-8")).hexdigest()
         _atomic_write(ledger_file, json.dumps(record, indent=2))
     except (OSError, ValueError) as exc:
         sys.stderr.write(
