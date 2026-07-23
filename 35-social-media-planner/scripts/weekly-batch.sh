@@ -37,6 +37,25 @@ log()  { printf '[%s] [Skill35-batch] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*
 warn() { printf '[%s] [Skill35-batch][WARN] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE" >&2; }
 err()  { printf '[%s] [Skill35-batch][ERR ] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" | tee -a "$LOG_FILE" >&2; }
 
+# --- Exit codes:
+#   0  = work done (one or more topics published)
+#   10 = zero-work idle (no calendar or no entries due)
+#   4+ = error (4=missing cycle script, 6=publishing failure)
+ZERO_WORK_EXIT=10
+
+# Zero-work heartbeat file (written every idle batch)
+IDLE_HEARTBEAT="$OPENCLAW_DIR/data/skill35/last-zero-work-heartbeat"
+HEARTBEAT_DIR="$(dirname "$IDLE_HEARTBEAT")"
+mkdir -p "$HEARTBEAT_DIR" 2>/dev/null || true
+
+write_idle_heartbeat() {
+  local now_iso
+  now_iso="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  printf '{"status":"idle","reason":"%s","timestamp":"%s","batch_version":"%s"}\n' \
+    "${1:-no-calendar}" "$now_iso" "$SCRIPT_VERSION" > "$IDLE_HEARTBEAT" 2>/dev/null || true
+  log "zero-work heartbeat written to $IDLE_HEARTBEAT (reason: ${1:-no-calendar})"
+}
+
 case "${1:-}" in
   --help|-h)
     cat <<EOF
@@ -109,10 +128,11 @@ enable weekly automation:
      fire run-publishing-cycle.sh once per scheduled topic each
      Monday morning.
 
-Exiting 0 (nothing to do today).
+Exiting $ZERO_WORK_EXIT (nothing to do today -- idle heartbeat).
 ────────────────────────────────────────────────────────────────────
 EOF
-  exit 0
+  write_idle_heartbeat "no-calendar"
+  exit $ZERO_WORK_EXIT
 fi
 
 # ---------- parse + filter calendar ----------
@@ -165,7 +185,8 @@ PYEOF
 
 if [ -z "$DUE_THIS_WEEK" ]; then
   log "calendar present but no entries match the current week. Nothing to do."
-  exit 0
+  write_idle_heartbeat "no-matching-entries"
+  exit $ZERO_WORK_EXIT
 fi
 
 COUNT=$(printf '%s\n' "$DUE_THIS_WEEK" | grep -c . || true)

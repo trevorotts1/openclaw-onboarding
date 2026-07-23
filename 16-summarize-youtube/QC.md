@@ -1,5 +1,5 @@
 # QC Checklist - Skill 16: Summarize YouTube
-**Version:** v6.5.6
+**Version:** v6.5.7
 
 Run this after installation. Every section must pass before you mark summarize-youtube complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `summarize-youtube-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `skill-version.txt` returns `v6.5.7`
 - [ ] `summarize-youtube-full.md` is non-empty
 
 ---
