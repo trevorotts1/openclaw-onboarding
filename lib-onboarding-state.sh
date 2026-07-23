@@ -56,6 +56,16 @@ ONBOARDING_STATE_FILE="${ONBOARDING_STATE_FILE:-$OC_CONFIG/.onboarding-state.jso
 # Skills that are legitimately INTERVIEW-gated (owner input required) and must
 # NOT be treated as a failure when they park in interview-pending.
 ONBOARDING_INTERVIEW_SKILLS="${ONBOARDING_INTERVIEW_SKILLS:-22-book-to-persona-coaching-leadership-system 23-ai-workforce-blueprint 32-command-center-setup 35-social-media-planner}"
+# ------------------------------------------------------------
+# WORKFORCE BUILD STATE SCHEMA VERSION (U049 fix)
+#   .workforce-build-state.json had no schema version field, so structural
+#   changes between releases produced garbage or a crash with no signal and no
+#   migration path.  Every writer must stamp schemaVersion with this constant.
+#   Readers must: treat missing schemaVersion as v1; refuse (hard error) on
+#   schemaVersion > current; run migration on schemaVersion < current.
+# ------------------------------------------------------------
+WORKFORCE_BUILD_STATE_SCHEMA_VERSION=2
+
 
 # ------------------------------------------------------------
 # oc_state_now — UTC ISO8601 timestamp
@@ -969,6 +979,166 @@ oc_repo_consistency_ok() {
   return 1
 }
 
+
+# ------------------------------------------------------------
+# migrate_build_state <wf_state_path>
+#   U049: Schema-version check + migration for .workforce-build-state.json.
+#
+#   Rules:
+#     - Missing file      -> no-op (workforce not yet started).
+#     - Missing schemaVersion -> treat as v1, migrate to current.
+#     - schemaVersion > current  -> HARD ERROR (refuse to parse a newer file with
+#       an older reader; print both versions and exit non-zero).
+#     - schemaVersion == current -> no-op (already current).
+#     - schemaVersion < current  -> run migration transform to current, then
+#       proceed (re-stamped on next write).
+#     - Corrupted/unparseable JSON -> quarantine to .workforce-build-state.json.corrupt-<ts>,
+#       print error, exit non-zero.
+#
+#   Returns 0 when the file is absent or already current, 1 on hard error.
+#   On successful migration, the file is updated in-place with schemaVersion stamped.
+# ------------------------------------------------------------
+migrate_build_state() {
+  local wf_path="${1:-}"
+  [ -n "$wf_path" ] || return 0
+  [ -f "$wf_path" ] || return 0   # absent is normal — workforce not yet started
+
+  WF_PATH="$wf_path" \
+  CURRENT_VERSION="$WORKFORCE_BUILD_STATE_SCHEMA_VERSION" \
+  NOW="$(oc_state_now)" python3 - <<'PYEOF' || return 1
+import json, os, sys, time, tempfile
+
+wf      = os.environ["WF_PATH"]
+cur_ver = int(os.environ["CURRENT_VERSION"])
+now     = os.environ["NOW"]
+
+
+def fail(msg):
+    sys.stderr.write("migrate_build_state: %s\n" % msg)
+    raise SystemExit(1)
+
+
+# Read — detect corruption
+try:
+    with open(wf, encoding="utf-8") as fh:
+        raw = fh.read()
+except OSError as exc:
+    fail("cannot read %s: %s" % (wf, exc))
+
+if not raw.strip():
+    # Empty file is non-fatal but abnormal — remove and warn
+    sys.stderr.write("migrate_build_state: %s is empty; removing\n" % wf)
+    try:
+        os.unlink(wf)
+    except OSError:
+        pass
+    raise SystemExit(0)
+
+try:
+    state = json.loads(raw)
+except json.JSONDecodeError as exc:
+    # CORRUPTION -> quarantine, never silently treated as empty
+    ts = str(int(time.time()))
+    q_path = wf + ".corrupt-" + ts
+    try:
+        os.rename(wf, q_path)
+        fail("CORRUPT JSON at %s — quarantined to %s: %s\n"
+             "Remove or repair the corrupt file to proceed." % (wf, q_path, exc))
+    except OSError as exc2:
+        fail("CORRUPT JSON at %s (%s) — could not quarantine (%s). "
+             "Please remove or repair this file manually." % (wf, exc, exc2))
+
+if not isinstance(state, dict):
+    fail("%s top-level is %s, not a JSON object — refusing to parse"
+         % (wf, type(state).__name__))
+
+# --- schema version check ---
+file_ver = state.get("schemaVersion")
+if file_ver is None:
+    # v1 — every existing file without schemaVersion
+    file_ver = 1
+elif not isinstance(file_ver, int):
+    fail("schemaVersion in %s is %s (not an integer) — treating as corrupt"
+         % (wf, type(file_ver).__name__))
+
+if file_ver > cur_ver:
+    fail("VERSION MISMATCH: %s has schemaVersion=%d but this reader only "
+         "understands up to %d. Update the reader before reading this file."
+         % (wf, file_ver, cur_ver))
+
+if file_ver == cur_ver:
+    # Already current — no migration needed
+    raise SystemExit(0)
+
+# --- migration: v1 -> v2 (current) ---
+# v1->v2 transforms (additive/normalizing U049):
+#   - Stamp schemaVersion
+#   - Normalize interviewComplete to boolean (could be "true"/"false" strings)
+#   - Ensure known keys exist with safe defaults:
+#       interviewComplete=false, buildCompletedAt=null, closeoutStatus="",
+#       companyName="", companySlug="", ownerName="", ownerChat="",
+#       industry="", departments={}, interviewProgress={},
+#       interviewStalled=false, interviewStalledAt=null
+migrated = False
+
+# Normalize interviewComplete boolean representation
+ic = state.get("interviewComplete")
+if isinstance(ic, str):
+    state["interviewComplete"] = (ic.lower() in ("true", "1", "yes"))
+    migrated = True
+
+# Ensure safe defaults for known keys
+_defaults = {
+    "interviewComplete": False,
+    "buildCompletedAt": None,
+    "closeoutStatus": "",
+    "companyName": "",
+    "companySlug": "",
+    "ownerName": "",
+    "ownerChat": "",
+    "industry": "",
+    "departments": {},
+    "interviewProgress": {},
+    "interviewStalled": False,
+    "interviewStalledAt": None,
+}
+for k, v in _defaults.items():
+    if k not in state:
+        state[k] = v
+        migrated = True
+
+state["schemaVersion"] = cur_ver
+migrated = True
+
+if not migrated:
+    raise SystemExit(0)
+
+# Atomic write
+target_dir = os.path.dirname(os.path.abspath(wf)) or "."
+tmp_path = None
+try:
+    fd, tmp_path = tempfile.mkstemp(
+        dir=target_dir, prefix=".workforce-build-state.", suffix=".tmp")
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        json.dump(state, fh, indent=2)
+        fh.flush()
+        os.fsync(fh.fileno())
+    os.replace(tmp_path, wf)
+    tmp_path = None
+except OSError as exc:
+    fail("could not write migrated state to %s: %s" % (wf, exc))
+finally:
+    if tmp_path and os.path.exists(tmp_path):
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
+
+sys.stderr.write("migrate_build_state: migrated %s v%d -> v%d\n"
+                 % (wf, file_ver, cur_ver))
+raise SystemExit(0)
+PYEOF
+}
 # ------------------------------------------------------------
 # oc_overall_goal_check
 #   CHEAP overall goal check (reads two state files, no network):
@@ -986,6 +1156,9 @@ oc_repo_consistency_ok() {
 oc_overall_goal_check() {
   [ -f "$ONBOARDING_STATE_FILE" ] || return 1
   local wf_state="${OC_WORKSPACE_DEFAULT:-$OC_CONFIG/workspace}/.workforce-build-state.json"
+
+  # U049: schema-version check + migration before reading workforce build state
+  migrate_build_state "$wf_state"
 
   # FAIL-CLOSED workspace-shell gate (raw on-disk verification, not JSON state).
   local ws_materialized="false"

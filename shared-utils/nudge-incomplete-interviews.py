@@ -27,6 +27,7 @@ import json
 import os
 import re
 import sys
+import time
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -245,7 +246,11 @@ def read_build_state(state_path: Path) -> dict:
     """
     Read .workforce-build-state.json. Returns {} if not found or invalid.
     PRD-2.15: build state is the PRIMARY source of interview progress data.
+    U049: schema-version check + migration applied before returning.
     """
+    migrated = migrate_workforce_build_state(state_path)
+    if migrated:
+        return migrated
     try:
         return json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:

@@ -24,11 +24,97 @@ import os
 import re
 import sys
 import tempfile
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
 from detect_platform import get_openclaw_paths
+
+
+WORKFORCE_BUILD_STATE_SCHEMA_VERSION = 2
+
+
+def migrate_workforce_build_state(state_path):
+    """U049: Schema-version check + migration for .workforce-build-state.json."""
+    import time as _time
+    if not state_path.exists():
+        return {}
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReconcileError("cannot read workforce build state: %s" % exc) from exc
+    if not raw.strip():
+        return {}
+    try:
+        state = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        ts = str(int(_time.time()))
+        q_path = state_path.parent / (state_path.name + ".corrupt-" + ts)
+        try:
+            state_path.rename(q_path)
+        except OSError as exc2:
+            raise ReconcileError(
+                "CORRUPT JSON at %s (%s) — could not quarantine (%s)" % (state_path, exc, exc2))
+        raise ReconcileError(
+            "CORRUPT JSON at %s — quarantined to %s: %s" % (state_path, q_path, exc)) from exc
+    if not isinstance(state, dict):
+        raise ReconcileError(".workforce-build-state.json is not a JSON object")
+
+    file_ver = state.get("schemaVersion")
+    if file_ver is None:
+        file_ver = 1
+    elif not isinstance(file_ver, int):
+        raise ReconcileError("schemaVersion is not an integer: %s" % repr(file_ver))
+
+    if file_ver > WORKFORCE_BUILD_STATE_SCHEMA_VERSION:
+        raise ReconcileError(
+            "VERSION MISMATCH: schemaVersion=%d > current %d" % (file_ver, WORKFORCE_BUILD_STATE_SCHEMA_VERSION))
+    if file_ver == WORKFORCE_BUILD_STATE_SCHEMA_VERSION:
+        return state
+
+    # v1 -> v2 migration
+    ic = state.get("interviewComplete")
+    if isinstance(ic, str):
+        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
+    for key in ("buildCompletedAt", "closeoutStatus", "companyName", "companySlug",
+                 "ownerName", "ownerChat", "industry", "departments",
+                 "interviewProgress", "interviewStalled", "interviewStalledAt"):
+        if key not in state:
+            if key in ("buildCompletedAt", "interviewStalledAt"):
+                state[key] = None
+            elif key in ("interviewComplete", "interviewStalled"):
+                state[key] = False
+            elif key in ("departments", "interviewProgress"):
+                state[key] = {}
+            else:
+                state[key] = ""
+    state["schemaVersion"] = WORKFORCE_BUILD_STATE_SCHEMA_VERSION
+
+    # Atomic write
+    target_dir = state_path.parent or Path(".")
+    tmp_path = None
+    try:
+        fd, tmp_name = tempfile.mkstemp(dir=str(target_dir), prefix=".workforce-build-state.", suffix=".tmp")
+        tmp_path = Path(tmp_name)
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp_path, state_path)
+        tmp_path = None
+    except OSError as exc:
+        raise ReconcileError("could not write migrated state: %s" % exc)
+    finally:
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
+
+    sys.stderr.write("migrate_workforce_build_state: migrated %s v%d -> v%d\n"
+                     % (state_path, file_ver, WORKFORCE_BUILD_STATE_SCHEMA_VERSION))
+    return state
 
 
 TEMPLATE_COMPANY_NAME = "Your Company"
@@ -308,7 +394,8 @@ def reconcile(
             "writes": "0",
         }
 
-    state_payload = _load_json(
+    # U049: schema-version check + migration before reading workforce build state
+    state_payload = migrate_workforce_build_state(workspace / ".workforce-build-state.json") or _load_json(
         workspace / ".workforce-build-state.json", missing={}, empty={}
     )
     if not isinstance(state_payload, dict):
