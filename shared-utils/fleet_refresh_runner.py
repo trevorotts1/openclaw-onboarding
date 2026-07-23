@@ -1602,7 +1602,10 @@ def step_provisioning_completeness(
                           present — but an EMPTY logoUrl is the DESIGNED text-SVG
                           fallback (useLogoUrl renders the company name) and is
                           NOT failed; only a missing/broken logo file fails.
-      DEPTS     (GATE)  — departments.json exists and is a NON-EMPTY array.
+      DEPTS     (GATE)  — departments.json exists and is a well-formed array. An
+                          EMPTY array is the intended fresh-box default (PASS); the
+                          authoritative completeness signal is ROLE-FLOOR, not the
+                          array length.
       ROLE-FLOOR(GATE)  — when departments.json declares >=1 department, the LIVE
                           departments workspace must exist on disk AND hold >=1
                           role artifact. departments.json lives in the ZHC company
@@ -1659,12 +1662,21 @@ def step_provisioning_completeness(
     checks.append(("BRANDING", branding_ok, bdetail))
 
     # ── DEPARTMENTS (gate) ────────────────────────────────────────────────────
+    # An EMPTY departments.json is the INTENDED shipped default on a fresh box —
+    # the same state ROLE-FLOOR treats as n/a. Keying this gate on emptiness
+    # rejected a correctly provisioned fresh box, while a non-empty array satisfied
+    # it without a single workspace being materialized. The authoritative
+    # completeness signal is ROLE-FLOOR (the floor-prover result + the live
+    # departments workspace on disk), not the length of this JSON array. So
+    # DEPARTMENTS gates only on the file being a well-formed list; an empty array
+    # is a valid fresh-box state, never a failure.
     depts = _prov_read_json(pp.get("departments_json"))
     if not isinstance(depts, list):
         checks.append(("DEPARTMENTS", False,
                        f"departments.json missing/not-a-list ({pp.get('departments_json')})"))
     elif len(depts) == 0:
-        checks.append(("DEPARTMENTS", False, "departments.json is an EMPTY array"))
+        checks.append(("DEPARTMENTS", True,
+                       "empty array (fresh-box default; completeness gated by ROLE-FLOOR)"))
     else:
         checks.append(("DEPARTMENTS", True, f"{len(depts)} departments"))
 
