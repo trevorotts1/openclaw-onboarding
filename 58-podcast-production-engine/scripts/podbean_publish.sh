@@ -867,6 +867,12 @@ log "episode published; permalink captured"
 # podcast_state.py is the single state writer (dashboard-design Section 5.4). It
 # records podbean_permalink into the ledger and SQLite in lockstep. The Convert
 # and Flow custom-field write (Step 16) is a separate slice and is NOT done here.
+#
+# U039: ALSO record the Podbean MEDIA KEY (mp3_media_key / cover_image_key) as the
+# DURABLE reference. The *_media_url values are ephemeral presigned URLs that
+# expire; the key never expires and can be re-resolved to a fresh URL on demand
+# via `podcast_state.py resolve-media-key`. The key is the primary reference the
+# roster should carry forward.
 SW="${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}"
 if [ -n "$JOB_ID" ] && [ -f "$SW" ]; then
   if python3 "$SW" output --job-id "$JOB_ID" --field podbean_permalink --value "$PERMALINK" >&2; then
@@ -874,11 +880,27 @@ if [ -n "$JOB_ID" ] && [ -f "$SW" ]; then
   else
     log "warning: podcast_state.py did not record the permalink; caller must persist it"
   fi
+  # Record the durable media key(s). Best-effort: a failure to persist the key is
+  # a warning, never fatal (the permalink already landed and the episode is live).
+  if [ -n "$MEDIA_KEY" ]; then
+    if python3 "$SW" output --job-id "$JOB_ID" --field mp3_media_key --value "$MEDIA_KEY" >&2; then
+      log "mp3 media key recorded via podcast_state.py for job ${JOB_ID}"
+    else
+      log "warning: podcast_state.py did not record the mp3 media key; caller must persist it"
+    fi
+  fi
+  if [ -n "$LOGO_KEY" ]; then
+    if python3 "$SW" output --job-id "$JOB_ID" --field cover_image_key --value "$LOGO_KEY" >&2; then
+      log "cover media key recorded via podcast_state.py for job ${JOB_ID}"
+    else
+      log "warning: podcast_state.py did not record the cover media key; caller must persist it"
+    fi
+  fi
 elif [ -n "$JOB_ID" ]; then
   log "podcast_state.py not found at ${SW}; emitting result for the caller to persist"
 fi
 
 # ------------------------------------------------------------------- result ----
-emit_result "{\"status\":\"published\",\"idempotent_skip\":false,\"permalink_url\":$(jstr "$PERMALINK"),\"episode_id\":$(jstr "$EPISODE_ID"),\"episode_number\":${EPISODE_NUMBER},\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS"),\"publish_timestamp\":$( [ -n "$PUBLISH_TIMESTAMP" ] && printf '%s' "$PUBLISH_TIMESTAMP" || printf 'null' )}"
+emit_result "{\"status\":\"published\",\"idempotent_skip\":false,\"permalink_url\":$(jstr "$PERMALINK"),\"episode_id\":$(jstr "$EPISODE_ID"),\"episode_number\":${EPISODE_NUMBER},\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS"),\"publish_timestamp\":$( [ -n "$PUBLISH_TIMESTAMP" ] && printf '%s' "$PUBLISH_TIMESTAMP" || printf 'null' ),\"mp3_media_key\":$(jstr "${MEDIA_KEY:-}"),\"cover_image_key\":$(jstr "${LOGO_KEY:-}")}"
 exit 0
 fi

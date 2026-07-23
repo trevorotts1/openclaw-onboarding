@@ -46,6 +46,8 @@ import secrets
 import sqlite3
 import sys
 import time
+import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta, timezone
 
 # ---------------------------------------------------------------------------
@@ -58,6 +60,9 @@ DEFAULT_JOBINDEX_REL = os.path.join(".openclaw", "state", "podcast-engine", "job
 
 QUEUE_HOLD_DAYS = 60          # credit-out queue maximum hold (SPEC credit_out_queue)
 PII_TOMBSTONE_DAYS = 90       # scrub PII this long after the terminal event (Section 10.2)
+# U039: bound the media-key -> URL resolution so a hung Podbean API can never
+# stall the caller. Overridable via env for the test harness / canary only.
+RESOLVE_MEDIA_KEY_TIMEOUT = int(os.environ.get("PODBEAN_RESOLVE_TIMEOUT", "30"))
 
 
 def _home() -> str:
@@ -165,6 +170,13 @@ OUTPUT_COLUMNS = {
     "book_teaser_url": "text",
     "mp3_media_url": "text",
     "cover_image_url": "text",
+    # U039: the Podbean media keys are the DURABLE references. The *_media_url
+    # columns above hold the temporary presigned/download URLs Podbean returns at
+    # upload time; those expire. The keys never expire and can be re-resolved to
+    # a fresh URL on demand via `resolve-media-key`. The key is the primary
+    # reference; the URL is a derived, re-fetchable convenience.
+    "mp3_media_key": "text",
+    "cover_image_key": "text",
     "spoken_word_count": "int",
     "runtime_minutes": "real",
     "publish_timestamp": "text",
@@ -342,6 +354,8 @@ CREATE TABLE IF NOT EXISTS podcast_jobs (
   book_teaser_url     TEXT,
   mp3_media_url       TEXT,
   cover_image_url     TEXT,
+  mp3_media_key       TEXT,
+  cover_image_key     TEXT,
   spoken_word_count   INTEGER,
   runtime_minutes     REAL,
   publish_timestamp   TEXT,
@@ -1335,6 +1349,75 @@ def cmd_init(conn, args):
 
 
 # ---------------------------------------------------------------------------
+# U039: media-key -> fresh-URL resolution
+# ---------------------------------------------------------------------------
+# Podbean media URLs are EPHEMERAL: the presigned/download URL returned at upload
+# time expires. The durable reference is the media KEY (the file_key from
+# uploadAuthorize, echoed back as the episode's media_key). This resolves a key
+# to a FRESH URL on demand, so a stale/expired URL in the roster can always be
+# re-fetched without re-uploading. The lookup is BOUNDED (RESOLVE_MEDIA_KEY_TIMEOUT)
+# so a hung API can never stall the caller.
+
+def resolve_media_key(media_key: str, access_token: str,
+                      api_base: str | None = None,
+                      timeout: int | None = None) -> str:
+    """Resolve a Podbean media key to a fresh download/stream URL.
+
+    Calls GET {api_base}/files?key=<media_key>&access_token=<token> and returns
+    the URL from the response body (probing the documented field names in order).
+    The request is bounded by `timeout` (default RESOLVE_MEDIA_KEY_TIMEOUT) so a
+    hung API raises rather than blocking forever. Raises on any failure
+    (network, non-2xx, missing URL) so the caller can decide the fallback; the
+    access token is passed as a query param (the documented Podbean shape) and is
+    never logged.
+    """
+    base = (api_base or os.environ.get("PODBEAN_API_BASE")
+            or "https://api.podbean.com/v1").rstrip("/")
+    qs = urllib.parse.urlencode({"key": media_key, "access_token": access_token})
+    url = f"{base}/files?{qs}"
+    req = urllib.request.Request(url, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout or RESOLVE_MEDIA_KEY_TIMEOUT) as resp:
+        status = getattr(resp, "status", 200)
+        if not (200 <= status < 300):
+            raise RuntimeError(f"podbean files lookup returned HTTP {status}")
+        data = json.loads(resp.read().decode("utf-8"))
+    # Probe the documented response shapes for the URL field.
+    for field in ("url", "download_url", "media_url", "file_url", "presigned_url"):
+        val = data.get(field) if isinstance(data, dict) else None
+        if isinstance(val, str) and val:
+            return val
+    nested = data.get("file") if isinstance(data, dict) else None
+    if isinstance(nested, dict):
+        for field in ("url", "download_url", "media_url"):
+            val = nested.get(field)
+            if isinstance(val, str) and val:
+                return val
+    raise RuntimeError("podbean files lookup returned no resolvable URL for the media key")
+
+
+def cmd_resolve_media_key(conn, args):
+    row = _load_job(conn, args.job_id)
+    field = args.field
+    key_col = {"mp3": "mp3_media_key", "cover": "cover_image_key"}.get(field)
+    if not key_col:
+        raise UsageError("--field must be 'mp3' or 'cover'")
+    media_key = row[key_col] if key_col in row.keys() else None
+    if not media_key:
+        raise UsageError(
+            f"job {args.job_id} has no {key_col} recorded; record it first via "
+            f"`output --field {key_col} --value <key>`"
+        )
+    if not args.access_token:
+        raise UsageError("--access-token is required to resolve a media key (value never logged)")
+    try:
+        fresh_url = resolve_media_key(media_key, args.access_token, api_base=args.api_base)
+    except Exception as exc:  # noqa: BLE001 - surface a sanitized, non-zero failure
+        raise UsageError(f"could not resolve {field} media key to a fresh URL: {redact(str(exc))}")
+    _emit(args, {"job_id": args.job_id, "field": field, "media_key": media_key,
+                 "fresh_url": fresh_url})
+
+
+# ---------------------------------------------------------------------------
 # Output
 # ---------------------------------------------------------------------------
 
@@ -1445,6 +1528,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     i = sub.add_parser("init", help="ensure the schema exists")
     i.set_defaults(func=cmd_init)
+
+    r = sub.add_parser("resolve-media-key", help="resolve a media key to a fresh URL (U039)")
+    r.add_argument("--job-id", required=True)
+    r.add_argument("--field", required=True, choices=["mp3", "cover"],
+                   help="which media key to resolve: mp3 (audio) or cover (image)")
+    r.add_argument("--access-token", required=True,
+                   help="Podbean access token (value never logged)")
+    r.add_argument("--api-base", default=None,
+                   help="override PODBEAN_API_BASE (default: env or https://api.podbean.com/v1)")
+    r.set_defaults(func=cmd_resolve_media_key)
 
     return p
 
