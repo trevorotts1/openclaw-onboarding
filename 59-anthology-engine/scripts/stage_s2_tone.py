@@ -24,6 +24,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from anthology_run_dir import resolve_participant_run_dir  # noqa: E402
+
 STAGE = "s2"
 STAGE_NAME = "TONE"
 KEY_ARG = "participant-key"
@@ -54,26 +57,17 @@ WORKING_FILE = "tone-doc.md"    # 54-anthology-writer/run_anthology.py working/t
 
 
 def _run_dir_for(key, run_dir=None):
-    """Resolve (and create) this run's per-participant working directory
-    -- the SAME directory 54-anthology-writer/anthology-entry.sh --run-dir targets,
-    so its working/*.md checkpoints are exactly what this dispatcher reads back."""
+    """Resolve (and create) this run's per-participant working directory via the
+    shared resolver (anthology_run_dir.resolve_participant_run_dir) -- the SAME
+    directory 54-anthology-writer/run_anthology.py resolves for its gate-artifact
+    checks, so its working/*.md checkpoints are exactly what this dispatcher
+    writes and the downstream orchestrator reads back. No stage invents its own
+    path string; all call the shared resolver (U059)."""
     if run_dir:
         d = Path(run_dir)
-    else:
-        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (key or "unknown"))
-        # ONE canonical directory per participant, shared by EVERY authoring stage.
-        # It used to be stage-scoped (state/runs/<STAGE>/<safe>), which meant S2 handed
-        # 54-anthology-writer/anthology-entry.sh an EMPTY directory: run_anthology.py
-        # walks its phases from P0-INTAKE every time and fails closed at the first phase
-        # whose gate artifacts are absent, and those artifacts (working/intake.json,
-        # working/avatar.md) were written by S1 into a DIFFERENT directory. Every stage
-        # now resolves the same path, so later stages read back what earlier ones wrote.
-        # NOTE: "participants" is a fixed literal, never a stage name, so this can never
-        # collide with the anthology-level assembly dir at state/runs/s9/<anthology_id>
-        # that gate_engine.py::_s9_run_dir must keep resolving identically.
-        d = SKILL_DIR / "state" / "runs" / "participants" / safe
-    (d / "working").mkdir(parents=True, exist_ok=True)
-    return d
+        (d / "working").mkdir(parents=True, exist_ok=True)
+        return d
+    return resolve_participant_run_dir(key, base=SKILL_DIR)
 
 
 def _run(argv, timeout=180):

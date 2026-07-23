@@ -45,6 +45,18 @@ MANIFEST = _SKILL_DIR / "ANTHOLOGY-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
 PROMPTS = _SKILL_DIR / "assets" / "prompts"
 
+# U059: the single durable per-participant run directory resolver lives in the
+# sibling engine (59-anthology-engine). Both this orchestrator and every Skill 59
+# stage dispatcher resolve the participant's working directory through the SAME
+# function, so the gate artifacts this orchestrator checks (working/intake.json,
+# working/avatar.md, working/tone-doc.md, ...) are exactly what the stages wrote.
+_ANTHOLOGY_ENGINE_SCRIPTS = _SKILL_DIR.parent / "59-anthology-engine" / "scripts"
+sys.path.insert(0, str(_ANTHOLOGY_ENGINE_SCRIPTS))
+try:
+    from anthology_run_dir import resolve_participant_run_dir  # noqa: E402
+except Exception:  # pragma: no cover - resolver must resolve; fail loud at use site
+    resolve_participant_run_dir = None
+
 PHASE_ORDER = ["P0-INTAKE", "P0A-AVATAR", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
                "P4-TITLE-LOCK", "P5-CHAPTER-AUTHOR", "P6-CHAPTER-QC", "P7-DELIVER"]
 
@@ -960,6 +972,10 @@ def _mc_board_blocked(run_dir, task_id):
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Anthology Writer orchestrator (Skill 54).")
     ap.add_argument("--run-dir", help="the anthology run directory (contains working/)")
+    ap.add_argument("--participant-key", dest="participant_key", default=None,
+                    help="resolve the run directory via the shared per-participant resolver "
+                         "(anthology_run_dir.resolve_participant_run_dir) instead of --run-dir; "
+                         "the SAME resolver every Skill 59 stage dispatcher uses (U059)")
     ap.add_argument("--upto", choices=PHASE_ORDER, help="run through this phase only")
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
@@ -972,9 +988,19 @@ def main(argv=None):
     manifest = _load_manifest()
     if args.plan:
         return plan(manifest)
-    if not args.run_dir:
-        ap.error("--run-dir is required (or use --plan)")
-    run_dir = Path(args.run_dir).resolve()
+    if not args.run_dir and not args.participant_key:
+        ap.error("--run-dir or --participant-key is required (or use --plan)")
+    if args.participant_key:
+        # U059: resolve the gate-artifact directory through the SAME shared resolver
+        # the Skill 59 stage dispatchers use, so this orchestrator checks exactly the
+        # directory the stages wrote to (never an ad-hoc per-stage path).
+        if resolve_participant_run_dir is None:
+            print("FATAL: cannot import anthology_run_dir.resolve_participant_run_dir from "
+                  "59-anthology-engine/scripts (U059 shared resolver).", file=sys.stderr)
+            return EXIT_USAGE
+        run_dir = resolve_participant_run_dir(args.participant_key)
+    else:
+        run_dir = Path(args.run_dir).resolve()
     if not run_dir.is_dir():
         print("FATAL: --run-dir not found: %s" % run_dir, file=sys.stderr)
         return EXIT_USAGE
