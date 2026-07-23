@@ -1,3 +1,8 @@
+## [v21.0.3]  -  2026-07-23  -  July-23-Fixes Batch 3: Missing-departments edge case warning
+
+Units: U007
+- U007 — Warn when departments/ missing but workforce build reports interviewComplete=true
+
 ## [v21.0.2]  -  2026-07-23  -  July-23-Fixes Batch 2: Shared-utils orphan detection
 
 Units: U006
