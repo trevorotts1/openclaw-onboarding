@@ -41,7 +41,7 @@ Cinematic Forge is an OpenClaw skill that produces complete videos using AI. It 
 See `INSTALL.md` for full instructions. Short version:
 
 1. Install the Teach Yourself Protocol skill first
-2. Install this skill to `~/.openclaw/skills/cinematic-forge/`
+2. Install this skill to `~/.openclaw/skills/28-cinematic-forge/`
 3. Tell your agent: "Teach yourself this skill" and provide SKILL.md
 4. Verify API access (KIE.ai, GHL/Convert and Flow)
 5. Test with a simple short video

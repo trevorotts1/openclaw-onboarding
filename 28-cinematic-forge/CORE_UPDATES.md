@@ -28,7 +28,7 @@ Add this section:
 ## Video Skills Suite
 
 ### Cinematic Forge (Skill 28)
-- Location: `~/.openclaw/skills/cinematic-forge/`
+- Location: `~/.openclaw/skills/28-cinematic-forge/`
 - Purpose: end-to-end video production pipeline (intake to finished video)
 - Provider: KIE.ai for VEO, Nano Banana Pro, voice, music
 ```
@@ -38,5 +38,5 @@ Add this pointer:
 
 ```md
 ## Video Skills Suite
-- Cinematic Forge (Skill 28): `~/.openclaw/skills/cinematic-forge/`
+- Cinematic Forge (Skill 28): `~/.openclaw/skills/28-cinematic-forge/`
 ```
