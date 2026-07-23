@@ -67,13 +67,22 @@ if [ "$_existing_count" -eq 1 ]; then
   # Exactly one entry — check if it is healthy (main target, non-error, correct schedule)
   _is_main="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "main" || true)"
   _is_error="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "error" || true)"
+  # U129: compare schedule — an existing row scheduled for the wrong day
+  # (e.g. Monday "0 8 * * 1") would otherwise satisfy the count + sessionTarget
+  # checks and be reported as healthy.
+  _schedule_ok="$(echo "$_list_output" | grep "$CRON_NAME" | grep -cF "$CRON_EXPR" || true)"
 
-  if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ]; then
-    echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry — nothing to do." >&2
+  if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ] && [ "$_schedule_ok" -ge 1 ]; then
+    echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry and correct schedule ($CRON_EXPR) — nothing to do." >&2
     exit 0
   fi
-  # One entry but it is erroring or not on main — fall through to delete + re-register.
-  echo "NOTICE: existing '$CRON_NAME' entry is stale or erroring — will delete and re-register." >&2
+  # One entry but it is erroring, not on main, or on the wrong schedule —
+  # fall through to delete + re-register.
+  if [ "$_schedule_ok" -eq 0 ]; then
+    echo "NOTICE: existing '$CRON_NAME' entry has wrong schedule (expected $CRON_EXPR) — will delete and re-register." >&2
+  else
+    echo "NOTICE: existing '$CRON_NAME' entry is stale or erroring — will delete and re-register." >&2
+  fi
 fi
 
 if [ "$_existing_count" -ge 1 ]; then
