@@ -34,7 +34,7 @@ python3 -c "from google import genai; import numpy; print('SDK ready')" 2>/dev/n
   && echo "PASS: google-genai + numpy importable" \
   || echo "FAIL: google-genai and/or numpy missing"
 
-echo "GOOGLE_API_KEY length: ${#GOOGLE_API_KEY}"
+[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"
 [ -n "$GOOGLE_API_KEY" ] \
   && echo "PASS: GOOGLE_API_KEY set" \
   || echo "INFO: GOOGLE_API_KEY not set - Layer 4 may be pending"

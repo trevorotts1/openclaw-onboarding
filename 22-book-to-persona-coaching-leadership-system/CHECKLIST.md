@@ -7,7 +7,7 @@ Run these checks before every pipeline start. Do not proceed if any check fails.
 ```
 [ ] Python 3.8+ installed (run: python3 --version)
 [ ] All pip dependencies installed (run verify command in INSTALL.md Step 2b)
-[ ] GOOGLE_API_KEY set (run: grep GOOGLE_API_KEY secrets/.env)
+[ ] GOOGLE_API_KEY set (run: `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"` — presence-only, never prints the value)
 [ ] Calibre installed - ebook-convert available (run: ebook-convert --version)
 [ ] At least one book file available (PDF, EPUB, MOBI, AZW3 in books/ folder)
 [ ] Ollama Cloud configured (`OLLAMA_API_KEY` or `models.providers.ollama.apiKey` in openclaw.json) — PRIMARY. OpenRouter (`OPENROUTER_API_KEY`) only as fallback.

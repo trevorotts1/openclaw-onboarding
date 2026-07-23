@@ -259,10 +259,10 @@ a real person. That is never part of an automatic test and must never be run to
 "prove setup worked" — see SEND VERIFICATION below, which requires explicit
 operator approval and a designated operator test contact.
 
-TEST 1: Verify Credentials Exist
-echo "API Key: $(echo $GOHIGHLEVEL_API_KEY | head -c 10)..."
+TEST 1: Verify Credentials Exist (presence-only — never prints the value)
+[ -n "$GOHIGHLEVEL_API_KEY" ] && echo "GOHIGHLEVEL_API_KEY: SET" || echo "GOHIGHLEVEL_API_KEY: NOT-SET"
 echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
-# Should show first 10 chars of key and full location ID
+# Reports SET/NOT-SET for the key (presence-only — never prints key characters). Location ID is not a secret.
 
 TEST 2: Test API Connection (Get Location Info)
 curl -s -X GET "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \

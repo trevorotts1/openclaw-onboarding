@@ -42,9 +42,9 @@ ls /data/.openclaw/skills/37-zhc-closeout/
 # 2. Scripts executable
 ls -l /data/.openclaw/skills/37-zhc-closeout/scripts/
 
-# 3. Env vars present
-printenv KIE_API_KEY | head -c 8 && echo "..."
-printenv NOTION_API_TOKEN | head -c 8 && echo "..."
+# 3. Env vars present (presence-only — never prints the value)
+[ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"
+[ -n "$NOTION_API_TOKEN" ] && echo "NOTION_API_TOKEN: SET" || echo "NOTION_API_TOKEN: NOT-SET"
 
 # 4. At least ONE closeout trigger cron is installed (REDUNDANT triggers — v12.34.0)
 #    The closeout fires if ANY of these reach run-closeout.sh:

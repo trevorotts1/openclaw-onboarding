@@ -194,9 +194,9 @@ Expected output should show version info (e.g., "ebook-convert (calibre 6.x)"). 
 
 ### Step 2d - Verify GOOGLE_API_KEY
 
-**Check your API key is set:**
+**Check your API key is set (presence-only — never prints the value):**
 ```bash
-grep "GOOGLE_API_KEY" ~/.openclaw/secrets/.env
+grep -q "GOOGLE_API_KEY" ~/.openclaw/secrets/.env && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"
 ```
 
 **If missing:** Add your Gemini API key to `~/.openclaw/secrets/.env`:

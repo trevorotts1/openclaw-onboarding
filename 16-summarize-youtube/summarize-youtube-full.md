@@ -367,11 +367,11 @@ You see an error saying API keys are missing.
    set -a && source .env && set +a
    ```
 
-4. Test that the variables are set:
+4. Test that the variables are set (presence-only — never prints the value):
    ```bash
-   echo $OPENAI_API_KEY
+   [ -n "$OPENAI_API_KEY" ] && echo "OPENAI_API_KEY: SET" || echo "OPENAI_API_KEY: NOT-SET"
    ```
-   This should show your key (partially hidden).
+   This should show "OPENAI_API_KEY: SET" (presence-only — never prints key characters).
 
 ### Problem: "brew: command not found"
 

@@ -51,7 +51,7 @@ This skill upgrades your OpenClaw agent from the default memory system to an 8-l
 | Prerequisite | Required For | How to Check |
 |-------------|-------------|--------------|
 | Teach Yourself Protocol (TYP) | All skills | Check AGENTS.md for "Teach Yourself Protocol" |
-| Google API key | Layer 4 (Gemini search) | `echo $GOOGLE_API_KEY` returns a key starting with AIza |
+| Google API key | Layer 4 (Gemini search) | `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" \|\| echo "GOOGLE_API_KEY: NOT-SET"` (presence-only — never prints the value) |
 | Python 3.8+ | Layer 4 (Gemini search) | `python3 --version` |
 | google-genai + numpy | Layer 4 (Gemini search) | `python3 -c "import google.genai; import numpy"` |
 | OpenClaw running | All layers | `openclaw status` shows gateway running |
@@ -122,9 +122,9 @@ User's explicit override is highest priority. Chain:
 Before installing, check these prerequisites. If any are missing, still install the skill files but mark the skill as PENDING.
 
 ```bash
-# Check 1: Google API Key
-echo $GOOGLE_API_KEY
-# Expected: starts with AIza... If empty, MARK AS PENDING.
+# Check 1: Google API Key (presence-only — never prints the value)
+[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"
+# Expected: "GOOGLE_API_KEY: SET". If "NOT-SET", MARK AS PENDING.
 
 # Check 2: Python SDK
 python3 -c "from google import genai; import numpy; print('SDK ready')"
@@ -848,7 +848,7 @@ openclaw memory search "the user" 2>&1 | head -20
 Expected: returns actual search results with content from the user's files.
 
 If this returns nothing:
-1. Check if GOOGLE_API_KEY is set: `echo $GOOGLE_API_KEY`
+1. Check if GOOGLE_API_KEY is set (presence-only): `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"`
 2. Check if indexing completed: `openclaw memory status`
 3. Check if backend is correct: `grep '"backend"' ~/.openclaw/openclaw.json`
 
