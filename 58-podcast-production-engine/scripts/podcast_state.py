@@ -804,10 +804,21 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
         record = {}
         if os.path.exists(ledger_file):
             with open(ledger_file, "r", encoding="utf-8") as fh:
-                record = json.load(fh)
+                raw = fh.read()
+            # U035: verify the integrity checksum before trusting the record
+            # contents. A corrupt or truncated file is detected here.
+            record = json.loads(raw)
+            if isinstance(record, dict) and ROSTER_CHECKSUM_KEY in record:
+                verify_checksum(raw)
         record["state"] = ledger_state
         record["updated_at"] = iso(now_utc())
         record["sqlite_job_id"] = job_id
+        # U035: embed an integrity checksum so truncation / corruption is
+        # detected on the next read. Drop a pre-existing _checksum so the
+        # compute is of content only.
+        record.pop(ROSTER_CHECKSUM_KEY, None)
+        raw_for_checksum = json.dumps(record, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+        record[ROSTER_CHECKSUM_KEY] = hashlib.sha256(raw_for_checksum.encode("utf-8")).hexdigest()
         _atomic_write(ledger_file, json.dumps(record, indent=2))
     except (OSError, ValueError) as exc:
         sys.stderr.write(
