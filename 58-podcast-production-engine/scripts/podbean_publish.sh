@@ -86,15 +86,55 @@ set -euo pipefail
 readonly PODBEAN_API="${PODBEAN_API_BASE:-https://api.podbean.com/v1}"
 readonly RETRIES=3
 readonly CURL_MAX_TIME=180
+# U036: bounded exponential backoff for transient Podbean API errors (429, 5xx,
+# network timeout). Delay for attempt N is BACKOFF_BASE * 2^(N-1), capped at
+# BACKOFF_CAP seconds: 2s, 4s, 8s by default - never unbounded.
+# PODBEAN_RETRY_BASE_DELAY exists only so the test harness can shrink the
+# sleeps; unset in production it is 2, so shipped behavior is unchanged.
+readonly BACKOFF_BASE="${PODBEAN_RETRY_BASE_DELAY:-2}"
+readonly BACKOFF_CAP=8
 # publish-proxy mode (S58-U14): a distinct exit code for the ONE refusal reason
 # that is a client-facing business state, not an error - so the caller can
 # detect "not in good standing" without parsing JSON.
 readonly EXIT_BLOCKED_STANDING=3
+# U036: a distinct exit code for a TRANSIENT Podbean API failure (429, 5xx, or
+# network timeout) that survived the full retry budget. Distinct from exit 1
+# (terminal: bad credentials, rejected request, usage error) so the engine can
+# re-queue the job instead of treating a Podbean outage as a permanent failure.
+readonly EXIT_TRANSIENT=5
 
 # ------------------------------------------------------------------ logging --
 # stderr is the operator channel. Secret values are never passed here.
 log()  { printf '%s podbean_publish %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >&2; }
 die()  { log "ERROR: $*"; exit 1; }
+# U036: die with the distinct transient-failure exit code, so the engine can
+# tell "Podbean is down / rate-limiting us, re-queue" from "this request is
+# permanently wrong, do not retry".
+die_transient() { log "ERROR (transient): $*"; exit "$EXIT_TRANSIENT"; }
+
+# U036: is this HTTP status a TRANSIENT Podbean API error worth retrying?
+# 429 (rate limit) and any 5xx (server error) are transient; 401/403/404 and
+# every other 4xx are TERMINAL (a retry can never change the verdict). A blank
+# or "000" code means curl never got a status line (network timeout / DNS /
+# connection refused) - also transient.
+is_transient_code() {
+  case "$1" in
+    ""|000)        return 0 ;;
+    429)           return 0 ;;
+    5[0-9][0-9])   return 0 ;;
+    *)             return 1 ;;
+  esac
+}
+
+# U036: bounded exponential backoff delay for a 1-based attempt number:
+# BACKOFF_BASE * 2^(attempt-1), capped at BACKOFF_CAP. Default base 2 yields
+# 2s, 4s, 8s for attempts 1, 2, 3 - never unbounded.
+backoff_delay() {
+  local attempt="$1" d
+  d=$(( BACKOFF_BASE * (1 << (attempt - 1)) ))
+  [ "$d" -gt "$BACKOFF_CAP" ] && d="$BACKOFF_CAP"
+  printf '%s' "$d"
+}
 
 # Redact known secret substrings from any text before it is shown. The secret
 # values themselves are only used as a replacement target, never printed.
@@ -290,20 +330,35 @@ cfg_lines() {
 }
 
 # http_request METHOD URL [extra curl argv...]
-# Sets RESP_BODY and RESP_CODE. Returns non-zero only after RETRIES failures.
+# Sets RESP_BODY and RESP_CODE. Returns 0 on a 2xx.
+# U036: retries ONLY transient errors (429, 5xx, network timeout / code 000),
+# up to RETRIES attempts with BOUNDED exponential backoff (2s, 4s, 8s - capped
+# at BACKOFF_CAP, never unbounded). Terminal errors (401/403/404 and every
+# other 4xx) return 1 IMMEDIATELY with no retry - a retry can never change
+# their verdict. After the retry budget is exhausted on a transient error it
+# also returns 1; the caller inspects RESP_CODE with is_transient_code to
+# choose the transient (exit 5) vs terminal (exit 1) verdict.
 # URL (which may carry access_token) is passed via cfg_lines, not argv.
 RESP_BODY=""; RESP_CODE=""
 http_request() {
   local method="$1" url="$2"; shift 2
-  local attempt=1 out
+  local attempt=1 out delay
   while :; do
     out="$(curl -K <(cfg_lines "$method" "$url") "$@" -w $'\n%{http_code}' 2>/dev/null || true)"
     RESP_CODE="${out##*$'\n'}"
     RESP_BODY="${out%$'\n'*}"
     if [[ "$RESP_CODE" =~ ^2[0-9][0-9]$ ]]; then return 0; fi
+    # Terminal error (401/403/404/other 4xx): fail immediately, never retry.
+    if ! is_transient_code "$RESP_CODE"; then
+      log "${method} $(redact "${url%%\?*}") returned HTTP ${RESP_CODE} (terminal); not retrying"
+      return 1
+    fi
+    # Transient error (429/5xx/network): retry with bounded backoff until the
+    # retry budget is exhausted.
     if [ "$attempt" -ge "$RETRIES" ]; then return 1; fi
-    log "attempt ${attempt} for ${method} $(redact "${url%%\?*}") returned HTTP ${RESP_CODE:-000}; backing off"
-    sleep "$(( attempt * attempt ))"
+    delay="$(backoff_delay "$attempt")"
+    log "attempt ${attempt}/${RETRIES} for ${method} $(redact "${url%%\?*}") returned HTTP ${RESP_CODE:-000} (transient); retrying in ${delay}s"
+    sleep "$delay"
     attempt=$(( attempt + 1 ))
   done
 }
@@ -330,18 +385,27 @@ broker_cfg_lines() {
 }
 
 # broker_mint_token: POST {action:"mint_token", podcast_id:<Channel ID>} to the
-# broker. Sets RESP_BODY and RESP_CODE. Returns non-zero only after RETRIES.
+# broker. Sets RESP_BODY and RESP_CODE. Returns 0 on a 2xx.
+# U036: same retry contract as http_request - retries ONLY transient errors
+# (429, 5xx, network timeout) with bounded exponential backoff up to RETRIES
+# attempts; a terminal 4xx (e.g. 401 bad broker token) fails immediately. The
+# caller inspects RESP_CODE with is_transient_code for the exit-code verdict.
 broker_mint_token() {
-  local body attempt=1 out
+  local body attempt=1 out delay
   body="$(printf '{"action":"mint_token","podcast_id":"%s"}' "$PODBEAN_PODCAST_ID")"
   while :; do
     out="$(curl -K <(broker_cfg_lines) --data "$body" -w $'\n%{http_code}' 2>/dev/null || true)"
     RESP_CODE="${out##*$'\n'}"
     RESP_BODY="${out%$'\n'*}"
     if [[ "$RESP_CODE" =~ ^2[0-9][0-9]$ ]]; then return 0; fi
+    if ! is_transient_code "$RESP_CODE"; then
+      log "podbean broker returned HTTP ${RESP_CODE} (terminal); not retrying"
+      return 1
+    fi
     if [ "$attempt" -ge "$RETRIES" ]; then return 1; fi
-    log "podbean broker attempt ${attempt} returned HTTP ${RESP_CODE:-000}; backing off"
-    sleep "$(( attempt * attempt ))"
+    delay="$(backoff_delay "$attempt")"
+    log "podbean broker attempt ${attempt}/${RETRIES} returned HTTP ${RESP_CODE:-000} (transient); retrying in ${delay}s"
+    sleep "$delay"
     attempt=$(( attempt + 1 ))
   done
 }
@@ -720,7 +784,12 @@ if [ "$BROKER_MODE" = "1" ]; then
   # secret is present on this box; the isolation guard lives in the broker (it
   # only mints tokens for channels on the host account).
   log "requesting a Channel-scoped Podbean token from the n8n broker (app credentials never leave n8n)"
-  broker_mint_token || die "podbean broker token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  if ! broker_mint_token; then
+    if is_transient_code "$RESP_CODE"; then
+      die_transient "podbean broker token request failed after ${RETRIES} attempts (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+    fi
+    die "podbean broker token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  fi
   broker_ok="$(printf '%s' "$RESP_BODY" | json_field ok)"
   ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
   RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
@@ -731,9 +800,13 @@ if [ "$BROKER_MODE" = "1" ]; then
   log "Channel-scoped access token acquired from broker (value not shown)"
 else
   log "requesting a client_credentials access token from BlackCEO's shared Podbean app (local fallback, operator box only)"
-  USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/token" \
-    --data-urlencode "grant_type=client_credentials" \
-    || die "oauth token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  if ! USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/token" \
+    --data-urlencode "grant_type=client_credentials"; then
+    if is_transient_code "$RESP_CODE"; then
+      die_transient "oauth token request failed after ${RETRIES} attempts (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+    fi
+    die "oauth token request failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  fi
   ACCESS_TOKEN="$(printf '%s' "$RESP_BODY" | json_field access_token)"
   [ -n "$ACCESS_TOKEN" ] || die "oauth response carried no access_token (HTTP ${RESP_CODE}): $(redact "$RESP_BODY")"
   RESP_BODY=""   # drop the token-bearing body from memory as soon as possible
@@ -755,7 +828,10 @@ else
   # quadratic backoff, so a network blip is retried BEFORE it becomes a verdict
   # here. What reaches these die() calls is a failure that survived the retries.
   if ! http_request GET "$PODBEAN_API/podcasts?access_token=${ACCESS_TOKEN}&offset=0&limit=100"; then
-    die "could not list podcasts on this account (HTTP ${RESP_CODE:-000}) after ${RETRIES} attempt(s); refusing to publish with an unscoped token (isolation guard)"
+    if is_transient_code "$RESP_CODE"; then
+      die_transient "could not list podcasts on this account (HTTP ${RESP_CODE:-000}) after ${RETRIES} attempt(s); refusing to publish with an unscoped token (isolation guard)"
+    fi
+    die "could not list podcasts on this account (HTTP ${RESP_CODE:-000}); refusing to publish with an unscoped token (isolation guard)"
   fi
   account_ids="$(printf '%s' "$RESP_BODY" | podcast_ids)"
   RESP_BODY=""
@@ -772,6 +848,9 @@ else
     if ! USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/multiplePodcastsToken" \
          --data-urlencode "grant_type=client_credentials" \
          --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"; then
+      if is_transient_code "$RESP_CODE"; then
+        die_transient "multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}) after ${RETRIES} attempt(s) on a multi-channel account; refusing to publish with the account-wide token (isolation guard)"
+      fi
       die "multiplePodcastsToken unavailable (HTTP ${RESP_CODE:-000}) on a multi-channel account; refusing to publish with the account-wide token (isolation guard)"
     fi
     scoped="$(printf '%s' "$RESP_BODY" | scoped_token "$PODBEAN_PODCAST_ID")"
@@ -791,8 +870,12 @@ fi
 
 # ------------------------------------------------------- episode numbering ----
 log "reading current episode count for numbering"
-http_request GET "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}&offset=0&limit=1" \
-  || die "could not list episodes for numbering (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+if ! http_request GET "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}&offset=0&limit=1"; then
+  if is_transient_code "$RESP_CODE"; then
+    die_transient "could not list episodes for numbering (HTTP ${RESP_CODE:-000}) after ${RETRIES} attempts: $(redact "$RESP_BODY")"
+  fi
+  die "could not list episodes for numbering (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+fi
 EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
 [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
 EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
@@ -854,8 +937,12 @@ create_args=(
 [ -n "$LOGO_KEY" ]         && create_args+=( --data-urlencode "logo_key=${LOGO_KEY}" )
 [ -n "$PUBLISH_TIMESTAMP" ] && create_args+=( --data-urlencode "publish_timestamp=${PUBLISH_TIMESTAMP}" )
 
-http_request POST "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}" "${create_args[@]}" \
-  || die "episode create failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+if ! http_request POST "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}" "${create_args[@]}"; then
+  if is_transient_code "$RESP_CODE"; then
+    die_transient "episode create failed after ${RETRIES} attempts (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+  fi
+  die "episode create failed (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
+fi
 
 PERMALINK="$(printf '%s' "$RESP_BODY" | json_field episode permalink_url)"
 EPISODE_ID="$(printf '%s' "$RESP_BODY" | json_field episode id)"
