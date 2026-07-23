@@ -325,6 +325,36 @@ fresh session / `/new`, not a lower threshold). The fleet standard is therefore 
 conservatively and per-box when genuinely needed. No aggressive cap is written by
 the fleet-standards apply.
 
+### 12. Tool Allowlist — Per-Agent Tool Policy Ships with Skills Update (U134)
+
+The fleet-standard per-agent tool allowlist for the main/CEO/orchestrator agent (17 tools
+allowed, 9 tools denied, 2 MCP providers blocked) is applied as an idempotent config-patch
+step on every skills update via `scripts/apply-tool-allowlist.sh`. This means tool-policy
+changes propagate fleet-wide as part of the regular skills update.
+
+**The fleet tool policy:**
+
+| Category | Tools |
+|----------|-------|
+| ALLOW (17) | `read`, `web_fetch`, `web_search`, `message`, `telegram`, `slack`, `discord`, `sessions_send`, `sessions_list`, `sessions_history`, `mc-route__route_task`, `exec`, `memory_search`, `memory_get`, `cron`, `gateway`, `nodes` |
+| DENY (7 + 2 wildcards) | `write`, `edit`, `apply_patch`, `browser`, `canvas`, `image`, `process`, `ghl-community-mcp__*`, `ghl-mcp__*` |
+| MCP byProvider deny | `ghl-community-mcp` -> deny: `["*"]`, `ghl-mcp` -> deny: `["*"]` |
+
+**Key behaviors:**
+
+- **Idempotent:** Running twice on an already-compliant box is a no-op.
+- **Local-only tool preservation:** Operators can add per-box tools without them being
+  wiped on the next update.
+- **PA-freeze guard:** A non-router (personal-assistant) default agent is skipped.
+- **Owner-consent carve-out:** If the owner has explicitly granted consent, the gate is
+  intentionally lifted — the script skips.
+- **Keep-in-sync:** The tool lists are byte-identical to `apply-fleet-standards.sh`'s
+  `_CEO_TOOL_*` blocks. `tests/unit/test-tool-allowlist.sh` asserts they match.
+
+**Enforced + idempotent.** Applied on every update via `update-skills.sh`.
+`openclaw config validate` is the backstop — if a gateway version ever rejects a key,
+the run rolls back to the pre-apply backup.
+
 ## Source of Truth
 
 Configuration verified against:

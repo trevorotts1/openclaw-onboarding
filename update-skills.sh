@@ -4334,6 +4334,21 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
+  # Fleet tool allowlist: apply the fleet-standard per-agent tool policy as an
+  # idempotent config-patch step (U134). Ships tool-policy changes as part of the
+  # skills update — no separate fleet action needed. Local-only tools preserved.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Applying fleet tool allowlist (idempotent config-patch — tool policy ships with skills update)..."
+  TOOL_AL="$_PERSIST_SCRIPTS/apply-tool-allowlist.sh"
+  [ -f "$TOOL_AL" ] || TOOL_AL="$ONBOARDING_DIR/scripts/apply-tool-allowlist.sh"
+  if [ -f "$TOOL_AL" ]; then
+    bash "$TOOL_AL" >> "$LOG_FILE" 2>&1 && echo "  ✓ Tool allowlist applied" || echo "  ⚠ Tool allowlist application reported errors (update continues)"
+  else
+    echo "  ℹ Tool allowlist script not found in bundle — skipping (older bundle, harmless)"
+  fi
+
+  # ----------------------------------------------------------
   # v14.24.0: Operator Telegram channel separation (mirrors install.sh:7113-7124).
   # configure-operator-telegram.sh is idempotent; it emits a machine-readable
   # STATUS: operator-telegram=<state> line for honest reporting.
