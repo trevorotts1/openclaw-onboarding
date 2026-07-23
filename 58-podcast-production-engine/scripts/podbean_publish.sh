@@ -630,8 +630,6 @@ fi
 [ -n "$TITLE" ] || { usage; die "--title is required"; }
 [ -f "$AUDIO" ] || die "audio file not found: $AUDIO"
 if [ -n "$COVER" ] && [ ! -f "$COVER" ]; then die "cover file not found: $COVER"; fi
-case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, premium, or private" ;; esac
-
 # Credentials are checked for presence only; values are never printed.
 # The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.
 : "${PODBEAN_PODCAST_ID:?PODBEAN_PODCAST_ID is NOT SET (the client Podbean Channel ID / podcast_id)}"
@@ -968,7 +966,6 @@ fi
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
-  --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"
   --data-urlencode "title=${FINAL_TITLE}"
   --data-urlencode "content=${DESCRIPTION}"
   --data-urlencode "status=${PUBLISH_STATUS}"
