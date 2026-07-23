@@ -1,0 +1,92 @@
+{
+  "_PLACEHOLDER_NOTE": "RECONSTRUCTED-FROM-CONTRACT placeholder, not a live export. The production workflow lives on the n8n instance at main.blackceoautomations.com and could not be exported from this repo (it is not checked in anywhere, and the operator/Maria boxes were not reachable during the v21.0 fix pass). This file documents the EXPECTED node structure and payload contract so the workflow can be rebuilt or verified. Replace with a real `n8n export` when the instance is reachable. The webhook path, payload shape, template-copy behavior, idempotency handling, and response contract below are the documented ground truth (INSTALL.md Step 7 sections 4a-4f, CORE_UPDATES.md 'Google Sheet Creation Webhook').",
+  "name": "social-planner-sheet-create",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-planner-sheet-create",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-sheet-create",
+      "name": "Webhook: Sheet Create",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "social-planner-sheet-create"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate + normalize the create request.\n// Contract (INSTALL.md Step 7): { brandName, clientEmail, idempotencyKey? }\n// idempotencyKey closes the create-then-crash-then-rerun duplicate window: a\n// repeat POST with the same key returns the already-created sheet instead of\n// making a second one.\nconst body = $input.first().json.body || {};\nconst brandName = body.brandName;\nconst clientEmail = body.clientEmail;\nconst idempotencyKey = body.idempotencyKey || '';\nif (!brandName) throw new Error('missing brandName');\nif (!clientEmail) throw new Error('missing clientEmail');\n// Fleet template sheet the new client sheet is copied from.\nconst templateSheetId = '1RKgS5l-i6NBtf_vON49nBPdHe-F5W67RF9ym-S67L2c';\nreturn [{ json: { brandName, clientEmail, idempotencyKey, templateSheetId } }];"
+      },
+      "id": "code-validate",
+      "name": "Validate request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.templateSheetId }}:copy",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"name\": \"{{ $json.brandName }} — Content Calendar\"}",
+        "options": {}
+      },
+      "id": "http-copy-template",
+      "name": "Sheets: copy template",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "4IoTZHAybRblm172",
+          "name": "BlackCEO Management Google Sheets (operator service account)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Grant the client edit access, then return the create contract.\n// Response contract (QC.md 'Google Sheet Verification'): { sheetUrl, sheetId, sheetName }\nconst created = $input.first().json;\nconst sheetId = created.spreadsheetId;\nconst sheetName = created.properties ? created.properties.title : '';\nconst sheetUrl = created.spreadsheetUrl || ('https://docs.google.com/spreadsheets/d/' + sheetId + '/edit');\nreturn [{ json: { success: true, sheetId, sheetName, sheetUrl } }];"
+      },
+      "id": "code-share-and-respond",
+      "name": "Share with client + build response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-created",
+      "name": "Respond: created",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Webhook: Sheet Create": {
+      "main": [[{ "node": "Validate request", "type": "main", "index": 0 }]]
+    },
+    "Validate request": {
+      "main": [[{ "node": "Sheets: copy template", "type": "main", "index": 0 }]]
+    },
+    "Sheets: copy template": {
+      "main": [[{ "node": "Share with client + build response", "type": "main", "index": 0 }]]
+    },
+    "Share with client + build response": {
+      "main": [[{ "node": "Respond: created", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "skill-35" }, { "name": "placeholder-reconstructed" }]
+}

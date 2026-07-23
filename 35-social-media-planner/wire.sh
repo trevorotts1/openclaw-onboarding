@@ -1,5 +1,22 @@
 #!/usr/bin/env bash
-# wire.sh — skill 35 live-client migration runner (M4: credential name migration)
+# wire.sh — skill 35 live-client migration runner.
+#
+# PURPOSE (despite the generic name): this script does ONE thing — the M4
+# CREDENTIAL-NAME MIGRATION. It mirrors stray legacy GHL secret names
+# (GHL_PRIVATE_TOKEN, GHL_LOCATION_ID) to the canonical names
+# (GOHIGHLEVEL_API_KEY, GOHIGHLEVEL_LOCATION_ID) in the box's secrets file.
+# It does NOT wire up publishing, sheets, crons, or anything else. If you are
+# looking for the publishing/sheet logic, that lives in
+# scripts/run-publishing-cycle.sh and the social-planner-* n8n webhooks
+# (config/n8n/), not here.
+#
+# WHY IT IS STILL NAMED wire.sh: the fleet update loop in update-skills.sh
+# auto-invokes a skill's installer by filename priority
+# (wire.sh > install.sh > scripts/install.sh). This file MUST stay named
+# wire.sh at the skill root or the M4 credential migration would stop running
+# on fleet updates. The name is a wiring-loop convention, not a description of
+# scope — hence this clarifying header.
+#
 # Idempotent. Prints STATUS: lines. NEVER logs secret values.
 set -euo pipefail
 

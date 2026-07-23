@@ -1,0 +1,93 @@
+{
+  "_PLACEHOLDER_NOTE": "RECONSTRUCTED-FROM-CONTRACT placeholder, not a live export. The production workflow (ID myXde6jbIIkaG5zW) lives on the n8n instance at main.blackceoautomations.com and could not be exported from this repo (it is not checked in anywhere, and the operator/Maria boxes were not reachable during the v21.0 fix pass). This file documents the EXPECTED node structure and payload contract so the workflow can be rebuilt or verified. Replace with a real `n8n export` when the instance is reachable. The webhook path, payload shape, Google Sheets target, valueInputOption, and column/row sizing below are the documented ground truth (CHANGELOG v2.6.0 + INSTALL.md Step 7 section 4f).",
+  "name": "social-planner-row-append",
+  "id": "myXde6jbIIkaG5zW",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "social-planner-row-append",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-row-append",
+      "name": "Webhook: Row Append",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "webhookId": "social-planner-row-append"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Map body.row.* to the 20-column order of the 'Weekly Overview' tab (A:T).\n// Image cells arrive already wrapped as =IMAGE(\"url\", 1) formula strings from\n// the caller (SKILL.md Media Delivery Contract step 4) and are passed through\n// verbatim so Sheets evaluates them into inline images.\nconst body = $input.first().json.body || {};\nconst row = body.row || {};\nconst sheetId = body.sheetId;\nif (!sheetId) throw new Error('missing sheetId');\n\n// Documented column order (Weekly Overview!A:T). Fill unknown columns with ''.\nconst columns = [\n  'Week Of',            // A\n  'Theme of the Week',  // B\n  'Core Content',       // C\n  'Image URL',          // D  (=IMAGE() formula)\n  'Facebook',           // E\n  'Instagram',          // F\n  'LinkedIn',           // G\n  'X',                  // H\n  'TikTok',             // I\n  'Pinterest',          // J\n  'Google Business',    // K\n  'Blog',               // L\n  'Email',              // M\n  'Podcast',            // N\n  'Video',              // O\n  'Carousel',           // P\n  'Comments',           // Q\n  'Scheduled',          // R\n  'Overall',            // S\n  'Notes'               // T\n];\nconst values = columns.map((c) => (row[c] !== undefined && row[c] !== null ? row[c] : ''));\nreturn [{ json: { sheetId, values } }];"
+      },
+      "id": "code-map-columns",
+      "name": "Map row to 20-column order",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://sheets.googleapis.com/v4/spreadsheets/{{ $json.sheetId }}/values/Weekly%20Overview!A:T:append?valueInputOption=USER_ENTERED&insertDataOption=INSERT_ROWS",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googleSheetsOAuth2Api",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\"values\": [{{ JSON.stringify($json.values) }}]}",
+        "options": {}
+      },
+      "id": "http-append-row",
+      "name": "Sheets: append row (USER_ENTERED)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [440, 0],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "4IoTZHAybRblm172",
+          "name": "BlackCEO Management Google Sheets (operator service account)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Resize the image column (D) to 108px wide and the appended data row to 133px\n// tall so the =IMAGE() thumbnail displays at full size (INSTALL.md 4f). Two\n// batchUpdate calls against the Sheets API; sizing is best-effort and must not\n// fail the append.\nreturn [{ json: { note: 'resize image column to 108px and data row to 133px' } }];"
+      },
+      "id": "code-resize",
+      "name": "Resize image column + row",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\"success\": true, \"sheetId\": \"{{ $('Map row to 20-column order').item.json.sheetId }}\", \"updatedRange\": \"{{ $json.updatedRange || 'Weekly Overview' }}\"}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond: success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [880, 0]
+    }
+  ],
+  "connections": {
+    "Webhook: Row Append": {
+      "main": [[{ "node": "Map row to 20-column order", "type": "main", "index": 0 }]]
+    },
+    "Map row to 20-column order": {
+      "main": [[{ "node": "Sheets: append row (USER_ENTERED)", "type": "main", "index": 0 }]]
+    },
+    "Sheets: append row (USER_ENTERED)": {
+      "main": [[{ "node": "Resize image column + row", "type": "main", "index": 0 }]]
+    },
+    "Resize image column + row": {
+      "main": [[{ "node": "Respond: success", "type": "main", "index": 0 }]]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "tags": [{ "name": "skill-35" }, { "name": "placeholder-reconstructed" }]
+}

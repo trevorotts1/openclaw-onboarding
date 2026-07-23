@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v2.9.16
+version: v2.9.18
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -85,7 +85,7 @@ WordPress (blog), Medium (articles), Substack (newsletter), YouTube (videos), em
 
 ### Phase 2: Content Creation
 1. Writer + Editor: Draft → refine article.
-2. Image Prompt Engineer + Image Generator: Create visuals.
+2. Image Prompt Engineer + Image Generator: Create visuals. **Image production path (pick one per asset, in priority order):** (1) **kie.ai direct** — the DEFAULT, via Ideogram V3 DESIGN for any text/headline image and Nano Banana 2/Pro for non-text imagery only; (2) **Agnes** — Skill 63 (`agnes-image-2.1-flash`) for stills / Skill 64 (`agnes-video-v2.0`) for video, OPT-IN only when the request names Agnes or an upstream skill routes to it; (3) **Graphics department handoff** — the Image Generator step is REPLACED by the Section 19a input-quality gate (reject any asset without a SOP-GIP-02 receipt >= 8.5). Full decision table + working curl examples: `references/playbook.md` Section 8 "Image Production Path". Every path uploads the finished file to the GHL Media Library and uses the returned CDN `url`.
 3. Video Script Writer: Script video/podcast.
 4. Video Producer: 
    - Generate clips via `video_generate`.
@@ -234,9 +234,10 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
      -H "Authorization: Bearer [from secrets/.env: GOHIGHLEVEL_API_KEY]" \
      -H "Version: 2021-07-28" \
      -F "file=@/path/to/file.mp4" \
-     -F "hosted=true" \
      -F "fileProcessingOpts={\"forceReprocess\": true}"
    ```
+   **Do NOT send `-F "hosted=true"`.** The GHL `medias/upload-file` endpoint rejects the request with HTTP 400 when the multipart form includes a `hosted` field alongside `file=@`. Upload with `file=@` (and optional `fileProcessingOpts`) only.
+
    The response body contains a `url` field with a permanent public CDN link of the form `https://assets.cdn.filesafe.space/[LOCATION_ID]/media/[filename]`. This is the authoritative GHL media URL — confirmed from Skill 28 (cinematic-forge) which documents the same endpoint and CDN format.
 3. **Extract the `url` field** from the response JSON.
 4. **Log a row** in the content sheet by calling the `social-planner-row-append` webhook:
@@ -258,9 +259,17 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
      }"
    ```
    The webhook appends directly to the **Weekly Overview** tab of the client's Google Sheet using the operator service account (no client credentials required). If the webhook call fails: log to `~/.openclaw/data/skill35/content-log.jsonl` and retry on next cycle. **Do NOT call `social-planner-sheet-create` here** — that webhook is for first-time sheet creation only.
+
+   **CRITICAL: Image URLs must use =IMAGE() formula, not raw text.** When logging image URLs to any tab (Day tabs, platform tabs, Images tab, Blog/Podcast cover images), the value MUST be wrapped as `=IMAGE("https://...", 1)` so Google Sheets renders the image inline. Raw URLs display as unclickable text. Example:
+   ```json
+   "Image URL": "=IMAGE(\"https://assets.cdn.filesafe.space/.../image.png\", 1)"
+   ```
+   The webhook writes this formula directly to the cell. Mode 1 fits the image within the cell while maintaining aspect ratio.
 5. **Reply to owner** with the CDN link only — never attach the raw file to Telegram.
 
 **Size threshold:** Any file over 10 MB MUST go through GHL CDN delivery. Files under 10 MB MAY be attached directly only if the operator explicitly configures `direct_attach_under_10mb=true` in MEMORY.md; default is always link delivery.
+
+**Permanent hosting only — NO ephemeral file hosts.** Every media URL this skill logs, embeds, or sends MUST be a permanent GHL CDN link (`https://assets.cdn.filesafe.space/[LOCATION_ID]/media/...`). Ephemeral/anonymous hosts — **tmpfiles.org** (and its `tmp.ninja` download mirror), file.io, transfer.sh, 0x0.st, catbox.moe, litterbox — are BANNED: their links expire (tmpfiles.org after ~60 days) and silently break every sheet `=IMAGE()` cell, social post, and newsletter that references them. If a generation or handoff step ever returns a tmpfiles.org URL, re-upload that file to the client's GHL Media Library and use the returned CDN `url` instead — never log the ephemeral link. QC.md "Media Hosting" carries the fail-closed rejection check.
 
 **If GHL upload fails:** retry once after 30 seconds. If still failing, notify owner via Telegram that media is queued for retry, log the error, and do NOT send the raw file attachment.
 
