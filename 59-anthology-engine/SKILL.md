@@ -46,6 +46,84 @@ Move in silence. Every code path honors these:
    is HELD at repo-only until the operator gives the explicit OK. No client box is
    touched by the build.
 
+## Per-client GHL (Convert and Flow) authentication (binding constraint)
+
+Every Anthology engine instance authenticates to a SINGLE client's Convert and Flow
+account using that CLIENT's OWN private integration token (PIT) and Location ID.
+This is a per-client authentication architecture -- NOT a single shared credential
+across clients.
+
+### What makes it per-client
+
+| Aspect | Architecture |
+|--------|-------------|
+| Credential pair | `CONVERT_AND_FLOW_PIT` + `CONVERT_AND_FLOW_LOCATION_ID` -- one pair per client box |
+| Owner | The CLIENT's own GoHighLevel sub-account, provisioned in their own Convert and Flow instance |
+| Never | An operator-level, shared, fleet, or master API key. No single key drives multiple clients |
+| Resolution | Resolved per-box at install time by `caf_credential_gate.py` (W2.3), live process env first, then the three client env stores |
+| Enforcement | `caf_credential_gate.py` AF-AE-COMMINGLE -- the resolved value is fingerprinted (unsalted sha256) and compared against operator-namespaced labels and foreign-client labels. A collision exits 4 (violation) |
+| Model-map tiers | Resolved per-box by `preflight.sh` against the CLIENT's OWN configured models in their `openclaw.json`, never a shared or operator provider key |
+
+### The binding constraints
+
+1. **PER-CLIENT PAIR, NEVER SHARED.** Every client box carries its OWN
+   `CONVERT_AND_FLOW_PIT` (the private integration token, `pit-` prefix) and its OWN
+   `CONVERT_AND_FLOW_LOCATION_ID`. These are resolved per-box at install time. The
+   engine never falls back to an operator-level or shared integration token.
+
+2. **ANTI-COMMINGLING FINGERPRINT (AF-AE-COMMINGLE).** The credential gate
+   (`caf_credential_gate.py`) computes an unsalted sha256 fingerprint of the resolved
+   PIT and Location values and checks them against:
+   - Any operator/shared/fleet-namespaced label on the same box (config-free collision).
+   - Any foreign-client/tenant-namespaced label (another client's key).
+   - An expected-own fingerprint from a prior clean provisioning.
+   - A denylist of known operator/other-client fingerprints.
+   A collision exits 4 and STOPS provisioning. A clean verdict means the credential
+   belongs to THIS client, not the operator and not another client.
+
+3. **PIT SCOPE (AF-AE-PIT-SCOPE).** The client's own PIT must be able to READ
+   pipelines in that client's own Convert and Flow Location. A token that cannot
+   even READ pipelines STOPS setup with an operator surface. Pipeline FIND-AND-BIND
+   always uses the CLIENT's own PIT, never an operator token with cross-tenant scope.
+
+4. **MODEL SOVEREIGNTY IS SEPARATE BUT PARALLEL.** The client's OWN model provider
+   keys (OLLAMA_CLOUD_API_KEY, OPENROUTER_API_KEY, GEMINI_API_KEY, etc.) are
+   resolved per-box by `preflight.sh` against the CLIENT's own `openclaw.json`.
+   These are also authenticated per-client and never shared. Model id resolution
+   is fail-closed (AF-AE-UNRESOLVED-MODELMAP, AF-AE-ANTHROPIC).
+
+5. **CREDENTIALS NEVER COMMITTED.** No key value, no PIT, no Location ID, no model
+   provider key ever lives in a committed file. Credentials are referenced by LABEL
+   only. The repo ships `model-map.template.json` with `<CLIENT_*>` placeholders;
+   the per-box resolved copy is written at install time and never committed.
+
+6. **NO FALLBACK TO OPERATOR CREDS.** If a client's PIT cannot be resolved (all
+   three env stores consulted, live-process-first), the engine FAILS PROVISIONING
+   (exit 2) rather than falling back to any operator/shared/default credential.
+   There is no "default GHL API key" anywhere in the engine.
+
+### Why this matters for builders
+
+A builder extending the Anthology engine must never:
+
+- Write code that assumes a single shared GHL API key lives on the operator box.
+- Hardcode a PIT, Location ID, or provider key literal anywhere in the runtime.
+- Use an operator-level or fleet-level credential to authenticate Convert and Flow
+  operations for a client -- the CLIENT's own PIT is always required.
+- Create a credential resolver that falls back to a shared default when the
+  client-specific credential is absent. Absence must fail closed.
+- Commit a resolved credential value or a resolved model-map.json to the repository.
+
+The credential resolution pipeline is: **live process env** -> **three client env
+stores** (`~/.openclaw/secrets/.env`, `~/.openclaw/workspace/.env`,
+`~/clawd/secrets/.env`) -> **fail closed** (do not substitute a default). This
+chain is implemented in `caf_credential_gate.py` and `preflight.sh`, and every
+credential-dependent operation should delegate to these modules rather than
+implementing its own resolution.
+
+See also `INSTALL.md` in this directory for the full provisioning procedure
+including per-client credential resolution and the anti-commingling fingerprint.
+
 ## The four layers
 
     Convert and Flow universal form (visible: name, email, phone, Q1 ideal avatar,
