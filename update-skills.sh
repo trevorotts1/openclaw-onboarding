@@ -2793,6 +2793,71 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
   fi
 
   # ----------------------------------------------------------
+    # U133: Merge-additive departments sync. Syncs CC departments from
+    # canonical ZHC artifact: adds new depts, updates existing fields,
+    # never deletes custom departments. Advisory (non-blocking).
+    if [ "$_U6D_RC" -eq 0 ] && [ -n "$_U6D_CC_DIR" ] && \
+       [ -f "$_U6D_CC_DIR/config/departments.json" ]; then
+      _U6D_CANON="\$(python3 -c "
+import os,sys
+from pathlib import Path
+try:
+    from detect_platform import get_openclaw_paths
+    p=get_openclaw_paths()
+    cd=p.get('company_dir')
+    if cd:
+        dp=Path(cd)/'departments.json'
+        if dp.exists():
+            print(str(dp))
+except Exception:
+    pass
+" 2>/dev/null || true)"
+      if [ -n "$_U6D_CANON" ] && [ -f "$_U6D_CANON" ]; then
+        _U6D_MERGED="\$(python3 -c "
+import json,os,sys
+def ns(r):
+    s=str(r or '').strip().lower()
+    if s.startswith('dept-'): s=s[5:]
+    return s
+can=json.load(open(sys.argv[1]))
+cc=json.load(open(sys.argv[2]))
+if not can: sys.exit(0)
+if not cc:
+    with open(sys.argv[2],'w') as fh:
+        json.dump(can,fh,indent=2,ensure_ascii=False)
+        fh.write(chr(10))
+    print('populated from empty')
+    sys.exit(0)
+by={}
+for i,d in enumerate(cc):
+    s=ns(d.get('slug') or d.get('id'))
+    if s: by[s]=i
+sf=('name','emoji','headTitle','head_title','workspacePath')
+merged=list(cc);added=0;updated=0
+for e in can:
+    s=ns(e.get('slug') or e.get('id'))
+    if not s: continue
+    if s in by:
+        idx=by[s];chg=False
+        for f in sf:
+            if f in e and merged[idx].get(f)!=e[f]:
+                merged[idx][f]=e[f];chg=True
+        if chg: updated+=1
+    else:
+        merged.append(dict(e));added+=1
+if added or updated:
+    with open(sys.argv[2],'w') as fh:
+        json.dump(merged,fh,indent=2,ensure_ascii=False)
+        fh.write(chr(10))
+sys.stderr.write(f'U133 dept-sync: {added} added, {updated} updated, {len(cc)} pre-existing (custom preserved)\n')
+" "\$_U6D_CANON" "\$_U6D_CC_DIR/config/departments.json" 2>>"\$LOG_FILE")" || true
+        if [ -n "$_U6D_MERGED" ]; then
+          printf "%s\n" "$_U6D_MERGED" >> "$LOG_FILE"
+          echo "  ✓ U133 dept-sync: $_U6D_MERGED"
+        fi
+      fi
+    fi
+
   # v10.15.47: WIRING PHASE -- per-skill executed steps (not prose).
   # For every installed skill folder, this phase:
   #   1. Runs the skill's own installer (wire.sh > install.sh > setup-*.sh) if present, idempotent.
