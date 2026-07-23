@@ -77,6 +77,14 @@ else
   yellow "  ⚠ WARN — Podbean credential probe skipped (no LOCAL client pair; PROXY/BROKER boxes mint tokens server-side)"; WARN=$((WARN+1))
 fi
 
+# ── U040: Podbean E2E integration test reference ────────────────────────────
+# This gate does NOT auto-run the integration test. The test requires explicit
+# opt-in (PODBEAN_E2E_TEST=1) and performs a live publish+verify+delete cycle
+# against the Podbean API. To run it manually:
+#   PODBEAN_E2E_TEST=1 bash scripts/tests/integration_podbean_e2e_publish.sh
+yellow "  INFO -- Podbean E2E integration test available at: scripts/tests/integration_podbean_e2e_publish.sh"
+yellow "          Requires PODBEAN_E2E_TEST=1 to run (never runs unattended)."
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 58 QC FAILED"; exit 1; } || { green "Skill 58 QC PASS"; exit 0; }
