@@ -1033,6 +1033,27 @@ else
   WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh missing|Update openclaw-onboarding to the version that ships W7.4")
 fi
 
+# ─── CHECK X.15: No impersonation directives in agent identity files (U124) ──
+echo
+blue "── CHECK X.15: Anti-impersonation directives (U124) ──"
+ANTI_IMPERSONATION_SCRIPT=""
+for _ai_cand in   "$(dirname "${BASH_SOURCE[0]}")/qc-assert-no-impersonation-directives.sh"   "$HOME/.openclaw/skills/scripts/qc-assert-no-impersonation-directives.sh"   "/data/.openclaw/skills/scripts/qc-assert-no-impersonation-directives.sh"; do
+  [[ -f "$_ai_cand" ]] && ANTI_IMPERSONATION_SCRIPT="$_ai_cand" && break
+done
+if [[ -n "$ANTI_IMPERSONATION_SCRIPT" ]]; then
+  _ai_tmp=$(mktemp)
+  bash "$ANTI_IMPERSONATION_SCRIPT" > "$_ai_tmp" 2>&1
+  ANTI_IMPERSONATION_RC=$?
+  ANTI_IMPERSONATION_OUT=$(cat "$_ai_tmp"); rm -f "$_ai_tmp"
+  case "$ANTI_IMPERSONATION_RC" in
+    0) green "  ✓ X.15 No impersonation directives found in repo"; PASS=$((PASS+1)) ;;
+    1) red "  ✗ X.15 Impersonation directive(s) found"; FAIL=$((FAIL+1)); FAILURES+=("X.15|Impersonation directive(s) in repo|Replace with anti-impersonation framework per U124") ;;
+    *) yellow "  ⚠ X.15 Check failed (rc=$ANTI_IMPERSONATION_RC)"; WARN=$((WARN+1)) ;;
+  esac
+else
+  yellow "  ⚠ X.15 qc-assert-no-impersonation-directives.sh not found"; WARN=$((WARN+1))
+fi
+
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────
 echo
 blue "═══════════════════════════════════════════════════"

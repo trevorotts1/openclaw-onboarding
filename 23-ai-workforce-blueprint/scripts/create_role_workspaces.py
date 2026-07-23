@@ -48,7 +48,6 @@ except ImportError:
     def get_openclaw_paths():
         raise RuntimeError("detect_platform.py not on sys.path")
 
-
 # ─── MSF: Capability-Class Model-Selection Framework (v1.0.0) ─────────────────
 # Best-effort import from shared-utils/model_selector.py.
 # Gracefully degrades if unavailable — never crashes the workspace builder.
@@ -60,7 +59,6 @@ except ImportError:
     def _msf_infer_class(slug, dept, role_type=""):  # type: ignore
         return {}
 
-
 def _crw_get_capability_class(role_slug: str, dept_slug: str, role_type: str = "") -> dict:
     """Return MSF capability-class info for a role slug + dept (or {} if unavailable)."""
     if not _MSF_AVAILABLE:
@@ -70,24 +68,19 @@ def _crw_get_capability_class(role_slug: str, dept_slug: str, role_type: str = "
     except Exception:  # noqa: BLE001
         return {}
 
-
 # ─── DEFERRAL CLAUSES ─────────────────────────────────────────────────────────
 
 STANDARD_DEFERRAL = """
-## Persona Governance Override
+## Persona Governance Framework
 
 When you are assigned a persona for a task, that persona governs HOW you perform
 the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
 task come from the persona — not from this file.
 
-Act AS IF you ARE the persona for the duration of the task. Use their frameworks.
-Use their phrasing. Hold their standards. Make the calls they would make.
-
-This file is your fallback identity. It governs only when no persona is assigned.
-When a persona is present, this file is subordinate to it.
+This file is your primary identity. It governs when no persona is assigned. When a persona is present, use its frameworks as a tool -- not as a replacement for your own judgment or accountability.
 
 **Order of operations:**
-1. Check for an assigned persona. If present → act AS that persona.
+1. Check for an assigned persona. If present → apply that persona's frameworks and standards as a reference, not as an identity.
 2. If no persona is assigned → use this file.
 3. In all cases: honor the company's mission (workspace SOUL.md) and the owner's
    stated values (workspace USER.md).
@@ -180,7 +173,6 @@ Before dispatching ANY task, in this order:
 4. Review returned deliverables against the SOP the specialist followed.
 """
 
-
 # ─── STUB GENERATORS (used as fallback when library has no match) ────────────
 
 def stub_identity(role_name, dept_name, is_ceo):
@@ -201,7 +193,6 @@ See symlinked `TOOLS.md` (shared across company).
 See symlinked `AGENTS.md` (shared across company).
 {protocol}{deferral}
 """
-
 
 def stub_soul(role_name, dept_name, is_ceo):
     deferral = CEO_DEFERRAL if is_ceo else STANDARD_DEFERRAL
@@ -224,7 +215,6 @@ Identity Profile). Plain, direct, no jargon unless the task domain requires it.
 {protocol}{deferral}
 """
 
-
 def stub_memory(role_name):
     return f"""# {role_name} — MEMORY
 
@@ -239,7 +229,6 @@ def stub_memory(role_name):
 ## What I've learned about the owner / customers
 - (Captured from feedback over time)
 """
-
 
 def stub_heartbeat(role_name, dept_name):
     return f"""# {role_name} — HEARTBEAT
@@ -257,7 +246,6 @@ Dept: {dept_name}
 3. Check for assigned persona (if any)
 4. Read your latest entries in `MEMORY.md`
 """
-
 
 def stub_how_to(role_name, dept_name, is_ceo):
     """Placeholder used when the library has no matching doc.
@@ -300,12 +288,10 @@ def stub_how_to(role_name, dept_name, is_ceo):
 ## 3-19. Pending fill — read the one-shot instruction at the top of this file.
 """
 
-
 # ─── LIBRARY TEMPLATE-FILL (Wave 5b) ──────────────────────────────────────────
 
 def _now_iso():
     return datetime.now(timezone.utc).isoformat()
-
 
 def _resolve_skill_dir():
     """Return absolute path to 23-ai-workforce-blueprint inside the install.
@@ -368,7 +354,6 @@ def _resolve_skill_dir():
     # role-library).
     return Path(__file__).resolve().parent.parent
 
-
 # ─── ROLE-NAME NORMALIZER (WS-2: 58% naive match → ~100% normalized) ──────────
 #
 # WS-1 archaeology proved that naive `slugify(role_name)` exact-matches only
@@ -405,12 +390,10 @@ _EMPLOYMENT_TOKENS = {
     "or",
 }
 
-
 def normalize_dept(dept_slug):
     """Map a workspace/suggested-roles dept id to the role-library dept value."""
     key = str(dept_slug or "").replace("-dept", "").replace("dept-", "").strip().lower()
     return _LIBRARY_DEPT_ALIASES.get(key, key)
-
 
 # ── CANONICAL DEPARTMENT-DIRECTORY RESOLUTION ────────────────────────────────
 # ONE resolver, shared by every consumer that has to turn a BARE manifest
@@ -431,7 +414,6 @@ def normalize_dept(dept_slug):
 # Living in create_role_workspaces.py — the canonical builder both of those
 # scripts already import — is what keeps them from drifting apart again.
 _DEPT_DECOR_RE = re.compile(r'^dept[-_]|[-_]dept$')
-
 
 def norm_dept(name):
     """Normalize a department directory NAME or a manifest department ID to one
@@ -459,7 +441,6 @@ def norm_dept(name):
     n = n.replace('_', '-')
     n = re.sub(r'-{2,}', '-', n).strip('-')
     return n
-
 
 def resolve_dept_dir(departments_root, dept_slug):
     """Resolve a BARE manifest department id (e.g. "sales") to the department's
@@ -503,13 +484,11 @@ def resolve_dept_dir(departments_root, dept_slug):
             continue
     return None
 
-
 def _strip_role_decorations(s):
     s = s.replace("**", "").replace("⭐", "").replace("★", "").replace("🌟", "")
     s = re.sub(r"(?i)\bflagship\s+role\b", " ", s)
     s = re.sub(r"(?i)\bflagship\b", " ", s)
     return s
-
 
 def _clean_role_key(s, amp):
     """amp in {'and','drop'} — the library is internally inconsistent about `&`,
@@ -520,7 +499,6 @@ def _clean_role_key(s, amp):
     s = re.sub(r"[^a-z0-9]+", " ", s).strip()
     toks = [t for t in s.split() if t not in _EMPLOYMENT_TOKENS]
     return " ".join(toks)
-
 
 def normalize_role_variants(name):
     """
@@ -540,10 +518,8 @@ def normalize_role_variants(name):
                 out.add(v)
     return out
 
-
 # Cache: skill_dir -> {dept: {normalized_key: role_entry}}
 _LIBRARY_INDEX_CACHE = {}
-
 
 def _build_library_index(skill_dir):
     """Read _index.json and build {dept: {normalized_key: role_entry}}."""
@@ -582,7 +558,6 @@ def _build_library_index(skill_dir):
     _LIBRARY_INDEX_CACHE[cache_key] = by_dept
     return by_dept
 
-
 def library_lookup(role_slug, dept_slug):
     """
     Return (library_doc_path, role_entry_dict) or (None, None) if no match.
@@ -618,7 +593,6 @@ def library_lookup(role_slug, dept_slug):
         return fallback, role_entry
     return None, role_entry
 
-
 def _load_company_config():
     """Read company-config.json from the workspace, or {} if missing."""
     try:
@@ -629,7 +603,6 @@ def _load_company_config():
     except Exception:
         pass
     return {}
-
 
 def _load_user_md_excerpt():
     """Pull a short owner-profile excerpt from workspace USER.md for tokens."""
@@ -642,7 +615,6 @@ def _load_user_md_excerpt():
     except Exception:
         pass
     return ""
-
 
 def _compute_revenue_cascade(yearly):
     """Return monthly/weekly/daily/quarterly given yearly. Empty dict if no yearly."""
@@ -657,7 +629,6 @@ def _compute_revenue_cascade(yearly):
         "WEEKLY_TARGET": f"${y/52:,.0f}",
         "DAILY_TARGET": f"${y/250:,.0f}",  # 250 working days
     }
-
 
 def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
     """
@@ -1257,7 +1228,6 @@ def fill_tokens(content, role_name, dept_name, is_ceo, role_entry=None):
 
     return out
 
-
 def try_library_fill(role_name, dept_path, is_ceo, lib_key=None):
     """
     Look up the library for a pre-written how-to.md, token-fill it, and return
@@ -1331,7 +1301,6 @@ def try_library_fill(role_name, dept_path, is_ceo, lib_key=None):
     )
     return header + filled
 
-
 # ─── PATH / NAMING HELPERS ────────────────────────────────────────────────────
 
 def slugify(name):
@@ -1346,7 +1315,6 @@ def slugify(name):
             out.append("-")
             prev_dash = True
     return "".join(out).strip("-")
-
 
 # ─── CORE: CREATE A SINGLE ROLE WORKSPACE ─────────────────────────────────────
 
@@ -1502,12 +1470,10 @@ When a new SOP is added, append a line to the table below.
 
     return role_path
 
-
 # ─── AUGMENT EXISTING ROLE FOLDERS (Wave 5b: previously missing!) ────────────
 
 V21_REQUIRED = ["IDENTITY.md", "SOUL.md", "MEMORY.md", "HEARTBEAT.md", "how-to.md"]
 V21_SYMLINKS = ["AGENTS.md", "TOOLS.md", "USER.md"]
-
 
 def augment_role_folder(role_path, workspace_root, role_metadata=None):
     """
@@ -1581,7 +1547,6 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
 
     return {"written": written, "symlinked": symlinked}
 
-
 def _is_sops_library_dir(path):
     """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
 
@@ -1611,7 +1576,6 @@ def _is_sops_library_dir(path):
         if n.startswith("sop-") or n.endswith("-sops.md"):
             return True
     return False
-
 
 def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     """
@@ -1663,7 +1627,6 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
     # a partial or resume materialization can never leave a stale roster behind.
     regenerate_department_roster(dept_path, dry_run=dry_run)
     return results
-
 
 # ─── governing-personas.md per dept (v10.8.0 P0-3 fix) ────────────────────────
 
@@ -1866,7 +1829,6 @@ add more personas) and re-run the workspace builder.
     print(f"  ✓ wrote {out_path.relative_to(dept_path.parent) if dept_path.parent.exists() else out_path}")
     return out_path
 
-
 # ─── BUILD ALL ROLES FOR A DEPT (used by build-workforce.py) ──────────────────
 
 def build_all_roles_for_dept(dept_path, dept_id, roles, workspace_root):
@@ -1892,7 +1854,6 @@ def build_all_roles_for_dept(dept_path, dept_id, roles, workspace_root):
     write_governing_personas_md(dept_path, dept_id)
 
     return created
-
 
 # ─── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -1941,11 +1902,9 @@ def refresh_all_governing_personas_md(workspace_root: Path) -> int:
                   file=sys.stderr)
     return refreshed
 
-
 # ─── DEPT-SCOPED INSTANTIATION (defect #4: a COMPLETE department) ─────────────
 
 _ROSTER_DECORATION_RE = re.compile(r"\([^)]*\)")
-
 
 def _roster_clean_name(name):
     """Strip parenthetical decorations from a roster `### N. <name>` header so a
@@ -1953,7 +1912,6 @@ def _roster_clean_name(name):
     explicit **Slug:** line is the authoritative key; this only tidies display."""
     s = _ROSTER_DECORATION_RE.sub("", str(name or "")).strip()
     return re.sub(r"\s{2,}", " ", s)
-
 
 def parse_roster(roster_path):
     """
@@ -2009,7 +1967,6 @@ def parse_roster(roster_path):
             r["slug"] = slugify(r["name"])
     return roles
 
-
 def _parse_roster_table(text):
     """Parse a `| # | Slug | Title | Type | Purpose |` role table into role dicts.
 
@@ -2057,7 +2014,6 @@ def _parse_roster_table(text):
         })
     return rows
 
-
 # ─── DISK-TRUTH DEPARTMENT ROSTER (ROSTER.md) ─────────────────────────────────
 # ROOT-CAUSE FIX (2026-06-18): every materialization path writes role folders
 # into a department but, before this, NONE of them (re)generated the department's
@@ -2085,7 +2041,6 @@ _ROLE_TYPE_RE = re.compile(r"^\*\*Role type:\*\*\s*(.+?)\s*$", re.IGNORECASE)
 _ROLE_TYPE_ALT_RE = re.compile(r"^\*\*Role Type:\*\*\s*(.+?)\s*$", re.IGNORECASE)
 _NN_PREFIX_RE = re.compile(r"^(\d+)-(.*)$")
 
-
 def _first_md_heading(text):
     """Return the first level-1 markdown heading text, or '' if none."""
     for line in text.split("\n"):
@@ -2093,7 +2048,6 @@ def _first_md_heading(text):
         if s.startswith("# "):
             return s[2:].strip()
     return ""
-
 
 def _read_role_from_folder(role_path):
     """Read one materialized role folder and return its roster fields from disk.
@@ -2179,7 +2133,6 @@ def _read_role_from_folder(role_path):
         "is_head": is_head,
     }
 
-
 def scan_department_roles_on_disk(dept_path):
     """Return the materialized role folders for a department, read FROM DISK.
 
@@ -2220,11 +2173,9 @@ def scan_department_roles_on_disk(dept_path):
     roles.sort(key=lambda r: (r.get("number", 999), r.get("slug", "")))
     return roles
 
-
 def _roster_when_to_use(role):
     """One-line when-to-use cell for a disk-derived role (kept scannable)."""
     return f"Tasks owned by the {role['name']}."
-
 
 def regenerate_department_roster(dept_path, dept_name=None, dept_head=None,
                                  dept_emoji="", dry_run=False):
@@ -2314,7 +2265,6 @@ def regenerate_department_roster(dept_path, dept_name=None, dept_head=None,
           f"{roster_path} ({len(roles)} roles from disk)")
     return roster_path
 
-
 def _resolve_dept_library_dir(dept_slug):
     """Return the role-library dir for a dept (Path) or None."""
     skill_dir = _resolve_skill_dir()
@@ -2322,11 +2272,9 @@ def _resolve_dept_library_dir(dept_slug):
     cand = skill_dir / "templates" / "role-library" / dept_key
     return cand if cand.is_dir() else None
 
-
 # Dept-level meta files copied (token-filled) into the workspace department root.
 _DEPT_LEVEL_FILES = ["IDENTITY.md", "SOUL.md", "TOOLS.md",
                      "how-to-use-this-department.md"]
-
 
 def scaffold_department(dept_path, dept_slug, dry_run=False):
     """
@@ -2427,7 +2375,6 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
 
     return written
 
-
 def instantiate_department(dept_path, dept_slug, roles, workspace_root,
                            dry_run=False):
     """
@@ -2470,7 +2417,6 @@ def instantiate_department(dept_path, dept_slug, roles, workspace_root,
     if roster_path is not None:
         summary["roster_regenerated"] = str(roster_path)
     return summary
-
 
 def main():
     parser = argparse.ArgumentParser(
@@ -2568,7 +2514,6 @@ def main():
     created = build_all_roles_for_dept(dept_path, dept_path.name, roles, workspace_root)
     print(f"\nCreated {len(created)} role workspaces in {dept_path.name}")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
