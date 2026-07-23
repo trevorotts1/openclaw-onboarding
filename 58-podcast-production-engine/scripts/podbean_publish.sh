@@ -154,6 +154,12 @@ Common options:
   --type <value>          public | premium | private (default public); ignored
                           in proxy mode (excluded from the v2 payload contract;
                           episode_type is hardcoded to "full" server-side)
+  --draft                 U044: create a Podbean DRAFT episode (status=draft)
+                          instead of publishing, for full end-to-end verification
+                          without going live. The draft is verified (fetched back)
+                          and then deleted so it never accumulates on the feed.
+                          Wins over --status/--release-date. Ignored in proxy mode
+                          (n8n owns the publish there; use its own draft contract).
 
 Idempotency and state (Step 15 double-publish guard):
   --ledger <path>         job ledger json; if it already holds a non-null
@@ -458,7 +464,7 @@ proxy_request() {
 AUDIO=""; TITLE=""; COVER=""; SPEAKER=""; DESCRIPTION=""
 RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
-TEST_RUN=0; DRY_RUN=0
+TEST_RUN=0; DRY_RUN=0; DRAFT_MODE=0
 AUDIO_URL=""; IMAGE_URL=""   # publish-proxy only (S58-U14)
 
 while [ $# -gt 0 ]; do
@@ -479,6 +485,7 @@ while [ $# -gt 0 ]; do
     --out)           OUT="${2:-}"; shift 2 ;;
     --test)          TEST_RUN=1; shift ;;
     --dry-run)       DRY_RUN=1; shift ;;
+    --draft)         DRAFT_MODE=1; shift ;;
     -h|--help)       usage; exit 0 ;;
     *)               usage; die "unknown argument: $1" ;;
   esac
@@ -593,6 +600,15 @@ if [ -n "$STATUS_OVERRIDE" ]; then
     PUBLISH_TIMESTAMP="$(to_epoch "$RELEASE_DATE")"
   fi
   if [ "$PUBLISH_STATUS" != "future" ]; then PUBLISH_TIMESTAMP=""; fi
+fi
+
+# U044: --draft wins over --status / --release-date. A draft episode is created
+# with status=draft and no publish_timestamp, so it can never go live. This
+# enables full end-to-end verification (upload + create + fetch-back + delete)
+# without ever touching the live feed.
+if [ "$DRAFT_MODE" = "1" ]; then
+  PUBLISH_STATUS="draft"
+  PUBLISH_TIMESTAMP=""
 fi
 
 log "plan: status=${PUBLISH_STATUS} type=${EP_TYPE} title=$(jstr "$FINAL_TITLE")"
@@ -859,6 +875,36 @@ http_request POST "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}" "${create
 
 PERMALINK="$(printf '%s' "$RESP_BODY" | json_field episode permalink_url)"
 EPISODE_ID="$(printf '%s' "$RESP_BODY" | json_field episode id)"
+
+# U044: draft mode - the episode was created with status=draft, so it is NOT on
+# the live feed. Verify it (fetch it back to prove the full upload+create path
+# worked end-to-end) and then delete it, so a verification draft never
+# accumulates on the client's channel. The draft's episode id (not its
+# permalink) is the handle we need for both steps.
+if [ "$DRAFT_MODE" = "1" ]; then
+  [ -n "$EPISODE_ID" ] || die "draft episode created but no episode id returned; cannot verify or delete (HTTP ${RESP_CODE}): $(redact "$RESP_BODY")"
+  RESP_BODY=""
+  log "draft mode: verifying draft episode ${EPISODE_ID} (fetch-back) before deletion"
+  DRAFT_STATUS=""
+  if http_request GET "$PODBEAN_API/episodes/${EPISODE_ID}?access_token=${ACCESS_TOKEN}"; then
+    DRAFT_STATUS="$(printf '%s' "$RESP_BODY" | json_field episode status)"
+    log "draft verified: episode ${EPISODE_ID} status=${DRAFT_STATUS:-unknown}"
+  else
+    log "warning: draft fetch-back failed (HTTP ${RESP_CODE:-000}); proceeding to delete"
+  fi
+  RESP_BODY=""
+  DRAFT_DELETED=false
+  if http_request DELETE "$PODBEAN_API/episodes/${EPISODE_ID}?access_token=${ACCESS_TOKEN}"; then
+    DRAFT_DELETED=true
+    log "draft episode ${EPISODE_ID} deleted after verification"
+  else
+    log "warning: draft episode ${EPISODE_ID} could not be deleted (HTTP ${RESP_CODE:-000}); manual cleanup may be needed"
+  fi
+  RESP_BODY=""
+  emit_result "{\"status\":\"draft-verified\",\"idempotent_skip\":false,\"draft\":true,\"episode_id\":$(jstr "$EPISODE_ID"),\"episode_number\":${EPISODE_NUMBER},\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":\"draft\",\"draft_status\":$(jstr "$DRAFT_STATUS"),\"deleted\":${DRAFT_DELETED}}"
+  exit 0
+fi
+
 [ -n "$PERMALINK" ] || die "episode created but no permalink_url returned (HTTP ${RESP_CODE}): $(redact "$RESP_BODY")"
 RESP_BODY=""
 log "episode published; permalink captured"
