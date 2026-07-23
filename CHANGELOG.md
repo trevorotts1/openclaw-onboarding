@@ -1,3 +1,10 @@
+## [v21.0.1]  -  2026-07-23  -  July-23-Fixes Batch 1: Graphics department enforcement gates
+
+Units: U137, U138, U139
+- U137 — Verify graphics prompt-band enforcement (5,000-19,000 characters) across the department manifest
+- U138 — Enforce image-to-image only for logo generation (prohibit text-to-image logos)
+- U139 — Verify DIU library ceiling at 19,000 characters (uplifted from 18,000)
+
 ## [v20.0.101]  -  2026-07-23  -  SAFETY: updater now ENABLES the built-in per-turn tool-loop detector (tools.loopDetection.enabled=true) on every roll
 
 ROOT CAUSE: OpenClaw ships the built-in per-turn tool-loop detector OFF by default —
