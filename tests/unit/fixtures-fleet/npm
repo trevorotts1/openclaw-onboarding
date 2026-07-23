@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+case "$1" in
+  view) echo "${FAKE_NPM_LATEST:-10.7.0}" ;;
+  update) echo "NPM-UPDATE-CALLED" ;;
+esac

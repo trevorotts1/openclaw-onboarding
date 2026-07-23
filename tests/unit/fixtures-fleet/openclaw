@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+case "$1" in
+  --version) echo "openclaw v${FAKE_OC_VERSION:-10.3.0}" ;;
+  cron)
+    case "$2" in
+      list) echo "${FAKE_OC_CRON_LIST:-[]}" ;;
+      rm) echo "cron-rm invoked" ;;
+      add) echo "cron-add invoked" ;;
+    esac ;;
+  config) echo "{}" ;;
+  doctor) : ;;
+esac
