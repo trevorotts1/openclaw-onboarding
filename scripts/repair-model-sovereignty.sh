@@ -6,6 +6,8 @@
 #   - openclaw.json agents whose primary model is null / a bare string-with-no-
 #     fallbacks / the free sentinel / a forbidden (Anthropic) model -> re-resolves
 #     a real, modality-correct, cascade-ordered dept-default model.
+#   - U123: strips Anthropic model-id references from department-agent SOUL.md
+#     files under workspace/departments/ (backed up to .bak-soul-sweep-<ts>).
 #   - Emits a CC-side repair payload (model-sweep receipt) listing every
 #     agent_settings dept-default + tasks.model_id offender the CC repair driver
 #     (command-center/scripts/repair-model-defaults.ts) must rewrite.
@@ -411,12 +413,31 @@ if APPLY and changed:
     wrote = True
     print(f"[repair] applied {changed} mutation(s); backup -> {BAK}", file=sys.stderr)
 
+# ── U123: strip Anthropic model-id references from dept-*/SOUL.md ──
+soul_stripped = 0
+soul_details = []
+if APPLY:
+    soul_offenders, _ = gate.scan_agent_soul_files(CONFIG)
+    if soul_offenders:
+        for o in soul_offenders:
+            sp = o.get("source")
+            if sp and os.path.isfile(sp):
+                n = gate._strip_anthropic_from_soul_file(sp)
+                if n:
+                    soul_stripped += n
+                    soul_details.append({"agent": o["agent"], "mutated_lines": n})
+        if soul_stripped:
+            changed += 1
+            print(f"[repair] soul-file strip: {soul_stripped} lines across "
+                  f"{len(soul_details)} SOUL.md file(s)", file=sys.stderr)
+
 # ── Re-run the gate over the (possibly repaired) config — ground truth ──
 offenders_after, scanned = gate.scan_config(CONFIG)
 
 _planned = (len(openclaw_fixes)
             + sum(len(v) for v in strip_actions.values())
-            + len(fallback_scrubs) + len(depth_caps))
+            + len(fallback_scrubs) + len(depth_caps)
+            + soul_stripped)
 
 receipt = {
     "box": BOX,
@@ -428,6 +449,8 @@ receipt = {
     "strip_actions": strip_actions,
     "fallback_scrubs": fallback_scrubs,
     "depth_caps": depth_caps,
+    "soul_file_repairs": soul_details,
+    "soul_file_lines_stripped": soul_stripped,
     "cc_repair_payload": cc_payload,
     "gate_scanned": len(scanned),
     "gate_offenders_after": offenders_after,
@@ -442,6 +465,7 @@ print(f"[repair] receipt -> {RECEIPT} (clean={not offenders_after}, "
       f"providers_stripped={len(strip_actions['providers_removed'])}, "
       f"plugin_entries_stripped={len(strip_actions['plugin_entries_removed'])}, "
       f"fallback_scrubs={len(fallback_scrubs)}, depth_caps={len(depth_caps)}, "
+      f"soul_lines_stripped={soul_stripped}, "
       f"cc_dept_defaults={len(cc_payload['agent_settings_dept_defaults'])})", file=sys.stderr)
 
 sys.exit(0 if not offenders_after else 3)
