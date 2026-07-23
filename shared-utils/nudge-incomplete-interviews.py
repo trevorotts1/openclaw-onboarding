@@ -43,6 +43,88 @@ from detect_platform import get_openclaw_paths
 # Any such value is rejected below — skip-and-warn instead of nudging operator.
 OPERATOR_CHAT_IDS = {"5252140759", "6663821679", "6771245262"}
 
+# U049: canonical schema version for .workforce-build-state.json
+WF_STATE_SCHEMA_VERSION = 2
+
+
+def _wf_migrate_build_state(state_path, current_version=2):
+    """
+    Migrate .workforce-build-state.json to current schema version (U049).
+    Returns silently; prints warnings on issues.
+    """
+    import json as _j, os as _o, tempfile as _t, time as _ti
+    from pathlib import Path as _P
+
+    if not state_path.is_file():
+        return
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError:
+        return
+    if not raw.strip():
+        return
+    try:
+        state = _j.loads(raw)
+    except _j.JSONDecodeError as exc:
+        ts = str(int(_ti.time()))
+        cp = _P(str(state_path) + ".corrupt-" + ts)
+        try:
+            state_path.rename(cp)
+            print("_wf_migrate_build_state: corrupt JSON -- quarantined to %s" % cp, file=sys.stderr)
+        except OSError:
+            print("_wf_migrate_build_state: corrupt JSON in %s: %s" % (state_path, exc), file=sys.stderr)
+        return
+    if not isinstance(state, dict):
+        return
+
+    fv = state.get("schemaVersion")
+    if fv is None:
+        fv = 1
+    else:
+        try:
+            fv = int(fv)
+        except (TypeError, ValueError):
+            fv = 1
+
+    if fv > current_version:
+        print("_wf_migrate_build_state: schemaVersion %d > current %d -- refusing: %s"
+              % (fv, current_version, state_path), file=sys.stderr)
+        return
+    if fv == current_version:
+        return
+
+    state["schemaVersion"] = current_version
+    ic = state.get("interviewComplete")
+    if isinstance(ic, str):
+        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
+    elif ic is None:
+        state["interviewComplete"] = False
+    state.setdefault("ownerName", "")
+    state.setdefault("ownerChat", "")
+    state.setdefault("companySlug", "")
+    state.setdefault("buildCompletedAt", None)
+    state.setdefault("closeoutStatus", "pending")
+    state.setdefault("interviewProgress", {})
+
+    td = state_path.parent
+    tmp = None
+    try:
+        fd, tmp = _t.mkstemp(dir=str(td), prefix=".workforce-build-state.", suffix=".tmp")
+        with _o.fdopen(fd, "w", encoding="utf-8") as fh:
+            _j.dump(state, fh, indent=2)
+            fh.flush()
+            _o.fsync(fh.fileno())
+        _o.replace(tmp, state_path)
+        tmp = None
+    except OSError as exc:
+        print("_wf_migrate_build_state: could not write %s: %s" % (state_path, exc), file=sys.stderr)
+    finally:
+        if tmp and _o.path.exists(tmp):
+            try:
+                _o.unlink(tmp)
+            except OSError:
+                pass
+
 
 NUDGE_CONFIG = [
     {
@@ -243,9 +325,11 @@ def send_telegram_nudge(meta: dict, cfg: dict, company_slug: str, dry_run: bool 
 
 def read_build_state(state_path: Path) -> dict:
     """
-    Read .workforce-build-state.json. Returns {} if not found or invalid.
+    Read .workforce-build-state.json with schema version migration (U049).
+    Returns {} if not found or invalid.
     PRD-2.15: build state is the PRIMARY source of interview progress data.
     """
+    _wf_migrate_build_state(state_path)
     try:
         return json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
@@ -306,6 +390,8 @@ def record_nudge_sent_state(state_path: Path, nudge_key: str) -> None:
         state = json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
         return
+
+    state.setdefault("schemaVersion", WF_STATE_SCHEMA_VERSION)
 
     sent = list(state.get("nudges_sent") or [])
     if nudge_key not in sent:
@@ -391,6 +477,7 @@ def scan_and_nudge(dry_run: bool = False) -> dict:
                             _s["interviewStalledAt"] = datetime.now(_tz.utc).strftime(
                                 "%Y-%m-%dT%H:%M:%SZ"
                             )
+                            _s.setdefault("schemaVersion", WF_STATE_SCHEMA_VERSION)
                             state_path.write_text(_json.dumps(_s, indent=2))
                             print(
                                 f"  Company {company.name}: nudges exhausted at {hours_idle:.1f}h idle — "

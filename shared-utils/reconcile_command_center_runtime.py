@@ -35,6 +35,72 @@ TEMPLATE_COMPANY_NAME = "Your Company"
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
 _SAFE_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
+# U049: canonical schema version
+WF_STATE_SCHEMA_VERSION = 2
+
+
+def _wf_migrate_build_state(state_path):
+    import time as _t
+    try:
+        raw = state_path.read_text(encoding="utf-8")
+    except OSError as exc:
+        raise ReconcileError("cannot read workforce build state: %s" % exc) from exc
+    if not raw.strip():
+        return True
+    try:
+        state = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        ts = str(int(_t.time()))
+        cp = Path(str(state_path) + ".corrupt-" + ts)
+        try:
+            state_path.rename(cp)
+        except OSError:
+            pass
+        raise ReconcileError(".workforce-build-state.json is corrupt JSON (quarantined to %s): %s" % (cp, exc)) from exc
+    if not isinstance(state, dict):
+        raise ReconcileError(".workforce-build-state.json is not a JSON object")
+    fv = state.get("schemaVersion")
+    if fv is None:
+        fv = 1
+    else:
+        try:
+            fv = int(fv)
+        except (TypeError, ValueError):
+            raise ReconcileError("schemaVersion is not an integer (%s)" % repr(state.get("schemaVersion")))
+    if fv > WF_STATE_SCHEMA_VERSION:
+        raise ReconcileError("schemaVersion %d > current %d; refusing" % (fv, WF_STATE_SCHEMA_VERSION))
+    if fv == WF_STATE_SCHEMA_VERSION:
+        return True
+    state["schemaVersion"] = WF_STATE_SCHEMA_VERSION
+    ic = state.get("interviewComplete")
+    if isinstance(ic, str):
+        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
+    state.setdefault("ownerName", "")
+    state.setdefault("ownerChat", "")
+    state.setdefault("companySlug", "")
+    state.setdefault("buildCompletedAt", None)
+    state.setdefault("closeoutStatus", "pending")
+    state.setdefault("interviewProgress", {})
+    td = state_path.parent
+    tmp = None
+    try:
+        fd, tmp = tempfile.mkstemp(dir=str(td), prefix=".workforce-build-state.", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(state, fh, indent=2)
+            fh.flush()
+            os.fsync(fh.fileno())
+        os.replace(tmp, state_path)
+        tmp = None
+    except OSError as exc:
+        raise ReconcileError("could not write migrated state %s: %s" % (state_path, exc))
+    finally:
+        if tmp and os.path.exists(tmp):
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    return True
+
 
 class ReconcileError(RuntimeError):
     """An unsafe or incomplete reconciliation state."""
@@ -308,8 +374,13 @@ def reconcile(
             "writes": "0",
         }
 
+    # U049: version-aware migration before read
+    wf_sp = workspace / ".workforce-build-state.json"
+    if wf_sp.exists():
+        _wf_migrate_build_state(wf_sp)
+
     state_payload = _load_json(
-        workspace / ".workforce-build-state.json", missing={}, empty={}
+        wf_sp, missing={}, empty={}
     )
     if not isinstance(state_payload, dict):
         raise ReconcileError(".workforce-build-state.json is not a JSON object")
