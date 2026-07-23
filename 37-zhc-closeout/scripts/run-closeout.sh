@@ -569,7 +569,20 @@ else
     fail_closeout "Skill 32 orchestrator failed: $actual_reason"
   fi
 
-  log "INFO" "step=1 command-center: done -- commandCenterUrl=$(state_get '.commandCenterUrl')"
+  # U072: run-full-install.sh exits 0 for BOTH completion AND deferral
+  # (interview-pending, interview-qc-unverified, done-degraded). Read the
+  # recorded commandCenterStatus from state -- the terminal "done" value is
+  # the only signal that the full 8-phase install completed successfully.
+  _cc_post_status=$(state_get '.commandCenterStatus')
+  if [[ "$_cc_post_status" != "done" && "$_cc_post_status" != "done-degraded" ]]; then
+    _cc_reason=$(state_get '.commandCenterGateReason')
+    [[ -z "$_cc_reason" ]] && _cc_reason="commandCenterStatus=${_cc_post_status:-<unset>} (terminal completed state not reached)"
+    log "WARN" "step=1 command-center: deferred -- $_cc_reason"
+    state_set ".closeoutStatus = \"deferred-cc-not-complete\" | .closeoutBlockReason = \"$_cc_reason\""
+    exit 0
+  fi
+
+  log "INFO" "step=1 command-center: done (status=${_cc_post_status}) -- commandCenterUrl=$(state_get '.commandCenterUrl')"
 fi
 
 # FIX-S36-06: land a card on the Command Center kanban the closeout just built,
