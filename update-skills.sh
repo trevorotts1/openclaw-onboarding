@@ -3753,6 +3753,25 @@ if isinstance(n, int) and n > 0:
       [[ "$skill_name" == "__TREE_SHA__" ]] && continue
       case "$skill_name" in *ARCHIVED*) continue ;; esac
 
+      # U004: when --only is set, restrict A3 check to the target skill(s) only.
+      # Otherwise drift in a non-copied skill falsely withholds the stamp.
+      if [ -n "$ONLY_SKILLS" ]; then
+        _SKILL_PREFIX=$(echo "$skill_name" | cut -d'-' -f1)
+        _A3_MATCH="false"
+        _A3_OIFS=$IFS; IFS=','
+        for _a3_want in $ONLY_SKILLS; do
+          _a3_want_trimmed=$(echo "$_a3_want" | tr -d '[:space:]')
+          if [ "$_SKILL_PREFIX" = "$_a3_want_trimmed" ]; then
+            _A3_MATCH="true"
+            break
+          fi
+        done
+        IFS=$_A3_OIFS
+        if [ "$_A3_MATCH" != "true" ]; then
+          continue
+        fi
+      fi
+
       dest_digest=$(echo "$DEST_MANIFEST" | grep "^${skill_name}|" | cut -d'|' -f2 | head -1 || true)
       if [ -z "$dest_digest" ]; then
         echo "    [A3] MISMATCH: $skill_name — present in source but NOT in destination" >&2
