@@ -1350,6 +1350,102 @@ preclear_2026_7_1() {
 # <<< TRAP1-PRECLEAR-END
 
 # ----------------------------------------------------------
+# U008: Pre-flight spend/cost check
+# ----------------------------------------------------------
+# Checks whether the operator's org has sufficient spend budget before any
+# step that may trigger paid API calls (persona embedding, QC gates, etc.).
+# Controlled by OPENCLAW_ORG_SPEND_LIMIT (env var, integer in USD cents).
+# When the limit is unset the check is a no-op. When set, we try to read the
+# remaining budget from available sources and WARN or GATE when below the
+# configured threshold of remaining budget.
+#
+# Exit codes:
+#   0 — check completed: spend OK, threshold not configured, or spend
+#        could not be determined (fail-open for safety)
+#   1 — remaining budget below configured threshold (GATE)
+# ----------------------------------------------------------
+check_spend_budget() {
+  local threshold="${OPENCLAW_ORG_SPEND_LIMIT:-}"
+
+  # No limit configured → no gate. This is the default — the check is
+  # opt-in. Boxes that have never set OPENCLAW_ORG_SPEND_LIMIT proceed
+  # unchanged.
+  if [ -z "$threshold" ]; then
+    return 0
+  fi
+
+  # Validate threshold is a non-negative integer.
+  case "$threshold" in
+    ''|*[!0-9]*)
+      echo "  [spend-check] WARN: OPENCLAW_ORG_SPEND_LIMIT is not a valid non-negative integer ($threshold) — spend gate skipped" >&2
+      return 0
+      ;;
+  esac
+
+  local remaining=""
+  local source_label=""
+
+  # --- Resolve remaining budget from available sources ---
+
+  # 1) openclaw CLI (org spend subcommand — canonical source).
+  if [ -z "$remaining" ] && command -v openclaw >/dev/null 2>&1; then
+    remaining="$(openclaw org spend 2>/dev/null || true)"
+    if [ -n "$remaining" ]; then
+      # Strip any non-numeric prefix/suffix (e.g. "$" or " USD").
+      remaining="$(printf '%s' "$remaining" | tr -dc '0-9')"
+      [ -n "$remaining" ] && source_label="openclaw org spend"
+    fi
+  fi
+
+  # 2) Budget tracking file (written by fleet-wide budget daemon or
+  #    operator cron).
+  if [ -z "$remaining" ]; then
+    local _budget_file=""
+    [ -f "/data/.openclaw/.org-budget-remaining" ] && _budget_file="/data/.openclaw/.org-budget-remaining"
+    [ -z "$_budget_file" ] && [ -f "$HOME/.openclaw/.org-budget-remaining" ] && _budget_file="$HOME/.openclaw/.org-budget-remaining"
+    if [ -n "$_budget_file" ]; then
+      remaining="$(cat "$_budget_file" 2>/dev/null | tr -d '[:space:]' | tr -dc '0-9' || true)"
+      [ -n "$remaining" ] && source_label="budget tracking file ($_budget_file)"
+    fi
+  fi
+
+  # 3) Could not determine spend — fail OPEN (proceed) so a missing
+  #    budget source never blocks a roll. The operator gets a visible
+  #    warning in the log.
+  if [ -z "$remaining" ]; then
+    echo "  [spend-check] WARN: could not determine remaining org budget (threshold: $threshold) — proceeding, verify budget manually" >&2
+    return 0
+  fi
+
+  # --- Gate decision ---
+  if [ "$remaining" -lt "$threshold" ] 2>/dev/null; then
+    echo "" >&2
+    echo "  ============================================================" >&2
+    echo "  ## PRE-FLIGHT SPEND GATE — BUDGET BELOW THRESHOLD" >&2
+    echo "  ##" >&2
+    echo "  ##   threshold (OPENCLAW_ORG_SPEND_LIMIT): $threshold (USD cents)" >&2
+    echo "  ##   remaining budget                    : $remaining (USD cents)" >&2
+    echo "  ##   source                              : $source_label" >&2
+    echo "  ##" >&2
+    echo "  ## This update may trigger paid API calls (persona embedding," >&2
+    echo "  ## QC gates). Proceeding with insufficient budget could" >&2
+    echo "  ## result in failed operations or unexpected charges." >&2
+    echo "  ##" >&2
+    echo "  ## To override, set a lower threshold:" >&2
+    echo "  ##   export OPENCLAW_ORG_SPEND_LIMIT=<lower_value>" >&2
+    echo "  ## To skip the check entirely:" >&2
+    echo "  ##   unset OPENCLAW_ORG_SPEND_LIMIT" >&2
+    echo "  ============================================================" >&2
+    echo "" >&2
+    return 1
+  fi
+
+  echo "  [spend-check] OK: remaining budget ($remaining) >= threshold ($threshold, source: $source_label) — proceeding"
+  return 0
+}
+# <<< U008-SPEND-CHECK-END
+
+# ----------------------------------------------------------
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
@@ -2163,6 +2259,30 @@ _ocs_tree_in_sync() {
       echo "  ✗ shared-utils refresh INCOMPLETE — source entries missing from box:${_SU_MISSING}"
     else
       echo "  ✓ shared-utils refreshed in $SKILLS_DIR/shared-utils"
+    fi
+
+    # v21.0.x: Orphan-detection pass — shared-utils/ delivery is merge-copy
+    # (additive). If canonical deletes a Python file, the deletion never
+    # propagates — the file stays on every box forever. This pass walks the
+    # destination, reports or quarantines files with no source counterpart.
+    # Dry-run by default (logs only); set OPENCLAW_ORPHAN_APPLY=1 to quarantine.
+    # Never blocks the stamp — an orphan is stale data, not a delivery failure.
+    local _orphan_apply=""
+    [ "${OPENCLAW_ORPHAN_APPLY:-0}" = "1" ] && _orphan_apply="--apply"
+    if [ -x "$EXTRACTED_DIR/shared-utils/reconcile-orphan-shared-utils.py" ]; then
+      echo "  [shared-utils] running orphan detection..."
+      local _orphan_rc=0
+      python3 "$EXTRACTED_DIR/shared-utils/reconcile-orphan-shared-utils.py" \
+            --src "$EXTRACTED_DIR/shared-utils" \
+            --dest "$SKILLS_DIR/shared-utils" \
+            $_orphan_apply >> "$LOG_FILE" 2>&1 || _orphan_rc=$?
+      if [ "$_orphan_rc" = "10" ]; then
+        echo "  ! shared-utils orphan(s) detected (dry-run — not quarantined). Set OPENCLAW_ORPHAN_APPLY=1 to quarantine."
+      elif [ "$_orphan_rc" != "0" ]; then
+        echo "  ! shared-utils orphan detection exited $_orphan_rc — see $LOG_FILE"
+      fi
+    else
+      echo "  [shared-utils] orphan detector not found — skipping orphan pass"
     fi
   fi
 
@@ -3332,6 +3452,23 @@ except:
   else
     OC_WORKSPACE="$HOME/.openclaw/workspace"
   fi
+
+  # U007: Missing-departments edge case warning.
+  # When departments/ is absent but interviewComplete: true, the staleness
+  # check has nothing to verify — surface the anomaly explicitly instead of
+  # silently skipping (or finding zero departments to check against).
+  if [ ! -d "${OC_WORKSPACE}/departments" ] && [ -f "${OC_WORKSPACE}/.workforce-build-state.json" ] && command -v jq >/dev/null 2>&1; then
+    _U007_IV_DONE="$(jq -r '.interviewComplete // false' "${OC_WORKSPACE}/.workforce-build-state.json" 2>/dev/null || echo false)"
+    if [ "$_U007_IV_DONE" = "true" ]; then
+      echo ""
+      echo "  ⚠ U007: departments/ directory is MISSING but .workforce-build-state.json"
+      echo "     reports interviewComplete=true. Role staleness cannot be checked"
+      echo "     against a missing department tree. Restore departments/ from backup"
+      echo "     or re-run the workforce build to re-create the missing directory."
+      echo ""
+    fi
+  fi
+
   if [ -f "$DETECT_SCRIPT" ] && [ -f "$DETECT_MANIFEST" ] && \
      { [ -d "$OC_WORKSPACE/departments" ] || [ -f "$OC_WORKSPACE/.workforce-build-state.json" ]; } && \
      command -v python3 >/dev/null 2>&1; then

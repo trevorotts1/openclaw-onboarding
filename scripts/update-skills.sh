@@ -405,6 +405,24 @@ if [ -d "$REPO_DIR/shared-utils" ]; then
   # anything that legitimately rewrites a shared-utils file at install time
   # would otherwise block the stamp fleet-wide. Absence still gates.
   [ -n "$_OC_TREE_DIFFERS" ] && show_info "shared-utils: post-copy content differences:${_OC_TREE_DIFFERS}" || true
+
+  # Orphan-detection pass: shared-utils/ delivery is merge-copy (additive).
+  # Files deleted from canonical stay on the box forever. This pass walks the
+  # destination and reports or quarantines files with no source counterpart.
+  # Dry-run by default; set OPENCLAW_ORPHAN_APPLY=1 to quarantine.
+  if [ -x "$REPO_DIR/shared-utils/reconcile-orphan-shared-utils.py" ]; then
+    show_info "shared-utils: running orphan detection..."
+    local _orphan_rc=0
+    python3 "$REPO_DIR/shared-utils/reconcile-orphan-shared-utils.py" \
+          --src "$REPO_DIR/shared-utils" \
+          --dest "$SKILLS_DIR/shared-utils" \
+          ${OPENCLAW_ORPHAN_APPLY:+--apply} >> "$LOG_FILE" 2>&1 || _orphan_rc=$?
+    if [ "$_orphan_rc" = "10" ]; then
+      show_info "shared-utils: orphan(s) detected (dry-run — not quarantined). Set OPENCLAW_ORPHAN_APPLY=1 to quarantine."
+    elif [ "$_orphan_rc" != "0" ]; then
+      show_info "shared-utils: orphan detection exited $_orphan_rc — see $LOG_FILE"
+    fi
+  fi
 fi
 if [ -d "$REPO_DIR/universal-sops" ]; then
   # Destructive replace (matches the root updater) so canonical deletions
