@@ -152,8 +152,10 @@ Common options:
                           a future value schedules the episode instead of publishing now
   --status <value>        force publish | draft | future (default derives from --release-date)
   --type <value>          public | premium | private (default public); ignored
-                          in proxy mode (excluded from the v2 payload contract;
-                          episode_type is hardcoded to "full" server-side)
+                          in proxy mode (excluded from the v2 payload contract)
+  --episode-type <value>  full | trailer | bonus (default full); the Podbean
+                          episode type. Pre-flight validated against the allowed
+                          set (U037) before any API call.
 
 Idempotency and state (Step 15 double-publish guard):
   --ledger <path>         job ledger json; if it already holds a non-null
@@ -204,6 +206,45 @@ content_type_for() {
     png|PNG)   printf 'image/png' ;;
     *)         printf 'application/octet-stream' ;;
   esac
+}
+
+# U037: Podbean episode-metadata field limits. Pre-flight bounds so an
+# over-length / invalid field is rejected HERE with a clear message, not by a
+# cryptic API rejection after the upload. The show-notes limit matches the
+# documented "kept under 3000 chars" contract (usage text, line ~150); the
+# episode-type set is the Podbean episode type vocabulary.
+readonly PODBEAN_MAX_DESCRIPTION_LEN="${PODBEAN_MAX_DESCRIPTION_LEN:-3000}"
+readonly PODBEAN_MAX_TITLE_LEN="${PODBEAN_MAX_TITLE_LEN:-200}"
+readonly PODBEAN_EPISODE_TYPES="full trailer bonus"
+
+# validate_episode_metadata <title> <description> <episode_type>
+#   Pre-flight bounds/content checks run BEFORE any Podbean API call. Dies with
+#   a clear message on:
+#     - show notes (description) longer than PODBEAN_MAX_DESCRIPTION_LEN;
+#     - title longer than PODBEAN_MAX_TITLE_LEN;
+#     - an episode type outside PODBEAN_EPISODE_TYPES (full/trailer/bonus).
+#   Returns 0 (proceeds) when every field is within bounds. Never makes a network
+#   call. Lengths are counted in characters (wc -m), matching the "chars" contract.
+validate_episode_metadata() {
+  local title="$1" description="$2" episode_type="${3:-full}"
+  local desc_len title_len
+
+  desc_len="$(printf '%s' "$description" | wc -m | tr -d ' ')"
+  if [ "$desc_len" -gt "$PODBEAN_MAX_DESCRIPTION_LEN" ]; then
+    die "pre-flight: show notes are ${desc_len} chars, over the Podbean limit of ${PODBEAN_MAX_DESCRIPTION_LEN} — shorten the --description before publishing (the API would reject this)"
+  fi
+
+  title_len="$(printf '%s' "$title" | wc -m | tr -d ' ')"
+  if [ "$title_len" -gt "$PODBEAN_MAX_TITLE_LEN" ]; then
+    die "pre-flight: episode title is ${title_len} chars, over the Podbean limit of ${PODBEAN_MAX_TITLE_LEN} — shorten the --title before publishing (the API would reject this)"
+  fi
+
+  case " $PODBEAN_EPISODE_TYPES " in
+    *" $episode_type "*) : ;;  # allowed episode type
+    *) die "pre-flight: episode type '${episode_type}' is not allowed — must be one of:$(printf ' %s' $PODBEAN_EPISODE_TYPES) (the API would reject this)" ;;
+  esac
+
+  return 0
 }
 
 # Extract a value from a JSON document supplied on stdin. Args are a key path
@@ -402,7 +443,7 @@ build_proxy_payload() {
   python3 -c '
 import json, sys
 (podcast_id, last_name, email, first_name, title, description, audio_url,
- image_url, publish_date, idem_key, speaker, source) = sys.argv[1:13]
+ image_url, publish_date, idem_key, speaker, source, episode_type) = sys.argv[1:14]
 d = {
     "contract_version": "2",
     "podcast_id": podcast_id,
@@ -414,7 +455,7 @@ d = {
     "image_url": image_url,
     "publish_date": publish_date,
     "idempotency_key": idem_key,
-    "episode_type": "full",
+    "episode_type": episode_type,
     "explicit": "clean",
     "source": source,
 }
@@ -425,7 +466,8 @@ if speaker:
 print(json.dumps(d))
 ' "$PODBEAN_PODCAST_ID" "$PODCAST_CLIENT_LAST_NAME" "$PODCAST_CLIENT_EMAIL" \
   "${PODCAST_CLIENT_FIRST_NAME:-}" "$FINAL_TITLE" "$DESCRIPTION" "$AUDIO_URL" \
-  "$IMAGE_URL" "$PROXY_PUBLISH_DATE" "$JOB_ID" "${SPEAKER:-}" "skill58-step15"
+  "$IMAGE_URL" "$PROXY_PUBLISH_DATE" "$JOB_ID" "${SPEAKER:-}" "skill58-step15" \
+  "${EPISODE_TYPE:-full}"
 }
 
 # proxy_request URL BODY: POST BODY to URL with the shared header token. Sets
@@ -457,6 +499,7 @@ proxy_request() {
 # ------------------------------------------------------------- argument parse --
 AUDIO=""; TITLE=""; COVER=""; SPEAKER=""; DESCRIPTION=""
 RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
+EPISODE_TYPE="full"   # U037: Podbean episode type (full|trailer|bonus), pre-flight validated
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
 TEST_RUN=0; DRY_RUN=0
 AUDIO_URL=""; IMAGE_URL=""   # publish-proxy only (S58-U14)
@@ -473,6 +516,7 @@ while [ $# -gt 0 ]; do
     --release-date)  RELEASE_DATE="${2:-}"; shift 2 ;;
     --status)        STATUS_OVERRIDE="${2:-}"; shift 2 ;;
     --type)          EP_TYPE="${2:-}"; shift 2 ;;
+    --episode-type)  EPISODE_TYPE="${2:-}"; shift 2 ;;
     --ledger)        LEDGER="${2:-}"; shift 2 ;;
     --job-id)        JOB_ID="${2:-}"; shift 2 ;;
     --state-writer)  STATE_WRITER="${2:-}"; shift 2 ;;
@@ -596,6 +640,13 @@ if [ -n "$STATUS_OVERRIDE" ]; then
 fi
 
 log "plan: status=${PUBLISH_STATUS} type=${EP_TYPE} title=$(jstr "$FINAL_TITLE")"
+
+# U037: PRE-FLIGHT METADATA BOUNDS CHECK. Validates the episode metadata against
+# Podbean's field limits BEFORE any API call (proxy or broker/local), so an
+# over-length show-notes/title or an invalid episode type is rejected HERE with a
+# clear message instead of a cryptic API rejection after the upload. Dies on a
+# violation; proceeds silently when every field is within bounds.
+validate_episode_metadata "$FINAL_TITLE" "$DESCRIPTION" "$EPISODE_TYPE"
 
 if [ "$TEST_RUN" = "1" ]; then
   emit_result "{\"status\":\"test-skipped\",\"reason\":\"test_flag\",\"idempotent_skip\":false,\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS")}"
