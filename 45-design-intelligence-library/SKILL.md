@@ -26,7 +26,7 @@ Skill 45 ships a **Design Intelligence Unit (DIU) library** — a knowledge syst
 
 1. **Analyze images** across 12 style dimensions (render, composition, subject, color, grading, lighting, typography, layering, subject-background, negative space, workflow, unity).
 2. **Extract transferable style** — separate content from aesthetic DNA so the style card works for any new subject.
-3. **Write style cards** in three tiers (SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 chars), calibrated to real API limits.
+3. **Write style cards** in three tiers (SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 chars), calibrated to real API limits.
 4. **Generate style-faithful images** via 7 endpoints (GPT-Image 2, Nano Banana 2, Seedream 4.5, Ideogram V3, Wan 2.7), routed per category and model-fitness rules.
 5. **Analyze decks** as systems (not slides) and run **Style Rotation Engine** — deterministic multi-slide generation with rhythm constraints and cohesion.
 6. **Execute identity-locked personal photo shoots** — real-person imagery with consent gates, identity preservation, and surgical retouching (Seedream 4.5 Edit).
@@ -177,7 +177,7 @@ The gates above are no longer prose-only. `scripts/diu_validator.py` (Python std
 
 | Gate | Command | Enforces | Fail exit |
 |---|---|---|---|
-| **Prompt-length caps** | `diu_validator.py prompt-caps --tier {SHORT\|MEDIUM\|LONG} --prompt-file P` | SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 chars (MODEL-SPECS tier table). Over-cap ⇒ fall back a tier, never silently truncate. | 3 (`AF-DIU-PROMPT-CAP`) |
+| **Prompt-length caps** | `diu_validator.py prompt-caps --tier {SHORT\|MEDIUM\|LONG} --prompt-file P` | SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 chars (MODEL-SPECS tier table). Over-cap ⇒ fall back a tier, never silently truncate. | 3 (`AF-DIU-PROMPT-CAP`) |
 | **DIU routing interlock** | `diu_validator.py route-check --deck-kind K` | SOP-DIU-611 §D.1 coded hard stop: audience/webinar/funnel/sales/virtual-event decks CANNOT run on the Rotation Engine — route to Presentations. | 2 (`AF-DIU-ROUTING-INTERLOCK`) |
 | **Consent + minor + PII gate** | `diu_validator.py consent-check --identity-file IDENTITY.md` | PHOTO-SHOOT-SOP §1 fail-closed: real-person likeness needs documented+dated consent, an attested-adult subject (Minors = HARD NO), and an at-rest-protected biometric store. Unconfirmed ⇒ do not generate. | 4 (`AF-DIU-CONSENT`) |
 | **Fidelity receipt + 3-strike** | `diu_validator.py fidelity --run-dir R --card-id ID --scores-file S` | TEST-PROTOCOL §5: avg ≥4.0 AND no dim <3 AND zero hard-rule violations; appends a receipt; 3 consecutive fails on one dimension ⇒ escalate to CDO. | 3 (fail) / 5 (`AF-DIU-3-STRIKE` escalate) |

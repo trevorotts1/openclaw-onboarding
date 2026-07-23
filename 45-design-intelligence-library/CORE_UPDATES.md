@@ -64,7 +64,7 @@ Add this section to TOOLS.md under the GRAPHICS DEPARTMENT / DESIGN TOOLS:
 - **INDEX.md + style cards + identity profiles** = box-owned, persisted across updates
 
 **Key vocabulary:**
-- **Style Card**: reusable 3-tier prompt (SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤18,000 chars) describing an image's transferable aesthetic
+- **Style Card**: reusable 3-tier prompt (SHORT ≤500 / MEDIUM ≤2,800 / LONG ≤19,000 chars) describing an image's transferable aesthetic
 - **Style ID**: unique identifier (FB-001, SI-015, etc.) used to look up style cards in INDEX
 - **Identity Lock Block**: mandatory prompt block for personal photo shoots; preserves skin tone, facial structure, age exactly
 - **Style Rotation Engine**: deterministic multi-slide generation for decks; varies flex variables while maintaining family cohesion

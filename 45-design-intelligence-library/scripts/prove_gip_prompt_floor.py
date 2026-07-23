@@ -212,7 +212,7 @@ def _self_test() -> int:
                      None, False, False))
     fixtures.append(("empty", "medium", "   \n  \t ", None, False, False))
 
-    # Over the cap -> length fail (a real distinct body padded past 18,000).
+    # Over the cap -> length fail (a real distinct body padded past 19,000).
     over = rich_text_bearing(n_sentences=180)
     fixtures.append(("over-cap", "text_bearing_long", over, None, False, False))
 

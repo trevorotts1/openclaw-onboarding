@@ -72,7 +72,7 @@ Build all three prompt tiers (SHORT / MEDIUM / LONG) following the structures de
 After writing each tier, **count the actual character length** (do not estimate) and write it explicitly in the card's character-count annotation line:
 - SHORT: must be <= 500 characters.
 - MEDIUM: must be <= 2,800 characters. This is the default production tier. **Flag any MEDIUM draft exceeding 2,500 characters as a warning.**
-- LONG: must be <= 18,000 characters (GPT-Image-2 and Nano Banana 2 only; document model constraint in the card).
+- LONG: must be <= 19,000 characters (GPT-Image-2 and Nano Banana 2 only; document model constraint in the card).
 
 Seedream 4.5 hard cap is 3,000 characters per prompt; flag any tier intended for Seedream that exceeds 2,800 characters with a prominent warning in the card.
 

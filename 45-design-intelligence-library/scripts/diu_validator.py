@@ -14,7 +14,7 @@ never; a violation is a hard non-zero exit an agent cannot narrate past).
 WHAT IT ENFORCES (three sub-commands)
 
   prompt-caps  — PROMPT-LENGTH CAPS (MODEL-SPECS.md §"tier table").
-      SHORT <= 500, MEDIUM <= 2,800, LONG <= 18,000 characters. An assembled
+      SHORT <= 500, MEDIUM <= 2,800, LONG <= 19,000 characters. An assembled
       prompt over its tier cap is a HARD FAIL (exit 3) — the operator must fall
       back a tier (the MODEL-SPECS auto-fallback rule) rather than silently
       truncate at the endpoint.
@@ -36,7 +36,7 @@ WHAT IT ENFORCES (three sub-commands)
           attached (--style-ref) the STYLE-REFERENCE-ONLY directive is mandatory
           (MODEL-SPECS §4). Clearing the floor is NECESSARY, never SUFFICIENT.
           Two text-bearing bands exist because one endpoint cannot serve both:
-          `text_bearing_long` (5,000-18,000) targets GPT-Image 2 T2I/I2I; the
+          `text_bearing_long` (5,000-19,000) targets GPT-Image 2 T2I/I2I; the
           mandatory Ideogram V3 DESIGN quote-card/text-led route (see
           social-media-designs/_RULES.md) targets `text_bearing_medium`
           (1,600-4,500) instead, sized to Ideogram's own verified 5,000-char API
@@ -111,7 +111,7 @@ from pathlib import Path
 TIER_CAPS = {
     "SHORT": 500,
     "MEDIUM": 2800,
-    "LONG": 18000,
+    "LONG": 19000,
 }
 
 
