@@ -41,13 +41,14 @@ conversational cache). Both happened in June 2026 — see *Why this exists* belo
    publishes the new `gemini-index.sqlite.gz` GitHub Release asset. Commit the
    bumped manifest. **Clients DOWNLOAD this asset; they never recompute it.**
 
-5. **qmd awareness** — the client's qmd `coaching-personas` collection is refreshed
-   automatically by `reconcile_qmd_persona_index` (in
-   `shared-utils/provision-persona-index.sh`) on every install/update. It repoints
-   the collection at the CANONICAL personas dir and re-indexes (BM25 only —
-   furnace-safe). **Never** let it point at the skill-bundled folder
-   (`~/.openclaw/skills/22-…/personas`), which is frozen at the build snapshot.
-   This is the break that made one client answer "no new personas since March."
+5. **Client-side persona awareness** — persona inventory is resolved from the
+   canonical SET file (`persona-categories.json`) via `persona-selector-v2.py`
+   (`list_available_personas`). Clients get the updated SET + prebuilt Gemini
+   index on every install/update (via `provision-persona-index.sh`). The
+   persona-selector builds its candidate universe from the SET keys — the
+   canonical source that is always in lockstep with the published asset. This
+   prevents the June 2026 break where a client answered "no new personas since
+   March" because inventory came from a stale cache instead of the SET.
 
 6. **Re-wire** — on update, `reconcile_persona_assets` writes a
    `.persona-set-version` sentinel and exports `_SET_CHANGED=1` when the SET grew;
@@ -111,7 +112,7 @@ python3 23-ai-workforce-blueprint/scripts/qc-assert-repo-consistency.py --only c
 ```
 
 The pre-commit hook and the `update-skills.sh` pre-roll path run this guard
-automatically; qmd refresh + re-wire happen on the client's next update. See
+automatically; SET delivery + re-wire happen on the client's next update. See
 `22-…/PIPELINE.md` → *Adding books → publishing personas to the fleet* for the
 full runbook. If you must operate the underlying asset step directly (advanced),
 `shared-utils/prebuilt-index/build-and-publish.sh --persona-id <slug>` still
@@ -127,9 +128,9 @@ client's agent still answered *"no new personas since March."* Three independent
 breaks produced that one symptom:
 
 1. **BREAK 1** — the agent answered persona-inventory questions from a frozen
-   `qmd` cache pointed at the skill-bundled folder, which no pipeline step ever
-   refreshed. Closed by `reconcile_qmd_persona_index` (artifact 5) + the N16 hard
-   rule (*inventory answers from `persona-categories.json`, never qmd*).
+   conversational cache pointed at the skill-bundled folder, which no pipeline
+   step ever refreshed. Closed by the N16 hard rule (*inventory answers ONLY
+   from `persona-categories.json`, the SET file — the matcher's ground truth*).
 2. **BREAK 2** — the SET had no per-box version stamp, so drift was silent and
    un-rewired. Closed by the `.persona-set-version` sentinel + `_SET_CHANGED`
    re-wire (artifacts 2 & 6).
