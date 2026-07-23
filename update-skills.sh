@@ -4599,6 +4599,9 @@ PYEOF
   #            "onboarding content applied; Command Center needs attention",
   #            NOT as a failed update — re-running the updater will not clear
   #            it until the CC install log is addressed.
+  #   exit 0 = deferred bootstrap (no slug, or missing company/email) — not an
+  #            infrastructure failure; the box is not yet provisioned for CC and
+  #            exits 0 so fleet drivers do not treat it as a broken update.
   # ----------------------------------------------------------
   # ----------------------------------------------------------
   # TRAP-3 (second-Command-Center guard): _CC_DIR was hardcoded to the SINGLE
