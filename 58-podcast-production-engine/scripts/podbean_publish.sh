@@ -789,14 +789,46 @@ else
   fi
 fi
 
-# ------------------------------------------------------- episode numbering ----
-log "reading current episode count for numbering"
-http_request GET "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}&offset=0&limit=1" \
-  || die "could not list episodes for numbering (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
-EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
+# ----------------------------------------------- episode numbering (U034) ----
+# U034: Before assigning an episode number, query the Podbean API for the
+# server-side episode count and verify it against the local roster. If the
+# roster and server disagree, refuse to publish to prevent duplicate
+# numbering. The API query carries its own timeout (default 30s), separate
+# from the global CURL_MAX_TIME so this lightweight check is never held
+# hostage by a slow upload or token-mint.
+readonly CURL_EPISODE_COUNT_TIMEOUT="${CURL_EPISODE_COUNT_TIMEOUT:-30}"
+log "querying Podbean API for server-side episode count (timeout ${CURL_EPISODE_COUNT_TIMEOUT}s)"
+ep_count_resp="$(curl -sS --max-time "$CURL_EPISODE_COUNT_TIMEOUT" \
+  "${PODBEAN_API}/episodes?access_token=${ACCESS_TOKEN}&offset=0&limit=1" \
+  -w $'\n%{http_code}' 2>/dev/null || true)"
+EP_COUNT_CODE="${ep_count_resp##*$'\n'}"
+EP_COUNT_BODY="${ep_count_resp%$'\n'*}"
+ep_count_resp=""
+if [[ ! "$EP_COUNT_CODE" =~ ^2[0-9][0-9]$ ]]; then
+  die "could not list episodes for numbering (HTTP ${EP_COUNT_CODE:-000}); refusing to publish without verified server-side episode count (idempotency guard)"
+fi
+EPISODE_COUNT="$(printf '%s' "$EP_COUNT_BODY" | json_field count)"
 [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
+EP_COUNT_BODY=""
+log "server-side episode count: ${EPISODE_COUNT}"
+
+# U034: Idempotency guard -- if the caller supplied an EXPECTED_EPISODE_COUNT
+# (from the local roster), compare it with the server-side count. A mismatch
+# means the local roster is out of sync with Podbean, and publishing now
+# would risk a duplicate episode number. Refuse to publish (non-zero exit)
+# and log the discrepancy so a human can reconcile before retrying.
+if [ -n "${EXPECTED_EPISODE_COUNT:-}" ]; then
+  if ! [[ "$EXPECTED_EPISODE_COUNT" =~ ^[0-9]+$ ]]; then
+    die "EXPECTED_EPISODE_COUNT is set but is not a non-negative integer: ${EXPECTED_EPISODE_COUNT}"
+  fi
+  if [ "$EXPECTED_EPISODE_COUNT" -ne "$EPISODE_COUNT" ]; then
+    die "EPISODE-COUNT MISMATCH: local roster expects ${EXPECTED_EPISODE_COUNT} episodes, but Podbean server reports ${EPISODE_COUNT}. Refusing to publish -- the roster is out of sync. Reconcile the discrepancy before retrying."
+  fi
+  log "local roster count (${EXPECTED_EPISODE_COUNT}) matches server count (${EPISODE_COUNT}); proceeding"
+fi
+
 EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
-log "existing episode count ${EPISODE_COUNT}; this episode is number ${EPISODE_NUMBER}"
+log "this episode will be number ${EPISODE_NUMBER}"
 
 # ------------------------------------------------- authorize and upload media --
 # uploadAuthorize returns a presigned url plus the file_key that becomes the
