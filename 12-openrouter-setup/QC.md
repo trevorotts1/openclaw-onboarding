@@ -1,5 +1,5 @@
 # QC Checklist - Skill 12: OpenRouter Setup
-**Version:** v6.5.9
+**Version:** v6.5.11
 
 Run this after installation. Every section must pass before you mark OpenRouter complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `openrouter-setup-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.5.9`
+- [ ] `skill-version.txt` returns `v6.5.11`
 - [ ] `openrouter-setup-full.md` is non-empty
 
 ---
