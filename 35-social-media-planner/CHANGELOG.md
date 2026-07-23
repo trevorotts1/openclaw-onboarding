@@ -1,5 +1,20 @@
 # Changelog - Social Media Planner (Skill 35)
 
+## v2.9.17 - 2026-07-23 — Fix: Google Sheet image rendering — =IMAGE() formulas + row/column sizing
+
+### Fixed
+- **Image URLs now render as inline images, not raw text.** All image cells (Day tabs, platform tabs, Blog Featured Image, Podcast Cover Image) MUST use `=IMAGE("url", 1)` formula syntax. Raw URLs display as unclickable text and defeat the visual planner purpose.
+- **Row/column sizing applied to all image tabs.** Image columns resized to 108px wide (79px for 9:16), data rows to 133px tall (153px for 9:16) so thumbnails display at full size. Applied via Google Sheets API batchUpdate.
+- **Documentation updated:** SKILL.md Media Delivery Contract, INSTALL.md webhook docs, CORE_UPDATES.md webhook payload, playbook.md Section 25 step-by-step instructions — all now explicitly require =IMAGE() formulas and document the sizing requirement.
+
+### Changed
+- `social-planner-row-append` webhook payload: image cells sent as `=IMAGE("url", 1)` formula strings, not raw URLs.
+- Webhook applies `valueInputOption: USER_ENTERED` so formula strings are evaluated by Google Sheets.
+- Webhook resizes target image column and data row after append.
+
+### Version
+- skill-version.txt v2.9.16 -> v2.9.17; SKILL.md frontmatter version v2.9.16 -> v2.9.17 (re-versioned from v2.9.15 to avoid collision with the already-bumped v2.9.16 on disk; same collision-handling precedent as prior entries).
+
 ## v2.9.14 - 2026-07-16 — Skill 6 blended-persona-kanban v2, U98 (E4-1/v1 U28): blend GOVERNS the content voice — per-day blend via U5 scoped bundles
 
 ### Added

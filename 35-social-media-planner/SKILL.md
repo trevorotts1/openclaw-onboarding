@@ -11,7 +11,7 @@ description: Multi-agent content publishing engine that researches, creates, pro
 # run via OpenClaw subagents. It is NOT the skill name and OpenClaw never
 # registers from it.
 pipeline_id: content-publishing-engine
-version: v2.9.16
+version: v2.9.17
 author: Stefanie
 created_date: 2026-04-14
 ---
@@ -258,6 +258,12 @@ All finished media (assembled Reels, podcast MP3s, image sets) MUST be delivered
      }"
    ```
    The webhook appends directly to the **Weekly Overview** tab of the client's Google Sheet using the operator service account (no client credentials required). If the webhook call fails: log to `~/.openclaw/data/skill35/content-log.jsonl` and retry on next cycle. **Do NOT call `social-planner-sheet-create` here** — that webhook is for first-time sheet creation only.
+
+   **CRITICAL: Image URLs must use =IMAGE() formula, not raw text.** When logging image URLs to any tab (Day tabs, platform tabs, Images tab, Blog/Podcast cover images), the value MUST be wrapped as `=IMAGE("https://...", 1)` so Google Sheets renders the image inline. Raw URLs display as unclickable text. Example:
+   ```json
+   "Image URL": "=IMAGE(\"https://assets.cdn.filesafe.space/.../image.png\", 1)"
+   ```
+   The webhook writes this formula directly to the cell. Mode 1 fits the image within the cell while maintaining aspect ratio.
 5. **Reply to owner** with the CDN link only — never attach the raw file to Telegram.
 
 **Size threshold:** Any file over 10 MB MUST go through GHL CDN delivery. Files under 10 MB MAY be attached directly only if the operator explicitly configures `direct_attach_under_10mb=true` in MEMORY.md; default is always link delivery.

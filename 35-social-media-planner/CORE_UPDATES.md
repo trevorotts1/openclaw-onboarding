@@ -189,6 +189,26 @@ Podcast episodes are published via n8n webhook.
 }
 ```
 
+### Google Sheet Row-Append Webhook (Skill 35)
+
+**Endpoint:** `POST https://main.blackceoautomations.com/webhook/social-planner-row-append`
+
+**Payload:**
+```json
+{
+  "sheetId": "[from MEMORY.md: content_sheet_id]",
+  "row": {
+    "Week Of": "Week of Jun 9 - Jun 15, 2026",
+    "Theme of the Week": "[theme]",
+    "Core Content": "[title]",
+    "Image URL": "=IMAGE(\"https://assets.cdn.filesafe.space/.../image.png\", 1)",
+    "Notes": "[CDN link]"
+  }
+}
+```
+
+**CRITICAL:** Image cells MUST use `=IMAGE("url", 1)` formula syntax, NOT raw URLs. Raw URLs display as unclickable text. The webhook writes values with `valueInputOption: USER_ENTERED` so formula strings are evaluated by Google Sheets into inline images. The webhook also resizes image columns to 108px wide and data rows to 133px tall for proper thumbnail display.
+
 ---
 
 ## Add to MEMORY.md

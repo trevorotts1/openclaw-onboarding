@@ -2252,6 +2252,34 @@ Image cell sizing by ratio:
 - 2:3 images: Column width 14 (~101px display), Row height 100pt (~133px). Full image visible, proportionally smaller.
 - 1:1 images: Column width 14 (~101px display), Row height 100pt (~133px). Full image visible, proportionally smaller.
 
+**Row/Column Sizing (CRITICAL):**
+When the AI writes image URLs using =IMAGE() formulas, it MUST also resize the rows and columns to display the images properly. Raw URLs in cells that are too small display as truncated text. The AI MUST call the Google Sheets API batchUpdate method to set:
+- Image columns: pixelSize 108 (for 4:5, 2:3, 1:1) or 79 (for 9:16)
+- Data rows containing images: pixelSize 133 (for 4:5, 2:3, 1:1) or 153 (for 9:16)
+
+Example batchUpdate request for a Day tab (column D, rows 2-21):
+```json
+{
+  "requests": [
+    {
+      "updateDimensionProperties": {
+        "range": {"sheetId": 123, "dimension": "COLUMNS", "startIndex": 3, "endIndex": 4},
+        "properties": {"pixelSize": 108},
+        "fields": "pixelSize"
+      }
+    },
+    {
+      "updateDimensionProperties": {
+        "range": {"sheetId": 123, "dimension": "ROWS", "startIndex": 1, "endIndex": 21},
+        "properties": {"pixelSize": 133},
+        "fields": "pixelSize"
+      }
+    }
+  ]
+}
+```
+The n8n webhook (`social-planner-row-append`) should apply this sizing automatically when it detects an =IMAGE() formula in the payload. If the webhook does not handle sizing, the AI MUST call the Sheets API directly after appending the row.
+
 **Video Links:**
 Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
 ```
@@ -2263,13 +2291,14 @@ Google Sheets cannot embed playable video. The AI inserts a clickable hyperlink:
 2. Determine the next available row on each worksheet.
 3. Write "Week of [start date] - [end date], [year]" in Column A.
 4. For each platform sheet, write all 7 days of content across the columns: Day 1 post in column B, Day 1 comment in column C, Day 1 image in column D, Day 2 post in column E, etc.
-5. Insert image URLs using =IMAGE() for inline display.
-6. Write content at 100-120 characters per cell (2-3 lines visible). The AI writes the full content to the cell, but the fixed row height naturally hides anything beyond the preview. Click the cell to see full text in the formula bar.
-7. Insert video links using =HYPERLINK().
-8. For the Images master sheet, write all 3 ratios per day across columns (4:5 URL, 4:5 Preview, 2:3 URL, 2:3 Preview, 9:16 URL, 9:16 Preview) for each of the 7 days.
-9. For carousel sheets, write one row per week with slide content across columns.
-10. For Email, Blog, Podcast sheets (one entry per week), write one row with all fields.
-11. Update the Weekly Overview with the theme and status of each production phase.
+5. **Insert image URLs using =IMAGE("url", 1) for inline display — NEVER write a raw URL as text.** Every image cell value must be a formula string starting with `=IMAGE(`. Raw URLs render as unclickable text and defeat the purpose of the visual planner.
+6. **Resize image columns and data rows** via batchUpdate (see "Row/Column Sizing" above) so the =IMAGE() thumbnails display at full size. Image columns → 108px wide (79px for 9:16); data rows → 133px tall (153px for 9:16). Apply to ALL tabs that contain images, not just one.
+7. Write content at 100-120 characters per cell (2-3 lines visible). The AI writes the full content to the cell, but the fixed row height naturally hides anything beyond the preview. Click the cell to see full text in the formula bar.
+8. Insert video links using =HYPERLINK().
+9. For the Images master sheet, write all 3 ratios per day across columns (4:5 URL, 4:5 Preview, 2:3 URL, 2:3 Preview, 9:16 URL, 9:16 Preview) for each of the 7 days. Preview columns use =IMAGE(); URL columns may stay as text.
+10. For carousel sheets, write one row per week with slide content across columns.
+11. For Email, Blog, Podcast sheets (one entry per week), write one row with all fields. Blog "Featured Image" and Podcast "Cover Image" use =IMAGE().
+12. Update the Weekly Overview with the theme and status of each production phase.
 
 ---
 
