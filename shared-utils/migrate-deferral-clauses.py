@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Walk every existing zero-human-company workspace and append the appropriate
-Persona Governance Override clause to any SOUL.md or IDENTITY.md that doesn't
+Persona Governance Framework clause to any SOUL.md or IDENTITY.md that doesn't
 have it yet.
 
 Idempotent — safe to run multiple times. Reports counts of patches applied.
@@ -19,32 +19,25 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from detect_platform import get_openclaw_paths
 
-
-STANDARD_CLAUSE_MARKER = "## Persona Governance Override"
+STANDARD_CLAUSE_MARKER = "## Persona Governance Framework"
 CEO_CLAUSE_MARKER = "## Persona Governance — CEO Mode"
-
 
 STANDARD_CLAUSE = """
 
-## Persona Governance Override
+## Persona Governance Framework
 
 When you are assigned a persona for a task, that persona governs HOW you perform
 the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
 task come from the persona — not from this file.
 
-Act AS IF you ARE the persona for the duration of the task. Use their frameworks.
-Use their phrasing. Hold their standards. Make the calls they would make.
-
-This file is your fallback identity. It governs only when no persona is assigned.
-When a persona is present, this file is subordinate to it.
+This file is your primary identity. It governs when no persona is assigned. When a persona is present, use its frameworks as a tool -- not as a replacement for your own judgment or accountability.
 
 **Order of operations when picking up a task:**
-1. Check for an assigned persona. If present → act AS that persona.
+1. Check for an assigned persona. If present → apply that persona's frameworks and standards as a reference, not as an identity.
 2. If no persona is assigned → use this file (SOUL.md / IDENTITY.md / how-to.md).
 3. In all cases: honor the company's mission (workspace SOUL.md) and the owner's
    stated values (workspace USER.md).
 """
-
 
 CEO_CLAUSE = """
 
@@ -65,11 +58,9 @@ You are the protector of the mission. Personas are tools you use, not authoritie
 you serve.
 """
 
-
 def is_ceo_file(file_path: Path) -> bool:
     """A file belongs to the CEO if its path includes 'master-orchestrator'."""
     return "master-orchestrator" in str(file_path).lower()
-
 
 def migrate_file(file_path: Path, dry_run: bool = False) -> str:
     """Returns one of: 'patched', 'already_has_clause', 'wrong_clause_fixed', 'error'."""
@@ -105,7 +96,6 @@ def migrate_file(file_path: Path, dry_run: bool = False) -> str:
         file_path.write_text(content, encoding="utf-8")
     return "patched"
 
-
 def migrate_workspace(zhc_root: Path, dry_run: bool = False) -> dict:
     counts = {
         "patched": 0,
@@ -140,9 +130,8 @@ def migrate_workspace(zhc_root: Path, dry_run: bool = False) -> dict:
                 print(f"    {tag}{result.upper()} ({kind}): {file_path.relative_to(zhc_root)}")
     return counts
 
-
 def main():
-    parser = argparse.ArgumentParser(description="Append Persona Governance Override clause to all SOUL.md and IDENTITY.md files in zero-human-company workspaces. Idempotent.")
+    parser = argparse.ArgumentParser(description="Append Persona Governance Framework clause to all SOUL.md and IDENTITY.md files in zero-human-company workspaces. Idempotent.")
     parser.add_argument("--dry-run", action="store_true", help="Report what would change without writing.")
     args = parser.parse_args()
 
@@ -165,7 +154,6 @@ def main():
     print("=" * 60)
 
     return 1 if counts["error"] > 0 else 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

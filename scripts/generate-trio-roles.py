@@ -71,30 +71,23 @@ BUDDY_EXTRA_DEPTS = {
     "presentations": ("Presentations", "Director of Presentations"),
 }
 
-
 def da_role_slug(dept: str) -> str:
     return f"devils-advocate-—-{dept}"
-
 
 def da_filename(dept: str) -> str:
     return f"devils-advocate-—-{dept}.md"
 
-
 def research_role_slug(dept: str) -> str:
     return f"deep-research-specialist-{dept}"
-
 
 def research_filename(dept: str) -> str:
     return f"deep-research-specialist-{dept}.md"
 
-
 def qc_role_slug(dept: str) -> str:
     return f"qc-specialist-{dept}"
 
-
 def qc_filename(dept: str) -> str:
     return f"qc-specialist-{dept}.md"
-
 
 def make_da_content(dept: str, dept_name: str, director_title: str) -> str:
     return f"""\
@@ -155,8 +148,6 @@ is 21% (Mailchimp 2024 benchmark). The plan breaks at 21%."
 When you are assigned a persona for a task, that persona governs HOW you perform
 the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
 task come from the persona -- not from this file.
-
-Act AS IF you ARE the persona for the duration of the task.
 
 This file is your fallback identity. It governs only when no persona is assigned.
 
@@ -307,7 +298,6 @@ exception: when a challenge requires a multi-hour research project to validate,
 create a linked task routed to the department's Deep Research Specialist.
 """
 
-
 def make_research_content(dept: str, dept_name: str, director_title: str) -> str:
     return f"""\
 # Deep Research Specialist — {dept_name}
@@ -356,9 +346,6 @@ research may surface risks, the DA role structures challenges of strategic decis
 When you are assigned a persona for a task, that persona governs HOW you perform
 the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
 task come from the persona -- not from this file.
-
-Act AS IF you ARE the persona for the duration of the task. Use their frameworks.
-Use their phrasing. Hold their standards. Make the calls they would make.
 
 This file is your fallback identity. It governs only when no persona is assigned.
 
@@ -588,7 +575,6 @@ Specialist may request a sub-specialist task for a specific investigation track
 (e.g., a dedicated competitive analysis sub-task). Route via the {director_title}.
 """
 
-
 def make_qc_content(dept: str, dept_name: str, director_title: str) -> str:
     return f"""\
 # QC Specialist — {dept_name}
@@ -638,8 +624,6 @@ work of the specialist you are reviewing.
 When you are assigned a persona for a task, that persona governs HOW you perform
 the work. Your beliefs, voice, decision logic, quality bar, and judgment for that
 task come from the persona -- not from this file.
-
-Act AS IF you ARE the persona for the duration of the task.
 
 This file is your fallback identity. It governs only when no persona is assigned.
 
@@ -837,14 +821,12 @@ flags the gap to the {director_title} and requests specialist involvement before
 scoring.
 """
 
-
 # Canonical PART 5 department-Healer template (the QUAD's 4th role). Lives in the
 # role library; we read it and fill {{DEPARTMENT_NAME}} per department so every
 # dept's embedded Healer is byte-identical to the canonical template (the
 # never-twice immune system). See THE_HEALER_AND_BUGS_DEPARTMENT.md PART 5 and
 # SYSTEM-INTEGRATION-STRATEGY.md C3 ("extend the trio to a QUAD").
 HEALER_TEMPLATE = ROLE_LIB / "healer" / "dept-healer-template.md"
-
 
 def make_healer_content(dept: str, dept_name: str, director_title: str) -> str:
     """Instantiate the PART 5 department-Healer template for one department.
@@ -863,14 +845,11 @@ def make_healer_content(dept: str, dept_name: str, director_title: str) -> str:
     tmpl = HEALER_TEMPLATE.read_text()
     return tmpl.replace("{{DEPARTMENT_NAME}}", dept_name)
 
-
 def healer_role_slug(dept: str) -> str:
     return f"healer-{dept}"
 
-
 def healer_filename(dept: str) -> str:
     return f"healer-{dept}.md"
-
 
 def needs_healer_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
@@ -878,21 +857,17 @@ def needs_healer_file(dept_dir: Path) -> bool:
             return False
     return True
 
-
 def bb_role_slug(dept: str) -> str:
     return f"brainstorming-buddy-{dept}"
 
-
 def bb_filename(dept: str) -> str:
     return f"brainstorming-buddy-{dept}.md"
-
 
 def needs_bb_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
         if "brainstorming-buddy" in f.name.lower():
             return False
     return True
-
 
 def make_bb_content(dept: str, dept_name: str, director_title: str) -> str:
     """Instantiate the canonical Brainstorming Buddy template for one department.
@@ -920,13 +895,11 @@ def make_bb_content(dept: str, dept_name: str, director_title: str) -> str:
             .replace("{{DEPT_QUESTION_BANK}}", banks["rendered_question_bank"])
             .replace("{{DEPT_BUILD_SPECIALISTS}}", banks["build_specialists_str"]))
 
-
 def needs_da_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
         if "devil" in f.name.lower():
             return False
     return True
-
 
 def needs_research_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
@@ -934,13 +907,11 @@ def needs_research_file(dept_dir: Path) -> bool:
             return False
     return True
 
-
 def needs_qc_file(dept_dir: Path) -> bool:
     for f in dept_dir.iterdir():
         if f.name.lower().startswith("qc") or "qc-specialist" in f.name.lower():
             return False
     return True
-
 
 def main():
     parser = argparse.ArgumentParser(description="Generate missing trio (or quad) role files")
@@ -1163,7 +1134,6 @@ def main():
         print(f"  {e}")
 
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())
