@@ -654,7 +654,7 @@ run_publishing_worker() {
   done
   posts_json+="]"
   local created="$planned"
-  python3 - "$receipts_file" "$connected" "$planned" "$created" "$posts_json" <<'PYEOF'
+  python3 - "$receipts_file" "$connected" "$planned" "$created" "$posts_json" >&2 <<'PYEOF'
 import json, sys
 rp = sys.argv[1]
 d = {
@@ -665,10 +665,8 @@ d = {
 }
 with open(rp, "w") as f:
     json.dump(d, f, indent=2)
-print(rp)
 PYEOF
-  log "publishing worker: wrote $created per-post receipt(s) to $receipts_file"
-  echo "$receipts_file"
+  printf '%s\n' "$receipts_file"
 }
 
 # ============================================================

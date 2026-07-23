@@ -50,7 +50,8 @@ class ExecuteTests(unittest.TestCase):
     def test_journal_has_entries(self):
         _run(self.ht, self.wt, "--execute")
         j = (Path(self.wt) / "journal.log").read_text()
-        self.assertIn("per-post receipt", j)
+        self.assertIn("phase-1 queued", j)
+        self.assertIn("phase-5 queued", j)
 
 class ProofTests(unittest.TestCase):
     def setUp(self):
@@ -113,7 +114,11 @@ class MutationTests(unittest.TestCase):
     def test_execute_exit_mutation(self):
         self.assertEqual(_run(self.ht, self.wt, "--execute").returncode, 0, "GREEN")
         bk = SCRIPT.read_text()
-        mut = bk.replace("exit 0", "exit 99", 1)
+        # Target the exit in the execute branch by replacing the unique log-line
+        # that immediately precedes it
+        mut = bk.replace(
+            'log "EXECUTE mode: all posts created with proof. Cycle complete."',
+            'log "EXECUTE mode: all posts created with proof. Cycle complete."\n    exit 99')
         self.assertNotEqual(bk, mut)
         try:
             SCRIPT.write_text(mut)
