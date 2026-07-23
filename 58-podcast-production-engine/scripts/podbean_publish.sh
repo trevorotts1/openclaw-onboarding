@@ -630,45 +630,7 @@ fi
 [ -n "$TITLE" ] || { usage; die "--title is required"; }
 [ -f "$AUDIO" ] || die "audio file not found: $AUDIO"
 if [ -n "$COVER" ] && [ ! -f "$COVER" ]; then die "cover file not found: $COVER"; fi
-# ------------------------------------------------------------------ metadata bounds --
-# U037: Pre-flight bounds checks for Podbean field limits.
-# Reject over-length or invalid fields before the API call so the operator
-# gets a clear actionable message instead of a cryptic API rejection.
-readonly PODBEAN_SHOW_NOTES_MAX_LENGTH=4000
-readonly PODBEAN_EPISODE_TYPE_VALID=(full trailer bonus)
-
-# Episode type (--type) validated against the allowed set of display types
-# (public|premium|private, the Podbean visibility field) plus episode types
-# (full|trailer|bonus, the Podbean episode_type field).
-_EP_TYPE_VALID_PATTERN="^(public|premium|private|full|trailer|bonus)$"
-if [[ ! "$EP_TYPE" =~ $_EP_TYPE_VALID_PATTERN ]]; then
-  die "--type must be one of public, premium, private, full, trailer, bonus; got '${EP_TYPE}'"
-fi
-
-# Show notes / description length: Podbean rejects content over 4000 chars.
-# Check before any API call so over-length is caught early with a clear message.
-if [ "${#DESCRIPTION}" -gt "$PODBEAN_SHOW_NOTES_MAX_LENGTH" ]; then
-  die "show notes / description is ${#DESCRIPTION} characters; Podbean limit is ${PODBEAN_SHOW_NOTES_MAX_LENGTH} characters. Trim the description before publishing."
-fi
-
-# Episode type vs Podbean API type: if --type is one of full|trailer|bonus it
-# is an episode_type, which maps to the Podbean episode_type field. For
-# broker/local mode the script sends the value as the API 'type' field, which
-# also accepts the episode_type values (Podbean's API maps episode_type to type
-# when set). In proxy mode episode_type is hardcoded to "full" server-side and
-# this flag is excluded from the payload, so an episode_type value here is
-# informational only (passed through for proxy metadata). No action is needed
-# beyond validation; the value flows through to the API call unchanged.
-case "$EP_TYPE" in
-  full|trailer|bonus)
-    log "pre-flight: episode type '${EP_TYPE}' passed bounds check (episode_type)"
-    ;;
-  public|premium|private)
-    log "pre-flight: episode type '${EP_TYPE}' passed bounds check (visibility type)"
-    ;;
-esac
-
-log "pre-flight: description length ${#DESCRIPTION} chars (limit ${PODBEAN_SHOW_NOTES_MAX_LENGTH}) — passed"
+case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, premium, or private" ;; esac
 
 # Credentials are checked for presence only; values are never printed.
 # The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.

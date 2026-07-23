@@ -39,6 +39,7 @@
 
 import argparse
 import hashlib
+import hmac
 import json
 import os
 import re
@@ -55,6 +56,10 @@ from datetime import datetime, timedelta, timezone
 DEFAULT_DB_REL = os.path.join(".openclaw", "podcast-engine", "podcast-engine.db")
 DEFAULT_LEDGER_REL = os.path.join(".openclaw", "state", "podcast-engine", "intake-ledger")
 DEFAULT_JOBINDEX_REL = os.path.join(".openclaw", "state", "podcast-engine", "job-index")
+
+# U035: key name for the integrity checksum embedded in each roster/ledger record.
+# SHA-256 of the canonical JSON (sorted keys, no whitespace) excluding this field.
+ROSTER_CHECKSUM_KEY = "_checksum"
 
 QUEUE_HOLD_DAYS = 60          # credit-out queue maximum hold (SPEC credit_out_queue)
 PII_TOMBSTONE_DAYS = 90       # scrub PII this long after the terminal event (Section 10.2)
@@ -772,6 +777,29 @@ def _atomic_write(path: str, text: str) -> None:
         os.chmod(path, 0o600)
     except OSError:
         pass
+
+
+def verify_checksum(raw: str) -> None:
+    """U035: Verify the integrity checksum embedded in a roster/ledger record.
+    Raises ValueError if the checksum is present and does not match.
+    Pre-U035 records without a _checksum field pass silently.
+    """
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        raise ValueError("ledger record is not valid JSON")
+    if not isinstance(data, dict):
+        raise ValueError("ledger record is not a JSON object")
+    cs = data.get(ROSTER_CHECKSUM_KEY)
+    if cs is None:
+        return
+    obj = {k: v for k, v in data.items() if k != ROSTER_CHECKSUM_KEY}
+    canonical = json.dumps(obj, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    actual = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if not hmac.compare_digest(cs, actual):
+        raise ValueError(
+            f"ledger checksum MISMATCH: expected {cs[:16]}... got {actual[:16]}..."
+        )
 
 
 def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
