@@ -21,9 +21,10 @@ cat >> ~/.openclaw/skills/.pending-setup.md << 'EOF'
 - What is needed:
   - Fish Audio API key (sign up free at fish.audio, then go to fish.audio/app/api-keys)
   - Fish Audio Voice ID (set up your voice clone, then copy the model ID from the URL)
-- Resume at: Skill 30 (30-fish-audio-api-reference) INSTALL.md Step 4
+
 EOF
 ```
+Your agent
 
 Your agent will remind you to complete setup once you have your credentials.
 

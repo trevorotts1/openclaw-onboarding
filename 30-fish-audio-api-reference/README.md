@@ -2,8 +2,8 @@
 
 **What it does:** Installs the complete Fish Audio API reference into your master files and indexes it with Gemini Engine so your agent knows exactly how to make Fish Audio API calls - podcasts, phone calls, voice generation, and more.
 
-**Standalone:** Yes. Works without Skill 30 (Voice Call Plugin).
-**Required by:** Skill 30 (Voice Call Plugin).
+**Standalone:** Yes. This skill is self-contained.
+**Required by:** (none)
 
 **Start here:** Read `INSTALL.md` and follow every step in order.
 
