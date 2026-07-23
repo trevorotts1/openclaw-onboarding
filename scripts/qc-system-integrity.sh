@@ -1,5 +1,5 @@
 #!/bin/bash
-# qc-system-integrity.sh — v9.6.2
+# qc-system-integrity.sh — v9.7.0
 #
 # Executable runner for SYSTEM-DIAGNOSTIC-CHECKLIST.md.
 # Runs the 9 check sections + cross-cutting checks. Exits 0 only when all green.
@@ -7,7 +7,8 @@
 # Categories: 1=Interview, 2=Workforce, 3=Book-to-Persona, 4=Gemini, 5=Semantic,
 #             6=Keyword, 7=Tasks/Kanban, 8=Persona, 9=Agent linking, X=Cross-cutting.
 # Cross-cutting (X): X.7=PRD-1.10 migration, X.8=provider-capability invariants,
-#             X.9=Ollama provider platform standard (Mac local daemon vs VPS cloud).
+#             X.9=Ollama provider platform standard (Mac local daemon vs VPS cloud),
+#             X.15=anti-impersonation directives (U124).
 
 set -u  # NOT -e — we want to keep running after failures, then report all at the end
 
@@ -94,7 +95,7 @@ COMPANY_DIR=${COMPANY_DIR%/}
 
 echo
 blue "══════════════════════════════════════════════════"
-blue "  OpenClaw System Integrity Check — v9.6.2"
+blue "  OpenClaw System Integrity Check — v9.7.0"
 blue "══════════════════════════════════════════════════"
 echo "Platform:   $PLATFORM"
 echo "Workspace:  $WORKSPACE"
@@ -1031,6 +1032,43 @@ else
   yellow "  ⚠ X.14 qc-assert-platform-facts-stamped.sh not found — skipping platform-facts check"
   WARN=$((WARN+1))
   WARNINGS+=("X.14|qc-assert-platform-facts-stamped.sh missing|Update openclaw-onboarding to the version that ships W7.4")
+fi
+
+# ─── CHECK X.15: No impersonation directives in agent identity files (U124) ──
+echo
+blue "── CHECK X.15: Anti-impersonation directives (U124) ──"
+ANTI_IMPERSONATION_SCRIPT=""
+for _ai_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/qc-assert-no-impersonation-directives.sh" \
+  "$HOME/.openclaw/skills/scripts/qc-assert-no-impersonation-directives.sh" \
+  "/data/.openclaw/skills/scripts/qc-assert-no-impersonation-directives.sh"; do
+  [[ -f "$_ai_cand" ]] && ANTI_IMPERSONATION_SCRIPT="$_ai_cand" && break
+done
+if [[ -n "$ANTI_IMPERSONATION_SCRIPT" ]]; then
+  _ai_tmp=$(mktemp)
+  bash "$ANTI_IMPERSONATION_SCRIPT" > "$_ai_tmp" 2>&1
+  ANTI_IMPERSONATION_RC=$?
+  ANTI_IMPERSONATION_OUT=$(cat "$_ai_tmp"); rm -f "$_ai_tmp"
+  case "$ANTI_IMPERSONATION_RC" in
+    0)
+      green "  ✓ X.15 No impersonation directives found in repo"; PASS=$((PASS+1)) ;;
+    1)
+      red "  ✗ X.15 Impersonation directive(s) found — agents instructed to impersonate, contradicting platform anti-impersonation guarantee"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.15|Impersonation directive(s) in repo|Replace \"Act AS IF you ARE the persona\" + \"Persona Governance Override\" with anti-impersonation framework per U124")
+      while IFS= read -r _ailine; do
+        case "$_ailine" in
+          *"INVARIANT VIOLATED"*) red "    $_ailine" ;;
+        esac
+      done <<< "$ANTI_IMPERSONATION_OUT" ;;
+    *)
+      yellow "  ⚠ X.15 Anti-impersonation check could not run (rc=$ANTI_IMPERSONATION_RC)"; WARN=$((WARN+1))
+      WARNINGS+=("X.15|Anti-impersonation gate could not run|Ensure qc-assert-no-impersonation-directives.sh is present") ;;
+  esac
+else
+  yellow "  ⚠ X.15 qc-assert-no-impersonation-directives.sh not found — skipping anti-impersonation check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.15|qc-assert-no-impersonation-directives.sh missing|Update openclaw-onboarding to the version that ships U124")
 fi
 
 # ─── SUMMARY ─────────────────────────────────────────────────────────────────

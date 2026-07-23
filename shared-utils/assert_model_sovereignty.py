@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-assert_model_sovereignty.py — AF-MODEL-SOVEREIGNTY enforcement gate (PLAN.md §7).
+assert_model_sovereignty.py -- AF-MODEL-SOVEREIGNTY enforcement gate (PLAN.md SS7).
 
 The single assertion this gate enforces:
 
@@ -9,15 +9,15 @@ The single assertion this gate enforces:
     (a) non-null AND not the `openrouter/free` literal nor any bare "free" default
     (b) present in the client's available inventory
     (c) NOT in FORBIDDEN_PREFIXES (Anthropic)
-    (d) modality-appropriate (capabilities ⊇ required_modality)
+    (d) modality-appropriate (capabilities >= required_modality)
 
-  Otherwise the dispatch is BLOCKED and routed to needs_owner_input — NEVER
+  Otherwise the dispatch is BLOCKED and routed to needs_owner_input -- NEVER
   silently downgraded to a free/text model.
 
 This is the ONE place the gate logic lives. It is imported by:
   - the onboarding QC sweep (scripts/repair-model-sovereignty.sh, qc-system-integrity)
   - the Command Center runtime gate (mirrored in TypeScript as assertModelSovereignty;
-    the CC build consumes the SAME capability map + cascade rules — see PLAN.md §10
+    the CC build consumes the SAME capability map + cascade rules -- see PLAN.md SS10
     "remaining for CC repo").
 
 Usage (library):
@@ -32,7 +32,8 @@ Usage (CLI, for QC sweeps over a config / a single model):
     # exit 0 = sovereign/valid ; exit 3 = BLOCKED (with JSON verdict on stdout)
 
     python3 assert_model_sovereignty.py --scan-config ~/.openclaw/openclaw.json
-    # scans every agent model in the config; exit 3 if any offender found
+    # scans every agent model in the config + workspace/departments/SOUL.md;
+    # exit 3 if any offender found
 """
 
 import argparse
@@ -58,25 +59,25 @@ except Exception:  # noqa: BLE001
         sm = None  # type: ignore
 
 
-# ─── SK2-16 — canonical Anthropic / Claude model-id detector (one source) ─────
+# --- SK2-16 -- canonical Anthropic / Claude model-id detector (one source) ------
 # The SINGLE place the "is this an Anthropic model?" test lives. Skill 52
 # (Avatar Alchemist) previously carried FOUR divergent copies of this regex
 # (aa_qc_cert, aa_director tier-check + bypass-scan, aa_build_check) with
-# INCONSISTENT coverage — some missed the `anthropic.` dot route, some missed
+# INCONSISTENT coverage -- some missed the `anthropic.` dot route, some missed
 # bare `opus`/`sonnet`/`haiku`, some missed a bare `anthropic` provider token.
 # They now all defer to the two functions below so detection can never drift.
 #
 # Two inputs, two purpose-built matchers (same source of truth, no divergence):
-#   • is_anthropic_model(id)          — a DISCRETE model-id string (a config
+#   . is_anthropic_model(id)          -- a DISCRETE model-id string (a config
 #       field, a resolved model id, a cert verifier_model). STRICT: matches
 #       `anthropic` in any form (slash `anthropic/`, dot `anthropic.` /
 #       `us.anthropic.`, or bare), the whole `claude` family (claude, claude-3,
 #       claude-5, claude-opus/-sonnet/-haiku, future gens), AND the bare
 #       Anthropic model families opus / sonnet / haiku (word-bounded).
-#   • text_has_anthropic_model_id(t)  — scans FREE TEXT (a prompt .md, a
+#   . text_has_anthropic_model_id(t)  -- scans FREE TEXT (a prompt .md, a
 #       manifest .json) for a sneaked Anthropic model *id*. ID-SHAPED so it does
 #       NOT false-positive on prose or on compliance documentation that merely
-#       names the vendor or quotes the ban regex — e.g. a comment "the sole
+#       names the vendor or quotes the ban regex -- e.g. a comment "the sole
 #       Anthropic-Sonnet chain is removed per the client-path rule" or a manifest
 #       line 'G-NOANTHROPIC hard-fails any /anthropic|claude/i id'. Only a real
 #       id-shaped token trips it: `anthropic/<m>`, `anthropic.<m>`,
@@ -95,7 +96,7 @@ def is_anthropic_model(model_id) -> bool:
 
     Fail-closed by contract: an EMPTY/None id returns False here (it is 'not an
     Anthropic id'), but an empty *resolved* model id is separately a hard failure
-    at each caller's gate — callers must reject a missing id in their own right
+    at each caller's gate -- callers must reject a missing id in their own right
     (they do). This function only answers the Anthropic-family question.
     """
     return bool(_ANTHROPIC_MODEL_ID_RE.search(str(model_id or "")))
@@ -142,12 +143,12 @@ def assert_model_sovereignty(
     # (a) non-null + not a free/bare default
     if not model_id or not str(model_id).strip():
         return verdict(False, "NULL_MODEL",
-                       "Resolved model is null/empty — dispatch BLOCKED, routed to owner.")
+                       "Resolved model is null/empty -- dispatch BLOCKED, routed to owner.")
     mid = str(model_id).strip()
     if mid.lower() in sm.FREE_SENTINELS:
         return verdict(False, "FREE_DEFAULT",
-                       f"Resolved model is the free sentinel '{mid}' — never a valid "
-                       f"resolution (PLAN.md §7). Dispatch BLOCKED.")
+                       f"Resolved model is the free sentinel '{mid}' -- never a valid "
+                       f"resolution (PLAN.md SS7). Dispatch BLOCKED.")
 
     # (c) not forbidden (Anthropic)
     if sm._is_forbidden(mid):
@@ -167,7 +168,7 @@ def assert_model_sovereignty(
     if inv_ids and mid not in inv_ids:
         return verdict(False, "NOT_IN_INVENTORY",
                        f"Resolved model '{mid}' is not in the client's available "
-                       f"inventory. BLOCKED (PLAN.md §7b).")
+                       f"inventory. BLOCKED (PLAN.md SS7b).")
 
     # (d) modality-appropriate (HARD)
     if not sm.model_has_modality(mid, rm):
@@ -179,13 +180,166 @@ def assert_model_sovereignty(
                                f"modality '{rm}' satisfied).")
 
 
-def scan_config(openclaw_json_path=None):
+# ---------------------------------------------------------------------------
+# U084 / U123 -- department-agent SOUL.md scan + strip
+# ---------------------------------------------------------------------------
+# The gate previously only scanned openclaw.json agents.  Eight of 23 non-master
+# agents had their Anthropic provider pin in SOUL.md files under
+# workspace/departments/ -- a directory the gate never read.  These functions
+# extend the gate to also walk that tree and detect (and optionally repair)
+# Anthropic model-id references in free text.
+
+
+def _resolve_workspace_departments(openclaw_json_path=None):
+    """Return the workspace departments directory path, or None if not found.
+
+    Resolution order mirrors the gateway + detect_platform: per-agent main
+    workspace override -> agents.defaults.workspace -> platform-default
+    (<root>/workspace/departments).
+    """
+    if sm is None:
+        return None
+    cfg = sm._load_openclaw_config(openclaw_json_path)
+    ws = None
+    agents = cfg.get("agents", {})
+    for a in agents.get("list", []) or []:
+        if isinstance(a, dict) and a.get("id") == "main" and a.get("workspace"):
+            ws = os.path.expanduser(a["workspace"])
+            break
+    if not ws:
+        dws = agents.get("defaults", {}).get("workspace")
+        if dws:
+            ws = os.path.expanduser(dws)
+    if not ws:
+        if os.path.isdir("/data/.openclaw"):
+            ws = "/data/.openclaw/workspace"
+        else:
+            ws = os.path.expanduser("~/.openclaw/workspace")
+    dept = os.path.join(ws, "departments")
+    return dept if os.path.isdir(dept) else None
+
+
+def _scan_soul_file_text(soul_path):
+    """Scan a single SOUL.md for Anthropic model-id references in free text.
+
+    Returns a list of {line, match} dicts for each offending line, or [] if clean.
+    Uses text_has_anthropic_model_id (the narrower text scanner) to avoid
+    false-positives on compliance prose that merely documents the ban.
+    """
+    hits = []
+    try:
+        with open(soul_path, "r", encoding="utf-8", errors="replace") as f:
+            for lineno, line in enumerate(f, 1):
+                if text_has_anthropic_model_id(line):
+                    hits.append({"line": lineno, "match": line.strip()[:120]})
+    except (OSError, UnicodeDecodeError):
+        pass
+    return hits
+
+
+def scan_agent_soul_files(openclaw_json_path=None):
+    """Walk workspace/departments for SOUL.md files and scan each for Anthropic
+    model-id references.  Returns (offenders: list, scanned: list).
+
+    An offender is a department agent whose SOUL.md contains at least one
+    id-shaped Anthropic model reference.  Clean agents are recorded as
+    {"agent": "<dept-slug>", "model": null, "source": "..."}.
+
+    If the departments directory does not exist, returns empty lists (no-op).
+    """
+    dept_root = _resolve_workspace_departments(openclaw_json_path)
+    if not dept_root:
+        return [], []
+
+    offenders = []
+    scanned = []
+
+    try:
+        entries = sorted(os.listdir(dept_root))
+    except OSError:
+        return [], []
+
+    for slug in entries:
+        soul_path = os.path.join(dept_root, slug, "SOUL.md")
+        if not os.path.isfile(soul_path):
+            continue
+        hits = _scan_soul_file_text(soul_path)
+        scanned.append({"agent": slug, "model": None, "source": soul_path})
+        if hits:
+            offenders.append({
+                "agent": slug,
+                "source": soul_path,
+                "code": "FORBIDDEN_SOUL_TEXT",
+                "hits": hits,
+                "reason": (
+                    f"dept-{slug}/SOUL.md contains {len(hits)} Anthropic "
+                    f"model-id reference(s) in free text"
+                ),
+            })
+
+    return offenders, scanned
+
+
+def _strip_anthropic_from_soul_file(soul_path):
+    """Remove Anthropic model-id references from a SOUL.md file in-place.
+
+    Each line that matches text_has_anthropic_model_id is rewritten by
+    replacing the offending token with a safe placeholder.  A timestamped
+    .bak-soul-sweep backup is created before mutation.  Returns the count
+    of lines mutated, or 0 if clean/unreadable.
+    """
+    try:
+        with open(soul_path, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+    except (OSError, UnicodeDecodeError):
+        return 0
+
+    mutated = 0
+    safe = []
+    for line in lines:
+        if text_has_anthropic_model_id(line):
+            # Replace id-shaped Anthropic references with a safe placeholder.
+            # The agent's model is resolved by openclaw.json at dispatch time;
+            # in-line model hints in SOUL.md are decoration only.
+            fixed = re.sub(
+                r"anthropic[/.][^\s\"']+", "client-provider/model",
+                line, flags=re.IGNORECASE,
+            )
+            fixed = re.sub(
+                r"\bclaude-[^\s\"']+", "client-provider/model",
+                fixed, flags=re.IGNORECASE,
+            )
+            safe.append(fixed)
+            mutated += 1
+        else:
+            safe.append(line)
+
+    if not mutated:
+        return 0
+
+    import shutil
+    import datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    bak = soul_path + ".bak-soul-sweep-" + ts
+    shutil.copy2(soul_path, bak)
+    with open(soul_path, "w", encoding="utf-8") as f:
+        f.writelines(safe)
+    return mutated
+
+
+def scan_config(openclaw_json_path=None, include_soul_files=True):
     """Scan every agent model in a config for sovereignty offenders.
 
     Returns (offenders: list, scanned: list). An offender is any agent whose
     primary model fails the gate at the baseline `text` modality. (Per-task
     modality checks happen at dispatch; this is the build/QC-time floor that
     catches null / free-default / forbidden / not-in-inventory.)
+
+    When include_soul_files is True, also walks workspace/departments for
+    SOUL.md files and scans each for Anthropic model-id references.  Closes
+    the U084 / U123 gap: the gate previously only scanned openclaw.json and
+    missed the 8 of 23 non-master agents whose Anthropic provider pin lived
+    in their SOUL.md file.
     """
     if sm is None:
         raise RuntimeError(
@@ -216,9 +370,16 @@ def scan_config(openclaw_json_path=None):
     for agent_id, model_field in entries:
         primary = _primary(model_field)
         scanned.append({"agent": agent_id, "model": primary})
-        v = assert_model_sovereignty(primary, inventory=inventory, required_modality="text")
-        if not v["ok"]:
-            offenders.append({"agent": agent_id, **v})
+        if primary:
+            v = assert_model_sovereignty(primary, inventory=inventory, required_modality="text")
+            if not v["ok"]:
+                offenders.append({"agent": agent_id, **v})
+
+    # U084 / U123: also scan department-agent SOUL.md files
+    if include_soul_files:
+        soul_offenders, soul_scanned = scan_agent_soul_files(openclaw_json_path)
+        offenders.extend(soul_offenders)
+        scanned.extend(soul_scanned)
 
     return offenders, scanned
 
@@ -229,11 +390,53 @@ def main():
     p.add_argument("--required-modality", default="text")
     p.add_argument("--config", default=None, help="Path to openclaw.json (inventory source)")
     p.add_argument("--scan-config", default=None,
-                   help="Scan every agent model in this config for offenders")
+                   help="Scan every agent model in this config for offenders "
+                        "(now includes dept-*/SOUL.md by default per U123)")
+    p.add_argument("--scan-soul", default=None,
+                   help="Scan ONLY department-agent SOUL.md files (provide "
+                        "openclaw.json path for workspace resolution)")
+    p.add_argument("--strip-soul", default=None,
+                   help="Remove Anthropic model-id refs from all dept-*/SOUL.md "
+                        "under workspace/departments (provide openclaw.json path). "
+                        "Creates .bak-soul-sweep-<ts> backups before writing.")
+    p.add_argument("--no-soul", action="store_true",
+                   help="With --scan-config, skip the SOUL.md scan "
+                        "(opt-out of U084/U123 extended scan)")
     args = p.parse_args()
 
+    if args.strip_soul:
+        dept_root = _resolve_workspace_departments(args.strip_soul)
+        if not dept_root:
+            print(json.dumps({"stripped": 0, "error": "departments dir not found"}))
+            sys.exit(2)
+        total = 0
+        details = []
+        try:
+            for slug in sorted(os.listdir(dept_root)):
+                sp = os.path.join(dept_root, slug, "SOUL.md")
+                if not os.path.isfile(sp):
+                    continue
+                n = _strip_anthropic_from_soul_file(sp)
+                if n:
+                    total += n
+                    details.append({"agent": slug, "mutated_lines": n})
+        except OSError:
+            pass
+        print(json.dumps({"stripped": total, "details": details}, indent=2))
+        sys.exit(0 if total == 0 else 3)
+
+    if args.scan_soul:
+        offenders, scanned = scan_agent_soul_files(args.scan_soul)
+        print(json.dumps({
+            "scanned": len(scanned),
+            "offenders": offenders,
+            "clean": not offenders,
+        }, indent=2))
+        sys.exit(0 if not offenders else 3)
+
     if args.scan_config:
-        offenders, scanned = scan_config(args.scan_config)
+        offenders, scanned = scan_config(args.scan_config,
+                                         include_soul_files=not args.no_soul)
         print(json.dumps({
             "scanned": len(scanned),
             "offenders": offenders,
@@ -250,7 +453,7 @@ def main():
         print(json.dumps(v, indent=2))
         sys.exit(0 if v["ok"] else 3)
 
-    p.error("provide either --model or --scan-config")
+    p.error("provide --model, --scan-config, --scan-soul, or --strip-soul")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 **Department:** Focus & Completion Specialist (27-focus-completion)
 **Version:** 1.0
 **Last updated:** 2026-06-02
-**Generated for:** {{COMPANY_NAME}}
+**Generated for:** {{the company}}
 
 ---
 
