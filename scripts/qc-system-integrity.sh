@@ -14,6 +14,11 @@ set -u  # NOT -e — we want to keep running after failures, then report all at 
 # U073 (STAGE 1): shared assert/warn/verdict helpers. The verdict at the end of
 # this script routes through qc_verdict (behavior-preserving — QC_FAIL_ON_WARN
 # is NOT set here, so warnings stay non-fatal until STAGE 2 promotes them).
+#
+# U076 (STAGE 2): three warnings promoted to failure path (symlink drift,
+# stranded legacy trees, missing Mission Control DB). Two "not-applicable"
+# warnings converted to explicit N/A results via na_result(). N/A counter and
+# NARESULTS array added for transparent reporting.
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 # shellcheck source=../lib-qc-shared.sh
 . "$ROOT/lib-qc-shared.sh"
@@ -21,8 +26,10 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PASS=0
 FAIL=0
 WARN=0
+NA=0
 FAILURES=()
 WARNINGS=()
+NARESULTS=()
 
 red()    { printf "\033[31m%s\033[0m\n" "$1"; }
 green()  { printf "\033[32m%s\033[0m\n" "$1"; }
@@ -52,6 +59,15 @@ warn_check() {
     WARN=$((WARN+1))
     WARNINGS+=("$id|$desc|$remedy")
   fi
+}
+
+# U076: na_result — prereq not met, this check is not applicable.
+# This is an EXPLICIT non-result, not a warning — no WARN counter bump.
+na_result() {
+  local id="$1"; local desc="$2"; local reason="${3:-}"
+  echo "  - $id  $desc — N/A ($reason)"
+  NA=$((NA+1))
+  NARESULTS+=("$id|$desc|$reason")
 }
 
 # ─── platform detect ─────────────────────────────────────────────────────────
@@ -143,7 +159,7 @@ fi
 check "2.2" "Each dept has a director subfolder (00-*/)" \
   "[ -d \"$COMPANY_DIR/departments\" ] && [ \$(find \"$COMPANY_DIR/departments\" -maxdepth 2 -type d -name '00-*' | wc -l) -gt 0 ]" \
   "Re-run build-workforce.py; create_role_workspace() failed"
-# 2.3 — symlink check
+# 2.3 — symlink check (U076: mixed/drift promoted to FAIL; missing dept -> N/A)
 if [ -d "$COMPANY_DIR/departments" ]; then
   COPIED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   SYMLINKED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
@@ -153,13 +169,13 @@ if [ -d "$COMPANY_DIR/departments" ]; then
     red "  ✗ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (pre-v9.6.1 bug)"; FAIL=$((FAIL+1))
     FAILURES+=("2.3|Files copied instead of symlinked|Re-run build-workforce.py — v9.6.1+ uses symlinks")
   elif [ "$COPIED" = "0" ] && [ "$SYMLINKED" = "0" ]; then
-    yellow "  ⚠ 2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"; WARN=$((WARN+1))
+    na_result "2.3" "No AGENTS/TOOLS/USER.md found in any dept" "build may be incomplete — no files to check"
   else
-    yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (drift detected)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Mixed symlinks and copies|Delete the copies, re-run build")
+    red "  ✗ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected)"; FAIL=$((FAIL+1))
+    FAILURES+=("2.3|Mixed symlinks and copies (drift)|Delete the copies, re-run build")
   fi
 else
-  yellow "  ⚠ 2.3  No departments folder to check"; WARN=$((WARN+1))
+  na_result "2.3" "No departments folder to check" "company not built yet (CHECK 1.1 owns this)"
 fi
 # 2.4 — dept directors in agents.list[]
 # H2: inject via env var — OCJSON path must not be shell-expanded inside a Python string literal
@@ -299,6 +315,7 @@ if [ -d "$COMPANY_DIR/departments" ]; then
 fi
 
 # 2.14 — legacy tree detection (misrouted workspace tree pattern)
+# U076: promoted from WARN to FAIL — a stranded legacy tree is genuine breakage.
 LEGACY_FOUND=""
 for cand in /data/clawd/departments "$HOME/clawd/departments"; do
   if [ -d "$cand" ]; then
@@ -315,8 +332,8 @@ done
 if [ -z "$LEGACY_FOUND" ]; then
   green "  ✓ 2.14 No legacy /clawd/departments tree present"; PASS=$((PASS+1))
 else
-  yellow "  ⚠ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; WARN=$((WARN+1))
-  WARNINGS+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
+  red "  ✗ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; FAIL=$((FAIL+1))
+  FAILURES+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
 fi
 
 # ─── CHECK 3: Book-to-Persona ────────────────────────────────────────────────
@@ -436,7 +453,9 @@ if [ -n "$CC_DB" ]; then
     fi
   fi
 else
-  yellow "  ⚠ 7.0  Mission Control DB not found — Skill 32 may not be installed"; WARN=$((WARN+1))
+  # U076: promoted from WARN to FAIL — missing Mission Control DB is genuine breakage.
+  red "  ✗ 7.0  Mission Control DB not found — Skill 32 may not be installed"; FAIL=$((FAIL+1))
+  FAILURES+=("7.0|Mission Control DB not found|Install Skill 32 command-center-setup")
 fi
 warn_check "7.5" "Kanban dashboard reachable at localhost:4000" \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000 2>/dev/null)\" = '200' ]" \
@@ -1039,6 +1058,7 @@ blue "════════════════════════�
 blue "  SUMMARY"
 blue "═══════════════════════════════════════════════════"
 echo "  Passed:   $PASS"
+[ "$NA" -gt 0 ] && echo "  N/A:      $NA" || echo "  N/A:      $NA"
 [ "$WARN" -gt 0 ] && yellow "  Warnings: $WARN" || echo "  Warnings: $WARN"
 [ "$FAIL" -gt 0 ] && red "  Failures: $FAIL" || echo "  Failures: $FAIL"
 echo
@@ -1051,6 +1071,18 @@ if [ "$FAIL" -gt 0 ]; then
     remedy=$(echo "$f" | cut -d'|' -f3)
     echo "  [$id] $desc"
     [ -n "$remedy" ] && echo "       → $remedy"
+  done
+  echo
+fi
+
+if [ "$NA" -gt 0 ]; then
+  echo "N/A DETAILS:"
+  for n in "${NARESULTS[@]}"; do
+    id=$(echo "$n" | cut -d'|' -f1)
+    desc=$(echo "$n" | cut -d'|' -f2)
+    reason=$(echo "$n" | cut -d'|' -f3)
+    echo "  [$id] $desc"
+    [ -n "$reason" ] && echo "       → $reason"
   done
   echo
 fi

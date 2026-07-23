@@ -102,6 +102,10 @@ readonly EXIT_BLOCKED_STANDING=3
 # (terminal: bad credentials, rejected request, usage error) so the engine can
 # re-queue the job instead of treating a Podbean outage as a permanent failure.
 readonly EXIT_TRANSIENT=5
+# U034: episode-count mismatch between local roster and Podbean server. Distinct
+# from exit 1 (generic terminal) so the caller can detect "roster has drifted,
+# reconcile before retrying" without parsing JSON.
+readonly EXIT_EPISODE_COUNT_MISMATCH=6
 
 # ------------------------------------------------------------------ logging --
 # stderr is the operator channel. Secret values are never passed here.
@@ -201,6 +205,16 @@ Idempotency and state (Step 15 double-publish guard):
   --job-id <id>           records the permalink via podcast_state.py output ...
   --state-writer <path>   path to podcast_state.py (default: sibling in this dir)
   --out <path>            also write the json result to this file
+
+Server-side idempotency (U034):
+  --roster-episode-count <n>  local roster's episode tally for this channel.
+                          Before assigning an episode number the script queries
+                          the Podbean API for the server-side episode count and
+                          compares it to this value. If they disagree the script
+                          refuses to publish (exit code 6) and logs the
+                          discrepancy. Omitting this flag disables the guard
+                          (backward-compatible), but numbering is vulnerable to
+                          roster drift in that case.
 
 Safety:
   --test                  test run: validate and short-circuit BEFORE any Podbean
@@ -524,6 +538,7 @@ RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
 TEST_RUN=0; DRY_RUN=0
 AUDIO_URL=""; IMAGE_URL=""   # publish-proxy only (S58-U14)
+ROSTER_EPISODE_COUNT=""      # U034: server-side episode-count idempotency guard
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -541,6 +556,7 @@ while [ $# -gt 0 ]; do
     --job-id)        JOB_ID="${2:-}"; shift 2 ;;
     --state-writer)  STATE_WRITER="${2:-}"; shift 2 ;;
     --out)           OUT="${2:-}"; shift 2 ;;
+    --roster-episode-count) ROSTER_EPISODE_COUNT="${2:-}"; shift 2 ;;
     --test)          TEST_RUN=1; shift ;;
     --dry-run)       DRY_RUN=1; shift ;;
     -h|--help)       usage; exit 0 ;;
@@ -878,6 +894,28 @@ if ! http_request GET "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}&offset
 fi
 EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
 [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
+RESP_BODY=""
+
+# U034: server-side episode-count idempotency guard.
+# When the caller supplies --roster-episode-count, verify the Podbean server-side
+# count matches the local roster before assigning a number. If they disagree the
+# roster has drifted and publishing could produce a duplicate episode number.
+# Refuse with a distinct exit code so the engine can surface the discrepancy to
+# the operator without parsing JSON.
+if [ -n "$ROSTER_EPISODE_COUNT" ]; then
+  if ! [[ "$ROSTER_EPISODE_COUNT" =~ ^[0-9]+$ ]]; then
+    die "--roster-episode-count must be a non-negative integer; got: ${ROSTER_EPISODE_COUNT}"
+  fi
+  if [ "$ROSTER_EPISODE_COUNT" -ne "$EPISODE_COUNT" ]; then
+    log "EPISODE COUNT MISMATCH: roster says ${ROSTER_EPISODE_COUNT} episodes exist on this channel, but the Podbean server reports ${EPISODE_COUNT}. The roster has drifted; publishing is blocked to prevent a duplicate episode number. Reconcile the roster (podcast_state.py recount or manual correction) and retry."
+    emit_result "{\"status\":\"blocked\",\"reason\":\"episode_count_mismatch\",\"roster_count\":${ROSTER_EPISODE_COUNT},\"server_count\":${EPISODE_COUNT},\"channel_id\":$(jstr \"${PODBEAN_PODCAST_ID}\")}"
+    exit "$EXIT_EPISODE_COUNT_MISMATCH"
+  fi
+  log "server-side episode count ${EPISODE_COUNT} matches roster (${ROSTER_EPISODE_COUNT}); guard passed"
+fi
+
+EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
+[[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
 EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
 log "existing episode count ${EPISODE_COUNT}; this episode is number ${EPISODE_NUMBER}"
 
@@ -927,7 +965,6 @@ fi
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
-  --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"
   --data-urlencode "title=${FINAL_TITLE}"
   --data-urlencode "content=${DESCRIPTION}"
   --data-urlencode "status=${PUBLISH_STATUS}"
