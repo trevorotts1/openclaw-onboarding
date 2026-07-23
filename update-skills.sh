@@ -2164,6 +2164,35 @@ _ocs_tree_in_sync() {
     else
       echo "  ✓ shared-utils refreshed in $SKILLS_DIR/shared-utils"
     fi
+
+    # U006: ORPHAN DETECTION. The merge-copy above is ADDITIVE (trailing "/."):
+    # it creates/overwrites but never deletes, so a file canonical has RETIRED
+    # stays on the box forever (the _ocs_tree_compare check above only asserts
+    # src ⊆ dest and treats dest supersets as fine). Run the orphan reconciler in
+    # REPORT-ONLY mode (no --apply) so a retired file is LOGGED, never silently
+    # left invisible and never moved during an automated update. Non-fatal: an
+    # orphan report must never withhold the stamp or fail the update. The
+    # operator can quarantine with:
+    #   python3 shared-utils/reconcile-orphan-shared-utils.py \
+    #     --src <canonical>/shared-utils --dest "$SKILLS_DIR/shared-utils" --apply
+    _SU_ORPHAN_TOOL="$EXTRACTED_DIR/shared-utils/reconcile-orphan-shared-utils.py"
+    if [ -f "$_SU_ORPHAN_TOOL" ]; then
+      if python3 "$_SU_ORPHAN_TOOL" \
+           --src "$EXTRACTED_DIR/shared-utils" \
+           --dest "$SKILLS_DIR/shared-utils" \
+           --quarantine-root "$SKILLS_DIR" >&2; then
+        : # clean (no orphans) — nothing to report
+      else
+        _SU_ORPHAN_RC=$?
+        # rc 10 = orphans found (dry-run); anything else is a tool problem. Both
+        # are advisory here — never fail the update on an orphan report.
+        if [ "$_SU_ORPHAN_RC" -eq 10 ]; then
+          echo "  ! shared-utils has ORPHAN files canonical no longer ships (see report above; run the reconciler with --apply to quarantine)"
+        else
+          echo "  ! shared-utils orphan reconciler exited ${_SU_ORPHAN_RC} (advisory; update continues)"
+        fi
+      fi
+    fi
   fi
 
   # v14.24.0: Deliver universal-sops/ SOP cluster (Skills 47/48 source tree).

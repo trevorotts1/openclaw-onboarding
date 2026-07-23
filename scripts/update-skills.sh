@@ -405,6 +405,32 @@ if [ -d "$REPO_DIR/shared-utils" ]; then
   # anything that legitimately rewrites a shared-utils file at install time
   # would otherwise block the stamp fleet-wide. Absence still gates.
   [ -n "$_OC_TREE_DIFFERS" ] && show_info "shared-utils: post-copy content differences:${_OC_TREE_DIFFERS}" || true
+
+  # U006: ORPHAN DETECTION. The merge-copy above is ADDITIVE (trailing "/."): it
+  # creates/overwrites but never deletes, so a file canonical has RETIRED stays
+  # on the box forever (the _ocs_tree_compare check only asserts src ⊆ dest).
+  # Run the orphan reconciler in REPORT-ONLY mode (no --apply) so a retired file
+  # is LOGGED, never silently invisible and never moved during an automated
+  # update. Non-fatal: an orphan report must never fail the update. Quarantine
+  # manually with:
+  #   python3 shared-utils/reconcile-orphan-shared-utils.py \
+  #     --src "$REPO_DIR/shared-utils" --dest "$SKILLS_DIR/shared-utils" --apply
+  _SU_ORPHAN_TOOL="$REPO_DIR/shared-utils/reconcile-orphan-shared-utils.py"
+  if [ -f "$_SU_ORPHAN_TOOL" ]; then
+    if python3 "$_SU_ORPHAN_TOOL" \
+         --src "$REPO_DIR/shared-utils" \
+         --dest "$SKILLS_DIR/shared-utils" \
+         --quarantine-root "$SKILLS_DIR" >&2; then
+      : # clean (no orphans)
+    else
+      _SU_ORPHAN_RC=$?
+      if [ "$_SU_ORPHAN_RC" -eq 10 ]; then
+        show_info "shared-utils: ORPHAN files canonical no longer ships (run the reconciler with --apply to quarantine)"
+      else
+        show_info "shared-utils: orphan reconciler exited ${_SU_ORPHAN_RC} (advisory; update continues)"
+      fi
+    fi
+  fi
 fi
 if [ -d "$REPO_DIR/universal-sops" ]; then
   # Destructive replace (matches the root updater) so canonical deletions
