@@ -10,10 +10,12 @@
 #  IDEMPOTENT + DEDUPING:
 #   - Reads `openclaw cron list` before registering.
 #   - If ONE healthy (non-error) skill35-weekly-theme entry
-#     exists with sessionTarget=main, exits 0 (nothing to do).
-#   - If DUPLICATE entries exist, or a stale/erroring entry
-#     exists, deletes the bad ones then re-registers a clean
-#     single entry.
+#     exists with sessionTarget=main AND the intended schedule,
+#     exits 0 (nothing to do).
+#   - If DUPLICATE entries exist, a stale/erroring entry exists,
+#     OR the existing entry is on the WRONG schedule, deletes the
+#     bad one(s) then re-registers a clean single entry (U129: a
+#     wrong-day job is no longer reported healthy).
 #
 #  FURNACE-SAFE:
 #   - Schedule: 0 8 * * 6  (Saturday 8 AM only — weekly)
@@ -63,17 +65,39 @@ _list_output="$(openclaw cron list 2>/dev/null || true)"
 # Count existing entries with this cron name
 _existing_count="$(echo "$_list_output" | grep -c "$CRON_NAME" || true)"
 
+# Normalize a cron expression for comparison: collapse whitespace runs to a single
+# space and trim leading/trailing space, so "0  8 * * 6" compares equal to "0 8 * * 6".
+_normalize_cron() { printf '%s' "$1" | tr -s '[:space:]' ' ' | sed -e 's/^ //' -e 's/ $//'; }
+_intended_norm="$(_normalize_cron "$CRON_EXPR")"
+
 if [ "$_existing_count" -eq 1 ]; then
-  # Exactly one entry — check if it is healthy (main target, non-error, correct schedule)
+  # Exactly one entry — check if it is healthy: main target, non-error, AND on the
+  # intended schedule. U129: the old check verified only row count + session target,
+  # so an entry scheduled for the WRONG day (e.g. Monday "0 8 * * 1") satisfied both
+  # checks and the weekly cycle silently ran on the wrong day. Parse the schedule out
+  # of the existing row (a 5-field cron expression) and compare it to the intended
+  # one; any mismatch falls through to delete + re-register.
   _is_main="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "main" || true)"
   _is_error="$(echo "$_list_output" | grep "$CRON_NAME" | grep -c "error" || true)"
+  # Extract the existing 5-field cron schedule (minute hour dom month dow) from the
+  # entry's row. If it cannot be parsed, _existing_norm is empty and the comparison
+  # below fails closed (re-register) rather than trusting an unverifiable schedule.
+  _existing_schedule="$(echo "$_list_output" | grep "$CRON_NAME" | head -1 \
+    | grep -oE '[0-9*,/-]+[[:space:]]+[0-9*,/-]+[[:space:]]+[0-9*,/-]+[[:space:]]+[0-9*,/-]+[[:space:]]+[0-9*,/-]+' \
+    | head -1 || true)"
+  _existing_norm="$(_normalize_cron "$_existing_schedule")"
 
-  if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ]; then
-    echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry — nothing to do." >&2
+  if [ "$_is_main" -ge 1 ] && [ "$_is_error" -eq 0 ] && [ "$_existing_norm" = "$_intended_norm" ]; then
+    echo "OK: cron '$CRON_NAME' already registered with a healthy main-target entry on the correct schedule ($_intended_norm) — nothing to do." >&2
     exit 0
   fi
-  # One entry but it is erroring or not on main — fall through to delete + re-register.
-  echo "NOTICE: existing '$CRON_NAME' entry is stale or erroring — will delete and re-register." >&2
+  # One entry but it is erroring, not on main, or on the WRONG schedule — fall
+  # through to delete + re-register.
+  if [ "$_existing_norm" != "$_intended_norm" ]; then
+    echo "NOTICE: existing '$CRON_NAME' entry is on schedule '${_existing_norm:-<unparseable>}' but expected '$_intended_norm' — will delete and re-register." >&2
+  else
+    echo "NOTICE: existing '$CRON_NAME' entry is stale or erroring — will delete and re-register." >&2
+  fi
 fi
 
 if [ "$_existing_count" -ge 1 ]; then
