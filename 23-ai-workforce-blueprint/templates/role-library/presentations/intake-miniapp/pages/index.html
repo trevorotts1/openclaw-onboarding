@@ -82,15 +82,17 @@
     .spin { width: 26px; height: 26px; border: 3px solid var(--line); border-top-color: var(--accent);
       border-radius: 50%; animation: sp 0.8s linear infinite; margin: 30px auto; }
     @keyframes sp { to { transform: rotate(360deg); } }
+    :focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
     .hidden { display: none !important; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
   </style>
 </head>
 <body>
-  <div class="bar"><i id="progress"></i></div>
-  <main id="app">
-    <div class="spin" id="loader"></div>
+  <div class="bar" role="progressbar" aria-valuenow="0" aria-valuemin="0" aria-valuemax="100" aria-label="Interview progress"><i id="progress"></i></div>
+  <main id="app" role="main" aria-label="Interview questions">
+    <div class="spin" id="loader" role="status" aria-label="Loading"></div>
   </main>
-  <footer>Your answers are saved as you go — you can close this and come back to the same link.</footer>
+  <footer role="contentinfo"><span class="sr-only">Privacy note:</span> Your answers are saved as you go — you can close this and come back to the same link.</footer>
 
   <script>
   (function () {
@@ -108,6 +110,7 @@
 
     var app = document.getElementById("app");
     var bar = document.getElementById("progress");
+    var progressContainer = bar && bar.parentElement;
 
     var state = {
       questions: [],
@@ -133,14 +136,30 @@
     }
     function clear() { while (app.firstChild) app.removeChild(app.firstChild); }
     function setBar(p) {
-      if (!p || !p.total) { bar.style.width = "0%"; return; }
-      bar.style.width = Math.round((p.answered / p.total) * 100) + "%";
+      if (!p || !p.total) {
+        bar.style.width = "0%";
+        if (progressContainer) progressContainer.setAttribute("aria-valuenow", "0");
+        return;
+      }
+      var pct = Math.round((p.answered / p.total) * 100);
+      bar.style.width = pct + "%";
+      if (progressContainer) progressContainer.setAttribute("aria-valuenow", String(pct));
     }
     function api(path, opts) {
       opts = opts || {};
       opts.headers = Object.assign({ "content-type": "application/json" }, opts.headers || {});
       return fetch(API + path, opts).then(function (r) {
         return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+      });
+    }
+
+    // ---- global keyboard shortcuts ---------------------------------------
+    function installKeyboardShortcuts() {
+      document.addEventListener("keydown", function (e) {
+        if (e.altKey && (e.key === "n" || e.key === "N")) {
+          var nextBtn = document.querySelector("button.primary:not(:disabled)");
+          if (nextBtn) { e.preventDefault(); nextBtn.click(); }
+        }
       });
     }
 
@@ -177,19 +196,25 @@
     // ---- confirmation code (optional, high-trust) ------------------------
     function askConfirm() {
       clear();
-      var input = el("input", { type: "text", inputmode: "numeric", maxlength: "6", placeholder: "6-digit code" });
-      var msg = el("div", { class: "msg" });
-      var go = el("button", { class: "primary", text: "Continue" });
+      var inputId = "confirm-input";
+      var msgId = "confirm-msg";
+      var input = el("input", { type: "text", id: inputId, inputmode: "numeric", maxlength: "6", placeholder: "6-digit code", "aria-describedby": "confirm-help" });
+      var msg = el("div", { class: "msg", id: msgId, role: "alert", "aria-live": "polite" });
+      var go = el("button", { class: "primary", text: "Continue", "aria-keyshortcuts": "Enter" });
       go.onclick = function () {
         state.confirmCode = input.value.trim();
         if (!/^\d{6}$/.test(state.confirmCode)) { msg.className = "msg err"; msg.textContent = "Enter the 6-digit code you were given."; return; }
         state.requiresConfirm = false; render();
       };
+      input.onkeydown = function (e) {
+        if (e.key === "Enter" && !go.disabled) { e.preventDefault(); go.click(); }
+      };
       app.appendChild(el("div", { class: "card" }, [
         el("h1", { class: "prompt", text: "Enter your access code" }),
-        el("p", { class: "help", text: "You were given a 6-digit code in chat. It keeps this intake private to you." }),
+        el("p", { class: "help", id: "confirm-help", text: "You were given a 6-digit code in chat. It keeps this intake private to you." }),
         input, el("div", { class: "row" }, [go]), msg,
       ]));
+      setTimeout(function () { document.getElementById(inputId) && document.getElementById(inputId).focus(); }, 50);
     }
 
     // ---- render one question --------------------------------------------
@@ -200,7 +225,8 @@
       clear();
 
       var stepText = "Question " + ((state.progress.current_index || 0) + 1) + " of " + state.progress.total;
-      var card = el("div", { class: "card" });
+      var cardId = "card-" + (q.id || Math.random().toString(36).slice(2,8));
+      var card = el("div", { class: "card", id: cardId, role: "region", "aria-label": stepText });
       card.appendChild(el("h1", { class: "prompt", text: q.prompt }));
       if (q.help) card.appendChild(el("p", { class: "help", text: q.help }));
 
@@ -209,53 +235,62 @@
 
       var kind = q.kind || "text";
       if (kind === "enum" && (q.allowed_values || []).length) {
-        var opts = el("div", { class: "opts" });
+        var groupEl = el("div", { class: "opts", role: "radiogroup", "aria-label": q.prompt || "Select an option" });
         (q.allowed_values || []).forEach(function (v) {
           var label = (q.value_labels && q.value_labels[v]) || v;
-          var b = el("button", { class: "opt", "aria-pressed": "false", text: label });
+          var b = el("button", { class: "opt", role: "radio", "aria-checked": "false", text: label });
           b.onclick = function () {
             state.selected = v;
-            Array.prototype.forEach.call(opts.children, function (c) { c.setAttribute("aria-pressed", "false"); });
-            b.setAttribute("aria-pressed", "true");
+            Array.prototype.forEach.call(groupEl.children, function (c) { c.setAttribute("aria-checked", "false"); });
+            b.setAttribute("aria-checked", "true");
             next.disabled = false;
           };
-          opts.appendChild(b);
+          b.onkeydown = function (e) {
+            if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); var p = b.previousElementSibling; if (p) p.focus(); }
+            if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); var n = b.nextElementSibling; if (n) n.focus(); }
+          };
+          groupEl.appendChild(b);
         });
-        inputWrap.appendChild(opts);
+        inputWrap.appendChild(groupEl);
         getValue = function () { return state.selected; };
       } else if (kind === "boolean") {
-        var yn = el("div", { class: "opts" });
+        var yn = el("div", { class: "opts", role: "radiogroup", "aria-label": q.prompt || "Yes or No" });
         [["true", "Yes"], ["false", "No"]].forEach(function (pair) {
-          var b = el("button", { class: "opt", "aria-pressed": "false", text: pair[1] });
+          var b = el("button", { class: "opt", role: "radio", "aria-checked": "false", text: pair[1] });
           b.onclick = function () {
             state.selected = pair[0];
-            Array.prototype.forEach.call(yn.children, function (c) { c.setAttribute("aria-pressed", "false"); });
-            b.setAttribute("aria-pressed", "true");
+            Array.prototype.forEach.call(yn.children, function (c) { c.setAttribute("aria-checked", "false"); });
+            b.setAttribute("aria-checked", "true");
             next.disabled = false;
+          };
+          b.onkeydown = function (e) {
+            if (e.key === "ArrowUp" || e.key === "ArrowLeft") { e.preventDefault(); var p = b.previousElementSibling; if (p) p.focus(); }
+            if (e.key === "ArrowDown" || e.key === "ArrowRight") { e.preventDefault(); var n = b.nextElementSibling; if (n) n.focus(); }
           };
           yn.appendChild(b);
         });
         inputWrap.appendChild(yn);
         getValue = function () { return state.selected; };
       } else if (kind === "integer") {
-        var num = el("input", { type: "number", step: "1", placeholder: q.default != null ? String(q.default) : "" });
+        var num = el("input", { type: "number", step: "1", placeholder: q.default != null ? String(q.default) : "", "aria-label": q.prompt || "Enter a number" });
         num.oninput = function () { next.disabled = q.required !== false && !num.value.trim(); };
         inputWrap.appendChild(num);
         getValue = function () { return num.value.trim(); };
       } else {
-        var ta = el("textarea", { placeholder: "Type your answer…" });
+        var ta = el("textarea", { placeholder: "Type your answer…", "aria-label": q.prompt || "Type your answer" });
         ta.oninput = function () { next.disabled = q.required !== false && !ta.value.trim(); };
         inputWrap.appendChild(ta);
         getValue = function () { return ta.value.trim(); };
       }
       card.appendChild(inputWrap);
 
-      var msg = el("div", { class: "msg" });
-      var next = el("button", { class: "primary", text: "Next" });
+      var msgId = "msg-" + (q.id || Math.random().toString(36).slice(2,8));
+      var msg = el("div", { class: "msg", id: msgId, role: "alert", "aria-live": "polite" });
+      var next = el("button", { class: "primary", text: "Next", "aria-keyshortcuts": "Alt+N", "aria-describedby": msgId });
       var row = el("div", { class: "row" }, [next]);
       // Optional questions can be skipped to their default.
       if (q.required === false) {
-        var skip = el("button", { class: "ghost", text: "Skip" });
+        var skip = el("button", { class: "ghost", text: "Skip", "aria-label": "Skip this question" });
         skip.onclick = function () { submit(q, q.default != null ? String(q.default) : "", msg, next); };
         row.appendChild(skip);
       }
@@ -268,7 +303,14 @@
 
       card.appendChild(row);
       card.appendChild(msg);
-      app.appendChild(el("div", {}, [el("div", { class: "step", text: stepText }), card]));
+      var stepDiv = el("div", { class: "step", "aria-live": "polite", "aria-atomic": "true", text: stepText });
+      app.appendChild(el("div", {}, [stepDiv, card]));
+      setTimeout(function () {
+        var cardEl = document.getElementById(cardId);
+        if (!cardEl) return;
+        var firstInput = cardEl.querySelector("textarea, input, [role=radio], button");
+        if (firstInput) firstInput.focus();
+      }, 50);
     }
 
     // ---- submit one answer ----------------------------------------------
@@ -284,7 +326,8 @@
             msg.textContent = (res.body && res.body.error) || "That answer wasn't accepted. Please try again.";
             next.disabled = false;
             // If the server says we're out of order, resync from the server.
-            if (res.status === 409) return boot();
+            if (res.status === 409) return installKeyboardShortcuts();
+    boot();
             return;
           }
           state.progress = res.body.progress;
@@ -302,15 +345,16 @@
       var card = el("div", { class: "card center" });
       card.appendChild(el("h1", { class: "prompt", text: "That's everything — ready to send?" }));
       card.appendChild(el("p", { class: "help", text: "Review is optional. When you send, your presentation team picks it up and may follow up with a question or two." }));
-      var go = el("button", { class: "primary", text: "Send my answers" });
-      var msg = el("div", { class: "msg" });
+      var go = el("button", { class: "primary", text: "Send my answers", "aria-keyshortcuts": "Alt+N" });
+      var msg = el("div", { class: "msg", id: "complete-msg", role: "alert", "aria-live": "polite" });
       go.onclick = function () {
         go.disabled = true; msg.textContent = "Sending…";
         api("/sessions/" + token + "/complete", { method: "POST", body: "{}" }).then(function (res) {
           if (!res.ok) {
             msg.className = "msg err";
             msg.textContent = (res.body && res.body.error) || "Couldn't send — please try again.";
-            if (res.status === 409 && res.body && res.body.missing) return boot();
+            if (res.status === 409 && res.body && res.body.missing) return installKeyboardShortcuts();
+    boot();
             go.disabled = false; return;
           }
           done(false);
@@ -319,25 +363,28 @@
       card.appendChild(el("div", { class: "row", style: "justify-content:center" }, [go]));
       card.appendChild(msg);
       app.appendChild(card);
+      setTimeout(function () { go.focus(); }, 50);
     }
 
     function done(already) {
       clear();
       bar.style.width = "100%";
+      if (progressContainer) progressContainer.setAttribute("aria-valuenow", "100");
       app.appendChild(el("div", { class: "card center" }, [
-        el("div", { class: "big", text: already ? "You're all set" : "Thank you!" }),
+        el("div", { class: "big", role: "heading", "aria-level": "1", text: already ? "You're all set" : "Thank you!" }),
         el("p", { class: "help", text: "Your answers are in. Your presentation team has everything they need to start — you can close this tab." }),
       ]));
     }
 
     function fatal(text) {
       clear();
-      app.appendChild(el("div", { class: "card center" }, [
-        el("div", { class: "big", text: "Hmm." }),
+      app.appendChild(el("div", { class: "card center", role: "alert" }, [
+        el("div", { class: "big", role: "heading", "aria-level": "1", text: "Hmm." }),
         el("p", { class: "help", text: text }),
       ]));
     }
 
+    installKeyboardShortcuts();
     boot();
   })();
   </script>
