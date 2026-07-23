@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-21T13:45:44Z",
-  "file_count": 104,
+  "generated_at": "2026-07-23T16:25:13Z",
+  "file_count": 107,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "ab426f2c7ba20b8083605fd1b94dc154981d9b97a94388240ea4e4c805604dfb",
@@ -387,6 +387,18 @@
     "video-pipeline-craft/VIDEO-PIPELINE-MANIFEST.json": {
       "sha256": "15f8f699610f49076832e3ee15411df6f2f57f8c7ed9b5207e264b31ad2c1db2",
       "bytes": 18394
+    },
+    "video-production/README.md": {
+      "sha256": "13d47a0d07b2e7cfdfaefae4da3c88c55c82fc09f5f8ed4202aad03ced378c07",
+      "bytes": 6478
+    },
+    "video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md": {
+      "sha256": "c531d1c7b09f8bac7817e5d0072525b3b37f9f7a505af4263d6974a5a3fd9cfc",
+      "bytes": 64048
+    },
+    "video-production/VIDEO-PRODUCTION-MANIFEST.json": {
+      "sha256": "52d9babd962a1a10bef182b3c0d388b94035b2ceea1daf61f54b6701ac115f7c",
+      "bytes": 8098
     },
     "website-craft/MASTER-WEBSITE-QC-AUTOFAIL-RULESET.md": {
       "sha256": "78cd2377f66433fbe6b77d4e1564d83ab1bc39e07a2dc06e65ca679bba6bb6d2",

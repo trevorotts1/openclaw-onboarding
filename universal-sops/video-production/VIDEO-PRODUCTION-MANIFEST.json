@@ -1,0 +1,108 @@
+{
+  "manifest_version": 1,
+  "$schema_note": "Cluster manifest for universal-sops/video-production/ — the personal / talking-head video SOP (likeness + cloned Fish Audio voice + mandatory lip-sync correction). Mirrors the video-pipeline-craft VIDEO-PIPELINE-MANIFEST.json enforcement spine but governs the LIKENESS path (identity consistency + audio-driven lip-sync), which video-pipeline-craft's documentary/montage pipeline does not. The sops[] record below matches the ingest-sop-library.py row schema (slug, name, description, department, task_keywords, steps, success_criteria, persona_hints, source_role, confidence_tier) so it can be registered into the CC SOP library / picker. gate_map[] is the single source of truth binding each AF-PVC-* gate to its deterministic probe script; a gate with no probe is a gap and must not ship.",
+  "cluster": "video-production",
+  "owning_department": "video",
+  "owning_department_slug": "video",
+  "approval_authority": "head-of-video-production",
+  "canonical_machine_spine": [
+    "47-movie-producer",
+    "63-agnes-image",
+    "64-agnes-video",
+    "30-fish-audio-api-reference"
+  ],
+  "sops": [
+    {
+      "slug": "personal-video-creator",
+      "name": "Personal Video Creator (likeness + cloned-voice talking-head production)",
+      "description": "Create a polished video featuring a consenting person's likeness and Fish Audio cloned voice: one continuous narration master, audio-led storyboard, likeness-preserving Agnes scenes, mandatory scene-by-scene audio-driven lip-sync correction, and FFmpeg assembly on the master timeline — with hardened, measurable QC gates, fallback hierarchies, and identity-consistency controls.",
+      "version": 2,
+      "department": "video",
+      "cadence": "per-project",
+      "source_role": "automated-video-production-specialist-openmontage",
+      "confidence_tier": "verified",
+      "estimated_minutes": 180,
+      "layer_version": "v2",
+      "source_file": "universal-sops/video-production/SOP-PVC-01-PERSONAL-VIDEO-CREATOR.md",
+      "task_keywords": "personal video, talking head, talking-head video, likeness video, founder video, spokesperson video, VSL with my face, clone my voice, video of me speaking, animate my portrait, avatar video with lip sync, ai talking head, fish audio narration, agnes video, lipsync",
+      "persona_hints": [
+        "vsevolod-pudovkin-film-technique",
+        "thorne-youtube-unlocked",
+        "video-funnels"
+      ],
+      "steps": [
+        "P-INTAKE: verify consent (probe_consent), environment + SecretRefs (probe_environment), build project_manifest.yaml (probe_manifest)",
+        "P-LIKENESS: build identity bible + approved multi-view reference from authorized photos; every reference prompt clears the 5,000-19,000 band (probe_prompt_band)",
+        "P-SCRIPT: write for speech, pronunciation dictionary, Fish-tag + clean scripts",
+        "P-AUDIO: generate ONE continuous Fish Audio master + timestamps; audio QC (probe_audio_master)",
+        "P-STORYBOARD: audio-led scene cuts; Agnes frame plan satisfies 8n+1 and <= 441 (probe_frame_plan)",
+        "P-SEGMENTS: extract exact scene WAVs from the master (probe_segment_duration)",
+        "P-AGNES: image-to-video per scene; visual + technical QC (probe_video_clip)",
+        "P-LIPSYNC: scene-by-scene audio-driven lip-sync; offset <= 2 frames, drift <= 1 frame (probe_lipsync_offset); retry ladder then scene fallback",
+        "P-ASSEMBLE: normalize + concat on the master timeline; picture == audio +/- 1 frame (probe_picture_duration)",
+        "P-FINISH: B-roll, captions, licensed music mix, attach final audio; final technical + creative QC (probe_final_technical, probe_final_qc)",
+        "P-DELIVER: delivery manifest + consent record; card the run on the video department CC campaign"
+      ],
+      "success_criteria": "Consent verified; one approved continuous Fish master; scene boundaries follow natural audio timing; no Agnes scene exceeds the active interface limit; every visible speaking scene has dedicated lip-sync within 2 frames at head/middle/end; B-roll supports narration; music licensed + instrumental + ducked; picture duration matches master; captions match; ffprobe confirms spec; all AF-PVC-* probes exit 0; human approver watched the export; delivery manifest complete.",
+      "dependencies_upstream": [],
+      "template_vars_used": ["COMPANY_NAME", "GENERATION_DATE"]
+    }
+  ],
+  "gate_map": [
+    { "code": "AF-PVC-CONSENT", "probe": "scripts/probe_consent.py", "stage": "P-INTAKE", "exit_violation": 2 },
+    { "code": "AF-PVC-ENV", "probe": "scripts/probe_environment.py", "stage": "P-INTAKE", "exit_violation": 2 },
+    { "code": "AF-PVC-MANIFEST", "probe": "scripts/probe_manifest.py", "stage": "P-INTAKE", "exit_violation": 2 },
+    { "code": "AF-PVC-SECRET-LEAK", "probe": "scripts/probe_no_secrets.py", "stage": "ALL", "exit_violation": 2 },
+    { "code": "AF-PVC-PROMPT-FLOOR", "probe": "scripts/probe_prompt_band.py", "stage": "P-LIKENESS", "exit_violation": 2 },
+    { "code": "AF-PVC-PROMPT-CEILING", "probe": "scripts/probe_prompt_band.py", "stage": "P-LIKENESS", "exit_violation": 2 },
+    { "code": "AF-PVC-PROMPT-IDENTITY", "probe": "scripts/probe_prompt_band.py", "stage": "P-LIKENESS", "exit_violation": 2 },
+    { "code": "AF-PVC-FRAMEPLAN", "probe": "scripts/probe_frame_plan.py", "stage": "P-STORYBOARD", "exit_violation": 2 },
+    { "code": "AF-PVC-SEGMENT-DUR", "probe": "scripts/probe_segment_duration.py", "stage": "P-SEGMENTS", "exit_violation": 2 },
+    { "code": "AF-PVC-CLIP-TECH", "probe": "scripts/probe_video_clip.py", "stage": "P-AGNES", "exit_violation": 2 },
+    { "code": "AF-PVC-LIPSYNC-OFFSET", "probe": "scripts/probe_lipsync_offset.py", "stage": "P-LIPSYNC", "exit_violation": 2 },
+    { "code": "AF-PVC-DURATION", "probe": "scripts/probe_picture_duration.py", "stage": "P-ASSEMBLE", "exit_violation": 2 },
+    { "code": "AF-PVC-AUDIO", "probe": "scripts/probe_audio_master.py", "stage": "P-AUDIO/P-FINISH", "exit_violation": 2 },
+    { "code": "AF-PVC-SCENE-QC", "probe": "scripts/probe_scene_qc.py", "stage": "P-LIPSYNC", "exit_violation": 2 },
+    { "code": "AF-PVC-FINAL-TECH", "probe": "scripts/probe_final_technical.py", "stage": "P-FINISH", "exit_violation": 2 },
+    { "code": "AF-PVC-FINAL-QC", "probe": "scripts/probe_final_qc.py", "stage": "P-DELIVER", "exit_violation": 2 }
+  ],
+  "fallback_hierarchies": {
+    "image": ["gpt-image-2", "agnes-image-2.1-flash", "kie-ai"],
+    "video": ["agnes-video-v2.0", "kie-gemini-omni-video", "kie-veo3_fast"],
+    "voice": ["s2.1-pro", "s2.1-pro-free", "elevenlabs"],
+    "lip_sync": ["lipsync-2-pro", "sync-3", "lipsync-2", "musetalk-1.5"],
+    "music": ["suno", "other-licensed", "none"]
+  },
+  "retry_policy": {
+    "agnes_attempts_max": 3,
+    "lip_sync_attempts_per_model_max": 2,
+    "model_escalations_max": 1
+  },
+  "qc_tolerances": {
+    "max_lip_offset_frames": 2,
+    "max_lip_drift_frames": 1,
+    "duration_difference_frames": 1,
+    "fps": 24,
+    "frame_seconds": 0.041667,
+    "final_lufs": -16,
+    "lufs_tolerance": 1,
+    "true_peak_db": -1.5,
+    "prompt_char_floor": 5000,
+    "prompt_char_ceiling": 19000,
+    "agnes_max_frames": 441,
+    "agnes_frame_rule": "8n+1"
+  },
+  "command_center": {
+    "department_slug": "video",
+    "card_campaign_pattern": "PVC-YYYYMMDD-CLIENT-SLUG",
+    "board_driver": "47-movie-producer/scripts/cc_board.py",
+    "rule_zero_authority": "head-of-video-production",
+    "routing_note": "personal/talking-head/likeness/cloned-voice video -> video dept -> Movie Producer (Skill 47) operator. Edit supplied footage -> video-pipeline-craft (Skill 27). Captions only -> Skill 26. TTS only -> Skill 30. Storyboard only -> Skill 24."
+  },
+  "persona_matching": {
+    "persona_hints": ["vsevolod-pudovkin-film-technique", "thorne-youtube-unlocked", "video-funnels"],
+    "department_domain_tags": ["video", "editing", "montage", "visual-storytelling", "copywriting", "communication", "marketing"],
+    "task_category": "video-edit",
+    "selector": "23-ai-workforce-blueprint/scripts/persona-selector-v2.py"
+  }
+}
