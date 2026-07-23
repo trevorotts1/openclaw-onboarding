@@ -88,7 +88,7 @@ Choose by task. Category `_RULES.md` files may override.
 |---|---|---|---|---|---|---|
 | SHORT | ≤500 | ✅ | ✅ | ✅ | ✅ | ✅ |
 | MEDIUM | ≤2,800 | ✅ | ✅ | ✅ (3,000 cap) | ✅ (5,000 cap) | ✅ (5,000 cap) |
-| LONG | ≤18,000 | ✅ (20,000 cap) | ✅ (20,000 cap) | ❌ | ❌ | ❌ |
+| LONG | ≤19,000 | ✅ (20,000 cap) | ✅ (20,000 cap) | ❌ | ❌ | ❌ |
 
 **Rule:** If a LONG-tier generation is requested on an endpoint that can't take it, automatically fall back to MEDIUM and tell the operator.
 

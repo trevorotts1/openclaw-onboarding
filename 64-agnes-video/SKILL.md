@@ -162,6 +162,39 @@ values):
   tier. Flag this so the operator does not overpay for video throughput that
   does not exist.
 
+## Image Prompt-Length Band — 5,000-19,000 Enforcement
+
+When Agnes Video V2.0 is used in **image-to-video** or **keyframe animation**
+mode, each input image's generation prompt (if that image was created via
+GPT-image-2 or Agnes Image 2.1 Flash) MUST respect the same band enforced by
+Skill 63: **NEVER BELOW 5,000 characters AND NEVER ABOVE 19,000 characters**
+(stripped, whitespace never counts). Valid range: 5,000-19,000.
+
+The Agnes AI API accepts up to 25,000 characters per prompt. The 19,000 ceiling
+preserves ~6,000 characters of headroom to stay well clear of the endpoint's
+truncation boundary. The 5,000 floor ensures every image prompt carries the
+rich specificity GPT-image-2 and Agnes Image need — a prompt below 5,000 is a
+thin stub, NOT submitted, NOT rendered.
+
+Enforcement: `63-agnes-image/prove_agnes_image_prompt_floor.py` gates image
+prompts before any paid API call, including when those images serve as input to
+a video generation pipeline. Run it as a preflight:
+```
+python3 63-agnes-image/prove_agnes_image_prompt_floor.py --file prompt.txt
+```
+
+This band applies whenever the target generation endpoint is GPT-image-2 (T2I
+or I2I) or Agnes Image 2.1 Flash. It does NOT apply to shorter-cap endpoints.
+
+## Image-to-Image for Logos (MANDATORY)
+
+When an image prompt involves the client's LOGO, wordmark, brand mark, monogram,
+or any existing brand image — including as an input frame for video generation —
+you MUST use IMAGE-TO-IMAGE generation. Provide the logo as a reference image
+via `extra_body.image[]` (Agnes) or `input_urls` (Kie.ai GPT-Image 2 I2I).
+Text-to-image generation of a logo is PROHIBITED: a text-to-image model cannot
+render a specific client's logo accurately and will invent a lookalike instead.
+
 ## Credential Note
 
 The credential is `AGNES_AI_API_KEY`. It is ALREADY provisioned on the fleet

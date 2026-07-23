@@ -92,7 +92,7 @@ Variables available: {SUBJECT} {HEADLINE_TEXT} {SUBHEAD_TEXT} {CTA_TEXT} {BRAND_
 {structured paragraphs per MASTER-SOP §5.1}
 ```
 
-### LONG (≤18,000 chars — GPT-Image 2 / Nano Banana 2 only) — actual count: {N} chars
+### LONG (≤19,000 chars — GPT-Image 2 / Nano Banana 2 only) — actual count: {N} chars
 ```
 {full spec per MASTER-SOP §5.1, ending with restatement of the 3 most critical instructions}
 ```

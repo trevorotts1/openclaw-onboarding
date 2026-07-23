@@ -16,7 +16,7 @@ rather than only described in a QC report:
   3. A genuinely rich, fully-compliant `text_bearing_long` prompt (every quality
      tooth satisfied: 8-class negative block, per-string spelling-lock, baked
      copy, style-reference-only directive, no hardcoded demographic split,
-     >=150 distinct words, 5,000-18,000 chars) -> PASSES, exit 0.
+     >=150 distinct words, 5,000-19,000 chars) -> PASSES, exit 0.
   4. FAIL-FIRST PROOF: cases 1 and 2 are also run with `--bands-file` pointed at
      a deliberately permissive fixture bands file whose floors are all 0 — both
      now PASS (exit 0). This proves the two refusals above are actually caused

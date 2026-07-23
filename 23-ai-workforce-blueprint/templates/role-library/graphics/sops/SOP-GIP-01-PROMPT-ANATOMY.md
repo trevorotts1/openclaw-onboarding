@@ -12,7 +12,7 @@
 ## Why this exists
 
 The Graphics department had MAX-only prompt caps (`diu_validator.py prompt-caps`, SHORT ≤500 /
-MEDIUM ≤2,800 / LONG ≤18,000) and **no minimum floor anywhere** — a one-line prompt could reach
+MEDIUM ≤2,800 / LONG ≤19,000) and **no minimum floor anywhere** — a one-line prompt could reach
 the paid Kie.ai / GPT-Image 2 API unchallenged (diagnosis G1). This SOP is the graphics analogue
 of the Presentations 9,000-character prompt floor + quality gate: every production image prompt is
 authored to a TEN-ELEMENT anatomy and validated by `diu_validator.py prompt-band` **before**
@@ -28,9 +28,9 @@ Band floors/caps live in `45-design-intelligence-library/library/_system/prompt-
 
 | Band | Tier | MIN (floor) | MAX (cap) | Distinct-word floor | Text-bearing |
 |---|---|---|---|---|---|
-| `text_bearing_long` | LONG | 5,000 | 18,000 | 150 | yes |
+| `text_bearing_long` | LONG | 5,000 | 19,000 | 150 | yes |
 | `text_bearing_medium` | MEDIUM | 1,600 | 4,500 | 90 | yes |
-| `visual_long` | LONG | 2,500 | 18,000 | 120 | no |
+| `visual_long` | LONG | 2,500 | 19,000 | 120 | no |
 | `medium` | MEDIUM | 800 | 2,800 | 60 | no |
 | `short_draft` | SHORT | 200 | 500 | 25 | no (NEVER a client deliverable) |
 

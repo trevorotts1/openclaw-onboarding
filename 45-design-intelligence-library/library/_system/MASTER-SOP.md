@@ -186,7 +186,7 @@ Every style card carries three prompt templates. Tiers are calibrated to verifie
 |---|---|---|---|
 | **SHORT** | ≤ 500 chars | ALL models | Fast drafts, volume runs, quick iterations |
 | **MEDIUM** | ≤ 2,800 chars | ALL models (fits Seedream 4.5's 3,000 ceiling with headroom; safe for Ideogram/Wan 5,000) | **Default production tier** |
-| **LONG** | ≤ 18,000 chars | GPT-Image 2 + Nano Banana 2 ONLY (20,000 ceilings) | Full style spec: complex layouts, text-heavy designs, maximum fidelity |
+| **LONG** | ≤ 19,000 chars | GPT-Image 2 + Nano Banana 2 ONLY (20,000 ceilings) | Full style spec: complex layouts, text-heavy designs, maximum fidelity |
 
 ### 5.1 Required structure for each tier
 
