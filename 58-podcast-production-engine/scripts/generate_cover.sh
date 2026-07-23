@@ -155,6 +155,50 @@ compute_out_path() {
 # int_from: robust integer read from ffprobe output
 int_from() { awk '{printf "%d", $1}' <<<"${1:-0}"; }
 
+# probe_downloaded_image <file>: bounded content-validity probe (U033).
+# Verifies the downloaded file is a real JPEG/PNG image with dimensions >=
+# COVER_MIN_SIDE and square aspect ratio within 2% tolerance. Rejects HTML
+# error pages, undersized images, and non-square content BEFORE finalize.
+# Uses file(1) for format and ffprobe for dimensions — no network, bounded.
+# Returns 0 on success, non-zero on probe failure.
+probe_downloaded_image() {
+  local img="$1"
+  [[ -f "$img" ]] || { err "probe: file not found: $img"; return 1; }
+
+  # Format check: must be JPEG or PNG (rejects HTML, text, empty files).
+  local mime
+  mime="$(file --mime-type -b "$img" 2>/dev/null || echo unknown)"
+  case "$mime" in
+    image/jpeg|image/png) ;;
+    *)
+      err "probe: invalid image format (mime=${mime}); expected image/jpeg or image/png"
+      return 1
+      ;;
+  esac
+
+  # Dimension check: both width and height must be >= COVER_MIN_SIDE.
+  local w h
+  w="$(int_from "$(ffprobe -v error -select_streams v:0 -show_entries stream=width -of csv=p=0 "$img" 2>/dev/null)")"
+  h="$(int_from "$(ffprobe -v error -select_streams v:0 -show_entries stream=height -of csv=p=0 "$img" 2>/dev/null)")"
+  if [[ "$w" -lt "$COVER_MIN_SIDE" || "$h" -lt "$COVER_MIN_SIDE" ]]; then
+    err "probe: image too small (${w}x${h}); minimum is ${COVER_MIN_SIDE}x${COVER_MIN_SIDE}"
+    return 1
+  fi
+
+  # Aspect ratio check: must be square within 2% tolerance.
+  local max_dim diff tolerance
+  max_dim=$(( w > h ? w : h ))
+  diff=$(( w > h ? w - h : h - w ))
+  tolerance=$(( max_dim * 2 / 100 ))
+  if [[ "$diff" -gt "$tolerance" ]]; then
+    err "probe: image not square (${w}x${h}); aspect ratio deviation ${diff}px exceeds 2% tolerance (${tolerance}px)"
+    return 1
+  fi
+
+  log "probe: valid image (${w}x${h}, mime=${mime})"
+  return 0
+}
+
 # emit_receipt <json> : write to --receipt if set, and always to stdout
 emit_receipt() {
   local json="$1"
@@ -449,6 +493,14 @@ if [[ "$DLCODE" != "200" || ! -s "$RAW_IMG" ]]; then
   exit 6
 fi
 log "download: ok ($(wc -c < "$RAW_IMG" | tr -d ' ') bytes)"
+
+# ---------------------------------------------------------------------------
+# Probe downloaded image (U033): verify format, dimensions, aspect ratio.
+# ---------------------------------------------------------------------------
+if ! probe_downloaded_image "$RAW_IMG"; then
+  err "downloaded image failed content-validity probe"
+  exit 6
+fi
 
 # ---------------------------------------------------------------------------
 # Finalize + verify.
