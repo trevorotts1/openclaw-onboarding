@@ -1415,6 +1415,36 @@ if not _is_router(main_agent):
 
 tools = main_agent.get("tools")
 if isinstance(tools, dict) and isinstance(tools.get("deny"), list) and "write" in tools["deny"]:
+    # FABLE-5 HEAL — the box is already production-gated (deny ⊇ write), so the
+    # DENY gate needs no work. But an explicit per-agent tools.allow is a HARD
+    # allowlist: boxes gated before the Fable-5 fix carry ONLY the old routing
+    # tools and are MISSING the plugin/operational tools now in CEO_TOOL_ALLOW
+    # (memory_search/memory_get for active-memory, cron/gateway/nodes) — so the
+    # plugin's tool calls resolve to nothing ("No callable tools remain after
+    # resolving explicit tool allowlist"). Refresh the allow list up to the
+    # canonical set here: ADD any missing CEO_TOOL_ALLOW entry, preserve any
+    # box-specific extras, and re-apply deny-wins. Idempotent in effect (a box
+    # already at the canonical set is rewritten byte-identically). This is what
+    # heals EXISTING already-gated boxes on the next apply-routing-fix.sh run —
+    # without it the early-exit would leave every pre-Fable-5 box lockdown-broken.
+    _deny_set = set(tools.get("deny") or [])
+    _allow = tools.get("allow")
+    if not isinstance(_allow, list):
+        _allow = []
+        tools["allow"] = _allow
+    _before = list(_allow)
+    for t in CEO_TOOL_ALLOW:
+        if t not in _allow:
+            _allow.append(t)
+    tools["allow"] = [t for t in _allow if t not in _deny_set]  # deny wins
+    if tools["allow"] != _before:
+        cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
+        sys.stderr.write(
+            "[apply-routing-fix] Fable-5 heal: refreshed already-gated default agent "
+            "(id=%s) tools.allow to the canonical set (added: %s)\n"
+            % (main_agent.get("id", "<unknown>"),
+               ", ".join(t for t in tools["allow"] if t not in _before) or "none")
+        )
     print("ALREADY_GATED")
     sys.exit(0)
 
