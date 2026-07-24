@@ -1,0 +1,4 @@
+# QMD orphan sweep — daily at 6am
+# Removes .qmd files older than 24h from render temp dirs.
+# Env vars: QMD_RENDER_DIR, QMD_MIN_AGE_MIN, QMD_DRY_RUN, QMD_RENDER_ACK
+0 6 * * * root /usr/local/bin/qmd-orphan-sweep.sh
