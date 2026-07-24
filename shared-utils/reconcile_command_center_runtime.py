@@ -29,7 +29,7 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 from urllib.parse import quote
 
 from detect_platform import get_openclaw_paths
-
+from workforce_build_state import load_build_state
 
 TEMPLATE_COMPANY_NAME = "Your Company"
 _HEX_COLOR = re.compile(r"^#[0-9a-fA-F]{6}$")
@@ -38,75 +38,6 @@ _SAFE_SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 class ReconcileError(RuntimeError):
     """An unsafe or incomplete reconciliation state."""
-
-# U049: canonical schema version + migration
-WF_STATE_SCHEMA_VERSION = 2
-
-
-def _wf_migrate_build_state(state_path):
-    """Read, version-check, and migrate .workforce-build-state.json in-place."""
-    import time as _t
-    if not state_path.exists():
-        return True
-    try:
-        raw = state_path.read_text(encoding="utf-8")
-    except OSError as exc:
-        raise ReconcileError("cannot read workforce build state: %s" % exc) from exc
-    if not raw.strip():
-        return True
-    try:
-        state = json.loads(raw)
-    except json.JSONDecodeError as exc:
-        ts = str(int(_t.time()))
-        cp = Path(str(state_path) + ".corrupt-" + ts)
-        try:
-            state_path.rename(cp)
-        except OSError:
-            pass
-        raise ReconcileError(".workforce-build-state.json is corrupt JSON (quarantined to %s): %s" % (cp, exc)) from exc
-    if not isinstance(state, dict):
-        raise ReconcileError(".workforce-build-state.json is not a JSON object")
-    fv = state.get("schemaVersion")
-    if fv is None:
-        fv = 1
-    else:
-        try:
-            fv = int(fv)
-        except (TypeError, ValueError):
-            raise ReconcileError("schemaVersion is not an integer (%s)" % repr(state.get("schemaVersion")))
-    if fv > WF_STATE_SCHEMA_VERSION:
-        raise ReconcileError("schemaVersion %d > current %d; refusing" % (fv, WF_STATE_SCHEMA_VERSION))
-    if fv == WF_STATE_SCHEMA_VERSION:
-        return True
-    state["schemaVersion"] = WF_STATE_SCHEMA_VERSION
-    ic = state.get("interviewComplete")
-    if isinstance(ic, str):
-        state["interviewComplete"] = ic.lower() in ("true", "yes", "1")
-    state.setdefault("ownerName", "")
-    state.setdefault("ownerChat", "")
-    state.setdefault("companySlug", "")
-    state.setdefault("buildCompletedAt", None)
-    state.setdefault("closeoutStatus", "pending")
-    state.setdefault("interviewProgress", {})
-    td = state_path.parent
-    tmp = None
-    try:
-        fd, tmp = tempfile.mkstemp(dir=str(td), prefix=".workforce-build-state.", suffix=".tmp")
-        with os.fdopen(fd, "w", encoding="utf-8") as fh:
-            json.dump(state, fh, indent=2)
-            fh.flush()
-            os.fsync(fh.fileno())
-        os.replace(tmp, state_path)
-        tmp = None
-    except OSError as exc:
-        raise ReconcileError("could not write migrated state %s: %s" % (state_path, exc))
-    finally:
-        if tmp and os.path.exists(tmp):
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-    return True
 
 
 def _load_json(path: Path, *, missing: Any = None, empty: Any = None) -> Any:
@@ -377,13 +308,13 @@ def reconcile(
             "writes": "0",
         }
 
-    # U049: migrate build state to current schema version before reading
-    _wf_migrate_build_state(workspace / ".workforce-build-state.json")
-    state_payload = _load_json(
-        workspace / ".workforce-build-state.json", missing={}, empty={}
-    )
-    if not isinstance(state_payload, dict):
-        raise ReconcileError(".workforce-build-state.json is not a JSON object")
+    # U049: read build state through shared module for schema version check + migration
+    try:
+        state_payload = load_build_state(workspace / ".workforce-build-state.json", allow_absent=True)
+    except SystemExit as exc:
+        raise ReconcileError(
+            ".workforce-build-state.json cannot be read: schema version too new or file corrupted"
+        ) from exc
     company_dir = _resolve_company_dir(workspace, master_files, state_payload)
 
     source_departments: Optional[List[Dict[str, Any]]] = None
