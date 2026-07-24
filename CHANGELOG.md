@@ -1,3 +1,9 @@
+## [v21.1.0]  -  2026-07-24  -  CAPSTONE: consolidated 154 merged commits (65 Super-Spec units, v21.0.5-unreleased through v21.1.0)
+
+128 units merged under the stale v21.0.4 version label are now consolidated into v21.1.0, represented by 154 commits across 65 unit ranges recorded since the v21.0.4 tag. Units included: U001, U002, U003, U004, U005, U027, U028, U030, U031, U032, U033, U034, U035, U036, U037, U038, U039, U040, U041, U043, U044, U045, U046, U049, U052, U053, U054, U055, U056, U057, U058, U059, U060, U061, U066, U068, U072, U073, U074, U076, U077, U078, U079, U096, U098, U099, U101, U102, U103, U105, U106, U107, U111, U116, U120, U126, U127, U128, U129, U130, U131, U132, U134, U135, U136.
+
+All 10 canonical version markers aligned to v21.1.0. See CHANGELOG entry below for v21.0.5 (U096 verification stamp, preserved from the pre-consolidation record).
+
 ## [v21.0.5]  -  2026-07-23  -  July-23-Fixes Batch 5: U096 verification stamp
 
 Units: U096
