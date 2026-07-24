@@ -35,7 +35,8 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-_SCRIPT = Path("/tmp/podbean_publish_test.sh")
+# Path to the shipped podbean_publish.sh (tests/ -> scripts/)
+_SHIPPED_SCRIPT = Path(__file__).resolve().parents[1] / "podbean_publish.sh"
 
 FIXTURE_BROKER_TOKEN = "test-fixt-broker-not-real"
 FIXTURE_ACCESS_TOKEN = "test-fixt-access-not-real"
@@ -130,6 +131,26 @@ class EpisodeNumberGuardTest(unittest.TestCase):
     BROKER_PATH = "/webhook/podbean-broker"
     EPISODES_PREFIX = "/api/episodes"
 
+    # Class-level temp copy of the shipped podbean_publish.sh.  setUpClass
+    # copies the deliverable into a temporary directory so every test run
+    # exercises the current bytes on disk — never a stale /tmp leftover.
+    _SCRIPT: Path | None = None
+    _tmp_dir: tempfile.TemporaryDirectory | None = None
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls._tmp_dir = tempfile.TemporaryDirectory(prefix="podbean-u034-script-")
+        cls._SCRIPT = Path(cls._tmp_dir.name) / "podbean_publish.sh"
+        shutil.copy2(_SHIPPED_SCRIPT, cls._SCRIPT)
+        cls._SCRIPT.chmod(0o755)
+
+    @classmethod
+    def tearDownClass(cls) -> None:
+        if cls._tmp_dir is not None:
+            cls._tmp_dir.cleanup()
+        cls._SCRIPT = None
+        cls._tmp_dir = None
+
     def setUp(self):
         self.mock = MockServer()
         self.addCleanup(self.mock.close)
@@ -148,7 +169,7 @@ class EpisodeNumberGuardTest(unittest.TestCase):
         if env_extra:
             env.update(env_extra)
         return subprocess.run(
-            ["bash", str(_SCRIPT), "--audio", self.audio,
+            ["bash", str(type(self)._SCRIPT), "--audio", self.audio,
              "--title", "Test Episode"] + args,
             env=env, capture_output=True, text=True, timeout=timeout,
         )
