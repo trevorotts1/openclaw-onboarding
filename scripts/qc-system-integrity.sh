@@ -28,6 +28,11 @@ red()    { printf "\033[31m%s\033[0m\n" "$1"; }
 green()  { printf "\033[32m%s\033[0m\n" "$1"; }
 yellow() { printf "\033[33m%s\033[0m\n" "$1"; }
 blue()   { printf "\033[34m%s\033[0m\n" "$1"; }
+# U076: not-applicable result — a check that does not apply to this box (e.g.
+# workforce not built yet, optional script not shipped). Distinct from a warning
+# (which means "applies but found a non-fatal problem"). Does NOT increment WARN.
+NA=0
+na()     { printf "\033[36m  ⊘ %s  (not applicable)\033[0m\n" "$1"; NA=$((NA+1)); }
 
 check() {
   local id="$1"; local desc="$2"; local cmd="$3"; local remedy="${4:-}"
@@ -152,14 +157,18 @@ if [ -d "$COMPANY_DIR/departments" ]; then
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
     red "  ✗ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (pre-v9.6.1 bug)"; FAIL=$((FAIL+1))
     FAILURES+=("2.3|Files copied instead of symlinked|Re-run build-workforce.py — v9.6.1+ uses symlinks")
-  elif [ "$COPIED" = "0" ] && [ "$SYMLINKED" = "0" ]; then
-    yellow "  ⚠ 2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"; WARN=$((WARN+1))
+  elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" -gt 0 ]; then
+    # U076: mixed symlinks + copies is symlink DRIFT — genuine breakage, now a FAIL
+    # (was a warn-only that could not affect the exit code).
+    red "  ✗ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected)"; FAIL=$((FAIL+1))
+    FAILURES+=("2.3|Mixed symlinks and copies (drift)|Delete the copies, re-run build")
   else
-    yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (drift detected)"; WARN=$((WARN+1))
-    WARNINGS+=("2.3|Mixed symlinks and copies|Delete the copies, re-run build")
+    # U076: no core files in any dept = build not complete yet — not-applicable, not a warning.
+    na "2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"
   fi
 else
-  yellow "  ⚠ 2.3  No departments folder to check"; WARN=$((WARN+1))
+  # U076: no departments folder = workforce not built yet — not-applicable, not a warning.
+  na "2.3  No departments folder to check (workforce not built yet)"
 fi
 # 2.4 — dept directors in agents.list[]
 # H2: inject via env var — OCJSON path must not be shell-expanded inside a Python string literal
@@ -201,8 +210,9 @@ if [ -d "$COMPANY_DIR/departments" ]; then
   if [ "$STUBS" = "0" ]; then
     green "  ✓ 2.6  No SOP stubs remaining (all populated)"; PASS=$((PASS+1))
   else
-    yellow "  ⚠ 2.6  $STUBS SOP file(s) still contain stub placeholders"; WARN=$((WARN+1))
-    WARNINGS+=("2.6|$STUBS SOPs are stubs|Run populate-sops-from-manifest.py")
+    # U076: SOP stubs mean the populate step has not run yet — an incomplete build,
+    # not a defect in a completed one. Not-applicable, not a warning.
+    na "2.6  $STUBS SOP file(s) still contain stub placeholders (build incomplete)"
   fi
 fi
 # 2.7 — "no guessing" rule
@@ -212,7 +222,8 @@ if [ -d "$COMPANY_DIR/departments" ]; then
   if [ "$SOPS_TOTAL" -gt 0 ] && [ "$SOPS_WITH_RULE" = "$SOPS_TOTAL" ]; then
     green "  ✓ 2.7  All $SOPS_TOTAL SOPs contain the 'no guessing' rule"; PASS=$((PASS+1))
   elif [ "$SOPS_TOTAL" = "0" ]; then
-    yellow "  ⚠ 2.7  No SOPs found to check"; WARN=$((WARN+1))
+    # U076: no SOPs to check = build incomplete — not-applicable, not a warning.
+    na "2.7  No SOPs found to check (build incomplete)"
   else
     yellow "  ⚠ 2.7  Only $SOPS_WITH_RULE / $SOPS_TOTAL SOPs contain the rule"; WARN=$((WARN+1))
     WARNINGS+=("2.7|Some SOPs missing no-guessing rule|Re-run populate-sops-from-manifest.py")
@@ -315,8 +326,11 @@ done
 if [ -z "$LEGACY_FOUND" ]; then
   green "  ✓ 2.14 No legacy /clawd/departments tree present"; PASS=$((PASS+1))
 else
-  yellow "  ⚠ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; WARN=$((WARN+1))
-  WARNINGS+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
+  # U076: a stranded legacy tree means content the operator's departments point at
+  # may be living in a tree that is NOT the canonical workspace — genuine breakage,
+  # now a FAIL (was a warn-only that could not affect the exit code).
+  red "  ✗ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; FAIL=$((FAIL+1))
+  FAILURES+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
 fi
 
 # ─── CHECK 3: Book-to-Persona ────────────────────────────────────────────────
@@ -431,12 +445,17 @@ if [ -n "$CC_DB" ]; then
     if echo "$BRAND" | grep -q '"primary"'; then
       green "  ✓ 7.2  Brand colors present in companies.config"; PASS=$((PASS+1))
     else
-      yellow "  ⚠ 7.2  No brand colors in DB (will use neutral defaults)"; WARN=$((WARN+1))
-      WARNINGS+=("7.2|No brand colors|Re-run seed-workspaces.py with COMPANY_BRAND_COLORS env var")
+      # U076: missing brand colors is cosmetic (neutral defaults are used) —
+      # not-applicable to integrity, not a warning.
+      na "7.2  No brand colors in DB (will use neutral defaults — cosmetic)"
     fi
   fi
 else
-  yellow "  ⚠ 7.0  Mission Control DB not found — Skill 32 may not be installed"; WARN=$((WARN+1))
+  # U076: a missing Mission Control DB is genuine breakage (Skill 32 not installed /
+  # DB path unresolvable) — now a FAIL (was a warn-only that could not affect the
+  # exit code, so a box with no DB still reported ALL CHECKS PASSED).
+  red "  ✗ 7.0  Mission Control DB not found — Skill 32 may not be installed"; FAIL=$((FAIL+1))
+  FAILURES+=("7.0|Mission Control DB not found|Install Skill 32 or verify the mission-control.db path (~/projects/command-center or /opt/mission-control)")
 fi
 warn_check "7.5" "Kanban dashboard reachable at localhost:4000" \
   "[ \"\$(curl -s -o /dev/null -w '%{http_code}' http://localhost:4000 2>/dev/null)\" = '200' ]" \
@@ -1040,6 +1059,7 @@ blue "  SUMMARY"
 blue "═══════════════════════════════════════════════════"
 echo "  Passed:   $PASS"
 [ "$WARN" -gt 0 ] && yellow "  Warnings: $WARN" || echo "  Warnings: $WARN"
+[ "$NA" -gt 0 ] && blue "  N/A:      $NA" || echo "  N/A:      $NA"
 [ "$FAIL" -gt 0 ] && red "  Failures: $FAIL" || echo "  Failures: $FAIL"
 echo
 
