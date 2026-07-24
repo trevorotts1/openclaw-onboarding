@@ -1118,3 +1118,14 @@ for s in skills:
 print(" ".join(parts))
 PYEOF
 }
+# ============================================================
+# U049 -- WORKFORCE BUILD-STATE SCHEMA VERSION + MIGRATION
+# ============================================================
+WORKFORCE_BUILD_STATE_SCHEMA_VERSION=2
+_oc_state_shared_utils="$(cd "$(dirname "${BASH_SOURCE[0]}")/shared-utils" 2>/dev/null && pwd)"
+migrate_build_state() {
+  local state_file="$1" _rc=0
+  [ -f "$state_file" ] || return 1
+  python3 "$_oc_state_shared_utils/workforce_build_state.py" --migrate "$state_file" || _rc="$?"
+  return "$_rc"
+}

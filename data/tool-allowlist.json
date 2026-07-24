@@ -1,0 +1,25 @@
+{
+  "_doc": "Fleet-wide canonical tool allowlist for the main agent's Claude Code settings.json. This is the SINGLE SOURCE OF TRUTH for which tools are ALLOWED on the main agent. Any tool NOT in this list is implicitly DENIED (hard allowlist semantics). Ship changes here and the update-skills.sh config-patch step propagates them to every box on the next Sunday update -- no per-box touch needed. This is NOT a deny-list; it is an explicit allow-list. Adding a tool here ENABLES it fleet-wide; removing a tool here DISABLES it fleet-wide.",
+  "_note": "This file is read by scripts/apply-tool-allowlist.sh, which deep-merges the mainAgentTools config into the box's Claude Code settings.json (agents.list[where default:true].tools.allow). Idempotent -- skips if already canonical.",
+  "mainAgentTools": {
+    "allow": [
+      "Read",
+      "Write",
+      "Edit",
+      "MultiEdit",
+      "Bash",
+      "WebFetch",
+      "WebSearch",
+      "Skill",
+      "Task",
+      "EnterWorktree",
+      "ExitWorktree",
+      "SendMessage",
+      "NotebookEdit",
+      "Monitor",
+      "TaskStop",
+      "AskUserQuestion"
+    ],
+    "_comment": "27 tools have been REMOVED from the main agent via this explicit allow-list. Tools removed include but are not limited to: Glob, Grep, BashOutput, TodoWrite, TaskOutput, Bash(interactive), and any tools not explicitly listed. An explicit allow-list means ANY tool not listed here -- including newly added Claude Code tools -- is DENIED to the main agent by default. To enable a tool fleet-wide, ADD it to 'allow' above and push -- the Sunday update will propagate it."
+  }
+}
