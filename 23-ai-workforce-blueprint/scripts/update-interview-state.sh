@@ -6,6 +6,10 @@
 # writer existed.
 set -euo pipefail
 
+# Rate-limit gate (U056)
+UPD_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$UPD_SCRIPT_DIR/lib-interview-rate-limit.sh"
+
 # Resolve state file path (VPS: /data/.openclaw/workspace; Mac: $HOME/.openclaw/workspace)
 if [ -d /data/.openclaw/workspace ]; then
   STATE_DIR=/data/.openclaw/workspace
@@ -40,6 +44,18 @@ while [ $# -gt 0 ]; do
     *) echo "unknown flag: $1" >&2; exit 1 ;;
   esac
 done
+
+# Rate-limit check
+RL_SESSION="${ASKED_BY:-}"
+if [ -z "$RL_SESSION" ]; then RL_SESSION="$(interview_session_id)"; fi
+if [ "$COMPLETE" = true ]; then
+  RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-5}"
+  INTERVIEW_RATE_LIMIT_MAX=3
+  check_interview_rate_limit "complete:${RL_SESSION}" || exit 1
+  INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
+elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
+  check_interview_rate_limit "$RL_SESSION" || exit 1
+fi
 
 # Build the jq patch fragment
 NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
