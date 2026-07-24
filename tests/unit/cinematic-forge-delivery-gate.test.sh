@@ -191,7 +191,7 @@ bash "$MUT" --artifact "$W/vertical.mp4" --requirements "$W/reqs.json" --receipt
 
 echo ""
 echo "--- T2-29: no document names the image host as the FINAL-VIDEO fallback ---"
-for f in INSTALL.md QC.md SKILL.md; do
+for f in INSTALL.md QC.md SKILL.md README.md CORE_UPDATES.md; do
   P="$SKILL/$f"
   BAD=0
   while IFS= read -r line; do
@@ -209,7 +209,7 @@ done
 
 echo ""
 echo "--- T2-30: one canonical, PREFIXED skill directory everywhere ---"
-for f in INSTALL.md QC.md SKILL.md; do
+for f in INSTALL.md QC.md SKILL.md README.md CORE_UPDATES.md; do
   if grep -q "skills/cinematic-forge" "$SKILL/$f"; then
     fail "T2-30: $f still names the unprefixed skills/cinematic-forge directory"
   else
@@ -219,6 +219,19 @@ done
 grep -q "28-cinematic-forge" "$SKILL/INSTALL.md" \
   && pass "T2-30: INSTALL.md directs the operator to the prefixed directory" \
   || fail "T2-30: INSTALL.md does not name the prefixed directory at all"
+grep -q "28-cinematic-forge" "$SKILL/README.md" && pass "T2-30: README.md directs the operator to the prefixed directory" || fail "T2-30: README.md does not name the prefixed directory at all"
+grep -q "28-cinematic-forge" "$SKILL/CORE_UPDATES.md" && pass "T2-30: CORE_UPDATES.md directs the operator to the prefixed directory" || fail "T2-30: CORE_UPDATES.md does not name the prefixed directory at all"
+echo ""
+echo "--- MUTATION: revert CORE_UPDATES.md to unprefixed path, verify T2-30 catches it ---"
+MUT_FILE="$SKILL/CORE_UPDATES.md"
+CORE_BACKUP="$(mktemp)"
+cp "$MUT_FILE" "$CORE_BACKUP"
+sed -i '' 's|skills/28-cinematic-forge|skills/cinematic-forge|g' "$MUT_FILE" 2>/dev/null
+grep -q "skills/cinematic-forge[^.]" "$MUT_FILE" && pass "MUTATION: unprefixed path reintroduced (RED expected)" || fail "MUTATION: sed did not produce an unprefixed path"
+cp "$CORE_BACKUP" "$MUT_FILE"
+rm -f "$CORE_BACKUP"
+grep -q "28-cinematic-forge" "$MUT_FILE" && pass "MUTATION: revereted to prefixed path (GREEN)" || fail "MUTATION: revert failed"
+
 
 # ---------------------------------------------------------------------------
 echo ""
