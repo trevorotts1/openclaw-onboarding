@@ -137,7 +137,11 @@ fi
 # ---------------------------------------------------------------------------
 echo
 echo "== T3 - CONTROL: healthy box still seeds and still says so =="
-D="$TMPROOT/t3"; mkdir -p "$D/skills/01-demo" "$D/cfg"
+# lib-onboarding-state.sh resolves shared-utils/ next to itself at source time
+# (line ~1125: cd "$(dirname "${BASH_SOURCE[0]}")/shared-utils"). Under the
+# probe's `set -euo pipefail` a missing dir aborts the source before
+# oc_state_seed is defined, so the healthy-box seed never runs. Create it.
+D="$TMPROOT/t3"; mkdir -p "$D/skills/01-demo" "$D/cfg" "$D/shared-utils"
 cp "$LIB" "$D/lib-onboarding-state.sh"
 build_probe "$D"
 OUT="$(OC_CONFIG="$D/cfg" bash "$D/probe.sh" 2>&1)"

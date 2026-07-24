@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 set -uo pipefail
-REPO_ROOT="/Users/blackceomacmini/July-23-Fixes/repos/openclaw-onboarding"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 ORIG_FILE="$REPO_ROOT/35-social-media-planner/scripts/weekly-batch.sh"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

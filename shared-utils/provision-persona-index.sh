@@ -718,7 +718,7 @@ except Exception:
 
 # qmd provisioning removed 2026-07-23.  The `qmd` tool (a local vector-search
 # tool backed by better-sqlite3) was replaced by Google/OpenAI embeddings.
-# reconcile_qmd_persona_index() and all _qmd_* helpers have been removed.
+# The qmd persona-index reconcile routine and all _qmd_* helpers have been removed.
 # Inventory answers now come from persona-categories.json per the N16 hard rule.
 # Version-pinned rebuilds (qmd-version-pin.sh) are also archived.
 
