@@ -10,9 +10,13 @@
 # BOTH counters — behind an opt-in flag so STAGE 1 changes no behavior.
 #
 # ── TWO-STAGE PLAN ────────────────────────────────────────────────────────────
-#   STAGE 1 (this unit, U073): extract these helpers; route the repo-level
-#     gates' verdicts through qc_verdict WITHOUT setting QC_FAIL_ON_WARN=1.
+#   STAGE 1 (U073): extract these helpers; route the repo-level gates'
+#     verdicts through qc_verdict WITHOUT setting QC_FAIL_ON_WARN=1.
 #     Every gate's pass/fail behavior is byte-for-byte unchanged.
+#   STAGE 1 (U122): add qc_parse_skill_verdict — parses per-skill qc-*.sh
+#     output to extract pass/fail/warn counts so the fleet-level agent
+#     (qc-agent.sh) can surface warnings in its JSON report. Still
+#     behavior-preserving — QC_FAIL_ON_WARN is NOT set here.
 #   STAGE 2 (later units, one at a time): promote individual warn-only checks
 #     to required, PER-CHECK, PER-SKILL, with fleet-wide report-only
 #     measurement (QC_FAIL_ON_WARN=1 in a measurement pass first) between
@@ -75,4 +79,37 @@ qc_verdict() {
     echo "QC FAIL (warnings promoted): $label"; return 1
   fi
   echo "QC PASS: $label"; return 0
+}
+
+# ── U122 (STAGE 1): per-skill verdict parser ─────────────────────────────────
+# qc_parse_skill_verdict <log_file>
+# Parses per-skill qc-*.sh output from a log, extracting pass/fail/warn
+# counts from the "Result:" line using awk (portable, handles ANSI codes).
+# Sets QC_SKILL_PASS/FAIL/WARN in caller scope. Returns 0 on success.
+qc_parse_skill_verdict() {
+  local log_file="$1"
+  local result_line
+  result_line="$(grep -m1 'Result:' "$log_file" 2>/dev/null || true)"
+  if [ -z "$result_line" ]; then return 1; fi
+  local parsed
+  parsed="$(echo "$result_line" | awk '{
+    for(i=1;i<=NF;i++){
+      if($i=="passed" && $(i-1)+0==$(i-1)) p=$(i-1)
+      if($i=="failed" && $(i-1)+0==$(i-1)) f=$(i-1)
+      if($i=="warnings" && $(i-1)+0==$(i-1)) w=$(i-1)
+    }
+    if(p=="" && f=="" && w=="") exit 1
+    printf "%s %s %s", p, f, w
+  }')"
+  if [ -z "$parsed" ]; then return 1; fi
+  QC_SKILL_PASS="$(echo "$parsed" | awk '{print $1}')"
+  QC_SKILL_FAIL="$(echo "$parsed" | awk '{print $2}')"
+  QC_SKILL_WARN="$(echo "$parsed" | awk '{print $3}')"
+  # Guard: require at least one extracted value to be a non-negative integer
+  local found=0
+  for v in "$QC_SKILL_PASS" "$QC_SKILL_FAIL" "$QC_SKILL_WARN"; do
+    case "$v" in ''|*[!0-9]*) continue ;; *) found=1; break ;; esac
+  done
+  [ "$found" -eq 1 ] || return 1
+  return 0
 }

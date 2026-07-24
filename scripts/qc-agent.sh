@@ -7,6 +7,12 @@
 # independent QC sub-agent — it does NOT trust the installer's
 # .onboarding-status file. It re-derives PASS/FAIL from its own checks.
 #
+# U122 (STAGE 1): per-skill warn visibility. The QC agent previously read ONLY
+# the exit code of each per-skill qc-*.sh, inheriting the blindness of all 37
+# warn-only checks. STAGE 1 parses the per-skill Result line to surface
+# pass/fail/warn counts in the JSON report — without changing the agent's own
+# pass/fail outcome (QC_FAIL_ON_WARN is NOT set). STAGE 2: fleet measurement.
+#
 # Usage:
 #   bash scripts/qc-agent.sh <skill-folder-name>
 #
@@ -17,17 +23,20 @@
 #   1. Verifies the skill folder exists with required files (SKILL.md,
 #      INSTALL.md, QC.md, qc-*.sh)
 #   2. Runs the skill's qc-*.sh script (the mechanical-check script the
-#      install agent wrote). Captures exit code and stderr/stdout.
+#      install agent wrote). Captures exit code and stderr/stdout. U122:
+#      additionally parses the per-skill Result line for warn visibility.
 #   3. Reads the QC.md rubric — checks the agent followed format (10-point
 #      rubric, 5-loop retry cap, self-audit checklist present).
 #   4. Reports a structured JSON result: {skill, pass, score_estimate,
-#      script_exit, failures: [...], escalate: bool}
+#      script_exit, failures: [...], escalate: bool, skill_pass, skill_fail,
+#      skill_warn}
 #
 # What it does NOT do:
 #   - Score the rubric itself (that's the install agent's job)
 #   - Trust the install agent's score (we just check the rubric is PRESENT
 #     and the script EXITS ZERO — both must be true to pass)
 #   - Need the install agent to set any flag file — purely external check.
+#   - Fail on per-skill warnings in STAGE 1 (observation only)
 
 set -u
 
@@ -40,9 +49,7 @@ fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-# U073 (STAGE 1): shared assert/warn/verdict helpers. The final verdict routes
-# through qc_verdict (behavior-preserving — QC_FAIL_ON_WARN is NOT set here,
-# so the exit code still depends only on the FAIL counter, exactly as before).
+# U073 (STAGE 1): shared assert/warn/verdict helpers. U122: qc_parse_skill_verdict.
 # shellcheck source=../lib-qc-shared.sh
 . "$ROOT/lib-qc-shared.sh"
 
@@ -100,17 +107,30 @@ fi
 
 # 3. Run the qc-*.sh script and capture result. Exit ZERO is required.
 SCRIPT_EXIT="n/a"
+SKILL_PASS="n/a"
+SKILL_FAIL="n/a"
+SKILL_WARN="n/a"
 if [ -n "$QC_SCRIPT" ] && [ -f "$QC_SCRIPT" ]; then
   blue "── Running $QC_SCRIPT ──"
-  bash "$QC_SCRIPT" >/tmp/qc-agent-${SKILL//\//_}.log 2>&1
+  LOG_FILE="/tmp/qc-agent-${SKILL//\//_}.log"
+  bash "$QC_SCRIPT" >"$LOG_FILE" 2>&1
   SCRIPT_EXIT=$?
   if [ $SCRIPT_EXIT -eq 0 ]; then
     green "  ✓ 3.1  qc-*.sh exited 0"
     PASS=$((PASS+1))
   else
-    red "  ✗ 3.1  qc-*.sh exited $SCRIPT_EXIT  (log: /tmp/qc-agent-${SKILL//\//_}.log)"
+    red "  ✗ 3.1  qc-*.sh exited $SCRIPT_EXIT  (log: $LOG_FILE)"
     FAIL=$((FAIL+1))
     FAILURES+=("qc script exited $SCRIPT_EXIT")
+  fi
+  # U122 (STAGE 1): parse per-skill Result line for warn visibility.
+  if qc_parse_skill_verdict "$LOG_FILE"; then
+    SKILL_PASS="$QC_SKILL_PASS"
+    SKILL_FAIL="$QC_SKILL_FAIL"
+    SKILL_WARN="$QC_SKILL_WARN"
+    blue "  info per-skill counts — $SKILL_PASS passed | $SKILL_FAIL failed | $SKILL_WARN warnings (STAGE 1: observation only)"
+  else
+    yellow "  warn could not parse per-skill Result line from $LOG_FILE"
   fi
 fi
 
@@ -160,7 +180,10 @@ cat <<EOF
   "checks_total":  $TOTAL,
   "script_exit":   "$SCRIPT_EXIT",
   "failures":      $FAILURES_JSON,
-  "escalate":      $ESCALATE
+  "escalate":      $ESCALATE,
+  "skill_pass":    "$SKILL_PASS",
+  "skill_fail":    "$SKILL_FAIL",
+  "skill_warn":    "$SKILL_WARN"
 }
 EOF
 
