@@ -4492,6 +4492,29 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
+  # U134 -- Fleet tool allowlist config-patch step.
+  # Ships the CEO tool-gate allow/deny lists as part of the
+  # skills update so tool policy changes propagate fleet-wide.
+  # Sources hooks/lib-ceo-tool-gate.sh as single source of truth.
+  # Idempotent; non-fatal (skips consent-active/PA boxes).
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Applying fleet tool allowlist (U134 config-patch)..."
+  _TOOL_AL="${OC_PERSISTENT_SCRIPTS_DIR:-$HOME/.openclaw/scripts}/u134-tool-allowlist-patch.sh"
+  [ -f "$_TOOL_AL" ] || _TOOL_AL="$ONBOARDING_DIR/scripts/u134-tool-allowlist-patch.sh"
+  if [ -f "$_TOOL_AL" ]; then
+    _TOOL_AL_OUT="$(bash "$_TOOL_AL" 2>&1)" || _TOOL_AL_RC=$?
+    case "$_TOOL_AL_OUT" in
+      *"APPLIED"*) echo "  (check) Tool allowlist applied - tool policy shipped fleet-wide" ;;
+      *"CANONICAL"*|*"already applied"*) echo "  (check) Tool allowlist already applied - idempotent no-op" ;;
+      *"consent"*|*"CONSENT"*) echo "  (info) Tool allowlist skipped - owner consent active" ;;
+      *"PA"*) echo "  (info) Tool allowlist skipped - PA-only box" ;;
+      *) echo "  (info) Tool allowlist: ""${_TOOL_AL_OUT:-no output}" ;;
+    esac
+  else
+    echo "  (info) u134-tool-allowlist-patch.sh not in bundle - step skipped"
+  fi
+
   # Fleet standards: ensure sub-agents fully permitted + Telegram media 50MB
   # (idempotent -- applied on every update, no-op if already canonical)
   # ----------------------------------------------------------
