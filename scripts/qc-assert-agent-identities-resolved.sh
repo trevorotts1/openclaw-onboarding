@@ -96,6 +96,21 @@ REQUIRED_FILES=(
 
 mapfile -t ID_FILES < <(find "$ROOT" -type f \( -name 'SOUL.md' -o -name 'IDENTITY.md' \) -not -path '*/.claude/*' 2>/dev/null | sort)
 
+# Files intentionally left as user-fillable templates (not unresolved)
+#   - Root IDENTITY.md: workspace identity — user fills in at first use
+#   - 18-proactive-agent/assets/SOUL.md: upstream original — user customizes
+USER_TEMPLATE_PATTERNS=(
+  'IDENTITY\.md$'
+  '18-proactive-agent/upstream-original/assets/SOUL\.md$'
+)
+_is_user_template() {
+  local rel="$1"
+  for p in "${USER_TEMPLATE_PATTERNS[@]}"; do
+    if [[ "$rel" =~ $p ]]; then return 0; fi
+  done
+  return 1
+}
+
 # Check 1: Required files exist
 for rf in "${REQUIRED_FILES[@]}"; do
   if [[ ! -f "$ROOT/$rf" ]]; then
@@ -103,9 +118,10 @@ for rf in "${REQUIRED_FILES[@]}"; do
   fi
 done
 
-# Check 2: Literal fill-in prompts
+# Check 2: Literal fill-in prompts (skip intentional user templates)
 for f in "${ID_FILES[@]}"; do
   rel="${f#$ROOT/}"
+  if _is_user_template "$rel"; then continue; fi
   for pat in "${FILL_IN_PATTERNS[@]}"; do
     if grep -qE "$pat" "$f" 2>/dev/null; then
       FAILURES+=("unresolved-fill-in:$rel")
@@ -114,9 +130,10 @@ for f in "${ID_FILES[@]}"; do
   done
 done
 
-# Check 3: Template variables
+# Check 3: Template variables (skip intentional user templates)
 for f in "${ID_FILES[@]}"; do
   rel="${f#$ROOT/}"
+  if _is_user_template "$rel"; then continue; fi
   for var in "${UNRESOLVED_VARS[@]}"; do
     if grep -qF "$var" "$f" 2>/dev/null; then
       FAILURES+=("unresolved-var:$rel:$var")
@@ -125,9 +142,10 @@ for f in "${ID_FILES[@]}"; do
   done
 done
 
-# Check 4: Generated-for with template token
+# Check 4: Generated-for with template token (skip intentional user templates)
 for f in "${ID_FILES[@]}"; do
   rel="${f#$ROOT/}"
+  if _is_user_template "$rel"; then continue; fi
   for pat in "${UNRESOLVED_GENFOR[@]}"; do
     if grep -qE "$pat" "$f" 2>/dev/null; then
       FAILURES+=("unresolved-generated-for:$rel")
@@ -136,9 +154,10 @@ for f in "${ID_FILES[@]}"; do
   done
 done
 
-# Check 5: Comprehensive {{}} template marker scan (anywhere in file)
+# Check 5: Comprehensive {{}} template marker scan (skip intentional user templates)
 for f in "${ID_FILES[@]}"; do
   rel="${f#$ROOT/}"
+  if _is_user_template "$rel"; then continue; fi
   if grep -qE "$UNRESOLVED_ANY_MARKER_RE" "$f" 2>/dev/null; then
     markers_found=$(grep -oE "$UNRESOLVED_ANY_MARKER_RE" "$f" 2>/dev/null | sort -u | tr '\n' ' ' | sed 's/ $//')
     FAILURES+=("unresolved-template-marker:$rel:[$markers_found]")
