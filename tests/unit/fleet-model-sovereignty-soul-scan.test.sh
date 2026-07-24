@@ -24,7 +24,8 @@ import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 o,s=g.scan_agent_soul_files(os.path.join(os.environ["HOME"],".openclaw","openclaw.json"))
 print(json.dumps({"o":o,"s":s}))
-PN)"
+PN
+)"
 sA="$(echo "$rA"|python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['s']))" 2>/dev/null||echo 0)"
 oA="$(echo "$rA"|python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['o']))" 2>/dev/null||echo 0)"
 [ "$sA" = "3" ] && pass "scanned 3 SOUL.md" || fail "expected 3 scanned; got $sA"
@@ -44,7 +45,8 @@ import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 o,s=g.scan_agent_soul_files(os.path.join(os.environ["HOME"],".openclaw","openclaw.json"))
 print(json.dumps({"o":o,"s":s}))
-PN)"
+PN
+)"
 sB="$(echo "$rB"|python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['s']))" 2>/dev/null||echo 0)"
 oB="$(echo "$rB"|python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['o']))" 2>/dev/null||echo 0)"
 [ "$sB" = "2" ] && pass "scanned 2 clean SOUL.md" || fail "expected 2 scanned; got $sB"
@@ -59,7 +61,8 @@ rC="$(python3 - "$GATE_PY" "$soulC" <<'PN'
 import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 m=g._strip_anthropic_from_soul_file(sys.argv[2]); print(json.dumps({"m":m}))
-PN)"
+PN
+)"
 mC="$(echo "$rC"|python3 -c "import json,sys;d=json.load(sys.stdin);print(d['m'])" 2>/dev/null||echo 0)"
 [ "$mC" = "3" ] && pass "replaced 3 model-ids" || fail "expected 3; got $mC"
 grep -q "client-provider/model" "$soulC" && pass "has client-provider/model" || fail "no replacement"
@@ -92,7 +95,8 @@ rE="$(python3 - "$GATE_PY" "$soulE" <<'PN'
 import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 m=g._strip_anthropic_from_soul_file(sys.argv[2]); print(json.dumps({"m":m}))
-PN)"
+PN
+)"
 mE="$(echo "$rE"|python3 -c "import json,sys;d=json.load(sys.stdin);print(d['m'])" 2>/dev/null||echo -1)"
 [ "$mE" = "0" ] && pass "second pass mutated 0" || fail "expected 0; got $mE"
 echo ""
@@ -105,7 +109,8 @@ rF="$(python3 - "$GATE_PY" "$F" <<'PN'
 import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 h=g._scan_soul_file_text(sys.argv[2]); print(json.dumps({"h":h}))
-PN)"
+PN
+)"
 hF="$(echo "$rF"|python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d['h']))" 2>/dev/null||echo 0)"
 [ "$hF" = "3" ] && pass "found 3 model-id lines" || fail "expected 3; got $hF"
 echo "$rF"|python3 -c "
@@ -139,7 +144,8 @@ rH="$(python3 - "$GATE_PY" "$soulH" <<'PN'
 import sys,os,json; sys.path.insert(0,os.path.dirname(sys.argv[1]))
 import assert_model_sovereignty as g
 m=g._strip_anthropic_from_soul_file(sys.argv[2]); print(json.dumps({"m":m}))
-PN)"
+PN
+)"
 mH="$(echo "$rH"|python3 -c "import json,sys;d=json.load(sys.stdin);print(d['m'])" 2>/dev/null||echo -1)"
 [ "$mH" = "0" ] && pass "returns 0 on clean" || fail "expected 0; got $mH"
 echo ""
