@@ -199,19 +199,25 @@ t3_run() {
   # t1_run: command substitution subshells any assignment made in here).
   local hook="$1" BOX="$T3_BOX"
   mkdir -p "$BOX/skills/32-command-center-setup/scripts"
-  # stub installer: records argv instead of doing anything
-  cat > "$BOX/skills/32-command-center-setup/scripts/run-full-install.sh" <<EOS
+  # stub installer: records argv, exit code controlled by FAKE_INSTALLER_EXIT.
+  # When FAKE_SKIP_INSTALLER=1 the installer is NOT created (exercises the
+  # no-installer exit-2 path).
+  if [ "${FAKE_SKIP_INSTALLER:-0}" != "1" ]; then
+    cat > "$BOX/skills/32-command-center-setup/scripts/run-full-install.sh" <<'EOS'
 #!/usr/bin/env bash
-echo "INSTALLER_INVOKED args=\$*" >> "$BOX/invocations"
-exit 0
+echo "INSTALLER_INVOKED args=$*" >> "${INSTALLER_LOG:-$HOME/invocations}"
+exit "${FAKE_INSTALLER_EXIT:-0}"
 EOS
-  chmod +x "$BOX/skills/32-command-center-setup/scripts/run-full-install.sh"
+    chmod +x "$BOX/skills/32-command-center-setup/scripts/run-full-install.sh"
+  fi
   : > "$BOX/invocations"
   (
     export HOME="$BOX"
     export PATH="$STUB:$PATH"
     export SKILLS_DIR="$BOX/skills"
     export LOG_FILE="$BOX/log"
+    export OC_WORKSPACE_DEFAULT="$BOX/.openclaw/workspace"
+    export INSTALLER_LOG="$BOX/invocations"
     eval "$hook"
     # shellcheck source=/dev/null
     source "$WORK/cc-guard.sh"
@@ -263,6 +269,27 @@ export _CC_EMAIL="" FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1
 T3_BOX="$(mktemp -d)"; out="$(t3_run 'true')"
 echo "$out" | grep -q "missing company/email" && ok "deferred on missing install args, reason stated" || bad "no clear deferral message"
 grep -q 'INSTALLER_INVOKED' "$T3_BOX/invocations" && bad "installer invoked without required args" || ok "installer not invoked"
+
+hdr "TRAP 3 / CASE 7 — CC exists, refresh-installer FAILS (U005 exit-2 advisory)"
+export FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1 FAKE_INSTALLER_EXIT=1
+T3_BOX="$(mktemp -d)"; out="$(t3_run 'make_checkout "$HOME/projects/command-center" https://github.com/trevorotts1/blackceo-command-center.git')"; rc=$?
+[ "$rc" = "2" ] && ok "exit 2 (CC refresh failed, content current)" || bad "expected exit 2, got $rc"
+echo "$out" | grep -q "ADVISORY: skills CONTENT is current" && ok "advisory line emitted (parseable pattern)" || bad "advisory line missing"
+echo "$out" | grep -q "refresh FAILED" && ok "refresh-failure reason stated" || bad "no refresh-failure reason"
+
+hdr "TRAP 3 / CASE 8 — no CC, bootstrap-installer FAILS (U005 exit-2 advisory)"
+export _CC_SLUG=acme _CC_COMPANY=Acme _CC_EMAIL=a@b.co FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1 FAKE_INSTALLER_EXIT=1
+T3_BOX="$(mktemp -d)"; out="$(t3_run 'true')"; rc=$?
+[ "$rc" = "2" ] && ok "exit 2 (bootstrap failed, content current)" || bad "expected exit 2, got $rc"
+echo "$out" | grep -q "ADVISORY: skills CONTENT is current" && ok "advisory line emitted (parseable pattern)" || bad "advisory line missing"
+echo "$out" | grep -q "bootstrap FAILED" && ok "bootstrap-failure reason stated" || bad "no bootstrap-failure reason"
+
+hdr "TRAP 3 / CASE 9 — CC exists but installer script MISSING (U005 exit-2 advisory)"
+export FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1 FAKE_SKIP_INSTALLER=1
+T3_BOX="$(mktemp -d)"; out="$(t3_run 'make_checkout "$HOME/projects/command-center" https://github.com/trevorotts1/blackceo-command-center.git')"; rc=$?
+[ "$rc" = "2" ] && ok "exit 2 (installer missing, content current)" || bad "expected exit 2, got $rc"
+echo "$out" | grep -q "ADVISORY: skills CONTENT is current" && ok "advisory line emitted (parseable pattern)" || bad "advisory line missing"
+echo "$out" | grep -q "installer missing" && ok "installer-missing reason stated" || bad "no installer-missing reason"
 
 printf '\n=========================================\n'
 printf 'TRAPS 1+3 REGRESSION SUITE: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
