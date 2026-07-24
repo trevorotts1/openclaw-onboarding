@@ -2,7 +2,7 @@
 
 **Purpose:** Document the deterministic mapping from interview answers to department enablement decisions. An operator can predict which departments will be enabled from a given set of answers without reading the source code.
 
-**Date:** 2026-07-23
+**Date:** 2026-07-24
 **Owner:** Skill 23 (AI Workforce Blueprint)
 
 ---
@@ -16,7 +16,7 @@ Interview Answers
        │
        ▼
 ┌─────────────────────────┐
-│ Stage 1: Canonical Floor │  ← 22 mandatory departments (standard-unless-declined)
+│ Stage 1: Canonical Floor │  ← 23 mandatory departments (standard-unless-declined)
 │ reconcile_canonical_floor│
 └──────────┬──────────────┘
            │
@@ -47,7 +47,7 @@ Interview Answers
 
 ## Stage 1: Canonical Floor (`reconcile_canonical_floor`)
 
-The canonical floor is the set of 22 mandatory departments defined in `department-naming-map.json` (v2.6.0). These are included by default unless the client explicitly declined them during the interview.
+The canonical floor is the set of 23 mandatory departments defined in `department-naming-map.json` . These are included by default unless the client explicitly declined them during the interview.
 
 **Logic:**
 ```
@@ -62,13 +62,13 @@ final = (all canonical MINUS explicit "no" in build-state) UNION client customs
 - Client custom (non-canonical) departments are always preserved.
 - Idempotent: re-running never duplicates a folder and never overwrites a client-authored description.
 
-**Canonical department IDs (22 mandatory):**
+**Canonical department IDs (23 mandatory):**
 ```
-marketing, sales, graphics, video, audio, research, crm, legal,
-billing-finance, customer-support, hr-people, operations,
-project-management, quality-control, product-development,
-engineering, data-analytics, communications, it-infrastructure,
-procurement, risk-management, openclaw-maintenance
+marketing, sales, billing-finance, customer-support, web-development,
+funnels, app-development, graphics, video, audio, research,
+communications, crm, openclaw-maintenance, legal, social-media,
+paid-advertisement, personal-assistant, general-task,
+project-architecture-office, bugs, healer, quality-control
 ```
 
 **Decline mechanism:** During the interview, the client can decline any canonical department. The decline is recorded in `build-state.canonicalReconciliation.decisions` with a provenance record. Declined departments are excluded from the final set.
@@ -116,16 +116,76 @@ Every custom department must carry a provenanced yes/no/later decision. If any c
 
 ---
 
-## Preview Before Finalizing
+## Decision-Tree Preview (Phase 5.6 -- Pipeline Output Before Finalizing)
 
-During the interview flow (Phase 5.5), the operator is shown a preview of the department set before finalizing. This preview shows:
+During the interview flow, after completing Phase 5.5 reconciliation, the operator renders the full 4-stage pipeline output before the owner confirms the final department set. This is a new Phase 5.6 step -- it shows the actual computed result of running Stages 1-4 against the owner's answers, not just a description of what will happen.
 
-1. **Canonical departments** that will be included (with decline options)
-2. **Semantic merge proposals** (custom depts that match a canonical dept, with merge/keep options)
-3. **Vertical pack additions** (industry-based departments)
-4. **Custom departments** that will be preserved
+### 1. Canonical Floor Report (Stage 1 output)
+- Every canonical department (23 mandatory) with its status:
+  - `INCLUDED` -- part of the final set (not declined)
+  - `DECLINED` -- owner explicitly said no (with decline provenance)
+  - `COVERED` -- owner already named this department in Phase 4
+  - `MISSING` -- not yet addressed; needs a decision before finalizing
+- Count: how many of 23 are included vs declined
 
-The operator confirms or adjusts before the build proceeds.
+### 2. Semantic Merge Proposals (Stage 2 output)
+- Each custom department flagged by `detect_semantic_overlaps()`:
+  - The custom department name + the canonical department it maps to
+  - The keyword signal(s) that triggered the overlap detection
+  - Decision recorded: `merge`, `keep`, or `PENDING`
+- Count: how many merges proposed, how many decided
+
+### 3. Vertical Pack Additions (Stage 3 output)
+- The detected industry and which vertical packs matched
+- Each additional department added by the matched packs
+- Whether each vertical-pack department is floor (universal-primary) or industry-gated
+- Count: how many vertical departments added
+
+### 4. Custom Departments (Stage 4 output)
+- Every custom department the owner named that did NOT match a canonical ID
+- Each custom department's decision: `yes`, `no`, `later`, or `PENDING`
+- Count: how many customs in the final set
+
+### Preview Format
+
+The operator renders the preview as a single structured message to the owner:
+
+```
+=== DEPARTMENT DECISION-TREE PREVIEW ===
+
+STAGE 1 -- CANONICAL FLOOR (23 mandatory)
+  INCLUDED (N):
+    [list each with display_name + one_liner]
+  DECLINED (N):
+    [list each with decline reason]
+
+STAGE 2 -- SEMANTIC MERGES
+  PROPOSED:
+    [custom_name] -> [canonical_name] (signal: [keyword])
+    Decision: [merge / keep / PENDING]
+  NO OVERLAPS DETECTED
+
+STAGE 3 -- VERTICAL PACKS
+  Industry: [detected industry]
+  Packs matched: [pack names]
+  Departments added (N):
+    [list each with display_name + one_liner]
+
+STAGE 4 -- CUSTOM DEPARTMENTS
+  KEPT (N):
+    [list each]
+  MERGED INTO CANONICAL (N):
+    [custom_name] -> [canonical_name]
+  DECLINED (N):
+    [list each]
+
+FINAL SET: [N] departments
+  Canonical: [N] | Vertical: [N] | Custom: [N] | Total: [N]
+
+Ready to finalize? (YES / ADJUST)
+```
+
+The operator confirms or adjusts before the build proceeds. No department advances to `status: "done"` until the owner confirms the preview.
 
 ---
 
@@ -139,6 +199,18 @@ The same interview answers always produce the same department set. The mapping i
 - Decision coverage: enforced, not optional
 
 No LLM is used in the department assignment logic. The AI generates the interview questions dynamically, but the mapping from answers to departments is deterministic code.
+
+---
+
+## Validation
+
+The canonical department IDs in this document are validated against `department-naming-map.json` by two automated checks:
+
+1. **CI test:** `tests/unit/u052-department-doc-validation.test.sh` -- asserts every canonical ID listed in this document exists in `department-naming-map.json` and that every mandatory department in the naming map appears in this document. Fails if any ID is fabricated or missing.
+
+2. **Manual validation script:** `scripts/qc-validate-department-docs.py` -- cross-references this document against the naming map and reports any mismatches with exit code 0 (clean) or 1 (drift detected).
+
+Both checks are mutation-proof: altering a canonical ID in this document to an invalid value makes the test FAIL (RED); reverting the change makes it PASS (GREEN).
 
 ---
 

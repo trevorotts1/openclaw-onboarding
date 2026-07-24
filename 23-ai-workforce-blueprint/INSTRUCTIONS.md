@@ -571,6 +571,75 @@ Canonical and floor departments resolve their roles/SOPs by COPY + token-persona
 
 ---
 
+
+
+### Phase 5.6  -  Decision-Tree Preview (BINDING  -  added v10.16.0 / U052)
+
+**Purpose:** Before advancing to Phase 6 final review, show the operator the COMPUTED output of the full four-stage department assignment pipeline so they can predict exactly which departments will be enabled BEFORE the build runs. This is NOT a re-run of Phase 5.5 reconciliation -- it is a structured preview of the pipeline result derived from the recorded decisions.
+
+**When to run:** Immediately after every canonical/vertical/custom decision is recorded in `.workforce-build-state.json` and BEFORE any "Build my company" confirmation. Never skip this -- it catches mistakes before they become built departments.
+
+#### 1. Canonical Floor Report (Stage 1)
+
+Walk the full 23-mandatory list from `department-naming-map.json` and report the status of each:
+- **INCLUDED** -- not declined, part of the final set
+- **COVERED** -- owner already named this department in Phase 4
+- **DECLINED** -- owner explicitly said no
+- **MISSING** -- no decision recorded yet; must be decided before finalizing
+
+#### 2. Semantic Merge Proposals (Stage 2)
+
+For each merge-flagged custom department: the custom name -> canonical survivor, the keyword signal(s), the recorded decision (`merge` / `keep` / `PENDING`).
+
+#### 3. Vertical Pack Additions (Stage 3)
+
+Detected industry, which vertical packs matched, each department added.
+
+#### 4. Custom Departments (Stage 4)
+
+Every non-canonical department the owner named, with decision (`yes` / `no` / `later` / `PENDING`), merged/declined breakdown.
+
+#### 5. Final Count + Confirmation
+
+```
+=== DEPARTMENT DECISION-TREE PREVIEW ===
+
+STAGE 1 -- CANONICAL FLOOR (23 mandatory)
+  INCLUDED (N):
+    [list each with display_name + one_liner]
+  DECLINED (N):
+    [list each with decline reason]
+
+STAGE 2 -- SEMANTIC MERGES
+  PROPOSED:
+    [custom_name] -> [canonical_name] (signal: [keyword])
+    Decision: [merge / keep / PENDING]
+
+STAGE 3 -- VERTICAL PACKS
+  Industry: [detected]
+  Packs matched: [names]
+  Departments added (N):
+    [list each]
+
+STAGE 4 -- CUSTOM DEPARTMENTS
+  KEPT (N): [list]
+  MERGED (N): [custom -> canonical]
+  DECLINED (N): [list]
+
+FINAL SET: [N] departments
+  Canonical: [N] | Vertical: [N] | Custom: [N] | Total: [N]
+
+Ready to finalize? (YES / ADJUST)
+```
+
+#### 6. Hard rules
+
+1. **MISSING_MANDATORY is a BLOCKER.** Do not advance to Phase 6 with any canonical department still MISSING.
+2. **PENDING merges are BLOCKERS.** Every `mergeDecisions` entry with value `PENDING` must be decided before finalizing.
+3. **The owner MUST confirm.** Acknowledge receipt of the preview. No silent advancement.
+4. **The preview is read from recorded state, not from memory.** Re-read `.workforce-build-state.json` to produce it -- do not reconstruct from conversation memory.
+
+
 ### Phase 6 - Final Review (~2-3 min)
 
 Show a plain-English synthesis of EVERYTHING captured (not raw answers - your synthesis of who they are and what they want to build). Owner confirms or edits any line. Then: *"Build my company."*
