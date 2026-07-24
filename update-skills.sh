@@ -4772,6 +4772,15 @@ PYEOF
   # checkout of blackceo-command-center. Does NOT re-embed the persona index (honors
   # "never rebuild a live correct index" and "client uses own keys").
   #
+  # EXIT-CODE CONTRACT (post-stamp section, never withholds the version stamp):
+  #   0 = fully current (skills content + CC infrastructure both up to date)
+  #   1 = stamp WITHHELD (a content-integrity gate before the stamp failed)
+  #   2 = content current, but CC infrastructure is incomplete or needs attention
+  #       (advisory — does NOT exit 1 so fleet drivers can distinguish
+  #       "stamp withheld" from "CC needs attention"; prevents the exit-1 loop
+  #       described in U002 where a post-stamp CC failure causes a re-run that
+  #       finds the stamp current but fails CC again → infinite loop).
+  #
   # U002 — EXIT-CODE CONTRACT (this section runs AFTER the version stamp is
   # written, so its failures must NOT masquerade as "stamp withheld"):
   #   exit 0 = fully current (stamp written AND CC infrastructure complete)
