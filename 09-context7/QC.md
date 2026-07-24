@@ -1,5 +1,5 @@
 # QC Checklist - Skill 09: Context7
-**Version:** v6.5.6
+**Version:** v6.5.7
 
 Run this after installation. Every section must pass before you mark Context7 complete.
 
@@ -16,7 +16,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `context7-full.md`, `QC.md`, and `skill-version.txt` all exist
-- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `skill-version.txt` returns `v6.5.7`
 - [ ] `context7-full.md` is non-empty
 
 **PASS:** All files exist and the version matches.
@@ -93,7 +93,7 @@ curl -s -H "Authorization: Bearer $CONTEXT7_API_KEY"   "https://api.context7.com
 
 Mark this skill FAIL if any of these are true:
 
-- [ ] `skill-version.txt` does not match `v6.5.6`
+- [ ] `skill-version.txt` does not match `v6.5.7`
 - [ ] `CONTEXT7_API_KEY` is missing or malformed
 - [ ] Search works but docs fetch fails
 - [ ] Core files are bloated with copied full-doc content
@@ -106,7 +106,7 @@ Mark this skill FAIL if any of these are true:
 Pass this skill only if all of the following are true:
 
 - [ ] File set is complete
-- [ ] Version matches `v6.5.6`
+- [ ] Version matches `v6.5.7`
 - [ ] Core file summaries are lean and correct
 - [ ] `CONTEXT7_API_KEY` is stored correctly
 - [ ] Search and docs fetch both work with the real API

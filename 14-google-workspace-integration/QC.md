@@ -1,5 +1,5 @@
 # QC Checklist - Skill 14: Google Workspace Integration
-**Version:** v6.5.6
+**Version:** v6.5.7
 
 Run this after installation. Every section must pass before you mark Google Workspace integration complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `google-workspace-integration-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.5.6`
+- [ ] `skill-version.txt` returns `v6.5.7`
 - [ ] `google-workspace-integration-full.md` is non-empty
 
 ---

@@ -1,5 +1,5 @@
 # QC Checklist - Skill 15: BlackCEO Team Management
-**Version:** v6.7.0
+**Version:** v6.7.2
 
 Run this after installation. Every section must pass before you mark team management complete.
 
@@ -14,7 +14,7 @@ cat "$SKILL_DIR/skill-version.txt"
 ```
 
 - [ ] Required files exist: `SKILL.md`, `INSTALL.md`, `INSTRUCTIONS.md`, `EXAMPLES.md`, `CORE_UPDATES.md`, `CHANGELOG.md`, `TEAM_CONFIG.md`, `blackceo-team-management-full.md`, `QC.md`, `skill-version.txt`
-- [ ] `skill-version.txt` returns `v6.6.0`
+- [ ] `skill-version.txt` returns `v6.7.2`
 
 ---
 
