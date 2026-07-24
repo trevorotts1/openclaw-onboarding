@@ -91,7 +91,7 @@ This skill upgrades your OpenClaw agent from the default memory system to an 8-l
 | Prerequisite | Required For | How to Check |
 |-------------|-------------|--------------|
 | Teach Yourself Protocol (TYP) | All skills | Check AGENTS.md for "Teach Yourself Protocol" |
-| Google API key | Layer 4 (Gemini search) | `echo $GOOGLE_API_KEY` returns a key starting with AIza |
+| Google API key | Layer 4 (Gemini search) | `[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" \|\| echo "GOOGLE_API_KEY: NOT-SET"` (presence-only — never prints the value) |
 | Python 3.8+ | Layer 4 (Gemini search) | `python3 --version` |
 | google-genai + numpy | Layer 4 (Gemini search) | `python3 -c "import google.genai; import numpy"` |
 | OpenClaw running | All layers | `openclaw status` shows gateway running |

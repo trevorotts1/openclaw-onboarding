@@ -152,9 +152,9 @@ SELF-TEST: VERIFY KIE.AI IS WORKING
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 After setup, run these tests to confirm everything works:
 
-TEST 1: Verify API Key Exists
-echo $KIE_API_KEY | head -c 10
-Expected: First 10 characters of your key
+TEST 1: Verify API Key Exists (presence-only — never prints the value)
+[ -n "$KIE_API_KEY" ] && echo "KIE_API_KEY: SET" || echo "KIE_API_KEY: NOT-SET"
+Expected: "KIE_API_KEY: SET" (presence-only — never prints key characters)
 
 TEST 2: Test Image Generation
 curl -s -X POST "https://api.kie.ai/api/v1/jobs/createTask" \

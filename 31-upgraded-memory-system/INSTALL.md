@@ -46,9 +46,9 @@ User's explicit override is highest priority. Chain:
 Before installing, check these prerequisites. If any are missing, still install the skill files but mark the skill as PENDING.
 
 ```bash
-# Check 1: Google API Key
-echo $GOOGLE_API_KEY
-# Expected: starts with AIza... If empty, MARK AS PENDING.
+# Check 1: Google API Key (presence-only — never prints the value)
+[ -n "$GOOGLE_API_KEY" ] && echo "GOOGLE_API_KEY: SET" || echo "GOOGLE_API_KEY: NOT-SET"
+# Expected: "GOOGLE_API_KEY: SET". If "NOT-SET", MARK AS PENDING.
 
 # Check 2: Python SDK
 python3 -c "from google import genai; import numpy; print('SDK ready')"
