@@ -1,3 +1,55 @@
+## [v21.2.0]  -  2026-07-24  -  FLEET MEMORY STANDARDIZATION: kill QMD/LanceDB backends, standardize google/gemini-embedding-2, enable dreaming fleet-wide
+
+ROOT CAUSE: a fleet box ran 17 days with a completely empty embedding index because its qmd
+vector backend had stalled and the memory-lancedb plugin was disabled — the memory pipeline was
+completely dark (the agent could not recall any past work) and nothing surfaced it. This is a
+fleet-wide default-safety gap: per the loopDetection precedent (v20.0.101), the fleet default
+for a safety/memory capability should be ON, not OFF. The updater's memory-converge step
+(added in this release, immediately after the loopDetection step in update-skills.sh, same
+SAFETY-ADDITIVE + NON-FATAL `openclaw config set` contract) now closes it on every roll:
+
+1. KILL QMD + LANCEDB BACKENDS FLEET-WIDE
+   - `plugins.entries.memory-lancedb.enabled=false` is force-set whenever the entry exists
+     (the plugin that was disabled on the affected box but still present in config; LanceDB was
+     replaced by Google/OpenAI embeddings, so a present-but-disabled entry is drift).
+   - Legacy qmd neutralized: the qmd tool (better-sqlite3 backed) was retired 2026-07-23 (U132)
+     and the code no longer invokes it — shared-utils/provision-persona-index.sh removed all
+     _qmd_* helpers and update-skills.sh dropped the reconcile call in that pass, so no qmd
+     code path remains to gate. What remains on a box is the stale binary and any legacy qmd
+     config keys. When a Google or OpenAI embedding key is configured AND qmd is present the
+     step logs "qmd backend migrated to Google/OpenAI embeddings, skipping" and best-effort
+     disables any legacy `plugins.entries.qmd` / `memorySearch.qmd` keys. The binary itself is
+     never touched.
+
+2. STANDARDIZE ON GOOGLE gemini-embedding-2 AS THE DEFAULT EMBEDDING MODEL
+   - Google key SET (presence-only check — the key VALUE is never read, printed, or written):
+     ensures `models.providers.google.models` includes the gemini-embedding-2 entry
+     (id "gemini-embedding-2", name "Gemini Embedding 2", input ["text"], contextWindow 2048)
+     and pins `agents.defaults.memorySearch` to provider=gemini model=gemini-embedding-2.
+   - Google key NOT set AND OpenAI key SET: falls back to openai/text-embedding-3-small.
+   - NEITHER set: logs a non-blocking warning ("No embedding provider configured — memory
+     features will be degraded. Set GOOGLE_API_KEY or OPENAI_API_KEY.") and pins nothing —
+     never pins a keyless model (the v13.2.0 regression class).
+   - All writes via `openclaw config set` (NEVER root file edits). Idempotent: every key is
+     pre-read and only written when different. Degrades gracefully on older builds that reject
+     a key — the step never blocks the roll and, running after the stamp, structurally cannot
+     withhold the version stamp.
+
+3. ENABLE DREAMING (memory-core) FLEET-WIDE
+   - `plugins.entries.memory-core.enabled=true` when the plugin entry exists, plus
+     `config.dreaming` = {enabled: true, frequency: "0 3 * * *", timezone: "America/New_York"}
+     (the fleet-standard nightly schedule). When memory-core is newly enabled the step notes
+     that a gateway reload registers the dreaming cron — that reload is delivered by the
+     existing conditional gateway-restart gate, which fires automatically because these
+     config writes mutate openclaw.json. Older builds without memory-core log a note and
+     continue; the roll never aborts.
+
+GUARDRAILS: touches only update-skills.sh (the new step), CHANGELOG.md, and version markers.
+No skill content, routing, model configs (beyond the memorySearch/embedding defaults above),
+agent definitions, or credential VALUES are read or written. provision-persona-index.sh is
+unchanged — its qmd code was already removed in the 2026-07-23 U132 pass, so there was no
+live qmd path left to gate there.
+
 ## [v21.1.0]  -  2026-07-24  -  CAPSTONE: consolidated 154 merged commits (65 Super-Spec units, v21.0.5-unreleased through v21.1.0)
 
 128 units merged under the stale v21.0.4 version label are now consolidated into v21.1.0, represented by 154 commits across 65 unit ranges recorded since the v21.0.4 tag. Units included: U001, U002, U003, U004, U005, U027, U028, U030, U031, U032, U033, U034, U035, U036, U037, U038, U039, U040, U041, U043, U044, U045, U046, U049, U052, U053, U054, U055, U056, U057, U058, U059, U060, U061, U066, U068, U072, U073, U074, U076, U077, U078, U079, U096, U098, U099, U101, U102, U103, U105, U106, U107, U111, U116, U120, U126, U127, U128, U129, U130, U131, U132, U134, U135, U136.

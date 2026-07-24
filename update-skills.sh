@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.1.0"
+ONBOARDING_VERSION="v21.2.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -701,7 +701,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.1.0 - safe_json_edit
+# v21.2.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4636,6 +4636,186 @@ PYEOF
     fi
   else
     echo "  ℹ openclaw CLI not on PATH — skipping loopDetection enablement (update continues)."
+  fi
+
+  # ----------------------------------------------------------
+  # FLEET MEMORY STANDARDIZATION (v21.2.0) — kills the dark-memory default
+  # gap fleet-wide. Root cause: a box ran 17 days with a completely empty
+  # embedding index because its qmd vector backend was stalled and the
+  # memory-lancedb plugin was disabled — the memory pipeline was fully dark
+  # (no recall of any past work) and NOTHING surfaced it. Per the loopDetection
+  # precedent (v20.0.101, directly above), the fleet default must be ON, not
+  # OFF — so every roll now converges the memory stack to a serveable,
+  # always-on state:
+  #
+  #   (a) memory-lancedb plugin force-disabled when its entry exists
+  #       (plugins.entries.memory-lancedb.enabled=false) — it was replaced by
+  #       Google/OpenAI embeddings; a present-but-disabled entry is drift.
+  #   (b) legacy qmd backend neutralized — the qmd tool (better-sqlite3
+  #       backed) was retired 2026-07-23 (U132) and the code no longer
+  #       invokes it, but a box may still carry the stale binary or a legacy
+  #       qmd config key. When a Google or OpenAI key is configured AND qmd
+  #       is present we log "qmd backend migrated to Google/OpenAI
+  #       embeddings, skipping" and best-effort disable any legacy
+  #       plugins.entries.qmd / memorySearch.qmd keys. The binary itself is
+  #       NEVER touched.
+  #   (c) embedding default standardized on google/gemini-embedding-2 when a
+  #       Google key is SET (presence-only check — the key VALUE is never
+  #       read, printed, or written; the provider apiKey stays where the box
+  #       already has it), ensuring models.providers.google.models carries
+  #       the gemini-embedding-2 entry and agents.defaults.memorySearch pins
+  #       provider=gemini model=gemini-embedding-2. Falls back to
+  #       openai/text-embedding-3-small when only an OpenAI key is set, and
+  #       logs a non-blocking warning when NEITHER is set (never pins a
+  #       keyless model — the v13.2.0 regression class).
+  #   (d) dreaming ENABLED fleet-wide: plugins.entries.memory-core.enabled=true
+  #       plus config.dreaming.enabled=true with the fleet-standard nightly
+  #       schedule (frequency "0 3 * * *", timezone America/New_York).
+  #
+  # SAFETY-ADDITIVE + NON-FATAL, same contract as the loopDetection step:
+  # every write goes through the schema-validated CLI writer
+  # `openclaw config set` — NEVER a root file edit of openclaw.json. Each key
+  # is pre-read and only written when different (idempotent no-op on a
+  # converged box). On an older build that rejects a key the step logs a note
+  # and CONTINUES — it can never block the roll or withhold the version
+  # stamp (this step runs AFTER the stamp, so it structurally cannot). No
+  # models, no routing (primary/fallbacks), and no credential VALUES are
+  # touched. Any config mutation is picked up by the conditional
+  # gateway-restart gate at the end of this section, which activates the
+  # dreaming cron.
+  # ----------------------------------------------------------
+  echo ""
+  echo "  Fleet memory standardization (kill qmd/LanceDB, standardize embeddings, enable dreaming)..."
+  if command -v openclaw >/dev/null 2>&1; then
+    # Presence-only helper: prints SET/NOT-SET for a provider apiKey WITHOUT
+    # ever exposing the value. `openclaw config get` on a secret path can
+    # echo the key, so output is swallowed and only the exit/success signal
+    # and a length bucket are used.
+    _ms_key_state() {
+      local _raw
+      _raw="$(openclaw config get "$1" 2>/dev/null || true)"
+      _raw="$(printf '%s' "$_raw" | tr -d '[:space:]')"
+      # A real key is never empty and never one of the CLI's null markers.
+      if [ -n "$_raw" ] && [ "$_raw" != "null" ] && [ "$_raw" != "undefined" ] \
+         && [ "$_raw" != '""' ] && [ "$_raw" != "''" ]; then
+        echo "SET"
+      else
+        echo "NOT-SET"
+      fi
+    }
+
+    _GOOGLE_KEY_STATE="$(_ms_key_state models.providers.google.apiKey)"
+    _OPENAI_KEY_STATE="$(_ms_key_state models.providers.openai.apiKey)"
+
+    # ── (a) memory-lancedb force-disable (only when the entry exists) ──────
+    _LDB_PRESENT="$(openclaw config get plugins.entries.memory-lancedb 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$_LDB_PRESENT" ] && [ "$_LDB_PRESENT" != "null" ] && [ "$_LDB_PRESENT" != "undefined" ]; then
+      _LDB_CUR="$(openclaw config get plugins.entries.memory-lancedb.enabled 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_LDB_CUR" = "false" ]; then
+        echo "  ✓ plugins.entries.memory-lancedb.enabled already false — no change (idempotent no-op)"
+      elif openclaw config set plugins.entries.memory-lancedb.enabled false >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ memory-lancedb plugin force-disabled (replaced by Google/OpenAI embeddings)"
+      else
+        echo "  ℹ Could not disable memory-lancedb — older build may not support the key; update continues."
+      fi
+    else
+      echo "  ✓ memory-lancedb entry not present — nothing to disable"
+    fi
+
+    # ── (b) legacy qmd backend neutralization ──────────────────────────────
+    if command -v qmd >/dev/null 2>&1; then
+      if [ "$_GOOGLE_KEY_STATE" = "SET" ] || [ "$_OPENAI_KEY_STATE" = "SET" ]; then
+        echo "  ℹ qmd backend migrated to Google/OpenAI embeddings, skipping"
+        # Legacy qmd config keys were superseded 2026-07-23. Best-effort
+        # disable when present; ignore failures (key may not exist — that is
+        # the converged state).
+        for _QMD_KEY in plugins.entries.qmd.enabled memorySearch.qmd.enabled; do
+          _QMD_CUR="$(openclaw config get "$_QMD_KEY" 2>/dev/null | tr -d '[:space:]' || true)"
+          if [ "$_QMD_CUR" = "true" ]; then
+            openclaw config set "$_QMD_KEY" false >>"$LOG_FILE" 2>&1 \
+              && echo "  ✓ legacy qmd key $_QMD_KEY disabled" \
+              || echo "  ℹ could not disable $_QMD_KEY (older build) — update continues"
+          fi
+        done
+        unset _QMD_CUR _QMD_KEY
+      else
+        echo "  ⚠ qmd present but NO Google/OpenAI key set — qmd retired; set GOOGLE_API_KEY or OPENAI_API_KEY to restore memory search"
+      fi
+    fi
+
+    # ── (c) embedding default standardization ──────────────────────────────
+    if [ "$_GOOGLE_KEY_STATE" = "SET" ]; then
+      # Ensure the gemini-embedding-2 entry is present in the Google provider
+      # model list. --merge merges the object map instead of replacing the
+      # whole provider block.
+      _GMS_CUR="$(openclaw config get models.providers.google.models 2>/dev/null || true)"
+      if printf '%s' "$_GMS_CUR" | grep -q '"gemini-embedding-2"' 2>/dev/null; then
+        echo "  ✓ models.providers.google.models already includes gemini-embedding-2 — no change"
+      elif openclaw config set models.providers.google.models \
+          '[{"id":"gemini-embedding-2","name":"Gemini Embedding 2","input":["text"],"contextWindow":2048}]' \
+          --strict-json >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ models.providers.google.models now includes gemini-embedding-2 (Gemini Embedding 2, text, 2048 ctx)"
+      else
+        echo "  ℹ Could not write models.providers.google.models — older build may reject the key; update continues."
+      fi
+      _MSP_CUR="$(openclaw config get agents.defaults.memorySearch.provider 2>/dev/null | tr -d '[:space:]' || true)"
+      _MSM_CUR="$(openclaw config get agents.defaults.memorySearch.model 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_MSP_CUR" = "gemini" ] && [ "$_MSM_CUR" = "gemini-embedding-2" ]; then
+        echo "  ✓ agents.defaults.memorySearch already gemini/gemini-embedding-2 — no change"
+      elif openclaw config set agents.defaults.memorySearch.provider gemini >>"$LOG_FILE" 2>&1 \
+        && openclaw config set agents.defaults.memorySearch.model gemini-embedding-2 >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ agents.defaults.memorySearch standardized → gemini/gemini-embedding-2 (fleet default)"
+      else
+        echo "  ℹ Could not set agents.defaults.memorySearch — older build may reject the key; update continues."
+      fi
+      unset _GMS_CUR _MSP_CUR _MSM_CUR
+    elif [ "$_OPENAI_KEY_STATE" = "SET" ]; then
+      _MSM_CUR="$(openclaw config get agents.defaults.memorySearch.model 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_MSM_CUR" = "text-embedding-3-small" ]; then
+        echo "  ✓ agents.defaults.memorySearch already openai/text-embedding-3-small — no change"
+      elif openclaw config set agents.defaults.memorySearch.provider openai >>"$LOG_FILE" 2>&1 \
+        && openclaw config set agents.defaults.memorySearch.model text-embedding-3-small >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ agents.defaults.memorySearch standardized → openai/text-embedding-3-small (no Google key; fleet fallback)"
+      else
+        echo "  ℹ Could not set agents.defaults.memorySearch — older build may reject the key; update continues."
+      fi
+      unset _MSM_CUR
+    else
+      echo "  ⚠ No embedding provider configured — memory features will be degraded. Set GOOGLE_API_KEY or OPENAI_API_KEY."
+    fi
+
+    # ── (d) dreaming enablement (memory-core) ──────────────────────────────
+    _MC_PRESENT="$(openclaw config get plugins.entries.memory-core 2>/dev/null | tr -d '[:space:]' || true)"
+    if [ -n "$_MC_PRESENT" ] && [ "$_MC_PRESENT" != "null" ] && [ "$_MC_PRESENT" != "undefined" ]; then
+      _MC_WAS="$(openclaw config get plugins.entries.memory-core.enabled 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_MC_WAS" = "true" ]; then
+        echo "  ✓ plugins.entries.memory-core.enabled already true — no change"
+      elif openclaw config set plugins.entries.memory-core.enabled true >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ memory-core plugin enabled (dreaming memory-consolidation now active)"
+        echo "    gateway reload (conditional restart below) registers the dreaming cron"
+      else
+        echo "  ℹ Could not enable memory-core — older build may not support the key; update continues."
+      fi
+      # Dreaming config: enabled + fleet-standard nightly schedule. Written
+      # as one nested object via --strict-json only when not already enabled.
+      _DRM_CUR="$(openclaw config get plugins.entries.memory-core.config.dreaming.enabled 2>/dev/null | tr -d '[:space:]' || true)"
+      if [ "$_DRM_CUR" = "true" ]; then
+        echo "  ✓ memory-core dreaming already enabled — no change"
+      elif openclaw config set plugins.entries.memory-core.config.dreaming \
+          '{"enabled":true,"frequency":"0 3 * * *","timezone":"America/New_York"}' \
+          --strict-json >>"$LOG_FILE" 2>&1; then
+        echo "  ✓ memory-core dreaming enabled (nightly 03:00 America/New_York)"
+      else
+        echo "  ℹ Could not write memory-core dreaming config — older build may not support the key; update continues."
+      fi
+      unset _MC_WAS _DRM_CUR
+    else
+      echo "  ℹ memory-core entry not present — this OpenClaw build may predate the dreaming plugin; skipping (update continues)."
+    fi
+
+    unset _GOOGLE_KEY_STATE _OPENAI_KEY_STATE _LDB_PRESENT _LDB_CUR _MC_PRESENT
+  else
+    echo "  ℹ openclaw CLI not on PATH — skipping fleet memory standardization (update continues)."
   fi
 
   # ----------------------------------------------------------
