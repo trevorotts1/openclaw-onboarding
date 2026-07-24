@@ -22,7 +22,8 @@ every one so the fleet roll lands green:
    provision-persona-index.sh tombstone comment is restored to its historical wording.
 
 4. GHL Tier-2 no-client-names guard: skill35-zero-work-idle-heartbeat.test.sh hardcoded the
-   operator path /Users/blackceomacmini/... (the single flagged roster hit). Replaced with the
+   operator's macOS home path (the single flagged roster hit — the banned operator-home literal).
+   Replaced with the
    portable BASH_SOURCE-derived REPO_ROOT used by sibling tests. (Note: this test is not wired
    into any CI workflow and has a separate pre-existing U131 assertion failure; both are out of
    scope for the gate — only the operator-path leak blocked a gate.)
