@@ -179,13 +179,86 @@ def assert_model_sovereignty(
                                f"modality '{rm}' satisfied).")
 
 
-def scan_config(openclaw_json_path=None):
+
+def _resolve_workspace_departments(openclaw_json_path=None):
+    if sm is None: return None
+    cfg = sm._load_openclaw_config(openclaw_json_path)
+    ws = None
+    agents = cfg.get("agents", {})
+    for a in agents.get("list", []) or []:
+        if isinstance(a, dict) and a.get("id") == "main" and a.get("workspace"):
+            ws = os.path.expanduser(a["workspace"]); break
+    if not ws:
+        dws = agents.get("defaults", {}).get("workspace")
+        if dws: ws = os.path.expanduser(dws)
+    if not ws:
+        ws = "/data/.openclaw/workspace" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw/workspace")
+    dept = os.path.join(ws, "departments")
+    return dept if os.path.isdir(dept) else None
+
+
+def _scan_soul_file_text(soul_path):
+    hits = []
+    try:
+        with open(soul_path, "r", encoding="utf-8", errors="replace") as f:
+            for lineno, line in enumerate(f, 1):
+                if text_has_anthropic_model_id(line):
+                    hits.append({"line": lineno, "match": line.strip()[:120]})
+    except (OSError, UnicodeDecodeError): pass
+    return hits
+
+
+def scan_agent_soul_files(openclaw_json_path=None):
+    dept_root = _resolve_workspace_departments(openclaw_json_path)
+    if not dept_root: return [], []
+    offenders, scanned = [], []
+    try: entries = sorted(os.listdir(dept_root))
+    except OSError: return [], []
+    for slug in entries:
+        soul_path = os.path.join(dept_root, slug, "SOUL.md")
+        if not os.path.isfile(soul_path): continue
+        hits = _scan_soul_file_text(soul_path)
+        scanned.append({"agent": slug, "model": None, "source": soul_path})
+        if hits:
+            offenders.append({
+                "agent": slug, "source": soul_path,
+                "code": "FORBIDDEN_SOUL_TEXT", "hits": hits,
+                "reason": f"dept-{slug}/SOUL.md contains {len(hits)} Anthropic model-id reference(s) in free text",
+            })
+    return offenders, scanned
+
+
+def _strip_anthropic_from_soul_file(soul_path):
+    try:
+        with open(soul_path, "r", encoding="utf-8", errors="replace") as f: lines = f.readlines()
+    except (OSError, UnicodeDecodeError): return 0
+    mutated = 0; safe = []
+    for line in lines:
+        if text_has_anthropic_model_id(line):
+            fixed = re.sub(r"anthropic[/.][^\s\"]+", r"client-provider/model", line, flags=re.IGNORECASE)
+            fixed = re.sub(r"\bclaude-[^\s\"]+", r"client-provider/model", fixed, flags=re.IGNORECASE)
+            safe.append(fixed); mutated += 1
+        else: safe.append(line)
+    if not mutated: return 0
+    import shutil, datetime
+    ts = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    bak = soul_path + ".bak-soul-sweep-" + ts
+    shutil.copy2(soul_path, bak)
+    with open(soul_path, "w", encoding="utf-8") as f: f.writelines(safe)
+    return mutated
+
+
+def scan_config(openclaw_json_path=None, include_soul_files=True):
     """Scan every agent model in a config for sovereignty offenders.
 
     Returns (offenders: list, scanned: list). An offender is any agent whose
     primary model fails the gate at the baseline `text` modality. (Per-task
     modality checks happen at dispatch; this is the build/QC-time floor that
     catches null / free-default / forbidden / not-in-inventory.)
+
+    When include_soul_files is True, also walks workspace/departments for
+    SOUL.md files.  Closes the U084 / U123 gap: the gate previously only
+    scanned openclaw.json and missed non-master agent SOUL.md violations.
     """
     if sm is None:
         raise RuntimeError(
@@ -219,6 +292,11 @@ def scan_config(openclaw_json_path=None):
         v = assert_model_sovereignty(primary, inventory=inventory, required_modality="text")
         if not v["ok"]:
             offenders.append({"agent": agent_id, **v})
+
+    if include_soul_files:
+        soul_offenders, soul_scanned = scan_agent_soul_files(openclaw_json_path)
+        offenders.extend(soul_offenders)
+        scanned.extend(soul_scanned)
 
     return offenders, scanned
 
