@@ -77,6 +77,23 @@ else
   yellow "  ⚠ WARN — Podbean credential probe skipped (no LOCAL client pair; PROXY/BROKER boxes mint tokens server-side)"; WARN=$((WARN+1))
 fi
 
+# ── U040: integration test reference (NO AUTO-RUN) ──────────────────────────
+# The integration test exercises the full Podbean publish+verify+delete cycle
+# against a live API. It is explicitly gated behind PODBEAN_INTEGRATION_TEST=1
+# and NEVER runs unattended. This QC gate references it so operators and judges
+# know it exists, but does NOT auto-run it.
+INTEGRATION_TEST="$SKILLS_DIR_DEFAULT/58-podcast-production-engine/scripts/tests/integration-test-podbean-publish-verify.sh"
+if [ -f "$INTEGRATION_TEST" ]; then
+  echo ""
+  echo "  Info -- U040 integration test found: $INTEGRATION_TEST"
+  echo "  Info -- This test is GATED -- it never runs unattended. To opt in:"
+  echo "  Info --   PODBEAN_INTEGRATION_TEST=1 bash 58-podcast-production-engine/scripts/tests/integration-test-podbean-publish-verify.sh"
+  echo "  Info -- It creates a draft episode, verifies it on the API, and deletes it."
+else
+  yellow "  WARN -- U040 integration test not found at expected path"
+  WARN=$((WARN+1))
+fi
+
 echo ""
 echo "═══ Result: $PASS passed | $FAIL failed | $WARN warnings ═══"
 [ $FAIL -gt 0 ] && { red "Skill 58 QC FAILED"; exit 1; } || { green "Skill 58 QC PASS"; exit 0; }
