@@ -569,6 +569,91 @@ The canonical list message in Step 2 will be long. Send it as ONE message anyway
 
 Canonical and floor departments resolve their roles/SOPs by COPY + token-personalize from the 420-role library (never LLM-authored; 420 roles / 34 departments as of v16.2.16). For anything the library does NOT cover  -  a custom department, or a custom role/SOP the owner needs inside ANY department (including a core one)  -  capture it per department, author it to standard, and LAYER any semantically overlapping custom content INTO the one core department instead of shipping a duplicate. See `23-ai-workforce-blueprint/CUSTOM-AUTHORING-AND-MERGE-STANDARD.md` for the binding trigger / capture / authoring / core-merge / closeout-gate rules.
 
+
+---
+
+### Phase 5.6 -- Decision-Tree Preview (Pipeline Output Before Finalizing) (BINDING -- added U052 v2026-07-24)
+
+**Why this exists.** Phase 5.5 gathers individual department decisions one by one. Before advancing to Phase 6 Final Review, the operator MUST render a single structured preview of the complete 4-stage pipeline output computed from the owner's answers. This lets the owner see the full department set at a glance -- what is included, what was declined, which semantic merges are proposed, and which vertical pack additions apply -- and confirm or adjust BEFORE the build finalizes.
+
+**When to run.** Run this phase AFTER Phase 5.5 Step 3 complete (all decisions recorded) and BEFORE Phase 6 Final Review. It is not optional.
+
+#### Step 1 -- Compute the four-stage output
+
+Using the live `department-naming-map.json` (v2.7.0+) and the recorded build-state, compute:
+
+1. **Canonical Floor Report (Stage 1):** For each of the 23 mandatory departments, render its status:
+   - `INCLUDED` -- part of the final set (not declined)
+   - `DECLINED` -- owner explicitly said no (with decline provenance)
+   - `COVERED` -- owner already named this department in Phase 4
+   - `MISSING` -- not yet addressed; needs a decision before finalizing
+   - Count: how many of 23 are included vs declined
+
+2. **Semantic Merge Proposals (Stage 2):** For each custom department flagged by `detect_semantic_overlaps()`:
+   - The custom department name + the canonical department it maps to
+   - The keyword signal(s) that triggered the overlap detection
+   - Decision recorded: `merge`, `keep`, or `PENDING`
+   - Count: how many merges proposed, how many decided
+
+3. **Vertical Pack Additions (Stage 3):**
+   - The detected industry and which vertical packs matched
+   - Each additional department added by the matched packs
+   - Whether each vertical-pack department is floor (universal-primary) or industry-gated
+   - Count: how many vertical departments added
+
+4. **Custom Departments (Stage 4):**
+   - Every custom department the owner named that did NOT match a canonical ID
+   - Each custom department's decision: `yes`, `no`, `later`, or `PENDING`
+   - Count: how many customs in the final set
+
+#### Step 2 -- Render the structured preview
+
+The operator renders the preview as a single structured message to the owner:
+
+```
+=== DEPARTMENT DECISION-TREE PREVIEW ===
+
+STAGE 1 -- CANONICAL FLOOR (23 mandatory)
+  INCLUDED (N):
+    [list each with emoji + display_name + one_liner]
+  DECLINED (N):
+    [list each with decline reason]
+
+STAGE 2 -- SEMANTIC MERGES
+  PROPOSED:
+    [custom_name] -> [canonical_name] (signal: [keyword])
+    Decision: [merge / keep / PENDING]
+  NO OVERLAPS DETECTED
+
+STAGE 3 -- VERTICAL PACKS
+  Industry: [detected industry]
+  Packs matched: [pack names]
+  Departments added (N):
+    [list each with emoji + display_name + one_liner]
+
+STAGE 4 -- CUSTOM DEPARTMENTS
+  KEPT (N):
+    [list each]
+  MERGED INTO CANONICAL (N):
+    [custom_name] -> [canonical_name]
+  DECLINED (N):
+    [list each]
+
+FINAL SET: [N] departments
+  Canonical: [N] | Vertical: [N] | Custom: [N] | Total: [N]
+
+Ready to finalize? (YES / ADJUST)
+```
+
+#### Step 3 -- Owner confirmation
+
+Wait for explicit owner confirmation. No department advances to `status: "done"` until the owner confirms the preview. On YES, proceed to Phase 6. On ADJUST, loop back through whichever stage needs correction and render the preview again.
+
+**Hard rules:**
+1. **NEVER skip this phase.** Even if the owner named every department by hand and declined nothing, render the preview. The point is to give the owner a single at-a-glance summary of the complete department set before the build is irrevocably committed.
+2. **NEVER advance to Phase 6 with PENDING items in Stage 2 or Stage 4.** Every merge proposal and custom department must carry a recorded decision. PENDING items block the preview -- show them as "UNRESOLVED -- requires decision" and refuse to advance.
+3. **NEVER auto-confirm on the owner's behalf.** The preview waits for an explicit YES or ADJUST from the owner. No exceptions.
+
 ---
 
 ### Phase 6 - Final Review (~2-3 min)

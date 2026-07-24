@@ -16,7 +16,7 @@ Interview Answers
        │
        ▼
 ┌─────────────────────────┐
-│ Stage 1: Canonical Floor │  ← 22 mandatory departments (standard-unless-declined)
+│ Stage 1: Canonical Floor │  ← 23 mandatory departments (standard-unless-declined)
 │ reconcile_canonical_floor│
 └──────────┬──────────────┘
            │
@@ -47,7 +47,7 @@ Interview Answers
 
 ## Stage 1: Canonical Floor (`reconcile_canonical_floor`)
 
-The canonical floor is the set of 22 mandatory departments defined in `department-naming-map.json` (v2.6.0). These are included by default unless the client explicitly declined them during the interview.
+The canonical floor is the set of 23 mandatory departments defined in `department-naming-map.json` (v2.7.0). These are included by default unless the client explicitly declined them during the interview.
 
 **Logic:**
 ```
@@ -62,13 +62,13 @@ final = (all canonical MINUS explicit "no" in build-state) UNION client customs
 - Client custom (non-canonical) departments are always preserved.
 - Idempotent: re-running never duplicates a folder and never overwrites a client-authored description.
 
-**Canonical department IDs (22 mandatory):**
+**Canonical department IDs (23 mandatory):**
 ```
-marketing, sales, graphics, video, audio, research, crm, legal,
-billing-finance, customer-support, hr-people, operations,
-project-management, quality-control, product-development,
-engineering, data-analytics, communications, it-infrastructure,
-procurement, risk-management, openclaw-maintenance
+marketing, sales, billing-finance, customer-support, web-development,
+funnels, app-development, graphics, video, audio, research,
+communications, crm, openclaw-maintenance, legal, social-media,
+paid-advertisement, personal-assistant, general-task,
+project-architecture-office, bugs, healer, quality-control
 ```
 
 **Decline mechanism:** During the interview, the client can decline any canonical department. The decline is recorded in `build-state.canonicalReconciliation.decisions` with a provenance record. Declined departments are excluded from the final set.
