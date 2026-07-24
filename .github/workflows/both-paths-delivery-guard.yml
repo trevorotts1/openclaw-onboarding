@@ -337,20 +337,36 @@ jobs:
           fi
           echo "PASS D18: CC board built on install (db:seed) + synced on update, reachable both paths"
 
-      - name: D19 — qmd persona-store reconcile on both paths
+      - name: D19 — qmd persona-store removed (replaced by embeddings, 2026-07-23)
         run: |
-          # reconcile_qmd_persona_index repoints + re-indexes the qmd persona store.
-          # Defined once (shared-utils) and invoked on BOTH paths.
+          # qmd was retired 2026-07-23 (U132) and replaced by Google/OpenAI
+          # embeddings. The reconcile_qmd_persona_index function and all _qmd_*
+          # helpers were removed from shared-utils, and the install.sh /
+          # update-skills.sh calls were replaced with archive comments. This step
+          # now asserts the REMOVAL contract on both paths (the inverse of the
+          # pre-removal assert it replaces), matching the dynamic D19 test below.
+          # Code matches are distinguished from the intentional tombstone comment
+          # by stripping comment lines before grepping.
           H="shared-utils/provision-persona-index.sh"
           MISS=""
-          grep -q 'reconcile_qmd_persona_index()' "$H"          || MISS="$MISS def-missing"
-          grep -q 'reconcile_qmd_persona_index' install.sh      || MISS="$MISS install:not-invoked"
-          grep -q 'reconcile_qmd_persona_index' update-skills.sh || MISS="$MISS update:not-invoked"
+          # (a) no live definition remains (comment lines excluded)
+          if grep -vE '^[[:space:]]*#' "$H" | grep -q 'reconcile_qmd_persona_index()'; then
+            MISS="$MISS def-present"
+          fi
+          # (b) no live invocation remains on either path (comment lines excluded)
+          if grep -vE '^[[:space:]]*#' install.sh | grep -q 'reconcile_qmd_persona_index'; then
+            MISS="$MISS install:still-invoked"
+          fi
+          if grep -vE '^[[:space:]]*#' update-skills.sh | grep -q 'reconcile_qmd_persona_index'; then
+            MISS="$MISS update:still-invoked"
+          fi
+          # (c) the removal tombstone comment is present (proof it was intentional)
+          grep -q 'qmd provisioning removed' "$H" || MISS="$MISS archive-comment-missing"
           if [ -n "$MISS" ]; then
-            echo "FAIL D19: qmd reconcile not delivered on both paths:$MISS"
+            echo "FAIL D19: qmd persona-store not fully removed:$MISS"
             exit 1
           fi
-          echo "PASS D19: reconcile_qmd_persona_index defined + invoked on both paths"
+          echo "PASS D19: qmd persona-store removed on both paths — replaced by Google/OpenAI embeddings"
 
       - name: D16-D19b — ZHE both-paths dynamic proof (offline)
         run: |

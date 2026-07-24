@@ -118,13 +118,13 @@ if need "$QMD" "D19"; then
   # qmd was replaced by Google/OpenAI embeddings. The reconcile_qmd_persona_index
   # function and all _qmd_ helpers have been gutted. Calls in install.sh and
   # update-skills.sh have been replaced with archive comments.
-  if grep -q 'reconcile_qmd_persona_index()' "$QMD" 2>/dev/null; then
+  if grep -vE '^[[:space:]]*#' "$QMD" 2>/dev/null | grep -q 'reconcile_qmd_persona_index()'; then
     fail "D19-def: reconcile_qmd_persona_index() still defined in provision-persona-index.sh — should be removed (qmd replaced by embeddings)"
   fi
-  if grep -q '^\s*reconcile_qmd_persona_index ' "$INSTALL" 2>/dev/null; then
+  if grep -vE '^[[:space:]]*#' "$INSTALL" 2>/dev/null | grep -q '^\s*reconcile_qmd_persona_index '; then
     fail "D19-install: reconcile_qmd_persona_index still called in install.sh"
   fi
-  if grep -q '^\s*reconcile_qmd_persona_index ' "$UPDATE" 2>/dev/null; then
+  if grep -vE '^[[:space:]]*#' "$UPDATE" 2>/dev/null | grep -q '^\s*reconcile_qmd_persona_index '; then
     fail "D19-update: reconcile_qmd_persona_index still called in update-skills.sh"
   fi
   # Verify the archive comment exists (proof the removal was intentional)

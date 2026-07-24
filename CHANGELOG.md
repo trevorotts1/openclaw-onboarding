@@ -1,3 +1,44 @@
+## [v21.3.0]  -  2026-07-24  -  CI-GREEN: restamp graphics content-manifest + clear 5 inherited guard failures
+
+v21.1.0 (and the first v21.2.0 cut) landed with FIVE pre-existing CI failures — all inherited
+from the v21.1.0 capstone, none introduced by the memory-standardization work. This pass clears
+every one so the fleet roll lands green:
+
+1. Role/SOP/persona library lockstep + QC static (Skill 23 repo-consistency CONTENT-HASH rc=6):
+   18 graphics artifacts (16 roles + 2 dept SOPs) carried STALE content_sha in
+   role-library/_index.json — v21.1.0's content consolidation updated the files without
+   restamping the manifest. Re-ran hash-content-manifest.py; --check now reports no drift and
+   qc-assert-repo-consistency.py returns rc=0 (all 9 dimensions OK).
+
+2. QC static how-to-use guides: the graphics how-to-use-this-department.md guide was stale
+   (same graphics-content root cause). Regenerated via generate_how_to_use_docs.py (7/0).
+
+3. both-paths-delivery-guard D19: the STATIC D19 step still asserted the PRE-REMOVAL contract
+   (required reconcile_qmd_persona_index present + invoked on both paths) even though qmd was
+   retired 2026-07-23 (U132) — directly contradicting the dynamic D19 test (qmd removed) in the
+   SAME workflow. Rewrote the static step to the REMOVAL contract (comment-aware: strips comment
+   lines before grepping so the intentional tombstone comment is not read as a live definition).
+   Made the dynamic test's greps comment-aware too (same latent flaw). The
+   provision-persona-index.sh tombstone comment is restored to its historical wording.
+
+4. GHL Tier-2 no-client-names guard: skill35-zero-work-idle-heartbeat.test.sh hardcoded the
+   operator path /Users/blackceomacmini/... (the single flagged roster hit). Replaced with the
+   portable BASH_SOURCE-derived REPO_ROOT used by sibling tests. (Note: this test is not wired
+   into any CI workflow and has a separate pre-existing U131 assertion failure; both are out of
+   scope for the gate — only the operator-path leak blocked a gate.)
+
+5. embedded-python guard (ONB-STATE-002 T3): the healthy-box control probe builds an isolated
+   dir but never created shared-utils/ next to lib-onboarding-state.sh; the lib's source-time
+   `cd .../shared-utils` (line ~1125) then aborted under `set -e` before oc_state_seed was
+   defined, so the seed never ran (fixture gap, not a code bug). Create shared-utils/ in the
+   fixture. Suite now 12/0.
+
+G3 reconciliation: the graphics content-manifest restamp + how-to-use regeneration changed skill
+23 content (templates/role-library/), which G3 gates on a skill-version.txt change in the same
+push. skill 23's skill-version.txt is a /version-LOCKSTEP marker (must equal /version), so the
+two gates are only jointly satisfiable via a version bump — hence v21.2.0 → v21.3.0. The v21.2.0
+annotated tag and CHANGELOG entry are preserved below.
+
 ## [v21.2.0]  -  2026-07-24  -  FLEET MEMORY STANDARDIZATION: kill QMD/LanceDB backends, standardize google/gemini-embedding-2, enable dreaming fleet-wide
 
 ROOT CAUSE: a fleet box ran 17 days with a completely empty embedding index because its qmd
