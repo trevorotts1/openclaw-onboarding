@@ -19,7 +19,7 @@ This skill gives your AI agent complete working knowledge of the Fish Audio API.
 - Real-time streaming audio via WebSocket
 - Speech-to-text transcription (ASR)
 
-**This skill is standalone.** You do not need Skill 30 (Voice Call Plugin) to use it. However, if you have Skill 30 installed, this skill is required.
+**This skill is standalone.** No other skill is required. The Voice Call Plugin (formerly Skill 30) has been retired; Fish Audio API Reference is now Skill 30.
 
 ---
 
