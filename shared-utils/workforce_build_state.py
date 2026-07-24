@@ -41,6 +41,9 @@ Version 2 = additive/normalizing migration:
     ensured present with empty-string defaults.
 """
 
+# Canonical constant name (U049 fix: unified across all consumers).
+WORKFORCE_BUILD_STATE_SCHEMA_VERSION = SCHEMA_VERSION
+
 
 def _normalize_boolean(value: Any) -> bool:
     if isinstance(value, bool):
@@ -51,7 +54,6 @@ def _normalize_boolean(value: Any) -> bool:
         return value.strip().lower() in ("true", "yes", "1")
     return False
 
-
 def _normalize_timestamp(value: Any) -> Optional[str]:
     if not isinstance(value, str) or not value.strip():
         return None
@@ -60,13 +62,11 @@ def _normalize_timestamp(value: Any) -> Optional[str]:
         return stripped
     return None
 
-
 def _ensure_optional_string(payload: Dict[str, Any], key: str, default: str = "") -> None:
     if key not in payload:
         payload[key] = default
     elif not isinstance(payload[key], str):
         payload[key] = str(payload[key])
-
 
 def migrate_v1_to_v2(state: Dict[str, Any]) -> Dict[str, Any]:
     """Transform a v1 workforce-build-state into v2.
@@ -104,8 +104,11 @@ def migrate_v1_to_v2(state: Dict[str, Any]) -> Dict[str, Any]:
             if normed is None:
                 state.pop(ts_key, None)
 
-    return state
+    # clientSlug legacy: preserve both keys; readers use fallback order
+    if not state.get("companySlug") and state.get("clientSlug"):
+        state["companySlug"] = state["clientSlug"]
 
+    return state
 
 def _quarantine_corrupt(path: Path) -> str:
     ts = int(time.time())
@@ -115,7 +118,6 @@ def _quarantine_corrupt(path: Path) -> str:
     except OSError:
         pass
     return str(quarantine)
-
 
 def load_build_state(path: Path, *, allow_absent: bool = True) -> Dict[str, Any]:
     """Read, version-check, and migrate a .workforce-build-state.json file.
@@ -140,14 +142,12 @@ def load_build_state(path: Path, *, allow_absent: bool = True) -> Dict[str, Any]
         )
         raise SystemExit(2)
 
+    # U049 fix: an empty/whitespace-only file is treated as absent, not
+    # corrupted. This matches reconcile's behavior (pass-through) and
+    # avoids a false-positive quarantine when the file was created but
+    # not yet populated (e.g. a touch before the first write).
     if not raw.strip():
-        quarantine = _quarantine_corrupt(path)
-        print(
-            f"ERROR: .workforce-build-state.json is empty (zero bytes or whitespace only)\n"
-            f"  Quarantined to: {quarantine}",
-            file=sys.stderr,
-        )
-        raise SystemExit(2)
+        return {}
 
     try:
         state = json.loads(raw)
@@ -206,12 +206,10 @@ def load_build_state(path: Path, *, allow_absent: bool = True) -> Dict[str, Any]
 
     return state
 
-
 def save_build_state(path: Path, state: Dict[str, Any]) -> None:
     """Write a workforce-build-state, always stamping the current schema version."""
     state["schemaVersion"] = SCHEMA_VERSION
     _atomic_save(path, state)
-
 
 def _atomic_save(path: Path, state: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -235,7 +233,6 @@ def _atomic_save(path: Path, state: Dict[str, Any]) -> None:
         print(f"ERROR: could not write .workforce-build-state.json: {exc}", file=sys.stderr)
         raise
 
-
 def _cli() -> None:
     import argparse
     parser = argparse.ArgumentParser(description="Workforce build-state schema migration")
@@ -258,7 +255,6 @@ def _cli() -> None:
     else:
         parser.print_help()
         raise SystemExit(1)
-
 
 if __name__ == "__main__":
     _cli()
