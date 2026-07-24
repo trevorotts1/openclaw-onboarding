@@ -1,34 +1,13 @@
 /**
  * U057: Mutation-proof gate tests for interview skip/defer bypass.
+ * Exercises the REAL shipped skip-defer.js module via require().
  * Run: node test/test_skip_defer.cjs
  */
+const path = require("path");
 const assert = require("assert");
 
-const COOKIE_NAME = "intake_skip_defer";
-const COOKIE_TTL_SECONDS = 3600;
-
-let jar;
-
-function cookieGet() {
-  var parts = jar ? Object.entries(jar).map(function (kv) { return kv[0] + "=" + kv[1]; }) : [];
-  var cookies = parts.join(";").split(";");
-  for (var i = 0; i < cookies.length; i++) {
-    var part = cookies[i].trim();
-    if (part.indexOf(COOKIE_NAME + "=") === 0) {
-      return part.substring(COOKIE_NAME.length + 1) === "1";
-    }
-  }
-  return false;
-}
-
-function cookieSet() {
-  if (!jar) jar = {};
-  jar[COOKIE_NAME] = "1";
-}
-
-function cookieClear() {
-  if (jar) delete jar[COOKIE_NAME];
-}
+// Load the shipped module
+const mod = require(path.join(__dirname, "..", "pages", "skip-defer.js"));
 
 var passed = 0;
 var failed = 0;
@@ -44,159 +23,175 @@ function test(name, fn) {
   }
 }
 
-console.log("=== U057 Skip/Defer Mutation-Proof Gate ===\n");
-console.log("-- Phase 1: Constants --\n");
+function resetJar() {
+  mod._jarStr = "";
+}
+
+console.log("=== U057 Skip/Defer Mutation-Proof Gate (REAL MODULE) ===\n");
+console.log("-- Phase 1: Constants (from shipped module) --\n");
 
 test("COOKIE_NAME is 'intake_skip_defer'", function () {
-  assert.strictEqual(COOKIE_NAME, "intake_skip_defer");
+  assert.strictEqual(mod.COOKIE_NAME, "intake_skip_defer");
 });
 
 test("COOKIE_TTL_SECONDS is 3600 (1 hour)", function () {
-  assert.strictEqual(COOKIE_TTL_SECONDS, 3600);
+  assert.strictEqual(mod.COOKIE_TTL_SECONDS, 3600);
 });
 
-console.log("\n-- Phase 2: Cookie lifecycle --\n");
+console.log("\n-- Phase 2: Cookie lifecycle (shipped cookieGet/cookieSet/cookieClear) --\n");
 
 test("get returns false when cookie not set", function () {
-  jar = {};
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("set then get returns true", function () {
-  jar = {};
-  cookieSet();
-  assert.strictEqual(cookieGet(), true);
+  resetJar();
+  mod.cookieSet();
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
 test("clear then get returns false", function () {
-  jar = {};
-  cookieSet();
-  cookieClear();
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod.cookieSet();
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("clear when empty is safe (no-op)", function () {
-  jar = {};
-  cookieClear();
-  cookieClear();
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod.cookieClear();
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
-test("set stores value '1'", function () {
-  jar = {};
-  cookieSet();
-  assert.strictEqual(jar[COOKIE_NAME], "1");
+test("set stores value '1' in jar", function () {
+  resetJar();
+  mod.cookieSet();
+  assert.ok(mod._jarStr.indexOf(mod.COOKIE_NAME + "=1") !== -1,
+    "jar must contain " + mod.COOKIE_NAME + "=1, got: " + mod._jarStr);
 });
 
-test("clear removes the cookie key entirely", function () {
-  jar = {};
-  cookieSet();
-  cookieClear();
-  assert.strictEqual(COOKIE_NAME in jar, false);
+test("clear removes the cookie from jar", function () {
+  resetJar();
+  mod.cookieSet();
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
+  assert.ok(mod._jarStr.indexOf(mod.COOKIE_NAME + "=") === -1,
+    "jar still contains cookie: " + mod._jarStr);
 });
 
 test("set is idempotent", function () {
-  jar = {};
-  cookieSet();
-  cookieSet();
-  assert.strictEqual(cookieGet(), true);
+  resetJar();
+  mod.cookieSet();
+  mod.cookieSet();
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
 test("set/clear/set round-trip is correct", function () {
-  jar = {};
-  cookieSet();
-  assert.strictEqual(cookieGet(), true);
-  cookieClear();
-  assert.strictEqual(cookieGet(), false);
-  cookieSet();
-  assert.strictEqual(cookieGet(), true);
+  resetJar();
+  mod.cookieSet();
+  assert.strictEqual(mod.cookieGet(), true);
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
+  mod.cookieSet();
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
-console.log("\n-- Phase 3: Substring immunity --\n");
+console.log("\n-- Phase 3: Substring immunity (shipped cookieGet) --\n");
 
 test("not confused by substring match (similar cookie name)", function () {
-  jar = { "intake_skip": "maybe" };
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod._jarStr = "intake_skip=maybe";
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("not confused by prefix match", function () {
-  jar = { "intake_skip_deferred": "1" };
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod._jarStr = "intake_skip_deferred=1";
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("not confused by suffix match", function () {
-  jar = { "xintake_skip_defer": "1" };
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod._jarStr = "xintake_skip_defer=1";
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("exact match among similar cookies", function () {
-  jar = { "intake_skip": "maybe", "intake_skip_defer": "1" };
-  assert.strictEqual(cookieGet(), true);
+  resetJar();
+  mod._jarStr = "intake_skip=maybe;intake_skip_defer=1";
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
 test("exact match with trailing cookies", function () {
-  jar = { "intake_skip_defer": "1", "other_cookie": "xyz" };
-  assert.strictEqual(cookieGet(), true);
+  resetJar();
+  mod._jarStr = "intake_skip_defer=1;other_cookie=xyz";
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
 test("cookie value '0' treated as falsy", function () {
-  jar = { "intake_skip_defer": "0" };
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod._jarStr = "intake_skip_defer=0";
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("cookie value 'true' treated as falsy (only '1' is truthy)", function () {
-  jar = { "intake_skip_defer": "true" };
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod._jarStr = "intake_skip_defer=true";
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
-console.log("\n-- Phase 4: Mutation proof --\n");
+console.log("\n-- Phase 4: Mutation proof (shipped module) --\n");
 
 test("MUTATION RED: COOKIE_NAME changed would break", function () {
-  assert.strictEqual(COOKIE_NAME, "intake_skip_defer");
-  jar = { "intake_skip_defer": "1" };
-  assert.strictEqual(cookieGet(), true);
+  assert.strictEqual(mod.COOKIE_NAME, "intake_skip_defer");
+  resetJar();
+  mod._jarStr = "intake_skip_defer=1";
+  assert.strictEqual(mod.cookieGet(), true);
 });
 
 test("MUTATION RED: TTL must be 3600, not 0", function () {
-  assert.strictEqual(COOKIE_TTL_SECONDS, 3600);
-  assert.notStrictEqual(COOKIE_TTL_SECONDS, 0);
+  assert.strictEqual(mod.COOKIE_TTL_SECONDS, 3600);
+  assert.notStrictEqual(mod.COOKIE_TTL_SECONDS, 0);
 });
 
 test("MUTATION RED: TTL must be >= 60 seconds", function () {
-  assert.ok(COOKIE_TTL_SECONDS >= 60, "TTL too short: " + COOKIE_TTL_SECONDS);
+  assert.ok(mod.COOKIE_TTL_SECONDS >= 60, "TTL too short: " + mod.COOKIE_TTL_SECONDS);
 });
 
 test("MUTATION RED: set must write value '1'", function () {
-  jar = {};
-  cookieSet();
-  assert.strictEqual(jar[COOKIE_NAME], "1");
+  resetJar();
+  mod.cookieSet();
+  assert.ok(mod._jarStr.indexOf(mod.COOKIE_NAME + "=1") !== -1,
+    "jar does not contain " + mod.COOKIE_NAME + "=1: " + mod._jarStr);
 });
 
 test("MUTATION RED: clear must remove cookie", function () {
-  jar = {};
-  cookieSet();
-  cookieClear();
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  mod.cookieSet();
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
 test("REVERT GREEN: COOKIE_NAME matches spec", function () {
-  assert.strictEqual(COOKIE_NAME, "intake_skip_defer");
+  assert.strictEqual(mod.COOKIE_NAME, "intake_skip_defer");
 });
 
 test("REVERT GREEN: TTL is 1 hour", function () {
-  assert.strictEqual(COOKIE_TTL_SECONDS, 3600);
+  assert.strictEqual(mod.COOKIE_TTL_SECONDS, 3600);
 });
 
 test("REVERT GREEN: full lifecycle works end-to-end", function () {
-  jar = {};
-  assert.strictEqual(cookieGet(), false);
-  cookieSet();
-  assert.strictEqual(cookieGet(), true);
-  cookieClear();
-  assert.strictEqual(cookieGet(), false);
+  resetJar();
+  assert.strictEqual(mod.cookieGet(), false);
+  mod.cookieSet();
+  assert.strictEqual(mod.cookieGet(), true);
+  mod.cookieClear();
+  assert.strictEqual(mod.cookieGet(), false);
 });
 
-console.log("\n=== " + passed + "/" + (passed + failed) + " passed ===\n");
+console.log("\n" + passed + "/" + (passed + failed) + " passed ===\n");
 
 if (failed > 0) {
   console.log("SOME TESTS FAILED — exiting 1\n");

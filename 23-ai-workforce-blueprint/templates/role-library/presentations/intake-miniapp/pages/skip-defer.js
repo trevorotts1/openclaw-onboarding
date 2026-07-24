@@ -7,6 +7,9 @@
  * interview, with a persistent reminder banner until the interview is completed.
  *
  * Include: <script src="skip-defer.js" defer></script>
+ *
+ * When loaded via require() in Node.js, exports cookie helpers and constants
+ * for direct testing (uses internal _jarStr instead of document.cookie).
  */
 (function () {
   "use strict";
@@ -14,10 +17,19 @@
   var COOKIE_NAME = "intake_skip_defer";
   var COOKIE_TTL_SECONDS = 3600; // 1 hour
 
+  // Internal cookie jar for Node.js testing (no document.cookie).
+  var _jarStr = "";
+
   // ---- Cookie helpers -------------------------------------------------------
 
   function cookieGet() {
-    var cookies = (document.cookie || "").split(";");
+    var raw;
+    if (typeof document !== "undefined" && document.cookie !== undefined) {
+      raw = document.cookie || "";
+    } else {
+      raw = _jarStr;
+    }
+    var cookies = raw.split(";");
     for (var i = 0; i < cookies.length; i++) {
       var part = cookies[i].trim();
       if (part.indexOf(COOKIE_NAME + "=") === 0) {
@@ -28,13 +40,26 @@
   }
 
   function cookieSet() {
-    document.cookie =
-      COOKIE_NAME + "=1; max-age=" + COOKIE_TTL_SECONDS + "; path=/; SameSite=Lax";
+    var val = COOKIE_NAME + "=1; max-age=" + COOKIE_TTL_SECONDS + "; path=/; SameSite=Lax";
+    if (typeof document !== "undefined" && document.cookie !== undefined) {
+      document.cookie = val;
+    } else {
+      var parts = _jarStr.split(";").filter(function (s) { return s.trim(); });
+      parts = parts.filter(function (s) { return s.trim().indexOf(COOKIE_NAME + "=") !== 0; });
+      parts.push(COOKIE_NAME + "=1");
+      _jarStr = parts.join(";");
+    }
   }
 
   function cookieClear() {
-    document.cookie =
-      COOKIE_NAME + "=0; max-age=0; path=/; SameSite=Lax";
+    var val = COOKIE_NAME + "=0; max-age=0; path=/; SameSite=Lax";
+    if (typeof document !== "undefined" && document.cookie !== undefined) {
+      document.cookie = val;
+    } else {
+      var parts = _jarStr.split(";").filter(function (s) { return s.trim(); });
+      parts = parts.filter(function (s) { return s.trim().indexOf(COOKIE_NAME + "=") !== 0; });
+      _jarStr = parts.join(";");
+    }
   }
 
   // ---- Element factory ------------------------------------------------------
@@ -213,7 +238,27 @@
     document.head.appendChild(style);
   }
 
-  // ---- Init -----------------------------------------------------------------
+  // ---- Node.js exports for testability --------------------------------------
+
+  if (typeof module !== "undefined" && module.exports) {
+    module.exports = {
+      COOKIE_NAME: COOKIE_NAME,
+      COOKIE_TTL_SECONDS: COOKIE_TTL_SECONDS,
+      cookieGet: cookieGet,
+      cookieSet: cookieSet,
+      cookieClear: cookieClear,
+    };
+    // Expose _jarStr as a read/write property for test control
+    Object.defineProperty(module.exports, "_jarStr", {
+      get: function () { return _jarStr; },
+      set: function (v) { _jarStr = v; },
+      enumerable: true,
+      configurable: true,
+    });
+    return;
+  }
+
+  // ---- Init (browser only) --------------------------------------------------
 
   injectStyles();
 
