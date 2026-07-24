@@ -242,8 +242,10 @@ Agent parses the JSON to locate or create the "env" section.
 Agent adds OPENROUTER_API_KEY to env section:
 
 ```json
+{
 "env": {
   "OPENROUTER_API_KEY": "sk-or-YOUR-KEY-HERE"
+}
 }
 ```
 
@@ -623,20 +625,24 @@ Setup is complete and ready for use.
 Add it additively to the `agents.defaults.models` section (do NOT remove existing models):
 
 ```json
+{
 "openrouter/deepseek/deepseek-v4-pro": {
   "alias": "DeepSeek V4 Pro",
   "params": { "temperature": 0.4, "reasoning": { "effort": "high" } }
+}
 }
 ```
 
 For build-quality work, set it as the primary model and default thinking to high:
 
 ```json
+{
 "agents": {
   "defaults": {
     "model": { "primary": "openrouter/deepseek/deepseek-v4-pro" },
     "thinkingDefault": "high"
   }
+}
 }
 ```
 
