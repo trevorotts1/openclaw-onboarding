@@ -724,10 +724,43 @@ def run_interview(
             asked_count += 1
 
             if not raw_answer:
-                # Empty answer → treat as "you decide" for optional questions.
-                if not question.required:
-                    think_triggered = True
-                    answers[question.qid] = "you decide"
+                # U055: required field with empty answer -> re-ask with a
+                # field-specific validation message ("{Field name} is required")
+                # instead of silently skipping or showing a generic error.
+                if question.required:
+                    _req_reask = 0
+                    while _req_reask < 3 and not raw_answer:
+                        _req_reask += 1
+                        _val_q = Question(
+                            qid=question.qid,
+                            text=question.text,
+                            hint=(
+                                f"{question.hint}; " if question.hint else ""
+                            ) + f"'{question.qid.replace('_', ' ').title()}' is required. "
+                                "Please provide an answer.",
+                            task_keys=question.task_keys,
+                            brief_patterns=question.brief_patterns,
+                            options=question.options,
+                            required=True,
+                        )
+                        raw_answer = (ask_fn(_val_q) or "").strip()
+                    if not raw_answer:
+                        # Exhausted re-asks - record empty and move on.
+                        answers[question.qid] = ""
+                        continue
+                    # Re-ask succeeded - normalise and record the answer.
+                    if question.options:
+                        normed = _match_option(raw_answer, question.options)
+                        answers[question.qid] = normed if normed else raw_answer
+                    else:
+                        answers[question.qid] = raw_answer
+                    if _wants_suggestion(raw_answer):
+                        think_triggered = True
+                    continue
+
+                # Empty answer -> treat as "you decide" for optional questions.
+                think_triggered = True
+                answers[question.qid] = "you decide"
                 continue
 
             # Normalise options (case-insensitive match).
@@ -997,6 +1030,74 @@ def _selftest() -> int:
         for marker in ("anthropic", "claude", "opus", "sonnet", "haiku"):
             if marker in scaffold_str:
                 failures.append(f"scaffold({bt}) contains Anthropic marker '{marker}'")
+
+    # 9. U055: required field empty -> re-ask with field-specific message.
+    _reask_log: list[tuple[str, str]] = []
+
+    def _reask_tracking_ask(q: Question) -> str:
+        _reask_log.append((q.qid, q.hint or ""))
+        return ""
+
+    _reask_log.clear()
+    _req_page_task = {"build_type": "page", "brief": "create a landing page"}
+    r9 = run_interview(_req_page_task, _reask_tracking_ask)
+    pt_calls = [c for c in _reask_log if c[0] == "page_type"]
+    if len(pt_calls) < 3:
+        failures.append(
+            f"U055: page_type re-ask: expected >=3, got {len(pt_calls)}: {pt_calls}"
+        )
+    if pt_calls and not any("required" in h.lower() for _, h in pt_calls if h):
+        failures.append(f"U055: re-ask hint must include 'required': {pt_calls}")
+    if r9.get("answers", {}).get("page_type") != "":
+        failures.append(
+            f"U055: page_type after exhausted re-asks: "
+            f"{r9.get('answers',{}).get('page_type')!r}"
+        )
+
+    # 10. U055: required field accepted on re-ask (second attempt).
+    _retry_log: list[str] = []
+
+    def _retry_ask(q: Question) -> str:
+        _retry_log.append(q.qid)
+        if _retry_log.count(q.qid) == 1:
+            return ""
+        if q.qid == "cta_offer":
+            return "download the guide"
+        return "sales"
+
+    _retry_log.clear()
+    r10 = run_interview({"build_type": "page", "brief": "make a page"}, _retry_ask)
+    if _retry_log.count("page_type") < 2:
+        failures.append(
+            f"U055: page_type re-ask: expected >=2, got {_retry_log.count('page_type')}: "
+            f"{_retry_log}"
+        )
+    if r10.get("answers", {}).get("page_type") != "sales":
+        failures.append(
+            f"U055: page_type value: {r10.get('answers',{}).get('page_type')!r}"
+        )
+
+    # 11. U055 regression: non-required empty answer -> "you decide".
+    _opt_log: list[str] = []
+
+    def _opt_ask(q: Question) -> str:
+        _opt_log.append(q.qid)
+        return ""
+
+    _opt_log.clear()
+    r11 = run_interview(
+        {"build_type": "page", "page_type": "sales",
+         "cta_offer": "download", "brief": "make a page"},
+        _opt_ask,
+    )
+    if r11.get("answers", {}).get("copy_depth") != "you decide":
+        failures.append(
+            f"U055 regression: copy_depth: {r11.get('answers',{}).get('copy_depth')!r}"
+        )
+    if "page_type" in _opt_log:
+        failures.append(
+            f"U055 regression: page_type was re-asked despite being pre-filled: {_opt_log}"
+        )
 
     if failures:
         print("FAIL")
