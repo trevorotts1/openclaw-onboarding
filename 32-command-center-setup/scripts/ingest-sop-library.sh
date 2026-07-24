@@ -79,29 +79,45 @@ fi
 echo "[sop-library] client=$CLIENT  tag=$TAG"
 
 # ----------------------------------------------------------------------------
-# ALREADY-POPULATED SKIP GATE (v20.1.0). A box already at/above the manifest's
-# canonical population is left COMPLETELY untouched: no download, no backup, no
-# write, no network I/O at all. This is what makes the step safe to run on
-# EVERY update of EVERY box:
-#   - a healthy box (library already ingested) is never clobbered or re-ingested,
-#     and its client-authored SOPs are never at risk;
-#   - a re-run is free and provably idempotent;
-#   - only an under-populated box does any work.
+# ALREADY-POPULATED SKIP GATE (v20.1.0 / U120 fleet rollout).
+#
+# U120: verify canonical membership by identifier, not bare count. Before U120,
+# ANY database with >= 2555 rows from ANY source (CC starters, role-library
+# converge, or any other writer) passed the gate, making the canonical library
+# download entirely skippable. This gate now requires that rows matching the
+# canonical id pattern (sop_%) ALSO reach the canonical threshold. A box whose
+# sops table is filled from non-library sources will have near-zero sop_%
+# rows and will correctly trigger a download.
+#
 # SOP_LIB_FORCE=1 overrides (operator escape hatch for a genuine re-ingest).
 # ----------------------------------------------------------------------------
 CURRENT_COUNT="$(sqlite3 "file:${DB}?mode=ro" \
   "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sops';" 2>/dev/null || echo 0)"
 if [ "${CURRENT_COUNT:-0}" = "1" ]; then
   CURRENT_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+  MEMBER_COUNT="$(sqlite3 "file:${DB}?mode=ro" \
+    "SELECT COUNT(*) FROM sops WHERE id LIKE 'sop\_%' ESCAPE '\';" 2>/dev/null || echo 0)"
 else
   CURRENT_COUNT=0
+  MEMBER_COUNT=0
 fi
-echo "[sop-library] db=$DB  current sops rows=$CURRENT_COUNT  canonical=$CANONICAL_SOP_COUNT"
-if [ "${SOP_LIB_FORCE:-0}" != "1" ] && [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
-  echo "[sop-library] SKIP — this box already holds $CURRENT_COUNT sops rows (>= canonical $CANONICAL_SOP_COUNT)."
+echo "[sop-library] db=$DB  current sops rows=$CURRENT_COUNT  canonical-members=$MEMBER_COUNT  canonical=$CANONICAL_SOP_COUNT"
+if [ "${SOP_LIB_FORCE:-0}" != "1" ] && \
+   [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null && \
+   [ "${MEMBER_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+  echo "[sop-library] SKIP -- this box already holds $CURRENT_COUNT sops rows ($MEMBER_COUNT canonical)"
+  echo "[sop-library]   >= canonical $CANONICAL_SOP_COUNT, membership verified."
   echo "[sop-library] Nothing downloaded, nothing written, DB untouched. (SOP_LIB_FORCE=1 to re-ingest anyway.)"
-  echo "[sop-library] downloaded 0 SOP records (skipped — already populated)"
+  echo "[sop-library] downloaded 0 SOP records (skipped -- already populated)"
   exit 0
+fi
+
+if [ "${CURRENT_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null && \
+   [ "${MEMBER_COUNT:-0}" -lt "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
+  echo "[sop-library] NOTE: total row count ($CURRENT_COUNT) meets canonical threshold ($CANONICAL_SOP_COUNT)"
+  echo "[sop-library]   BUT canonical-membership count ($MEMBER_COUNT) does NOT -- the sops table was"
+  echo "[sop-library]   populated from a non-library source (starters, role-library, or other writer)."
+  echo "[sop-library]   Proceeding with canonical library download to correct the mismatch."
 fi
 
 echo "[sop-library] downloading $URL"
