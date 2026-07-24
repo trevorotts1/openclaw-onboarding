@@ -1760,6 +1760,88 @@ def _atomic_write_json(path, obj):
         raise
 
 
+def _detect_and_propose_orphaned_departments(selected_departments, prior_entries, *, company_dir=None):
+    """
+    U053: detect departments that a PRIOR interview selected but that THIS run
+    no longer selects, and PROPOSE their invalidation — never auto-delete.
+
+    The U109 merge in write_chosen_departments_artifact deliberately preserves
+    any prior department not in the current selection and not explicitly declined
+    (so an aborted/partial run can never silently shrink the floor). The side
+    effect is that a department the client genuinely DESELECTED on an interview
+    re-take is carried forward forever with no garbage collection — orphaned
+    departments accumulate.
+
+    This closes that gap WITHOUT breaking the merge's safety guarantee: it
+    computes the orphan set (prior - current - declined) and, when non-empty,
+    writes a durable proposal artifact + a human-readable report naming each
+    orphan and the EXACT confirmation command to remove it
+    (record-dept-decision.sh --decision no <slug>). Removal happens ONLY when
+    the operator runs that command — the merge then stops carrying the declined
+    department forward. Nothing here deletes or archives anything.
+
+    Returns the sorted list of orphaned bare slugs (empty when there are none).
+    Never raises (a detection failure must never abort a build).
+    """
+    try:
+        cdir = company_dir or COMPANY_DIR
+        current_norm = {_bare_norm_slug(d) for d in selected_departments}
+        current_norm.discard("")
+        declined_now = _shared_canonical_decline_set(_load_build_state())
+        # The CEO column is prepended by generate_departments_json and is never
+        # part of selected_departments, so it would otherwise look like an orphan
+        # on every re-take. Exclude it (same identity set as
+        # _reconstruct_entries_from_slugs).
+        _ceo_norm = {_bare_norm_slug(s) for s in ("ceo", "dept-ceo", "master-orchestrator")}
+        orphans = []
+        seen = set()
+        for entry in prior_entries or []:
+            if not isinstance(entry, dict):
+                continue
+            raw_eslug = entry.get("slug") or entry.get("id")
+            norm_bare = _bare_norm_slug(raw_eslug)
+            if not norm_bare or norm_bare in seen or norm_bare in _ceo_norm:
+                continue
+            # Still selected this run, or already explicitly declined — not an
+            # orphan (a decline is the operator's confirmation, already honored).
+            if norm_bare in current_norm or norm_bare in declined_now:
+                continue
+            seen.add(norm_bare)
+            # Report the ORIGINAL bare slug (legacy 'dept-' prefix stripped, but
+            # hyphens/case preserved) so the confirmation command the operator
+            # runs names the department exactly as it appears on disk.
+            bare = raw_eslug[5:] if raw_eslug.startswith("dept-") else raw_eslug
+            orphans.append(bare)
+        if not orphans:
+            return []
+        ordered = sorted(orphans)
+        proposal = {
+            "detectedAt": datetime.now().isoformat(),
+            "reason": "departments selected by a prior interview but not by this run",
+            "orphans": ordered,
+            "count": len(ordered),
+            "confirmCommand": "record-dept-decision.sh --decision no <slug>",
+            "note": "Nothing is deleted automatically. Run the confirm command per "
+                    "department to invalidate it; the chosen-list merge then stops "
+                    "carrying it forward.",
+        }
+        if cdir:
+            try:
+                os.makedirs(cdir, exist_ok=True)
+                _atomic_write_json(os.path.join(cdir, "departments-invalidation-proposal.json"), proposal)
+            except OSError as e:
+                print(f"[RETAKE-INVALIDATION WARNING] could not write proposal artifact: {e}",
+                      file=sys.stderr)
+        print(f"[RETAKE-INVALIDATION] {len(ordered)} department(s) selected by a prior "
+              f"interview are no longer selected: {', '.join(ordered)}.", file=sys.stderr)
+        print(f"[RETAKE-INVALIDATION] Nothing was deleted. To invalidate one, run: "
+              f"record-dept-decision.sh --decision no <slug>", file=sys.stderr)
+        return ordered
+    except Exception as _e:  # noqa: BLE001 — detection must never abort a build
+        print(f"[RETAKE-INVALIDATION WARNING] orphan detection skipped: {_e}", file=sys.stderr)
+        return []
+
+
 def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
                                       discovery_dir=None, source="reconciliation-end"):
     """
@@ -1805,6 +1887,16 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
 
     # ── U109 merge-not-replace (fail-safe: file + build-state, normalized) ──
     prior_entries = _resolve_prior_chosen_entries(cdir)
+
+    # ── U053 re-take invalidation: detect + PROPOSE (never auto-delete) ──
+    # A department a prior interview selected but this run does not is an orphan
+    # the U109 merge would otherwise carry forward forever. Detect the orphan set
+    # and write a durable proposal + report naming the confirmation command; the
+    # merge below still preserves every prior department (its safety guarantee is
+    # untouched) — removal happens only when the operator confirms via
+    # record-dept-decision.sh, which the merge already honors as a decline.
+    _detect_and_propose_orphaned_departments(selected_departments, prior_entries, company_dir=cdir)
+
     if prior_entries:
         declined_now = _shared_canonical_decline_set(_load_build_state())
         known_norm = {_bare_norm_slug(e.get("slug") or e.get("id")) for e in dept_json if isinstance(e, dict)}
