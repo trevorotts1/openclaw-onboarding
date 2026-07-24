@@ -504,7 +504,7 @@ This script runs a FOUR-STAGE FUNNEL internally:
   "score": 0.86,
   "mode": "hybrid (semantic + keyword + 5-layer)",
   "gemini_available": true,
-  "top_3": [{...}, {...}, {...}],
+  "top_3": [{"_detail": "omitted"}, {"_detail": "omitted"}, {"_detail": "omitted"}],
   "breakdown": {"mission": 0.85, "values": 0.80, "company_kpis": 0.75, "dept_kpis": 0.90, "task_fit": 0.95, "semantic_score": 0.82}
 }
 ```

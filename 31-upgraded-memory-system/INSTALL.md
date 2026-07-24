@@ -152,7 +152,9 @@ Do NOT store: routine greetings, small talk, repeated context already in MEMORY.
 In the same `memoryFlush` block, set:
 
 ```json
+{
 "softThresholdTokens": 32000
+}
 ```
 
 This triggers the flush when the context reaches 32K tokens.
@@ -166,12 +168,14 @@ This triggers the flush when the context reaches 32K tokens.
 In `~/.openclaw/openclaw.json`, find the `agents.defaults.memorySearch` section. Add or verify these settings:
 
 ```json
+{
 "memorySearch": {
   "enabled": true,
   "sources": ["memory", "sessions"],
   "experimental": {
     "sessionMemory": true
   }
+}
 }
 ```
 
@@ -180,6 +184,7 @@ In `~/.openclaw/openclaw.json`, find the `agents.defaults.memorySearch` section.
 In the same `memorySearch` block, add:
 
 ```json
+{
 "sync": {
   "onSessionStart": true,
   "onSearch": true,
@@ -189,6 +194,7 @@ In the same `memorySearch` block, add:
     "deltaBytes": 20000,
     "deltaMessages": 10
   }
+}
 }
 ```
 
@@ -203,8 +209,10 @@ In the same `memorySearch` block, add:
 In `~/.openclaw/openclaw.json`, find the `agents.defaults.memorySearch` section. Add or update:
 
 ```json
+{
 "provider": "gemini",
 "model": "models/gemini-embedding-2-preview"
+}
 ```
 
 ### 4.2 Set the memory backend
@@ -212,8 +220,10 @@ In `~/.openclaw/openclaw.json`, find the `agents.defaults.memorySearch` section.
 Find the top-level `memory` section in openclaw.json and set:
 
 ```json
+{
 "memory": {
   "backend": "builtin"
+}
 }
 ```
 
@@ -224,6 +234,7 @@ Find the top-level `memory` section in openclaw.json and set:
 In the `memorySearch` section, add:
 
 ```json
+{
 "query": {
   "maxResults": 50,
   "minScore": 0.18,
@@ -233,6 +244,7 @@ In the `memorySearch` section, add:
     "textWeight": 0.25,
     "candidateMultiplier": 8
   }
+}
 }
 ```
 
@@ -247,8 +259,10 @@ Layer 5 uses OpenClaw's built-in memory-core instead of the legacy memory plugin
 In `~/.openclaw/openclaw.json`, verify the memory backend:
 
 ```json
+{
 "memory": {
   "backend": "builtin"
+}
 }
 ```
 
@@ -257,9 +271,11 @@ In `~/.openclaw/openclaw.json`, verify the memory backend:
 In `~/.openclaw/openclaw.json`, under `agents.defaults`, add:
 
 ```json
+{
 "memory": {
   "autoCapture": true,
   "autoRecall": true
+}
 }
 ```
 
@@ -300,6 +316,7 @@ openclaw plugins install @openclaw/cognee
 In `~/.openclaw/openclaw.json`, under `plugins.entries`:
 
 ```json
+{
 "cognee": {
   "enabled": true,
   "config": {
@@ -307,6 +324,7 @@ In `~/.openclaw/openclaw.json`, under `plugins.entries`:
     "llm_provider": "gemini",
     "llm_model": "gemini-3-flash-preview"
   }
+}
 }
 ```
 
@@ -353,11 +371,13 @@ ls ~/Documents/ | grep -i obsidian
 In `~/.openclaw/openclaw.json`, add:
 
 ```json
+{
 "obsidian": {
   "enabled": true,
   "vaultPath": "/Users/USERNAME/Documents/ObsidianVault",
   "dailyNotes": true,
   "wikilinks": true
+}
 }
 ```
 
@@ -483,10 +503,12 @@ exist yet. The script's JSON merge is the supported pattern.
 In `~/.openclaw/openclaw.json`, add:
 
 ```json
+{
 "wiki": {
   "enabled": true,
   "vaultPath": "/Users/USERNAME/.openclaw/wiki",
   "backend": "sqlite"
+}
 }
 ```
 
@@ -647,6 +669,7 @@ EOF
 #### Step 2: CONFIGURE active-memory in openclaw.json
 Add to `~/.openclaw/openclaw.json` under `agents.defaults`:
 ```json
+{
 "activeMemory": {
   "enabled": true,
   "autoCapture": true,
@@ -657,16 +680,19 @@ Add to `~/.openclaw/openclaw.json` under `agents.defaults`:
     "cognee": true
   }
 }
+}
 ```
 
 #### Step 3: UPDATE memory backend to "builtin"
 In `~/.openclaw/openclaw.json`:
 ```json
+{
 "memory": {
   "backend": "builtin"
 },
 "memorySearch": {
   "provider": "gemini"
+}
 }
 ```
 
