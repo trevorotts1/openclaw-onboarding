@@ -71,4 +71,21 @@ grep -q -- "-type f -mmin +" "$MUT_SCRIPT" && ! grep -q -- '-name "\*\.qmd"' "$M
 HOME="$MUT_HOME" QMD_MIN_AGE_MIN=1440 QMD_RENDER_DIR="$MUT_RD" bash "$MUT_SCRIPT" >/dev/null 2>&1
 T1=$(count "$MUT_RD" "*.txt"); J1=$(count "$MUT_RD" "*.json"); P1=$(count "$MUT_RD" "*.png")
 [ "$T1" -eq 0 ] && [ "$J1" -eq 0 ] && [ "$P1" -eq 0 ] && pass "T9b: MUTATION PROOF - all old files swept (proves T3 non-vacuous)" || fail "T9b: txt=$T1 json=$J1 png=$P1"
+echo "== T10 cron-like minimal PATH =="
+OC10="$WORK/t10"; mkdir -p "$OC10/.openclaw/workspace"; WS10="$(ws_dir "$OC10")"
+touch_aged "$WS10/cron-orphan.qmd" 2000
+# Simulate cron: strip PATH to bare minimum (/usr/bin:/bin), unset all other env
+env -i HOME="$OC10" PATH="/usr/bin:/bin" QMD_MIN_AGE_MIN=1440 QMD_RENDER_DIR="$WS10" \
+  bash "$SWEEP" >/dev/null 2>&1; RC=$?
+[ $RC -eq 0 ] && [ "$(count "$WS10" "*.qmd")" -eq 0 ] && pass "T10a: cron-env exit 0, file swept" || fail "T10a: rc=$RC count=$(count "$WS10" "*.qmd")"
+[ -f "$(log_file "$OC10")" ] && grep -q "SWEPT" "$(log_file "$OC10")" && pass "T10b: cron-env log with SWEPT" || fail "T10b: log"
+echo "== T11 CRON MUTATION PROOF =="
+CRONTAB="$REPO_ROOT/config/cron.d/qmd-orphan-sweep"
+[ -f "$CRONTAB" ] || { fail "T11: crontab file missing"; echo "=== SUMMARY  PASS $PASS  FAIL $FAIL ==="; exit 1; }
+MUT_CRONTAB="$WORK/t11-mut-cron"
+# Mutation: corrupt the 0 6 * * * line by changing the script path to nonexistent
+sed 's|/usr/local/bin/qmd-orphan-sweep.sh|/usr/local/bin/NONEXISTENT-sweep.sh|' "$CRONTAB" > "$MUT_CRONTAB"
+grep -q "NONEXISTENT-sweep.sh" "$MUT_CRONTAB" && ! grep -q "NONEXISTENT" "$CRONTAB" && pass "T11a: cron mutation applied" || fail "T11a: cron mutation"
+# Revert check: original crontab points to real script
+grep -q "/usr/local/bin/qmd-orphan-sweep.sh" "$CRONTAB" && pass "T11b: cron original intact" || fail "T11b: cron original"
 echo ""; echo "=== SUMMARY  PASS $PASS  FAIL $FAIL ==="; [ "$FAIL" -gt 0 ] && exit 1; echo "PASS: all checks pass"; exit 0

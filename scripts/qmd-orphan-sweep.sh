@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 # scripts/qmd-orphan-sweep.sh -- U132: remove orphaned .qmd render temp files
+#
+# Environment variables:
+#   SWEEP_AGE_HOURS    – max age in hours before sweep (default: 24, maps to QMD_MIN_AGE_MIN=1440)
+#   SWEEP_TARGET_DIR   – directory to scan for orphaned .qmd files (default: $OC_ROOT/workspace)
+#   DRY_RUN            – set to 1 to log deletions without performing them (default: 0)
+#   LOG_FILE           – path to sweep log (default: $OC_ROOT/qmd-orphan-sweep.log)
+#
+# Cron wiring: config/cron.d/qmd-orphan-sweep runs daily at 6am.
 QMD_ORPHAN_SWEEP_VERSION="v1.0.0"
 set -u
 if [[ -d /data/.openclaw ]]; then OC_ROOT=/data/.openclaw
