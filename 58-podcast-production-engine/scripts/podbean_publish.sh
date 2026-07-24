@@ -564,6 +564,13 @@ RELEASE_DATE=""; STATUS_OVERRIDE=""; EP_TYPE="public"
 LEDGER=""; JOB_ID=""; STATE_WRITER=""; OUT=""
 TEST_RUN=0; DRY_RUN=0; DRAFT_MODE=0
 AUDIO_URL=""; IMAGE_URL=""   # publish-proxy only (S58-U14)
+# U034: server-side episode-number idempotency guard. The caller passes the
+# roster-tracked episode count so the script can verify it against the actual
+# Podbean server count before publishing. --roster-episode-delta is the
+# allowable difference (e.g., when the client had pre-existing Podbean episodes
+# created outside this system). Without these flags the guard is inactive;
+# backward-compatible with all existing callers.
+ROSTER_EPISODE_COUNT=""; ROSTER_EPISODE_DELTA="0"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -581,6 +588,8 @@ while [ $# -gt 0 ]; do
     --job-id)        JOB_ID="${2:-}"; shift 2 ;;
     --state-writer)  STATE_WRITER="${2:-}"; shift 2 ;;
     --out)           OUT="${2:-}"; shift 2 ;;
+    --roster-episode-count) ROSTER_EPISODE_COUNT="${2:-}"; shift 2 ;;
+    --roster-episode-delta) ROSTER_EPISODE_DELTA="${2:-}"; shift 2 ;;
     --test)          TEST_RUN=1; shift ;;
     --dry-run)       DRY_RUN=1; shift ;;
     --draft)         DRAFT_MODE=1; shift ;;
@@ -937,6 +946,28 @@ EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
 [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
 EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
 log "existing episode count ${EPISODE_COUNT}; this episode is number ${EPISODE_NUMBER}"
+
+# ------------------------------ U034: server-side episode-number guard --
+# If the caller passes a roster-tracked episode count, verify it against the
+# server-side count before publishing. A disagreement means the local roster
+# is out of sync, and publishing would create a duplicate episode number.
+# The guard is active ONLY when --roster-episode-count is supplied; without
+# it the script operates as it did before U034 (backward compatible).
+if [ -n "$ROSTER_EPISODE_COUNT" ]; then
+  [[ "$ROSTER_EPISODE_COUNT" =~ ^[0-9]+$ ]] || die "--roster-episode-count must be a non-negative integer, got: ${ROSTER_EPISODE_COUNT}"
+  [[ "$ROSTER_EPISODE_DELTA"    =~ ^[0-9]+$ ]] || die "--roster-episode-delta must be a non-negative integer, got: ${ROSTER_EPISODE_DELTA}"
+  _diff=$(( EPISODE_COUNT - ROSTER_EPISODE_COUNT ))
+  _abs_diff=${_diff#-}
+  if [ "$_abs_diff" -gt "$ROSTER_EPISODE_DELTA" ]; then
+    log "EPISODE-NUMBER CONFLICT: server reports ${EPISODE_COUNT} episode(s), but the local roster expects ${ROSTER_EPISODE_COUNT} (discrepancy ${_diff}, allowed delta ${ROSTER_EPISODE_DELTA}). Refusing to publish -- a duplicate episode number would result."
+    exit 2
+  fi
+  if [ "$_abs_diff" -gt 0 ]; then
+    log "episode-number guard: discrepancy of ${_diff} is within tolerance (delta=${ROSTER_EPISODE_DELTA}); proceeding with server-side episode number ${EPISODE_NUMBER}"
+  else
+    log "episode-number guard: server (${EPISODE_COUNT}) agrees with local roster (${ROSTER_EPISODE_COUNT}); proceeding"
+  fi
+fi
 
 # ------------------------------------------------- authorize and upload media --
 # uploadAuthorize returns a presigned url plus the file_key that becomes the
