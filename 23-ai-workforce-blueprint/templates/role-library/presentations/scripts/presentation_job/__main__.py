@@ -15,6 +15,7 @@ from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
+from . import diagnose
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -27,7 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     m = p.add_mutually_exclusive_group(required=True)
     m.add_argument("--new", action="store_true", help="create a job in --run-dir from --intake")
     m.add_argument("--run", action="store_true", help="run the phase loop")
-    m.add_argument("--resume", action="store_true", help="resume a parked job from checkpoint")
+    m.add_argument("--resume", action="store_true",
+                   help="resume a parked job from checkpoint; prints why it parked first. "
+                        "With --phase, re-runs only that phase and does NOT evaluate gates, "
+                        "so it cannot clear a job parked on a gate failure.")
     m.add_argument("--status", action="store_true", help="print job status")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
@@ -38,6 +42,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--until", help="run through this phase then stop")
     p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
+    p.add_argument("--diagnose-only", action="store_true",
+                   help="with --resume: print why the job parked and exit without resuming")
     p.add_argument("--json", action="store_true", help="machine-readable --status")
     return p
 
@@ -145,10 +151,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         die(EXIT_USAGE, "--run-dir is required")
     run_dir = args.run_dir.expanduser().resolve()
 
+    if args.diagnose_only and not args.resume:
+        die(EXIT_USAGE, "--diagnose-only must be used with --resume")
+
     if args.new:
         return cmd_new(args, scripts_dir)
     if args.status:
         return cmd_status(args)
+
+    if args.diagnose_only and not args.resume:
+        die(EXIT_USAGE, "--diagnose-only must be used with --resume")
 
     with RunLock(run_dir):
         store = StateStore(run_dir)
@@ -164,15 +176,27 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.close:
             return engine.close()
         if args.resume:
+            lines = diagnose.describe_park(state, run_dir)
+            if lines:
+                print("\n".join(lines), file=sys.stderr, flush=True)
+            else:
+                print(f"This job is not parked (terminal={state.get('terminal')!r}). "
+                      "Resuming will re-enter at the first unfinished phase.",
+                      file=sys.stderr, flush=True)
+            if args.diagnose_only:
+                return EXIT_OK
+            # Preserve the diagnosis BEFORE clearing it. Popping `blocked` without keeping a copy
+            # destroys the only record of why this job parked (B7's con).
+            prior = state.pop("blocked", None)
+            if prior:
+                state.setdefault("resume_history", []).append(
+                    {"at": utcnow(), "cleared_blocked": prior})
             state["terminal"] = None
-            state.pop("blocked", None)
             store.save(state)
-            revalidated = 0
-            for ps in state.get("phases", []):
-                if ps.get("status") == "done" and (ps.get("artifacts") or ps.get("sha256")):
-                    revalidated += 1
-            engine.report.event("job.resume",
-                f"resuming from checkpoint; {revalidated} phase(s) re-validated, banked artifacts reused")
+            engine.report.event(
+                "job.resume",
+                "resuming from checkpoint; banked artifacts reused" +
+                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
         return engine.run(only=args.phase, until=args.until)
 
 

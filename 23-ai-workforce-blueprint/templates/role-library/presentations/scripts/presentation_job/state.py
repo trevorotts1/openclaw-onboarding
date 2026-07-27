@@ -28,6 +28,11 @@ STATE_FILENAME = "state.json"
 LOCK_FILENAME = ".job.lock"
 STATE_SCHEMA_VERSION = 1
 
+# The shim U011 keeps at the scripts-dir root.  Printed by _block and close()
+# as the runnable entry-point, so that the command the engine tells operators to
+# run is actually the command that works.
+ENTRY_COMMAND = "presentation_job.py"
+
 def utcnow() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
