@@ -395,41 +395,312 @@ PYEOF
 }
 
 # ----------------------------------------------------------
+# WORKSPACE RESOLVER -- ONE implementation, LOUD, never guesses (v21.3.1)
+# ----------------------------------------------------------
+# WHY THIS EXISTS (a live AGENTS.md was clobbered by the old shape):
+# three call sites each resolved the agent workspace as
+#     command -v obs_resolve_workspace >/dev/null && ws="$(obs_resolve_workspace)"
+#     [ -z "$ws" ] && ws=<HARDCODED GUESS>
+# obs_resolve_workspace is only defined if scripts/onboarding-state.sh was
+# present in the pulled bundle and got SOURCED (it is sourced CONDITIONALLY).
+# When that file was absent the call produced an empty string and each site
+# SILENTLY substituted a DIFFERENT hardcoded path -- one site chose
+# <oc-root>/workspace, another preferred $HOME/clawd. On a box whose
+# openclaw.json names a workspace, BOTH guesses can be wrong, and the write
+# lands on a file nobody intended. Guessing a path IS the defect.
+#
+# CONTRACT:
+#   * Sets OC_WS_RESOLVED (path) and OC_WS_SOURCE (how it was resolved).
+#   * ANNOUNCES the chosen path AND the reason it was chosen on EVERY call,
+#     BEFORE the caller writes anything.
+#   * Returns 1 -- with an exact statement of what could not be resolved -- when
+#     the workspace cannot be determined by the intended means. There is NO
+#     hardcoded last-resort guess. Callers MUST treat a non-zero return as
+#     fatal and write NOTHING.
+#
+# RESOLUTION ORDER (identical to obs_resolve_workspace / install.sh Step 10):
+#   1. obs_resolve_workspace, when the shim really did define it
+#   2. THIS box's openclaw.json -> agents.list[id=main].workspace
+#   3. THIS box's openclaw.json -> agents.defaults.workspace
+#   4. the canonical <oc-root>/workspace default -- ONLY when a readable,
+#      parseable openclaw.json exists and simply declares no workspace at all
+#      (that is the documented default, not a guess) -- still announced, with
+#      its reason, on every run.
+# ----------------------------------------------------------
+oc_resolve_workspace_announced() {
+  local _ctx="${1:-workspace}"
+  OC_WS_RESOLVED=""
+  OC_WS_SOURCE=""
+
+  local _ws_ocroot="$HOME/.openclaw"
+  [ -d "/data/.openclaw" ] && _ws_ocroot="/data/.openclaw"
+  local _ws_ocjson="$_ws_ocroot/openclaw.json"
+
+  # (1) the intended resolver, when the conditionally-sourced shim defined it.
+  local _ws_have_resolver="no"
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    _ws_have_resolver="yes"
+    # Guarded: a non-zero must not abort the updater under `set -euo pipefail`.
+    OC_WS_RESOLVED="$(obs_resolve_workspace 2>/dev/null || true)"
+    [ -n "$OC_WS_RESOLVED" ] && OC_WS_SOURCE="obs_resolve_workspace() from the onboarding-state.sh shim"
+  fi
+
+  # (2)+(3) read THIS box's own config directly. This is the SAME intended means
+  # (the config), not a guess -- so it is a legitimate fallback, and it is
+  # announced below with the reason the primary resolver was unavailable.
+  if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && command -v python3 >/dev/null 2>&1; then
+    OC_WS_RESOLVED="$(OC_JSON="$_ws_ocjson" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
+            print(os.path.expanduser(ag["workspace"])); break
+    else:
+        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
+        if ws:
+            print(os.path.expanduser(ws))
+except Exception:
+    pass
+PYEOF
+)"
+    if [ -n "$OC_WS_RESOLVED" ]; then
+      OC_WS_SOURCE="this box's own openclaw.json ($_ws_ocjson) -- FALLBACK USED because obs_resolve_workspace() is NOT defined (scripts/onboarding-state.sh was not sourced: absent from this bundle)"
+    fi
+  fi
+
+  # (4) config is readable+parseable but declares no workspace anywhere.
+  if [ -z "$OC_WS_RESOLVED" ] && [ -f "$_ws_ocjson" ] && [ -r "$_ws_ocjson" ] \
+     && command -v python3 >/dev/null 2>&1 \
+     && OC_JSON="$_ws_ocjson" python3 -c 'import json,os; json.load(open(os.environ["OC_JSON"]))' 2>/dev/null; then
+    OC_WS_RESOLVED="$_ws_ocroot/workspace"
+    OC_WS_SOURCE="canonical default -- FALLBACK USED because $_ws_ocjson parses but declares NO agents.list[id=main].workspace and NO agents.defaults.workspace"
+  fi
+
+  if [ -z "$OC_WS_RESOLVED" ]; then
+    local _ws_why_resolver _ws_why_json _ws_why_py
+    if [ "$_ws_have_resolver" = "yes" ]; then
+      _ws_why_resolver="DEFINED but returned an empty path"
+    else
+      _ws_why_resolver="NOT DEFINED -- scripts/onboarding-state.sh was not sourced (missing from the pulled bundle)"
+    fi
+    if [ ! -f "$_ws_ocjson" ]; then
+      _ws_why_json="ABSENT"
+    elif [ ! -r "$_ws_ocjson" ]; then
+      _ws_why_json="present but NOT READABLE"
+    else
+      _ws_why_json="present but did NOT parse as JSON"
+    fi
+    if command -v python3 >/dev/null 2>&1; then _ws_why_py="present"; else _ws_why_py="ABSENT"; fi
+    {
+      echo "  ✗ WORKSPACE UNRESOLVED -- refusing to write ($_ctx)."
+      echo "    Could not determine the agent workspace by ANY intended means:"
+      echo "      - obs_resolve_workspace(): $_ws_why_resolver"
+      echo "      - config file $_ws_ocjson: $_ws_why_json"
+      echo "      - python3: $_ws_why_py"
+      echo "    NOT falling back to a hardcoded path. A silent guess is exactly what"
+      echo "    overwrote a live AGENTS.md. Restore the bundle/config and re-run."
+    } >&2
+    return 1
+  fi
+
+  echo "  [workspace] $_ctx -> $OC_WS_RESOLVED"
+  echo "  [workspace] resolved via: $OC_WS_SOURCE"
+  return 0
+}
+
+# ----------------------------------------------------------
+# Size of a file in BYTES, without reading it. (v21.3.2)
+# ----------------------------------------------------------
+# WHY NOT `wc -c < "$f"`: that redirect needs READ permission. On a file the
+# updater may write but may not read, the redirect fails, and under
+# `set -euo pipefail` the failure aborted the whole run at the size probe --
+# BEFORE the AGENTS.md guards below could report anything. The file survived by
+# luck rather than by design, and the operator saw a bare "Permission denied"
+# with no explanation. `stat` needs only the directory entry, so an unreadable
+# file still reports its true size and the shrink guard keeps working.
+# Prints 0 when the file is absent or the size cannot be read. Never fails.
+# Handles both stat flavours: -f is the Mac form, -c the VPS form.
+oc_file_size_bytes() {
+  local _p="${1:-}" _sz=""
+  [ -n "$_p" ] && [ -e "$_p" ] || { echo 0; return 0; }
+  # -L FOLLOWS the link. Without it stat reports the size of the link itself
+  # (the length of the path it stores), so on the shared-AGENTS.md setup every
+  # size would come back as a constant ~100 bytes and the shrink check below
+  # could never fire -- dead exactly where the file matters most.
+  #
+  # The VPS form is tried FIRST and every answer is checked to be a plain
+  # integer. Both details matter. The Mac form given to the VPS stat prints a
+  # whole FILE SYSTEM report on stdout and THEN exits non-zero, so a chain that
+  # trusted exit status alone glued that report onto the real number and the
+  # result parsed as 0 -- a size guard that silently read zero on every VPS box.
+  # The VPS form given to the Mac stat is rejected outright with nothing usable
+  # on stdout, so this order falls through cleanly in the other direction.
+  _sz="$(stat -L -c '%s' "$_p" 2>/dev/null | head -1 || true)"
+  case "$_sz" in '' | *[!0-9]*) _sz="" ;; esac
+  if [ -z "$_sz" ]; then
+    _sz="$(stat -L -f '%z' "$_p" 2>/dev/null | head -1 || true)"
+    case "$_sz" in '' | *[!0-9]*) _sz="" ;; esac
+  fi
+  [ -n "$_sz" ] || _sz=0
+  echo "$_sz"
+  return 0
+}
+
+# ----------------------------------------------------------
 # Write UPDATE PENDING flag to AGENTS.md
 # ----------------------------------------------------------
 write_update_pending_flag() {
   local version="$1"
   local new_skills="$2"
 
-  # v10.15.48: resolve the canonical workspace the agent ACTUALLY reads from.
-  # Prefer the OBS-resolved workspace (per-agent override -> defaults ->
-  # canonical default). NEVER prefer the dead ~/clawd -- writing the flag there
-  # while the agent reads ~/.openclaw/workspace is the classic "agent never sees
-  # the flag" bug. Falls back to the canonical default only.
+  # v10.15.48: resolve the canonical workspace the agent ACTUALLY reads from
+  # (per-agent override -> defaults -> canonical default).
+  # v21.3.1: the old code here was
+  #     [ -z "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  # i.e. when obs_resolve_workspace was undefined (its shim is sourced
+  # CONDITIONALLY) this SILENTLY wrote the flag into a hardcoded path that the
+  # box's own openclaw.json may not name at all. That is how a live AGENTS.md
+  # got clobbered. Now: one announced resolver, and an unresolvable workspace is
+  # a LOUD REFUSAL -- we never guess a target for a write.
   local WORKSPACE_DIR=""
-  if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    # v16.2.13: guard the substitution (mirror the guarded call at ~L1175) so a
-    # non-zero from obs_resolve_workspace cannot abort the updater under
-    # `set -euo pipefail` (this runs on the always-executed normal path via
-    # write_update_pending_flag); the empty fallback below already handles it.
-    WORKSPACE_DIR="$(obs_resolve_workspace 2>/dev/null || true)"
+  if ! oc_resolve_workspace_announced "UPDATE PENDING flag target"; then
+    echo "  ✗ Refusing to write the UPDATE PENDING flag -- workspace unresolved (see above)." >&2
+    return 1
   fi
-  [ -z "$WORKSPACE_DIR" ] && WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  WORKSPACE_DIR="$OC_WS_RESOLVED"
   mkdir -p "$WORKSPACE_DIR"
   local AGENTS_FILE="$WORKSPACE_DIR/AGENTS.md"
+  # Report the exact write target BEFORE touching it.
+  echo "  [workspace] about to write: $AGENTS_FILE"
 
-  touch "$AGENTS_FILE"
+  # ------------------------------------------------------------------
+  # SAFE IN-PLACE REWRITE of AGENTS.md.
+  #
+  # WHAT WENT WRONG BEFORE (this is a repaired wipe, not a hypothetical):
+  # the old block read the file as
+  #     try:    text = open(p).read()
+  #     except Exception: text = ""
+  # and then wrote it back with a TRUNCATING open(p, "w"). So ANY read
+  # failure -- a permission problem, an I/O error, a link that could not be
+  # followed -- silently turned the existing content into an empty string,
+  # and the truncating write then destroyed the file. The only survivor was
+  # the flag appended just below, which is why a live AGENTS.md came back as
+  # a short stub containing nothing but an UPDATE PENDING notice. The read
+  # error was invisible on top of that, because the old command ended in
+  # `2>/dev/null || true` -- stderr thrown away, exit status ignored.
+  #
+  # WHY THIS STILL WRITES IN PLACE, and must NEVER become
+  # write-a-temp-file-then-rename: agents deliberately share ONE AGENTS.md
+  # through symlinks. A rename REPLACES the link with a regular file, so the
+  # shared file silently becomes an unshared private copy and every other
+  # agent stops seeing updates. `open(p, "w")` truncates the TARGET the link
+  # points at and leaves the link itself in place, which is what we want.
+  # Writing through the link is INTENDED -- the guards below only make it
+  # visible, they never refuse it.
+  #
+  # THE GUARDS, in order:
+  #   1. a read failure ABORTS with the real error -- never an empty string
+  #   2. a timestamped backup is written AND read back and compared first
+  #   3. the result is size-checked against the file ON DISK, so an
+  #      unexpected shrink is refused even if guard 1 were ever defeated
+  #   4. a symlink is detected and the real path being written is reported
+  #   5. the link must still be a link afterwards -- asserted below
+  # ------------------------------------------------------------------
+  # Pre-write facts recorded in the SHELL so they outlive the python step and
+  # can be asserted again after the flag is appended.
+  local AGENTS_WAS_LINK=0
+  if [ -L "$AGENTS_FILE" ]; then
+    AGENTS_WAS_LINK=1
+  fi
+  # Size probe that does NOT need read permission and can never abort the run
+  # (see oc_file_size_bytes above -- the old `wc -c <` form did both).
+  local AGENTS_SIZE_BEFORE
+  AGENTS_SIZE_BEFORE="$(oc_file_size_bytes "$AGENTS_FILE")"
+
   # FIX 1: FULLY strip ALL prior UPDATE PENDING / ONBOARDING PENDING SECTIONS
   # (header → next "## " heading or EOF). The old `grep -v "UPDATE PENDING"`
   # only removed the single header LINE, leaving the multi-line body behind and
   # STACKING a fresh full flag on every run -- duplicates accreted forever.
-  AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' 2>/dev/null || true
-import os, re
+  #
+  # NOTE the command form: no `2>/dev/null`, no `|| true`. The real error has
+  # to reach the operator, and a refusal has to be detectable below.
+  local FLAG_STRIP_RC=0
+  AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' || FLAG_STRIP_RC=$?
+import os, re, sys, time
+
 p = os.environ["AGENTS_FILE"]
-try:
-    text = open(p, encoding="utf-8", errors="replace").read()
-except Exception:
-    text = ""
+
+
+def die(msg):
+    """Refuse to write. The file is left exactly as it was."""
+    sys.stderr.write("  REFUSING to rewrite " + p + "\n")
+    for line in msg.splitlines():
+        sys.stderr.write("    " + line + "\n")
+    raise SystemExit(1)
+
+
+# --- guard 4: symlink transparency. Writing through the link is intended;
+# --- say so out loud, and name the file that actually receives the bytes.
+was_link = os.path.islink(p)
+real = os.path.realpath(p)
+if was_link:
+    print("  [agents-flag] " + p)
+    print("  [agents-flag]   is a SYMLINK -> " + real)
+    print("  [agents-flag]   writing THROUGH the link, in place, onto that shared file.")
+    print("  [agents-flag]   (intended: many agents share one AGENTS.md. The link is preserved.)")
+else:
+    print("  [agents-flag] target is a regular file: " + real)
+
+# A file that does not exist yet is a known, safe state -- there is nothing to
+# preserve, so we create it. A file that EXISTS but cannot be read is an ERROR
+# and must never be treated as empty. That distinction is the whole fix.
+exists = os.path.exists(p)
+disk_before = os.path.getsize(p) if exists else 0
+
+if not exists:
+    if was_link:
+        print("  [agents-flag] link target does not exist yet -- creating it through the link.")
+    else:
+        print("  [agents-flag] no existing AGENTS.md -- creating a fresh one (nothing to preserve).")
+    original = ""
+else:
+    # --- guard 1: a read failure ABORTS, loudly, with the real error.
+    # surrogateescape (not "replace") round-trips bytes that are not valid
+    # UTF-8 exactly as they were, so a rewrite can never mangle them.
+    try:
+        with open(p, encoding="utf-8", errors="surrogateescape") as fh:
+            original = fh.read()
+    except Exception as exc:
+        die("could not READ the existing file: " + repr(exc) + "\n"
+            "This file is " + str(disk_before) + " bytes on disk and its contents are\n"
+            "therefore UNKNOWN to this script. Rewriting it now would destroy it.\n"
+            "Nothing was written. Fix the read error and re-run the updater.")
+
+# --- guard 2: back up first, then READ THE BACKUP BACK and compare.
+# A backup nobody has read is not a backup.
+backup = ""
+if original != "":
+    backup = real + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+    try:
+        with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
+            fh.write(original)
+    except Exception as exc:
+        die("could not WRITE the backup " + backup + ": " + repr(exc) + "\n"
+            "Refusing to rewrite the file with no backup in hand. Nothing was written.")
+    try:
+        with open(backup, encoding="utf-8", errors="surrogateescape") as fh:
+            readback = fh.read()
+    except Exception as exc:
+        die("could not READ BACK the backup " + backup + ": " + repr(exc) + "\n"
+            "An unverified backup is not a backup. Nothing was written.")
+    if readback != original:
+        die("the backup " + backup + " does not match what was read from the file.\n"
+            "Nothing was written.")
+    print("  [agents-flag] backup verified: " + backup)
+    print("  [agents-flag]   " + str(len(original.encode("utf-8", "surrogateescape")))
+          + " bytes written, read back, and compared byte for byte.")
+
 # Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
 # section: from its "## " header up to (but not including) the next top-level
 # "## " heading, or EOF. Non-greedy, multiline.
@@ -437,11 +708,87 @@ pattern = re.compile(
     r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
     r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
 )
-new = pattern.sub("", text)
+# Measured in BYTES, because it is compared against byte sizes below. Counting
+# CHARACTERS here under-counted every non-ASCII character in a removed section
+# (the flag text contains a few), so on a file carrying several stacked old
+# flags the guard saw a bigger shrink than it could explain and REFUSED a
+# perfectly good rewrite -- and, because the stale sections then stayed put, it
+# refused again on every later run too.
+removed_len = sum(len(m.group(0).encode("utf-8", "surrogateescape"))
+                  for m in pattern.finditer(original))
+stripped = pattern.sub("", original)
+new = stripped
 # Collapse >2 blank lines left behind.
 new = re.sub(r'\n{3,}', '\n\n', new)
-open(p, "w", encoding="utf-8").write(new)
+
+# The collapse above is allowed to touch blank lines and nothing else.
+if "".join(new.split()) != "".join(stripped.split()):
+    die("internal check failed: collapsing blank lines changed real content.\n"
+        "Nothing was written.")
+
+# --- guard 3: SIZE SANITY. Stripping the previous flag section is the ONLY
+# legitimate way this can shrink. Compare against the size ON DISK rather than
+# against the text we read, so this still fires even if guard 1 were somehow
+# defeated and `original` came back empty on a file full of content.
+new_bytes = len(new.encode("utf-8", "surrogateescape"))
+allowed_shrink = removed_len + 64   # +64 covers collapsed blank lines
+if new_bytes < disk_before - allowed_shrink:
+    die("the result would SHRINK this file by far more than removing the old\n"
+        "flag can explain, so something has gone wrong:\n"
+        "  on disk now      : " + str(disk_before) + " bytes\n"
+        "  would be written : " + str(new_bytes) + " bytes\n"
+        "  old flag sections: " + str(removed_len) + " bytes (the only allowed shrink)\n"
+        "Nothing was written." + (("\nThe verified backup is at " + backup) if backup else ""))
+
+# In place, through the link. NOT a temp file and a rename -- see the long
+# comment above. This truncates the target and keeps the link itself.
+try:
+    with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write(new)
+except Exception as exc:
+    die("the write itself FAILED: " + repr(exc)
+        + (("\nThe verified backup is at " + backup) if backup else ""))
+
+# --- guard 5: the link must have survived the write.
+if was_link and not os.path.islink(p):
+    die("after writing, " + p + " is NO LONGER A SYMLINK.\n"
+        "The shared-file design has been broken -- restore from " + backup)
+
+print("  [agents-flag] rewrote " + real + ": " + str(disk_before) + " -> "
+      + str(new_bytes) + " bytes (removed " + str(removed_len)
+      + " bytes of previous flag)")
 PYEOF
+
+  if [ "$FLAG_STRIP_RC" -ne 0 ]; then
+    # The rewrite was REFUSED. The file is untouched. Do not append the flag
+    # either: the previous flag could not be stripped, so appending would
+    # stack a duplicate on top of it. Say so as loudly as possible, in the
+    # Terminal and in the log, and leave the file alone.
+    {
+      echo ""
+      echo "  =============================================================="
+      echo "  AGENTS.md WAS NOT MODIFIED -- the rewrite was refused above."
+      echo "  The file was NOT truncated and NOT emptied. No flag appended."
+      echo "  The rest of this update already completed; only the agent's"
+      echo "  UPDATE PENDING notice is missing. Fix the error printed above"
+      echo "  and re-run the updater to write it."
+      echo "  =============================================================="
+      echo ""
+    } 2>&1 | tee -a "${LOG_FILE:-/dev/null}" >&2
+    return 0
+  fi
+
+  # Size AFTER the dedupe rewrite but BEFORE the append below. The rewrite is
+  # ALLOWED to shrink the file -- removing stale flag sections is exactly what
+  # it is for, and it has already size-checked itself against what it read.
+  # The APPEND is the step that can only ever grow the file, so that is what
+  # the assertion further down compares against. Comparing the final size to
+  # the size before the dedupe instead cried wolf on every box carrying more
+  # than one stale flag: a correct run printed "this file lost content,
+  # restore it from backup". A wipe alarm that fires on good runs is an alarm
+  # the operator learns to ignore.
+  local AGENTS_SIZE_STRIPPED
+  AGENTS_SIZE_STRIPPED="$(oc_file_size_bytes "$AGENTS_FILE")"
 
   local DATE_STAMP
   DATE_STAMP=$(date +%Y-%m-%d)
@@ -485,7 +832,29 @@ For each such skill folder under \`~/.openclaw/skills/\`:
   "${version} update applied on ${DATE_STAMP}. Verification gate PASSED. Skills activated: ${new_skills:-none}."
 
 FLAGCONTENT
+
+  # ------------------------------------------------------------------
+  # POST-WRITE ASSERTIONS. Appending a flag can only make the file BIGGER,
+  # and a shared file must still be shared afterwards. Both are checked
+  # against the facts recorded before the write, and both are loud.
+  # ------------------------------------------------------------------
+  local AGENTS_SIZE_AFTER
+  AGENTS_SIZE_AFTER="$(oc_file_size_bytes "$AGENTS_FILE")"
+  if [ "$AGENTS_WAS_LINK" = "1" ] && [ ! -L "$AGENTS_FILE" ]; then
+    echo "  ✗ ERROR: $AGENTS_FILE was a SYMLINK before this write and is a regular file now." >&2
+    echo "    The shared core-file design has been broken -- other agents no longer see this file." >&2
+    echo "    Restore the link from the timestamped backup reported above." >&2
+  fi
+  if [ "$AGENTS_SIZE_AFTER" -lt "$AGENTS_SIZE_STRIPPED" ]; then
+    echo "  ✗ ERROR: $AGENTS_FILE SHRANK across the append: ${AGENTS_SIZE_STRIPPED} -> ${AGENTS_SIZE_AFTER} bytes." >&2
+    echo "    Appending a flag can only grow a file, so this file lost content." >&2
+    echo "    Restore it from the timestamped backup reported above." >&2
+  fi
   echo "  ✓ UPDATE PENDING flag written (deduped) to $AGENTS_FILE"
+  echo "    ${AGENTS_SIZE_BEFORE} bytes -> ${AGENTS_SIZE_STRIPPED} after removing stale flag sections -> ${AGENTS_SIZE_AFTER} with the new flag"
+  if [ "$AGENTS_WAS_LINK" = "1" ]; then
+    echo "    (written through a symlink onto the shared file; the link is intact)"
+  fi
 
   # Seed Core.md terminology into MEMORY.md (idempotent)
   local MEMORY_FILE="$WORKSPACE_DIR/MEMORY.md"
@@ -810,38 +1179,22 @@ link_shared_core_files() {
   # We ALWAYS read THIS box's openclaw.json -- never a foreign/hardcoded path.
   local OCJSON="$HOME/.openclaw/openclaw.json"
   [ -f "/data/.openclaw/openclaw.json" ] && OCJSON="/data/.openclaw/openclaw.json"
+  # v21.3.1: this used to (a) call obs_resolve_workspace UNGUARDED -- a non-zero
+  # aborts the whole updater under `set -euo pipefail` -- and (b) fall through to
+  # a SILENT hardcoded <oc-root>/workspace when nothing resolved. CANON_DIR is
+  # the symlink TARGET for the box's shared AGENTS.md/TOOLS.md/USER.md, so a
+  # wrong guess here re-points real files at a path nobody named. Now: the one
+  # announced resolver, and an unresolvable workspace REFUSES the whole
+  # link-shared step (the caller already reports a warning + trips the step gate)
+  # instead of linking into a guessed directory.
   if [ -z "$CANON_DIR" ]; then
-    if command -v obs_resolve_workspace >/dev/null 2>&1; then
-      CANON_DIR="$(obs_resolve_workspace)"
-    elif [ -f "$OCJSON" ] && command -v python3 >/dev/null 2>&1; then
-      CANON_DIR="$(OC_JSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || true
-import json, os
-try:
-    cfg = json.load(open(os.environ["OC_JSON"]))
-    for ag in cfg.get("agents", {}).get("list", []) or []:
-        if isinstance(ag, dict) and ag.get("id") == "main" and ag.get("workspace"):
-            print(os.path.expanduser(ag["workspace"])); break
-    else:
-        ws = cfg.get("agents", {}).get("defaults", {}).get("workspace")
-        if ws:
-            print(os.path.expanduser(ws))
-except Exception:
-    pass
-PYEOF
-)"
+    if ! oc_resolve_workspace_announced "link-shared CANON_DIR (symlink target for shared core files)"; then
+      echo "  ✗ [link-shared] REFUSING to unify core files -- workspace unresolved (see above). No symlink was created or re-pointed." >&2
+      return 1
     fi
-  fi
-  # Final fallback: the canonical OpenClaw default for this box. (Clawd is dead;
-  # only fall back to ~/clawd as an absolute last resort if it is the workspace.)
-  if [ -z "$CANON_DIR" ]; then
-    local _oc_r
-    if declare -F resolve_oc_root >/dev/null 2>&1 && _oc_r="$(resolve_oc_root)"; then
-      CANON_DIR="$_oc_r/workspace"
-    elif [ -d "/data/.openclaw" ]; then
-      CANON_DIR="/data/.openclaw/workspace"
-    else
-      CANON_DIR="$HOME/.openclaw/workspace"
-    fi
+    CANON_DIR="$OC_WS_RESOLVED"
+  else
+    echo "  [link-shared] CANON_DIR supplied by caller (explicit argument): $CANON_DIR"
   fi
 
   echo "  [link-shared] Zero-Human-Workforce file unification"
@@ -2218,7 +2571,14 @@ u008_preflight_spend_check() {
         source "$_rc_lib"; break
       fi
     done
-    command -v install_onboarding_resume_cron >/dev/null 2>&1 || install_onboarding_resume_cron() { :; }
+    # v21.3.1: same conditional-source shape as the workspace resolver -- if the
+    # lib was absent the loop above sourced NOTHING and this line replaced the
+    # installer with a SILENT no-op, so the roll reported success while the
+    # self-healing resume cron was never registered. Announce the degradation.
+    if ! command -v install_onboarding_resume_cron >/dev/null 2>&1; then
+      echo "  ⚠ lib-onboarding-resume-cron.sh not found (looked in \$ONBOARDING_DIR and \${_SCRIPT_DIR}) -- install_onboarding_resume_cron() is a NO-OP for this run: the self-healing onboarding-resume cron will NOT be registered."
+      install_onboarding_resume_cron() { :; }
+    fi
     if command -v obs_seed_state >/dev/null 2>&1; then
       obs_seed_state "$ONBOARDING_VERSION" "$EXTRACTED_DIR" || echo "  ⚠ onboarding-state seed reported an issue (continuing)"
     else
@@ -2226,6 +2586,12 @@ u008_preflight_spend_check() {
     fi
   else
     echo "  ⚠ onboarding-state.sh not found in pulled repo -- honesty gate disabled for this run (older bundle?)"
+    # v21.3.1: say the SECOND consequence out loud. This same file defines
+    # obs_resolve_workspace(); without it every workspace lookup this run falls
+    # back to reading openclaw.json directly (announced per call by
+    # oc_resolve_workspace_announced), and if that also fails the run REFUSES to
+    # write rather than guessing a path.
+    echo "  ⚠ obs_resolve_workspace() is therefore UNDEFINED for this run -- workspace lookups will use the announced openclaw.json fallback, and will REFUSE to write if that fails."
   fi
 
   # Backup existing skills.
@@ -2943,18 +3309,27 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
   # running agent read from the 2026.x agent dir, not the legacy workspace. The gate
   # then reported core-sentinel-missing even when the wiring ran cleanly.
   # FIX: use obs_resolve_workspace (which honours openclaw.json agents[].workspace)
-  # as the primary resolver; fall back to the legacy heuristic only when the CLI
-  # helper is absent.  Then ALSO detect the active 2026.x agent dir and dual-write
-  # sentinels there so both the legacy-workspace path AND the agent-dir path are
-  # covered — whichever path the running agent reads from will see the sentinel.
+  # as the primary resolver.  Then ALSO detect the active 2026.x agent dir and
+  # dual-write sentinels there so both the legacy-workspace path AND the agent-dir
+  # path are covered — whichever path the running agent reads from will see the
+  # sentinel.
+  #
+  # v21.3.1: the "legacy heuristic" fallback that used to live here was
+  #     WIRE_WORKSPACE_DIR="$HOME/clawd"
+  #     [ ! -d "$WIRE_WORKSPACE_DIR" ] && WIRE_WORKSPACE_DIR="$HOME/.openclaw/workspace"
+  # -- a SILENT guess, and a guess that DISAGREED with the equally silent guess in
+  # write_update_pending_flag ($HOME/.openclaw/workspace). So the same run could
+  # write core-update blocks into one AGENTS.md and the UPDATE PENDING flag into a
+  # DIFFERENT one, purely because scripts/onboarding-state.sh is sourced
+  # CONDITIONALLY. "A directory exists" is not evidence that it is the workspace.
+  # Now: the one announced resolver, and an unresolvable workspace STOPS the run
+  # before a single core file is touched.
   WIRE_WORKSPACE_DIR=""
-  if command -v obs_resolve_workspace >/dev/null 2>&1; then
-    WIRE_WORKSPACE_DIR="$(obs_resolve_workspace 2>/dev/null || true)"
+  if ! oc_resolve_workspace_announced "core-update wiring target (AGENTS/TOOLS/MEMORY/SOUL/IDENTITY/USER)"; then
+    echo "  ✗ Refusing to wire CORE_UPDATES -- workspace unresolved (see above). No core file was touched." >&2
+    exit 1
   fi
-  if [ -z "$WIRE_WORKSPACE_DIR" ]; then
-    WIRE_WORKSPACE_DIR="$HOME/clawd"
-    [ ! -d "$WIRE_WORKSPACE_DIR" ] && WIRE_WORKSPACE_DIR="$HOME/.openclaw/workspace"
-  fi
+  WIRE_WORKSPACE_DIR="$OC_WS_RESOLVED"
   mkdir -p "$WIRE_WORKSPACE_DIR"
 
   # Detect the active 2026.x agent dir for dual-write.
