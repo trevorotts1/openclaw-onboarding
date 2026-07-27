@@ -11,8 +11,8 @@ EXTERNAL_SCRIPTS=()
 while IFS= read -r line; do
   var_def=$(echo "$line" | sed -n 's/^[[:space:]]*\([A-Z_][A-Z0-9_]*\)="\{0,1\}\([a-zA-Z0-9._/-]*\.sh\)"\{0,1\}[[:space:]]*$/\1:\2/p' || true)
   if [ -n "$var_def" ]; then EXTERNAL_SCRIPTS+=("${var_def#*:}"); continue; fi
-  script_path=$(echo "$line" | sed -n 's/.*bash \+\([a-zA-Z0-9._/-][a-zA-Z0-9._/-]*\)[ ;&|].*/\1/p' || true)
-  [ -z "$script_path" ] && script_path=$(echo "$line" | sed -n 's/.*bash \+\([a-zA-Z0-9._/-][a-zA-Z0-9._/-]*\)[[:space:]]*$/\1/p' || true)
+  script_path=$(echo "$line" | sed -n 's/.*bash  *\([^;&| ][^;&| ]*\).*/\1/p' || true)
+  [ -z "$script_path" ] && script_path=$(echo "$line" | sed -n 's/.*bash  *\([^;&| ][^;&| ]*\)[[:space:]]*$/\1/p' || true)
   [ -n "$script_path" ] && [[ "$script_path" == */* ]] && EXTERNAL_SCRIPTS+=("$script_path")
 done < <(cat "$HOOK" 2>/dev/null || true)
 if [ ${#EXTERNAL_SCRIPTS[@]} -eq 0 ]; then echo "WARN 3b: no external scripts found"
