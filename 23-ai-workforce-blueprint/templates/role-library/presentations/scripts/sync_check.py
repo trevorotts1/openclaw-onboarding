@@ -320,16 +320,39 @@ def parse_check_scripts(manifest):
     return {k: sorted(v) for k, v in emitted.items()}
 
 
+# Directories under the department root that are infrastructure, never roles. Each
+# ships its own how-to.md, so without this set the directory rule below would register
+# them as roles — the identical false-positive class the rule exists to remove.
+# Measured 2026-07-25 on the deployed department: 60 dirs contain how-to.md; 3 of them
+# (memory, scripts, sops) are infra; 57 are roles; 35 unique after de-numbering.
+_INFRA_DIRS = {"scripts", "sops", "memory", "working", ".openclaw"}
+
+# Flat *.md files at the department root that are agent scaffolding, not roles. They
+# are declared in PIPELINE-MANIFEST.roles today; U009 removes them from the manifest in
+# THIS SAME COMMIT, and without this set that removal creates five new A5 items.
+_NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
+                  "how-to-use-this-department"}
+
+
 def scan_roles_and_sops():
     if not PRES_DIR.is_dir():
         _fatal(f"presentations role-library dir not found: {PRES_DIR}")
-    # Role file stems: presentations/*.md, excluding the 00-START-HERE index.
+    # Role file stems, layout-agnostic. The repo library ships each role as a flat
+    # <slug>.md; the deployed department ships each role as <NN->?<slug>/how-to.md.
+    # Both are accepted so the same checker is honest in both layouts.
     role_stems = set()
     for p in PRES_DIR.glob("*.md"):
         name = p.stem
         if name.startswith("00-") or name.upper().startswith("00-START"):
             continue
+        if name in _NON_ROLE_DOCS:
+            continue
         role_stems.add(name)
+    for d in PRES_DIR.iterdir():
+        if not d.is_dir() or d.name in _INFRA_DIRS:
+            continue
+        if (d / "how-to.md").exists():
+            role_stems.add(re.sub(r"^\d\d-", "", d.name))
     sop_files = set()
     if SOPS_DIR.is_dir():
         for p in SOPS_DIR.glob("*.md"):
