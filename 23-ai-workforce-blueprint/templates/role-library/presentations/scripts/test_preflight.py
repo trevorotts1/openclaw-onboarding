@@ -4422,8 +4422,75 @@ def test_engine_checks() -> list:
     return failures
 
 
+def test_hook_banner_exemption():
+    """U067 - prove hook/section-banner exemption fires on boolean schema (stage 1).
+
+    Returns a list of failure strings ([] = all passed)."""
+    failures = []
+    import tempfile
+    import pathlib
+
+    # (a) boolean schema, "hook": true -> True.
+    rd_a = pathlib.Path(tempfile.mkdtemp())
+    (rd_a / "working" / "copy").mkdir(parents=True)
+    (rd_a / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "hook": True}]}))
+    tags_a = build_deck._load_slide_arc_tags(rd_a)
+    if not build_deck._is_hook_or_banner_slide(tags_a.get(1, "")):
+        failures.append("U067-a: boolean hook=true should classify True")
+
+    # (b) boolean schema, "label_slide": true -> True.
+    rd_b = pathlib.Path(tempfile.mkdtemp())
+    (rd_b / "working" / "copy").mkdir(parents=True)
+    (rd_b / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "label_slide": True}]}))
+    tags_b = build_deck._load_slide_arc_tags(rd_b)
+    if not build_deck._is_hook_or_banner_slide(tags_b.get(1, "")):
+        failures.append("U067-b: boolean label_slide=true should classify True")
+
+    # (c) boolean schema, "case_study": true, nothing else -> False (regression guard).
+    rd_c = pathlib.Path(tempfile.mkdtemp())
+    (rd_c / "working" / "copy").mkdir(parents=True)
+    (rd_c / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Purpose Pitch", "case_study": True}]}))
+    tags_c = build_deck._load_slide_arc_tags(rd_c)
+    if build_deck._is_hook_or_banner_slide(tags_c.get(1, "")):
+        failures.append("U067-c: boolean case_study=true must NOT classify True (regression guard)")
+
+    # (d) string schema, {"slide": 1, "section": "HOOK-OPEN"} -> True (unchanged).
+    rd_d = pathlib.Path(tempfile.mkdtemp())
+    (rd_d / "working" / "copy").mkdir(parents=True)
+    (rd_d / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "section": "HOOK-OPEN"}]}))
+    tags_d = build_deck._load_slide_arc_tags(rd_d)
+    if not build_deck._is_hook_or_banner_slide(tags_d.get(1, "")):
+        failures.append("U067-d: string schema section=HOOK-OPEN should classify True (unchanged)")
+
+    # (e) gate level: with COPY_HOOK_EXEMPTION_ENFORCED = False, a 19-char hook slide
+    #     is still an offender, and its offender string contains U067 ADVISORY.
+    rd_e = pathlib.Path(tempfile.mkdtemp())
+    (rd_e / "working" / "copy").mkdir(parents=True)
+    (rd_e / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "hook": True}]}))
+    (rd_e / "working" / "copy" / "slides.json").write_text(json.dumps(
+        {"slides": [{"slide": 1, "copy": ["Nineteen chars xyz"]}]}))
+    r = build_deck._chk_copy_density(rd_e)
+    if not r:
+        failures.append("U067-e: gate must be NONEMPTY for a 19-char hook slide under stage 1")
+    elif "slide 01 SLIDE TOTAL" not in r:
+        failures.append("U067-e: hook slide must still be an offender in stage 1")
+    elif "U067 ADVISORY" not in r:
+        failures.append("U067-e: offender string missing U067 ADVISORY")
+
+    print(f"U067 HOOK-BANNER EXEMPTION   -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
 def main():
     failures = []
+
+    # U067 - hook/section-banner exemption on boolean schema (stage 1, warn-mode).
+    failures += test_hook_banner_exemption()
 
     # Fix #6 — deterministic font-floor / type-scale / contrast rejector.
     failures += test_chk_font_floor()
