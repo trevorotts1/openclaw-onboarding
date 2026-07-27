@@ -109,6 +109,18 @@ if [ -f "scripts/guard-agent-browser-managed.sh" ]; then
   fi
 fi
 
+# ── 8. -type f census guard (warn-mode) ───────────────────────────────────────
+if [ -f "scripts/qc-assert-no-type-f-census.py" ]; then
+  if ! python3 scripts/qc-assert-no-type-f-census.py; then
+    # warn-mode always exits 0; this block is here so that when --enforce
+    # is wired in a later unit, the hook blocks the commit.
+    echo ""
+    echo "WARNING: -type f without companion -type l detected."
+    echo "A census must enumerate symlinks too. Use \\( -type f -o -type l \\)."
+    echo "See output above for the violation list."
+  fi
+fi
+
 # ── 7. Persona-set count triad (repo library <-> manifest lockstep) ──────────
 # When any persona artifact is staged, the N38 count triad MUST agree in the
 # working tree: blueprint dirs == persona-categories.json keys ==

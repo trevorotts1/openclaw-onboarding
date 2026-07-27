@@ -1,0 +1,16 @@
+# qc-assert-no-type-f-census.allowlist
+# Format: path:line | classification | YYYY-MM-DD reason
+# Lines starting with # are comments.
+# Only the 9 incidental lines are seeded here — these use -type f in a context
+# where symlink-blindness is harmless (temp deletion, existence-only, or test
+# fixture string mutation). The 43 census lines and 28 guard-enumeration lines
+# are the work list and are deliberately NOT allowlisted.
+scripts/orphan-temp-sweep.sh:117 | incidental | 2026-07-27 age-based temp-file deletion, symlinks irrelevant to mtime sweep
+scripts/qmd-orphan-sweep.sh:23 | incidental | 2026-07-27 age-based temp-file deletion, symlinks irrelevant to mtime sweep
+tests/unit/podbean-publish-provision-roll.test.sh:634 | incidental | 2026-07-27 find ends in -delete, symlink-blindness harmless
+tests/unit/update-skills-full-scripts-tree.test.sh:138 | incidental | 2026-07-27 find ends in -print -quit, existence-only check
+04-superpowers/qc-superpowers.sh:19 | incidental | 2026-07-27 find pipes to head -1 | grep -q ., existence-only check
+tests/unit/qmd-orphan-sweep.test.sh:68 | incidental | 2026-07-27 test fixture sed mutation on the string -type f, not a real invocation
+tests/unit/qmd-orphan-sweep.test.sh:70 | incidental | 2026-07-27 test fixture grep -q check on mutated string, not a real invocation
+tests/unit/podbean-publish-provision-roll.test.sh:645 | incidental | 2026-07-27 locate-one find with -print, existence-only backup path check
+tests/unit/update-skills-full-scripts-tree.test.sh:155 | incidental | 2026-07-27 find -print0 in while-read loop, existence-only file iteration

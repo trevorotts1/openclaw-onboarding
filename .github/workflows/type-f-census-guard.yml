@@ -1,0 +1,52 @@
+# type-f-census-guard.yml — Regression: -type f census without companion -type l
+#
+# Rule 3.1: a census that asks only `-type f` silently skips symlinks.
+# A symlink to a file IS a file for counting purposes. Use ( -type f -o -type l ).
+#
+# This guard ships in WARN-MODE (exits 0, reports violations as a work list).
+# The --enforce flag is wired to nothing yet; the negative self-test asserts
+# it CAN fail so we know the guard is alive.
+#
+# Added by U056.
+
+name: Type-f Census Guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '**/*.sh'
+      - '**/*.py'
+      - 'scripts/qc-assert-no-type-f-census.py'
+      - 'scripts/qc-assert-no-type-f-census.allowlist'
+      - 'scripts/tests/type-f-census-guard.negative-fixture.sh'
+      - '.github/workflows/type-f-census-guard.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - '**/*.sh'
+      - '**/*.py'
+      - 'scripts/qc-assert-no-type-f-census.py'
+      - 'scripts/qc-assert-no-type-f-census.allowlist'
+      - 'scripts/tests/type-f-census-guard.negative-fixture.sh'
+      - '.github/workflows/type-f-census-guard.yml'
+
+jobs:
+  guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Type-f census guard (warn-mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/qc-assert-no-type-f-census.py
+          echo "✓ Type-f census guard completed (warn-mode)"
+
+      - name: Negative self-test (guard must fail on planted violation)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/tests/type-f-census-guard.negative-fixture.sh
+          echo "✓ Negative self-test passed (guard exits 1 on a planted violation)"
