@@ -5181,5 +5181,145 @@ def test_chk_cc_registered() -> list:
     return fails
 
 
+# ---------------------------------------------------------------------------
+# U027 — AF-OCR-READBACK fixture suite (check_ocr_readback)
+# ---------------------------------------------------------------------------
+
+def _make_ocr_run_dir(sidecar_gen, *, n=2, token=None):
+    """Create a temp run dir with n rendered PNGs and optional sidecars + token."""
+    import json as _json, tempfile as _tempfile
+    rd = Path(_tempfile.mkdtemp(prefix="u027_ocr_"))
+    (rd / "renders").mkdir(parents=True)
+    (rd / "working" / "checkpoints").mkdir(parents=True)
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 60000  # above 51,200-byte floor
+    for i in range(1, n + 1):
+        (rd / "renders" / f"slide-{i:02d}.png").write_bytes(PNG)
+        sd = sidecar_gen(i)
+        if sd is not None:
+            sc_path = rd / "renders" / f"slide-{i:02d}.ocr.json"
+            sc_path.write_text(sd if isinstance(sd, str) else _json.dumps(sd))
+    if token is not None:
+        (rd / "working" / "checkpoints" / "process_manifest.json").write_text(
+            _json.dumps({"owner_skip_approval": token}))
+    return rd
+
+
+OCR_OWNER_TOKEN = {
+    "owner_approved": True,
+    "af_code": "AF-OCR-READBACK",
+    "approved_by": "owner",
+    "reason": "stylised headline",
+    "timestamp": "2026-07-25T00:00:00Z",
+}
+
+
+def test_ocr_no_renders_defers():
+    """U027 fixture 1: no PNGs at all -> '' (defer)."""
+    rd = Path(tempfile.mkdtemp(prefix="u027_ocr_empty_"))
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", f"expected defer on empty dir, got: {result!r}"
+
+
+def test_ocr_no_sidecars_fails():
+    """U027 fixture 2: PNG with no sidecar -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(lambda i: None)
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for missing sidecars"
+    assert "AF-OCR-READBACK" in result
+    assert "of 2" in result  # denominator present
+
+
+def test_ocr_checked_false_fails():
+    """U027 fixture 3: PNG with checked:false -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for checked:false"
+    assert "AF-OCR-READBACK" in result
+    assert "checked:false" in result.lower()
+
+
+def test_ocr_checked_false_not_waivable():
+    """U027 fixture 4: checked:false + full owner token -> still FAILs (NOT waivable)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False},
+        token=OCR_OWNER_TOKEN)
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", (
+        f"checked:false MUST NOT be waivable; got empty (PASS) with owner token. "
+        f"A self-disabled check is not a pass.")
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_matched_false_fails():
+    """U027 fixture 5: checked:true, matched:false -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": False, "misses": ["HEADLINE"]})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for matched:false"
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_matched_false_waivable():
+    """U027 fixture 6: checked:true, matched:false + owner token -> '' (PASS)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": False, "misses": ["X"]},
+        token=OCR_OWNER_TOKEN)
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", (
+        f"matched:false WITH owner token should waive (stylised headline), "
+        f"got: {result!r}")
+
+
+def test_ocr_all_good_passes():
+    """U027 fixture 7: checked:true, matched:true -> '' (PASS)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": True, "misses": []})
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", f"all-good should pass, got: {result!r}"
+
+
+def test_ocr_malformed_json_fails():
+    """U027 fixture 8: sidecar is malformed JSON -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(lambda i: "{not json")
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "malformed JSON sidecar must fail"
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_partial_missing_fails():
+    """U027 fixture 9: one of two slides missing sidecar -> FAILs with count/denominator."""
+    rd = _make_ocr_run_dir(
+        lambda i: None if i == 1 else {"checked": True, "matched": True})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "one of two missing must fail"
+    assert "AF-OCR-READBACK" in result
+    assert "1 of 2" in result  # count with denominator
+
+
+def test_ocr_owner_token_does_not_waive_checked_false_against_variants():
+    """U027: all four owner-token shapes fail to waive checked:false (QC-3)."""
+    import json as _json
+    tokens = {
+        "none": None,
+        "AF-OCR-READBACK full": OCR_OWNER_TOKEN,
+        "wildcard gate": {
+            "owner_approved": True, "gate": "*",
+            "approved_by": "o", "reason": "r", "timestamp": "t"},
+        "AF-BUNDLE-COMPLETE wrong code": {
+            "owner_approved": True, "af_code": "AF-BUNDLE-COMPLETE",
+            "approved_by": "o", "reason": "r", "timestamp": "t"},
+    }
+    failures = []
+    for label, tok in tokens.items():
+        rd = _make_ocr_run_dir(
+            lambda i: {"checked": False, "matched": None}, token=tok, n=1)
+        result = build_deck.check_ocr_readback(rd)
+        if result == "":
+            failures.append(
+                f"checked:false wrongly waived by token={label!r}")
+    assert not failures, "; ".join(failures)
+
+
 if __name__ == "__main__":
     main()

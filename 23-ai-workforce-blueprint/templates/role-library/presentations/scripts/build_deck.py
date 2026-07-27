@@ -5066,6 +5066,121 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
     return ""
 
 
+def check_ocr_readback(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-OCR-READBACK (U027) — the ONLY automated check in this pipeline that reads
+    what a finished slide actually SAYS, made mandatory at POSTFLIGHT.
+
+    Reads the per-slide provenance sidecars render_slide already writes
+    (renders/slide-NN.ocr.json, _record_ocr_readback:1289) and requires, for every
+    rendered PNG:
+        * a sidecar exists                  -> else FAIL (never a defer: the write is
+                                               best-effort at :1296, so an absent
+                                               sidecar beside a present PNG is a real
+                                               unknown, and an unknown is a failure)
+        * sidecar["checked"] is True        -> NOT WAIVABLE. A self-disabled check is
+                                               not a pass (audit B3 gate table). This is
+                                               the ONE condition no owner token waives.
+        * sidecar["matched"] is not False   -> WAIVABLE by a logged owner_skip_approval
+                                               for AF-OCR-READBACK, for the legitimate
+                                               case of a deliberately stylised headline.
+
+    DEFERS ("") only in the genuine pre-render state: zero rendered PNGs. Mirrors
+    check_image_qc_vision:4997-5001 — once renders exist there is no defer-to-pass.
+
+    Registered in run_postflight_gate ONLY. It must never appear in
+    PREFLIGHT_REQUIRED: preflight runs BEFORE the render, so there it would either
+    defer for every deck (the appearance of a fix, zero teeth) or fail every
+    pre-render call (audit Errata #12).
+    """
+    pngs = _gather_rendered_pngs(run_dir)
+
+    # Genuine pre-render state — nothing to inspect yet.  The ONLY defer.
+    if not pngs:
+        return ""
+
+    # --- WAIVABLE condition: matched:false may be waived by a logged owner token.
+    # `checked:false` is NOT waivable (no call to _owner_skip_approved for it below).
+    owner_waiver = _owner_skip_approved(run_dir, "AF-OCR-READBACK")
+
+    missing_sidecars: list[str] = []
+    unchecked: list[str] = []
+    mismatched: list[str] = []
+    unparseable: list[str] = []
+    n = len(pngs)
+
+    for png in pngs:
+        sidecar = png.with_suffix(".ocr.json")
+        if not sidecar.exists():
+            missing_sidecars.append(png.name)
+            continue
+        record = _read_json(sidecar)
+        if isinstance(record, dict) and "__parse_error__" in record:
+            unparseable.append(png.name)
+            continue
+        if not isinstance(record, dict):
+            unparseable.append(png.name)
+            continue
+        if record.get("checked") is not True:
+            # checked:false is NOT WAIVABLE — a self-disabled check is not a pass.
+            # The interpreter name in the message is the actual diagnosis on the
+            # operator box and saves the next engineer an hour.
+            unchecked.append(png.name)
+            continue
+        if record.get("matched") is False:
+            # matched:false IS waivable by a logged owner_skip_approval for
+            # AF-OCR-READBACK — the legitimate case of a deliberately stylised
+            # headline that OCRs badly.
+            if owner_waiver is not None:
+                print(f"  NOTE  AF-OCR-READBACK mismatched slide {png.name} waived by "
+                      f"logged owner_skip_approval "
+                      f"(approved_by={owner_waiver.get('approved_by')!r}, "
+                      f"reason={owner_waiver.get('reason')!r}).",
+                      file=sys.stderr)
+                continue
+            mismatched.append(png.name)
+
+    # Build the failure message.  checked:false is NOT waivable — report it even
+    # when a full owner token exists, naming the interpreter so the next engineer
+    # can diagnose without re-measuring.
+    lines: list[str] = []
+
+    if missing_sidecars:
+        lines.append(
+            f"{len(missing_sidecars)} of {n} rendered slides have no OCR provenance "
+            f"sidecar (the OCR engine is absent or _record_ocr_readback failed "
+            f"silently): {', '.join(missing_sidecars[:5])}"
+            + ("" if len(missing_sidecars) <= 5 else f" (+{len(missing_sidecars) - 5} more)")
+        )
+    if unchecked:
+        import sys as _sys
+        lines.append(
+            f"{len(unchecked)} of {n} sidecars record checked:false — the OCR engine "
+            f"did not run. This condition is NOT waivable — a self-disabled check is "
+            f"not a pass. Install pytesseract into the pipeline interpreter "
+            f"({_sys.executable}, Python {_sys.version.split()[0]}) and ensure the "
+            f"tesseract binary is on PATH. Offenders: {', '.join(unchecked[:5])}"
+            + ("" if len(unchecked) <= 5 else f" (+{len(unchecked) - 5} more)")
+        )
+    if mismatched:
+        lines.append(
+            f"{len(mismatched)} of {n} slides did not read back against approved copy "
+            f"(matched:false): {', '.join(mismatched[:5])}"
+            + ("" if len(mismatched) <= 5 else f" (+{len(mismatched) - 5} more)")
+        )
+    if unparseable:
+        lines.append(
+            f"{len(unparseable)} of {n} OCR provenance sidecars are unreadable/"
+            f"unparseable JSON (corrupt or generated by a non-standard tool): "
+            f"{', '.join(unparseable[:5])}"
+            + ("" if len(unparseable) <= 5 else f" (+{len(unparseable) - 5} more)")
+        )
+
+    if not lines:
+        return ""
+
+    return ("AF-OCR-READBACK: " + " | ".join(lines))
+
+
 def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS — the canonical render path is
     build_deck.py / run_signature_deck.py ONLY (FIX-2).
@@ -8435,6 +8550,22 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 0, 0, "IMAGE_QC_VISION"))
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
+
+    # --- U027: OCR-READBACK sub-check (AF-OCR-READBACK) — the one check that reads
+    # what a finished slide SAYS. At closeout, require a provenance sidecar per
+    # rendered PNG with checked:true and no matched:false. `checked` is NOT waivable.
+    ocr_readback_reason = ""
+    if run_dir is not None:
+        ocr_readback_reason = check_ocr_readback(run_dir, slides_path)
+        if ocr_readback_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "OCR text readback (every rendered slide's baked words read back and "
+                "matched against the approved copy)",
+                0, 0, "OCR_READBACK"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=ocr_readback_reason)
 
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not
