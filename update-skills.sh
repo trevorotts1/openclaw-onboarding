@@ -2496,6 +2496,37 @@ u008_preflight_spend_check() {
   return 0
 }
 
+# U004: u004_assert_doctrine_provenance
+#   Run assert-dept-doctrine-provenance.py (warn-mode) against the materialized
+#   Presentations department. Reports four disjoint buckets (identical, fork,
+#   orphan, broken-symlink) into the log file.  Guarded on the department
+#   existing; non-fatal; resolves the workspace through the same helper the
+#   surrounding blocks use (oc_resolve_workspace_announced, fallback
+#   $HOME/.openclaw/workspace).  Never prints file contents.  Never dumps an
+#   environment.  Exits 0 always (warn-mode -- Rule 3.5).
+u004_assert_doctrine_provenance() {
+  if ! oc_resolve_workspace_announced "U004 doctrine-provenance assertion" 2>/dev/null; then
+    echo "  [U004] doctrine-provenance assertion SKIPPED (workspace not resolvable)" >&2
+    return 0
+  fi
+  local _dept_dir="$OC_WS_RESOLVED/departments/Presentations"
+  if [ ! -d "$_dept_dir" ]; then
+    echo "  [U004] doctrine-provenance assertion SKIPPED (department not materialized at $_dept_dir)" >&2
+    return 0
+  fi
+  local _assert="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/assert-dept-doctrine-provenance.py"
+  if [ ! -f "$_assert" ]; then
+    echo "  [U004] assert-dept-doctrine-provenance.py not found at $_assert - skipping (older onboarding bundle?)" >&2
+    return 0
+  fi
+  {
+    echo "  [U004] doctrine-provenance assertion (warn-mode) - dept at $_dept_dir"
+    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1
+    echo "  [U004] assertion completed (exit $?)"
+  } >> "${LOG_FILE:-/dev/null}" 2>&1
+  echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
+}
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -4073,6 +4104,10 @@ else:
   # AC#3: when departments/ IS present this is a no-op (no warning, same
   # staleness result and exit code as before).
   u007_missing_departments_warning "${OC_WORKSPACE:-$HOME/.openclaw/workspace}"
+
+  # U004 -- Assert department doctrine provenance (warn-mode).
+  # Non-fatal; logged through $LOG_FILE.
+  u004_assert_doctrine_provenance
 
   # ----------------------------------------------------------
   # RETIRED-LIBRARY-FILE RECONCILE (2026-07-21). Canonical DELETIONS reach the

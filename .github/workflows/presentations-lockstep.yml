@@ -47,6 +47,9 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove_pres_prompt_floor.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py"
+      # Board tests -- contract-CC integration unit tests (U004)
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_board.py"
+      - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_contract.py"
 
 jobs:
   presentations-lockstep:
@@ -99,6 +102,30 @@ jobs:
           # which Guard A (gate_integrity_check.py) consumes in the next step.
           python3 "$TEST_PREFLIGHT"
           echo "test_preflight: all process-gate unit tests PASSED (af-coverage emitted)."
+
+      - name: test_cc_board.py — board contract unit tests (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_CC_BOARD="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_board.py"
+          if [ ! -f "$TEST_CC_BOARD" ]; then
+            echo "FATAL: test_cc_board.py not found at $TEST_CC_BOARD" >&2
+            exit 2
+          fi
+          python3 "$TEST_CC_BOARD"
+          echo "test_cc_board: all board contract unit tests PASSED."
+
+      - name: test_cc_contract.py — contract integration unit tests (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_CC_CONTRACT="23-ai-workforce-blueprint/templates/role-library/presentations/scripts/test_cc_contract.py"
+          if [ ! -f "$TEST_CC_CONTRACT" ]; then
+            echo "FATAL: test_cc_contract.py not found at $TEST_CC_CONTRACT" >&2
+            exit 2
+          fi
+          python3 "$TEST_CC_CONTRACT"
+          echo "test_cc_contract: all contract integration unit tests PASSED."
 
       - name: gate_integrity_check.py — Guard A (declared==enforced==tested, exit 0 required)
         shell: bash
