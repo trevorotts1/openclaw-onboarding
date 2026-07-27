@@ -596,12 +596,12 @@ def _phase_index(phase_id: str, phases: list) -> tuple:
 # The gate below has always bitten on a MISSING record and never on an
 # unconfirmed one, even though check_phase_preconditions' docstring claimed
 # otherwise. A record now counts as CONFIRMED only when the transport actually
-# reported success — `sent` true AND a non-empty gateway_msg_id — or when the
+# (U046) reported success — `sent` true AND a non-empty gateway_msg_id — or when the
 # non-delivery was explicitly recorded as undeliverable (the producer-side twin
 # of the Command Center's recordUndeliverable path, U043 Part A).
 #
 # WARN vs ENFORCE: on a box with no owner target configured, EVERY existing
-# record has sent=False and gateway_msg_id="" — so enforcing on day one blocks
+# (U046) record has sent=False and gateway_msg_id="" — so enforcing on day one blocks
 # every build immediately. Stage 1 reports and continues; the finding count is
 # the work list. Stage 3 sets PRESENTATION_REPORT_CONFIRM_ENFORCE=1 (or flips
 # the default here) once the count is zero.
