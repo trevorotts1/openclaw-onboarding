@@ -4572,6 +4572,9 @@ def main():
     # doctrine gates (each gate FIRES on a tripping fixture, PASSES on a clean deck).
     failures += test_doctrine_gates_fire_and_pass()
 
+    # U022 -- _chk_mode with dated exemption, extracted_substance, and owner-skip token.
+    failures += test_mode_substance_u022()
+
     # Skill 51 SOP-SLIDE-06 step iv — Signature Presentation gates: a golden signature
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
@@ -5092,6 +5095,90 @@ def test_check_brand_consistency():
     print(f"BRAND-D (empty renders)     -> {'PASS' if 'BRAND-D' not in str(fails) else 'FAIL'}")
 
     print(f"BRAND-CONSISTENCY (gate tests)-> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+
+def test_mode_substance_u022() -> list:
+    """U022 -- _chk_mode with dated exemption, extracted_substance, and owner-skip token."""
+    fails = []
+    import datetime as _dt
+    orig_date = build_deck.date
+
+    def _mk(intake, doctrine=False, token=None):
+        r = Path(tempfile.mkdtemp())
+        (r / "working" / "copy").mkdir(parents=True)
+        if intake is not None:
+            (r / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+        if doctrine:
+            (r / "working" / "copy" / "priority_shift_spec.json").write_text('{"true_goal":"x","priority_stack":["a"]}')
+        if token is not None:
+            (r / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+            (r / "working" / "checkpoints" / "process_manifest.json").write_text(json.dumps({"owner_skip_approval": token}))
+        return r
+
+    r1 = _mk({}, False)
+    try:
+        build_deck.date = orig_date
+        result = build_deck._chk_mode(r1)
+        if result: fails.append(f"U022-1: unset mode + no doctrine inside window expected '', got {result!r}")
+    finally:
+        build_deck.date = orig_date
+
+    class _Later(_dt.date):
+        @classmethod
+        def today(cls): return cls(2099, 1, 1)
+    r2 = _mk({}, False)
+    try:
+        build_deck.date = _Later
+        result = build_deck._chk_mode(r2)
+        if not result: fails.append("U022-2: unset mode + no doctrine past window expected BLOCK, got PASS")
+    finally:
+        build_deck.date = orig_date
+
+    r3 = _mk({}, True)
+    result3 = build_deck._chk_mode(r3)
+    if not result3: fails.append("U022-3: unset mode + doctrine expected BLOCK, got PASS")
+
+    r4 = _mk({"creation_mode": "whatever"}, False)
+    result4 = build_deck._chk_mode(r4)
+    if not result4: fails.append("U022-4: bad mode expected BLOCK, got PASS")
+
+    r5 = _mk({"creation_mode": "content_general"}, True)
+    result5 = build_deck._chk_mode(r5)
+    if not result5: fails.append("U022-5: content mode without substance expected BLOCK, got PASS")
+
+    r6 = _mk({"creation_mode": "content_general", "extracted_substance": "the one idea"}, True)
+    result6 = build_deck._chk_mode(r6)
+    if result6: fails.append(f"U022-6: content mode with substance expected '', got {result6!r}")
+
+    r7 = _mk({"creation_mode": "from_scratch"}, True)
+    result7 = build_deck._chk_mode(r7)
+    if result7: fails.append(f"U022-7: from_scratch expected '', got {result7!r}")
+
+    good_token = {"owner_approved": True, "af_code": "AF-MODE-UNSET", "approved_by": "the operator", "reason": "legacy run dir, migration deferred", "timestamp": "2026-07-26T00:00:00Z"}
+    r8 = _mk({}, False, token=good_token)
+    try:
+        build_deck.date = _Later
+        result8 = build_deck._chk_mode(r8)
+        if result8: fails.append(f"U022-8: valid owner token past window expected '', got {result8!r}")
+    finally:
+        build_deck.date = orig_date
+
+    bad_token = dict(good_token, owner_approved=False)
+    r9 = _mk({}, False, token=bad_token)
+    try:
+        build_deck.date = _Later
+        result9 = build_deck._chk_mode(r9)
+        if not result9: fails.append("U022-9: malformed token past window expected BLOCK, got PASS")
+    finally:
+        build_deck.date = orig_date
+
+    r10 = _mk({"creation_mode": "content_general", "extracted_substance": "driver writes this"}, True)
+    result10 = build_deck._chk_mode(r10)
+    if result10: fails.append(f"U022-10: content mode with driver-written substance expected '', got {result10!r}")
+
+    print(f"MODE-SUBSTANCE-U022 (gate tests) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
