@@ -1473,7 +1473,7 @@ When a new SOP is added, append a line to the table below.
 # ─── AUGMENT EXISTING ROLE FOLDERS (Wave 5b: previously missing!) ────────────
 
 V21_REQUIRED = ["IDENTITY.md", "SOUL.md", "MEMORY.md", "HEARTBEAT.md", "how-to.md"]
-V21_SYMLINKS = ["AGENTS.md", "TOOLS.md", "USER.md"]
+V21_SYMLINKS = ["TOOLS.md", "USER.md"]
 
 def augment_role_folder(role_path, workspace_root, role_metadata=None):
     """
@@ -1534,18 +1534,71 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             written.append("SOP/00-INDEX.md")
 
     symlinked = []
+    converted = []
     for shared in V21_SYMLINKS:
         link_path = role_path / shared
-        if link_path.exists() or link_path.is_symlink():
-            continue
         target = workspace_root / shared
+        if link_path.is_symlink():
+            if link_path.resolve() == target.resolve():
+                continue                      # already correct — nothing to do
+            link_path.unlink()                # wrong target: relink, no backup needed
+        elif link_path.exists():
+            # A stale REGULAR copy. Back it up before converting — its content
+            # exists nowhere else (no copy of it is in the repository).
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
+            try:
+                link_path.replace(bak)
+            except OSError as e:
+                print(f"  WARN: could not back up {shared} before converting: {e}",
+                      file=sys.stderr)
+                continue                      # never destroy what we could not back up
+            converted.append(shared)
         try:
             link_path.symlink_to(target)
             symlinked.append(shared)
         except OSError as e:
             print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
 
-    return {"written": written, "symlinked": symlinked}
+    return {"written": written, "symlinked": symlinked, "converted": converted}
+
+
+def _link_shared_files_only(role_path, workspace_root, results):
+    """
+    U054: link shared files in a container that is correctly excluded from
+    role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
+    hold stale regular copies of TOOLS.md/USER.md.  Never writes stubs or
+    touches AGENTS.md (AGENTS.md is deleted by the caller per U053's
+    disposition).
+    """
+    role_path = Path(role_path)
+    workspace_root = Path(workspace_root)
+    symlinked = []
+    converted = []
+    for shared in V21_SYMLINKS:
+        link_path = role_path / shared
+        target = workspace_root / shared
+        if link_path.is_symlink():
+            if link_path.resolve() == target.resolve():
+                continue                      # already correct
+            link_path.unlink()                # wrong target: relink
+        elif link_path.exists():
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
+            try:
+                link_path.replace(bak)
+            except OSError as e:
+                print(f"  WARN: could not back up {shared} before converting: {e}",
+                      file=sys.stderr)
+                continue
+            converted.append(shared)
+        try:
+            link_path.symlink_to(target)
+            symlinked.append(shared)
+        except OSError as e:
+            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
+    results.append({"role": role_path.name, "written": [], "symlinked": symlinked,
+                    "converted": converted, "skipped_container": True})
 
 def _is_sops_library_dir(path):
     """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
@@ -1620,6 +1673,69 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
             if result["symlinked"]:
                 extras.append(f"+links: {','.join(result['symlinked'])}")
             print(f"    {entry.name}: {' | '.join(extras)}")
+    # U054: AGENTS.md deletion pass (U053 disposition = delete). Remove stale
+    # regular-file AGENTS.md copies from role folders the walker visits.  Back
+    # up with bak-unify-<TS> before deleting — the content exists nowhere in
+    # the repository, and a conversion run is irreversible without a backup.
+    _AGENTS_DELETED = []
+    for entry in sorted(dept_path.iterdir()):
+        if not entry.is_dir():
+            continue
+        if entry.name.lower() in SKIP_NAMES or entry.name.startswith("."):
+            continue
+        if _is_sops_library_dir(entry):
+            continue
+        agents_path = entry / "AGENTS.md"
+        if agents_path.is_file():
+            if dry_run:
+                print(f"    [DRY-RUN] would delete AGENTS.md from {entry.name}")
+                _AGENTS_DELETED.append(entry.name)
+                continue
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
+            try:
+                agents_path.replace(bak)
+                print(f"    {entry.name}: backed up & deleted AGENTS.md -> {bak.name}")
+                _AGENTS_DELETED.append(entry.name)
+            except OSError as e:
+                print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
+                      file=sys.stderr)
+        elif agents_path.is_symlink():
+            if dry_run:
+                print(f"    [DRY-RUN] would unlink AGENTS.md symlink in {entry.name}")
+                _AGENTS_DELETED.append(entry.name)
+                continue
+            agents_path.unlink()
+            print(f"    {entry.name}: unlinked AGENTS.md symlink")
+            _AGENTS_DELETED.append(entry.name)
+
+    # U054: SKIP_NAMES containers are correctly excluded from role augmentation,
+    # but they still hold stale regular copies of AGENTS.md/TOOLS.md/USER.md
+    # (measured: 95 of 692 — roles 39, sops 55, scripts 1).  Clean them up
+    # without stub-augmenting.
+    for entry in sorted(dept_path.iterdir()):
+        if not entry.is_dir() or entry.name not in SKIP_NAMES:
+            continue
+        if dry_run:
+            print(f"    [DRY-RUN] would clean skipped container: {entry.name}")
+            continue
+        # Delete AGENTS.md with backup (U053 disposition = delete)
+        agents_path = entry / "AGENTS.md"
+        if agents_path.is_file():
+            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+            bak = agents_path.with_name(f"AGENTS.md.bak-unify-{ts}")
+            try:
+                agents_path.replace(bak)
+                print(f"    [{entry.name}] backed up & deleted AGENTS.md -> {bak.name}")
+            except OSError as e:
+                print(f"  WARN: could not back up AGENTS.md in {entry.name}: {e}",
+                      file=sys.stderr)
+        elif agents_path.is_symlink():
+            agents_path.unlink()
+            print(f"    [{entry.name}] unlinked AGENTS.md symlink")
+        # Link TOOLS.md / USER.md via shared implementation
+        _link_shared_files_only(entry, workspace_root, results)
+
 
     # ROOT-CAUSE FIX: after (re)materializing/augmenting a department's role
     # folders, ALWAYS refresh its ROSTER.md from the folders now on disk. This is

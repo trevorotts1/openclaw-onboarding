@@ -150,23 +150,22 @@ check "2.2" "Each dept has a director subfolder (00-*/)" \
   "Re-run build-workforce.py; create_role_workspace() failed"
 # 2.3 — symlink check
 if [ -d "$COMPANY_DIR/departments" ]; then
-  COPIED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
-  SYMLINKED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
+  # U054: depth cap removed — Check 2.3 now sees all depths.  Warn-mode
+  # per Rule 3.5: a fleet still holding copies reports its count instead of
+  # failing every box on day one.
+  COPIED=$(find "$COMPANY_DIR/departments" -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
+  SYMLINKED=$(find "$COMPANY_DIR/departments" -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   if [ "$COPIED" = "0" ] && [ "$SYMLINKED" -gt 0 ]; then
     green "  ✓ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — none copied"; PASS=$((PASS+1))
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
-    red "  ✗ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (pre-v9.6.1 bug)"; FAIL=$((FAIL+1))
-    FAILURES+=("2.3|Files copied instead of symlinked|Re-run build-workforce.py — v9.6.1+ uses symlinks")
+    yellow "  ⚠ 2.3  AGENTS/TOOLS/USER.md COPIED ($COPIED) — should be symlinked (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
+    WARNINGS+=("2.3|Files copied instead of symlinked ($COPIED)|Re-run build-workforce.py")
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" -gt 0 ]; then
-    # U076: mixed symlinks + copies is symlink DRIFT — genuine breakage, now a FAIL
-    # (was a warn-only that could not affect the exit code).
-    red "  ✗ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected)"; FAIL=$((FAIL+1))
-    FAILURES+=("2.3|Mixed symlinks and copies (drift)|Delete the copies, re-run build")
+    yellow "  ⚠ 2.3  Mixed: $SYMLINKED symlinked, $COPIED copied (symlink drift detected — warn-mode, Rule 3.5)"; WARN=$((WARN+1))
+    WARNINGS+=("2.3|Mixed symlinks and copies ($COPIED copies, $SYMLINKED symlinks)|Delete the copies, re-run build")
   else
-    # U076: no core files in any dept = build not complete yet — not-applicable, not a warning.
     na "2.3  No AGENTS/TOOLS/USER.md found in any dept (build may be incomplete)"
   fi
-else
   # U076: no departments folder = workforce not built yet — not-applicable, not a warning.
   na "2.3  No departments folder to check (workforce not built yet)"
 fi
