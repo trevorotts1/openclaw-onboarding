@@ -132,6 +132,17 @@ if [ -f "$PERSONA_GUARD" ]; then
   fi
 fi
 
+# ── 8. Type-f census guard (U056 — warn-mode) ──────────────────────────────────
+# NOTE (U056): core.hooksPath is blank on this clone, so the hook is advisory here.
+# Enforcement is in CI (.github/workflows/type-f-census-guard.yml).
+if [ -f "scripts/qc-assert-no-type-f-census.py" ]; then
+  if ! python3 scripts/qc-assert-no-type-f-census.py; then
+    echo ""
+    echo "WARNING: Bare -type f census detected in staged files."
+    echo "Use \\( -type f -o -type l \\) to count both files and symlinks."
+  fi
+fi
+
 # ── 5. Version consistency ───────────────────────────────────────────────────
 VERSION=$(cat version 2>/dev/null)
 INSTALL_VERSION=$(grep 'ONBOARDING_VERSION=' install.sh 2>/dev/null | head -1 | cut -d'"' -f2)

@@ -1,0 +1,47 @@
+name: type-f census guard
+
+# U056 — Ban the type-f census flag (warn-mode)
+#
+# Detects bare -type f in find invocations without companion -type l.
+# A symlink to a file is a file for counting purposes — a bare -type f
+# census silently skips symlinks (spec-common Rule 3.1).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/qc-assert-no-type-f-census.py'
+      - 'scripts/qc-assert-no-type-f-census.allowlist'
+      - 'scripts/tests/type-f-census-guard.negative-fixture.sh'
+      - '.github/workflows/type-f-census-guard.yml'
+      - '**/*.sh'
+      - '**/*.py'
+
+jobs:
+  type-f-census-guard:
+    name: type-f census guard (warn-mode)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run type-f census guard (warn-mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/qc-assert-no-type-f-census.py
+          echo "OK type-f census guard — warn-mode pass"
+
+      - name: Negative self-test (prove guard bites)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/tests/type-f-census-guard.negative-fixture.sh
+          echo "OK negative self-test: guard fails when it should"

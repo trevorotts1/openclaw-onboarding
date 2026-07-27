@@ -1,0 +1,22 @@
+# Allowlist for qc-assert-no-type-f-census.py (U056)
+# Format: path:line | classification | YYYY-MM-DD reason
+#
+# These 9 lines are genuinely incidental — locate-one, existence-only,
+# or temp-file deletion — not census/count or guard/security-scan operations.
+# The 43 census and 28 guard-enumeration lines are intentionally NOT here;
+# they are the work list that warn-mode produces.
+#
+# Checksum: 9 entries total.
+# Note: two entries (:634 delete, :138 print-quit) are also caught by the
+# safe-action exemption earlier in the classification chain, so they are
+# redundant here but included for completeness.
+
+scripts/orphan-temp-sweep.sh:117 | incidental — temp-file deletion | 2026-07-27 age-based temp sweep of old memory files
+scripts/qmd-orphan-sweep.sh:23 | incidental — temp-file deletion | 2026-07-27 age-based temp sweep of old qmd renders
+04-superpowers/qc-superpowers.sh:19 | incidental — existence-only check | 2026-07-27 head -1 | grep -q . checks existence of companion files
+update-skills.sh:1594 | incidental — locate-one | 2026-07-27 find ... | head -n 1 locates most-recent skill-tree file
+26-caption-creator/Scripts/export-srt.sh:58 | incidental — locate-one | 2026-07-27 find ... | head -n 1 locates first .srt in temp dir
+38-conversational-ai-system/scripts/22-init-run-manifest.sh:37 | incidental — locate-one | 2026-07-27 find ... | head -n1 locates existing run-manifest for today
+38-conversational-ai-system/scripts/17-backup-openclaw-config.sh:33 | incidental — locate-one | 2026-07-27 find ... locates most recent config backup
+tests/unit/podbean-publish-provision-roll.test.sh:634 | incidental — safe-action (-delete) | 2026-07-27 test cleanup deletes temp .env backups
+tests/unit/update-skills-full-scripts-tree.test.sh:138 | incidental — safe-action (-print -quit) | 2026-07-27 -print -quit exits after finding first match
