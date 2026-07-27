@@ -226,23 +226,39 @@ class TestBoardMirror:
     # Test 9b: TypeError raised by cc_board is recorded as board.internal_error, not board.error
     def test_typeerror_records_internal_error(self, tmp_path, monkeypatch):
         """A TypeError from cc_board records board.internal_error, not board.error."""
+        import presentation_job.board as board_module
+        from presentation_job.state import StateStore
         fake_cc = mock.MagicMock()
         fake_cc.board_config.return_value = {"url": "http://example.com"}  # enabled
         fake_cc.CC_TASK_STATUSES = frozenset({"in_progress", "review", "blocked"})
         fake_cc.ingest_deck_task.side_effect = TypeError("wrong argument name")
 
-        bm, state, reporter = self._make_boardmirror(tmp_path, fake_cc, monkeypatch)
+        monkeypatch.delenv("COMMAND_CENTER_URL", raising=False)
+        monkeypatch.delenv("MISSION_CONTROL_URL", raising=False)
 
-        # Should NOT raise
-        result = bm.open_card("test", "title", "desc")
-        assert result is None
+        # Keep mock active for the ENTIRE test
+        with mock.patch("presentation_job.board._get_cc_board", return_value=fake_cc):
+            board_module._cc_board = fake_cc
+            run_dir = tmp_path / "run"
+            run_dir.mkdir()
+            state = {"job_id": "test", "events": []}
+            store = StateStore(run_dir)
+            class R:
+                def event(self, kind, message, **extra):
+                    state.setdefault("events", []).append({"kind": kind, "message": message})
+            reporter = R()
+            bm = BoardMirror(run_dir, state, store, reporter)
 
-        # Should have board.internal_error, not just board.error
-        internal_errors = [e for e in state["events"] if e["kind"] == "board.internal_error"]
-        assert len(internal_errors) >= 1, (
-            f"No board.internal_error events. All board events: "
-            f"{[e['kind'] for e in state['events']]}"
-        )
+            # Should NOT raise
+            result = bm.open_card("test", "title", "desc")
+            assert result is None
+
+            # Should have board.internal_error, not just board.error
+            internal_errors = [e for e in state["events"] if e["kind"] == "board.internal_error"]
+            assert len(internal_errors) >= 1, (
+                f"No board.internal_error events. All board events: "
+                f"{[e['kind'] for e in state['events']]}"
+            )
 
     # Test 10: BoardMirror.mark_review refuses "done"
     def test_mark_review_refuses_done(self, tmp_path, monkeypatch):

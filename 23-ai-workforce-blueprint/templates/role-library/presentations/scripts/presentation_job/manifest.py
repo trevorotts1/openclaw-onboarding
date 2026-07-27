@@ -68,6 +68,7 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
 # ---------------------------------------------------------------------------
 # Manifest. Pinned per job (invariant 4).
 # ---------------------------------------------------------------------------
+@dataclass
 class Phase:
     id: str
     order: float
