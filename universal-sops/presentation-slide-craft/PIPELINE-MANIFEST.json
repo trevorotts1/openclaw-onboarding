@@ -1,5 +1,5 @@
 {
-  "manifest_version": 25,
+  "manifest_version": 26,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -761,7 +761,7 @@
     {
       "id": "P9.5-NOTES-SYNC",
       "order": 8.7,
-      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "name": "Notes-Pane Sync \u2014 reorder notes assembly to AFTER the speech is finalized",
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -772,8 +772,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -813,11 +813,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_claim",
-        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir \u2014 closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -842,8 +842,8 @@
         "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -861,11 +861,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_intake_trace",
-        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed \u2014 a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -894,8 +894,8 @@
         "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -916,8 +916,8 @@
         "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     }
   ],
@@ -2661,26 +2661,6 @@
       "id": "qc-specialist-speech-presentations",
       "owns_phase": "P-SPEECH-QC",
       "description": "INDEPENDENT reviewer of the presenter speech (AF-SPEECH-QC). Grades against the written speech rubric; never the Speech Writer who authored it."
-    },
-    {
-      "id": "how-to-use-this-department",
-      "owns_phase": null
-    },
-    {
-      "id": "BUILDER-PROMPT",
-      "owns_phase": null
-    },
-    {
-      "id": "IDENTITY",
-      "owns_phase": null
-    },
-    {
-      "id": "SOUL",
-      "owns_phase": null
-    },
-    {
-      "id": "TOOLS",
-      "owns_phase": null
     },
     {
       "id": "signature-presentation-architect",
