@@ -541,7 +541,7 @@ Harmony is enforced at THREE shift-left placements — narrative harmony at COPY
 ## 10. Quality Gates
 
 ### Gate 0 -- Deck-Intake Completion (HARD pre-build gate)
-**Before ANY build work begins:** `deck-intake-driver.py --complete --run-dir <RUN_DIR>` must exit 0 and `working/interview/intake_ledger.json` must contain `"status": "complete"`. If this gate is not satisfied, the build is BLOCKED -- return to the Brainstorming Buddy. No PHASE can start, no brief can be ingested, no pipeline step can proceed until this gate passes. This gate enforces FIX D (deck-intake turn-gate state machine); deck-build-guard.sh also enforces it at the exec layer.
+**Before ANY build work begins:** `deck-intake-driver.py --complete --run-dir <RUN_DIR>` must exit 0 and `working/interview/intake_ledger.json` must contain `"status": "complete"`. If this gate is not satisfied, the build is BLOCKED -- return to the Brainstorming Buddy. No PHASE can start, no brief can be ingested, no pipeline step can proceed until this gate passes. This gate enforces FIX D (deck-intake turn-gate state machine); `presentation-canonical-entry.sh` GATE 0 also enforces it at the exec layer (the intake-ledger check was relocated from the retired `deck-build-guard.sh`, U025).
 
 ### Gate 1 -- Pre-Run Readiness
 Before Phase A: media library folders exist, all keys are confirmed, capacity_plan.json is written.

@@ -11,7 +11,8 @@ out-of-order answer**, so question-batching (`AF-INTAKE-BATCH`) is not merely
 discouraged — it is impossible. It is a **front-end to the existing intake state
 machine, not a second state machine**: every answer is replayed through
 `deck-intake-driver.py`, so `intake_ledger.json`, the provers, Gate 0 and
-`deck-build-guard.sh` are all unchanged.
+`presentation-canonical-entry.sh`'s GATE 0 are all unchanged (the intake-ledger
+check was relocated from the retired `deck-build-guard.sh`, U025).
 
 ## Pieces
 

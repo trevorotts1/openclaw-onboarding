@@ -9,7 +9,7 @@ one. This bridge:
   sync  -> poll GET /api/sessions/<token>/answers?since=<cursor> and REPLAY each
            new answer through deck-intake-driver.py --answer <id> "<text>" then
            --next, so working/interview/intake_ledger.json, the provers, Gate 0
-           and deck-build-guard.sh are all UNCHANGED. On completion it runs
+           and presentation-canonical-entry.sh's GATE 0 are all UNCHANGED (the intake-ledger check was relocated from the retired deck-build-guard.sh, U025). On completion it runs
            --complete (standard) or assembles the record and runs
            --signature --record (signature).
 
