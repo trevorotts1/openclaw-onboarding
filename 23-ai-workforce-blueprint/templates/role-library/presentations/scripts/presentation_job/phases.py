@@ -9,12 +9,14 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED,
+    EXIT_WAIVER_INVALID,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from . import heal
+from .artifacts import validate_artifact
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -64,12 +66,33 @@ class Engine:
                 missing.append(rel)
         return (not missing), missing
 
+    def _revalidate_banked(self, phase: Phase) -> Tuple[bool, list]:
+        ps = self._phase_state(phase.id)
+        shas = ps.get("sha256") or {}
+        bad = []
+        for rel in (ps.get("artifacts") or []):
+            recorded = shas.get(rel)
+            ok, reason = validate_artifact(self.run_dir, rel, self.manifest, recorded_sha=recorded)
+            if not ok:
+                bad.append(f"{rel}: {reason}")
+        return (not bad), bad
+
     # -- executors --------------------------------------------------------
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
         if ps.get("status") == "done":
-            print(f"SKIP {phase.id}: already done (resuming reuses banked work)", flush=True)
-            return EXIT_OK
+            ok, invalid = self._revalidate_banked(phase)
+            if ok:
+                print(f"SKIP {phase.id}: already done (resuming reuses banked work)", flush=True)
+                return EXIT_OK
+            st = self._phase_state(phase.id)
+            st["status"] = "pending"
+            st.pop("sha256", None)
+            st.pop("artifacts", None)
+            st.pop("attested_at", None)
+            self.store.save(self.state)
+            print(f"RESET {phase.id}: banked artifacts invalid ({', '.join(invalid)}), will re-run",
+                  flush=True)
 
         self.state["current_phase"] = phase.id
         self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
@@ -116,7 +139,11 @@ class Engine:
             return EXIT_OK
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
-        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow())
+        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
+                         pre_run_artifacts=list(
+            (self.run_dir / f).name for f in (phase.produces_artifact or [])
+            if (self.run_dir / f).is_file()
+        ) if phase.produces_artifact else [])
         budget = phase.budget_minutes * 60
         for attempt in range(1, HEAL_CAP_TRANSIENT + 1):
             try:
@@ -165,10 +192,15 @@ class Engine:
 
         deadline = time.time() + phase.budget_minutes * 60
         announced_half = False
+        last_checkpoint = time.time()
+        checkpoint_every = min(60, phase.budget_minutes * 60 / 4)
         while time.time() < deadline:
             ok, _ = self._artifacts_present(phase)
             if ok:
                 return EXIT_OK
+            if time.time() - last_checkpoint >= checkpoint_every:
+                self._checkpoint(phase.id, status="running", last_poll_at=utcnow())
+                last_checkpoint = time.time()
             remaining = deadline - time.time()
             if not announced_half and remaining < (phase.budget_minutes * 60) / 2:
                 announced_half = True
@@ -187,15 +219,29 @@ class Engine:
         self._checkpoint(phase.id, status="blocked", blocked_reason=reason)
         self.state["terminal"] = "BLOCKED"
         self.state["blocked"] = {"phase": phase.id, "reason": reason, "at": utcnow()}
-        banked = [a for ps in self.state.get("phases", []) if ps.get("status") == "done"
-                  for a in ps.get("artifacts", [])]
+        banked = []
+        bad_banked = []
+        for ps in self.state.get("phases", []):
+            if ps.get("status") != "done":
+                continue
+            shas = ps.get("sha256") or {}
+            for a in (ps.get("artifacts") or []):
+                recorded = shas.get(a)
+                ok, r = validate_artifact(self.run_dir, a, self.manifest, recorded_sha=recorded)
+                if ok:
+                    banked.append(a)
+                else:
+                    bad_banked.append(f"{a}: {r}")
         self.store.save(self.state)
         if self.board:
             self.board.mark_blocked(phase.id, reason)
+        banked_msg = f"{len(banked)} file(s) already produced are saved — nothing is lost."
+        if bad_banked:
+            banked_msg += f" {len(bad_banked)} file(s) may need rebuilding: {'; '.join(bad_banked[:3])}"
         self.report.to_requester(
             "blocked",
             f"Your presentation is paused at {phase.id}. {reason} "
-            f"{len(banked)} file(s) already produced are saved — nothing is lost. "
+            f"{banked_msg} "
             "We have been told and are looking at it.")
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)

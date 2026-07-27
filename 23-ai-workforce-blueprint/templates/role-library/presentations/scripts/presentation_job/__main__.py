@@ -167,7 +167,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             state["terminal"] = None
             state.pop("blocked", None)
             store.save(state)
-            engine.report.event("job.resume", "resuming from checkpoint; banked artifacts reused")
+            revalidated = 0
+            for ps in state.get("phases", []):
+                if ps.get("status") == "done" and (ps.get("artifacts") or ps.get("sha256")):
+                    revalidated += 1
+            engine.report.event("job.resume",
+                f"resuming from checkpoint; {revalidated} phase(s) re-validated, banked artifacts reused")
         return engine.run(only=args.phase, until=args.until)
 
 
