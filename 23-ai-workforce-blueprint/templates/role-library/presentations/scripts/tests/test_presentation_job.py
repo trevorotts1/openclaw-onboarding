@@ -416,3 +416,107 @@ class TestModuleBoundaries:
         assert "presentation_job.phases" not in sys.modules, (
             "state.py causes phases.py to be imported — circular dependency"
         )
+
+
+# ---------------------------------------------------------------------------
+# U069: shell-injection fix --- three tests
+# ---------------------------------------------------------------------------
+class TestU069ShellInjectionFix:
+    """U069: Stop shell=True on manifest strings and run-dir path."""
+
+    def _make_engine_state(self, run_dir, manifest_path, manifest):
+        from presentation_job.state import StateStore
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "u069_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return store, state
+
+    def test_u069_space_in_run_dir_preserves_path(self, tmp_path):
+        """U069-a: space in run dir path must arrive as ONE argument."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        from presentation_job.state import EXIT_OK
+
+        run_dir = tmp_path / "run dir with spaces"
+        run_dir.mkdir()
+        (run_dir / "echo_argv.py").write_text(
+            "import json, sys\njson.dump(sys.argv, open('argv_out.json', 'w'))\n"
+        )
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["argv_out.json"],
+                        "executor": {"kind": "script",
+                                     "cmd": "python3 echo_argv.py {run_dir}"}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert rc == EXIT_OK, f"Phase should pass, got rc={rc}"
+        output = run_dir / "argv_out.json"
+        assert output.is_file()
+        argv_data = json.loads(output.read_text())
+        assert len(argv_data) >= 2
+        assert argv_data[1] == str(run_dir), (
+            f"argv[1]={argv_data[1]!r} expected {str(run_dir)!r}"
+        )
+
+    def test_u069_shell_injection_blocked(self, tmp_path):
+        """U069-b: shell metachar in executor.cmd must NOT be interpreted."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        from presentation_job.state import EXIT_GATE_BLOCKED
+
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        sentinel = tmp_path / "PWNED_U069"
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["does_not_exist.txt"],
+                        "executor": {"kind": "script",
+                                     "cmd": "echo hello; touch " + str(sentinel)}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert rc == EXIT_GATE_BLOCKED
+        assert not sentinel.exists(), f"SECURITY FAILURE: sentinel {sentinel} exists!"
+        for p in state.get("phases", []):
+            if p["id"] == "P0A-INTAKE":
+                assert p.get("status") != "done"
+
+    def test_u069_unbalanced_quote_raises_contract_error(self, tmp_path):
+        """U069-c: unparseable executor.cmd raises PhaseExecutorContractError."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine, PhaseExecutorContractError
+
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["out.txt"],
+                        "executor": {"kind": "script",
+                                     "cmd": "echo \"unclosed quote"}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        with pytest.raises(PhaseExecutorContractError) as exc_info:
+            engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert "P0A-INTAKE" in str(exc_info.value)
+        for p in state.get("phases", []):
+            if p["id"] == "P0A-INTAKE":
+                assert p.get("status") != "done"

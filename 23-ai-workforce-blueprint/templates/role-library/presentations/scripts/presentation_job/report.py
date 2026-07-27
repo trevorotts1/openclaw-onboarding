@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import shlex
 import subprocess
 from typing import Any, Dict, Optional
 
@@ -145,8 +146,16 @@ class Reporter:
         cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
         if not cmd:
             return False
+        # U069: tokenise, refuse on unparseable, shell=False.
         try:
-            r = subprocess.run(cmd, shell=True, input=json.dumps(
+            argv = shlex.split(cmd)
+        except ValueError as exc:
+            raise ValueError(
+                f"PRESENTATION_NOTIFY_CMD is not a valid argument vector ({exc}). "
+                "Fix the environment variable; this is not sanitised for you."
+            ) from exc
+        try:
+            r = subprocess.run(argv, shell=False, input=json.dumps(
                 {"chat_id": chat_id, "kind": kind, "message": message}),
                 text=True, capture_output=True, timeout=30)
             return r.returncode == 0
