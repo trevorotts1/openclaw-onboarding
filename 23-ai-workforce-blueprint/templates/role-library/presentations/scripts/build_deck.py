@@ -6170,6 +6170,12 @@ PRIORITY_PHASE_ID = "P0B-PRIORITY"
 RENDER_PHASE_ID = "P4-RENDER"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
+# U021 -- the CLOSED set of deck_type values. Mirrors deck-intake-driver.py's
+# LEGACY_FIELD_MAPPING (the single point of derivation) and
+# intake/deck-intake-questions.json's legacy_field_mapping table. deck_type is
+# ENGINE-WRITTEN by derive_legacy_fields(); it is never an agent's free text.
+# Adding a value here without adding it there re-opens the split this closes.
+DECK_TYPES = ("webinar", "signature_presentation")
 # U022 -- dated migration window for the two gates that must stop exempting
 # legacy run dirs (AF-MODE-UNSET's no-doctrine exemption, and U021's
 # AF-DECK-TYPE-UNSET). A run dir created before this date and carrying no
@@ -6177,6 +6183,12 @@ CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # established pattern at prove_sp_intake.py:96. Do NOT extend this date in
 # place -- retire it in a dated follow-up line item.
 MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
+# U021 stage flag -- MODULE SCOPE, beside DECK_TYPES. Rule 3.5: warn -> remediate ->
+# enforce, and the enforce flip is a SEPARATE unit whose ENTIRE change is this one
+# line. Its prerequisite is an installed deck_type producer reachable from the
+# department (deck-intake-driver.py in <dept>/scripts/, U006/A4, or U058).
+# The dated window below REPORTS that the window has closed; it does not enforce.
+DECK_TYPE_GATE_STAGE = "warn"          # "warn" | "enforce"
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (
@@ -9196,8 +9208,16 @@ def main():
             else:
                 _cc_title = deck_slug
                 _cc_desc = f"Deck build: {deck_slug}"
+                _rcid, _rchan = _cc_board.resolve_requester(run_dir)
+                if not _rcid:
+                    # Rule 3.5 WARN-MODE, stage 1 of 3 — standalone twin
+                    print("[cc_board] WARN-REQUESTER-MISSING: standalone build_deck run with "
+                          "no requester chat id; the client will receive no acknowledgement, "
+                          "progress or completion message for this build.",
+                          file=sys.stderr, flush=True)
                 _cc_task_id = _cc_board.ingest_deck_task(
-                    run_dir, deck_slug, title=_cc_title, description=_cc_desc
+                    run_dir, deck_slug, title=_cc_title, description=_cc_desc,
+                    requester_chat_id=_rcid, requester_channel=_rchan
                 )
                 if _cc_task_id:
                     _cc_board.stamp_task_id(run_dir, _cc_task_id)

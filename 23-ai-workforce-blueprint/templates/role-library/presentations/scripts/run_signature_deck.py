@@ -1401,8 +1401,18 @@ def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
         if cc_board._read_manifest(run_dir).get("cc_task_id"):
             return  # already ingested earlier this run
         slug = _deck_slug(run_dir)
+        rcid, rchan = cc_board.resolve_requester(run_dir)
+        if not rcid:
+            # Rule 3.5 WARN-MODE, stage 1 of 3
+            print("[cc_board] WARN-REQUESTER-MISSING: this deck has no requester chat id "
+                  "(checked working/copy/intake.json and the PRESENTATION_REQUESTER_CHAT_ID / "
+                  "ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID environment keys). "
+                  "The client will receive NO acknowledgement, progress or completion message "
+                  "for this build. Route presentation requests with the chat id set.",
+                  file=sys.stderr, flush=True)
         cc_board.ingest_deck_task(
-            run_dir, slug, title=slug, description=f"Deck build: {slug}")
+            run_dir, slug, title=slug, description=f"Deck build: {slug}",
+            requester_chat_id=rcid, requester_channel=rchan)
     except Exception as exc:  # noqa: BLE001 — board is best-effort, never a gate
         print(f"[cc_board] Phase-0 pre-flight ingest raised ({exc}) — run continues; "
               "the card will be (re)ingested idempotently at render-begin.",
