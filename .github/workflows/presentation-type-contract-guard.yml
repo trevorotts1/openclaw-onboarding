@@ -1,0 +1,52 @@
+name: presentation-type-contract-guard
+
+# Fails the build if the two-field presentation_type question contract
+# regresses (U059).  The contract: one canonical presentation_type enum
+# question with two conditional sub-questions (recipient_name for
+# content_personal, signature_source for signature); a single derivation
+# function (derive_legacy_fields) maps presentation_type to four legacy
+# fields and closes the signature_source override; both consumers
+# (build_deck.py: _chk_mode / _sp_active) read the derived fields as
+# written.
+#
+# The test asserts the two-field shape, total derivation over all four
+# types, the signature_source override, JSON-vs-Python table agreement,
+# consumer wiring in build_deck.py, and that the driver's own --selftest
+# still passes.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
+      - tests/unit/presentation-type-contract.test.sh
+      - .github/workflows/presentation-type-contract-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - 23-ai-workforce-blueprint/scripts/deck-intake-driver.py
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py
+      - tests/unit/presentation-type-contract.test.sh
+      - .github/workflows/presentation-type-contract-guard.yml
+
+jobs:
+  type-contract-guard:
+    name: Two-field presentation_type contract (U059)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Presentation type contract guard
+        shell: bash
+        run: |
+          chmod +x tests/unit/presentation-type-contract.test.sh
+          bash tests/unit/presentation-type-contract.test.sh
