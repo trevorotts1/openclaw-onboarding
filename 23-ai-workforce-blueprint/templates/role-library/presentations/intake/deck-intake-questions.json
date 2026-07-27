@@ -5,15 +5,44 @@
   "description": "Single source of truth for the Presentations deck-intake interview. Encodes SOP 9.0 mandatory fields in canonical order. The deck-intake-driver.py reads this file at runtime and enforces one-question-per-turn ordering. Do not hardcode these question prompts elsewhere — edit here. ONE CANONICAL TYPE-PICKER (order 0, id 'presentation_type') replaces the old binary deck_type question and is the single answer that decides all four legacy axis fields (deck_type, creation_mode, presentation_mode, audience_mode) — see 'legacy_field_mapping' below; the ONE place that mapping table is applied in code is derive_legacy_fields() in deck-intake-driver.py. On presentation_type=='signature' the driver asks ONE conditional follow-up ('signature_source', order 0.5) then switches to SIGNATURE mode: choice-first (QUICK vs IN-DEPTH), then it asks the SACRED 8 Questions + frame-selection question ONE at a time and waits for each answer (never a batch -- dumping them is AF-INTAKE-BATCH), and assembles the answers into ONE atomic record per 51-signature-presentation/intake/sp-8-questions.json (deck-intake-driver.py signature mode). The frame is captured THERE as signature_frame (rulebook|vault|quest|original), not here. Director Mode A/B (scratch vs augment) is NEVER asked here — it stays derived from whether source assets exist, per director-of-presentations.md SOP 9.3. The picker (+ its conditional follow-up) runs BEFORE the standard one-question-per-turn capture below. ALSO (v1.2.0) the full prose OPENING/SIMPLE/EXTENSIVE question bank previously only documented in brainstorming-buddy-presentations.md \"Department-Specific Question Bank\" now lives here as real driver questions — every client question flows through deck-intake-driver.py --next, machine-paced, instead of being paced by prose alone. Two conditional-skip schemas coexist and are applied by ONE reconciled pass (deck-intake-driver.py:auto_skip_all_conditionals): the type-picker follow-ups (recipient_name/signature_source) carry a `conditional_on` {id,equals} block, and the migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a price drop, WANT_AUDIO_DEMO/TARGET_WPM only when a speech/audio deliverable is in scope) carry an `ask_if` block; unmet conditions are auto-skipped (never surfaced, never block --complete).",
   "legacy_field_mapping": {
     "_comment": "Canonical mapping table (SOURCE OF TRUTH mirrored in deck-intake-driver.py:derive_legacy_fields). presentation_type -> {deck_type, creation_mode, presentation_mode, audience_mode}. Applied automatically the moment the driver records a validated presentation_type answer, and again at --complete when it writes/merges working/copy/intake.json.",
-    "from_scratch": {"deck_type": "webinar", "creation_mode": "from_scratch", "presentation_mode": "general", "audience_mode": "STANDARD"},
-    "content_personal": {"deck_type": "webinar", "creation_mode": "content_personal", "presentation_mode": "one-person", "audience_mode": "PERSONAL", "requires": ["recipient_name", "extracted_substance"]},
-    "content_general": {"deck_type": "webinar", "creation_mode": "content_general", "presentation_mode": "general", "audience_mode": "GENERAL", "requires": ["extracted_substance"]},
-    "signature": {"deck_type": "signature_presentation", "creation_mode": "from_scratch", "presentation_mode": "general", "audience_mode": "STANDARD", "note": "creation_mode defaults to from_scratch; overridden to content_personal/content_general by the signature_source follow-up when the client is converting existing material into the signature talk. Never left unset (AF-MODE-UNSET)."}
+    "from_scratch": {
+      "deck_type": "webinar",
+      "creation_mode": "from_scratch",
+      "presentation_mode": "general",
+      "audience_mode": "STANDARD"
+    },
+    "content_personal": {
+      "deck_type": "webinar",
+      "creation_mode": "content_personal",
+      "presentation_mode": "one-person",
+      "audience_mode": "PERSONAL",
+      "requires": [
+        "recipient_name",
+        "extracted_substance"
+      ]
+    },
+    "content_general": {
+      "deck_type": "webinar",
+      "creation_mode": "content_general",
+      "presentation_mode": "general",
+      "audience_mode": "GENERAL",
+      "requires": [
+        "extracted_substance"
+      ]
+    },
+    "signature": {
+      "deck_type": "signature_presentation",
+      "creation_mode": "from_scratch",
+      "presentation_mode": "general",
+      "audience_mode": "STANDARD",
+      "note": "creation_mode defaults to from_scratch; overridden to content_personal/content_general by the signature_source follow-up when the client is converting existing material into the signature talk. Never left unset (AF-MODE-UNSET)."
+    }
   },
   "storeTarget": {
     "PRESENTATION_TYPE": "pre_presentation_capture.PRESENTATION_TYPE",
     "SIGNATURE_SOURCE": "pre_presentation_capture.SIGNATURE_SOURCE",
     "RECIPIENT_NAME": "pre_presentation_capture.RECIPIENT_NAME",
+    "EXTRACTED_SUBSTANCE": "pre_presentation_capture.EXTRACTED_SUBSTANCE",
     "DECK_TYPE": "pre_presentation_capture.DECK_TYPE",
     "REPRESENTATION_MIX": "pre_presentation_capture.REPRESENTATION_MIX",
     "AUDIENCE_COMPOSITION_NOTE": "pre_presentation_capture.AUDIENCE_COMPOSITION_NOTE",
@@ -54,8 +83,8 @@
     "CLIENT_NOTES": "deck_brief.CLIENT_NOTES"
   },
   "session_budget": {
-    "max_turns": 40,
-    "max_minutes": 40
+    "max_turns": 44,
+    "max_minutes": 45
   },
   "questions": [
     {
@@ -66,7 +95,12 @@
       "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. Default if no preference: from_scratch.",
       "kind": "enum",
       "storeOn": "PRESENTATION_TYPE",
-      "allowed_values": ["from_scratch", "content_personal", "content_general", "signature"],
+      "allowed_values": [
+        "from_scratch",
+        "content_personal",
+        "content_general",
+        "signature"
+      ],
       "value_labels": {
         "from_scratch": "From scratch -- brainstorm and build new",
         "content_personal": "From your content -- personal (one specific recipient)",
@@ -88,8 +122,30 @@
       "storeOn": "RECIPIENT_NAME",
       "required": true,
       "block_gate": false,
-      "conditional_on": {"id": "presentation_type", "equals": "content_personal"},
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "content_personal"
+      },
       "resolverHint": "Ask only when presentation_type=='content_personal'. If the owner cannot name a single recipient, flag recipient_name_uncaptured:true and confirm with the operator before build -- PERSONAL is the named mode and _chk_intake blocks an empty recipient_name."
+    },
+    {
+      "id": "extracted_substance",
+      "section": "deck-intake",
+      "order": 0.4,
+      "prompt": "You said this deck comes from material you already have. In your own words, what is the ONE core idea in that material that the audience must walk away with?",
+      "help": "Asked only for the two CONTENT modes (content_personal / content_general). This is the SUBSTANCE the deck is extracted FROM -- build_deck.py's AF-MODE-UNSET gate refuses a content-mode deck that has none (SOP-MODE-00, P22-P29). It is the client's own words, never the assistant's summary.",
+      "kind": "text",
+      "storeOn": "EXTRACTED_SUBSTANCE",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "presentation_type",
+        "in": [
+          "content_personal",
+          "content_general"
+        ]
+      },
+      "resolverHint": "Ask ONLY when presentation_type is content_personal or content_general; auto-skipped for from_scratch and signature. The validated answer is lifted verbatim into working/copy/intake.json.extracted_substance by _apply_type_picker_derivation -- never paraphrased, never defaulted. There is no default: an empty answer must be re-asked."
     },
     {
       "id": "signature_source",
@@ -99,7 +155,10 @@
       "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types.",
       "kind": "enum",
       "storeOn": "SIGNATURE_SOURCE",
-      "allowed_values": ["from_scratch", "existing_content"],
+      "allowed_values": [
+        "from_scratch",
+        "existing_content"
+      ],
       "value_labels": {
         "from_scratch": "Building it from scratch with you",
         "existing_content": "Converting existing content I already have"
@@ -107,7 +166,10 @@
       "required": true,
       "block_gate": false,
       "default": "from_scratch",
-      "conditional_on": {"id": "presentation_type", "equals": "signature"},
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "signature"
+      },
       "resolverHint": "Ask only when presentation_type=='signature'. Default if unanswered: from_scratch. On 'existing_content': the driver asks the SAME content_personal-vs-content_general follow-up implicitly via the normal signature 8-Questions flow; until that is known, creation_mode is set to content_general (the safer default -- never left unset per AF-MODE-UNSET) and corrected once the signature intake clarifies the audience. On 'from_scratch': creation_mode stays from_scratch (the signature default)."
     },
     {
@@ -208,7 +270,10 @@
       "required": false,
       "block_gate": false,
       "default": false,
-      "ask_if": {"question_id": "deliverable_set", "contains": "audio"},
+      "ask_if": {
+        "question_id": "deliverable_set",
+        "contains": "audio"
+      },
       "resolverHint": "Ask only if DELIVERABLE_SET includes '+audio'. If '+audio' but no voice named: set WANT_AUDIO_DEMO:true and audio_voice_unset:true. Default when not '+audio': WANT_AUDIO_DEMO:false."
     },
     {
@@ -220,7 +285,13 @@
       "kind": "integer",
       "storeOn": "TARGET_WPM",
       "required": false,
-      "ask_if": {"question_id": "deliverable_set", "contains_any": ["speech", "audio"]},
+      "ask_if": {
+        "question_id": "deliverable_set",
+        "contains_any": [
+          "speech",
+          "audio"
+        ]
+      },
       "block_gate": false,
       "default": 140,
       "resolverHint": "Ask only if DELIVERABLE_SET includes a speech. Default if owner says 'you decide' or not asked: 140. Mark target_wpm_defaulted:true when defaulted."
@@ -342,7 +413,10 @@
       "help": "Pick: drop / straight.",
       "kind": "enum",
       "storeOn": "PRICE_MODE",
-      "allowed_values": ["drop", "straight"],
+      "allowed_values": [
+        "drop",
+        "straight"
+      ],
       "required": true,
       "block_gate": true,
       "resolverHint": "Mandatory per director-of-presentations.md brief validation (SOP 9.1). Drives whether price_anchor is asked next."
@@ -415,7 +489,10 @@
       "storeOn": "PRICE_ANCHOR",
       "required": true,
       "block_gate": false,
-      "ask_if": {"question_id": "price_mode", "equals": "drop"},
+      "ask_if": {
+        "question_id": "price_mode",
+        "equals": "drop"
+      },
       "resolverHint": "Mandatory per director-of-presentations.md brief validation when PRICE_MODE=drop; auto-skipped on 'straight'."
     },
     {
@@ -448,7 +525,10 @@
       "storeOn": "VIP_PRICE",
       "required": false,
       "block_gate": false,
-      "ask_if": {"question_id": "vip_tier", "truthy": true}
+      "ask_if": {
+        "question_id": "vip_tier",
+        "truthy": true
+      }
     },
     {
       "id": "vip_spots",
@@ -460,7 +540,10 @@
       "storeOn": "VIP_SPOTS",
       "required": false,
       "block_gate": false,
-      "ask_if": {"question_id": "vip_tier", "truthy": true}
+      "ask_if": {
+        "question_id": "vip_tier",
+        "truthy": true
+      }
     },
     {
       "id": "primary_objection",

@@ -201,6 +201,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
+from datetime import date
 from pathlib import Path
 from typing import Optional
 from urllib.parse import urlparse, quote
@@ -3673,12 +3674,59 @@ VISUAL_VARIETY_LIGHT_SLIDE_FLOOR_PCT = 0.10   # at least 10% of slides must be l
 VISUAL_VARIETY_HUE_DOMINANCE_CEILING = 0.90   # if one hue bucket >= this fraction -> FAIL
 VISUAL_VARIETY_DARK_LUMA_THRESHOLD   = 0.30   # luma <= this is "dark" (0-1 scale)
 
+# Warn-mode staging for the NEUTRAL branch of the hue-dominance half (U050). Step 1a makes
+# bucket 36 countable for the first time, and _png_dominant_hue_bucket reads only the twelve
+# corner/edge pixels at its sample_coords -- so any deck with a white, grey or black MARGIN
+# reports 100% neutral dominance however varied its CONTENT is. Measured 2026-07-26: a
+# twenty-slide deck of five distinct hue families inset on a white margin goes PASSED ->
+# REJECTED the moment this is True. While False that deck passes and a durable
+# `neutral_hue_dominance` warning is recorded instead. A chromatic monotone deck still
+# HARD-FAILS in both positions -- staging narrows this to the neutral branch only.
+# PROMOTION CRITERION -- flip to True only when BOTH hold: (i) staged_warnings.json records
+# zero `neutral_hue_dominance` events across the last ten consecutive real builds; and
+# (ii) the hue sampler reads slide CONTENT rather than only those twelve background pixels,
+# which is a different unit. Record the flip as its own commit.
+VISUAL_VARIETY_NEUTRAL_HUE_ENFORCED = False
+
+
+def _imaging_available() -> bool:
+    """True when Pillow can actually decode an image. A check that silently passes when
+    its dependency is missing is not a check (Super Spec 6.5). Callers must FAIL, not
+    defer, when this returns False -- with the install instruction in the message."""
+    try:
+        from PIL import Image  # noqa: PLC0415
+        Image.new("RGB", (1, 1))
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _warn_once(run_dir: Path, key: str, message: str) -> None:
+    """Append a staged-warning record to working/qc/staged_warnings.json and print to
+    stderr. Durable because the promotion criterion in U050 step 4d is 'zero of the last
+    N runs warned' -- which is unanswerable if warnings only ever went to a console."""
+    import sys as _sys
+    print(message, file=_sys.stderr)
+    try:
+        out = run_dir / "working" / "qc" / "staged_warnings.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        existing = _read_json(out) if out.exists() else {}
+        if not isinstance(existing, dict) or "__parse_error__" in existing:
+            existing = {}
+        existing.setdefault(key, 0)
+        existing[key] += 1
+        existing.setdefault("_messages", {})[key] = message
+        out.write_text(json.dumps(existing, indent=2), encoding="utf-8")
+    except Exception:  # noqa: BLE001
+        pass  # a warning that cannot be recorded must never break a build
+
 
 def _png_mean_luma(path: Path) -> Optional[float]:
-    """Return the mean luminance (0.0–1.0 Y-channel) of a PNG slide, or None if
+    """Return the mean luminance (0.0-1.0 Y-channel) of a PNG slide, or None if
     the file cannot be read or Pillow is unavailable. Converts to grayscale (ITU-R
-    BT.601) and averages all pixels. This is a stdlib-only fallback that reads raw
-    RGBA bytes when PIL is absent."""
+    BT.601) and averages all pixels. When Pillow is absent, no stdlib measurement
+    is attempted -- a missing dependency must produce a FAILURE (see
+    _imaging_available in each checker), never a fabricated measurement."""
     try:
         from PIL import Image
         with Image.open(str(path)) as im:
@@ -3687,17 +3735,12 @@ def _png_mean_luma(path: Path) -> Optional[float]:
             return sum(pixels) / (len(pixels) * 255.0)
     except Exception:  # noqa: BLE001
         pass
-    # Fallback: read raw PNG IDAT and compute a heuristic from the first few scanlines.
-    try:
-        with open(path, "rb") as f:
-            data = f.read(4096)
-        # Very rough heuristic: count high-value bytes in the raw compressed stream.
-        # This is approximate but good enough to distinguish all-dark from mixed.
-        non_zero = sum(1 for b in data[8:] if b > 30)
-        return non_zero / max(len(data) - 8, 1)
-    except Exception:  # noqa: BLE001
-        return None
-
+    # No stdlib fallback. Until 2026-07-26 this function fell back to counting high bytes
+    # in the DEFLATE-compressed PNG stream, which bears no relationship to luminance: it
+    # returned a plausible float in 0-1, so `lumas` filled with noise and the
+    # dark-dominance check produced a confident wrong answer. A missing dependency must
+    # produce a FAILURE (see _imaging_available), never a fabricated measurement.
+    return None
 
 def _png_dominant_hue_bucket(path: Path) -> Optional[int]:
     """Return the dominant background hue bucket (0-35, quantised in 10° steps) of a
@@ -3724,17 +3767,25 @@ def _png_dominant_hue_bucket(path: Path) -> Optional[int]:
                 mn = min(rn, gn, bn)
                 diff = mx - mn
                 if diff < 0.05:
-                    # Achromatic (gray/black/white) — treat as bucket 36 (neutral)
+                    # Achromatic (gray/black/white). Bucket 36 is the NEUTRAL bucket and is
+                    # deliberately outside the 0-35 hue range so a neutral-background deck is
+                    # counted as monotone rather than dropped. Before 2026-07-26 the assignment
+                    # below overwrote this unconditionally, `hue` was unbound on this path, the
+                    # resulting UnboundLocalError was swallowed by the handler at the end of this
+                    # function, and every neutral slide was silently dropped from hue_buckets --
+                    # which disabled the hue half of AF-VISUAL-VARIETY on any white, black or grey
+                    # deck. Twenty identical white slides passed. Do not re-merge these branches.
                     bucket = 36
-                elif mx == rn:
-                    hue = 60 * (((gn - bn) / diff) % 6)
-                elif mx == gn:
-                    hue = 60 * ((bn - rn) / diff + 2)
                 else:
-                    hue = 60 * ((rn - gn) / diff + 4)
-                if hue < 0:
-                    hue += 360
-                bucket = int(hue // 10) % 36
+                    if mx == rn:
+                        hue = 60 * (((gn - bn) / diff) % 6)
+                    elif mx == gn:
+                        hue = 60 * ((bn - rn) / diff + 2)
+                    else:
+                        hue = 60 * ((rn - gn) / diff + 4)
+                    if hue < 0:
+                        hue += 360
+                    bucket = int(hue // 10) % 36
                 hue_counts[bucket] = hue_counts.get(bucket, 0) + 1
             if not hue_counts:
                 return None
@@ -3760,6 +3811,12 @@ def check_visual_variety(run_dir: Path, slides_path: Optional[Path] = None) -> s
     pngs = sorted(renders_dir.glob("slide-*.png"))
     if not pngs:
         return ""  # defers when no PNG renders exist yet.
+
+    if not _imaging_available():
+        return ("AF-VISUAL-VARIETY: DECK FAIL — Pillow is not installed, so no slide's palette "
+                "could be examined. This gate cannot pass unexamined renders. "
+                "Install with: python3 -m pip install Pillow  "
+                "(AF-VISUAL-VARIETY)")
 
     lumas = []
     hue_buckets = []
@@ -3796,14 +3853,22 @@ def check_visual_variety(run_dir: Path, slides_path: Optional[Path] = None) -> s
         top_bucket, top_count = hue_counts.most_common(1)[0]
         hue_frac = top_count / len(hue_buckets)
         if hue_frac >= VISUAL_VARIETY_HUE_DOMINANCE_CEILING:
-            hue_deg = top_bucket * 10
-            problems.append(
+            if top_bucket == 36:
+                hue_label = "neutral (grey/black/white, no chroma)"
+            else:
+                hue_label = f"~{top_bucket * 10}°"
+            finding = (
                 f"monotone_palette: {top_count}/{len(hue_buckets)} slides share "
-                f"dominant background hue bucket ~{hue_deg}° (={hue_frac:.0%} of deck; "
+                f"dominant background hue {hue_label} (={hue_frac:.0%} of deck; "
                 f"ceiling {VISUAL_VARIETY_HUE_DOMINANCE_CEILING:.0%}). "
                 f"Introduce section-break slides with contrasting palette to ensure "
                 f"visual variety and WCAG AA legibility at projection distance."
             )
+            if top_bucket == 36 and not VISUAL_VARIETY_NEUTRAL_HUE_ENFORCED:
+                _warn_once(run_dir, "neutral_hue_dominance",
+                           f"AF-VISUAL-VARIETY WARNING (not yet enforced): {finding}")
+            else:
+                problems.append(finding)
 
     if problems:
         return (
@@ -4029,6 +4094,17 @@ def check_image_qc_present(run_dir: Path, slides_path: Optional[Path] = None) ->
 BRAND_CONSISTENCY_TOLERANCE = 80   # max RGB Euclidean distance (0-441 scale, 0=exact match)
 BRAND_CONSISTENCY_SAMPLE_COLORS = 3  # number of dominant colors to sample per slide
 
+# Warn-mode staging for the brand-palette requirement (U050). While False, a run with no
+# declared brand.palette gets a WARNING and still passes. Flip to True only when the
+# promotion criterion in step 4d is met. Every existing intake.json without a palette
+# becomes non-conformant the moment this is True -- that is the whole reason it is staged.
+# PROMOTION CRITERION: flip to True only when BOTH hold:
+# (i) staged_warnings.json records zero brand_palette_absent events across the last
+#     ten consecutive real builds; and
+# (ii) the intake surface actually collects a palette (U058's work, gated on D01).
+# Record the flip as its own commit so it can be reverted without reverting the fix.
+BRAND_PALETTE_REQUIRED = False
+
 
 def _hex_to_rgb(hex_color: str) -> Optional[tuple]:
     """Parse a hex color (#RRGGBB or RRGGBB) to (R, G, B) tuple, or None on error."""
@@ -4135,9 +4211,23 @@ def check_brand_consistency(run_dir: Path, slides_path: Optional[Path] = None) -
     if not pngs:
         return ""  # no renders yet — defer.
 
+    if not _imaging_available():
+        return ("AF-BRAND-CONSISTENCY: DECK FAIL — Pillow is not installed, so no slide's palette "
+                "could be examined. This gate cannot pass unexamined renders. "
+                "Install with: python3 -m pip install Pillow  "
+                "(AF-BRAND-CONSISTENCY)")
+
     brand_tokens = _load_brand_palette(run_dir)
     if not brand_tokens:
-        return ""  # no brand palette declared — gate cannot enforce; defer.
+        msg = ("no brand palette is declared, so every rendered slide is unexamined. "
+               "Add brand.palette to working/copy/intake.json as a list of hex tokens "
+               '(for example [\"#0A2540\", \"#F5F5F5\"]); a single primary colour is not '
+               "a palette and is not read by this gate")
+        if BRAND_PALETTE_REQUIRED:
+            return f"AF-BRAND-CONSISTENCY: DECK FAIL — {msg} (AF-BRAND-CONSISTENCY)"
+        _warn_once(run_dir, "brand_palette_absent",
+                   f"AF-BRAND-CONSISTENCY WARNING (not yet enforced): {msg}")
+        return ""
 
     off_brand_slides = []
     for png in pngs:
@@ -4783,7 +4873,8 @@ def _chk_no_overlay(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 def _owner_skip_approved(run_dir: Path, af_code: str):
     """Return the logged owner/founder skip-approval record waiving `af_code`, or None.
 
-    A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION)
+    A FIX-2 gate (AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION /
+    AF-MODE-UNSET)
     may be skipped ONLY by an explicit, LOGGED owner token recorded in
     working/checkpoints/process_manifest.json under "owner_skip_approval" (a single
     object or a list of them). A valid token carries owner_approved:true, the af_code
@@ -5802,10 +5893,12 @@ def check_deck_harmony(run_dir: Path, slides_path: Optional[Path] = None) -> str
     # --- palette / brand coherence cross-check (folded into harmony) ---
     try:
         brand_reason = check_brand_consistency(run_dir, slides_path)
-    except Exception:  # noqa: BLE001
+    except Exception as _exc:  # noqa: BLE001
+        import sys as _sys
+        print(f"harmony brand cross-check raised: {_exc!r}", file=_sys.stderr)
         brand_reason = ""
     if brand_reason:
-        problems.append("palette coherence (brand cross-check): " + brand_reason.split(".")[0])
+        problems.append("palette coherence (brand cross-check): " + brand_reason)
 
     # --- world continuity (conservative; only the wholly-fragmented extreme) ---
     world_tokens = ("office", "home", "studio", "stage", "kitchen", "boardroom", "outdoor",
@@ -6077,6 +6170,13 @@ PRIORITY_PHASE_ID = "P0B-PRIORITY"
 RENDER_PHASE_ID = "P4-RENDER"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
+# U022 -- dated migration window for the two gates that must stop exempting
+# legacy run dirs (AF-MODE-UNSET's no-doctrine exemption, and U021's
+# AF-DECK-TYPE-UNSET). A run dir created before this date and carrying no
+# creation_mode is grandfathered; after it, the gate blocks. Mirrors the
+# established pattern at prove_sp_intake.py:96. Do NOT extend this date in
+# place -- retire it in a dated follow-up line item.
+MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (
@@ -6240,7 +6340,16 @@ def _chk_mode(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         return ""  # no intake — _chk_intake / AF-SLIDE-COUNT-FLOOR own absence.
     mode = str(intake.get("creation_mode") or "").strip().lower()
     if not mode and not _doctrine_active(run_dir):
-        return ""  # legacy / pre-doctrine deck — defer (no-regression).
+        # U022: the pre-doctrine exemption is now DATED, not permanent.
+        if _owner_skip_approved(run_dir, "AF-MODE-UNSET"):
+            return ""
+        if date.today() <= MIGRATION_WINDOW_UNTIL:
+            print("  WARN  AF-MODE-UNSET: intake.json.creation_mode is unset and no "
+                  "priority_shift_spec.json is present. This deck is exempt only until "
+                  + MIGRATION_WINDOW_UNTIL.isoformat() + "; after that an unset mode "
+                  "blocks the build (SOP-MODE-00, P118).", file=sys.stderr)
+            return ""
+        # fall through to the CREATION_MODES check, which now blocks.
     if mode not in CREATION_MODES:
         return (f"AF-MODE-UNSET: intake.json.creation_mode is {mode or 'unset'!r}; it must be "
                 f"one of {', '.join(CREATION_MODES)}. Step Zero of every deck is to identify "

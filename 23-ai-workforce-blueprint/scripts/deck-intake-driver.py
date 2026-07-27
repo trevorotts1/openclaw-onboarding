@@ -209,8 +209,9 @@ def auto_skip_all_conditionals(qdata: dict, ledger: dict) -> bool:
     """Unified conditional-skip pass (integration reconciliation of the
     typepicker + intakegate units). Covers BOTH conditional schemas in the
     merged question set:
-      * `conditional_on` {id, equals} — typepicker's recipient_name /
-        signature_source, gated on presentation_type.
+      * `conditional_on` {id, equals} or {id, in: [...]} — typepicker's
+        recipient_name / signature_source / extracted_substance, gated on
+        presentation_type.
       * `ask_if` {question, truthy|equals|contains|contains_any|in} — the
         migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a
         price-drop, WANT_AUDIO_DEMO/TARGET_WPM, ...).
@@ -347,6 +348,8 @@ def _condition_met(question: dict, ledger: dict) -> Optional[bool]:
     if not ctrl_entry.get("validated"):
         return None
     ctrl_value = ctrl_entry.get("normalized", ctrl_entry.get("answer"))
+    if "in" in cond:
+        return ctrl_value in cond["in"]
     return ctrl_value == cond.get("equals")
 
 
@@ -478,7 +481,8 @@ def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str)
     derived legacy fields and merge them into working/copy/intake.json. No-op
     (and never raises) if presentation_type has not been validated yet or
     run_dir is unavailable (e.g. --answer called without a real run dir)."""
-    if qid not in ("presentation_type", "signature_source", "recipient_name"):
+    if qid not in ("presentation_type", "signature_source", "recipient_name",
+                   "extracted_substance"):
         return
     if run_dir is None:
         return
@@ -498,6 +502,15 @@ def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str)
         rn = entries.get("recipient_name", {})
         if rn.get("validated") and not rn.get("skipped"):
             updates["recipient_name"] = rn.get("answer")
+    # U022: extracted_substance had ZERO writers. build_deck._chk_mode reads it
+    # (AF-MODE-UNSET) and deck-intake-questions.json declares it required for
+    # both content modes, but nothing produced it. Lift the client's own
+    # validated answer VERBATIM -- never a paraphrase, never a default.
+    es = entries.get("extracted_substance", {})
+    if es.get("validated") and not es.get("skipped"):
+        answer = str(es.get("answer") or "").strip()
+        if answer:
+            updates["extracted_substance"] = answer
     merge_intake_json(run_dir, updates)
 
 
