@@ -9,6 +9,7 @@
 #   5. Version consistency (version / install.sh / CHANGELOG.md)
 #   6. agent-browser singleton gateway (no raw launch outside browser_manager;
 #      teardown+lock+breaker present; sentinel present) — on staged 06-* changes
+#   8. Full env dump guard (pm2 jlist/prettylist/--json) — WARN-MODE only (Rule 3.5 stage 1)
 
 # ── 0. Locate repo root ──────────────────────────────────────────────────────
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
@@ -88,6 +89,27 @@ while IFS= read -r f; do
   fi
 done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.sh$')
 [ "$C600_FAIL" -eq 1 ] && exit 1
+
+# ── 8. Full env dump guard (warn-mode) ─────────────────────────────────────────
+# Detects pm2 jlist / pm2 prettylist / pm2 --json and the Python list-form
+# equivalent in staged files. Ledger incidents: skill6-blended-persona-
+# kanban-v2-2026-07-13.md:78 and skill58-podbean-proxy-2026-07-16.md:452.
+# WARN-MODE ONLY — does not block the commit (Rule 3.5 stage 1).
+# core.hooksPath is blank on this clone — the hook is advisory here.
+if [ -f "scripts/qc-assert-no-full-env-dump.py" ]; then
+  if git diff --cached --name-only --diff-filter=ACM 2>/dev/null \
+      | grep -qE '\.(sh|py|md|json)$'; then
+    if ! python3 scripts/qc-assert-no-full-env-dump.py --report-json 2>/dev/null \
+        | python3 -c "import json,sys; d=json.load(sys.stdin); v=d.get('violations',0); sys.exit(0 if v==0 else 1)"; then
+      echo ""
+      echo "WARNING: Full env dump (pm2 jlist/prettylist/--json) detected in staged files."
+      echo "Reference: 61-loop-protection-system/scripts/loop_common.py:164-172 (filter_pm2_record)."
+      echo "Report presence by name only, never value. Never capture a full process list"
+      echo "into a shell variable. This is warn-mode (Rule 3.5 stage 1); not blocking."
+      echo ""
+    fi
+  fi
+fi
 
 # ── 6. agent-browser singleton gateway (on staged 06-* / gateway changes) ─────
 # SINGLETON POOLED BROWSER — one session, lock=1, TTL, guaranteed teardown,
