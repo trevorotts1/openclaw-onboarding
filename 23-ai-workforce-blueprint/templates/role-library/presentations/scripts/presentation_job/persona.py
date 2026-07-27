@@ -94,6 +94,57 @@ def load_blend_module():
 
 
 # ---------------------------------------------------------------------------
+# State recording helpers — graceful when state.json is absent
+# ---------------------------------------------------------------------------
+def _state_store_exists(run_dir: Path) -> bool:
+    from .state import STATE_FILENAME
+    return (run_dir / STATE_FILENAME).is_file()
+
+
+def _try_record_legacy(run_dir: Path, phase_id: str) -> None:
+    """Record legacy-intake-tone marker if state.json exists."""
+    if not _state_store_exists(run_dir):
+        return
+    from .report import Reporter
+    from .state import StateStore, utcnow
+    store = StateStore(run_dir)
+    state = store.load()
+    rep = Reporter(state, store)
+    rep.event("persona_resolved",
+              f"{phase_id} -> legacy-intake-tone",
+              phase_id=phase_id,
+              persona_governance="legacy-intake-tone")
+    result = {"persona_governance": "legacy-intake-tone",
+              "phase_id": phase_id, "at": utcnow()}
+    for ps in state.setdefault("phases", []):
+        if ps.get("id") == phase_id:
+            ps["persona_bundle"] = result
+            break
+    store.save(state)
+
+
+def _try_record_bundle(run_dir: Path, phase_id: str,
+                        narrative: str, bundle: Dict[str, Any]) -> None:
+    """Record the resolved persona bundle if state.json exists."""
+    if not _state_store_exists(run_dir):
+        return
+    from .report import Reporter
+    from .state import StateStore
+    store = StateStore(run_dir)
+    state = store.load()
+    for ps in state.setdefault("phases", []):
+        if ps.get("id") == phase_id:
+            ps["persona_bundle"] = bundle
+            break
+    rep = Reporter(state, store)
+    rep.event("persona_resolved",
+              f"{phase_id} -> {narrative} governed by blend directive",
+              phase_id=phase_id, narrative_phase=narrative,
+              persona_id=bundle.get("persona_id"))
+    store.save(state)
+
+
+# ---------------------------------------------------------------------------
 # Resolver — once per pipeline phase
 # ---------------------------------------------------------------------------
 def resolve_for_phase(run_dir: Path, phase_id: str,
@@ -123,45 +174,18 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
     # Flag-off path: SKILL51_BLEND_GOVERNS=0 — continue with legacy marker
     try:
         if not mod.blend_governs():
-            from .report import Reporter
-            from .state import StateStore, utcnow
-            store = StateStore(run_dir)
-            state = store.load()
-            rep = Reporter(state, store)
-            rep.event("persona_resolved",
-                      f"{phase_id} -> legacy-intake-tone",
-                      phase_id=phase_id,
-                      persona_governance="legacy-intake-tone")
-            result = {"persona_governance": "legacy-intake-tone",
-                      "phase_id": phase_id, "at": utcnow()}
-            for ps in state.setdefault("phases", []):
-                if ps.get("id") == phase_id:
-                    ps["persona_bundle"] = result
-                    break
-            store.save(state)
-            return result
+            _try_record_legacy(run_dir, phase_id)
+            return {"persona_governance": "legacy-intake-tone",
+                    "phase_id": phase_id}
     except mod.LegacyIntakeVoiceRequired:
-        from .report import Reporter
-        from .state import StateStore, utcnow
-        store = StateStore(run_dir)
-        state = store.load()
-        rep = Reporter(state, store)
-        rep.event("persona_resolved",
-                  f"{phase_id} -> legacy-intake-tone",
-                  phase_id=phase_id,
-                  persona_governance="legacy-intake-tone")
-        result = {"persona_governance": "legacy-intake-tone",
-                  "phase_id": phase_id, "at": utcnow()}
-        for ps in state.setdefault("phases", []):
-            if ps.get("id") == phase_id:
-                ps["persona_bundle"] = result
-                break
-        store.save(state)
-        return result
+        _try_record_legacy(run_dir, phase_id)
+        return {"persona_governance": "legacy-intake-tone",
+                "phase_id": phase_id}
 
     # Normal path: call governed_phase_voice under a hard timeout
     import concurrent.futures
-    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+    try:
         fut = ex.submit(
             mod.governed_phase_voice,
             narrative, avatar_context,
@@ -174,22 +198,11 @@ def resolve_for_phase(run_dir: Path, phase_id: str,
                 f"timed out after {BLEND_TIMEOUT_S}s for phase {phase_id}. "
                 "The persona resolution seam (persona_for_job.py) did not "
                 "respond within the governance wall.") from None
+    finally:
+        ex.shutdown(wait=False)
 
     # Write the bundle to state.json and record the event.
-    from .report import Reporter
-    from .state import StateStore
-    store = StateStore(run_dir)
-    state = store.load()
-    for ps in state.setdefault("phases", []):
-        if ps.get("id") == phase_id:
-            ps["persona_bundle"] = bundle
-            break
-    rep = Reporter(state, store)
-    rep.event("persona_resolved",
-              f"{phase_id} -> {narrative} governed by blend directive",
-              phase_id=phase_id, narrative_phase=narrative,
-              persona_id=bundle.get("persona_id"))
-    store.save(state)
+    _try_record_bundle(run_dir, phase_id, narrative, bundle)
     return bundle
 
 
