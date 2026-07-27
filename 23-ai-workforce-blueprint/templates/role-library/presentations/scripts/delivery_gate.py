@@ -143,6 +143,19 @@ AF_NOT_KIE_RENDERED = "AF-NOT-KIE-RENDERED"
 AF_OVERLAY_DELIVERED = "AF-OVERLAY-DELIVERED"
 AF_BUNDLE_COMPLETE = "AF-BUNDLE-COMPLETE"
 
+# ---------------------------------------------------------------------------
+# U020 — C2 GHL upload gate staging. Three-stage rollout (Rule 3.5):
+#   stage 1  UPLOAD_GATE_WARN_ONLY = True (default). The gate runs, its reasons are
+#            printed and counted, and they are NOT appended to `reasons`. The count is
+#            the work list.
+#   stage 2  U012's P9.2-GHL-UPLOAD produces the ledger on every new run; drive the
+#            count to zero.
+#   stage 3  flip UPLOAD_GATE_WARN_ONLY to False. Now a missing upload REJECTS the
+#            delivery. Exit criterion: U012 an ancestor of main, plus a zero warn count
+#            across the golden corpus.
+# ---------------------------------------------------------------------------
+UPLOAD_GATE_WARN_ONLY = True
+
 # sync_check.py LOCKSTEP — HOLE B / C1 emission registry. sync_check scans every
 # script named in an autofails[].check_script for `"code": "AF-..."` emission dicts
 # and FAILS (exit 4) if any emitted code is not registered in the manifest. This
@@ -254,6 +267,11 @@ def _check_destinations(run_dir: Path, plan: dict) -> list:
             elif not ap.is_file():
                 reasons.append(f"SOP-9.4: mac_downloads verify_anchor missing on disk: {anchor}")
         elif dtype == "ghl":
+            # U020: the unconditional GHL upload obligation now lives in _bundle_completeness
+            # (gate_ghl_media_complete). This branch is the plan-consistency check: did the
+            # upload record match what the delivery_plan promised? It is correctly conditional
+            # on the plan declaring a ghl destination, and deleting it would remove a working
+            # check (Law 15).
             if not media.get("pptx_ghl_media_id"):
                 reasons.append("AF-DELIVER/GHL: ghl destination resolved but "
                                "media_library.json has no pptx_ghl_media_id (upload record absent)")
@@ -544,6 +562,26 @@ def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
     else:
         _ok, dg = delivery_gate(run_dir, verify_destinations=verify_destinations)
         reasons.extend(dg)
+        if verify_destinations:
+            # C2: the GHL upload is an obligation, not an agent's option. The unconditional,
+            # per-asset gate already exists — ghl_media_push.gate_ghl_media_complete (:316-388) —
+            # and had zero programmatic callers. LAZY import: ghl_media_push imports this module at
+            # module level (:58), so a top-level import here is circular. delivery_gate already
+            # uses this pattern for ghl_media (:940) and canonical_render_guard (:489).
+            try:
+                import ghl_media_push
+                ok_upload, upload_reasons = ghl_media_push.gate_ghl_media_complete(run_dir)
+            except Exception as exc:  # noqa: BLE001 — fail-closed
+                ok_upload, upload_reasons = False, [
+                    f"{AF_BUNDLE_COMPLETE}: the GHL media-upload gate could not be evaluated "
+                    f"({exc!r}) — fail-closed. An unverifiable upload is not an upload."]
+            if not ok_upload:
+                if UPLOAD_GATE_WARN_ONLY:
+                    # Stage 1: gate runs, findings exist, but NOT appended to reasons.
+                    # The count is the work list. Stage 3 flips to fail-closed.
+                    pass
+                else:
+                    reasons.extend(upload_reasons)
     # Teleprompter sibling (part of the full presentation experience).
     tele = []
     for pat in ("**/*teleprompter*.html", "**/*TELEPROMPTER*.html",

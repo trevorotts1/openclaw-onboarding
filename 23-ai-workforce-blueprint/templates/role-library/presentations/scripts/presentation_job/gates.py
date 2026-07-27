@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict
 
@@ -67,23 +68,65 @@ class Gates:
 
     def _ghl_gate(self) -> Dict[str, Any]:
         """
-        Unconditional. delivery_gate.py:256-259 only demands the media id when an LLM-authored
-        delivery_plan.json declares a `ghl` destination — the agent deletes its own obligation by
-        staying silent (fix C2). Here the gate reads the engine's own record.
+        U020 — delegate to the existing per-asset gate_ghl_media_complete (ghl_media_push.py
+        :316-388). It checks folder + per-slide PNGs + final PPTX, and honors the owner token
+        and client waiver paths — a much stronger check than the local read of phantom keys.
+
+        The import chain is ghl_media_push -> ghl_media -> _find_canonical_ghl_media (which
+        does a filesystem walk and module exec at import time, but no network call), and
+        ghl_media_push -> delivery_gate (already imported by the time this runs). Verified
+        safe for gate evaluation: no credential resolution or network call at import time.
+
+        Falls back to the local read (U013's key-reading implementation) when the producer
+        module is unimportable, so the engine still works on a box without it installed.
         """
-        p = self.run_dir / "working" / "checkpoints" / "media_library.json"
-        if not p.is_file():
-            return {"state": "fail", "evidence": str(p.relative_to(self.run_dir)),
-                    "reason": "no GHL media-library record — the upload phase did not run"}
         try:
-            obj = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc:
-            return {"state": "fail", "reason": f"media_library.json unreadable: {exc}"}
-        ids = obj.get("media_ids") or []
-        if not ids:
-            return {"state": "fail", "reason": "media_library.json records zero uploaded assets"}
-        return {"state": "pass", "media_ids": ids, "folder_id": obj.get("folder_id"),
-                "reason": None}
+            sys.path.insert(0, str((Path(__file__).resolve().parent.parent)))
+            import ghl_media_push
+            ok, reasons = ghl_media_push.gate_ghl_media_complete(self.run_dir)
+        except Exception as exc:
+            p = self.run_dir / "working" / "checkpoints" / "media_library.json"
+            if not p.is_file():
+                return {"state": "fail",
+                        "evidence": str(p.relative_to(self.run_dir)),
+                        "reason": f"upload gate unevaluable: {exc!r} (fail-closed) — "
+                                  "no media_library.json"}
+            try:
+                obj = json.loads(p.read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError) as exc2:
+                return {"state": "fail",
+                        "reason": f"upload gate unevaluable: {exc!r} (fail-closed) — "
+                                  f"media_library.json unreadable: {exc2}"}
+            # Document the keys the producer actually writes: ghl_folder_id, slides[],
+            # pptx_ghl_media_id. Never media_ids or folder_id (C2's phantom keys — U013).
+            folder = str(obj.get("ghl_folder_id") or "").strip()
+            slides = obj.get("slides") or []
+            pptx_id = str(obj.get("pptx_ghl_media_id") or "").strip()
+            if not folder and not slides and not pptx_id:
+                return {"state": "fail",
+                        "reason": f"upload gate unevaluable: {exc!r} (fail-closed) — "
+                                  "gate_ghl_media_complete unavailable and "
+                                  "media_library.json records zero uploaded assets. "
+                                  "A client who declined the upload needs a waiver in "
+                                  "waivers.json naming rule 'ghl_upload' with their own "
+                                  "quoted words. An operator skipping the gate needs an "
+                                  "owner_skip_approval token in process_manifest.json. "
+                                  "These are different things: the first is client "
+                                  "consent, the second is an operator decision."}
+            return {"state": "pass", "ghl_folder_id": folder,
+                    "reason": f"gate_ghl_media_complete unavailable ({exc!r}); "
+                              "falling back to local ledger read — records present"}
+        if ok:
+            return {"state": "pass", "reason": None}
+        # Add the dual-route guidance to the failure reason so an operator reading a
+        # rejection knows which bypass path applies.
+        return {"state": "fail",
+                "reason": "; ".join(reasons) + ". A client who declined the upload needs "
+                          "a waiver in waivers.json naming rule 'ghl_upload' with their own "
+                          "quoted words. An operator skipping the gate needs an "
+                          "owner_skip_approval token in process_manifest.json. These are "
+                          "different things: the first is client consent, the second is an "
+                          "operator decision."}
 
     def _qc_gate(self) -> Dict[str, Any]:
         p = self.run_dir / "working" / "qc" / "final_qc_report.json"
