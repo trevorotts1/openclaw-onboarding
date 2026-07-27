@@ -69,7 +69,20 @@ done
 #     engine is co-located, assert the wiring landed — FAIL (not warn) if it did not
 #     (a stale skill-23 copy / a box where the SOP-SLIDE-06 lockstep never ran would
 #     otherwise pass verify.sh while ZERO SP enforcement exists at runtime).
-ENGINE="$SKILL_DIR/../23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
+# The GOVERNED engine is the materialized department, not the skills template. Until
+# U006 co-locates the entry script this file may run from either place, so resolve both
+# and say which one is being verified. Measured 2026-07-25: the template tree carries
+# manifest v25 (5 P-SP phases, 16 AF-SP codes) while the materialized department carried
+# v18 (0 and 0) — and this script printed RESULT: PASS against the template.
+OC_WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+DEPT_DIR="$OC_WORKSPACE/departments/Presentations"
+TEMPLATE_ENGINE="$SKILL_DIR/../23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py"
+if [ -f "$DEPT_DIR/scripts/build_deck.py" ]; then
+    ENGINE="$DEPT_DIR/scripts/build_deck.py"; ENGINE_SRC="materialized department"
+else
+    ENGINE="$TEMPLATE_ENGINE";               ENGINE_SRC="skills template (department not materialized)"
+fi
+echo "  engine under verification: $ENGINE  ($ENGINE_SRC)"
 if [ -f "$ENGINE" ]; then
     run "engine wire-presence (P-SP gates wired into build_deck.py)" \
         "$PY" "$SP_SCRIPTS/prove_sp_routing.py" --check-wiring "$ENGINE"
@@ -83,6 +96,80 @@ else
     printf 'skill 23 (prerequisite presentations engine) is absent; SP enforcement is unwired.\n'
     fails=$((fails + 1))
 fi
+
+# 1c) LOCKSTEP CHECKER — the one thing that reads the MANIFEST the engine will
+#     actually obey. Without it this script can certify a box whose manifest
+#     declares none of the skill's phases. sync_check exits 0 in sync, 4 on drift,
+#     2 when it cannot run.
+SYNC="$(dirname "$ENGINE")/sync_check.py"
+if [ -f "$SYNC" ]; then
+    run "sync_check.py lockstep (engine tree: $ENGINE_SRC)" "$PY" "$SYNC"
+else
+    printf '  [FAIL] sync_check.py NOT found beside the engine at %s — ' "$(dirname "$ENGINE")"
+    printf 'the lockstep state of the manifest this engine obeys cannot be established.\n'
+    fails=$((fails + 1))
+fi
+
+# 1d) MANIFEST PHASE + AUTOFALL DECLARATION. Assert the five P-SP phases and at
+#     least 16 AF-SP codes are declared in the manifest the engine will obey.
+#     The 16 is a floor, measured at 16 in canonical v25 on 2026-07-25, written
+#     as `< 16` so a future manifest that adds a seventeenth code does not break.
+SP_PHASES="P-SP-CLAIM P-SP-INTAKE P-SP-INTAKE-TRACE P-SP-STRUCTURE P-SP-P3-HYGIENE"
+_assert_sp_manifest() {
+    ENGINE_DIR="$(dirname "$ENGINE")" SP_PHASES="$SP_PHASES" "$PY" - <<'PY'
+import json, os, sys
+from pathlib import Path
+here = Path(os.environ["ENGINE_DIR"])
+pres = here.parent
+cand = [pres / "sops" / "PIPELINE-MANIFEST.json", pres / "PIPELINE-MANIFEST.json"]
+root = here
+for _ in range(12):
+    p = root / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+    if p.is_file():
+        cand.insert(0, p); break
+    if root.parent == root: break
+    root = root.parent
+m = None
+for c in cand:
+    if c.is_file():
+        m = json.loads(c.read_text()); src = c; break
+if m is None:
+    print("no PIPELINE-MANIFEST.json resolvable from", here, file=sys.stderr); sys.exit(2)
+ids = {p["id"] for p in m["phases"]}
+codes = {a["code"] for a in m["autofails"]}
+want_phases = set(os.environ["SP_PHASES"].split())
+sp_codes = {c for c in codes if c.startswith("AF-SP-")}
+bad = 0
+missing = sorted(want_phases - ids)
+if missing:
+    print(f"manifest {src} (version {m['manifest_version']}) declares "
+          f"{len(want_phases & ids)}/{len(want_phases)} P-SP phases; missing: {missing}",
+          file=sys.stderr); bad = 1
+if len(sp_codes) < 16:
+    print(f"manifest {src} (version {m['manifest_version']}) declares {len(sp_codes)}/16 "
+          f"AF-SP-* autofail codes", file=sys.stderr); bad = 1
+if bad: sys.exit(1)
+print(f"manifest {src} version {m['manifest_version']}: "
+      f"{len(want_phases)}/{len(want_phases)} P-SP phases, {len(sp_codes)} AF-SP-* codes")
+PY
+}
+# run() swallows a passing check's stdout (verify.sh:33-45 prints $log only on failure),
+# so emit the manifest summary unconditionally before grading it.
+_assert_sp_manifest | sed 's/^/         /' || true
+run "SP phases + AF-SP codes declared in the engine's manifest" _assert_sp_manifest
+
+# 1e) PROVER RESOLVABILITY. Assert each of the five provers is resolvable the way
+#     build_deck.py's _sp_prover resolves them: its own scripts dir OR the sibling
+#     51-signature-presentation/scripts/. Do NOT assert they were copied.
+for p in prove_sp_routing prove_sp_intake prove_sp_structure prove_sp_no_pitch intake_trace_check; do
+    if [ -f "$(dirname "$ENGINE")/$p.py" ] || [ -f "$SP_SCRIPTS/$p.py" ]; then
+        printf '  [PASS] %s.py resolvable by _sp_prover\n' "$p"
+    else
+        printf '  [FAIL] %s.py resolvable from NEITHER %s NOR %s — _sp_prover returns None and every SP gate is treated as BLOCKED\n' \
+            "$p" "$(dirname "$ENGINE")" "$SP_SCRIPTS"
+        fails=$((fails + 1))
+    fi
+done
 
 # 2) library-register --check sanity: both SP roles are registered in _index.json.
 if [ -f "$REGISTER" ]; then

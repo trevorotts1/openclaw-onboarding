@@ -47,6 +47,8 @@ on:
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prompt_gate.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/prove_pres_prompt_floor.py"
       - "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/kie_generate.py"
+      # Skill 51 (Signature Presentation) self-verification gate
+      - "51-signature-presentation/**"
 
 jobs:
   presentations-lockstep:
@@ -233,3 +235,21 @@ jobs:
           # exits non-zero and blocks the merge.
           python3 "$PROVER" --self-test
           echo "prove_pres_prompt_floor: shared image-prompt gate self-test PASSED."
+
+      - name: verify.sh — Skill 51 (Signature Presentation) self-verification gate (exit 0 required)
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERIFY_SH="51-signature-presentation/verify.sh"
+          if [ ! -f "$VERIFY_SH" ]; then
+            echo "FATAL: verify.sh not found at $VERIFY_SH" >&2
+            exit 2
+          fi
+          # Verify.sh runs the five prover self-tests, the wire-presence check,
+          # sync_check.py lockstep, manifest phase/autofail declaration, prover
+          # resolvability, and register-library-additions --check. In CI there is
+          # no materialized department, so ENGINE_SRC is the skills template, which
+          # carries the canonical v25 manifest (5 P-SP phases, 16 AF-SP codes).
+          # Must roll after U004 so boxes that have not taken it yet don't go red.
+          bash "$VERIFY_SH"
+          echo "verify.sh: Skill 51 self-verification PASSED."
