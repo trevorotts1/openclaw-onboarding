@@ -549,3 +549,33 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 **What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.
 **Detection:** Phase 6 final gate: confirm `working/qc/vision_qc_log.json` exists, is non-empty, and contains at minimum one entry per slide with a non-null `vision_api_response` field. A log that records only `{"slide": N, "exists": true}` entries is NOT a vision QC log and triggers AF-NO-VISION-QC for the DECK.
 
+## 8. RETIRED ROLES AND WHERE THEIR OBLIGATIONS LIVE
+
+The Assembled-Slide Legibility and Visual-Artifact QC Owner (`assembled-slide-legibility-qc`) is
+RETIRED as a role (U048, audit G3). It was never present in this repository: it had no role-library
+file, no `PIPELINE-MANIFEST.roles` row, no phase, and no checker, and the SOP mirror that carried its
+procedures cited an authoritative role file that does not exist. It is retired, not deleted: its
+obligations are re-homed below, and the slug is registered in
+`role-library/presentations/retired-doctrine-patterns.json` so it can never re-appear as a live
+routing instruction.
+
+| Retired SOP | The obligation, in one line | Where it lives now |
+|---|---|---|
+| SOP-PRES-CUSTOM-13 (assembled-deck assert battery) — OVERLAY OVERLAP | two text boxes overlap on a rendered page | code: the text-fits postflight sub-check (`AF-TEXT-OVERFLOW`), overlap half |
+| SOP-PRES-CUSTOM-13 — CROP | an element clipped at the slide edge | code: the text-fits postflight sub-check (`AF-TEXT-OVERFLOW`), per-axis edge-margin half |
+| SOP-PRES-CUSTOM-13 — CONTRAST and LEGIBILITY | text-to-background contrast below the legibility floor | NOT MECHANISED. Carved out as senior work (U047 Part B): WCAG contrast needs a glyph mask, and a baked photographic background makes a two-cluster threshold report a number about the photograph. No code is registered for it until an enforcer exists. A human reviewer judges it, against `CONTRAST_RATIO_FLOOR_NORMAL` and `DARK_THEME_CONTRAST_FLOOR` in the renderer |
+| SOP-PRES-CUSTOM-13 — STRETCH | an image distorted from its native aspect ratio | code: the existing render-time aspect-ratio verification (16:9 within tolerance, width floor) |
+| SOP-PRES-CUSTOM-13 — text-versus-image COLLISION, TEXT-OVER-FACE, MISALIGNMENT | text over an image element it should not cover; text over a detected face; an element off the layout grid | NOT MECHANISED. Face detection is not present in this pipeline, and "off the layout grid" has no declared grid to measure against. A human reviewer judges all three |
+| SOP-PRES-CUSTOM-14 (rendered-page spelling sweep) | every rendered word is accounted for by the approved copy | code: the spelling postflight sub-check (`AF-SPELLING`) |
+| SOP-PRES-CUSTOM-14 — em-dash sweep | an em dash rendered onto a slide | NOT MECHANISED HERE. The em-dash prohibition is copy doctrine and is enforced against authored copy, not against an optical read: an optical reader does not reliably distinguish an em dash from a hyphen or a rule, so an optical em-dash gate would be a confident wrong answer. A human reviewer judges the rendered page |
+| SOP-PRES-CUSTOM-14 — measured type size (implied by "legibility") | rendered text below the body-type floor | code: the measured-type-size postflight sub-check (`AF-TYPE-SIZE-MEASURED`) |
+| SOP-PRES-CUSTOM-15 (facial-expression match) | the face matches the slide's emotional job; no deformed face or hand | NOT MECHANISED. This is a judgement about whether an expression serves a message. A human reviewer judges it |
+| SOP-PRES-CUSTOM-16 (blocking pass-artifact `final_deck_qc.json`) | a pass token written only on a fully clean deck | SUPERSEDED AS A GATE. No code reads it (measured: 57 occurrences across 11 files in this repository, **0 of them executable**). The blocking function is carried by the postflight completeness gate, which refuses the bundle when any sub-check returns a reason. **The token remains a live instruction in four shipped role files** — `qc-specialist-presentations`, `delivery-concierge`, `director-of-presentations`, `media-librarian-ghl-updater` — **which this unit does NOT edit.** Their reconciliation is a separate finding |
+
+Two sibling roles are in the identical state — declared in the live department, absent from this
+repository, no file, no row, no phase, no checker: the Image-Grounding Steward
+(`image-grounding-steward`) and the Representation Casting Director
+(`representation-casting-director`). **Their disposition is not decided here.** It belongs with the
+rescue of the machine-only doctrine, because deciding whether to retire or restore them requires
+reading doctrine that exists only on one box.
+

@@ -42,6 +42,12 @@
       "pattern": "(?:MECHANICALLY\\s+composes?\\s+the\\s+(?:KIE\\s+)?prompt|composes?\\s+the\\s+(?:KIE\\s+)?prompt\\s+mechanically)",
       "scope": "**/*.md",
       "allowed_context_markers": ["retired", "banned residual", "FALSE for the current engine", "does not compose", "does NOT compose"]
+    },
+    {
+      "id": "role-assembled-slide-legibility-qc-retired",
+      "why": "U048 (audit G3). The 'assembled-slide-legibility-qc' role was declared in the live department's ROSTER.md and four SOP mirrors and NEVER existed in the repository (measured: 0 occurrences across 6,635 tree entries), had no role-library file, no manifest role row, no phase, no checker, and its own SOP mirror cited an authoritative role file that does not exist. Its mechanisable obligations are carried by AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED in run_postflight_gate (U047); its unmechanisable obligations are stated as human judgement in the MASTER ruleset's retired-roles crosswalk. The slug must never re-appear as a LIVE routing instruction in a top-level role-library file: doing so would re-create a role with a promise and no code. It may appear as documented history (carry a retirement marker).",
+      "pattern": "assembled[-_]slide[-_]legibility[-_]qc",
+      "scope": "*.md"
     }
   ]
 }
