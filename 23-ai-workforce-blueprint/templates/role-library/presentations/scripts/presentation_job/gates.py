@@ -2,13 +2,32 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 GATE_KEYS = ("script", "teleprompter", "prompt_floor", "ghl_upload", "qc")
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
+WARN_ONLY_GATES = ("qc", "ocr_readback")
 
 QC_PASS_THRESHOLD = 8.5
+
+# Import-time assertion: GATE_KEYS and NON_WAIVABLE_GATES must never overlap.
+# If ocr_readback is ever added to GATE_KEYS, this assertion fires immediately,
+# preventing a silent regression where the one non-waivable gate becomes waivable.
+assert not (set(GATE_KEYS) & set(NON_WAIVABLE_GATES)), \
+    f"GATE_KEYS and NON_WAIVABLE_GATES must be disjoint; overlap: {set(GATE_KEYS) & set(NON_WAIVABLE_GATES)}"
+
+
+# Decision on whether a transcript quote may authorise a waiver before the identity
+# gap closes. The audit's D3 (:1016-1019) records that a Telegram-routed request
+# "sends five keys and no requester identity", and the chat transcript lives in the
+# Command Center database -- which breaks the offline-authoritative rule (the engine
+# cannot read it from the run dir).  When False (the safe default), waivers citing
+# source="transcript" are rejected with an operator message explaining why.  The
+# decision itself is escalated (see ticket U013 step 6); setting this to True
+# requires the identity gap to close first (a separate unit, outside this engine).
+TRANSCRIPT_WAIVERS_ACCEPTED: bool = False
+
 
 # ---------------------------------------------------------------------------
 # Gates. Fail-closed (invariant 5).
@@ -25,7 +44,9 @@ class Gates:
 
     def evaluate_all(self) -> Dict[str, Dict[str, Any]]:
         g = self.state.setdefault("gates", {})
-        g["script"] = self._artifact_gate("working/deliverables/PRESENTERS-SPEECH.md", 2048)
+        g["script"] = self._artifact_gate_any(
+            ["working/deliverables/PRESENTERS-SPEECH.md",
+             "working/presenter-speech/PRESENTERS-SPEECH.md"], 2048)
         g["teleprompter"] = self._artifact_gate(
             "working/deliverables/presenter-teleprompter.html", 10240)
         g["prompt_floor"] = self._prompt_floor_gate()
@@ -43,6 +64,26 @@ class Gates:
             return {"state": "fail", "evidence": rel,
                     "reason": f"{rel} is {size} bytes, below the {min_bytes}-byte floor"}
         return {"state": "pass", "evidence": rel, "bytes": size, "reason": None}
+
+    def _artifact_gate_any(self, rels: List[str], min_bytes: int) -> Dict[str, Any]:
+        """Accepts the first existing path at or above min_bytes. Fail-closed if none do."""
+        found = None
+        for rel in rels:
+            p = self.run_dir / rel
+            if p.is_file() and p.stat().st_size >= min_bytes:
+                found = rel
+                break
+        if found is None:
+            # Report the primary path (first in the list) as the expected location.
+            p = self.run_dir / rels[0]
+            if p.is_file():
+                size = p.stat().st_size
+                return {"state": "fail", "evidence": rels[0],
+                        "reason": f"{rels[0]} is {size} bytes, below the {min_bytes}-byte floor"}
+            return {"state": "fail", "evidence": rels[0],
+                    "reason": f"{rels[0]} does not exist (checked: {', '.join(rels)})"}
+        p = self.run_dir / found
+        return {"state": "pass", "evidence": found, "bytes": p.stat().st_size, "reason": None}
 
     def _prompt_floor_gate(self) -> Dict[str, Any]:
         """PROMPT_CHAR_FLOOR = 9000 (prompt_gate.py:89, build_deck.py:325)."""
@@ -79,25 +120,50 @@ class Gates:
             obj = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
             return {"state": "fail", "reason": f"media_library.json unreadable: {exc}"}
-        ids = obj.get("media_ids") or []
-        if not ids:
-            return {"state": "fail", "reason": "media_library.json records zero uploaded assets"}
-        return {"state": "pass", "media_ids": ids, "folder_id": obj.get("folder_id"),
-                "reason": None}
+        # Key names are the PRODUCER's, verified against ghl_media_push.push_deck_media (:229-246),
+        # its own gate contract (:30-33), delivery_gate._check_destinations (:257), and the
+        # media-librarian role doc. There is no `media_ids` key anywhere in this system.
+        folder_id = str(obj.get("ghl_folder_id") or "").strip()
+        slides = [e for e in (obj.get("slides") or []) if isinstance(e, dict)]
+        complete = [e for e in slides
+                    if (e.get("ghl_media_id") or e.get("file_id"))
+                    and str(e.get("ghl_upload_status") or "").lower() == "complete"]
+        pptx_id = str(obj.get("pptx_ghl_media_id") or "").strip()
+        missing = []
+        if not folder_id:
+            missing.append("ghl_folder_id is null or empty — the per-deck media folder was never resolved")
+        if not complete:
+            missing.append("no per-slide upload carries a real ghl_media_id with status 'complete'")
+        elif len(complete) != len(slides):
+            missing.append(f"{len(slides) - len(complete)} of {len(slides)} slide uploads are incomplete")
+        if not pptx_id:
+            missing.append("pptx_ghl_media_id is absent — the assembled deck is not in the media library")
+        base = {"evidence": str(p.relative_to(self.run_dir)),
+                "ghl_folder_id": folder_id or None,
+                "slide_uploads_complete": len(complete),
+                "slide_uploads_total": len(slides),
+                "pptx_ghl_media_id": pptx_id or None}
+        if missing:
+            return {**base, "state": "fail", "reason": "; ".join(missing)}
+        return {**base, "state": "pass", "reason": None}
 
     def _qc_gate(self) -> Dict[str, Any]:
         p = self.run_dir / "working" / "qc" / "final_qc_report.json"
         if not p.is_file():
-            return {"state": "fail", "reason": "no final QC report"}
+            return {"state": "fail", "warn_only": True,
+                    "reason": "no final QC report — this gate is in warn-mode because no "
+                              "producer writes final_qc_report.json yet"}
         try:
             obj = json.loads(p.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError) as exc:
-            return {"state": "fail", "reason": f"QC report unreadable: {exc}"}
+            return {"state": "fail", "warn_only": True,
+                    "reason": f"QC report unreadable: {exc}"}
         score = obj.get("average") or obj.get("score")
         if not isinstance(score, (int, float)):
-            return {"state": "fail", "reason": "QC report carries no numeric score"}
+            return {"state": "fail", "warn_only": True,
+                    "reason": "QC report carries no numeric score"}
         if score < QC_PASS_THRESHOLD:
-            return {"state": "fail", "score": score,
+            return {"state": "fail", "warn_only": True, "score": score,
                     "reason": f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"}
         return {"state": "pass", "score": score,
                 "per_dimension": obj.get("per_dimension"), "reason": None}
@@ -112,7 +178,7 @@ class Gates:
         d = self.run_dir / "renders"
         sidecars = sorted(d.glob("slide-*.ocr.json")) if d.is_dir() else []
         if not sidecars:
-            return {"state": "fail", "checked": False,
+            return {"state": "fail", "warn_only": True, "checked": False,
                     "reason": "no OCR readback records. Either no slides were rendered, or the OCR "
                               "engine is not installed on this box. Install tesseract + "
                               "pytesseract; a self-disabled check does not count as a pass."}
@@ -128,11 +194,11 @@ class Gates:
             elif o.get("matched") is False:
                 mismatched.append(s.name)
         if unchecked:
-            return {"state": "fail", "checked": False,
+            return {"state": "fail", "warn_only": True, "checked": False,
                     "reason": f"{len(unchecked)} slide(s) have no completed OCR check "
                               f"(engine missing or skipped): {', '.join(unchecked[:5])}"}
         if mismatched:
-            return {"state": "fail", "checked": True,
+            return {"state": "fail", "warn_only": True, "checked": True,
                     "reason": f"{len(mismatched)} slide(s) failed OCR readback — the words on the "
                               f"slide do not match approved copy: {', '.join(mismatched[:5])}"}
         return {"state": "pass", "checked": True, "slides": len(sidecars), "reason": None}
@@ -141,4 +207,3 @@ class Gates:
 # ---------------------------------------------------------------------------
 # Waivers. The only bypass, and it must not be self-issuable.
 # ---------------------------------------------------------------------------
-

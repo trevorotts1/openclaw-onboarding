@@ -9,7 +9,7 @@ from typing import Any, Dict, List, Optional
 from .state import (
     StateStore, RunLock, utcnow, sha256_text,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
-    EXIT_STATE_CORRUPT, STATE_SCHEMA_VERSION,
+    EXIT_STATE_CORRUPT, STATE_SCHEMA_VERSION, _read_json,
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine

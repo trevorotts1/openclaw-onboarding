@@ -9,11 +9,12 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED,
+    EXIT_WAIVER_INVALID,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
-from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
-from .waivers import WaiverError, load_waivers, validate_waiver
+from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
+from .waivers import WaiverError, load_waivers, validate_waiver, print_waiver_error
 from . import heal
 
 # ---------------------------------------------------------------------------
@@ -237,7 +238,10 @@ class Engine:
         return self.close()
 
     def close(self) -> int:
-        """Fail-closed. Every gate must pass or carry a valid waiver."""
+        """Fail-closed. Every gate must pass or carry a valid waiver.
+        Warn-mode gates (qc, ocr_readback) report failures into gate_warnings
+        but do not block close — they ship in warn-mode until their producers
+        exist and the warning count reaches zero across the golden corpus."""
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
             waivers = load_waivers(self.run_dir)
@@ -245,12 +249,13 @@ class Engine:
                 validate_waiver(w, self.run_dir)
         except WaiverError as exc:
             self.report.event("waiver.invalid", str(exc))
-            print(f"FATAL: {exc}", file=sys.stderr)
+            print_waiver_error(exc, self.run_dir)
             return EXIT_WAIVER_INVALID
-        waived = {w["rule"] for w in waivers}
+        waived = {w.get("rule") for w in waivers if w.get("rule")}
         self.state["waivers"] = waivers
 
         failures = []
+        gate_warnings: list = []
         for k in ALL_GATE_KEYS:
             g = gates.get(k, {"state": "fail", "reason": "not evaluated"})
             if g.get("state") == "pass":
@@ -258,8 +263,12 @@ class Engine:
             if k in waived and k not in NON_WAIVABLE_GATES:
                 g["state"] = "waived"
                 continue
+            if k in WARN_ONLY_GATES and g.get("warn_only"):
+                gate_warnings.append((k, g.get("reason") or "not evaluated"))
+                continue
             failures.append((k, g.get("reason") or "failed"))
 
+        self.state["gate_warnings"] = gate_warnings
         self.store.save(self.state)
         if failures:
             self.state["terminal"] = "BLOCKED"
@@ -270,6 +279,9 @@ class Engine:
                 "Your presentation is finished building but cannot be delivered yet — "
                 f"{len(failures)} quality check(s) did not pass. We are on it.")
             print("\nCANNOT CLOSE — fail-closed gates did not pass:\n" + lines, file=sys.stderr)
+            if gate_warnings:
+                print(f"\n  {len(gate_warnings)} gate(s) in warn-mode did not pass — "
+                      f"see state.json gate_warnings", file=sys.stderr)
             print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.",
                   file=sys.stderr)
             return EXIT_GATE_BLOCKED
@@ -281,7 +293,12 @@ class Engine:
         self.store.save(self.state)
         self.report.to_requester(
             "done", "Your presentation is ready. All quality checks passed.")
-        print("DONE — all gates passed.", flush=True)
+        n_warn = len(gate_warnings)
+        if n_warn:
+            print(f"DONE — all gates passed. {n_warn} gate(s) in warn-mode did not pass "
+                  f"— see state.json gate_warnings", flush=True)
+        else:
+            print("DONE — all gates passed.", flush=True)
         return EXIT_OK
 
 

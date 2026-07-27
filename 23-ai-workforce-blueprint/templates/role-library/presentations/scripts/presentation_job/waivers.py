@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import json
+import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from .gates import GATE_KEYS, NON_WAIVABLE_GATES
+from .gates import GATE_KEYS, NON_WAIVABLE_GATES, TRANSCRIPT_WAIVERS_ACCEPTED
 from .state import _norm, _read_json
 
 # ---------------------------------------------------------------------------
@@ -12,7 +13,6 @@ from .state import _norm, _read_json
 # ---------------------------------------------------------------------------
 class WaiverError(Exception):
     pass
-
 
 
 def load_waivers(run_dir: Path) -> List[Dict[str, Any]]:
@@ -23,8 +23,15 @@ def load_waivers(run_dir: Path) -> List[Dict[str, Any]]:
         obj = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         raise WaiverError(f"waivers.json is unreadable: {exc}")
-    return obj if isinstance(obj, list) else [obj]
-
+    result = obj if isinstance(obj, list) else [obj]
+    # Reject duplicate rules: one gate, one waiver.
+    seen: set = set()
+    for w in result:
+        rule = w.get("rule")
+        if rule in seen:
+            raise WaiverError(f"two waivers name the same gate {rule!r}; one gate, one waiver")
+        seen.add(rule)
+    return result
 
 
 def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
@@ -46,8 +53,9 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
         raise WaiverError(f"waiver names {rule!r}, which is not a waivable gate. "
                           f"Waivable: {', '.join(GATE_KEYS)}. "
                           f"Never waivable: {', '.join(NON_WAIVABLE_GATES)}")
-    if rule in NON_WAIVABLE_GATES:
-        raise WaiverError(f"gate {rule!r} cannot be waived")
+    # The NON_WAIVABLE_GATES branch below was removed as dead code because GATE_KEYS already
+    # excludes the non-waivable set. The assertion at import time in gates.py guarantees that
+    # a future edit adding ocr_readback to GATE_KEYS does not silently make it waivable.
     src = w.get("source")
     if src not in ("intake_field", "transcript"):
         raise WaiverError(f"waiver for {rule!r} has source={src!r}; must be "
@@ -67,6 +75,18 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
                               "which is not present in intake.json")
         return
 
+    # transcript source
+    if not TRANSCRIPT_WAIVERS_ACCEPTED:
+        raise WaiverError(
+            f"waiver for {rule!r} cites source='transcript'. Transcript-sourced waivers are "
+            "NOT YET ACCEPTED. The audit's D3 (:1016-1019) records that a Telegram-routed "
+            "request sends five keys and no requester identity, and the ceo-chat transcript "
+            "lives in the Command Center database — which violates the offline-authoritative "
+            "rule (the engine cannot read it from the run dir). Until that identity gap closes, "
+            "the only accepted waiver source is 'intake_field' — a form field the client set, "
+            "where the form is the consent record. Use an intake field waiver instead, or set "
+            "TRANSCRIPT_WAIVERS_ACCEPTED to True after the identity gap is closed.")
+
     tp = run_dir / "working" / "interview" / "intake_transcript.json"
     if not tp.is_file():
         raise WaiverError(f"waiver for {rule!r} cites the transcript, but "
@@ -85,4 +105,31 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
             "recorded transcript. The quote must be the client's own words.")
 
 
+def _waiver_schema_message() -> str:
+    """Produce the standard schema reminder for rejected waivers."""
+    return (
+        "A valid waiver must match this schema:\n"
+        '  {\n'
+        '    "rule": "gate-key",\n'
+        '    "source": "intake_field",\n'
+        '    "client_request_quote": "the client\'s own words (min 3 chars)",\n'
+        '    "intake_field": "field_name_in_intake.json",\n'
+        '    "captured_at": "ISO-8601 timestamp",\n'
+        '    "captured_from": "where the consent was recorded"\n'
+        '  }\n'
+        "Waivable gates: " + ", ".join(GATE_KEYS) + "\n"
+        "Never waivable: " + ", ".join(NON_WAIVABLE_GATES) + "\n"
+        "Resume after fixing waivers.json:\n"
+        "  python3 presentation_job.py --close --run-dir <run_dir>"
+    )
 
+
+def print_waiver_error(exc: WaiverError, run_dir: Optional[Path] = None) -> None:
+    """Print a readable waiver rejection to stderr and exit 9."""
+    print("\n" + "=" * 72, file=sys.stderr)
+    print("WAIVER REJECTED — the waiver is invalid and cannot authorise a gate skip.",
+          file=sys.stderr)
+    print(f"  reason: {exc}", file=sys.stderr)
+    print(file=sys.stderr)
+    print(_waiver_schema_message(), file=sys.stderr)
+    print("=" * 72 + "\n", file=sys.stderr)
