@@ -65,7 +65,7 @@ PHASES = ("avatar-section", "signature-story", "transformational-teaching", "pur
 # The sacred files this module proves byte-unchanged. Paths are relative to
 # the skill root; frame-templates is a directory (all four glob-expanded at
 # hash time so a new/renamed frame is caught rather than silently skipped).
-_SACRED_FILES = ("MASTERDOC.md", "structure/sp_structure.json")
+_SACRED_FILES = ("MASTERDOC.md", "structure/sp_structure.json", "intake/sp-8-questions.json")
 _SACRED_GLOBS = ("frame-templates/*.md",)
 
 
