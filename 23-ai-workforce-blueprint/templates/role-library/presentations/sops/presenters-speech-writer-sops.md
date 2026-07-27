@@ -16,6 +16,74 @@ This SOP set enforces the proven 11-stage webinar arc defined in Section 9A of t
 
 Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md; voice authority: 30-fish-audio-api-reference/. Structure authority: Section 9A.
 
+### SOP 9.0 -- Resilient Speech-Build Harness (budget-up-front + checkpoint-resume + auto-expand + retry)
+
+**When to run:** Before SOP 9.1. This SOP governs HOW all API-driven generation in the speech pipeline is executed. It is not optional.
+
+**Why it exists:** Two production failures drove this SOP:
+1. A provider HTTP 529 "overloaded" response killed the build mid-slide, losing all generated text.
+2. The length gate (SOP 9.2 step 3) fired AFTER writing, requiring manual expansion and full re-runs.
+
+**The tool:** `presentations/scripts/speech_build_harness.py` (owned by this role; does NOT touch build_deck.py, sync_check.py, or PIPELINE-MANIFEST.json).
+
+**Steps:**
+
+**A. Up-front word budgeting (run before the first API call):**
+
+1. Compute total word target from DURATION_MIN and WPM:
+   - `pause_budget_sec` = (drop_count x 3s) + (misc_pause_count x 2s)
+   - `net_spoken_sec` = (DURATION_MIN x 60) minus pause_budget_sec
+   - `target_words` = net_spoken_sec x (WPM / 60)
+2. Distribute target_words to PER-SLIDE budgets weighted by slide type (hook=1.40x, welcome=1.30x, close/cta=1.20-1.25x, offer/drop/final=1.15-1.20x, teach/proof/credibility=1.10-1.20x, recap=0.90x, normal=1.00x). Every slide gets a minimum of 30 words.
+3. Assert that per-slide budgets sum within 2% of target_words. Log the math. GENERATION BEGINS ONLY AFTER THIS PASSES.
+4. Record the budget math in the speech header: DURATION_MIN, WPM, pause_budget_sec, net_spoken_sec, target_words, per-slide type weights, per-stage allocations.
+
+**B. Per-slide disk checkpointing:**
+
+1. Working directory: `working/speech/` (or the --workdir argument). Create it if absent.
+2. The moment a slide's spoken block is generated and passes a basic word-count check, write it to `working/speech/slide-NN.txt` (zero-padded two digits).
+3. Maintain `working/speech/speech_ledger.json` with one record per slide: `{ slide_no, headline, kind, stage, word_budget, actual_words, status }` where status is `pending | written | verified`.
+4. Write the ledger to disk after EVERY slide (not at the end). A crash between slides loses at most one slide's work.
+5. On startup, read the ledger and restore any slides whose disk file exists and meets >= 90% of budget. Those slides are SKIPPED (no API call, no cost). Only `pending` or under-budget slides are generated.
+
+**C. Transient-error resilience (wrap every API call):**
+
+1. All model API calls go through `call_with_retry()`. Never call the API bare. The harness calls an
+   OpenAI-compatible base only -- NEVER Anthropic (`speech_build_harness.py:122`, `:394`, `:408`).
+2. Retryable errors: HTTP 429, 500, 503, 529, and any response body containing "overloaded_error" or "overloaded". These are transient; retry without alarm.
+3. Retry policy: exponential backoff with full jitter. Formula: `sleep = random.uniform(0, min(BASE * 2^(attempt-1), 60s))`. Maximum 5 retries per slide per pass.
+4. Each retry attempt is logged: `[retry] slide-N-gen attempt K/5 (HTTP 529) -- sleeping X.Xs before retry`.
+5. On retry exhaustion (5 retries all fail), the model-fallback hook fires: switch to `--fallback-model`
+   (default `minimax-m3:cloud`, `speech_build_harness.py:932`) and retry the same slide on the fallback.
+   The primary is `--model` (default `glm-5.2:cloud`, `:929`). Log the switch.
+6. If fallback also exhausts, raise HardAPIError. The slide is left `pending` in the ledger. The run exits non-zero. A resumed run (Step B) will pick it up.
+
+**D. Programmatic auto-expand loop (after each generation pass):**
+
+1. After a full generation pass, count slides below 90% of their word budget.
+2. If any exist, run an expand pass: re-prompt each under-budget slide with its current text and the budget gap. The prompt explicitly asks for expansion to hit the budget. Checkpoint the expanded text.
+3. Repeat for up to K=3 rounds (--max-expand-rounds). Stop early if all slides reach budget.
+4. The existing SOP 9.1 length gate (total within +/-10% of target) is the BACKSTOP. It should now pass on the first check. If it still fails after K rounds, flag to the Director; do NOT silently ship an under-budget speech.
+
+**Outputs:**
+- `working/speech/slide-NN.txt` (one per slide, written as generated)
+- `working/speech/speech_ledger.json` (status per slide, updated after every slide)
+- `working/presenter-speech/speech.md` (the assembled full speech, written at the end)
+
+**Failure mode:** If a mid-run crash occurs, re-run with the SAME --workdir. The harness reads the ledger, restores completed slides from disk, and generates only the missing ones. Never wipe the workdir between runs of the same deck unless starting fresh intentionally.
+
+**Enforcement check (what auto-fails):**
+- Calling any generation API before per-slide word budgets are computed and logged = FAIL.
+- Any API call made outside call_with_retry() = FAIL.
+- speech_ledger.json not written after each slide = FAIL.
+- A slide file on disk ignored at resume (not checked / not restored) = FAIL.
+- Auto-expand loop not run after a generation pass = FAIL.
+- Shipping a speech without running the length gate backstop check = FAIL.
+
+**Dry-run / smoke test:** `python3 presentations/scripts/speech_build_harness.py --dry-run --intake /dev/null --slides /dev/null --arc /dev/null --out /tmp/speech_test.md --workdir /tmp/speech_test_work`. All four proofs (A budget sum, B kill-resume, C auto-expand, D retry backoff) must print PASS. Run this after any code change to the harness.
+
+---
+
 ### SOP 9.1 -- Write the Word-for-Word Webinar Speech at 130 wpm
 
 **Purpose:** Produce the exact, prolific, passionate words the owner says as a live WEBINAR HOST, following the proven webinar arc (Section 9A), paced so a human delivering it at 130 wpm with the doctrine's pauses lands the deck inside DURATION_MIN.
