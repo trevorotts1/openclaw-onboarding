@@ -211,7 +211,7 @@ def auto_skip_all_conditionals(qdata: dict, ledger: dict) -> bool:
     merged question set:
       * `conditional_on` {id, equals} — typepicker's recipient_name /
         signature_source, gated on presentation_type.
-      * `ask_if` {question, truthy|equals|contains|contains_any|in} — the
+      * `ask_if` {question_id, truthy|equals|contains|contains_any|in} — the
         migrated question-bank follow-ups (VIP tiers, PRICE_ANCHOR on a
         price-drop, WANT_AUDIO_DEMO/TARGET_WPM, ...).
     No question carries both fields, so the two passes are disjoint and
