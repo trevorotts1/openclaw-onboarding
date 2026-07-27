@@ -273,10 +273,18 @@ def missing_attestations(run_dir: Path, phases: list, phase_skip_approvals=None)
 # Per the shared contract, Fix 2 exports check symbols on build_deck for the three
 # new AF codes. We wire them by their agreed names; if a symbol is absent (Fix 2
 # not yet deployed) the guard degrades gracefully — its own detection still runs.
+# U023 — REPOINTED. The three names above never existed on build_deck: a live
+# getattr proved all three present=False, so run_fix2_checks `continue`d on every
+# iteration and this guard has never produced a Fix-2 finding. The REAL exported
+# names are published in build_deck.py's own FIX-2 contract block at :604-609.
+# The _chk_local_canvas entry is DELETED, not renamed: no local-canvas function
+# has ever existed. AF-LOCAL-CANVAS is emitted from INSIDE
+# check_canonical_render_path (see its docstring at build_deck.py:5070/5078) and
+# from check_image_qc_vision (:5032), so the code is a RESULT of the two checks
+# below and needs no wiring of its own.
 _FIX2_SYMBOLS = [
-    ("_chk_canonical_render_bypass", AF_CANONICAL_RENDER_BYPASS),
-    ("_chk_local_canvas", AF_LOCAL_CANVAS),
-    ("_chk_image_qc_vision", AF_IMAGE_QC_VISION),
+    ("check_canonical_render_path", AF_CANONICAL_RENDER_BYPASS),
+    ("check_image_qc_vision", AF_IMAGE_QC_VISION),
 ]
 
 
@@ -286,13 +294,29 @@ def run_fix2_checks(run_dir: Path, slides_path=None) -> list:
     failures = []
     try:
         import build_deck as bd  # noqa: WPS433
-    except Exception:  # noqa: BLE001
+    except ImportError:
+        # U023 step 4: a genuinely ABSENT build_deck (standalone --mode pre-delivery
+        # CLI run from a directory without the engine) still degrades
         return failures
+    except Exception as exc:  # noqa: BLE001
+        raise RuntimeError(
+            "canonical_render_guard: build_deck is present but not importable "
+            f"({exc!r}) — the Fix-2 pre-delivery cross-check cannot run and must not "
+            "pass silently. Fix the engine import before delivering.") from exc
     owner_skips = load_owner_skip_approvals(run_dir)
     for sym, af_code in _FIX2_SYMBOLS:
         fn = getattr(bd, sym, None)
         if not callable(fn):
-            continue
+            # U023 step 3: fail-CLOSED. Reaching here means build_deck no longer
+            # exports a name this guard's contract requires (build_deck.py:604-609).
+            # Silently continuing is how this guard produced zero findings for its
+            # entire life. Raising is safe ONLY because step 2 proved both names
+            # resolve before this line existed
+            raise RuntimeError(
+                f"{af_code}: canonical_render_guard requires build_deck.{sym}, and it is "
+                f"not callable (present={fn is not None}). The FIX-2 export contract is "
+                f"build_deck.py:604-609; the pre-delivery vision cross-check cannot run "
+                f"fail-open. Restore the export or update _FIX2_SYMBOLS in the same commit.")
         if af_code in owner_skips:
             continue
         try:
@@ -409,9 +433,13 @@ def guard_pre_delivery(run_dir: Path, phases: list, slides_path=None,
                         "governed phases are neither attested nor owner-skip-approved: "
                         + ", ".join(missing))
 
-    # (3) Fix-2 pixel/vision checks.
+    # (3) Fix-2 pixel/vision checks. U023: these two checks ALSO run at preflight
+    # (build_deck.py:7191, :7202) and postflight (:8412, :8428). Re-running them at
+    # the delivery boundary is deliberate defence in depth, so the same finding can
+    # legitimately appear up to three times in one run's output. Tag it so an
+    # operator does not read one defect as three.
     for af_code, msg in run_fix2_checks(run_dir, slides_path):
-        problems.append(f"  [{af_code}] {msg}")
+        problems.append(f"  [{af_code}] (pre-delivery re-check) {msg}")
 
     # (4) Guard C (fix-8): no ungoverned QC-report generator / untrusted QC report
     # may be present at delivery — the governed path must never ship a deck blessed
