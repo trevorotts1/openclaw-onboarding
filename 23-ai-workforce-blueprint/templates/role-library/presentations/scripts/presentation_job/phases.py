@@ -52,6 +52,17 @@ class Engine:
         hb = self.state.setdefault("heartbeat", {})
         hb["last_checkpoint_at"] = utcnow()
         hb["current_phase"] = pid
+        # The watchdog is read-only and must not resolve a manifest (Super Spec 8.3). The engine,
+        # which already has the pinned Phase, writes the two numbers the watchdog needs.
+        try:
+            ph = self.manifest.phase_or_none(pid)
+        except AttributeError:
+            ph = None
+        if ph is not None:
+            hb["interval_minutes"] = ph.heartbeat_interval_minutes
+            hb["budget_minutes"] = ph.budget_minutes
+            hb["interval_source"] = ("manifest_heartbeat_minutes" if ph.heartbeat_minutes
+                                     else "phase_budget_fallback")
         self.store.save(self.state)
 
     # -- verification -----------------------------------------------------

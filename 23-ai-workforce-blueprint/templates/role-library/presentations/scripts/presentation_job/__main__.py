@@ -8,17 +8,16 @@ from typing import Any, Dict, List, Optional
 
 from .state import (
     StateStore, RunLock, utcnow, sha256_text,
+    StateStore, RunLock, utcnow, sha256_text,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
-    EXIT_STATE_CORRUPT, STATE_SCHEMA_VERSION,
+    EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 
-# ---------------------------------------------------------------------------
-# CLI
-# ---------------------------------------------------------------------------
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
         prog="presentation_job.py",
@@ -31,16 +30,33 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--status", action="store_true", help="print job status")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
+    m.add_argument("--sweep-undeliverable", action="store_true",
+                   help="retry every queued undeliverable message for --run-dir, oldest first")
+    m.add_argument("--reconcile-board", action="store_true",
+                   help="scan --scan-root for jobs whose board card is missing or behind; "
+                        "reports only unless --apply is given")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
     p.add_argument("--phase", help="run exactly one phase")
     p.add_argument("--until", help="run through this phase then stop")
-    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog")
+    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog and --reconcile-board")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
     p.add_argument("--json", action="store_true", help="machine-readable --status")
+    p.add_argument("--apply", action="store_true",
+                   help="with --reconcile-board: actually create and advance cards")
+    p.add_argument("--max-age-hours", type=float, default=72.0,
+                   help="with --reconcile-board: ignore run dirs created longer ago than this")
+    # U016 adds --scan-depth with default 3 first (EXECUTION-PLAN:812).
+    # Declare conditionally so a second declaration does not raise ArgumentError.
+    if not any("--scan-depth" in a.option_strings for a in p._actions):
+        p.add_argument("--scan-depth", type=int, default=3,
+                       help="how many directory levels below --scan-root to search for state.json")
+    p.add_argument("--grace", type=float, default=1.5,
+                   help="multiply the expected checkpoint interval by this before alarming")
+    p.add_argument("--enforce", action="store_true",
+                   help="exit 5 on a stall (default: report and exit 0)")
     return p
-
 
 
 def cmd_new(args, scripts_dir: Path) -> int:
@@ -103,7 +119,6 @@ def cmd_new(args, scripts_dir: Path) -> int:
     return EXIT_OK
 
 
-
 def cmd_status(args) -> int:
     store = StateStore(args.run_dir.expanduser().resolve())
     st = store.load()
@@ -130,6 +145,66 @@ def cmd_status(args) -> int:
     return EXIT_OK
 
 
+def _read_json(p: Path) -> Optional[Dict[str, Any]]:
+    if not p.is_file():
+        return None
+    try:
+        return json.loads(p.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
+def cmd_sweep_undeliverable(args) -> int:
+    """Retry every queued undeliverable message, oldest first. Takes the run lock."""
+    import os as _os
+    import subprocess as _sp
+    run_dir = args.run_dir.expanduser().resolve()
+    with RunLock(run_dir):
+        store = StateStore(run_dir)
+        state = store.load()
+        undeliverable = state.get("undeliverable", [])
+        if not undeliverable:
+            print("0 queued, 0 delivered, 0 still undeliverable")
+            return EXIT_OK
+        delivered = 0
+        remaining = []
+        for msg in undeliverable:
+            chat_id = msg.get("chat_id", "")
+            kind = msg.get("kind", "")
+            message = msg.get("message", "")
+            attempts = msg.get("attempts", 0) + 1
+            ok = False
+            cmd = _os.environ.get("PRESENTATION_NOTIFY_CMD")
+            if cmd and chat_id and kind:
+                try:
+                    r = _sp.run(cmd, shell=True,
+                               input=json.dumps({"chat_id": chat_id, "kind": kind, "message": message}),
+                               text=True, capture_output=True, timeout=30)
+                    ok = r.returncode == 0
+                except (_sp.TimeoutExpired, OSError):
+                    pass
+            if ok:
+                delivered += 1
+                sent = state.setdefault("sent", {})
+                prior = sent.get(kind)
+                if not isinstance(prior, dict):
+                    sent[kind] = {"count": 0, "first_at": prior, "last_at": prior}
+                rec = sent[kind]
+                rec["count"] = rec.get("count", 0) + 1
+                rec["first_at"] = rec["first_at"] or utcnow()
+                rec["last_at"] = utcnow()
+            else:
+                msg["attempts"] = attempts
+                msg["last_attempt_at"] = utcnow()
+                remaining.append(msg)
+        total = len(undeliverable)
+        still = len(remaining)
+        state["undeliverable"] = remaining
+        store.save(state)
+        print(f"{total} queued, {delivered} delivered, {still} still undeliverable")
+        return EXIT_OK if still == 0 else 1
+
+
 
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
@@ -139,7 +214,33 @@ def main(argv: Optional[List[str]] = None) -> int:
         root = (args.scan_root or args.run_dir)
         if not root:
             die(EXIT_USAGE, "--watchdog needs --scan-root")
-        return watchdog(root.expanduser().resolve())
+        if getattr(args, 'grace', 1.5) <= 0:
+            die(EXIT_USAGE, "--grace must be > 0")
+        sd = getattr(args, 'scan_depth', 3)
+        if sd < 1:
+            die(EXIT_USAGE, "--scan-depth must be >= 1")
+        return _run_watchdog(
+            root.expanduser().resolve(),
+            grace_multiplier=getattr(args, 'grace', 1.5),
+            scan_depth=sd,
+            enforce=getattr(args, 'enforce', False),
+        )
+
+    if args.reconcile_board:
+        root = args.scan_root
+        if not root:
+            die(EXIT_USAGE, "--reconcile-board needs --scan-root")
+        sd = args.scan_depth if hasattr(args, 'scan_depth') else 2
+        from .sweep import reconcile_sweep
+        return reconcile_sweep(
+            scan_root=root,
+            max_age_hours=args.max_age_hours,
+            apply=args.apply,
+            scan_depth=sd,
+        )
+
+    if args.apply and not args.reconcile_board:
+        die(EXIT_USAGE, "--apply is only meaningful with --reconcile-board")
 
     if not args.run_dir:
         die(EXIT_USAGE, "--run-dir is required")
@@ -169,6 +270,3 @@ def main(argv: Optional[List[str]] = None) -> int:
             store.save(state)
             engine.report.event("job.resume", "resuming from checkpoint; banked artifacts reused")
         return engine.run(only=args.phase, until=args.until)
-
-
-

@@ -52,18 +52,51 @@ class BoardMirror:
                               f"{fn.__name__}: {exc}\n{traceback.format_exc()}")
             return None
 
+    @staticmethod
+    def task_id_anywhere(run_dir, state: Dict[str, Any]) -> bool:
+        """True when a card was recorded in state["board"]["task_id"]
+        OR process_manifest.json's cc_task_id."""
+        if (state.get("board") or {}).get("task_id"):
+            return True
+        cc = _get_cc_board()
+        manifest = cc._read_manifest(run_dir)
+        if manifest.get("cc_task_id"):
+            return True
+        return False
+
+    @staticmethod
+    def has_failed_advance(run_dir) -> bool:
+        """True when cc-board.json holds an unsuperseded ok:false status movement."""
+        import json as _json
+        import cc_board as _ccb
+        p = _ccb._movements_path(run_dir)
+        if not p.exists():
+            return False
+        try:
+            data = _json.loads(p.read_text())
+        except (_json.JSONDecodeError, OSError):
+            return False
+        movements = data.get("movements") if isinstance(data, dict) else None
+        if not isinstance(movements, list):
+            return False
+        last_failed = None
+        for m in movements:
+            if not isinstance(m, dict) or m.get("kind") != "status":
+                continue
+            if m.get("ok"):
+                last_failed = None
+            else:
+                last_failed = m
+        return last_failed is not None
+
     def open_card(self, deck_slug, title, description):
         """Create a task card via cc_board.ingest_deck_task."""
         cc = _get_cc_board()
 
         def _do():
-            task_id = cc.ingest_deck_task(
+            return cc.ingest_deck_task(
                 self.run_dir, deck_slug, title, description,
                 priority="normal", env=os.environ)
-            if task_id:
-                self.state.setdefault("board", {})["task_id"] = task_id
-                self.store.save(self.state)
-            return task_id
 
         return self._wrap(_do)
 
@@ -127,4 +160,3 @@ class BoardMirror:
                                   reason, env=os.environ)
 
         return self._wrap(_do)
-

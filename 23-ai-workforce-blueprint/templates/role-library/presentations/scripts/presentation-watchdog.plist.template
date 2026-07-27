@@ -1,0 +1,53 @@
+<!--
+  presentation-watchdog.plist.template -- ready-to-apply, NOT installed.
+  Named Stop: installation is a live production change (Super Spec 9.9.2 and 5.3).
+
+  PLACEHOLDERS to replace before installing:
+    1. <WATCHDOG_SCRIPT_PATH>  -- absolute path to presentation-watchdog.sh
+    2. <SCAN_ROOT>             -- the root directory to scan for run dirs
+    3. <LOG_PATH>              -- where stdout/stderr should go
+
+  Install (Named Stop -- do not run unattended):
+    cp presentation-watchdog.plist.template ~/Library/LaunchAgents/com.presentations.watchdog.plist
+    Replace every placeholder above in the installed copy.
+    launchctl load ~/Library/LaunchAgents/com.presentations.watchdog.plist
+
+  Uninstall (Named Stop -- do not run unattended):
+    launchctl unload ~/Library/LaunchAgents/com.presentations.watchdog.plist
+    rm ~/Library/LaunchAgents/com.presentations.watchdog.plist
+
+  Verify it is running:
+    launchctl list | grep com.presentations.watchdog
+-->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.presentations.watchdog</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/sh</string>
+        <string>&lt;WATCHDOG_SCRIPT_PATH&gt;</string>
+        <string>&lt;LOG_PATH&gt;</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>SCAN_ROOT</key>
+        <string>&lt;SCAN_ROOT&gt;</string>
+        <key>GRACE</key>
+        <string>1.5</string>
+        <key>SCAN_DEPTH</key>
+        <string>3</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>600</integer>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>&lt;LOG_PATH&gt;</string>
+    <key>StandardErrorPath</key>
+    <string>&lt;LOG_PATH&gt;</string>
+</dict>
+</plist>
