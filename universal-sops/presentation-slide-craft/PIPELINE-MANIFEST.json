@@ -1,5 +1,5 @@
 {
-  "manifest_version": 25,
+  "manifest_version": 26,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -2518,6 +2518,37 @@
       "trigger": "Signature Presentation Phase-3 (Teaching) hygiene: a q7 offer/product name, a price/monetary token, or an enroll/buy/scarcity CTA appears on a teaching-band slide, or the Phase-3->Phase-4 bridge is not contiguous. DEFERS unless deck_type==signature_presentation.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_sp_no_pitch"
+    },
+    {
+      "code": "AF-TEXT-OVERFLOW",
+      "stage": "5/6/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box — measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_text_fits",
+      "secondary_py_symbols": ["SLIDE_GEOMETRY_EDGE_MARGIN_FRAC"],
+      "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#slide-geometry"
+    },
+    {
+      "code": "AF-SPELLING",
+      "stage": "5/6/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list — measured over OCR output from the baked PNG, never over the prompt",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_spelling"
+    },
+    {
+      "code": "AF-TYPE-SIZE-MEASURED",
+      "stage": "5/6/Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) — measured, not read off the design brief",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_type_size",
+      "secondary_py_symbols": ["FONT_BODY_PT_FLOOR", "DARK_THEME_BODY_PT_FLOOR",
+                               "SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX"]
     }
   ],
   "roles": [
