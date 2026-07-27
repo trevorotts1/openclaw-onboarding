@@ -166,6 +166,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.resume:
             state["terminal"] = None
             state.pop("blocked", None)
+            bad_count = 0
+            for ps in state.get("phases", []):
+                if ps.get("banked_invalid"):
+                    bad_count += len(ps["banked_invalid"])
+            state["resume_revalidation"] = bad_count
+            if bad_count:
+                print(f"resume: {bad_count} banked artifact(s) failed re-validation "
+                      f"-- those phases will re-run", flush=True)
+            else:
+                print("resume: all banked artifacts re-validated", flush=True)
             store.save(state)
             engine.report.event("job.resume", "resuming from checkpoint; banked artifacts reused")
         return engine.run(only=args.phase, until=args.until)
