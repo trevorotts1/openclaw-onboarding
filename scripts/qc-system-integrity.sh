@@ -150,8 +150,8 @@ check "2.2" "Each dept has a director subfolder (00-*/)" \
   "Re-run build-workforce.py; create_role_workspace() failed"
 # 2.3 — symlink check
 if [ -d "$COMPANY_DIR/departments" ]; then
-  COPIED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
-  SYMLINKED=$(find "$COMPANY_DIR/departments" -maxdepth 2 -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
+  COPIED=$(find "$COMPANY_DIR/departments" -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
+  SYMLINKED=$(find "$COMPANY_DIR/departments" -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   if [ "$COPIED" = "0" ] && [ "$SYMLINKED" -gt 0 ]; then
     green "  ✓ 2.3  AGENTS/TOOLS/USER.md SYMLINKED ($SYMLINKED) — none copied"; PASS=$((PASS+1))
   elif [ "$COPIED" -gt 0 ] && [ "$SYMLINKED" = "0" ]; then
@@ -331,6 +331,45 @@ else
   # now a FAIL (was a warn-only that could not affect the exit code).
   red "  ✗ 2.14 Legacy tree(s) present: ${LEGACY_FOUND}— content may be stranded"; FAIL=$((FAIL+1))
   FAILURES+=("2.14|legacy tree ${LEGACY_FOUND}|Run reconcile-legacy-tree.py from Release 2 (v10.15.5/v10.16.5)")
+fi
+
+# 2.15 — exposed-file census, warn-mode (U053 step 6; Rule 3.5)
+# Counts AGENTS.md entries under departments/ that carry operator-scoped content.
+# Known-exposed hash prefixes (sha256[:12]): 7f5be5bc3e61 (133-line reference copy),
+# 12252803ce49 (Tree E — the operator's own live agent doctrine), and
+# 64dc2ef10ee9 (backup-only class in departments.bak/).  Census uses
+# \( -type f -o -type l \) per Rule 3.1; broken symlinks are excluded.
+# Set _QC_CENSUS_DEPT to override the default departments path (for fixture testing).
+_CENSUS_DEPT="${_QC_CENSUS_DEPT:-$COMPANY_DIR/departments}"
+if [ -d "$_CENSUS_DEPT" ]; then
+  _CENSUS_RESULT=$(python3 -c "
+import os, hashlib
+BAD = {'7f5be5bc3e61','12252803ce49','64dc2ef10ee9'}
+root = os.environ.get('_QC_CENSUS_DEPT',
+      os.path.join(os.environ.get('COMPANY_DIR',''),'departments'))
+total = 0; exposed = 0
+for r, d, fl in os.walk(root, followlinks=False):
+    for n in [f for f in fl if f=='AGENTS.md'] + [x for x in d if x=='AGENTS.md']:
+        p = os.path.join(r, n)
+        if os.path.islink(p) and not os.path.exists(p): continue
+        total += 1
+        try:
+            h = hashlib.sha256()
+            with open(p, 'rb') as f:
+                for b in iter(lambda: f.read(65536), b''): h.update(b)
+            if h.hexdigest()[:12] in BAD: exposed += 1
+        except OSError: pass
+print(f'{exposed} {total}')
+" 2>/dev/null)
+  EXPOSED=$(echo "$_CENSUS_RESULT" | awk '{print $1}'); TOTAL=$(echo "$_CENSUS_RESULT" | awk '{print $2}')
+  if [ "${EXPOSED:-0}" = "0" ]; then
+    green "  ✓ 2.15 Exposed-file census: 0 exposed of $TOTAL AGENTS.md entries in departments/ (all clean)"; PASS=$((PASS+1))
+  else
+    yellow "  ⚠ 2.15 Exposed-file census: $EXPOSED exposed of $TOTAL AGENTS.md entries in departments/ (warn-mode — Rule 3.5)"; WARN=$((WARN+1))
+    WARNINGS+=("2.15|$EXPOSED exposed AGENTS.md entries across departments/|Run U053 remediation to remove/replace exposed copies, then U054 to prevent regen")
+  fi
+else
+  na "2.15 Exposed-file census skipped (no departments directory to check)"
 fi
 
 # ─── CHECK 3: Book-to-Persona ────────────────────────────────────────────────
