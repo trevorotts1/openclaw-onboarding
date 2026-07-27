@@ -89,6 +89,38 @@
   ],
   "phases": [
     {
+      "id": "P-CONVERTER",
+      "order": -1,
+      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc \u2192 Intake)",
+      "owning_role": "content-to-presentation-architect",
+      "sop_refs": [
+        "content-to-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-CONVERTER-PARITY",
+        "AF-CONVERTER-NO-INVENT"
+      ],
+      "preflight": null,
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_converter_no_invent",
+          "label": "converter extracts, never invents (every numeric/statistical figure in the source brief traces to the raw source; AF-CONVERTER-NO-INVENT). DEFERS unless both a source brief and the raw source text are present."
+        }
+      ],
+      "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
+      "converter_path": true,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
       "id": "P-0.5-RESEARCH",
       "order": -0.5,
       "name": "Deep Research",
@@ -197,35 +229,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
-    },
-    {
-      "id": "P-CONVERTER",
-      "order": -1,
-      "name": "Content-to-Presentation Conversion (Zoom/Video/Doc \u2192 Intake)",
-      "owning_role": "content-to-presentation-architect",
-      "sop_refs": [
-        "content-to-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/intake.json",
-      "gate_codes": [
-        "AF-CONVERTER-PARITY",
-        "AF-CONVERTER-NO-INVENT"
-      ],
-      "preflight": null,
-      "additional_preflights": [
-        {
-          "required": true,
-          "checker": "_chk_converter_no_invent",
-          "label": "converter extracts, never invents (every numeric/statistical figure in the source brief traces to the raw source; AF-CONVERTER-NO-INVENT). DEFERS unless both a source brief and the raw source text are present."
-        }
-      ],
-      "routing_note": "Content-first path only. Writes intake.json with source_brief_origin: 'content-to-presentation-architect'. Mandates Phase -0.5 Deep Research (SOP 9.8 step 3) before standard pipeline continues.",
-      "converter_path": true,
-      "client_report": {
-        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
-        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0A-INTAKE",
@@ -284,7 +292,93 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SP-CLAIM",
+      "order": 0.14,
+      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/intake.json",
+      "gate_codes": [
+        "AF-SP-TYPE-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_claim",
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir \u2014 closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SP-INTAKE",
+      "order": 0.15,
+      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_intake.json",
+      "gate_codes": [
+        "AF-SP-8Q-MISSING",
+        "AF-SP-8Q-SPLIT",
+        "AF-SP-FRAME-UNSET",
+        "AF-SP-TYPE-MISMATCH",
+        "AF-SP-OFFER-UNDECLARED"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake",
+        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SP-INTAKE-TRACE",
+      "order": 0.16,
+      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/interview/intake_transcript.json",
+      "gate_codes": [
+        "AF-INTAKE-BATCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_intake_trace",
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed \u2014 a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0B-PRIORITY",
@@ -345,54 +439,179 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
-      "id": "P-STYLE-PREVIEW",
-      "order": 4.85,
-      "name": "Approved 3-Style Preview (9 samples \u2192 owner gateway sign-off, before full render)",
-      "owning_role": "slide-image-creator",
+      "id": "P3-ARC",
+      "order": 3,
+      "name": "Converting Arc Allocation",
+      "owning_role": "offer-price-strategist",
       "sop_refs": [
-        "slide-image-creator-sops.md"
+        "offer-price-strategist-sops.md"
       ],
-      "produces_artifact": "working/style-preview/style_samples_manifest.json",
+      "produces_artifact": "working/copy/arc_allocation.json",
       "gate_codes": [
-        "AF-STYLE-UNPICKED",
-        "AF-STYLE-DOUBLECHARGE"
+        "AF-COVERAGE-1",
+        "AF-PITCH-MISSING",
+        "AF-PITCH-LEAK",
+        "AF-PEAK-END"
       ],
       "preflight": {
         "required": true,
-        "checker": "_chk_style_preview",
-        "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
+        "checker": "_chk_arc",
+        "label": "converting arc \u2014 per-slide arc-section allocation"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_peak_end",
+          "label": "peak-end rule \u2014 the arc declares a deliberate PEAK/APEX beat AND a deliberate ending beat (a flat ending is remembered as flat; AF-PEAK-END). DEFERS without doctrine/arc."
+        },
+        {
+          "required": true,
+          "checker": "_chk_pitch",
+          "label": "offer ladder + re-pitch (CONDITIONAL on pitch_included:true \u2014 arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING). Pitchless decks (pitch_included:false) defer this and are governed by AF-PITCH-LEAK instead."
+        },
+        {
+          "required": true,
+          "checker": "_chk_pitch_leak",
+          "label": "pitchless integrity (pitch_included:false decks carry NO offer/price/ladder/re-pitch content and no price_ladder.json; AF-PITCH-LEAK)"
+        }
+      ],
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-3.5-RESEARCH-MAP",
+      "order": 3.5,
+      "name": "Research-to-Slide Mapping",
+      "owning_role": "deep-research-specialist-presentations",
+      "sop_refs": [
+        "deep-research-specialist-presentations-sops.md"
+      ],
+      "produces_artifact": "working/research/research_map.json",
+      "gate_codes": [
+        "AF-RESEARCH-WEAVE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_research_map",
+        "label": "research woven across the deck \u2014 research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
       },
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "long_running": true,
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
-      "id": "P-SHIFT-QC",
-      "order": 7.5,
-      "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
-      "owning_role": "qc-specialist-presentations",
+      "id": "P4-COPY",
+      "order": 4,
+      "name": "Slide Copy",
+      "owning_role": "slide-copywriter",
       "sop_refs": [
-        "qc-specialist-presentations-sops.md",
-        "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md"
+        "slide-copywriter-sops.md"
       ],
-      "produces_artifact": "working/qc/priority_shift_report.json",
+      "produces_artifact": "working/copy/slides_copy.md",
       "gate_codes": [
-        "AF-PRIORITY-SHIFT",
-        "AF-NO-SALIENCE-APEX"
+        "AF-OBI-6",
+        "AF-COPY-BAND"
       ],
       "preflight": {
         "required": true,
-        "checker": "_chk_priority_shift_ledger",
-        "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
+        "checker": "_chk_slides_copy",
+        "label": "slide copy authored per doctrine (hook >=7x, 10 components)"
+      },
+      "additional_preflights": [
+        {
+          "required": true,
+          "checker": "_chk_copy_density",
+          "label": "copy character-count band per slides.json copy[] field (HEADLINE 12-60, SUBHEAD 20-110 if present, KICKER <=40 if present, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 / 12-180 hook-exempt; AF-COPY-BAND). Reconciles the historical 3-way bullet-count conflict and adds the previously-missing floor."
+        }
+      ],
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SP-STRUCTURE",
+      "order": 4.1,
+      "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
+      "owning_role": "signature-presentation-architect",
+      "sop_refs": [
+        "signature-presentation-architect-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-SLIDE-FLOOR",
+        "AF-SP-PHASE-RANGE",
+        "AF-SP-PHASE-ORDER",
+        "AF-SP-PHASE-LABEL",
+        "AF-SP-IMG-SUGGESTION",
+        "AF-SP-CASESTUDY-CAP",
+        "AF-SP-TEACH-STEPS",
+        "AF-SP-HOOK",
+        "AF-SP-QUADRANT"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_structure",
+        "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SP-P3-HYGIENE",
+      "order": 4.15,
+      "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
+      "owning_role": "qc-specialist-signature-presentations",
+      "sop_refs": [
+        "qc-specialist-signature-presentations-sops.md"
+      ],
+      "produces_artifact": "working/copy/sp_structure.json",
+      "gate_codes": [
+        "AF-SP-P3-PITCH"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_sp_no_pitch",
+        "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P1Q-COPY-QC",
@@ -438,103 +657,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
-    },
-    {
-      "id": "P3-ARC",
-      "order": 3,
-      "name": "Converting Arc Allocation",
-      "owning_role": "offer-price-strategist",
-      "sop_refs": [
-        "offer-price-strategist-sops.md"
-      ],
-      "produces_artifact": "working/copy/arc_allocation.json",
-      "gate_codes": [
-        "AF-COVERAGE-1",
-        "AF-PITCH-MISSING",
-        "AF-PITCH-LEAK",
-        "AF-PEAK-END"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_arc",
-        "label": "converting arc \u2014 per-slide arc-section allocation"
       },
-      "additional_preflights": [
-        {
-          "required": true,
-          "checker": "_chk_peak_end",
-          "label": "peak-end rule \u2014 the arc declares a deliberate PEAK/APEX beat AND a deliberate ending beat (a flat ending is remembered as flat; AF-PEAK-END). DEFERS without doctrine/arc."
-        },
-        {
-          "required": true,
-          "checker": "_chk_pitch",
-          "label": "offer ladder + re-pitch (CONDITIONAL on pitch_included:true \u2014 arc carries value-stack/anchor/price ladder beats AND a re-pitch after FINAL; AF-PITCH-MISSING). Pitchless decks (pitch_included:false) defer this and are governed by AF-PITCH-LEAK instead."
-        },
-        {
-          "required": true,
-          "checker": "_chk_pitch_leak",
-          "label": "pitchless integrity (pitch_included:false decks carry NO offer/price/ladder/re-pitch content and no price_ladder.json; AF-PITCH-LEAK)"
-        }
-      ],
-      "client_report": {
-        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
-        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
-    },
-    {
-      "id": "P-3.5-RESEARCH-MAP",
-      "order": 3.5,
-      "name": "Research-to-Slide Mapping",
-      "owning_role": "deep-research-specialist-presentations",
-      "sop_refs": [
-        "deep-research-specialist-presentations-sops.md"
-      ],
-      "produces_artifact": "working/research/research_map.json",
-      "gate_codes": [
-        "AF-RESEARCH-WEAVE"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_research_map",
-        "label": "research woven across the deck \u2014 research_map.json maps facts/quotes/stats to >=60% of non-exempt content slides; >=8 distinct items (AF-RESEARCH-WEAVE; defers until copy exists)"
+      "executor": {
+        "kind": "agent"
       },
-      "client_report": {
-        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
-        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      },
-      "long_running": true,
-      "heartbeat_minutes": 10
-    },
-    {
-      "id": "P4-COPY",
-      "order": 4,
-      "name": "Slide Copy",
-      "owning_role": "slide-copywriter",
-      "sop_refs": [
-        "slide-copywriter-sops.md"
-      ],
-      "produces_artifact": "working/copy/slides_copy.md",
-      "gate_codes": [
-        "AF-OBI-6",
-        "AF-COPY-BAND"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_slides_copy",
-        "label": "slide copy authored per doctrine (hook >=7x, 10 components)"
-      },
-      "additional_preflights": [
-        {
-          "required": true,
-          "checker": "_chk_copy_density",
-          "label": "copy character-count band per slides.json copy[] field (HEADLINE 12-60, SUBHEAD 20-110 if present, KICKER <=40 if present, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 / 12-180 hook-exempt; AF-COPY-BAND). Reconciles the historical 3-way bullet-count conflict and adds the previously-missing floor."
-        }
-      ],
-      "client_report": {
-        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
-        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "PF-DESIGN",
@@ -554,7 +681,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-TYPO-QC",
@@ -577,7 +708,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-PROMPT",
@@ -599,7 +734,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-PROMPT-QC",
@@ -621,7 +760,38 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-STYLE-PREVIEW",
+      "order": 4.85,
+      "name": "Approved 3-Style Preview (9 samples \u2192 owner gateway sign-off, before full render)",
+      "owning_role": "slide-image-creator",
+      "sop_refs": [
+        "slide-image-creator-sops.md"
+      ],
+      "produces_artifact": "working/style-preview/style_samples_manifest.json",
+      "gate_codes": [
+        "AF-STYLE-UNPICKED",
+        "AF-STYLE-DOUBLECHARGE"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_style_preview",
+        "label": "approved style preview (after the 9 samples render via build_deck.py --sample, the owner picks 1 of 3 attention-grade variants via their OWN gateway; the winner's 3 representative renders are LOCKED + reused so kie never double-charges; AF-STYLE-UNPICKED / AF-STYLE-DOUBLECHARGE). DEFERS until the samples manifest exists."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-RENDER",
@@ -657,7 +827,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-IMAGE-QC",
@@ -687,7 +861,39 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-SHIFT-QC",
+      "order": 7.5,
+      "name": "Priority-Shift Ship Gate (the framework's 14-item pre-output checklist)",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "qc-specialist-presentations-sops.md",
+        "SOP-INTEGRATION-00-LOADABLE-BLOCK-AND-VERIFICATION-GATE.md"
+      ],
+      "produces_artifact": "working/qc/priority_shift_report.json",
+      "gate_codes": [
+        "AF-PRIORITY-SHIFT",
+        "AF-NO-SALIENCE-APEX"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_priority_shift_ledger",
+        "label": "priority-shift ship gate (the ONLY phase where copy+design+rendered images coexist; runs the 14-item pre-output checklist; item 0 = the North Star, attention is the #1 job; writes priority_shift_report.json; AF-PRIORITY-SHIFT). DEFERS pre-render."
+      },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8-ASSEMBLE",
@@ -709,6 +915,58 @@
           "parse_speech_chunks"
         ]
       },
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P8.1-PDF-EXPORT",
+      "order": 8.1,
+      "name": "PPTX to PDF Export",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/*-FINAL.pdf",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 15,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P8.2-GUIDE",
+      "order": 8.2,
+      "name": "Presenter Guide PDF",
+      "owning_role": "presenters-guide-specialist",
+      "sop_refs": [
+        "presenters-guide-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTER-GUIDE.pdf",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 20,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
@@ -734,6 +992,59 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P8.4-FISH-TAG",
+      "order": 8.52,
+      "name": "Fish Audio Expression Tagging",
+      "owning_role": "fish-audio-expression-specialist",
+      "sop_refs": [
+        "fish-audio-expression-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 15,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P9.1-SPEECH-PDF",
+      "order": 8.55,
+      "name": "Presenter Speech Teleprompter PDF",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH.pdf",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 15,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
+      },
+      "verifier": "phase_verifiers.verify",
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -756,12 +1067,16 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9.5-NOTES-SYNC",
       "order": 8.7,
-      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "name": "Notes-Pane Sync \u2014 reorder notes assembly to AFTER the speech is finalized",
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -772,8 +1087,60 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P9.2-GHL-UPLOAD",
+      "order": 8.9,
+      "name": "GHL Media Library Upload",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/media_library.json",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 30,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify",
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P7-TELEPROMPTER",
+      "order": 8.95,
+      "name": "Presenter Teleprompter HTML",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/presenter-teleprompter.html",
+      "gate_codes": [
+        "AF-BUNDLE-COMPLETE"
+      ],
+      "preflight": null,
+      "budget_minutes": 10,
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
+      },
+      "verifier": "phase_verifiers.verify",
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -796,129 +1163,12 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
-    },
-    {
-      "id": "P-SP-CLAIM",
-      "order": 0.14,
-      "name": "Signature-Presentation Router / Claim Gate (deck_type must be declared)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/intake.json",
-      "gate_codes": [
-        "AF-SP-TYPE-UNDECLARED"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_claim",
-        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
       },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      }
-    },
-    {
-      "id": "P-SP-INTAKE",
-      "order": 0.15,
-      "name": "Signature-Presentation Intake Gate (8 Questions in ONE block + frame)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_intake.json",
-      "gate_codes": [
-        "AF-SP-8Q-MISSING",
-        "AF-SP-8Q-SPLIT",
-        "AF-SP-FRAME-UNSET",
-        "AF-SP-TYPE-MISMATCH",
-        "AF-SP-OFFER-UNDECLARED"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_intake",
-        "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
       },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      }
-    },
-    {
-      "id": "P-SP-INTAKE-TRACE",
-      "order": 0.16,
-      "name": "Signature-Presentation Intake CONVERSATION Gate (choice-first, one question per turn)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/interview/intake_transcript.json",
-      "gate_codes": [
-        "AF-INTAKE-BATCH"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_intake_trace",
-        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      }
-    },
-    {
-      "id": "P-SP-STRUCTURE",
-      "order": 4.1,
-      "name": "Signature-Presentation SACRED Structure (4-phase arc + phase labels)",
-      "owning_role": "signature-presentation-architect",
-      "sop_refs": [
-        "signature-presentation-architect-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_structure.json",
-      "gate_codes": [
-        "AF-SP-SLIDE-FLOOR",
-        "AF-SP-PHASE-RANGE",
-        "AF-SP-PHASE-ORDER",
-        "AF-SP-PHASE-LABEL",
-        "AF-SP-IMG-SUGGESTION",
-        "AF-SP-CASESTUDY-CAP",
-        "AF-SP-TEACH-STEPS",
-        "AF-SP-HOOK",
-        "AF-SP-QUADRANT"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_structure",
-        "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      }
-    },
-    {
-      "id": "P-SP-P3-HYGIENE",
-      "order": 4.15,
-      "name": "Signature-Presentation Phase-3 (Teaching) No-Pitch Hygiene",
-      "owning_role": "qc-specialist-signature-presentations",
-      "sop_refs": [
-        "qc-specialist-signature-presentations-sops.md"
-      ],
-      "produces_artifact": "working/copy/sp_structure.json",
-      "gate_codes": [
-        "AF-SP-P3-PITCH"
-      ],
-      "preflight": {
-        "required": true,
-        "checker": "_chk_sp_no_pitch",
-        "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
-      },
-      "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
-      }
+      "verifier": "phase_verifiers.verify"
     }
   ],
   "autofails": [

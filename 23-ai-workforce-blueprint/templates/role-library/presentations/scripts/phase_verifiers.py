@@ -456,6 +456,94 @@ def _verify_sp_no_pitch(run_dir: Path) -> Tuple[bool, List[str]]:
 # ---------------------------------------------------------------------------
 # PHASE_VERIFIERS registry — keyed by manifest phase id (PIPELINE-MANIFEST.json v23)
 # ---------------------------------------------------------------------------
+
+def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
+    reasons: List[str] = []
+    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
+    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
+    if not tagged_p.exists() or not source_p.exists(): return True, []
+    size = tagged_p.stat().st_size
+    if size < 2048: reasons.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {size} bytes < 2048")
+    try: tagged_text = tagged_p.read_text(encoding="utf-8",errors="replace"); source_text = source_p.read_text(encoding="utf-8",errors="replace")
+    except: return True, []
+    import re
+    def strip_tags(t):
+        t = re.sub(r'\[.*?\]', ' ', t); t = re.sub(r'\(.*?\)', ' ', t)
+        return re.sub(r'\s+', ' ', t).strip()
+    if strip_tags(tagged_text) != strip_tags(source_text):
+        reasons.append("AF-FISH-TAG: strip-equals prover failed")
+    return (len(reasons) == 0), reasons
+
+
+def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
+    ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
+    if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
+    try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
+    except: return True, ["NOTE: media_library.json unreadable"]
+    reasons: List[str] = []
+    if not isinstance(obj, dict): return True, reasons
+    if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
+    return True, reasons
+
+
+def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    fn = _bd_fn("_chk_sp_claim")
+    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
+    fn = _bd_fn("_chk_sp_intake_trace")
+    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+
+def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
+    reasons: List[str] = []
+    tagged_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH-FISH-TAGGED.md"
+    source_p = run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md"
+    if not tagged_p.exists() or not source_p.exists(): return True, []
+    size = tagged_p.stat().st_size
+    if size < 2048: reasons.append(f"PRESENTERS-SPEECH-FISH-TAGGED.md: {size} bytes < 2048")
+    try: tagged_text = tagged_p.read_text(encoding="utf-8",errors="replace"); source_text = source_p.read_text(encoding="utf-8",errors="replace")
+    except: return True, []
+    import re
+    def strip_tags(t):
+        t = re.sub(r'\[.*?\]', ' ', t); t = re.sub(r'\(.*?\)', ' ', t)
+        return re.sub(r'\s+', ' ', t).strip()
+    if strip_tags(tagged_text) != strip_tags(source_text):
+        reasons.append("AF-FISH-TAG: strip-equals prover failed")
+    return (len(reasons) == 0), reasons
+
+
+def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
+    ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
+    if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
+    try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
+    except: return True, ["NOTE: media_library.json unreadable"]
+    reasons: List[str] = []
+    if not isinstance(obj, dict): return True, reasons
+    if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
+    return True, reasons
+
+
+def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
+    fn = _bd_fn("_chk_sp_claim")
+    if fn is None: return _check_json_nonempty(run_dir, "working/copy/sp_claims.json")
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
+def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
+    fn = _bd_fn("_chk_sp_intake_trace")
+    if fn is None: return _check_json_nonempty(run_dir, "working/interview/intake_transcript.json")
+    result = fn(run_dir)
+    return (True, []) if _checker_pass(result) else (False, [str(result)])
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -505,6 +593,16 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P-SP-STRUCTURE":     _verify_sp_structure,
     # Phase 4.15  Signature-Presentation Phase-3 No-Pitch Hygiene (Skill 51)
     "P-SP-P3-HYGIENE":    _verify_sp_no_pitch,
+    # --- U012 new phases ---
+    "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html", 10240),
+    "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
+    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200),
+    "P8.4-FISH-TAG":      _verify_fish_tag,
+    "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
+    "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
+    # --- U012 SP registry gaps ---
+    "P-SP-CLAIM":         _verify_sp_claim,
+    "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,
 }
 
 
