@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -15,8 +16,14 @@ from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
-from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE
+from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
+
+# ---------------------------------------------------------------------------
+# U069: named error for unparseable executor.cmd.
+# ---------------------------------------------------------------------------
+class PhaseExecutorContractError(RuntimeError):
+    """U069: a phase's executor.cmd is not a parseable argument vector."""
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -165,17 +172,28 @@ class Engine:
         return rc
 
     def _run_script_phase(self, phase: Phase) -> int:
-        cmd = (phase.executor_cmd or "").replace("{run_dir}", str(self.run_dir))
-        if not cmd:
+        # U069: tokenise FIRST, substitute SECOND.
+        raw = phase.executor_cmd or ""
+        try:
+            argv = shlex.split(raw)
+        except ValueError as exc:
+            raise PhaseExecutorContractError(
+                f"phase {phase.id}: executor.cmd is not a valid argument vector "
+                f"({exc}). Fix the manifest; this is not sanitised for you."
+            ) from exc
+        run_dir_str = str(self.run_dir)
+        argv = [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+                for tok in argv]
+        if not argv:
             return self._block(phase, "executor kind is 'script' but no cmd is declared")
         if self.dry_run:
-            print(f"DRY-RUN {phase.id}: {cmd}", flush=True)
+            print(f"DRY-RUN {phase.id}: {' '.join(argv)}", flush=True)
             return EXIT_OK
 
         ps = self._phase_state(phase.id)
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
-        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
+        self._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
                              str(m.relative_to(self.run_dir))
                              for rel in phase.produces_artifact
@@ -185,7 +203,7 @@ class Engine:
         budget = phase.budget_minutes * 60
         for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
-                r = subprocess.run(cmd, shell=True, cwd=str(self.run_dir),
+                r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
                                    timeout=budget, capture_output=False)
                 if r.returncode == 0:
                     return EXIT_OK
@@ -195,7 +213,7 @@ class Engine:
             except OSError as exc:
                 reason = f"could not start: {exc}"
 
-            heal.record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
+            record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
             # ANNOUNCE BEFORE RETRYING (invariant 6).
             self.report.to_requester(
                 "blocked",
