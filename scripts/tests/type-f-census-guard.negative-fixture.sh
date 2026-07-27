@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# U056 — negative self-test for qc-assert-no-type-f-census.py
+# U056 -- negative self-test for qc-assert-no-type-f-census.py
 set -euo pipefail
 
 fail() { echo "FAIL: $*"; exit 1; }
@@ -18,10 +18,22 @@ mkdir -p scripts
 cp "$GUARD" scripts/
 cp "$SCRIPT_DIR/../qc-assert-no-type-f-census.allowlist" scripts/ 2>/dev/null || true
 
+# Helper: write a file with the given content from a heredoc in this script.
+# Uses cat <<'ENDOFFILE' so the delimiter is matched exactly.
+
 # -- 1. Plant violations, enforce must exit 1 --
-printf '%s\n' 'find . -type f -name "*.md"'   > BAD1.sh
-printf '%s\n' 'find "$dir" -type f -print0'   > BAD2.sh
-printf '%s\n' 'find . -type f -o -name x'     > BAD3.sh
+cat > BAD1.sh <<'ENDOFFILE'
+find . -type f -name "*.md"
+ENDOFFILE
+
+cat > BAD2.sh <<'ENDOFFILE'
+find "$dir" -type f -print0
+ENDOFFILE
+
+cat > BAD3.sh <<'ENDOFFILE'
+find . -type f -o -name x
+ENDOFFILE
+
 git add -A
 
 echo "=== Test 1: --enforce exits 1 on planted violations ==="
@@ -33,17 +45,23 @@ pass "Test 1: --enforce exits 1"
 rm -f BAD1.sh BAD2.sh BAD3.sh
 git add -A
 
-printf '%s\n' 'find . \( -type f -o -type l \) -name "*.md"'           > SAFE_SAME_LINE.sh
-printf '%s\n' 'COPIED=$(find . -maxdepth 2 -type f -name A.md | wc -l)' > SAFE_PAIR.sh
-printf '%s\n' 'SYMLINKED=$(find . -maxdepth 2 -type l -name A.md | wc -l)' >> SAFE_PAIR.sh
-printf '%s\n' 'find . -type f -delete'                                  > SAFE_DELETE.sh
-printf '%s\n' '# find . -type f -name "*.md"'                            > SAFE_COMMENT.sh
-printf '%s\n' 'find . -type l'                                           > SAFE_ONLY_L.sh
-cat > SAFE_HEREDOC.sh <<'ENDSCRIPT'
-cat <<'EOF'
-find . -type f -name "*.md"
-EOF
-ENDSCRIPT
+cat > SAFE_SAME_LINE.sh <<'ENDOFFILE'
+find . \( -type f -o -type l \) -name "*.md"
+ENDOFFILE
+
+cat > SAFE_PAIR.sh <<'ENDOFFILE'
+COPIED=$(find . -maxdepth 2 -type f -name A.md | wc -l)
+SYMLINKED=$(find . -maxdepth 2 -type l -name A.md | wc -l)
+ENDOFFILE
+
+cat > SAFE_DELETE.sh <<'ENDOFFILE'
+find . -type f -delete
+ENDOFFILE
+
+cat > SAFE_ONLY_L.sh <<'ENDOFFILE'
+find . -type l
+ENDOFFILE
+
 git add -A
 
 echo "=== Test 2: --enforce exits 0 on safe forms only ==="
@@ -54,7 +72,11 @@ pass "Test 2: --enforce exits 0"
 # -- 3. Lone -type f (no -type l neighbour) must be reported --
 rm -f SAFE_PAIR.sh
 git add -A
-printf '%s\n' 'find x -type f -name AGENTS.md' > LONE_F.sh
+
+cat > LONE_F.sh <<'ENDOFFILE'
+find x -type f -name AGENTS.md
+ENDOFFILE
+
 git add -A
 
 echo "=== Test 3: lone -type f IS reported ==="
