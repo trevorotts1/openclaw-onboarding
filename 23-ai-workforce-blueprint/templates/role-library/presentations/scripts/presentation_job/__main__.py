@@ -15,6 +15,7 @@ from .manifest import Manifest, resolve_manifest
 from .phases import Engine
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
+from .sweep import reconcile_sweep
 
 # ---------------------------------------------------------------------------
 # CLI
@@ -31,14 +32,24 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--status", action="store_true", help="print job status")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
+    m.add_argument("--reconcile-board", action="store_true",
+                   help="scan --scan-root for jobs whose board card is missing or behind; "
+                        "reports only unless --apply is given")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
     p.add_argument("--phase", help="run exactly one phase")
     p.add_argument("--until", help="run through this phase then stop")
-    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog")
+    p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog / --reconcile-board")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
     p.add_argument("--json", action="store_true", help="machine-readable --status")
+    p.add_argument("--apply", action="store_true",
+                   help="with --reconcile-board: actually create and advance cards")
+    p.add_argument("--max-age-hours", type=float, default=72.0,
+                   help="with --reconcile-board: ignore run dirs created longer ago than this")
+    if not any("--scan-depth" in a.option_strings for a in p._actions):
+        p.add_argument("--scan-depth", type=int, default=2,
+                       help="how many directory levels below --scan-root to search for state.json")
     return p
 
 
@@ -139,7 +150,20 @@ def main(argv: Optional[List[str]] = None) -> int:
         root = (args.scan_root or args.run_dir)
         if not root:
             die(EXIT_USAGE, "--watchdog needs --scan-root")
-        return watchdog(root.expanduser().resolve())
+        return _run_watchdog(root.expanduser().resolve())
+
+    if args.reconcile_board:
+        if not args.scan_root:
+            die(EXIT_USAGE, "--reconcile-board needs --scan-root")
+        return reconcile_sweep(
+            args.scan_root.expanduser().resolve(),
+            scan_depth=args.scan_depth if hasattr(args, "scan_depth") else 2,
+            apply=args.apply,
+            max_age_hours=args.max_age_hours,
+        )
+
+    if args.apply:
+        die(EXIT_USAGE, "--apply is only meaningful with --reconcile-board")
 
     if not args.run_dir:
         die(EXIT_USAGE, "--run-dir is required")
