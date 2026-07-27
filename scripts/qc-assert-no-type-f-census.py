@@ -132,7 +132,7 @@ def classify_line(raw_lines, idx, is_binary):
 
 
 def main():
-    ap = argparse.ArgumentParser(description='Ban bare -type f in find invocations')
+    ap = argparse.ArgumentParser(description='Ban type-f flag in find invocations without companion type-l')
     ap.add_argument('--enforce', action='store_true',
                     help='Exit 1 when violations exist (default: warn-mode, exit 0)')
     ap.add_argument('--report-json', action='store_true',
