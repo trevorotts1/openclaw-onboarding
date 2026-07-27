@@ -534,6 +534,13 @@ DARK_THEME_BODY_PT_FLOOR = 22      # +~20% projection-dispersion compensation wh
 DARK_THEME_CONTRAST_FLOOR = 7.0    # AAA when dark is opt-in/premium (dark slides are washed out at projection)
 TYPE_LAYOUT_SYSTEM_REL = "working/typography/type_layout_system.md"  # the gate-of-record artifact
 
+# U051 — Rule 3.5 staging. These are new gates meeting decks already shipped, so they
+# REPORT and return success until the finding count is driven to zero. Stage 3 flips this
+# default in a SEPARATE unit. Only the exact string "1" enables enforcement before then.
+SLIDE_CRAFT_ENFORCE_ENV = "PRESENTATION_SLIDE_CRAFT_ENFORCE"
+SLIDE_CRAFT_HEADLINE_WORD_MAX = 9
+SLIDE_CRAFT_PRICE_BEAT_MIN_GAP = 8
+
 # ---------------------------------------------------------------------------
 # RESEARCH-WEAVE / BREADTH GATE (AF-RESEARCH-WEAVE) — research distributed ACROSS
 # the deck, not funnelled to one proof slide.
@@ -5463,6 +5470,103 @@ def _import_pitch_engines_check():
     return None
 
 
+def _import_slide_craft():
+    """Import the slide_craft module that ships beside build_deck.py (the craft-rule
+    arithmetic enforcers). Tries a normal import first (scripts/ is on sys.path when
+    build_deck runs / is imported), then a path-based load from this file's own
+    directory. Returns the module or None. Mirrors _import_intelligence_engines_check."""
+    try:
+        import importlib
+        return importlib.import_module("slide_craft")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "slide_craft",
+                str(Path(__file__).resolve().parent / "slide_craft.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _slide_craft_warn(fn_name: str, run_dir: Path,
+                      slides_path: Optional[Path] = None) -> str:
+    """U051 shared wrapper body. Calls slide_craft.<fn_name>, and under Rule 3.5 stage 1
+    PRINTS the reason and returns "" so preflight does not exit 3. Only
+    SLIDE_CRAFT_ENFORCE_ENV == "1" lets the reason reach the caller, where the loop at
+    run_preflight_gate turns it into a FATAL. The switch lives HERE and not at the
+    registration site because PREFLIGHT_REQUIRED is consumed by a loop this unit does not
+    own whose only input is the checker's return value — U047's postflight staging had a
+    block it could guard; this is the same three-stage staging at the only site available."""
+    sc = _import_slide_craft()
+    if sc is None:
+        return ""          # module absent -> defer, exactly as _import_prompt_gate callers do
+    reason = getattr(sc, fn_name)(run_dir, slides_path)
+    if not reason:
+        return ""
+    if os.environ.get(SLIDE_CRAFT_ENFORCE_ENV, "") == "1":
+        return reason
+    print("WARN-SLIDE-CRAFT: " + reason, file=sys.stderr, flush=True)
+    return ""
+
+
+def _chk_obi_text_blocks(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-OBI-1 wrapper — the counting lives in slide_craft.py; this is the
+    build_deck-side symbol the manifest's py_symbol lockstep resolves against."""
+    return _slide_craft_warn("check_obi_text_blocks", run_dir, slides_path)
+
+
+def _chk_obi_headline_words(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-OBI-2 wrapper."""
+    return _slide_craft_warn("check_obi_headline_words", run_dir, slides_path)
+
+
+def _chk_aud_meta_tokens(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-AUD-4 wrapper."""
+    return _slide_craft_warn("check_aud_meta_tokens", run_dir, slides_path)
+
+
+def _chk_aud_credentials(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-AUD-5 wrapper."""
+    return _slide_craft_warn("check_aud_credentials", run_dir, slides_path)
+
+
+def _chk_aud_placeholder_render(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-AUD-6 / AF-PLACEHOLDER wrapper. ONE enforcer, TWO manifest rows: the ruleset's
+    own column-1 cell is "AF-PLACEHOLDER (AF-AUD-6)", so they are one rule with two names
+    and A3 is satisfied by pointing both py_symbols at this symbol."""
+    return _slide_craft_warn("check_aud_placeholder_render", run_dir, slides_path)
+
+
+def _chk_hook_verbatim(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-HOOK-5 wrapper."""
+    return _slide_craft_warn("check_hook_verbatim", run_dir, slides_path)
+
+
+def _chk_den_ladder_gaps(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-DEN-1 wrapper."""
+    return _slide_craft_warn("check_den_ladder_gaps", run_dir, slides_path)
+
+
+def _chk_den_anchor_depth(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-DEN-2 wrapper."""
+    return _slide_craft_warn("check_den_anchor_depth", run_dir, slides_path)
+
+
+def _chk_den_stack_before_drop(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-DEN-4 wrapper."""
+    return _slide_craft_warn("check_den_stack_before_drop", run_dir, slides_path)
+
+
+def _chk_den_repitch_block(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-DEN-7 wrapper."""
+    return _slide_craft_warn("check_den_repitch_block", run_dir, slides_path)
+
+
 def _engine_name_for_code(code: str) -> str:
     """Map an AF code to the human INTELLIGENCE-engine name it belongs to, for the
     routeback payload's `intelligence` field (so the author knows which engine is absent)."""
@@ -7330,6 +7434,61 @@ PREFLIGHT_REQUIRED = [
      "unless intake.json deck_type == signature_presentation.",
      "Phase 4.15 — QC Specialist (Signature Presentations) (P-SP-P3-HYGIENE, prove_sp_no_pitch)",
      _chk_sp_no_pitch),
+    # --- U051: SLIDE-CRAFT enforcers. The craft rules that are ARITHMETIC get real
+    # gates; the ones a human judges are marked human_judged in the manifest and
+    # HUMAN JUDGEMENT in the ruleset instead of being given a fake enforcer.
+    # Rule 3.5: WARN by default — each wrapper prints its reason and returns "" unless
+    # SLIDE_CRAFT_ENFORCE_ENV == "1". See _slide_craft_warn.
+    (None,
+     "one-big-idea text-block ceiling — at most 3 non-empty copy blocks per slide "
+     "(SOP-SLIDE-01 §2.3, AF-OBI-1)",
+     "Phase 1Q — Slide Copywriter / QC Specialist (SOP-SLIDE-01)",
+     _chk_obi_text_blocks),
+    (None,
+     "one-big-idea headline word ceiling — headline at most 9 words, counted exactly "
+     "(SOP-SLIDE-01 §2.4, AF-OBI-2)",
+     "Phase 1Q — Slide Copywriter / QC Specialist (SOP-SLIDE-01)",
+     _chk_obi_headline_words),
+    (None,
+     "audience-facing meta-token scan — the literal word 'webinar' and the named "
+     "technique-announcement lines are banned on the face (SOP-SLIDE-02 §2.4, AF-AUD-4)",
+     "Phase 1Q — Slide Copywriter / QC Specialist (SOP-SLIDE-02)",
+     _chk_aud_meta_tokens),
+    (None,
+     "audience-facing credential scan — no credential/resume marker as body copy "
+     "(SOP-SLIDE-02 §2.5, AF-AUD-5)",
+     "Phase 1Q — Slide Copywriter / QC Specialist (SOP-SLIDE-02)",
+     _chk_aud_credentials),
+    (None,
+     "no build token on a RENDERED face — bracket tokens and placeholder substrings in "
+     "the OCR readout (SOP-SLIDE-02 §2.6, AF-AUD-6 / AF-PLACEHOLDER)",
+     "Phase 5/6 — Slide Image Creator / QC Specialist (SOP-SLIDE-02)",
+     _chk_aud_placeholder_render),
+    (None,
+     "the hook is a verbatim refrain — a near-variant of the canonical hook that is not "
+     "char-exact is a mutation (SOP-SLIDE-03 §2.4, AF-HOOK-5)",
+     "Phase 1Q — Hook Strategist / Slide Copywriter (SOP-SLIDE-03)",
+     _chk_hook_verbatim),
+    (None,
+     "price-beat spacing — adjacent ladder rungs at least 8 slides apart, computed "
+     "against the FULL deck (SOP-SLIDE-04 §2.1, AF-DEN-1)",
+     "Phase 1Q — Director / Offer Price Strategist (SOP-SLIDE-04)",
+     _chk_den_ladder_gaps),
+    (None,
+     "value-anchor depth — the anchor lands between 25% and 45% of deck depth "
+     "(SOP-SLIDE-04 §3 DEN-2, AF-DEN-2)",
+     "Phase 1Q — Director / Offer Price Strategist (SOP-SLIDE-04)",
+     _chk_den_anchor_depth),
+    (None,
+     "a value-stack beat precedes the first price drop — ORDER only "
+     "(SOP-SLIDE-04 §2.4, AF-DEN-4)",
+     "Phase 1Q — Director / Offer Price Strategist (SOP-SLIDE-04)",
+     _chk_den_stack_before_drop),
+    (None,
+     "a 4-to-7-slide re-pitch block follows the FINAL price — COUNT only "
+     "(SOP-SLIDE-04 §2.7, AF-DEN-7)",
+     "Phase 1Q — Director / Offer Price Strategist (SOP-SLIDE-04)",
+     _chk_den_repitch_block),
 ]
 
 
