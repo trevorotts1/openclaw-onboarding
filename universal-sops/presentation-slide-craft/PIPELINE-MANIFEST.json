@@ -1,5 +1,5 @@
 {
-  "manifest_version": 25,
+  "manifest_version": 26,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -761,7 +761,7 @@
     {
       "id": "P9.5-NOTES-SYNC",
       "order": 8.7,
-      "name": "Notes-Pane Sync — reorder notes assembly to AFTER the speech is finalized",
+      "name": "Notes-Pane Sync \u2014 reorder notes assembly to AFTER the speech is finalized",
       "owning_role": "pptx-assembly-specialist",
       "sop_refs": [
         "pptx-assembly-specialist-sops.md"
@@ -772,8 +772,8 @@
       ],
       "preflight": null,
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -813,11 +813,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_claim",
-        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir — closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
+        "label": "signature-presentation routing/claim gate (AF-SP-TYPE-UNDECLARED): if the run carries signature-presentation signals (an sp_intake.json, a set Signature frame, a frame-selection question, or a 'signature presentation' request) but intake.json does NOT declare deck_type == signature_presentation, fail-closed. Runs for EVERY deck (does NOT defer, unlike the three P-SP gates that follow) via 51-signature-presentation/scripts/prove_sp_routing.evaluate_run_dir \u2014 closes the highest-severity skip where a signature presentation is built through the generic path by omitting the magic word (which would make every SP gate no-op). A non-signature deck with no SP signal passes untouched."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -842,8 +842,8 @@
         "label": "signature-presentation intake gate (AF-SP-8Q-MISSING / AF-SP-8Q-SPLIT / AF-SP-FRAME-UNSET / AF-SP-TYPE-MISMATCH / AF-SP-OFFER-UNDECLARED): the 8 Questions delivered in ONE block + a set frame (rulebook|vault|quest|original) + the q7 offer(s) declared into the offer-token ledger. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before (mirror of the _chk_style_preview defer switch)."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -861,11 +861,11 @@
       "preflight": {
         "required": true,
         "checker": "_chk_sp_intake_trace",
-        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed — a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
+        "label": "signature-presentation intake-CONVERSATION gate (AF-INTAKE-BATCH): the intake was CONDUCTED choice-first (quick vs in-depth) and one bank question per assistant turn, proven against working/interview/intake_transcript.json via 51-signature-presentation/scripts/intake_trace_check.scan_transcript. P-SP-INTAKE above proves the assembled intake RECORD; this proves the conversation that produced it, so a batched eight-question dump that afterwards yields a structurally valid record can no longer reach a signed certificate. An ABSENT transcript is fail-closed \u2014 a conversation gate nobody can omit their way past. DEFERS (returns empty) unless intake.json deck_type == signature_presentation, so non-signature decks behave EXACTLY as before."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -894,8 +894,8 @@
         "label": "signature-presentation structure gate (AF-SP-SLIDE-FLOOR / AF-SP-PHASE-RANGE / AF-SP-PHASE-ORDER / AF-SP-PHASE-LABEL / AF-SP-IMG-SUGGESTION / AF-SP-CASESTUDY-CAP / AF-SP-TEACH-STEPS / AF-SP-HOOK / AF-SP-QUADRANT): 100-slide floor unless a logged client-exact override, the 4 phase floors (avatar 11 / story 13 / teaching 36 / pitch 40) contiguous and in order with each phase's label slide, a non-empty suggested_image on every slide, at most 2 case studies, 3 to 7 teaching steps, one central hook + four distinct section hooks, and the N.E.E.I.T. + 4-Quadrant markers. DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     },
     {
@@ -916,8 +916,8 @@
         "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
       "client_report": {
-        "start_template": "Step {k} of {N} — {name} — starting{eta}",
-        "done_template": "Step {k} of {N} — {name} — complete"
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       }
     }
   ],
@@ -1041,7 +1041,8 @@
       "in_ruleset": true,
       "trigger": "hook on > 4 slides",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_copy"
     },
     {
       "code": "AF-HOOK-2",
@@ -1050,7 +1051,9 @@
       "in_ruleset": true,
       "trigger": "hook in a footer/band position",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-HOOK-3",
@@ -1059,7 +1062,8 @@
       "in_ruleset": true,
       "trigger": "zero dedicated hook slides",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "enforced_via": "AF-NO-HOOK-REFRAIN"
     },
     {
       "code": "AF-HOOK-4",
@@ -1068,7 +1072,8 @@
       "in_ruleset": true,
       "trigger": "hook printed 2+ times on one slide",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "check_script": "scripts/intelligence_engines_check.py::check_prompts"
     },
     {
       "code": "AF-HOOK-5",
@@ -1076,8 +1081,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "hook mutated/extended/reworded",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_hook_verbatim"
     },
     {
       "code": "AF-HOOK-6",
@@ -1086,7 +1091,8 @@
       "in_ruleset": true,
       "trigger": "hook misspelled/garbled on render",
       "enforced_by": "agent",
-      "py_symbol": null
+      "py_symbol": null,
+      "enforced_via": "AF-SPELLING (U047 \u2014 not yet merged)"
     },
     {
       "code": "AF-HOOK-7",
@@ -1095,7 +1101,9 @@
       "in_ruleset": true,
       "trigger": "signature quote conflated with main hook",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-AUD-1",
@@ -1104,7 +1112,9 @@
       "in_ruleset": true,
       "trigger": "speaker SAY line on the face",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-AUD-2",
@@ -1113,7 +1123,9 @@
       "in_ruleset": true,
       "trigger": "internal pitch doctrine as caption",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-AUD-3",
@@ -1122,7 +1134,9 @@
       "in_ruleset": true,
       "trigger": "image-narration caption",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-AUD-4",
@@ -1130,8 +1144,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "meta-telegraph / 'webinar' / technique label",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_aud_meta_tokens"
     },
     {
       "code": "AF-AUD-5",
@@ -1139,8 +1153,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "credential/justification dump",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_aud_credentials"
     },
     {
       "code": "AF-PLACEHOLDER",
@@ -1148,8 +1162,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "bracket/placeholder token on a rendered slide (AF-AUD-6)",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_aud_placeholder_render"
     },
     {
       "code": "AF-AUD-6",
@@ -1157,8 +1171,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "placeholder on render \u2014 cross-listed audience-facing alias of AF-PLACEHOLDER",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_aud_placeholder_render"
     },
     {
       "code": "AF-OBI-1",
@@ -1166,8 +1180,8 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "> 3 text blocks",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_obi_text_blocks"
     },
     {
       "code": "AF-OBI-2",
@@ -1175,8 +1189,11 @@
       "level": "slide",
       "in_ruleset": true,
       "trigger": "headline > 9 words",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_obi_headline_words",
+      "secondary_py_symbols": [
+        "SLIDE_CRAFT_HEADLINE_WORD_MAX"
+      ]
     },
     {
       "code": "AF-OBI-3",
@@ -1185,7 +1202,9 @@
       "in_ruleset": true,
       "trigger": "2+ core ideas",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-OBI-4",
@@ -1194,7 +1213,9 @@
       "in_ruleset": true,
       "trigger": "full value trio on one slide",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-OBI-5",
@@ -1203,7 +1224,9 @@
       "in_ruleset": true,
       "trigger": "bulleted pain list",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-OBI-6",
@@ -1212,7 +1235,9 @@
       "in_ruleset": true,
       "trigger": "comparison table > 2 rows",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-COPY-BAND",
@@ -1229,8 +1254,11 @@
       "level": "DECK",
       "in_ruleset": true,
       "trigger": "price beats < 8 slides apart",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_den_ladder_gaps",
+      "secondary_py_symbols": [
+        "SLIDE_CRAFT_PRICE_BEAT_MIN_GAP"
+      ]
     },
     {
       "code": "AF-DEN-2",
@@ -1238,8 +1266,8 @@
       "level": "DECK",
       "in_ruleset": true,
       "trigger": "anchor outside 25-45% depth",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_den_anchor_depth"
     },
     {
       "code": "AF-DEN-3",
@@ -1248,7 +1276,9 @@
       "in_ruleset": true,
       "trigger": "DROP with no BUILDUP before it",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-DEN-4",
@@ -1256,8 +1286,8 @@
       "level": "DECK",
       "in_ruleset": true,
       "trigger": "no value-stack slide before Drop 1",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_den_stack_before_drop"
     },
     {
       "code": "AF-DEN-5",
@@ -1266,7 +1296,8 @@
       "in_ruleset": true,
       "trigger": "no promises beat before anchor",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "enforced_via": "AF-PRICE-BEFORE-PROMISE"
     },
     {
       "code": "AF-DEN-6",
@@ -1275,7 +1306,9 @@
       "in_ruleset": true,
       "trigger": "Wall of Wins not 4-6 before offer",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-DEN-7",
@@ -1283,8 +1316,8 @@
       "level": "DECK",
       "in_ruleset": true,
       "trigger": "no 4-7 slide re-pitch after FINAL",
-      "enforced_by": "qc_check",
-      "py_symbol": null
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_den_repitch_block"
     },
     {
       "code": "AF-DEN-8",
@@ -1293,7 +1326,9 @@
       "in_ruleset": true,
       "trigger": "section below its slide floor",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-RENDERER",
@@ -1996,7 +2031,9 @@
       "in_ruleset": true,
       "trigger": "generic One-Big-Idea violation catch-all \u2014 the OBI dimension name for any unclassified multi-idea defect; the specific violation is carried by the AF-OBI-1..6 sub-codes; this base code labels the dimension in routeback work orders",
       "enforced_by": "qc_check",
-      "py_symbol": null
+      "py_symbol": null,
+      "human_judged": true,
+      "judged_by": "QC Specialist - Presentations"
     },
     {
       "code": "AF-P-STRUCT",
