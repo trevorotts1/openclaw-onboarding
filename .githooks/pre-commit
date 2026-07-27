@@ -1,14 +1,19 @@
 #!/bin/bash
-# Pre-commit hook: version consistency + fleet QC invariants on every commit.
+# Pre-commit hook: version consistency + fleet QC invariants.
 #
-# Gates (all hard-fail, block the commit):
+# This hook ONLY executes on clones where scripts/install-git-hooks.sh has been
+# run (core.hooksPath is per-clone local configuration and is not committable).
+# Without the installer, this file sits inert — run it once per clone.
+#
+# Gates (all hard-fail, block the commit — listed here in file order 1,2,3,4,6,7,5):
 #   1. Client-name guard (CRITICAL — fleet privacy rule, no real names in template)
 #   2. WhatsApp fleet ban (FLEET-STANDARDS.md §3 — enabled:true or uncommented WHATSAPP_NUMBER=)
 #   3. N28 no destructive cron payloads (rm -rf on install paths / npm uninstall -g openclaw)
 #   4. chmod-600 coverage on .sh files that write secrets/.env
-#   5. Version consistency (version / install.sh / CHANGELOG.md)
 #   6. agent-browser singleton gateway (no raw launch outside browser_manager;
 #      teardown+lock+breaker present; sentinel present) — on staged 06-* changes
+#   7. Persona-set count triad (repo library <-> manifest lockstep)
+#   5. Version consistency (version / install.sh / CHANGELOG.md)
 
 # ── 0. Locate repo root ──────────────────────────────────────────────────────
 REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"

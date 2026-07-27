@@ -1,0 +1,15 @@
+name: hook-enforcement parity guard
+on:
+  push:
+  pull_request:
+jobs:
+  hook-enforcement-parity:
+    name: hook-enforcement parity guard
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run hook enforcement parity guard
+        run: bash scripts/guard-hook-enforcement-parity.sh
