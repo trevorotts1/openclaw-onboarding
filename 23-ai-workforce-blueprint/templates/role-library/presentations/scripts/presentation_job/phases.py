@@ -15,6 +15,7 @@ from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
+from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE
 from . import heal
 
 # ---------------------------------------------------------------------------
@@ -138,6 +139,19 @@ class Engine:
                              artifacts=sorted(shas.keys()))
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
+            # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            try:
+                import phase_verifiers
+                v_ok, v_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                self._checkpoint(phase.id, verifier_ok=v_ok, verifier_notes=v_notes)
+                if not v_ok:
+                    self.report.event("phase.verifier_warn",
+                                      f"{phase.id}: {'; '.join(v_notes)}")
+            except ImportError:
+                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
+                                          "substance check skipped")
+            if self.board:
+                self.board.phase_progress(phase.id, done_msg)
         return rc
 
     def _run_script_phase(self, phase: Phase) -> int:
@@ -289,6 +303,13 @@ class Engine:
                 "ack",
                 f"Got it. Building your presentation in {n} steps. "
                 "I will tell you as each step finishes, and immediately if anything stops.")
+
+        if self.board:
+            deck_slug = self.run_dir.name
+            intake = self.state.get("intake") or {}
+            title = intake.get("title") or f"Presentation {self.state.get('job_id', '?')[:8]}"
+            description = intake.get("description") or ""
+            self.board.open_card(deck_slug, title, description)
 
         for p in phases:
             rc = self.run_phase(p)
