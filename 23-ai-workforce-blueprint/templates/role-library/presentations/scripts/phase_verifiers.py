@@ -524,7 +524,7 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
     so the runner does not block phases that have no substance checker yet."""
     fn: Optional[Callable] = PHASE_VERIFIERS.get(phase_id)
     if fn is None:
-        return True, [f"no verifier for {phase_id!r} — pass"]
+        return False, [f"no verifier registered for {phase_id!r} — pass"]
     try:
         result = fn(Path(run_dir))
         # Accept both (ok, reasons) tuple and legacy str return for compat.
@@ -536,7 +536,7 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
             return (result == ""), ([] if result == "" else [result])
         return bool(result), []
     except Exception as exc:  # noqa: BLE001
-        return True, [f"NOTE: verifier for {phase_id!r} raised {exc!r} — degraded (pass)"]
+        return False, [f"verifier for {phase_id!r} raised {exc!r} — degraded (pass)"]
 
 
 # ---------------------------------------------------------------------------

@@ -7,13 +7,12 @@ from typing import Any, Dict, List, Optional
 from .gates import GATE_KEYS, NON_WAIVABLE_GATES
 from .state import _norm, _read_json
 
-# ---------------------------------------------------------------------------
-# Waivers. The only bypass, and it must not be self-issuable.
-# ---------------------------------------------------------------------------
+assert not (set(GATE_KEYS) & set(NON_WAIVABLE_GATES)), "a non-waivable gate appears in GATE_KEYS"
+
+TRANSCRIPT_WAIVERS_ACCEPTED: bool = False
+
 class WaiverError(Exception):
     pass
-
-
 
 def load_waivers(run_dir: Path) -> List[Dict[str, Any]]:
     p = run_dir / "waivers.json"
@@ -23,24 +22,17 @@ def load_waivers(run_dir: Path) -> List[Dict[str, Any]]:
         obj = json.loads(p.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         raise WaiverError(f"waivers.json is unreadable: {exc}")
-    return obj if isinstance(obj, list) else [obj]
-
-
+    waivers = obj if isinstance(obj, list) else [obj]
+    seen = set()
+    for w in waivers:
+        if isinstance(w, dict):
+            rule = w.get("rule")
+            if rule in seen:
+                raise WaiverError(f"two waivers name the same gate {rule!r}; one gate, one waiver")
+            seen.add(rule)
+    return waivers
 
 def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
-    """
-    A waiver must be traceable to the CLIENT, not to the agent that wants the skip.
-
-    v1 of the plan required matching the quote against "the recorded conversation", which is not
-    implementable for a Telegram-routed request (route-presentation.sh:101-107 sends five keys and
-    no requester identity). So the accepted evidence is, in order of strength:
-      1. intake_field  — a form field the client set (strongest; the form is the consent record)
-      2. transcript    — a verbatim quote found in working/interview/intake_transcript.json,
-                         which is written turn-by-turn by deck-intake-driver.py:1273-1298, a
-                         DIFFERENT producer than the build being certified
-    An empty, unquoted, or unsourced waiver is invalid. See the plan's D3 for the eight hardening
-    changes still needed before a transcript quote is consent-grade.
-    """
     rule = w.get("rule")
     if rule not in GATE_KEYS:
         raise WaiverError(f"waiver names {rule!r}, which is not a waivable gate. "
@@ -67,11 +59,19 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
                               "which is not present in intake.json")
         return
 
+    if not TRANSCRIPT_WAIVERS_ACCEPTED:
+        raise WaiverError(
+            f"waiver for {rule!r} is transcript-sourced, but TRANSCRIPT_WAIVERS_ACCEPTED "
+            "is False. Transcript waivers are not yet consent-grade: the route script "
+            "sends five keys and no requester identity, and the chat transcript lives in "
+            "a database which breaks the offline-authoritative rule (audit D3:1016-1019). "
+            "Set TRANSCRIPT_WAIVERS_ACCEPTED = True only after the identity gap closes "
+            "and the transcript is in the run dir.")
+
     tp = run_dir / "working" / "interview" / "intake_transcript.json"
     if not tp.is_file():
         raise WaiverError(f"waiver for {rule!r} cites the transcript, but "
-                          "working/interview/intake_transcript.json does not exist. "
-                          "An absent transcript is not proof of client consent.")
+                          "working/interview/intake_transcript.json does not exist.")
     try:
         turns = json.loads(tp.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
@@ -83,6 +83,3 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
         raise WaiverError(
             f"waiver for {rule!r} quotes text that does not appear in any client turn of the "
             "recorded transcript. The quote must be the client's own words.")
-
-
-
