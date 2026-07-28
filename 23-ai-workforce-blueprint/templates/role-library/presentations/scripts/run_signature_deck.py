@@ -432,7 +432,8 @@ def _send_owner_message(text: str) -> tuple:
 
 
 def _append_report_record(run_dir: Path, phase_id: str, kind: str,
-                          gateway_msg_id: str, text: str, sent: bool = False) -> None:
+                          gateway_msg_id: str, text: str, sent: bool = False,
+                          undeliverable: str = "") -> None:
     """Append a client report record to client_reports.json.
     kind should be 'start' (AF-PHASE-REPORT-START) or 'done' (AF-PHASE-REPORT-DONE).
     Never raises — if the file is unwritable the record is silently dropped and
@@ -451,6 +452,10 @@ def _append_report_record(run_dir: Path, phase_id: str, kind: str,
         "sent": bool(sent),
         "text": text,
         "ts": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+        # U046: a non-empty string names WHY delivery is impossible, which the
+        # phase gate accepts as an honest answer. Empty means "not recorded" —
+        # which is the case the gate warns (and later fails) on.
+        "undeliverable": undeliverable or "",
     })
     try:
         p.write_text(json.dumps(records, indent=2))
@@ -466,8 +471,8 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
     kind in {"start", "done"} corresponding to AF-PHASE-REPORT-START /
     AF-PHASE-REPORT-DONE. FAIL-CLOSED for the gate: if no record exists at all,
     attest_phase (and the next-phase precondition check AF-PHASE-REPORT-MISSING)
-    refuses. Never raises — a send failure records an empty gateway_msg_id so the
-    gate can detect 'no confirmed id' while still seeing a record was attempted.
+    refuses. Never raises — U046: a send failure records an empty gateway_msg_id
+    and the gate warns (PRESENTATION_REPORT_CONFIRM_ENFORCE=1 to make it fatal).
 
     NEVER calls the Telegram API directly — uses ``openclaw message send``
     exclusively (fleet memory: never-bypass-openclaw-telegram)."""
@@ -480,7 +485,16 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
         tmpl += f" (ETA ~{eta} min)"
 
     msg_id, sent = _send_owner_message(tmpl)
-    _append_report_record(run_dir, phase_id, kind, msg_id, tmpl, sent=sent)
+    # U046: a provable non-delivery is RECORDED as such, not left as a bare
+    # sent=False that reads identically to "nobody looked". The two cases the
+    # transport proves are: no target resolvable, and a non-zero/raised send.
+    undeliverable = ""
+    if not sent:
+        channel, target = _resolve_owner_route()
+        undeliverable = ("no owner target configured" if not target
+                         else "gateway send did not confirm")
+    _append_report_record(run_dir, phase_id, kind, msg_id, tmpl, sent=sent,
+                          undeliverable=undeliverable)
     return msg_id or None
 
 
@@ -577,6 +591,62 @@ def _phase_index(phase_id: str, phases: list) -> tuple:
 
 
 # ---------------------------------------------------------------------------
+# Report CONFIRMATION (U046). Rule 3.5 staging: this ships in WARN mode.
+#
+# The gate below has always bitten on a MISSING record and never on an
+# unconfirmed one, even though check_phase_preconditions' docstring claimed
+# otherwise. A record now counts as CONFIRMED only when the transport actually
+# reported success — `sent` true AND a non-empty gateway_msg_id — or when the
+# non-delivery was explicitly recorded as undeliverable (the producer-side twin
+# of the Command Center's recordUndeliverable path, U043 Part A).
+#
+# WARN vs ENFORCE: on a box with no owner target configured, EVERY existing
+# record has sent=False and gateway_msg_id="" — so enforcing on day one blocks
+# every build immediately. Stage 1 reports and continues; the finding count is
+# the work list. Stage 3 sets PRESENTATION_REPORT_CONFIRM_ENFORCE=1 (or flips
+# the default here) once the count is zero.
+# ---------------------------------------------------------------------------
+REPORT_CONFIRM_ENFORCE_ENV = "PRESENTATION_REPORT_CONFIRM_ENFORCE"
+
+
+def _report_confirm_enforced() -> bool:
+    """True when an unconfirmed report record must FAIL the phase gate.
+
+    Default False (WARN mode). Only the exact string '1' enables enforcement, so a
+    stray 'true'/'yes'/'0 ' cannot silently arm a build-blocking gate.
+    """
+    return os.environ.get(REPORT_CONFIRM_ENFORCE_ENV, "") == "1"
+
+
+def _report_confirmed(rec: dict) -> bool:
+    """A report record counts as delivered.
+
+    Confirmed = the transport reported success AND returned an id, OR the
+    non-delivery was explicitly recorded (undeliverable), which is an honest
+    'a human could not be told and we said so' rather than a silent gap.
+
+    WHY `undeliverable` IS TRUSTED, AND WHAT THAT TRUST DOES NOT COVER.
+    It is engine-written: emit_client_report is its only producer, and it sets
+    the field from a closed two-branch expression ("no owner target configured"
+    / "gateway send did not confirm"), never from agent input. But the records
+    read here come off disk, and _load_client_reports does a plain json.loads
+    with no per-record schema validation — so anything that can write into the
+    run directory could forge the key and this predicate would call the phase
+    delivered. That is ACCEPTED at stage 1, where nothing blocks, and it MUST BE
+    RE-EXAMINED BEFORE STAGE 3 makes this predicate load-bearing. The
+    MISSING-record return in the gate above is unforgeable by that route and
+    stays the hard gate either way.
+
+    ANY truthy value counts, on purpose. A future transport that records a third
+    honest reason must fall through to WARN, not to rejection; a closed
+    vocabulary would make the gate fire on correct behaviour.
+    """
+    if rec.get("undeliverable"):
+        return True
+    return bool(rec.get("sent")) and bool(str(rec.get("gateway_msg_id") or "").strip())
+
+
+# ---------------------------------------------------------------------------
 # Prior-phase report gate (FIX 4b — AF-PHASE-REPORT-MISSING enforcement)
 # ---------------------------------------------------------------------------
 def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str) -> str:
@@ -608,6 +678,13 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
     reports = _load_client_reports(run_dir)
     start_ids = {r["phase_id"] for r in reports if r.get("kind") == "start"}
     done_ids = {r["phase_id"] for r in reports if r.get("kind") == "done"}
+    # U046: the CONFIRMED subsets — a record whose transport actually reported
+    # success (or whose non-delivery was explicitly recorded).
+    start_confirmed = {r["phase_id"] for r in reports
+                       if r.get("kind") == "start" and _report_confirmed(r)}
+    done_confirmed = {r["phase_id"] for r in reports
+                      if r.get("kind") == "done" and _report_confirmed(r)}
+    unconfirmed = []
 
     for pid in sorted(prior_attested):
         ph = by_id.get(pid, {})
@@ -626,6 +703,25 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
                 "AF-PHASE-REPORT-DONE record in client_reports.json — its client "
                 "done-report step was skipped."
             )
+        # U046 — WARN stage. The record exists; was it delivered?
+        for kind, confirmed in (("start", start_confirmed), ("done", done_confirmed)):
+            if pid not in confirmed:
+                unconfirmed.append(f"{pid}:{kind}")
+
+    if unconfirmed:
+        detail = (
+            f"AF-PHASE-REPORT-MISSING: {len(unconfirmed)} prior phase report(s) exist "
+            f"in client_reports.json but were never DELIVERED (no gateway_msg_id and no "
+            f"recorded undeliverable): {", ".join(unconfirmed)}. A written record is not a "
+            f"told human. Configure an owner target "
+            f"(PRESENTATION_OWNER_CHAT_ID / OPENCLAW_OWNER_CHAT_ID / OWNER_CHAT_ID / "
+            f"OWNER_TELEGRAM_CHAT_ID / TELEGRAM_CHAT_ID) so the gateway can resolve one."
+        )
+        if _report_confirm_enforced():
+            return detail
+        print("[client_report] WARN-REPORT-UNCONFIRMED: " + detail
+              + f" (WARN mode — set {REPORT_CONFIRM_ENFORCE_ENV}=1 to make this fatal.)",
+              file=sys.stderr, flush=True)
     return ""
 
 
@@ -756,8 +852,11 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     It additionally enforces produces_artifact presence for each prior phase.
 
     FIX 4b: also enforces AF-PHASE-REPORT-MISSING — every prior attested phase must
-    have confirmed AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records with a
-    non-empty gateway_msg_id in client_reports.json."""
+    have AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records in client_reports.json.
+    U046: a record that exists but was never DELIVERED (no gateway_msg_id and no
+    recorded undeliverable) is reported in WARN mode and becomes fatal only when
+    PRESENTATION_REPORT_CONFIRM_ENFORCE=1. This docstring previously claimed the gate
+    required a non-empty gateway_msg_id; it never did."""
     by_id = {ph["id"]: ph for ph in phases}
     target = by_id.get(target_phase_id)
     if target is None:
@@ -782,8 +881,9 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
                     f"produces_artifact {ph.get('produces_artifact')!r} is not present in "
                     f"the run dir — an attestation must correspond to a real artifact. "
                     f"Re-run {pid!r} or add a logged owner-authorized skip.")
-    # FIX 4b: AF-PHASE-REPORT-MISSING — every prior attested phase must have confirmed
-    # AF-PHASE-REPORT-START + AF-PHASE-REPORT-DONE records with non-empty gateway_msg_id.
+    # FIX 4b + U046: AF-PHASE-REPORT-MISSING — every prior attested phase must have
+    # START + DONE records; delivery confirmation is warned on, and enforced only under
+    # PRESENTATION_REPORT_CONFIRM_ENFORCE=1.
     report_reason = _check_prior_phase_reports(run_dir, phases, target_phase_id)
     if report_reason:
         return report_reason
