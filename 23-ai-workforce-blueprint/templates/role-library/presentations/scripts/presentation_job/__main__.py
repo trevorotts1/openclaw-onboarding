@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .state import (
-    StateStore, RunLock, utcnow, sha256_text,
+    StateStore, RunLock, utcnow, sha256_text, _read_json,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
 )
@@ -140,15 +140,6 @@ def cmd_status(args) -> int:
         print(f"UNDELIVERABLE messages: {len(st['undeliverable'])} "
               "(the requester was NOT told — see F2)")
     return EXIT_OK
-
-
-def _read_json(p: Path) -> Optional[Dict[str, Any]]:
-    if not p.is_file():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
 
 
 def cmd_sweep_undeliverable(args) -> int:
