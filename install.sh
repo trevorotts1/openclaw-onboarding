@@ -7235,6 +7235,40 @@ install_skill_57_social_media_in_a_box() {
 install_skill_57_social_media_in_a_box
 
 # ----------------------------------------------------------
+# U004 -- assert-dept-doctrine-provenance (warn-mode)
+#
+# Run assert-dept-doctrine-provenance.py against the materialized Presentations
+# department.  Warn-mode only (exits 0 regardless of findings).  Guarded on the
+# department existing; non-fatal; logs through $LOG_FILE.
+# ----------------------------------------------------------
+u004_assert_doctrine_provenance() {
+  local _ws=""
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    _ws="$(obs_resolve_workspace 2>/dev/null || true)"
+  fi
+  [ -n "$_ws" ] || _ws="$HOME/.openclaw/workspace"
+  local _dept_dir="$_ws/departments/Presentations"
+  if [ ! -d "$_dept_dir" ]; then
+    warn "U004: doctrine-provenance assertion SKIPPED (department not materialized at $_dept_dir)"
+    return 0
+  fi
+  local _assert="$SKILLS_DIR/23-ai-workforce-blueprint/scripts/assert-dept-doctrine-provenance.py"
+  if [ ! -f "$_assert" ]; then
+    warn "U004: assert-dept-doctrine-provenance.py not found at $_assert - skipping (older onboarding bundle?)"
+    return 0
+  fi
+  note "U004: doctrine-provenance assertion (warn-mode) - dept at $_dept_dir"
+  {
+    echo "[U004] doctrine-provenance assertion (warn-mode) - dept at $_dept_dir"
+    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1
+    echo "[U004] assertion completed (exit $?)"
+  } >> "${LOG_FILE:-/dev/null}" 2>&1
+  note "U004: doctrine-provenance assertion logged (warn-mode, see $LOG_FILE)"
+}
+
+u004_assert_doctrine_provenance
+
+# ----------------------------------------------------------
 # Step 15: Register Skill 32's materialize-dept-agents.sh (v10.13.18)
 # ----------------------------------------------------------
 # Why: pre-v10.13.18 Skill 23 marked depts "done" purely on file presence,
