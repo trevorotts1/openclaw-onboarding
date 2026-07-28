@@ -81,7 +81,8 @@ Think of Skill 23 as the blueprint phase. This is the construction phase.
 ## When to Use This Skill
 
 Use this skill when:
-- You have completed Skill 23 (AI Workforce Blueprint) and have department folders created
+- You want the locked Command Center shell live immediately — Skill 23 completion is NOT required to start this skill (see the INTERVIEW-COMPLETE PRECONDITION section above, OQ-1): the shell ships FIRST and stays locked to `/interview` until the workforce build is ready.
+- You have completed Skill 23 (AI Workforce Blueprint) and have department folders created, and want the full workforce build (live department heads, topics, agents) to materialize on top of the already-live shell
 - You want to activate your AI workforce with live department heads
 - You need a centralized control room to manage all departments
 - You want persistent agents that remember conversations and tasks
@@ -91,7 +92,7 @@ Use this skill when:
 
 | Prerequisite | Required | Why It Matters |
 |--------------|----------|----------------|
-| Skill 23: AI Workforce Blueprint | MANDATORY | This skill builds on the department structure created in Skill 23. Without it, there are no departments to activate. |
+| Skill 23: AI Workforce Blueprint | MANDATORY for the WORKFORCE BUILD only — NOT for the CC shell (see OQ-1 above) | The workforce build (live departments, agents, topics) materializes from Skill 23's output. The locked CC shell itself ships without it and stays locked to `/interview` until Skill 23 completes. |
 | Skill 22: Book-to-Persona | Recommended | Department heads use personas from your coaching system. Without them, heads will be generic. |
 | Skill 31: Upgraded Memory System | Recommended | Department heads need the 8-layer memory system for persistent operation. |
 | Memory Wiki | Recommended | Department heads use wiki_search and wiki_get for structured knowledge retrieval across coaching theories and SOPs. |

@@ -361,7 +361,7 @@ Skill 22 (Book-to-Persona Coaching Leadership System) → Skill 23 (AI Workforce
 
 - Skill 22 converts books into persona blueprints (coaching and leadership frameworks)
 - Skill 23 interviews the client, creates departments, hires department heads, determines specialists, assigns personas, generates the org chart, and sets up the Command Center config
-- The Command Center displays and manages everything Skill 23 built
+- The Command Center displays and manages everything Skill 23 built — but the Command Center SHELL itself does not wait for any of this. Per OQ-1 (ratified 2026-07-03), the locked Command Center ships FIRST, before Skill 23's interview even starts, locked to its own `/interview` page. Only the REAL workforce it displays (departments, agents, org chart) waits on Skill 23 — the shell that will display it does not.
 
 Skills 33 (Department Heads) and 34 (Intelligent Staffing) are ARCHIVED. Their logic has been merged into Skill 23. Skill 23 is now the single skill that builds the entire AI company.
 
@@ -2076,8 +2076,9 @@ label: "wave4-agent-f"
 
 6. **Install Skill 35** v1.4.0 | Content Publishing with Video Pipeline | 8 platforms, HTML email, FFmpeg: Read SKILL.md, check prerequisites (Skills 22, 30, 31), follow INSTALL.md
 
-6. **Skill 32 triggers automatically after Skill 23**
-   - Skill 32 (Command Center Setup) is triggered automatically when Skill 23 completes. See Skill 23 INSTALL.md for the handoff.
+6. **Skill 32's locked shell triggers early; the workforce build triggers after Skill 23**
+   - Per OQ-1, the locked Command Center shell (install.sh Step 15c / update-skills.sh F10) bootstraps automatically on a fresh box, BEFORE Skill 23's interview completes — it does not wait for the handoff below.
+   - The REAL workforce (departments, agents, org chart) that the shell displays is still triggered automatically when Skill 23 completes. See Skill 23 INSTALL.md for that handoff.
    - If Skill 23 was completed in a previous session and Skill 32 has not been installed, install it now.
 
 7. **Report completion**

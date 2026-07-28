@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.3.0"
+ONBOARDING_VERSION="v21.4.1"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -7345,6 +7345,98 @@ install_run_full_install_sh() {
 }
 
 install_run_full_install_sh
+
+# ----------------------------------------------------------
+# Step 15c: Bootstrap the LOCKED Command Center shell for a fresh client
+# (bootstrap gap fix, 2026-07-28)
+# ----------------------------------------------------------
+# Why: Steps 15/15b above only COPY run-full-install.sh into place for LATER
+# use — by update-skills.sh's weekly-update F10 bootstrap branch, or by Skill
+# 37 closeout once the workforce build finishes. Neither runs during a brand
+# new client's FIRST install.sh pass, so a fresh box had NO live Command
+# Center until the next Sunday update or the interview finished — even though
+# OQ-1 (32-command-center-setup/INSTALL.md, ratified 2026-07-03) says the
+# LOCKED `/interview` shell must ship FIRST, before either of those. This is
+# that missing trigger: on a genuinely fresh box (no existing checkout, no
+# running pm2 app, port free — the same three-way absence proof
+# update-skills.sh's TRAP-3 guard requires, so a resumed/retried install.sh
+# never clobbers a board that already exists), invoke run-full-install.sh in
+# FULL mode right now.
+#
+# The interview has not run yet on a fresh box, so there is no companySlug —
+# build-workforce.py writes it only at interview-completion
+# (build-state-schema.json). Waiting on that slug to unblock the shell is the
+# bug OQ-1 exists to prevent. Default PERMANENTLY to a slug derived from the
+# box's own owner-identity (resolve_owner_name, already used above for the
+# Telegram kickoff message) — the same name-derived-slug convention
+# update-skills.sh's F10 branch uses, and the operator's ruling for this
+# repo: Jennifer's production slug is literally "jennifer", derived this
+# same way. No rename/migration path is built; the name-derived slug is the
+# final answer for this box.
+# ----------------------------------------------------------
+step "Step 15c: Bootstrapping the locked Command Center shell (OQ-1 shell-first)"
+
+bootstrap_command_center_shell() {
+    local RUN_INSTALL="$SKILLS_DIR/32-command-center-setup/scripts/run-full-install.sh"
+    if [ ! -x "$RUN_INSTALL" ]; then
+        note "run-full-install.sh not installed — skipping Command Center bootstrap trigger"
+        return 0
+    fi
+
+    local CC_DIR="$HOME/projects/command-center"
+    [ -d "/data/.openclaw" ] && CC_DIR="/data/projects/command-center"
+
+    # Absence check 1 — a valid Command Center checkout already present.
+    if [ -d "$CC_DIR/.git" ] && [ -f "$CC_DIR/package.json" ]; then
+        local _bccs_remote
+        _bccs_remote=$(git -C "$CC_DIR" remote get-url origin 2>/dev/null || echo "")
+        if printf '%s' "$_bccs_remote" | grep -q 'blackceo-command-center'; then
+            note "Command Center already checked out at $CC_DIR — bootstrap trigger skipped"
+            return 0
+        fi
+    fi
+    # Absence check 2 — pm2 already runs a Command Center app.
+    if command -v pm2 >/dev/null 2>&1; then
+        local _bccs_jlist
+        _bccs_jlist=$(pm2 jlist 2>/dev/null || echo "")
+        if [ -n "$_bccs_jlist" ] && printf '%s' "$_bccs_jlist" | python3 -c 'import json,sys
+try:
+    apps = json.load(sys.stdin)
+except Exception:
+    sys.exit(1)
+sys.exit(0 if any(a.get("name") in ("blackceo-command-center","mission-control","command-center") for a in apps) else 1)' 2>/dev/null; then
+            note "pm2 already runs a Command Center app — bootstrap trigger skipped"
+            return 0
+        fi
+    fi
+    # Absence check 3 — the dashboard port is already bound.
+    if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:4000 -sTCP:LISTEN >/dev/null 2>&1; then
+        note "Port 4000 is already bound — bootstrap trigger skipped"
+        return 0
+    fi
+
+    local _bccs_owner _bccs_slug
+    _bccs_owner=$(resolve_owner_name)
+    if [ -z "$_bccs_owner" ] || [ "$_bccs_owner" = "there" ]; then
+        note "No owner identity resolved yet — Command Center bootstrap trigger deferred (will retry on the next update-skills.sh run)"
+        return 0
+    fi
+    _bccs_slug=$(printf '%s' "$_bccs_owner" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+    if [ -z "$_bccs_slug" ]; then
+        warn "Owner name '$_bccs_owner' slugified to empty — Command Center bootstrap trigger deferred"
+        return 0
+    fi
+
+    note "Bootstrapping the locked Command Center shell for slug '$_bccs_slug' (name-derived; interview not yet complete)..."
+    if bash "$RUN_INSTALL" "$_bccs_slug" "$_bccs_owner" "pending+${_bccs_slug}@zerohumanworkforce.com" >>"$LOG_FILE" 2>&1; then
+        success "Command Center locked shell bootstrapped (slug=$_bccs_slug) — will unlock automatically once the AI Workforce interview completes"
+    else
+        warn "Command Center bootstrap did not complete cleanly on this run — check $OC_WORKSPACE_DEFAULT/.command-center-install.log; a later update-skills.sh run will retry"
+    fi
+    return 0
+}
+
+bootstrap_command_center_shell
 
 # ----------------------------------------------------------
 # Telegram diagnostic note (v10.0.1)
