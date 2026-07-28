@@ -150,9 +150,6 @@ check "2.2" "Each dept has a director subfolder (00-*/)" \
   "Re-run build-workforce.py; create_role_workspace() failed"
 # 2.3 — symlink check
 if [ -d "$COMPANY_DIR/departments" ]; then
-  # U054: depth cap removed — Check 2.3 now sees all depths.  Warn-mode
-  # per Rule 3.5: a fleet still holding copies reports its count instead of
-  # failing every box on day one.
   COPIED=$(find "$COMPANY_DIR/departments" -type f \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   SYMLINKED=$(find "$COMPANY_DIR/departments" -type l \( -name "AGENTS.md" -o -name "TOOLS.md" -o -name "USER.md" \) 2>/dev/null | wc -l | tr -d ' ')
   if [ "$COPIED" = "0" ] && [ "$SYMLINKED" -gt 0 ]; then
