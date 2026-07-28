@@ -64,17 +64,59 @@ export function validateQuestionsPayload(payload) {
   }
   return { ok: true };
 }
+// ---------------------------------------------------------------------------
+// U058: Conditional-question evaluator, ported from deck-intake-driver.py
+// auto_skip_all_conditionals() at :208. Covers BOTH conditional schemas.
+// ---------------------------------------------------------------------------
+
+function _askIfSatisfied(cond, answers) {
+  const refId = cond.question_id;
+  if (!refId) return null;
+  const entry = answers[refId];
+  if (entry === undefined) return null;
+  const val = String(entry).trim().toLowerCase();
+  if ("truthy" in cond) {
+    const isTruthy = val === "yes" || val === "true" || val === "y" || val === "1"
+      || (val !== "" && val !== "no" && val !== "false" && val !== "n" && val !== "0" && Boolean(val));
+    return isTruthy === Boolean(cond.truthy);
+  }
+  if ("equals" in cond) return val === String(cond.equals).trim().toLowerCase();
+  if ("contains" in cond) return val.includes(String(cond.contains).trim().toLowerCase());
+  if ("contains_any" in cond) return (cond.contains_any || []).some((x) => val.includes(String(x).trim().toLowerCase()));
+  if ("in" in cond) return (cond.in || []).map((x) => String(x).trim().toLowerCase()).includes(val);
+  return true;
+}
+
+function _conditionMet(question, answers) {
+  const cond = question.conditional_on;
+  if (!cond) return true;
+  const ctrlValue = answers[cond.id];
+  if (ctrlValue === undefined) return null;
+  return String(ctrlValue).trim().toLowerCase() === String(cond.equals).trim().toLowerCase();
+}
+
+export function isQuestionActive(question, answers) {
+  if (!answers) return true;
+  const askIf = question.ask_if;
+  if (askIf) { const r = _askIfSatisfied(askIf, answers); if (r !== null) return r; }
+  const condOn = question.conditional_on;
+  if (condOn) { const r = _conditionMet(question, answers); if (r !== null) return r; }
+  return null;
+}
+
 
 /**
  * The ordered question list, sorted by `order` when present, else array order.
  * Order is what makes batching impossible: the client can only ever be served,
  * and can only ever answer, the current question.
  */
-export function orderedQuestions(payload) {
+export function orderedQuestions(payload, answers) {
   const qs = [...(payload.questions || [])];
-  const hasOrder = qs.every((q) => typeof q.order === "number");
-  if (hasOrder) qs.sort((a, b) => a.order - b.order);
-  return qs;
+  let filtered = qs;
+  if (answers) filtered = qs.filter((q) => isQuestionActive(q, answers) !== false);
+  const hasOrder = filtered.every((q) => typeof q.order === "number");
+  if (hasOrder) filtered.sort((a, b) => a.order - b.order);
+  return filtered;
 }
 
 /**
@@ -83,9 +125,9 @@ export function orderedQuestions(payload) {
  * here (the UI offers a Skip that submits their default); they are not silently
  * dropped. Returns -1 when every question has an answer on record.
  */
-export function nextQuestionIndex(payload, answeredIds) {
+export function nextQuestionIndex(payload, answeredIds, answers) {
   const answered = new Set(answeredIds);
-  const qs = orderedQuestions(payload);
+  const qs = orderedQuestions(payload, answers);
   for (let i = 0; i < qs.length; i++) {
     if (answered.has(qs[i].id)) continue;
     return i; // first unanswered question in canonical order
@@ -99,11 +141,11 @@ export function nextQuestionIndex(payload, answeredIds) {
  * `expectedId` is the id at nextQuestionIndex; answering anything else — the
  * mechanism a batcher would need — is rejected.
  */
-export function checkAnswerOrder(payload, answeredIds, questionId) {
-  const qs = orderedQuestions(payload);
+export function checkAnswerOrder(payload, answeredIds, questionId, answers) {
+  const qs = orderedQuestions(payload, answers);
   const q = qs.find((x) => x.id === questionId);
   if (!q) return { ok: false, error: `unknown question id '${questionId}'` };
-  const idx = nextQuestionIndex(payload, answeredIds);
+  const idx = nextQuestionIndex(payload, answeredIds, answers);
   if (idx === -1) return { ok: false, error: "all questions already answered" };
   const expected = qs[idx];
   if (expected.id !== questionId) {
@@ -169,11 +211,11 @@ export function answersSince(rows, since) {
 }
 
 /** Progress summary the UI renders ("Question k of N"). */
-export function progress(payload, answeredIds) {
-  const qs = orderedQuestions(payload);
+export function progress(payload, answeredIds, answers) {
+  const qs = orderedQuestions(payload, answers);
   const total = qs.length;
   const answered = qs.filter((q) => answeredIds.includes(q.id)).length;
-  const idx = nextQuestionIndex(payload, answeredIds);
+  const idx = nextQuestionIndex(payload, answeredIds, answers);
   return {
     total,
     answered,
