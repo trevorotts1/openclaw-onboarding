@@ -1,5 +1,5 @@
 {
-  "manifest_version": 26,
+  "manifest_version": 27,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -314,7 +314,7 @@
         {
           "required": true,
           "checker": "_chk_mode",
-          "label": "creation mode set (intake.creation_mode from_scratch|content_personal|content_general; content modes carry extracted_substance; AF-MODE-UNSET)"
+          "label": "creation mode set (intake.creation_mode from_scratch|content_personal|content_general; content modes carry extracted_substance; legacy pre-doctrine exemption dated per U022 MIGRATION_WINDOW_UNTIL 2026-09-30; AF-MODE-UNSET)"
         },
         {
           "required": true,
@@ -2021,7 +2021,7 @@
       "stage": "0.1/0.2",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "intake.json.creation_mode is unset or not one of from_scratch|content_personal|content_general (a content mode also needs extracted_substance). Step Zero of every deck is to identify the creation mode (P118). DEFERS for a legacy/pre-doctrine deck (no mode AND no priority_shift_spec.json) so an in-flight build is never broken.",
+      "trigger": "intake.json.creation_mode is unset or not one of from_scratch|content_personal|content_general (a content mode also needs extracted_substance). Step Zero of every deck is to identify the creation mode (P118). U022: the legacy pre-doctrine exemption is now DATED -- a run dir with no mode AND no priority_shift_spec.json is grandfathered only until 2026-09-30 (MIGRATION_WINDOW_UNTIL), after which an unset mode blocks the build. A logged owner_skip_approval token waives the gate on both sides of the window.",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_mode",
       "secondary_py_symbols": [
