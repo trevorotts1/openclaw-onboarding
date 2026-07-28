@@ -1533,37 +1533,13 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             )
             written.append("SOP/00-INDEX.md")
 
-    symlinked = []
-    converted = []
-    for shared in V21_SYMLINKS:
-        link_path = role_path / shared
-        target = workspace_root / shared
-        if link_path.is_symlink():
-            if link_path.resolve() == target.resolve():
-                continue                      # already correct — nothing to do
-            link_path.unlink()                # wrong target: relink, no backup needed
-        elif link_path.exists():
-            # A stale REGULAR copy. Back it up before converting — its content
-            # exists nowhere else (no copy of it is in the repository).
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
-            try:
-                link_path.replace(bak)
-            except OSError as e:
-                print(f"  WARN: could not back up {shared} before converting: {e}",
-                      file=sys.stderr)
-                continue                      # never destroy what we could not back up
-            converted.append(shared)
-        try:
-            link_path.symlink_to(target)
-            symlinked.append(shared)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
-
-    return {"written": written, "symlinked": symlinked, "converted": converted}
+    # U054: delegate symlink logic to the single canonical implementation
+    link_info = _link_shared_files_only(role_path, workspace_root)
+    return {"written": written, "symlinked": link_info["symlinked"],
+            "converted": link_info["converted"]}
 
 
-def _link_shared_files_only(role_path, workspace_root, results):
+def _link_shared_files_only(role_path, workspace_root):
     """
     U054: link shared files in a container that is correctly excluded from
     role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
@@ -1597,8 +1573,7 @@ def _link_shared_files_only(role_path, workspace_root, results):
             symlinked.append(shared)
         except OSError as e:
             print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
-    results.append({"role": role_path.name, "written": [], "symlinked": symlinked,
-                    "converted": converted, "skipped_container": True})
+    return {"symlinked": symlinked, "converted": converted}
 
 def _is_sops_library_dir(path):
     """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
@@ -1734,7 +1709,9 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
             agents_path.unlink()
             print(f"    [{entry.name}] unlinked AGENTS.md symlink")
         # Link TOOLS.md / USER.md via shared implementation
-        _link_shared_files_only(entry, workspace_root, results)
+        link_info = _link_shared_files_only(entry, workspace_root)
+        results.append({"role": entry.name, "written": [], "symlinked": link_info["symlinked"],
+                         "converted": link_info["converted"], "skipped_container": True})
 
 
     # ROOT-CAUSE FIX: after (re)materializing/augmenting a department's role
