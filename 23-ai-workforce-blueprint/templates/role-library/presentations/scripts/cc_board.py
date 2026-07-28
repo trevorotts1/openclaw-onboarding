@@ -111,6 +111,17 @@ _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "presentations"
 _PERSONA = "Director of Presentations"
 
+# U030 (audit E1): the statuses whose PATCH payload carries proof the narrower
+# status endpoint cannot accept. POST /api/tasks/{id}/status validates against
+# {status, note} ONLY (StatusTransitionSchema) and is NOT strict, so any other key
+# is DROPPED SILENTLY with a 200 — including process_certificate_sha, which is the
+# whole no-skip proof. So these statuses keep using PATCH /api/tasks/{id}; every
+# other status uses the status endpoint, which does not run the Triad gate.
+# This is the SAME predicate that decides whether a certificate is attached at all
+# (see the if status in _CERT_BEARING_STATUSES block below) — one constant, one
+# truth, so the two can never drift apart.
+_CERT_BEARING_STATUSES = frozenset({"review", "done"})
+
 # Authoritative Command Center TaskStatus enum — the 10 values of UpdateTaskSchema
 # in the CC repo src/lib/validation.ts. Kept here as the single source of truth on
 # the producer side; the contract test (test_cc_contract.py) fails if this drifts
@@ -605,7 +616,7 @@ def patch_phase(
     # The PROCESS-CERTIFICATE is the ticket INTO 'review' AND the sha the CC
     # presentations no-skip done-gate reads on the eventual 'done' — so attach it on
     # BOTH terminal transitions once prove-deck.py has minted it (Fix 2a / Fix 2b).
-    if status in ("review", "done") and run_dir is not None:
+    if status in _CERT_BEARING_STATUSES and run_dir is not None:
         cert_sha = _read_certificate_sha(run_dir)
         if cert_sha:
             payload["process_certificate_sha"] = cert_sha
@@ -618,18 +629,26 @@ def patch_phase(
     if qc_scores and qc_scores.get("gates_graded"):
         payload["qc_scores"] = qc_scores
 
-    url = f"{cfg['base_url']}/api/tasks/{task_id}"
+    # U030 (audit E1): route non-cert-bearing transitions around the Triad gate
+    if status in _CERT_BEARING_STATUSES:
+        url = f"{cfg['base_url']}/api/tasks/{task_id}"
+        method = "PATCH"
+        endpoint = "PATCH /api/tasks/{id}"
+        body_payload = payload
+    else:
+        url = f"{cfg['base_url']}/api/tasks/{task_id}/status"
+        method = "POST"
+        endpoint = "POST /api/tasks/{id}/status"
+        body_payload = {"status": status}
+        _note_with_phase = f"[{phase_id}] {note_text}" if note_text else f"[{phase_id}] phase start"
+        body_payload["note"] = _note_with_phase
     try:
-        st, body = _request("PATCH", url, payload, cfg)
-        # DEFENSIVE FALLBACK: a 400/422 schema rejection while the optional
-        # qc_scores enrichment key is present -> strip it and retry ONCE with the
-        # core payload. Protects the review transition against an unknown-key-strict
-        # CC server; the note still carries the summary either way.
-        if st in (400, 422) and "qc_scores" in payload:
+        st, body = _request(method, url, body_payload, cfg)
+        if st in (400, 422) and "qc_scores" in body_payload:
             _log(f"patch_phase {phase_id}->{status} HTTP {st} with qc_scores present "
                  "— retrying once without the structured enrichment key.")
-            core = {k: v for k, v in payload.items() if k != "qc_scores"}
-            st, body = _request("PATCH", url, core, cfg)
+            core = {k: v for k, v in body_payload.items() if k != "qc_scores"}
+            st, body = _request(method, url, core, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"patch_phase {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
         _record_movement(run_dir, {

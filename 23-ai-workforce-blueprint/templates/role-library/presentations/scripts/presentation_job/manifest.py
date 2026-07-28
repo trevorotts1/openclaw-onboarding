@@ -184,6 +184,18 @@ class Manifest:
         die(EXIT_USAGE, f"unknown phase id {phase_id!r} in manifest v{self.version} "
                         f"({len(self.phases)} phases). Known: {', '.join(p.id for p in self.phases)}")
 
+    def phase_or_none(self, phase_id: str) -> Optional[Phase]:
+        """Non-fatal lookup. Returns None for an unknown id -- never dies.
+
+        The --phase command-line path depends on phase() hard-failing with the full
+        known-id list, so this is a separate method.  The engine's _checkpoint uses
+        this to write interval metadata into state without crashing on a phase id
+        it cannot resolve.
+        """
+        for p in self.phases:
+            if p.id == phase_id:
+                return p
+        return None
 
 
 def _as_list(v: Any) -> List[str]:
