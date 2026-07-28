@@ -1,0 +1,58 @@
+name: full-env-dump guard
+
+# Ban pm2 jlist / pm2 prettylist / pm2 --json and the Python list-form equivalent.
+# These commands dump every process's entire environment (including live credential
+# VALUES) into output. The repository has two recorded incidents:
+#   ledgers/skill6-blended-persona-kanban-v2-2026-07-13.md:78 — "piped once to
+#     this agent's own tool output, briefly surfacing two live API-key env values."
+#   ledgers/skill58-podbean-proxy-2026-07-16.md:452 — "separate pm2 jlist incident"
+#
+# This guard detects all four forms:
+#   shell:  pm2 jlist, pm2 prettylist, pm2 <...> --json
+#   Python list form: subprocess.run(["pm2", "jlist"], ...) — via syntax-tree walk
+#
+# Ships in WARN-MODE (Rule 3.5 stage 1): reports findings, exits 0. The four
+# existing RISK call sites are allowlisted with dated reasons — converting them
+# is stage 2.
+#
+# Triggers on every push to main and every PR targeting main.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+    paths:
+      - 'scripts/qc-assert-no-full-env-dump.py'
+      - 'scripts/qc-assert-no-full-env-dump.allowlist'
+      - 'scripts/tests/full-env-dump-guard.negative-fixture.sh'
+      - '.github/workflows/full-env-dump-guard.yml'
+      - '**/*.sh'
+      - '**/*.py'
+
+jobs:
+  full-env-dump-guard:
+    name: full-env-dump guard (pm2 jlist/prettylist/--json ban, warn-mode)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Run full-env-dump guard (warn-mode)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/qc-assert-no-full-env-dump.py
+          echo "full-env-dump guard: warn-mode pass (scanned, violations reported but not blocking)"
+
+      - name: Negative self-test (shell + Python list-form fixtures)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/tests/full-env-dump-guard.negative-fixture.sh
+          echo "full-env-dump guard negative self-test: both shell and Python list-form fixtures detected"

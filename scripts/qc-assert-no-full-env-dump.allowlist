@@ -1,0 +1,8 @@
+# qc-assert-no-full-env-dump.allowlist
+# One entry per line: path:line | classification | YYYY-MM-DD reason | named remediation
+# These four are RISK — the full pm2 jlist blob transits an unfiltered variable.
+# Allowlisted with a dated reason per Rule 3.5 stage 1 (warn-mode); remediation is stage 2.
+scripts/fleet-audit-remediate.sh:52 | RISK | 2026-07-27 Full pm2 jlist JSON lands in shell variable `jl`; never printed, but `set -x` or error trace would leak. | Capture through filter_pm2_record (loop_common.py:164-172) instead.
+scripts/u126-remediate.sh:76 | RISK | 2026-07-27 Full pm2 jlist JSON lands in shell variable `pm2_json`; near-duplicate of fleet-audit-remediate.sh:52. | Capture through filter_pm2_record (loop_common.py:164-172) instead.
+shared-utils/fleet_refresh_runner.py:619 | RISK | 2026-07-27 The ONLY site that indexes pm2_env by name (:624). Uses subprocess.run(["pm2","jlist"]) list form (invisible to string regex). | Read status through filter_pm2_record (loop_common.py:164-172); use pm2 describe/pm2 list instead.
+update-skills.sh:5442 | RISK | 2026-07-27 Fleet updater — full pm2 jlist JSON lands in shell variable `_ccp_list`; a hard fail here blocks every fleet roll (Rule 3.5). | Capture through a field filter like filter_pm2_record; use targeted pm2 describe that does not emit environments.
