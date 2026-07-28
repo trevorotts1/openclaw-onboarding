@@ -1,3 +1,56 @@
+## [v21.4.1]  -  2026-07-28  -  BOOTSTRAP GAP: the Command Center no longer waits on the interview it exists to unblock
+
+A brand-new client could not start. The AI Workforce interview is a web page at `/interview`
+on the client's OWN Command Center (verified live: `https://jennifer.zerohumanworkforce.com/interview`
+returns HTTP 200, "Your AI Workforce Interview"). So no Command Center meant no interview, and
+provisioning waited on the interview. Nothing bootstrapped.
+
+Decision OQ-1 (ratified 2026-07-03) already said the right thing: the Command Center ships
+FIRST, locked to `/interview`, and the `interviewComplete` gate protects the WORKFORCE BUILD,
+never the CC shell. The design was correct. Nothing implemented it. Three gaps, closed:
+
+1. `32-command-center-setup/INSTALL.md` + `SKILL.md` rescoped the hard-stop. `INSTALL.md:10`
+   and Phase 1.4 (`INSTALL.md:69-84`) told the installing agent to STOP because "Skill 23 must
+   be completed first" — 35 lines below the file's own OQ-1 callout, directly contradicting
+   it. `SKILL.md:83-84,94` carried the same stale language, plus a third copy inside the file's
+   own "ACTIVATION" walkthrough (`INSTALL.md` Step 1, "If missing: STOP"). All three now say the
+   stop gates the WORKFORCE BUILD (Phases 3/4/5/6i/7) only — never Phase 6, the locked CC shell.
+
+2. `update-skills.sh`'s F10 bootstrap branch (Command Center absent, no `companySlug`) used to
+   log "bootstrap deferred (interview not completed)" and do nothing — deferring on the exact
+   artifact `build-workforce.py` writes ONLY at interview-completion, so the box waited on the
+   one thing only the interview produces. When no slug exists yet, the branch now derives one
+   from the box's own owner-identity (`openclaw.json` `meta.ownerName` / `owner.name` /
+   `wizard.ownerName` / etc., the same field order as `install.sh`'s `resolve_owner_name()`) and
+   bootstraps the locked shell anyway. Operator ruling: default PERMANENTLY to the name-derived
+   slug — Jennifer's production slug is literally `jennifer`, derived this same way, and has
+   been fine in production. No rename/migration path is built; the name-derived slug is final.
+
+3. `install.sh` Steps 15/15b only ever COPIED `run-full-install.sh` into place for LATER use
+   (the weekly `update-skills.sh` cron, or Skill 37 closeout) — no automated path invoked it in
+   FULL mode for a fresh client before the interview. New Step 15c is that missing trigger: on a
+   genuinely fresh box (absence proven three ways — no valid checkout, no running pm2 app, port
+   free, mirroring `update-skills.sh`'s TRAP-3 guard so a resumed install never clobbers a board
+   that already exists) it invokes `run-full-install.sh` in FULL mode using the same
+   name-derived slug.
+
+`blackceo-command-center`: verified, no change needed. Its `/interview` lock middleware (P0-5 /
+WG-9, `src/middleware.ts`) already 302-redirects every non-`/interview`, non-`/onboarding` page
+while `interviewComplete` is false, exactly as OQ-1 requires — confirmed by reading the live
+logic on that repo's `origin/main` and by Jennifer's own 302 in production. The gap was entirely
+upstream of the shell ever being deployed in the first place; once deployed, the existing
+middleware already does the rest correctly.
+
+Touches: `32-command-center-setup/INSTALL.md`, `32-command-center-setup/SKILL.md`,
+`32-command-center-setup/skill-version.txt`, `update-skills.sh`, `install.sh`, `Start Here.md`
+(pipeline description + Wave 5 trigger note), plus the version-bump ripple via
+`scripts/bump-version.sh` (`version`, `cc-compat.json`, `README.md`,
+`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `23-ai-workforce-blueprint/skill-version.txt`,
+`23-ai-workforce-blueprint/SKILL.md`, `23-ai-workforce-blueprint/templates/role-library/_index.json`,
+`06-ghl-install-pages/SKILL.md`, `06-ghl-install-pages/skill-version.txt`,
+`06-ghl-install-pages/tools/browser_manager.{py,sh}`, `scripts/agent-browser-reaper.sh`,
+`scripts/guard-agent-browser-managed.sh`).
+
 ## [v21.4.0]  -  2026-07-27  -  Retire deck-build-guard.sh (U025)
 
 `deck-build-guard.sh` is retired. Its intake-ledger check is relocated into

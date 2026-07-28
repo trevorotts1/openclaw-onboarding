@@ -7,7 +7,7 @@
 
 This guide walks you through activating your AI workforce as a live Command Center. The process has 8 phases. Some phases you do manually (like setting up Telegram). Other phases the agent does automatically.
 
-**Important:** This skill requires Skill 23 (AI Workforce Blueprint) to be complete first. The agent will check for this before proceeding.
+**Important:** Per OQ-1 below, the LOCKED Command Center shell (Phase 6 dashboard deploy) ships regardless of Skill 23 status — it does NOT wait on Skill 23. Skill 23 (AI Workforce Blueprint) being complete is required only for the WORKFORCE BUILD phases that materialize real departments, agents, and topics (Phases 3, 4, 5, 6i, 7). The agent checks for Skill 23 completion at Phase 1.4 below, but that check gates the workforce build, not the shell.
 
 > **🔒 Locked interview-mode is BY DESIGN (ratified 2026-07-03, OQ-1).** The Command
 > Center ships to the client FIRST but LOCKED to the `/interview` surface. The CC
@@ -66,9 +66,9 @@ npm install -g pm2
 
 > **Timeout hint:** If `npm install -g pm2` takes longer than 3 minutes, kill it with Ctrl+C and retry with `npm install -g pm2 --prefer-offline`.
 
-### 1.4 Verify Skill 23 Is Complete
+### 1.4 Verify Skill 23 Is Complete (gates the WORKFORCE BUILD only — never the CC shell)
 
-The agent will scan for department folders in your master files area. These folders indicate Skill 23 was completed.
+The agent will scan for department folders in your master files area. These folders indicate Skill 23 was completed. **This check does NOT gate the Command Center shell deploy (Phase 6).** Per OQ-1 above, the locked `/interview` shell ships FIRST regardless of Skill 23 status. This check gates only the WORKFORCE BUILD: Phase 3 (department workspace creation), Phase 4 (agent configuration), Phase 5 (Telegram topic creation), Phase 6i (SOP library ingestion), and Phase 7 (verification) — all of which need a real department list to act on.
 
 **What the agent looks for:**
 - Department folders at `~/.openclaw/workspace/departments/[name]/` (where Skill 23 writes them) — NO -dept suffix
@@ -76,11 +76,11 @@ The agent will scan for department folders in your master files area. These fold
 - Each folder should contain role definitions
 
 **If Skill 23 is NOT found:**
-The agent will STOP and tell you:
-> "Skill 23 (AI Workforce Blueprint) must be completed first. Please finish that skill, then return to activate your Command Center."
+The agent does NOT stop the install. It proceeds to Phase 2 (Telegram, manual) and Phase 6 (locked CC shell deploy + tunnel) so the client gets a live, locked `/interview` Command Center immediately, then tells you:
+> "Skill 23 (AI Workforce Blueprint) is not complete yet, so your Command Center is live now but shows only the interview for the moment. Finish Skill 23 and the real department workforce (Phases 3-5, 6i, 7) will build automatically on the next run."
 
 **If Skill 23 IS found:**
-The agent will identify which departments you chose and proceed.
+The agent will identify which departments you chose and proceed through all phases in order.
 
 ---
 
@@ -847,7 +847,7 @@ Teach Yourself means READ. Activate means EXECUTE.
 
 ### Prerequisites
 - [ ] Skill 01 (Teach Yourself Protocol) installed
-- [ ] Skill 23 (AI Workforce Blueprint) completed
+- [ ] Skill 23 (AI Workforce Blueprint) completed — required for the WORKFORCE BUILD only. Per OQ-1, the locked CC shell (Steps 2-8 below) ships without it.
 - [ ] Node.js 18+ installed
 - [ ] PM2 installed globally
 - [ ] Git installed
@@ -860,12 +860,11 @@ Teach Yourself means READ. Activate means EXECUTE.
 
 ### ACTIVATION Steps
 
-#### Step 1: VERIFY Skill 23 completion
+#### Step 1: CHECK Skill 23 completion (informational — does NOT block the shell below)
 ```bash
 ls -la ~/.openclaw/workspace/departments/
 ```
-Expected: Department folders exist from Skill 23.
-If missing: STOP and complete Skill 23 first.
+Expected: Department folders exist from Skill 23. **If missing, that is fine — proceed to Step 2 anyway.** Per OQ-1 (see above), the locked Command Center shell (Steps 2-8) ships regardless of Skill 23 status. Skill 23 is required only for the real WORKFORCE BUILD (departments, agents, topics), which `run-full-install.sh` materializes automatically once the interview is complete — there is nothing to STOP for here.
 
 #### Step 2: CLONE Command Center repository
 ```bash
