@@ -115,14 +115,6 @@ class DeliveryGateRejected(RuntimeError):
         super().__init__("DELIVERY BOUNDARY GATE REJECTED the deck — refusing to upload "
                          "to GHL:\n  - " + "\n  - ".join(str(r) for r in self.reasons))
 
-# The FIVE client-package files (AF-DH1 whitelist), kept in lockstep with
-# sops/delivery-concierge-sops.md SOP 9.0 step 3a and PIPELINE-MANIFEST.json
-# client_package_files. PRESENTERS-SPEECH is PLURAL (the canonical producer name).
-EXACT_NAME_WHITELIST = frozenset({
-    "PRESENTER-GUIDE.pdf",
-    "PRESENTERS-SPEECH.pdf",
-    "PRESENTER-AUDIO.mp3",
-})
 # Blocklist substrings/suffixes (belt-and-suspenders mirror of SOP 9.0 step 3b).
 BLOCKLIST_SUFFIXES = (
     ".py", ".log", ".txt", "_manifest.json", "_qc_log.json", "_run.log",

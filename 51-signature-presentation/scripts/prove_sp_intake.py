@@ -243,7 +243,9 @@ def _evaluate_turn_pacing(intake, today=None):
     intake record lacking valid driver turn-ledger provenance, or whose ledger
     shows two questions sharing one turn (batch-dumped, not paced one at a
     time). Says NOTHING about the conversation itself (that stays scanned by
-    intake_trace_check.py / AF-INTAKE-BATCH, which never gates the build).
+    intake_trace_check.py / AF-INTAKE-BATCH, an out-of-band scan that does not
+    itself gate the build — the gating enforcer is the required preflight
+    P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16).
 
     Only meaningful for a RUNTIME record (carries an `answers` dict) — the
     static sp-8-questions.json spec/contract shape has no ledger and is exempt.
