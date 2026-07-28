@@ -1,3 +1,56 @@
+## [v21.4.2]  -  2026-07-28  -  CI GREEN: four stale main-branch gates fixed (syntax, half-add SOPs, manifest restamp, sync drift)
+
+Five checks were failing on `main` (Library lockstep appeared twice across recent runs); all pre-dated and were unrelated to
+v21.4.1's bootstrap-gap fix. Each was the real content bug the guard was designed to catch, not a false alarm:
+
+1. **QC static checks** — `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/run_signature_deck.py:715`
+   had an f-string with nested double-quotes (`f"...{", ".join(...)}..."`), invalid grammar before Python 3.12; CI runs 3.11.
+   Changed the inner literal to single quotes.
+2. **Library lockstep (system-wide add-handling)** — 8 presentations SOPs (`01`-`05`-core-sop.md,
+   `assembled-slide-legibility-qc-sops.md`, `image-grounding-steward-sops.md`, `representation-casting-director-sops.md`)
+   existed on disk but were never added to `_index.json sops[]` — a genuine half-add. Ran the repo's own reconciler,
+   `23-ai-workforce-blueprint/scripts/register-library-additions.py --apply` (0 roles added, 0 duplicate-residue, 0 orphans —
+   only the 8 missing SOP registrations), which also chained the content-hash restamp and closed the operator-flagged
+   15-item `hash-content-manifest.py --check` drift as a side effect.
+3. **embedding-integrity-guard (universal-sops job)** — an earlier merged commit (103e4981) edited
+   `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json` without re-running the stamp script, leaving
+   `universal-sops/_content-manifest.json`'s sha256 stale. Ran `scripts/hash-universal-sops-manifest.py` (the real restamp
+   mechanism) to regenerate it.
+4. **Presentations lockstep (sync_check)** — `build_deck.py` carried a stale comment citing `AF-DECK-TYPE-UNSET`, the U021
+   working name for what U022 registered in the manifest as `AF-SP-TYPE-UNDECLARED`. `sync_check.py`'s AF-code scan reads
+   every `AF-...` string in the file, comments included, and flagged the retired name as an unregistered code. Corrected the
+   comment to cite the real, registered code name. Confirmed this is content drift, not the documented
+   PIPELINE-MANIFEST.json repo/universal-sops split (`sync_check.py` already resolves the manifest from
+   `universal-sops/presentation-slide-craft/` via its `_CLUSTER_REPO` fallback on a clean checkout).
+   Fixing (4) exposed a downstream bug the broken sync_check had been masking for a while: `test_preflight.py`'s
+   AF-VISUAL-VARIETY fixture wrote a magic-bytes-only PNG stub (no valid IHDR/IDAT). Pillow cannot decode that, so
+   `_png_mean_luma` / `_png_dominant_hue_bucket` correctly return `None` per the 2026-07-26 no-fabricated-measurement fix,
+   and the check silently deferred instead of failing — a false negative once Pillow is actually installed in the job.
+   Switched the fixture to `_tiny_png` (a real, Pillow-decodable image), already used elsewhere in the same test suite.
+
+No check was disabled, excluded, or skipped. The operator's separately-documented Presentations structural drift (a
+`PIPELINE-MANIFEST.json` materialized on an installed department with no source of truth in the repo role-library, while
+the maintained copy lives in `universal-sops/presentation-slide-craft/` and is never installed) is real but does not gate
+CI — confirmed by running `51-signature-presentation/verify.sh` with `OPENCLAW_WORKSPACE` pointed at an empty directory
+(matching a fresh Actions runner with no materialized department): PASS, reading the repo's canonical manifest. It remains
+unfixed here as a design decision, not a stamp problem.
+
+`build_deck.py` and `run_signature_deck.py` changed, so `CANONICAL-RENDERER-PIN.sha256` was regenerated over both files.
+Changing `23-ai-workforce-blueprint/` content required a `skill-version.txt` bump (G3) and a matching `SKILL.md`
+frontmatter `version:` (skill-frontmatter-version-guard) — since that skill's version tracks `/version` in lockstep
+(`scripts/version-markers.json`), that cascaded into the full `scripts/bump-version.sh v21.4.2` ripple across all 10
+repo-wide markers. No new feature; the bump exists solely because the repo's own gates required it once the fix touched
+a version-tracked skill directory.
+
+Touches: `23-ai-workforce-blueprint/templates/role-library/_index.json`,
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/{run_signature_deck.py,build_deck.py,test_preflight.py,CANONICAL-RENDERER-PIN.sha256}`,
+`universal-sops/_content-manifest.json`, plus the version-bump ripple via `scripts/bump-version.sh` (`version`,
+`cc-compat.json`, `README.md`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `install.sh`, `update-skills.sh`,
+`23-ai-workforce-blueprint/skill-version.txt`, `23-ai-workforce-blueprint/SKILL.md`,
+`06-ghl-install-pages/SKILL.md`, `06-ghl-install-pages/skill-version.txt`,
+`06-ghl-install-pages/tools/browser_manager.{py,sh}`, `scripts/agent-browser-reaper.sh`,
+`scripts/guard-agent-browser-managed.sh`).
+
 ## [v21.4.1]  -  2026-07-28  -  BOOTSTRAP GAP: the Command Center no longer waits on the interview it exists to unblock
 
 A brand-new client could not start. The AI Workforce interview is a web page at `/interview`
