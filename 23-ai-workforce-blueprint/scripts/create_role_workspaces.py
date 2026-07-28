@@ -1453,20 +1453,7 @@ When a new SOP is added, append a line to the table below.
         )
 
     # Symlinks for shared files
-    for shared in ["AGENTS.md", "TOOLS.md", "USER.md"]:
-        link_path = role_path / shared
-        target = Path(workspace_root) / shared
-        try:
-            if link_path.exists() or link_path.is_symlink():
-                link_path.unlink()
-            link_path.symlink_to(target)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared} in {role_path}: {e}",
-                  file=sys.stderr)
-            link_path.write_text(
-                f"# {shared} — see workspace root\n\n"
-                f"Symlink to {target} failed. Re-run create_role_workspaces.py "
-                f"with appropriate permissions.\n")
+    _link_shared_files_only(role_path, Path(workspace_root))
 
     return role_path
 
@@ -1533,43 +1520,31 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             )
             written.append("SOP/00-INDEX.md")
 
-    symlinked = []
-    converted = []
-    for shared in V21_SYMLINKS:
-        link_path = role_path / shared
-        target = workspace_root / shared
-        if link_path.is_symlink():
-            if link_path.resolve() == target.resolve():
-                continue                      # already correct — nothing to do
-            link_path.unlink()                # wrong target: relink, no backup needed
-        elif link_path.exists():
-            # A stale REGULAR copy. Back it up before converting — its content
-            # exists nowhere else (no copy of it is in the repository).
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
-            try:
-                link_path.replace(bak)
-            except OSError as e:
-                print(f"  WARN: could not back up {shared} before converting: {e}",
-                      file=sys.stderr)
-                continue                      # never destroy what we could not back up
-            converted.append(shared)
-        try:
-            link_path.symlink_to(target)
-            symlinked.append(shared)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
+    link_result = _link_shared_files_only(role_path, workspace_root)
+    symlinked = link_result["symlinked"]
+    converted = link_result["converted"]
 
     return {"written": written, "symlinked": symlinked, "converted": converted}
 
 
-def _link_shared_files_only(role_path, workspace_root, results):
-    """
-    U054: link shared files in a container that is correctly excluded from
-    role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
-    hold stale regular copies of TOOLS.md/USER.md.  Never writes stubs or
-    touches AGENTS.md (AGENTS.md is deleted by the caller per U053's
-    disposition).
+def _link_shared_files_only(role_path, workspace_root, results=None):
+    """Create symlinks for shared V21_SYMLINKS files in a role folder or container.
+
+    U054: The single canonical symlink + stale-file-conversion implementation
+    called by create_role_workspace(), augment_role_folder(), and
+    augment_all_existing_role_folders() (for sops/ containers).
+
+    Backs up stale regular copies as .bak-unify-<timestamp> before converting
+    them to symlinks.  Never writes stubs or touches AGENTS.md.
+
+    Args:
+        role_path: Path to the role folder or container.
+        workspace_root: Path to the workspace root.
+        results: Optional list to append result dict to (for sops containers).
+
+    Returns:
+        dict with keys "symlinked", "converted" (and "skipped_container" when
+        results is passed).
     """
     role_path = Path(role_path)
     workspace_root = Path(workspace_root)
@@ -1597,9 +1572,12 @@ def _link_shared_files_only(role_path, workspace_root, results):
             symlinked.append(shared)
         except OSError as e:
             print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
-    results.append({"role": role_path.name, "written": [], "symlinked": symlinked,
-                    "converted": converted, "skipped_container": True})
-
+    result = {"symlinked": symlinked, "converted": converted}
+    if results is not None:
+        results.append({"role": role_path.name, "written": [],
+                        "symlinked": symlinked, "converted": converted,
+                        "skipped_container": True})
+    return result
 def _is_sops_library_dir(path):
     """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
 
