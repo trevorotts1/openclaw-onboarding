@@ -712,7 +712,7 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
         detail = (
             f"AF-PHASE-REPORT-MISSING: {len(unconfirmed)} prior phase report(s) exist "
             f"in client_reports.json but were never DELIVERED (no gateway_msg_id and no "
-            f"recorded undeliverable): {", ".join(unconfirmed)}. A written record is not a "
+            f"recorded undeliverable): {', '.join(unconfirmed)}. A written record is not a "
             f"told human. Configure an owner target "
             f"(PRESENTATION_OWNER_CHAT_ID / OPENCLAW_OWNER_CHAT_ID / OWNER_CHAT_ID / "
             f"OWNER_TELEGRAM_CHAT_ID / TELEGRAM_CHAT_ID) so the gateway can resolve one."

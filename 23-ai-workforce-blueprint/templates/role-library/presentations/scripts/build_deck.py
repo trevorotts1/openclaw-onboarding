@@ -6172,7 +6172,8 @@ RENDER_PHASE_ID = "P4-RENDER"
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # U022 -- dated migration window for the two gates that must stop exempting
 # legacy run dirs (AF-MODE-UNSET's no-doctrine exemption, and U021's
-# AF-DECK-TYPE-UNSET). A run dir created before this date and carrying no
+# deck_type engine gate, registered in the manifest as AF-SP-TYPE-UNDECLARED).
+# A run dir created before this date and carrying no
 # creation_mode is grandfathered; after it, the gate blocks. Mirrors the
 # established pattern at prove_sp_intake.py:96. Do NOT extend this date in
 # place -- retire it in a dated follow-up line item.
