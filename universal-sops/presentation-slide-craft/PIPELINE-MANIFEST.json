@@ -1,5 +1,5 @@
 {
-  "manifest_version": 27,
+  "manifest_version": 28,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -2015,6 +2015,19 @@
       "trigger": "the persuasion (offer) sub-engine checker (pitch_engines_check.py) could not be imported, exposes no check_copy entry point, raised an exception, or the offer sub-engines auto-failed at COPY-QC (PROMISE must precede PRICE; value cadence, cost-of-inaction, branded method, guarantee specificity, and time-to-result must all pass before any prompt is authored \u2014 shift-left)",
       "enforced_by": "build_deck",
       "py_symbol": "check_pitch_engines"
+    },
+    {
+      "code": "AF-DECK-TYPE-UNSET",
+      "stage": "0.1",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "intake.json.deck_type must be present and one of webinar|signature_presentation. It is ENGINE-WRITTEN by deck-intake-driver.derive_legacy_fields() from the ONE presentation_type answer -- never hand-typed. An unset deck_type makes _sp_active defer, so every signature-presentation gate silently no-ops. Warn-mode until 2026-09-30 (MIGRATION_WINDOW_UNTIL, Rule 3.5). Waivable only by a logged owner_skip_approval for AF-DECK-TYPE-UNSET.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_deck_type",
+      "secondary_py_symbols": [
+        "_read_intake_obj",
+        "DECK_TYPES"
+      ]
     },
     {
       "code": "AF-MODE-UNSET",

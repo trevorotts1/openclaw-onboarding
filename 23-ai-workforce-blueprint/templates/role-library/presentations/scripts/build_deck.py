@@ -6170,6 +6170,12 @@ PRIORITY_PHASE_ID = "P0B-PRIORITY"
 RENDER_PHASE_ID = "P4-RENDER"
 # Creation modes (P19/P118 — Step Zero identifies the mode before anything else).
 CREATION_MODES = ("from_scratch", "content_personal", "content_general")
+# U021 -- the CLOSED set of deck_type values. Mirrors deck-intake-driver.py's
+# LEGACY_FIELD_MAPPING (the single point of derivation) and
+# intake/deck-intake-questions.json's legacy_field_mapping table. deck_type is
+# ENGINE-WRITTEN by derive_legacy_fields(); it is never an agent's free text.
+# Adding a value here without adding it there re-opens the split this closes.
+DECK_TYPES = ("webinar", "signature_presentation")
 # U022 -- dated migration window for the two gates that must stop exempting
 # legacy run dirs (AF-MODE-UNSET's no-doctrine exemption, and U021's
 # deck_type engine gate, registered in the manifest as AF-SP-TYPE-UNDECLARED).
@@ -6178,6 +6184,12 @@ CREATION_MODES = ("from_scratch", "content_personal", "content_general")
 # established pattern at prove_sp_intake.py:96. Do NOT extend this date in
 # place -- retire it in a dated follow-up line item.
 MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
+# U021 stage flag -- MODULE SCOPE, beside DECK_TYPES. Rule 3.5: warn -> remediate ->
+# enforce, and the enforce flip is a SEPARATE unit whose ENTIRE change is this one
+# line. Its prerequisite is an installed deck_type producer reachable from the
+# department (deck-intake-driver.py in <dept>/scripts/, U006/A4, or U058).
+# The dated window below REPORTS that the window has closed; it does not enforce.
+DECK_TYPE_GATE_STAGE = "warn"          # "warn" | "enforce"
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (
@@ -6328,6 +6340,41 @@ def _apex_slide_ordinal(run_dir: Path) -> Optional[int]:
                     return None
         return None
     return None
+
+
+def _chk_deck_type(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-DECK-TYPE-UNSET (U021). intake.json.deck_type must be present and one of
+    DECK_TYPES. It is ENGINE-WRITTEN by deck-intake-driver.derive_legacy_fields();
+    a run that reaches preflight without it was assembled by hand, and _sp_active
+    then silently defers every signature gate.
+
+    Defers when intake is absent -- PREFLIGHT_REQUIRED entry #1 (_chk_intake) owns
+    absence and returns 'file absent', so absence is already fail-closed there.
+    Warn-mode until MIGRATION_WINDOW_UNTIL (Rule 3.5): reports to stderr and
+    returns '' so no in-flight run dir is broken by the roll. Waivable only by a
+    logged owner_skip_approval for AF-DECK-TYPE-UNSET."""
+    intake = _read_intake_obj(run_dir)
+    if not isinstance(intake, dict):
+        return ""  # absence is _chk_intake's, fail-closed there.
+    declared = str(intake.get("deck_type") or "").strip()
+    if declared in DECK_TYPES:
+        return ""
+    reason = (f"AF-DECK-TYPE-UNSET: intake.json.deck_type is "
+              f"{declared or 'unset'!r}; it must be one of {', '.join(DECK_TYPES)}. "
+              f"deck_type is written by deck-intake-driver.py's "
+              f"derive_legacy_fields() from the ONE presentation_type answer -- it is "
+              f"never hand-typed. An unset deck_type makes _sp_active defer, so every "
+              f"signature-presentation gate silently no-ops (SOP-MODE-00 / P-SP-CLAIM).")
+    if _owner_skip_approved(run_dir, "AF-DECK-TYPE-UNSET"):
+        return ""
+    # Read the MODULE-SCOPE stage flag declared above. Do NOT re-declare it here:
+    # a local rebinding makes `return reason` unreachable and the gate permanently warn.
+    if DECK_TYPE_GATE_STAGE != "enforce":
+        overdue = "" if date.today() <= MIGRATION_WINDOW_UNTIL else " [WINDOW CLOSED -- the enforce unit is overdue]"
+        print("  WARN  " + reason + " [warn-mode until "
+              + MIGRATION_WINDOW_UNTIL.isoformat() + "]" + overdue, file=sys.stderr)
+        return ""
+    return reason
 
 
 def _chk_mode(run_dir: Path, slides_path: Optional[Path] = None) -> str:
@@ -7313,11 +7360,18 @@ PREFLIGHT_REQUIRED = [
     # === POWERFUL-PRESENTATION DOCTRINE GATES (manifest v18) ===
     # All DEFER unless Phase P0B-PRIORITY produced working/copy/priority_shift_spec.json
     # (the no-regression master switch), so a legacy / ad-hoc build is never broken.
-    # AF-MODE-UNSET (P118) — the creation mode is identified at Step Zero.
+    # AF-DECK-TYPE-UNSET (U021) -- the type field the SP switch reads must exist and
+    # be enumerated. Runs for EVERY deck; warn-mode until the dated window closes.
     (None,
-     "creation mode set — intake.creation_mode is from_scratch|content_personal|content_general "
+     "deck type set -- intake.deck_type is webinar|signature_presentation, engine-written "
+     "by deck-intake-driver.derive_legacy_fields() (AF-DECK-TYPE-UNSET)",
+     "Phase 0.1 -- Director intake / type-picker (deck-intake-questions.json order 0, AF-DECK-TYPE-UNSET)",
+     _chk_deck_type),
+    # AF-MODE-UNSET (P118) -- the creation mode is identified at Step Zero.
+    (None,
+     "creation mode set -- intake.creation_mode is from_scratch|content_personal|content_general "
      "(content modes carry extracted_substance) (AF-MODE-UNSET)",
-     "Phase 0.1/0.2 — Director intake + Attention-Content Strategist (SOP-MODE-00, AF-MODE-UNSET)",
+     "Phase 0.1/0.2 -- Director intake + Attention-Content Strategist (SOP-MODE-00, AF-MODE-UNSET)",
      _chk_mode),
     # AF-NO-SHIFT (P33/P105) — the priority-shift spine: spec + 8 monotonic build-moves.
     (None,

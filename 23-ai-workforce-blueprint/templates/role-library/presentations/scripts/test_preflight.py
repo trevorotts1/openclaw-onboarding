@@ -4578,6 +4578,9 @@ def main():
     # U022 -- _chk_mode with dated exemption, extracted_substance, and owner-skip token.
     failures += test_mode_substance_u022()
 
+    # U021 -- _chk_deck_type with deck_type validation, stage flag, and dated window.
+    failures += test_deck_type_u021()
+
     # Skill 51 SOP-SLIDE-06 step iv — Signature Presentation gates: a golden signature
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
@@ -5187,6 +5190,118 @@ def test_mode_substance_u022() -> list:
     if result10: fails.append(f"U022-10: content mode with driver-written substance expected '', got {result10!r}")
 
     print(f"MODE-SUBSTANCE-U022 (gate tests) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+def _deck_type_fixture(intake):
+    """Create a temp run dir with the given intake.json dict."""
+    import tempfile as _tmp
+    r = Path(_tmp.mkdtemp())
+    (r / "working" / "copy").mkdir(parents=True)
+    (r / "working" / "copy" / "intake.json").write_text(json.dumps(intake))
+    return r
+
+
+def test_U021_deck_type_absent_warn_inside_window():
+    """deck_type absent, inside window, warn-mode -> returns ''. stderr carries WARN."""
+    import datetime as _dt
+    orig_date = build_deck.date
+    orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    try:
+        build_deck.date = orig_date
+        build_deck.DECK_TYPE_GATE_STAGE = "warn"
+        r = _deck_type_fixture({"interview_confirmed": True})
+        result = build_deck._chk_deck_type(r)
+        assert result == "", f"U021-1: expected '', got {result!r}"
+    finally:
+        build_deck.date = orig_date
+        build_deck.DECK_TYPE_GATE_STAGE = orig_stage
+
+
+def test_U021_deck_type_absent_enforce_past_window():
+    """deck_type absent, past window, ENFORCE -> non-empty reason."""
+    import datetime as _dt
+    orig_date = build_deck.date
+    orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    class _Later(_dt.date):
+        @classmethod
+        def today(cls): return cls(2099, 1, 1)
+    try:
+        build_deck.date = _Later
+        build_deck.DECK_TYPE_GATE_STAGE = "enforce"
+        r = _deck_type_fixture({"interview_confirmed": True})
+        result = build_deck._chk_deck_type(r)
+        assert result, f"U021-2: expected non-empty reason, got {result!r}"
+    finally:
+        build_deck.date = orig_date
+        build_deck.DECK_TYPE_GATE_STAGE = orig_stage
+
+
+def test_U021_deck_type_webinar_pass():
+    """deck_type='webinar' -> returns '' (legal value)."""
+    orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    try:
+        build_deck.DECK_TYPE_GATE_STAGE = "enforce"
+        r = _deck_type_fixture({"deck_type": "webinar"})
+        result = build_deck._chk_deck_type(r)
+        assert result == "", f"U021-3: expected '', got {result!r}"
+    finally:
+        build_deck.DECK_TYPE_GATE_STAGE = orig_stage
+
+
+def test_U021_deck_type_bogus_enforce_past_window():
+    """deck_type='powerpoint', past window, ENFORCE -> non-empty reason."""
+    import datetime as _dt
+    orig_date = build_deck.date
+    orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    class _Later(_dt.date):
+        @classmethod
+        def today(cls): return cls(2099, 1, 1)
+    try:
+        build_deck.date = _Later
+        build_deck.DECK_TYPE_GATE_STAGE = "enforce"
+        r = _deck_type_fixture({"deck_type": "powerpoint"})
+        result = build_deck._chk_deck_type(r)
+        assert result, f"U021-4: expected non-empty reason, got {result!r}"
+    finally:
+        build_deck.date = orig_date
+        build_deck.DECK_TYPE_GATE_STAGE = orig_stage
+
+
+def test_U021_deck_type_absent_warn_past_window():
+    """deck_type absent, past window, WARN mode -> returns ''; stderr carries WINDOW CLOSED."""
+    import datetime as _dt
+    orig_date = build_deck.date
+    orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    class _Later(_dt.date):
+        @classmethod
+        def today(cls): return cls(2099, 1, 1)
+    try:
+        build_deck.date = _Later
+        build_deck.DECK_TYPE_GATE_STAGE = "warn"
+        r = _deck_type_fixture({"interview_confirmed": True})
+        result = build_deck._chk_deck_type(r)
+        assert result == "", f"U021-5: expected '' (warn-mode), got {result!r}"
+    finally:
+        build_deck.date = orig_date
+        build_deck.DECK_TYPE_GATE_STAGE = orig_stage
+
+
+# Alias for the main()-driven all-in-one runner (runs all five cases via individual
+# pytest functions above, and returns aggregated failures).
+def test_deck_type_u021() -> list:
+    """U021 -- _chk_deck_type gate tests. Returns empty list on full pass."""
+    fails = []
+    for fn in [test_U021_deck_type_absent_warn_inside_window,
+               test_U021_deck_type_absent_enforce_past_window,
+               test_U021_deck_type_webinar_pass,
+               test_U021_deck_type_bogus_enforce_past_window,
+               test_U021_deck_type_absent_warn_past_window]:
+        try:
+            fn()
+        except AssertionError as e:
+            fails.append(str(e))
+    print(f"DECK-TYPE-U021 (gate tests) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
