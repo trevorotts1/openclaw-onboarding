@@ -51,8 +51,7 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
 6–7, under Trevor's ruling that one-question-at-a-time wins). Open by offering the owner a QUICK vs
 IN-DEPTH interview, then ask exactly **one question at a time** and wait for each answer — never a
 wall of questions (dumping the batch, or opening with no quick-vs-in-depth choice, is
-**AF-INTAKE-BATCH**, an intake-conversation autofail enforced by the QC/Healer scan that NEVER gates
-`build_deck.py`). The answers are then assembled into ONE atomic machine RECORD
+**AF-INTAKE-BATCH**, an intake-conversation autofail enforced by the required preflight `P-SP-INTAKE-TRACE` (`build_deck._chk_sp_intake_trace`, phase order 0.16), which is fail-closed and blocks the build — an absent transcript is a fail. The QC/Healer scan runs the same scanner out of band as an additional post-hoc pass. The answers are then assembled into ONE atomic machine RECORD
 (`working/copy/sp_intake.json`) — that assembled block is what the intake prover validates. Once
 every answer is locked, write all slides at one time (Directive 8). The eight, verbatim ids `q1..q8`:
 

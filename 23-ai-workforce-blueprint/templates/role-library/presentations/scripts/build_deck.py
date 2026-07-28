@@ -6879,10 +6879,11 @@ def _sp_active(run_dir: Path) -> bool:
 
 def _sp_prover(mod_name: str):
     """Lazily import a Skill-51 prover module by name, searching build_deck's own scripts
-    dir (deployed: install copies the provers here) and the sibling
-    51-signature-presentation/scripts/ (repo/worktree layout). Cached. Returns the module,
-    or None when it cannot be located/imported. Only reached for a signature deck (the
-    wrappers defer first via _sp_active)."""
+    dir first and then the sibling 51-signature-presentation/scripts/
+    (repo/worktree layout). On a materialized department the provers resolve only via the
+    sibling fallback because the install does not copy them into the engine's scripts dir.
+    Cached. Returns the module, or None when it cannot be located/imported. Only reached
+    for a signature deck (the wrappers defer first via _sp_active)."""
     if mod_name in _SP_PROVER_CACHE:
         return _SP_PROVER_CACHE[mod_name]
     import importlib.util

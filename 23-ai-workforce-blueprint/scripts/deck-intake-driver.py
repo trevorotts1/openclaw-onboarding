@@ -1285,8 +1285,10 @@ def cmd_selftest() -> None:
 #       quick-vs-in-depth interview CHOICE, then asks exactly ONE of the 8
 #       Questions (plus the frame question) per message and waits for the answer;
 #       never a wall of questions. Dumping the batch, or opening with no choice,
-#       is AF-INTAKE-BATCH (a QC/Healer intake-trace autofail; it NEVER gates
-#       build_deck.py / run_signature_deck.py). This mode emits that intake plan
+#       is AF-INTAKE-BATCH (a QC/Healer intake-trace autofail; this out-of-band
+#       scan does not itself gate the build — the gating enforcer is the required
+#       preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order
+#       0.16). This mode emits that intake plan
 #       (the choice-first conversation_contract + the 8 Questions + the frame
 #       question) for the agent to run one turn at a time.
 #   (2) RECORD LAYER — on --record, the answers gathered one at a time are
@@ -1365,8 +1367,10 @@ def _sp_append_transcript(run_dir: Optional[pathlib.Path], role: str, text) -> N
     reads post-hoc. Because the driver's turn-gate asks exactly ONE bank question
     per --next and records ONE answer per --answer, this machine-authored
     transcript is a faithful one-question-per-turn record: scanning it is expected
-    to PASS. It is ADVISORY provenance only — it NEVER gates build_deck.py /
-    run_signature_deck.py. Fail-soft: a transcript write must never break intake."""
+    to PASS. It is ADVISORY provenance only — this out-of-band transcript does
+    not itself gate the build; the gating enforcer is the required preflight
+    P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16.
+    Fail-soft: a transcript write must never break intake."""
     if run_dir is None:
         return
     try:
@@ -1418,7 +1422,9 @@ def build_signature_block(spec: dict, block_msg_id: str) -> dict:
             "asked_all_at_once": True,
         },
         # conversation_contract describes the CONVERSATION layer: choice-first,
-        # one question at a time; a batch trips AF-INTAKE-BATCH (never gates build).
+        # one question at a time; a batch trips AF-INTAKE-BATCH (this out-of-band
+        # scan does not itself gate the build — the gating enforcer is the required
+        # preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16).
         "conversation_contract": conversation_contract,
         "question_block_msg_id": block_msg_id,
         "instruction": (
@@ -1582,7 +1588,9 @@ def cmd_sp_answer(run_dir: pathlib.Path, spec: dict, ledger: dict, qid: str, tex
     write_answer_file(run_dir, qid, text, SP_ANSWERS_REL)
     # Mechanically log this one-at-a-time turn (the question as an assistant turn,
     # the client's reply as an owner turn) to the intake transcript the QC/Healer
-    # AF-INTAKE-BATCH scanner reads. ADVISORY provenance only — never gates build.
+    # AF-INTAKE-BATCH scanner reads. ADVISORY provenance only — this out-of-band
+    # transcript does not itself gate the build; the gating enforcer is the required
+    # preflight P-SP-INTAKE-TRACE, build_deck._chk_sp_intake_trace, phase order 0.16.
     _sp_append_transcript(run_dir, "assistant", question.get("prompt") or qid)
     _sp_append_transcript(run_dir, "owner", text)
     entries[qid]["answer"] = stored
