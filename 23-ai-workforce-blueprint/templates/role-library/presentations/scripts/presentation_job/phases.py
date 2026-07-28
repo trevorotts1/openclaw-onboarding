@@ -135,21 +135,23 @@ class Engine:
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
-            self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
-                             artifacts=sorted(shas.keys()))
-            done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
-            self.report.to_requester("progress", done_msg)
             # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            verifier_ok = None
+            verifier_notes = None
             try:
                 import phase_verifiers
-                v_ok, v_notes = phase_verifiers.verify(phase.id, self.run_dir)
-                self._checkpoint(phase.id, verifier_ok=v_ok, verifier_notes=v_notes)
-                if not v_ok:
+                verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                if not verifier_ok:
                     self.report.event("phase.verifier_warn",
-                                      f"{phase.id}: {'; '.join(v_notes)}")
+                                      f"{phase.id}: {'; '.join(verifier_notes)}")
             except ImportError:
                 self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
                                           "substance check skipped")
+            self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
+                             artifacts=sorted(shas.keys()),
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
+            done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
+            self.report.to_requester("progress", done_msg)
             if self.board:
                 self.board.phase_progress(phase.id, done_msg)
         return rc
@@ -331,7 +333,7 @@ class Engine:
             self.report.event("waiver.invalid", str(exc))
             print(f"FATAL: {exc}", file=sys.stderr)
             return EXIT_WAIVER_INVALID
-        waived = {w["rule"] for w in waivers}
+        waived = {w.get("rule") for w in waivers if w.get("rule")}
         self.state["waivers"] = waivers
 
         failures = []
