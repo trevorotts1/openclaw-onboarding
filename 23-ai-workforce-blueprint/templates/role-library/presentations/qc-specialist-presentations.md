@@ -589,7 +589,7 @@ Phase 5 image QC uses the following two-pass architecture (both passes on the cl
 **Hard blocks from vision QC:**
 - Any slide where the vision model returns "placeholder/flat fill" -> triggers AF-BAKED -> slide loops back to Slide Image Creator
 - Any slide where the vision model returns "text is overlaid (Pillow/PPTX)" -> triggers AF-BAKED -> loops back
-- Any deck where ANY slide has a missing or empty `vision_api_response` -> triggers AF-NO-VISION-QC -> DECK FAIL
+- Any deck where ANY slide has a missing or empty per-slide vision observation in `working/qc/image_qc_report.json` -> triggers AF-IMAGE-QC-VISION -> DECK FAIL
 
 **path.exists() is NOT vision QC.** A file-presence check that confirms a .png exists at a path is a crash-recovery guard, not a quality gate. The Phase 5 vision check MUST call a multimodal vision API with the image content. Any "QC log" that contains only path-existence records triggers AF-NO-VISION-QC.
 

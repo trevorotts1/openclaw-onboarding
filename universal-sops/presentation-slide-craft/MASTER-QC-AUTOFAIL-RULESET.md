@@ -192,8 +192,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-BAKED | Phase 5/6 | slide (blocks FINAL) | Slide text was drawn by Pillow/PPTX/ImageDraw rather than baked by the image model, OR slide is a flat placeholder fill with no Kie render | Vision QC agent confirms: text is overlaid, not rendered; OR image dimensions/size match known placeholder signatures |
 | AF-I14 | Phase 5/6 | slide (blocks FINAL) | Rendered slide not KIE-baked (native render / no image / flat-placeholder fill) | process_manifest.json render record: per-slide taskId is a real KIE id AND the PNG exists, is a valid PNG, and exceeds the placeholder floor; absent/native/under-floor/duplicate-hash = fail |
 | AF-PROMPT-FLOOR | Phase Prompt-QC | slide | Image prompt under the reconciled 9,000-char standard OR over the ceiling OR missing required structural blocks | len(prompt) < 9000 (PROMPT_CHAR_FLOOR) OR len(prompt) > 18000 (PROMPT_CHAR_CEILING) OR prompt missing [ARCHETYPE, NEGATIVE BLOCK, "Do not " imperatives] |
-| AF-NO-VISION-QC | Phase 6 | DECK | Deck submitted without an executed vision-QC log (path.exists() is not vision QC) | working/qc/vision_qc_log.json missing OR empty OR contains only path-existence checks with no vision API call records |
-| AF-CONVERTER-PARITY | Phase 1Q | DECK (converter-origin only) | Converter-origin deck (intake.json source_brief_origin: "content-to-presentation-architect") failed the runtime parity gate | Any of: process_manifest.json has no build_deck.py render record (re-uses AF-RENDERER logic); model pin mismatch (re-uses AF-MODEL-SOVEREIGNTY logic); vision_qc_log.json missing/empty/path-only; research brief absent or Category E/F missing; persuasion variables (GOAL/CTA_ACTION/TRANSFORMATION_PROMISE/PRIMARY_OBJECTION/TARGET_FEELING/TONE) absent from intake.json without being listed in fields_absent_in_source |
+| AF-CONVERTER-PARITY | Phase 1Q | DECK (converter-origin only) | Converter-origin deck (intake.json source_brief_origin: "content-to-presentation-architect") failed the runtime parity gate | Any of: process_manifest.json has no build_deck.py render record (re-uses AF-RENDERER logic); model pin mismatch (re-uses AF-MODEL-SOVEREIGNTY logic); working/qc/image_qc_report.json missing a declared vision engine or per-slide observation row (re-uses AF-IMAGE-QC-VISION logic — check_image_qc_vision); research brief absent or Category E/F missing; persuasion variables (GOAL/CTA_ACTION/TRANSFORMATION_PROMISE/PRIMARY_OBJECTION/TARGET_FEELING/TONE) absent from intake.json without being listed in fields_absent_in_source |
 | AF-QC-INDEPENDENCE | Phase 1Q | DECK | Copy QC report was self-graded / builder-graded rather than graded by an INDEPENDENT QC specialist | working/qc/copy_qc_report.json lacks an independent-reviewer provenance block (qc_independence with graded_by + independent:true naming a reviewer who is NOT build_deck.py / self / builder / author / the deck-copy author slide-copywriter), OR is marked self_graded:true, OR sets independent:false, OR names a reviewer equal to the recorded builder/built_by identity |
 | AF-TYPOGRAPHY-QC | Phase Typography-QC | DECK | Typography QC report (sequenced AFTER Design) missing / wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded | working/qc/typography_qc_report.json: gate=="Phase Typography-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance (generalized AF-QC-INDEPENDENCE); any miss fails the DECK |
 | AF-PROMPT-QC | Phase Prompt-QC | DECK | Prompt QC report (sequenced AFTER Prompt-Authoring) missing / wrong gate / below 8.5 / triggered-autofail / not pass:true / self-or-builder-graded | working/qc/prompt_qc_report.json: gate=="Phase Prompt-QC", average>=8.5, no triggered_autofails, pass:true, AND independent-reviewer provenance; any miss fails the DECK |
@@ -510,7 +509,7 @@ These ten codes close the remaining gaps found in the Presentation Department V2
 
 2. **Model pin held on a converter run:** the latest `process_manifest.json` render record `model_used` == `intake.json model_pin` with no undocumented fallback (re-uses AF-MODEL-SOVEREIGNTY logic). The gpt-image-2 pin applies to converter runs exactly as it applies to regular runs.
 
-3. **Real vision QC executed:** `working/qc/vision_qc_log.json` exists, is non-empty, and carries at minimum one entry per slide with a non-null `vision_api_response` field (re-uses AF-NO-VISION-QC logic). A log that records only path-existence checks with no vision API call records is NOT real vision QC.
+3. **Real vision QC executed:** `working/qc/image_qc_report.json` exists, is non-empty, declares a vision engine, and carries at minimum one per-slide observation row for every rendered slide (re-uses AF-IMAGE-QC-VISION logic — `check_image_qc_vision`). A report that records only path-existence checks with no vision API call records is NOT real vision QC.
 
 4. **Phase -0.5 Research Brief present and complete:** `working/research/brief-[DECK_SLUG].md` exists on disk with `research_complete: true` in its header AND the files `working/research/grounded-content-[DECK_SLUG].json` and `working/research/design-brief-[DECK_SLUG].md` exist (Category E and Category F delivered to the image stage). This proves the Slide Image Creator received grounded scene context specific to this source, not generic stock direction.
 
@@ -548,9 +547,26 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 **What failed:** 100% of 98 image prompts (across all four decks) were below the 1500-char floor (the floor in force at the time of this incident; the floor has since been raised to the reconciled 9,000-char standard -- see Detection). Median was 277 chars -- 5.4x under that floor. Zero prompts had proper archetype declarations or negative blocks.
 **Detection:** Phase Prompt-QC (the dedicated Prompt QC gate, sequenced AFTER Prompt-Authoring). Count characters in each prompt file against the RECONCILED 9,000-char standard (`PROMPT_CHAR_FLOOR` in build_deck.py): a prompt under 9,000 chars (or over the 18,000 ceiling, `PROMPT_CHAR_CEILING`) FAILS. Check for `[ARCHETYPE` on line 1, a dedicated NEGATIVE BLOCK paragraph, and at least three "Do not ..." imperative sentences in the final paragraph. Any miss: slide FAIL, loops back to the Prompt Author.
 
-### AF-NO-VISION-QC (Fix 6)
-**What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.
-**Detection:** Phase 6 final gate: confirm `working/qc/vision_qc_log.json` exists, is non-empty, and contains at minimum one entry per slide with a non-null `vision_api_response` field. A log that records only `{"slide": N, "exists": true}` entries is NOT a vision QC log and triggers AF-NO-VISION-QC for the DECK.
+### AF-NO-VISION-QC (Fix 6) — RETIRED 2026-07-26
+
+**Status:** RETIRED. Superseded by `AF-IMAGE-QC-VISION` (pixel-blind pass) and `AF-IMAGE-QC`
+(no pass at all), both `enforced_by: build_deck` with resolving `py_symbol`s and therefore
+policed by sync_check A3. This code was declared with `enforced_by: "closeout_gate"` and
+`py_symbol: null` and was never implemented: no `closeout_gate` script exists in this
+department, and its detection input `working/qc/vision_qc_log.json` is written and read by
+nothing. The real artifact is `working/qc/image_qc_report.json`.
+
+**What failed originally:** all four forensic decks used only `path.exists()` for
+"verification"; no vision API was called on any image. Part1-GENERAL shipped 40 placeholder
+PNGs because they passed the file-presence check.
+
+**Where that failure is caught now:** a rendered deck with NO image-QC report fails
+`AF-IMAGE-QC` (`_qc_report_gate(None, "AF-IMAGE-QC", …)`, build_deck.py:2427-2430, reached via
+`check_image_qc_report_gate`). A report that exists but cannot have come from a pixel read —
+no declared vision engine, no per-slide observation row, a dict instead of a per-slide list,
+any slide excluded from scope, or an overlay-blessing rubric — fails `AF-IMAGE-QC-VISION`
+(`check_image_qc_vision` + `_image_qc_report_defects`). Both fire at preflight and again at
+the postflight gate.
 
 ---
 
