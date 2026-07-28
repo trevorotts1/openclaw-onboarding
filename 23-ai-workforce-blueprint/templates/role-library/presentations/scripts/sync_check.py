@@ -66,6 +66,8 @@ from pathlib import Path
 # the check runs identically in the repo and on a deployed client box.
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).resolve().parent                       # .../presentations/scripts
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -75,27 +77,7 @@ BUILD_DECK = HERE / "build_deck.py"
 PROMPT_GATE = HERE / "prompt_gate.py"
 TEST_PREFLIGHT = HERE / "test_preflight.py"
 
-# The manifest + MASTER ruleset live in the universal-sops/presentation-slide-craft
-# cluster in the repo, and are deployed next to the sops dir on a client box. Try
-# both so the same script works in either layout.
-def _first_existing(paths):
-    for p in paths:
-        if p.exists():
-            return p
-    return paths[0]  # return the canonical (repo) path for the error message
-
-# repo root = .../openclaw-onboarding (walk up until universal-sops is found)
-def _find_repo_root(start: Path):
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
-
-_REPO_ROOT = _find_repo_root(HERE)
+_REPO_ROOT = find_repo_root(HERE)
 _CLUSTER_REPO = (_REPO_ROOT / "universal-sops" / "presentation-slide-craft") if _REPO_ROOT else None
 
 # The RETIRED render module (templates/presentation-render/render_deck.py). It is no
@@ -109,17 +91,15 @@ RENDER_DECK = (
      / "render_deck.py") if _REPO_ROOT else None
 )
 
-MANIFEST = _first_existing([
-    *( [_CLUSTER_REPO / "PIPELINE-MANIFEST.json"] if _CLUSTER_REPO else [] ),
-    SOPS_DIR / "PIPELINE-MANIFEST.json",
-    PRES_DIR / "PIPELINE-MANIFEST.json",
-])
-MASTER_RULESET = _first_existing([
-    *( [_CLUSTER_REPO / "MASTER-QC-AUTOFAIL-RULESET.md"] if _CLUSTER_REPO else [] ),
-    SOPS_DIR / "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md",
-    SOPS_DIR / "MASTER-QC-AUTOFAIL-RULESET.md",
-    PRES_DIR / "MASTER-QC-AUTOFAIL-RULESET.md",
-])
+MANIFEST, MANIFEST_PROVENANCE = resolve_manifest(HERE)
+MASTER_RULESET, RULESET_PROVENANCE = resolve_ruleset(HERE)
+
+# Measured 2026-07-25 via parse_master_ruleset_section5() against the cluster
+# registry at universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md.
+# The cluster registry is a growing file (134 codes against 153 manifest autofails
+# at time of measurement), so this is a FLOOR, not an equality — a future increase
+# is expected and must not refuse.
+RULESET_MIN_SECTION5_CODES = 134
 
 AF_RE = re.compile(r'AF-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 
@@ -775,6 +755,10 @@ def main():
     manifest = load_manifest()
     bd = parse_build_deck()
     ruleset_codes = parse_master_ruleset_section5()
+    if len(ruleset_codes) < RULESET_MIN_SECTION5_CODES:
+        refuse(f"Section-5 registry at {MASTER_RULESET} declares {len(ruleset_codes)} codes; "
+               f"the canonical cluster registry declares {RULESET_MIN_SECTION5_CODES}. "
+               f"provenance={RULESET_PROVENANCE}. Refusing to check drift against a truncated registry.")
     role_stems, sop_files = scan_roles_and_sops()
 
     drift = run_checks(manifest, bd, ruleset_codes, role_stems, sop_files)

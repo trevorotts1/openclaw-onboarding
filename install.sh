@@ -6788,6 +6788,63 @@ install_skill_47_movie_producer() {
 install_skill_47_movie_producer
 
 # ----------------------------------------------------------
+# U001 -- Presentations manifest+ruleset placement (canonical-home wiring)
+#
+# Copy the cluster-canonical PIPELINE-MANIFEST.json and
+# MASTER-QC-AUTOFAIL-RULESET.md into the materialized Presentations department's
+# sops/ directory so manifest_source.py's resolve_manifest() / resolve_ruleset()
+# find the installed copy FIRST (provenance "installed"), before falling back to
+# the cluster walk-up or legacy paths.  Also write MANIFEST-SOURCE.txt with the
+# content_sha256 so the checker can refuse on mismatch instead of silently
+# reading a stale manifest.  Guarded on the department existing; non-fatal.
+# ----------------------------------------------------------
+u001_presentations_manifest_placement() {
+  local _ws=""
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    _ws="$(obs_resolve_workspace 2>/dev/null || true)"
+  fi
+  [ -n "$_ws" ] || _ws="$HOME/.openclaw/workspace"
+  local _dept_dir="$_ws/departments/Presentations"
+  if [ ! -d "$_dept_dir" ]; then
+    note "U001: presentations manifest placement SKIPPED (department not materialized at $_dept_dir)"
+    return 0
+  fi
+  local _sops_dir="$_dept_dir/sops"
+  mkdir -p "$_sops_dir" 2>/dev/null
+  local _manifest_src="$SKILLS_DIR/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
+  local _ruleset_src="$SKILLS_DIR/universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
+  local _manifest_dest="$_sops_dir/PIPELINE-MANIFEST.json"
+  local _ruleset_dest="$_sops_dir/MASTER-QC-AUTOFAIL-RULESET.md"
+  local _source_txt="$_sops_dir/MANIFEST-SOURCE.txt"
+  if [ ! -f "$_manifest_src" ]; then
+    warn "U001: cluster manifest not found at $_manifest_src — placement skipped"
+    return 0
+  fi
+  if ! cp "$_manifest_src" "$_manifest_dest" 2>>"$LOG_FILE" || \
+     ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$_manifest_dest" 2>>"$LOG_FILE"; then
+    warn "U001: could not validate PIPELINE-MANIFEST.json at $_manifest_dest (see $LOG_FILE) — manifest_source.py falls back to cluster/legacy"
+    return 0
+  fi
+  if [ -f "$_ruleset_src" ]; then
+    cp "$_ruleset_src" "$_ruleset_dest" 2>>"$LOG_FILE" || true
+  fi
+  local _git_sha=""
+  if git -C "$SKILLS_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    _git_sha="$(git -C "$SKILLS_DIR" log -1 --format=%H -- universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json 2>/dev/null || true)"
+  fi
+  local _content_sha256
+  _content_sha256="$(python3 -c "import hashlib; print(hashlib.sha256(open('$_manifest_dest','rb').read()).hexdigest())" 2>/dev/null || true)"
+  {
+    printf 'source_path=%s\n' "$_manifest_src"
+    printf 'git_sha=%s\n' "$_git_sha"
+    printf 'content_sha256=%s\n' "$_content_sha256"
+    printf 'installed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  } > "$_source_txt"
+  success "U001: PIPELINE-MANIFEST.json + MASTER-QC-AUTOFAIL-RULESET.md placed at $_sops_dir"
+}
+u001_presentations_manifest_placement
+
+# ----------------------------------------------------------
 # Skill 48: Facebook & Instagram Ad Generator (paid-advertisement — 10-ad batch pipeline)
 # ----------------------------------------------------------
 # Self-contained: this template install copies the Skill 48 folder (foreman +

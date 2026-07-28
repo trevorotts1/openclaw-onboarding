@@ -103,6 +103,8 @@ import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 
 # Reuse build_deck.py's primitives — do NOT reimplement (detect_platform,
 # find_run_dir, the shared Kie balance pre-flight, the run-dir JSON reader).
@@ -225,31 +227,12 @@ _QC_PRODUCES_ARTIFACT = {
 # ---------------------------------------------------------------------------
 # Manifest resolution (same cluster-or-deployed layout sync_check uses)
 # ---------------------------------------------------------------------------
-def _find_repo_root(start: Path):
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
+_MANIFEST_PATH, _MANIFEST_PROVENANCE = resolve_manifest(HERE)
+_MASTER_RULESET, _RULESET_PROVENANCE = resolve_ruleset(HERE)
 
 
 def load_manifest() -> dict:
-    repo = _find_repo_root(HERE)
-    candidates = []
-    if repo:
-        candidates.append(repo / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
-    candidates += [
-        HERE.parent / "sops" / "PIPELINE-MANIFEST.json",
-        HERE.parent / "PIPELINE-MANIFEST.json",
-    ]
-    for c in candidates:
-        if c.exists():
-            return json.loads(c.read_text())
-    print("FATAL: PIPELINE-MANIFEST.json not found.", file=sys.stderr)
-    sys.exit(2)
+    return json.loads(_MANIFEST_PATH.read_text())
 
 
 # ---------------------------------------------------------------------------
