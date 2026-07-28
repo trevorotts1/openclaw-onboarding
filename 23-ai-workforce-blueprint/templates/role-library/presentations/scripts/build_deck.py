@@ -361,6 +361,14 @@ COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves hi
 COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
                                         # hook line alone is allowed to be short
 
+# U067 stage 1 (Rule 3.5). The hook/section-banner exemption was unreachable on the
+# boolean arc_allocation schema, so every such slide has been judged against the
+# 40-char floor. Turning the exemption on flips slides from FAIL to PASS, which is
+# the fail-open direction and must never arrive in one step. While this is False the
+# gate still applies the standard floor and merely REPORTS which slides the exemption
+# would cover. Stage 3 (flipping this to True) is a SEPARATE unit.
+COPY_HOOK_EXEMPTION_ENFORCED = False
+
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
 # the final-paragraph negative block (the header our gold exemplars + the SOP 9.8 template
@@ -3269,13 +3277,27 @@ def _load_slide_arc_tags(run_dir: Path) -> dict:
         if not isinstance(ordinal, int):
             continue
         tokens = []
-        for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+        for k in ("arc_section", "section", "beat", "tag", "type", "role", "phase"):
             v = s.get(k)
             if isinstance(v, str):
                 tokens.append(v.lower())
         tags = s.get("tags")
         if isinstance(tags, list):
             tokens += [str(t).lower() for t in tags]
+        # U067: one arc_allocation schema marks hook and section-banner slides as
+        # BOOLEANS, not strings. Measured 2026-07-26 on the only in-repository
+        # arc_allocation.json: 103 slots, 8 with "hook": true, 4 with
+        # "label_slide": true, and _is_hook_or_banner_slide returned False for all
+        # 103, because the loop above keeps only isinstance(v, str) values and
+        # neither key is even in the tuple. Emit the marker token the classifier
+        # already recognises. This is an ALLOWLIST of exactly two flags: do NOT
+        # generalise it to "every true boolean". "case_study" is also a boolean on
+        # this schema (true on 2 of 103) and case-study slides are the DENSEST in
+        # the deck; exempting them from the body-copy floor is the opposite of what
+        # this exemption is for.
+        for flag, marker in (("hook", "hook"), ("label_slide", "section-banner")):
+            if s.get(flag) is True:
+                tokens.append(marker)
         out[ordinal] = " ".join(tokens)
     return out
 
@@ -3362,13 +3384,18 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 
         total = sum(len(f) for f in fields)
         tag_blob = arc_tags.get(ordinal, "")
-        exempt = _is_hook_or_banner_slide(tag_blob)
+        exempt_eligible = _is_hook_or_banner_slide(tag_blob)
+        exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
         if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
             offenders.append(
                 f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
                 f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
                 + (" (hook/section-banner exemption applied)" if exempt else ""))
+            if exempt_eligible and not COPY_HOOK_EXEMPTION_ENFORCED:
+                offenders[-1] += (" [U067 ADVISORY: this slide is hook/section-banner and "
+                                  f"would clear a {COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR}-char "
+                                  "floor once the exemption is enforced]")
 
     if offenders:
         return ("AF-COPY-BAND: per-slide copy character-count floor/ceiling FAILED for "
