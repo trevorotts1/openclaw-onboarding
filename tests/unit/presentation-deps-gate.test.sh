@@ -231,8 +231,9 @@ assert_file_has "00-START-HERE names the canonical command"   "$START_HERE" 'pre
 assert_file_has "00-START-HERE forbids python3 working/*.py"  "$START_HERE" 'python3 working/\*\.py'
 
 # write_complete_ledger DIR — mint a completed deck-intake ledger so GATE-0
-# (deck-build-guard fail-closed intake check) passes and the test can exercise the
-# LATER gates (bypass-scan / clean-pass) without being pre-empted by the intake gate.
+# (the inline intake-ledger check, relocated from the retired deck-build-guard.sh)
+# passes and the test can exercise the LATER gates (bypass-scan / clean-pass)
+# without being pre-empted by the intake gate.
 write_complete_ledger() {
     mkdir -p "$1/working/interview"
     cat > "$1/working/interview/intake_ledger.json" <<'LEDGER'

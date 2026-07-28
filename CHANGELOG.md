@@ -1,3 +1,18 @@
+## [v21.4.0]  -  2026-07-27  -  Retire deck-build-guard.sh (U025)
+
+`deck-build-guard.sh` is retired. Its intake-ledger check is relocated into
+`presentation-canonical-entry.sh` as a native GATE 0 (fail-closed). The wiring
+verifier now asserts `presentation-canonical-entry.sh` present + executable
+instead of the guard. The guard's DENY rules 1-6 were unreachable from the
+canonical door and added nothing unique (GATE 2 already covers the file-surface
+half). Four prose/comment locations updated to reference the relocated check.
+Ten-location census: 4 code/test + 4 prose/comment + 2 documentation = 10.
+
+Touches: presentation-canonical-entry.sh, verify-wiring.sh, deck-build-guard.sh
+(removed), presentation-deps-gate.test.sh, director-of-presentations.md,
+intake-miniapp/README.md, intake_bridge.py, worker/src/index.js, README.md,
+CHANGELOG.md.
+
 ## [v21.3.0]  -  2026-07-24  -  CI-GREEN: restamp graphics content-manifest + clear 5 inherited guard failures
 
 v21.1.0 (and the first v21.2.0 cut) landed with FIVE pre-existing CI failures — all inherited

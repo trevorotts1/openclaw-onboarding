@@ -253,33 +253,110 @@ gate_fail() {
 }
 
 # ===========================================================================
-# GATE 0 — FRONT-DOOR SELF-SCREEN via deck-build-guard.sh
-# Checks: (a) hand-rolled artifacts in the run directory, (b) interview-ledger
-# completeness. Even the one sanctioned door self-polices.
-# deck-build-guard.sh lives beside this script in the same scripts directory.
+# GATE 0 — INTAKE-LEDGER CHECK (fail-closed)
+# The intake interview (deck-intake-driver.py) must be complete before any
+# deck build runs. Read-only --plan inspection is exempt. The only waiver is
+# a logged owner_skip_approval token for gate INTAKE-INTERVIEW.
+#
+# Formerly delegated to deck-build-guard.sh (retired U025). The guard's
+# allow-list reduced to this one check on the canonical path; the rest of
+# the guard was unreachable from the door. Relocated here so the door owns
+# its own front-door precondition and the silent-skip `else` branch is gone.
 # ===========================================================================
-GUARD="$SELF_DIR/deck-build-guard.sh"
-if [ -f "$GUARD" ]; then
-    note "GATE 0 — FRONT-DOOR SELF-SCREEN (deck-build-guard.sh)"
-    # Pass the canonical-entry command so the guard can extract --run-dir and
-    # check the intake ledger, while recognizing this is the sanctioned route.
-    GUARD_RC=0
-    # Pass --plan through so the guard exempts read-only plan inspection from the
-    # fail-closed intake-ledger requirement (a real build must have a complete ledger).
-    _GUARD_CMD="bash $SELF_DIR/presentation-canonical-entry.sh --run-dir $RUN_DIR"
-    [ "$PLAN" -eq 1 ] && _GUARD_CMD="$_GUARD_CMD --plan"
-    OPENCLAW_EXEC_CMD="$_GUARD_CMD" \
-        bash "$GUARD" 2>&1 || GUARD_RC=$?
-    if [ "$GUARD_RC" -ne 0 ]; then
-        echo "FATAL [$PROG]: GATE 0 — deck-build-guard.sh denied this run (exit $GUARD_RC)." >&2
-        echo "  Fix the reported condition (see output above) and re-run." >&2
-        echo "  The ONLY sanctioned deck build is: bash presentation-canonical-entry.sh --run-dir … --slides … --out …" >&2
-        exit "$GUARD_RC"
+note "GATE 0 — INTAKE-LEDGER CHECK"
+
+# owner_skip_intake — ported verbatim from deck-build-guard.sh:177-207.
+# Returns 0 iff a logged owner approval waives the intake-interview gate
+# (gate code INTAKE-INTERVIEW, AF-INTAKE-INTERVIEW, or *), read from
+# process_manifest.json. Non-empty approved_by and reason are mandatory to
+# prevent an agent from self-issuing a waiver.
+owner_skip_intake() {
+    local run_dir="$1"
+    local pm="$run_dir/working/checkpoints/process_manifest.json"
+    [ -f "$pm" ] || return 1
+    command -v python3 >/dev/null 2>&1 || return 1
+    PM="$pm" python3 - <<'PY'
+import json, os, sys
+try:
+    obj = json.load(open(os.environ["PM"]))
+except Exception:
+    sys.exit(1)
+recs = []
+for key in ("owner_skip_approvals", "owner_skip_approval"):
+    v = obj.get(key) if isinstance(obj, dict) else None
+    if isinstance(v, list):
+        recs += v
+    elif isinstance(v, dict):
+        recs.append(v)
+WANT = {"INTAKE-INTERVIEW", "AF-INTAKE-INTERVIEW", "*"}
+for r in recs:
+    if not isinstance(r, dict):
+        continue
+    code = str(r.get("gate") or r.get("gate_code") or r.get("code") or r.get("af_code") or "").strip().upper()
+    if code not in WANT:
+        continue
+    if (r.get("approved") is True or r.get("owner_approved") is True) \
+       and str(r.get("approved_by", "")).strip() and str(r.get("reason", "")).strip():
+        sys.exit(0)
+sys.exit(1)
+PY
+}
+
+# check_intake_ledger — ported from deck-build-guard.sh:213-256.
+# Fail-closed on an absent or incomplete intake ledger. --plan is exempt
+# (uses the entry script's own PLAN variable — strictly better than the
+# guard's command-string pattern match). The only waiver is owner_skip_intake.
+check_intake_ledger() {
+    local run_dir="$1"
+    [ -n "$run_dir" ] || return 0
+    # --plan inspection is read-only; never blocked on the interview.
+    # Uses the entry script's own PLAN variable rather than re-parsing
+    # the command string. This catches --plan=1 and trailing-newline forms
+    # that the guard's pattern match would miss.
+    [ "$PLAN" -eq 1 ] && return 0
+    _INTAKE_LEDGER="$run_dir/working/interview/intake_ledger.json"
+    if [ ! -f "$_INTAKE_LEDGER" ]; then
+        if owner_skip_intake "$run_dir"; then
+            echo "!! [$PROG] GATE 0: intake ledger ABSENT but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding under owner authority." >&2
+            note "  GATE 0 PASSED (owner-approved skip)"
+            return 0
+        fi
+        gate_fail "INTAKE-INTERVIEW" 5 "intake ledger missing ($_INTAKE_LEDGER) — run the Brainstorming Buddy interview (deck-intake-driver.py --next/--answer/--complete) before building. Owner override: log an owner_skip_approval for gate INTAKE-INTERVIEW (approved:true, approved_by, reason) in working/checkpoints/process_manifest.json."
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        local complete
+        complete="$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$_INTAKE_LEDGER'))
+    print('yes' if (d.get('status') == 'complete' or d.get('complete') is True or str(d.get('complete','')).strip().lower() == 'true') else '')
+except Exception:
+    print('')
+" 2>/dev/null || true)"
+        if [ -z "$complete" ]; then
+            if owner_skip_intake "$run_dir"; then
+                echo "!! [$PROG] GATE 0: intake ledger INCOMPLETE but an OWNER-APPROVED skip is logged (INTAKE-INTERVIEW); proceeding." >&2
+                note "  GATE 0 PASSED (owner-approved skip)"
+                return 0
+            fi
+            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER status is not 'complete'). Finish the deck-intake interview with deck-intake-driver.py --complete before building. Owner override: owner_skip_approval gate INTAKE-INTERVIEW in working/checkpoints/process_manifest.json."
+        fi
+    else
+        # python3 absent: parse crudely with grep
+        if ! grep -qE '"status"[[:space:]]*:[[:space:]]*"complete"|"complete"[[:space:]]*:[[:space:]]*true' "$_INTAKE_LEDGER" 2>/dev/null; then
+            if owner_skip_intake "$run_dir"; then
+                echo "!! [$PROG] GATE 0: intake ledger incomplete but OWNER-APPROVED skip logged; proceeding." >&2
+                note "  GATE 0 PASSED (owner-approved skip)"
+                return 0
+            fi
+            gate_fail "INTAKE-INTERVIEW" 5 "intake interview not complete ($_INTAKE_LEDGER). Complete the deck-intake interview with deck-intake-driver.py --complete before building."
+        fi
     fi
     note "  GATE 0 PASSED"
-else
-    note "  GATE 0 — deck-build-guard.sh not found at $GUARD; self-screen skipped"
-fi
+    return 0
+}
+
+check_intake_ledger "$RUN_DIR"
 
 # ===========================================================================
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)

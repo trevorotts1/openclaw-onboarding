@@ -5,7 +5,8 @@
 // only the current question and rejects any out-of-order answer. The box bridge
 // (../bridge/intake_bridge.py) polls the answers and replays each through the
 // existing deck-intake-driver.py, so the intake_ledger, provers, Gate 0 and
-// deck-build-guard are all unchanged. This is a FRONT-END to the existing state
+// presentation-canonical-entry.sh's GATE 0 are all unchanged (the intake-ledger check was relocated from the retired deck-build-guard.sh, U025).
+// This is a FRONT-END to the existing state
 // machine, not a second state machine.
 //
 // Endpoints:

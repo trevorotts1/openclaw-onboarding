@@ -636,8 +636,10 @@ PYEOF
 
   # --------------------------------------------------------------------------
   # (e) PRESENTATIONS-SPECIFIC WIRING ASSERTIONS
-  # For the presentations dept, assert the front-door guard is in place:
-  #   1. deck-build-guard.sh is present AND executable in the dept scripts dir.
+  # For the presentations dept, assert the sanctioned front door is in place:
+  #   1. presentation-canonical-entry.sh is present AND executable in the dept
+  #      scripts dir (the ONE sanctioned build entry point; U025 retired
+  #      deck-build-guard.sh and relocated its intake-ledger check into the door).
   #   2. run_signature_deck.py + build_deck.py each contain the front-door
   #      marker guard (grep for OC_DECK_CANONICAL_ENTRY).
   # Fail the dept check if any assertion is missing (fail-closed, not advisory).
@@ -653,30 +655,30 @@ PYEOF
     else
       _PRES_SCRIPTS=""
     fi
-    _CANONICAL_ENTRY="$SCRIPT_DIR/deck-build-guard.sh"
+    _CANONICAL_ENTRY="$SCRIPT_DIR/presentation-canonical-entry.sh"
     PRES_FAIL=0
 
     echo "  [PRESENTATIONS]  front-door wiring assertions:"
 
-    # (e1) deck-build-guard.sh present and executable
+    # (e1) presentation-canonical-entry.sh present and executable
     if [[ -f "$_CANONICAL_ENTRY" && -x "$_CANONICAL_ENTRY" ]]; then
-      echo "  [PRESENTATIONS]  OK:   deck-build-guard.sh present and executable at $_CANONICAL_ENTRY"
+      echo "  [PRESENTATIONS]  OK:   presentation-canonical-entry.sh present and executable at $_CANONICAL_ENTRY"
     elif [[ -f "$_CANONICAL_ENTRY" ]]; then
-      echo "  [PRESENTATIONS]  FAIL: deck-build-guard.sh found at $_CANONICAL_ENTRY but is NOT executable (chmod +x required)" >&2
+      echo "  [PRESENTATIONS]  FAIL: presentation-canonical-entry.sh found at $_CANONICAL_ENTRY but is NOT executable (chmod +x required)" >&2
       PRES_FAIL=1
-      FAIL_CONNECTION+=("$DEPT_SLUG:deck-build-guard-not-executable")
-      DEPT_WIRING_FAIL_REASONS+=("presentations:deck-build-guard-not-executable")
+      FAIL_CONNECTION+=("$DEPT_SLUG:canonical-entry-not-executable")
+      DEPT_WIRING_FAIL_REASONS+=("presentations:canonical-entry-not-executable")
     else
       # Also check in the presentations scripts dir (deployed or template)
-      _GUARD_ALT=""
-      [[ -n "$_PRES_SCRIPTS" ]] && _GUARD_ALT="$_PRES_SCRIPTS/deck-build-guard.sh"
-      if [[ -n "$_GUARD_ALT" && -f "$_GUARD_ALT" && -x "$_GUARD_ALT" ]]; then
-        echo "  [PRESENTATIONS]  OK:   deck-build-guard.sh present and executable at $_GUARD_ALT"
+      _ENTRY_ALT=""
+      [[ -n "$_PRES_SCRIPTS" ]] && _ENTRY_ALT="$_PRES_SCRIPTS/presentation-canonical-entry.sh"
+      if [[ -n "$_ENTRY_ALT" && -f "$_ENTRY_ALT" && -x "$_ENTRY_ALT" ]]; then
+        echo "  [PRESENTATIONS]  OK:   presentation-canonical-entry.sh present and executable at $_ENTRY_ALT"
       else
-        echo "  [PRESENTATIONS]  FAIL: deck-build-guard.sh not found (checked $_CANONICAL_ENTRY and ${_GUARD_ALT:-<pres scripts not found>}). The front-door exec guard is missing — direct build_deck.py invocations are not blocked." >&2
+        echo "  [PRESENTATIONS]  FAIL: presentation-canonical-entry.sh not found (checked $_CANONICAL_ENTRY and ${_ENTRY_ALT:-<pres scripts not found>}). The sanctioned front door is missing — presentations builds are ungoverned." >&2
         PRES_FAIL=1
-        FAIL_CONNECTION+=("$DEPT_SLUG:deck-build-guard-missing")
-        DEPT_WIRING_FAIL_REASONS+=("presentations:deck-build-guard-missing")
+        FAIL_CONNECTION+=("$DEPT_SLUG:canonical-entry-missing")
+        DEPT_WIRING_FAIL_REASONS+=("presentations:canonical-entry-missing")
       fi
     fi
 
