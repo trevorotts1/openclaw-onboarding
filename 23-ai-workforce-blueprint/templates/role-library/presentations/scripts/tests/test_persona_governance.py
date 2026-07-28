@@ -118,16 +118,25 @@ def test_unreachable_seam_blocks(tmp_path):
 # the wall, monkeypatched — never a real sleep.
 # ---------------------------------------------------------------------------
 def test_timeout_wall_fires(tmp_path, monkeypatch):
+    import concurrent.futures
+
+    # Hard-guard the constant value — a mutation of BLEND_TIMEOUT_S must
+    # turn this test red (fail-closed rule 2).
+    assert persona.BLEND_TIMEOUT_S == 30, (
+        f"BLEND_TIMEOUT_S must be 30, got {persona.BLEND_TIMEOUT_S}")
+
     run_dir = _make_run_dir(tmp_path)
     mod = persona.load_blend_module()
     assert mod is not None, "blend_voice_governance must be reachable"
 
     # Make the Future.result raise TimeoutError by monkeypatching it to
-    # throw after checking timeout.
-    import concurrent.futures
+    # throw after checking timeout, AND capture the timeout= KWARG
+    # to assert it is the specific BLEND_TIMEOUT_S constant.
     orig_result = concurrent.futures.Future.result
+    captured_timeout = []
 
     def raising_result(self, timeout=None):
+        captured_timeout.append(timeout)
         if timeout is not None and timeout <= persona.BLEND_TIMEOUT_S:
             raise concurrent.futures.TimeoutError(
                 f"simulated timeout after {timeout}s")
@@ -137,6 +146,10 @@ def test_timeout_wall_fires(tmp_path, monkeypatch):
 
     with pytest.raises((TimeoutError, concurrent.futures.TimeoutError)):
         persona.resolve_for_phase(run_dir, "P4-COPY")
+
+    assert captured_timeout, "Future.result was never called"
+    assert captured_timeout[0] == persona.BLEND_TIMEOUT_S, (
+        f"expected timeout={persona.BLEND_TIMEOUT_S}, got {captured_timeout[0]}")
 
 
 # ---------------------------------------------------------------------------
