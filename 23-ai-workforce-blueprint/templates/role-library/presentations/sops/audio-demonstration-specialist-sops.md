@@ -60,7 +60,11 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 
-1. CHUNK the speech into segments at or below the API input limit (per-slide or per-section is the natural boundary). Each chunk keeps its expression tags.
+1. CHUNK the ENTIRE speech into segments at or below the API input limit. The Fish Audio per-request limit is `chunk_length` MAX 300 characters (per 30-fish-audio-api-reference); pre-chunk to <= 280 chars and send EACH chunk as its own `/v1/tts` request so a single oversized request can never silently truncate the talk. Split on sentence / paragraph / slide boundaries. Each chunk keeps its expression tags.
+
+   **FULL-COVERAGE RULE (hard):** Every spoken word of the QC-passed speech MUST land in some chunk. The chunker MUST assert >= 95% character coverage of the cleaned spoken text BEFORE any synthesis; if coverage is below that, ABORT and fix the chunker -- do not synthesize a partial speech. NEVER synthesize only a "key beats" / "sizzle" / highlight subset and pass it off as the presentation audio. (Root-cause of the Corey 2026-06 incident: only 7 hand-picked beats -- ~4 min -- were synthesized instead of the full ~25 min, 62-slide speech.) If a SHORT highlight reel is explicitly requested, it is a SEPARATE deliverable with its own name (e.g. `<deck>_sizzle.mp3`) and MUST NOT overwrite the full presenter audio.
+
+   The committed pipeline that does this correctly is `Presentations/scripts/synthesize_full_speech.py` (cleans front-matter / headings / stage-directions out of the speech, chunks the whole talk, synthesizes every chunk via Fish Audio, concatenates with ffmpeg, and enforces the SOP 9.3 duration gate). Use it; do not hand-roll an ad-hoc subset run.
 
 2. Synthesize EACH chunk through the FALLBACK CHAIN, in order, falling through (LOUD-FAIL, log the leg error) on any leg failure:
    - PRIMARY: Fish Audio S2-Pro (`POST https://api.fish.audio/v1/tts`, Bearer auth, `model: s2-pro`, json or msgpack body, mp3 192 kbps; `normalize: false` for tag fidelity). Re-tag the chunk in S2 bracket syntax.
@@ -94,16 +98,18 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 2. LOUDNESS-NORMALIZE the stitched mp3 (ffmpeg loudnorm) so the demo plays at a consistent, marketable level (target an integrated loudness suitable for spoken-word content). The hook emphasis and drop energy should remain dynamic but the overall level should be even.
 
-3. Verify the stitched file is non-empty, the duration approximates the Speech's expected runtime (total_words / TARGET_WPM), and it plays.
+3. **DURATION SANITY GATE (HARD CHECK -- FAIL LOUD, NON-NEGOTIABLE).** Measure the stitched mp3 duration with `ffprobe`. Compute the expected runtime from the cleaned spoken word count: `expected_sec = spoken_words / TARGET_WPM * 60` (TARGET_WPM = 140). The rendered audio duration MUST be `>= 0.80 * expected_sec`. If it is not, the audio does NOT cover the full speech: do NOT name it the deliverable, do NOT hand it to delivery -- move the short file aside (`*.FAILED-SHORT`), EXIT NON-ZERO, and re-run synthesis over the ENTIRE speech (SOP 9.2). This gate is what catches the failure where TTS only voiced a fraction of the talk. It is enforced in code by `scripts/synthesize_full_speech.py` (`--wpm`, `--min-ratio`, default 0.80); the script aborts on its own if the render is short. Also verify the file is non-empty and plays.
 
-4. Name the file working/audio-demo/<deck>_demo.mp3.
+   Worked example (Corey *Explore Growth*): spoken_words = 3,516 -> expected ~1,507s (~25 min) -> gate floor ~1,205s (~20 min). The original 4-min sizzle (242s) and even the 18.5-min cut (1,110s) FAIL this gate; a full render (~25 min) passes.
+
+4. Name the file working/audio-demo/<deck>_demo.mp3 (full presenter audio). A short highlight reel, if separately requested, is named `<deck>_sizzle.mp3` and is exempt from the duration gate ONLY because it is explicitly a partial deliverable -- it never substitutes for the full audio.
 
 **Outputs:**
-- working/audio-demo/<deck>_demo.mp3 (stitched, loudness-normalized)
+- working/audio-demo/<deck>_demo.mp3 (stitched, loudness-normalized, duration-gated to the full speech length)
 
 **Hand to:** SOP 9.4 (STT Verify).
 
-**Failure mode:** If the concat or normalize fails, fall back to a re-encode pass before concat (normalize each chunk to the same codec/sample-rate first). If ffmpeg is unavailable on the box, escalate to the Capacity and Reliability Engineer. Never deliver an un-normalized or partial mp3.
+**Failure mode:** If the concat or normalize fails, fall back to a re-encode pass before concat (normalize each chunk to the same codec/sample-rate first). If ffmpeg is unavailable on the box, escalate to the Capacity and Reliability Engineer. **If the duration gate fails, the audio is INCOMPLETE -- hold it, never deliver it, and re-synthesize the full speech.** Never deliver an un-normalized, partial, or duration-gate-failing mp3. A short audio that does not match the true presentation length is a defect, not a deliverable.
 
 ---
 

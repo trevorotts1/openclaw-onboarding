@@ -19,9 +19,13 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - working/copy/presenter_notes.json
 - working/copy/mission_prd.json (slide_count_final, deck_slug)
 
-**NATIVE TEXT/ELEMENT OVERLAYS ARE ELIMINATED (Decision 5C — AF-OVERLAY-DELIVERED).**
+**NATIVE TEXT/ELEMENT OVERLAYS ARE ELIMINATED (Decision 5C -- AF-OVERLAY-DELIVERED).**
 
-This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json` native-text-overlay subsystem (the overlays dict read, the `add_textbox` loop, strike support, the typography-safe assembler spec, the gradient scrim) is REMOVED. Every slide ships as a SINGLE composed gpt-image-2 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
+This role NEVER composites native PPTX text. The legacy `pptx_text_overlays.json` native-text-overlay subsystem (the overlays dict read, the `add_textbox` loop, strike support, the typography-safe assembler spec, the gradient scrim) is REMOVED.
+
+**Archival reference -- decommissioned overlay subsystem specification (preserved by U003 rescue):**
+
+The eliminated subsystem included: a strike-capable overlay support mechanism with `{"strike": true}` property on any run, requiring OOXML `<a:rPr>` with `strike="sngStrike"` set via `run.font._rPr.set("strike", "sngStrike")` (python-pptx direct XML manipulation); and a Typography-Safe Assembler Spec (former SOP 9.4) with six non-optional rules: (1) autofit banned (`noAutofit`), (2) fixed-box sizing from pptx_text_overlays.json, (3) rendered-text-height measurement with collision assert, (4) bottom-anchoring for price/hook entries, (5) build-time collision assert across all slide overlays, and (6) a bottom-up gradient scrim (rgba 0,0,0,0.65) behind overlay text boxes on photographic backgrounds. The full specification is preserved in the U003 rescue backup archive. Every slide ships as a SINGLE composed gpt-image-2 image with its text baked in by the model; the only legitimate PPTX text part is the off-slide speaker-notes pane.
 
 - If a slide's verbatim text garbles, misspells, or duplicates at image QC, the remedy is NEVER a native overlay. The Slide Image Creator RE-PROMPTS and RE-SEEDS the slide (new prompt, new seed) and re-renders. If the garble PERSISTS after the re-prompt/re-seed loop, it ESCALATES TO A HUMAN — it is never papered over with a native text box.
 - The mere PRESENCE of a `pptx_text_overlays.json` file in the run dir at assembly is a hard auto-fail (AF-OVERLAY-DELIVERED). If you find one, HALT, delete it, and route the affected slide back to the re-prompt/re-seed loop.
@@ -185,7 +189,11 @@ The shipped `.pptx` must carry, in each slide's NATIVE NOTES pane, that slide's 
 ### SOP 9.3 / 9.4 -- ELIMINATED (Decision 5C, AF-OVERLAY-DELIVERED)
 
 The former SOP 9.3 (Native-Text Overlay Fallback) and SOP 9.4 (Typography-Safe
-Assembler Spec) are **removed**. The native PPTX text/element-overlay path no
+Assembler Spec with six rules: autofit ban, fixed-box sizing, rendered-height assertion,
+bottom-anchoring, collision assert, and bottom-up gradient scrim) are **removed**.
+The full specification is archived in the U003 rescue backup.
+
+The native PPTX text/element-overlay path no
 longer exists: there is no `pptx_text_overlays.json`, no `add_textbox` loop, no
 strike support, no rendered-height/collision asserts, and no gradient scrim. Every
 slide is a SINGLE composed gpt-image-2 image with its text baked in by the model;
