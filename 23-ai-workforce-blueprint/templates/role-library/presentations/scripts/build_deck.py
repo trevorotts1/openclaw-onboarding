@@ -535,6 +535,14 @@ DARK_THEME_BODY_PT_FLOOR = 22      # +~20% projection-dispersion compensation wh
 DARK_THEME_CONTRAST_FLOOR = 7.0    # AAA when dark is opt-in/premium (dark slides are washed out at projection)
 TYPE_LAYOUT_SYSTEM_REL = "working/typography/type_layout_system.md"  # the gate-of-record artifact
 
+# U047 — Rule 3.5 staging. These three checks are new gates meeting already-shipped
+# decks, so they REPORT and return success until the finding count is driven to zero.
+# Stage 3 flips this default. Only the exact string "0" disables enforcement once the
+# default is flipped, and only the exact string "1" enables it before then.
+SLIDE_GEOMETRY_ENFORCE_ENV = "PRESENTATION_SLIDE_GEOMETRY_ENFORCE"
+SLIDE_GEOMETRY_EDGE_MARGIN_FRAC = 0.02
+SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX = 1080
+
 # ---------------------------------------------------------------------------
 # RESEARCH-WEAVE / BREADTH GATE (AF-RESEARCH-WEAVE) — research distributed ACROSS
 # the deck, not funnelled to one proof slide.
@@ -5554,6 +5562,60 @@ def _import_pitch_engines_check():
     return None
 
 
+def _import_slide_geometry():
+    """Import the slide_geometry module that ships beside build_deck.py.
+    Tries a normal import first (scripts/ is on sys.path when build_deck runs / is
+    imported), then a path-based load from this file's own directory. Returns the module
+    or None (callers degrade gracefully). Mirrors _import_prompt_gate."""
+    try:
+        import importlib
+        return importlib.import_module("slide_geometry")
+    except Exception:  # noqa: BLE001
+        try:
+            import importlib.util as _ilu
+            spec = _ilu.spec_from_file_location(
+                "slide_geometry",
+                str(Path(__file__).resolve().parent / "slide_geometry.py"))
+            if spec and spec.loader:
+                mod = _ilu.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        except Exception:  # noqa: BLE001
+            return None
+    return None
+
+
+def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-TEXT-OVERFLOW wrapper — the geometry lives in slide_geometry.py; this is the
+    build_deck-side symbol the manifest's py_symbol lockstep resolves against."""
+    sg = _import_slide_geometry()
+    if sg is None:
+        return ""    # module absent -> defer, exactly as _import_prompt_gate callers do
+    return sg.check_text_fits(run_dir, slides_path)
+
+
+def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-SPELLING wrapper."""
+    sg = _import_slide_geometry()
+    if sg is None:
+        return ""
+    return sg.check_spelling(run_dir, slides_path)
+
+
+def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-TYPE-SIZE-MEASURED wrapper. Passes the FLOOR CONSTANTS and the dark-theme
+    decision in, so the measured floor and check_font_floor's declared floor are the
+    same number by construction."""
+    sg = _import_slide_geometry()
+    if sg is None:
+        return ""
+    dark = _read_dark_optin(run_dir)
+    return sg.check_type_size(
+        run_dir, slides_path,
+        pt_floor=(DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR),
+        dark=dark)
+
+
 def _engine_name_for_code(code: str) -> str:
     """Map an AF code to the human INTELLIGENCE-engine name it belongs to, for the
     routeback payload's `intelligence` field (so the author knows which engine is absent)."""
@@ -8599,6 +8661,34 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                 0, 0, "IMAGE_QC_VISION"))
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
+
+    # --- U047: SLIDE-GEOMETRY sub-checks (AF-TEXT-OVERFLOW / AF-SPELLING /
+    # AF-TYPE-SIZE-MEASURED) — the three pixel-level checks that did not exist. They read
+    # BAKED renders, so postflight is the only place they can run: preflight has no PNGs.
+    # Rule 3.5: WARN by default. Each reason is printed and recorded; only under
+    # SLIDE_GEOMETRY_ENFORCE_ENV=1 does it reach missing_or_short and fail the gate.
+    slide_geometry_reasons = []
+    if run_dir is not None:
+        for _label, _fn, _token in (
+            ("text fits on the slide (no glyph box at an edge, no overlapping text blocks)",
+             _chk_text_fits, "TEXT_OVERFLOW"),
+            ("rendered spelling (every baked word accounted for by approved copy or allowlist)",
+             _chk_spelling, "SPELLING"),
+            ("measured type size (smallest rendered word box at or above the pt floor)",
+             _chk_type_size, "TYPE_SIZE"),
+        ):
+            _reason = _fn(run_dir, slides_path)
+            if not _reason:
+                continue
+            slide_geometry_reasons.append(_reason)
+            if os.environ.get(SLIDE_GEOMETRY_ENFORCE_ENV, "") == "1":
+                missing_or_short.append((
+                    "deck_pptx",
+                    _expand_filename("deck.pptx", deck_slug),
+                    _label, 0, 0, _token))
+                update_deliverable_status(ledger_path, "deck_pptx", "failed", error=_reason)
+    for _reason in slide_geometry_reasons:
+        print("WARN-SLIDE-GEOMETRY: " + _reason, file=sys.stderr, flush=True)
 
     # --- TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE) ---
     # A self-contained HTML on disk is NOT a delivered teleprompter. The bundle is not

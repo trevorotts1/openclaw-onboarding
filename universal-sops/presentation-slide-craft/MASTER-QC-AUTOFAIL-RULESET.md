@@ -286,6 +286,9 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-SP-HOOK | Structure | DECK | Signature Presentation: missing the central hook or the four DISTINCT section hooks (one per phase) | build_deck._chk_sp_structure. DEFERS unless deck_type==signature_presentation |
 | AF-SP-QUADRANT | Structure | DECK | Signature Presentation: a required phase missing the N.E.E.I.T. or the 4-Quadrant marker | build_deck._chk_sp_structure. DEFERS unless deck_type==signature_presentation |
 | AF-SP-P3-PITCH | Phase-3 | slide | Signature Presentation: a q7 offer/product name, a price token, or an enroll/buy/scarcity CTA on a teaching-band slide, or a non-contiguous Phase-3-to-Phase-4 bridge | build_deck._chk_sp_no_pitch -> prove_sp_no_pitch.evaluate_paths. DEFERS unless deck_type==signature_presentation |
+| AF-TEXT-OVERFLOW | 5/6/Postflight | DECK | a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box — measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions | build_deck._chk_text_fits -> slide_geometry.check_text_fits. Defers when renders absent or OCR engine unavailable. |
+| AF-SPELLING | 5/6/Postflight | DECK | a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list — measured over OCR output from the baked PNG, never over the prompt | build_deck._chk_spelling -> slide_geometry.check_spelling. Defers when renders absent or OCR engine unavailable. |
+| AF-TYPE-SIZE-MEASURED | 5/6/Postflight | DECK | the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) — measured, not read off the design brief | build_deck._chk_type_size -> slide_geometry.check_type_size. Defers when renders absent or OCR engine unavailable. |
 
 Every row is a binary trigger with an exact detection method and a verbatim failure message (Section 1 and 2). Wire them as auto-fails, checked before scoring. A deck that trips any DECK-level row, or any slide that trips a slide-level row, cannot be marked final.
 
@@ -548,4 +551,24 @@ These five codes were added after the forensic four-deck failure analysis. Each 
 ### AF-NO-VISION-QC (Fix 6)
 **What failed:** All four decks used only `path.exists()` for "verification." No vision API was called on any image. Part1-GENERAL shipped 40 placeholder PNGs because they passed the file-presence check.
 **Detection:** Phase 6 final gate: confirm `working/qc/vision_qc_log.json` exists, is non-empty, and contains at minimum one entry per slide with a non-null `vision_api_response` field. A log that records only `{"slide": N, "exists": true}` entries is NOT a vision QC log and triggers AF-NO-VISION-QC for the DECK.
+
+---
+
+## slide-geometry — Pixel-Level Baked-Render Checks (2026-07, U047)
+
+Three deterministic checks over rendered slide PNGs using OCR word geometry
+(`pytesseract.image_to_data`). These are the pixel-level checks the department
+promised and never had: does the text FIT, is it SPELLED right, is it BIG enough to
+read. They run in `run_postflight_gate` because preflight has no PNGs.
+
+**Engine dependency:** `pytesseract` + `PIL` (the same pair `prompt_gate._ocr_engine_available`
+already requires). On a box without the OCR engine, all three checks defer (return `""`)
+and record the defer in `working/qc/slide_geometry.json`.
+
+**Thresholds:** Every pixel threshold is derived from the actual PNG's `Image.size`.
+No threshold is hard-coded to a particular resolution. The `min_body_pt` token is
+defined as pt-equivalent at 1080px (build_deck.py:5170), giving `px_per_pt = 2.0 * H / 1080`.
+
+**Warn-mode (Rule 3.5):** These checks REPORT by default (print to stderr) and do not
+fail the gate. Set `PRESENTATION_SLIDE_GEOMETRY_ENFORCE=1` to enforce.
 
