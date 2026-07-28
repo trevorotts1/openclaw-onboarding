@@ -3393,15 +3393,18 @@ def emit_af_coverage():
 
     # ---- 2026-06-19 deck-quality gate probes (Bug 1 fix) ----
     # AF-VISUAL-VARIETY — 35 all-dark near-black PNGs drive check_visual_variety to FAIL.
-    # We write real PNG headers + dark-byte fill so the luma heuristic sees near-zero
-    # mean luminance (all bytes 0x05 = ~2% brightness) and the hue-dominance check
-    # also fires (all slides share the same near-black hue bucket 36 / achromatic).
+    # We write REAL, Pillow-decodable PNGs (near-black solid fill, RGB 5/5/5 => ~2%
+    # mean luminance) so the luma heuristic sees near-zero luminance and the
+    # hue-dominance check also fires (all slides share the achromatic hue bucket 36).
+    # A magic-bytes-only stub (no valid IHDR/IDAT) is NOT decodable by Pillow, so
+    # _png_mean_luma / _png_dominant_hue_bucket return None for it and the probe
+    # silently no-ops -- see _png_mean_luma's 2026-07-26 fix note (no fabricated
+    # measurement on an unreadable file). Use _tiny_png (already used elsewhere in
+    # this suite for real-image fixtures) instead.
     vv_root = Path(tempfile.mkdtemp(prefix="deck_coverage_vv_probe_"))
     (vv_root / "renders").mkdir(parents=True)
     for _i in range(1, 36):
-        # near-black PNG (fill byte 0x05 => very dark; luma << VISUAL_VARIETY_DARK_LUMA_THRESHOLD)
-        (vv_root / "renders" / f"slide-{_i:02d}.png").write_bytes(
-            b"\x89PNG\r\n\x1a\n" + bytes([0x05]) * (100 * 1024))
+        _tiny_png(vv_root / "renders" / f"slide-{_i:02d}.png", color=(5, 5, 5))
     record("AF-VISUAL-VARIETY", build_deck.check_visual_variety(vv_root))
 
     # AF-PACKAGE-CLEAN — a bundle containing a .py dev artifact drives
@@ -4779,18 +4782,23 @@ def test_check_visual_variety():
           (monotone_dark_palette or monotone_palette).
       (b) A run dir with no renders/ dir -> MUST DEFER (pass, empty string).
       (c) A run dir with renders/ but no *.png files -> MUST DEFER.
-    Note: PIL may not be installed in test env; the gate uses a stdlib fallback.
+    Uses _tiny_png (real, Pillow-decodable images) rather than a magic-bytes-only
+    stub: since the 2026-07-26 fix to _png_mean_luma (no fabricated measurement on
+    a file Pillow cannot decode), a stub with no valid IHDR/IDAT decodes to None and
+    the check silently defers instead of failing -- this would have made the (a)
+    assertion below a false negative when Pillow IS installed. When Pillow is
+    absent entirely, check_visual_variety fails closed before decoding anything
+    (see _imaging_available), so this fixture only needs a real image when Pillow
+    can actually read one.
     Returns a list of failure strings ([] = all passed)."""
     fails = []
 
-    # (a) 35 all-dark slides (near-black fill byte 0x05 -> very dark).
+    # (a) 35 all-dark slides (near-black fill -> very dark mean luma).
     root = Path(tempfile.mkdtemp(prefix="deck_visual_variety_test_"))
     renders_dir = root / "renders"
     renders_dir.mkdir(parents=True, exist_ok=True)
     for i in range(1, 36):
-        png_path = renders_dir / f"slide-{i:02d}.png"
-        # Write a small mostly-dark PNG (fill with near-black bytes).
-        png_path.write_bytes(b"\x89PNG\r\n\x1a\n" + bytes([0x05]) * (100 * 1024))
+        _tiny_png(renders_dir / f"slide-{i:02d}.png", color=(5, 5, 5))
     r = build_deck.check_visual_variety(root)
     if not r or "AF-VISUAL-VARIETY" not in r:
         fails.append(
