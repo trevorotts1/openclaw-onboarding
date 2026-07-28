@@ -80,7 +80,15 @@
     "SLIDE_COUNT": "deck_brief.SLIDE_COUNT",
     "DELIVERY_DESTINATIONS": "deck_brief.DELIVERY_DESTINATIONS",
     "DEADLINE": "deck_brief.DEADLINE",
-    "CLIENT_NOTES": "deck_brief.CLIENT_NOTES"
+    "CLIENT_NOTES": "deck_brief.CLIENT_NOTES",
+    "WANT_TELEPROMPTER": "pre_presentation_capture.WANT_TELEPROMPTER",
+    "TELEPROMPTER_DECLINED_REASON": "pre_presentation_capture.TELEPROMPTER_DECLINED_REASON",
+    "WANT_SPEECH_SCRIPT": "pre_presentation_capture.WANT_SPEECH_SCRIPT",
+    "SPEECH_SCRIPT_DECLINED_REASON": "pre_presentation_capture.SPEECH_SCRIPT_DECLINED_REASON",
+    "WANT_GHL_UPLOAD": "pre_presentation_capture.WANT_GHL_UPLOAD",
+    "GHL_UPLOAD_DECLINED_REASON": "pre_presentation_capture.GHL_UPLOAD_DECLINED_REASON",
+    "WANT_AUDIO_DELIVERABLE": "pre_presentation_capture.WANT_AUDIO_DELIVERABLE",
+    "AUDIO_DECLINED_REASON": "pre_presentation_capture.AUDIO_DECLINED_REASON"
   },
   "session_budget": {
     "max_turns": 44,
@@ -258,6 +266,154 @@
       "block_gate": false,
       "default": "deck-only",
       "resolverHint": "Default if owner says 'just the deck' or 'no preference': deck-only. The Director dispatches ROLE-19 (guide), ROLE-20 (speech), ROLE-21 (audio) based on this value."
+    },
+    {
+      "id": "want_teleprompter",
+      "section": "deck-intake",
+      "order": 7.1,
+      "prompt": "I'll build you a presenter TELEPROMPTER — a scrolling web app you can run on a second screen while you speak. Do you want it? (yes / no)",
+      "help": "Default YES. The teleprompter is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, build the teleprompter",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "WANT_TELEPROMPTER",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote."
+    },
+    {
+      "id": "teleprompter_declined_reason",
+      "section": "deck-intake",
+      "order": 7.11,
+      "prompt": "Understood -- no teleprompter. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_teleprompter is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "kind": "text",
+      "storeOn": "TELEPROMPTER_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_teleprompter",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_teleprompter is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+    },
+    {
+      "id": "want_speech_script",
+      "section": "deck-intake",
+      "order": 7.2,
+      "prompt": "I'll write you a full word-for-word SPEECH SCRIPT you can deliver from the stage or record. Do you want it? (yes / no)",
+      "help": "Default YES. The speech script is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, write the speech script",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "WANT_SPEECH_SCRIPT",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+    },
+    {
+      "id": "speech_script_declined_reason",
+      "section": "deck-intake",
+      "order": 7.21,
+      "prompt": "Understood -- no speech script. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_speech_script is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "kind": "text",
+      "storeOn": "SPEECH_SCRIPT_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_speech_script",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_speech_script is 'yes'. When asked, it BLOCKS --complete."
+    },
+    {
+      "id": "want_ghl_upload",
+      "section": "deck-intake",
+      "order": 7.3,
+      "prompt": "I can upload the finished deck directly to your GoHighLevel account. Do you want the GHL upload? (yes / no)",
+      "help": "Default YES. The GHL upload is a standard delivery destination and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, upload to GHL",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "WANT_GHL_UPLOAD",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+    },
+    {
+      "id": "ghl_upload_declined_reason",
+      "section": "deck-intake",
+      "order": 7.31,
+      "prompt": "Understood -- no GHL upload. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_ghl_upload is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "kind": "text",
+      "storeOn": "GHL_UPLOAD_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_ghl_upload",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_ghl_upload is 'yes'. When asked, it BLOCKS --complete."
+    },
+    {
+      "id": "want_audio_deliverable",
+      "section": "deck-intake",
+      "order": 7.4,
+      "prompt": "I'll produce an AUDIO demo of your talk in your chosen voice. Do you want the audio deliverable? (yes / no)",
+      "help": "Default YES. The audio deliverable is a standard deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant.",
+      "kind": "text",
+      "allowed_values": [
+        "yes",
+        "no"
+      ],
+      "value_labels": {
+        "yes": "Yes, build the audio demo",
+        "no": "No thank you"
+      },
+      "default": "yes",
+      "storeOn": "WANT_AUDIO_DELIVERABLE",
+      "required": true,
+      "block_gate": true,
+      "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up."
+    },
+    {
+      "id": "audio_declined_reason",
+      "section": "deck-intake",
+      "order": 7.41,
+      "prompt": "Understood -- no audio deliverable. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+      "help": "Asked ONLY when want_audio_deliverable is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+      "kind": "text",
+      "storeOn": "AUDIO_DECLINED_REASON",
+      "required": true,
+      "block_gate": true,
+      "conditional_on": {
+        "id": "want_audio_deliverable",
+        "equals": "no"
+      },
+      "resolverHint": "Auto-skipped whenever want_audio_deliverable is 'yes'. When asked, it BLOCKS --complete."
     },
     {
       "id": "want_audio_demo",
@@ -627,5 +783,24 @@
       "required": false,
       "block_gate": false
     }
-  ]
+  ],
+  "waiver_field_mapping": {
+    "_comment": "U026 — the CONSENT record. Each entry maps a gate key (see the engine's Gates class) to the intake question that captures the client's own decision, plus the conditional follow-up that captures their VERBATIM words when they decline. A gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent: every toggle here is required+block_gate, so --complete cannot pass while one is unanswered. prompt_floor and qc are deliberately ABSENT — a client cannot consent to a thinner prompt or a lower quality bar; those are craft floors, not options.",
+    "teleprompter": {
+      "toggle": "want_teleprompter",
+      "reason": "teleprompter_declined_reason"
+    },
+    "script": {
+      "toggle": "want_speech_script",
+      "reason": "speech_script_declined_reason"
+    },
+    "ghl_upload": {
+      "toggle": "want_ghl_upload",
+      "reason": "ghl_upload_declined_reason"
+    },
+    "audio": {
+      "toggle": "want_audio_deliverable",
+      "reason": "audio_declined_reason"
+    }
+  }
 }

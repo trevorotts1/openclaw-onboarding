@@ -476,16 +476,85 @@ def merge_intake_json(run_dir: pathlib.Path, updates: dict) -> pathlib.Path:
     return p
 
 
+
+def _build_waiver_records(qdata: dict, ledger: dict) -> list:
+    """U026 — assemble the CLIENT CONSENT records from the intake ledger.
+
+    One record per gate the client explicitly declined, per the waiver schema the
+    engine's gate evaluator reads:
+        {rule, source, client_request_quote, intake_field, captured_at, captured_from}
+
+    A record is emitted ONLY when the toggle is validated AND its answer is 'no'
+    AND the reason answer is validated and non-empty. There is no
+    assistant-authored fallback and no inferred decline: a missing reason yields
+    NO record, which leaves the gate ENFORCED. That is the safe direction.
+
+    A `skipped` entry is rejected outright: auto_skip_conditionals stamps skipped
+    questions validated=True with answer="(not applicable)" (:365-368), and a
+    question that was never asked cannot carry consent.
+    """
+    mapping = (qdata.get("waiver_field_mapping") or {})
+    entries = ledger.get("entries", {})
+    out = []
+    for rule, fields in mapping.items():
+        if rule.startswith("_"):
+            continue
+        tog = entries.get(fields["toggle"], {})
+        if not tog.get("validated"):
+            continue
+        if str(tog.get("normalized", tog.get("answer", ""))).strip().lower() != "no":
+            continue
+        rsn = entries.get(fields["reason"], {})
+        quote = str(rsn.get("answer") or "").strip()
+        # U026: an AUTO-SKIPPED entry is written validated with a non-empty
+        # answer -- auto_skip_conditionals stamps validated=True, skipped=True,
+        # answer="(not applicable)" at deck-intake-driver.py:365-368. Checking
+        # only `validated and quote` therefore accepts the driver's own
+        # placeholder as the client's words. A skipped question was never asked,
+        # so it can never carry consent. Reject it before anything else.
+        if rsn.get("skipped"):
+            continue
+        if not (rsn.get("validated") and quote):
+            continue          # no quote -> no waiver -> gate stays enforced.
+        out.append({
+            "rule": rule,
+            "source": "intake_field",
+            "client_request_quote": quote,
+            "intake_field": fields["reason"],
+            "captured_at": rsn.get("validated_at") or rsn.get("asked_at") or _now(),
+            "captured_from": "deck-intake-driver.py",
+        })
+    return out
+
 def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str) -> None:
     """After presentation_type or signature_source is recorded, (re)compute the
     derived legacy fields and merge them into working/copy/intake.json. No-op
     (and never raises) if presentation_type has not been validated yet or
     run_dir is unavailable (e.g. --answer called without a real run dir)."""
+    _WAIVER_IDS = frozenset((
+        "want_teleprompter", "teleprompter_declined_reason",
+        "want_speech_script", "speech_script_declined_reason",
+        "want_ghl_upload", "ghl_upload_declined_reason",
+        "want_audio_deliverable", "audio_declined_reason",
+    ))
     if qid not in ("presentation_type", "signature_source", "recipient_name",
-                   "extracted_substance"):
+                   "extracted_substance") and qid not in _WAIVER_IDS:
         return
     if run_dir is None:
         return
+
+    # U026: waiver-question answers always trigger a consent-record write.
+    if qid in _WAIVER_IDS:
+        waivers = _build_waiver_records(qdata, ledger)
+        merge_intake_json(run_dir, {"waivers": waivers})
+        # Still do the type-picker derivation if presentation_type is validated
+        # (belt-and-suspenders — ensures the waiver write and the derived fields
+        # both land when an answer is recorded).
+        entries = ledger.get("entries", {})
+        if entries.get("presentation_type", {}).get("validated"):
+            _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+        return
+
     entries = ledger.get("entries", {})
     pt_entry = entries.get("presentation_type", {})
     if not pt_entry.get("validated"):
@@ -866,6 +935,12 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     # --next, e.g. test fixtures or a resumed/edited ledger).
     if entries.get("presentation_type", {}).get("validated"):
         _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+
+    # U026: the CLIENT CONSENT record. NOT fail-soft — a lost waiver is a gate the
+    # client legitimately declined that nobody can pass without an agent forging a
+    # permission slip. A write failure must fail --complete loudly.
+    waivers = _build_waiver_records(qdata, ledger)
+    merge_intake_json(run_dir, {"waivers": waivers})
 
     # GK-23/D18: non-signature deck intake gets the SAME turn-ledger provenance
     # stamp as the signature path (deck-intake-questions.json order enforcement
