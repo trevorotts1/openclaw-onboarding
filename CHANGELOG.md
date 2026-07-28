@@ -51,6 +51,13 @@ Touches: `32-command-center-setup/INSTALL.md`, `32-command-center-setup/SKILL.md
 `06-ghl-install-pages/tools/browser_manager.{py,sh}`, `scripts/agent-browser-reaper.sh`,
 `scripts/guard-agent-browser-managed.sh`).
 
+## [v21.3.1]  -  2026-07-27  -  Ripple: batch of 7 units
+
+Ripple batch covering U046, U020, U014, U054, U055, U056 and U057 (7 units).
+Entry added retroactively: the tag was cut without one, which failed the G2 gate
+("every v11+ annotated tag must have a CHANGELOG entry") on every subsequent pull
+request. No code change accompanies this entry.
+
 ## [v21.4.0]  -  2026-07-27  -  Retire deck-build-guard.sh (U025)
 
 `deck-build-guard.sh` is retired. Its intake-ledger check is relocated into
