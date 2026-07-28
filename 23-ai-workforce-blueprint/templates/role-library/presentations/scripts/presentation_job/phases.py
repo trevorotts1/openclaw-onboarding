@@ -14,6 +14,7 @@ from .manifest import Manifest, Phase
 from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
+from .artifacts import validate_artifact
 from . import heal
 
 # ---------------------------------------------------------------------------
@@ -64,12 +65,33 @@ class Engine:
                 missing.append(rel)
         return (not missing), missing
 
+    def _revalidate_banked(self, phase: Phase, ps: Dict[str, Any]) -> List[str]:
+        """Return a list of human-readable reasons, empty when every banked artifact is still good."""
+        bad = []
+        shas = ps.get("sha256") or {}
+        for rel in (ps.get("artifacts") or []):
+            ok, why = validate_artifact(self.run_dir, rel, self.manifest,
+                                        recorded_sha=shas.get(rel))
+            if not ok:
+                bad.append(f"{rel}: {why}")
+        if not (ps.get("artifacts") or []) and phase.produces_artifact:
+            bad.append("phase recorded status=done with an empty artifact list")
+        return bad
+
     # -- executors --------------------------------------------------------
     def run_phase(self, phase: Phase) -> int:
         ps = self._phase_state(phase.id)
         if ps.get("status") == "done":
-            print(f"SKIP {phase.id}: already done (resuming reuses banked work)", flush=True)
-            return EXIT_OK
+            bad = self._revalidate_banked(phase, ps)
+            if not bad:
+                print(f"SKIP {phase.id}: already done, {len(ps.get('artifacts', []))} artifact(s) "
+                      f"re-validated (resuming reuses banked work)", flush=True)
+                return EXIT_OK
+            self.report.event(
+                "phase.banked_invalid",
+                f"{phase.id} was marked done but {len(bad)} banked artifact(s) no longer validate: "
+                + "; ".join(bad) + " -- re-running this phase.")
+            self._checkpoint(phase.id, status="pending", banked_invalid=bad)
 
         self.state["current_phase"] = phase.id
         self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
@@ -116,7 +138,13 @@ class Engine:
             return EXIT_OK
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
-        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow())
+        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
+                         pre_run_artifacts=sorted(
+                             str(m.relative_to(self.run_dir))
+                             for rel in phase.produces_artifact
+                             for m in (self.run_dir.glob(rel) if any(c in rel for c in "*?[")
+                                       else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
+                             if m.is_file()))
         budget = phase.budget_minutes * 60
         for attempt in range(1, HEAL_CAP_TRANSIENT + 1):
             try:
@@ -165,17 +193,26 @@ class Engine:
 
         deadline = time.time() + phase.budget_minutes * 60
         announced_half = False
+        checkpoint_every = max(60, phase.heartbeat_interval_minutes * 60 // 4)
+        last_cp = time.time()
+        started_at = time.time()
         while time.time() < deadline:
             ok, _ = self._artifacts_present(phase)
             if ok:
                 return EXIT_OK
-            remaining = deadline - time.time()
+            now = time.time()
+            remaining = deadline - now
             if not announced_half and remaining < (phase.budget_minutes * 60) / 2:
                 announced_half = True
                 self.report.to_requester(
                     "progress",
                     f"Still waiting on {phase.id} ({phase.owning_role}). "
                     f"About {int(remaining/60)} minutes before I flag it.")
+            if now - last_cp >= checkpoint_every:
+                last_cp = now
+                self._checkpoint(phase.id, status="running",
+                                 waiting_for=list(phase.produces_artifact),
+                                 waited_seconds=int(now - started_at))
             time.sleep(15)
         return self._block(
             phase,
@@ -184,18 +221,30 @@ class Engine:
 
     def _block(self, phase: Phase, reason: str) -> int:
         """Park resumable. Never die, never restart from scratch (decision #5)."""
+        # Count banked artifacts BEFORE checkpointing, so the current
+        # phase is still "done" when we look for done phases.
+        banked, lost = [], []
+        for ps_ in self.state.get("phases", []):
+            if ps_.get("status") != "done":
+                continue
+            for a in (ps_.get("artifacts") or []):
+                ok, _why = validate_artifact(self.run_dir, a, self.manifest,
+                                             recorded_sha=(ps_.get("sha256") or {}).get(a))
+                (banked if ok else lost).append(a)
         self._checkpoint(phase.id, status="blocked", blocked_reason=reason)
         self.state["terminal"] = "BLOCKED"
         self.state["blocked"] = {"phase": phase.id, "reason": reason, "at": utcnow()}
-        banked = [a for ps in self.state.get("phases", []) if ps.get("status") == "done"
-                  for a in ps.get("artifacts", [])]
         self.store.save(self.state)
         if self.board:
             self.board.mark_blocked(phase.id, reason)
+        safe_msg = f"{len(banked)} file(s) are saved and {len(lost)} will be rebuilt on resume " \
+                   "-- nothing you sent us is lost."
+        if not lost:
+            safe_msg = f"{len(banked)} file(s) already produced are saved -- nothing is lost."
         self.report.to_requester(
             "blocked",
             f"Your presentation is paused at {phase.id}. {reason} "
-            f"{len(banked)} file(s) already produced are saved — nothing is lost. "
+            f"{safe_msg} "
             "We have been told and are looking at it.")
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
@@ -205,6 +254,9 @@ class Engine:
               file=sys.stderr)
         print(f"  banked   : {len(banked)} artifact(s) — reused on resume, not regenerated",
               file=sys.stderr)
+        if lost:
+            print(f"  lost     : {len(lost)} artifact(s) — will be rebuilt on resume",
+                  file=sys.stderr)
         print("\n  continue with:", file=sys.stderr)
         print(f"    python3 {Path(__file__).name} --resume --run-dir {self.run_dir}",
               file=sys.stderr)
