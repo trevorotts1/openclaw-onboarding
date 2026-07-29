@@ -14,7 +14,8 @@ per-fix rolls are not doctrine.
 ZERO boxes and ZERO people. Which box plays each pre-roll proving role, the wave
 membership, and the per-box remediation checklist live in the operator's private
 notes, never in this repo. See `scripts/qc-assert-no-client-names.sh` (enforced
-on every commit by `.githooks/pre-commit`).
+on clones where `scripts/install-git-hooks.sh` has been run; the hook is per-clone
+local configuration and must be installed once per clone).
 
 ---
 
