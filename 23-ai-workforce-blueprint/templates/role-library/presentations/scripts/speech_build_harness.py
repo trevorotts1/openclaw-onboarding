@@ -69,6 +69,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+from presentation_job.checkpoint import atomic_write_text
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -289,7 +290,7 @@ def slide_path(workdir: Path, slide_no: int) -> Path:
 def save_ledger(ledger: SpeechLedger, workdir: Path) -> None:
     workdir.mkdir(parents=True, exist_ok=True)
     lp = ledger_path(workdir)
-    lp.write_text(json.dumps(ledger.to_dict(), indent=2))
+    atomic_write_text(lp, json.dumps(ledger.to_dict(), indent=2))
 
 
 def load_ledger(workdir: Path) -> Optional[dict]:
@@ -306,7 +307,7 @@ def checkpoint_slide(slide: SlideSpec, workdir: Path) -> None:
     """Write a slide's spoken text to disk the moment it's finished."""
     workdir.mkdir(parents=True, exist_ok=True)
     sp = slide_path(workdir, slide.slide_no)
-    sp.write_text(slide.spoken_text)
+    atomic_write_text(sp, slide.spoken_text)
     slide.status = "written"
 
 
