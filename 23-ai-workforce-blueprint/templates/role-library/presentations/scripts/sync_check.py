@@ -40,6 +40,7 @@ EXIT CODES:
     4 — drift (distinct from build_deck's 1/2/3 so a caller can tell lockstep
         drift from a render/config/preflight failure).
     2 — sync_check could not run (an input is missing/unparseable).
+       Warn-mode (W*) findings never change the exit code; see --json "warn_count".
 
 USAGE:
     python3 sync_check.py            # human report, exit 0 / 4
@@ -366,6 +367,18 @@ EXTENSION_STEP = {
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
 }
 
+# WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
+# `drift`, they never contribute to the exit code, and they never flip --json's
+# "in_sync". Letter W is chosen because A/B/C/D/E/V are all in use as drift classes
+# (A1-A8, B1-B2, C1, D1-D2, E1-E2 in EXTENSION_STEP, plus V1/V2/V3 emitted by
+# value_checks()). Reusing A7 — as an earlier draft proposed — would have attached
+# an exit-0 meaning to the live sop_refs integrity class at :587-596.
+WARN_STEP = {
+    "W1": "step (i) — declare executor and verifier on the phase in PIPELINE-MANIFEST.json "
+          "(the step contract). ADVISORY until every phase carries both; then this class "
+          "is promoted to fail-closed in a separate unit.",
+}
+
 
 # ---------------------------------------------------------------------------
 # (V) VALUE-LEVEL DRIFT — the cited NUMBER must match the code constant.
@@ -478,6 +491,32 @@ def value_checks(manifest_text):
                     f"PIPELINE-MANIFEST.json cites a {n}-char ceiling but build_deck.py "
                     f"PROMPT_CHAR_CEILING={ceiling}. Reconcile the manifest prose to {ceiling}.")
     return drift
+
+
+def warn_checks(manifest):
+    """W1 — the STEP CONTRACT, in warn-mode (Rule 3.5 stage 1).
+
+    Every phase should declare BOTH `executor` (who runs the step) and `verifier` (what
+    proves it ran). Measured 2026-07-25: zero of 20 phases in the installed v18 manifest
+    and zero of 26 in the canonical v25 manifest declare `executor`, and `verifier` is
+    not a field in either. A fail-closed version of this check would therefore fail every
+    phase on day one, so it reports and returns; the count IS the work list.
+
+    Returns a list of {check, item, detail} dicts for the SEPARATE warnings list. It must
+    never be added to `drift`: main() exits 4 on any drift entry, and two callers treat
+    non-zero as a hard stop (the CI lockstep job, and presentation-canonical-entry.sh's
+    GATE 3, which maps it to AF-CANONICAL-RENDER-BYPASS / exit 7)."""
+    warns = []
+    for ph in manifest["phases"]:
+        missing = [k for k in ("executor", "verifier") if not ph.get(k)]
+        if missing:
+            warns.append({
+                "check": "W1",
+                "item": ph["id"],
+                "detail": (f"phase {ph['id']} declares no {' and no '.join(missing)}. "
+                           f"{WARN_STEP['W1']}"),
+            })
+    return warns
 
 
 def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
@@ -700,7 +739,17 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
-def report_human(drift, manifest, explain):
+def _print_warnings(warnings, manifest):
+    if warnings:
+        print(f"\n(W) STEP-CONTRACT WARNINGS — ADVISORY, exit code unaffected "
+              f"({len(warnings)} of {len(manifest['phases'])} phases):", file=sys.stderr)
+        for w in warnings:
+            print(f"  WARN {w['check']}: [{w['item']}] {w['detail']}", file=sys.stderr)
+        print(f"\n{len(warnings)} warning(s). These do NOT fail the check. Drive the count "
+              f"to zero, then promote W1 to fail-closed in a separate change.", file=sys.stderr)
+
+
+def report_human(drift, warnings, manifest, explain):
     if not drift:
         print("=== sync_check: PRESENTATIONS SOP <-> build_deck.py LOCKSTEP ===")
         print(f"manifest_version: {manifest['manifest_version']}")
@@ -708,10 +757,12 @@ def report_human(drift, manifest, explain):
               f"roles: {len(manifest['roles'])}")
         print("IN SYNC — the Python renderer, the MASTER ruleset Section-5 table, the "
               "role roster, and the SOP set all match PIPELINE-MANIFEST.json.")
+        _print_warnings(warnings, manifest)
         return
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
     c = [d for d in drift if d["check"].startswith("C")]
+    d_items = [x for x in drift if x["check"].startswith("D")]
     e = [d for d in drift if d["check"].startswith("E")]
     v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
@@ -730,6 +781,11 @@ def report_human(drift, manifest, explain):
               "an AF code the manifest does not declare (HOLE B):", file=sys.stderr)
         for d in c:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if d_items:
+        print("\n(D) DELIVERABLE-KEY DRIFT — a required deliverable key is declared on one "
+              "side of the contract and not the other:", file=sys.stderr)
+        for d in d_items:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if e:
         print("\n(E) PHASE-STRUCTURE DRIFT — a manifest phase is missing a required "
               "structural block (client_report, heartbeat_minutes on long_running):",
@@ -745,6 +801,7 @@ def report_human(drift, manifest, explain):
           "change to a Presentations SOP/role/gate MUST update PIPELINE-MANIFEST.json "
           "(+ bump manifest_version), build_deck.py, the MASTER ruleset, and a test.",
           file=sys.stderr)
+    _print_warnings(warnings, manifest)
 
 
 def main():
@@ -764,6 +821,8 @@ def main():
     drift = run_checks(manifest, bd, ruleset_codes, role_stems, sop_files)
     # (V) value-level drift — the cited NUMBER must equal the code constant.
     drift += value_checks(MANIFEST.read_text())
+    # (W) warn-mode. SEPARATE list. Never merged into `drift` — see warn_checks().
+    warnings = warn_checks(manifest)
 
     if as_json:
         print(json.dumps({
@@ -773,9 +832,11 @@ def main():
                        "autofails": len(manifest["autofails"]),
                        "roles": len(manifest["roles"])},
             "drift": drift,
+            "warnings": warnings,
+            "warn_count": len(warnings),
         }, indent=2))
     else:
-        report_human(drift, manifest, explain)
+        report_human(drift, warnings, manifest, explain)
 
     sys.exit(4 if drift else 0)
 
