@@ -15,6 +15,7 @@ from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
+from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE
 from . import heal
 
 # ---------------------------------------------------------------------------
@@ -134,10 +135,25 @@ class Engine:
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
+            # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            verifier_ok = None
+            verifier_notes = None
+            try:
+                import phase_verifiers
+                verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                if not verifier_ok:
+                    self.report.event("phase.verifier_warn",
+                                      f"{phase.id}: {'; '.join(verifier_notes)}")
+            except ImportError:
+                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
+                                          "substance check skipped")
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
-                             artifacts=sorted(shas.keys()))
+                             artifacts=sorted(shas.keys()),
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
+            if self.board:
+                self.board.phase_progress(phase.id, done_msg)
         return rc
 
     def _run_script_phase(self, phase: Phase) -> int:
@@ -290,6 +306,13 @@ class Engine:
                 f"Got it. Building your presentation in {n} steps. "
                 "I will tell you as each step finishes, and immediately if anything stops.")
 
+        if self.board:
+            deck_slug = self.run_dir.name
+            intake = self.state.get("intake") or {}
+            title = intake.get("title") or f"Presentation {self.state.get('job_id', '?')[:8]}"
+            description = intake.get("description") or ""
+            self.board.open_card(deck_slug, title, description)
+
         for p in phases:
             rc = self.run_phase(p)
             if rc != EXIT_OK:
@@ -310,7 +333,7 @@ class Engine:
             self.report.event("waiver.invalid", str(exc))
             print(f"FATAL: {exc}", file=sys.stderr)
             return EXIT_WAIVER_INVALID
-        waived = {w["rule"] for w in waivers}
+        waived = {w.get("rule") for w in waivers if w.get("rule")}
         self.state["waivers"] = waivers
 
         failures = []
