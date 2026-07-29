@@ -8,14 +8,16 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
-    StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED,
+    StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
-from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
+from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
+from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE
 from . import heal
+from . import persona
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -112,6 +114,11 @@ class Engine:
                      f"Starting {phase.id} ({phase.owning_role})")
         self.report.to_requester("progress", start_msg)
 
+        try:
+            persona.resolve_for_phase(self.run_dir, phase.id)
+        except (RuntimeError, TimeoutError) as exc:
+            return self._block(phase, f"persona governance: {exc}")
+
         if phase.id == "P4-RENDER" and self.board:
             self.board.mark_in_progress()
 
@@ -128,16 +135,39 @@ class Engine:
         if rc == EXIT_OK:
             ok, missing = self._artifacts_present(phase)
             if not ok:
-                return self._block(phase, f"produced no artifact: missing {', '.join(missing)}")
+                rc2 = heal.rung2_regenerate(self, phase, f"missing {', '.join(missing)}")
+                if rc2 != EXIT_OK:
+                    return self._block(phase, f"produced no artifact after "
+                                              f"{heal.HEAL_CAP_REGENERATE} regeneration attempt(s): "
+                                              f"missing {', '.join(missing)}")
+                ok, missing = self._artifacts_present(phase)
+                if not ok:
+                    return self._block(phase, f"regeneration reported success but produced "
+                                              f"nothing: missing {', '.join(missing)}")
             shas = {}
             for rel in phase.produces_artifact:
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
+            # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            verifier_ok = None
+            verifier_notes = None
+            try:
+                import phase_verifiers
+                verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                if not verifier_ok:
+                    self.report.event("phase.verifier_warn",
+                                      f"{phase.id}: {'; '.join(verifier_notes)}")
+            except ImportError:
+                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
+                                          "substance check skipped")
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
-                             artifacts=sorted(shas.keys()))
+                             artifacts=sorted(shas.keys()),
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
+            if self.board:
+                self.board.phase_progress(phase.id, done_msg)
         return rc
 
     def _run_script_phase(self, phase: Phase) -> int:
@@ -148,6 +178,8 @@ class Engine:
             print(f"DRY-RUN {phase.id}: {cmd}", flush=True)
             return EXIT_OK
 
+        ps = self._phase_state(phase.id)
+
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
         self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
@@ -157,7 +189,7 @@ class Engine:
                                        else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
                              if m.is_file()))
         budget = phase.budget_minutes * 60
-        for attempt in range(1, HEAL_CAP_TRANSIENT + 1):
+        for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
                 r = subprocess.run(cmd, shell=True, cwd=str(self.run_dir),
                                    timeout=budget, capture_output=False)
@@ -174,10 +206,17 @@ class Engine:
             self.report.to_requester(
                 "blocked",
                 f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
-                f"{HEAL_CAP_TRANSIENT}. Nothing you need to do yet.")
-            if attempt < HEAL_CAP_TRANSIENT:
+                f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
+                phase_id=phase.id, reason=reason)
+            if attempt < heal.HEAL_CAP_TRANSIENT:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
-        return self._block(phase, f"script executor failed after {HEAL_CAP_TRANSIENT} attempts")
+
+        # Rung 3: alternate route -- MECHANISM ONLY, NO CLIENT POLICY
+        rc3 = heal.rung3_alt_route(self, phase)
+        if rc3 == EXIT_OK:
+            return EXIT_OK
+
+        return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
 
     def _run_agent_phase(self, phase: Phase) -> int:
         """
@@ -256,7 +295,8 @@ class Engine:
             "blocked",
             f"Your presentation is paused at {phase.id}. {reason} "
             f"{safe_msg} "
-            "We have been told and are looking at it.")
+            "We have been told and are looking at it.",
+            phase_id=phase.id, reason=reason)
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
         print(f"  reason   : {reason}", file=sys.stderr)
@@ -290,6 +330,13 @@ class Engine:
                 f"Got it. Building your presentation in {n} steps. "
                 "I will tell you as each step finishes, and immediately if anything stops.")
 
+        if self.board:
+            deck_slug = self.run_dir.name
+            intake = self.state.get("intake") or {}
+            title = intake.get("title") or f"Presentation {self.state.get('job_id', '?')[:8]}"
+            description = intake.get("description") or ""
+            self.board.open_card(deck_slug, title, description)
+
         for p in phases:
             rc = self.run_phase(p)
             if rc != EXIT_OK:
@@ -300,7 +347,6 @@ class Engine:
         return self.close()
 
     def close(self) -> int:
-        """Fail-closed. Every gate must pass or carry a valid waiver."""
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
             waivers = load_waivers(self.run_dir)
@@ -308,12 +354,14 @@ class Engine:
                 validate_waiver(w, self.run_dir)
         except WaiverError as exc:
             self.report.event("waiver.invalid", str(exc))
-            print(f"FATAL: {exc}", file=sys.stderr)
+            print("\nFATAL: " + str(exc), file=sys.stderr)
+            print("  Valid waiver: {rule, source, client_request_quote, intake_field?, captured_at, captured_from}", file=sys.stderr)
+            print("\n  Resume: python3 presentation_job.py --resume --run-dir " + str(self.run_dir), file=sys.stderr)
             return EXIT_WAIVER_INVALID
-        waived = {w["rule"] for w in waivers}
+        waived = {w.get("rule") for w in waivers if w.get("rule")}
         self.state["waivers"] = waivers
-
         failures = []
+        gate_warnings = []
         for k in ALL_GATE_KEYS:
             g = gates.get(k, {"state": "fail", "reason": "not evaluated"})
             if g.get("state") == "pass":
@@ -321,30 +369,42 @@ class Engine:
             if k in waived and k not in NON_WAIVABLE_GATES:
                 g["state"] = "waived"
                 continue
+            if g.get("warn_only", False):
+                gate_warnings.append({"gate": k, "reason": g.get("reason") or "failed"})
+                continue
             failures.append((k, g.get("reason") or "failed"))
-
+        if gate_warnings:
+            self.state["gate_warnings"] = gate_warnings
+            print(f"{len(gate_warnings)} gate(s) in warn-mode did not pass -- see state.json gate_warnings", file=sys.stderr)
         self.store.save(self.state)
         if failures:
+            failed_keys = [k for k, _ in failures]
+            regated = heal.rung4_regate(self, failed_keys)
+            failures = [(k, r.get("reason") or "failed") for k, r in regated.items()
+                        if r.get("state") != "pass"]
+            if not failures:
+                # All failed gates passed on re-evaluation.
+                if self.board:
+                    self.board.mark_review()
+                self.state["terminal"] = "DONE"
+                self.state["completed_at"] = utcnow()
+                self.store.save(self.state)
+                self.report.to_requester(
+                    "done", "Your presentation is ready. All quality checks passed.")
+                print("DONE — all gates passed after re-evaluation.", flush=True)
+                return EXIT_OK
             self.state["terminal"] = "BLOCKED"
             self.store.save(self.state)
             lines = "\n".join(f"    - {k}: {r}" for k, r in failures)
-            self.report.to_requester(
-                "blocked",
-                "Your presentation is finished building but cannot be delivered yet — "
-                f"{len(failures)} quality check(s) did not pass. We are on it.")
-            print("\nCANNOT CLOSE — fail-closed gates did not pass:\n" + lines, file=sys.stderr)
-            print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.",
-                  file=sys.stderr)
+            print("\nCANNOT CLOSE -- fail-closed gates did not pass:\n" + lines, file=sys.stderr)
+            print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.", file=sys.stderr)
             return EXIT_GATE_BLOCKED
-
         if self.board:
             self.board.mark_review()
         self.state["terminal"] = "DONE"
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)
-        self.report.to_requester(
-            "done", "Your presentation is ready. All quality checks passed.")
-        print("DONE — all gates passed.", flush=True)
+        print("DONE -- all gates passed.", flush=True)
         return EXIT_OK
 
 

@@ -340,17 +340,16 @@ def test_waiver_ghl_upload_valid_quote_passes(tmp_path):
     from presentation_job.waivers import validate_waiver
     base = tmp_path / "waiver_ok"
     client_words = "I do not want the GoHighLevel upload, skip it entirely"
-    tp = base / "working" / "interview"
-    tp.mkdir(parents=True, exist_ok=True)
-    (tp / "intake_transcript.json").write_text(json.dumps([
-        {"role": "owner", "text": client_words},
-    ]))
-    _mk_intake_json(base, has_ghl=True)
+    # Use intake_field path since TRANSCRIPT_WAIVERS_ACCEPTED=False per U013 step 6
+    cp = base / "working" / "copy"
+    cp.mkdir(parents=True, exist_ok=True)
+    (cp / "intake.json").write_text(json.dumps({"has_ghl": True, "skip_ghl": client_words}))
     waiver = {
         "rule": "ghl_upload",
-        "source": "transcript",
+        "source": "intake_field",
         "client_request_quote": client_words,
         "captured_at": "2026-07-27T12:00:00Z",
+        "intake_field": "skip_ghl",
     }
     validate_waiver(waiver, base)
 

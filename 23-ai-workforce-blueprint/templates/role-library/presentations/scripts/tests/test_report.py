@@ -1,3 +1,4 @@
+"""Tests for presentation_job report.py -- U015 throttle, dispatch, events."""
 import json, os, subprocess, sys
 from pathlib import Path
 from unittest import mock
@@ -5,96 +6,114 @@ import pytest
 _scripts_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_scripts_dir))
 from presentation_job.state import StateStore, utcnow
-from presentation_job.report import Reporter, EVENTS_MAX, PROGRESS_MIN_INTERVAL_MINUTES
+from presentation_job.report import Reporter, EVENTS_MAX
 
-def _mkstate(tmp_path, chat_id="test_chat"):
-    run_dir = tmp_path / "run"; run_dir.mkdir()
-    store = StateStore(run_dir)
-    state = {"schema_version":1,"job_id":"test","run_dir":str(run_dir),"created_at":"2026-01-01T00:00:00+00:00","manifest_path":"/x.json","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":chat_id},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
-    return store, state
+def _mkstate(tmp_path, chat_id="tc"):
+    rd = tmp_path / "r"; rd.mkdir(); store = StateStore(rd)
+    s = {"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"2026-01-01T00:00:00+00:00","manifest_path":"/x.json","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":chat_id},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
+    return s, store
 
-class TestDispatchFailsWithoutCmd:
+class TestDispatchFail:
     def test_dispatch_false(self, tmp_path, monkeypatch):
         monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
-        from presentation_job.report import _dispatch
-        assert _dispatch("c","done","hi") is False
-    def test_to_requester_undeliverable(self, tmp_path, monkeypatch):
-        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        r.to_requester("done","test")
-        assert len(state.get("undeliverable",[])) == 1
-        assert state.get("sent",{}).get("done") is None
+        s,st=_mkstate(tmp_path); r=Reporter(s,st); r.to_requester("done","x")
+        assert len(s.get("undeliverable",[]))==1; assert s.get("sent",{}).get("done") is None
 
-class TestDispatchNonZero:
-    def test_nonzero_undeliverable(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\nexit 7\n"); ns.chmod(0o755)
+class TestNonZero:
+    def test_nonzero(self, tmp_path, monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\nexit 7\n");ns.chmod(0o755)
         monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        r.to_requester("done","x")
-        assert len(state.get("undeliverable",[])) >= 1
-        sd = state.get("sent",{}).get("done"); assert sd is None or (isinstance(sd,dict) and sd.get("count",0)==0)
+        s,st=_mkstate(tmp_path); r=Reporter(s,st); r.to_requester("done","x")
+        assert len(s.get("undeliverable",[]))>=1
+        sd=s.get("sent",{}).get("done"); assert sd is None or (isinstance(sd,dict) and sd.get("count",0)==0)
 
-class TestDispatchSuccess:
-    def test_success_stamps(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
+class TestSuccess:
+    def test_success(self, tmp_path, monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
         monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        r.to_requester("progress","started")
-        sd = state.get("sent",{}).get("progress"); assert isinstance(sd,dict); assert sd.get("count")==1
+        s,st=_mkstate(tmp_path); r=Reporter(s,st); r.to_requester("progress","x")
+        sd=s.get("sent",{}).get("progress"); assert isinstance(sd,dict); assert sd.get("count")==1
 
-class TestDispatchTimeout:
-    def test_timeout_undeliverable(self, tmp_path, monkeypatch):
+class TestTimeout:
+    def test_timeout(self, tmp_path, monkeypatch):
         monkeypatch.setenv("PRESENTATION_NOTIFY_CMD","sleep 60")
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        with mock.patch.object(subprocess,"run",side_effect=subprocess.TimeoutExpired("c",30)): r.to_requester("done","x")
-        assert len(state.get("undeliverable",[])) >= 1
+        s,st=_mkstate(tmp_path); r=Reporter(s,st)
+        with mock.patch.object(subprocess,"run",side_effect=subprocess.TimeoutExpired("c",30)):r.to_requester("done","x")
+        assert len(s.get("undeliverable",[]))>=1
 
-class TestDoneNeverThrottled:
-    def test_done_always_delivers(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        for i in range(500): r.to_requester("progress",f"n{i}")
-        r.to_requester("done","deck ready")
-        assert isinstance(state.get("sent",{}).get("done"),dict)
+class TestDoneNever:
+    def test_done(self,tmp_path,monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        s,st=_mkstate(tmp_path);r=Reporter(s,st)
+        for i in range(500):r.to_requester("progress",f"n{i}")
+        r.to_requester("done","deck ready");assert isinstance(s.get("sent",{}).get("done"),dict)
 
-class TestBlockedDedupe:
-    def test_blocked_deduped(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        r.to_requester("blocked","x",phase_id="PX",reason="exit 9")
-        r.to_requester("blocked","x",phase_id="PX",reason="exit 9")
-        r.to_requester("blocked","x",phase_id="PX",reason="exit 9")
-        sd = state.get("sent",{}).get("blocked"); assert isinstance(sd,dict); assert sd.get("count")==1
-        assert state.get("throttled",0) >= 2
-    def test_blocked_different_reason_not_deduped(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        r.to_requester("blocked","x",phase_id="PX",reason="exit 9")
-        r.to_requester("blocked","x",phase_id="PX",reason="executor failed")
-        assert state.get("sent",{}).get("blocked",{}).get("count")==2
+class TestBlocked:
+    def test_dedupe(self,tmp_path,monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        s,st=_mkstate(tmp_path);r=Reporter(s,st)
+        r.to_requester("blocked","x",phase_id="P",reason="e9");r.to_requester("blocked","x",phase_id="P",reason="e9");r.to_requester("blocked","x",phase_id="P",reason="e9")
+        assert s.get("sent",{}).get("blocked",{}).get("count")==1;assert s.get("throttled",0)>=2
+    def test_diff_reason(self,tmp_path,monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        s,st=_mkstate(tmp_path);r=Reporter(s,st)
+        r.to_requester("blocked","x",phase_id="P",reason="e9");r.to_requester("blocked","x",phase_id="P",reason="ef")
+        assert s.get("sent",{}).get("blocked",{}).get("count")==2
 
-class TestEventsCap:
-    def test_events_capped(self, tmp_path):
-        store, state = _mkstate(tmp_path); r = Reporter(state, store)
-        for i in range(EVENTS_MAX+500): r.event("test",f"msg {i}")
-        events = state.get("events",[]); assert len(events) <= EVENTS_MAX+2
-        assert events[-1]["message"] == f"msg {EVENTS_MAX+499}"
+class TestEvents:
+    def test_cap(self,tmp_path):
+        s,st=_mkstate(tmp_path);r=Reporter(s,st)
+        for i in range(EVENTS_MAX+500):r.event("t",f"m{i}")
+        ev=s.get("events",[]);assert len(ev)<=EVENTS_MAX+2;assert ev[-1]["message"]==f"m{EVENTS_MAX+499}"
 
-class TestSentUpgrade:
-    def test_bare_timestamp_upgraded(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); state["sent"]["ack"]="2026-01-01T00:00:00+00:00"; store.save(state)
-        r = Reporter(state, store); r.to_requester("ack","hello")
-        sd = state.get("sent",{}).get("ack"); assert isinstance(sd,dict); assert sd["count"]==1; assert sd["first_at"]=="2026-01-01T00:00:00+00:00"
+class TestUpgrade:
+    def test_upgrade(self,tmp_path,monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        s,st=_mkstate(tmp_path);s["sent"]["ack"]="2026-01-01T00:00:00+00:00";st.save(s)
+        r=Reporter(s,st);r.to_requester("ack","h")
+        sd=s.get("sent",{}).get("ack");assert isinstance(sd,dict);assert sd["count"]==1;assert sd["first_at"]=="2026-01-01T00:00:00+00:00"
 
-class TestThrottleProbe:
-    def test_probe_suppresses_progress(self, tmp_path, monkeypatch):
-        ndir = tmp_path / "notify"; ndir.mkdir(); ns = ndir / "n.sh"; ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n"); ns.chmod(0o755)
-        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
-        store, state = _mkstate(tmp_path); state["throttle_probe"]=True; r = Reporter(state, store)
-        for i in range(10): r.to_requester("progress",f"n{i}")
-        assert state.get("sent",{}).get("progress") is None; assert state.get("throttled",0)==10
+class TestProbe:
+    def test_probe(self,tmp_path,monkeypatch):
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        s,st=_mkstate(tmp_path);s["throttle_probe"]=True;r=Reporter(s,st)
+        for i in range(10):r.to_requester("progress",f"n{i}")
+        assert s.get("sent",{}).get("progress") is None;assert s.get("throttled",0)==10
+
+class Test8MessageBound:
+    """Test 8: throttle assertion — sends many progress messages with time
+    advancing 1 minute per call, verifying total sent is 6-20.
+
+    When PROGRESS_MIN_INTERVAL_MINUTES is set to 0 (mutation), the throttle
+    never suppresses, so all 66 messages go through (>20), and this test FAILS.
+    That proves the suite detects the broken throttle."""
+    def test_message_bound(self,tmp_path,monkeypatch):
+        import presentation_job.report as rpt
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        rd=tmp_path/"r";rd.mkdir();store=StateStore(rd)
+        s={"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"2026-01-01T00:00:00+00:00","manifest_path":"/x.json","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":"tc"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
+        store.save(s)
+        # Fake clock: 1 minute per call, so with PROGRESS_MIN_INTERVAL_MINUTES=10,
+        # every 11th progress message passes (diff >= 10).  64 progress / 11 ≈ 6 sent.
+        # Total: 1 ack + ~6 progress + 1 done ≈ 8 (in the 6-20 band).
+        _tick=[0]
+        monkeypatch.setattr(rpt,'_parse_minutes',lambda ts: (_tick.__setitem__(0,_tick[0]+1) or _tick[0]) if True else 0)
+        r=Reporter(s,store)
+        r.to_requester("ack","Starting build.")
+        for i in range(32):
+            r.to_requester("progress",f"Starting phase {i}",phase_id=f"P{i}",reason="start")
+            r.to_requester("progress",f"Phase {i} complete",phase_id=f"P{i}",reason="done")
+        r.to_requester("done","All done.")
+        sc=s.get("sent",{})
+        total=sum(v.get("count",0) for v in sc.values() if isinstance(v,dict))
+        throttled=s.get("throttled",0)
+        assert isinstance(sc.get("ack"),dict) and sc["ack"]["count"]==1
+        assert isinstance(sc.get("done"),dict) and sc["done"]["count"]==1
+        assert throttled>0,(f"throttled={throttled} — throttle inactive (PROGRESS_MIN_INTERVAL_MINUTES=0?)")
+        assert 6<=total<=20,f"expected 6-20 messages, got {total} (throttled={throttled})"

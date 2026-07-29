@@ -1,5 +1,5 @@
 {
-  "manifest_version": 29,
+  "manifest_version": 30,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -68,7 +68,7 @@
       "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
     }
   ],
-  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the FIVE files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist). The four build-only artifacts (speech_md, speech_fish_md, infographic_png, teleprompter_html) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (FIVE); the per-artifact existence/size gate reads build_bundle_files (NINE).",
+  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the SIX files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist) -- as of D02 (ratified 2026-07-26) this now includes teleprompter_html. The three remaining build-only artifacts (speech_md, speech_fish_md, infographic_png) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (SIX); the per-artifact existence/size gate reads build_bundle_files (NINE).",
   "build_bundle_files": [
     "deck_pptx",
     "deck_pdf",
@@ -85,7 +85,8 @@
     "deck_pdf",
     "guide_pdf",
     "speech_pdf",
-    "audio_mp3"
+    "audio_mp3",
+    "teleprompter_html"
   ],
   "phases": [
     {
@@ -1012,7 +1013,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "delivery interlock \u2014 the five-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
+      "trigger": "delivery interlock \u2014 the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
@@ -1030,7 +1031,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "five-file bundle / infographic / GHL upload incomplete",
+      "trigger": "six-file bundle / infographic / GHL upload incomplete",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },

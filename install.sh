@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.4.2"
+ONBOARDING_VERSION="v21.4.14"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2541,6 +2541,43 @@ PYEOF
   note "[link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP"
   note "[link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
 }
+# ----------------------------------------------------------
+# U006 — Co-locate the canonical presentation entry script + its guard
+# into the materialized Presentations department scripts/ directory.
+# Resolves the workspace via obs_resolve_workspace (this file's own
+# convention), not oc_resolve_workspace_announced.
+# ----------------------------------------------------------
+colocate_presentation_entry() {
+  local dept_scripts=""
+  if command -v obs_resolve_workspace >/dev/null 2>&1; then
+    local ws; ws="$(obs_resolve_workspace 2>/dev/null || true)"
+    if [ -n "$ws" ]; then
+      dept_scripts="$ws/departments/Presentations/scripts"
+    fi
+  fi
+  if [ -z "$dept_scripts" ]; then
+    local _home_ws="${HOME}/.openclaw/workspace"
+    [ -d "/data/.openclaw/workspace" ] && _home_ws="/data/.openclaw/workspace"
+    dept_scripts="$_home_ws/departments/Presentations/scripts"
+  fi
+  if [ ! -d "$dept_scripts" ]; then
+    echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
+    return 0
+  fi
+  local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
+  local copied=0
+  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
+    if [ -f "$src_dir/$f" ]; then
+      cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
+    fi
+  done
+  if [ "$copied" -eq 2 ]; then
+    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
+  else
+    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
+  fi
+}
+# <<< U006-COLOCATE-PRESENTATION-ENTRY-END
 
 # ----------------------------------------------------------
 # Concurrency Configuration
@@ -8244,6 +8281,10 @@ else
     warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
 fi
 echo ""
+
+# U006 — Co-locate the canonical presentation entry script + guard into the
+# materialized department's scripts/ directory.
+colocate_presentation_entry
 
 # FIX 2 (v10.15.48): Operator Telegram channel separation.
 # Adds channels.telegram.accounts.{default,operator} + defaultAccount=default +

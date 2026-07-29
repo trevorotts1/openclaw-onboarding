@@ -1882,9 +1882,14 @@ governing persona per task at runtime using the 5-layer scoring matrix
 (mission / owner_values / company_kpis / dept_kpis / task_fit).
 
 This file lists personas that have been **pre-qualified** for this department's
-work based on their domain alignment. The selector treats this list as a
-recommendation pool, but it can still pick from outside the pool when the
-task context warrants it.
+work based on their domain alignment. For Presentations the resolved BLEND is
+GOVERNING, not advisory: `blend_voice_governance.py` resolves one governing blend
+bundle per narrative phase through `shared-utils/persona_for_job.py` (blend=True)
+before slide authoring, and the engine records it in state.json. The selector may
+still draw a candidate from outside this pool when the task context warrants it —
+but whatever it resolves GOVERNS the written voice. The only exemption is the
+documented flag `SKILL51_BLEND_GOVERNS=0`, which reverts to intake-tone-only
+governance (Skill 51 SKILL.md, "Voice governance"; Skill 6 U98 / D1 ruling).
 
 ## Pre-qualified personas
 
@@ -2465,6 +2470,27 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
         if scripts_copied:
             written.setdefault("scripts", 0)
             written["scripts"] = scripts_copied
+
+        # U024 — post-materialization assertion for blend_voice_governance.py.
+        # A copy that silently diverges is worse than an absence, because
+        # `--prove` would attest to the wrong file.
+        _blend_src = lib_dir / "scripts" / "blend_voice_governance.py"
+        _blend_dst = scripts_target / "blend_voice_governance.py"
+        if _blend_src.is_file():
+            import hashlib as _hashlib
+            _src_hash = _hashlib.sha256(_blend_src.read_bytes()).hexdigest()
+            if not _blend_dst.is_file():
+                raise RuntimeError(
+                    f"blend_voice_governance.py source exists at {_blend_src} "
+                    f"but the materialized copy at {_blend_dst} is absent — "
+                    "the materializer loop should have copied it")
+            _dst_hash = _hashlib.sha256(_blend_dst.read_bytes()).hexdigest()
+            if _src_hash != _dst_hash:
+                raise RuntimeError(
+                    f"blend_voice_governance.py materialized copy has diverged "
+                    f"from its source. source sha256={_src_hash[:16]}... "
+                    f"copy sha256={_dst_hash[:16]}... — refusing to ship a "
+                    f"drifted governance file")
 
     return written
 

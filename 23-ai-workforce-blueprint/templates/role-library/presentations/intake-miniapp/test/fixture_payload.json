@@ -1,0 +1,420 @@
+{
+  "run_id": "FIXTURE",
+  "question_set": "standard",
+  "source": "deck-intake-questions.json",
+  "questions": [
+    {
+      "id": "presentation_type",
+      "order": 0,
+      "prompt": "What kind of presentation is this? (1) From scratch -- we brainstorm and build it new. (2) From your content -- personal: turn something you already have (deck/video/transcript) into a presentation for ONE specific person. (3) From your content -- general: turn existing content into a presentation for a room/mass audience. (4) Signature Presentation -- the 4-phase, 100+-slide signature talk (The Rulebook / The Vault / The Quest / The Original).",
+      "help": "This single answer decides everything downstream -- deck type, creation mode, presentation mode, and audience mode are all derived automatically from it (see legacy_field_mapping at the top of this file). You never have to answer those separately. Default if no preference: from_scratch.",
+      "kind": "enum",
+      "required": true,
+      "allowed_values": [
+        "from_scratch",
+        "content_personal",
+        "content_general",
+        "signature"
+      ],
+      "value_labels": {
+        "from_scratch": "From scratch -- brainstorm and build new",
+        "content_personal": "From your content -- personal (one specific recipient)",
+        "content_general": "From your content -- general (room/mass audience)",
+        "signature": "Signature Presentation (4-phase, 100+ slides)"
+      },
+      "default": "from_scratch",
+      "block_gate": false
+    },
+    {
+      "id": "recipient_name",
+      "order": 0.3,
+      "prompt": "Who is this presentation for -- what is their name?",
+      "help": "Only asked when presentation_type is 'content_personal' (audience_mode:PERSONAL is the one NAMED mode and build_deck.py's _chk_intake requires a non-empty recipient_name for it). Skipped entirely for the other three presentation types.",
+      "kind": "text",
+      "required": true,
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "content_personal"
+      },
+      "block_gate": false
+    },
+    {
+      "id": "signature_source",
+      "order": 0.5,
+      "prompt": "Is this Signature Presentation built from existing content you already have (a deck, video, or transcript), or are we building it from scratch with you?",
+      "help": "Only asked when presentation_type is 'signature'. Determines whether the signature run's creation_mode defaults to from_scratch or is overridden to a content_* mode (never left unset -- AF-MODE-UNSET). Skipped entirely for the other three presentation types.",
+      "kind": "enum",
+      "required": true,
+      "allowed_values": [
+        "from_scratch",
+        "existing_content"
+      ],
+      "value_labels": {
+        "from_scratch": "Building it from scratch with you",
+        "existing_content": "Converting existing content I already have"
+      },
+      "default": "from_scratch",
+      "conditional_on": {
+        "id": "presentation_type",
+        "equals": "signature"
+      },
+      "block_gate": false
+    },
+    {
+      "id": "representation_mix",
+      "order": 1,
+      "prompt": "Who will be in the seats watching this -- and how should the people in the images break down? Give me percentages. For example: 70% African-American women, 20% mixed race, 10% men. Or: 100% women, diverse. Or: no people at all.",
+      "help": "This sets the audience-representation mandate for every image in the deck. If you have no preference or are unsure, say 'no people at all' and we will flag it — a racial or gender default is never assumed.",
+      "kind": "text",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "audience_composition_note",
+      "order": 2,
+      "prompt": "In plain words, who is this audience? For example: all women, multicultural Black + white + Hispanic professionals, mixed gender diverse.",
+      "help": "A single plain-language sentence that names the audience composition. This seeds the audience-engine. May be derived from the representation_mix answer without re-asking if the answer is already clear.",
+      "kind": "text",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "grounded_content",
+      "order": 3,
+      "prompt": "What is the specific book, program, method, or message this deck is built around? I need the name and a one-line description so every image is grounded in YOUR content, not generic inspiration.",
+      "help": "Examples: 'my book, The Momentum Method — a 5-step system for compounding small wins' or 'the Aligned Leader program — three pillars of authentic authority'. If you do not have a final name yet, describe it and we will mark it provisional.",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "visual_mix",
+      "order": 4,
+      "prompt": "Should the slides be people-heavy, some people, typography-led, or a mix?",
+      "help": "People-heavy = most slides show real people in scenes. Some people = a balance of people and concept shots. Typography-led = mostly text-based dramatic slides. Mix = variety across all three. Default if no preference: mix.",
+      "kind": "text",
+      "required": true,
+      "default": "mix",
+      "block_gate": false
+    },
+    {
+      "id": "dark_ok",
+      "order": 5,
+      "prompt": "Default is a clean white base -- the standard that makes premium decks pop. Do you specifically want any dark-styled slides?",
+      "help": "The proven gold standard eliminated all black backgrounds. White base is the safe, premium default. Only say yes if you have a specific creative vision for dark slides.",
+      "kind": "boolean",
+      "required": true,
+      "default": false,
+      "block_gate": false
+    },
+    {
+      "id": "hook_seed",
+      "order": 6,
+      "prompt": "Is there one line you already say all the time -- the phrase you want them humming when they leave? The hook the whole deck will be built around.",
+      "help": "This is the core promise line — the thing your audience will repeat to themselves and others after your presentation. If you do not have one yet, say 'not sure' and the Hook Strategist will derive one during the build.",
+      "kind": "text",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "deliverable_set",
+      "order": 7,
+      "prompt": "Beyond the slide deck itself, what else do you want? I can also produce a presenter's GUIDE (a branded at-a-glance run-of-show), a full word-for-word SPEECH script, and even an AUDIO demo of the talk. Pick one: deck only / +guide / +guide+speech / +audio.",
+      "help": "Deck only = just the PowerPoint. +guide = deck + a printed/PDF presenter guide. +guide+speech = both plus a full speech script. +audio = all of that plus an audio demo in a chosen voice. Default if no preference: deck-only.",
+      "kind": "text",
+      "required": true,
+      "default": "deck-only",
+      "block_gate": false
+    },
+    {
+      "id": "want_audio_demo",
+      "order": 8,
+      "prompt": "For the audio demo, what voice or persona should it use -- your own cloned voice, a warm female narrator, a high-energy male host, or something else?",
+      "help": "Ask only if DELIVERABLE_SET is '+audio'; otherwise default false. A voice is never defaulted silently if '+audio' is chosen but no voice is specified.",
+      "kind": "text",
+      "required": false,
+      "default": false,
+      "ask_if": {
+        "question_id": "deliverable_set",
+        "contains": "audio"
+      },
+      "block_gate": false
+    },
+    {
+      "id": "target_wpm",
+      "order": 9,
+      "prompt": "How fast should the spoken pace feel -- standard (about 140 words a minute, the most credible pace), a slower teach pace (about 130), or a high-energy pace (about 150 to 160)?",
+      "help": "Ask only if DELIVERABLE_SET includes a speech ('+guide+speech' or '+audio'). The presentation-speech constant is 140 WPM; never silently default to 150.",
+      "kind": "integer",
+      "required": false,
+      "default": 140,
+      "ask_if": {
+        "question_id": "deliverable_set",
+        "contains_any": [
+          "speech",
+          "audio"
+        ]
+      },
+      "block_gate": false
+    },
+    {
+      "id": "style_source",
+      "order": 10,
+      "prompt": "Do you have an existing deck or visual style you want matched, a reference deck I should analyze, or should we CREATE a fresh signature style for you?",
+      "help": "Match-existing = we replicate your current look. Analyze-reference = you share a deck or brand for us to study. Create-new = Brand Steward builds a fresh STYLE BLOCK. Default if no preference: create-new.",
+      "kind": "text",
+      "required": false,
+      "default": "create-new",
+      "block_gate": false
+    },
+    {
+      "id": "goal",
+      "order": 11,
+      "prompt": "In one line, what is this presentation FOR -- what do you want people to do at the end?",
+      "help": "This is the core objective the whole deck is built to serve (buy / book / join / enroll / something else).",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "cta_action",
+      "order": 12,
+      "prompt": "What is the exact call-to-action -- the specific verb and next step you want them to take?",
+      "help": "Example: 'book a call', 'buy the program', 'join the waitlist'. This drives the closing slide's action language.",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "event_price",
+      "order": 13,
+      "prompt": "Is the event itself -- the webinar, workshop, or challenge -- free or paid to ATTEND? If paid, what does a seat cost?",
+      "help": "TWO-PRICES RULE: this is the price to ATTEND, NOT the offer price sold at the end (final_price, asked separately). Never conflate the two.",
+      "kind": "text",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "access_free",
+      "order": 14,
+      "prompt": "Just to confirm -- is attending the event completely free, or is there a cost to attend?",
+      "help": "Derive from event_price when the owner already gave an unambiguous number/'free' answer; only ask fresh if event_price was vague.",
+      "kind": "boolean",
+      "required": true,
+      "block_gate": false
+    },
+    {
+      "id": "target_feeling",
+      "order": 15,
+      "prompt": "How should they feel walking away from this presentation?",
+      "help": "The emotional target the whole arc is tuned toward (e.g. empowered, urgent, hopeful, challenged).",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "tone",
+      "order": 16,
+      "prompt": "Pick a tone -- Inspirational, Tough Love, Challenger, Teacher, Storyteller, High-Energy Hype, or Calm Premium. You can also blend two.",
+      "help": "One of the seven named styles, or a blend of two.",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "offer_name",
+      "order": 17,
+      "prompt": "What are you SELLING at the end -- the exact name of the product or offer?",
+      "help": "The OFFER sold at the end -- SEPARATE from the event/access price already captured. Never invented.",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "offer_stack",
+      "order": 18,
+      "prompt": "What's included in that offer -- the full stack of what they get?",
+      "help": "Every component of the offer (bonuses, modules, coaching calls, etc).",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "price_mode",
+      "order": 19,
+      "prompt": "Is the final price a gradual price DROP through the pitch, or a straight, single price shown once?",
+      "help": "Pick: drop / straight.",
+      "kind": "enum",
+      "required": true,
+      "allowed_values": [
+        "drop",
+        "straight"
+      ],
+      "block_gate": true
+    },
+    {
+      "id": "final_price",
+      "order": 20,
+      "prompt": "What is the final price of the offer?",
+      "help": "The OFFER price ONLY -- NEVER copied or inferred from event_price/access_free. Set 0 only on the owner's EXPLICIT confirmation there is no paid offer (free_only_close).",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "duration_min",
+      "order": 21,
+      "prompt": "How many minutes should this presentation run -- 10, 15, 30, 45, 60, or 90?",
+      "help": "Drives the slide-count math (duration target vs source slide count).",
+      "kind": "integer",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "audience",
+      "order": 22,
+      "prompt": "Beyond who's in the room (already captured), any additional specifics about this audience -- industry, income level, the pain point that brought them here?",
+      "help": "REPRESENTATION_MIX already captured the composition; do not re-ask the percentage question here.",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "brand_primary",
+      "order": 23,
+      "prompt": "Any brand colors or a logo you want on the slides?",
+      "help": "Skip if already on file for this client.",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "logo_on_slides",
+      "order": 24,
+      "prompt": "Should the logo appear on every slide, or just the cover/close?",
+      "kind": "boolean",
+      "required": false,
+      "default": false,
+      "block_gate": false
+    },
+    {
+      "id": "price_anchor",
+      "order": 25,
+      "prompt": "What is the anchor value you want to show before the drop -- the 'worth $X' number (should be at least 3x the final price)?",
+      "help": "Only asked when price_mode is 'drop'.",
+      "kind": "text",
+      "required": true,
+      "ask_if": {
+        "question_id": "price_mode",
+        "equals": "drop"
+      },
+      "block_gate": false
+    },
+    {
+      "id": "payment_plan",
+      "order": 26,
+      "prompt": "Is there a payment-plan option for this offer, and if so what are the terms?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "vip_tier",
+      "order": 27,
+      "prompt": "Do you want a VIP or premium tier offered alongside the main offer?",
+      "kind": "boolean",
+      "required": false,
+      "default": false,
+      "block_gate": false
+    },
+    {
+      "id": "vip_price",
+      "order": 28,
+      "prompt": "What does the VIP tier cost, and what does it include beyond the main offer?",
+      "kind": "text",
+      "required": false,
+      "ask_if": {
+        "question_id": "vip_tier",
+        "truthy": true
+      },
+      "block_gate": false
+    },
+    {
+      "id": "vip_spots",
+      "order": 29,
+      "prompt": "How many real VIP spots are available?",
+      "help": "A real, honest number -- never invented scarcity.",
+      "kind": "integer",
+      "required": false,
+      "ask_if": {
+        "question_id": "vip_tier",
+        "truthy": true
+      },
+      "block_gate": false
+    },
+    {
+      "id": "primary_objection",
+      "order": 30,
+      "prompt": "What's the #1 reason people say no to this offer?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "proof_assets",
+      "order": 31,
+      "prompt": "What proof do you have -- testimonials, screenshots, press logos, before/after numbers? List what you can send now.",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "style_prefs",
+      "order": 32,
+      "prompt": "Any decks or brands you admire that I should draw style inspiration from?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "transformation_promise",
+      "order": 33,
+      "prompt": "What's the before-and-after this offer delivers -- who are they before, and who are they after?",
+      "kind": "text",
+      "required": true,
+      "block_gate": true
+    },
+    {
+      "id": "slide_count",
+      "order": 34,
+      "prompt": "Do you have a target slide count in mind, or should the duration math decide?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "delivery_destinations",
+      "order": 35,
+      "prompt": "Where should the final deck go -- GoHighLevel, Google Drive, a local download, or somewhere else?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "deadline",
+      "order": 36,
+      "prompt": "When do you need this live?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    },
+    {
+      "id": "client_notes",
+      "order": 37,
+      "prompt": "Anything else important I should know before I start writing?",
+      "kind": "text",
+      "required": false,
+      "block_gate": false
+    }
+  ]
+}

@@ -2,17 +2,17 @@
 """
 delivery_gate.py — MECHANICAL last-mile delivery enforcer (R9-F9 fix).
 
-Until now the client-facing last mile (AF-DH1 five-file whitelist, the GHL upload
+Until now the client-facing last mile (AF-DH1 six-file whitelist, the GHL upload
 record, and the SOP 9.4 ground-truth destination check) was DOCTRINE-ONLY: the codes
 AF-DELIVER / AF-DH1 / AF-DELIVERY-COMPLETE are enforced_by "closeout_gate" with a
 null py_symbol, and gate_integrity_check.py (Guard A) exempts non-build_deck codes.
 So the only mechanical bundle gate was build_deck.py's AF-BUNDLE-COMPLETE over the
 NINE-file operator build bundle in ~/Downloads — the actual client package
-(delivery/[DECK_SLUG]-FINAL/, the FIVE whitelisted files) had no coded enforcer and
+(delivery/[DECK_SLUG]-FINAL/, the SIX whitelisted files) had no coded enforcer and
 relied on the Concierge agent obeying the SOPs. This script closes that gap.
 
 It mechanically enforces, over a run dir:
-  1. AF-DH1 — delivery/[DECK_SLUG]-FINAL/ contains EXACTLY the five whitelisted,
+  1. AF-DH1 — delivery/[DECK_SLUG]-FINAL/ contains EXACTLY the six whitelisted,
      correctly-named client files and NOTHING else (no extras, no working/ dirs,
      no .md guide/speech, pptx/pdf carry the -FINAL suffix).
   2. GHL upload record — when the resolved delivery_plan.json carries a `ghl`
@@ -164,6 +164,29 @@ _EMITTED_AF_CODES = (
 # A taskId that is not a real kie.ai bake (mirrors build_deck.py's I14 gate).
 _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n/a"})
 
+# ---------------------------------------------------------------------------
+# U019 — D02 (RATIFIED 2026-07-26) makes the teleprompter a sixth client-package
+# file. `required` below already carries all six keys — the manifest's
+# client_package_files set and this whitelist must never drift apart (Site 2 /
+# Site 15). But every deck already delivered was packaged under the pre-D02
+# whitelist (no teleprompter file), so flipping straight to a hard six-file
+# requirement would reject every historical package dir on sight. Three-stage
+# rollout (Rule 3.5), mirroring UPLOAD_GATE_WARN_ONLY:
+#   stage 1  CLIENT_PACKAGE_WARN_ONLY = {"teleprompter_html"} (default, shipped
+#            here). A missing teleprompter_html is reported as a WARNING
+#            (printed, not appended to the failure reason) and check_af_dh1
+#            still returns "" (pass). Count the warnings across the corpus.
+#   stage 2  U012's P7-TELEPROMPTER produces the file on every new run, and the
+#            delivery step copies it into the package dir. Drive the warning
+#            count to zero.
+#   stage 3  set CLIENT_PACKAGE_WARN_ONLY = frozenset(). A missing teleprompter
+#            now REJECTS the delivery like every other required file. Exit
+#            criterion: a zero warn count across the golden corpus.
+# Land stage 1 only. Do NOT set this to frozenset() in the same commit that
+# adds the sixth key — that is stage 3, and it is deliberately deferred.
+# ---------------------------------------------------------------------------
+CLIENT_PACKAGE_WARN_ONLY = frozenset({"teleprompter_html"})
+
 
 def _categorize(name: str) -> str:
     """Return the client-package category for a filename, or '' if not whitelisted."""
@@ -173,6 +196,8 @@ def _categorize(name: str) -> str:
         return "speech_pdf"
     if name == "PRESENTER-AUDIO.mp3":
         return "audio_mp3"
+    if name == "presenter-teleprompter.html":
+        return "teleprompter_html"
     if name.endswith("-FINAL.pptx"):
         return "deck_pptx"
     if name.endswith("-FINAL.pdf"):
@@ -182,9 +207,10 @@ def _categorize(name: str) -> str:
 
 def check_af_dh1(package_dir: Path) -> str:
     """AF-DH1 hygiene gate over the resolved client package dir. Returns '' on PASS,
-    or a specific failure reason. Enforces: exactly the five whitelisted client files,
+    or a specific failure reason. Enforces: exactly the six whitelisted client files,
     correctly named; no extra/wrongly-named file; no forbidden subdir; pptx/pdf carry
-    the -FINAL suffix; no .md guide/speech."""
+    the -FINAL suffix; no .md guide/speech. (teleprompter_html is warn-only at stage 1
+    — see CLIENT_PACKAGE_WARN_ONLY.)"""
     if not package_dir.is_dir():
         return f"AF-DH1: client package dir {package_dir} does not exist"
     found = {}
@@ -204,16 +230,23 @@ def check_af_dh1(package_dir: Path) -> str:
                 return f"AF-DH1: blocklisted dev artifact in client package: {nm}"
         cat = _categorize(nm)
         if not cat:
-            return f"AF-DH1: file not on the five-item whitelist: {nm}"
+            return f"AF-DH1: file not on the six-item whitelist: {nm}"
         if cat in found:
             return (f"AF-DH1: two files map to the same client slot {cat!r}: "
                     f"{found[cat]} + {nm}")
         found[cat] = nm
-    required = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3"}
+    required = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3", "teleprompter_html"}
     missing = required - set(found)
-    if missing:
+    hard_missing = missing - CLIENT_PACKAGE_WARN_ONLY
+    warn_missing = missing & CLIENT_PACKAGE_WARN_ONLY
+    if warn_missing:
+        # Stage 1 (Rule 3.5): a warn-only key's absence is reported but does not fail
+        # the gate. The count across the corpus is the stage-2 work list.
+        print(f"AF-DH1 WARN: client package is missing {', '.join(sorted(warn_missing))} "
+              f"(warn-only stage 1 — will be required at stage 3)")
+    if hard_missing:
         return (f"AF-DH1: client package is incomplete — missing "
-                f"{', '.join(sorted(missing))} (have: {', '.join(sorted(found.values())) or 'nothing'})")
+                f"{', '.join(sorted(hard_missing))} (have: {', '.join(sorted(found.values())) or 'nothing'})")
     return ""
 
 
@@ -524,16 +557,19 @@ def _lead_af_code(reason):
 # (4) BUNDLE-COMPLETENESS — the FULL deliverable set must be present.
 # ---------------------------------------------------------------------------
 def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
-    """Require the full deliverable set before delivery: the five-file client package
-    (deck pptx + deck pdf + presenter guide + presenter speech + audio, via AF-DH1),
-    the GoHighLevel upload record + destination ground-truth (via delivery_gate), AND
-    the teleprompter deliverable. A bare run dir at the delivery boundary that never
-    assembled a package/plan is INCOMPLETE (this is the 1-of-12 partial-delivery
+    """Require the full deliverable set before delivery: the six-file client package
+    (deck pptx + deck pdf + presenter guide + presenter speech + audio + teleprompter,
+    via AF-DH1 — teleprompter_html is warn-only at stage 1, see
+    CLIENT_PACKAGE_WARN_ONLY), the GoHighLevel upload record + destination ground-truth
+    (via delivery_gate), AND the teleprompter deliverable somewhere in the run dir
+    (this glob, independent of AF-DH1). A bare run dir at the delivery boundary that
+    never assembled a package/plan is INCOMPLETE (this is the 1-of-12 partial-delivery
     failure). Returns a list of AF-coded reasons.
 
     verify_destinations=False is the PRE-TRANSPORT subset (used when the boundary gate
     runs INSIDE a transport — ghl_media_push.py / the SOP copy step — BEFORE the upload):
-    the AF-DH1 five-file package + teleprompter are still required, but the SOP-9.4
+    the AF-DH1 six-file package (the teleprompter is now one of the six) is still
+    required, but the SOP-9.4
     destination ground-truth (the GHL upload record / mac anchor) is skipped, because
     that upload is exactly what the transport is ABOUT to perform — verifying it
     pre-upload would be circular. The artifact-intrinsic gates (overlay / kie / no-run-
@@ -601,7 +637,8 @@ def gate_delivered_artifact(artifact_path, run_dir=None, *, verify_destinations:
     with verify_destinations=False from a TRANSPORT (ghl_media_push.py before it uploads
     a deck, or the SOP copy/send step) so the gate runs BEFORE the deck leaves the box:
     every artifact-intrinsic gate (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED /
-    AF-NO-RUN-DIR) plus the AF-DH1 five-file package + teleprompter are enforced, while
+    AF-NO-RUN-DIR) plus the AF-DH1 six-file package (the teleprompter is now one of the
+    six) are enforced, while
     the SOP-9.4 destination ground-truth (the very upload the transport is about to do)
     is deferred — so a hand-built / overlay / no-run-dir deck is REJECTED at the
     transport without the chicken-and-egg of demanding the upload record before the
@@ -731,8 +768,11 @@ def _write_media(base: Path, media):
     (p / "media_library.json").write_text(json.dumps(media))
 
 
-FIVE = ["demo-deck-FINAL.pptx", "demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
-        "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3"]
+# U019 (D02, ratified 2026-07-26): the six-file client package. Named CLIENT_PACKAGE,
+# not FIVE, so a future seventh addition does not have to rename it again.
+CLIENT_PACKAGE = ["demo-deck-FINAL.pptx", "demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
+                  "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3",
+                  "presenter-teleprompter.html"]
 
 _SLIDE_IMG_ONLY = (
     '<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>'
@@ -765,9 +805,17 @@ def _write_render_manifest(base: Path, task_ids):
 
 
 def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=True):
-    """Assemble a complete governed run dir: 5-file client package (deck.pptx baked as
-    an OOXML zip), GHL upload record + plan, a render manifest with kie taskIds, and a
-    teleprompter. Returns the path to the delivered deck .pptx."""
+    """Assemble a complete governed run dir: 6-file client package (deck.pptx baked as
+    an OOXML zip, including the teleprompter — U019/D02), GHL upload record + plan, a
+    render manifest with kie taskIds, and a run-dir teleprompter sibling. Returns the
+    path to the delivered deck .pptx.
+
+    teleprompter=True writes the teleprompter to BOTH places a client-package file must
+    exist: the package copy at delivery/demo-deck-FINAL/presenter-teleprompter.html (so
+    check_af_dh1 sees it) and the run-dir copy at working/teleprompter/teleprompter.html
+    (so _bundle_completeness's independent glob still sees it, and CASE K still fails
+    when it is absent). teleprompter=False writes NEITHER copy, so CASE K keeps proving
+    what it claims."""
     pkg = base / "delivery" / "demo-deck-FINAL"
     pkg.mkdir(parents=True, exist_ok=True)
     deck = _mk_pptx(pkg / "demo-deck-FINAL.pptx", with_text=with_text)
@@ -781,6 +829,7 @@ def _mk_full_run(base: Path, with_text=False, task_ids=("kie-1",), teleprompter=
     ]})
     _write_render_manifest(base, list(task_ids))
     if teleprompter:
+        (pkg / "presenter-teleprompter.html").write_text("<html></html>")
         tp = base / "working" / "teleprompter"
         tp.mkdir(parents=True, exist_ok=True)
         (tp / "teleprompter.html").write_text("<html></html>")
@@ -796,10 +845,10 @@ def _selftest() -> int:
         if not ok or reasons:
             fails.append(f"A defer: expected ok/empty, got ok={ok} reasons={reasons}")
 
-    # CASE B — clean 5-file package + verified GHL + mac anchor -> PASS.
+    # CASE B — clean 6-file package + verified GHL + mac anchor -> PASS.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        pkg = _mk_pkg(base, FIVE)
+        pkg = _mk_pkg(base, CLIENT_PACKAGE)
         _write_media(base, {"pptx_ghl_media_id": "abc123"})
         _write_plan(base, {"destinations": [
             {"type": "ghl", "ghl_folder_id": "root", "status": "uploaded"},
@@ -812,7 +861,7 @@ def _selftest() -> int:
     # CASE C — extra .md draft in the package -> AF-DH1 FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        pkg = _mk_pkg(base, FIVE + ["notes-draft.md"])
+        pkg = _mk_pkg(base, CLIENT_PACKAGE + ["notes-draft.md"])
         _write_media(base, {"pptx_ghl_media_id": "abc"})
         _write_plan(base, {"destinations": [{"type": "ghl"}]})
         ok, reasons = delivery_gate(base)
@@ -834,7 +883,7 @@ def _selftest() -> int:
     # CASE E — ghl destination but NO upload record -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        _mk_pkg(base, FIVE)
+        _mk_pkg(base, CLIENT_PACKAGE)
         _write_media(base, {})  # no pptx_ghl_media_id
         _write_plan(base, {"destinations": [{"type": "ghl", "status": "pending"}]})
         ok, reasons = delivery_gate(base)
@@ -844,7 +893,7 @@ def _selftest() -> int:
     # CASE F — mac_downloads verify_anchor missing on disk -> FAIL.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        _mk_pkg(base, FIVE)
+        _mk_pkg(base, CLIENT_PACKAGE)
         _write_plan(base, {"destinations": [
             {"type": "mac_downloads", "verify_anchor": str(base / "delivery" / "nope.pptx")},
         ]})
@@ -853,9 +902,12 @@ def _selftest() -> int:
             fails.append(f"F missing-anchor: expected SOP-9.4 FAIL, got ok={ok} reasons={reasons}")
 
     # CASE G — package incomplete (missing audio) -> AF-DH1 FAIL.
+    # Exclude by NAME, not by slice position: CLIENT_PACKAGE's last element is now
+    # the teleprompter, not the audio file — a positional [:-1] would silently drop
+    # the wrong file and stop testing what this case's name says it tests.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        _mk_pkg(base, FIVE[:-1])  # no audio
+        _mk_pkg(base, [f for f in CLIENT_PACKAGE if f != "PRESENTER-AUDIO.mp3"])  # no audio
         _write_plan(base, {"destinations": [{"type": "ghl"}]})
         _write_media(base, {"pptx_ghl_media_id": "abc"})
         ok, reasons = delivery_gate(base)
@@ -1037,7 +1089,8 @@ def main() -> int:
                     help="PRE-TRANSPORT mode for --artifact: run the boundary gate BEFORE a "
                     "deck leaves the box (the SOP copy/upload step). Enforces artifact "
                     "provenance (AF-OVERLAY-DELIVERED / AF-NOT-KIE-RENDERED / AF-NO-RUN-DIR) "
-                    "+ the AF-DH1 five-file package + teleprompter, but DEFERS the SOP-9.4 "
+                    "+ the AF-DH1 six-file package (the teleprompter is now one of the six), "
+                    "but DEFERS the SOP-9.4 "
                     "destination ground-truth (the upload this transport is about to do). "
                     "Use this in delivery-concierge-sops.md before any cp/upload/send; the "
                     "full destination check runs later at run_signature_deck.py P9-DELIVER.")

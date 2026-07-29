@@ -135,12 +135,13 @@ This SOP is owned jointly by the Presenters Guide Specialist (ROLE-19, SOP 9.2) 
 bundle to `~/Downloads/<client-slug>-<deck-slug>/` (`<deck-slug>-FINAL.pptx`, `<deck-slug>-FINAL.pdf`,
 `PRESENTER-GUIDE.pdf`, `PRESENTERS-SPEECH.md`, `PRESENTERS-SPEECH.pdf`, `PRESENTERS-SPEECH-FISH-TAGGED.md`,
 `PRESENTER-AUDIO.mp3`, `infographic.png`, `presenter-teleprompter.html` -- the `build_bundle_files`
-set). The Delivery Concierge SOP 9.0 then CURATES the FIVE-file CLIENT package (the
-`client_package_files` set) from that build bundle. Nine build, five client -- the difference is
-intentional (the `.md` sources, the fish-tagged script, the infographic, and the teleprompter HTML
-are operator-side artifacts, not part of the clean client hand-off).
+set). The Delivery Concierge SOP 9.0 then CURATES the SIX-file CLIENT package (the
+`client_package_files` set) from that build bundle. Nine build, six client -- the difference is
+intentional (the `.md` sources, the fish-tagged script, and the infographic are operator-side
+artifacts, not part of the clean client hand-off; the teleprompter HTML, by contrast, is now one
+of the six client files handed to the client -- D02, ratified 2026-07-26).
 
-The client-deliverable package must contain EXACTLY these five files and NOTHING ELSE:
+The client-deliverable package must contain EXACTLY these six files and NOTHING ELSE:
 
 ```
 [DECK_SLUG]-FINAL/
@@ -149,11 +150,12 @@ The client-deliverable package must contain EXACTLY these five files and NOTHING
   PRESENTER-GUIDE.pdf              # rendered from working/deliverables/PRESENTER-GUIDE.md
   PRESENTERS-SPEECH.pdf            # rendered from working/presenter-speech/PRESENTERS-SPEECH.md (locked plural name; matches build_deck.py)
   PRESENTER-AUDIO.mp3              # Fish Audio S2 render (from working/presenter-speech/audio/PRESENTER-AUDIO.mp3)
+  presenter-teleprompter.html      # standalone scrolling teleprompter app (from working/deliverables/presenter-teleprompter.html; produced by build_teleprompter.py -- D02, ratified 2026-07-26)
 ```
 
-**Five files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTERS-SPEECH` ship as **PDF only** -- clients do not open markdown. (The `*-FINAL.pptx` / `*-FINAL.pdf` AF-DH1 whitelist patterns are unchanged.)
+**Six files. Nothing else.** No scripts, logs, prompts, loose PNGs, JSON manifests, QC reports, or `.md` source files. `PRESENTER-GUIDE` and `PRESENTERS-SPEECH` ship as **PDF only** -- clients do not open markdown. (The `*-FINAL.pptx` / `*-FINAL.pdf` AF-DH1 whitelist patterns are unchanged.)
 
-**Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the five allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
+**Hygiene gate (AF-DH1):** Before any delivery action, the Delivery Concierge runs SOP 9.0 (Package Assembly and Hygiene Sweep) which creates a clean `delivery/[DECK_SLUG]-FINAL/` directory, copies only the six allowed files into it, and runs AF-DH1. Hard-stop on any AF-DH1 failure -- delivery cannot proceed.
 
 ---
 

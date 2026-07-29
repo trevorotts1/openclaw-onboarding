@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from .state import (
-    StateStore, RunLock, utcnow, sha256_text,
+    StateStore, RunLock, utcnow, sha256_text, _read_json,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
 )
@@ -33,6 +33,8 @@ def build_parser() -> argparse.ArgumentParser:
     m.add_argument("--reconcile-board", action="store_true",
                    help="scan --scan-root for jobs whose board card is missing or behind; "
                         "reports only unless --apply is given")
+    m.add_argument("--sweep-undeliverable", action="store_true",
+                   help="retry every queued undeliverable message for --run-dir, oldest first")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -142,15 +144,6 @@ def cmd_status(args) -> int:
     return EXIT_OK
 
 
-def _read_json(p: Path) -> Optional[Dict[str, Any]]:
-    if not p.is_file():
-        return None
-    try:
-        return json.loads(p.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError):
-        return None
-
-
 def cmd_sweep_undeliverable(args) -> int:
     """Retry every queued undeliverable message, oldest first. Takes the run lock."""
     import os as _os
@@ -202,7 +195,6 @@ def cmd_sweep_undeliverable(args) -> int:
         return EXIT_OK if still == 0 else 1
 
 
-
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
@@ -245,6 +237,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_new(args, scripts_dir)
     if args.status:
         return cmd_status(args)
+    if args.sweep_undeliverable:
+        return cmd_sweep_undeliverable(args)
 
     with RunLock(run_dir):
         store = StateStore(run_dir)

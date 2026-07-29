@@ -1927,6 +1927,35 @@ deliver_canonical_scripts_tree() {
   echo "  ✓ Full canonical scripts/ tree delivered and verified ($files files; additive, local-only files retained)"
 }
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
+# ----------------------------------------------------------
+# U006 — Co-locate the canonical presentation entry script + its guard
+# into the materialized Presentations department scripts/ directory.
+# ----------------------------------------------------------
+colocate_presentation_entry() {
+  if ! oc_resolve_workspace_announced "presentation entry co-location"; then
+    echo "  [U006] presentation entry co-location SKIPPED (workspace not resolvable)" >&2
+    return 0
+  fi
+  WORKSPACE_DIR="$OC_WS_RESOLVED"
+  local dept_scripts="$WORKSPACE_DIR/departments/Presentations/scripts"
+  if [ ! -d "$dept_scripts" ]; then
+    echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
+    return 0
+  fi
+  local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
+  local copied=0
+  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
+    if [ -f "$src_dir/$f" ]; then
+      cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
+    fi
+  done
+  if [ "$copied" -eq 2 ]; then
+    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
+  else
+    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
+  fi
+}
+# <<< U006-COLOCATE-PRESENTATION-ENTRY-END
 
 # ----------------------------------------------------------
 # U001 — Dual Sunday cron mutex + legacy crontab retirement
@@ -5428,6 +5457,10 @@ PYEOF
       echo "  ⚠ WIRING-ASSERT FAIL: materialize-dept-agents.sh exited non-zero — dept agents NOT registered"
       echo "  ⚠ Check that Skill 32 is installed and build-workforce.py has produced department folders"
     fi
+
+  # U006 — Co-locate the canonical presentation entry script + guard into the
+  # materialized department's scripts/ directory.
+  colocate_presentation_entry
 
   # ----------------------------------------------------------
   # D5 — Command Center web-app refresh (v14.27.0):
