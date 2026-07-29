@@ -210,9 +210,14 @@ def _as_list(v: Any) -> List[str]:
 # it has never heard of.
 
 
-MIN_MANIFEST_VERSION = 30  # U019/D02: moved with manifest_version (PIPELINE-MANIFEST.json's
-# client_package_files gained a sixth key, teleprompter_html, at this version; see
-# universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt for the stamped hash).
+MIN_MANIFEST_VERSION = 31  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# (SPEC/units/U019.md:409-410, :440-441, :1093): "set MIN_MANIFEST_VERSION to that same new value,
+# in the same commit" — the floor and the manifest move TOGETHER. A floor one behind the manifest is
+# the split-brain that step 8 exists to prevent: the engine keeps accepting the older, fewer-key
+# manifest while the delivery gate already demands the newer keys. Whoever bumps manifest_version
+# bumps this line in the same commit; test_client_package.py::
+# test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below fails the build if not.
+# (30 -> 31 here: commit 428fd914 raised manifest_version to 31 and left this at 30.)
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
