@@ -50,3 +50,31 @@
     was redacted (path string only; U012's verdict, scores and evidence are byte-identical).
     It was tripping `scripts/qc-assert-no-client-names.sh`, which is repo-wide and not
     diff-scoped, and therefore blocked EVERY commit to this repository.
+
+## v21.4.16 — 2026-07-29T18:16:10Z
+- U008: Merge the 22 duplicated role folders down to one each — PASS 8.80 (round 9), operator
+  waived post-fix re-judge 2026-07-29 for the round-10 one-file fix (hardcoded operator path
+  replaced with `OPENCLAW_WORKSPACE`, matching `51-signature-presentation/verify.sh`).
+- U073: Make the repository's commit hook actually run — PASS gate 8.6, operator waived
+  post-fix re-judge 2026-07-29 for the round-2 one-line chmod-600 false-positive wording fix
+  (`secrets/.env` mention reworded; guard NOT weakened). Stale-based branch, three merge
+  conflicts resolved: kept HEAD's `presentation_job.py` 5-line shim, kept HEAD's current
+  `manifest_version` (31 by merge time — main advanced past the `30` noted when the fix was
+  made), combined both sides' `.githooks/pre-commit` header gate-listing comments (no
+  functional change).
+- U028: Generalise checkpoint and resume; checkpoint before the paid call — PASS (round 9
+  repair), operator waived post-fix re-judge 2026-07-29. Round 8's fail-closed findings (D.2,
+  D.11.8 — U014's 24 tests for `presentation_job/artifacts.py` were silently deleted because
+  the card's `Touches:` block wrongly marked `tests/test_checkpoint.py` as `NEW`) are resolved:
+  U014's 24 tests and U028's own 25 are merged into one 49-test file, zero name collisions,
+  mutation-proven both ways. `SPEC/units/U028.md`'s `Touches:` entry corrected `NEW` → `MODIFY`.
+- Gate suite (`pytest tests/ -q` from
+  `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/`): fresh baseline at
+  `origin/main` tip `9dbe2d5a` measured **6 failed / 224 passed / 13 skipped**; after landing
+  all three units, **6 failed / 249 passed / 13 skipped** — identical 6 pre-existing failing
+  test names, +25 passed (U028's own net-new test count), zero regressions.
+- Version bump via `scripts/bump-version.sh v21.4.16` — all 9 script-rolled markers agree;
+  `update-skills.sh`'s own `ONBOARDING_VERSION` deliberately left at `v21.4.2` (same precedent
+  as every prior ripple): the repo's pre-commit hook blocks any staged `.sh` file that writes
+  `secrets/.env` without a `chmod 600` call in the same file, and `update-skills.sh` has such
+  writes with no chmod — a pre-existing gap, not introduced here, hook never bypassed.
