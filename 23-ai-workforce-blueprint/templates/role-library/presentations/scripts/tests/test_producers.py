@@ -211,13 +211,23 @@ def test_presenter_guide_builds_pdf(tmp_path):
 # ---------------------------------------------------------------------------
 
 def test_every_manifest_deliverable_has_producer():
-    """Assert every deliverables_required filename is produced by exactly one phase."""
-    import json
-    manifest_path = Path(__file__).resolve().parent.parent.parent.parent.parent.parent / \
-                    "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
+    """Assert every deliverables_required filename is produced by exactly one phase.
 
-    if not manifest_path.exists():
-        pytest.skip("Manifest not found at expected path")
+    Resolves the manifest through manifest_source.resolve_manifest (U001's single
+    canonical resolver) rather than a hand-counted parent walk. The old hardcoded
+    path was one directory short of the repo root, so this guard silently skipped
+    from the day it was written and never once checked the manifest. The resolver
+    fail-closes (SystemExit) when no manifest can be found, so a missing manifest
+    is now a loud failure instead of a silent skip.
+    """
+    from manifest_source import resolve_manifest
+
+    scripts_dir = Path(__file__).resolve().parent.parent
+    manifest_path, provenance = resolve_manifest(scripts_dir)
+    assert manifest_path.exists(), (
+        f"resolve_manifest returned {manifest_path} (provenance={provenance}) "
+        "but that file does not exist"
+    )
 
     m = json.loads(manifest_path.read_text())
 
@@ -232,19 +242,52 @@ def test_every_manifest_deliverable_has_producer():
             prod.setdefault(fn, []).append(p["id"])
 
     # Check deliverables
-    orphans = []
+    orphans = set()
     for d in m["deliverables_required"]:
         fn = d["filename"]
         # Handle glob-like patterns
         search = fn.replace("{deck_slug}", "*")
         producers = prod.get(fn) or prod.get(search)
         if not producers:
-            orphans.append(f"{d['key']} -> {fn}")
+            orphans.add(d["key"])
 
-    # infographic_png is expected to have no producer (audit question Q4, not U012's job)
-    orphans = [o for o in orphans if "infographic" not in o]
+    # KNOWN OPEN DEFECT, not an accepted state. These deliverables_required entries
+    # have no phase in PIPELINE-MANIFEST.json declaring them via produces_artifact,
+    # so no phase owns building them. U012 shipped the producer *scripts*
+    # (presenter_guide.py, presenters_speech_pdf.py, speech_fish_tag.py,
+    # build_teleprompter.py) but no manifest phase was added to declare their output;
+    # this guard, which exists to catch exactly that, was inert because of the bad
+    # manifest path above, so the gap landed unnoticed. Four of these five are
+    # client_package_files, i.e. files the client is promised.
+    #
+    # Declaring the producing phases needs phase ids, order, owning_role, gate_codes
+    # and client_report templates for a ratified 26-phase pipeline. That is a design
+    # decision and is deliberately NOT invented here.
+    #
+    # This is asserted as an EXACT set on purpose: adding a producing phase makes this
+    # test fail until the fixed key is removed from this list, so the list cannot rot
+    # into a silent permanent exemption.
+    known_missing_producers = {
+        "deck_pdf",
+        "guide_pdf",
+        "speech_pdf",
+        "speech_fish_md",
+        "teleprompter_html",
+        # infographic_png: no producer by design (audit question Q4, not U012's job)
+        "infographic_png",
+    }
 
-    assert not orphans, f"Deliverables with no producer: {orphans}"
+    new_orphans = sorted(orphans - known_missing_producers)
+    assert not new_orphans, (
+        f"deliverables_required entries with no phase declaring produces_artifact: "
+        f"{new_orphans}"
+    )
+
+    fixed = sorted(known_missing_producers - orphans)
+    assert not fixed, (
+        f"These deliverables now HAVE a producing phase: {fixed}. "
+        "Remove them from known_missing_producers so this guard stays honest."
+    )
 
 
 # ---------------------------------------------------------------------------
