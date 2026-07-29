@@ -201,7 +201,7 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from presentation_job.checkpoint import atomic_write_text, PREDICATES
@@ -1531,6 +1531,19 @@ def _record_completed_task(run_dir: Path, ordinal: int, task_id: str,
     except Exception: pass  # noqa: BLE001
 
 
+def _clear_pending_task(run_dir: Path, ordinal: int) -> None:
+    """Remove a terminal/exhausted pending task record so a future resume
+    submits fresh instead of re-polling the same dead task id forever."""
+    try:
+        p = _pending_tasks_path(run_dir)
+        existing = _read_pending_tasks(run_dir)
+        if str(ordinal) in existing:
+            del existing[str(ordinal)]
+            atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
 def _resume_pending_task(run_dir: Path, ordinal: int, api_key: str) -> Optional[str]:
     pending = _read_pending_tasks(run_dir)
     rec = pending.get(str(ordinal))
@@ -1551,6 +1564,7 @@ def _resume_pending_task(run_dir: Path, ordinal: int, api_key: str) -> Optional[
     except Exception:
         print(f"    [resume] pending taskId={task_id} is terminal/exhausted -- "
               f"will submit fresh.", flush=True)
+        _clear_pending_task(run_dir, ordinal)
         return None
 
 
