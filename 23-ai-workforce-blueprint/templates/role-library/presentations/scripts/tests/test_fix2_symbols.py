@@ -74,10 +74,16 @@ def test_d_owner_skip_suppresses_one_code():
     assert "AF-IMAGE-QC-VISION" not in af_codes_tok
     assert "AF-CANONICAL-RENDER-BYPASS" in af_codes_tok
 
+    # NOTE: this fixture's run dir never gives check_image_qc_vision anything to
+    # inspect (no rendered PNGs, no image_qc_report.json), so it always defers
+    # ("") regardless of any token. That means "AF-IMAGE-QC-VISION present in
+    # run_fix2_checks() results" is never a valid way to prove a malformed token
+    # was rejected here. Assert directly on the real claim instead: a malformed
+    # token must not be recognised as a valid owner skip at all.
     mal = {"owner_approved": True, "gate": "AF-IMAGE-QC-VISION", "reason": "no approved_by"}
-    af_codes_mal = {af for af, _ in crg.run_fix2_checks(make_run_dir(mal))}
-    assert "AF-IMAGE-QC-VISION" in af_codes_mal
+    assert crg.load_owner_skip_approvals(make_run_dir(mal)) == {}, (
+        "a token missing approved_by must not be recognised as a valid owner skip")
 
     mal2 = {"owner_approved": True, "gate": "AF-IMAGE-QC-VISION", "approved_by": "owner"}
-    af_codes_mal2 = {af for af, _ in crg.run_fix2_checks(make_run_dir(mal2))}
-    assert "AF-IMAGE-QC-VISION" in af_codes_mal2
+    assert crg.load_owner_skip_approvals(make_run_dir(mal2)) == {}, (
+        "a token missing reason must not be recognised as a valid owner skip")
