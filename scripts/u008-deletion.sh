@@ -7,7 +7,8 @@
 set -euo pipefail
 
 BK="${BK:-}"
-DEPT="/Users/blackceomacmini/.openclaw/workspace/departments/Presentations"
+OC_WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+DEPT="${DEPT:-$OC_WORKSPACE/departments/Presentations}"
 UTC_STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 RETIRED="${DEPT}/working/u008-retired-${UTC_STAMP}"
 MERGED_ROOT="${MERGED_ROOT:-}"
