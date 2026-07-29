@@ -1,4 +1,4 @@
-## [v21.4.13]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
+## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
 
 Two role-library files existed only as SOP mirrors, not as their own role-library docs:
 `image-grounding-steward.md` and `representation-casting-director.md` (department: presentations). Added both
@@ -10,9 +10,11 @@ Adding two roles to a version-tracked skill directory (`23-ai-workforce-blueprin
 CI itself requires — none of it was a new feature, all of it was closing gaps the PR's content change exposed:
 
 1. **G3 (skill-version.txt bump)** — `23-ai-workforce-blueprint/skill-version.txt` had not moved alongside the
-   library content change. Rolled via `scripts/bump-version.sh v21.4.13`, which also rippled all 10 repo-wide
-   version markers plus the 06-ghl-install-pages G3-lockstep markers (browser-manager version strings and its
-   own `skill-version.txt`) in the same run.
+   library content change. Rolled via `scripts/bump-version.sh v21.4.15` (this branch was rebased onto `main`'s
+   concurrent `v21.4.13`/`v21.4.14` ripples mid-review — see the merge commit — so the PR's own version landed one
+   patch later than originally cut), which also rippled all 10 repo-wide version markers plus the
+   06-ghl-install-pages G3-lockstep markers (browser-manager version strings and its own `skill-version.txt`) in
+   the same run.
 2. **Skill-23 provisioning tests — count agreement (T7) + canonical-role folders (T1)** — the presentations
    roster file (`23-ai-workforce-blueprint/suggested-roles/presentations-suggested-roles.md`) still declared
    32 roles; `_index.json` now declared 34. Added roster entries #32/#33 for the two new roles (slug, what-it-does,
@@ -53,6 +55,18 @@ plus the version-bump ripple via `scripts/bump-version.sh` (`version`, `cc-compa
 `06-ghl-install-pages/tools/browser_manager.{py,sh}`, `scripts/agent-browser-reaper.sh`,
 `scripts/guard-agent-browser-managed.sh`). `update-skills.sh` deliberately EXCLUDED from this commit — see (a)
 above; its marker remains at `v21.4.2`, unchanged by this release, as it has been since that version.
+
+## [v21.4.14]  -  2026-07-29  -  Ripple v21.4.14: batch of 1 unit (U024)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`ba79dd37`) already carries.
+
+## [v21.4.13]  -  2026-07-29  -  Ripple v21.4.13: batch of 2 units (U010, U058)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`0e5550d8`) already carries.
 
 ## [v21.4.12]  -  2026-07-29  -  Ripple v21.4.12: batch verification (U006, U027, U070 confirmed) + ticket corrections
 
