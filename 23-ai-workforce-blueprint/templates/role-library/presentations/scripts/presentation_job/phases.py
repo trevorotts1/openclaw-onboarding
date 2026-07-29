@@ -16,6 +16,7 @@ from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
 from . import heal
+from . import persona
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -111,6 +112,11 @@ class Engine:
         start_msg = (phase.client_report.get("start_template") or
                      f"Starting {phase.id} ({phase.owning_role})")
         self.report.to_requester("progress", start_msg)
+
+        try:
+            persona.resolve_for_phase(self.run_dir, phase.id)
+        except (RuntimeError, TimeoutError) as exc:
+            return self._block(phase, f"persona governance: {exc}")
 
         if phase.id == "P4-RENDER" and self.board:
             self.board.mark_in_progress()
