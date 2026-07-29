@@ -795,6 +795,11 @@ set -uo pipefail
 
 INGEST_URL="http://127.0.0.1:4000/api/tasks/ingest"
 MAX_RETRIES=2
+# P1-04 trust engine: the ORIGINATING client chat id + channel, so the Command
+# Center report-back loop can acknowledge/progress/done back to the client. Empty
+# (the default) => omitted from the payload, exactly as mc-route.sh behaves.
+REQUESTER_CHAT_ID="${ROUTE_PRES_REQUESTER_CHAT_ID:-${MC_ROUTE_REQUESTER_CHAT_ID:-}}"
+REQUESTER_CHANNEL="${ROUTE_PRES_REQUESTER_CHANNEL:-${MC_ROUTE_REQUESTER_CHANNEL:-telegram}}"
 
 TITLE="${1:-}"
 DESCRIPTION="${2:-}"
@@ -869,7 +874,9 @@ WEBHOOK_SECRET="$(_resolve WEBHOOK_SECRET CC_WEBHOOK_SECRET)"
 # ── Build the EXACT raw body once (compact JSON, like cc_board.py) ───────────
 BODY_FILE="$(mktemp "${TMPDIR:-/tmp}/route-pres.XXXXXX")" || _escalate "mktemp failed"
 trap 'rm -f "$BODY_FILE"' EXIT
-if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" python3 - >"$BODY_FILE" <<'PYBODY'
+if ! TITLE="$TITLE" DESCRIPTION="$DESCRIPTION" \
+     REQUESTER_CHAT_ID="$REQUESTER_CHAT_ID" REQUESTER_CHANNEL="$REQUESTER_CHANNEL" \
+     python3 - >"$BODY_FILE" <<'PYBODY'
 import json, os, sys
 payload = {
     "title": os.environ.get("TITLE", "")[:120],
@@ -878,6 +885,13 @@ payload = {
     "source": "telegram",
     "priority": "medium",
 }
+# P1-04 trust engine: pass the originating client chat id through so the Command
+# Center captures it and reports acknowledge/progress/done back to the client.
+# Only added when present — an operator/internal route omits it entirely.
+_rcid = os.environ.get("REQUESTER_CHAT_ID", "").strip()
+if _rcid:
+    payload["requester_chat_id"] = _rcid
+    payload["requester_channel"] = os.environ.get("REQUESTER_CHANNEL", "telegram").strip() or "telegram"
 sys.stdout.write(json.dumps(payload, separators=(",", ":")))
 PYBODY
 then
@@ -987,7 +1001,13 @@ WHEN TRIGGERED your FIRST and ONLY action is EXACTLY these two steps, in order �
   credentials at RUNTIME and signs BOTH required auth layers (Bearer + HMAC webhook signature)
   for you. Run it EXACTLY like this, in an exec / bash tool call:
 
-      bash @@ROUTE_HELPER_PATH@@ "<owner request, <=120 chars>" "<owner message, verbatim>"
+      ROUTE_PRES_REQUESTER_CHAT_ID="<the chat id this owner message arrived on>" \
+        bash @@ROUTE_HELPER_PATH@@ "<owner request, <=120 chars>" "<owner message, verbatim>"
+
+  The chat id is MANDATORY when you have it. Without it the client gets NO acknowledgement,
+  NO progress message and NO completion message — the deck is built in silence. If you
+  genuinely cannot determine the chat id, still route (the helper works without it) and say
+  so in your escalation note.
 
   ⚠ PORT / ENDPOINT (handled inside the helper): the Command Center on THIS box listens on
   PORT 4000 at IPv4 127.0.0.1 — NOT 3000, NOT 8080, NOT any remembered default. The helper

@@ -9369,8 +9369,16 @@ def main():
             else:
                 _cc_title = deck_slug
                 _cc_desc = f"Deck build: {deck_slug}"
+                _rcid, _rchan = _cc_board.resolve_requester(run_dir)
+                if not _rcid:
+                    # Rule 3.5 WARN-MODE, stage 1 of 3 — standalone twin
+                    print("[cc_board] WARN-REQUESTER-MISSING: standalone build_deck run with "
+                          "no requester chat id; the client will receive no acknowledgement, "
+                          "progress or completion message for this build.",
+                          file=sys.stderr, flush=True)
                 _cc_task_id = _cc_board.ingest_deck_task(
-                    run_dir, deck_slug, title=_cc_title, description=_cc_desc
+                    run_dir, deck_slug, title=_cc_title, description=_cc_desc,
+                    requester_chat_id=_rcid, requester_channel=_rchan
                 )
                 if _cc_task_id:
                     _cc_board.stamp_task_id(run_dir, _cc_task_id)
