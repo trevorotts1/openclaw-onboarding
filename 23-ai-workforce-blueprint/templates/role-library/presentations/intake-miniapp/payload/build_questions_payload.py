@@ -26,7 +26,12 @@ import sys
 
 # Fields carried straight through from the JSON question objects to the UI.
 _PASSTHROUGH = ("id", "order", "prompt", "help", "kind", "required",
-                "allowed_values", "value_labels", "default")
+                "allowed_values", "value_labels", "default",
+                # U058: the conditional contract. Dropping these made every
+                # conditional question unconditional and mandatory, so a
+                # from_scratch straight-price client could not close (409 on
+                # recipient_name / signature_source / price_anchor).
+                "conditional_on", "ask_if", "block_gate")
 
 
 def _project_root(start: pathlib.Path) -> pathlib.Path:
