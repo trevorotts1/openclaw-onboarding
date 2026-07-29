@@ -4,7 +4,7 @@
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (Section 4 Slide Math, Section 4.2 the proven flow, Section 5.5 the price sequence)
 **Owning role at write time:** Director of Presentations (arc_allocation.json minimum-count enforcement)
 **Enforced at the gate by:** QC Specialist - Presentations (auto-fail AF-DENSITY, below)
-**Gold-standard numbers:** the proven 75-slide reference run: ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75.
+**Gold-standard numbers:** the proven 75-slide reference run: ladder at s24/35/51/65/73, gaps 11/16/14/8, Wall of Wins 5 slides before offer, re-pitch s74-75 — **note: 2 post-FINAL slides, which is BELOW the 4-to-7 floor this document sets in item 7 and in DEN-7. The reference deck is authoritative on ladder spacing and Wall-of-Wins placement; it is NOT authoritative on re-pitch length, and an enforcer built to DEN-7 will correctly flag it. Do not widen DEN-7 to accommodate this line.**
 **Status:** DRAFT for integration. Strengthens Section 4 with hard minimum counts and a minimum-gap floor, so the offer can never be crammed into the back third again.
 
 ---
@@ -18,7 +18,7 @@ A slow drop is a reward for staying, earned across minutes of narrative. The for
 ## 2. THE HARD RULE
 
 1. **Minimum gap between any two price beats: 8 slides.** Anchor to Drop 1, Drop 1 to Drop 2, Drop 2 to Drop 3, Drop 3 to Final, every adjacent pair, at least 8 slides apart. Computed against the FULL deck slide count, never against the offer window only. (reference run: 11/16/14/8.)
-2. **The value anchor lands near the one-third mark**, not the back third. Target 30 to 40% depth. (reference run: s24 = 32%.) The anchor is a value-plant ("remember this number"), not a drop.
+2. **The value anchor lands near the one-third mark**, not the back third. Target 25 to 45% depth — the same band DEN-2 enforces as 0.25-0.45. (reference run: s24 = 32%.) The anchor is a value-plant ("remember this number"), not a drop.
 3. **A dedicated BUILDUP slide immediately precedes every DROP.** No price ever drops cold. (reference run: s34, s50, s64, s72.)
 4. **A mandatory itemized value-stack slide precedes Drop 1**, and the stack total is proven to exceed the anchor before the cheapest prices appear. (reference run: s57 stack, s58 "add it all up".)
 5. **A promises beat precedes the anchor.** Promises are planted before the first number (people buy promises, not products).
