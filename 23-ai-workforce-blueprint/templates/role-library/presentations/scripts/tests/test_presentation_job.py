@@ -335,6 +335,71 @@ class TestBoardMirror:
         assert rc == EXIT_GATE_BLOCKED, f"Expected EXIT_GATE_BLOCKED (3), got {rc}"
         assert state["terminal"] == "BLOCKED"
 
+    # Test 12: run_phase calls persona governance for a BLEND_PHASE_FOR-mapped phase
+    def test_run_phase_calls_persona_governance_for_mapped_phase(self, tmp_path, monkeypatch):
+        """run_phase must call persona.resolve_for_phase(run_dir, phase.id) for a
+        phase id that is one of the four BLEND_PHASE_FOR keys (e.g. P4-COPY).
+        This is the integration test that bleeds if the U024 call site in
+        phases.py is ever removed."""
+        from presentation_job.state import StateStore
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        import presentation_job.phases as phases_mod
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        manifest_path = tmp_path / "manifest.json"
+        manifest_json = {
+            "manifest_version": 25,
+            "phases": [{
+                "id": "P4-COPY",
+                "order": 1,
+                "owning_role": "test",
+                "produces_artifact": ["output.txt"],
+                "executor": {"kind": "none"},
+            }],
+        }
+        manifest_path.write_text(json.dumps(manifest_json))
+        manifest = Manifest(manifest_path)
+
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1,
+            "job_id": "test_job",
+            "run_dir": str(run_dir),
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path),
+            "manifest_version": 25,
+            "manifest_sha256": manifest.sha256,
+            "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"},
+            "current_phase": None,
+            "phases": [],
+            "gates": {},
+            "waivers": [],
+            "events": [],
+            "sent": {},
+            "undeliverable": [],
+            "heartbeat": {},
+            "terminal": None,
+        }
+        store.save(state)
+
+        calls = []
+        stub = mock.MagicMock(side_effect=lambda run_dir, phase_id, *a, **kw:
+                               calls.append(phase_id) or None)
+        monkeypatch.setattr(phases_mod.persona, "resolve_for_phase", stub)
+
+        engine = Engine(run_dir, manifest, store, state, dry_run=True)
+        engine.run_phase(manifest.phase("P4-COPY"))
+
+        stub.assert_called_once()
+        assert calls == ["P4-COPY"], (
+            f"Expected persona.resolve_for_phase to be called with phase id "
+            f"'P4-COPY', got calls={calls}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 12: Mutation guard — importing state must not import phases
