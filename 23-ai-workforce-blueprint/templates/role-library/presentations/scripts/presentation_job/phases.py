@@ -12,7 +12,7 @@ from .state import (
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
-from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES, WARN_ONLY_GATES, WARN_ONLY_GATES
+from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE
@@ -366,16 +366,6 @@ class Engine:
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)
         print("DONE -- all gates passed.", flush=True)
-        return EXIT_OK
-
-        if self.board:
-            self.board.mark_review()
-        self.state["terminal"] = "DONE"
-        self.state["completed_at"] = utcnow()
-        self.store.save(self.state)
-        self.report.to_requester(
-            "done", "Your presentation is ready. All quality checks passed.")
-        print("DONE — all gates passed.", flush=True)
         return EXIT_OK
 
 

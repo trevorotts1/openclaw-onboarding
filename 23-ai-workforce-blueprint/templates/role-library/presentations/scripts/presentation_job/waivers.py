@@ -25,11 +25,12 @@ def load_waivers(run_dir: Path) -> List[Dict[str, Any]]:
     waivers = obj if isinstance(obj, list) else [obj]
     seen = set()
     for w in waivers:
-        if isinstance(w, dict):
-            rule = w.get("rule")
-            if rule in seen:
-                raise WaiverError(f"two waivers name the same gate {rule!r}; one gate, one waiver")
-            seen.add(rule)
+        if not isinstance(w, dict):
+            raise WaiverError(f"waivers.json: expected an object, got {type(w).__name__}: {w!r}")
+        rule = w.get("rule")
+        if rule in seen:
+            raise WaiverError(f"two waivers name the same gate {rule!r}; one gate, one waiver")
+        seen.add(rule)
     return waivers
 
 def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:

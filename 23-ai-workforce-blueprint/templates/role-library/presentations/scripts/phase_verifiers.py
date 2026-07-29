@@ -9,8 +9,8 @@ REQUIRED PUBLIC API (run_signature_deck.py imports this module and calls these):
             callable(run_dir: Path) -> (ok: bool, reasons: list[str])
 
     verify(phase_id: str, run_dir: Path) -> (ok: bool, reasons: list[str])
-        Entry point. Unknown phase ids return (True, ["no verifier — pass"]) so the
-        runner degrades gracefully rather than blocking unmapped phases.
+        Entry point. Unknown phase ids return (False, ["no verifier — pass"]) so the
+        runner blocks unmapped phases (fail-closed per U013 step 9).
 
 DESIGN RULES
   * These verifiers are SECONDARY proofs — they supplement, never replace, the
@@ -520,8 +520,8 @@ def verify(phase_id: str, run_dir: Path) -> Tuple[bool, List[str]]:
       ok=True, reasons=[NOTE ...]  — PASS with degraded notes (checker unavailable)
       ok=False, reasons=[...]      — FAIL; reasons lists every finding
 
-    For phase ids not in PHASE_VERIFIERS, returns (True, ["no verifier — pass"])
-    so the runner does not block phases that have no substance checker yet."""
+    For phase ids not in PHASE_VERIFIERS, returns (False, ["no verifier — pass"])
+    so the runner blocks unmapped phases (fail-closed per U013 step 9)."""
     fn: Optional[Callable] = PHASE_VERIFIERS.get(phase_id)
     if fn is None:
         return False, [f"no verifier registered for {phase_id!r} — pass"]
@@ -597,10 +597,12 @@ def _selftest() -> None:
         if not ok:
             fails.append(f"T3: valid intake.json should pass, got reasons={reasons}")
 
-        # T4: unknown phase id => pass
+        # T4: unknown phase id => fail-closed (U013 step 9)
         ok, reasons = verify("UNKNOWN-PHASE-XYZ", rd)
-        if not ok:
-            fails.append(f"T4: unknown phase should pass, got reasons={reasons}")
+        if ok:
+            fails.append(f"T4: unknown phase should fail-closed, got ok={ok} reasons={reasons}")
+        if not any("UNKNOWN-PHASE-XYZ" in r for r in reasons):
+            fails.append(f"T4: unknown phase reason should name the phase, got reasons={reasons}")
 
         # T5: verify_all_phases with no artifacts => no failures
         phases = [
