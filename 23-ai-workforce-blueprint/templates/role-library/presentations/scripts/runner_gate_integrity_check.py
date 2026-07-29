@@ -55,6 +55,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent          # .../presentations/scripts
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse
 PRES_DIR = HERE.parent
 
 # Runner source files to scan for AF code string literals.
@@ -69,40 +71,8 @@ def _fatal(msg: str) -> None:
     sys.exit(2)
 
 
-def _find_repo_root(start: Path) -> "Path | None":
-    """Walk up from start until a directory containing 'universal-sops' is found.
-    Mirrors gate_integrity_check.py's path resolution exactly."""
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
-
-
-def _resolve_manifest() -> Path:
-    """Resolve PIPELINE-MANIFEST.json via repo-root walk, same as gate_integrity_check.py."""
-    repo_root = _find_repo_root(HERE)
-    candidates = []
-    if repo_root:
-        candidates.append(
-            repo_root / "universal-sops" / "presentation-slide-craft"
-            / "PIPELINE-MANIFEST.json"
-        )
-    candidates += [
-        PRES_DIR / "sops" / "PIPELINE-MANIFEST.json",
-        PRES_DIR / "PIPELINE-MANIFEST.json",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]  # return canonical path for the error message
-
-
 def load_manifest() -> dict:
-    mpath = _resolve_manifest()
+    mpath = resolve_manifest(HERE)[0]
     if not mpath.exists():
         _fatal(f"PIPELINE-MANIFEST.json not found (looked at {mpath}).")
     try:

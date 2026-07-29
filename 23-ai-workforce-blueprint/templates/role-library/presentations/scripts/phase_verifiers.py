@@ -454,7 +454,7 @@ def _verify_sp_no_pitch(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 # ---------------------------------------------------------------------------
-# PHASE_VERIFIERS registry — keyed by manifest phase id (PIPELINE-MANIFEST.json v23)
+# PHASE_VERIFIERS registry — keyed by manifest phase id (PIPELINE-MANIFEST.json version read at runtime from the resolved manifest; canonical at time of writing: 25)
 # ---------------------------------------------------------------------------
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion

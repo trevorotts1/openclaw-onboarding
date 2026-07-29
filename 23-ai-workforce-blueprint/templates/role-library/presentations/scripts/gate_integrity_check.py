@@ -50,6 +50,8 @@ import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent              # .../presentations/scripts
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse
 PRES_DIR = HERE.parent
 BUILD_DECK = HERE / "build_deck.py"
 AF_COVERAGE = HERE / "working" / "af-coverage.json"
@@ -62,35 +64,8 @@ def _fatal(msg):
     sys.exit(2)
 
 
-def _find_repo_root(start: Path):
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
-
-
-def _resolve_manifest():
-    repo_root = _find_repo_root(HERE)
-    candidates = []
-    if repo_root:
-        candidates.append(repo_root / "universal-sops" / "presentation-slide-craft"
-                          / "PIPELINE-MANIFEST.json")
-    candidates += [
-        PRES_DIR / "sops" / "PIPELINE-MANIFEST.json",
-        PRES_DIR / "PIPELINE-MANIFEST.json",
-    ]
-    for c in candidates:
-        if c.exists():
-            return c
-    return candidates[0]
-
-
 def load_manifest():
-    mpath = _resolve_manifest()
+    mpath = resolve_manifest(HERE)[0]
     if not mpath.exists():
         _fatal(f"PIPELINE-MANIFEST.json not found (looked at {mpath}).")
     try:
