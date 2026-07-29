@@ -4,7 +4,7 @@
 **Master authority:** universal-sops/CLIENT-WEBINAR-DECK-SOP.md (the pipeline map, §0) + presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md (Section 2.6 renderer + process-manifest auto-fails)
 **Owning role:** every phase's owning role APPENDS its entry; the Director finalizes it at closeout; the QC Specialist - Presentations reads it.
 **Canonical renderer:** `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py` (the deterministic Phase-4 renderer + Phase-8 assembler; it WRITES this manifest's render/assembly entries).
-**Status:** DRAFT for integration. Defines the single attestation artifact the renderer auto-fails (AF-RENDERER / AF-MODEL-SOVEREIGNTY / AF-NO-VISION-QC / AF-CONVERTER-PARITY) and AF-COVERAGE-1 assert against.
+**Status:** DRAFT for integration. Defines the single attestation artifact the renderer auto-fails (AF-RENDERER / AF-MODEL-SOVEREIGNTY / AF-CONVERTER-PARITY) and AF-COVERAGE-1 assert against.
 
 ---
 
@@ -63,7 +63,7 @@ Field rules:
 - **ran** (bool): true only if the phase actually executed. A phase that was skipped either has no entry or `ran: false` (both fail the corresponding gate).
 - **qc_score** (number): the phase's QC score where a QC gate applies (Phase 1Q, 3, 5, 6); use `null` for non-QC phases.
 - **qc_pass** (bool): whether the phase's gate passed (>= 8.5 and no auto-fail). `null` where no gate applies.
-- **gate_codes_checked** (array of string): the exact auto-fail codes this phase evaluated. The render phases MUST include the render gate codes (AF-I*, AF-PLACEHOLDER, AF-HOOK render codes) so AF-NO-VISION-QC can confirm the vision read happened.
+- **gate_codes_checked** (array of string): the exact auto-fail codes this phase evaluated. The render phases MUST include the render gate codes (AF-I*, AF-PLACEHOLDER, AF-HOOK render codes) so AF-IMAGE-QC-VISION can confirm the vision read happened.
 - **timestamp** (string, ISO-8601 UTC): when the entry was appended.
 
 ---
@@ -77,7 +77,7 @@ These are the assertions the MASTER-QC-AUTOFAIL-RULESET Section 2.5/2.6 gates ma
 | AF-COVERAGE-1 | `source_slide_count`, assembled page count | `final_slide_count < source_slide_count` (Mode B add-only; Mode A `source==0` always passes) |
 | AF-RENDERER | the Phase-4/6 entry: `role == build_deck`, `ran == true`, not adhoc | no canonical-renderer entry, or `build_deck.py` ran with `--adhoc-no-process` on a real deliverable |
 | AF-MODEL-SOVEREIGNTY | the Phase-4 generation entry's model id vs `model_manifest` | a non-manifest model id recorded |
-| AF-NO-VISION-QC | the Phase-5 image-QC entry: `ran == true` + render `gate_codes_checked` | no Phase-5 image-QC entry, or it did not record a multimodal vision read of every rendered slide |
+| AF-IMAGE-QC-VISION | the Phase-5 image-QC entry: `ran == true` + render `gate_codes_checked` | no Phase-5 image-QC entry, or it did not record a multimodal vision read of every rendered slide |
 | AF-CONVERTER-PARITY | the assembly-phase page count vs count of Phase-5-passed `slide-NN.png` | assembled PPTX page count != QC-passed render count |
 
 There is no `render_manifest.json`, no `render_deck.py`, and no `vision_qc_log.json` in this system. Every renderer/coverage assertion reads `working/checkpoints/process_manifest.json` and only it.
