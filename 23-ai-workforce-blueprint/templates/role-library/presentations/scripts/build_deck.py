@@ -201,8 +201,10 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
+
+from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from typing import Optional
 from urllib.parse import urlparse, quote
 
@@ -1482,6 +1484,91 @@ def verify_png(path: Path) -> None:
 # Per-slide render with retry
 # ---------------------------------------------------------------------------
 
+
+
+# ---------------------------------------------------------------------------
+# U028 -- pre-call task-id checkpointing (see presentation_job/checkpoint.py)
+# ---------------------------------------------------------------------------
+
+def _pending_tasks_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "pending_tasks.json"
+
+
+def _checkpoint_pending_task(run_dir: Path, ordinal: int, task_id: str,
+                             attempt: int) -> None:
+    try:
+        p = _pending_tasks_path(run_dir)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        if p.exists():
+            try: existing = json.loads(p.read_text())
+            except (json.JSONDecodeError, ValueError): pass
+        existing[str(ordinal)] = {"task_id": task_id, "attempt": attempt,
+                                   "submitted_at": datetime.now(timezone.utc).isoformat()}
+        atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_pending_tasks(run_dir: Path) -> dict:
+    p = _pending_tasks_path(run_dir)
+    if not p.exists(): return {}
+    try: return json.loads(p.read_text())
+    except (json.JSONDecodeError, ValueError, OSError): return {}
+
+
+def _record_completed_task(run_dir: Path, ordinal: int, task_id: str,
+                           out_path: Path) -> None:
+    try: sha = hashlib.sha256(out_path.read_bytes()).hexdigest()
+    except Exception: return
+    try:
+        p = _pending_tasks_path(run_dir)
+        existing = _read_pending_tasks(run_dir)
+        existing[str(ordinal)] = {"task_id": task_id, "completed": True,
+                                   "output_path": str(out_path), "sha256": sha,
+                                   "completed_at": datetime.now(timezone.utc).isoformat()}
+        atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception: pass  # noqa: BLE001
+
+
+def _clear_pending_task(run_dir: Path, ordinal: int) -> None:
+    """Remove a terminal/exhausted pending task record so a future resume
+    submits fresh instead of re-polling the same dead task id forever."""
+    try:
+        p = _pending_tasks_path(run_dir)
+        existing = _read_pending_tasks(run_dir)
+        if str(ordinal) in existing:
+            del existing[str(ordinal)]
+            atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _resume_pending_task(run_dir: Path, ordinal: int, api_key: str) -> Optional[str]:
+    pending = _read_pending_tasks(run_dir)
+    rec = pending.get(str(ordinal))
+    if not rec: return None
+    task_id = rec.get("task_id")
+    if not task_id: return None
+    if rec.get("completed"):
+        out_p = rec.get("output_path")
+        sha = rec.get("sha256")
+        if out_p and sha:
+            if PREDICATES["image"](Path(out_p), sha256=sha):
+                return "__COMPLETED__"
+        return None
+    try:
+        result_url = poll_task(task_id, api_key)
+        print(f"    [resume] pending taskId={task_id} completed -- reusing.")
+        return result_url
+    except Exception:
+        print(f"    [resume] pending taskId={task_id} is terminal/exhausted -- "
+              f"will submit fresh.", flush=True)
+        _clear_pending_task(run_dir, ordinal)
+        return None
+
+
+
 def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                  has_official_logo: bool = False, logo_url: Optional[str] = None) -> dict:
     """
@@ -1499,6 +1586,23 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
     out_path = renders_dir / f"{name}.png"
     prompt = load_rich_prompt(slide, run_dir)
 
+    # U028 -- resume: poll a pending task id from a prior killed run before
+    # paying for a fresh submission.  This is the entire saving.
+    resumed_url = _resume_pending_task(run_dir, ordinal, api_key)
+    if resumed_url == "__COMPLETED__":
+        print(f"  [{name}] resume found completed artifact -- skipping.")
+        return {"slide": ordinal, "file": str(out_path),
+                "taskId": "resumed-completed"}
+    if resumed_url is not None:
+        print(f"  [{name}] resume polling succeeded -- downloading result.")
+        download_unauthenticated(resumed_url, out_path)
+        verify_png(out_path)
+        _verify_aspect_and_readback(out_path, slide, ordinal)
+        size = out_path.stat().st_size
+        print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
+        _record_completed_task(run_dir, ordinal, "resumed", out_path)
+        return {"slide": ordinal, "file": str(out_path), "taskId": "resumed"}
+
     last_err = None
     for attempt in range(1, SLIDE_MAX_ATTEMPTS + 1):
         print(f"  [{name}] attempt {attempt}/{SLIDE_MAX_ATTEMPTS}", flush=True)
@@ -1512,6 +1616,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                     print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
                     time.sleep(RATE_LIMIT_SLEEP_S)
             print(f"    submitted -> taskId={task_id}", flush=True)
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
             result_url = poll_task(task_id, api_key)
             print(f"    success resultUrls[0]={result_url}", flush=True)
             download_unauthenticated(result_url, out_path)
@@ -1523,6 +1628,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _verify_aspect_and_readback(out_path, slide, ordinal)
             size = out_path.stat().st_size
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
+            _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
