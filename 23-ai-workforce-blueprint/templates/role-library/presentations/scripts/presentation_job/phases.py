@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
-    StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED,
+    StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
@@ -129,7 +129,15 @@ class Engine:
         if rc == EXIT_OK:
             ok, missing = self._artifacts_present(phase)
             if not ok:
-                return self._block(phase, f"produced no artifact: missing {', '.join(missing)}")
+                rc2 = heal.rung2_regenerate(self, phase, f"missing {', '.join(missing)}")
+                if rc2 != EXIT_OK:
+                    return self._block(phase, f"produced no artifact after "
+                                              f"{heal.HEAL_CAP_REGENERATE} regeneration attempt(s): "
+                                              f"missing {', '.join(missing)}")
+                ok, missing = self._artifacts_present(phase)
+                if not ok:
+                    return self._block(phase, f"regeneration reported success but produced "
+                                              f"nothing: missing {', '.join(missing)}")
             shas = {}
             for rel in phase.produces_artifact:
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
@@ -164,6 +172,8 @@ class Engine:
             print(f"DRY-RUN {phase.id}: {cmd}", flush=True)
             return EXIT_OK
 
+        ps = self._phase_state(phase.id)
+
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
         self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
@@ -173,7 +183,7 @@ class Engine:
                                        else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
                              if m.is_file()))
         budget = phase.budget_minutes * 60
-        for attempt in range(1, HEAL_CAP_TRANSIENT + 1):
+        for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
                 r = subprocess.run(cmd, shell=True, cwd=str(self.run_dir),
                                    timeout=budget, capture_output=False)
@@ -190,10 +200,17 @@ class Engine:
             self.report.to_requester(
                 "blocked",
                 f"{phase.id} failed ({reason}). Retrying — attempt {attempt} of "
-                f"{HEAL_CAP_TRANSIENT}. Nothing you need to do yet.")
-            if attempt < HEAL_CAP_TRANSIENT:
+                f"{heal.HEAL_CAP_TRANSIENT}. Nothing you need to do yet.",
+                phase_id=phase.id, reason=reason)
+            if attempt < heal.HEAL_CAP_TRANSIENT:
                 time.sleep(min(60, 5 * (2 ** (attempt - 1))))
-        return self._block(phase, f"script executor failed after {HEAL_CAP_TRANSIENT} attempts")
+
+        # Rung 3: alternate route -- MECHANISM ONLY, NO CLIENT POLICY
+        rc3 = heal.rung3_alt_route(self, phase)
+        if rc3 == EXIT_OK:
+            return EXIT_OK
+
+        return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
 
     def _run_agent_phase(self, phase: Phase) -> int:
         """
@@ -272,7 +289,8 @@ class Engine:
             "blocked",
             f"Your presentation is paused at {phase.id}. {reason} "
             f"{safe_msg} "
-            "We have been told and are looking at it.")
+            "We have been told and are looking at it.",
+            phase_id=phase.id, reason=reason)
         print("\n" + "=" * 72, file=sys.stderr)
         print(f"BLOCKED at {phase.id}", file=sys.stderr)
         print(f"  reason   : {reason}", file=sys.stderr)
@@ -348,6 +366,21 @@ class Engine:
 
         self.store.save(self.state)
         if failures:
+            failed_keys = [k for k, _ in failures]
+            regated = heal.rung4_regate(self, failed_keys)
+            failures = [(k, r.get("reason") or "failed") for k, r in regated.items()
+                        if r.get("state") != "pass"]
+            if not failures:
+                # All failed gates passed on re-evaluation.
+                if self.board:
+                    self.board.mark_review()
+                self.state["terminal"] = "DONE"
+                self.state["completed_at"] = utcnow()
+                self.store.save(self.state)
+                self.report.to_requester(
+                    "done", "Your presentation is ready. All quality checks passed.")
+                print("DONE — all gates passed after re-evaluation.", flush=True)
+                return EXIT_OK
             self.state["terminal"] = "BLOCKED"
             self.store.save(self.state)
             lines = "\n".join(f"    - {k}: {r}" for k, r in failures)
