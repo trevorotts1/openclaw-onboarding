@@ -210,7 +210,9 @@ def _as_list(v: Any) -> List[str]:
 # it has never heard of.
 
 
-MIN_MANIFEST_VERSION = 25
+MIN_MANIFEST_VERSION = 30  # U019/D02: moved with manifest_version (PIPELINE-MANIFEST.json's
+# client_package_files gained a sixth key, teleprompter_html, at this version; see
+# universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt for the stamped hash).
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
