@@ -20,6 +20,8 @@ A direct `build_deck.py` or `working/*.py` call is blocked by the front-door gua
 `kie_generate.py`, and `slides.schema.json` ship in this repo's scripts and
 render-template directories and are installed into the client's Presentations scripts
 directory on a materialized box. Use the `SCRIPTS_DIR` your task message gives you.
+The scripts directory defaults to the materialized department's `scripts/` folder;
+`--scripts-dir` overrides it. The script refuses rather than searching or guessing.
 
 **Your job is NOT just `slides.json`.** `slides.json` is the Layer-A structure ledger; the
 render also requires the hand-authored 9,000–18,000-character rich per-slide prompt files
