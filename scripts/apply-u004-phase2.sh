@@ -48,7 +48,7 @@ if [ ! -f "$BACKUP_TAR" ]; then
 fi
 
 echo "[Phase2] verifying backup checksum..."
-if ! shasum -a 256 -c "$BACKUP_CHECKSUM" >/dev/null 2>&1; then
+if ! (cd "$BK" && shasum -a 256 -c "$(basename "$BACKUP_CHECKSUM")") >/dev/null 2>&1; then
   echo "FATAL: backup checksum verification FAILED for $BACKUP_TAR" >&2
   echo "The archive may be corrupt. Do NOT proceed. Escalate." >&2
   exit 1
