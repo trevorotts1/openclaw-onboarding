@@ -20,6 +20,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 ### SOP 9.1 -- Signature Deck Arc Design (Start With The End In Mind)
 
+> Gating enforcer: `P-SP-INTAKE-TRACE` / `build_deck._chk_sp_intake_trace` (fail-closed preflight, phase order 0.16); the QC/Healer scan enforces the same check out-of-band.
 
 **SOP ID:** SOP-PRES-CUSTOM-01 (BlackCEO)
 **Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 4.1 (17-row allocation), Section 4.2 (seven-section proven flow), Section 4.3 (pitch doctrine)
