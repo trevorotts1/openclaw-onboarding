@@ -93,6 +93,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
+| **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
+| **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
 
 ### What each specialist is for, with an example request
 
@@ -200,6 +202,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51).
 - *Example request:* "Have the Signature Presentation Architect take this on: Owns the Signature Presentation deck type end to end (Skill 51)."
+
+**Image-Grounding Steward ("The Witness")**
+
+- *What it is for:* You own one question no other role owns.
+- *Example request:* "Have the Image-Grounding Steward ("The Witness") take this on: You own one question no other role owns."
+
+**Per-Client Representation and Casting Director ("The Mirror")**
+
+- *What it is for:* You own one question end to end.
+- *Example request:* "Have the Per-Client Representation and Casting Director ("The Mirror") take this on: You own one question end to end."
 
 
 ---

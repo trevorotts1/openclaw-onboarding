@@ -1,8 +1,8 @@
 # Suggested Roles -- presentations-dept
-**Version:** 2.0 | 2026-07-03
-**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`) and the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`) -> **32 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
+**Version:** 2.1 | 2026-07-29
+**Status:** The v12.20.0 canonical 24-role roster is extended with the **2 Skill-51 Signature-Presentation methodology roles** (`signature-presentation-architect`, `qc-specialist-signature-presentations`), the **6 attention-strategy + prompt-authoring + specialist-QC roles** (`attention-content-strategist`, `prompt-author-presentations`, `qc-specialist-prompt-presentations`, `qc-specialist-image-presentations`, `qc-specialist-typography-presentations`, `qc-specialist-speech-presentations`), and the **2 image-grounding + representation roles** (`image-grounding-steward`, `representation-casting-director`) -> **34 roster roles**. Every roster role resolves to a role-library `_index.json` entry (verified green by `qc-assert-repo-consistency.py --only consistency` and `register-library-additions.py --check`). Every role header is CLEAN (no `(NEW)`, no `-- vX.Y`, no `renamed from ...`, no `&`/`+`/`'` decorations) and carries an explicit `**Slug:**` that matches its role-library `.md` file exactly. The slug is the canonical key for folder naming (`NN-<slug>/`) and role-library lookup.
 
-## Canonical Role Count: 32
+## Canonical Role Count: 34
 The canonical set is one role per role-library `.md` file under
 `templates/role-library/presentations/` (excluding the `00-START-HERE.md` meta
 doc, `BUILDER-PROMPT.md`, `how-to-use-this-department.md`, `IDENTITY.md`,
@@ -342,6 +342,26 @@ End-to-end branded webinar and slide deck production: copy writing, price ladder
 - 03-Independence-and-Provenance-Block.md
 - 04-Rework-Loop-and-Escalation.md
 **Role type:** qc
+
+### 32. Image-Grounding Steward
+**Slug:** image-grounding-steward
+**What it does:** Owns brief-grounding for the visual layer of the deck: does this slide's imagery depict a concrete moment from THIS client's specific method, message, book, or offer, or is it generic on-brand stock? Assembles the grounded-content reference (SOP 9.1), scores every people-or-scene-bearing prompt for specificity versus genericness and routes ungrounded prompts back (SOP 9.2), reviews pain-point slides for pain-visibility (SOP 9.3), and runs a final-deck grounding pass before delivery (SOP 9.4).
+**Core SOPs to build:**
+- 01-Grounded-Content-Capture.md
+- 02-Prompt-Grounding-Score-Specific-Not-Generic.md
+- 03-Pain-Visibility-Review-Make-the-Pain-Felt.md
+- 04-Final-Deck-Grounding-Pass.md
+**Role type:** specialist
+
+### 33. Per-Client Representation and Casting Director
+**Slug:** representation-casting-director
+**What it does:** Owns representation end to end: does the finished deck's cast match THIS client's actual audience? Verifies the captured REPRESENTATION_MIX at intake and allocates percentages (SOP 9.1), assigns and audits per-prompt representation (SOP 9.2), runs the image-stage deck-wide cast tally (SOP 9.3), and runs the final-deck representation tally as the audience-as-mirror gate before delivery (SOP 9.4). Never invents a racial or gender default; if the audience composition was not captured, renders NO PEOPLE and flags the operator.
+**Core SOPs to build:**
+- 01-Audience-Capture-Verification-and-Percentage-Allocation.md
+- 02-Per-Prompt-Representation-Assignment.md
+- 03-Image-Stage-Deck-Wide-Representation-Tally.md
+- 04-Final-Deck-Representation-Tally-The-Audience-As-Mirror-Gate.md
+**Role type:** specialist
 
 ---
 
