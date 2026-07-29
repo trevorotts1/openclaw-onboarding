@@ -84,3 +84,36 @@ class TestProbe:
         s,st=_mkstate(tmp_path);s["throttle_probe"]=True;r=Reporter(s,st)
         for i in range(10):r.to_requester("progress",f"n{i}")
         assert s.get("sent",{}).get("progress") is None;assert s.get("throttled",0)==10
+
+class Test8MessageBound:
+    """Test 8: throttle assertion — sends many progress messages with time
+    advancing 1 minute per call, verifying total sent is 6-20.
+
+    When PROGRESS_MIN_INTERVAL_MINUTES is set to 0 (mutation), the throttle
+    never suppresses, so all 66 messages go through (>20), and this test FAILS.
+    That proves the suite detects the broken throttle."""
+    def test_message_bound(self,tmp_path,monkeypatch):
+        import presentation_job.report as rpt
+        n=tmp_path/"n";n.mkdir();ns=n/"s.sh";ns.write_text("#!/bin/sh\ncat>/dev/null\nexit 0\n");ns.chmod(0o755)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD",str(ns))
+        rd=tmp_path/"r";rd.mkdir();store=StateStore(rd)
+        s={"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"2026-01-01T00:00:00+00:00","manifest_path":"/x.json","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":"tc"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
+        store.save(s)
+        # Fake clock: 1 minute per call, so with PROGRESS_MIN_INTERVAL_MINUTES=10,
+        # every 11th progress message passes (diff >= 10).  64 progress / 11 ≈ 6 sent.
+        # Total: 1 ack + ~6 progress + 1 done ≈ 8 (in the 6-20 band).
+        _tick=[0]
+        monkeypatch.setattr(rpt,'_parse_minutes',lambda ts: (_tick.__setitem__(0,_tick[0]+1) or _tick[0]) if True else 0)
+        r=Reporter(s,store)
+        r.to_requester("ack","Starting build.")
+        for i in range(32):
+            r.to_requester("progress",f"Starting phase {i}",phase_id=f"P{i}",reason="start")
+            r.to_requester("progress",f"Phase {i} complete",phase_id=f"P{i}",reason="done")
+        r.to_requester("done","All done.")
+        sc=s.get("sent",{})
+        total=sum(v.get("count",0) for v in sc.values() if isinstance(v,dict))
+        throttled=s.get("throttled",0)
+        assert isinstance(sc.get("ack"),dict) and sc["ack"]["count"]==1
+        assert isinstance(sc.get("done"),dict) and sc["done"]["count"]==1
+        assert throttled>0,(f"throttled={throttled} — throttle inactive (PROGRESS_MIN_INTERVAL_MINUTES=0?)")
+        assert 6<=total<=20,f"expected 6-20 messages, got {total} (throttled={throttled})"
