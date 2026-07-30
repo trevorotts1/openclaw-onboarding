@@ -49,6 +49,49 @@ pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.
 waivers. No version bump -- release PR #738 is open.
 
 
+## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code
+
+### Why
+A client's assistant read stale Skill 58 (Podcast Production Engine) docs that still described the
+credential broker as the fleet default and instructed a manual n8n workflow import. She concluded the
+client needed her own n8n instance and needed BlackCEO's Podbean OAuth app credentials, and escalated a
+blocker that does not exist. The code (`podbean_publish.sh`, precedence PROXY > BROKER > LOCAL, landed at
+tag v20.0.67) was already correct; the docs were not.
+
+### What changed
+- `58-podcast-production-engine/scripts/podbean_publish.sh`: the `PODBEAN_CLIENT_ID is NOT SET` die
+  message named only the broker and the local Podbean app secret, so a box simply missing the proxy pair
+  was told to go deploy a broker. It now names `PODBEAN_PUBLISH_WEBHOOK_URL` + `PODBEAN_PUBLISH_TOKEN`
+  first as the fleet default, the broker as fallback, and local as operator-own-box-only. Message text
+  only -- no control flow or precedence change.
+- `58-podcast-production-engine/SKILL.md`: the credentials-section Podbean bullet said "Broker mode (fleet
+  default)", directly contradicting Step 15's own correct statement (line ~321) that publish-proxy is the
+  fleet default. Rewritten to lead with proxy mode and its five variables, broker as fallback (flagged as
+  an unused fallback not deployed on the live instance), local as operator-own-box-only, and the explicit
+  selection rule (proxy if the publish webhook URL and token both resolve, else broker if the broker pair
+  both resolve, else local). Frontmatter `version:` bumped 0.1.20 -> 0.1.21; `skill-version.txt` bumped to
+  match.
+- `58-podcast-production-engine/config/n8n/README.md`: added a top banner stating publish-proxy to the
+  live `/webhook/podbean-publish` workflow is the current and only live path, that the broker in this
+  directory is an unused fallback that is not deployed and must not be imported, and that no client needs
+  their own n8n instance or Podbean OAuth app credentials. Retitled and reframed the "Import" section as
+  fallback-only, not a required onboarding step. Fixed the "Skill side" section's stale "broker mode ...
+  fleet default" claim to state the real PROXY > BROKER > LOCAL precedence. Added a new "Provisioning a
+  client box for Step 15 publish (proxy mode)" section listing the five box variables, the operator-side
+  `OPENCLAW_*` injection variables, and the `--dry-run` standing-check reachability probe as the no-spend
+  verification step. Also removed the pinned, already-stale `versionId` / `activeVersionId` capture-
+  metadata pointer for the live n8n workflow (`TkL0rn2SH3q32SeB`) in favor of stating the graph shape (51
+  nodes / 35 connections / active), re-verified live on 2026-07-30, with the reason a version pointer is
+  deliberately never pinned here again (it changes on every live edit and would manufacture false audit
+  drift).
+- Repo version bumped v21.4.17 -> v21.4.18 via `scripts/bump-version.sh` (all 10 tracked markers verified
+  in agreement).
+
+### Risk
+Documentation and one error-message string only. No change to publish-path behavior, precedence, or
+control flow; `podbean_publish.sh` still passes `bash -n`.
+
+
 ## [v21.4.17]  -  2026-07-30  -  Un-freeze update-skills.sh after fourteen releases of drift
 
 `update-skills.sh` carried `ONBOARDING_VERSION="v21.4.2"` while `/version`, `install.sh` and every other
