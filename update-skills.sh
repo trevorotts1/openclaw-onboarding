@@ -131,6 +131,163 @@ ONBOARDING_VERSION="v21.4.30"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
+#=== BEGIN FLEET-STANDING-GATE-V1 ===
+# ============================================================
+#  FLEET STANDING GATE -- the single chokepoint for entitlement.
+#
+#  WHY HERE: a client box can be updated three different ways --
+#    1. the Sunday `openclaw cron` job (client-facing, cron-prompt.txt)
+#    2. the legacy silent shell cron (.update-restart-if-needed)
+#    3. the operator's fleet-roll SSH push
+#  ALL THREE ultimately execute THIS script. Gating each caller
+#  separately means three patches and three chances to miss one; a
+#  single early exit here covers every path at once.
+#
+#  FAIL OPEN -- READ THIS BEFORE CHANGING ANYTHING:
+#  Only an EXPLICIT `blocked` verdict stops an update. Unreachable
+#  gate, HTTP error, malformed reply, missing config, unknown box --
+#  every one of those PROCEEDS with the update. The reason is
+#  asymmetric blast radius: wrongly blocking freezes updates across
+#  the entire fleet the moment n8n hiccups, while wrongly allowing
+#  costs one update cycle for one delinquent box. Never "harden"
+#  this into fail-closed.
+#
+#  A box that has never been provisioned with the gate env vars is
+#  therefore unaffected -- this change is backward compatible and
+#  inert until FLEET_STANDING_GATE_URL is seeded.
+#
+#  Escape hatches:
+#    FLEET_STANDING_GATE_BYPASS=1   skip the gate entirely (operator)
+#    FLEET_STANDING_GATE_SHADOW=1   report the verdict, never block
+#
+#  NEVER prints the header secret.
+# ============================================================
+
+fleet_standing_resolve_slug() {
+    # 1. explicit env  2. openclaw.json env.vars  3. hostname
+    if [ -n "${FLEET_STANDING_BOX_SLUG:-}" ]; then
+        printf '%s' "$FLEET_STANDING_BOX_SLUG"; return 0
+    fi
+    local json="${OC_JSON:-}"
+    if [ -n "$json" ] && [ -f "$json" ] && command -v python3 >/dev/null 2>&1; then
+        local from_json
+        from_json="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    print(((d.get('env') or {}).get('vars') or {}).get('FLEET_STANDING_BOX_SLUG','') or '')
+except Exception:
+    print('')
+" "$json" 2>/dev/null || printf '')"
+        if [ -n "$from_json" ]; then printf '%s' "$from_json"; return 0; fi
+    fi
+    hostname -s 2>/dev/null || printf ''
+}
+
+fleet_standing_gate() {
+    if [ "${FLEET_STANDING_GATE_BYPASS:-0}" = "1" ]; then
+        echo "  [standing-gate] bypassed (FLEET_STANDING_GATE_BYPASS=1)"
+        return 0
+    fi
+
+    local url="${FLEET_STANDING_GATE_URL:-}"
+    local hdr_name="${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}"
+    local hdr_val="${FLEET_STANDING_GATE_SECRET:-}"
+
+    if [ -z "$url" ] || [ -z "$hdr_val" ]; then
+        echo "  [standing-gate] not configured on this box -- proceeding (fail open)"
+        return 0
+    fi
+
+    local slug; slug="$(fleet_standing_resolve_slug)"
+    if [ -z "$slug" ]; then
+        echo "  [standing-gate] could not resolve box slug -- proceeding (fail open)"
+        return 0
+    fi
+
+    local body resp code
+    body="{\"boxName\":\"${slug}\",\"action\":\"update\",\"source\":\"update-skills.sh\"}"
+
+    # Two attempts, short timeouts. Never let curl's exit code trip set -e.
+    local attempt
+    for attempt in 1 2; do
+        resp="$(curl -s -m 15 --connect-timeout 8 \
+                 -w $'\n%{http_code}' \
+                 -X POST "$url" \
+                 -H "Content-Type: application/json" \
+                 -H "${hdr_name}: ${hdr_val}" \
+                 -d "$body" 2>/dev/null || printf '\n000')"
+        code="$(printf '%s' "$resp" | tail -n1)"
+        [ "$code" = "200" ] && break
+        [ "$attempt" = "1" ] && sleep 3
+    done
+
+    if [ "$code" != "200" ]; then
+        echo "  [standing-gate] gate unreachable (HTTP ${code:-000}) -- proceeding (fail open)"
+        return 0
+    fi
+
+    local payload verdict
+    payload="$(printf '%s' "$resp" | sed '$d')"
+    # NOTE the `|| printf ''`: under `set -euo pipefail` a non-matching grep
+    # exits 1, which would kill this command substitution and abort the whole
+    # update -- i.e. a malformed gate reply would silently fail CLOSED across
+    # the fleet. Swallowing the failure is what keeps the "unrecognised reply
+    # -> proceed" branch below reachable. tests/unit/fleet-standing-gate.test.sh
+    # covers this exact regression.
+    verdict="$(printf '%s' "$payload" \
+                | grep -o '"verdict"[[:space:]]*:[[:space:]]*"[a-z_]*"' \
+                | head -n1 | sed 's/.*"\([a-z_]*\)"$/\1/' 2>/dev/null || printf '')"
+
+    case "$verdict" in
+        blocked) : ;;                                   # the only stop condition
+        allowed)
+            echo "  [standing-gate] account current -- proceeding"
+            return 0 ;;
+        unmatched|held)
+            echo "  [standing-gate] verdict '${verdict}' (box not on roster or lookup failed) -- proceeding (fail open)"
+            return 0 ;;
+        *)
+            echo "  [standing-gate] unrecognised reply -- proceeding (fail open)"
+            return 0 ;;
+    esac
+
+    if [ "${FLEET_STANDING_GATE_SHADOW:-0}" = "1" ]; then
+        echo "  [standing-gate] SHADOW MODE: would have BLOCKED this update (${slug}) -- proceeding anyway"
+        return 0
+    fi
+
+    # ---- blocked ----
+    local agents_md="${OC_CONFIG:-$HOME/.openclaw}/AGENTS.md"
+    local stamp; stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ -f "$agents_md" ] && ! grep -qF "OPENCLAW_UPDATE_HELD_BILLING" "$agents_md" 2>/dev/null; then
+        {
+            echo ""
+            echo "<!-- OPENCLAW_UPDATE_HELD_BILLING:${stamp} -->"
+            echo "## Update held -- account not current"
+            echo "An update was available on ${stamp} but was not applied because this"
+            echo "account is not current on payments. Nothing on this system was changed;"
+            echo "everything continues running as it is. The update will apply automatically"
+            echo "once the account is brought up to date."
+            echo "<!-- OPENCLAW_UPDATE_HELD_BILLING_END -->"
+        } >> "$agents_md" 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo "  Update held -- account not current on payments."
+    echo ""
+    echo "  Nothing on this system has been changed and everything"
+    echo "  keeps running as it is. As soon as the account is up to"
+    echo "  date the latest version will install on the next check."
+    echo "============================================================"
+    echo ""
+    exit 0
+}
+
+fleet_standing_gate
+#=== END FLEET-STANDING-GATE-V1 ===
+
 #=== BEGIN OPENCLAW-BACKUP-RETENTION-V1 ===
 # ============================================================
 #  Backup retention + disk pre-check -- ONE policy, every site.
