@@ -1,3 +1,62 @@
+## [Unreleased]  -  qc gate blocks close() instead of only warning (fail-open closed)
+
+**Presentations engine: the `qc` gate now blocks `close()` instead of only warning.**
+`presentation_job/gates.py` carried `qc` inside `WARN_ONLY_GATES`, and every failure branch of
+`_qc_gate` set `"warn_only": True`. `phases.py`'s `close()` routes any gate result carrying
+`warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of `failures` — so
+a job with **no QC report at all** could reach `DONE`. This is the identical defect shape the
+`ocr_readback` fix just above closed, flagged by a QC review of that very fix: D10's own doctrine
+names it directly — *"a check that defers because its input is missing is a fail-open wearing a
+fail-closed label."* The department's ratified strictness decision is fail-closed: no close
+without QC >= 8.5 (`QC_PASS_THRESHOLD`), with the client's own quoted request (`waivers.json`,
+validated against `intake.json` or the transcript by `waivers.py`) as the ONLY bypass.
+
+**Investigation, verified by grep across the whole repo:** no phase anywhere writes
+`working/qc/final_qc_report.json` — the file `_qc_gate` checks for. The manifest's six QC phases
+(`P1Q-COPY-QC`, `P-TYPO-QC`, `P-PROMPT-QC`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P-SPEECH-QC`) each write
+their own domain report (`copy_qc_report.json`, `typography_qc_report.json`,
+`prompt_qc_report.json`, `image_qc_report.json`, `priority_shift_report.json`,
+`speech_qc_report.json`), and nothing aggregates them into `final_qc_report.json`. `phases.py`
+imports `WARN_ONLY_GATES` (line 16) but never branches on it — confirmed dead code; `close()`'s
+actual branch (`g.get("warn_only", False)`) keys off each gate's own per-branch dict entry, which
+is exactly what let `ocr_readback` and `qc` diverge in the first place.
+
+Fixed: `WARN_ONLY_GATES` is now `()` — `qc` was removed, mirroring the `ocr_readback` fix exactly
+— and `_qc_gate` sets `warn_only: False` on every branch (missing report, unreadable report, no
+numeric score, sub-threshold score, and pass), so `close()`'s existing fail-closed path
+(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers `qc`
+exactly like the other four hard gates. Unlike `ocr_readback`, `qc` stays in `GATE_KEYS` (not
+`NON_WAIVABLE_GATES`) — a client-quoted waiver remains the sanctioned bypass, unchanged from
+today's forged-waiver fix in `waivers.py`.
+
+**Before/after proof** (`Engine.close()`, every other gate genuinely satisfied, no
+`final_qc_report.json` present): pre-fix, `close()` printed `1 gate(s) in warn-mode did not pass`
+and then `DONE -- all gates passed.`, exit `0`, `terminal: DONE`. Post-fix, the same run-dir
+prints `CANNOT CLOSE -- fail-closed gates did not pass:\n    - qc: no final QC report at
+working/qc/final_qc_report.json ...`, exit `3` (`EXIT_GATE_BLOCKED`), `terminal: BLOCKED`. A
+genuine passing report (`{"average": 9.2}`) and a client-quoted waiver
+(`rule=qc, client_request_quote` verified against `intake.json`) both still close `DONE` —
+confirmed by new regression tests in `tests/test_gates.py` (`test_qc_gate_*`,
+`test_no_gate_is_warn_only_anymore`) and `tests/test_presentation_job.py`
+(`TestQCGateBlocks`), bleed-tested by reverting `_qc_gate`'s missing-report branch to
+`warn_only: True` and confirming both `test_qc_gate_missing_report_is_hard_failure_not_warn_only`
+and `TestQCGateBlocks::test_close_blocks_with_no_qc_report` fail, then restoring and confirming
+both pass again.
+
+**Known, accepted risk, disclosed rather than hidden — same shape as the OCR risk above:** this
+fix makes `qc` block every real job today, because no phase produces
+`working/qc/final_qc_report.json` yet. That is the fail-closed behaviour D10 asks for (fail on a
+missing input rather than silently pass), not a defect in this fix. The larger, separate unit
+this leaves undone: an aggregation phase that reads the six domain QC reports above, verifies
+each carries genuine independent-reviewer provenance (guarded against hand-rolled generators by
+`qc_generator_guard.py`'s `AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT` /
+`AF-QC-REPORT-UNTRUSTED` checks), computes a combined score, and writes
+`final_qc_report.json` — plus a manifest phase entry (bumping `manifest_version` and
+`MIN_MANIFEST_VERSION` together per U019 step 8) so the engine actually runs it. Until that
+aggregation phase exists, every real job either supplies a genuine report out of band or is
+blocked here, on purpose — never a silent pass.
+
+
 ## [Unreleased]  -  U012: add the six missing manifest phases and their executors
 
 `PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --

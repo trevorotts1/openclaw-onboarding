@@ -624,3 +624,116 @@ class TestOCRReadbackGateBlocks:
         assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
         assert engine.state["terminal"] == "DONE"
         assert "CANNOT CLOSE" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# qc gate fail-open: gates.py carried `qc` in WARN_ONLY_GATES with every one of
+# _qc_gate's failure branches setting "warn_only": True. close() routes any gate result
+# carrying warn_only: True into the non-blocking state["gate_warnings"] list instead of
+# failures -- so a job with NO working/qc/final_qc_report.json at all (the real situation
+# on every run today: no phase in the manifest produces that file) could reach DONE with
+# zero QC score. The department's ratified strictness decision (D10) is fail-closed: no
+# close without QC >= 8.5, with a client-quoted waiver as the only bypass. These drive
+# Engine.close() itself (not just Gates in isolation) to prove the observable,
+# end-to-end behaviour -- the same shape as TestOCRReadbackGateBlocks above.
+# ---------------------------------------------------------------------------
+class TestQCGateBlocks:
+    def _seed_other_gates_passing(self, run_dir):
+        """Every gate except qc satisfied for real, so a close() failure can only be
+        attributed to qc."""
+        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (run_dir / "renders").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
+        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
+            {"ghl_folder_id": "root",
+             "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
+             "pptx_ghl_media_id": "p9"}))
+        (run_dir / "renders" / "slide-01.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        # Deliberately no working/qc/final_qc_report.json.
+
+    def _make_engine(self, run_dir):
+        from presentation_job.manifest import Manifest
+        from presentation_job.phases import Engine
+        manifest_path = run_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({"manifest_version": 25, "phases": []}))
+        manifest = Manifest(manifest_path)
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "qc_gate_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return Engine(run_dir, manifest, store, state, dry_run=False)
+
+    def test_close_blocks_with_no_qc_report(self, tmp_path, capsys):
+        """The exact scenario the fail-open bug describes: no phase ever wrote
+        final_qc_report.json. close() must exit EXIT_GATE_BLOCKED, never reach DONE, and
+        name the gate in the same '--close' output style as every other fail-closed gate."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "CANNOT CLOSE -- fail-closed gates did not pass:" in captured.err
+        assert "qc" in captured.err
+        assert engine.state.get("gate_warnings") is None or all(
+            w.get("gate") != "qc" for w in engine.state.get("gate_warnings", [])
+        ), "qc must never land in the non-blocking gate_warnings list"
+
+    def test_close_blocks_below_threshold_qc_score(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(
+            json.dumps({"average": 6.0}))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "qc" in captured.err
+
+    def test_close_succeeds_with_genuine_passing_qc_report(self, tmp_path, capsys):
+        """Bleed-test companion: a job with a real, passing QC score must still close
+        DONE. Fixing the block must not break the good path."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(
+            json.dumps({"average": 9.2}))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert "CANNOT CLOSE" not in captured.err
+
+    def test_close_succeeds_with_client_quoted_qc_waiver(self, tmp_path, capsys):
+        """The only sanctioned bypass: a waiver quoting the client's own recorded words.
+        Must not be weakened by this fix (waivers.py is untouched)."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+        (run_dir / "waivers.json").write_text(json.dumps([
+            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
+             "client_request_quote": "skip the QC check",
+             "captured_at": "2026-01-01T00:00:00Z"}]))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert engine.state["gates"]["qc"]["state"] == "waived"

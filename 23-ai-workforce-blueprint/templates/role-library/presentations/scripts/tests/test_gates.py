@@ -65,14 +65,19 @@ def test_all_gates_fail_on_empty_dir():
          and not gates.get(k, {}).get("warn_only", False)]
     assert len(f) >= 4, f"expected >=4 failures, got {len(f)}"
 
-def test_warn_mode_gates_are_warn_only():
-    # ocr_readback is deliberately given a passing sidecar here: since MASTER-SPEC 7.4 / D10
-    # this gate is a hard (non-warn-only) gate, so this fixture must satisfy it for real in
-    # order to still prove the point this test exists for -- that the one gate genuinely left
-    # in WARN_ONLY_GATES (qc) does not count as a hard failure.
+def test_no_gate_is_warn_only_anymore():
+    # WARN_ONLY_GATES used to carry both ocr_readback and, later, qc alone -- both were
+    # fixed to fail-closed (see gates.py's WARN_ONLY_GATES comment and CHANGELOG
+    # [Unreleased] qc-gate-fail-closed). This is a regression guard: the tuple must stay
+    # empty, and every gate this fixture satisfies for real (including a genuine passing
+    # final_qc_report.json) must show up as a hard pass with warn_only False.
+    assert WARN_ONLY_GATES == (), (
+        "a gate was added back to WARN_ONLY_GATES -- see D10: a check that defers "
+        "because its input is missing is a fail-open wearing a fail-closed label")
     rd = _rd(); (rd / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
     (rd / "working" / "prompts").mkdir(parents=True, exist_ok=True)
     (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd / "working" / "qc").mkdir(parents=True, exist_ok=True)
     (rd / "renders").mkdir(parents=True, exist_ok=True)
     _w(rd, "working/deliverables/PRESENTERS-SPEECH.md", "x" * 3000)
     _w(rd, "working/deliverables/presenter-teleprompter.html", "y" * 12000)
@@ -80,11 +85,60 @@ def test_warn_mode_gates_are_warn_only():
     _wj(rd, "working/checkpoints/media_library.json",
         {"ghl_folder_id": "root", "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}], "pptx_ghl_media_id": "p9"})
     _wj(rd, "renders/slide-01.ocr.json", {"checked": True, "matched": True})
+    _wj(rd, "working/qc/final_qc_report.json", {"average": 9.0})
     gates = Gates(rd, {}).evaluate_all()
     assert gates["ocr_readback"]["state"] == "pass", gates["ocr_readback"]
+    assert gates["qc"]["state"] == "pass", gates["qc"]
+    assert gates["qc"]["warn_only"] is False
     f = [k for k in ALL_GATE_KEYS if gates.get(k, {}).get("state") != "pass"
          and not gates.get(k, {}).get("warn_only", False)]
     assert len(f) == 0, f"all hard gates should pass, got {f}"
+
+def test_qc_gate_missing_report_is_hard_failure_not_warn_only():
+    """The exact scenario the fail-open bug describes: no phase ever writes
+    working/qc/final_qc_report.json. This must BLOCK (D10), never defer to a
+    non-blocking warning."""
+    rd = _rd()
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False, "a missing QC report must not be warn-only -- it must block"
+    assert "qc" not in WARN_ONLY_GATES
+
+def test_qc_gate_unreadable_report_is_hard_failure():
+    rd = _rd(); _w(rd, "working/qc/final_qc_report.json", "{not valid json")
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
+
+def test_qc_gate_no_numeric_score_is_hard_failure():
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"notes": "looks fine to me"})
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
+
+def test_qc_gate_below_threshold_is_hard_failure():
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"average": 7.9})
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
+    assert "7.9" in g["reason"]
+
+def test_qc_gate_passes_on_genuine_report_at_or_above_threshold():
+    rd = _rd(); _wj(rd, "working/qc/final_qc_report.json", {"average": 8.5})
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "pass", g
+    assert g["warn_only"] is False
+    assert g["score"] == 8.5
+
+def test_qc_is_waivable_with_genuine_client_quote():
+    """Unlike ocr_readback, qc stays in GATE_KEYS -- a client-quoted waiver (validated by
+    waivers.py against the client's own recorded words) is the ONLY bypass. This is not
+    weakened by the fail-closed fix."""
+    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
+    w = {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
+         "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}
+    validate_waiver(w, rd)  # must not raise
+    assert "qc" not in NON_WAIVABLE_GATES
 
 def test_ocr_readback_unchecked_is_hard_failure_not_warn_only():
     """MASTER-SPEC 7.4 / D10: an unchecked readback BLOCKS -- it must never be routed
