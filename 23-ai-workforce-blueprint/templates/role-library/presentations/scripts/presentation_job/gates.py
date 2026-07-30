@@ -6,7 +6,13 @@ GATE_KEYS = ("script", "teleprompter", "prompt_floor", "ghl_upload", "qc")
 NON_WAIVABLE_GATES = ("ocr_readback",)
 ALL_GATE_KEYS = GATE_KEYS + NON_WAIVABLE_GATES
 QC_PASS_THRESHOLD = 8.5
-WARN_ONLY_GATES = ("qc", "ocr_readback")
+# ocr_readback was removed from this tuple deliberately (see _ocr_gate below): MASTER-SPEC
+# section 7.4 and decision D10 require an unchecked slide-content readback to BLOCK the job,
+# and D10 names it as the one gate no waiver can pass either. U013 originally staged it here
+# in warn-mode because no phase declared a producer for renders/slide-*.ocr.json; that
+# producer question is orthogonal to whether a missing/unchecked record should ever be
+# allowed to reach DONE, and the spec's answer for "unchecked" is unconditional: no.
+WARN_ONLY_GATES = ("qc",)
 class Gates:
     def __init__(self, run_dir: Path, state: Dict[str, Any]) -> None:
         self.run_dir = run_dir
@@ -72,15 +78,21 @@ class Gates:
         if score < QC_PASS_THRESHOLD: return {"state":"fail","score":score,"warn_only":True,"reason":f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"}
         return {"state":"pass","score":score,"per_dimension":obj.get("per_dimension"),"reason":None,"warn_only":False}
     def _ocr_gate(self) -> Dict[str, Any]:
+        # MASTER-SPEC 7.4 / D10: the slide-content readback is the one gate that fail-closes
+        # unconditionally -- "a check that disabled itself is not a pass, and no waiver can
+        # make it one." warn_only is always False here, on every branch, on purpose: an
+        # unchecked or mismatched readback must land in close()'s `failures`, never in the
+        # non-blocking `gate_warnings` list. See NON_WAIVABLE_GATES above for the companion
+        # half of the contract (no waiver can mark this gate "waived" either).
         d = self.run_dir / "renders"
         sidecars = sorted(d.glob("slide-*.ocr.json")) if d.is_dir() else []
-        if not sidecars: return {"state":"fail","checked":False,"warn_only":True,"reason":"no OCR readback records"}
+        if not sidecars: return {"state":"fail","checked":False,"warn_only":False,"reason":"no OCR readback records -- no slide was ever read back against its approved copy"}
         unchecked, mismatched = [], []
         for s in sidecars:
             try: o = json.loads(s.read_text(encoding="utf-8"))
             except (json.JSONDecodeError, OSError): unchecked.append(s.name); continue
             if not o.get("checked"): unchecked.append(s.name)
             elif o.get("matched") is False: mismatched.append(s.name)
-        if unchecked: return {"state":"fail","checked":False,"warn_only":True,"reason":f"{len(unchecked)} slide(s) unchecked: {', '.join(unchecked[:5])}"}
-        if mismatched: return {"state":"fail","checked":True,"warn_only":True,"reason":f"{len(mismatched)} slide(s) mismatched: {', '.join(mismatched[:5])}"}
+        if unchecked: return {"state":"fail","checked":False,"warn_only":False,"reason":f"{len(unchecked)} slide(s) unchecked: {', '.join(unchecked[:5])} -- the OCR engine did not run against these renders"}
+        if mismatched: return {"state":"fail","checked":True,"warn_only":False,"reason":f"{len(mismatched)} slide(s) mismatched: {', '.join(mismatched[:5])} -- rendered text does not match the approved copy"}
         return {"state":"pass","checked":True,"slides":len(sidecars),"reason":None,"warn_only":False}
