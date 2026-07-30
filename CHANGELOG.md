@@ -129,6 +129,39 @@ directory). Verified as a bleed test: reintroducing the old loop fails all seven
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
 
 
+## [v21.4.23]  -  2026-07-30  -  A real client name was committed to this fleet-wide repo, and CI structurally cannot see it
+
+### Why
+`scripts/qc-assert-no-client-names.sh` exits 1 on `origin/main` (`3b945650`): a real client's
+full name — and the same name again inside a rescue-agent slug — sits in the module docstrings of
+`23-ai-workforce-blueprint/scripts/_interview_transcript.py:6` and
+`23-ai-workforce-blueprint/scripts/test-interview-transcript-decryption.py:4`, both added
+2026-07-30 by `411cf502` (PR #772). This repo is fleet-wide and ships to every client box, so
+AGENTS.md rule N0 (no co-mingling) forbids it.
+
+The reason nobody caught it: **this gate is roster-dependent, and CI has no roster.** The script
+loads client names from `$OPENCLAW_CLIENT_ROSTER`, then `~/.openclaw/client-roster.txt`, then
+derives one structurally from `~/clawd/accounts/accounts.md`. None of those exist on a GitHub
+Actions runner, and `accounts.md` is deliberately not in the repo — so in CI the roster is empty,
+no name can match, and the `QC static checks` job reports success. It has been green on `main`
+throughout (`30567044167`, `30563428843`, `30560676911`, `30560663618`). The violation is only
+visible on an operator box, where the derived roster is real. Green CI here means "could not
+check", not "clean".
+
+### What changed
+Replaced both docstring references with a non-identifying description of the same incident
+(`a 2026-07-30 incident on a client Mac mini box / its rescue agent`). Only comment prose
+changed — no code, no behavior, no test. Re-scanned for forename and surname independently
+(the two-scan discipline, because the slug form `rescue-<first>-<last>` is lowercase-hyphenated
+and would not match a capitalized-name pattern): zero hits repo-wide. The gate now exits 0.
+
+### Risk
+None to runtime. The bump rolls all 10 version markers so boxes comparing skill versions pick up
+the redaction. Note the gate remains blind in CI for the same structural reason — this change
+removes the current leak, it does not close the detection gap; a roster-independent check (or a
+CI-side roster secret) is the separate fix.
+
+
 ## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
 
 ### Why
