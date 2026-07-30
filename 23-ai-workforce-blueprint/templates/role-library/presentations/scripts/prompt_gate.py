@@ -511,18 +511,57 @@ def verify_aspect_ratio(png_path, expected_ratio: float = _EXPECTED_RATIO,
 # ---------------------------------------------------------------------------
 # OCR TEXT-READBACK QC  (deterministic garbled-text catch; optional engine)
 # ---------------------------------------------------------------------------
-def _ocr_engine_available():
-    """Return (pytesseract_module, PIL_Image_module) if both are importable AND the
-    tesseract binary is reachable, else (None, None). Lazy so this module always loads."""
+def ocr_engine_diagnostic() -> dict:
+    """Structured OCR-engine-availability diagnostic — the SINGLE source of truth
+    _ocr_engine_available() (below, used by ocr_readback()'s POSTFLIGHT, provenance-
+    recorded-optional path) and build_deck.ocr_engine_preflight() (the MASTER-SPEC
+    7.4 Phase-0 fail-closed PREFLIGHT gate, minute-zero, before any paid generation)
+    both build on, so the two never independently drift on what 'available' means.
+
+    Distinguishes WHY the engine is unavailable (pytesseract not importable vs.
+    Pillow not importable vs. the tesseract BINARY not reachable) so a fail-closed
+    caller can print an actionable message instead of a bare 'missing'.
+
+    Tests THIS interpreter only — it does no venv/PATH detection of its own. A
+    caller that needs to know whether the RENDER environment has an engine must
+    invoke this from the exact interpreter/process that performs the render (see
+    build_deck.ocr_engine_preflight's docstring for the launchd/cron/venv/sudo
+    user-site-packages invisibility trap this exists to catch).
+
+    Returns one of:
+      {"available": True,  "engine": "pytesseract", "version": "<tesseract version>"}
+      {"available": False, "engine": None, "reason": "pytesseract-import-failed", "detail": "<exc>"}
+      {"available": False, "engine": None, "reason": "pillow-import-failed",      "detail": "<exc>"}
+      {"available": False, "engine": None, "reason": "tesseract-binary-not-found","detail": "<exc>"}
+    """
     try:
         import pytesseract  # type: ignore
-        from PIL import Image  # type: ignore
-    except Exception:  # noqa: BLE001 — engine absent is an EXPECTED, recorded state
-        return None, None
+    except Exception as exc:  # noqa: BLE001 — engine absence is an EXPECTED, probed state
+        return {"available": False, "engine": None,
+                "reason": "pytesseract-import-failed", "detail": str(exc)}
     try:
-        pytesseract.get_tesseract_version()
-    except Exception:  # noqa: BLE001 — python binding present but no tesseract binary
+        from PIL import Image  # type: ignore
+    except Exception as exc:  # noqa: BLE001
+        return {"available": False, "engine": None,
+                "reason": "pillow-import-failed", "detail": str(exc)}
+    try:
+        version = pytesseract.get_tesseract_version()
+    except Exception as exc:  # noqa: BLE001 — python binding present but no tesseract binary
+        return {"available": False, "engine": None,
+                "reason": "tesseract-binary-not-found", "detail": str(exc)}
+    del Image  # imported only to prove PIL is importable; _ocr_engine_available re-imports it
+    return {"available": True, "engine": "pytesseract", "version": str(version)}
+
+
+def _ocr_engine_available():
+    """Return (pytesseract_module, PIL_Image_module) if both are importable AND the
+    tesseract binary is reachable, else (None, None). Lazy so this module always
+    loads. Thin wrapper over ocr_engine_diagnostic() (the shared source of truth) —
+    kept for the existing (module, module) call shape ocr_readback() below uses."""
+    if not ocr_engine_diagnostic().get("available"):
         return None, None
+    import pytesseract  # type: ignore
+    from PIL import Image  # type: ignore
     return pytesseract, Image
 
 

@@ -1,5 +1,5 @@
 {
-  "manifest_version": 33,
+  "manifest_version": 34,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1795,6 +1795,18 @@
         "PER_SLIDE_CREDIT_ESTIMATE",
         "KIE_BALANCE_FLOOR_MULTIPLIER",
         "_fetch_kie_balance"
+      ]
+    },
+    {
+      "code": "AF-OCR-ENGINE-MISSING",
+      "stage": "Phase-0",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "MASTER-SPEC 7.4 ('Quality that is measured, not asserted'): 'The missing OCR dependency fails at minute zero, before any paid generation, not after 62 images.' Phase-0 OCR-engine-AVAILABILITY pre-flight (distinct from the postflight OCR-readback sidecar-verification gate, which can only audit a slide once it has already been rendered and paid for). Fires when pytesseract / Pillow is not importable, or the tesseract binary is not reachable, in the EXACT interpreter/environment that will perform the render. HARD-ABORTS before ANY phase is dispatched (run_signature_deck.phase0_preflight, the earliest point in the entire run) and, defense-in-depth, before any render in build_deck.py's own direct-invocation Phase-0 block, so a box with no OCR engine never spends a single Kie.ai render on a deck whose OCR-readback audit can never pass. Skipped only in --adhoc mode, which forces an empty api_key and so can never spend real credit regardless of OCR state (same carve-out AF-KIE-BALANCE takes).",
+      "enforced_by": "build_deck",
+      "py_symbol": "ocr_engine_preflight",
+      "secondary_py_symbols": [
+        "_import_prompt_gate"
       ]
     },
     {
