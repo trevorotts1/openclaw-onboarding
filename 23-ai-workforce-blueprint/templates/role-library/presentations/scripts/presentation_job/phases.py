@@ -19,6 +19,7 @@ from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
 from . import persona
+from .preflight_deps import probe_ocr
 
 # ---------------------------------------------------------------------------
 # U069: named error for unparseable executor.cmd.
@@ -351,8 +352,57 @@ class Engine:
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
 
+    # -- start-up preflight -------------------------------------------------
+    def _preflight_ocr(self) -> int:
+        """MASTER-SPEC 7.4: "The missing OCR dependency fails at minute zero, before any
+        paid generation, not after 62 images." Runs first thing inside run(), before the
+        phase loop, before the ack message, before the board card, and before a single
+        image is generated. Delegates the availability check to preflight_deps.probe_ocr(),
+        which calls the SAME prompt_gate._ocr_engine_available() the post-render readback
+        (build_deck.py::_record_ocr_readback) and the close()-time gate
+        (gates.py::Gates._ocr_gate, NON_WAIVABLE_GATES) both use — so "available" can never
+        mean something different here than it means at the gate that, before this method
+        existed, was the only place this was ever checked: expensively, after every slide
+        had already been downloaded and paid for.
+        """
+        if probe_ocr(self.run_dir) == EXIT_OK:
+            return EXIT_OK
+        reason = (
+            f"OCR readback engine is not available under this pipeline's interpreter "
+            f"({sys.executable}, Python {sys.version.split()[0]}). Either pytesseract is "
+            f"not importable there, or the tesseract binary is not on PATH. MASTER-SPEC 7.4 "
+            f"requires this to refuse now, before any paid image generation — not after 62 "
+            f"images. Install: `{sys.executable} -m pip install pytesseract`, and make sure "
+            f"the `tesseract` binary is installed and reachable on PATH "
+            f"(e.g. `brew install tesseract`)."
+        )
+        self.state["terminal"] = "BLOCKED"
+        self.state["blocked"] = {"phase": "P0-STARTUP-OCR-PROBE", "reason": reason, "at": utcnow()}
+        self.store.save(self.state)
+        if self.board:
+            self.board.mark_blocked("P0-STARTUP-OCR-PROBE", reason)
+        self.report.to_requester(
+            "blocked",
+            f"Your presentation cannot start yet. {reason} No images have been generated "
+            "and nothing has been paid for. We have been told and are looking at it.",
+            phase_id="P0-STARTUP-OCR-PROBE", reason=reason)
+        print("\n" + "=" * 72, file=sys.stderr)
+        print("BLOCKED at P0-STARTUP-OCR-PROBE (minute zero — before any paid generation)",
+              file=sys.stderr)
+        print(f"  reason   : {reason}", file=sys.stderr)
+        print("  banked   : 0 artifact(s) — no phase ran", file=sys.stderr)
+        print("\n  fix the OCR dependency above, then continue with:", file=sys.stderr)
+        print(f"    python3 {Path(__file__).name} --resume --run-dir {self.run_dir}",
+              file=sys.stderr)
+        print("=" * 72 + "\n", file=sys.stderr)
+        return EXIT_GATE_BLOCKED
+
     # -- the loop ---------------------------------------------------------
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
+        rc = self._preflight_ocr()
+        if rc != EXIT_OK:
+            return rc
+
         phases = self.manifest.phases
         if only:
             phases = [self.manifest.phase(only)]

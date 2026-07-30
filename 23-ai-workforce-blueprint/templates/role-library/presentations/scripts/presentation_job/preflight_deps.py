@@ -1,16 +1,31 @@
-"""U027 step 1 — runtime-dependency probe for the OCR readback.
+"""U027 step 1 (start-up wiring) — runtime-dependency probe for the OCR readback,
+called from Engine.run() (phases.py) before the phase loop and before a single
+image is generated.
 
 Audit D7(b) asks for tesseract + pytesseract as HARD runtime dependencies probed
-before any paid generation. Measured on the operator box 2026-07-25: the tesseract
-BINARY is present (5.5.2) but `pytesseract` is NOT importable from the interpreter
-the pipeline uses (CPython 3.14 — see the .cpython-314.pyc caches the engine
-leaves in <dept>/scripts/__pycache__). prompt_gate._ocr_engine_available()
-therefore returns (None, None) and the readback is silently off.
+before any paid generation. MASTER-SPEC 7.4 states it unconditionally: "The
+missing OCR dependency fails at minute zero, before any paid generation, not
+after 62 images." That is what this module now enforces.
 
-So this probe ships WARN-MODE (Rule 3.5 stage 1): it reports, it records, and it
-returns success. Flipping it to fail-closed is a SEPARATE dated item that cannot
-fire until pytesseract is importable from the pipeline interpreter on every
-target box. Enforcing it today fails every build.
+History: this probe originally shipped WARN-MODE (Rule 3.5 stage 1) and always
+returned 0. Measured on the operator box 2026-07-25: the tesseract BINARY was
+present (5.5.2) but `pytesseract` was NOT importable from the interpreter the
+pipeline uses (CPython 3.14). Flipping to fail-closed was staged as a SEPARATE
+item whose stated prerequisite was `import pytesseract` succeeding under the
+pipeline interpreter — enforcing it before that would have failed every build.
+
+That prerequisite is now met on the operator box: verified 2026-07-30,
+`import pytesseract` and `pytesseract.get_tesseract_version()` both succeed under
+/opt/homebrew/bin/python3 (3.14.5). So this probe now enforces instead of only
+warning — the same `_ocr_engine_available()` call the post-render readback
+(`build_deck.py::_record_ocr_readback`) and the close()-time gate
+(`gates.py::Gates._ocr_gate`, `NON_WAIVABLE_GATES`) already treat as fail-closed.
+A box where the prerequisite is NOT met is exactly the case this exists to catch
+— refusing there is the intended behaviour, not a regression. MASTER-SPEC's own
+non-goals (§8, item 5, "Not a fleet rollout") scope rollout as operator machine,
+then one client machine, then the fleet, precisely so this is proven
+machine-by-machine rather than assumed fleet-wide; this change only proves the
+operator machine.
 """
 from __future__ import annotations
 
@@ -29,18 +44,20 @@ def probe_ocr(run_dir: Path) -> int:
     sys.executable and sys.version alongside the result; without those two facts
     the operator box failure is undiagnosable.
 
-    WARN-MODE (Rule 3.5 stage 1): always returns 0.  Flipping to fail-closed is
-    a SEPARATE dated item whose stated prerequisite is `import pytesseract`
-    succeeding under the pipeline interpreter on every target box.
+    Fail-closed (MASTER-SPEC 7.4): returns 0 when the engine is available under
+    THIS interpreter, 1 when it is not. The caller — Engine._preflight_ocr in
+    phases.py — turns a non-zero return into a BLOCKED job before any phase runs
+    and before a single image is generated or paid for.
     """
     # Lazy import so this module always loads even when prompt_gate is absent.
     try:
         from prompt_gate import _ocr_engine_available  # type: ignore[import-untyped]
     except ImportError:
-        # prompt_gate is not importable at all — record honestly.
+        # prompt_gate is not importable at all — record honestly and refuse: without it,
+        # the post-render readback and the close()-time gate can never run either.
         _record(run_dir, available=False, engine=None)
         _warn("prompt_gate is not importable — the OCR readback cannot run")
-        return 0
+        return 1
 
     pytesseract_mod, _pil_image = _ocr_engine_available()
     available = pytesseract_mod is not None
@@ -51,12 +68,14 @@ def probe_ocr(run_dir: Path) -> int:
         _warn(
             f"OCR engine NOT available under the pipeline interpreter "
             f"({sys.executable}, Python {sys.version.split()[0]}). "
-            f"pytesseract is not importable. The postflight OCR readback gate "
-            f"(check_ocr_readback) will block closeout until the binding is "
-            f"installed. Install pytesseract into the pipeline interpreter: "
-            f"`{sys.executable} -m pip install pytesseract`. "
-            f"The tesseract binary must also be on PATH."
+            f"pytesseract is not importable and/or the tesseract binary is not on PATH. "
+            f"MASTER-SPEC 7.4 requires this run to refuse now, before any paid image "
+            f"generation — not after 62 images. Install pytesseract into the pipeline "
+            f"interpreter: `{sys.executable} -m pip install pytesseract`. "
+            f"The tesseract binary must also be installed and reachable on PATH "
+            f"(e.g. `brew install tesseract`)."
         )
+        return 1
     return 0
 
 
@@ -82,9 +101,9 @@ def _record(run_dir: Path, *, available: bool, engine: Optional[str]) -> None:
 
 
 def _warn(msg: str) -> None:
-    """Print one loud, unmissable warn line."""
+    """Print one loud, unmissable block line."""
     bar = "=" * 78
     print(f"\n{bar}", file=sys.stderr)
-    print("WARNING — OCR READBACK DEPENDENCY MISSING (U027)", file=sys.stderr)
+    print("BLOCKED — OCR READBACK DEPENDENCY MISSING AT START-UP (U027)", file=sys.stderr)
     print(msg, file=sys.stderr)
     print(f"{bar}\n", file=sys.stderr)
