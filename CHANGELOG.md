@@ -49,6 +49,47 @@ pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.
 waivers. No version bump -- release PR #738 is open.
 
 
+## [v21.4.19]  -  2026-07-30  -  install.sh still told the operator the retired Podbean broker was "PREFERRED" for client boxes
+
+### Why
+v21.4.18 corrected the Skill 58 docs that pointed operators and agents at the abandoned Podbean
+credential broker, but it did not reach `install.sh`. The provisioning path itself -- the thing an
+operator actually reads while standing up a client box -- still labelled the broker pair
+`OPENCLAW_PODBEAN_BROKER_URL` / `_TOKEN` as "PREFERRED for client boxes" and listed the
+publish-proxy pair third, below the operator-only legacy `client_id`/`client_secret` pair. An
+operator following that comment provisions a box into a mode that cannot publish: the broker
+workflow is not deployed on the live n8n instance, so the box falls through to local mode and
+hard-stops demanding a Podbean app secret that must never sit on a client box. That is the same
+defect v21.4.18 fixed, surviving in the one file most likely to be followed literally.
+
+### What changed
+`install.sh` only. Four edits, all comment/message text -- no control flow, no injection logic:
+
+- Operator setup comment block: publish-proxy is now listed FIRST and named the fleet default,
+  with the real webhook URL and a note that n8n performs the entire publish so the box holds no
+  Podbean credential and needs no n8n of its own. The broker pair is demoted to "UNUSED FALLBACK"
+  with an explicit "do NOT import a broker workflow to satisfy it". The legacy app-credential pair
+  is marked operator-own-box only, "NEVER set these on a client box".
+- The broker injection block's header comment: retitled from "PREFERRED for client boxes" to
+  "UNUSED FALLBACK", and now states that broker mode engages only when the publish-proxy pair is
+  absent, and that setting the broker pair without a deployed broker workflow fails at publish time.
+- The `injected_count == 0` operator note: now names `OPENCLAW_PODBEAN_PUBLISH_URL` /
+  `_TOKEN` as the fleet default plus `OPENCLAW_PODCAST_CLIENT_LAST_NAME` /
+  `_EMAIL` (the roster identity tuple Step 15 requires and which the old note never mentioned).
+- The half-configured publish-proxy warning: no longer says the box "falls back to broker/local
+  mode" as though that were serviceable. It now states that neither fallback can publish on a
+  client box and that Step 15 will hard-stop until both values are set.
+
+The five variables a client box needs for Step 15 are unchanged and are documented in
+`58-podcast-production-engine/config/n8n/README.md`: `PODBEAN_PUBLISH_WEBHOOK_URL`,
+`PODBEAN_PUBLISH_TOKEN`, `PODBEAN_PODCAST_ID`, `PODCAST_CLIENT_LAST_NAME`, `PODCAST_CLIENT_EMAIL`.
+
+### Risk
+Comment and operator-message text only. `bash -n install.sh` passes. No node edits, no credential
+touches, no n8n API calls, no change to the injection blocks' conditions or to publish behaviour.
+The publish path was already correct in code and is untouched.
+
+
 ## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code
 
 ### Why
