@@ -1,4 +1,91 @@
-## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
+## [v21.4.22]  -  2026-07-30  -  Consolidate 6 backlogged [Unreleased] entries (ticket-hash audit, universal-sops re-stamp + pre-commit guard, presentation_job hardening) into one release; fix a 14-release-stale /.version file
+### Summary
+
+Six `[Unreleased]` CHANGELOG entries had accumulated without being folded into a
+release -- five of them (U012, U006, the `ocr_readback` gate, the `report.py`
+`dispatch()` shell-injection closure, and the waiver quote-check) predate the
+v21.4.20 tag itself; the sixth (the `CONTROL/LEDGER.md` / `CONTROL/CHECKLIST.md`
+false-alarm closure) landed after v21.4.20. Both v21.4.20 and the concurrently-cut
+v21.4.21 (renderer-hash-pin re-stamp) added their own new sections without folding
+this backlog in. This release folds all six into a single version, covers the
+remaining previously-undocumented commits merged since v21.4.20 (below), and fixes
+the `.version` marker-agreement defect described in the scope note below.
+
+**Concurrency note:** while this release was being prepared, `v21.4.21` was cut and
+tagged directly by a separate, concurrent process (PR #753, commit `49a8ca22`,
+tag `v21.4.21` -> `f17fbd95`) and a follow-up chmod-600 pre-commit hardening fix
+landed after that (PR #759, commit `76f25a7e`, no CHANGELOG entry needed --
+`.githooks/pre-commit` and `scripts/qc-assert-chmod600-real.py` are outside any
+tracked skill directory so no G3 version-marker bump applied). This release
+(v21.4.22) starts from `origin/main` at commit `2af155ba` (`v21.4.21..HEAD`:
+`76f25a7e`, `2af155ba`) and consolidates the still-unconsolidated 6-entry backlog
+on top of it.
+
+**Also merged in this release, with no prior CHANGELOG entry:**
+- **Ticket-hash audit** -- a full sweep of `QUALITY-CONTROL/tickets/` for the
+  commit-hash off-by-one defect (previously proven on U006/U027/U049/U070) found
+  and fixed the same defect on 10 more tickets (U001, U011, U013, U015, U023,
+  U028, U045, U055, U056, U057), and separately flagged U060 as an unresolved
+  name-collision with an unrelated project's unit of the same number (PR #747,
+  commit `e3087a73`; follow-up ticket correction for U045's merge-commit citation,
+  commit `27175650`, PR #750; and a stale NOT-merged disposition corrected on the
+  U069 ticket, commit `af9588c9`, PR #758).
+- **`universal-sops` content-manifest re-stamp** -- U012's `PIPELINE-MANIFEST.json`
+  edit (six new phases, see below) left `universal-sops/_content-manifest.json`'s
+  sha256 stale; re-stamped via the canonical `scripts/hash-universal-sops-manifest.py`
+  (commit `69a1ca97`, PR #751), plus a new **local pre-commit guard** so this class of
+  drift is caught before push instead of only by post-push CI (commit `51e5a547`,
+  PR #756).
+- **CI hermetic fix** -- `presentation-deps-gate.test.sh` section (C) had been red on
+  every run for weeks (not caused by any single PR); three functional entry-script
+  invocations were made hermetic (commit `06e43fba`, PR #752).
+- **Test re-point** -- `test_cc_board.py` still asserted the pre-U030 `PATCH
+  /api/tasks/{id}` shape for `in_progress`; U030 had already, deliberately,
+  repointed non-cert-bearing status transitions to `POST /api/tasks/{id}/status`.
+  Re-pointed the stale test at U030's actual contract (commit `8f5086a9`, PR #757).
+- **`.version` marker-agreement fix** -- the repo root carries two version files:
+  `version` (no dot, the real, tracked marker -- all 10 entries in
+  `scripts/version-markers.json` and `scripts/bump-version.sh`'s roll/check logic
+  point at it) and `.version` (with a leading dot). `.version` was manually created
+  and hand-rolled through exactly three ripple commits (v21.4.5, v21.4.6, v21.4.7)
+  and then never touched again -- 14 releases of drift, frozen at `v21.4.7` while
+  `version` advanced to `v21.4.21`. Root cause: `.version` is not, and never was,
+  one of the 10 SSOT markers in `scripts/version-markers.json` -- `bump-version.sh`
+  and `qc-assert-repo-consistency.py`'s VERSION-MARKERS dimension both enumerate
+  `version` (no dot) and correctly never touch `.version`, so PR #745's "all 10
+  version markers agree" report was accurate about the 10 markers it checks; it
+  was never claiming anything about `.version`, which sits entirely outside that
+  contract. A repo-wide `grep -a` for `.version` as a path token found **zero**
+  consumers -- no script, workflow, hook, or doc reads it. It is brought into
+  agreement with `version` in this release (both now `v21.4.22`), but is
+  deliberately **not** added to `scripts/version-markers.json` / `BUMP_CHECKED_MARKERS`
+  here: doing so would require mirroring roll logic into `bump-version.sh` and
+  bumping its checked-marker count from 10 to 11 on the strength of a file with no
+  known reader, which is exactly the kind of unreviewed checker-widening this repo
+  has been burned by before (the chmod-600 substring match that silently froze
+  `update-skills.sh` for 14 releases). Registering or deleting `.version` is left as
+  a separate, deliberate decision for whoever owns the SSOT manifest.
+
+**Scope note -- read before assuming decks are protected.** Three of the six
+consolidated entries below (the `ocr_readback` fail-closed gate, the waiver
+quote-check, and the `report.py` `shell=True` removal) live in `presentation_job/`.
+That package currently has **no production callers**: `build_deck.py` imports only
+`presentation_job.checkpoint`, and neither `run_signature_deck.py` nor
+`presentation-canonical-entry.sh` reference `presentation_job` at all (verified by
+direct grep of all three files on this release's commit). These fixes are real,
+tested, and correct on their own terms, but they do **not** yet protect any deck
+built through the sanctioned build path -- wiring `presentation_job`'s `Engine`
+into that path is separate, not-yet-done work.
+
+**For additional context (already shipped, restated here only for continuity, not
+new in this release):** U030's Command Center acceptance (`build_deck` now returns
+success end-to-end instead of 403) and U017's `--resume` diagnostics wiring both
+landed in earlier releases; the three previously-red CI checks named in the
+v21.4.20 section directly below (skill-version lockstep, `sync_check` lockstep,
+Leadership/Task-Mode wiring) were fixed and released as v21.4.20, not this release.
+
+
+### `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
 
 Investigated after a report that "the live ledger... the checklist... the to-do list" were not
 being updated while work was reported complete. The instruction was to find why these two
@@ -44,7 +131,8 @@ names:
 - **The unit changelog**: this file and `CONTROL/CHANGELOG.md`, both updated on every merge/ripple
   and current as of the commit before this one.
 
-## [Unreleased]  -  U012: add the six missing manifest phases and their executors
+
+### U012: add the six missing manifest phases and their executors
 
 `PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --
 `P7-TELEPROMPTER`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.4-FISH-TAG`, `P9.1-SPEECH-PDF`,
@@ -91,7 +179,7 @@ again) confirmed. Full suite from
 `origin/main` -- zero new failures, zero regressions.
 
 
-## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
+### U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
 
 `presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate
 autodetect loop U006 was supposed to have retired — with no refusal behaviour. Ancestry said
@@ -127,6 +215,143 @@ check relocated into this script, replacing the retired `deck-build-guard.sh`) i
 directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
 directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+
+
+### ocr_readback gate blocks close() instead of only warning
+
+**Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**
+`presentation_job/gates.py` carried `ocr_readback` inside `WARN_ONLY_GATES`, and every one of
+`_ocr_gate`'s failure branches set `"warn_only": True`. `phases.py`'s `close()` routes any gate
+result carrying `warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of
+`failures` — so a job with zero OCR-verified slides (no sidecars, an unchecked engine, or a
+mismatched readback) could reach `DONE`. `MASTER-SPEC-2026-07-25.md` §7.4 and decision D10 are
+unambiguous: *"An unchecked slide-content readback blocks the job"* and *"[i]t is the one gate
+not waivable at all... no waiver can make it [a pass]."* U013 had staged both `qc` and
+`ocr_readback` into warn-mode together, reasoning (correctly, at the time) that neither gate had
+a producing phase in the 32-phase manifest and a gate with no producer fails every job on day
+one. That reasoning still holds for `qc` — no phase writes `final_qc_report.json` — but it does
+not license a *permanent* silent pass on the one check the spec names as the department's floor
+against "the check that reads a finished slide and is allowed to switch itself off"
+(source audit Cause 4).
+
+Fixed: `WARN_ONLY_GATES` is now `("qc",)` — `ocr_readback` was removed — and `_ocr_gate` sets
+`warn_only: False` on every branch (pass and fail), so `close()`'s existing fail-closed path
+(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers a
+missing, unchecked, or mismatched OCR sidecar exactly like the other four hard gates.
+`ocr_readback` stays in `NON_WAIVABLE_GATES` unchanged — this fix does not touch waiver handling
+at all.
+
+**Known, accepted risk, disclosed rather than hidden:** measured this session, the OCR engine
+(`pytesseract`) is not importable under the interpreter this pipeline actually runs
+(`/opt/homebrew/opt/python@3.14/bin/python3.14` — confirmed via `prompt_gate._ocr_engine_available()`
+returning `(None, None)`), so on this operator box every real render will produce `checked: false`
+sidecars and this gate will block every close until that binding is installed for that
+interpreter. That is the fail-closed behaviour §7.4's fourth bullet asks for in spirit (fail on
+a missing dependency rather than silently pass), though the "minute zero, before any paid
+generation" half of that bullet is a separate, larger unit: `presentation_job/preflight_deps.py`
+already contains a warn-mode dependency probe (`probe_ocr`, from a prior unit) but it is not
+wired into engine start anywhere in `phases.py`. Wiring it — and deciding whether to flip it to
+fail-closed — is intentionally left to that unit, not folded in here silently.
+
+
+### U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
+
+U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
+tokenising `PRESENTATION_NOTIFY_CMD` with `shlex.split` before `subprocess.run(argv, shell=False, ...)`.
+A few lines **above** it, a module-level `dispatch(chat_id, kind, message)` function, reading the same
+`PRESENTATION_NOTIFY_CMD` environment variable, was left calling `subprocess.run(cmd, shell=True, ...)`
+unchanged. `presentation_job/watchdog.py` imports and calls that function directly
+(`from .report import dispatch`), so the watchdog's stall-notification path stayed exploitable even
+though the class method next to it was closed. Two independent QC passes reported this file clean
+because the review brief that drove them named only `phases.py` and `heal.py` — the two files U069's
+`heal.py` bypass touched — not `report.py`, so neither pass ever grepped it.
+
+A full-package grep for executable `shell=True` (not just the named files) turned up a **third**,
+previously unknown site: `presentation_job/__main__.py::cmd_sweep_undeliverable` held its own,
+independently hand-rolled `subprocess.run(cmd, shell=True, ...)` over the identical
+`PRESENTATION_NOTIFY_CMD` value — a third parallel implementation of the same transport, not called from
+either `report.dispatch()` or `Reporter._dispatch()`.
+
+Closed by consolidation rather than a second (or fourth) parallel fix: `report.dispatch()` is now the
+**single** implementation of the `PRESENTATION_NOTIFY_CMD` transport in the package — tokenise with
+`shlex.split`, `subprocess.run(argv, shell=False, ...)`, raise `ValueError` on an unparseable command
+(same refuse-loud behaviour U069 established, matching the existing precedent in this file rather than
+inventing new error semantics). `Reporter._dispatch()` now delegates to it instead of re-running its own
+copy of the subprocess call; `watchdog.py`'s import is unchanged (it already called the module-level
+function, which is now fixed at the source); `__main__.cmd_sweep_undeliverable` now imports and calls
+`report.dispatch()` instead of hand-rolling a third copy. A subsequent full-package grep for executable
+`shell=True` (excluding comments/docstrings) returns zero matches.
+
+Proof: `tests/test_watchdog.py::TestU069ModuleDispatchBypassClosed` (3 tests) and
+`tests/test_heal.py::TestSweep::test_injection_blocked` drive a `PRESENTATION_NOTIFY_CMD` payload
+containing a shell metacharacter and a `$(touch ...)` command substitution through `report.dispatch()`
+directly, through `watchdog.py`'s call site (with a `subprocess.run` spy proving the argv reaching the OS
+is a tokenised list, not a shell string), and through `cmd_sweep_undeliverable`'s call site; each asserts
+the sentinel file is never created while the harmless `echo` still runs (mechanical success, `rc == 0`).
+Bled: reverting `dispatch()` to `subprocess.run(cmd, shell=True, ...)` makes all four fail with the
+sentinel present; restoring the fix makes them pass again. One pre-existing test,
+`tests/test_watchdog.py::test_one_notification_per_scan`, itself relied on shell interpretation of a raw
+`cat >> {log}` redirect and would otherwise have become a new failure under `shell=False`; it now points
+`PRESENTATION_NOTIFY_CMD` at a real script (the same pattern already used throughout
+`tests/test_report.py`), preserving its original intent (exactly one notification per scan).
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): 15 pre-existing failing test names identical before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`); 4 new tests added, all passing;
+zero new failures. Note: `reportlab` **is** installed in this environment (v4.4.10, verified via
+`pip show reportlab`), contradicting this ticket's brief that it was absent — `tests/test_producers.py`
+collected and ran its full 17 tests (all passing, both before and after) rather than being excluded.
+
+
+### Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
+
+`presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
+"intake_field"` -- and it only checked that the named key existed in `intake.json`. It never compared
+`client_request_quote` against that key's *value*. The correctly-built path, `source: "transcript"`,
+does a real substring match against recorded client turns, but is hard-disabled at
+`TRANSCRIPT_WAIVERS_ACCEPTED = False`, so the only path anyone could actually use was the unprotected
+one. Reproduced live: a fabricated quote nobody ever said, attached to real intake field `"topic"`, was
+accepted by `validate_waiver()`, and a synthetic job closed with `terminal: DONE`, exit 0, gate recorded
+`"state": "waived"` -- while the `teleprompter` gate it was supposedly excusing had never actually passed.
+This is the self-issued-waiver failure the programme's own fix plan named by number: if the engine
+accepts any `waiver.json` it finds, the agent writes its own permission slip.
+
+Fix: the `intake_field` path now requires (a) the cited field's value to be a string -- a boolean/flag
+field carries no client words to check a quote against, so citing one is now rejected outright -- and
+(b) `client_request_quote`, normalised for case and whitespace (`_norm`, already used by the transcript
+path), to be a genuine substring of that value. A quote the client did not write is rejected with a
+plain-language error naming the field: `"waiver for 'X' quotes text that does not appear in intake field
+'Y'. Recorded value of 'Y' does not contain the quoted words -- the quote must be the client's own words
+as recorded in intake.json, not text the agent supplied."`
+
+`TRANSCRIPT_WAIVERS_ACCEPTED` stays `False` -- a decision, not an oversight, now recorded directly above
+the flag in `waivers.py`. Its substring match is correct and is not why it is off; it stays off because
+of two problems this change does not touch: no requester identity on the route script that produces the
+transcript, and the transcript living in a database, which breaks the offline-authoritative rule (audit
+D3:1016-1019). Flipping it is a separate decision for whenever both close.
+
+`tests/test_waivers.py::test_valid_intake_waiver` cited a boolean intake field (`{"no_teleprompter":
+True}`) with an unrelated quote -- it never exercised quote content, which is why it never caught this.
+Rewritten to use a string field the quote is genuinely drawn from, plus new tests: a case/whitespace-
+insensitive match, a forged quote against a real field (the reproduced defect, rejected), and a non-string
+field value (rejected). `tests/test_gates.py::test_valid_intake_waiver_loads` had the same shape of
+defect (`{"skip_qc": True}` with an unrelated quote) and was updated the same way.
+
+Bleed test (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`): forged quote
+against a real field -> `WaiverError`, plain-language, names the field. Verbatim quote from the same
+field -> accepted. Reverting the fix -> both new rejection tests fail with "DID NOT RAISE," reproducing
+the original hole; 26 of 28 waiver/gate tests unaffected either way. Driven end to end with the real
+`presentation_job.py --close` entry point against a synthetic run dir with a legitimate `script`,
+`prompt_floor`, and `ghl_upload` pass and only `teleprompter` depending on the forged waiver: pre-fix,
+exit 0, `terminal: DONE`; post-fix, exit 9 (`EXIT_WAIVER_INVALID`), stderr `FATAL: waiver for
+'teleprompter' quotes text that does not appear in intake field 'topic' ...`, `terminal` never set.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`; `reportlab` was present in this environment so `tests/test_producers.py`
+collected and is included): 15 failed / 446 passed / 13 skipped. `diff` of sorted failing-test names
+against the pre-change baseline (same worktree, before this edit) is empty -- zero new failures, same 15
+pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`), none touching
+waivers. No version bump -- release PR #738 is open.
 
 
 ## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
@@ -224,142 +449,6 @@ regenerated derived guide, and the content-hash restamp those edits require. No 
 no gate thresholds, no credentials. All four checks verified green locally before push:
 `test-how-to-use-docs.sh` 7/0, `persona-task-mode-wiring.test.sh` 7/0, `sync_check.py` rc=0
 (IN SYNC), `test_preflight.py` ALL PREFLIGHT TESTS PASSED.
-
-
-## [Unreleased]  -  ocr_readback gate blocks close() instead of only warning
-
-**Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**
-`presentation_job/gates.py` carried `ocr_readback` inside `WARN_ONLY_GATES`, and every one of
-`_ocr_gate`'s failure branches set `"warn_only": True`. `phases.py`'s `close()` routes any gate
-result carrying `warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of
-`failures` — so a job with zero OCR-verified slides (no sidecars, an unchecked engine, or a
-mismatched readback) could reach `DONE`. `MASTER-SPEC-2026-07-25.md` §7.4 and decision D10 are
-unambiguous: *"An unchecked slide-content readback blocks the job"* and *"[i]t is the one gate
-not waivable at all... no waiver can make it [a pass]."* U013 had staged both `qc` and
-`ocr_readback` into warn-mode together, reasoning (correctly, at the time) that neither gate had
-a producing phase in the 32-phase manifest and a gate with no producer fails every job on day
-one. That reasoning still holds for `qc` — no phase writes `final_qc_report.json` — but it does
-not license a *permanent* silent pass on the one check the spec names as the department's floor
-against "the check that reads a finished slide and is allowed to switch itself off"
-(source audit Cause 4).
-
-Fixed: `WARN_ONLY_GATES` is now `("qc",)` — `ocr_readback` was removed — and `_ocr_gate` sets
-`warn_only: False` on every branch (pass and fail), so `close()`'s existing fail-closed path
-(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers a
-missing, unchecked, or mismatched OCR sidecar exactly like the other four hard gates.
-`ocr_readback` stays in `NON_WAIVABLE_GATES` unchanged — this fix does not touch waiver handling
-at all.
-
-**Known, accepted risk, disclosed rather than hidden:** measured this session, the OCR engine
-(`pytesseract`) is not importable under the interpreter this pipeline actually runs
-(`/opt/homebrew/opt/python@3.14/bin/python3.14` — confirmed via `prompt_gate._ocr_engine_available()`
-returning `(None, None)`), so on this operator box every real render will produce `checked: false`
-sidecars and this gate will block every close until that binding is installed for that
-interpreter. That is the fail-closed behaviour §7.4's fourth bullet asks for in spirit (fail on
-a missing dependency rather than silently pass), though the "minute zero, before any paid
-generation" half of that bullet is a separate, larger unit: `presentation_job/preflight_deps.py`
-already contains a warn-mode dependency probe (`probe_ocr`, from a prior unit) but it is not
-wired into engine start anywhere in `phases.py`. Wiring it — and deciding whether to flip it to
-fail-closed — is intentionally left to that unit, not folded in here silently.
-
-
-## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
-
-U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
-tokenising `PRESENTATION_NOTIFY_CMD` with `shlex.split` before `subprocess.run(argv, shell=False, ...)`.
-A few lines **above** it, a module-level `dispatch(chat_id, kind, message)` function, reading the same
-`PRESENTATION_NOTIFY_CMD` environment variable, was left calling `subprocess.run(cmd, shell=True, ...)`
-unchanged. `presentation_job/watchdog.py` imports and calls that function directly
-(`from .report import dispatch`), so the watchdog's stall-notification path stayed exploitable even
-though the class method next to it was closed. Two independent QC passes reported this file clean
-because the review brief that drove them named only `phases.py` and `heal.py` — the two files U069's
-`heal.py` bypass touched — not `report.py`, so neither pass ever grepped it.
-
-A full-package grep for executable `shell=True` (not just the named files) turned up a **third**,
-previously unknown site: `presentation_job/__main__.py::cmd_sweep_undeliverable` held its own,
-independently hand-rolled `subprocess.run(cmd, shell=True, ...)` over the identical
-`PRESENTATION_NOTIFY_CMD` value — a third parallel implementation of the same transport, not called from
-either `report.dispatch()` or `Reporter._dispatch()`.
-
-Closed by consolidation rather than a second (or fourth) parallel fix: `report.dispatch()` is now the
-**single** implementation of the `PRESENTATION_NOTIFY_CMD` transport in the package — tokenise with
-`shlex.split`, `subprocess.run(argv, shell=False, ...)`, raise `ValueError` on an unparseable command
-(same refuse-loud behaviour U069 established, matching the existing precedent in this file rather than
-inventing new error semantics). `Reporter._dispatch()` now delegates to it instead of re-running its own
-copy of the subprocess call; `watchdog.py`'s import is unchanged (it already called the module-level
-function, which is now fixed at the source); `__main__.cmd_sweep_undeliverable` now imports and calls
-`report.dispatch()` instead of hand-rolling a third copy. A subsequent full-package grep for executable
-`shell=True` (excluding comments/docstrings) returns zero matches.
-
-Proof: `tests/test_watchdog.py::TestU069ModuleDispatchBypassClosed` (3 tests) and
-`tests/test_heal.py::TestSweep::test_injection_blocked` drive a `PRESENTATION_NOTIFY_CMD` payload
-containing a shell metacharacter and a `$(touch ...)` command substitution through `report.dispatch()`
-directly, through `watchdog.py`'s call site (with a `subprocess.run` spy proving the argv reaching the OS
-is a tokenised list, not a shell string), and through `cmd_sweep_undeliverable`'s call site; each asserts
-the sentinel file is never created while the harmless `echo` still runs (mechanical success, `rc == 0`).
-Bled: reverting `dispatch()` to `subprocess.run(cmd, shell=True, ...)` makes all four fail with the
-sentinel present; restoring the fix makes them pass again. One pre-existing test,
-`tests/test_watchdog.py::test_one_notification_per_scan`, itself relied on shell interpretation of a raw
-`cat >> {log}` redirect and would otherwise have become a new failure under `shell=False`; it now points
-`PRESENTATION_NOTIFY_CMD` at a real script (the same pattern already used throughout
-`tests/test_report.py`), preserving its original intent (exactly one notification per scan).
-
-Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
-`python3 -m pytest -q`): 15 pre-existing failing test names identical before and after (unrelated to this
-change — `test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`); 4 new tests added, all passing;
-zero new failures. Note: `reportlab` **is** installed in this environment (v4.4.10, verified via
-`pip show reportlab`), contradicting this ticket's brief that it was absent — `tests/test_producers.py`
-collected and ran its full 17 tests (all passing, both before and after) rather than being excluded.
-
-## [Unreleased]  -  Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
-
-`presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
-"intake_field"` -- and it only checked that the named key existed in `intake.json`. It never compared
-`client_request_quote` against that key's *value*. The correctly-built path, `source: "transcript"`,
-does a real substring match against recorded client turns, but is hard-disabled at
-`TRANSCRIPT_WAIVERS_ACCEPTED = False`, so the only path anyone could actually use was the unprotected
-one. Reproduced live: a fabricated quote nobody ever said, attached to real intake field `"topic"`, was
-accepted by `validate_waiver()`, and a synthetic job closed with `terminal: DONE`, exit 0, gate recorded
-`"state": "waived"` -- while the `teleprompter` gate it was supposedly excusing had never actually passed.
-This is the self-issued-waiver failure the programme's own fix plan named by number: if the engine
-accepts any `waiver.json` it finds, the agent writes its own permission slip.
-
-Fix: the `intake_field` path now requires (a) the cited field's value to be a string -- a boolean/flag
-field carries no client words to check a quote against, so citing one is now rejected outright -- and
-(b) `client_request_quote`, normalised for case and whitespace (`_norm`, already used by the transcript
-path), to be a genuine substring of that value. A quote the client did not write is rejected with a
-plain-language error naming the field: `"waiver for 'X' quotes text that does not appear in intake field
-'Y'. Recorded value of 'Y' does not contain the quoted words -- the quote must be the client's own words
-as recorded in intake.json, not text the agent supplied."`
-
-`TRANSCRIPT_WAIVERS_ACCEPTED` stays `False` -- a decision, not an oversight, now recorded directly above
-the flag in `waivers.py`. Its substring match is correct and is not why it is off; it stays off because
-of two problems this change does not touch: no requester identity on the route script that produces the
-transcript, and the transcript living in a database, which breaks the offline-authoritative rule (audit
-D3:1016-1019). Flipping it is a separate decision for whenever both close.
-
-`tests/test_waivers.py::test_valid_intake_waiver` cited a boolean intake field (`{"no_teleprompter":
-True}`) with an unrelated quote -- it never exercised quote content, which is why it never caught this.
-Rewritten to use a string field the quote is genuinely drawn from, plus new tests: a case/whitespace-
-insensitive match, a forged quote against a real field (the reproduced defect, rejected), and a non-string
-field value (rejected). `tests/test_gates.py::test_valid_intake_waiver_loads` had the same shape of
-defect (`{"skip_qc": True}` with an unrelated quote) and was updated the same way.
-
-Bleed test (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`): forged quote
-against a real field -> `WaiverError`, plain-language, names the field. Verbatim quote from the same
-field -> accepted. Reverting the fix -> both new rejection tests fail with "DID NOT RAISE," reproducing
-the original hole; 26 of 28 waiver/gate tests unaffected either way. Driven end to end with the real
-`presentation_job.py --close` entry point against a synthetic run dir with a legitimate `script`,
-`prompt_floor`, and `ghl_upload` pass and only `teleprompter` depending on the forged waiver: pre-fix,
-exit 0, `terminal: DONE`; post-fix, exit 9 (`EXIT_WAIVER_INVALID`), stderr `FATAL: waiver for
-'teleprompter' quotes text that does not appear in intake field 'topic' ...`, `terminal` never set.
-
-Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
-`python3 -m pytest -q`; `reportlab` was present in this environment so `tests/test_producers.py`
-collected and is included): 15 failed / 446 passed / 13 skipped. `diff` of sorted failing-test names
-against the pre-change baseline (same worktree, before this edit) is empty -- zero new failures, same 15
-pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`), none touching
-waivers. No version bump -- release PR #738 is open.
 
 
 ## [v21.4.19]  -  2026-07-30  -  install.sh still told the operator the retired Podbean broker was "PREFERRED" for client boxes
@@ -8736,7 +8825,6 @@ Fleet Operator Co-Mingling Audit remediation — client boxes no longer ship the
 ## v12.31.1 — 2026-06-18 — content-manifest restamp + QC-static repo-consistency fix
 
 - Content-manifest restamp + QC-static repo-consistency fix for the v12.31.0 presentation edits. The v12.31.0 commit restamped `23-ai-workforce-blueprint/templates/role-library/_index.json` (a Skill-23 file) without moving the skill version, tripping the version-consistency guards (G3 "skill content change requires skill-version.txt bump" + the "9 markers must agree / skill-version.txt == /version" rule). This patch bumps the whole version in lockstep so all 9 markers + `cc-compat.json onboardingVersion` read `v12.31.1`, and re-runs `hash-content-manifest.py` so the per-artifact content_sha manifest stays consistent. No functional change beyond v12.31.0.
-
 
 
 ## v12.31.0 — 2026-06-18 — Presentation Friday-critical fixes + roster-regen materialization fix
