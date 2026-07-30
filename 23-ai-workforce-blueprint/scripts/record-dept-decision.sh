@@ -113,11 +113,20 @@ if [ ! -f "$STATE" ]; then
   exit 1
 fi
 
-# Rate-limit check
-RL_SESSION="${SESSION:-}"
-if [ -z "$RL_SESSION" ]; then RL_SESSION="${BY:-}"; fi
-if [ -z "$RL_SESSION" ]; then RL_SESSION="$(interview_session_id)"; fi
-check_interview_rate_limit "dept-decision:${RL_SESSION}" || exit 1
+# Rate-limit check (P0 hardening: route the key through
+# interview_rate_limit_session_key() so the shared "interview-web" literal can
+# never become a bucket key here either -- see lib-interview-rate-limit.sh for
+# the incident this closes. In practice this script's only caller
+# (seam.recordDeptDecision in the Command Center) always supplies a real
+# --session (the stable interviewSessionId), so this script was not observed
+# to collide in the actual incident; this is defense-in-depth, not a fix for
+# an observed break here.)
+RL_SESSION="$(interview_rate_limit_session_key "${SESSION:-}" "${BY:-}")"
+if ! check_interview_rate_limit "dept-decision:${RL_SESSION}"; then
+  echo "RATE-LIMIT: this department decision was NOT recorded (dept-decision requests are not queued for replay)." >&2
+  echo "Wait for the rate-limit window noted above to clear, then resubmit the identical --dept/--decision/--by/--session; nothing else changed." >&2
+  exit 89
+fi
 
 # ── Validate --dept against the canonical id list + recorded customs ──────────
 # Issue #2: a decline keyed by a display name ("Video") or an underscore variant
