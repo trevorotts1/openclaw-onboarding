@@ -1,3 +1,76 @@
+## [v21.4.28]  -  2026-07-30  -  bump-version.sh computed the next version from the working tree, so two same-day PRs shipped colliding versions and a tag that does not contain its own work
+
+### Why
+
+`scripts/bump-version.sh` rolls all 10 markers to whatever target the caller hands it, and callers
+derive that target by reading the WORKING TREE's `./version` and adding one -- never the tip of
+`origin/main`. Two pull requests cut from the same base therefore compute the SAME next version.
+Git then auto-merges the byte-identical `version` edit with **no conflict**, so the second merge
+carries real content while its markers are identical to its parent's: the version never advances
+for that change, and the annotated tag ends up pointing at a commit that does not contain the work
+it claims to ship.
+
+This is not a hypothetical -- it happened on 2026-07-30 and is recorded in the v21.4.26 entry
+below. PR #778 and PR #779 were both cut from `f9c6efb4` at `v21.4.24` and both bumped to
+`v21.4.25`. #778 merged first and took the annotated tag at `9bac4243`. Re-verified independently
+while building this fix:
+
+- `v21.4.25` resolves to commit `9bac4243`.
+- `git merge-base --is-ancestor 1fff3038 v21.4.25` returns **false** -- the presentations doctrine
+  fix that release claimed is **NOT** in it. (The same command against `v21.4.26` returns true,
+  which is what the follow-up bump corrected.)
+- It also turned CI guard `G3` red on `main` until `v21.4.26` landed.
+
+Every existing gate was green through all of it, because each one asked a question that the
+collision does not violate: `G1` saw a matching tag exist, `G2` saw a CHANGELOG entry for it, `G4`
+(`tag-ancestry-guard.yml`) saw the tag was an ancestor of `main`, and `bump-version.sh --check` saw
+all 10 markers agree. They agreed on the wrong number. Nothing anywhere asserted the reverse
+direction -- that a tag CONTAINS the work it is named for. Anyone auditing releases by tag gets a
+false answer, and `update-skills.sh` can tell a client box it is current when it is not.
+
+### What changed
+
+`scripts/bump-version.sh` -- two additions, no change to what the 10 markers are:
+
+- **`release_integrity_guard()` (fail-closed, runs before any file is written).** Fetches
+  `origin/main` and compares the requested target against `origin/main`'s `./version` -- the real
+  shipped release floor -- instead of trusting the working tree. It refuses with a non-zero exit
+  and a specific message on three conditions: STALE BASE (working tree `./version` is behind
+  `origin/main`, the root cause of the collision), COLLIDING VERSION (target is not strictly ahead
+  of the released floor), and TAG ALREADY EXISTS (the target tag is present locally or on the
+  remote). There is deliberately **no bypass flag**: a blocked bump costs one `git merge`, and a
+  wrong tag lies to every release audit.
+- **Offline degradation.** A failed `git fetch` is never fatal. The guard falls back to the
+  last-known `origin/main` ref plus the local tag list and prints, line by line, which checks it
+  could not perform, so a legitimate bump on a bare CI runner or an offline machine still
+  completes. Verified: with an unreachable remote a legitimate bump exits 0 and rolls all 10
+  markers, and a stale base is STILL refused off the stale ref.
+- **`tag_containment_advisory()` on `--check`.** If a tag matching `./version` exists but does not
+  contain HEAD, `--check` now says so loudly. This is the exact assertion that would have caught
+  the incident. It is ADVISORY ONLY -- it never mutates a file, always returns 0, and leaves
+  `--check`'s exit code untouched -- because a hard assert would be wrong in two ordinary
+  situations: on a feature branch the tag does not exist yet (it is cut after merge), and on `main`
+  there is a legitimate window between a merge landing and its tag being pushed. Hard enforcement
+  belongs at bump time, where the collision can still be PREVENTED rather than merely reported.
+- `semver_cmp()` helper: numeric vX.Y.Z comparison, so `v21.4.9` vs `v21.4.10` cannot sort wrong as
+  text.
+
+Mutation-proved in both directions rather than merely declared. The guard was fired on all three
+refusal conditions (each exits 1 with zero files modified), and the advisory was run against the
+real incident commit `b2a91133`, where it prints the containment WARN while the pre-existing drift
+check on that same commit still reports "All 10 version markers agree" -- the precise blind spot.
+A normal bump `v21.4.27 -> v21.4.28` still succeeds cleanly and rolls all 10 markers.
+
+### Risk
+
+Low, and confined to release tooling. No role file, SOP, department, persona, skill content, or
+runtime code path is touched; nothing a client box installs changes behavior. The `--check` exit
+contract is unchanged, so `version-consistency.yml` (which delegates to it) cannot go red on the
+new advisory. The one behavioral change is intended: `bump-version.sh <version>` now refuses a bump
+that would collide with `origin/main` or an existing tag. A release cut from a stale base fails
+loudly instead of silently shipping a tag that does not contain its own work.
+
+
 ## [v21.4.27]  -  2026-07-30  -  Skill 38's "91 scripts" figure had drifted to 92, and closed the actual gap: bump-version.sh never checked the scripts/ total
 
 ### Why
