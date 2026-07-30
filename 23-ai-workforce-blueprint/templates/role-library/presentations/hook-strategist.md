@@ -86,8 +86,8 @@ Review every hook_package.json from the past month. Identify which of the 7 form
 
 ## 6. Quarterly Operations
 
-Re-read the master SOP Section 4.3 rule 1 (the Hook Doctrine), Section 6.1 criterion 11 (the hook CEILING + anti-footer battery, density-floor overhaul), and universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md for any version changes. Incorporate updates immediately. If a new operator-approved hook formula or framework is adopted, fold it into the SOP 9.1 formula bank and propose the change to the Director. Confirm the 7-formula bank and the 3-quality scoring rubric still match the master doctrine, and confirm the 3-to-4-dedicated-slide ceiling and anti-footer rule are still in force (never revert to a count floor).
-Re-read the master SOP Section 4.3 rule 1 (the Hook Doctrine) and Section 6.1 criterion 11 (the mechanical hook count) for any version changes. Incorporate updates immediately. If a new operator-approved hook formula or framework is adopted, fold it into the SOP 9.1 formula bank and propose the change to the Director. Confirm the 7-formula bank and the 3-quality scoring rubric still match the master doctrine.
+Re-read the SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) rule 1 (the Hook Doctrine), SOP-SLIDE-03-HOOK-DOCTRINE + the qc-specialist-presentations copy-QC criterion 11 (PRESENTATION-MASTER-DOCTRINE.md §4) (the hook CEILING + anti-footer battery, density-floor overhaul), and universal-sops/presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md for any version changes. Incorporate updates immediately. If a new operator-approved hook formula or framework is adopted, fold it into the SOP 9.1 formula bank and propose the change to the Director. Confirm the 7-formula bank and the 3-quality scoring rubric still match the master doctrine, and confirm the 3-to-4-dedicated-slide ceiling and anti-footer rule are still in force (never revert to a count floor).
+Re-read the SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) rule 1 (the Hook Doctrine) and SOP-SLIDE-03-HOOK-DOCTRINE + the qc-specialist-presentations copy-QC criterion 11 (PRESENTATION-MASTER-DOCTRINE.md §4) (the mechanical hook count) for any version changes. Incorporate updates immediately. If a new operator-approved hook formula or framework is adopted, fold it into the SOP 9.1 formula bank and propose the change to the Director. Confirm the 7-formula bank and the 3-quality scoring rubric still match the master doctrine.
 
 ---
 
@@ -125,8 +125,8 @@ Re-read the master SOP Section 4.3 rule 1 (the Hook Doctrine) and Section 6.1 cr
 - working/copy/arc_allocation.json (read: section structure for the placement map)
 - working/copy/slides_copy.md (read for the post-deck audit; the Copywriter writes it, you only count and verify against it)
 - working/copy/hook_package.json (write: your primary output)
-- master SOP Section 4.3 rule 1 (the Hook Doctrine / Purple Rain rule) and Section 6.1 (the AF-HOOK ceiling + anti-footer battery)
-- master SOP Section 4.3 rule 1 (the Hook Doctrine / Purple Rain rule) and Section 6.1 criterion 11 (mechanical hook count)
+- SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) rule 1 (the Hook Doctrine / Purple Rain rule) and SOP-SLIDE-03-HOOK-DOCTRINE + the qc-specialist-presentations copy-QC criterion (PRESENTATION-MASTER-DOCTRINE.md §4) (the AF-HOOK ceiling + anti-footer battery)
+- SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) rule 1 (the Hook Doctrine / Purple Rain rule) and SOP-SLIDE-03-HOOK-DOCTRINE + the qc-specialist-presentations copy-QC criterion 11 (PRESENTATION-MASTER-DOCTRINE.md §4) (mechanical hook count)
 
 ---
 
@@ -344,7 +344,7 @@ Additional bad outputs:
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 4.3 rule 1 (the Hook Doctrine / Purple Rain rule) and Section 6.1 (the AF-HOOK ceiling + anti-footer battery)
+- SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) rule 1 (the Hook Doctrine / Purple Rain rule) and SOP-SLIDE-03-HOOK-DOCTRINE + the qc-specialist-presentations copy-QC criterion (PRESENTATION-MASTER-DOCTRINE.md §4) (the AF-HOOK ceiling + anti-footer battery)
 - The proven reference run hooks (illustrative: "30 Kids. 30 Days.", "It's not your heart. It's your system.", "Stay. I dare you.")
 - Proven hook formulas: F1 number symmetry ("30 Kids. 30 Days."), F3 reframe contrast ("It's not your heart. It's your system."), F4 dare ("Stay. I dare you.")
 

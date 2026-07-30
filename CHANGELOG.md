@@ -180,6 +180,78 @@ directory). Verified as a bleed test: reintroducing the old loop fails all seven
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
 
 
+## [v21.4.25]  -  2026-07-30  -  Guard B was red because the role files still ordered two retired doctrines: the >= 7 hook padding floor and a 1,500/5,000-char prompt floor
+
+### Why
+
+`main` had exactly one failing check: `Presentations SOP/manifest/code lockstep (sync_check)`.
+`sync_check.py` itself exits 0 and Guard A exits 0 -- the red step was Guard B
+(`doctrine_residual_check.py`), reporting **107 offenders across 17 files** (measured, not the
+20 files initially assumed). Guard B is the retired-doctrine residual lint: it fails when a
+doctrine value that was explicitly retired reappears as a LIVE instruction rather than as
+documented history.
+
+The 107 were not noise. Two of the three root causes were live doctrine contradictions in which
+a role file gave an agent an order that the enforcing code refuses:
+
+1. **The retired `>= 7` hook FLOOR.** `SOP-SLIDE-03-HOOK-DOCTRINE` retired it because it
+   produced the reference-case 40-slide footer-stamping: the system floored the count and
+   stamped footers because that is exactly what it was told to do. The live rule is a
+   **3 to 4 dedicated-slide CEILING**. `slide-copywriter.md` was half-migrated -- it stated the
+   ceiling on one line and ordered "insert hook refrains ... until the count reaches 7" a few
+   lines later. `devils-advocate-presentations.md` shipped a worked PASS example citing
+   **9 hook appearances**, which the live gate vetoes as AF-HOOK-1.
+2. **The retired prompt-char floor.** `build_deck.py` and `prompt_gate.py` both pin
+   `PROMPT_CHAR_FLOOR = 9000`. `slide-image-creator.md` told the author the renderer's HARD floor
+   was **1,500** chars with a **5,000** soft minimum. Any prompt authored to that instruction is
+   sub-floor and is refused, not run. Docs were corrected UP to the code; the code was not
+   touched.
+
+The third cause was the documented doctrine schism (P3-01(c)6): 88 citations of a numbered
+"master SOP Section N.N" that no longer resolves. `CLIENT-WEBINAR-DECK-SOP.md` today has only
+sections 0-9a, so cited sections 4.3 / 7.2 / 7.5 / 11.3 / 11.4 point into a void.
+
+### What changed
+
+- **Hook floor -> ceiling (13 offenders, 5 files).** `slide-copywriter.md` (role summary, KPI
+  row, SOP step 7, failure mode, ten-components self-check), `devils-advocate-presentations.md`
+  (doctrine-point heading, the doctrine bullet, and the worked PASS example rewritten to 4
+  hook-carrying slides), `qc-specialist-presentations.md` (assembled-deck check k, Gate 12),
+  `director-of-presentations.md` (checklist_of_promises line item).
+  **Not** mass-substituted: `presenter-coach.md` governs the SPOKEN hook, whose live band is
+  5-20 (`AF-SPEECH-HOOK-COUNT`, `pitch_engines_check.py`), not the 3-4 slide ceiling. It was
+  corrected to 5-20.
+- **Prompt floor -> 9,000 (6 offenders + 1 uncaught contradiction).**
+  `slide-image-creator.md` (the 1,500 HARD-floor claim at the renderer contract -- not
+  Guard-B-caught but the sharpest code contradiction in the set -- plus the 5,000 references),
+  `qc-specialist-presentations.md` (KPI row, AF-P1 row). The AF-P1 "fails unless it carries a
+  documented reason" escape hatch was removed: `build_deck.py` grants no such exception.
+  `slide-submitter.md` truncated prompts at a stale **15,000**; raised to the real AF-P2 ceiling
+  of **18,000** (`PROMPT_CHAR_CEILING`), which also cleared a Guard B regex false positive
+  (`5[,.]?000[\s-]*char` matches inside "1**5,000 char**acters").
+- **88 dead section citations repointed** across 16 role files, using the ratified crosswalk in
+  `universal-sops/PRESENTATION-MASTER-DOCTRINE.md` Section 4 and matching the convention the
+  dept `sops/` mirrors already use: `<live SOP> (PRESENTATION-MASTER-DOCTRINE.md §4)`. The
+  mirrors had already been repaired; the top-level role files were missed. Every repoint target
+  was confirmed to exist on disk first.
+- Content-manifest re-stamped (17 role content_sha bumps).
+
+### Risk
+
+Low, and doc-only. **No code constant, threshold, or gate was changed** -- every edit moves a
+doc toward the value the code already enforces, and no threshold was relaxed. `sync_check.py`
+and Guard A were exit-0 before and after. The behavioral change is that agents reading these
+role files are no longer instructed to pad decks to 7 hook appearances (which the AF-HOOK gate
+vetoes) or to author 1,500-char prompts (which the renderer refuses) -- i.e. the docs now fail
+in the same direction as the code instead of against it.
+
+Not in scope, and deliberately left: roughly 80 bare `master Section N.N` references that carry
+no `master SOP` / `CLIENT-WEBINAR-DECK-SOP.md` prefix. Guard B does not match them, and
+per-citation repair of that form is the A6 unit's assignment under
+`PRESENTATION-MASTER-DOCTRINE.md` §5. They are the same defect class and still resolve into a
+void.
+
+
 ## [v21.4.24]  -  2026-07-30  -  The same client name came straight back on the next PR, which is the actual finding
 
 ### Why

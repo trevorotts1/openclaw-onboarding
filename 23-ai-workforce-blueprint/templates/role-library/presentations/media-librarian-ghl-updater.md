@@ -491,7 +491,7 @@ media_library.json: delivery_verified = true, local_count = 75, ghl_count = 75, 
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 2 (media library requirements) and Section 6 (delivery)
+- PIPELINE-MANIFEST.json produces_artifact paths + director-of-presentations SOP 9.x (media library requirements) and SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md §9a (delivery) (PRESENTATION-MASTER-DOCTRINE.md §4)
 - GHL API documentation (current media library endpoints)
 
 **Tier 2:**

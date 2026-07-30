@@ -286,7 +286,7 @@ Rate cap, wave scheduling, polling cadence, and the 100-poll guard live in Secti
    - At 1.5x budget_ceiling: WARN. Send message to Director: "Generation cost at 1.5x budget ceiling ([N] slides generated, estimated $X spent). Continuing but flagging for review."
    - At 2.0x budget_ceiling: STOP. Send message to Director: "Generation cost has reached 2x budget ceiling ($X spent for [SLIDE_COUNT] slides). Halting submission. Awaiting operator authorization to continue."
 4. Record all budget events in phase4_checkpoint.json: `{ "budget_checks": [{"at_slide": N, "estimated_cost": X, "ceiling": Y, "action": "continue|warn|stop"}] }`.
-5. Truncation check: if the prompt file for a slide exceeds 15,000 characters (this should have been caught by Phase 3 QC, but check again before submission), truncate the prompt at the 15,000-character boundary by removing content from the end of the AVOID block. Log the truncation: `{ "slide_number": N, "original_chars": N, "truncated_to": 15000, "truncation_applied": true }`. Notify the Slide Image Creator.
+5. Truncation check: if the prompt file for a slide exceeds 18,000 characters -- the AF-P2 ceiling (`build_deck.py` PROMPT_CHAR_CEILING=18000, a 2,000-char margin under the 20,000 API ceiling); this should have been caught by Phase 3 QC, but check again before submission -- truncate the prompt at the 18,000-character boundary by removing content from the end of the AVOID block. Log the truncation: `{ "slide_number": N, "original_chars": N, "truncated_to": 18000, "truncation_applied": true }`. Notify the Slide Image Creator. Never truncate a prompt that is inside the 9,000-18,000 band.
 
 **Outputs:**
 - phase4_checkpoint.json (budget events and truncation log)

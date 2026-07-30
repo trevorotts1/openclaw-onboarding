@@ -415,7 +415,7 @@ The delivery notification is sent exclusively via `openclaw message send`. Raw T
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 11.4 (Delivery)
+- SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md §9a (PRESENTATION-MASTER-DOCTRINE.md §4) (Delivery)
 - GHL API documentation (current media library and upload endpoints)
 
 **Tier 2:**
@@ -448,7 +448,7 @@ If the client box_type is not mac, you ask for the delivery destination, and the
 1. GHL API changes its upload or file-retrieval endpoints or authentication method.
 2. Google Drive API changes its upload or metadata endpoints.
 3. A new delivery channel is added (email, Dropbox, S3, etc.).
-4. The master SOP Section 11.4 (Delivery) is updated.
+4. The SOP-PITCH-05-DELIVERABLE-BUNDLE + delivery-concierge SOP + CLIENT-WEBINAR-DECK-SOP.md §9a (PRESENTATION-MASTER-DOCTRINE.md §4) (Delivery) is updated.
 5. The openclaw message send API or channel routing changes.
 6. The operator explicitly requests a revision.
 7. A Devil's Advocate challenge for this role gets accepted 3+ times.
