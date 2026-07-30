@@ -100,7 +100,10 @@ def test_duplicate_waivers_rejected():
     with pytest.raises(WaiverError, match="(?i)two waivers"): load_waivers(rd)
 
 def test_valid_intake_waiver_loads():
-    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": True})
+    # The quote must genuinely appear in the intake field's recorded value —
+    # a bare presence check on a boolean flag is the defect this guards against.
+    rd = _rd()
+    _wj(rd, "working/copy/intake.json", {"skip_qc": "Please skip the QC check for this run."})
     _wj(rd, "waivers.json", [{"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
         "client_request_quote": "skip the QC check", "captured_at": "2026-01-01T00:00:00Z"}])
     waivers = load_waivers(rd)

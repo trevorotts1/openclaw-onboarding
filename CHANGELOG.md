@@ -1,3 +1,54 @@
+## [Unreleased]  -  Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
+
+`presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
+"intake_field"` -- and it only checked that the named key existed in `intake.json`. It never compared
+`client_request_quote` against that key's *value*. The correctly-built path, `source: "transcript"`,
+does a real substring match against recorded client turns, but is hard-disabled at
+`TRANSCRIPT_WAIVERS_ACCEPTED = False`, so the only path anyone could actually use was the unprotected
+one. Reproduced live: a fabricated quote nobody ever said, attached to real intake field `"topic"`, was
+accepted by `validate_waiver()`, and a synthetic job closed with `terminal: DONE`, exit 0, gate recorded
+`"state": "waived"` -- while the `teleprompter` gate it was supposedly excusing had never actually passed.
+This is the self-issued-waiver failure the programme's own fix plan named by number: if the engine
+accepts any `waiver.json` it finds, the agent writes its own permission slip.
+
+Fix: the `intake_field` path now requires (a) the cited field's value to be a string -- a boolean/flag
+field carries no client words to check a quote against, so citing one is now rejected outright -- and
+(b) `client_request_quote`, normalised for case and whitespace (`_norm`, already used by the transcript
+path), to be a genuine substring of that value. A quote the client did not write is rejected with a
+plain-language error naming the field: `"waiver for 'X' quotes text that does not appear in intake field
+'Y'. Recorded value of 'Y' does not contain the quoted words -- the quote must be the client's own words
+as recorded in intake.json, not text the agent supplied."`
+
+`TRANSCRIPT_WAIVERS_ACCEPTED` stays `False` -- a decision, not an oversight, now recorded directly above
+the flag in `waivers.py`. Its substring match is correct and is not why it is off; it stays off because
+of two problems this change does not touch: no requester identity on the route script that produces the
+transcript, and the transcript living in a database, which breaks the offline-authoritative rule (audit
+D3:1016-1019). Flipping it is a separate decision for whenever both close.
+
+`tests/test_waivers.py::test_valid_intake_waiver` cited a boolean intake field (`{"no_teleprompter":
+True}`) with an unrelated quote -- it never exercised quote content, which is why it never caught this.
+Rewritten to use a string field the quote is genuinely drawn from, plus new tests: a case/whitespace-
+insensitive match, a forged quote against a real field (the reproduced defect, rejected), and a non-string
+field value (rejected). `tests/test_gates.py::test_valid_intake_waiver_loads` had the same shape of
+defect (`{"skip_qc": True}` with an unrelated quote) and was updated the same way.
+
+Bleed test (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`): forged quote
+against a real field -> `WaiverError`, plain-language, names the field. Verbatim quote from the same
+field -> accepted. Reverting the fix -> both new rejection tests fail with "DID NOT RAISE," reproducing
+the original hole; 26 of 28 waiver/gate tests unaffected either way. Driven end to end with the real
+`presentation_job.py --close` entry point against a synthetic run dir with a legitimate `script`,
+`prompt_floor`, and `ghl_upload` pass and only `teleprompter` depending on the forged waiver: pre-fix,
+exit 0, `terminal: DONE`; post-fix, exit 9 (`EXIT_WAIVER_INVALID`), stderr `FATAL: waiver for
+'teleprompter' quotes text that does not appear in intake field 'topic' ...`, `terminal` never set.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`; `reportlab` was present in this environment so `tests/test_producers.py`
+collected and is included): 15 failed / 446 passed / 13 skipped. `diff` of sorted failing-test names
+against the pre-change baseline (same worktree, before this edit) is empty -- zero new failures, same 15
+pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`), none touching
+waivers. No version bump -- release PR #738 is open.
+
+
 ## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code
 
 ### Why
