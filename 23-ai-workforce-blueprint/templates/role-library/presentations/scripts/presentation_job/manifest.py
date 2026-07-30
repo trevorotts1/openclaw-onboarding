@@ -210,7 +210,7 @@ def _as_list(v: Any) -> List[str]:
 # it has never heard of.
 
 
-MIN_MANIFEST_VERSION = 33  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 34  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 # (SPEC/units/U019.md:409-410, :440-441, :1093): "set MIN_MANIFEST_VERSION to that same new value,
 # in the same commit" — the floor and the manifest move TOGETHER. A floor one behind the manifest is
 # the split-brain that step 8 exists to prevent: the engine keeps accepting the older, fewer-key
@@ -222,7 +222,16 @@ MIN_MANIFEST_VERSION = 33  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
 # executor blocks, raising manifest_version to 32 in the same commit.
 # 32 -> 33: SOP-SLIDE-06 wiring of the U027 OCR-readback postflight gate — added the
 # AF-OCR-READBACK autofails[] entry (enforced_by:build_deck, py_symbol:check_ocr_readback),
-# raising manifest_version to 33 in the same commit.)
+# raising manifest_version to 33 in the same commit.
+# 33 -> 34: fix/ocr-engine-preflight-real-path added AF-OCR-ENGINE-MISSING — the
+# MASTER-SPEC 7.4 Phase-0 OCR-engine-availability pre-flight on the REAL render path
+# (build_deck.ocr_engine_preflight / run_signature_deck.phase0_preflight) — raising
+# manifest_version to 34 in the same commit. NOTE: this constant lives in
+# presentation_job/, a package with zero production callers (build_deck.py imports only
+# presentation_job.checkpoint); it is updated here SOLELY because
+# test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below asserts
+# MIN_MANIFEST_VERSION == the real on-disk manifest_version and would otherwise fail —
+# this is NOT new wiring into presentation_job.Engine.)
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

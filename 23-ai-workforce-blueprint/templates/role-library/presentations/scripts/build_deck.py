@@ -4869,6 +4869,109 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
 
 
 # ---------------------------------------------------------------------------
+# MASTER-SPEC 7.4 — OCR-engine AVAILABILITY pre-flight (AF-OCR-ENGINE-MISSING).
+# Phase-0 of the signature runner (mirrors kie_balance_preflight's placement/
+# calling convention exactly) and a shared pre-render gate inside build_deck.py's
+# own direct-invocation Phase-0 block. HARD-ABORTS before any phase is dispatched
+# (run_signature_deck.phase0_preflight) — and, defense-in-depth, before any render
+# (build_deck.main()'s own Phase-0) — when this render environment has no OCR
+# engine, so the deck is never rendered (and never paid for) on a box whose
+# postflight OCR-readback audit can never actually run.
+# ---------------------------------------------------------------------------
+def ocr_engine_preflight(run_dir: Path) -> str:
+    """MASTER-SPEC 7.4 (§7.4, 'Quality that is measured, not asserted'): 'The missing
+    OCR dependency fails at minute zero, before any paid generation, not after 62
+    images.' This is that refusal.
+
+    prompt_gate.ocr_readback()'s own docstring documents that OCR is intentionally
+    PROVENANCE-RECORDED-OPTIONAL and 'never hard-fails purely for a missing engine' —
+    correct for THAT function (a healthy-engine box must keep rendering; a box mid-
+    decision records the absence rather than silently skipping it) — but nothing
+    UPSTREAM of it was refusing on a missing engine, so a box with no OCR engine
+    rendered and paid for every slide, then produced unverifiable OCR sidecars with
+    nothing hard-failing. This is the ENGINE-AVAILABILITY probe ('does an OCR engine
+    exist on this box at all'), run BEFORE a single slide is dispatched — distinct
+    from a POSTFLIGHT sidecar-verification gate (a separate concern: auditing the
+    per-slide renders/*.ocr.json records once they exist) that can only audit a
+    slide once it has already been rendered and paid for.
+
+    Called from TWO sites, both non-adhoc only (an --adhoc-no-process run forces an
+    empty api_key — see main() — so it can never spend real Kie.ai credit regardless
+    of OCR state, exactly the same carve-out kie_balance_preflight already takes):
+      1. run_signature_deck.phase0_preflight() — the REAL orchestrated path
+         (presentation-canonical-entry.sh -> run_signature_deck.py -> build_deck.py),
+         checked in-process BEFORE any phase (research/copy/QC/render) is dispatched —
+         the earliest possible point in the entire run.
+      2. build_deck.main()'s own Phase-0 block — so a DIRECT `python3 build_deck.py`
+         invocation that bypasses the runner is equally refused, exactly as
+         kie_balance_preflight and the P0B-PRIORITY binding in run_preflight() already
+         refuse a direct-invocation bypass of other Phase-0/Phase-0b gates.
+
+    Unconditional: never defers on run_dir state. An OCR-blind box can never satisfy
+    a postflight OCR-readback audit later, regardless of what phase the run is in, so
+    there is no state in which deferring would be correct.
+
+    ENVIRONMENT TRAP THIS CLOSES: probes prompt_gate.ocr_engine_diagnostic() in THIS
+    process — the SAME interpreter/environment that will actually render (run_signature_
+    deck.py launches the build_deck.py render subprocess via `sys.executable`, inheriting
+    this process's environment, so what this process sees is what the render subprocess
+    sees). A user-site-packages install of pytesseract (~/Library/Python/*/lib/python/
+    site-packages) is invisible under PYTHONNOUSERSITE=1, inside a venv without
+    --system-site-packages, under sudo, and to launchd/cron (whose default PATH carries
+    no Homebrew, so no tesseract binary either) — a probe run from a DIFFERENT
+    interpreter/shell than the one that renders proves nothing about the render's own
+    environment. Returns "" on pass, else a fatal AF-OCR-ENGINE-MISSING message naming
+    exactly what is missing and how to install it."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return ("AF-OCR-ENGINE-MISSING: prompt_gate.py could not be imported at all "
+                "(it ships beside build_deck.py) — cannot verify OCR engine availability "
+                "in this render environment. MASTER-SPEC 7.4: 'The missing OCR dependency "
+                "fails at minute zero, before any paid generation, not after 62 images.'")
+    try:
+        diag = pg.ocr_engine_diagnostic()
+    except Exception as exc:  # noqa: BLE001 — a broken diagnostic is itself fail-closed
+        return (f"AF-OCR-ENGINE-MISSING: prompt_gate.ocr_engine_diagnostic() raised "
+                f"({exc}) instead of returning a status — cannot verify OCR engine "
+                "availability. MASTER-SPEC 7.4: 'The missing OCR dependency fails at "
+                "minute zero, before any paid generation, not after 62 images.'")
+    if diag.get("available"):
+        return ""
+    reason = diag.get("reason", "unknown")
+    detail = diag.get("detail", "")
+    install_hint = {
+        "pytesseract-import-failed": (
+            "install pytesseract INTO THE EXACT interpreter that runs build_deck.py / "
+            "run_signature_deck.py (e.g. `<that interpreter> -m pip install "
+            "pytesseract`). A user-site-packages install is INVISIBLE under "
+            "PYTHONNOUSERSITE=1, inside a venv without --system-site-packages, under "
+            "sudo, and to launchd/cron — install into the interpreter's OWN "
+            "site-packages if this render runs under any of those."
+        ),
+        "pillow-import-failed": (
+            "install Pillow INTO THE EXACT interpreter that runs build_deck.py / "
+            "run_signature_deck.py (same interpreter-site caveat as pytesseract above)."
+        ),
+        "tesseract-binary-not-found": (
+            "install the tesseract binary and ensure it is on PATH for the render "
+            "process (e.g. `brew install tesseract` on macOS). launchd/cron's default "
+            "PATH is typically /usr/bin:/bin:/usr/sbin:/sbin — NO Homebrew — so a "
+            "scheduled/cron-driven render needs an explicit PATH (or the tesseract "
+            "binary's full path) configured in the launchd plist / cron environment, "
+            "not merely in an interactive shell's PATH."
+        ),
+    }.get(reason, "install pytesseract + Pillow + the tesseract binary, reachable from "
+                   "the EXACT interpreter/environment that will run build_deck.py / "
+                   "run_signature_deck.py.")
+    return (
+        f"AF-OCR-ENGINE-MISSING: no OCR engine is available in this render environment "
+        f"({reason}{': ' + detail if detail else ''}). MASTER-SPEC 7.4: 'The missing OCR "
+        "dependency fails at minute zero, before any paid generation, not after 62 "
+        f"images.' Fix: {install_hint}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # 3C — phase-precondition gate (AF-PHASE-SKIPPED). The deterministic runner
 #      (run_signature_deck.py) makes skipping/reordering a phase structurally
 #      impossible: before dispatching phase N+1 it proves every lower-order phase
@@ -9653,6 +9756,15 @@ def main():
         _box_type = detect_platform(run_dir, platform_arg)
         print(f"=== PHASE-0 PRE-FLIGHT — box_type={_box_type}; "
               f"Kie balance floor check before render ===", flush=True)
+        # MASTER-SPEC 7.4 / AF-OCR-ENGINE-MISSING — checked FIRST (fast, local, no
+        # network) so a box with no OCR engine refuses before the network-dependent
+        # Kie-balance call, let alone before any render. Defense-in-depth for a direct
+        # `python3 build_deck.py` invocation that bypasses run_signature_deck.
+        # phase0_preflight()'s identical check.
+        _ocr_engine_reason = ocr_engine_preflight(run_dir)
+        if _ocr_engine_reason:
+            print("\nFATAL: " + _ocr_engine_reason, file=sys.stderr)
+            sys.exit(4)
         _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
         if _balance_reason:
             print("\nFATAL: " + _balance_reason, file=sys.stderr)

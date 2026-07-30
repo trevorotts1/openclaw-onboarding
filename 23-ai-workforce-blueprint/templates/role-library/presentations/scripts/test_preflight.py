@@ -2545,6 +2545,56 @@ def test_kie_balance_preflight():
     return fails
 
 
+def test_ocr_engine_preflight():
+    """MASTER-SPEC 7.4 AF-OCR-ENGINE-MISSING: Phase-0 OCR-engine-AVAILABILITY
+    pre-flight. An absent engine (pytesseract not importable, Pillow not
+    importable, or the tesseract BINARY not reachable) HARD-ABORTS (returns a
+    fatal AF-OCR-ENGINE-MISSING string naming the missing piece + how to fix
+    it); an available engine PASSES (returns ""). Monkeypatches
+    prompt_gate.ocr_engine_diagnostic (no dependency on this test box's real
+    OCR install), restores the original after — same pattern _kie_balance_probe
+    uses for _fetch_kie_balance."""
+    fails = []
+    root = _g4_run_dir("deck_g4_ocrengine_")
+    pg = build_deck._import_prompt_gate()
+    if pg is None:
+        fails.append("OCR-ENGINE: prompt_gate module could not be imported for the test")
+        print(f"OCR-ENGINE-PREFLIGHT (MASTER-SPEC 7.4) -> {'PASS' if not fails else 'FAIL'}")
+        return fails
+    orig = pg.ocr_engine_diagnostic
+    try:
+        # pytesseract itself not importable.
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": False, "engine": None,
+            "reason": "pytesseract-import-failed", "detail": "No module named 'pytesseract'"}
+        r = build_deck.ocr_engine_preflight(root)
+        if not r or "AF-OCR-ENGINE-MISSING" not in r:
+            fails.append(f"OCR-ENGINE: missing pytesseract should FAIL, got {r!r}")
+        if "pytesseract" not in r.lower():
+            fails.append(f"OCR-ENGINE: message should name the missing piece, got {r!r}")
+
+        # pytesseract importable, but the tesseract BINARY is not reachable (the
+        # launchd/cron/stripped-PATH trap this gate exists to catch).
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": False, "engine": None,
+            "reason": "tesseract-binary-not-found", "detail": "TesseractNotFoundError"}
+        r2 = build_deck.ocr_engine_preflight(root)
+        if not r2 or "AF-OCR-ENGINE-MISSING" not in r2:
+            fails.append(f"OCR-ENGINE: missing tesseract binary should FAIL, got {r2!r}")
+        if "tesseract" not in r2.lower() or "path" not in r2.lower():
+            fails.append(f"OCR-ENGINE: binary-missing message should mention PATH, got {r2!r}")
+
+        # Available engine PASSES.
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": True, "engine": "pytesseract", "version": "5.5.2"}
+        if build_deck.ocr_engine_preflight(root):
+            fails.append("OCR-ENGINE: available engine should PASS but failed")
+    finally:
+        pg.ocr_engine_diagnostic = orig
+    print(f"OCR-ENGINE-PREFLIGHT (MASTER-SPEC 7.4) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_check_phase_preconditions():
     """3C AF-PHASE-SKIPPED: dispatching a phase before a prior phase is attested
     FAILS; an attested prior PASSES; an owner-authorized skip PASSES."""
@@ -4630,6 +4680,11 @@ def main():
     # GOAL-4 / 3C — Kie balance pre-flight + phase-precondition contract.
     failures += test_kie_balance_preflight()
     failures += test_check_phase_preconditions()
+
+    # MASTER-SPEC 7.4 — OCR-engine AVAILABILITY pre-flight (AF-OCR-ENGINE-MISSING).
+    # Minute-zero fail-closed gate on the real render path, distinct from the
+    # postflight OCR-readback sidecar audit.
+    failures += test_ocr_engine_preflight()
 
     # v16.1.5 (Defect 1) — a phase attested via the RUNNER's own attest path is SEEN by
     # the shared precondition gate (no false AF-PHASE-SKIPPED); a genuine skip STILL trips.

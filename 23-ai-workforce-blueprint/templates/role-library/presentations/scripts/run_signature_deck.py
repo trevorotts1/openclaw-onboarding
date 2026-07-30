@@ -20,6 +20,13 @@ WHAT IT GUARANTEES
     owner_approved:true). That is not a free flag — absent the signed record, the
     precondition is unmet and the run aborts.
   * Phase-0 PRE-FLIGHT (before ANY dispatch/render):
+      - OCR-ENGINE availability pre-flight (MASTER-SPEC 7.4): HARD-ABORTS
+        (AF-OCR-ENGINE-MISSING, exit 4) before ANY phase — not merely before
+        render — when this render environment has no OCR engine (pytesseract /
+        Pillow / the tesseract binary unreachable from the exact interpreter that
+        will render). SHARED with build_deck.ocr_engine_preflight. The missing
+        OCR dependency fails at minute zero, before any paid generation, never
+        after images have already been rendered.
       - detect_platform() box-type resource note (mac -> fewer workers; vps ->
         more) recorded into the brief/attestation.
       - Kie.ai BALANCE pre-flight (GET https://api.kie.ai/api/v1/chat/credit):
@@ -41,7 +48,8 @@ WHAT IT GUARANTEES
 EXIT CODES
     0 — all phases attested (or owner-authorized skips), pre-flight clean.
     2 — phase-precondition violation (AF-PHASE-SKIPPED) or usage error.
-    4 — Phase-0 balance abort (AF-KIE-BALANCE).
+    4 — Phase-0 balance abort (AF-KIE-BALANCE) or Phase-0 OCR-engine abort
+        (AF-OCR-ENGINE-MISSING, MASTER-SPEC 7.4).
     3 — a build_deck.py subprocess (render phase) failed preflight/render.
     5 — canonical-render guard hard-block (AF-CANONICAL-RENDER-BYPASS /
         AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION / incomplete attestation chain).
@@ -889,8 +897,11 @@ def _slide_count(run_dir: Path, slides_path: Path) -> int:
 
 def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
                      adhoc: bool = False) -> None:
-    """Phase-0: detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
-    (exit 4) on AF-KIE-BALANCE before any phase is dispatched."""
+    """Phase-0: OCR-engine availability pre-flight (AF-OCR-ENGINE-MISSING, MASTER-SPEC
+    7.4) + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
+    (exit 4) on AF-OCR-ENGINE-MISSING or AF-KIE-BALANCE before any phase is
+    dispatched — this runs before research/copy/QC as well as before render, the
+    earliest possible point in the entire run."""
     platform = bd.detect_platform(run_dir, override=platform_override)
     worker_note = "mac -> fewer parallel render workers" if platform == "mac" else \
                   "vps -> more parallel render workers"
@@ -900,11 +911,27 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
     print(f"=== PHASE-0 — deck slide_count={slide_count} ===", flush=True)
 
     if adhoc:
-        print("=== PHASE-0 — adhoc (owner-authorized): Kie balance pre-flight skipped ===",
-              flush=True)
+        print("=== PHASE-0 — adhoc (owner-authorized): OCR-engine + Kie balance "
+              "pre-flight skipped ===", flush=True)
         attest_phase(run_dir, "P-0-PREFLIGHT", "run_signature_deck",
                      "preflight_ok_adhoc", artifact_sha="preflight-no-artifact")
         return
+
+    # MASTER-SPEC 7.4 / AF-OCR-ENGINE-MISSING — checked FIRST (fast, local, no
+    # network) and BEFORE the Kie API key is even loaded, so a box with no OCR
+    # engine refuses before any network call, let alone before any phase or paid
+    # render. Same in-process bd.ocr_engine_preflight() build_deck.py's own
+    # Phase-0 block calls for a direct-invocation bypass — checking it HERE too
+    # means the run refuses before research/copy/QC time is spent, not merely
+    # before render.
+    ocr_reason = bd.ocr_engine_preflight(run_dir)
+    if ocr_reason:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: " + ocr_reason, file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
+    print("=== PHASE-0 — OCR-engine pre-flight PASSED (engine available in this "
+          "render environment) ===", flush=True)
 
     api_key = ""
     try:
