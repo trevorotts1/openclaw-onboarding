@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
 
 `presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate
@@ -35,7 +34,8 @@ check relocated into this script, replacing the retired `deck-build-guard.sh`) i
 directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
 directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
-=======
+
+
 ## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
 
 U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
@@ -174,7 +174,6 @@ The five variables a client box needs for Step 15 are unchanged and are document
 Comment and operator-message text only. `bash -n install.sh` passes. No node edits, no credential
 touches, no n8n API calls, no change to the injection blocks' conditions or to publish behaviour.
 The publish path was already correct in code and is untouched.
->>>>>>> origin/main
 
 
 ## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code
