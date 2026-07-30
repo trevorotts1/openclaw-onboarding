@@ -17,7 +17,7 @@
 ### SOP 9.1 -- Audience Capture Verification and Percentage Allocation
 
 **SOP ID:** SOP-PRES-CUSTOM-05 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 3.1 Q9 (REPRESENTATION_MIX); pre-presentation audience-capture requirement
+**Library pointer:** SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION + deck-intake-questions.json (PRESENTATION-MASTER-DOCTRINE.md §4) Q9 (REPRESENTATION_MIX); pre-presentation audience-capture requirement
 **When to run:** When a deck arrives from intake and before any people-bearing prompt is written.
 **Frequency:** Per deck.
 **Inputs:** intake.json, the plain-language audience-composition note (gender; race or ethnicity mix; age; defining traits).
@@ -38,7 +38,7 @@
 ### SOP 9.2 -- Per-Prompt Representation Assignment
 
 **SOP ID:** SOP-PRES-CUSTOM-06 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 7.2 (people-allocation rule); slide-image-creator Audience Engine
+**Library pointer:** SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (people-allocation rule); slide-image-creator Audience Engine
 **When to run:** After audience capture is confirmed and before prompts are submitted for people-bearing slides.
 **Frequency:** Per deck, before the prompt batch.
 **Inputs:** The confirmed REPRESENTATION_MIX with percentages, the slide manifest listing which slides bear people.
@@ -82,7 +82,7 @@
 ### SOP 9.4 -- Final-Deck Representation Tally (The Audience-As-Mirror Gate)
 
 **SOP ID:** SOP-PRES-CUSTOM-08 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
+**Library pointer:** MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
 **When to run:** On the assembled, rendered deck, before delivery.
 **Frequency:** Per deck, once, at final QC.
 **Inputs:** The final deck rendered to PNG pages (from the QC Specialist's render), the captured REPRESENTATION_MIX, the image-stage tally record.

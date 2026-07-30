@@ -28,7 +28,7 @@ A slide presents exactly ONE core idea, expressed in a handful of words. Specifi
    - A **gap + its reframe** is TWO slides (the gap on one, the "what if the problem is not X but Y" reframe on the next). Never one slide carrying both.
    - **Four distinct pains** are FOUR slides, one emotional image each (master rule 9). Never a bulleted list of pains.
 3. **Text-block ceiling.** A slide carries at most THREE text blocks: headline, optional sub-copy, optional ONE supporting element (a stat chip, a label, or a CTA chip). A fourth text block is a defect. The hook footer is a text block; because the hook footer is banned outright (see SOP-SLIDE-03), it never counts as an allowed block and its presence is its own separate auto-fail.
-4. **Word ceiling.** Headline 9 words maximum (target 4 to 7). Sub-copy 18 words maximum, one line. Counts are exact and mechanical (master Section 5.1). A slide that needs more words than this to make its point has more than one idea; split it.
+4. **Word ceiling.** Headline 9 words maximum (target 4 to 7). Sub-copy 18 words maximum, one line. Counts are exact and mechanical (SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4)). A slide that needs more words than this to make its point has more than one idea; split it.
 
 ---
 

@@ -196,7 +196,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Read FINAL_PRICE from intake.json. If absent, halt and notify the Director (do NOT invent a price).
-2. Build the sequence in this exact order (master Section 5.5 straight mode):
+2. Build the sequence in this exact order (SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) straight mode):
    a. **STACK:** present the value stack one named component per slide, each `Name + $X value` (SOP 9.2 rules).
    b. **ANCHOR with memory hook:** land the TOTAL STACK VALUE as the value reality check, carrying the explicit memory hook: "Remember this number. Hold onto it. Keep watching." The anchor value must be >= 3x FINAL_PRICE.
    c. **ONE reveal:** a single price reveal slide, "all of that, for FINAL_PRICE." There is no ladder; the price is stated once.
@@ -228,7 +228,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 **Steps:**
 1. Read VIP_TIER, VIP_PRICE, VIP_SPOTS, and the VIP contents from intake.json. If VIP_TIER is false or absent, this SOP does not run.
 2. Present the VIP option WITH the final price as a two-option close: GA price and VIP price SIDE BY SIDE on the same moment of decision. The VIP is NEVER presented after the close, and never as a separate later pitch.
-3. Spot counts are REAL scarcity only. Use VIP_SPOTS exactly as the client stated it. If VIP_SPOTS is missing or the client cannot state a real number, do NOT invent one -- present VIP without a spot count and flag to the Director. Fabricated scarcity is forbidden (master Section 5.4).
+3. Spot counts are REAL scarcity only. Use VIP_SPOTS exactly as the client stated it. If VIP_SPOTS is missing or the client cannot state a real number, do NOT invent one -- present VIP without a spot count and flag to the Director. Fabricated scarcity is forbidden (SOP-PITCH-02-VALUE-STACK-AND-PROMISES (guarantee) + SOP-OBJECTION-01 (PRESENTATION-MASTER-DOCTRINE.md §4)).
 4. List the VIP contents as named items with values, the same way the GA stack is built (SOP 9.2). VIP value is GA value PLUS the named VIP additions; it never strips GA value.
 5. Record the VIP block in price_ladder.json:
    ```json
@@ -340,7 +340,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - SOP-PITCH-02-VALUE-STACK-AND-PROMISES (guarantee) + SOP-OBJECTION-01 + offer-price-strategist SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (the four guarantee types) and SOP-PITCH-* cluster + SOP-PROCLAMATION-01 (Kill List operational home: devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) rule 21
 
 **Steps:**
-1. **Select the GUARANTEE type with the client (the deck must carry one).** Choose one of the four (master Section 5.4): Unconditional (any-reason refund), Conditional (do-the-work clause, allows a bolder promise), Anti-guarantee (all sales final, framed as exclusivity), or Implied (performance-based). For a service business wary of refunds, the operator-preferred frame is the SERVICE GUARANTEE: "if you do not get the result, your next 30 days is on us" or "five more sessions until your breakthrough." It reverses risk without writing checks. If intake states no guarantee, propose the service-guarantee frame and flag to the Director for the client to confirm; never ship a deck with no guarantee beat.
+1. **Select the GUARANTEE type with the client (the deck must carry one).** Choose one of the four (SOP-PITCH-02-VALUE-STACK-AND-PROMISES (guarantee) + SOP-OBJECTION-01 (PRESENTATION-MASTER-DOCTRINE.md §4)): Unconditional (any-reason refund), Conditional (do-the-work clause, allows a bolder promise), Anti-guarantee (all sales final, framed as exclusivity), or Implied (performance-based). For a service business wary of refunds, the operator-preferred frame is the SERVICE GUARANTEE: "if you do not get the result, your next 30 days is on us" or "five more sessions until your breakthrough." It reverses risk without writing checks. If intake states no guarantee, propose the service-guarantee frame and flag to the Director for the client to confirm; never ship a deck with no guarantee beat.
 2. Record the guarantee in price_ladder.json:
    ```json
    "guarantee": {

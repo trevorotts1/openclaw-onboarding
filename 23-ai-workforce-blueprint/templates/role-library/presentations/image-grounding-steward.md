@@ -155,7 +155,7 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| **Master SOP — CLIENT-WEBINAR-DECK-SOP.md (v2.3)** | World Engine (Section 7.3 element 11), no-fabrication rules, the proven exemplar | `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Read-only authority. The World Engine grounds setting to plausibility; you extend grounding to the client's specific content. The master wins every conflict. |
+| **Master SOP — CLIENT-WEBINAR-DECK-SOP.md (v2.3)** | World Engine (SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11), no-fabrication rules, the proven exemplar | `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Read-only authority. The World Engine grounds setting to plausibility; you extend grounding to the client's specific content. The master wins every conflict. |
 | **Grounded-content reference (per deck)** | The client's book, message, offer, and methodology specifics the imagery must depict | Project record / working directory | Assembled from the client's material plus the Deep Research Specialist's findings. Your scoring baseline. |
 | **Deep Research Specialist findings** | Grounded proof, case studies, and real-world knowledge that should flow into the imagery | Proof inventory | Ensure these findings reach the IMAGE prompts, not only the copy. |
 | **Generated slide images plus receipts** | The actual imagery to verify against the grounded-content reference | `_local/jobs/{job-id}/` | Verify from downloaded local files confirmed in receipts; never from an expiring resultUrl. |
@@ -169,7 +169,7 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 ### SOP 9.1 — Grounded-Content Capture
 
 **SOP ID:** SOP-PRES-CUSTOM-09 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 3.2 (no fabrication, proof inventory); World Engine (Section 7.3 element 11)
+**Library pointer:** SOP-PITCH-02-VALUE-STACK-AND-PROMISES (proof) + SOP-SLIDE-00 AF ruleset + devils-advocate-presentations SOP 9.1 (PRESENTATION-MASTER-DOCTRINE.md §4) (no fabrication, proof inventory); World Engine (SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11)
 **When to run:** When a deck arrives from intake and before image prompts are scored.
 **Frequency:** Per deck.
 **Inputs:** The client's material (book, message, offer, methodology), the Deep Research Specialist's grounded findings, the narrative architecture from the Signature Presentation Architect.
@@ -212,7 +212,7 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 ### SOP 9.3 — Pain-Visibility Review (Make the Pain Felt)
 
 **SOP ID:** SOP-PRES-CUSTOM-11 (BlackCEO)
-**Library pointer:** Governing intelligence GP-16; `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 7.5 exemplar (emotional job of the image)
+**Library pointer:** Governing intelligence GP-16; SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (emotional job of the image)
 **When to run:** On pain-point slides, during prompt scoring and again on the generated image.
 **Frequency:** Per deck, for every pain-point slide.
 **Inputs:** The pain-point slide prompts, the generated pain-point images, the SEE-journey map from the Signature Presentation Architect.
@@ -233,7 +233,7 @@ This role contributes to the company revenue cascade by: **making the deck's ima
 ### SOP 9.4 — Final-Deck Grounding Pass
 
 **SOP ID:** SOP-PRES-CUSTOM-12 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
+**Library pointer:** MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
 **When to run:** On the assembled, rendered deck, before delivery.
 **Frequency:** Per deck, once, at final QC.
 **Inputs:** The final deck rendered to PNG pages, the grounded-content reference, the prompt grounding record.
@@ -380,7 +380,7 @@ The Deep Research Specialist's grounded findings reach the copy, but the imagery
 
 **Tier 1 — Always consult first (authoritative for this role):**
 
-- **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** Section 3.2 (no fabrication), Section 7.3 element 11 (World Engine), Section 7.5 exemplar (emotional job of the image). The constitution for grounding setting and proof; you extend it to the client's specific content.
+- **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** -- SOP-PITCH-02-VALUE-STACK-AND-PROMISES (proof) + SOP-SLIDE-00 AF ruleset + devils-advocate-presentations SOP 9.1 (PRESENTATION-MASTER-DOCTRINE.md §4) (no fabrication), SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11 (World Engine), SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (emotional job of the image). The constitution for grounding setting and proof; you extend it to the client's specific content.
 - **The proven exemplar deck (Lyric's "Enrollment On Autopilot").** Study how each image is welded to the message and carries an emotional job; never copy its content.
 - **Governing intelligence GP-16 (imagery carries the show; make the pain visible).** Trevor's belief that strong imagery can carry a faceless webinar and that pain must be felt.
 
