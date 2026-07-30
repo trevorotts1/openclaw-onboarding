@@ -21,11 +21,14 @@ tightens a secrets file which may ALREADY exist with loose permissions from an o
 install — something nothing on this code path previously did — and it satisfies rule 4
 honestly. The hook was not bypassed and `--no-verify` was not used.
 
-**Skill 38 doc self-counts** — `38-conversational-ai-system/INSTALL.md` was stale on all
-three counts the bump-time advisory checks: `45 protocols` -> **51**, `22 reference
-documents` -> **25**, numbered install scripts `` `00`-`30` `` -> `` `00`-`33` ``.
-`SKILL.md` was already correct; INSTALL.md was the only drifted file. The advisory now
-prints with zero warnings.
+**Scope correction (same release).** An earlier revision of this entry also
+changed `38-conversational-ai-system/INSTALL.md` doc self-counts. That was
+REVERTED before merge: Skill 38 is the conversational-AI system and has nothing
+to do with the presentation department this programme is about, and the
+bump-time count checker is explicitly `ADVISORY ONLY -- it never mutates a file
+and never changes the exit code`, so it was blocking nothing. The three counts
+are still stale (`45` vs 51 protocols, `22` vs 25 references, `00`-`30` vs
+`00`-`33`) and belong in their own change.
 
 **Released in this bump** (three PRs that landed after v21.4.16 with no version roll):
 - **#729** — re-cut `MANIFEST-SOURCE.txt` `content_sha256` for `manifest_version` 31.
