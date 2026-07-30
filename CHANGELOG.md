@@ -1,3 +1,41 @@
+## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
+
+`presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate
+autodetect loop U006 was supposed to have retired — with no refusal behaviour. Ancestry said
+otherwise: U006's fix (commit `edc8a2fd`, "stop entry script guessing scripts dir") and its
+"Land U006" merge (`e9b73432`) are both ancestors of `main`. Content disagreed — the loop was
+back, verbatim.
+
+**Root cause.** `unit/U025-retire-front-door-build-guard` was cut from a commit (`5e181ceb`)
+*before* `edc8a2fd` landed, and its own commit rewrote the same section of the entry script
+starting from the pre-fix seven-candidate version (needed for its own, unrelated GATE 0
+relocation work). "Land U025" (`166aef55`) merged that branch into `main` on 2026-07-27, two
+days *before* "Land U006" (`e9b73432`, 2026-07-29) merged U006's branch in. By the time U006
+landed, `main`'s copy of the file had already diverged via U025; the merge kept `main`'s
+(U025's, pre-fix) version of `resolve_scripts_dir()` and only carried over U006's tests,
+installers and docs — the six files "Land U006" actually touched never included the script
+itself.
+
+**Fix:** restored verbatim from `edc8a2fd` — not a reinterpretation. The seven-candidate loop
+(`$SCRIPTS_DIR`, `$SELF_DIR`, the skills-template copy, `$RUN_DIR/departments/...`,
+`$RUN_DIR/../scripts`, `$RUN_DIR/scripts`, `$HOME/departments/...`) is replaced by an explicit
+two-candidate resolver: `--scripts-dir` / `$SCRIPTS_DIR` (caller-stated), else the materialized
+department default (`$OPENCLAW_WORKSPACE/departments/Presentations/scripts`, `$HOME/.openclaw/workspace`
+if unset) — nothing else. A caller-stated-but-wrong directory refuses (exit 2, "Refusing to
+autodetect") rather than falling through to a guess; an unstated, unmaterialized department
+refuses the same way and names the exact directory it looked for and the flag to pass instead.
+The skills-TEMPLATE copy is refused by name even when explicitly stated, closing the specific
+wrong answer the old loop used to land on. U025's later, legitimate GATE 0 rework (intake-ledger
+check relocated into this script, replacing the retired `deck-build-guard.sh`) is untouched.
+
+**New regression test:** `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_canonical_entry_scripts_dir.py`
+— static checks that the seven-candidate loop shape is absent, plus five executing checks
+(refuses with no `--scripts-dir` and no materialized department; refuses a stated-but-wrong
+directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
+directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
+passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+
+
 ## [Unreleased]  -  ocr_readback gate blocks close() instead of only warning
 
 **Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**
