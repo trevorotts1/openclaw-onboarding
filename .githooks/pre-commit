@@ -5,7 +5,7 @@
 # run (core.hooksPath is per-clone local configuration and is not committable).
 # Without the installer, this file sits inert — run it once per clone.
 #
-# Gates (all hard-fail, block the commit — listed here in file order 1,2,3,4,6,7,5,8):
+# Gates (all hard-fail, block the commit — listed here in file order 1,2,3,4,6,7,9,5,8):
 #   1. Client-name guard (CRITICAL — fleet privacy rule, no real names in template)
 #   2. WhatsApp fleet ban (FLEET-STANDARDS.md §3 — enabled:true or uncommented WHATSAPP_NUMBER=)
 #   3. N28 no destructive cron payloads (rm -rf on install paths / npm uninstall -g openclaw)
@@ -13,6 +13,8 @@
 #   6. agent-browser singleton gateway (no raw launch outside browser_manager;
 #      teardown+lock+breaker present; sentinel present) — on staged 06-* changes
 #   7. Persona-set count triad (repo library <-> manifest lockstep)
+#   9. universal-sops content-manifest freshness (sha256 lockstep) — on staged
+#      universal-sops/** changes
 #   5. Version consistency (version / install.sh / CHANGELOG.md)
 #   8. Full env dump guard (pm2 jlist/prettylist/--json) — WARN-MODE only (Rule 3.5 stage 1)
 
@@ -166,6 +168,29 @@ if [ -f "$PERSONA_GUARD" ]; then
       echo "A persona was added to one half without the others. Bring all four into"
       echo "lockstep in ONE run before committing:"
       echo "  22-book-to-persona-coaching-leadership-system/pipeline/publish-personas-to-fleet.sh"
+      exit 1
+    fi
+  fi
+fi
+
+# ── 9. universal-sops content-manifest freshness (sha256 lockstep) ───────────
+# universal-sops/_content-manifest.json (scripts/hash-universal-sops-manifest.py)
+# is a separate, additive integrity stamp gating the CI job "universal-sops
+# content manifest" (.github/workflows/embedding-integrity-guard.yml). Restamping
+# it is a fully manual step with nothing local enforcing it, and this exact
+# drift has broken main twice in two days on the same file (ec1c4ab2 2026-07-28,
+# 69a1ca97 2026-07-30) -- caught only after push, by CI, with no auto-fix. Only
+# fires when a staged path is under universal-sops/; does NOT touch (and never
+# should) universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt or
+# PIPELINE-MANIFEST.json, which are a separate, independent runtime stamp (see
+# the hasher script's own docstring).
+if [ -f "scripts/hash-universal-sops-manifest.py" ]; then
+  if git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep -q '^universal-sops/'; then
+    if ! python3 scripts/hash-universal-sops-manifest.py --check; then
+      echo ""
+      echo "PRE-COMMIT BLOCKED: universal-sops/_content-manifest.json is stale (drift listed above)."
+      echo "Re-stamp with the repo's own tool, then stage the result:"
+      echo "  scripts/hash-universal-sops-manifest.py && git add universal-sops/_content-manifest.json"
       exit 1
     fi
   fi
