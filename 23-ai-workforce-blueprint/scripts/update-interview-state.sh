@@ -4,6 +4,30 @@
 # per-question protocol. Added v10.15.1 (VPS) / v10.14.1 (Mac) to close the
 # bug where lastQuestionNumber was stuck at 1 forever because no per-question
 # writer existed.
+#
+# EVIDENCE-GATED COMPLETION (2026-07-30 incident, Cassandra Henriquez /
+# rescue-cassandra-henriquez): `--complete` used to write
+# `.interviewComplete = true` UNCONDITIONALLY and only ran
+# qc-interview-completion.py AFTERWARD, best-effort/non-fatal ("WARN ...
+# non-fatal"). A 19-question interview with 5 missing mandatory fields was
+# marked complete, the client was told she was finished, and interviewQc.status
+# never resolved past "pending" (a separate bug: the auto-QC call passed no
+# --transcript and the web path's encrypted-at-rest transcript wasn't found —
+# fixed in PR #772 / commit 411cf502). Both defects together produced a false
+# "you're done": the flag write had no evidence requirement, and the one check
+# that could have caught it silently no-op'd.
+#
+# Fix: `--complete` now runs qc-interview-completion.py --write-state FIRST,
+# BEFORE writing `.interviewComplete`. Exit 0 (PASS) or 2 (NEEDS-REVIEW) lets
+# completion proceed (interviewQc.status is already written by that same run —
+# it is NOT re-seeded to "pending" below). Exit 1 or 3 (error / HARD FAIL, e.g.
+# question count outside 25-35, missing mandatory fields, or a
+# lastQuestionNumber-vs-transcript disagreement > 3) REFUSES: interviewComplete
+# is NEVER written, and the script exits 87 — the same code
+# blackceo-command-center's POST /api/interview/complete route already expects
+# and maps to a clean 409 `interview_pending` response (see src/lib/interview/
+# seam.ts InterviewScriptError handling). A missing QC script is ALSO a refusal
+# (fail-closed: absence of the evidence check is not permission to skip it).
 set -euo pipefail
 
 # Rate-limit gate (U056)
@@ -219,6 +243,54 @@ elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
   fi
 fi
 
+# ── EVIDENCE GATE (2026-07-30 fix, Cassandra Henriquez / rescue-cassandra-henriquez) ──
+# `--complete` used to write `.interviewComplete = true` UNCONDITIONALLY (see the
+# write block below) and only ran qc-interview-completion.py AFTERWARD,
+# best-effort/non-fatal ("WARN ... non-fatal - interviewQc.status stays pending").
+# A 19-question interview with 5 missing mandatory fields (and a
+# lastQuestionNumber frozen at 11 while the transcript held 19 Q/A blocks) was
+# marked complete this way; the client was told she was finished. Nothing in the
+# automated pipeline ever required the evidence to support the flag.
+#
+# Fix: run the SAME qc-interview-completion.py gate FIRST, before any write, and
+# make its verdict authoritative over whether interviewComplete is written at all:
+#   rc=0 (PASS) or rc=2 (NEEDS-REVIEW)  -> evidence supports completion; proceed.
+#     interviewQc is already written by THIS run (--write-state), so the write
+#     block below must NOT re-seed it to "pending".
+#   rc=3 (HARD FAIL: count outside 25-35, missing mandatory fields, or a
+#     lastQuestionNumber-vs-transcript disagreement > 3 questions) -> REFUSE.
+#     interviewComplete is NEVER written. Exit 87 - the exact code
+#     blackceo-command-center's POST /api/interview/complete route already
+#     expects and maps to a clean 409 `interview_pending` response (see
+#     src/lib/interview/seam.ts's InterviewScriptError handling) rather than a
+#     generic crash.
+#   rc=1 (script/transcript error - cannot verify) -> FAIL CLOSED the same way:
+#     absence of evidence is not permission to mark complete. Exit 87.
+#   QC script missing entirely -> ALSO a refusal (exit 87), for the same reason.
+# This is the ONE chokepoint every --complete caller funnels through (the web
+# Command Center route, the Telegram/SKILL.md agent protocol, and
+# resume-workforce-build.sh's recovery-promotion path all call `--complete` on
+# THIS script) — closing it here closes it for every caller, not just the one
+# that fired in this incident.
+if [ "$COMPLETE" = true ]; then
+  QC_SCRIPT="$UPD_SCRIPT_DIR/qc-interview-completion.py"
+  if [ ! -f "$QC_SCRIPT" ]; then
+    echo "REFUSED: qc-interview-completion.py not found at $QC_SCRIPT - cannot verify question-count + mandatory-field evidence before marking complete. interviewComplete was NOT written. Repair the Skill 23 install and retry." >&2
+    exit 87
+  fi
+  echo "evidence gate: running qc-interview-completion.py --write-state BEFORE marking complete (question count 25-35, mandatory fields, transcript/counter agreement)..."
+  set +e
+  QC_GATE_OUTPUT=$(python3 "$QC_SCRIPT" --write-state --state "$STATE" 2>&1)
+  QC_GATE_RC=$?
+  set -e
+  echo "$QC_GATE_OUTPUT"
+  if [ "$QC_GATE_RC" != "0" ] && [ "$QC_GATE_RC" != "2" ]; then
+    echo "REFUSED: qc-interview-completion.py rc=$QC_GATE_RC (neither PASS nor NEEDS-REVIEW) - the answer evidence does not support completion. interviewComplete was NOT written (interviewQc above already carries the reasons for the owner/agent to fix and retry)." >&2
+    exit 87
+  fi
+  echo "evidence gate: rc=$QC_GATE_RC - evidence supports completion; proceeding to write interviewComplete=true."
+fi
+
 if [ "$COMPLETE" = true ]; then
   # --complete keeps its ORIGINAL combined atomic write (progress stamp +
   # completion/gate fields in ONE jq call) verbatim -- this branch is
@@ -253,11 +325,14 @@ if [ "$COMPLETE" = true ]; then
   JQ_ARGS+=(--arg now "$NOW")
   JQ_FILTER+=' | .interviewProgress.lastQuestionAt = $now'
 
-  # PRD-2.15: when marking complete, also set interviewQc.status="pending" so the
-  # closeout SM and crons see a QC gate is owed. The QC gate (qc-interview-completion.py)
-  # transitions this to "pass" / "needs-review" / "fail" when it runs.
+  # interviewQc is deliberately NOT (re-)seeded to "pending" here: the EVIDENCE
+  # GATE above already ran qc-interview-completion.py --write-state and wrote the
+  # real verdict (pass/needs-review) before this write block ever runs (a FAIL
+  # or error already `exit 87`'d before reaching this point). Re-seeding to
+  # "pending" here would silently clobber that fresh, authoritative verdict back
+  # to an unresolved state — exactly the bug that let interviewQc.status sit at
+  # "pending" forever while interviewComplete was already true.
   JQ_FILTER+=' | .interviewComplete = true | .interviewCompletedAt = $now'
-  JQ_FILTER+=' | if .interviewQc == null then .interviewQc = {"status":"pending"} else .interviewQc.status = "pending" end'
   # PRD-3.3 R3.1 (auto-closeout): finishing the interview must DETERMINISTICALLY
   # advance the chain instead of waiting on a separate agent hand-write of the
   # build-state. Seed the library + closeout gate fields to "pending" the moment
@@ -284,34 +359,17 @@ fi
 
 echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPLETE"
 
-# PRD-2.15 (v12.3.12): auto-run QC gate immediately on --complete so
-# interviewQc.status transitions from "pending" to pass|needs-review|fail
-# the moment the interview is marked done. This removes the "agent forgot to run
-# QC" failure mode. Best-effort (non-fatal - the watchdog + resume cron will
-# re-drive if QC is pending).
+# QC already ran BEFORE the write (the EVIDENCE GATE above) - interviewQc.status
+# already reflects pass|needs-review the moment interviewComplete is written (a
+# FAIL/error refused with exit 87 before any write happened, so this point is
+# only ever reached with a verdict that supports completion). No second,
+# post-hoc QC run is needed here anymore.
 if [ "$COMPLETE" = true ]; then
   # Clear the interview-not-complete report throttle marker: the interview is now
   # complete, so the resume cron's next fire can re-report fresh if needed (it
   # won't, since the build will proceed). Matches the marker written by
   # report_interview_not_complete() in resume-workforce-build.sh.
   rm -f "$STATE_DIR/.workforce-interview-not-complete.reported" 2>/dev/null || true
-  QC_SCRIPT="$(dirname "$0")/qc-interview-completion.py"
-  if [ -f "$QC_SCRIPT" ]; then
-    echo "auto-running QC gate (qc-interview-completion.py --write-state --state) post-complete..."
-    # FIX (v12.4.x): --write-state is a flag; the state path MUST be passed via
-    # --state. The prior form `--write-state "$STATE"` passed the path as a
-    # positional, which argparse REJECTS ("unrecognized arguments") - so QC never
-    # ran, interviewQc.status stayed "pending", and the whole auto-closeout chain
-    # stalled silently. Verified against the script's argparse definition.
-    if python3 "$QC_SCRIPT" --write-state --state "$STATE" 2>&1; then
-      qc_result=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
-      echo "interviewQc.status after auto-QC: $qc_result"
-    else
-      echo "WARN: qc-interview-completion.py returned non-zero (non-fatal - interviewQc.status stays pending for watchdog/resume to retry)" >&2
-    fi
-  else
-    echo "WARN: qc-interview-completion.py not found at $QC_SCRIPT - interviewQc.status remains pending" >&2
-  fi
 fi
 
 # PRD-3.3 R3.1 (auto-closeout): KICK THE BUILD deterministically.
