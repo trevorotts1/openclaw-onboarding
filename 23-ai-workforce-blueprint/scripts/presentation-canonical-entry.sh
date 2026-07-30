@@ -94,6 +94,7 @@ EOF
 # Arg parsing
 # ---------------------------------------------------------------------------
 RUN_DIR="" SLIDES="" OUT="" PHASE="P4-RENDER" PLATFORM="" SCRIPTS_DIR="${SCRIPTS_DIR:-}"
+SCRIPTS_DIR_STATED="${SCRIPTS_DIR:+1}"  # set if the environment carried a value
 PLAN=0 ADHOC=0
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -102,7 +103,7 @@ while [ $# -gt 0 ]; do
         --out)         OUT="${2:-}"; shift 2 ;;
         --phase)       PHASE="${2:-}"; shift 2 ;;
         --platform)    PLATFORM="${2:-}"; shift 2 ;;
-        --scripts-dir) SCRIPTS_DIR="${2:-}"; shift 2 ;;
+        --scripts-dir) SCRIPTS_DIR="${2:-}"; SCRIPTS_DIR_STATED=1; shift 2 ;;
         --plan)        PLAN=1; shift ;;
         --adhoc)       ADHOC=1; shift ;;
         -h|--help)     usage ;;
@@ -121,33 +122,60 @@ fi
 
 # ---------------------------------------------------------------------------
 # Locate the canonical render scripts (single source of truth).
-# Works on the repo/operator box AND a materialized client box.
+# Resolution is EXPLICIT. There are exactly two accepted sources, in this order:
+#   1. --scripts-dir DIR  (or $SCRIPTS_DIR)      — the caller states it
+#   2. the materialized department's scripts dir — the ONE default
+# Nothing else. The previous seven-candidate search accepted the skills-TEMPLATE copy
+# (candidate 3, $SELF_DIR/../templates/role-library/presentations/scripts) whenever the
+# script ran from the skills tree, and the materialized department path was not among the
+# seven at all. Measured 2026-07-25: the same byte-identical build_deck.py runs under
+# manifest v25 from the template dir (sync_check exit 0) and v18 from the department dir
+# (sync_check exit 4, 79 drift items). A guess here silently invalidates GATE 1b, GATE 3
+# and every downstream attestation.
 # ---------------------------------------------------------------------------
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+OC_WORKSPACE="${OPENCLAW_WORKSPACE:-$HOME/.openclaw/workspace}"
+DEPT_SCRIPTS_DEFAULT="$OC_WORKSPACE/departments/Presentations/scripts"
+
 resolve_scripts_dir() {
     local c
-    for c in \
-        "$SCRIPTS_DIR" \
-        "$SELF_DIR" \
-        "$SELF_DIR/../templates/role-library/presentations/scripts" \
-        "$RUN_DIR/departments/Presentations/scripts" \
-        "$RUN_DIR/../scripts" \
-        "$RUN_DIR/scripts" \
-        "$HOME/departments/Presentations/scripts" \
-    ; do
+    for c in "$SCRIPTS_DIR" "$DEPT_SCRIPTS_DEFAULT"; do
         [ -n "$c" ] || continue
         if [ -f "$c/build_deck.py" ] && [ -f "$c/run_signature_deck.py" ]; then
             (cd "$c" && pwd); return 0
         fi
+        [ -n "$SCRIPTS_DIR" ] && [ "$c" = "$SCRIPTS_DIR" ] && return 2   # stated but wrong
     done
     return 1
 }
-SCRIPTS_DIR="$(resolve_scripts_dir)" || die \
-    "canonical scripts (build_deck.py + run_signature_deck.py) not found. \
-Pass --scripts-dir DIR or set \$SCRIPTS_DIR to the Presentations scripts directory."
+SCRIPTS_DIR_RC=0
+SCRIPTS_DIR="$(resolve_scripts_dir)" || SCRIPTS_DIR_RC=$?
+if [ "$SCRIPTS_DIR_RC" -eq 2 ]; then
+    die "--scripts-dir / $SCRIPTS_DIR was set but does not hold both build_deck.py and \
+run_signature_deck.py. Refusing to autodetect — a wrong scripts directory silently \
+invalidates GATE 1b, GATE 3 and every phase attestation. Point it at the materialized \
+department: --scripts-dir $DEPT_SCRIPTS_DEFAULT"
+elif [ "$SCRIPTS_DIR_RC" -ne 0 ]; then
+    die "canonical scripts (build_deck.py + run_signature_deck.py) not found at the \
+materialized department ($DEPT_SCRIPTS_DEFAULT). Refusing to autodetect. Either \
+materialize the Presentations department, or state the directory explicitly: \
+--scripts-dir DIR"
+fi
 BUILD_DECK="$SCRIPTS_DIR/build_deck.py"
 RUNNER="$SCRIPTS_DIR/run_signature_deck.py"
-note "canonical scripts: $SCRIPTS_DIR"
+if [ -n "${SCRIPTS_DIR_STATED:-}" ]; then
+    note "canonical scripts: $SCRIPTS_DIR  (source: --scripts-dir / $SCRIPTS_DIR)"
+else
+    note "canonical scripts: $SCRIPTS_DIR  (source: materialized department default)"
+fi
+
+# Refuse the skills-template directory by name, even when it is stated.
+case "$SCRIPTS_DIR" in
+    */templates/role-library/presentations/scripts)
+        die "refusing to run against the skills-TEMPLATE copy ($SCRIPTS_DIR). That tree \
+carries its own manifest and is not the governed department. Use \
+--scripts-dir $DEPT_SCRIPTS_DEFAULT" ;;
+esac
 
 PROC_MANIFEST="$RUN_DIR/working/checkpoints/process_manifest.json"
 
