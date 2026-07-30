@@ -83,6 +83,55 @@ directory). Verified as a bleed test: reintroducing the old loop fails all seven
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
 
 
+## [v21.4.20]  -  2026-07-30  -  Turn main green: four checks had been failing on main, three of them for long enough to be treated as background noise
+
+### Why
+`main` was shipping red on four checks. Three were long-standing; the fourth (G3) regressed at
+`7c2ce02d` when PR #740 changed presentations engine code without bumping the owning skill's
+`skill-version.txt`. A permanently-red main is worse than the individual failures: it trains
+everyone to ignore CI, so the next real regression lands unnoticed. Each of these was a genuine
+defect with a deterministic fix, not a flaky test.
+
+### What changed
+
+**G3 — skill content change requires skill-version.txt bump.** PR #740 edited
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`__main__.py`,
+`gates.py`, `report.py`, plus four test files) while `23-ai-workforce-blueprint/skill-version.txt`
+stayed at `21.4.19`. Bumping the repo to v21.4.20 rolls that skill-version marker with it, which
+is what the gate asks for. Left unfixed, a box comparing skill versions would not see the changed
+skill as changed.
+
+**Presentations SOP/manifest/code lockstep (sync_check).** `test_preflight.py` died with
+`AttributeError: module 'delivery_gate' has no attribute 'FIVE'`. U019 (ratified 2026-07-26)
+renamed that constant to `CLIENT_PACKAGE` when the client package went from five files to six --
+`delivery_gate.py` even carries the comment explaining the rename was done so a future seventh
+addition would not force another rename -- but this one call site was never updated. Fixed the
+reference and corrected the now-wrong "clean 5-file package" assertion message to
+"clean client package" so it does not re-rot on the next count change.
+
+**Leadership / Task-Mode fires at task time.** Assertion (E) requires every role file whose
+section 2 is "Persona Governance Override" to also carry the concrete "How to load the persona's
+Task Mode" step, so a role is self-sufficient and naming a persona cannot substitute for loading
+its governance. 22 role files -- the entire `presentations` department -- had the section 2
+heading with no load step. Inserted the canonical block (verbatim from the passing exemplar
+`_brainstorming-buddy-template.md`) into all 22. No other department was affected.
+
+**QC static invariants.** `test-how-to-use-docs.sh` reported the department guides stale against
+their renderer. Regenerated with `generate_how_to_use_docs.py`; only the `presentations` guide had
+actually drifted, which is consistent with the role-file gap above.
+
+Role-file edits invalidate stored content hashes, so `_index.json` was re-stamped with
+`hash-content-manifest.py` in the same change.
+
+### Risk
+One functional line (`delivery_gate.FIVE` -> `delivery_gate.CLIENT_PACKAGE`, in a test), one
+assertion string, 22 documentation blocks inserted verbatim from an existing passing exemplar, one
+regenerated derived guide, and the content-hash restamp those edits require. No engine behaviour,
+no gate thresholds, no credentials. All four checks verified green locally before push:
+`test-how-to-use-docs.sh` 7/0, `persona-task-mode-wiring.test.sh` 7/0, `sync_check.py` rc=0
+(IN SYNC), `test_preflight.py` ALL PREFLIGHT TESTS PASSED.
+
+
 ## [Unreleased]  -  ocr_readback gate blocks close() instead of only warning
 
 **Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**

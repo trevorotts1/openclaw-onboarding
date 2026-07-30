@@ -4244,7 +4244,7 @@ def test_delivery_gate() -> list:
     # Re-assert the clean-pass and the AF-DH1 extra-file fail directly.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        pkg = delivery_gate._mk_pkg(base, delivery_gate.FIVE)
+        pkg = delivery_gate._mk_pkg(base, delivery_gate.CLIENT_PACKAGE)
         delivery_gate._write_media(base, {"pptx_ghl_media_id": "id1"})
         delivery_gate._write_plan(base, {"destinations": [
             {"type": "ghl"},
@@ -4252,7 +4252,7 @@ def test_delivery_gate() -> list:
         ]})
         ok, reasons = delivery_gate.delivery_gate(base)
         if not ok:
-            failures.append(f"DELIVERY-GATE-A: clean 5-file package should PASS, got {reasons}")
+            failures.append(f"DELIVERY-GATE-A: clean client package should PASS, got {reasons}")
         # Now drop in a stray script -> AF-DH1 must trigger.
         (pkg / "fix_render.py").write_text("x")
         ok2, reasons2 = delivery_gate.delivery_gate(base)
