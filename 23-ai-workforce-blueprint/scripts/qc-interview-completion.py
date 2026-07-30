@@ -16,6 +16,14 @@ the build pipeline is allowed to proceed. Five checks:
      mandatory fields, and no-fabrication (checks 2/3/5) still apply in full.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
+     (2026-07-30 fix, Cassandra Henriquez / rescue-cassandra-henriquez incident): a
+     branding field is populated when EITHER build-state records it OR the transcript
+     has a matching answered Q/A block — see check_mandatory_fields() /
+     compute_answered_ids() below. Previously this check consulted build-state ONLY,
+     which the normal interview flow never populates for free-text branding answers
+     (those are logged solely to the transcript), so it reported these five fields
+     "missing" for every client, always: brand_evokes, customer_feeling,
+     brand_descriptors, ideal_customer, unique_differentiator.
   4. Nudge cadence wired: interview-nudge-cron.sh exists + install.sh registers it.
   5. NO-FABRICATION (v12.3.4): if interview-context-map.json exists, every answer whose
      text is a verbatim copy of a context snippet WITHOUT a 'confirmed-from-context:'
@@ -574,20 +582,127 @@ def scan_jargon(transcript: str, jargon_list: list) -> list:
     return hits
 
 
+# ── Structured transcript matching (2026-07-30 fix, U048-follow-on) ──────────
+# Cassandra Henriquez / rescue-cassandra-henriquez incident: check_mandatory_fields()
+# below used to look ONLY at build-state (state[fid] / state["brandingAnswers"][fid] /
+# state["interview"][fid]) for the five branding required fields. The normal interview
+# flow NEVER writes those keys to build-state — per SKILL.md, a free-text branding
+# answer is logged ONLY to workforce-interview-answers.md via log_answer(). A verified
+# real client transcript had all 11 canonical structured questions answered (each
+# 534-921 chars) and a 90-key build-state with none of the five branding keys anywhere
+# in it — so this check reported all five "missing" for EVERY client, unconditionally,
+# regardless of what they actually answered. She was told (wrongly) that she still had
+# ~10 questions outstanding, after already being told (also wrongly) that she was done.
+#
+# The functions below are byte-identical ports of the Command Center's OWN matching
+# semantics (blackceo-command-center src/lib/interview/seam.ts:parseAnswerBlocks() and
+# src/lib/interview/structured-progress.ts:normPrompt()/computeAnsweredIds()) — the
+# same code the Command Center's /api/interview/state route and the client's resume
+# logic use to decide "is this question answered". Reusing it here (rather than
+# inventing a looser comparison) guarantees this QC gate can never disagree with the
+# Command Center about whether a branding field was actually answered.
+#
+# FAIL-CLOSED: this is an ADDITIONAL source, never a replacement. A field is present
+# if EITHER the (pre-existing) build-state locations OR the transcript match says so.
+# A field with no match in state AND no matching answered transcript block is STILL
+# reported missing — this can only ever recognize MORE genuinely-answered fields, never
+# fewer; it cannot turn a real gap into a false pass.
+
+def norm_prompt(s: str) -> str:
+    """
+    Byte-identical port of structured-progress.ts normPrompt(): lowercase, collapse
+    all whitespace runs to a single space, strip. Used to tolerantly match a
+    transcript's recorded question text against a canonical question prompt.
+    """
+    return re.sub(r"\s+", " ", s.lower()).strip()
+
+
+# Chunk boundary: a line consisting only of 3+ dashes, with a newline on each side.
+# Byte-identical to seam.ts parseAnswerBlocks()'s `text.split(/\n\s*-{3,}\s*\n/)`.
+_ANSWER_BLOCK_SPLIT_RE = re.compile(r"\n\s*-{3,}\s*\n")
+# Byte-identical to seam.ts's qMatch / aMatch regexes (note the REQUIRED colon —
+# this is the format build-workforce.py's own log_answer() writes: "**Q:** ... **A:** ...").
+_Q_BLOCK_RE = re.compile(r"\*\*Q:\*\*\s*([\s\S]*?)(?=\n\*\*A:\*\*)")
+_A_BLOCK_RE = re.compile(r"\*\*A:\*\*\s*([\s\S]*?)(?=\n\*\*(?:Provenance|Logged|Updated)\b|$)")
+
+
+def parse_answer_blocks(text: str) -> list:
+    """
+    Byte-identical port of seam.ts parseAnswerBlocks(): split the transcript into
+    content-level Q/A blocks on '---' separator lines, then extract the **Q:** /
+    **A:** pair from each chunk. A chunk with no Q, no A, or an empty question is
+    skipped (same semantics as the TS regexes simply not matching). Read-only;
+    never raises — a malformed/absent transcript degrades to an empty list.
+    Returns a list of {"question": str, "answer": str} dicts.
+    """
+    if not text:
+        return []
+    blocks = []
+    for chunk in _ANSWER_BLOCK_SPLIT_RE.split(text):
+        qm = _Q_BLOCK_RE.search(chunk)
+        am = _A_BLOCK_RE.search(chunk)
+        if not qm or not am:
+            continue
+        question = qm.group(1).strip()
+        if not question:
+            continue
+        answer = am.group(1).strip()
+        blocks.append({"question": question, "answer": answer})
+    return blocks
+
+
+def compute_answered_ids(blocks: list, questions: list) -> set:
+    """
+    Byte-identical port of structured-progress.ts computeAnsweredIds(): index the
+    canonical question set by normPrompt(prompt) (first definition wins), then for
+    every transcript block with a non-empty answer, look up normPrompt(block
+    question) in that index. A hit marks that question id answered. Blocks that
+    match no canonical prompt (free-form/conversational depth) are ignored, and a
+    block whose answer is empty/whitespace-only is never counted as answered —
+    identical to the TS original. Read-only. Returns the set of answered question ids.
+    """
+    idx = {}
+    for q in questions:
+        key = norm_prompt(q.get("prompt", ""))
+        if key and key not in idx:
+            idx[key] = q.get("id")
+
+    answered = set()
+    for b in blocks:
+        if not b.get("answer") or not b["answer"].strip():
+            continue
+        qid = idx.get(norm_prompt(b.get("question", "")))
+        if qid:
+            answered.add(qid)
+    return answered
+
+
 # ── Check 3: Mandatory fields ─────────────────────────────────────────────────
 
-def check_mandatory_fields(state: dict, branding_questions_path: Path) -> dict:
+def check_mandatory_fields(state: dict, branding_questions_path: Path,
+                            transcript: str = "") -> dict:
     """
     Load branding required:true fields from branding-questions.json (single source).
     Also check structural build-state requireds.
+
+    A branding field is PRESENT when EITHER:
+      (a) it is recorded in build-state (state[fid] / state["brandingAnswers"][fid] /
+          state["interview"][fid]) — the pre-2026-07-30 check, kept as-is so any flow
+          that DOES mirror answers into build-state keeps working unchanged; OR
+      (b) the transcript has an answered Q/A block whose question text matches the
+          field's canonical prompt (see compute_answered_ids() above) — the FIX: this
+          is where the real interview actually logs branding answers.
+    Fail-closed: a field with neither is still reported missing.
+
     Returns {"missing": [...], "checked": [...]}
     """
     # Load branding requireds dynamically
     try:
         bq = load_json(branding_questions_path, "branding-questions.json")
+        branding_questions = bq.get("questions", [])
         branding_required = [
             q["id"]
-            for q in bq.get("questions", [])
+            for q in branding_questions
             if q.get("required", False)
         ]
     except SystemExit:
@@ -597,13 +712,20 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path) -> dict:
     # Structural build-state requireds
     structural_required = ["companyName", "industry", "ownerChat", "agentName"]
 
-    # Check branding fields — they may be in the state or in the transcript (we check state)
-    # The state doesn't directly hold branding answers in structured fields by default,
-    # but as per SKILL.md the interview must populate identifiable keys.
-    # We look for them under a "brandingAnswers" map or top-level or under "interview" sub-object.
+    # Transcript-sourced answers (2026-07-30 fix): match the transcript's Q/A blocks
+    # against the FULL branding question set (not just the required ones) using the
+    # exact same prompt-normalization + matching semantics as the Command Center's
+    # structured-progress.ts, so this gate and the CC's own "answered" notion can
+    # never drift apart.
+    transcript_answered_ids = compute_answered_ids(
+        parse_answer_blocks(transcript or ""), branding_questions
+    )
+
     missing = []
 
     def field_present(key: str) -> bool:
+        if key in transcript_answered_ids:
+            return True
         # Check multiple possible state locations for branding answers
         v = (
             state.get(key)
@@ -1374,7 +1496,7 @@ def main():
     # Run checks
     count_result = count_questions(transcript, state)
     jargon_hits = scan_jargon(transcript, jargon_terms)
-    field_result = check_mandatory_fields(state, branding_path)
+    field_result = check_mandatory_fields(state, branding_path, transcript)
     nudge_result = check_nudges_wired(repo_root)
     fabrication_result = check_no_fabrication(transcript, context_map_path, state)
 
