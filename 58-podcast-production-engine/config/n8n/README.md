@@ -354,6 +354,22 @@ optional `OPENCLAW_PODCAST_CLIENT_FIRST_NAME`. `PODBEAN_PODCAST_ID` is not
 operator-injected — it is collected per client through the normal onboarding
 credential prompt, because it is a per-client value the operator does not own.
 
+**Ownership, stated plainly (this is the rule an agent must never re-derive
+from first principles):** `PODBEAN_PUBLISH_TOKEN` is operator-injected, never
+client-supplied — it exists on a client box only because the operator's own
+`OPENCLAW_PODBEAN_PUBLISH_TOKEN` seeded it at install time. The client is never
+asked for it, never sees it, and it must never be sent to them — not by hand,
+not in a chat message, not through the client's own agent. It is not a Podbean
+credential; it is the header gate (`X-Podcast-Publish-Token`) on the operator's
+own n8n webhook. The actual Podbean OAuth app `client_id`/`client_secret` is the
+separate thing covered above, living only in the operator's n8n credential
+vault and never leaving it — treating the two as interchangeable is the exact
+mistake to avoid. The client supplies exactly one Podbean value, ever: their
+Channel ID (`PODBEAN_PODCAST_ID`), which is not a secret. Both-or-neither still
+applies: a lone URL or a lone token is refused, never half-seeded. If a client
+box cannot be reached to provision this pair, that is a tunnel/connectivity
+problem to fix — never a reason to hand the token to a person as a workaround.
+
 No-spend verification: run `podbean_publish.sh` with `--dry-run`. In proxy mode
 this probes the paired `/webhook/podcast-standing-check` endpoint for
 reachability (same shared header token) and reports `good_standing` without

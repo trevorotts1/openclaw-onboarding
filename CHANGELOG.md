@@ -1,3 +1,50 @@
+## [v21.4.31]  -  2026-07-30  -  state PODBEAN_PUBLISH_TOKEN ownership in Skill 58 docs; an agent invented a credential-handoff procedure because the docs never said who supplies it
+
+### Why
+
+An agent (this one) told the operator to hand a client's assistant the value of
+`PODBEAN_PUBLISH_TOKEN` so she could provision her own box. The operator corrected it
+sharply and correctly: he does not give a client his Podbean publish token, that is not
+how the system works. The doctrine was never wrong -- `install.sh` has carried it since
+the publish-proxy pair shipped ("this box never holds a Podbean credential in proxy mode",
+"both-or-neither... a lone URL or a lone token is refused, never half-seeded") -- but it
+lived only in a code comment nobody reads while working the skill. `58-podcast-production-engine/SKILL.md`
+(the Podbean bullet under "Per-client credentials") and `config/n8n/README.md` ("Provisioning
+a client box for Step 15 publish") both correctly listed the five variables a client box
+needs, but neither ever stated WHO supplies them or HOW. A reader is left to infer the
+client provides them, which is exactly the wrong inference, and it is the one an agent drew.
+The fix is not a new rule; it is making an existing, already-true rule visible where it
+actually gets read.
+
+### What changed
+
+- `58-podcast-production-engine/SKILL.md` (Per-client credentials, Podbean bullet, line
+  517): added that `PODBEAN_PUBLISH_TOKEN` is operator-injected only from
+  `OPENCLAW_PODBEAN_PUBLISH_TOKEN` at install time, is never asked from or shown to the
+  client, must never be routed through a person/chat/client's agent, is not a Podbean
+  credential (it is the `X-Podcast-Publish-Token` header gate on the operator's own n8n
+  webhook, distinct from the vaulted Podbean OAuth app `client_id`/`client_secret`),
+  both-or-neither still applies, and an unreachable client box is a tunnel/connectivity
+  problem to fix, never a reason to hand the token to a human as a workaround.
+- `58-podcast-production-engine/config/n8n/README.md` ("Provisioning a client box for
+  Step 15 publish (proxy mode)", line 357): added the same ownership statement in the
+  file's own prose style, immediately after the existing operator-side-injection
+  paragraph.
+- No code, variable name, behavior, or the five-variable list itself changed -- the design
+  was correct; only its visibility was fixed.
+- `58-podcast-production-engine/skill-version.txt` and the `SKILL.md` frontmatter
+  `version:` field bumped 0.1.22 -> 0.1.23 (skill content changed).
+- All 10 repo version markers bumped v21.4.30 -> v21.4.31 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. Both edits are additive prose inserted into existing sections, in each file's own
+style, with no restructuring. `bash -n` on `scripts/podbean_publish.sh` confirms no code
+was touched. `qc-assert-skill-frontmatter-version.sh` confirms the Skill 58 version bump
+is internally consistent.
+
+---
+
 ## [v21.4.30]  -  2026-07-30  -  repoint 4 of the last 17 dangling doctrine citations (Section 11 -> Section 17) in two presentations role files; the remaining 13 stay blocked
 
 ### Why
