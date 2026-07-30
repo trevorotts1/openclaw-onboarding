@@ -1,0 +1,171 @@
+{
+  "name": "fleet-standing-check",
+  "active": true,
+  "nodes": [
+    {
+      "id": "webhook-fleet-standing-check",
+      "name": "Webhook \u2014 Fleet Standing Check",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fleet-standing-check",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8HTB7khC7fDcRVhN",
+          "name": "Podcast Publish Gate"
+        }
+      },
+      "webhookId": "8388514e-e477-4ab7-9d45-e384b6f39843"
+    },
+    {
+      "id": "datatable-fleet-standing-lookup",
+      "name": "Data Table Lookup \u2014 Fleet Standing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "fleet_standing"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "box_slug",
+              "condition": "eq",
+              "keyValue": "={{ ((($json.body || $json).boxName) || '').trim() }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1
+      },
+      "alwaysOutputData": true,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "code-standing-verdict",
+      "name": "Determine Standing Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "// Fleet Standing Check verdict logic\nconst webhookJson = $('Webhook \u2014 Fleet Standing Check').first().json;\nconst body = webhookJson.body || webhookJson;\nconst boxName = (body.boxName || '').trim();\nconst action = (body.action || 'escalate');\nconst ticketId = (body.ticketId || '');\n\nconst nowUtc = new Date();\nconst yyyy = nowUtc.getUTCFullYear();\nconst mm = String(nowUtc.getUTCMonth()+1).padStart(2, '0');\nconst dd = String(nowUtc.getUTCDate()).padStart(2, '0');\nconst day_key = boxName + '|' + yyyy + '-' + mm + '-' + dd;\nconst requested_at = nowUtc.toISOString();\n\nconst inputItems = $input.all();\nconst lookupErrored = inputItems.length > 0 && inputItems[0].json && inputItems[0].json.error;\nconst rows = lookupErrored ? [] : inputItems.map((i) => i.json).filter((r) => r && typeof r === 'object' && Object.keys(r).length > 0);\n\n// Default outputs\nlet verdict = 'unmatched';\nlet reason = '';\nlet client_message = \"I'd normally escalate this to the Rescue Rangers team for you. Before I do \u2014 it looks like the account may not be current on payments, so let me confirm with management before I put the request in. I'll come back to you as soon as I hear.\";\nlet good_standing = false;\n\nif (lookupErrored) {\n  verdict = 'held';\n  reason = 'lookup_error';\n} else if (!boxName) {\n  verdict = 'unmatched';\n  reason = 'missing_or_empty_boxName';\n} else if (rows.length === 0) {\n  verdict = 'unmatched';\n  reason = 'no_record_found';\n} else {\n  const row = rows[0];\n  if (row.good_standing === true) {\n    verdict = 'allowed';\n    reason = '';\n    client_message = '';\n    good_standing = true;\n  } else if (row.good_standing === false) {\n    verdict = 'blocked';\n    reason = 'good_standing_is_false';\n  } else if (row.good_standing === null || row.good_standing === '' || typeof row.good_standing !== 'boolean') {\n    verdict = 'unmatched';\n    reason = 'good_standing_null_or_not_boolean';\n  }\n}\n\n// Assemble response body\nconst responseBody = {\n  ok: verdict === 'allowed',\n  good_standing,\n  verdict,\n  reason,\n  client_message,\n};\n\n// Prepare ledger row\nconst ledgerRow = {\n  ticket_id: ticketId,\n  box_slug: boxName,\n  client_label: rows[0]?.client_label || '',\n  agent_name: rows[0]?.agent_name || '',\n  action,\n  verdict,\n  reason,\n  day_key,\n  requested_at,\n};\n\nreturn [{ json: { responseBody, ledgerRow } }];"
+      }
+    },
+    {
+      "id": "datatable-insert-ledger",
+      "name": "Ledger Insert \u2014 Rescue Request",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        900,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "insert",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "rescue_request_ledger"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "ticket_id": "={{ $json.ledgerRow.ticket_id }}",
+            "box_slug": "={{ $json.ledgerRow.box_slug }}",
+            "client_label": "={{ $json.ledgerRow.client_label }}",
+            "agent_name": "={{ $json.ledgerRow.agent_name }}",
+            "action": "={{ $json.ledgerRow.action }}",
+            "verdict": "={{ $json.ledgerRow.verdict }}",
+            "reason": "={{ $json.ledgerRow.reason }}",
+            "day_key": "={{ $json.ledgerRow.day_key }}",
+            "requested_at": "={{ $json.ledgerRow.requested_at }}"
+          }
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "respond-webhook-standing-verdict",
+      "name": "Respond to Webhook \u2014 Standing Verdict",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        1200,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $('Determine Standing Verdict').first().json.responseBody }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook \u2014 Fleet Standing Check": {
+      "main": [
+        [
+          {
+            "node": "Data Table Lookup \u2014 Fleet Standing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Table Lookup \u2014 Fleet Standing": {
+      "main": [
+        [
+          {
+            "node": "Determine Standing Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Standing Verdict": {
+      "main": [
+        [
+          {
+            "node": "Ledger Insert \u2014 Rescue Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ledger Insert \u2014 Rescue Request": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook \u2014 Standing Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
