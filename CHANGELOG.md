@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 ## [Unreleased]  -  U012: add the six missing manifest phases and their executors
 
 `PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --
@@ -44,7 +43,8 @@ again) confirmed. Full suite from
 `23-ai-workforce-blueprint/templates/role-library/presentations/scripts`: 15 failed, 443 passed,
 13 skipped both before and after, and the 15 failing test **names** are byte-identical to
 `origin/main` -- zero new failures, zero regressions.
-=======
+
+
 ## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
 
 U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
@@ -226,7 +226,6 @@ tag v20.0.67) was already correct; the docs were not.
 ### Risk
 Documentation and one error-message string only. No change to publish-path behavior, precedence, or
 control flow; `podbean_publish.sh` still passes `bash -n`.
->>>>>>> origin/main
 
 
 ## [v21.4.17]  -  2026-07-30  -  Un-freeze update-skills.sh after fourteen releases of drift
