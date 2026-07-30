@@ -371,7 +371,7 @@ The Deep Research Specialist's grounded findings reach the copy, but the imagery
 | 3 | **Abstract pain images.** | Treating pain slides as decorative. | Pain must be visible and recognizable; route abstract images back (SOP 9.3). |
 | 4 | **Fabricating a client moment to ground a prompt.** | An empty grounded-content field. | Mark `[CONTENT PENDING]` and request the content; never invent (SOP 9.1 step 2). |
 | 5 | **Skipping the final-deck grounding pass.** | Assuming prompt scoring is enough. | The final-deck pass is a blocking artifact; re-verify on the rendered deck (SOP 9.4). |
-| 6 | **Trusting DIU-sourced imagery to be grounded.** | The DIU Golden Rule strips client content. | DIU imagery is the highest generic risk; re-verify grounding (Section 11). |
+| 6 | **Trusting DIU-sourced imagery to be grounded.** | The DIU Golden Rule strips client content. | DIU imagery is the highest generic risk; re-verify grounding (Section 17, Edge Case 17.4). |
 | 7 | **Scoring grounding from an expiring resultUrl.** | Convenience. | Verify from local files confirmed in receipts (SOP tools note). |
 
 ---
@@ -442,7 +442,7 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 2. A new grounded-content variable is added to the brief schema (the capture procedure must be updated).
 3. The grounding score rubric (grounded versus generic) is revised by the owner or Director.
 4. The role's KPIs miss targets for 2 consecutive months (the Director triggers a review of the grounding procedures).
-5. A new pipeline source of imagery is added (for example a new DIU strategy) that changes the generic-imagery risk (Section 11 must be extended).
+5. A new pipeline source of imagery is added (for example a new DIU strategy) that changes the generic-imagery risk (Section 17, Edge Cases, must be extended).
 6. The Deep Research Specialist's research format changes such that research-to-image flow must be re-wired.
 7. A Devil's Advocate challenge specific to this role (imagery grounding, pain visibility, generic-but-plausible) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.

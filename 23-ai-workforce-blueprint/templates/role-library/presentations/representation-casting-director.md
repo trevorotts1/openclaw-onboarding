@@ -381,7 +381,7 @@ The role assigns the mix to the prompts and considers the job done, never recoun
 | 3 | **Forcing the full mix onto every slide.** | Misreading the ratio as per-slide. | The ratio is deck-wide; distribute across people-bearing slides (SOP 9.2 step 2). |
 | 4 | **Confusing render quality with casting.** | Conflating the skin-tone-quality rule with who is cast. | Skin-tone quality governs whoever is cast; who is cast comes from the captured mix (Gate 2). |
 | 5 | **Shipping an off-mix final deck.** | Skipping the final-deck recount. | The final-deck tally is a blocking artifact; no delivery without it (SOP 9.4). |
-| 6 | **Letting DIU imagery apply its universal skin-tone default as casting.** | Cross-pipeline sourcing without the override. | Enforce the per-client mix override on any DIU imagery (Section 11). |
+| 6 | **Letting DIU imagery apply its universal skin-tone default as casting.** | Cross-pipeline sourcing without the override. | Enforce the per-client mix override on any DIU imagery (Section 17, Edge Case 17.5). |
 | 7 | **Resolving an ambiguous audience note by guessing.** | Wanting to keep the deck moving. | Return ambiguous notes to the Director or Brainstorming Buddy; never guess. |
 
 ---
@@ -452,7 +452,7 @@ This how-to.md must be reviewed and revised when ANY of the following occurs:
 2. The Brand Steward's NO-PEOPLE-default rule changes (the enforced rule must be re-aligned).
 3. The auto-fail threshold (currently more than ten percent off the captured mix) is revised by the owner or Director.
 4. The role's KPIs miss targets for 2 consecutive months (the Director triggers a review of the tally procedures).
-5. A new pipeline source of imagery is added (for example a new DIU strategy) that requires the per-client override (Section 11 must be extended).
+5. A new pipeline source of imagery is added (for example a new DIU strategy) that requires the per-client override (Section 17, Edge Cases, must be extended).
 6. The tally method (how the cast of an image is counted) is changed for consistency.
 7. A Devil's Advocate challenge specific to this role (representation accuracy, the NO-PEOPLE default, the tally points) is accepted 3 or more times in 90 days.
 8. The owner or Director explicitly requests a revision.
