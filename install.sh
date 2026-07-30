@@ -7498,18 +7498,20 @@ bootstrap_command_center_shell() {
         fi
     fi
     # Absence check 2 — pm2 already runs a Command Center app.
+    # SECURITY (2026-07-30): do NOT use `pm2 jlist` here — it serializes every
+    # process's full pm2_env, including live secret values, to stdout. All we
+    # need is a yes/no on whether one of three known app names is registered,
+    # so look each one up individually with `pm2 id <name>`, which prints only
+    # the matching pm_id array (e.g. "[ 0 ]" or "[]") and never env data.
     if command -v pm2 >/dev/null 2>&1; then
-        local _bccs_jlist
-        _bccs_jlist=$(pm2 jlist 2>/dev/null || echo "")
-        if [ -n "$_bccs_jlist" ] && printf '%s' "$_bccs_jlist" | python3 -c 'import json,sys
-try:
-    apps = json.load(sys.stdin)
-except Exception:
-    sys.exit(1)
-sys.exit(0 if any(a.get("name") in ("blackceo-command-center","mission-control","command-center") for a in apps) else 1)' 2>/dev/null; then
-            note "pm2 already runs a Command Center app — bootstrap trigger skipped"
-            return 0
-        fi
+        local _bccs_app _bccs_id
+        for _bccs_app in blackceo-command-center mission-control command-center; do
+            _bccs_id=$(pm2 id "$_bccs_app" 2>/dev/null || echo "[]")
+            if printf '%s' "$_bccs_id" | grep -qE '[0-9]'; then
+                note "pm2 already runs a Command Center app — bootstrap trigger skipped"
+                return 0
+            fi
+        done
     fi
     # Absence check 3 — the dashboard port is already bound.
     if command -v lsof >/dev/null 2>&1 && lsof -nP -iTCP:4000 -sTCP:LISTEN >/dev/null 2>&1; then
