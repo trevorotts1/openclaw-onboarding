@@ -162,14 +162,14 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Steps:**
 1. Open slides_copy.md. Write a file header: `# Slide Copy -- [DECK_SLUG] -- Draft 1`.
-1a. Walk the canonical arc (SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4), THE BLACKCEO SIGNATURE WEBINAR ARC). arc_allocation.json carries each slot's arc-section label (A through J): A. Hook Open, B. Care / See-Yourself, C. The Promise, D. Story, E. Teaching, F. Proof (Who Says So + Wall of Wins), G. The Offer (gradual spread ladder), H. Guarantee, I. Scarcity / Close, J. Hook Callback. Write each slide to do its arc-section's beat (the Section 4.2A table names the components for each, including the ten required components of Section 4.4), and carry the connective tissue across slides: open ON the hook (A) and sing it from the first verse toward the ~10x cadence; care about the audience before any credentials (B); pitch the promise not the product and weave the light pitch from the front (C); demonstrate expertise not charisma and quote names without credentials (D); one big idea per slide, Point-Story-Demo, appetizer-not-dinner, with the hook refraining after every proof (E, F); on the offer, the ANCHOR is a value plant not a drop, every drop is earned and built up and ADDS value with proof between drops and the FINAL below the whole ladder (G); reverse the risk (H); close on real scarcity (I); reprise the hook on the final substantive slide (J). Vary the text anchor so eyes do not fade out, and never put the presenter's spoken words on the slide.
+1a. Walk the canonical arc (SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4), THE BLACKCEO SIGNATURE WEBINAR ARC). arc_allocation.json carries each slot's arc-section label (A through J): A. Hook Open, B. Care / See-Yourself, C. The Promise, D. Story, E. Teaching, F. Proof (Who Says So + Wall of Wins), G. The Offer (gradual spread ladder), H. Guarantee, I. Scarcity / Close, J. Hook Callback. Write each slide to do its arc-section's beat (the SOP-STORY-01-VILLAIN-HERO-ARC + slide-copywriter SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) arc table names the components for each, including the ten required components of director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)), and carry the connective tissue across slides: open ON the hook (A) and sing it from the first verse toward the ~10x cadence; care about the audience before any credentials (B); pitch the promise not the product and weave the light pitch from the front (C); demonstrate expertise not charisma and quote names without credentials (D); one big idea per slide, Point-Story-Demo, appetizer-not-dinner, with the hook refraining after every proof (E, F); on the offer, the ANCHOR is a value plant not a drop, every drop is earned and built up and ADDS value with proof between drops and the FINAL below the whole ladder (G); reverse the risk (H); close on real scarcity (I); reprise the hook on the final substantive slide (J). Vary the text anchor so eyes do not fade out, and never put the presenter's spoken words on the slide.
 2. For each slide in arc_allocation order, write one slide block using this EXACT template (mirrors slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) -- every field is mandatory):
    ```
    ---
    SLIDE [N]
    SECTION: [arc section name]
    PURPOSE: [the one big idea, one sentence]
-   ARCHETYPE: [A1-A5 from master Section 7.2]
+   ARCHETYPE: [A1-A5 from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)]
    LADDER: [none | ANCHOR | BUILDUP | DROP1 | DROP2 | DROP3 | FINAL]
    HEADLINE: [max 9 words, active voice, no em dash]
    EMPHASIS: [which word(s) get accent color]
@@ -183,7 +183,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    HOOK VARIANT: [if this slide contains a hook appearance, write the exact hook variant used]
    ---
    ```
-3. Apply the hard limits (master Section 5.1):
+3. Apply the hard limits (SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4)):
    - Headline: 9 words maximum. Count every word including articles and prepositions. Target 4 to 7.
    - Subhead (sub-copy): 18 words maximum. One line.
    - Maximum 3 text blocks per slide (headline + sub-copy + one supporting element such as a stat, label, or CTA chip). The supporting line stays short.
@@ -292,7 +292,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **When to run:** Mode B runs only (per SOP 9.3 of director-of-presentations -- Enhancement Gap Analysis).
 
-**The absolute rule (master Section 3.4):** in Mode B you do not change their intent, you do not change their words, you do not change their methodology. Add on to, improve upon, NEVER change. The client's words ship verbatim. There is NO non-preserving rewrite path in Mode B -- not for headlines, not for subheads, not for body, not for any field. Any improvement you see is a PROPOSAL, never an edit.
+**The absolute rule (SOP-MODE-00-THREE-CREATION-MODES (PRESENTATION-MASTER-DOCTRINE.md §4)):** in Mode B you do not change their intent, you do not change their words, you do not change their methodology. Add on to, improve upon, NEVER change. The client's words ship verbatim. There is NO non-preserving rewrite path in Mode B -- not for headlines, not for subheads, not for body, not for any field. Any improvement you see is a PROPOSAL, never an edit.
 
 **Inputs:**
 - working/copy/enhancement_gap.json (from Director)
@@ -395,7 +395,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 intake.json is complete with interview_confirmed = true. arc_allocation.json exists. STYLE BLOCK is confirmed. If any are missing, stop and notify the Director.
 
 ### Gate 2 -- Hard Limits Check (self-check before Phase 1Q handoff)
-Every slide (master Section 5.1): headline <= 9 words, sub-copy <= 18 words on one line, maximum 3 text blocks per slide, bullet slides <= 5 bullets at 7 words each, value-stack slides <= 6 line items at 7 words per name, zero em dashes. Run a grep search for the em dash character before submitting; replace any with a comma, parenthesis, or "--".
+Every slide (SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4)): headline <= 9 words, sub-copy <= 18 words on one line, maximum 3 text blocks per slide, bullet slides <= 5 bullets at 7 words each, value-stack slides <= 6 line items at 7 words per name, zero em dashes. Run a grep search for the em dash character before submitting; replace any with a comma, parenthesis, or "--".
 
 ### Gate 3 -- Hook Ceiling + Anti-Footer Verification (density-floor overhaul)
 hook_package.json shows the hook on 3 to 4 DEDICATED slides ONLY (more than 4 = fail), footer_occurrences = 0, at least one dedicated hook slide, no slide printing the hook twice, every occurrence character-exact to the canonical string, and the signature quote not carrying the main hook. (Replaces the old "shows >= 7 appearances" gate.) Also: audience_say_tags.json exists (the SOP 9.7a pass ran).
@@ -440,7 +440,7 @@ proof_audit.txt shows the forbidden-on-slide scan (SOP 9.3 step 4a) ran and no a
 
 ## 13. Good Output Examples
 
-### Example A -- Strong Slide Block (full template, master Section 5.2)
+### Example A -- Strong Slide Block (full template, slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4))
 ```
 SLIDE 12
 SECTION: Solution Intro
@@ -479,7 +479,7 @@ A 75-slide deck with hook "[THE HOOK from intake]" distributed as: Slide 1 (full
 - A PRESENTER NOTE that duplicates the body copy word for word. The note should add what the speaker says, not repeat what the slide shows (master rule 15: the slide is never the script).
 - A headline built on a banned generic word: "Unlock Your Potential," "Transform Your Business," "A Seamless Journey." Says nothing, signals unedited AI copy. Replace with the concrete outcome in numbers.
 - An adjective where a number belongs: "a huge yearly loss" instead of "$48,000 a year, gone." Numbers beat adjectives.
-- A slide block with PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PEOPLE, HOOK_REFRAIN, or TEXT_ANCHOR left blank. Every per-slide template field is mandatory (master Section 5.2).
+- A slide block with PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PEOPLE, HOOK_REFRAIN, or TEXT_ANCHOR left blank. Every per-slide template field is mandatory (slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4)).
 - A four-pains-in-one bulleted list. Each pain is its own slide with its own emotional image note (master rule 9).
 - A Secret that teaches the complete how-to. That is dinner, not the appetizer -- there is nothing left to sell (master rule 8).
 - A Secret with no old-way vs new-way device, or an arc section with no intrigue slide. Compare/contrast lives in every Secret; an intrigue slide lives in every section (master rules 10, 11).
@@ -516,7 +516,7 @@ A 75-slide deck with hook "[THE HOOK from intake]" distributed as: Slide 1 (full
 | 4 | Writing a hook that is a question | Hooks must be statements or commands. Questions weaken the frame. |
 | 5 | Forgetting presenter notes entirely | Every slide gets a PRESENTER NOTE. Even "This slide is a refrain, pause and let it breathe." counts. |
 | 6 | Reaching for a generic word ("unlock," "elevate," "transform," "seamless," "journey") | Banned in headlines and subheads. Replace with the concrete outcome, ideally a number. |
-| 7 | Leaving a template field blank because "it's obvious" | PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR are all mandatory (master Section 5.2). Fill every one. |
+| 7 | Leaving a template field blank because "it's obvious" | PURPOSE, ARCHETYPE, LADDER, EMPHASIS, PEOPLE, HOOK_REFRAIN, TEXT_ANCHOR are all mandatory (slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4)). Fill every one. |
 | 8 | Doing all doctrine work as a post-write audit | Run SOP 9.7 WHILE writing each slide. Doctrine built in passes Phase 1Q the first time. |
 | 9 | Mode B: improving a client's line by editing it | Never edit client words. Write the improvement to mode_b_proposals.json, show it beside the original at Phase 1A, adopt only on per-line owner approval. |
 | 10 | Handing off without the read-aloud gate | Read HEADLINE + PRESENTER NOTE aloud for every slide before handoff. If it stumbles spoken, it is not done. |
@@ -557,7 +557,7 @@ If the client does not want the price revealed until a specific slide (common in
 
 1. Master SOP version increments (especially changes to Section 4 copy mechanics).
 2. Phase 1Q average score misses 8.5 for 2 consecutive decks.
-3. A new hard limit on slide copy is adopted (currently per master Section 5.1: 9-word headlines, 18-word sub-copy, maximum 3 text blocks per slide, 5 bullets at 7 words, 6 value-stack items at 7 words per name).
+3. A new hard limit on slide copy is adopted (currently per SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4): 9-word headlines, 18-word sub-copy, maximum 3 text blocks per slide, 5 bullets at 7 words, 6 value-stack items at 7 words per name).
 4. The Hormozi framework is superseded by a new operator-approved pitch framework.
 5. The operator explicitly requests a revision.
 6. A Devil's Advocate challenge for this role gets accepted 3+ times.

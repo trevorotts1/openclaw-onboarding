@@ -184,7 +184,7 @@ These standalone SOP documents live in `sops/` alongside the per-role mirrors. T
 | Slide-Craft | sops/SOP-SLIDE-03-HOOK-DOCTRINE.md | The sacred refrain: 3-4 dedicated pure-type hook slides, ceiling not floor, no footer | AF-C2 + AF-P12 + AF-P3 + AF-I1 + AF-F9 |
 | Slide-Craft | sops/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md | Beat spacing, build-up before drops, value-stack/promises/re-pitch presence, section floors | AF-C7 + copy c17/c19/c23/c24 |
 | Pitch-Craft | sops/SOP-PITCH-01-SLOW-DROP-PROCESS.md | The slow-drop choreography: anchor early, spread beats, earned reason + added value per drop, late final | AF-C7 + copy c17 |
-| Pitch-Craft | sops/SOP-PITCH-02-VALUE-STACK-AND-PROMISES.md | Itemized stack summed to a total exceeding the anchor; promises before the first number | Offer Price Strategist SOP 9.2 + Section 4.4 component gates |
+| Pitch-Craft | sops/SOP-PITCH-02-VALUE-STACK-AND-PROMISES.md | Itemized stack summed to a total exceeding the anchor; promises before the first number | Offer Price Strategist SOP 9.2 + director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4) component gates |
 | Pitch-Craft | sops/SOP-PITCH-03-RE-PITCH.md | Mandatory 4-7 slide post-price recap before the close | copy c23 + c24 + Offer Price Strategist SOP 9.9 |
 | Pitch-Craft | sops/SOP-PITCH-04-WALL-OF-WINS.md | Real-client homage ~5 slides before the offer; never a child future-pace | copy c19 + c24 |
 | Design-System | sops/SOP-DESIGN-00-INTEGRATION-MAP.md | Where each design rule lands + the reconciliation map to the live codes | AF-C2/P12/P3/I1/F6/F7/F9/F10/DC1..7 |

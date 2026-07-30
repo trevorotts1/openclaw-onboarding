@@ -214,7 +214,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 5. Notify the Director that the archetype palette and exemplar handoff has been delivered.
 
 **Outputs:**
-- working/brand/archetype_palette_handoff.md (archetype table + brand grammar + verbatim Section 7.5 exemplar)
+- working/brand/archetype_palette_handoff.md (archetype table + brand grammar + verbatim SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar)
 
 **Hand to:** Slide Image Creator (mandatory pre-reading before Phase 2); Director (confirmation of delivery)
 

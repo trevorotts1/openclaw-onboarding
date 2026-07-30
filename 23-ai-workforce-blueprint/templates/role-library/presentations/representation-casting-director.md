@@ -155,7 +155,7 @@ This role contributes to the company revenue cascade by: **making every client's
 
 | Tool | Purpose | Access via | Specifics |
 |------|---------|------------|-----------|
-| **Master SOP — CLIENT-WEBINAR-DECK-SOP.md (v2.3)** | Q9 REPRESENTATION_MIX with percentages; Section 7.2 people-allocation rule; Phase 3 and Phase 5 representation QC | `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Read-only authority. The master wins every conflict. The people-allocation rule distributes people-slides to match the deck-wide ratio. |
+| **Master SOP — CLIENT-WEBINAR-DECK-SOP.md (v2.3)** | Q9 REPRESENTATION_MIX with percentages; SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) people-allocation rule; Phase 3 and Phase 5 representation QC | `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` | Read-only authority. The master wins every conflict. The people-allocation rule distributes people-slides to match the deck-wide ratio. |
 | **Brand Steward NO-PEOPLE-default rule** | The hard rule: representation from intake with percentages, else NO PEOPLE plus operator flag | `presentations/brand-steward.md` and its SOP | This is the rule you enforce. The Brand Steward carries it; you own its application across all three pipeline points. |
 | **intake.json (audience composition)** | The captured REPRESENTATION_MIX with percentages and the plain-language audience-composition note | Project record / working directory | Your source of truth for the cast. If missing, the deck is NO-PEOPLE and flagged; never invent. |
 | **Generated slide images plus receipts** | The actual generated cast to tally at the image stage | `_local/jobs/{job-id}/` | Tally from downloaded local files confirmed in receipts; never tally from an expiring resultUrl. |
@@ -169,7 +169,7 @@ This role contributes to the company revenue cascade by: **making every client's
 ### SOP 9.1 — Audience Capture Verification and Percentage Allocation
 
 **SOP ID:** SOP-PRES-CUSTOM-05 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 3.1 Q9 (REPRESENTATION_MIX); pre-presentation audience-capture requirement
+**Library pointer:** SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION + deck-intake-questions.json (PRESENTATION-MASTER-DOCTRINE.md §4) Q9 (REPRESENTATION_MIX); pre-presentation audience-capture requirement
 **When to run:** When a deck arrives from intake and before any people-bearing prompt is written.
 **Frequency:** Per deck.
 **Inputs:** intake.json, the plain-language audience-composition note (gender; race or ethnicity mix; age; defining traits).
@@ -190,7 +190,7 @@ This role contributes to the company revenue cascade by: **making every client's
 ### SOP 9.2 — Per-Prompt Representation Assignment
 
 **SOP ID:** SOP-PRES-CUSTOM-06 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 7.2 (people-allocation rule); slide-image-creator Audience Engine
+**Library pointer:** SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (people-allocation rule); slide-image-creator Audience Engine
 **When to run:** After audience capture is confirmed and before prompts are submitted for people-bearing slides.
 **Frequency:** Per deck, before the prompt batch.
 **Inputs:** The confirmed REPRESENTATION_MIX with percentages, the slide manifest listing which slides bear people.
@@ -234,7 +234,7 @@ This role contributes to the company revenue cascade by: **making every client's
 ### SOP 9.4 — Final-Deck Representation Tally (The Audience-As-Mirror Gate)
 
 **SOP ID:** SOP-PRES-CUSTOM-08 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
+**Library pointer:** MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
 **When to run:** On the assembled, rendered deck, before delivery.
 **Frequency:** Per deck, once, at final QC.
 **Inputs:** The final deck rendered to PNG pages (from the QC Specialist's render), the captured REPRESENTATION_MIX, the image-stage tally record.
@@ -390,7 +390,7 @@ The role assigns the mix to the prompts and considers the job done, never recoun
 
 **Tier 1 — Always consult first (authoritative for this role):**
 
-- **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** Section 3.1 Q9, Section 7.2, Phase 3 and Phase 5 QC. The constitution for representation capture and enforcement.
+- **Master SOP CLIENT-WEBINAR-DECK-SOP.md (v2.3)** -- SOP-SIGPRES-01-EIGHT-QUESTIONS-ONE-BLOCK-AND-FRAME-SELECTION + deck-intake-questions.json (PRESENTATION-MASTER-DOCTRINE.md §4) Q9, SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4), Phase 3 and Phase 5 QC. The constitution for representation capture and enforcement.
 - **brand-steward.md (Presentations role).** Carries the NO-PEOPLE-default rule and the forbidden-default doctrine you enforce.
 - **The pre-presentation audience-capture requirement (Trevor, 2026-06-13).** The audience question is a first-class, non-skippable pre-presentation step; the captured mix drives all casting.
 
@@ -448,7 +448,7 @@ The role assigns the mix to the prompts and considers the job done, never recoun
 
 This how-to.md must be reviewed and revised when ANY of the following occurs:
 
-1. The master CLIENT-WEBINAR-DECK-SOP.md changes Q9, Section 7.2, or the representation QC criteria (the SOP references must be re-pinned).
+1. The master CLIENT-WEBINAR-DECK-SOP.md changes Q9, SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4), or the representation QC criteria (the SOP references must be re-pinned).
 2. The Brand Steward's NO-PEOPLE-default rule changes (the enforced rule must be re-aligned).
 3. The auto-fail threshold (currently more than ten percent off the captured mix) is revised by the owner or Director.
 4. The role's KPIs miss targets for 2 consecutive months (the Director triggers a review of the tally procedures).

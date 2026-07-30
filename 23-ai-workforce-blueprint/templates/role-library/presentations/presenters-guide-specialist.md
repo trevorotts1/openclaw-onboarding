@@ -100,7 +100,7 @@ Review every guide produced this month. Identify whether owners consistently wan
 
 ## 6. Quarterly Operations
 
-- Re-read SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine) and Section 5.2 (PRESENTER NOTE format) for version changes; update the outline structure if the doctrine evolved.
+- Re-read SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine) and slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format) for version changes; update the outline structure if the doctrine evolved.
 - Compare the Guide structure against the Presenter Coach's talk track to ensure they complement (Guide = points to cover; Speech and talk track = words to say) and never contradict.
 Re-read the master SOP close and delivery regions and the Presenter Coach's talk-track schema for any version changes. Confirm the PDF render path (soffice / LibreOffice or the Markdown-to-PDF path) and the Notion fallback chain still work end to end with a smoke test. Confirm the font-floor (>=12pt) assert still fires.
 
@@ -525,7 +525,7 @@ Group slide blocks under section banners and add a one-page section summary at t
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format) or Section 4.3 (doctrine) changes.
+1. slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format) or SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (doctrine) changes.
 2. The font floor policy changes (currently 12pt minimum).
 3. Post-webinar feedback shows owners consistently want more or less direction in the Guide.
 4. The Notion structure standard changes.

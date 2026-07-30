@@ -17,7 +17,7 @@
 ### SOP 9.1 -- Grounded-Content Capture
 
 **SOP ID:** SOP-PRES-CUSTOM-09 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 3.2 (no fabrication, proof inventory); World Engine (Section 7.3 element 11)
+**Library pointer:** SOP-PITCH-02-VALUE-STACK-AND-PROMISES (proof) + SOP-SLIDE-00 AF ruleset + devils-advocate-presentations SOP 9.1 (PRESENTATION-MASTER-DOCTRINE.md §4) (no fabrication, proof inventory); World Engine (SOP-ENGINE-00-INTELLIGENCE-ENGINES-FRAMEWORK (PRESENTATION-MASTER-DOCTRINE.md §4) element 11)
 **When to run:** When a deck arrives from intake and before image prompts are scored.
 **Frequency:** Per deck.
 **Inputs:** The client's material (book, message, offer, methodology), the Deep Research Specialist's grounded findings, the narrative architecture from the Signature Presentation Architect.
@@ -60,7 +60,7 @@
 ### SOP 9.3 -- Pain-Visibility Review (Make the Pain Felt)
 
 **SOP ID:** SOP-PRES-CUSTOM-11 (BlackCEO)
-**Library pointer:** Governing intelligence GP-16; `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 7.5 exemplar (emotional job of the image)
+**Library pointer:** Governing intelligence GP-16; SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (emotional job of the image)
 **When to run:** On pain-point slides, during prompt scoring and again on the generated image.
 **Frequency:** Per deck, for every pain-point slide.
 **Inputs:** The pain-point slide prompts, the generated pain-point images, the SEE-journey map from the Signature Presentation Architect.
@@ -81,7 +81,7 @@
 ### SOP 9.4 -- Final-Deck Grounding Pass
 
 **SOP ID:** SOP-PRES-CUSTOM-12 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
+**Library pointer:** MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (final deck rendered to PDF to PNG); qc-specialist SOP 9.5
 **When to run:** On the assembled, rendered deck, before delivery.
 **Frequency:** Per deck, once, at final QC.
 **Inputs:** The final deck rendered to PNG pages, the grounded-content reference, the prompt grounding record.
