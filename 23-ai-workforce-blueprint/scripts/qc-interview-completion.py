@@ -22,6 +22,19 @@ the build pipeline is allowed to proceed. Five checks:
      provenance note is flagged as HARD FAIL (exit 3, reason 'unconfirmed-context-as-answer').
      Answers that DO carry the provenance note PASS check #5.
 
+TRANSCRIPT ENCRYPTION (U048, 2026-07-30 fix): the Command Center encrypts the
+transcript at rest (workforce-interview-answers.md.enc, chacha20-poly1305 — see
+blackceo-command-center src/lib/interview/crypto.ts). This gate resolves and
+decrypts it IN-MEMORY via the shared _interview_transcript.py reader (never
+writes plaintext to disk, never logs its content) so a genuinely-complete
+encrypted interview is scored exactly as a plaintext one would be. If the
+transcript is genuinely absent, or present but undecryptable (no key material /
+tampered envelope), the gate still fails closed — see
+resolve_and_load_transcript(). This is the SAME shared reader
+build-workforce.py's _genuine_interview_answers_file() and
+verify_interview_complete() use, so the QC gate and the builder's own
+corroboration gate can never disagree about whether a transcript exists.
+
 EXIT CODES (mirror qc-completeness.sh):
   0 — PASS (all five checks pass)
   1 — Error (bad input, unreadable state, missing required file)
@@ -96,6 +109,19 @@ try:
 except Exception:  # noqa: BLE001
     _shared_decline_rejections = None
 
+# ── SHARED TRANSCRIPT READER (2026-07-30, U048 encrypted-transcript fix) ────
+# The Command Center encrypts the transcript at rest (workforce-interview-
+# answers.md.enc, chacha20-poly1305). This is the ONE shared reader — also
+# used by build-workforce.py's _genuine_interview_answers_file() /
+# verify_interview_complete() — so path-resolution + in-memory decrypt logic
+# can never drift between the QC gate and the builder's own corroboration
+# gate. Imported defensively: if unavailable, falls back to the ORIGINAL
+# plaintext-only behavior (see load_transcript()) rather than crashing.
+try:
+    import _interview_transcript as _transcript_reader
+except Exception:  # noqa: BLE001
+    _transcript_reader = None
+
 # ── WG-10c: no-web-only-store assertion (Check #7) ───────────────────────────
 # The Command Center / dashboard DB is ONLY a downstream mirror of the canonical
 # files. This sibling check proves the store never holds a department decision or an
@@ -142,6 +168,11 @@ def load_json(path: Path, label: str) -> dict:
 
 
 def load_transcript(path: Path) -> str:
+    """
+    ORIGINAL plaintext-only reader. Kept as the fallback path when
+    _interview_transcript is unavailable (defensive import failure) so the
+    gate degrades to its pre-encryption behavior instead of crashing.
+    """
     try:
         return path.read_text(encoding="utf-8")
     except FileNotFoundError:
@@ -150,6 +181,76 @@ def load_transcript(path: Path) -> str:
     except Exception as exc:
         print(f"[ERROR] Cannot read transcript: {exc}", file=sys.stderr)
         sys.exit(1)
+
+
+def resolve_and_load_transcript(explicit_path, state: dict, root: Path) -> str:
+    """
+    Resolve the transcript — plaintext OR encrypted (U048) — and return its
+    decrypted/plain content as a string. Exits (fail-closed) with a
+    diagnostic message on any failure; never returns None.
+
+    Probe order (via _interview_transcript.candidate_bases, shared with
+    build-workforce.py so the two gates can never disagree about WHERE the
+    transcript lives):
+      1. --transcript, if the operator passed one explicitly (tried as
+         plaintext, then its .enc sibling — or decrypted directly if the
+         operator passed a .enc path).
+      2. state.interviewProgress.answersFilePath, if recorded.
+      3. <root>/workspace/company-discovery/workforce-interview-answers.md(.enc)
+      4. /data/.openclaw/workspace/company-discovery/workforce-interview-answers.md(.enc)
+      5. $HOME/.openclaw/workspace/company-discovery/workforce-interview-answers.md(.enc)
+      6. <root>/workspace/workforce-interview-answers.md(.enc)  — the ORIGINAL
+         flat default this script used before this fix, kept so nothing that
+         worked before regresses.
+
+    NEVER writes plaintext to disk. NEVER logs transcript content — only
+    paths, byte counts, and pass/fail status are ever printed.
+    """
+    if _transcript_reader is None:
+        # Defensive fallback: module failed to import for some reason. Degrade
+        # to the ORIGINAL plaintext-only behavior rather than hard-failing on
+        # a dependency problem unrelated to the interview itself.
+        path = Path(explicit_path) if explicit_path else _default_transcript_path()
+        print(
+            "[WARN] _interview_transcript module unavailable — falling back to "
+            "plaintext-only transcript resolution (encrypted transcripts will "
+            "NOT be found in this mode).",
+            file=sys.stderr,
+        )
+        return load_transcript(path)
+
+    if explicit_path:
+        candidates = [str(Path(explicit_path))]
+    else:
+        recorded = (state.get("interviewProgress") or {}).get("answersFilePath")
+        candidates = _transcript_reader.candidate_bases(
+            recorded_path=recorded,
+            company_discovery_dir=str(root / "workspace" / "company-discovery"),
+        )
+        # Original flat default (pre-company-discovery convention) as a final
+        # fallback candidate, so an older install that only ever used it keeps
+        # working exactly as it did before this fix.
+        flat_default = str(_default_transcript_path())
+        if flat_default not in candidates:
+            candidates.append(flat_default)
+
+    result = _transcript_reader.read_transcript(candidates)
+    if not result.ok:
+        print(
+            f"[ERROR] Transcript not found or unreadable. Tried {len(result.tried)} "
+            f"location(s):\n{_transcript_reader.format_tried(result.tried)}",
+            file=sys.stderr,
+        )
+        print(f"[ERROR] {result.reason}", file=sys.stderr)
+        sys.exit(1)
+
+    if result.encrypted:
+        print(
+            f"[INFO] Transcript decrypted in-memory from {result.source_path} "
+            f"({len(result.content)} chars). Plaintext was never written to disk.",
+            file=sys.stderr,
+        )
+    return result.content
 
 
 # ── G1-FAB-ENFORCE: owner-consent provenance (mirrors build-workforce.py) ───────
@@ -1128,7 +1229,11 @@ def main():
     )
     parser.add_argument(
         "--transcript",
-        help="Path to workforce-interview-answers.md. Defaults to workspace path.",
+        help=(
+            "Path to workforce-interview-answers.md, its encrypted .enc sibling "
+            "(U048), or the .enc file itself. Defaults to auto-discovery across "
+            "company-discovery + flat workspace locations, plaintext or encrypted."
+        ),
     )
     parser.add_argument(
         "--state",
@@ -1212,7 +1317,6 @@ def main():
     script_dir = Path(__file__).resolve().parent
     skill_dir = script_dir.parent
 
-    transcript_path = Path(args.transcript) if args.transcript else _default_transcript_path()
     state_path = Path(args.state) if args.state else _default_state_path()
 
     jargon_path = (
@@ -1232,9 +1336,12 @@ def main():
     else:
         repo_root = skill_dir.parent  # skill_dir is 23-ai-workforce-blueprint/
 
-    # Load inputs
+    # Load inputs. State is loaded FIRST so transcript resolution can consult
+    # state.interviewProgress.answersFilePath (U048: transcript may be
+    # plaintext or an encrypted .enc envelope; resolve_and_load_transcript
+    # tries both via the shared _interview_transcript reader).
     state = load_json(state_path, ".workforce-build-state.json")
-    transcript = load_transcript(transcript_path)
+    transcript = resolve_and_load_transcript(args.transcript, state, _resolve_openclaw_root())
     jargon_data = load_json(jargon_path, "forbidden-jargon.json")
     jargon_terms = jargon_data.get("terms", [])
 
