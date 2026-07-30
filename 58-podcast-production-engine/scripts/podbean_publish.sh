@@ -718,7 +718,7 @@ BROKER_MODE=0
 if [ -n "${PODBEAN_BROKER_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_BROKER_TOKEN:-}" ]; then
   BROKER_MODE=1
 else
-  : "${PODBEAN_CLIENT_ID:?PODBEAN_CLIENT_ID is NOT SET. Configure the n8n Podbean broker (PODBEAN_BROKER_WEBHOOK_URL + PODBEAN_BROKER_TOKEN) on this box, or - on the operator OWN box only - set the BlackCEO shared Podbean app client id.}"
+  : "${PODBEAN_CLIENT_ID:?PODBEAN_CLIENT_ID is NOT SET. Configure PODBEAN_PUBLISH_WEBHOOK_URL + PODBEAN_PUBLISH_TOKEN (the fleet default, publish-proxy) on this box; the n8n Podbean broker (PODBEAN_BROKER_WEBHOOK_URL + PODBEAN_BROKER_TOKEN) is the fallback; or - on the operator OWN box only - set the BlackCEO shared Podbean app client id.}"
   : "${PODBEAN_CLIENT_SECRET:?PODBEAN_CLIENT_SECRET is NOT SET (the BlackCEO shared Podbean app secret; operator OWN box only - prefer the n8n broker so no secret sits on a client box).}"
 fi
 fi
