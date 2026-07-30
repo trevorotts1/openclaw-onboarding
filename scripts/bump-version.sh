@@ -61,7 +61,11 @@
 #                                   DO NOT RE-ADD IT HERE.
 #
 # VERSION-BUMP CHECKLIST — SKILL 38 SELF-COUNT RE-VERIFICATION (added 2026-05-29;
-#   extended 2026-07-05 FIX-XC-13c to ALSO cover INSTALL.md):
+#   extended 2026-07-05 FIX-XC-13c to ALSO cover INSTALL.md; extended 2026-07-30
+#   FIX-XC-13d to ALSO cover the scripts/ TOTAL — the "91 scripts" SKILL.md bullet
+#   drifted silently to 92 when qc-lattice-pointer.sh shipped in v1.9.2 because the
+#   advisory checked protocols/references/highest-numbered-script but never the
+#   scripts/ grand total; that gap is why the earlier 3 checks caught nothing):
 #   Skill 38 hard-codes file counts in TWO docs — SKILL.md "What This Skill Ships"
 #   AND INSTALL.md "What this installs" (protocols/, scripts/ range 00-NN,
 #   references/, journey templates, and which Round-2 features are shipped). They
@@ -77,11 +81,15 @@
 #         sed -E 's/-.*//' | sort -n | tail -1)" )
 #   Then make BOTH SKILL.md's SELF-COUNTS comment/bullets AND INSTALL.md's
 #   "What this installs" bullets match (protocol count, the `00`-`NN` script range,
-#   reference count, and the shipped-vs-OFF-by-default feature status — INSTALL.md
-#   must NEVER describe a shipped feature as "pending"). The advisory diff below
-#   (skill38_doc_selfcount_advisory) prints WARNs against disk to catch drift in
-#   both files, non-fatally, on every --check and bump. The 23-key linter
-#   qc-23-key-bodies.sh + trinity qc-trinity-registry.sh are part of scripts/.
+#   the scripts/ TOTAL, reference count, and the shipped-vs-OFF-by-default feature
+#   status — INSTALL.md must NEVER describe a shipped feature as "pending"). The
+#   advisory diff below (skill38_doc_selfcount_advisory) prints WARNs against disk
+#   to catch drift in both files, non-fatally, on every --check and bump. NOTE:
+#   the scripts/-total check only runs against SKILL.md (the only doc that states
+#   a "NN scripts" grand total in prose) — INSTALL.md documents the numbered range
+#   + named script list, never a bare total, so looping it into that file would be
+#   a permanent false WARN. The 23-key linter qc-23-key-bodies.sh + trinity
+#   qc-trinity-registry.sh are part of scripts/.
 #
 # Usage:
 #   ./scripts/bump-version.sh v10.6.2          # update all version markers
@@ -217,12 +225,13 @@ norm() { echo "${1#v}"; }
 skill38_doc_selfcount_advisory() {
   local d="$REPO_ROOT/38-conversational-ai-system"
   [ -d "$d" ] || return 0
-  local p r hi f
+  local p r s hi f
   p=$(ls -1 "$d"/protocols/*.md 2>/dev/null | wc -l | tr -d ' ')
   r=$(ls -1 "$d"/references/*.md 2>/dev/null | wc -l | tr -d ' ')
+  s=$(ls -1 "$d"/scripts/*.sh 2>/dev/null | wc -l | tr -d ' ')
   hi=$(ls -1 "$d"/scripts/ 2>/dev/null | grep -E '^[0-9]' | sed -E 's/-.*//' | sort -n | tail -1)
   echo ""
-  echo "Skill 38 doc self-count advisory (disk: protocols=$p references=$r highest-numbered-script=$hi):"
+  echo "Skill 38 doc self-count advisory (disk: protocols=$p references=$r scripts=$s highest-numbered-script=$hi):"
   for f in SKILL.md INSTALL.md; do
     [ -f "$d/$f" ] || continue
     grep -q "$p protocol" "$d/$f" 2>/dev/null \
@@ -230,6 +239,10 @@ skill38_doc_selfcount_advisory() {
     grep -q "$r reference" "$d/$f" 2>/dev/null \
       || echo "  WARN: 38-conversational-ai-system/$f does not state '$r reference…' — reference count may have drifted"
   done
+  if [ -f "$d/SKILL.md" ]; then
+    grep -q "$s script" "$d/SKILL.md" 2>/dev/null \
+      || echo "  WARN: 38-conversational-ai-system/SKILL.md does not state '$s script…' — total script count may have drifted"
+  fi
   if [ -f "$d/INSTALL.md" ]; then
     grep -qE "\`00\`.\`$hi\`" "$d/INSTALL.md" 2>/dev/null \
       || echo "  WARN: 38-conversational-ai-system/INSTALL.md numbered-script range may not reach \`$hi\` (expected \`00\`-\`$hi\`)"
