@@ -1,54 +1,3 @@
-## [v21.4.25]  -  2026-07-30  -  Skill 38 INSTALL.md self-contradicted its own protocol count and understated references/script range
-
-### Why
-`scripts/bump-version.sh --check` has carried a standing Skill-38 doc self-count advisory
-(`skill38_doc_selfcount_advisory`, FIX-XC-13c) that WARNs on every run when
-`38-conversational-ai-system/INSTALL.md` disagrees with what is actually on disk. On
-investigation the drift was worse than a single stale number: `INSTALL.md` stated **both**
-`45 protocols` (the "What this installs" total) **and** `32 v5.14 protocol files` (a Phase-5
-sub-count, in "Where to read next") without ever reconciling that these are different
-quantities, and separately understated `22 reference documents` and the numbered-script range
-as `` `00`-`30` ``.
-
-Recounted from disk against the exact method `skill38_doc_selfcount_advisory` uses
-(`ls -1 protocols/*.md`, `ls -1 references/*.md`, and the numeric prefix of `ls -1 scripts/`):
-**51 protocol files, 25 reference documents, numbered scripts `00`-`33`.** `SKILL.md` already
-carried the correct 51/25 figures (its SELF-COUNTS block was maintained through v1.9.0); only
-`INSTALL.md` had drifted.
-
-The `45` vs `32` pair was not two competing attempts at one number -- `45` was `INSTALL.md`'s
-stale copy of the skill-wide protocol TOTAL as of the v1.5.12 baseline (before the six v1.8.0
-CloseBot-alignment protocols and later Round-2/Round-3 additions), while `32` is, and remains,
-the count of protocol files that shipped VERBATIM from the original v5.14 source playbook
-before any Round-2/Round-3/v1.8.0 protocol was added on top (51 current total − 19 later
-additions enumerated in `SKILL.md`'s SELF-COUNTS history = 32, independently confirmed by
-enumerating all 51 files on disk against that history). `32` needed no change; `45` did.
-
-### What changed
-`38-conversational-ai-system/INSTALL.md`:
-- "What this installs" protocol bullet: `45 protocols` -> `51 protocols` (line 7).
-- Numbered-script range: `` `00`-`30` `` -> `` `00`-`33` ``, and named the two previously-unlisted
-  scripts `31-generate-workflow-visual.sh` / `32-verify-model-failover-support.sh` (line 10).
-- Reference-document bullet: `22 reference documents` -> `25 reference documents` (line 11).
-- Install-order comment block: `through 30` -> `through 33`, `23-30` -> `23-33`, and added
-  `31-generate-workflow-visual`, `32-verify-model-failover-support`,
-  `33-runtime-tool-gating-prover` to the walk-through list (lines 51-58).
-- The `32 v5.14 protocol files, verbatim from the source playbook` line (line 87) was left
-  unchanged -- it is a different, still-accurate quantity, not the stale one.
-
-No protocol, reference, or script file was touched -- the artifacts were already correct; only
-the docs describing them were wrong. Bumped `38-conversational-ai-system/skill-version.txt`
-1.9.3 -> 1.9.4 and the repo version to v21.4.25 via `scripts/bump-version.sh`.
-
-### Risk
-None to runtime or install behavior -- doc-only change. `scripts/bump-version.sh --check` now
-prints the Skill 38 advisory header with zero WARN lines. Does not touch
-`INSTRUCTIONS.md`'s unrelated `27 protocols` (a distinct Phase-5 step-mapping subset, not a
-total, and not checked by the advisory) or `SKILL.md`'s `91 scripts` figure (drifted separately
-to 92 after `qc-lattice-pointer.sh` shipped in v1.9.2; also not checked by the advisory and out
-of scope for this fix) -- both are flagged here for visibility, neither was changed.
-
-
 ## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
 
 Investigated after a report that "the live ledger... the checklist... the to-do list" were not
@@ -178,6 +127,93 @@ check relocated into this script, replacing the retired `deck-build-guard.sh`) i
 directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
 directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+
+
+## [v21.4.26]  -  2026-07-30  -  Two PRs claimed v21.4.25 on the same day; the presentations doctrine fix shipped under a tag that predates it
+
+### Why
+
+PR #778 (Skill 38 INSTALL.md count drift) and PR #779 (the presentations Guard B doctrine fix)
+were both cut from `f9c6efb4` at `v21.4.24` and both bumped to `v21.4.25` independently. #778
+merged first and took the annotated `v21.4.25` tag at merge commit `9bac4243`. When #779 merged
+at `b2a91133`, git auto-merged the two identical `v21.4.24 -> v21.4.25` edits with no conflict --
+so the merge carried real skill-content changes while its `version` and `skill-version.txt`
+markers were byte-identical to its parent.
+
+Two consequences, both real:
+- **`G3 — skill content change requires skill-version.txt bump` went red on `main`.** #779 changed
+  17 role files under `23-ai-workforce-blueprint` without an accompanying marker bump, because the
+  marker had already been consumed by #778.
+- **The `v21.4.25` tag does not contain the doctrine fix.** Anyone checking out `v21.4.25` gets
+  #778's tree, not the corrected presentations role library.
+
+The version-bump convention is not collision-safe when two same-day PRs branch from the same base:
+`bump-version.sh` reads the working tree's `version`, not the tip of `origin/main`, so both PRs
+computed the same "next patch" and neither could see the other.
+
+### What changed
+
+- Version markers bumped `v21.4.25 -> v21.4.26` across all 10 tracked locations via
+  `./scripts/bump-version.sh` (not hand-edited).
+- Annotated tag `v21.4.26` pushed onto this merge so the presentations doctrine fix from #779 is
+  covered by a released version that actually contains it.
+
+### Risk
+
+None to behavior -- version markers and this entry only. No role file, SOP, script, gate, or code
+constant is touched. This restores `G3` to green and closes the tag-coverage gap; it does not
+alter anything #779 shipped.
+
+
+## [v21.4.25]  -  2026-07-30  -  Skill 38 INSTALL.md self-contradicted its own protocol count and understated references/script range
+
+### Why
+`scripts/bump-version.sh --check` has carried a standing Skill-38 doc self-count advisory
+(`skill38_doc_selfcount_advisory`, FIX-XC-13c) that WARNs on every run when
+`38-conversational-ai-system/INSTALL.md` disagrees with what is actually on disk. On
+investigation the drift was worse than a single stale number: `INSTALL.md` stated **both**
+`45 protocols` (the "What this installs" total) **and** `32 v5.14 protocol files` (a Phase-5
+sub-count, in "Where to read next") without ever reconciling that these are different
+quantities, and separately understated `22 reference documents` and the numbered-script range
+as `` `00`-`30` ``.
+
+Recounted from disk against the exact method `skill38_doc_selfcount_advisory` uses
+(`ls -1 protocols/*.md`, `ls -1 references/*.md`, and the numeric prefix of `ls -1 scripts/`):
+**51 protocol files, 25 reference documents, numbered scripts `00`-`33`.** `SKILL.md` already
+carried the correct 51/25 figures (its SELF-COUNTS block was maintained through v1.9.0); only
+`INSTALL.md` had drifted.
+
+The `45` vs `32` pair was not two competing attempts at one number -- `45` was `INSTALL.md`'s
+stale copy of the skill-wide protocol TOTAL as of the v1.5.12 baseline (before the six v1.8.0
+CloseBot-alignment protocols and later Round-2/Round-3 additions), while `32` is, and remains,
+the count of protocol files that shipped VERBATIM from the original v5.14 source playbook
+before any Round-2/Round-3/v1.8.0 protocol was added on top (51 current total − 19 later
+additions enumerated in `SKILL.md`'s SELF-COUNTS history = 32, independently confirmed by
+enumerating all 51 files on disk against that history). `32` needed no change; `45` did.
+
+### What changed
+`38-conversational-ai-system/INSTALL.md`:
+- "What this installs" protocol bullet: `45 protocols` -> `51 protocols` (line 7).
+- Numbered-script range: `` `00`-`30` `` -> `` `00`-`33` ``, and named the two previously-unlisted
+  scripts `31-generate-workflow-visual.sh` / `32-verify-model-failover-support.sh` (line 10).
+- Reference-document bullet: `22 reference documents` -> `25 reference documents` (line 11).
+- Install-order comment block: `through 30` -> `through 33`, `23-30` -> `23-33`, and added
+  `31-generate-workflow-visual`, `32-verify-model-failover-support`,
+  `33-runtime-tool-gating-prover` to the walk-through list (lines 51-58).
+- The `32 v5.14 protocol files, verbatim from the source playbook` line (line 87) was left
+  unchanged -- it is a different, still-accurate quantity, not the stale one.
+
+No protocol, reference, or script file was touched -- the artifacts were already correct; only
+the docs describing them were wrong. Bumped `38-conversational-ai-system/skill-version.txt`
+1.9.3 -> 1.9.4 and the repo version to v21.4.25 via `scripts/bump-version.sh`.
+
+### Risk
+None to runtime or install behavior -- doc-only change. `scripts/bump-version.sh --check` now
+prints the Skill 38 advisory header with zero WARN lines. Does not touch
+`INSTRUCTIONS.md`'s unrelated `27 protocols` (a distinct Phase-5 step-mapping subset, not a
+total, and not checked by the advisory) or `SKILL.md`'s `91 scripts` figure (drifted separately
+to 92 after `qc-lattice-pointer.sh` shipped in v1.9.2; also not checked by the advisory and out
+of scope for this fix) -- both are flagged here for visibility, neither was changed.
 
 
 ## [v21.4.25]  -  2026-07-30  -  Guard B was red because the role files still ordered two retired doctrines: the >= 7 hook padding floor and a 1,500/5,000-char prompt floor
