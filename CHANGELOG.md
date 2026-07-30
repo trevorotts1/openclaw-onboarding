@@ -1,3 +1,51 @@
+## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
+
+U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
+tokenising `PRESENTATION_NOTIFY_CMD` with `shlex.split` before `subprocess.run(argv, shell=False, ...)`.
+A few lines **above** it, a module-level `dispatch(chat_id, kind, message)` function, reading the same
+`PRESENTATION_NOTIFY_CMD` environment variable, was left calling `subprocess.run(cmd, shell=True, ...)`
+unchanged. `presentation_job/watchdog.py` imports and calls that function directly
+(`from .report import dispatch`), so the watchdog's stall-notification path stayed exploitable even
+though the class method next to it was closed. Two independent QC passes reported this file clean
+because the review brief that drove them named only `phases.py` and `heal.py` — the two files U069's
+`heal.py` bypass touched — not `report.py`, so neither pass ever grepped it.
+
+A full-package grep for executable `shell=True` (not just the named files) turned up a **third**,
+previously unknown site: `presentation_job/__main__.py::cmd_sweep_undeliverable` held its own,
+independently hand-rolled `subprocess.run(cmd, shell=True, ...)` over the identical
+`PRESENTATION_NOTIFY_CMD` value — a third parallel implementation of the same transport, not called from
+either `report.dispatch()` or `Reporter._dispatch()`.
+
+Closed by consolidation rather than a second (or fourth) parallel fix: `report.dispatch()` is now the
+**single** implementation of the `PRESENTATION_NOTIFY_CMD` transport in the package — tokenise with
+`shlex.split`, `subprocess.run(argv, shell=False, ...)`, raise `ValueError` on an unparseable command
+(same refuse-loud behaviour U069 established, matching the existing precedent in this file rather than
+inventing new error semantics). `Reporter._dispatch()` now delegates to it instead of re-running its own
+copy of the subprocess call; `watchdog.py`'s import is unchanged (it already called the module-level
+function, which is now fixed at the source); `__main__.cmd_sweep_undeliverable` now imports and calls
+`report.dispatch()` instead of hand-rolling a third copy. A subsequent full-package grep for executable
+`shell=True` (excluding comments/docstrings) returns zero matches.
+
+Proof: `tests/test_watchdog.py::TestU069ModuleDispatchBypassClosed` (3 tests) and
+`tests/test_heal.py::TestSweep::test_injection_blocked` drive a `PRESENTATION_NOTIFY_CMD` payload
+containing a shell metacharacter and a `$(touch ...)` command substitution through `report.dispatch()`
+directly, through `watchdog.py`'s call site (with a `subprocess.run` spy proving the argv reaching the OS
+is a tokenised list, not a shell string), and through `cmd_sweep_undeliverable`'s call site; each asserts
+the sentinel file is never created while the harmless `echo` still runs (mechanical success, `rc == 0`).
+Bled: reverting `dispatch()` to `subprocess.run(cmd, shell=True, ...)` makes all four fail with the
+sentinel present; restoring the fix makes them pass again. One pre-existing test,
+`tests/test_watchdog.py::test_one_notification_per_scan`, itself relied on shell interpretation of a raw
+`cat >> {log}` redirect and would otherwise have become a new failure under `shell=False`; it now points
+`PRESENTATION_NOTIFY_CMD` at a real script (the same pattern already used throughout
+`tests/test_report.py`), preserving its original intent (exactly one notification per scan).
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): 15 pre-existing failing test names identical before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`); 4 new tests added, all passing;
+zero new failures. Note: `reportlab` **is** installed in this environment (v4.4.10, verified via
+`pip show reportlab`), contradicting this ticket's brief that it was absent — `tests/test_producers.py`
+collected and ran its full 17 tests (all passing, both before and after) rather than being excluded.
+
 ## [Unreleased]  -  Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
 
 `presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
