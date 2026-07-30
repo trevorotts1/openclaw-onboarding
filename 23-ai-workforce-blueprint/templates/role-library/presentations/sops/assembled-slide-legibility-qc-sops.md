@@ -17,7 +17,7 @@
 ### SOP 9.1 -- Assembled-Deck Render and Coded Assert Battery
 
 **SOP ID:** SOP-PRES-CUSTOM-13 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 (render the assembled deck to PDF to PNG, then QC the rendered pages)
+**Library pointer:** MASTER-QC-AUTOFAIL-RULESET (SOP-SLIDE-00) + qc-specialist-presentations SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (render the assembled deck to PDF to PNG, then QC the rendered pages)
 **When to run:** After the PPTX Assembly Specialist delivers the assembled deck and before delivery.
 **Frequency:** Per deck, once, plus once per rework loop.
 **Inputs:** The assembled PPTX, the slide manifest, the upstream gate artifacts (approval record, prompt QC pass, image QC pass, representation tally, grounding pass).

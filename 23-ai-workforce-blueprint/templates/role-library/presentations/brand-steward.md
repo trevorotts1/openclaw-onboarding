@@ -59,7 +59,7 @@ This file is your fallback identity. It governs only when no persona is assigned
 1. Read intake.json: extract brand_colors (hex codes or descriptions), brand_fonts (primary and secondary), logo_description (if no file is provided), representation_preferences (any stated diversity preferences with percentages), and style_references.
 2. If the client has provided a logo file, read it. If not, note its absence in the STYLE BLOCK.
 3. Build the STYLE BLOCK (SOP 9.1).
-4. Deliver the STYLE BLOCK and the Section 7.5 exemplar prompt to the Director and the Slide Image Creator (SOP 9.3).
+4. Deliver the STYLE BLOCK and the SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar prompt to the Director and the Slide Image Creator (SOP 9.3).
 5. After Phase 2 prompts are complete, run the distribution audit (SOP 9.2).
 
 ---
@@ -87,7 +87,7 @@ Review representation ratio outcomes from the past quarter. Are the target ratio
 | Metric | Target |
 |--------|--------|
 | STYLE BLOCK delivered before Phase 2 begins | 100% |
-| Section 7.5 exemplar prompt delivered to Slide Image Creator before Phase 2 begins | 100% |
+| SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar prompt delivered to Slide Image Creator before Phase 2 begins | 100% |
 | Phase 5 QC failures for brand color inconsistency | 0 |
 | Phase 5 QC failures for logo missing or misplaced | 0 |
 | Deck-level representation ratio within +/- 10% of target (when intake specifies a ratio) | 100% |
@@ -105,7 +105,7 @@ Review representation ratio outcomes from the past quarter. Are the target ratio
 - working/brand/style_block.md (write -- your primary output)
 - working/brand/brand_registry.json (maintain -- per-client STYLE BLOCK registry)
 - working/brand/representation_audit.json (write -- deck-level distribution audit)
-- master SOP Phase 2 section (STYLE BLOCK format requirements and Section 7.5 exemplar)
+- master SOP Phase 2 section (STYLE BLOCK format requirements and SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar)
 
 ---
 
@@ -283,7 +283,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 5. Notify the Director that the archetype palette and exemplar handoff has been delivered.
 
 **Outputs:**
-- working/brand/archetype_palette_handoff.md (archetype table + brand grammar + verbatim Section 7.5 exemplar)
+- working/brand/archetype_palette_handoff.md (archetype table + brand grammar + verbatim SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar)
 
 **Hand to:** Slide Image Creator (mandatory pre-reading before Phase 2); Director (confirmation of delivery)
 
@@ -376,7 +376,7 @@ The STYLE BLOCK must include both the COLOR THEORY section (color_relationship, 
 - Director of Presentations -- dispatch signal with intake.json
 
 ### You hand work off to:
-- Slide Image Creator -- STYLE BLOCK (for all prompt authoring) + archetype_palette_handoff.md (required pre-reading including Section 7.5 exemplar, delivered via SOP 9.3)
+- Slide Image Creator -- STYLE BLOCK (for all prompt authoring) + archetype_palette_handoff.md (required pre-reading including SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar, delivered via SOP 9.3)
 - Director -- brand_registry.json entry, audit results, and SOP 9.3 delivery confirmation
 - QC Specialist -- Presentations -- representation_audit.json (for Phase 3 QC criterion 13: representation ratio)
 
@@ -473,7 +473,7 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 | 6 | Inventing a racial default when representation is unanswered | Default is NO PEOPLE plus operator flag. Never invent percentages the client did not supply. |
 | 7 | Omitting brand grammar devices from the STYLE BLOCK | Every STYLE BLOCK must include the proven grammar: kicker, gold rule, divider, color roles, price tag motif, section banners, logo chip spec, compliance line. |
 | 8 | Setting logo chip to 4% slide width | The proven spec is approximately 9% of slide width with a subtle 1px brand-accent border. 4% is too small. |
-| 9 | Skipping SOP 9.3 archetype palette and exemplar handoff | SOP 9.3 fires every run, immediately after SOP 9.1. The Slide Image Creator must receive the Section 7.5 exemplar as required pre-reading before Phase 2. |
+| 9 | Skipping SOP 9.3 archetype palette and exemplar handoff | SOP 9.3 fires every run, immediately after SOP 9.1. The Slide Image Creator must receive the SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar as required pre-reading before Phase 2. |
 | 10 | Labeling a client hex as "tertiary almost always white" | White is the base layer, listed separately. The three client hexes are PRIMARY/SECONDARY/ACCENT. If a client brand truly uses white as an accent, document it explicitly with a note. |
 | 11 | Defaulting the type to a basic font ("Montserrat Bold" with no size, or Calibri/Arial/Times) | Encode the full TYPOGRAPHY LAW (SOP 9.4): one family, the weight map, the slide-height-relative size scale, the hierarchy stack, and the palette. Basic or default fonts are an AUTO-FAIL at QC. |
 | 12 | Shipping a STYLE BLOCK without the size scale or hierarchy stack | The TYPOGRAPHY LAW carries the per-role pt sizes and the canonical stack so every prompt names an exact weight and a large pt size per line. A LAW missing any part is an incomplete STYLE BLOCK (Gate 6). |
@@ -486,7 +486,7 @@ representation_audit.json shows: people_slides = 42 out of 60 total, Black_Brown
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (STYLE BLOCK format requirements, Section 7.2 archetypes, Section 7.5 exemplar prompt)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (STYLE BLOCK format requirements); SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4) (archetypes); SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (exemplar prompt)
 - WCAG 2.1 contrast guidelines (minimum 4.5:1 contrast ratio for normal text on slides)
 
 **Tier 2:**
@@ -528,7 +528,7 @@ If `REPRESENTATION_MIX` is answered with "no people" or "none" or "typography on
 
 This role is a specialist and does not manage sub-specialists directly. Close collaborators:
 
-- **Slide Image Creator** -- primary consumer of the STYLE BLOCK and required recipient of the Section 7.5 exemplar (SOP 9.3).
+- **Slide Image Creator** -- primary consumer of the STYLE BLOCK and required recipient of the SOP-IMG-01-KIE-CALL-MECHANICS + prompt-author-presentations SOP + brand-steward SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) exemplar (SOP 9.3).
 - **QC Specialist -- Presentations** -- validates brand consistency in Phase 3 (criteria 3-4) and Phase 5 (criteria 4-8).
 - **Director of Presentations** -- dispatches this role and receives brand_registry.json updates, SOP 9.3 delivery confirmations, and operator flags for unanswered representation intake.
 

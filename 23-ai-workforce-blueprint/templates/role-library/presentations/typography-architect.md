@@ -219,7 +219,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 - hook_package.json (read-only, for the placement map of dedicated hook slides)
 
 **Steps:**
-1. Pull the five archetypes (A1 full-bleed photo with overlay; A2 photo one side, text opposite; A3 photo-top, data-bottom; A4 type-dominant punch; A5 portrait/selfie). Confirm definitions verbatim from Section 7.2.
+1. Pull the five archetypes (A1 full-bleed photo with overlay; A2 photo one side, text opposite; A3 photo-top, data-bottom; A4 type-dominant punch; A5 portrait/selfie). Confirm definitions verbatim from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4).
 2. Walk the slide list in order. Assign each slide an archetype by content fit: emotional opens/closes/buildups to A1; teach/contrast slides to A2; loss/math/stat/Wall-of-Wins slides to A3; hook anchors and price-drop slides to A4 (type is the hero); founder-authority slides to A5.
 3. After the first pass, run the adjacency check: for each pair of consecutive slides, if both archetype AND text anchor match, reassign one of them (usually by moving the text anchor; A2 left-block becomes A2 right-block, or promote to A4). Repeat until zero adjacency violations remain.
 4. Run the window check: in every sliding window of 5 slides, count distinct archetypes; if fewer than 3, diversify.

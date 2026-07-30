@@ -518,7 +518,7 @@ Slide 73 FINAL: "Point to each struck price as you say it: five thousand -- twen
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority, especially Sections 4.2, 4.3, and 5.2 for PRESENTER NOTE standards)
+- universal-sops/CLIENT-WEBINAR-DECK-SOP.md (master authority); the PRESENTER NOTE standards live in SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4), SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4), and slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4)
 - Alex Hormozi, $100M Offers and $100M Leads (Hormozi.com/books) -- offer mechanics and CTA delivery
 - Duarte, Resonate and Slide:ology (duarte.com/resources/books) -- talk-track pacing and narrative arc delivery
 
@@ -547,7 +547,7 @@ If the owner wants a second run before going live, run SOP 9.4 again. On the sec
 
 ## 18. Update Triggers (When to Revise This Document)
 
-1. Master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) version increments, especially any change to Section 4.3 (pitch doctrine) or Section 5.2 (PRESENTER NOTE format).
+1. Master SOP (universal-sops/CLIENT-WEBINAR-DECK-SOP.md) version increments, especially any change to SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine) or slide-copywriter SOP 9.x (the copy-block template) + presenter-coach / presenters-guide-specialist SOPs (PRESENTATION-MASTER-DOCTRINE.md §4) (PRESENTER NOTE format).
 2. Post-webinar conversion data shows a systematic timing or delivery problem (e.g., consistent drop-off at the offer section) -- adjust the timing model and delivery notes accordingly.
 3. KPIs miss target for 2 consecutive runs.
 4. The rehearsal gate pass rate falls below 80% on first attempt -- investigate whether the talk-track format or Q&A prep is insufficient.
