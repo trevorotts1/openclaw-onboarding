@@ -17,6 +17,7 @@ from .report import dispatch
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 from .sweep import reconcile_sweep
+from . import diagnose
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,7 +28,10 @@ def build_parser() -> argparse.ArgumentParser:
     m = p.add_mutually_exclusive_group(required=True)
     m.add_argument("--new", action="store_true", help="create a job in --run-dir from --intake")
     m.add_argument("--run", action="store_true", help="run the phase loop")
-    m.add_argument("--resume", action="store_true", help="resume a parked job from checkpoint")
+    m.add_argument("--resume", action="store_true",
+                   help="resume a parked job from checkpoint; prints why it parked first. "
+                        "With --phase, re-runs only that phase and does NOT evaluate gates, "
+                        "so it cannot clear a job parked on a gate failure.")
     m.add_argument("--status", action="store_true", help="print job status")
     m.add_argument("--close", action="store_true", help="evaluate gates and close")
     m.add_argument("--watchdog", action="store_true", help="scan for stalled jobs")
@@ -43,6 +47,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--until", help="run through this phase then stop")
     p.add_argument("--scan-root", type=Path, help="root to scan for --watchdog / --reconcile-board")
     p.add_argument("--dry-run", action="store_true", help="print what would run, execute nothing")
+    p.add_argument("--diagnose-only", action="store_true",
+                   help="with --resume: print why the job parked and exit without resuming")
     p.add_argument("--json", action="store_true", help="machine-readable --status")
     p.add_argument("--apply", action="store_true",
                    help="with --reconcile-board: actually create and advance cards")
@@ -194,6 +200,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
 
+    if args.diagnose_only and not args.resume:
+        die(EXIT_USAGE, "--diagnose-only only makes sense with --resume "
+                        "(it modifies --resume, it is not its own mode)")
+
     if args.watchdog:
         root = (args.scan_root or args.run_dir)
         if not root:
@@ -249,18 +259,41 @@ def main(argv: Optional[List[str]] = None) -> int:
         if args.close:
             return engine.close()
         if args.resume:
+            # Print the diagnosis BEFORE anything is cleared. state.pop("blocked", None)
+            # used to run first, so the phase and reason the engine parked on were gone by
+            # the time the operator saw output (B7's con; U017).
+            lines = diagnose.describe_park(state, run_dir)
+            if lines:
+                print("\n".join(lines), file=sys.stderr, flush=True)
+            else:
+                print(f"This job is not parked (terminal={state.get('terminal')!r}). "
+                      "Resuming will re-enter at the first unfinished phase.",
+                      file=sys.stderr, flush=True)
+            if args.diagnose_only:
+                return EXIT_OK
+            # Preserve the diagnosis BEFORE clearing it. Popping `blocked` without keeping
+            # a copy destroys the only record of why this job parked (B7's con).
+            prior = state.pop("blocked", None)
+            if prior:
+                state.setdefault("resume_history", []).append(
+                    {"at": utcnow(), "cleared_blocked": prior})
             state["terminal"] = None
-            state.pop("blocked", None)
             bad_count = 0
+            total_banked = 0
             for ps in state.get("phases", []):
+                if ps.get("status") == "done":
+                    total_banked += len(ps.get("artifacts") or [])
                 if ps.get("banked_invalid"):
                     bad_count += len(ps["banked_invalid"])
-            state["resume_revalidation"] = bad_count
+            state["resume_revalidation"] = {"checked": total_banked, "failed": bad_count}
             if bad_count:
                 print(f"resume: {bad_count} banked artifact(s) failed re-validation "
                       f"-- those phases will re-run", flush=True)
             else:
                 print("resume: all banked artifacts re-validated", flush=True)
             store.save(state)
-            engine.report.event("job.resume", "resuming from checkpoint; banked artifacts reused")
+            engine.report.event(
+                "job.resume",
+                "resuming from checkpoint; banked artifacts reused" +
+                (f"; cleared block at {prior.get('phase')}: {prior.get('reason')}" if prior else ""))
         return engine.run(only=args.phase, until=args.until)
