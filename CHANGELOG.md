@@ -1,3 +1,38 @@
+## [Unreleased]  -  U069: shell-injection fix landed + a live heal.py bypass closed
+
+U069's original fix (tokenise `executor.cmd` with `shlex.split` before substituting `{run_dir}`, then
+`subprocess.run(argv, shell=False)`, in `presentation_job/phases.py::_run_script_phase`) was correctly
+**declined at the merge gate**: `presentation_job/heal.py`'s retry rungs — `rung2_regenerate` (the
+regeneration retry after a phase reports success but its declared artifact is missing) and
+`rung3_alt_route` (the alternate-command fallback after the primary attempts are exhausted) —
+independently re-derived the command with `cmd.replace("{run_dir}", str(engine.run_dir))` and ran it via
+`subprocess.run(cmd, shell=True, ...)`. That is the exact vulnerable pattern U069 removed from the primary
+path, duplicated a second time and left untouched, so any phase that healed through rung 2 or rung 3 was
+still exploitable via a `run_dir` or a manifest `executor.cmd`/`alt_cmd` crafted with shell metacharacters
+— a fix with a live bypass, which reads as closed but is not.
+
+Closed by extracting the tokenise-first/substitute-second logic into a single method,
+`Engine._build_executor_argv()`, and routing `_run_script_phase`, `rung2_regenerate`, and
+`rung3_alt_route` all through it. There is now exactly one place in the package that turns an
+`executor.cmd`/`alt_cmd` string into an argv; the two heal rungs can no longer drift back into
+re-implementing (and re-breaking) the fix independently. `PhaseExecutorContractError` (an unparseable
+`executor.cmd`) is raised from that single builder for every call site, including the heal rungs, instead
+of only the primary path.
+
+Proof: `tests/test_heal.py::TestU069HealBypassClosed` drives real injection payloads — a `;`-chained
+manifest `executor.cmd`, a `;`-chained `alt_cmd`, and a `run_dir` whose directory *name* contains a shell
+command-substitution payload (`$(touch ...)`) — through `rung2_regenerate` and `rung3_alt_route` directly,
+and asserts the injected side effect (a sentinel file) never appears, while the harmless part of the
+command (`echo`) still runs and returns success. One test drives the identical `run_dir` payload through
+both the primary path (`_run_script_phase`) and the heal path (`rung2_regenerate`) in the same test to
+prove they now share one safety guarantee, not two that can diverge.
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): identical 16 pre-existing failing test names before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `test_report.py`, `tests/test_resume.py`); 7 new tests
+added (3 from U069's original commit, 4 heal-bypass-closure tests), all passing. Zero new failures.
+
+
 ## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
 
 Two role-library files existed only as SOP mirrors, not as their own role-library docs:
