@@ -1,5 +1,5 @@
 {
-  "manifest_version": 33,
+  "manifest_version": 34,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1874,6 +1874,15 @@
       "secondary_py_symbols": [
         "_chk_image_qc"
       ]
+    },
+    {
+      "code": "AF-OCR-READBACK",
+      "stage": "Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render — NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch — waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_ocr_readback"
     },
     {
       "code": "AF-NO-RUN-DIR",

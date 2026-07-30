@@ -62,8 +62,13 @@ def describe_park(state: dict, run_dir=None) -> list[str]:
     lines.append(f"phases  : {n_done} of {total_phases} done, {n_banked} artifact(s) banked")
 
     # -- Resume re-validation count -------------------------------------------
+    # state["resume_revalidation"] is a dict as of U017: {"checked": N, "failed": M}.
+    # Before U017 it was written as a bare int, and any run dir resumed under the
+    # old code still carries that shape on disk (StateStore.load() does no shape
+    # migration). Treat any non-dict value (legacy int, corrupt string, etc.) the
+    # same as absent -- degrade to "unknown", never crash and never guess a cause.
     rr = state.get("resume_revalidation")
-    if rr is not None:
+    if isinstance(rr, dict):
         checked = rr.get("checked", 0)
         failed_rev = rr.get("failed", 0)
         lines.append(f"banked artifact re-validation: {checked} checked, {failed_rev} of {checked} failed")

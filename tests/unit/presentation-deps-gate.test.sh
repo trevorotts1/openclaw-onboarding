@@ -257,6 +257,36 @@ write_complete_ledger() {
 LEDGER
 }
 
+# HERMETICITY FIX (presentation-deps-gate CI red-check root cause): every functional
+# entry-script invocation below MUST pass --scripts-dir at a self-contained fixture.
+# Without it, resolve_scripts_dir() falls through to the materialized-department
+# default ($OC_WORKSPACE/departments/Presentations/scripts), and what happens next
+# depends entirely on the box the test runs on:
+#   - a fresh CI runner never materializes that department at all, so the resolver
+#     fails outright (rc=2, "Refusing to autodetect") before GATE 2 is ever reached;
+#   - a box with a REAL materialized department (e.g. an operator box) resolves fine,
+#     but then GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) trips: the materialized
+#     ghl_media.py is a thin shim that walks up its OWN parents looking for a sibling
+#     48-facebook-ad-generator/tools/ghl_media.py, which does not exist next to a
+#     standalone materialized department (rc=8, PRESENTATION_GHL_MODULE_MISSING).
+# Both are environment-dependent accidents, not the thing this section means to test
+# (GATE 2 bypass-scan behavior). Building one self-contained fixture — with a REAL,
+# import-standalone ghl_media.py (the Skill-06 copy, not the sibling-walking shim) —
+# and pointing every invocation at it with --scripts-dir makes the test hermetic
+# everywhere: CI, this box, and any other box, regardless of what is or isn't
+# materialized under $OC_WORKSPACE.
+FAKE_SCRIPTS="$TMPDIR_TEST/fake-scripts"
+mkdir -p "$FAKE_SCRIPTS"
+cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py" "$FAKE_SCRIPTS/build_deck.py" 2>/dev/null || touch "$FAKE_SCRIPTS/build_deck.py"
+# GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
+# co-located in SCRIPTS_DIR or it refuses before we ever reach GATE 2 (bypass-scan).
+cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
+cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
+import os, sys
+print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))
+sys.exit(0)
+FAKERUNNER
+
 # Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
 SCAN_RUN="$TMPDIR_TEST/scan-run"
 mkdir -p "$SCAN_RUN/working/checkpoints"
@@ -274,7 +304,7 @@ def hook():
     slide.shapes.add_text_box(1, 1, 1, 1)
 PYBAD
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-trip.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -eq 5 ]; then
@@ -295,7 +325,7 @@ cat > "$SCAN_RUN/working/checkpoints/process_manifest.json" <<'PMOK'
 ]}
 PMOK
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-waived.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "OWNER-APPROVED" "$TMPDIR_TEST/scan-waived.log"; then
@@ -313,7 +343,7 @@ touch "$CLEAN_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$CLEAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$CLEAN_RUN/slides.json" --out "$CLEAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/clean-scan.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "no hand-rolled renderer" "$TMPDIR_TEST/clean-scan.log"; then
@@ -346,18 +376,9 @@ touch "$ENV_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$ENV_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
 
-FAKE_SCRIPTS="$TMPDIR_TEST/fake-scripts"
-mkdir -p "$FAKE_SCRIPTS"
-cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py" "$FAKE_SCRIPTS/build_deck.py" 2>/dev/null || touch "$FAKE_SCRIPTS/build_deck.py"
-# GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
-# co-located in SCRIPTS_DIR or it refuses before we ever reach the orchestrator dispatch.
-cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
-cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
-import os, sys
-print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))
-sys.exit(0)
-FAKERUNNER
-
+# $FAKE_SCRIPTS was already built above (before section (C)) as the one shared,
+# self-contained scripts-dir fixture used by every functional entry-script
+# invocation in this file.
 ENTRY_RC=0
 QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" bash "$ENTRY" --run-dir "$ENV_RUN" \
     --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \

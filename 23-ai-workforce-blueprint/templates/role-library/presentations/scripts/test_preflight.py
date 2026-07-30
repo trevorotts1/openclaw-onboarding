@@ -3578,6 +3578,14 @@ def emit_af_coverage():
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
 
+    # AF-OCR-READBACK (U027) — a rendered PNG whose sidecar carries checked:false
+    # (the OCR engine never ran against that render) FAILS check_ocr_readback; this
+    # branch is NEVER waivable. Guard-A negative-test coverage for the postflight
+    # OCR gate (mirrors the same fixture family as test_ocr_checked_false_fails).
+    _ocr_cov_root = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False})
+    record("AF-OCR-READBACK", build_deck.check_ocr_readback(_ocr_cov_root))
+
     # ---- Quality-layer gate probes (AF-P13, AF-P14, AF-P-DENSITY, AF-P-VERBATIM,
     #      AF-COPY-QC, AF-INTELLIGENCE-ENGINES) ----
 
@@ -4244,7 +4252,7 @@ def test_delivery_gate() -> list:
     # Re-assert the clean-pass and the AF-DH1 extra-file fail directly.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        pkg = delivery_gate._mk_pkg(base, delivery_gate.FIVE)
+        pkg = delivery_gate._mk_pkg(base, delivery_gate.CLIENT_PACKAGE)
         delivery_gate._write_media(base, {"pptx_ghl_media_id": "id1"})
         delivery_gate._write_plan(base, {"destinations": [
             {"type": "ghl"},
@@ -4252,7 +4260,7 @@ def test_delivery_gate() -> list:
         ]})
         ok, reasons = delivery_gate.delivery_gate(base)
         if not ok:
-            failures.append(f"DELIVERY-GATE-A: clean 5-file package should PASS, got {reasons}")
+            failures.append(f"DELIVERY-GATE-A: clean client package should PASS, got {reasons}")
         # Now drop in a stray script -> AF-DH1 must trigger.
         (pkg / "fix_render.py").write_text("x")
         ok2, reasons2 = delivery_gate.delivery_gate(base)

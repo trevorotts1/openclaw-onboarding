@@ -1,3 +1,18 @@
+## [Unreleased]  -  Reconcile manifest_version collision with `fix/build-deck-check-ocr-readback` (33 -> 34)
+
+**Merge-only unit, no logic changes.** `fix/build-deck-check-ocr-readback` (PR #755) and this
+branch (`fix/qc-gate-fail-closed`) each independently bumped `manifest_version` 32 -> 33 —
+main's 33 adds `AF-OCR-READBACK` (157 autofails, 32 phases); this branch's 33 adds the
+`P-QC-AGGREGATE` phase (33 phases, 156 autofails). Main merged first, so this branch's 33 was
+stale against `origin/main`. Merged `origin/main` in and renumbered to **34**: both
+`AF-OCR-READBACK` and `P-QC-AGGREGATE` are present in the reconciled manifest (33 phases,
+157 autofails), `MIN_MANIFEST_VERSION` in `presentation_job/manifest.py` moves to 34 in the same
+commit (U019 step 8), `MANIFEST-SOURCE.txt`'s `content_sha256` is re-stamped against the merged
+`PIPELINE-MANIFEST.json` (verified via `shasum -a 256`), and
+`universal-sops/_content-manifest.json` is regenerated via
+`scripts/hash-universal-sops-manifest.py` (never hand-merged — hand-editing that stamp is what
+went stale twice this week). `sync_check.py` exits 0 post-merge.
+
 ## [Unreleased]  -  P-QC-AGGREGATE: the fail-closed qc gate's missing producer
 
 **Ships the producer the qc-gate fail-closed fix above (same PR) explicitly disclosed as
@@ -133,6 +148,51 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked here, on purpose — never a silent pass.
 
+## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
+
+Investigated after a report that "the live ledger... the checklist... the to-do list" were not
+being updated while work was reported complete. The instruction was to find why these two
+specific files stopped updating and either wire them into the merge path or remove them.
+They are neither stale nor removable: they were never created in this repository, at any point,
+on any branch.
+
+**Measured, not assumed:**
+- `git log --all --full-history -- CONTROL/LEDGER.md` and the same for `CONTROL/CHECKLIST.md`:
+  zero commits, checked against all 3,846 commits reachable from every local ref/branch of
+  `origin` (`git rev-list --all --count`).
+- `git log --follow --all` on both paths: zero commits.
+- `git log --all --diff-filter=ACMR --name-only` filtered to anything ever added under
+  `CONTROL/`: only `CONTROL/CHANGELOG.md`, `CONTROL/heartbeats/fix-unit.hb`, and a since-removed
+  `CONTROL/QUESTIONS-FOR-HUMAN.md` -- never a `LEDGER.md` or `CHECKLIST.md` sibling.
+- Full-tree `grep -a -rn` for the literal strings `LEDGER.md` and `CHECKLIST.md` across every
+  script, workflow, hook and doc: the only hits are unrelated files under different directories
+  (`ledgers/skill58-podbean-proxy-2026-07-16.md`'s `.gitattributes` merge rule,
+  `project-prds/anthology-engine/CHECKLIST.md`, `22-book-to-persona-coaching-leadership-system/
+  CHECKLIST.md`, `23-ai-workforce-blueprint/.../SOP-CAST-01-...-LEDGER.md`) -- none reference a
+  `CONTROL/` path, and no script, hook, or CI workflow ever wrote or read one.
+- GitHub's own code search corroborates the local clone: `gh api search/code -f
+  q="filename:LEDGER.md repo:trevorotts1/openclaw-onboarding"` and the `CHECKLIST.md` equivalent
+  both return `"total_count": 0`.
+- `CONTROL/` on `origin/main` today holds exactly `CHANGELOG.md` and `heartbeats/` -- confirmed
+  by directory listing, not inference.
+
+**Conclusion:** there is no drift to quantify (no PRs merged "since the last update" -- there was
+never a first update), no stale file to delete, and no automation gap to wire, because there was
+never anything to wire. This entry exists so this exact pair of filenames is never chased again
+as a live-tracking regression; if a *different* pair of tracking files was actually meant
+(a different path, or a different repo such as `blackceo-command-center`), that is a separate,
+new investigation -- this closes only the two literal paths reported.
+
+The operator's underlying need -- a ledger and a checklist that cannot silently drift -- is
+already met by mechanisms that DO exist and ARE wired into the merge path, under different
+names:
+- **The ledger**: `ledgers/*.md`, enforced on every PR and every push to main by
+  `.github/workflows/ledger-truth-gate.yml` -> `scripts/ledger-truth-gate.py` -> `unit-status.sh`,
+  which independently re-derives DONE / NOT-DONE / UNKNOWN from live git ancestry and paginated
+  CI check-run history and fails the build if a row's own `verified`/`done` claim disagrees with
+  that independent check. It cannot silently stop tracking without the CI gate turning red.
+- **The unit changelog**: this file and `CONTROL/CHANGELOG.md`, both updated on every merge/ripple
+  and current as of the commit before this one.
 
 ## [Unreleased]  -  U012: add the six missing manifest phases and their executors
 
@@ -217,6 +277,103 @@ check relocated into this script, replacing the retired `deck-build-guard.sh`) i
 directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
 directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+
+
+## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
+
+### Why
+PR #745 (v21.4.20, "turn main green") merged to `main` at `2769b8c0` before its own follow-up
+commit could land. Fixing v21.4.20's `test_preflight.py` FIVE->CLIENT_PACKAGE bug let the
+`sync_check` job's steps run further than `main` ever had before, unmasking a stale
+`CANONICAL-RENDERER-PIN.sha256`: Land U028 (`1ff47035`) added 108 lines to `build_deck.py`
+without regenerating the renderer hash pin, so the CI step that recomputes and compares it
+was failing every run -- just never reached, because the FIVE bug always aborted the job first.
+
+Two sibling defects found the same way (`test_cc_board.py`'s stale U030 PATCH/POST contract
+assertions, and a stale `universal-sops/_content-manifest.json` after U012's six added manifest
+phases) were fixed independently in parallel by `fix/cc-board-stale-contract-tests` (#757) and
+`fix/manifest-restamp-guard` (#756) before this branch could push its own copies; those two
+files were resolved by taking the already-landed, equivalent fix rather than re-doing the work.
+
+### What changed
+Recomputed `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/CANONICAL-RENDERER-PIN.sha256`
+over the current (unchanged-by-this-PR) `build_deck.py` + `run_signature_deck.py` per the
+workflow's own prescribed remedy. No renderer behavior changed -- the pin now matches content
+that was already correct and already on `main`.
+
+A separate, pre-existing gap surfaced independently: PR #745 bumped `/version` to v21.4.20 and
+merged before an annotated tag was pushed, so G1 (annotated tag required) went red on `main`.
+Pushed the missing `v21.4.20` annotated tag directly onto the merge commit (not part of this
+version bump).
+
+### Left deliberately unfixed (pre-existing, out of scope, not introduced by this or the #745 merge)
+- **Presentation-deps install + QC hard-fail guard** -- `tests/unit/presentation-deps-gate.test.sh`'s
+  bypass-scan family calls `presentation-canonical-entry.sh` without `--scripts-dir`/`SCRIPTS_DIR`,
+  relying on autodetection U006 deliberately removed. Reproduced identically against a plain
+  pre-#745 `main` export and via `gh run list --workflow=presentation-deps-gate.yml --branch main`
+  failing on every push for weeks. (A separate branch, `fix/presentation-deps-gate-ci`, appears to
+  already be addressing this in parallel.)
+- **gate_integrity_check.py (Guard A)** -- 6 violations (2 dead symbols never wired into
+  `build_deck.py`'s enforcement path, 4 gates with no negative-test fixture) and
+  **doctrine_residual_check.py (Guard B)** -- 107 retired "master SOP Section N" citations across
+  6 role files. Both reproduce identically against a plain pre-#745 `main` export using the same
+  `af-coverage.json`. They were masked by the FIVE bug; `main`'s own `sync_check` job will now
+  reach and fail on them too. Fixing either is a substantial, unrelated body of work (rewriting 107
+  citations across 6 files; wiring or retiring 2 dead symbols; authoring 4 new negative-test
+  fixtures) and is out of scope here.
+
+### Risk
+One hash value recomputed over unchanged source files, plus the version-marker bump this change
+itself requires (G3). No renderer, gate, or credential behavior changed.
+
+
+## [v21.4.20]  -  2026-07-30  -  Turn main green: four checks had been failing on main, three of them for long enough to be treated as background noise
+
+### Why
+`main` was shipping red on four checks. Three were long-standing; the fourth (G3) regressed at
+`7c2ce02d` when PR #740 changed presentations engine code without bumping the owning skill's
+`skill-version.txt`. A permanently-red main is worse than the individual failures: it trains
+everyone to ignore CI, so the next real regression lands unnoticed. Each of these was a genuine
+defect with a deterministic fix, not a flaky test.
+
+### What changed
+
+**G3 — skill content change requires skill-version.txt bump.** PR #740 edited
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`__main__.py`,
+`gates.py`, `report.py`, plus four test files) while `23-ai-workforce-blueprint/skill-version.txt`
+stayed at `21.4.19`. Bumping the repo to v21.4.20 rolls that skill-version marker with it, which
+is what the gate asks for. Left unfixed, a box comparing skill versions would not see the changed
+skill as changed.
+
+**Presentations SOP/manifest/code lockstep (sync_check).** `test_preflight.py` died with
+`AttributeError: module 'delivery_gate' has no attribute 'FIVE'`. U019 (ratified 2026-07-26)
+renamed that constant to `CLIENT_PACKAGE` when the client package went from five files to six --
+`delivery_gate.py` even carries the comment explaining the rename was done so a future seventh
+addition would not force another rename -- but this one call site was never updated. Fixed the
+reference and corrected the now-wrong "clean 5-file package" assertion message to
+"clean client package" so it does not re-rot on the next count change.
+
+**Leadership / Task-Mode fires at task time.** Assertion (E) requires every role file whose
+section 2 is "Persona Governance Override" to also carry the concrete "How to load the persona's
+Task Mode" step, so a role is self-sufficient and naming a persona cannot substitute for loading
+its governance. 22 role files -- the entire `presentations` department -- had the section 2
+heading with no load step. Inserted the canonical block (verbatim from the passing exemplar
+`_brainstorming-buddy-template.md`) into all 22. No other department was affected.
+
+**QC static invariants.** `test-how-to-use-docs.sh` reported the department guides stale against
+their renderer. Regenerated with `generate_how_to_use_docs.py`; only the `presentations` guide had
+actually drifted, which is consistent with the role-file gap above.
+
+Role-file edits invalidate stored content hashes, so `_index.json` was re-stamped with
+`hash-content-manifest.py` in the same change.
+
+### Risk
+One functional line (`delivery_gate.FIVE` -> `delivery_gate.CLIENT_PACKAGE`, in a test), one
+assertion string, 22 documentation blocks inserted verbatim from an existing passing exemplar, one
+regenerated derived guide, and the content-hash restamp those edits require. No engine behaviour,
+no gate thresholds, no credentials. All four checks verified green locally before push:
+`test-how-to-use-docs.sh` 7/0, `persona-task-mode-wiring.test.sh` 7/0, `sync_check.py` rc=0
+(IN SYNC), `test_preflight.py` ALL PREFLIGHT TESTS PASSED.
 
 
 ## [Unreleased]  -  ocr_readback gate blocks close() instead of only warning
