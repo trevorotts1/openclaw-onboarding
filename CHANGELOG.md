@@ -1,3 +1,49 @@
+## [v21.4.30]  -  2026-07-30  -  repoint 4 of the last 17 dangling doctrine citations (Section 11 -> Section 17) in two presentations role files; the remaining 13 stay blocked
+
+### Why
+
+The session-handoff ledger (`ledgers/session-handoff-podcast-step15-and-ci-green-2026-07-30.md`)
+left 17 doctrine citations unresolved after the v21.4.28 repointing pass: 4 bare "(Section 11)"
+citations in `image-grounding-steward.md` and `representation-casting-director.md`, and 13 "Section
+9A" citations in `presenters-speech-writer-sops.md`.
+
+Both role files number their own "Handoffs (Value Stream Map)" section as Section 11, so the bare
+"(Section 11)" citations were not obviously broken by a missing target -- the section exists, it
+just does not describe DIU-imagery re-verification or per-client mix overrides. Reading each citing
+sentence in full paragraph context (not just the line) showed the wording was boilerplate carried
+over from the standard role-template's "department restructure -> update Section 11 (Handoffs)"
+idiom, applied to a different concept without updating the pointer. Both files already carry their
+own Edge Case entry whose Trigger/Action text is a near-verbatim match for what the citation is
+actually describing: Edge Case 17.4 ("DIU-Sourced Background Is Generic") in the grounding steward,
+Edge Case 17.5 ("DIU-Sourced Background Imagery Contains People") in the casting director.
+
+The 13 "Section 9A" references were left alone. `presenters-speech-writer.md` still carries
+duplicated `SOP 9.1`-`SOP 9.4` and `Gate 1`-`Gate 5` headings -- the signature of an in-flight,
+mid-build unit -- and has no `Section 9A` or successor heading anywhere on disk. Authoring the
+missing section to make the citations resolve would be restructuring someone else's in-flight unit,
+not citation repair, so this batch stops at 4 of 17 and reports the remaining 13 as still blocked.
+
+### What changed
+
+- `image-grounding-steward.md` -- Common Mistakes row 6 and Update Trigger 5 repointed from
+  `(Section 11)` to `(Section 17, Edge Case 17.4)` / `(Section 17, Edge Cases, must be extended)`.
+- `representation-casting-director.md` -- the same two citations repointed to
+  `(Section 17, Edge Case 17.5)` / `(Section 17, Edge Cases, must be extended)`.
+- `templates/role-library/_index.json` -- content hashes re-stamped for the two edited role files
+  via `hash-content-manifest.py`; confirmed with `--check`.
+- All 10 version markers bumped v21.4.29 -> v21.4.30 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. Both edits are parenthetical citation text inside Markdown tables/lists; no code path, gate,
+schema, or SOP numbering changed, and the target section (`## 17. Edge Cases for This Role`) was
+confirmed to exist in both files before the citation was written. The 13 `Section 9A` references
+in `presenters-speech-writer-sops.md` were deliberately left untouched: `presenters-speech-writer.md`
+still carries duplicated `SOP 9.1`-`9.4` and `Gate 1`-`5` headings (an in-flight unit), so authoring
+the missing section here would risk colliding with that unit's own build.
+
+---
+
 ## [v21.4.29]  -  2026-07-30  -  bump-version.sh computed the next version from the working tree, so two same-day PRs shipped colliding versions and a tag that does not contain its own work
 
 ### Why
