@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 ## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
 
 `presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate
@@ -34,6 +35,146 @@ check relocated into this script, replacing the retired `deck-build-guard.sh`) i
 directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
 directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+=======
+## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
+
+U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
+tokenising `PRESENTATION_NOTIFY_CMD` with `shlex.split` before `subprocess.run(argv, shell=False, ...)`.
+A few lines **above** it, a module-level `dispatch(chat_id, kind, message)` function, reading the same
+`PRESENTATION_NOTIFY_CMD` environment variable, was left calling `subprocess.run(cmd, shell=True, ...)`
+unchanged. `presentation_job/watchdog.py` imports and calls that function directly
+(`from .report import dispatch`), so the watchdog's stall-notification path stayed exploitable even
+though the class method next to it was closed. Two independent QC passes reported this file clean
+because the review brief that drove them named only `phases.py` and `heal.py` — the two files U069's
+`heal.py` bypass touched — not `report.py`, so neither pass ever grepped it.
+
+A full-package grep for executable `shell=True` (not just the named files) turned up a **third**,
+previously unknown site: `presentation_job/__main__.py::cmd_sweep_undeliverable` held its own,
+independently hand-rolled `subprocess.run(cmd, shell=True, ...)` over the identical
+`PRESENTATION_NOTIFY_CMD` value — a third parallel implementation of the same transport, not called from
+either `report.dispatch()` or `Reporter._dispatch()`.
+
+Closed by consolidation rather than a second (or fourth) parallel fix: `report.dispatch()` is now the
+**single** implementation of the `PRESENTATION_NOTIFY_CMD` transport in the package — tokenise with
+`shlex.split`, `subprocess.run(argv, shell=False, ...)`, raise `ValueError` on an unparseable command
+(same refuse-loud behaviour U069 established, matching the existing precedent in this file rather than
+inventing new error semantics). `Reporter._dispatch()` now delegates to it instead of re-running its own
+copy of the subprocess call; `watchdog.py`'s import is unchanged (it already called the module-level
+function, which is now fixed at the source); `__main__.cmd_sweep_undeliverable` now imports and calls
+`report.dispatch()` instead of hand-rolling a third copy. A subsequent full-package grep for executable
+`shell=True` (excluding comments/docstrings) returns zero matches.
+
+Proof: `tests/test_watchdog.py::TestU069ModuleDispatchBypassClosed` (3 tests) and
+`tests/test_heal.py::TestSweep::test_injection_blocked` drive a `PRESENTATION_NOTIFY_CMD` payload
+containing a shell metacharacter and a `$(touch ...)` command substitution through `report.dispatch()`
+directly, through `watchdog.py`'s call site (with a `subprocess.run` spy proving the argv reaching the OS
+is a tokenised list, not a shell string), and through `cmd_sweep_undeliverable`'s call site; each asserts
+the sentinel file is never created while the harmless `echo` still runs (mechanical success, `rc == 0`).
+Bled: reverting `dispatch()` to `subprocess.run(cmd, shell=True, ...)` makes all four fail with the
+sentinel present; restoring the fix makes them pass again. One pre-existing test,
+`tests/test_watchdog.py::test_one_notification_per_scan`, itself relied on shell interpretation of a raw
+`cat >> {log}` redirect and would otherwise have become a new failure under `shell=False`; it now points
+`PRESENTATION_NOTIFY_CMD` at a real script (the same pattern already used throughout
+`tests/test_report.py`), preserving its original intent (exactly one notification per scan).
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): 15 pre-existing failing test names identical before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`); 4 new tests added, all passing;
+zero new failures. Note: `reportlab` **is** installed in this environment (v4.4.10, verified via
+`pip show reportlab`), contradicting this ticket's brief that it was absent — `tests/test_producers.py`
+collected and ran its full 17 tests (all passing, both before and after) rather than being excluded.
+
+## [Unreleased]  -  Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
+
+`presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
+"intake_field"` -- and it only checked that the named key existed in `intake.json`. It never compared
+`client_request_quote` against that key's *value*. The correctly-built path, `source: "transcript"`,
+does a real substring match against recorded client turns, but is hard-disabled at
+`TRANSCRIPT_WAIVERS_ACCEPTED = False`, so the only path anyone could actually use was the unprotected
+one. Reproduced live: a fabricated quote nobody ever said, attached to real intake field `"topic"`, was
+accepted by `validate_waiver()`, and a synthetic job closed with `terminal: DONE`, exit 0, gate recorded
+`"state": "waived"` -- while the `teleprompter` gate it was supposedly excusing had never actually passed.
+This is the self-issued-waiver failure the programme's own fix plan named by number: if the engine
+accepts any `waiver.json` it finds, the agent writes its own permission slip.
+
+Fix: the `intake_field` path now requires (a) the cited field's value to be a string -- a boolean/flag
+field carries no client words to check a quote against, so citing one is now rejected outright -- and
+(b) `client_request_quote`, normalised for case and whitespace (`_norm`, already used by the transcript
+path), to be a genuine substring of that value. A quote the client did not write is rejected with a
+plain-language error naming the field: `"waiver for 'X' quotes text that does not appear in intake field
+'Y'. Recorded value of 'Y' does not contain the quoted words -- the quote must be the client's own words
+as recorded in intake.json, not text the agent supplied."`
+
+`TRANSCRIPT_WAIVERS_ACCEPTED` stays `False` -- a decision, not an oversight, now recorded directly above
+the flag in `waivers.py`. Its substring match is correct and is not why it is off; it stays off because
+of two problems this change does not touch: no requester identity on the route script that produces the
+transcript, and the transcript living in a database, which breaks the offline-authoritative rule (audit
+D3:1016-1019). Flipping it is a separate decision for whenever both close.
+
+`tests/test_waivers.py::test_valid_intake_waiver` cited a boolean intake field (`{"no_teleprompter":
+True}`) with an unrelated quote -- it never exercised quote content, which is why it never caught this.
+Rewritten to use a string field the quote is genuinely drawn from, plus new tests: a case/whitespace-
+insensitive match, a forged quote against a real field (the reproduced defect, rejected), and a non-string
+field value (rejected). `tests/test_gates.py::test_valid_intake_waiver_loads` had the same shape of
+defect (`{"skip_qc": True}` with an unrelated quote) and was updated the same way.
+
+Bleed test (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`): forged quote
+against a real field -> `WaiverError`, plain-language, names the field. Verbatim quote from the same
+field -> accepted. Reverting the fix -> both new rejection tests fail with "DID NOT RAISE," reproducing
+the original hole; 26 of 28 waiver/gate tests unaffected either way. Driven end to end with the real
+`presentation_job.py --close` entry point against a synthetic run dir with a legitimate `script`,
+`prompt_floor`, and `ghl_upload` pass and only `teleprompter` depending on the forged waiver: pre-fix,
+exit 0, `terminal: DONE`; post-fix, exit 9 (`EXIT_WAIVER_INVALID`), stderr `FATAL: waiver for
+'teleprompter' quotes text that does not appear in intake field 'topic' ...`, `terminal` never set.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`; `reportlab` was present in this environment so `tests/test_producers.py`
+collected and is included): 15 failed / 446 passed / 13 skipped. `diff` of sorted failing-test names
+against the pre-change baseline (same worktree, before this edit) is empty -- zero new failures, same 15
+pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`), none touching
+waivers. No version bump -- release PR #738 is open.
+
+
+## [v21.4.19]  -  2026-07-30  -  install.sh still told the operator the retired Podbean broker was "PREFERRED" for client boxes
+
+### Why
+v21.4.18 corrected the Skill 58 docs that pointed operators and agents at the abandoned Podbean
+credential broker, but it did not reach `install.sh`. The provisioning path itself -- the thing an
+operator actually reads while standing up a client box -- still labelled the broker pair
+`OPENCLAW_PODBEAN_BROKER_URL` / `_TOKEN` as "PREFERRED for client boxes" and listed the
+publish-proxy pair third, below the operator-only legacy `client_id`/`client_secret` pair. An
+operator following that comment provisions a box into a mode that cannot publish: the broker
+workflow is not deployed on the live n8n instance, so the box falls through to local mode and
+hard-stops demanding a Podbean app secret that must never sit on a client box. That is the same
+defect v21.4.18 fixed, surviving in the one file most likely to be followed literally.
+
+### What changed
+`install.sh` only. Four edits, all comment/message text -- no control flow, no injection logic:
+
+- Operator setup comment block: publish-proxy is now listed FIRST and named the fleet default,
+  with the real webhook URL and a note that n8n performs the entire publish so the box holds no
+  Podbean credential and needs no n8n of its own. The broker pair is demoted to "UNUSED FALLBACK"
+  with an explicit "do NOT import a broker workflow to satisfy it". The legacy app-credential pair
+  is marked operator-own-box only, "NEVER set these on a client box".
+- The broker injection block's header comment: retitled from "PREFERRED for client boxes" to
+  "UNUSED FALLBACK", and now states that broker mode engages only when the publish-proxy pair is
+  absent, and that setting the broker pair without a deployed broker workflow fails at publish time.
+- The `injected_count == 0` operator note: now names `OPENCLAW_PODBEAN_PUBLISH_URL` /
+  `_TOKEN` as the fleet default plus `OPENCLAW_PODCAST_CLIENT_LAST_NAME` /
+  `_EMAIL` (the roster identity tuple Step 15 requires and which the old note never mentioned).
+- The half-configured publish-proxy warning: no longer says the box "falls back to broker/local
+  mode" as though that were serviceable. It now states that neither fallback can publish on a
+  client box and that Step 15 will hard-stop until both values are set.
+
+The five variables a client box needs for Step 15 are unchanged and are documented in
+`58-podcast-production-engine/config/n8n/README.md`: `PODBEAN_PUBLISH_WEBHOOK_URL`,
+`PODBEAN_PUBLISH_TOKEN`, `PODBEAN_PODCAST_ID`, `PODCAST_CLIENT_LAST_NAME`, `PODCAST_CLIENT_EMAIL`.
+
+### Risk
+Comment and operator-message text only. `bash -n install.sh` passes. No node edits, no credential
+touches, no n8n API calls, no change to the injection blocks' conditions or to publish behaviour.
+The publish path was already correct in code and is untouched.
+>>>>>>> origin/main
 
 
 ## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code

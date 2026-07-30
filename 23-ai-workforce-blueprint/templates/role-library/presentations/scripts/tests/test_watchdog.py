@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import hashlib, json, os, re, shutil, sys
+import hashlib, json, os, re, shutil, subprocess, sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import pytest
@@ -12,6 +12,7 @@ sys.path.insert(0, str(_scripts_dir))
 
 from presentation_job.watchdog import watchdog, _find_state_files
 from presentation_job.state import EXIT_OK, EXIT_STALLED
+from presentation_job.report import dispatch as report_dispatch
 
 
 def _w(fd, phase, iv, age, budget=240, src="manifest_heartbeat_minutes",
@@ -153,7 +154,15 @@ def test_one_notification_per_scan(tmp_path, monkeypatch):
     _w(tmp_path/"b","P4-RENDER",10,50)
     _w(tmp_path/"c","P4-RENDER",10,60)
     log = tmp_path/"notify.log"
-    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", f"cat >> {log}")
+    # U069: PRESENTATION_NOTIFY_CMD is tokenised with shlex and run with
+    # shell=False, so a raw shell redirect like "cat >> {log}" no longer
+    # means anything -- ">>" and the path would just be literal argv tokens
+    # to `cat`. Route the redirect through a real script instead (same
+    # pattern as tests/test_report.py's notify scripts).
+    ns = tmp_path/"notify.sh"
+    ns.write_text(f"#!/bin/sh\ncat >> {log}\n")
+    ns.chmod(0o755)
+    monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", str(ns))
     _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
     notify_lines = [ln for ln in log.read_text().splitlines() if ln.strip()]
     n = sum(1 for ln in notify_lines if ln.strip().startswith('{'))
@@ -178,3 +187,78 @@ def test_counter_checksum(tmp_path):
     rc2, out2 = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
     m2 = re.search(r"watchdog: scanned (\d+) state file\(s\).*?; (\d+) terminal, (\d+) without a heartbeat, (\d+) with an unreadable timestamp, (\d+) healthy, (\d+) stalled", out2, re.S)
     assert m2 and int(m2.group(1)) == 4 and int(m2.group(4)) == 0
+
+
+# ---------------------------------------------------------------------------
+# U069 bypass closure #2: report.py had TWO independent implementations of
+# the PRESENTATION_NOTIFY_CMD transport -- Reporter._dispatch (fixed:
+# shlex.split + shell=False) and a module-level dispatch() left on
+# shell=True. watchdog.py imports and calls the module-level function
+# directly (`from .report import dispatch`), so it stayed exploitable even
+# though the class method was closed -- and __main__.cmd_sweep_undeliverable
+# held a THIRD, independently hand-rolled subprocess.run(cmd, shell=True,
+# ...) of its own. All three now route through the single report.dispatch()
+# implementation. These tests drive a real command-substitution payload
+# through report.dispatch() directly and through watchdog()'s call site in
+# the same test -- one code path, one guarantee, not three.
+# ---------------------------------------------------------------------------
+class TestU069ModuleDispatchBypassClosed:
+    def test_report_dispatch_injection_blocked(self, tmp_path, monkeypatch):
+        """PRESENTATION_NOTIFY_CMD containing a `$(touch ...)` command
+        substitution must not be shell-interpreted when report.dispatch()
+        (the module-level function, not Reporter._dispatch) runs it."""
+        sentinel = tmp_path / "PWNED_REPORT_DISPATCH"
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", f"echo hello $(touch {sentinel})")
+        ok = report_dispatch("chat", "kind", "msg")
+        assert ok is True, "echo itself must still succeed mechanically"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: report.dispatch() executed injected content, {sentinel} exists"
+        )
+
+    def test_watchdog_call_site_injection_blocked(self, tmp_path, monkeypatch):
+        """Same payload shape, driven through watchdog.py's call site
+        (`from .report import dispatch; dispatch(...)`) -- proves the fix
+        covers the caller that bypassed Reporter._dispatch entirely. A spy
+        on subprocess.run proves the argv actually reaching the OS is a
+        tokenised list (metacharacter surviving as a literal token) rather
+        than a shell string, and that dispatch's subprocess call still ran
+        exactly once."""
+        calls = []
+        real_run = subprocess.run
+        def _spy_run(argv, *a, **kw):
+            calls.append(argv)
+            return real_run(argv, *a, **kw)
+        monkeypatch.setattr(subprocess, "run", _spy_run)
+
+        sentinel = tmp_path / "PWNED_WATCHDOG_DISPATCH"
+        _w(tmp_path/"stalled", "P4-RENDER", 10, 40)
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", f"echo hello $(touch {sentinel})")
+        rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
+
+        assert "STALLED" in out, "the scan itself must still complete mechanically"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: watchdog's dispatch() call executed injected content, {sentinel} exists"
+        )
+        assert len(calls) == 1, "watchdog must reach dispatch's subprocess.run exactly once"
+        assert calls[0][0] == "echo", "argv must be a tokenised list, not a shell string"
+        assert any("$(touch" in tok for tok in calls[0]), (
+            "the metacharacter sequence must survive as a literal argv token, never executed"
+        )
+
+    def test_same_payload_inert_on_both_paths(self, tmp_path, monkeypatch):
+        """Same adversarial PRESENTATION_NOTIFY_CMD, driven through
+        report.dispatch() directly and through watchdog()'s call site in the
+        same test -- proves there is exactly one dispatch implementation
+        shared by both, not two (or three) with diverging safety."""
+        sentinel = tmp_path / "PWNED_SHARED_DISPATCH"
+        payload = f"echo hello $(touch {sentinel})"
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", payload)
+
+        ok = report_dispatch("chat", "kind", "msg")
+        assert ok is True, "echo itself must still succeed mechanically (direct path)"
+        assert not sentinel.exists(), "report.dispatch() let the payload execute"
+
+        _w(tmp_path/"stalled2", "P4-RENDER", 10, 40)
+        rc, out = _run(tmp_path, grace_multiplier=1.5, scan_depth=1)
+        assert "STALLED" in out, "the scan itself must still complete mechanically (watchdog path)"
+        assert not sentinel.exists(), "watchdog's call site let the payload execute"
