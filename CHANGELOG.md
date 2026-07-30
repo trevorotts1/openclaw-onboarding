@@ -49,7 +49,48 @@ pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.
 waivers. No version bump -- release PR #738 is open.
 
 
-## [Unreleased]  -  U015: stop TestModuleBoundaries from corrupting sys.modules for the rest of the suite
+## [v21.4.17]  -  2026-07-30  -  Un-freeze update-skills.sh after fourteen releases of drift
+
+`update-skills.sh` carried `ONBOARDING_VERSION="v21.4.2"` while `/version`, `install.sh` and every other
+marker had moved to v21.4.16. Fourteen releases of drift, and `scripts/bump-version.sh --check` reported
+`DRIFT DETECTED` throughout without anyone acting on it.
+
+**Root cause, and it was not neglect.** `.githooks/pre-commit` rule 4 blocks any `.sh` that references
+`secrets/.env` without containing a `chmod 600` call. `update-skills.sh` references the path (it computes
+`_U6B_OC_SECRETS_ENV` and hands it to `wire_ghl_funnel_catalog`) but contained no `chmod 600` of its own,
+so **every commit touching the file was rejected** -- including a version bump. The file could not be
+version-stamped without also satisfying a rule it appeared to violate.
+
+**The credential handling was never actually broken.** The real writes live in
+`shared-utils/provision-persona-index.sh`, which `chmod 600`s correctly on `touch` and again after each
+append. The hook's check is per-file and cannot see that delegation.
+
+Fixed truthfully rather than worked around: a defensive
+`[ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600` at the point the path is computed. That also tightens a
+secrets file which may ALREADY exist with loose permissions from an older install -- something nothing on
+this code path previously did. The hook was **not** bypassed and `--no-verify` was **not** used; it
+reported `Pre-commit QC: all gates passed.`
+
+All 10 version markers verified in agreement at v21.4.17 via `scripts/bump-version.sh --check`, including
+`README.md` (both the repo-version line and the `Current Version:` line), `cc-compat.json`,
+`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `23-ai-workforce-blueprint/SKILL.md`, `skill-version.txt` and
+`templates/role-library/_index.json`.
+
+**Also released here** -- fifteen commits had accumulated on `main` since the v21.4.16 tag with no version
+roll: the manifest-stamp re-cut (#729), `MIN_MANIFEST_VERSION` 30 -> 31 (#731), the woken
+deliverable/producer guard (#732), U069's shell-injection fix and its `heal.py` bypass (#734), U015's
+`sys.modules` restore (#737), and the interview rate-limiter session-key fix (#736). The U015 and U069
+entries below were written as `[Unreleased]` at merge time and are folded into this release.
+
+**Known, deliberately NOT closed here:** `38-conversational-ai-system/INSTALL.md` still reports stale
+self-counts (45 vs 51 protocols, 22 vs 25 references, script range `00`-`30` vs `00`-`33`) and
+`SKILL.md:29` still says "the rest of the 32 protocols" while `SKILL.md:91` correctly says 51. The
+bump-time advisory that surfaces this is `ADVISORY ONLY -- it never changes the exit code`, so it does not
+block a release. It is fixed in a separate change that also makes the guard a contradiction scan and
+makes `--check` exit non-zero, so the drift can no longer ship silently.
+
+
+## [v21.4.17]  -  2026-07-30  -  U015: stop TestModuleBoundaries from corrupting sys.modules for the rest of the suite
 
 `tests/test_presentation_job.py::TestModuleBoundaries::test_import_state_does_not_import_phases` deleted
 every `presentation_job.*` entry from `sys.modules` to force a clean re-import, but never restored them
@@ -79,7 +120,7 @@ reverting the try/finally reproduced the original failure; restoring it turned t
 No version bump -- PRs #733/#735 already contend over that.
 
 
-## [Unreleased]  -  U069: shell-injection fix landed + a live heal.py bypass closed
+## [v21.4.17]  -  2026-07-30  -  U069: shell-injection fix landed + a live heal.py bypass closed
 
 U069's original fix (tokenise `executor.cmd` with `shlex.split` before substituting `{run_dir}`, then
 `subprocess.run(argv, shell=False)`, in `presentation_job/phases.py::_run_script_phase`) was correctly
@@ -112,6 +153,24 @@ Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scri
 `python3 -m pytest -q`): identical 16 pre-existing failing test names before and after (unrelated to this
 change — `test_cc_board.py`, `test_preflight.py`, `test_report.py`, `tests/test_resume.py`); 7 new tests
 added (3 from U069's original commit, 4 heal-bypass-closure tests), all passing. Zero new failures.
+
+
+## [v21.4.16]  -  2026-07-29  -  Batch of 3 units (U008, U073, U028)
+
+**Backfilled 2026-07-30.** This tag shipped with no CHANGELOG entry at all, which is a live Guard G2
+violation (`every annotated tag must have a CHANGELOG entry`) and the cause of the
+`WARNING: version (v21.4.16) != CHANGELOG.md top entry (v21.4.15)` that the pre-commit hook printed on
+every commit to this repo for a day without anyone acting on it. Reconstructed from the annotated tag's
+own message rather than from memory.
+
+- **U008** -- merge the 22 duplicated role folders down to one each. PASS 8.80.
+- **U073** -- make the repository's commit hook actually run. PASS, gate 8.6.
+- **U028** -- generalise checkpoint and resume; checkpoint before the paid call. PASS on round 9. Its
+  eight prior failures were caused by a **spec defect, not by the code**: the card declared
+  `tests/test_checkpoint.py` as NEW when it already existed on `main` from U014, so each attempt
+  faithfully followed the instruction and silently deleted U014's coverage for seven validator functions,
+  with no merge conflict to warn anyone. The round-9 repair merges instead of overwriting and the card now
+  reads MODIFY.
 
 
 ## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
