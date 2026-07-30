@@ -16,7 +16,7 @@ the build pipeline is allowed to proceed. Five checks:
      mandatory fields, and no-fabrication (checks 2/3/5) still apply in full.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
-     (2026-07-30 fix, Cassandra Henriquez / rescue-cassandra-henriquez incident): a
+     (2026-07-30 fix, client Mac mini box / its rescue agent incident): a
      branding field is populated when EITHER build-state records it OR the transcript
      has a matching answered Q/A block — see check_mandatory_fields() /
      compute_answered_ids() below. Previously this check consulted build-state ONLY,
@@ -583,7 +583,7 @@ def scan_jargon(transcript: str, jargon_list: list) -> list:
 
 
 # ── Structured transcript matching (2026-07-30 fix, U048-follow-on) ──────────
-# Cassandra Henriquez / rescue-cassandra-henriquez incident: check_mandatory_fields()
+# Client Mac mini box / rescue-agent incident: check_mandatory_fields()
 # below used to look ONLY at build-state (state[fid] / state["brandingAnswers"][fid] /
 # state["interview"][fid]) for the five branding required fields. The normal interview
 # flow NEVER writes those keys to build-state — per SKILL.md, a free-text branding
