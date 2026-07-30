@@ -215,6 +215,23 @@ PYEOF
 # Normalize a version: strip leading 'v', collapse to X.Y.Z
 norm() { echo "${1#v}"; }
 
+# Compare two vX.Y.Z strings numerically (NOT lexically — "v21.4.9" vs "v21.4.10"
+# sorts wrong as text). Prints -1 if $1 < $2, 0 if equal, 1 if $1 > $2.
+# Exits 1 and prints NOTHING if either argument is not vX.Y.Z, so every caller
+# must treat an empty result as "could not compare" rather than as "equal".
+semver_cmp() {
+  python3 - "$1" "$2" <<'PYEOF'
+import re, sys
+def parse(s):
+    m = re.match(r'^v?(\d+)\.(\d+)\.(\d+)$', s.strip())
+    return tuple(int(x) for x in m.groups()) if m else None
+a, b = parse(sys.argv[1]), parse(sys.argv[2])
+if a is None or b is None:
+    sys.exit(1)
+print((a > b) - (a < b))
+PYEOF
+}
+
 # ─── SKILL 38 doc self-count advisory (FIX-XC-13c) ───────────────────────────
 # Skill 38 hard-codes file counts in BOTH SKILL.md and INSTALL.md. This diffs the
 # stated counts against what is actually on disk and prints a WARN on drift. It is
@@ -249,6 +266,63 @@ skill38_doc_selfcount_advisory() {
     if grep -qiE 'does not implement pending roadmap features' "$d/INSTALL.md" 2>/dev/null; then
       echo "  WARN: 38-conversational-ai-system/INSTALL.md still calls shipped Round-2 features 'pending' (see SKILL.md 'What This Skill Does NOT Do')"
     fi
+  fi
+  return 0
+}
+
+# ─── TAG-CONTAINMENT ADVISORY (--check) — the v21.4.25 signature ─────────────
+# The exact assertion that would have caught the v21.4.25 incident: if an
+# annotated tag matching ./version already exists, does that tag actually
+# CONTAIN this commit? On 2026-07-30 it did not — `v21.4.25` is tagged at
+# `9bac4243` and `git merge-base --is-ancestor 1fff3038 v21.4.25` returns false,
+# so the release shipped a tag that does not carry the work it claimed.
+#
+# CI guard G4 (tag-ancestry-guard.yml) already asserts the OPPOSITE direction —
+# "the tag is an ancestor of main" — and `v21.4.25` passed it, because being ON
+# main says nothing about what a tag CONTAINS. This advisory is the missing half.
+#
+# ADVISORY, NOT FATAL, and deliberately so. It returns 0 unconditionally and
+# never mutates a file, exactly like skill38_doc_selfcount_advisory above, so
+# `--check`'s exit code is unchanged and the CI gate that delegates to it
+# (version-consistency.yml) cannot go red on this. A hard assert would be wrong
+# in two ordinary situations that are not incidents at all:
+#   * on a feature branch the tag for the version you just bumped to does not
+#     exist yet — it is cut after the merge — so every pre-merge --check and
+#     every pre-commit run would fail;
+#   * on main there is a legitimate window between "merge landed" and "tag
+#     pushed" where HEAD is genuinely not yet inside the tag.
+# The hard, fail-closed enforcement lives at BUMP time instead (see
+# release_integrity_guard), where the collision can still be prevented rather
+# than merely reported.
+tag_containment_advisory() {
+  git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1 || return 0
+  local v tag_sha head_sha
+  v=$(head -1 "$F_VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+  [ -n "$v" ] || return 0
+  echo ""
+  if ! git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$v" >/dev/null 2>&1; then
+    echo "Tag-containment advisory: no tag $v in this clone yet"
+    echo "  (normal before the release is tagged, and on a shallow/tagless CI checkout)."
+    return 0
+  fi
+  tag_sha=$(git -C "$REPO_ROOT" rev-parse "refs/tags/$v^{commit}" 2>/dev/null || echo "")
+  head_sha=$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo "")
+  if [ -z "$tag_sha" ] || [ -z "$head_sha" ]; then
+    echo "Tag-containment advisory: could not resolve tag $v or HEAD — check SKIPPED."
+    return 0
+  fi
+  if git -C "$REPO_ROOT" merge-base --is-ancestor "$head_sha" "$tag_sha" 2>/dev/null; then
+    echo "Tag-containment advisory: tag $v (${tag_sha:0:8}) CONTAINS HEAD (${head_sha:0:8}) — OK."
+  else
+    echo "Tag-containment advisory:"
+    echo "  WARN: ./version says $v, and tag $v exists at ${tag_sha:0:8}, but that tag does"
+    echo "  WARN: NOT contain HEAD (${head_sha:0:8}) — HEAD carries work that release does not ship."
+    echo "  WARN: This is the v21.4.25 signature: anyone auditing releases by tag, and any client"
+    echo "  WARN: box comparing update-skills.sh's ONBOARDING_VERSION against a tag, gets a FALSE"
+    echo "  WARN: 'already current' answer."
+    echo "  WARN: EXPECTED FIX: bump to the next patch and cut the tag on the commit that actually"
+    echo "  WARN: contains the work (that is what v21.4.26 did for v21.4.25)."
+    echo "  WARN: (Advisory only on a branch — before merge this is the normal pre-tag state.)"
   fi
   return 0
 }
@@ -295,6 +369,7 @@ check_drift() {
 # ─── --check mode: report drift and exit ─────────────────────────────────────
 if [ "${1:-}" = "--check" ]; then
   print_state
+  tag_containment_advisory
   if check_drift; then
     echo ""
     echo "All $BUMP_CHECKED_MARKERS version markers agree."
@@ -321,6 +396,157 @@ if ! echo "$TARGET" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
 fi
 
 TARGET_NOV="${TARGET#v}"  # 10.6.2 (no v)
+
+# ─── RELEASE-INTEGRITY GUARD — stale base / colliding version ────────────────
+# WHY THIS EXISTS (real incident, 2026-07-30, not a hypothetical):
+# This script rolls all 10 markers to whatever TARGET the caller supplies, and
+# the caller derives TARGET by reading the WORKING TREE's ./version and adding
+# one. Two pull requests cut from the same base therefore compute the SAME next
+# version. Git then auto-merges the byte-identical `version` edit with NO
+# conflict, so the second merge ships real content whose version markers are
+# identical to its parent's: the version never advances for that change, and the
+# annotated tag ends up pointing at a commit that does not contain the work it
+# claims to ship.
+#   PR #778 and PR #779 were both cut from f9c6efb4 at v21.4.24 and both bumped
+#   to v21.4.25. #778 merged first and took the tag at 9bac4243. The result:
+#   `git merge-base --is-ancestor 1fff3038 v21.4.25` returns FALSE — the
+#   presentations doctrine fix that release claimed is NOT in it. It also turned
+#   CI guard G3 red on main until v21.4.26 corrected it.
+# Nothing caught it: G1 saw a tag, G2 saw a CHANGELOG entry, G4 saw the tag was
+# on main, and --check saw 10 markers agreeing. They agreed on the wrong number.
+#
+# THE FIX: compare TARGET against origin/main's ./version — the real, shipped
+# release floor — instead of trusting the working tree, and against the tags
+# that already exist locally and on the remote.
+#
+# FAIL-CLOSED, WITH NO BYPASS FLAG. A blocked bump costs one `git merge`; a
+# wrong tag silently lies to every release audit and lets update-skills.sh tell
+# a client box it is current when it is not. There is deliberately no
+# --force/--skip-guard escape hatch: an escape hatch on a guard this cheap to
+# satisfy just becomes the thing everyone types.
+#
+# OFFLINE / BARE CI RUNNER: `git fetch` failing is NOT fatal. The guard degrades
+# to the last-known origin/main ref (if this clone has one) plus the LOCAL tag
+# list, and says loudly, line by line, which checks it could not perform. A
+# legitimate offline bump still completes.
+guard_fatal() {
+  echo "" >&2
+  echo "═══════════════════════════════════════════════════════════════════════" >&2
+  echo "RELEASE-INTEGRITY GUARD — BUMP REFUSED (no file was modified)" >&2
+  echo "═══════════════════════════════════════════════════════════════════════" >&2
+  local line
+  for line in "$@"; do echo "  $line" >&2; done
+  echo "" >&2
+  exit 1
+}
+
+release_integrity_guard() {
+  local target="$1"
+  local remote="origin" branch="main"
+  local fetched=0 base_ver="" tree_ver="" cmp_tree="" cmp_target=""
+  local ls_out="" ls_rc=0
+
+  if ! git -C "$REPO_ROOT" rev-parse --git-dir >/dev/null 2>&1; then
+    echo ""
+    echo "Release-integrity guard: not a git repo — checks SKIPPED."
+    return 0
+  fi
+
+  echo ""
+  echo "Release-integrity guard (target $target vs $remote/$branch):"
+
+  # 1. Refresh our view of the remote. Non-fatal by design.
+  if git -C "$REPO_ROOT" fetch --quiet "$remote" "$branch" 2>/dev/null; then
+    fetched=1
+    echo "  fetched $remote/$branch"
+  else
+    echo "  WARN: could not fetch $remote/$branch (offline, or no such remote)."
+    echo "  WARN: falling back to the last-known $remote/$branch ref and LOCAL tags only."
+  fi
+
+  # 2. The release floor is origin/main's ./version, NOT the working tree's.
+  #    Prefer FETCH_HEAD (just fetched, therefore current) over the tracking ref.
+  if [ "$fetched" -eq 1 ]; then
+    base_ver=$(git -C "$REPO_ROOT" show FETCH_HEAD:version 2>/dev/null | head -1 | tr -d '[:space:]' || true)
+  fi
+  if [ -z "$base_ver" ]; then
+    base_ver=$(git -C "$REPO_ROOT" show "$remote/$branch:version" 2>/dev/null | head -1 | tr -d '[:space:]' || true)
+  fi
+  tree_ver=$(head -1 "$F_VERSION" 2>/dev/null | tr -d '[:space:]' || true)
+
+  if [ -z "$base_ver" ]; then
+    echo "  WARN: no $remote/$branch ./version available in this clone."
+    echo "  WARN: CANNOT verify $target is ahead of the released floor — the stale-base"
+    echo "  WARN: and colliding-version checks are SKIPPED for this run."
+  else
+    echo "  $remote/$branch ./version = $base_ver ; working tree ./version = $tree_ver"
+    cmp_tree=$(semver_cmp "$tree_ver" "$base_ver" 2>/dev/null || echo "")
+    cmp_target=$(semver_cmp "$target" "$base_ver" 2>/dev/null || echo "")
+    if [ -z "$cmp_tree" ] || [ -z "$cmp_target" ]; then
+      echo "  WARN: a version is not parseable as vX.Y.Z (tree=$tree_ver base=$base_ver"
+      echo "  WARN: target=$target) — ordering comparison SKIPPED."
+    else
+      # 2a. STALE BASE — the working tree is behind what main has already shipped.
+      #     This is the root cause of the v21.4.25 collision.
+      if [ "$cmp_tree" -lt 0 ]; then
+        guard_fatal \
+          "STALE BASE: working tree ./version ($tree_ver) is BEHIND $remote/$branch ($base_ver)." \
+          "" \
+          "Your branch was cut before $base_ver shipped, so any 'next patch' computed from" \
+          "the working tree collides with a release that already exists. Merging that edit" \
+          "produces NO git conflict, which is exactly how v21.4.25 shipped a tag that does" \
+          "not contain the work it claimed (merge-base --is-ancestor 1fff3038 v21.4.25 = false)." \
+          "" \
+          "FIX:  git fetch $remote $branch && git merge $remote/$branch" \
+          "      then re-read ./version and bump from THAT value."
+      fi
+      # 2b. COLLIDING VERSION — target does not advance past the released floor.
+      if [ "$cmp_target" -le 0 ]; then
+        guard_fatal \
+          "COLLIDING VERSION: target $target is not strictly ahead of $remote/$branch ($base_ver)." \
+          "" \
+          "$remote/$branch has already shipped $base_ver. Rolling the markers to $target would" \
+          "either re-issue a released version or move it backwards, and git would auto-merge" \
+          "the identical marker edits with no conflict — so nothing downstream would notice." \
+          "" \
+          "FIX:  git fetch $remote $branch && git merge $remote/$branch" \
+          "      then bump to the next patch AFTER $base_ver."
+      fi
+      echo "  OK: $target is strictly ahead of the released floor $base_ver"
+    fi
+  fi
+
+  # 3. The target tag must not already exist — locally or on the remote.
+  #    A tag that exists is a release that shipped; re-pointing it rewrites history.
+  if git -C "$REPO_ROOT" rev-parse -q --verify "refs/tags/$target" >/dev/null 2>&1; then
+    guard_fatal \
+      "TAG ALREADY EXISTS LOCALLY: $target is tagged at $(git -C "$REPO_ROOT" rev-parse --short "refs/tags/$target^{commit}" 2>/dev/null || echo '?')." \
+      "" \
+      "That version has already been cut. Bumping to it again would produce a second," \
+      "different tree claiming the same release, which is precisely the v21.4.25 failure." \
+      "" \
+      "FIX:  pick the next unused patch, or delete the stray local tag if it was never pushed."
+  fi
+  ls_out=$(git -C "$REPO_ROOT" ls-remote --tags "$remote" "refs/tags/$target" 2>/dev/null) && ls_rc=0 || ls_rc=$?
+  if [ "$ls_rc" -ne 0 ]; then
+    echo "  WARN: could not list remote tags (offline) — remote tag collision NOT checked."
+    echo "  WARN: the local tag check above still ran."
+  elif [ -n "$ls_out" ]; then
+    guard_fatal \
+      "TAG ALREADY PUBLISHED ON $remote: $target exists on the remote." \
+      "" \
+      "Another branch has already released $target. Continuing would ship a second tree" \
+      "under a version that is already public." \
+      "" \
+      "FIX:  git fetch $remote $branch && git merge $remote/$branch, then bump past $target."
+  else
+    echo "  OK: tag $target does not exist locally or on $remote"
+  fi
+
+  return 0
+}
+
+release_integrity_guard "$TARGET"
 
 echo "Bumping repo at $REPO_ROOT → $TARGET"
 
