@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test-interview-transcript-decryption.py — U048 encrypted-transcript fix lock
-(2026-07-30, Cassandra Henriquez / rescue-cassandra-henriquez incident).
+(2026-07-30 incident on a client Mac mini box / its rescue agent).
 
 Proves the shared _interview_transcript.py reader — and the two gates that
 consume it, qc-interview-completion.py and build-workforce.py's
