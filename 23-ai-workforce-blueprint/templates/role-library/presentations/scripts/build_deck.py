@@ -630,6 +630,10 @@ AF_CANONICAL_RENDER_BYPASS = "AF-CANONICAL-RENDER-BYPASS"  # a non-canonical han
 AF_LOCAL_CANVAS            = "AF-LOCAL-CANVAS"             # a slide PNG was drawn on a LOCAL Pillow canvas (Image.new 2048x1152) instead of kie.ai
 AF_IMAGE_QC_VISION         = "AF-IMAGE-QC-VISION"          # image-QC "passed" without a real pixel/vision read (rubber-stamp number / flat card / overlay-blessing rubric)
 
+# U027 (not FIX-2, but reuses the same _owner_skip_approved helper): the postflight
+# OCR text-readback audit. See check_ocr_readback() below.
+AF_OCR_READBACK            = "AF-OCR-READBACK"             # a rendered slide's baked text was never read back against its approved copy (checked:false — NEVER waivable), or the readback found a mismatch (matched:false — waivable ONLY by a logged owner_skip_approval)
+
 # The canonical render/assemble tools. A *.py file inside a run/working dir whose
 # name is NOT in this set, and that defines a slide canvas / native text box /
 # direct kie task submission, is a forbidden hand-rolled renderer.
@@ -5295,6 +5299,98 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
                 + ("" if len(problems) <= 10 else f" (+{len(problems) - 10} more)")
                 + ". This gate may be waived ONLY by a logged owner_skip_approval for "
                 "AF-IMAGE-QC-VISION in working/checkpoints/process_manifest.json.")
+    return ""
+
+
+def check_ocr_readback(run_dir: Path) -> str:
+    """U027 — AF-OCR-READBACK postflight gate.
+
+    This audits the per-slide OCR sidecar records (renders/slide-*.ocr.json) that
+    _record_ocr_readback() writes beside every rendered PNG once
+    _verify_aspect_and_readback() calls prompt_gate.ocr_readback() against it. That
+    pair PRODUCES the readback; this function READS it back and decides pass/fail —
+    the two must never be the same code path, or a broken producer could never be
+    caught by its own consumer.
+
+    DEFERS (returns "") ONLY when there are no rendered PNGs yet (the genuine
+    pre-render state — nothing to audit). Once PNGs exist, every one of them MUST
+    carry a well-formed sidecar:
+
+      * missing sidecar, or a sidecar that is not valid JSON -> FAIL. A gate that
+        cannot even confirm the engine ran is not a pass.
+      * sidecar carries checked:false (or `checked` missing/falsy) -> FAIL, and this
+        branch is NEVER waivable. A checked:false record means the OCR engine did
+        not run against that render at all; a self-disabled check is not a pass, and
+        no owner_skip_approval token — however well-formed, whatever af_code/gate
+        value it declares — can waive it (MASTER-SPEC 7.4 / D10).
+      * sidecar carries checked:true, matched:false -> FAIL, UNLESS a logged
+        owner_skip_approval token for AF-OCR-READBACK is present in
+        working/checkpoints/process_manifest.json (_owner_skip_approved). Unlike
+        checked:false, a genuine mismatch the owner has reviewed and accepted (e.g.
+        a stylised headline OCR legitimately cannot read) IS waivable.
+      * checked:true, matched:true on every rendered slide -> PASS ("").
+
+    Returns "" on pass/defer, or a fatal AF-OCR-READBACK message naming the
+    offending slide(s) and the count/denominator (e.g. "1 of 2")."""
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs:
+        return ""
+
+    total = len(pngs)
+    missing: list = []      # no sidecar, or sidecar is not valid JSON
+    unchecked: list = []    # sidecar exists but checked is false/absent
+    mismatched: list = []   # checked:true but matched is false
+
+    for png in pngs:
+        sidecar = png.with_suffix(".ocr.json")
+        if not sidecar.is_file():
+            missing.append(png.name)
+            continue
+        obj = _read_json(sidecar)
+        if not isinstance(obj, dict) or "__parse_error__" in obj:
+            missing.append(png.name)
+            continue
+        if not obj.get("checked"):
+            unchecked.append(png.name)
+            continue
+        if obj.get("matched") is False:
+            mismatched.append(png.name)
+
+    if missing:
+        extra = "" if len(missing) <= 5 else f" (+{len(missing) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(missing)} of {total} slide(s) missing or unreadable "
+            f"OCR sidecar(s): {', '.join(missing[:5])}{extra}. Every rendered PNG must "
+            "carry a renders/<slide>.ocr.json readback record written by "
+            "ocr_readback()/_record_ocr_readback() before this gate can pass."
+        )
+
+    if unchecked:
+        extra = "" if len(unchecked) <= 5 else f" (+{len(unchecked) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(unchecked)} of {total} slide(s) failed OCR readback "
+            f"(checked:false): {', '.join(unchecked[:5])}{extra}. A checked:false record "
+            "means the OCR engine never ran against this render — a self-disabled check "
+            "is not a pass. This branch is NOT waivable: no owner_skip_approval token, "
+            "however well-formed, can waive it."
+        )
+
+    if mismatched:
+        skip = _owner_skip_approved(run_dir, AF_OCR_READBACK)
+        if skip is not None:
+            print(f"  NOTE  AF-OCR-READBACK waived by logged owner_skip_approval "
+                  f"(approved_by={skip.get('approved_by')!r}, reason={skip.get('reason')!r}).",
+                  file=sys.stderr)
+            return ""
+        extra = "" if len(mismatched) <= 5 else f" (+{len(mismatched) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(mismatched)} of {total} slide(s) mismatched the "
+            f"approved copy: {', '.join(mismatched[:5])}{extra}. The rendered text does "
+            "not match the slide's approved copy (garbled/unreadable bake). Re-prompt/"
+            "re-render the affected slide(s), or waive with a logged owner_skip_approval "
+            "token for AF-OCR-READBACK in working/checkpoints/process_manifest.json."
+        )
+
     return ""
 
 
