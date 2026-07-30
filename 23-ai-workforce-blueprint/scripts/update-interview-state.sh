@@ -26,6 +26,140 @@ if [ ! -f "$STATE" ]; then
   exit 1
 fi
 
+# ── Deferred-stamp spool (P0 fix) ─────────────────────────────────────────────
+# A tripped rate limit must never silently discard the caller's progress
+# stamp. Instead of exiting with nothing to show for it, a refused (non
+# --complete) call is queued here durably, in the exact shape needed to
+# replay it, and is applied automatically the next time ANY call for this
+# workspace succeeds (or immediately via --drain-deferred). The client's
+# actual answer text is not at risk from this script at all -- both known
+# callers (SKILL.md's "write the answer to disk first" step, and the Command
+# Center route's transcript append) write the transcript BEFORE this script
+# ever runs -- so what this spool protects is the progress record
+# (phase/question-number/asked-by/phases-complete) that this script owns.
+DEFERRED_SPOOL="$STATE_DIR/.interview-state-deferred.jsonl"
+
+# Apply one stamp to $STATE. Shared by the live (non --complete) path and by
+# drain_deferred_stamps() replay, so the write shape can never drift between
+# "answer this question live" and "replay a queued one" (byte-identical jq).
+apply_interview_stamp() {
+  local _state="$1" _phase="$2" _qnum="$3" _asked_by="$4" _phases_complete="$5"
+  local _now _tmp
+  _now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  _tmp="$_state.tmp.$$.$RANDOM"
+
+  local -a _jq_args=()
+  local _jq_filter='if .interviewProgress == null then .interviewProgress = {} else . end'
+
+  if [ -n "$_phase" ]; then
+    _jq_args+=(--arg phase "$_phase")
+    _jq_filter+=' | .interviewProgress.lastQuestionPhase = $phase'
+  fi
+  if [ -n "$_qnum" ]; then
+    _jq_args+=(--argjson qnum "$_qnum")
+    _jq_filter+=' | .interviewProgress.lastQuestionNumber = $qnum'
+  fi
+  if [ -n "$_asked_by" ]; then
+    _jq_args+=(--arg by "$_asked_by")
+    _jq_filter+=' | .interviewProgress.lastQuestionAskedBy = $by'
+  fi
+  if [ -n "$_phases_complete" ]; then
+    local _phases_json
+    _phases_json=$(echo "$_phases_complete" | python3 -c "import sys, json; print(json.dumps([p.strip() for p in sys.stdin.read().split(',') if p.strip()]))")
+    _jq_args+=(--argjson phases "$_phases_json")
+    _jq_filter+=' | .interviewProgress.phasesComplete = $phases'
+  fi
+  _jq_args+=(--arg now "$_now")
+  _jq_filter+=' | .interviewProgress.lastQuestionAt = $now'
+
+  jq "${_jq_args[@]}" "$_jq_filter" "$_state" > "$_tmp"
+  mv -f "$_tmp" "$_state"
+}
+
+# Replay every queued stamp this workspace's rate-limit budget currently has
+# room for (oldest first -- the spool is append-only so file order IS
+# chronological order). Entries still over budget stay queued; nothing is
+# ever dropped by a drain. Best-effort: a corrupt line is skipped, not fatal.
+drain_deferred_stamps() {
+  [ -s "$DEFERRED_SPOOL" ] || return 0
+  local _remaining
+  _remaining="$(mktemp "${DEFERRED_SPOOL}.remain.XXXXXX" 2>/dev/null || printf '%s.remain.%s' "$DEFERRED_SPOOL" "$$")"
+  : > "$_remaining"
+  local _applied=0 _kept=0 _line _sess _dphase _dqnum _dby _dphases
+  while IFS= read -r _line || [ -n "$_line" ]; do
+    [ -n "$_line" ] || continue
+    _sess="$(printf '%s' "$_line" | python3 -c "
+import json, sys
+try:
+    print(json.loads(sys.stdin.read()).get('session') or '')
+except Exception:
+    print('')" 2>/dev/null || true)"
+    if [ -n "$_sess" ] && check_interview_rate_limit "$_sess" 2>/dev/null; then
+      _dphase="$(printf '%s' "$_line" | python3 -c "import json,sys
+try: print(json.loads(sys.stdin.read()).get('phase') or '')
+except Exception: print('')" 2>/dev/null || true)"
+      _dqnum="$(printf '%s' "$_line" | python3 -c "import json,sys
+try:
+    v = json.loads(sys.stdin.read()).get('questionNumber')
+    print(v if v is not None else '')
+except Exception: print('')" 2>/dev/null || true)"
+      _dby="$(printf '%s' "$_line" | python3 -c "import json,sys
+try: print(json.loads(sys.stdin.read()).get('askedBy') or '')
+except Exception: print('')" 2>/dev/null || true)"
+      _dphases="$(printf '%s' "$_line" | python3 -c "import json,sys
+try: print(json.loads(sys.stdin.read()).get('phasesComplete') or '')
+except Exception: print('')" 2>/dev/null || true)"
+      apply_interview_stamp "$STATE" "$_dphase" "$_dqnum" "$_dby" "$_dphases"
+      _applied=$((_applied + 1))
+      echo "interview-state drain: applied deferred stamp for session=$_sess (phase=$_dphase qnum=$_dqnum)" >&2
+    else
+      printf '%s\n' "$_line" >> "$_remaining"
+      _kept=$((_kept + 1))
+    fi
+  done < "$DEFERRED_SPOOL"
+  if [ -s "$_remaining" ]; then
+    mv -f "$_remaining" "$DEFERRED_SPOOL"
+  else
+    rm -f "$_remaining" "$DEFERRED_SPOOL"
+  fi
+  if [ "$_applied" -gt 0 ] || [ "$_kept" -gt 0 ]; then
+    echo "interview-state drain: applied=$_applied kept-queued=$_kept" >&2
+  fi
+}
+
+# Queue a refused stamp durably (never silently dropped) and print a LOUD,
+# plain-language explanation. check_interview_rate_limit() has already written
+# its own "RATE-LIMIT: session ... Retry in Ns." line to stderr by the time
+# this runs; this adds what that generic message can't know -- that nothing
+# was lost, where it was queued, and how it comes back.
+defer_stamp_and_report() {
+  local _sess="$1" _phase="$2" _qnum="$3" _asked_by="$4" _phases="$5"
+  local _queued_at
+  _queued_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  python3 -c "
+import json, sys
+entry = {
+    'queuedAt': sys.argv[1],
+    'session': sys.argv[2],
+    'phase': sys.argv[3] or None,
+    'questionNumber': (int(sys.argv[4]) if sys.argv[4] else None),
+    'askedBy': sys.argv[5] or None,
+    'phasesComplete': sys.argv[6] or None,
+}
+with open(sys.argv[7], 'a') as f:
+    f.write(json.dumps(entry) + '\n')
+" "$_queued_at" "$_sess" "$_phase" "$_qnum" "$_asked_by" "$_phases" "$DEFERRED_SPOOL"
+  {
+    echo "This progress update was NOT lost: it is queued at $DEFERRED_SPOOL"
+    echo "and will be applied automatically the next time any interview-state"
+    echo "update for session $_sess succeeds, or immediately via:"
+    echo "  update-interview-state.sh --drain-deferred"
+    echo "The client's answer text is unaffected by this -- it is written to the"
+    echo "transcript before this script ever runs. Retry after the window clears,"
+    echo "or simply continue: the next successful call recovers this one too."
+  } >&2
+}
+
 # Parse flags
 PHASE=""
 QNUM=""
@@ -33,6 +167,8 @@ ASKED_BY=""
 PHASES_COMPLETE=""
 COMPLETE=false
 INDUSTRY_PACK_BLOB=""
+SESSION_ID="${INTERVIEW_SESSION_ID:-}"
+DRAIN_ONLY=false
 while [ $# -gt 0 ]; do
   case "$1" in
     --phase) PHASE="$2"; shift 2 ;;
@@ -41,51 +177,82 @@ while [ $# -gt 0 ]; do
     --phases-complete) PHASES_COMPLETE="$2"; shift 2 ;;
     --complete) COMPLETE=true; shift ;;
     --industry-pack) INDUSTRY_PACK_BLOB="$2"; shift 2 ;;  # PRD-2.15: passthrough to record-industry-pack.sh
+    --session-id) SESSION_ID="$2"; shift 2 ;;  # P0 fix: explicit stable session id, takes priority over --asked-by for the rate-limit key only (never for lastQuestionAskedBy)
+    --drain-deferred) DRAIN_ONLY=true; shift ;;  # replay the deferred spool (see drain_deferred_stamps above), then exit if no other flags were given
     *) echo "unknown flag: $1" >&2; exit 1 ;;
   esac
 done
 
-# Rate-limit check
-RL_SESSION="${ASKED_BY:-}"
-if [ -z "$RL_SESSION" ]; then RL_SESSION="$(interview_session_id)"; fi
+# Opportunistic drain: every invocation flushes any earlier queued stamp for
+# this workspace before doing its own work, so the very next successful call
+# -- even an unrelated one -- recovers anything an earlier rate-limit trip
+# queued, with zero extra operational awareness required.
+drain_deferred_stamps
+
+if [ "$DRAIN_ONLY" = true ] && [ -z "$PHASE" ] && [ -z "$QNUM" ] && [ "$COMPLETE" != true ] && [ -z "$INDUSTRY_PACK_BLOB" ]; then
+  exit 0
+fi
+
+# Rate-limit check. interview_rate_limit_session_key() prefers an explicit
+# --session-id, then a real (non-sentinel) --asked-by (preserving the
+# authenticated Cf-Access/operator path's exact behavior), then falls back to
+# the stable interviewSessionId in build-state -- so the shared
+# "interview-web" literal the Command Center defaults to can never become the
+# bucket key. See lib-interview-rate-limit.sh for the full incident writeup.
+RL_SESSION="$(interview_rate_limit_session_key "${SESSION_ID:-}" "${ASKED_BY:-}")"
 if [ "$COMPLETE" = true ]; then
-  RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-5}"
+  RL_MAX_SAVED="${INTERVIEW_RATE_LIMIT_MAX:-60}"
   INTERVIEW_RATE_LIMIT_MAX=3
-  check_interview_rate_limit "complete:${RL_SESSION}" || exit 1
+  if ! check_interview_rate_limit "complete:${RL_SESSION}"; then
+    INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
+    echo "This --complete call is NOT queued for replay (completion intentionally" >&2
+    echo "is not auto-replayed -- it would fire the QC gate / build-kick out of" >&2
+    echo "band). Nothing else was written. Re-run --complete once the window" >&2
+    echo "above clears." >&2
+    exit 89
+  fi
   INTERVIEW_RATE_LIMIT_MAX="${RL_MAX_SAVED}"
 elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
-  check_interview_rate_limit "$RL_SESSION" || exit 1
+  if ! check_interview_rate_limit "$RL_SESSION"; then
+    defer_stamp_and_report "$RL_SESSION" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE"
+    exit 89
+  fi
 fi
-
-# Build the jq patch fragment
-NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-TMP="$STATE.tmp.$$"
-
-JQ_ARGS=()
-# Ensure interviewProgress exists as an object
-JQ_FILTER='if .interviewProgress == null then .interviewProgress = {} else . end'
-
-if [ -n "$PHASE" ]; then
-  JQ_ARGS+=(--arg phase "$PHASE")
-  JQ_FILTER+=' | .interviewProgress.lastQuestionPhase = $phase'
-fi
-if [ -n "$QNUM" ]; then
-  JQ_ARGS+=(--argjson qnum "$QNUM")
-  JQ_FILTER+=' | .interviewProgress.lastQuestionNumber = $qnum'
-fi
-if [ -n "$ASKED_BY" ]; then
-  JQ_ARGS+=(--arg by "$ASKED_BY")
-  JQ_FILTER+=' | .interviewProgress.lastQuestionAskedBy = $by'
-fi
-if [ -n "$PHASES_COMPLETE" ]; then
-  PHASES_JSON=$(echo "$PHASES_COMPLETE" | python3 -c "import sys, json; print(json.dumps([p.strip() for p in sys.stdin.read().split(',') if p.strip()]))")
-  JQ_ARGS+=(--argjson phases "$PHASES_JSON")
-  JQ_FILTER+=' | .interviewProgress.phasesComplete = $phases'
-fi
-JQ_ARGS+=(--arg now "$NOW")
-JQ_FILTER+=' | .interviewProgress.lastQuestionAt = $now'
 
 if [ "$COMPLETE" = true ]; then
+  # --complete keeps its ORIGINAL combined atomic write (progress stamp +
+  # completion/gate fields in ONE jq call) verbatim -- this branch is
+  # deliberately NOT routed through apply_interview_stamp()/the deferred
+  # spool (see the rate-limit check above: a --complete trip is reported but
+  # not queued, since replaying it later would fire the QC gate / build-kick
+  # out of band).
+  NOW=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+  TMP="$STATE.tmp.$$"
+
+  JQ_ARGS=()
+  # Ensure interviewProgress exists as an object
+  JQ_FILTER='if .interviewProgress == null then .interviewProgress = {} else . end'
+
+  if [ -n "$PHASE" ]; then
+    JQ_ARGS+=(--arg phase "$PHASE")
+    JQ_FILTER+=' | .interviewProgress.lastQuestionPhase = $phase'
+  fi
+  if [ -n "$QNUM" ]; then
+    JQ_ARGS+=(--argjson qnum "$QNUM")
+    JQ_FILTER+=' | .interviewProgress.lastQuestionNumber = $qnum'
+  fi
+  if [ -n "$ASKED_BY" ]; then
+    JQ_ARGS+=(--arg by "$ASKED_BY")
+    JQ_FILTER+=' | .interviewProgress.lastQuestionAskedBy = $by'
+  fi
+  if [ -n "$PHASES_COMPLETE" ]; then
+    PHASES_JSON=$(echo "$PHASES_COMPLETE" | python3 -c "import sys, json; print(json.dumps([p.strip() for p in sys.stdin.read().split(',') if p.strip()]))")
+    JQ_ARGS+=(--argjson phases "$PHASES_JSON")
+    JQ_FILTER+=' | .interviewProgress.phasesComplete = $phases'
+  fi
+  JQ_ARGS+=(--arg now "$NOW")
+  JQ_FILTER+=' | .interviewProgress.lastQuestionAt = $now'
+
   # PRD-2.15: when marking complete, also set interviewQc.status="pending" so the
   # closeout SM and crons see a QC gate is owed. The QC gate (qc-interview-completion.py)
   # transitions this to "pass" / "needs-review" / "fail" when it runs.
@@ -106,10 +273,14 @@ if [ "$COMPLETE" = true ]; then
   JQ_FILTER+=' | if (.sopLibraryStatus == null) then .sopLibraryStatus = "pending" else . end'
   JQ_FILTER+=' | if (.closeoutStatus == null) then .closeoutStatus = "pending" else . end'
   JQ_FILTER+=' | .buildKickRequestedAt = $now'
-fi
 
-jq "${JQ_ARGS[@]}" "$JQ_FILTER" "$STATE" > "$TMP"
-mv -f "$TMP" "$STATE"
+  jq "${JQ_ARGS[@]}" "$JQ_FILTER" "$STATE" > "$TMP"
+  mv -f "$TMP" "$STATE"
+else
+  # Ordinary per-question stamp: the same write apply_interview_stamp() also
+  # uses to replay a deferred entry, so the two paths can never drift.
+  apply_interview_stamp "$STATE" "$PHASE" "$QNUM" "$ASKED_BY" "$PHASES_COMPLETE"
+fi
 
 echo "updated $STATE: phase=$PHASE qnum=$QNUM asked_by=$ASKED_BY complete=$COMPLETE"
 
