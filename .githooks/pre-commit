@@ -85,12 +85,19 @@ done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.s
 [ "$N28_FAIL" -eq 1 ] && exit 1
 
 # ── 4. chmod-600 coverage on secrets/.env writers ───────────────────────────
+# v2 (2026-07-30): closes the "comment bypass" -- the old check here was a
+# raw `grep -E 'chmod[[:space:]]+600'` over the WHOLE file, so a script
+# could satisfy this gate with nothing but `# remember to chmod 600` (or
+# the text sitting inert inside a heredoc body) and never actually secure
+# the file. scripts/qc-assert-chmod600-real.py strips comments and heredoc
+# bodies before searching for a real chmod 600 invocation -- see that
+# script's docstring for exactly what it does and does not catch.
 C600_FAIL=0
 while IFS= read -r f; do
   [ -f "$f" ] || continue
   if grep -qE '(secrets/\.env|SECRETS_ENV_FILE)' "$f" 2>/dev/null; then
-    if ! grep -qE 'chmod[[:space:]]+600' "$f" 2>/dev/null; then
-      echo "PRE-COMMIT BLOCKED: $f writes secrets/.env but has no chmod 600 call (token exposure risk)"
+    if ! python3 "$REPO_ROOT/scripts/qc-assert-chmod600-real.py" "$f" 2>/dev/null; then
+      echo "PRE-COMMIT BLOCKED: $f writes secrets/.env but has no real chmod 600 call (token exposure risk -- a chmod 600 mentioned only in a comment or heredoc does not count)"
       C600_FAIL=1
     fi
   fi
