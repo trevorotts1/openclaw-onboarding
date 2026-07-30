@@ -7649,6 +7649,21 @@ PREFLIGHT_REQUIRED = [
      "pixel read, not a self-typed number (AF-IMAGE-QC-VISION)",
      "Phase Image-QC / Postflight — Image QC Specialist pixel read (AF-IMAGE-QC-VISION)",
      check_image_qc_vision),
+    # U027 — OCR-READBACK postflight gate (AF-OCR-READBACK). Audits the per-slide OCR
+    # sidecar records (renders/slide-*.ocr.json) that _record_ocr_readback() writes
+    # beside every rendered PNG once _verify_aspect_and_readback() calls
+    # prompt_gate.ocr_readback() against it. A missing/unparseable sidecar, or a
+    # checked:false record (the OCR engine never ran), FAILS and is NEVER waivable;
+    # a checked:true/matched:false mismatch FAILS but is waivable ONLY by a logged
+    # owner_skip_approval token for AF-OCR-READBACK. Defers ONLY pre-render (no
+    # rendered PNGs yet). Run-dir-scoped (None sentinel).
+    (None,
+     "OCR readback — every rendered PNG carries a renders/<slide>.ocr.json sidecar "
+     "proving the baked text was read back and matched the approved copy; a "
+     "missing/unparseable sidecar or a checked:false record (OCR engine never ran) "
+     "is NEVER waivable (AF-OCR-READBACK)",
+     "Postflight — render closeout OCR audit (U027, AF-OCR-READBACK)",
+     check_ocr_readback),
     # === POWERFUL-PRESENTATION DOCTRINE GATES (manifest v18) ===
     # All DEFER unless Phase P0B-PRIORITY produced working/copy/priority_shift_spec.json
     # (the no-regression master switch), so a legacy / ad-hoc build is never broken.
