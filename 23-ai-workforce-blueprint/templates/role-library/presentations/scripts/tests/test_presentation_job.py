@@ -407,15 +407,38 @@ class TestBoardMirror:
 class TestModuleBoundaries:
     def test_import_state_does_not_import_phases(self):
         """Importing presentation_job.state must not import presentation_job.phases."""
-        # Clean modules
+        # Snapshot every already-imported presentation_job.* module, then clean
+        # sys.modules so the import below starts from a blank slate, and put the
+        # snapshot BACK afterward (try/finally -- must run on failure too).
+        #
+        # Leaving the deletion in place (as this test used to) corrupts every
+        # later test in the same pytest session that imports presentation_job.report,
+        # .phases, etc. fresh: e.g. Test8MessageBound in test_report.py does
+        # `import presentation_job.report as rpt` inside its own test body, and
+        # with the real module gone from sys.modules that import silently creates
+        # a SECOND, distinct module object. Test8 then monkeypatches `_parse_minutes`
+        # on that second object while the `Reporter` class it actually exercises
+        # (imported at test_report.py's top level, before this test ran) still
+        # points at the ORIGINAL module's globals -- so the monkeypatch has no
+        # effect, real wall-clock time is used, and the throttle test fails
+        # nondeterministically depending on file/test collection order. Confirmed
+        # by running `pytest tests/test_presentation_job.py tests/test_report.py`:
+        # FAILED before this fix (Test8 saw real epoch-minute timestamps instead of
+        # the monkeypatched fake clock); passes after restoring sys.modules here.
+        saved = {k: v for k, v in sys.modules.items() if k.startswith("presentation_job")}
         for k in list(sys.modules):
             if k.startswith("presentation_job"):
                 del sys.modules[k]
-
-        import presentation_job.state
-        assert "presentation_job.phases" not in sys.modules, (
-            "state.py causes phases.py to be imported — circular dependency"
-        )
+        try:
+            import presentation_job.state
+            assert "presentation_job.phases" not in sys.modules, (
+                "state.py causes phases.py to be imported — circular dependency"
+            )
+        finally:
+            for k in list(sys.modules):
+                if k.startswith("presentation_job"):
+                    del sys.modules[k]
+            sys.modules.update(saved)
 
 
 # ---------------------------------------------------------------------------
