@@ -71,6 +71,11 @@ echo "[activate-memory-stack] secrets: $OC_SECRETS"
 # ─── 1. Canonicalize GEMINI_API_KEY in secrets/.env ──────────────────────────
 mkdir -p "$(dirname "$OC_SECRETS")"
 touch "$OC_SECRETS"
+# `touch` on a not-yet-existing file creates it at the process umask default
+# (commonly 644/664, NOT 600) — this script never sets umask, so a fresh
+# secrets/.env would be left group/world-readable until something else
+# happened to chmod it. Secure it immediately after creation.
+chmod 600 "$OC_SECRETS" 2>/dev/null || true
 
 current_gemini="$(grep -E '^GEMINI_API_KEY=' "$OC_SECRETS" 2>/dev/null | tail -1 | cut -d= -f2- || true)"
 if [ -z "${current_gemini:-}" ]; then
@@ -81,6 +86,10 @@ if [ -z "${current_gemini:-}" ]; then
     if [ -n "${val:-}" ]; then
       echo "[activate-memory-stack] canonicalizing $alias → GEMINI_API_KEY"
       printf '\nGEMINI_API_KEY=%s\n' "$val" >> "$OC_SECRETS"
+      # Re-assert 600 after the append: an append never changes an existing
+      # file's mode, so a pre-existing secrets/.env left permissive by an
+      # older install stays permissive unless we tighten it here too.
+      chmod 600 "$OC_SECRETS" 2>/dev/null || true
       current_gemini="$val"
       break
     fi
