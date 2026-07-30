@@ -130,6 +130,36 @@ def test_qc_gate_passes_on_genuine_report_at_or_above_threshold():
     assert g["warn_only"] is False
     assert g["score"] == 8.5
 
+def test_qc_gate_surfaces_blocking_reasons_from_the_aggregator():
+    """qc_aggregate.py (P-QC-AGGREGATE) writes final_qc_report.json with a
+    null "average" and a "blocking_reasons" list naming exactly which domain is
+    missing/untrusted/sub-threshold when it cannot honestly certify a pass. The
+    gate must fold that detail into its own reason -- purely additive: a report
+    with no blocking_reasons key (every OTHER fixture in this file) is unaffected,
+    proven by test_qc_gate_below_threshold_is_hard_failure and
+    test_qc_gate_no_numeric_score_is_hard_failure above still passing verbatim."""
+    rd = _rd()
+    _wj(rd, "working/qc/final_qc_report.json", {
+        "average": None,
+        "blocking_reasons": ["Speech QC (P-SPEECH-QC): missing domain report at "
+                             "working/qc/speech_qc_report.json"],
+    })
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
+    assert "speech_qc_report.json" in g["reason"], g["reason"]
+    assert "P-SPEECH-QC" in g["reason"], g["reason"]
+
+def test_qc_gate_blocking_reasons_do_not_leak_into_a_passing_score():
+    """blocking_reasons is diagnostic detail for a FAILING report -- it must never
+    turn a genuinely passing numeric score into anything other than a pass."""
+    rd = _rd()
+    _wj(rd, "working/qc/final_qc_report.json",
+        {"average": 9.1, "blocking_reasons": []})
+    g = Gates(rd, {})._qc_gate()
+    assert g["state"] == "pass", g
+    assert g["score"] == 9.1
+
 def test_qc_is_waivable_with_genuine_client_quote():
     """Unlike ocr_readback, qc stays in GATE_KEYS -- a client-quoted waiver (validated by
     waivers.py against the client's own recorded words) is the ONLY bypass. This is not

@@ -1,3 +1,80 @@
+## [Unreleased]  -  P-QC-AGGREGATE: the fail-closed qc gate's missing producer
+
+**Ships the producer the qc-gate fail-closed fix above (same PR) explicitly disclosed as
+missing.** That fix made `_qc_gate` block `close()` unless `working/qc/final_qc_report.json`
+exists, parses, and carries a numeric `average >= 8.5` — correct, but no phase wrote that file,
+so the fixed gate blocked EVERY job, including a flawless one. Independent QC proved this by
+seeding a flawless run (speech, teleprompter, a 9,500-char prompt, a full media library, a
+passing OCR sidecar, and all six genuine domain QC reports at score 9.4) and confirming `--close`
+still printed `CANNOT CLOSE -- qc: no final QC report at working/qc/final_qc_report.json` and
+exited 3. The gate was correct; it simply had no input to check.
+
+**Added:** `scripts/qc_aggregate.py` and manifest phase `P-QC-AGGREGATE` (order 8.65, sequenced
+after every domain QC phase including `P-SPEECH-QC` at 8.6, before `P9.5-NOTES-SYNC` at 8.7;
+`executor.kind: script`, `cmd: python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode`).
+It reads the six domain QC reports from the paths the manifest itself declares
+(`P1Q-COPY-QC` → `copy_qc_report.json`, `P-TYPO-QC` → `typography_qc_report.json`,
+`P-PROMPT-QC` → `prompt_qc_report.json`, `P-IMAGE-QC` → `image_qc_report.json`,
+`P-SHIFT-QC` → `priority_shift_report.json`, `P-SPEECH-QC` → `speech_qc_report.json`), verifies
+provenance using the EXISTING mechanisms only — `qc_generator_guard.guard_qc_generators()`
+(`AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT` / `AF-QC-REPORT-UNTRUSTED`, a whole-run-dir
+sweep) and `build_deck._qc_independence_reason()` (the same self/builder-graded-report check every
+legacy per-domain gate already uses) — computes the combined score as the mean of the five numeric
+domain averages plus the priority-shift ship gate's own pass/fail (a 14-item checklist, not a 0-10
+rubric, so it gates rather than averages), and writes `final_qc_report.json`. No new trust
+mechanism was invented.
+
+**Never fabricates a score.** The gate-facing `average` field is populated ONLY on a genuine, full
+pass (all six domains present, trusted, individually >= 8.5, priority-shift passing, generator
+guard clean) — on ANY blocking finding it is `null`, never a partial or masked number that could
+slip past `_qc_gate`'s `score >= 8.5` check. `computed_average` is a separate, diagnostic-only
+field (the honest five-domain mean, populated whenever the numbers are readable, pass or fail) —
+informational for humans, never read by the gate. `blocking_reasons` names every finding by
+domain, phase id, and (where applicable) AF code.
+
+**Deliberately out of scope:** re-running build_deck.py's deep per-domain substance teeth (the
+prompt-file re-measure behind `_chk_prompt_qc`, the pixel/vision cross-check behind
+`_chk_image_qc`). Those already gate their OWN phases via build_deck's preflight framework and
+`phase_verifiers.py`'s warn-mode substance checks; re-running them here would be a third parallel
+path duplicating rather than reusing existing logic, and the task at hand is provenance +
+aggregation, not re-grading.
+
+**`gates.py`:** `_qc_gate` now folds `final_qc_report.json`'s `blocking_reasons` list (when
+present) into its own `reason` string — purely additive: a report with no `blocking_reasons` key
+(every existing fixture) is byte-for-byte unaffected; proven by the untouched
+`test_qc_gate_below_threshold_is_hard_failure` / `test_qc_gate_no_numeric_score_is_hard_failure`
+still passing verbatim. This is what turns "no numeric score" into "no final QC report — Speech QC
+(P-SPEECH-QC): missing domain report at working/qc/speech_qc_report.json" at `close()` time.
+
+**Manifest discipline (U019 step 8):** `manifest_version` and `MIN_MANIFEST_VERSION` both move
+32 → 33 in this commit. `MANIFEST-SOURCE.txt`'s `content_sha256` and
+`universal-sops/_content-manifest.json` (via `scripts/hash-universal-sops-manifest.py`) are
+re-stamped against the final content. `sync_check.py` reports IN SYNC (33 phases, 156 autofails,
+34 roles) — the new phase declares `gate_codes: []` and `preflight: null` (no new AF-* code, no
+`_chk_*` checker reference), matching the shape of the other script-executor phases from U012, so
+it introduces zero lockstep drift. `phase_verifiers.py` and `PHASE_BUDGET_MINUTES` both gained a
+`P-QC-AGGREGATE` entry.
+
+**Proof (`tests/test_qc_aggregate.py`, `tests/test_gates.py`, `tests/test_presentation_job.py::
+TestQCAggregatePhaseEndToEnd`):** a flawless run (all six genuine reports, average 9.4) reaches
+`DONE` via the REAL `qc_aggregate.py` subprocess + `Engine.close()`. A missing domain report
+BLOCKS and names it. A sub-threshold domain average BLOCKS, exit non-zero. An ungoverned/corrupt
+QC-report generator BLOCKS via the existing `AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT`
+codes. A self-graded (no independent-reviewer provenance) report BLOCKS via `AF-QC-INDEPENDENCE`.
+A forged `qc` waiver exits `EXIT_WAIVER_INVALID` (9); a genuine client-quoted one still closes
+`DONE`. A parametrized sweep proves `average` is never fabricated across every blocking scenario.
+Bleed-tested (reverting `_qc_gate`'s `blocking_reasons` fold and confirming the new gate tests
+fail, then restoring). Zero new failing test names versus this branch's own pre-change baseline
+(`comm -13`/`comm -23` both empty, 509 passed vs. 482 before, exactly +27 new tests, 15
+pre-existing unrelated failures unchanged). Note: comparing against `origin/main` directly (not
+just this branch's own baseline) surfaces 3 test names — `test_cc_board.py::AuthAndContractTest::
+test_patch_phase_contract`, `test_patch_unknown_status_is_rejected`, `test_preflight.py::
+test_delivery_gate` — that fail on this branch but not on `main`; these predate this change (they
+were already failing before any edit in this unit, per the branch's own pre-change baseline) and
+are branch-staleness from this branch sitting ~20 commits behind `main` (missing PR #757's
+`test_cc_board.py` re-point and an unrelated `test_delivery_gate` fix), not a regression this unit
+introduced.
+
 ## [Unreleased]  -  qc gate blocks close() instead of only warning (fail-open closed)
 
 **Presentations engine: the `qc` gate now blocks `close()` instead of only warning.**

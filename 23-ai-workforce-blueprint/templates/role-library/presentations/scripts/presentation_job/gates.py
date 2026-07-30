@@ -109,11 +109,22 @@ class Gates:
         except (json.JSONDecodeError, OSError) as exc:
             return {"state":"fail","warn_only":False,"reason":f"QC report unreadable: {exc}"}
         score = obj.get("average") or obj.get("score")
+        # qc_aggregate.py (the final_qc_report.json producer, P-QC-AGGREGATE) records
+        # WHY the score is missing/absent in "blocking_reasons" -- e.g. which of the six
+        # domain reports is missing, which AF-QC-* provenance code fired, which domain
+        # scored below threshold. When present, fold it into the reason so "no numeric
+        # score" is never the whole story a human sees. Purely additive: a report with no
+        # blocking_reasons key (every existing test fixture) is unaffected.
+        reasons = obj.get("blocking_reasons")
+        detail = "; ".join(str(r) for r in reasons) if isinstance(reasons, list) and reasons else ""
         if not isinstance(score, (int, float)):
-            return {"state":"fail","warn_only":False,"reason":"QC report carries no numeric score"}
+            base = "QC report carries no numeric score"
+            return {"state":"fail","warn_only":False,
+                    "reason": f"{base} -- {detail}" if detail else base}
         if score < QC_PASS_THRESHOLD:
+            base = f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"
             return {"state":"fail","score":score,"warn_only":False,
-                    "reason":f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"}
+                    "reason": f"{base} -- {detail}" if detail else base}
         return {"state":"pass","score":score,"per_dimension":obj.get("per_dimension"),"reason":None,"warn_only":False}
     def _ocr_gate(self) -> Dict[str, Any]:
         # MASTER-SPEC 7.4 / D10: the slide-content readback is the one gate that fail-closes
