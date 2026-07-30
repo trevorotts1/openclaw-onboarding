@@ -1,3 +1,50 @@
+## [Unreleased]  -  U012: add the six missing manifest phases and their executors
+
+`PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --
+`P7-TELEPROMPTER`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.4-FISH-TAG`, `P9.1-SPEECH-PDF`,
+`P9.2-GHL-UPLOAD` -- and the engine walks only `manifest["phases"]`, so it could never reach
+them: `Manifest.phase()` died with `unknown phase id ... (26 phases)`, `EXIT_USAGE=2`. This is
+the actual root cause behind the five deliverable orphans PR #732 exposed (`deck_pdf`,
+`guide_pdf`, `speech_pdf`, `speech_fish_md`, `teleprompter_html`) -- previously misdescribed as
+an open design question in `test_producers.py`'s `known_missing_producers`. They were this
+unit's unfinished wiring, not a design decision. The producer scripts already existed
+(`build_teleprompter.py`, `pdf_export.py`, `presenter_guide.py`, `speech_spec_build.py`,
+`presenters_speech_pdf.py`, `speech_fish_tag.py`, `ghl_media_push.py`) and
+`phase_verifiers.PHASE_VERIFIERS` already had all six registered; only the manifest phase
+objects and their executor blocks were missing.
+
+Added all six phases at the card-declared `order` / `owning_role` / `produces_artifact` values
+(`SPEC/units/U012.md` step 9), each with a real `executor: {"kind": "script", "cmd": ...}`
+pointing at its existing producer, `client_report` templates matching the other 26 phases, and
+`gate_codes: []` (the card names no AF-* code for any of the six; inventing one without a
+matching `autofails` entry would be fabrication, so it is left empty pending a real gate
+definition -- flagged, not silently guessed). `manifest_version` 31 -> 32,
+`MIN_MANIFEST_VERSION` in `presentation_job/manifest.py` bumped to match (U019 step 8), and
+`MANIFEST-SOURCE.txt`'s `content_sha256` re-cut in the same commit -- a stale stamp is exit 7 on
+every engine invocation. `tests/test_producers.py`'s `known_missing_producers` now holds only
+`infographic_png` (no producer by design, audit Q4, out of this unit's scope); the guard's
+bidirectional assertion (fails on a real orphan, fails again if a fixed key is not removed from
+the set) proves the fix rather than merely asserting it.
+
+**Left deliberately unfixed, and reported rather than papered over (Part B of this fix):**
+every one of the 26 pre-existing phases still declares no `executor` (`sync_check.py`'s W1
+warning class, advisory-only, now covers 32 of 32 phases instead of 26 of 26). Declaring
+executors for those 26 needs each one individually verified against a real script or a genuine
+agent-authored judgment call -- bulk-declaring them here would be exactly the kind of
+unverified mass change this programme has been damaged by. A synthetic job (seeded artifacts,
+`--dry-run`) advances cleanly past `P-CONVERTER` through all 21 upstream phases and reaches
+`P8.1-PDF-EXPORT` -- one of the six new phases -- dispatching it as a real script rather than
+stalling or dying with `unknown phase id`.
+
+Verified: `tests/test_producers.py` 17 passed (0 skipped, `known_missing_producers` down from 5
+open entries to just the one out-of-scope key); `sync_check.py` exits 0, `IN SYNC`; bleed test
+(revert the manifest additions -> test goes red naming the exact five keys -> restore -> green
+again) confirmed. Full suite from
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`: 15 failed, 443 passed,
+13 skipped both before and after, and the 15 failing test **names** are byte-identical to
+`origin/main` -- zero new failures, zero regressions.
+
+
 ## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
 
 `presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate

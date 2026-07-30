@@ -1,5 +1,5 @@
 {
-  "manifest_version": 31,
+  "manifest_version": 32,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -716,6 +716,46 @@
       }
     },
     {
+      "id": "P8.1-PDF-EXPORT",
+      "order": 8.1,
+      "name": "Deck PDF Export",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/*-FINAL.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
+      }
+    },
+    {
+      "id": "P8.2-GUIDE",
+      "order": 8.2,
+      "name": "Presenter Guide PDF",
+      "owning_role": "presenters-guide-specialist",
+      "sop_refs": [
+        "presenters-guide-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTER-GUIDE.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
+      }
+    },
+    {
       "id": "P9-SPEECH",
       "order": 8.5,
       "name": "Presenter Speech (length gate)",
@@ -735,6 +775,46 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P8.4-FISH-TAG",
+      "order": 8.52,
+      "name": "Speech Fish-Audio Tagging",
+      "owning_role": "fish-audio-expression-specialist",
+      "sop_refs": [
+        "fish-audio-expression-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
+      }
+    },
+    {
+      "id": "P9.1-SPEECH-PDF",
+      "order": 8.55,
+      "name": "Presenter's Speech PDF (Teleprompter Print)",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
       }
     },
     {
@@ -775,6 +855,46 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      }
+    },
+    {
+      "id": "P9.2-GHL-UPLOAD",
+      "order": 8.9,
+      "name": "GHL Media Library Upload",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/media_library.json",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
+      }
+    },
+    {
+      "id": "P7-TELEPROMPTER",
+      "order": 8.95,
+      "name": "Presenter Teleprompter HTML",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/presenter-teleprompter.html",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
       }
     },
     {

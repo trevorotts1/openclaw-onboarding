@@ -251,28 +251,20 @@ def test_every_manifest_deliverable_has_producer():
         if not producers:
             orphans.add(d["key"])
 
-    # KNOWN OPEN DEFECT, not an accepted state. These deliverables_required entries
-    # have no phase in PIPELINE-MANIFEST.json declaring them via produces_artifact,
-    # so no phase owns building them. U012 shipped the producer *scripts*
-    # (presenter_guide.py, presenters_speech_pdf.py, speech_fish_tag.py,
-    # build_teleprompter.py) but no manifest phase was added to declare their output;
-    # this guard, which exists to catch exactly that, was inert because of the bad
-    # manifest path above, so the gap landed unnoticed. Four of these five are
-    # client_package_files, i.e. files the client is promised.
-    #
-    # Declaring the producing phases needs phase ids, order, owning_role, gate_codes
-    # and client_report templates for a ratified 26-phase pipeline. That is a design
-    # decision and is deliberately NOT invented here.
+    # FIXED. PIPELINE-MANIFEST.json v32 adds the six phases the audit's B2 table
+    # was missing (P7-TELEPROMPTER, P8.1-PDF-EXPORT, P8.2-GUIDE, P8.4-FISH-TAG,
+    # P9.1-SPEECH-PDF, P9.2-GHL-UPLOAD), each declaring produces_artifact at the
+    # manifest filename and a real script executor pointing at the producer that
+    # already existed (presenter_guide.py, presenters_speech_pdf.py + speech_spec_build.py,
+    # speech_fish_tag.py, build_teleprompter.py, ghl_media_push.py). That closes five of
+    # the six deck_pdf/guide_pdf/speech_pdf/speech_fish_md/teleprompter_html orphans
+    # (P9.2-GHL-UPLOAD's artifact, working/checkpoints/media_library.json, is not a
+    # deliverables_required entry, so it was never counted as an orphan here).
     #
     # This is asserted as an EXACT set on purpose: adding a producing phase makes this
     # test fail until the fixed key is removed from this list, so the list cannot rot
     # into a silent permanent exemption.
     known_missing_producers = {
-        "deck_pdf",
-        "guide_pdf",
-        "speech_pdf",
-        "speech_fish_md",
-        "teleprompter_html",
         # infographic_png: no producer by design (audit question Q4, not U012's job)
         "infographic_png",
     }
