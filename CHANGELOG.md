@@ -1,3 +1,76 @@
+## [Unreleased] — branch `fix/skill38-count-guard` — Skill 38 doc self-count check: contradiction scan + enforcing gate (was a presence-only advisory that could never fail)
+
+Trevor named three defects and authorized Skill 38 in scope for these only. All three closed and proven, not just asserted:
+
+1. **The guard asked the wrong question.** `scripts/bump-version.sh`'s `skill38_doc_selfcount_advisory()` did
+   `grep -q "$p protocol"` — "does the CORRECT number appear ANYWHERE?" One match anywhere satisfied it, so a
+   file stating BOTH the right count and a wrong one still passed. Not hypothetical: `SKILL.md` said
+   "51 protocol files under `protocols/`" on one line and "the rest of the 32 protocols" on another, and the old
+   check was structurally incapable of seeing the second. Rewritten as a contradiction scan — "does ANY number
+   in a count position disagree with disk?" — with a delta-statement exclusion (`"v1.8.0 added 6 protocol
+   files"` is a changelog fact, not a total) that is deliberately biased toward false negatives: a spurious
+   release-blocking failure is worse than a missed doc count.
+2. **It was advisory-only, so drift shipped silently.** Its own comment said so: "ADVISORY ONLY... never
+   changes the exit code." A new `SKILL38_COUNT_DRIFT` flag is set on any finding but the function itself still
+   `return 0`s (it runs inside `print_state` under `set -e`; a release bump must not abort half-written).
+   `--check` now consults that flag and `exit 1`s, so drift cannot ship through CI while an in-progress bump
+   still completes.
+3. **The counts are hand-maintained prose in two files per skill, so they drift.** Not re-architected here — see
+   "durable fix" below.
+
+**Proof, not assertion — two real bugs found and fixed while proving the rewrite, both against the actual
+files, not synthetic cases:**
+- A same-line-only delta check missed the compound sentence `"v1.8.0 added 6 protocol files (...), 18 scripts
+  (...), and 3 reference docs (...)"` (word-wrapped across real newlines in `SKILL.md`'s SELF-COUNTS comment) —
+  the "added" governing "3 reference docs" sits five lines earlier, so it false-flagged a legitimate delta.
+  Widening the exclusion to "any delta word anywhere in the last 10 lines" fixed that but created a WORSE
+  regression: `SKILL.md`'s "Skill 38 **adds** the brain layer: ..., and the rest of the **32** protocols" —
+  the exact real drift defect #1 exists to catch — contains the word "adds" too, and the loose version wrongly
+  excluded it. Landed on a tighter rule: the delta word (or a `,`/`;`["and"]["the"]` list-continuation) must sit
+  within ~15 characters of THIS SPECIFIC candidate number, checked across a flattened multi-line window. Proven
+  against all three of Trevor's named non-flag cases (`"v1.8.0 added 6 protocol files"`, `"3 reference docs"`,
+  `"F49 added 0 references"`) and against the real defect (`SKILL.md`'s "32 protocols") in the same run.
+- The digit-extraction regex swallowed the tail of a decimal: `INSTALL.md`'s "the 32 **v5.14** protocol files"
+  contains the contiguous substring "**14** protocol" (the last two digits of the version number immediately
+  followed by the noun), misread as the count 14. Fixed by matching the `N.M noun` form FIRST (POSIX ERE takes
+  the longest leftmost match) and discarding it via a dot filter, so a version number glued to the noun can
+  never surface as a candidate. Left as a known remaining soft edge: because "32" is never directly adjacent to
+  "protocol" in that sentence, the checker structurally cannot verify that specific line either way — noted, not
+  worked around by rewording prose that wasn't asked for.
+
+**Content fix — disk truth re-derived independently** (`ls -1 protocols/*.md`, `references/*.md`,
+`ls -1 scripts/ | grep -E '^[0-9]' | sed -E 's/-.*//' | sort -n | tail -1`): protocols=51, references=25,
+highest-numbered-script=33. Corrected `INSTALL.md`'s "45 protocols" → 51, "22 reference documents" → 25, and
+script range `` `00`–`30` `` → `` `00`–`33` ``; corrected `SKILL.md`'s "the rest of the 32 protocols" → 51.
+
+**Verified, not assumed:** ran `--check` before the content fix (exit 1, named the real drift verbatim); a
+bleed test that temporarily restored the pre-existing `origin/main` presence-scan logic on the real file and
+confirmed it goes back to silently passing (`WARN`s printed, exit 0, when the unrelated marker below is
+stubbed out) before restoring the fix; confirmed the delta exclusion does not flag any of Trevor's three named
+non-drift strings; confirmed it does flag `SKILL.md`'s real "32 protocols" line; re-ran `--check` after the
+content fix — the Skill 38 section now prints "OK - no contradictory counts."
+
+**Known, pre-existing, out of scope:** `--check`'s overall exit code is still 1 on this branch, but NOT from
+Skill 38 — `update-skills.sh`'s `ONBOARDING_VERSION` has been stuck at `v21.4.2` since that version (already
+documented as a known `main`-identical CI failure in the v21.4.15 entry above, unrelated to and predating this
+work). Isolated the Skill 38 gate from that separate issue by stubbing the general version-marker check in a
+read-only test harness: with it stubbed to pass, the Skill 38 gate alone now yields exit 0. `update-skills.sh`
+was not touched — it is not one of the three defects named, and not one of the four files this change was
+authorized to touch.
+
+**Durable fix for defect #3 (generating the counts instead of gating on drift): not built, per instructions —
+Trevor's call, not mine.** The enforcing gate was chosen here because an un-shippable drift achieves the
+practical goal without restructuring hand-written prose. Generating the counts (or pointing both docs at one
+generated manifest) is tractable: both `SKILL.md`'s SELF-COUNTS bullets and `INSTALL.md`'s "What this installs"
+bullets already state the counts in short, near-fixed phrase shapes (`"N protocols"`, `"N reference documents
+under `references/`"`, `` "`00`–`NN`" ``); a small script could regenerate just those substrings from disk truth
+(the same `ls -1 | wc -l` commands already documented in this script's own header checklist) and splice them
+back into the surrounding hand-written prose, leaving everything else untouched. The harder part is the
+free-form historical/delta narrative around them (the SELF-COUNTS comment's "v1.8.0 added 6..." history) staying
+human-authored — that part should not be generated.
+
+Touches: `scripts/bump-version.sh`, `38-conversational-ai-system/INSTALL.md`, `38-conversational-ai-system/SKILL.md`.
+
 ## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
 
 Two role-library files existed only as SOP mirrors, not as their own role-library docs:

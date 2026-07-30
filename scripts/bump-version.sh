@@ -217,26 +217,100 @@ norm() { echo "${1#v}"; }
 skill38_doc_selfcount_advisory() {
   local d="$REPO_ROOT/38-conversational-ai-system"
   [ -d "$d" ] || return 0
-  local p r hi f
+  local p r hi f n bad
   p=$(ls -1 "$d"/protocols/*.md 2>/dev/null | wc -l | tr -d ' ')
   r=$(ls -1 "$d"/references/*.md 2>/dev/null | wc -l | tr -d ' ')
   hi=$(ls -1 "$d"/scripts/ 2>/dev/null | grep -E '^[0-9]' | sed -E 's/-.*//' | sort -n | tail -1)
   echo ""
-  echo "Skill 38 doc self-count advisory (disk: protocols=$p references=$r highest-numbered-script=$hi):"
+  echo "Skill 38 doc self-count check (disk: protocols=$p references=$r highest-numbered-script=$hi):"
+
+  # WHY THIS IS A CONTRADICTION SCAN AND NOT A PRESENCE SCAN
+  #
+  # The original version asked "does the CORRECT number appear anywhere in this
+  # file?" (grep -q "$p protocol"). One match anywhere satisfied that, so a file
+  # containing BOTH the right number and a wrong one passed. That was not
+  # hypothetical: SKILL.md said "51 protocol files under protocols/" on one line
+  # AND "the rest of the 32 protocols" on another, and the check was structurally
+  # incapable of seeing the second.
+  #
+  # This version asks the inverse, which is the question that actually matters:
+  # "does ANY number appear in a count position that disagrees with disk?"
+  #
+  # Delta statements are legitimate and must NOT be flagged -- "v1.8.0 added 6
+  # protocol files" is a changelog fact, not a total. They are excluded by the
+  # 'added|adds|new|plus' guard below. That exclusion is a HEURISTIC and the only
+  # soft edge in this check: a total phrased with one of those words would be
+  # missed. It is deliberately biased toward false negatives over false positives,
+  # because a spurious release-blocking failure is worse than a missed doc count.
   for f in SKILL.md INSTALL.md; do
     [ -f "$d/$f" ] || continue
-    grep -q "$p protocol" "$d/$f" 2>/dev/null \
-      || echo "  WARN: 38-conversational-ai-system/$f does not state '$p protocol…' — protocol count may have drifted"
-    grep -q "$r reference" "$d/$f" 2>/dev/null \
-      || echo "  WARN: 38-conversational-ai-system/$f does not state '$r reference…' — reference count may have drifted"
+    for spec in "protocol:$p" "reference:$r"; do
+      local noun="${spec%%:*}" truth="${spec##*:}"
+      # Every "<N> <noun>" occurrence whose nearby context does not read as a
+      # delta. Two refinements over a naive same-line check -- both found by
+      # actually running this against the real prose here, not assumed:
+      #   1. EXTRACTION must not swallow the tail of a decimal. "the 32 v5.14
+      #      protocol files" contains the contiguous substring "14 protocol"
+      #      (the last two digits of "v5.14" immediately followed by the
+      #      noun), which a plain "[0-9]+ noun" scan misreads as the count 14.
+      #      The "N.M noun" alternative is matched FIRST (POSIX ERE takes the
+      #      longest leftmost match at that position) and then discarded by
+      #      the dot filter, so a version number glued to the noun can never
+      #      surface as a candidate at all.
+      #   2. EXCLUSION must look past the current line, but STAY TIED to the
+      #      specific candidate number -- a bare "does a delta word appear
+      #      anywhere nearby" is too loose and was tried and rejected: SKILL.md
+      #      line 29 ("Skill 38 adds the brain layer: ... and the rest of the
+      #      32 protocols") contains the word "adds" too, dozens of words
+      #      before the count, and a scope-agnostic check wrongly swallowed
+      #      that real drift. What actually distinguishes a delta is the
+      #      count sitting almost immediately after the delta word ("added 6
+      #      protocol files") OR immediately after a list-continuation comma
+      #      ("18 scripts (...), and 3 reference docs" -- the word-wrapped
+      #      compound-sentence case: one "added" governs a trailing
+      #      comma/"and"-joined list several lines later, and each later
+      #      item is introduced by ",[ and][ the] N noun" with NO other words
+      #      in between). Look back up to 10 lines, flatten to one string, and
+      #      require ONE of those two tight adjacency forms for THIS candidate
+      #      specifically -- not just any delta word anywhere in the window.
+      while read -r n; do
+        [ -z "$n" ] && continue
+        [ "$n" = "$truth" ] && continue
+        echo "  DRIFT: $f states '$n ${noun}' but disk has $truth"
+        SKILL38_COUNT_DRIFT=1
+      done <<EOF_COUNTS
+$(grep -aoE "[0-9]+\\.[0-9]+ ${noun}s?|[0-9]+ ${noun}s?" "$d/$f" 2>/dev/null \
+    | grep -avE '\.' \
+    | grep -avE "^(0|1) ${noun}" \
+    | awk '{print $1}' \
+    | while read -r cand; do
+        grep -anE "\\b${cand} ${noun}s?\\b" "$d/$f" 2>/dev/null | cut -d: -f1 \
+          | while read -r ln; do
+              start=$(( ln > 10 ? ln - 10 : 1 ))
+              window=$(sed -n "${start},${ln}p" "$d/$f" 2>/dev/null | tr '\n' ' ')
+              echo "$window" | grep -aqiE \
+                "\\b(added|adds|new|plus)\\b[^.]{0,15}${cand} ${noun}s?|[,;] *(and +)?(the +)?${cand} ${noun}s?" \
+                || { echo "$cand"; break; }
+            done
+      done | sort -u)
+EOF_COUNTS
+    done
   done
+
   if [ -f "$d/INSTALL.md" ]; then
     grep -qE "\`00\`.\`$hi\`" "$d/INSTALL.md" 2>/dev/null \
-      || echo "  WARN: 38-conversational-ai-system/INSTALL.md numbered-script range may not reach \`$hi\` (expected \`00\`-\`$hi\`)"
+      || { echo "  DRIFT: INSTALL.md numbered-script range does not reach \`$hi\` (expected \`00\`-\`$hi\`)"; SKILL38_COUNT_DRIFT=1; }
     if grep -qiE 'does not implement pending roadmap features' "$d/INSTALL.md" 2>/dev/null; then
-      echo "  WARN: 38-conversational-ai-system/INSTALL.md still calls shipped Round-2 features 'pending' (see SKILL.md 'What This Skill Does NOT Do')"
+      echo "  DRIFT: INSTALL.md still calls shipped Round-2 features 'pending'"
+      SKILL38_COUNT_DRIFT=1
     fi
   fi
+
+  [ "${SKILL38_COUNT_DRIFT:-0}" = "1" ] || echo "  OK - no contradictory counts."
+  # Still returns 0 on purpose: this runs inside print_state under `set -e`, and
+  # a release bump must not abort half-written. --check consults
+  # SKILL38_COUNT_DRIFT and exits non-zero, so drift CANNOT ship through CI while
+  # a bump in progress still completes cleanly.
   return 0
 }
 
@@ -283,6 +357,12 @@ check_drift() {
 if [ "${1:-}" = "--check" ]; then
   print_state
   if check_drift; then
+    if [ "${SKILL38_COUNT_DRIFT:-0}" = "1" ]; then
+      echo ""
+      echo "DRIFT DETECTED - version markers agree, but Skill 38 doc self-counts contradict disk."
+      echo "                 (this used to be advisory-only and shipped silently)"
+      exit 1
+    fi
     echo ""
     echo "All $BUMP_CHECKED_MARKERS version markers agree."
     exit 0

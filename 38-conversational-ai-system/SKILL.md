@@ -26,7 +26,7 @@ This skill is governed by `../QC-PROTOCOL.md` (repo root) — the Sub-Agent Hand
 
 ## What This Skill Is
 
-**Skill 38 is the conversational AI BRAIN that runs on top of skill 29 (GHL Convert and Flow).** Skill 29 installs Convert and Flow and the basic GHL integration. Skill 38 adds the brain layer: sales best practices, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent routing, weekly + monthly self-tuning, model version freshness checking, and the rest of the 32 protocols from v5.14 (see the SELF-COUNTS note under "What This Skill Ships").
+**Skill 38 is the conversational AI BRAIN that runs on top of skill 29 (GHL Convert and Flow).** Skill 29 installs Convert and Flow and the basic GHL integration. Skill 38 adds the brain layer: sales best practices, intelligent follow-up, dual-mode customer service + support, typed knowledge bases, intelligent routing, weekly + monthly self-tuning, model version freshness checking, and the rest of the 51 protocols from v5.14 (see the SELF-COUNTS note under "What This Skill Ships").
 
 These two skills are SIBLINGS, not duplicates. **Skill 29 is a hard prerequisite** (it provides the runtime GHL connection — the location Private Integration Token the brain SENDS/READS on).
 
