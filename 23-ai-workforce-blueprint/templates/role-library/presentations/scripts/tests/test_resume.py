@@ -460,3 +460,112 @@ class TestDescribeParkEdgeCases:
         assert "heal events by rung:" in text
         assert "rung 1:" in text
         assert "3 event(s)" in text or "rung 2:" in text  # depends on counts
+
+
+# ---------------------------------------------------------------------------
+# Test 16: Legacy `resume_revalidation` shapes must not crash the real CLI
+#          path. Before U017, __main__.py wrote state["resume_revalidation"]
+#          as a bare int. Any run dir resumed even once under the old code
+#          still carries that shape on disk -- StateStore.load() does no
+#          shape migration -- so `presentation_job.py --resume --diagnose-only`
+#          must survive it end-to-end, not just describe_park() in isolation.
+# ---------------------------------------------------------------------------
+def _run_resume_diagnose_only(scripts_dir: Path, run_dir: Path):
+    entry = scripts_dir / "presentation_job.py"
+    return subprocess.run(
+        [sys.executable, str(entry), "--resume", "--run-dir", str(run_dir),
+         "--diagnose-only"],
+        capture_output=True, text=True, timeout=60, cwd=str(scripts_dir),
+    )
+
+
+def _make_legacy_run_dir(td: str, resume_revalidation_value: Any) -> Path:
+    """Build a parked run dir whose state.json carries a legacy/malformed
+    resume_revalidation value (anything that is not the U017 dict shape)."""
+    run_dir = Path(td) / "run"
+    run_dir.mkdir()
+    manifest_path = Path(td) / "manifest.json"
+    manifest_path.write_text(json.dumps({
+        "manifest_version": 25,
+        "phases": [
+            {"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+             "produces_artifact": [], "executor": {"kind": "script", "cmd": "true"}}
+        ],
+        "deliverables_required": [],
+        "client_package_files": [],
+    }))
+    import hashlib
+    store = StateStore(run_dir)
+    state = _make_state(run_dir=str(run_dir), manifest_path=str(manifest_path))
+    state["terminal"] = "BLOCKED"
+    state["manifest_sha256"] = hashlib.sha256(manifest_path.read_bytes()).hexdigest()
+    state["resume_revalidation"] = resume_revalidation_value
+    store.save(state)
+    return run_dir
+
+
+class TestLegacyResumeRevalidationShapeCLI:
+    """Regression for the U017 QC finding: describe_park() called .get() on
+    state["resume_revalidation"] unconditionally, so a legacy bare-int value
+    (the pre-U017 on-disk shape) crashed --resume --diagnose-only with an
+    unhandled AttributeError instead of printing a diagnosis. These tests go
+    through the real CLI subprocess path, because the crash was only fully
+    visible end-to-end -- a unit test that only calls describe_park() with a
+    hand-built dict cannot reproduce it."""
+
+    scripts_dir = _scripts_dir
+
+    def setup_method(self):
+        if not (self.scripts_dir / "presentation_job.py").is_file():
+            pytest.skip("presentation_job.py shim not found")
+
+    def test_legacy_bare_int_does_not_crash(self):
+        """Pre-U017 on-disk shape: resume_revalidation was a bare int."""
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = _make_legacy_run_dir(td, 7)
+            r = _run_resume_diagnose_only(self.scripts_dir, run_dir)
+            assert r.returncode == EXIT_OK, (
+                f"legacy int resume_revalidation must not crash --resume "
+                f"--diagnose-only, got {r.returncode}: stderr={r.stderr[:800]}"
+            )
+            assert "AttributeError" not in r.stderr, f"crashed: {r.stderr[:800]}"
+            assert "Traceback" not in r.stderr, f"crashed: {r.stderr[:800]}"
+            assert "banked artifact re-validation: unknown" in r.stderr, (
+                f"expected degrade-to-unknown line, got: {r.stderr}"
+            )
+            # Must not print the bare legacy digit as if it were a real count
+            reval_line = [l for l in r.stderr.splitlines() if "re-validation" in l][0]
+            import re as _re
+            assert not _re.search(r"\d", reval_line), (
+                f"must not surface the bare legacy digit: {reval_line}"
+            )
+
+    def test_legacy_string_does_not_crash(self):
+        """Malformed on-disk value: a string instead of the U017 dict shape."""
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = _make_legacy_run_dir(td, "corrupt")
+            r = _run_resume_diagnose_only(self.scripts_dir, run_dir)
+            assert r.returncode == EXIT_OK, (
+                f"legacy string resume_revalidation must not crash --resume "
+                f"--diagnose-only, got {r.returncode}: stderr={r.stderr[:800]}"
+            )
+            assert "AttributeError" not in r.stderr, f"crashed: {r.stderr[:800]}"
+            assert "Traceback" not in r.stderr, f"crashed: {r.stderr[:800]}"
+            assert "banked artifact re-validation: unknown" in r.stderr, (
+                f"expected degrade-to-unknown line, got: {r.stderr}"
+            )
+
+    def test_legacy_null_does_not_crash(self):
+        """resume_revalidation explicitly present but null (distinct from the
+        key being entirely absent, which Test 12 already covers)."""
+        with tempfile.TemporaryDirectory() as td:
+            run_dir = _make_legacy_run_dir(td, None)
+            r = _run_resume_diagnose_only(self.scripts_dir, run_dir)
+            assert r.returncode == EXIT_OK, (
+                f"null resume_revalidation must not crash --resume "
+                f"--diagnose-only, got {r.returncode}: stderr={r.stderr[:800]}"
+            )
+            assert "AttributeError" not in r.stderr, f"crashed: {r.stderr[:800]}"
+            assert "banked artifact re-validation: unknown" in r.stderr, (
+                f"expected degrade-to-unknown line, got: {r.stderr}"
+            )

@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
+    ENTRY_COMMAND,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
@@ -346,7 +347,7 @@ class Engine:
             print(f"  lost     : {len(lost)} artifact(s) — will be rebuilt on resume",
                   file=sys.stderr)
         print("\n  continue with:", file=sys.stderr)
-        print(f"    python3 {Path(__file__).name} --resume --run-dir {self.run_dir}",
+        print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
               file=sys.stderr)
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
@@ -431,10 +432,23 @@ class Engine:
                 print("DONE — all gates passed after re-evaluation.", flush=True)
                 return EXIT_OK
             self.state["terminal"] = "BLOCKED"
+            # Symmetric with _block: write state["blocked"] here too, so a gate-failure
+            # park is recorded exactly like a phase-failure park and diagnose.py has one
+            # primary source to read (U017). "phase" is the sentinel "CLOSE" because no
+            # single manifest phase owns a gate.
+            self.state["blocked"] = {
+                "phase": "CLOSE",
+                "reason": f"{len(failures)} gate(s) did not pass: " +
+                          ", ".join(k for k, _ in failures),
+                "at": utcnow(),
+                "gates": [k for k, _ in failures],
+            }
             self.store.save(self.state)
             lines = "\n".join(f"    - {k}: {r}" for k, r in failures)
             print("\nCANNOT CLOSE -- fail-closed gates did not pass:\n" + lines, file=sys.stderr)
             print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.", file=sys.stderr)
+            print("\n  continue with:", file=sys.stderr)
+            print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if self.board:
             self.board.mark_review()
