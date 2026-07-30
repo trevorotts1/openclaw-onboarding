@@ -7503,11 +7503,40 @@ bootstrap_command_center_shell() {
     # need is a yes/no on whether one of three known app names is registered,
     # so look each one up individually with `pm2 id <name>`, which prints only
     # the matching pm_id array (e.g. "[ 0 ]" or "[]") and never env data.
+    #
+    # FIX (2026-07-30, regression from the change above — QC on PR #761): a
+    # bare `grep -qE '[0-9]'` against pm2's raw combined stdout false-positives
+    # on the FIRST loop iteration of a brand-new box. `pm2 id` implicitly spawns
+    # the daemon on a fresh PM2_HOME, and before printing its actual result pm2
+    # writes an ASCII banner + "Spawning PM2 daemon..." + first-run VersionCheck
+    # notice ("This PM2 is not UP TO DATE" / "Upgrade to version X.Y.Z") to
+    # STDOUT — all full of digits. The old `pm2 jlist` + `json.load()` code
+    # failed SAFE against that same banner (it broke JSON parsing, the `except`
+    # fired, and execution fell through to attempt the bootstrap); this
+    # replacement failed UNSAFE — it silently skipped the bootstrap on every
+    # fresh client box and logged a false "already runs" message. Belt-and-
+    # braces fix, two independent layers:
+    #   1. PM2_DISCRETE_MODE=true suppresses the banner/spawn-notice/VersionCheck
+    #      at the source — pm2/lib/Client.js gates all three blocks on
+    #      `!process.env.PM2_DISCRETE_MODE` (scoped to just this command, not
+    #      exported, so it does not silence the real bootstrap's own pm2 output
+    #      later in $LOG_FILE).
+    #   2. Even if some other stray line ever reaches stdout regardless, only
+    #      the LAST LINE is tested (`pm2 id`'s `console.log(id)` is always the
+    #      final synchronous write before the CLI exits — see
+    #      Client.prototype.getProcessIdByName), and it must match pm2's real
+    #      array shape: an opening bracket immediately followed by (optional
+    #      space, then) a digit — `[ 0 ]` / `[0]` / `[ 0, 1 ]` — never a bare
+    #      "does this blob contain a digit anywhere" test. An empty match
+    #      (`[]`, ambiguous, unparseable, or errored output) falls through to
+    #      attempt the bootstrap — never treated as "already running" —
+    #      preserving the fail-safe direction the original jlist code had.
     if command -v pm2 >/dev/null 2>&1; then
-        local _bccs_app _bccs_id
+        local _bccs_app _bccs_id _bccs_id_last
         for _bccs_app in blackceo-command-center mission-control command-center; do
-            _bccs_id=$(pm2 id "$_bccs_app" 2>/dev/null || echo "[]")
-            if printf '%s' "$_bccs_id" | grep -qE '[0-9]'; then
+            _bccs_id=$(PM2_DISCRETE_MODE=true pm2 id "$_bccs_app" 2>/dev/null || echo "[]")
+            _bccs_id_last=$(printf '%s' "$_bccs_id" | tail -n 1)
+            if printf '%s' "$_bccs_id_last" | grep -qE '^\[[[:space:]]*[0-9]'; then
                 note "pm2 already runs a Command Center app — bootstrap trigger skipped"
                 return 0
             fi
