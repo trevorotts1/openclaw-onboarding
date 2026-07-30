@@ -96,6 +96,29 @@ class TestSweep:
         rc=cmd_sweep_undeliverable(A());assert rc==0
         s2=store.load();assert len(s2.get("undeliverable",[]))==0
         assert isinstance(s2.get("sent",{}).get("p"),dict);assert s2["sent"]["p"]["count"]==2
+
+    def test_injection_blocked(self, tmp_path, monkeypatch):
+        """U069 bypass #3: __main__.cmd_sweep_undeliverable held its own
+        hand-rolled subprocess.run(cmd, shell=True, ...), independent of both
+        report.dispatch() and Reporter._dispatch(). It now routes through
+        report.dispatch() -- prove a $(touch ...) payload in
+        PRESENTATION_NOTIFY_CMD never fires while the queued message still
+        drains mechanically."""
+        sentinel = tmp_path / "PWNED_SWEEP_UNDELIVERABLE"
+        monkeypatch.setenv("PRESENTATION_NOTIFY_CMD", f"echo hello $(touch {sentinel})")
+        rd = tmp_path/"r"; rd.mkdir(); store = StateStore(rd)
+        st = {"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"","manifest_path":"/x","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":"t"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[{"chat_id":"t","kind":"p","message":"m1"}],"heartbeat":{},"terminal":None}
+        store.save(st)
+        from presentation_job.__main__ import cmd_sweep_undeliverable
+        class A: run_dir = rd
+        rc = cmd_sweep_undeliverable(A())
+        assert rc == 0, "the message must still drain mechanically (echo succeeds)"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: cmd_sweep_undeliverable executed injected content, {sentinel} exists"
+        )
+        s2 = store.load()
+        assert len(s2.get("undeliverable", [])) == 0
+
     def test_parser(self,tmp_path):
         from presentation_job.__main__ import build_parser
         args=build_parser().parse_args(["--sweep-undeliverable","--run-dir",str(tmp_path)])

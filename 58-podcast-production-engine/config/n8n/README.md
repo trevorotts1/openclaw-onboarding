@@ -1,3 +1,22 @@
+> **READ THIS FIRST — current live path vs. unused fallback.** Step 15 (publish
+> to Podbean) runs in **publish-proxy mode**, the fleet default: `podbean_publish.sh`
+> POSTs straight to the live n8n workflow **"create podcast episode from
+> openclaw"** (`POST /webhook/podbean-publish`), which does the entire publish
+> server-side and returns the permalink synchronously. That workflow is already
+> active on the operator's instance — there is nothing in this directory to
+> import for a client box to work.
+>
+> Everything else in this directory — `podbean-broker.workflow.json` and the
+> "Import (manual — required)" section below — documents an **unused
+> fallback**. It is **not deployed** on the live n8n instance and **must not
+> be imported** as part of onboarding a client. No client ever needs their own
+> n8n instance, and no client box ever needs BlackCEO's Podbean OAuth app
+> credentials (`client_id`/`client_secret`) — those stay inside the operator's
+> n8n, full stop.
+>
+> For the five variables a client box actually needs, see "Provisioning a
+> client box for Step 15 publish (proxy mode)" near the end of this file.
+
 # Podbean Broker (n8n) — the Podbean credential broker for the podcast engine
 
 `podbean-broker.workflow.json` is the n8n workflow that acts as the Podbean
@@ -48,9 +67,14 @@ asset above, this workflow already exists and runs live on the instance; the
 file in this repo is not something to import, it is a durable structural
 record of what production runs, captured for audit and onboarding.
 
-Captured state (live API re-read, published version pointer):
-`activeVersionId` / `versionId` `e13b18be-2b37-49a8-b935-39a0520625bd`,
-`updatedAt` `2026-07-16T14:29:30Z`, 51 nodes, 35 connections, `active: true`.
+Captured state (live API re-read): 51 nodes, 35 connections, `active: true`,
+`updatedAt` `2026-07-20T02:51:32Z`. Re-verified live on 2026-07-30: the graph
+shape is structurally unchanged (still 51 nodes / 35 connections / active). The
+`versionId` / `activeVersionId` pointer is deliberately NOT pinned here — it
+changes on every edit to the workflow, so a pinned value goes stale on the next
+live edit and manufactures false audit drift against a workflow this repo does
+not own; read it live from the instance if a specific version pointer is ever
+needed.
 
 Sanitization applied before commit (spec `SKILL 58 PODBEAN SERVER-SIDE
 PUBLISH — MASTER SPEC v1`, unit U12):
@@ -214,11 +238,20 @@ is only about which workflow can fire **in production**, never about the
 credential inside either one — and, per the correction above, it does not by
 itself resolve manual/chat-mode reachability either.
 
-## Import (manual — required)
+## Import (fallback only — not a required step for any client)
 
-The n8n management API key on this fleet has historically failed to authenticate
-for writes (`AUTHENTICATION_ERROR`), so this workflow ships **validated offline**
-but is **not** created on the instance. Import it by hand:
+**This section does not apply to onboarding a client box.** The live proxy path
+(`/webhook/podbean-publish`) is already active on the operator's n8n instance and
+requires no import, no new n8n instance, and no Podbean credential on the client
+box. The steps below exist only for the day the broker fallback is deliberately
+adopted (for example, as a defense-in-depth path if the proxy workflow is ever
+retired) — until that decision is made, `podbean-broker.workflow.json` stays
+un-imported and inactive, exactly as it is today.
+
+If the broker fallback is ever adopted, the n8n management API key on this fleet
+has historically failed to authenticate for writes (`AUTHENTICATION_ERROR`), so
+this workflow ships **validated offline** but is **not** created on the instance.
+Import it by hand:
 
 1. n8n → **Workflows → Import from File** → select
    `58-podcast-production-engine/config/n8n/podbean-broker.workflow.json`.
@@ -266,21 +299,66 @@ vault credential and returns it. Podbean returning no token for the Channel ID �
 
 ## Skill side
 
-`scripts/podbean_publish.sh` speaks this contract. It runs in **broker mode** when
-`PODBEAN_BROKER_WEBHOOK_URL` and `PODBEAN_BROKER_TOKEN` both resolve on the box
-(fleet default): it POSTs `mint_token` with the client's Channel ID, uses the
-returned Channel-scoped token for `uploadAuthorize` / PUT / create-episode, and
-captures the permalink — no Podbean app secret is present on the box. When the
-broker pair is absent it falls back to a **local** `client_credentials` mint,
-which requires `PODBEAN_CLIENT_ID` / `PODBEAN_CLIENT_SECRET` and is intended only
-for the operator's OWN box. The Podbean Channel ID (`PODBEAN_PODCAST_ID`) is
-required in both modes and is the only per-client Podbean value.
+`scripts/podbean_publish.sh` selects its transport per box, precedence **PROXY,
+then BROKER, then LOCAL**. It runs in **publish-proxy mode** (the fleet default)
+when `PODBEAN_PUBLISH_WEBHOOK_URL` and `PODBEAN_PUBLISH_TOKEN` both resolve: it
+POSTs the contract v2 payload straight to the live `/webhook/podbean-publish`
+workflow described above, which runs the good-standing/identity gate, mints the
+Podbean token, uploads, creates the episode, and returns the permalink
+synchronously — no Podbean call and no OAuth mint happens on the box at all.
+Only when the proxy pair is absent does it fall back to **broker mode**
+(`PODBEAN_BROKER_WEBHOOK_URL` + `PODBEAN_BROKER_TOKEN` both resolve): it POSTs
+`mint_token` with the client's Channel ID against the workflow this directory
+ships, uses the returned Channel-scoped token for `uploadAuthorize` / PUT /
+create-episode, and captures the permalink — no Podbean app secret is present
+on the box. As covered above, that broker workflow is an unused fallback, not
+deployed on the live instance, so this path is not reachable today. When both
+the proxy and broker pairs are absent it falls back further to a **local**
+`client_credentials` mint, which requires `PODBEAN_CLIENT_ID` /
+`PODBEAN_CLIENT_SECRET` and is intended only for the operator's OWN box. The
+Podbean Channel ID (`PODBEAN_PODCAST_ID`) is required in every mode and is the
+only per-client Podbean value.
 
-Provisioning (`install.sh`): set `OPENCLAW_PODBEAN_BROKER_URL` +
-`OPENCLAW_PODBEAN_BROKER_TOKEN` in the operator env to inject the broker pair onto
-client boxes (no Podbean secret lands on them). The legacy `OPENCLAW_PODBEAN_CLIENT_ID`
-/ `OPENCLAW_PODBEAN_CLIENT_SECRET` injection is kept for the operator's own box /
+Provisioning (`install.sh`): set `OPENCLAW_PODBEAN_PUBLISH_URL` +
+`OPENCLAW_PODBEAN_PUBLISH_TOKEN` (plus the identity pair, see the provisioning
+section below) in the operator env to inject the publish-proxy pair onto client
+boxes — this is the fleet-default path and needs nothing from this directory.
+`OPENCLAW_PODBEAN_BROKER_URL` + `OPENCLAW_PODBEAN_BROKER_TOKEN` inject the broker
+pair instead, and exist only for the day the broker fallback is deliberately
+adopted (see "Import" above). The legacy `OPENCLAW_PODBEAN_CLIENT_ID` /
+`OPENCLAW_PODBEAN_CLIENT_SECRET` injection is kept for the operator's own box /
 backward compatibility only.
+
+## Provisioning a client box for Step 15 publish (proxy mode)
+
+This is the recipe a client box actually needs — nothing in this directory is
+part of it. Five variables, set on the client box:
+
+| Variable | What it is |
+|---|---|
+| `PODBEAN_PUBLISH_WEBHOOK_URL` | The operator's n8n publish webhook (e.g. `https://main.blackceoautomations.com/webhook/podbean-publish`). Not a secret. |
+| `PODBEAN_PUBLISH_TOKEN` | The shared webhook header token (`X-Podcast-Publish-Token`). This is a webhook credential, not a Podbean credential. |
+| `PODBEAN_PODCAST_ID` | The client's Podbean Channel ID. Non-secret, per-client (e.g. `<CLIENT_PODBEAN_CHANNEL_ID>`). |
+| `PODCAST_CLIENT_LAST_NAME` | Half of the roster identity key the n8n gate looks up. |
+| `PODCAST_CLIENT_EMAIL` | The other half of the roster identity key. |
+
+Plus optional `PODCAST_CLIENT_FIRST_NAME` (display only, never used for
+authorization).
+
+Operator-side injection (`install.sh` seeds these onto the client box from the
+operator's own env at provisioning time — see `install.sh` around the
+publish-proxy block, roughly lines 1214 and 1236):
+`OPENCLAW_PODBEAN_PUBLISH_URL`, `OPENCLAW_PODBEAN_PUBLISH_TOKEN`,
+`OPENCLAW_PODCAST_CLIENT_LAST_NAME`, `OPENCLAW_PODCAST_CLIENT_EMAIL`, and
+optional `OPENCLAW_PODCAST_CLIENT_FIRST_NAME`. `PODBEAN_PODCAST_ID` is not
+operator-injected — it is collected per client through the normal onboarding
+credential prompt, because it is a per-client value the operator does not own.
+
+No-spend verification: run `podbean_publish.sh` with `--dry-run`. In proxy mode
+this probes the paired `/webhook/podcast-standing-check` endpoint for
+reachability (same shared header token) and reports `good_standing` without
+uploading anything or calling Podbean — the safe way to confirm a client box is
+wired correctly before any real publish.
 
 ## Repository secret-vaulting guard and offline transformer
 

@@ -9,6 +9,25 @@ from .state import _norm, _read_json
 
 assert not (set(GATE_KEYS) & set(NON_WAIVABLE_GATES)), "a non-waivable gate appears in GATE_KEYS"
 
+# DECISION (self-issuable-waiver fix, see CHANGELOG [Unreleased]):
+# The intake_field path below (src == "intake_field") now requires
+# client_request_quote to be a genuine substring of the value already
+# recorded at that key in intake.json. That closes the hole where any
+# agent could write itself a waiver merely by naming a field that
+# exists, with no check that the client ever said the quoted words.
+#
+# TRANSCRIPT_WAIVERS_ACCEPTED stays False. The substring match against
+# recorded client turns further down in this file is correct and is not
+# why the flag is off. It stays off because of two problems that are
+# independent of quote verification and are NOT fixed by this change:
+#   1. No requester identity: the route script that produces the
+#      transcript sends five keys and no identity for who is speaking.
+#   2. Storage: the transcript lives in a database, which breaks the
+#      offline-authoritative rule (audit D3:1016-1019) that this job's
+#      state must be reconstructable from the run directory alone.
+# Flip this only after both are closed and the transcript file is
+# written into the run dir -- not as a side effect of unrelated waiver
+# work such as this fix.
 TRANSCRIPT_WAIVERS_ACCEPTED: bool = False
 
 class WaiverError(Exception):
@@ -58,6 +77,19 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
         if not field_name or field_name not in intake:
             raise WaiverError(f"waiver for {rule!r} cites intake field {field_name!r}, "
                               "which is not present in intake.json")
+        field_value = intake.get(field_name)
+        if not isinstance(field_value, str):
+            raise WaiverError(
+                f"waiver for {rule!r} cites intake field {field_name!r}, but that field's "
+                f"value is not text (got {type(field_value).__name__}), so the client's "
+                "quote cannot be checked against it. A waivable intake field must hold the "
+                "client's own written words.")
+        if _norm(quote) not in _norm(field_value):
+            raise WaiverError(
+                f"waiver for {rule!r} quotes text that does not appear in intake field "
+                f"{field_name!r}. Recorded value of {field_name!r} does not contain the "
+                "quoted words -- the quote must be the client's own words as recorded in "
+                "intake.json, not text the agent supplied.")
         return
 
     if not TRANSCRIPT_WAIVERS_ACCEPTED:

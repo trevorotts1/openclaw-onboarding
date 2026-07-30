@@ -43,10 +43,45 @@ def test_duplicate_waivers_exit():
         load_waivers(rd)
 
 def test_valid_intake_waiver():
-    rd = _rd(); _wj(rd, "working/copy/intake.json", {"no_teleprompter": True})
-    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "no_teleprompter",
-         "client_request_quote": "I waive the teleprompter quality check.", "captured_at": "2026-01-01T00:00:00Z"}
+    # The quote must be genuinely present in the cited intake field's value —
+    # not merely reference a field that happens to exist (that was the hole).
+    rd = _rd()
+    _wj(rd, "working/copy/intake.json",
+        {"special_instructions": "Please skip the teleprompter quality check for this one."})
+    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "special_instructions",
+         "client_request_quote": "skip the teleprompter quality check",
+         "captured_at": "2026-01-01T00:00:00Z"}
     validate_waiver(w, rd)
+
+def test_intake_waiver_quote_matches_ignoring_case_and_whitespace():
+    rd = _rd()
+    _wj(rd, "working/copy/intake.json",
+        {"special_instructions": "Please   SKIP   the   Teleprompter check for this one."})
+    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "special_instructions",
+         "client_request_quote": "skip the teleprompter check",
+         "captured_at": "2026-01-01T00:00:00Z"}
+    validate_waiver(w, rd)
+
+def test_intake_forged_quote_rejected():
+    # This is the reproduced defect: a quote nobody said, attached to a real
+    # intake field, must be rejected — not accepted because the field exists.
+    rd = _rd()
+    _wj(rd, "working/copy/intake.json", {"topic": "Our Q3 sales roadmap"})
+    w = {"rule": "teleprompter", "source": "intake_field", "intake_field": "topic",
+         "client_request_quote": "the client said we can skip the teleprompter check entirely",
+         "captured_at": "2026-01-01T00:00:00Z"}
+    with pytest.raises(WaiverError, match="(?i)does not appear in intake field"):
+        validate_waiver(w, rd)
+
+def test_intake_non_string_field_value_rejected():
+    # A boolean/flag field carries no client words to quote against, so a
+    # waiver citing it must be rejected rather than trusted on presence alone.
+    rd = _rd(); _wj(rd, "working/copy/intake.json", {"skip_qc": True})
+    w = {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
+         "client_request_quote": "please skip the qc gate for us",
+         "captured_at": "2026-01-01T00:00:00Z"}
+    with pytest.raises(WaiverError, match="(?i)not text"):
+        validate_waiver(w, rd)
 
 def test_missing_intake_field_rejected():
     rd = _rd(); _wj(rd, "working/copy/intake.json", {})
