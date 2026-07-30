@@ -1,3 +1,33 @@
+## [Unreleased]  -  U015: stop TestModuleBoundaries from corrupting sys.modules for the rest of the suite
+
+`tests/test_presentation_job.py::TestModuleBoundaries::test_import_state_does_not_import_phases` deleted
+every `presentation_job.*` entry from `sys.modules` to force a clean re-import, but never restored them
+afterward. Any later test in the same pytest session that imports `presentation_job.report`, `.phases`,
+etc. fresh got a SECOND, distinct module object; a `Reporter` class captured at an earlier module
+top-level import still pointed at the ORIGINAL module's globals, so a monkeypatch applied to the new
+object (e.g. `Test8MessageBound` patching `_parse_minutes` in `tests/test_report.py`) silently did nothing
+to the code path actually exercised. This is exactly the shape of defect that keeps a full-suite run red
+while every fixer who reruns only the file they touched sees green — `tests/test_report.py::Test8MessageBound::test_message_bound`
+had been dismissed as an ordering flake that "passes in isolation."
+
+Fix (cherry-picked from `unit/U015-announce-heal-escalate`, commit `798a003b`, onto current `main` --
+that branch was 118 commits behind and its full diff did not apply cleanly, so only this one test's
+payload was hand-threaded past `TestU069ShellInjectionFix`, which did not exist when U015 was written):
+snapshot the `presentation_job.*` entries before deleting them, wrap the existing assertion in
+try/finally, and restore the snapshot afterward regardless of outcome. The test's own purpose (assert
+state.py does not import phases.py) is unchanged.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`): before this fix, full suite = 16 failed / 442 passed / 13 skipped, including
+`Test8MessageBound::test_message_bound` (`AssertionError: expected 6-20 messages, got 3 (throttled=63)`)
+-- confirmed failing in the full suite and passing in isolation. After this fix: 15 failed / 443 passed /
+13 skipped; `comm` diff of sorted failing-test names shows zero new failures and exactly one name
+disappeared, `Test8MessageBound::test_message_bound`. The remaining 15 failures (`test_cc_board.py`,
+`test_preflight.py`, `tests/test_resume.py`) are pre-existing and unrelated to this change. Bleed test:
+reverting the try/finally reproduced the original failure; restoring it turned the suite green again.
+No version bump -- PRs #733/#735 already contend over that.
+
+
 ## [Unreleased]  -  U069: shell-injection fix landed + a live heal.py bypass closed
 
 U069's original fix (tokenise `executor.cmd` with `shlex.split` before substituting `{run_dir}`, then
