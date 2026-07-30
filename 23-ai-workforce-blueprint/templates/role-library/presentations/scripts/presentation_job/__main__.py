@@ -13,6 +13,7 @@ from .state import (
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
+from .report import dispatch
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 from .sweep import reconcile_sweep
@@ -146,8 +147,6 @@ def cmd_status(args) -> int:
 
 def cmd_sweep_undeliverable(args) -> int:
     """Retry every queued undeliverable message, oldest first. Takes the run lock."""
-    import os as _os
-    import subprocess as _sp
     run_dir = args.run_dir.expanduser().resolve()
     with RunLock(run_dir):
         store = StateStore(run_dir)
@@ -163,16 +162,12 @@ def cmd_sweep_undeliverable(args) -> int:
             kind = msg.get("kind", "")
             message = msg.get("message", "")
             attempts = msg.get("attempts", 0) + 1
-            ok = False
-            cmd = _os.environ.get("PRESENTATION_NOTIFY_CMD")
-            if cmd and chat_id and kind:
-                try:
-                    r = _sp.run(cmd, shell=True,
-                               input=json.dumps({"chat_id": chat_id, "kind": kind, "message": message}),
-                               text=True, capture_output=True, timeout=30)
-                    ok = r.returncode == 0
-                except (_sp.TimeoutExpired, OSError):
-                    pass
+            # U069: route through the single shared report.dispatch() --
+            # do not re-derive a subprocess.run(cmd, shell=True, ...) call
+            # here. A hand-rolled third copy of this logic (independent of
+            # report.py's dispatch() and Reporter._dispatch()) is exactly
+            # the drift U069's closure exists to prevent.
+            ok = bool(chat_id and kind) and dispatch(chat_id, kind, message)
             if ok:
                 delivered += 1
                 sent = state.setdefault("sent", {})

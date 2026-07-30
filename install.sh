@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.4.17"
+ONBOARDING_VERSION="v21.4.19"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -1080,17 +1080,21 @@ PYEOF
 # (chmod 600) + openclaw.json env.vars block.
 #
 # Operator setup (one-time, in ~/.zshrc on operator's Mac):
-#   # PREFERRED for client boxes — the n8n Podbean broker (no app secret on the box):
+#   # THE FLEET DEFAULT for client boxes — server-side publish-proxy (S58-U15).
+#   # n8n performs the ENTIRE publish (gate, token mint, upload, create-episode)
+#   # and returns the permalink synchronously, so a client box never holds any
+#   # Podbean credential and never needs an n8n instance of its own:
+#   export OPENCLAW_PODBEAN_PUBLISH_URL="https://main.blackceoautomations.com/webhook/podbean-publish"
+#   export OPENCLAW_PODBEAN_PUBLISH_TOKEN="..."    # the shared X-Podcast-Publish-Token value
+#   # UNUSED FALLBACK — the n8n Podbean credential broker. Not deployed on the
+#   # live instance; do NOT reach for this when publish-proxy is unset, and do
+#   # NOT import a broker workflow to satisfy it:
 #   export OPENCLAW_PODBEAN_BROKER_URL="https://main.blackceoautomations.com/webhook/podbean-broker"
 #   export OPENCLAW_PODBEAN_BROKER_TOKEN="..."   # the PODBEAN_BROKER_TOKEN set inside n8n
-#   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean app):
+#   # Operator OWN box / legacy fallback ONLY (BlackCEO's single shared Podbean
+#   # app). NEVER set these on a client box:
 #   export OPENCLAW_PODBEAN_CLIENT_ID="..."
 #   export OPENCLAW_PODBEAN_CLIENT_SECRET="..."
-#   # SERVER-SIDE PUBLISH-PROXY (S58-U15) — outranks the broker + legacy pairs
-#   # above; n8n does the whole publish so this box never holds a Podbean
-#   # credential in this mode:
-#   export OPENCLAW_PODBEAN_PUBLISH_URL="..."      # the n8n publish-proxy webhook (non-secret)
-#   export OPENCLAW_PODBEAN_PUBLISH_TOKEN="..."    # the shared X-Podcast-Publish-Token value
 #   # (future: OPENCLAW_GOOGLE_SERVICE_ACCOUNT_JSON, etc.)
 #
 # Per-client install:
@@ -1170,12 +1174,16 @@ json.dump(d, open(p, 'w'), indent=2)
 PYEOF
     }
 
-    # Podbean credential BROKER pair (PREFERRED for client boxes): inject only the
-    # broker webhook URL + a low-privilege shared token. BlackCEO's Podbean app
-    # client_id/client_secret then stay INSIDE n8n and never land on a client box.
-    # The engine (58-podcast-production-engine/scripts/podbean_publish.sh) runs in
-    # broker mode whenever both of these resolve. The client still supplies only
-    # their Podbean Channel ID. See 58-podcast-production-engine/config/n8n/README.md.
+    # Podbean credential BROKER pair (UNUSED FALLBACK — publish-proxy below is the
+    # fleet default and outranks this): inject only the broker webhook URL + a
+    # low-privilege shared token. BlackCEO's Podbean app client_id/client_secret
+    # then stay INSIDE n8n and never land on a client box. The engine
+    # (58-podcast-production-engine/scripts/podbean_publish.sh) runs in broker mode
+    # only when the publish-proxy pair is absent AND both of these resolve. The
+    # broker workflow is NOT deployed on the live n8n instance, so setting this
+    # pair without deploying one will fail at publish time — prefer the
+    # publish-proxy pair. The client still supplies only their Podbean Channel ID.
+    # See 58-podcast-production-engine/config/n8n/README.md.
     if [ -n "${OPENCLAW_PODBEAN_BROKER_URL:-}" ] && [ -n "${OPENCLAW_PODBEAN_BROKER_TOKEN:-}" ]; then
         _shared_write_env "PODBEAN_BROKER_WEBHOOK_URL" "$OPENCLAW_PODBEAN_BROKER_URL"
         _shared_write_env "PODBEAN_BROKER_TOKEN" "$OPENCLAW_PODBEAN_BROKER_TOKEN"
@@ -1219,7 +1227,7 @@ PYEOF
         success "Podbean publish-proxy pair injected from operator env (server-side publish; outranks broker/local; chmod 600)"
         injected_count=$((injected_count + 2))
     elif [ -n "${OPENCLAW_PODBEAN_PUBLISH_URL:-}" ] || [ -n "${OPENCLAW_PODBEAN_PUBLISH_TOKEN:-}" ]; then
-        warn "Only one of OPENCLAW_PODBEAN_PUBLISH_URL / OPENCLAW_PODBEAN_PUBLISH_TOKEN set — both required. Skipping Podbean publish-proxy injection (this box falls back to broker/local mode)."
+        warn "Only one of OPENCLAW_PODBEAN_PUBLISH_URL / OPENCLAW_PODBEAN_PUBLISH_TOKEN set — both required. Skipping Podbean publish-proxy injection. Set BOTH: on a client box the broker/local fallbacks cannot publish (the broker workflow is not deployed, and the local mode needs a Podbean app secret that must never sit on a client box), so Step 15 will hard-stop until this pair is set."
     fi
 
     # Podbean publish IDENTITY (S58-U15): the per-box client identity the n8n
@@ -1345,7 +1353,7 @@ PYEOF
     if [ "$injected_count" -gt 0 ]; then
         note "Shared operator secrets: $injected_count value(s) written to $OC_SECRETS_ENV"
     else
-        note "Shared operator secrets: none in env. For client boxes set OPENCLAW_PODBEAN_BROKER_URL + OPENCLAW_PODBEAN_BROKER_TOKEN in ~/.zshrc (preferred; keeps the Podbean app secret in n8n). OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET are the operator/legacy fallback only."
+        note "Shared operator secrets: none in env. For client boxes set OPENCLAW_PODBEAN_PUBLISH_URL + OPENCLAW_PODBEAN_PUBLISH_TOKEN in ~/.zshrc (the fleet default, publish-proxy; n8n performs the whole publish server-side and no Podbean secret ever lands on a client box), together with OPENCLAW_PODCAST_CLIENT_LAST_NAME + OPENCLAW_PODCAST_CLIENT_EMAIL (the roster identity tuple Step 15 requires). OPENCLAW_PODBEAN_BROKER_URL + OPENCLAW_PODBEAN_BROKER_TOKEN are an unused fallback; OPENCLAW_PODBEAN_CLIENT_ID + _CLIENT_SECRET are the operator OWN-box/legacy fallback only."
     fi
 }
 
