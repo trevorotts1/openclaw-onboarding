@@ -14,6 +14,23 @@ the build pipeline is allowed to proceed. Five checks:
      (no legacy flag) still MUST meet 25-35. See is_legacy_interview() and
      legacy_substance_ok() below. The exemption lifts ONLY the count floor; jargon,
      mandatory fields, and no-fabrication (checks 2/3/5) still apply in full.
+     STRUCTURED-WEB COVERAGE STANDARD (2026-07-30 fix, 4th defect of this shape in
+     this file, follow-on to the transcript-path/PR#772, mandatory-fields/PR#775,
+     and nudge-cadence/PR#777 fixes): the 25-35 RAW BLOCK COUNT is the wrong proxy
+     for an interview conducted through the Command Center's STRUCTURED WEB DECK —
+     that deck's entire canonical question set is only ~11 questions (2 identity +
+     up to 8 branding + 1 operations), so a client who substantively answers EVERY
+     one of them can never reach 25 raw blocks without the interviewer drilling an
+     already-answered question again for zero new coverage. Verified on a real
+     client transcript (rescue-cassandra-henriquez): 11/11 canonical questions
+     matched, every required branding field answered with 534-921 real characters,
+     yet only 18-19 raw blocks — HARD-FAILED as "too shallow" on an interview that
+     was, by every other measure, complete. For an interview identified as
+     structured-web (see is_structured_web_interview()), check #1 becomes coverage
+     + substance of the canonical set (see check_structured_coverage()) instead of
+     raw count. The conversational path's 25-35 standard (and its legacy/tailored
+     exemptions above) is completely UNCHANGED — this is an ADDITIONAL path,
+     selected by a real, already-existing signal, never a replacement.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
      (2026-07-30 fix, client Mac mini box / its rescue agent incident): a
@@ -509,6 +526,204 @@ def legacy_substance_ok(transcript: str, count_result: dict) -> dict:
             )
 
     return {"ok": ok, "questions": questions, "answered": answered, "reason": reason}
+
+
+# ── Structured-web coverage standard (2026-07-30 fix) ─────────────────────────
+#
+# WHICH STANDARD APPLIES: not a new config flag. is_structured_web_interview()
+# below reads state.interviewProgress.lastQuestionAskedBy — a field that
+# ALREADY exists for an unrelated reason (rate-limit bucketing —
+# lib-interview-rate-limit.sh's INTERVIEW_RATE_LIMIT_SHARED_LITERAL_SENTINEL /
+# update-interview-state.sh's --asked-by). The Command Center's
+# /api/interview/answer route — the structured web deck's OWN submission
+# endpoint, the "STRUCTURED-CARD write path" per its own header comment — is the
+# ONLY caller that ever invokes update-interview-state.sh without an explicit
+# --asked-by, and it defaults askedBy to the EXACT literal "interview-web"
+# whenever the request carries no authenticated-operator identity
+# (Cf-Access-Authenticated-User-Email / x-operator-email / an explicit
+# askedBy) — the normal case for a client filling out cards themselves. The
+# conversational path (SKILL.md's Telegram-agent flow) always calls
+# update-interview-state.sh with --asked-by "$AGENT_NAME" — a real agent
+# identity, never this literal. A missing/unknown value defaults to False (NOT
+# structured), which routes to the EXISTING, STRICTER raw-count standard — an
+# unknown signal can only ever raise the bar an interview must clear, never
+# lower it.
+
+def is_structured_web_interview(state: dict | None) -> bool:
+    """
+    True when this interview's most recently recorded answer arrived through
+    the Command Center's structured web deck (the QuestionCard flow), rather
+    than the conversational Telegram-agent flow. See the module comment above
+    for the signal and why it reliably distinguishes the two. Fail-safe:
+    absent/garbage state -> False (routes to the existing, stricter
+    conversational/raw-count standard — never the reverse).
+    """
+    progress = (state or {}).get("interviewProgress") or {}
+    asked_by = str(progress.get("lastQuestionAskedBy") or "").strip().lower()
+    return asked_by == "interview-web"
+
+
+# The two CC-owned (non-branding) sections of the structured deck's canonical
+# question set. Byte-identical port (id/prompt/required only — the fields this
+# gate needs) of blackceo-command-center's src/lib/interview/base-questions.ts
+# IDENTITY_QUESTIONS / OPERATIONS_QUESTIONS. This is DATA, not logic: a future
+# drift here can only ever make coverage MISS a genuinely-asked canonical
+# question (undercount -> more scrutiny, never less) — it can never invent
+# coverage for a question the client was never actually asked, because a match
+# still requires a real transcript **Q:**/**A:** block whose question text
+# normalizes (norm_prompt) to this exact prompt (see check_structured_coverage()
+# below, which reuses parse_answer_blocks()/norm_prompt() from check #3 above).
+IDENTITY_QUESTIONS_CANONICAL = [
+    {"id": "company_name", "prompt": "What is your company name?", "required": True},
+    {"id": "industry", "prompt": "What industry are you in?", "required": True},
+]
+OPERATIONS_QUESTIONS_CANONICAL = [
+    {
+        "id": "command_center_name",
+        "prompt": "What would you like to name your company's home base?",
+        "required": False,
+    },
+]
+
+# Substance floors — REUSED, not invented:
+#   - STRUCTURED_SUBSTANCE_MIN_CHARS reuses the EXACT numeric floor
+#     check_no_fabrication() above already uses for "a snippet long enough to
+#     be meaningful, not a tiny/coincidental match" (its context_snippets
+#     filter: `len(snippet) >= 30`). Applied here to any canonical question the
+#     branding JSON itself flags as needing a specific, non-generic answer (a
+#     non-empty `interviewGuidance` field) — brand_evokes, customer_feeling,
+#     brand_descriptors, brand_voice, ideal_customer, unique_differentiator.
+#     This floor is exactly what catches that guidance's OWN worked examples of
+#     an insufficient answer: "'Professional' is NOT an answer" (12 chars),
+#     "'Happy' is not specific enough" (5 chars), "'Small business owners' ...
+#     re-drill" (22 chars) — all below 30.
+#   - STRUCTURED_EXISTENCE_MIN_CHARS reuses LEGACY_MIN_ANSWER_CHARS as-is (the
+#     SAME "is this a real, non-empty answer line" floor legacy_substance_ok()
+#     above already applies) for canonical questions the branding JSON does NOT
+#     flag as needing drilled specificity (company name, industry, hex color,
+#     logo URL, command-center name) — a short factual answer to these is
+#     normal and correct, not shallow.
+STRUCTURED_SUBSTANCE_MIN_CHARS = 30
+STRUCTURED_EXISTENCE_MIN_CHARS = LEGACY_MIN_ANSWER_CHARS
+
+
+def load_canonical_structured_questions(branding_questions_path: Path) -> list:
+    """
+    Assemble the FULL structured-web-deck canonical question set: identity ->
+    branding -> operations — same order and content as blackceo-command-center's
+    src/lib/interview-questions.ts:
+        INTERVIEW_QUESTIONS = [...IDENTITY_QUESTIONS, ...BRANDING_QUESTIONS, ...OPERATIONS_QUESTIONS]
+    Branding questions are loaded from branding-questions.json — the SAME single
+    canonical source check_mandatory_fields() above already loads (never
+    duplicated/hand-copied here). Each item is normalized to
+    {id, prompt, required, needsSubstance, kind}, where needsSubstance is True
+    only when the branding JSON itself carries a non-empty `interviewGuidance`
+    for that question, and `kind` is the branding JSON's own answer-kind
+    ("text" | "color" | "url" | "choice") — used below to exempt structurally
+    short-but-correct answers (a hex color, a URL) from the prose substance
+    floor; identity/operations questions are all kind "text".
+    """
+    bq = load_json(branding_questions_path, "branding-questions.json")
+    branding_questions = bq.get("questions", [])
+
+    combined = []
+    for q in IDENTITY_QUESTIONS_CANONICAL:
+        combined.append(dict(q, needsSubstance=False, kind="text"))
+    for q in branding_questions:
+        combined.append({
+            "id": q["id"],
+            "prompt": q["prompt"],
+            "required": bool(q.get("required", False)),
+            "needsSubstance": bool(q.get("interviewGuidance")),
+            "kind": q.get("kind", "text"),
+        })
+    for q in OPERATIONS_QUESTIONS_CANONICAL:
+        combined.append(dict(q, needsSubstance=False, kind="text"))
+    return combined
+
+
+def check_structured_coverage(transcript: str, branding_questions_path: Path) -> dict:
+    """
+    Check #1 (structured-web path): coverage + substance of the FULL canonical
+    structured question set, using the SAME transcript-matching machinery as
+    check #3 (parse_answer_blocks() / norm_prompt() — byte-identical ports of
+    the Command Center's seam.ts / structured-progress.ts) so this gate and the
+    Command Center's own "is this question answered" notion can never drift.
+
+    For each canonical question, the LONGEST answer across ALL transcript
+    blocks that matched it is used — an interview may drill/re-ask the SAME
+    canonical question several times (the proven real fixture drilled
+    customer_feeling x6); the BEST substantive answer is what counts, not how
+    many rounds it took to get there:
+      - no matching block at all               -> MISSING
+      - matched, but below its substance floor  -> SHALLOW (see the floor
+        constants above)
+      - matched, at/above its floor              -> ANSWERED
+
+    `complete` is True only when NO required canonical question is missing or
+    shallow (optional questions — brand_primary_color, brand_logo, brand_voice,
+    command_center_name — never block completeness, mirroring
+    check_mandatory_fields()'s required-only gate). Read-only; never raises —
+    a malformed/absent transcript degrades to every question MISSING
+    (fail-closed).
+    """
+    questions = load_canonical_structured_questions(branding_questions_path)
+    idx = {}
+    for q in questions:
+        key = norm_prompt(q["prompt"])
+        if key and key not in idx:
+            idx[key] = q
+
+    blocks = parse_answer_blocks(transcript or "")
+    best_len: dict = {}
+    for b in blocks:
+        ans = (b.get("answer") or "").strip()
+        if not ans:
+            continue
+        q = idx.get(norm_prompt(b.get("question", "")))
+        if not q:
+            continue
+        qid = q["id"]
+        if len(ans) > best_len.get(qid, -1):
+            best_len[qid] = len(ans)
+
+    answered_ids, missing_ids, shallow_ids = [], [], []
+    for q in questions:
+        qid = q["id"]
+        length = best_len.get(qid)
+        if length is None:
+            missing_ids.append(qid)
+            continue
+        if q.get("kind", "text") != "text":
+            # A structurally short-form value (hex color, URL) is correct at
+            # any non-empty length -- the prose substance floors below don't
+            # apply. Any matched, non-empty answer counts (parse_answer_blocks
+            # already guarantees non-empty via the best_len collection above).
+            floor = 1
+        elif q.get("needsSubstance"):
+            floor = STRUCTURED_SUBSTANCE_MIN_CHARS
+        else:
+            floor = STRUCTURED_EXISTENCE_MIN_CHARS
+        if length < floor:
+            shallow_ids.append(qid)
+        else:
+            answered_ids.append(qid)
+
+    required_ids = [q["id"] for q in questions if q.get("required")]
+    required_set = set(required_ids)
+    missing_required_ids = [i for i in missing_ids if i in required_set]
+    shallow_required_ids = [i for i in shallow_ids if i in required_set]
+
+    return {
+        "total": len(questions),
+        "requiredTotal": len(required_ids),
+        "answeredIds": answered_ids,
+        "missingIds": missing_ids,
+        "shallowIds": shallow_ids,
+        "missingRequiredIds": missing_required_ids,
+        "shallowRequiredIds": shallow_required_ids,
+        "complete": not missing_required_ids and not shallow_required_ids,
+    }
 
 
 # ── Check 2: Forbidden jargon ─────────────────────────────────────────────────
@@ -1112,11 +1327,21 @@ def build_verdict(
     legacy_substance: dict | None = None,
     state: dict | None = None,
     web_store_result: dict | None = None,
+    structured_coverage: dict | None = None,
 ) -> tuple:
     """
     Returns (verdict_str, exit_code, details_dict).
     PASS=0, SOFT FAIL=2, HARD FAIL=3.
     Checks: 1=count, 2=jargon, 3=fields, 4=nudges, 5=no-fabrication (v12.3.4).
+
+    STRUCTURED-WEB COVERAGE STANDARD (2026-07-30 fix): when
+    is_structured_web_interview(state) is True, check #1 is decided ENTIRELY by
+    `structured_coverage` (the result of check_structured_coverage() — coverage +
+    substance of the ~11-question canonical structured deck) instead of the raw
+    **Q:** block count. Neither the 25-35 floor NOR the >36 ceiling applies to
+    this path — see check_structured_coverage()'s docstring for why raw count is
+    the wrong axis for it. The legacy/tailored exemptions below are UNCHANGED and
+    apply ONLY on the conversational (non-structured) path, exactly as before.
 
     The 25-35 count floor (PRD-2.15) is lifted ONLY through the unified short-interview
     exemption path, which covers TWO genuine cohorts (v13.2.0):
@@ -1182,8 +1407,44 @@ def build_verdict(
     # explicitly records a tailored interview downgrades a LOW count to NEEDS-REVIEW.
     tailored, tailored_basis = is_tailored_short_interview(state)
 
-    # The over-long ceiling is ABSOLUTE — no exemption lifts it.
-    if count > 36:
+    # (C) Structured-web coverage standard (2026-07-30 fix): an interview conducted
+    # through the Command Center's structured web deck is graded ENTIRELY on
+    # coverage of the canonical question set, not raw count — see
+    # is_structured_web_interview() / check_structured_coverage() above. This
+    # branch REPLACES the raw-count floor/ceiling/borderline decision below for
+    # this path only; the conversational path (elif chain below) is unchanged.
+    is_structured = is_structured_web_interview(state)
+
+    if is_structured:
+        sc = structured_coverage or {}
+        if sc.get("complete"):
+            warnings.append(
+                f"[structured-coverage GRANTED] interviewProgress.lastQuestionAskedBy=="
+                f"'interview-web' (structured web deck). "
+                f"{len(sc.get('answeredIds', []))}/{sc.get('total', 0)} canonical questions "
+                f"covered with substance ({sc.get('requiredTotal', 0)} required, all present). "
+                f"The 25-35 raw-**Q:**-block standard does not apply to this path — see "
+                f"check_structured_coverage(). Raw count was {count}. Jargon, mandatory-field, "
+                f"and no-fabrication checks STILL applied in full."
+            )
+        else:
+            missing_named = sc.get("missingRequiredIds", [])
+            shallow_named = sc.get("shallowRequiredIds", [])
+            parts = []
+            if missing_named:
+                parts.append(f"never answered: {', '.join(missing_named)}")
+            if shallow_named:
+                parts.append(f"answered but too shallow/generic: {', '.join(shallow_named)}")
+            hard_failures.append(
+                "[structured-coverage] Structured web-deck interview (askedBy=interview-web) "
+                "does not cover every REQUIRED canonical question with real substance"
+                + (f" — {'; '.join(parts)}" if parts else "")
+                + f". Raw count ({count}) is not the standard for this path; coverage of the "
+                f"{sc.get('total', '?')}-question canonical deck is."
+            )
+    # The over-long ceiling is ABSOLUTE — no exemption lifts it. (Conversational
+    # path only; a structured interview is graded above, never here.)
+    elif count > 36:
         hard_failures.append(
             f"Question count {count} is outside the acceptable range (25-35). "
             f"Too many — interview may have drifted long."
@@ -1322,7 +1583,13 @@ def build_verdict(
         "tailoredExemption": {
             "recorded": tailored,
             "basis": tailored_basis,
-            "applied": bool(tailored and count < 24 and count <= 36 and not legacy_granted),
+            "applied": bool(tailored and not is_structured and count < 24 and count <= 36 and not legacy_granted),
+        },
+        "structuredCoverage": {
+            "isStructuredWebInterview": is_structured,
+            "lastQuestionAskedBy": ((state or {}).get("interviewProgress") or {}).get("lastQuestionAskedBy"),
+            "applied": is_structured,
+            "result": structured_coverage or {},
         },
         "jargonHits": jargon_hits,
         "missingFields": missing_fields,
@@ -1357,6 +1624,7 @@ def build_verdict(
             (
                 f"PASS: {count} questions"
                 + (" [legacy/pre-standard exemption GRANTED]" if legacy_granted else "")
+                + (" [structured-web coverage standard applied]" if is_structured else "")
                 + ", 0 jargon hits, all fields present"
                 + (
                     ", nudges wired" if nudge_result["wired"]
@@ -1388,6 +1656,8 @@ def write_state_qc(state_path: Path, details: dict) -> None:
     }
 
     _legacy = details.get("legacyExemption", {})
+    _sc = details.get("structuredCoverage", {})
+    _sc_result = _sc.get("result", {}) or {}
     state["interviewQc"] = {
         "status": qc_status_map.get(verdict_str, "fail"),
         "questionCount": details["questionCount"],
@@ -1395,6 +1665,12 @@ def write_state_qc(state_path: Path, details: dict) -> None:
             "claimed": bool(_legacy.get("claimed")),
             "granted": bool(_legacy.get("granted")),
             "sources": _legacy.get("sources", []),
+        },
+        "structuredCoverage": {
+            "applied": bool(_sc.get("applied")),
+            "total": _sc_result.get("total"),
+            "answered": len(_sc_result.get("answeredIds", [])),
+            "complete": bool(_sc_result.get("complete")),
         },
         "jargonHits": [
             {"term": h["term"], "line": h["line"]}
@@ -1577,6 +1853,10 @@ def main():
     field_result = check_mandatory_fields(state, branding_path, transcript)
     nudge_result = check_nudges_wired(repo_root)
     fabrication_result = check_no_fabrication(transcript, context_map_path, state)
+    # Structured-web coverage standard (2026-07-30 fix): computed unconditionally
+    # (cheap — same transcript, same branding_path already loaded above); only
+    # USED by build_verdict() when is_structured_web_interview(state) is True.
+    structured_coverage_result = check_structured_coverage(transcript, branding_path)
 
     # Legacy / pre-standard exemption (v12.4.0): detect claim, then verify substance.
     legacy_result = is_legacy_interview(transcript, state, args.legacy_interview)
@@ -1604,6 +1884,7 @@ def main():
         count_result, jargon_hits, field_result, nudge_result, fabrication_result,
         legacy_result, legacy_substance, state=state,
         web_store_result=web_store_result,
+        structured_coverage=structured_coverage_result,
     )
 
     # Output
@@ -1622,6 +1903,12 @@ def main():
         print(f"  Question count : {details['questionCount']}"
               + (f" (state: {details['questionCountStateValue']})" if details['questionCountStateValue'] else "")
               + _legacy_tag)
+        _sc = details.get("structuredCoverage", {})
+        if _sc.get("isStructuredWebInterview"):
+            _scr = _sc.get("result", {}) or {}
+            print(f"  Structured cov.: {len(_scr.get('answeredIds', []))}/{_scr.get('total', 0)} canonical "
+                  f"questions covered with substance ({_scr.get('requiredTotal', 0)} required) "
+                  f"[askedBy=interview-web — 25-35 raw count standard N/A]")
         print(f"  Jargon hits    : {len(details['jargonHits'])}")
         print(f"  Missing fields : {len(details['missingFields'])}")
         print(f"  Nudges wired   : {'yes' if details['nudgesWired'] else 'NO'}")
