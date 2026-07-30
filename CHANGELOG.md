@@ -1,3 +1,63 @@
+## [v21.4.17]  -  2026-07-29  -  Un-freeze update-skills.sh (stuck at v21.4.2 for 14 releases), reconcile Skill 38 doc counts, and release the three manifest-integrity fixes (PRs #729/#731/#732)
+
+**The version freeze — the substantive item.** `update-skills.sh` carried
+`ONBOARDING_VERSION="v21.4.2"` while `/version`, `install.sh` and every other marker
+had moved to v21.4.16. Fourteen releases of drift, and `scripts/bump-version.sh --check`
+had been reporting `DRIFT DETECTED` for all of them.
+
+Root cause: `.githooks/pre-commit` rule 4 blocks any `.sh` that references
+`secrets/.env` without containing a `chmod 600` call. `update-skills.sh` references the
+path (it computes `_U6B_OC_SECRETS_ENV` and hands it to `wire_ghl_funnel_catalog`) but
+contained no `chmod 600` of its own, so **every commit touching the file was rejected** —
+including a version bump.
+
+The credential handling was never actually broken. The real writes live in
+`shared-utils/provision-persona-index.sh`, which `chmod 600`s correctly on `touch` and
+again after each append. The hook's check is per-file and cannot see that delegation.
+
+Fixed truthfully rather than worked around: a defensive
+`[ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600` at the point the path is computed. That
+tightens a secrets file which may ALREADY exist with loose permissions from an older
+install — something nothing on this code path previously did — and it satisfies rule 4
+honestly. The hook was not bypassed and `--no-verify` was not used.
+
+**Skill 38 doc self-counts** — `38-conversational-ai-system/INSTALL.md` was stale on all
+three counts the bump-time advisory checks: `45 protocols` -> **51**, `22 reference
+documents` -> **25**, numbered install scripts `` `00`-`30` `` -> `` `00`-`33` ``.
+`SKILL.md` was already correct; INSTALL.md was the only drifted file. The advisory now
+prints with zero warnings.
+
+**Released in this bump** (three PRs that landed after v21.4.16 with no version roll):
+- **#729** — re-cut `MANIFEST-SOURCE.txt` `content_sha256` for `manifest_version` 31.
+  U019 had recorded this obligation in its own ticket; a stale stamp is exit 7 on every
+  engine invocation, not merely a failing test.
+- **#731** — `MIN_MANIFEST_VERSION` 30 -> 31, restoring the invariant that the floor
+  equals the manifest version.
+- **#732** — woke the inert deliverable/producer guard in `test_producers.py`. That guard
+  had been checking a path that never existed, so it silently skipped from the day it was
+  written. Live, it exposes **five `deliverables_required` entries with no producing
+  phase** — `deck_pdf`, `guide_pdf`, `speech_pdf`, `speech_fish_md`, `teleprompter_html`
+  — four of which are `client_package_files`. Recorded as `known_missing_producers` and
+  asserted in both directions so it cannot rot. **Declaring those phases is an open
+  pipeline-design decision, not closed by this release.**
+
+All 10 version markers verified in agreement at v21.4.17.
+
+## [v21.4.16]  -  2026-07-29  -  Batch of 3 units (U008, U073, U028)
+
+**Backfilled 2026-07-29.** This tag shipped without a CHANGELOG entry, which is a Guard
+G2 violation (`every annotated tag must have a CHANGELOG entry`). Recorded here from the
+annotated tag's own message rather than reconstructed from memory.
+
+- **U008** — merge the 22 duplicated role folders down to one each. PASS 8.80.
+- **U073** — make the repository's commit hook actually run. PASS, gate 8.6.
+- **U028** — generalise checkpoint and resume; checkpoint before the paid call. PASS on
+  round 9. Its eight prior failures were caused by a spec defect, not by the code: the
+  card declared `tests/test_checkpoint.py` as NEW when it already existed on main from
+  U014, so each attempt faithfully followed the instruction and silently deleted U014's
+  coverage for seven validator functions, with no merge conflict to warn anyone. The
+  round-9 repair merges instead of overwriting and the card now reads MODIFY.
+
 ## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
 
 Two role-library files existed only as SOP mirrors, not as their own role-library docs:

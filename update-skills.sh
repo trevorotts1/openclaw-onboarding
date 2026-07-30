@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.2"
+ONBOARDING_VERSION="v21.4.17"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1070,7 +1070,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.2 - safe_json_edit
+# v21.4.17 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3021,6 +3021,21 @@ u004_assert_doctrine_provenance() {
   [ -f "/data/.openclaw/openclaw.json" ] && _U6B_OC_JSON="/data/.openclaw/openclaw.json"
   _U6B_OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
   [ -d "/data/.openclaw" ] && _U6B_OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
+  # Defensive 0600 on the secrets file before anything is handed its path.
+  #
+  # The actual credential WRITES live in shared-utils/provision-persona-index.sh,
+  # which already chmod 600s correctly (on touch, and again after each append).
+  # This line is not duplicating that -- it tightens a file that may ALREADY
+  # exist with loose permissions from an older install, which nothing on this
+  # code path previously did.
+  #
+  # It also un-freezes this file. .githooks/pre-commit rule 4 blocks any .sh that
+  # references secrets/.env without containing a `chmod 600`; that check is
+  # per-file and cannot see the delegation above, so it had blocked every commit
+  # touching this script -- which is why ONBOARDING_VERSION sat at v21.4.2 while
+  # /version and install.sh moved to v21.4.16. The rule is a reasonable heuristic
+  # and this satisfies it truthfully rather than working around it.
+  [ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600 "$_U6B_OC_SECRETS_ENV" 2>/dev/null || true
 
   _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
   [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
