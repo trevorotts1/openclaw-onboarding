@@ -87,12 +87,19 @@ class _Recorder:
             "body": body_str,
             "timeout": timeout,
         })
-        # SERVER-SIDE STATUS ENFORCEMENT (mirror of CC UpdateTaskSchema): a task PATCH
-        # carrying a status outside the 10 authoritative values is a 400 — the same
-        # way the live Zod validator rejects it — so an unknown literal like the
-        # retired 'delivered' can never masquerade as a successful advance.
-        if req.get_method() == "PATCH" and "/api/tasks/" in req.full_url \
-                and not req.full_url.endswith("/activities"):
+        # SERVER-SIDE STATUS ENFORCEMENT (mirror of CC UpdateTaskSchema): a task
+        # status update carrying a value outside the 10 authoritative values is a
+        # 400 — the same way the live Zod validator rejects it — so an unknown
+        # literal like the retired 'delivered' can never masquerade as a
+        # successful advance. U030 split the transport across TWO endpoints
+        # (PATCH /api/tasks/{id} for cert-bearing 'review'/'done'; POST
+        # /api/tasks/{id}/status for every other transition) but the live CC
+        # schema validates the status enum the same way regardless of which
+        # endpoint carries it, so both are checked here.
+        is_patch_task = (req.get_method() == "PATCH" and "/api/tasks/" in req.full_url
+                          and not req.full_url.endswith("/activities"))
+        is_status_post = (req.get_method() == "POST" and req.full_url.endswith("/status"))
+        if is_patch_task or is_status_post:
             try:
                 _status = json.loads(body_str).get("status") if body_str else None
             except (json.JSONDecodeError, ValueError):
@@ -252,17 +259,22 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertTrue(pm.get("cc_register_attempted"))
 
     def test_patch_phase_contract(self):
+        # U030 (audit E1) repoints non-cert-bearing transitions (anything other
+        # than the terminal 'review'/'done') to POST /api/tasks/{id}/status —
+        # 'in_progress' is not cert-bearing, so it takes that endpoint, with
+        # phase_id folded into the note (the status-endpoint schema has no
+        # phase_id field of its own).
         self.rec.queue(200, {"task": {"status": "in_progress"}})
         ok = cc_board.patch_phase(None, "task-xyz", "P0A-INTAKE", "in_progress",
                                   note="Intake started", env=ENV)
         self.assertTrue(ok)
         req = self.rec.requests[-1]
-        self.assertEqual(req["method"], "PATCH")
-        self.assertEqual(req["url"], "https://cc.example.test/api/tasks/task-xyz")
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["url"], "https://cc.example.test/api/tasks/task-xyz/status")
         body = json.loads(req["body"])
-        self.assertEqual(body["phase_id"], "P0A-INTAKE")
         self.assertEqual(body["status"], "in_progress")
-        self.assertEqual(body["note"], "Intake started")
+        self.assertIn("P0A-INTAKE", body["note"])
+        self.assertIn("Intake started", body["note"])
 
     def test_patch_phase_noop_without_config(self):
         ok = cc_board.patch_phase(None, "task-xyz", "P0A-INTAKE", "done", env={})
@@ -273,14 +285,15 @@ class AuthAndContractTest(unittest.TestCase):
         # REGRESSION for the P9-DELIVER bug: 'delivered' is NOT a CC TaskStatus, so
         # the server (mock, mirroring UpdateTaskSchema) rejects it with 400 and
         # patch_phase returns False. The request WAS attempted (proving the mock's
-        # rejection — not a client shortcut — produced the False).
+        # rejection — not a client shortcut — produced the False). 'delivered' is
+        # not cert-bearing, so (post-U030) it is attempted via POST .../status.
         with tempfile.TemporaryDirectory() as d:
             rd = Path(d)
             ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "delivered",
                                       note="bundle complete — deck delivered", env=ENV)
             self.assertFalse(ok)
             req = self.rec.requests[-1]
-            self.assertEqual(req["method"], "PATCH")
+            self.assertEqual(req["method"], "POST")
             self.assertEqual(json.loads(req["body"])["status"], "delivered")
             # The failed advance is VISIBLE in the movement receipt (HTTP 400, not ok).
             receipt = json.loads(
