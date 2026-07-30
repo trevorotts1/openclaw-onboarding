@@ -129,6 +129,54 @@ directory). Verified as a bleed test: reintroducing the old loop fails all seven
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
 
 
+## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
+
+### Why
+PR #745 (v21.4.20, "turn main green") merged to `main` at `2769b8c0` before its own follow-up
+commit could land. Fixing v21.4.20's `test_preflight.py` FIVE->CLIENT_PACKAGE bug let the
+`sync_check` job's steps run further than `main` ever had before, unmasking a stale
+`CANONICAL-RENDERER-PIN.sha256`: Land U028 (`1ff47035`) added 108 lines to `build_deck.py`
+without regenerating the renderer hash pin, so the CI step that recomputes and compares it
+was failing every run -- just never reached, because the FIVE bug always aborted the job first.
+
+Two sibling defects found the same way (`test_cc_board.py`'s stale U030 PATCH/POST contract
+assertions, and a stale `universal-sops/_content-manifest.json` after U012's six added manifest
+phases) were fixed independently in parallel by `fix/cc-board-stale-contract-tests` (#757) and
+`fix/manifest-restamp-guard` (#756) before this branch could push its own copies; those two
+files were resolved by taking the already-landed, equivalent fix rather than re-doing the work.
+
+### What changed
+Recomputed `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/CANONICAL-RENDERER-PIN.sha256`
+over the current (unchanged-by-this-PR) `build_deck.py` + `run_signature_deck.py` per the
+workflow's own prescribed remedy. No renderer behavior changed -- the pin now matches content
+that was already correct and already on `main`.
+
+A separate, pre-existing gap surfaced independently: PR #745 bumped `/version` to v21.4.20 and
+merged before an annotated tag was pushed, so G1 (annotated tag required) went red on `main`.
+Pushed the missing `v21.4.20` annotated tag directly onto the merge commit (not part of this
+version bump).
+
+### Left deliberately unfixed (pre-existing, out of scope, not introduced by this or the #745 merge)
+- **Presentation-deps install + QC hard-fail guard** -- `tests/unit/presentation-deps-gate.test.sh`'s
+  bypass-scan family calls `presentation-canonical-entry.sh` without `--scripts-dir`/`SCRIPTS_DIR`,
+  relying on autodetection U006 deliberately removed. Reproduced identically against a plain
+  pre-#745 `main` export and via `gh run list --workflow=presentation-deps-gate.yml --branch main`
+  failing on every push for weeks. (A separate branch, `fix/presentation-deps-gate-ci`, appears to
+  already be addressing this in parallel.)
+- **gate_integrity_check.py (Guard A)** -- 6 violations (2 dead symbols never wired into
+  `build_deck.py`'s enforcement path, 4 gates with no negative-test fixture) and
+  **doctrine_residual_check.py (Guard B)** -- 107 retired "master SOP Section N" citations across
+  6 role files. Both reproduce identically against a plain pre-#745 `main` export using the same
+  `af-coverage.json`. They were masked by the FIVE bug; `main`'s own `sync_check` job will now
+  reach and fail on them too. Fixing either is a substantial, unrelated body of work (rewriting 107
+  citations across 6 files; wiring or retiring 2 dead symbols; authoring 4 new negative-test
+  fixtures) and is out of scope here.
+
+### Risk
+One hash value recomputed over unchanged source files, plus the version-marker bump this change
+itself requires (G3). No renderer, gate, or credential behavior changed.
+
+
 ## [v21.4.20]  -  2026-07-30  -  Turn main green: four checks had been failing on main, three of them for long enough to be treated as background noise
 
 ### Why
