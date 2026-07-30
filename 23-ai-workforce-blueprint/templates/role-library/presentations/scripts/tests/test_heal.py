@@ -22,6 +22,15 @@ def _mkengine(tmp_path, manifest=None, dry_run=False):
     store.save(s)
     return Engine(rd, manifest, store, s, dry_run=dry_run), s
 
+def _mkengine_at(tmp_path, run_dir, manifest, dry_run=False):
+    """Like _mkengine, but the caller supplies the run_dir Path (which may be
+    an adversarial name for shell-metacharacter injection tests)."""
+    run_dir.mkdir(parents=True, exist_ok=True)
+    store = StateStore(run_dir)
+    s = {"schema_version":1,"job_id":"t","run_dir":str(run_dir),"created_at":"","manifest_path":str(manifest.path),"manifest_version":25,"manifest_sha256":manifest.sha256,"presentation_type":"from_scratch","requester":{"chat_id":"t"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
+    store.save(s)
+    return Engine(run_dir, manifest, store, s, dry_run=dry_run), s
+
 class TestCaps:
     def test_caps(self): assert HEAL_CAP_TRANSIENT==3 and HEAL_CAP_REGENERATE==2
 
@@ -102,3 +111,88 @@ class TestRecord:
         st={"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"","manifest_path":"/x","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":"t"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
         pd={};record_heal_event(st,"TP",store,pd,1,1,"a");record_heal_event(st,"TP",store,pd,2,1,"b");record_heal_event(st,"TP",store,pd,4,1,"c")
         assert len(pd.get("heal_events",[]))==3;assert sorted(x["rung"] for x in pd["heal_events"])==[1,2,4]
+
+
+# ---------------------------------------------------------------------------
+# U069 bypass closure: the merge gate found that heal.py's retry rungs
+# (rung2_regenerate, rung3_alt_route) re-derived `cmd.replace("{run_dir}", ...)`
+# and ran it with shell=True, completely independent of the tokenise-first
+# fix landed in phases.py._run_script_phase. That meant a run_dir or manifest
+# executor.cmd/alt_cmd crafted with shell metacharacters was STILL exploitable
+# whenever a phase healed through rung 2 or rung 3 -- the fix only covered the
+# happy path. The close: both rungs now call the engine's single
+# `_build_executor_argv` (tokenise, then substitute into tokens) instead of
+# rebuilding a raw command string of their own. These tests drive real
+# injection payloads through rung2 and rung3 directly and prove nothing
+# injected ever runs, then prove the identical run_dir payload is equally
+# inert on the primary path -- one code path, one guarantee, not two.
+# ---------------------------------------------------------------------------
+class TestU069HealBypassClosed:
+    def test_rung2_manifest_cmd_injection_blocked(self, tmp_path, monkeypatch):
+        """U069 bypass: executor.cmd with a `;`-chained payload must not run
+        the chained command when rung2_regenerate re-executes it."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        sentinel = tmp_path / "PWNED_RUNG2_CMD"
+        m = _mkmanifest(tmp_path, cmd="echo hello; touch " + str(sentinel))
+        e, s = _mkengine(tmp_path, m)
+        rc = rung2_regenerate(e, m.phase("TP"), "missing artifact")
+        assert rc == EXIT_OK, "echo itself must still succeed mechanically"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: rung2_regenerate executed injected content, {sentinel} exists"
+        )
+
+    def test_rung3_alt_cmd_injection_blocked(self, tmp_path, monkeypatch):
+        """U069 bypass: alt_cmd with a `;`-chained payload must not run the
+        chained command when rung3_alt_route executes it."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        sentinel = tmp_path / "PWNED_RUNG3_ALT"
+        m = _mkmanifest(tmp_path, phases=[{
+            "id": "TP", "order": 1, "owning_role": "t",
+            "produces_artifact": ["o.txt"],
+            "executor": {"kind": "script", "cmd": "exit 1",
+                         "alt_cmd": "echo hello; touch " + str(sentinel)},
+        }])
+        e, s = _mkengine(tmp_path, m)
+        rc = rung3_alt_route(e, m.phase("TP"))
+        assert rc == EXIT_OK, "echo itself must still succeed mechanically"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: rung3_alt_route executed injected content, {sentinel} exists"
+        )
+
+    def test_rung2_run_dir_metachar_injection_blocked(self, tmp_path, monkeypatch):
+        """U069 bypass, run_dir vector: a run_dir whose NAME contains a shell
+        command-substitution payload must not fire when rung2_regenerate
+        substitutes {run_dir} into the (re-tokenised) argv. Before the close,
+        rung2 did `cmd.replace("{run_dir}", str(run_dir))` then shell=True'd
+        the result, so this exact payload would execute."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        sentinel = tmp_path / "PWNED_RUNG2_RUNDIR"
+        run_dir = tmp_path / ("evil_$(touch " + str(sentinel) + ")_dir")
+        m = _mkmanifest(tmp_path, cmd="echo {run_dir}")
+        e, s = _mkengine_at(tmp_path, run_dir, m)
+        rc = rung2_regenerate(e, m.phase("TP"), "missing artifact")
+        assert rc == EXIT_OK, "echo itself must still succeed mechanically"
+        assert not sentinel.exists(), (
+            f"SECURITY FAILURE: rung2_regenerate re-interpreted run_dir as shell syntax, "
+            f"{sentinel} exists"
+        )
+
+    def test_same_run_dir_payload_inert_on_both_paths(self, tmp_path, monkeypatch):
+        """Same adversarial run_dir, driven through the primary path
+        (_run_script_phase) and the heal/retry path (rung2_regenerate) in the
+        same test -- proves there is exactly one argv-building code path
+        shared by both, not two with diverging safety."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        sentinel = tmp_path / "PWNED_SHARED_PATH"
+        run_dir = tmp_path / ("evil_$(touch " + str(sentinel) + ")_dir")
+        m = _mkmanifest(tmp_path, cmd="echo {run_dir}")
+        e, s = _mkengine_at(tmp_path, run_dir, m)
+        phase = m.phase("TP")
+
+        rc1 = e._run_script_phase(phase)
+        assert rc1 == EXIT_OK
+        assert not sentinel.exists(), "primary path let the run_dir payload execute"
+
+        rc2 = rung2_regenerate(e, phase, "missing artifact")
+        assert rc2 == EXIT_OK
+        assert not sentinel.exists(), "heal/retry path let the run_dir payload execute"

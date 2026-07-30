@@ -177,19 +177,38 @@ class Engine:
                 self.board.phase_progress(phase.id, done_msg)
         return rc
 
-    def _run_script_phase(self, phase: Phase) -> int:
-        # U069: tokenise FIRST, substitute SECOND.
-        raw = phase.executor_cmd or ""
+    def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
+        """U069: tokenise FIRST, substitute SECOND.
+
+        This is the ONLY sanctioned way to turn a manifest executor.cmd (or
+        alt_cmd) into an argv anywhere in this package. `run_dir` can contain
+        arbitrary characters (it is derived from client-controlled intake
+        text upstream) -- if it were substituted into a raw command string
+        before that string is split, a run_dir crafted with shell metacharacters
+        would be re-interpreted as shell syntax. Splitting first means
+        substitution only ever lands inside an already-tokenised argument,
+        so it can never introduce a new token or an operator.
+
+        heal.py's retry rungs (rung2_regenerate, rung3_alt_route) MUST call
+        this too instead of re-deriving a command themselves -- that
+        duplication is exactly how U069's original fix in this method left a
+        live bypass in the retry path.
+        """
+        raw = raw_cmd or ""
         try:
             argv = shlex.split(raw)
         except ValueError as exc:
             raise PhaseExecutorContractError(
-                f"phase {phase.id}: executor.cmd is not a valid argument vector "
+                f"phase {phase_id}: executor.cmd is not a valid argument vector "
                 f"({exc}). Fix the manifest; this is not sanitised for you."
             ) from exc
         run_dir_str = str(self.run_dir)
-        argv = [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+        return [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
                 for tok in argv]
+
+    def _run_script_phase(self, phase: Phase) -> int:
+        # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
+        argv = self._build_executor_argv(phase.executor_cmd, phase.id)
         if not argv:
             return self._block(phase, "executor kind is 'script' but no cmd is declared")
         if self.dry_run:

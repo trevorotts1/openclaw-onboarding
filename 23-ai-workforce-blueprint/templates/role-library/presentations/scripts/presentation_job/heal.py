@@ -19,9 +19,14 @@ def record_heal_event(state, phase_id, store, phase_data, rung, attempt, reason)
 
 
 def rung2_regenerate(engine, phase, deficiency):
+    # U069: route through the engine's single tokenise-first builder -- do not
+    # re-derive the command here. A hand-rolled `.replace()` + shell=True in
+    # this rung is exactly the bypass that let U069's original fix (in
+    # phases.py._run_script_phase only) ship with a live shell-injection hole
+    # in the retry path.
     ps = engine._phase_state(phase.id)
-    cmd = (phase.executor_cmd or "").replace("{run_dir}", str(engine.run_dir))
-    if not cmd:
+    argv = engine._build_executor_argv(phase.executor_cmd, phase.id)
+    if not argv:
         return EXIT_EXECUTOR_FAILED
     for attempt in range(1, HEAL_CAP_REGENERATE + 1):
         record_heal_event(engine.state, phase.id, engine.store, ps,
@@ -33,10 +38,10 @@ def rung2_regenerate(engine, phase, deficiency):
             phase_id=phase.id, reason=f"rung2:{deficiency}")
         if attempt < HEAL_CAP_REGENERATE:
             time.sleep(min(60, 5 * (2 ** (attempt - 1))))
-        engine._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow())
+        engine._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow())
         try:
             budget = phase.budget_minutes * 60
-            r = subprocess.run(cmd, shell=True, cwd=str(engine.run_dir),
+            r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
                                timeout=budget, capture_output=False)
             if r.returncode == 0:
                 return EXIT_OK
@@ -46,6 +51,8 @@ def rung2_regenerate(engine, phase, deficiency):
 
 
 def rung3_alt_route(engine, phase):
+    # U069: same rule as rung2 -- tokenise via the engine builder, never a
+    # local .replace() + shell=True re-derivation.
     alt_cmd = None
     for p in engine.manifest.raw.get("phases", []):
         if p.get("id") == phase.id:
@@ -54,13 +61,15 @@ def rung3_alt_route(engine, phase):
             break
     if not alt_cmd:
         return EXIT_EXECUTOR_FAILED
-    alt_cmd = alt_cmd.replace("{run_dir}", str(engine.run_dir))
+    argv = engine._build_executor_argv(alt_cmd, phase.id)
+    if not argv:
+        return EXIT_EXECUTOR_FAILED
     ps = engine._phase_state(phase.id)
     record_heal_event(engine.state, phase.id, engine.store, ps,
                       rung=3, attempt=1, reason="alternate route")
     try:
         budget = phase.budget_minutes * 60
-        r = subprocess.run(alt_cmd, shell=True, cwd=str(engine.run_dir),
+        r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
                            timeout=budget, capture_output=False)
         if r.returncode == 0:
             return EXIT_OK
