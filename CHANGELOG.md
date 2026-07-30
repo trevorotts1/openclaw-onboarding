@@ -1,4 +1,4 @@
-## [v21.4.22]  -  2026-07-30  -  Consolidate 6 backlogged [Unreleased] entries (ticket-hash audit, universal-sops re-stamp + pre-commit guard, presentation_job hardening) into one release; fix a 14-release-stale /.version file
+## [v21.4.22]  -  2026-07-30  -  Consolidate 6 backlogged Unreleased entries (ticket-hash audit, universal-sops re-stamp + pre-commit guard, presentation_job hardening) into one release; fix a 14-release-stale /.version file
 ### Summary
 
 Six `[Unreleased]` CHANGELOG entries had accumulated without being folded into a
