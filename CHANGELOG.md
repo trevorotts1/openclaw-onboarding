@@ -1,3 +1,39 @@
+## [Unreleased]
+
+**Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**
+`presentation_job/gates.py` carried `ocr_readback` inside `WARN_ONLY_GATES`, and every one of
+`_ocr_gate`'s failure branches set `"warn_only": True`. `phases.py`'s `close()` routes any gate
+result carrying `warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of
+`failures` — so a job with zero OCR-verified slides (no sidecars, an unchecked engine, or a
+mismatched readback) could reach `DONE`. `MASTER-SPEC-2026-07-25.md` §7.4 and decision D10 are
+unambiguous: *"An unchecked slide-content readback blocks the job"* and *"[i]t is the one gate
+not waivable at all... no waiver can make it [a pass]."* U013 had staged both `qc` and
+`ocr_readback` into warn-mode together, reasoning (correctly, at the time) that neither gate had
+a producing phase in the 32-phase manifest and a gate with no producer fails every job on day
+one. That reasoning still holds for `qc` — no phase writes `final_qc_report.json` — but it does
+not license a *permanent* silent pass on the one check the spec names as the department's floor
+against "the check that reads a finished slide and is allowed to switch itself off"
+(source audit Cause 4).
+
+Fixed: `WARN_ONLY_GATES` is now `("qc",)` — `ocr_readback` was removed — and `_ocr_gate` sets
+`warn_only: False` on every branch (pass and fail), so `close()`'s existing fail-closed path
+(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers a
+missing, unchecked, or mismatched OCR sidecar exactly like the other four hard gates.
+`ocr_readback` stays in `NON_WAIVABLE_GATES` unchanged — this fix does not touch waiver handling
+at all.
+
+**Known, accepted risk, disclosed rather than hidden:** measured this session, the OCR engine
+(`pytesseract`) is not importable under the interpreter this pipeline actually runs
+(`/opt/homebrew/opt/python@3.14/bin/python3.14` — confirmed via `prompt_gate._ocr_engine_available()`
+returning `(None, None)`), so on this operator box every real render will produce `checked: false`
+sidecars and this gate will block every close until that binding is installed for that
+interpreter. That is the fail-closed behaviour §7.4's fourth bullet asks for in spirit (fail on
+a missing dependency rather than silently pass), though the "minute zero, before any paid
+generation" half of that bullet is a separate, larger unit: `presentation_job/preflight_deps.py`
+already contains a warn-mode dependency probe (`probe_ocr`, from a prior unit) but it is not
+wired into engine start anywhere in `phases.py`. Wiring it — and deciding whether to flip it to
+fail-closed — is intentionally left to that unit, not folded in here silently.
+
 ## [v21.4.17]  -  2026-07-30  -  Un-freeze update-skills.sh after fourteen releases of drift
 
 `update-skills.sh` carried `ONBOARDING_VERSION="v21.4.2"` while `/version`, `install.sh` and every other

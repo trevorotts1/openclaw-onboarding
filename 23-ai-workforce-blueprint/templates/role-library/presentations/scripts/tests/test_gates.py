@@ -66,18 +66,50 @@ def test_all_gates_fail_on_empty_dir():
     assert len(f) >= 4, f"expected >=4 failures, got {len(f)}"
 
 def test_warn_mode_gates_are_warn_only():
+    # ocr_readback is deliberately given a passing sidecar here: since MASTER-SPEC 7.4 / D10
+    # this gate is a hard (non-warn-only) gate, so this fixture must satisfy it for real in
+    # order to still prove the point this test exists for -- that the one gate genuinely left
+    # in WARN_ONLY_GATES (qc) does not count as a hard failure.
     rd = _rd(); (rd / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
     (rd / "working" / "prompts").mkdir(parents=True, exist_ok=True)
     (rd / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (rd / "renders").mkdir(parents=True, exist_ok=True)
     _w(rd, "working/deliverables/PRESENTERS-SPEECH.md", "x" * 3000)
     _w(rd, "working/deliverables/presenter-teleprompter.html", "y" * 12000)
     _w(rd, "working/prompts/slide-01.txt", "p" * 9500)
     _wj(rd, "working/checkpoints/media_library.json",
         {"ghl_folder_id": "root", "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}], "pptx_ghl_media_id": "p9"})
+    _wj(rd, "renders/slide-01.ocr.json", {"checked": True, "matched": True})
     gates = Gates(rd, {}).evaluate_all()
+    assert gates["ocr_readback"]["state"] == "pass", gates["ocr_readback"]
     f = [k for k in ALL_GATE_KEYS if gates.get(k, {}).get("state") != "pass"
          and not gates.get(k, {}).get("warn_only", False)]
     assert len(f) == 0, f"all hard gates should pass, got {f}"
+
+def test_ocr_readback_unchecked_is_hard_failure_not_warn_only():
+    """MASTER-SPEC 7.4 / D10: an unchecked readback BLOCKS -- it must never be routed
+    into the warn-only path. Regression guard for the WARN_ONLY_GATES contradiction."""
+    rd = _rd(); (rd / "renders").mkdir(parents=True, exist_ok=True)
+    _wj(rd, "renders/slide-01.ocr.json", {"checked": False, "matched": None})
+    g = Gates(rd, {})._ocr_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False, "an unchecked readback must not be warn-only -- it must block"
+    assert "ocr_readback" not in WARN_ONLY_GATES
+
+def test_ocr_readback_no_sidecars_is_hard_failure_not_warn_only():
+    """The zero-sidecar case (no phase ever produced renders/slide-*.ocr.json) must also
+    block -- 'unverifiable' fails closed (D10), it does not defer to a silent pass."""
+    rd = _rd()
+    g = Gates(rd, {})._ocr_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
+
+def test_ocr_readback_mismatch_is_hard_failure_not_warn_only():
+    rd = _rd(); (rd / "renders").mkdir(parents=True, exist_ok=True)
+    _wj(rd, "renders/slide-01.ocr.json", {"checked": True, "matched": False, "misses": ["X"]})
+    g = Gates(rd, {})._ocr_gate()
+    assert g["state"] == "fail", g
+    assert g["warn_only"] is False
 
 def test_ocr_is_non_waivable():
     rd = _rd(); _wj(rd, "working/copy/intake.json", {"x": True})
