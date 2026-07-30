@@ -453,7 +453,14 @@ ensure_secret() {
   fi
   local val; val="$(openssl rand -hex 32)"
   # shellcheck disable=SC2016  # single quotes intentional: the secret expands only inside the inner shell, never into the command string
-  if runas bash -c 'umask 077; printf "%s=%s\n" "$0" "$1" >> "$2"' "$key" "$val" "$SECRETS_ENV_FILE"; then
+  # `umask 077` only governs the mode a file gets on CREATION. `>>` opens an
+  # ALREADY-EXISTING $SECRETS_ENV_FILE (e.g. left behind by an older install,
+  # or created by the sibling ensure_secret call above in this same run) in
+  # append mode without touching its mode bits, so a file that predates this
+  # fix -- or was ever loosened -- would stay permissive forever across every
+  # future append. Re-assert 600 explicitly after the write so both the
+  # brand-new-file and pre-existing-file cases end up secured.
+  if runas bash -c 'umask 077; printf "%s=%s\n" "$0" "$1" >> "$2"; chmod 600 "$2" 2>/dev/null || true' "$key" "$val" "$SECRETS_ENV_FILE"; then
     unset val
     if runas grep -qE "^${key}=" "$SECRETS_ENV_FILE" 2>/dev/null; then
       ledger_step "secret:${key}" "OK" "generated and SET (value never printed)"

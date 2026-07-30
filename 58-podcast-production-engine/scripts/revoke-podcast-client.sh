@@ -283,7 +283,13 @@ rotate_secret() {
     if runas grep -qE "^${key}=" "$SECRETS_ENV_FILE" 2>/dev/null; then
       local tmp; tmp="$(mktemp)"
       # shellcheck disable=SC2016  # single quotes intentional: paths are passed as positional args to the inner shell, nothing sensitive is interpolated
-      runas grep -vE "^${key}=" "$SECRETS_ENV_FILE" > "$tmp" 2>/dev/null && runas bash -c 'umask 077; cat "$0" > "$1"' "$tmp" "$SECRETS_ENV_FILE"
+      # `umask 077` only governs the mode a NEW file is created with; the
+      # `test -f` above proves $SECRETS_ENV_FILE already exists, so `cat >`
+      # here truncates-in-place and keeps whatever mode the file already had
+      # -- umask never touches it. Re-assert 600 explicitly after the rewrite
+      # so a file that predates this fix (or was ever loosened) is tightened
+      # instead of silently staying permissive.
+      runas grep -vE "^${key}=" "$SECRETS_ENV_FILE" > "$tmp" 2>/dev/null && runas bash -c 'umask 077; cat "$0" > "$1"; chmod 600 "$1" 2>/dev/null || true' "$tmp" "$SECRETS_ENV_FILE"
       rm -f "$tmp"
       if runas grep -qE "^${key}=" "$SECRETS_ENV_FILE" 2>/dev/null; then
         ledger_step "secret:${key}" "WARN" "still present after removal attempt"
