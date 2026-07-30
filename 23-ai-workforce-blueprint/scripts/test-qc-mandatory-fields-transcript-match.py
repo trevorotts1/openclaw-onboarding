@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 test-qc-mandatory-fields-transcript-match.py — lock for the 2026-07-30
-check_mandatory_fields() fix (Cassandra Henriquez / rescue-cassandra-henriquez
+check_mandatory_fields() fix (client Mac mini box / its rescue agent
 incident).
 
 BUG THIS LOCKS: check_mandatory_fields() in qc-interview-completion.py used to
@@ -205,7 +205,7 @@ def build_full_transcript(n_filler_questions=23, omit_ids=()) -> str:
 
 STATE_NO_BRANDING_KEYS = {
     # Structural facts a real interview DOES persist to build-state (per the
-    # proven Cassandra fixture: 90 keys present, but NONE of the five branding
+    # proven client fixture: 90 keys present, but NONE of the five branding
     # keys, no brandingAnswers map, no interview sub-object).
     "interviewComplete": True,
     "companyName": "Acme Rescue Co",

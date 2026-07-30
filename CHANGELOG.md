@@ -129,6 +129,38 @@ directory). Verified as a bleed test: reintroducing the old loop fails all seven
 passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
 
 
+## [v21.4.24]  -  2026-07-30  -  The same client name came straight back on the next PR, which is the actual finding
+
+### Why
+v21.4.23 (merged ~40 minutes earlier) redacted a real client's name from two Skill-23 scripts.
+PR #775 (`09db4090`, merged as `91576159`) put the same name back on `main` in four new places
+before that fix even landed:
+
+- `23-ai-workforce-blueprint/scripts/qc-interview-completion.py:19` and `:586`
+- `23-ai-workforce-blueprint/scripts/test-qc-mandatory-fields-transcript-match.py:4` and `:208`
+
+Both PRs were describing the same 2026-07-30 incident and both reached for the client's name to
+do it. Neither author was warned, because `scripts/qc-assert-no-client-names.sh` is
+roster-dependent and a GitHub Actions runner has no roster: it reads
+`$OPENCLAW_CLIENT_ROSTER`, then `~/.openclaw/client-roster.txt`, then derives one from
+`~/clawd/accounts/accounts.md`, and none of those exist in CI (`accounts.md` is deliberately not
+in the repo). The gate reported success on every run of both PRs.
+
+**This is the finding, not the two redactions.** A fleet-wide privacy invariant that only fires
+on an operator box is not enforced -- it is documentation. The name will keep coming back on
+every PR that describes this incident until the check can fail in CI.
+
+### What changed
+Redacted all four references to a non-identifying description of the same incident. Comment and
+docstring prose only -- no code, no behavior. `test-qc-mandatory-fields-transcript-match.py`
+(PR #775's own lock) still passes 9/9. Re-scanned forename and surname independently: zero hits
+repo-wide; gate exits 0.
+
+### Risk
+None to runtime. Does NOT close the detection gap -- that needs a roster-independent check or a
+CI-side roster secret, which is a design decision left to the owner.
+
+
 ## [v21.4.23]  -  2026-07-30  -  A real client name was committed to this fleet-wide repo, and CI structurally cannot see it
 
 ### Why
