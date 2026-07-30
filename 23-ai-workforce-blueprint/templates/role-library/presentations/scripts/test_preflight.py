@@ -4661,6 +4661,12 @@ def main():
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
     failures += test_sp_wrappers()
 
+    # U027 -- check_ocr_readback (AF-OCR-READBACK): no renders defers; missing
+    # sidecars/checked:false/matched:false/malformed-JSON/partial-missing all FAIL;
+    # checked:false is NEVER waivable (owner token or not); matched:false alone is
+    # waivable by a genuine owner token; all-good passes.
+    failures += test_ocr_readback_u027()
+
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py
     # reads this artifact and fails if any declared+enforced gate is a no-op/untested.
@@ -5604,6 +5610,30 @@ def test_ocr_owner_token_does_not_waive_checked_false_against_variants():
             failures.append(
                 f"checked:false wrongly waived by token={label!r}")
     assert not failures, "; ".join(failures)
+
+
+# Alias for the main()-driven all-in-one runner (runs all ten cases via individual
+# pytest functions above, and returns aggregated failures).
+def test_ocr_readback_u027() -> list:
+    """U027 -- check_ocr_readback (AF-OCR-READBACK) gate tests. Returns empty list
+    on full pass."""
+    fails = []
+    for fn in [test_ocr_no_renders_defers,
+               test_ocr_no_sidecars_fails,
+               test_ocr_checked_false_fails,
+               test_ocr_checked_false_not_waivable,
+               test_ocr_matched_false_fails,
+               test_ocr_matched_false_waivable,
+               test_ocr_all_good_passes,
+               test_ocr_malformed_json_fails,
+               test_ocr_partial_missing_fails,
+               test_ocr_owner_token_does_not_waive_checked_false_against_variants]:
+        try:
+            fn()
+        except AssertionError as e:
+            fails.append(f"{fn.__name__}: {e}")
+    print(f"OCR-READBACK-U027 (gate tests) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
 
 
 if __name__ == "__main__":
