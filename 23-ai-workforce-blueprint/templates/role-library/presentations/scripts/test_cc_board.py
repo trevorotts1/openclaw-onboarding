@@ -87,19 +87,17 @@ class _Recorder:
             "body": body_str,
             "timeout": timeout,
         })
-        # SERVER-SIDE STATUS ENFORCEMENT (mirror of CC UpdateTaskSchema): a task
-        # status update carrying a value outside the 10 authoritative values is a
-        # 400 — the same way the live Zod validator rejects it — so an unknown
-        # literal like the retired 'delivered' can never masquerade as a
-        # successful advance. U030 split the transport across TWO endpoints
-        # (PATCH /api/tasks/{id} for cert-bearing 'review'/'done'; POST
-        # /api/tasks/{id}/status for every other transition) but the live CC
-        # schema validates the status enum the same way regardless of which
-        # endpoint carries it, so both are checked here.
-        is_patch_task = (req.get_method() == "PATCH" and "/api/tasks/" in req.full_url
-                          and not req.full_url.endswith("/activities"))
-        is_status_post = (req.get_method() == "POST" and req.full_url.endswith("/status"))
-        if is_patch_task or is_status_post:
+        # SERVER-SIDE STATUS ENFORCEMENT (mirror of CC UpdateTaskSchema): a task PATCH
+        # carrying a status outside the 10 authoritative values is a 400 — the same
+        # way the live Zod validator rejects it — so an unknown literal like the
+        # retired 'delivered' can never masquerade as a successful advance. U030
+        # repointed non-cert-bearing statuses (everything but 'review'/'done') from
+        # PATCH /api/tasks/{id} to POST /api/tasks/{id}/status, so the same enum gate
+        # is mirrored on that endpoint too — the live route validates both the same way.
+        _is_patch_task = (req.get_method() == "PATCH" and "/api/tasks/" in req.full_url
+                           and not req.full_url.endswith("/activities"))
+        _is_post_status = (req.get_method() == "POST" and req.full_url.endswith("/status"))
+        if _is_patch_task or _is_post_status:
             try:
                 _status = json.loads(body_str).get("status") if body_str else None
             except (json.JSONDecodeError, ValueError):
@@ -259,11 +257,15 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertTrue(pm.get("cc_register_attempted"))
 
     def test_patch_phase_contract(self):
-        # U030 (audit E1) repoints non-cert-bearing transitions (anything other
-        # than the terminal 'review'/'done') to POST /api/tasks/{id}/status —
-        # 'in_progress' is not cert-bearing, so it takes that endpoint, with
-        # phase_id folded into the note (the status-endpoint schema has no
-        # phase_id field of its own).
+        # U030 (5d92bdce): 'in_progress' is NOT in _CERT_BEARING_STATUSES
+        # ({'review','done'}), so patch_phase routes it through
+        # POST /api/tasks/{id}/status, not PATCH /api/tasks/{id} — only the two
+        # cert-bearing terminal statuses still PATCH (see
+        # test_terminal_done_attaches_process_certificate and
+        # test_terminal_review_attaches_cert_and_qc_scores below, plus the routing
+        # table locked in by test_u030_status_repoint.py). The POST /status body
+        # is {status, note} only — no phase_id key; phase_id is folded into the
+        # note instead (cc_board.py's _note_with_phase).
         self.rec.queue(200, {"task": {"status": "in_progress"}})
         ok = cc_board.patch_phase(None, "task-xyz", "P0A-INTAKE", "in_progress",
                                   note="Intake started", env=ENV)
@@ -272,9 +274,9 @@ class AuthAndContractTest(unittest.TestCase):
         self.assertEqual(req["method"], "POST")
         self.assertEqual(req["url"], "https://cc.example.test/api/tasks/task-xyz/status")
         body = json.loads(req["body"])
+        self.assertNotIn("phase_id", body)
         self.assertEqual(body["status"], "in_progress")
-        self.assertIn("P0A-INTAKE", body["note"])
-        self.assertIn("Intake started", body["note"])
+        self.assertEqual(body["note"], "[P0A-INTAKE] Intake started")
 
     def test_patch_phase_noop_without_config(self):
         ok = cc_board.patch_phase(None, "task-xyz", "P0A-INTAKE", "done", env={})
@@ -285,8 +287,13 @@ class AuthAndContractTest(unittest.TestCase):
         # REGRESSION for the P9-DELIVER bug: 'delivered' is NOT a CC TaskStatus, so
         # the server (mock, mirroring UpdateTaskSchema) rejects it with 400 and
         # patch_phase returns False. The request WAS attempted (proving the mock's
-        # rejection — not a client shortcut — produced the False). 'delivered' is
-        # not cert-bearing, so (post-U030) it is attempted via POST .../status.
+        # rejection — not a client shortcut — produced the False).
+        #
+        # U030 (5d92bdce): 'delivered' is not cert-bearing, so patch_phase routes it
+        # through POST /api/tasks/{id}/status rather than PATCH — the enum gate
+        # applies on that endpoint too (see the _Recorder status check above), so the
+        # 400 still fires and the security property (unknown status never advances)
+        # holds under the new routing.
         with tempfile.TemporaryDirectory() as d:
             rd = Path(d)
             ok = cc_board.patch_phase(rd, "task-xyz", "P9-DELIVER", "delivered",
@@ -294,6 +301,7 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertFalse(ok)
             req = self.rec.requests[-1]
             self.assertEqual(req["method"], "POST")
+            self.assertEqual(req["url"], "https://cc.example.test/api/tasks/task-xyz/status")
             self.assertEqual(json.loads(req["body"])["status"], "delivered")
             # The failed advance is VISIBLE in the movement receipt (HTTP 400, not ok).
             receipt = json.loads(
