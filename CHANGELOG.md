@@ -1,3 +1,70 @@
+## [v21.4.27]  -  2026-07-30  -  Skill 38's "91 scripts" figure had drifted to 92, and closed the actual gap: bump-version.sh never checked the scripts/ total
+
+### Why
+The prior fix (v21.4.25, "Skill 38 INSTALL.md self-contradicted its own protocol count") recounted
+disk and explicitly flagged, in its own Risk section, that `SKILL.md`'s `91 scripts` figure had
+drifted separately to 92 after `qc-lattice-pointer.sh` shipped in v1.9.2 -- and that this was "not
+checked by the advisory." That is the actual root cause: `scripts/bump-version.sh`'s Skill 38 doc
+self-count advisory (`skill38_doc_selfcount_advisory`, FIX-XC-13c) has run on every `--check` and
+every version bump for months, printing WARNs for `protocols=`, `references=`, and
+`highest-numbered-script=` drift -- but it never computed or compared a scripts/ GRAND TOTAL. The
+`qc-lattice-pointer.sh` addition (v1.9.2, GK-27/U89) pushed disk from 91 to 92 `.sh` files and
+nothing caught it, not because the advisory malfunctioned, but because the check for that specific
+number never existed. Correcting the digit alone would leave the exact same blind spot for the
+next script add/remove, so the tripwire itself is the substance of this change, not a footnote.
+
+`38-conversational-ai-system/SKILL.md` states three different script counts and they are NOT three
+attempts at one number: `18 scripts` (What This Skill Ships bullet) is the v1.8.0 CloseBot
+Alignment Upgrade delta -- `31-generate-workflow-visual.sh` + `32-verify-model-failover-support.sh`
++ 7 QC gates x2 (`.sh` + `.test.sh`) + `qc-playbook-engine.sh` + the previously-missing
+`qc-f45-f47-substance.test.sh` = 18, verified by enumerating those 18 filenames on disk. `3
+scripts` (SELF-COUNTS comment) is the v1.9.0 (P3-07) delta -- `33-runtime-tool-gating-prover.sh` +
+`qc-runtime-tool-gating.sh` + `qc-runtime-tool-gating.test.sh` = 3, also verified on disk. Neither
+is a stale total; both are historical per-version addition deltas and were left unchanged. The
+grand total (`91 scripts` / `scripts/=91`) is the only wrong figure: `find scripts -maxdepth 1
+-name '*.sh' -type f | wc -l` = 92 today. It is 92, not 93 (all files including
+`scripts/import_aa_handoff.py`) -- the SELF-COUNTS comment's own verify command is explicit
+(`` ls -1 protocols/*.md scripts/*.sh references/*.md ``, a `.sh`-only glob), `bump-version.sh`'s
+matching checklist command uses the identical `scripts/*.sh` glob, and `import_aa_handoff.py` is
+never mentioned anywhere in `SKILL.md`'s own "What This Skill Ships" prose -- it is a
+cross-skill Avatar-Alchemist handoff adapter (added by the U061 commit spanning 4 skills), not one
+of the scripts this bullet is counting.
+
+### What changed
+`38-conversational-ai-system/SKILL.md`:
+- SELF-COUNTS comment: `scripts/=91` -> `scripts/=92`, with a new `v1.9.2 (GK-27/U89) added 1
+  script (qc-lattice-pointer.sh)` delta line alongside the existing v1.9.0/v1.8.0 delta history.
+- "What This Skill Ships" bullet: `**91 scripts**` -> `**92 scripts**`, with a matching `v1.9.2
+  added 1: qc-lattice-pointer.sh` clause.
+- `18 scripts` and `3 scripts` were left unchanged -- both independently verified against disk as
+  correct historical deltas, not the drifted total.
+
+`scripts/bump-version.sh` (`skill38_doc_selfcount_advisory`, FIX-XC-13d):
+- Added `s=$(ls -1 "$d"/scripts/*.sh | wc -l)`, printed in the advisory header
+  (`disk: protocols=$p references=$r scripts=$s highest-numbered-script=$hi`).
+- Added a new WARN, matching the exact idiom of the existing protocol/reference checks: `grep -q
+  "$s script" SKILL.md` (case-sensitive substring match, non-fatal) -- if it fails, prints `WARN:
+  38-conversational-ai-system/SKILL.md does not state '$s script...' -- total script count may
+  have drifted`.
+- Scoped to `SKILL.md` only (not looped into `INSTALL.md` like the protocol/reference checks):
+  `INSTALL.md` documents the numbered script range + a named-script list, never a bare "NN
+  scripts" total, so adding this check to that file would be a permanent false WARN. Documented
+  the reasoning inline and in the version-bump-checklist header comment.
+- Proved the check can actually fire: temporarily set `SKILL.md`'s stated total to `99` (disk
+  still 92) and confirmed `./scripts/bump-version.sh --check` printed exactly one new WARN line
+  (`does not state '92 script...'`); restored `92` and confirmed the WARN disappeared and the
+  advisory returned to zero WARN lines.
+
+Bumped `38-conversational-ai-system/skill-version.txt` 1.9.4 -> 1.9.5 and the repo version to
+v21.4.27 via `scripts/bump-version.sh`.
+
+### Risk
+None to runtime or install behavior -- doc + advisory-only change. `skill38_doc_selfcount_advisory`
+remains ADVISORY ONLY: it never mutates a file and always returns 0, so `bump-version.sh`'s exit
+behavior under `set -e` is unchanged; a WARN still cannot fail a bump or a CI job. Does not touch
+`INSTALL.md` (already correct as of v21.4.25) or `INSTRUCTIONS.md`'s unrelated `27 protocols`
+Phase-5 subset (a distinct, uncounted quantity, out of scope here).
+
 ## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
 
 Investigated after a report that "the live ledger... the checklist... the to-do list" were not
