@@ -1,3 +1,49 @@
+## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
+
+Investigated after a report that "the live ledger... the checklist... the to-do list" were not
+being updated while work was reported complete. The instruction was to find why these two
+specific files stopped updating and either wire them into the merge path or remove them.
+They are neither stale nor removable: they were never created in this repository, at any point,
+on any branch.
+
+**Measured, not assumed:**
+- `git log --all --full-history -- CONTROL/LEDGER.md` and the same for `CONTROL/CHECKLIST.md`:
+  zero commits, checked against all 3,846 commits reachable from every local ref/branch of
+  `origin` (`git rev-list --all --count`).
+- `git log --follow --all` on both paths: zero commits.
+- `git log --all --diff-filter=ACMR --name-only` filtered to anything ever added under
+  `CONTROL/`: only `CONTROL/CHANGELOG.md`, `CONTROL/heartbeats/fix-unit.hb`, and a since-removed
+  `CONTROL/QUESTIONS-FOR-HUMAN.md` -- never a `LEDGER.md` or `CHECKLIST.md` sibling.
+- Full-tree `grep -a -rn` for the literal strings `LEDGER.md` and `CHECKLIST.md` across every
+  script, workflow, hook and doc: the only hits are unrelated files under different directories
+  (`ledgers/skill58-podbean-proxy-2026-07-16.md`'s `.gitattributes` merge rule,
+  `project-prds/anthology-engine/CHECKLIST.md`, `22-book-to-persona-coaching-leadership-system/
+  CHECKLIST.md`, `23-ai-workforce-blueprint/.../SOP-CAST-01-...-LEDGER.md`) -- none reference a
+  `CONTROL/` path, and no script, hook, or CI workflow ever wrote or read one.
+- GitHub's own code search corroborates the local clone: `gh api search/code -f
+  q="filename:LEDGER.md repo:trevorotts1/openclaw-onboarding"` and the `CHECKLIST.md` equivalent
+  both return `"total_count": 0`.
+- `CONTROL/` on `origin/main` today holds exactly `CHANGELOG.md` and `heartbeats/` -- confirmed
+  by directory listing, not inference.
+
+**Conclusion:** there is no drift to quantify (no PRs merged "since the last update" -- there was
+never a first update), no stale file to delete, and no automation gap to wire, because there was
+never anything to wire. This entry exists so this exact pair of filenames is never chased again
+as a live-tracking regression; if a *different* pair of tracking files was actually meant
+(a different path, or a different repo such as `blackceo-command-center`), that is a separate,
+new investigation -- this closes only the two literal paths reported.
+
+The operator's underlying need -- a ledger and a checklist that cannot silently drift -- is
+already met by mechanisms that DO exist and ARE wired into the merge path, under different
+names:
+- **The ledger**: `ledgers/*.md`, enforced on every PR and every push to main by
+  `.github/workflows/ledger-truth-gate.yml` -> `scripts/ledger-truth-gate.py` -> `unit-status.sh`,
+  which independently re-derives DONE / NOT-DONE / UNKNOWN from live git ancestry and paginated
+  CI check-run history and fails the build if a row's own `verified`/`done` claim disagrees with
+  that independent check. It cannot silently stop tracking without the CI gate turning red.
+- **The unit changelog**: this file and `CONTROL/CHANGELOG.md`, both updated on every merge/ripple
+  and current as of the commit before this one.
+
 ## [Unreleased]  -  U012: add the six missing manifest phases and their executors
 
 `PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --
