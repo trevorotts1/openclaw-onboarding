@@ -85,19 +85,34 @@ done < <(git diff --cached --name-only --diff-filter=ACM 2>/dev/null | grep '\.s
 [ "$N28_FAIL" -eq 1 ] && exit 1
 
 # ── 4. chmod-600 coverage on secrets/.env writers ───────────────────────────
-# v2 (2026-07-30): closes the "comment bypass" -- the old check here was a
+# v2 (2026-07-30): closed the "comment bypass" -- the old check here was a
 # raw `grep -E 'chmod[[:space:]]+600'` over the WHOLE file, so a script
 # could satisfy this gate with nothing but `# remember to chmod 600` (or
 # the text sitting inert inside a heredoc body) and never actually secure
 # the file. scripts/qc-assert-chmod600-real.py strips comments and heredoc
 # bodies before searching for a real chmod 600 invocation -- see that
 # script's docstring for exactly what it does and does not catch.
+#
+# v3 (2026-07-30): narrowed the TRIGGER itself. Through v2 the trigger was
+# `grep -qE '(secrets/\.env|SECRETS_ENV_FILE)' "$f"` -- a blanket MENTION
+# match that fired on any script that merely read, sourced, or QC-asserted
+# the file, not just ones that wrote it. An audit found 98 .sh files
+# matching that mention, 62 of them blocked, and only 3 were genuine
+# writers -- the other 59 (read-only sourcing, credential-presence checks,
+# QC assertions, dead `resolve_platform_paths()` boilerplate, doc/test
+# text) were false positives. This silently froze scripts/update-skills.sh
+# at v21.4.2 for 14 releases with no visible error -- the commit just
+# never happened. `--is-write-reference` (same script) replaces the
+# mention-grep with a check for an actual write-like construct (`>`,
+# `>>`, `tee`, `touch`, `cp`, `mv`, `sed -i`) targeting the secrets file,
+# by name or literal path -- see that flag's section in the script for
+# the full design and its stated limitations.
 C600_FAIL=0
 while IFS= read -r f; do
   [ -f "$f" ] || continue
-  if grep -qE '(secrets/\.env|SECRETS_ENV_FILE)' "$f" 2>/dev/null; then
+  if python3 "$REPO_ROOT/scripts/qc-assert-chmod600-real.py" --is-write-reference "$f" 2>/dev/null; then
     if ! python3 "$REPO_ROOT/scripts/qc-assert-chmod600-real.py" "$f" 2>/dev/null; then
-      echo "PRE-COMMIT BLOCKED: $f writes secrets/.env but has no real chmod 600 call (token exposure risk -- a chmod 600 mentioned only in a comment or heredoc does not count)"
+      echo "PRE-COMMIT BLOCKED: $f writes to the secrets file (a redirection/touch/cp/mv/tee/sed-i targets a variable or literal path naming secrets/.env) but has no real chmod 600 call (token exposure risk -- a chmod 600 mentioned only in a comment or heredoc does not count)"
       C600_FAIL=1
     fi
   fi
