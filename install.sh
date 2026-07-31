@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.4.34"
+ONBOARDING_VERSION="v21.4.35"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -2200,16 +2200,20 @@ discover_all_credentials() {
     CRED_LIST="$CRED_LIST|FISH_AUDIO_API_KEY:Fish Audio"
     CRED_LIST="$CRED_LIST|FISH_AUDIO_VOICE_ID:Fish Audio Voice"
     CRED_LIST="$CRED_LIST|ELEVENLABS_API_KEY:ElevenLabs"
-    # v19.16.1: Podbean publishing goes through BlackCEO's n8n credential BROKER.
-    # A client box holds ONLY the broker pair (PODBEAN_BROKER_WEBHOOK_URL +
-    # PODBEAN_BROKER_TOKEN) plus the per-client Podbean Channel ID (podcast_id).
-    # The Podbean OAuth app client_id/client_secret are BlackCEO's SINGLE shared
-    # app: they live ONLY inside the n8n broker, are NEVER asked from the client,
-    # and are NEVER required or discovered on a client box (the local
-    # client_credentials mint is an operator-OWN-box fallback resolved directly by
-    # podbean_publish.sh, not a prerequisite). So discovery checks the broker pair
-    # + Channel ID here — NOT client_id/secret (which would falsely report
-    # "missing" on every broker-mode box).
+    # v19.16.1: Podbean publishing can go through BlackCEO's n8n credential BROKER
+    # as an UNUSED FALLBACK (the publish-proxy pair is the fleet default and
+    # outranks this; the broker workflow is not deployed on the live n8n instance).
+    # In broker mode a client box's role is to TRIGGER the broker webhook: it is
+    # provisioned with ONLY the broker pair (PODBEAN_BROKER_WEBHOOK_URL +
+    # PODBEAN_BROKER_TOKEN, both operator-owned, placed by the operator) plus the
+    # per-client Podbean Channel ID (podcast_id). The Podbean OAuth app
+    # client_id/client_secret are BlackCEO's SINGLE shared app: they live ONLY
+    # inside the n8n broker, are NEVER asked from the client, and are NEVER
+    # required or discovered on a client box (the local client_credentials mint
+    # is an operator-OWN-box fallback resolved directly by podbean_publish.sh,
+    # not a prerequisite). So discovery checks the broker pair + Channel ID here
+    # — NOT client_id/secret (which would falsely report "missing" on every
+    # broker-mode box).
     CRED_LIST="$CRED_LIST|PODBEAN_BROKER_WEBHOOK_URL:Podbean n8n broker webhook URL (broker mode)"
     CRED_LIST="$CRED_LIST|PODBEAN_BROKER_TOKEN:Podbean n8n broker shared token (broker mode)"
     # PODBEAN_PODCAST_ID is the per-client Podbean Channel ID — the ONLY Podbean

@@ -25,8 +25,12 @@ every client's show under his ONE Podbean account, so the Podbean OAuth app
 `client_id`/`client_secret` are BlackCEO's **single shared app** — never the
 client's, never asked from the client. Those app credentials live **only** inside
 n8n (as the `httpBasicAuth` credential on the `Podbean Token` node) and never
-leave it. A client box holds only the broker webhook URL, a low-privilege shared
-token, and the client's **Podbean Channel ID** (`podcast_id`). The broker mints a
+leave it. In this fallback (unused, not deployed on the live n8n instance — the
+fleet default is the publish-proxy path, where n8n performs the entire publish),
+a client box's role is limited to TRIGGERING the broker webhook: it is
+provisioned with only the broker webhook URL and a low-privilege, operator-owned
+token — both placed by the operator, never given to or requested from the
+client — plus the client's **Podbean Channel ID** (`podcast_id`). The broker mints a
 Podbean access token **scoped to that Channel ID** and returns it; the box then
 does its own upload + create-episode so it still captures the permalink
 synchronously (Step 15/16). A compromised client box cannot leak the Podbean app
@@ -270,8 +274,9 @@ Import it by hand:
    token endpoints accept HTTP Basic; the node calls `oauth/multiplePodcastsToken`
    so the returned token is scoped to the requested Channel ID.)
 5. Set one n8n **environment variable** (Settings → Variables/Env, or the
-   container env): `PODBEAN_BROKER_TOKEN` — the low-privilege shared token. It must
-   equal the value a client box holds as `PODBEAN_BROKER_TOKEN`.
+   container env): `PODBEAN_BROKER_TOKEN` — the low-privilege, operator-owned
+   token. It must equal the value the operator provisions onto a client box
+   (for triggering this broker webhook only) as `PODBEAN_BROKER_TOKEN`.
 6. **Activate** the workflow.
 
 ## Contract
@@ -337,7 +342,7 @@ part of it. Five variables, set on the client box:
 | Variable | What it is |
 |---|---|
 | `PODBEAN_PUBLISH_WEBHOOK_URL` | The operator's n8n publish webhook (e.g. `https://main.blackceoautomations.com/webhook/podbean-publish`). Not a secret. |
-| `PODBEAN_PUBLISH_TOKEN` | The shared webhook header token (`X-Podcast-Publish-Token`). This is a webhook credential, not a Podbean credential. |
+| `PODBEAN_PUBLISH_TOKEN` | An operator-owned header token (`X-Podcast-Publish-Token`) the operator places on the client box at provisioning, solely to authorize the box's TRIGGER call to the operator's n8n webhook. Not a Podbean credential; never disclosed to or requested from the client. |
 | `PODBEAN_PODCAST_ID` | The client's Podbean Channel ID. Non-secret, per-client (e.g. `<CLIENT_PODBEAN_CHANNEL_ID>`). |
 | `PODCAST_CLIENT_LAST_NAME` | Half of the roster identity key the n8n gate looks up. |
 | `PODCAST_CLIENT_EMAIL` | The other half of the roster identity key. |
