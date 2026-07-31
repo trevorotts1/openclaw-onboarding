@@ -242,7 +242,7 @@ This is the single canonical index of the N1–N35 non-negotiables. Every other 
 | N26 | **Calibre auto-install for Book-to-Persona.** `_find_calibre()` in `22-book-to-persona/pipeline/orchestrator.py` auto-installs Calibre when missing — Homebrew on Mac, apt-get on Linux (with upstream installer fallback). User never sees an "install Calibre manually" prompt. | `22-book-to-persona-coaching-leadership-system/pipeline/orchestrator.py` | Audit Phase 14 |
 | N27 | **No lying / no shortcuts / proof required.** End-to-end completion is the only completion. Every claimed fix needs a verifiable artifact (commit hash, curl-against-HEAD output, exit code). The 20% not done gets disclosed, not buried. | This file + owner directive | Audit retro on every release |
 | N28 | **No destructive teardown or kill scripts — ever.** Agents MUST NOT create or schedule any script or cron that removes the toolchain (`~/clawd`, `~/.openclaw`, Homebrew, Node, or OpenClaw itself). Cleanup must be scoped (remove a specific cron by ID), reversible (rename to `.QUARANTINED-<ts>` before deleting), and never self-deleting via a cron-scheduled kill script. Applies to build-cleanup, post-build teardown, SOP-backfill abort, and any "clean up after yourself" pattern. Root cause: 2026-05 incident — autonomous agent created a kill script during Skill 23 to abort a runaway SOP build; script wiped Homebrew/Node/OpenClaw/clawd. No script that touches core toolchain paths may be spawned by an agent without explicit owner approval. | This file + forensic post-mortem 2026-06-03 | Cron audit gate: any cron payload containing `rm -rf`, `brew uninstall`, `npm uninstall -g openclaw`, or paths `~/clawd` / `~/.openclaw` must be rejected |
-| N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via **symlink** (not duplicated). Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The symlink target is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before linking. Idempotent. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` |
+| N29 | **Shared core files (Zero-Human-Workforce file model).** On every box, ALL of that account's agents + sub-agents SHARE the box's ONE canonical `AGENTS.md` / `TOOLS.md` / `USER.md` via a **verified real-file copy** (not a symlink, not hand-duplicated) — re-copied on every `install.sh` / `update-skills.sh` run, so drift is bounded to one roll. Per-agent `IDENTITY.md` / `SOUL.md` / `MEMORY.md` / `HEARTBEAT.md` stay each agent's OWN real files. The copy SOURCE is ALWAYS the LOCAL box's own canonical (the default agent workspace resolved from THIS box's `openclaw.json`) — NEVER a hardcoded or cross-box/cross-account path (co-mingling guard, N0). Nested workflow agents (`*/workflows/*/agents/*`) are EXEMPT. Real files are backed up (`*.bak-unify-<ts>`, never deleted) + unique content preserved additively into the agent's own `IDENTITY.md` before copying. Idempotent. **Amended 2026-07-31:** the runtime's workspace-root boundary guard rejects any symlink whose realpath resolves outside the agent's own workspace, reporting the file missing and injecting a ~107-char stub with no error anywhere — do not restore symlinks. | This file (Shared Core Files section) + [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md) | `link_shared_core_files()` in `install.sh` (Step 10a) + `update-skills.sh`; QC check 9.9 in `scripts/qc-system-integrity.sh` — real file, byte-identical to canonical (a lingering symlink is a FAIL) |
 | N30 | **Ollama provider baseUrl is PLATFORM-BRANCHED (Mac vs VPS).** **VPS client** (Hostinger Docker / any Linux container, no local daemon): `baseUrl` MUST be `https://ollama.com` + the client's own `OLLAMA_API_KEY`; a loopback baseUrl → immediate `ECONNREFUSED` (HARD VIOLATION). **Mac client** (Mac mini / laptop / any macOS): the LOCAL Ollama daemon is signed in (`ollama signin`, client's own ollama.com account) and ONE `ollama` provider points at it — `baseUrl: "http://127.0.0.1:11434"`, `api: "ollama"`, `apiKey: "ollama-local"`. A signed-in daemon serves BOTH local AND `:cloud` models through that one loopback endpoint (the "Cloud + Local" hybrid flow). On Mac the loopback baseUrl is REQUIRED for inference, NOT a violation; forcing a Mac onto `https://ollama.com` (HARD VIOLATION on Mac) discards the local-model path. Health-check probes against a local daemon were always loopback-exempt. | This file (N30 section) + `docs/OLLAMA-PROVIDER-BY-PLATFORM.md` | `scripts/qc-assert-ollama-provider-platform.sh` (single source of truth); `scripts/qc-system-integrity.sh` CHECK X.9; `build-workforce.py` provider setup; `install.sh` model config step |
 | N31 | **Agent model field MUST be an object `{primary, fallbacks:[...]}`, NEVER a bare string.** Writing `"model": "ollama/deepseek-v4-pro:cloud"` in `agents.list[]` bypasses all fallback chains — if Ollama Cloud is over-capacity the agent dies silently. Every agent entry written by `build-workforce.py` or any install script MUST use the canonical object form: `{"primary": "ollama/deepseek-v4-pro:cloud", "fallbacks": ["openrouter/deepseek/deepseek-v4-pro", ...]}`. Bare strings are only permissible in temporary draft states during development; NEVER in production `openclaw.json`. | This file (N31 section) + `build-workforce.py add_agent_to_config()` | `scripts/qc-system-integrity.sh` model-object check |
 | N32 | **A model-provider change is NOT complete until `embedding-health` passes on the box.** Switching the generative provider (or any API key rotation) can silently orphan all three embedding consumers: OpenClaw memory search, persona gemini-index, and CC SOP embeddings. The `embedding-health` check (PRD Addendum B.6) MUST pass — all three indexes, three legs each (provider capable + key live + smoke embed + stamp matches config) — before any provider-change task is marked done. Ollama Cloud is NEVER embedding-capable (hard rule). Run: `python3 shared-utils/embedding_health.py --json` on the box after any provider/key change. | This file (N32 section) + `shared-utils/embedding_health.py` | `step_embedding_health()` in `fleet_refresh_runner.py`; Sunday cron `--verify-only` pass in `scripts/fleet-refresh.sh` |
@@ -262,37 +262,47 @@ If you invoke a rule by N-number elsewhere, link back to this index. If a rule's
 ## 🔴 N29 — Shared Core Files (Zero-Human-Workforce File Model)
 
 On **every box**, **all** of that account's agents and sub-agents **SHARE the
-box's ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md`** — via **symlink**,
-not by duplicating the files. Each agent keeps its **own** `IDENTITY.md`,
-`SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md` (its real, per-agent files).
+box's ONE canonical `AGENTS.md`, `TOOLS.md`, and `USER.md` CONTENT** — via a
+**verified real-file copy**, not a symlink and not hand-duplicated. Each agent
+keeps its **own** `IDENTITY.md`, `SOUL.md`, `MEMORY.md`, and `HEARTBEAT.md`
+(its real, per-agent files).
+
+**Amended 2026-07-31 (authorized by Trevor, operator):** N29 originally used a
+symlink. The OpenClaw runtime enforces a workspace-root boundary guard that
+rejects any symlink whose realpath resolves outside the reading agent's own
+workspace — the file is reported missing and a ~107-char stub is injected in
+its place, with no error anywhere. Do **not** restore symlinks here.
 
 | File | Scope |
 |------|-------|
-| `AGENTS.md`, `TOOLS.md`, `USER.md` | **SHARED** — one canonical per box; each agent workspace symlinks to it |
+| `AGENTS.md`, `TOOLS.md`, `USER.md` | **SHARED** — one canonical source per box; each agent workspace holds a real, byte-identical copy |
 | `IDENTITY.md`, `SOUL.md`, `MEMORY.md`, `HEARTBEAT.md` | **per-agent** — each agent's own real files (never replaced) |
 
-**CANON_DIR** (the symlink target) = the box's **default agent workspace**,
+**CANON_DIR** (the copy source) = the box's **default agent workspace**,
 resolved with the standard precedence (per-agent `main` override →
 `agents.defaults.workspace` → `~/.openclaw/workspace`).
 
-- 🔴 **Co-mingling guard (N0):** the symlink target is **ALWAYS the LOCAL box's
+- 🔴 **Co-mingling guard (N0):** the copy source is **ALWAYS the LOCAL box's
   own canonical**, resolved from **THIS box's own `openclaw.json`** — NEVER a
-  hardcoded path and NEVER a cross-box / cross-account path. A client box links
-  to the **client's own** files. The client is the USER. Never link a client
-  agent to the operator's or another account's files.
+  hardcoded path and NEVER a cross-box / cross-account path. A client box
+  copies from the **client's own** files. The client is the USER. Never copy
+  a client agent's content from the operator's or another account's files.
 - **Nested workflow agent exemption:** internal workflow micro-agents — any workspace path
   matching `*/workflows/*/agents/*` — are **EXEMPT** and **never touched**.
 - 💾 **Non-destructive:** a real file is backed up to `<file>.bak-unify-<ts>`
   (never deleted), its unique content is appended (additive only) to that
-  agent's own `IDENTITY.md` under a guarded marker, then it is replaced with the
-  symlink. Absent files are left absent.
-- 🔁 **Idempotent:** correct symlinks are no-ops; a second run makes no new
-  backups and no churn.
+  agent's own `IDENTITY.md` under a guarded marker, then it is replaced with a
+  real, byte-identical copy of the canonical. Absent files are left absent.
+- 🔁 **Idempotent:** a copy already byte-identical to canonical is a no-op; a
+  second run makes no new backups and no churn. The copy is re-written on
+  every run, so canonical drift is bounded to one install/update roll (not
+  instant like a symlink would be).
 
 Runs at install (`install.sh` Step 10a) and update (`update-skills.sh`).
-Enforced by QC check **9.9** in `scripts/qc-system-integrity.sh`. Full rule:
-[`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md). This is the box-wide
-generalization of **N19** (the ZHC `agents/` layout).
+Enforced by QC check **9.9** in `scripts/qc-system-integrity.sh` — the file
+must be a real file, byte-identical to canonical; a lingering symlink is now
+itself a FAIL. Full rule: [`docs/SHARED-CORE-FILES.md`](docs/SHARED-CORE-FILES.md).
+This is the box-wide generalization of **N19** (the ZHC `agents/` layout).
 
 ---
 
