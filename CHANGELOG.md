@@ -58,7 +58,7 @@ seven confirmed defects, four of them blocking real signal on the fleet:
    on all 10 VPS boxes. `get_current_version()` had the identical bug — it searched only `$HOME`
    paths and returned empty on every VPS/Contabo box.
 2. `_cc_currency_probe()` was called from exactly ONE place — inside the same-version recheck
-   branch, which is never entered on a version-bump roll (the normal case). PROVEN LIVE: a canary
+   branch, which is never entered on a version-bump roll (the normal case). PROVEN LIVE: a probe
    run going v21.1.0 -> v21.4.43 produced no `[CC CURRENCY]` line at all, so the marker was never
    written on a normal roll.
 3. `_cc_currency_probe`'s `git fetch --quiet origin 2>/dev/null || true` swallowed a fetch failure
