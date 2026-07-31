@@ -1,3 +1,50 @@
+## [v21.4.47]  -  2026-07-31  -  fix: install.sh seeded UNRESOLVABLE model pins (silent agent death) + new `verify-model-pins.py`
+
+### Why
+
+`install.sh` seeded a hardcoded sub-agent fallback chain:
+
+    ['ollama/kimi-k2.6:cloud', 'openrouter/xiaomi/mimo-v2.5-pro', 'deepseek/deepseek-v4-pro']
+
+All three are unusable on any box that does not happen to match that shape:
+
+1. `ollama/<model>:cloud` resolves ONLY where `models.providers.ollama` exists. A box onboarded
+   with `--auth-choice ollama-cloud` registers `ollama-cloud` instead, so the pin falls through to
+   the IMPLICIT local Ollama provider (`127.0.0.1:11434`). With no daemon there the agent dies at
+   launch with `Unknown model ... Ollama requires authentication` — an AUTH message for what is
+   really a namespace typo, which sends diagnosis at the client's credentials instead of the pin.
+2. `openrouter/xiaomi/mimo-v2.5-pro` is absent from the model allowlist.
+3. `deepseek/deepseek-v4-pro` names a provider that is never configured.
+
+Nothing validates a model pin until an agent LAUNCHES — not `config validate`, not `doctor`, not
+any health check — so a bad pin is invisible until that department is finally given real work.
+
+PROVEN LIVE 2026-07-31: a client's Web Development Department Head died 2 ms after dispatch, twice,
+with zero work events, while the gateway reported healthy and the board showed "in progress". A
+read-only sweep of 23 boxes found 8 still carrying these literal strings, and 316 agents fleet-wide
+with NO fallback chain at all (AGENTS.md N31) — which is what turns one bad pin into a
+company-wide outage instead of one degraded department. An Ollama Cloud cap/429 is ACCOUNT-level,
+so an all-Ollama chain fails as a single unit.
+
+### What changed
+
+- `install.sh` — the seed is now derived from the provider THIS box registers, filtered to this
+  box's allowlist, always terminates on a NON-Ollama provider, seeds `primary` alongside
+  `fallbacks`, and REFUSES to write a pin it cannot resolve rather than planting a silent
+  landmine. Verified against five box shapes: `ollama-cloud`, legacy `ollama`, fresh/empty
+  allowlist, no-ollama-provider, and nothing-resolvable (correctly refuses).
+- `scripts/verify-model-pins.py` (NEW) — read-only validator. Flags unregistered providers
+  (fatal), missing fallback chains, all-Ollama chains, non-allowlisted ids, and Anthropic pins on
+  client boxes. Exit 1 on fatal; `--strict` also fails on warnings; `--json` for tooling.
+  Self-tested: reports clean on a repaired box, finds real issues elsewhere.
+- `INSTALL-CONTRACT.md` + the install-time guidance note — document the provider-prefix caveat so
+  the docs stop teaching a prefix that is wrong on boxes registering `ollama-cloud`.
+
+### Operator note
+
+Run `scripts/verify-model-pins.py` on a box before trusting a green health check. A healthy
+gateway proves the process is up; it proves nothing about whether its agents can resolve a model.
+
 ## [v21.4.46]  -  2026-07-31  -  fix: fleet-roll coverage audit — CC-state marker path on VPS, CC currency probe never running on a version-bump roll, offline-fetch false "current", SOP-embeddings reaching already-populated boxes, stale onboarding-dir stamp, non-recursive hooks copy, and a deterministic direct-to-agent update message
 
 ### Why
