@@ -1,3 +1,48 @@
+## [v21.4.44]  -  2026-07-31  -  fix: restamp stale content_sha for 20 healer templates + 1 SOP (PR #796 regression blocking main)
+
+### Why
+
+PR #796 (v21.4.40) legitimately edited the "Note on shared-core boxes" paragraph in 20
+department `healer-*.md` role templates plus `templates/role-library/healer/chief-healer.md`,
+`templates/role-library/healer/dept-healer-template.md`, and
+`templates/role-library/graphics/sops/SOP--healer-graphics-sops.md` (commits `10e4f017`
+`fix(N29): shared core files are copied, not symlinked` and `61f0104d` `docs(N29): stop healer
+templates instructing symlink restoration`), but never re-ran `hash-content-manifest.py` to
+restamp the recorded `content_sha` values in `templates/role-library/_index.json`. Every push
+since (PR #796's merge `918e4ec5`/v21.4.40 through v21.4.42) shipped with those 21 entries
+stale, tripping two required checks on every commit since: **QC static invariants**
+(`qc-assert-repo-consistency.py`'s ARTIFACT-COVERAGE CONTENT-HASH dimension returns `rc=6`, so
+`test-repo-consistency.sh`'s T1 clean-repo fixture — which runs both the consistency and
+artifact sub-gates together — fails expecting `rc=0` but getting `rc=6`) and **Role/SOP/persona/
+dept library lockstep** (`hash-content-manifest.py --check` fails outright: `content-manifest
+CHECK FAIL — 21 problem(s)`, one per stale role/SOP). Confirmed the regression is ours and not
+pre-existing by running both gates locally against `970956a1` (the commit before PR #796,
+clean/green on both) versus `918e4ec5` (PR #796's merge, first commit where both fail).
+
+### What changed
+
+- Ran `23-ai-workforce-blueprint/scripts/hash-content-manifest.py` (the exact remediation named
+  in its own `--check` failure message) to restamp `templates/role-library/_index.json`: 21
+  `content_sha` / `content_version` / `content_hashed_at` entries updated to match the
+  already-correct on-disk content from PR #796. No role, SOP, or department template content
+  changed by this commit — only the recorded hash catches up to content that was already
+  correct and already reviewed.
+- Nothing else touched. No gate, test, or check was edited, weakened, or skipped to get green;
+  no cron-refresh code (`refresh_weekly_cron_message()`, the compare-before-write, `openclaw
+  cron edit --message`, the `${_OC_RAW_JSON:-}` guard, `tests/unit/weekly-cron-message-refresh.
+  test.sh`) was touched.
+
+### Risk
+
+LOW. Data-only restamp of a generated, checked-in manifest field; the underlying template
+content is unchanged (the diff is confined to `_index.json` hash/timestamp/version fields —
+zero `.md` template bytes touched). Verified locally before landing: `hash-content-manifest.py
+--check` PASS (440 roles + 140 sops + 19 personas), `register-library-additions.py --check`
+PASS, `test-library-register.sh` 14/14, `qc-assert-repo-consistency.py` PASS (rc=0, both
+consistency and artifact dimensions), `test-repo-consistency.sh` 8/8 (T1 now rc=0),
+`tests/unit/fleet-standing-gate.test.sh` 14 passed / 0 failed, `tests/unit/cron-owner-chat-
+guard.test.sh` 136 passed / 0 failed, `tests/unit/weekly-cron-message-refresh.test.sh` 31
+passed / 0 failed, `bash -n update-skills.sh` clean.
 ## [v21.4.43]  -  2026-07-31  -  self-heal the orphan END marker that blocked AGENTS.md dedup fleet-wide
 
 ### Why
