@@ -1,3 +1,68 @@
+## [v21.4.40]  -  2026-07-31  -  weekly-onboarding-update cron: refresh the stored payload from cron-prompt.txt instead of leaving it frozen forever
+
+### Why
+
+The client-facing Sunday update runs from an OpenClaw cron job named
+`weekly-onboarding-update`. Its instructions are the numbered RULES in this repo's
+`cron-prompt.txt` — but the job does not read that file at runtime; the rules text is baked
+into the cron record's stored `payload.message` inside each box's own OpenClaw state at
+creation time. `update-skills.sh`'s registrar only ever fetched `cron-prompt.txt` inside
+`if ! oc_cron_present "weekly-onboarding-update"; then` — i.e. only when the job was ABSENT,
+or (via the v14.19.1 migration) still carried the old auto-announce wiring. Once a box had a
+silent, already-installed job, the branch that ran for it printed "already installed" and
+stopped — cron-prompt.txt was never fetched, never compared, never applied again. RULE 5.6
+(the payment-standing politeness pass, added 2026-07-30) landed in the repo file but could
+never reach an already-provisioned box: `openclaw cron get` on the operator box confirmed a
+6,866-char frozen `payload.message` last written 2026-07-26, RULES 1-14 only, RULE 5.6
+absent, and still containing the `allowFrom[0]` client-ID pattern this repo's own RULE 1 now
+calls a leak. Consequence: `FLEET-STANDING-GATE-V1` enforcement still ran correctly against a
+delinquent box (nothing installed), but the frozen RULE 12 in the stale copy then told the
+agent to report "Done. Updated: …" — a false success claim to the client.
+
+### What changed
+
+- **`update-skills.sh`**: added `refresh_weekly_cron_message()` (new
+  `WEEKLY-CRON-MESSAGE-REFRESH-V1` block) and wired it into the existing
+  "already installed" branch (now `WEEKLY-CRON-FULL-REGISTRATION-V1`). When the cron already
+  exists and is not on the old auto-announce wiring, the update now fetches the CURRENT
+  `cron-prompt.txt`, reads the job's presently-stored message via `openclaw cron get <id>`,
+  and — only if the two differ — patches the message in place with
+  `openclaw cron edit <id> --message` (or `--system-event` for a systemEvent-kind job).
+  `cron edit` is a confirmed field-level PATCH (`openclaw cron edit --help`: "Edit a cron job
+  (patch fields)"), so schedule, timezone, `sessionTarget`, wake mode, timeout, and delivery
+  are never touched because they are never passed — deliberately NOT a delete+recreate, which
+  would require this code to already know every other field well enough to reproduce it
+  exactly, and any single wrong guess would silently reset it. Identical content is a no-op
+  (idempotent, no needless rewrite on every run); the absent-job creation path is unchanged.
+  Every new step is guarded: a missing CLI, an unreachable job, an empty/failed
+  `cron-prompt.txt` fetch, or a rejected `cron edit` is logged and the update continues —
+  never a hard failure, and never a blank or partial payload (the old message is always left
+  in place on any failure).
+- **`tests/unit/weekly-cron-message-refresh.test.sh`** (new): extracts the real
+  `WEEKLY-CRON-FULL-REGISTRATION-V1` block from `update-skills.sh` and runs it against a
+  self-contained fake `openclaw` + `curl` (scoped to this suite only; does not touch the
+  shared `tests/fixtures/fake-openclaw-cron.py` used elsewhere). 27 assertions covering: job
+  absent → created fresh from `cron-prompt.txt`; job present with stale content → message
+  refreshed, schedule/timezone/delivery untouched; job present with identical content → zero
+  `cron edit` calls across two consecutive runs (idempotent); and four fail-safe cases — curl
+  failure, an empty fetch, a failed `cron get`, and a rejected `cron edit` — each proving the
+  update reaches its end and the OLD message survives unchanged.
+
+### Risk
+
+MEDIUM. Touches the client-facing weekly maintenance cron's live payload on every one of the
+38 boxes once this ships via the operator's own update-skills.sh roll — but the change is
+additive and narrowly scoped (message-only field patch, gated by an equality check, fully
+guarded against every failure mode `set -euo pipefail` can turn into an aborted update), and
+the two suites that specifically guard cron registration and owner-chat targeting are
+unchanged: `tests/unit/fleet-standing-gate.test.sh` — 14 passed, 0 failed;
+`tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed. New suite
+`tests/unit/weekly-cron-message-refresh.test.sh` — 27 passed, 0 failed. Verified read-only on
+the operator box only (`openclaw cron get`, `openclaw cron edit --help`); no box was written
+to, and no client box was touched, SSH'd, or probed.
+
+---
+
 ## [v21.4.39]  -  2026-07-31  -  fleet standing gate: fix RULE 5.6 slug-chain drift, redact a client name from update-skills.sh, and document the Relay Brain sha256 recipe
 
 ### Why

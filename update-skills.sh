@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.39"
+ONBOARDING_VERSION="v21.4.40"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1227,7 +1227,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.39 - safe_json_edit
+# v21.4.40 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5283,6 +5283,87 @@ PYEOF
   if command -v openclaw >/dev/null 2>&1 && oc_cron_tombstoned "weekly-onboarding-update"; then
     echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
   elif command -v openclaw >/dev/null 2>&1; then
+    #=== BEGIN WEEKLY-CRON-FULL-REGISTRATION-V1 ===
+    #=== BEGIN WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
+    # refresh_weekly_cron_message <job_id> <job_kind> <new_content>
+    #
+    # THE DRIFT BUG THIS CLOSES (2026-07-30): an EXISTING weekly-onboarding-update
+    # cron (the "already installed" branch a few lines below) was never touched
+    # again after creation. cron-prompt.txt could gain new RULES -- or drop a
+    # pattern this same repo now calls a leak -- forever without a single
+    # already-provisioned box ever seeing the change; only a box whose cron was
+    # ABSENT, or still carried the old auto-announce wiring, ever got a fresh
+    # payload. This function is the missing refresh path: it reads the job's
+    # CURRENTLY STORED message via `openclaw cron get`, and only when that
+    # differs from the freshly-fetched cron-prompt.txt does it patch the message
+    # in place with `openclaw cron edit <id> --message` (or `--system-event` for
+    # a systemEvent-kind job) -- confirmed via `openclaw cron edit --help` to be
+    # a field-level PATCH ("Edit a cron job (patch fields)"), so schedule, tz,
+    # sessionTarget, wakeMode, timeoutSeconds, and delivery are never touched
+    # because they are never passed. Deliberately NOT delete+recreate: that would
+    # require this function to already know every other field to preserve, and
+    # getting even one wrong would silently reset it -- an in-place patch cannot.
+    #
+    # FAIL-SAFE: every step that can fail (CLI missing, gateway unreachable,
+    # malformed JSON, python3 absent, edit rejected) is guarded and logs a
+    # SKIP/WARN instead of propagating a nonzero exit -- this function always
+    # returns 0 so it can never abort the enclosing `set -euo pipefail` run. A
+    # failed refresh leaves the OLD message in place (stale-but-safe), never a
+    # blank or partial one.
+    command -v refresh_weekly_cron_message >/dev/null 2>&1 || refresh_weekly_cron_message() {
+      local _job_id="$1" _job_kind="$2" _new_content="$3"
+      if [ -z "$_job_id" ] || [ -z "$_new_content" ]; then
+        echo "  [weekly-cron-refresh] SKIP — missing job id or empty new content; nothing changed"
+        return 0
+      fi
+      if ! command -v openclaw >/dev/null 2>&1; then
+        echo "  [weekly-cron-refresh] SKIP — openclaw CLI not found; nothing changed"
+        return 0
+      fi
+      local _current_json=""
+      _current_json=$(openclaw cron get "$_job_id" 2>/dev/null) || _current_json=""
+      if [ -z "$_current_json" ]; then
+        echo "  [weekly-cron-refresh] SKIP — could not read current cron job ($_job_id); nothing changed"
+        return 0
+      fi
+      local _current_message=""
+      if command -v python3 >/dev/null 2>&1; then
+        _current_message=$(OC_CRON_JOB_JSON="$_current_json" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+raw = os.environ.get("OC_CRON_JOB_JSON", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+payload = data.get("payload") or {}
+msg = payload.get("message")
+if msg is None:
+    msg = payload.get("systemEvent")
+print(msg if isinstance(msg, str) else "", end="")
+PYEOF
+) || _current_message=""
+      fi
+      if [ -z "$_current_message" ]; then
+        echo "  [weekly-cron-refresh] SKIP — could not parse current message from cron get output; nothing changed"
+        return 0
+      fi
+      if [ "$_current_message" = "$_new_content" ]; then
+        echo "  [weekly-cron-refresh] OK — cron-prompt.txt content already current, no rewrite needed"
+        return 0
+      fi
+      local -a _edit_flags=(--message "$_new_content")
+      if [ "$_job_kind" = "systemEvent" ]; then
+        _edit_flags=(--system-event "$_new_content")
+      fi
+      if openclaw cron edit "$_job_id" "${_edit_flags[@]}" >/dev/null 2>&1; then
+        echo "  [weekly-cron-refresh] DONE — refreshed stale cron message from current cron-prompt.txt (schedule/tz/sessionTarget/delivery untouched -- cron edit patches only the flags passed)"
+      else
+        echo "  [weekly-cron-refresh] WARN — cron edit rejected/failed; message left as-is (stale but safe), will retry next run"
+      fi
+      return 0
+    }
+    #=== END WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
+
     # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
     # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
     # weekly-onboarding-update cron wired with --announce --channel telegram
@@ -5322,6 +5403,40 @@ PYEOF
         # Fall through to creation block below (cron is now absent)
       else
         echo "  ✓ Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
+        # Refresh the stored message from the CURRENT cron-prompt.txt so a RULE
+        # change in the repo actually reaches a box whose cron already exists --
+        # see refresh_weekly_cron_message above; this branch used to be a
+        # permanent no-op, the confirmed root cause of the RULE 5.6 drift.
+        _WOU_JOB_ID=""
+        _WOU_JOB_KIND=""
+        if [ -n "$_OC_RAW_JSON" ] && command -v python3 >/dev/null 2>&1; then
+          _WOU_ID_KIND=$(OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+raw = os.environ.get('OC_CRON_JSON', '')
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+jobs = data if isinstance(data, list) else data.get('jobs', [])
+for j in jobs:
+    if j.get('name') == 'weekly-onboarding-update':
+        print("%s\t%s" % (j.get('id', ''), (j.get('payload') or {}).get('kind', '')))
+        break
+PYEOF
+) || _WOU_ID_KIND=""
+          IFS=$'\t' read -r _WOU_JOB_ID _WOU_JOB_KIND <<< "$_WOU_ID_KIND" || true
+        fi
+        if [ -n "$_WOU_JOB_ID" ]; then
+          _WOU_PROMPT_TMP="/tmp/openclaw-cron-refresh-check-$$.txt"
+          if curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/cron-prompt.txt" -o "$_WOU_PROMPT_TMP" 2>/dev/null && [ -s "$_WOU_PROMPT_TMP" ]; then
+            refresh_weekly_cron_message "$_WOU_JOB_ID" "$_WOU_JOB_KIND" "$(cat "$_WOU_PROMPT_TMP")"
+          else
+            echo "  [weekly-cron-refresh] SKIP — could not fetch cron-prompt.txt; nothing changed"
+          fi
+          rm -f "$_WOU_PROMPT_TMP" 2>/dev/null || true
+        else
+          echo "  [weekly-cron-refresh] SKIP — could not resolve job id for weekly-onboarding-update; nothing changed"
+        fi
       fi
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
@@ -5394,6 +5509,7 @@ PYEOF
         echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
       fi
     fi
+    #=== END WEEKLY-CRON-FULL-REGISTRATION-V1 ===
   fi
 
   # ----------------------------------------------------------
