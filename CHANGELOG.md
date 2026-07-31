@@ -1,3 +1,49 @@
+## [v21.4.32]  -  2026-07-30  -  durably record the fleet standing gate: propagation script, refreshed n8n workflow backups, and two hard-won matching/wiring lessons
+
+### Why
+
+The fleet standing gate (`update-skills.sh` block `FLEET-STANDING-GATE-V1`, shipped
+v21.4.30/#787) gates all three update paths — the Sunday `openclaw cron`, the legacy
+silent shell cron, and the operator's fleet-roll SSH push — at their single common
+chokepoint, so it never needs to be re-derived per caller. That gate depends on env
+vars seeded per box and on n8n workflows whose current behavior was undocumented
+outside n8n itself. This durably records the propagation tooling, a point-in-time
+backup of the four supporting workflows, and two bugs found only by running the real
+thing that would otherwise be re-broken by the next person to touch this: an exact
+`box_slug` match silently defeats the gate because `unmatched` proceeds (fixed by
+matching aliases, `client_label`, and pipe-delimited tokens instead of an exact
+string), and n8n fires a fan-in node on its first predecessor rather than waiting for
+all of them, which would have failed the Stripe sync silently every night until a
+`Merge` barrier node was added.
+
+### What changed
+
+- `scripts/fleet-standing/propagate-fleet-standing-gate.sh`: seeds the four
+  `FLEET_STANDING_*` env vars onto every fleet box (Mac, VPS, mac-rescue), mirroring
+  `propagate-rescue-webhook.sh`. Client boxes get only the narrow header secret, never
+  an n8n API key. Unreachable box => skip and continue.
+- `scripts/fleet-standing/n8n-backups/`: refreshed exports of `fleet-standing-check`,
+  `fleet-standing-operator-alert`, `fleet-standing-prune`, and `fleet-standing-stripe-sync`
+  from the live n8n instance (`name`/`nodes`/`connections`/`settings`/`active` only).
+  The `Rescue Rangers Relay` workflow is deliberately NOT exported here — its Code node
+  holds a hardcoded client roster and this repo ships to every client box.
+- `scripts/fleet-standing/README.md`: documents the alias-matching fix (never an exact
+  slug match, never a name-matching fallback, blocked wins on a multi-row match) and
+  the n8n fan-in barrier fix (`n8n-nodes-base.merge`, `mode: append`, explicit
+  `numberInputs`).
+- All 10 repo version markers bumped v21.4.31 -> v21.4.32 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. No code path outside `scripts/fleet-standing/` changed; `tests/unit/fleet-standing-gate.test.sh`
+(14 cases) still passes unmodified. The workflow backups are read-only exports — no n8n
+workflow was created, edited, activated, or deactivated. Scanned for client personal
+names against the live box registry before commit; one leak was caught and fixed
+(an example slug in a code comment reproduced a real client's SSH alias) and no
+others were found.
+
+---
+
 ## [v21.4.31]  -  2026-07-30  -  state PODBEAN_PUBLISH_TOKEN ownership in Skill 58 docs; an agent invented a credential-handoff procedure because the docs never said who supplies it
 
 ### Why
