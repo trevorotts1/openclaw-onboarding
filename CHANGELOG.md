@@ -1387,6 +1387,26 @@ removes the current leak, it does not close the detection gap; a roster-independ
 CI-side roster secret) is the separate fix.
 
 
+## [v21.4.22]  -  2026-07-30  -  G3 skill-version bump for every skill it flagged that day, not only the red one
+
+### Why
+Entry backfilled 2026-07-31. `v21.4.22` shipped to `main` at `feb92c1b` (merge `3b945650`) and
+was never given a CHANGELOG entry and never given an annotated tag. It sat between two
+documented releases with nothing recorded, which is how the version-to-tag audit below found it.
+
+The release itself: G3 (`.github/workflows/version-consistency.yml`, "skill content change
+requires skill-version.txt bump") had gone red because PR #766 changed
+`23-ai-workforce-blueprint` content without bumping that skill's `skill-version.txt`. Rather
+than bumping only the skill named in the red check, every merge from that day was diffed
+against its own parent and each skill that would independently fail the same rule was bumped:
+`23-ai-workforce-blueprint` (via `scripts/bump-version.sh v21.4.22`, so all 10 repo-wide
+markers moved in lockstep), plus the two skills that carry independent per-skill versions,
+`31-upgraded-memory-system` and `58-podcast-production-engine`.
+
+### Risk
+None to runtime — version markers and per-skill version strings only.
+
+
 ## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
 
 ### Why
