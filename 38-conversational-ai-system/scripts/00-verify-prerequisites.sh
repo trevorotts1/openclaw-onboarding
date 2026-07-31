@@ -13,6 +13,15 @@
 #     token and REPORT the active build path (Option 1 caf-direct vs Option 2
 #     manual Build-with-AI paste). Skill 44 is required for Option 1 but is NOT a
 #     hard prereq — Skill 29 (the runtime GHL connection) is.
+#   - STEP A2 (fleet approval gate, SPEC Item 10): immediately after the
+#     Cloudflare key check (Rule 10 requires that check stay first among
+#     prerequisites), asks the Item 1 fleet-wide standing endpoint whether THIS
+#     box is approved for the conversational_ai system at all
+#     (fleet_standing.good_standing && conversational_ai_approved). FAILS
+#     CLOSED on any unreachable/non-200/malformed/unrecognised response. See
+#     the step's own inline comment for the full contract and why it is a
+#     shell-native equivalent of 59-anthology-engine/scripts/standing_gate.py
+#     rather than an import of it.
 #
 # Idempotent (read-only; never writes). Safe to re-run. OS-aware Darwin + Linux.
 
@@ -168,6 +177,203 @@ EONOKEY
   exit 1
 fi
 echo "$PASS_PREFIX Cloudflare API key found at $cf_token_source. Proceeding."
+
+# ----------------------------------------------------------------------------
+# STEP A2 — Fleet approval gate (SPEC Item 10): conversational_ai standing
+# ----------------------------------------------------------------------------
+# WHAT: refuses to proceed past this point when THIS box's fleet_standing row
+# is not approved for the conversational_ai system
+# (good_standing===true && conversational_ai_approved===true, computed at
+# read time by the Item 1 endpoint — never stored, never guessed here). Runs
+# immediately after the Cloudflare key check (Rule 10 requires that check
+# stay first among prerequisites) and BEFORE every other check below (skills
+# 05/10/19/29 presence + version + connectivity, the caf/Kie preflights, and
+# the Command Center task card) — nothing past this point has spent anything
+# yet, so a refusal here costs nothing.
+#
+# WHY: conversational_ai_approved is a real column on every fleet_standing
+# row and, before this step, nothing in Skill 38 ever read it — the operator
+# ratified this system as gated ("we want to get that skill set also if
+# they're not in good standing").
+#
+# THIS IS A SHELL-NATIVE EQUIVALENT of 59-anthology-engine/scripts/
+# standing_gate.py (Item 2's proven gate), NOT an import of it: this file
+# must not assume 59-anthology-engine is installed on this box — STEP B below
+# is this file's OWN existing model for a cross-skill dependency (it checks
+# another skill's directory is present before relying on it); Skill 38 has no
+# such dependency on Skill 59 today and this item does not create one. A box
+# that has only ever had Skill 38 rolled onto it (no anthology engine folder
+# on disk at all) must still be able to run this check. The CONTRACT matches
+# standing_gate.py exactly: identical env var names and defaults, identical
+# curl-config-on-stdin secret hygiene (the header value never touches argv, a
+# log line, or an error message), identical fail-closed matrix (unreachable
+# endpoint, non-200, a missing credential, an unparseable body, or an
+# unrecognised reason_code are ALL treated as NOT approved), and the same
+# never-guess-a-reason rule — reason_code is passed through byte-for-byte
+# from the endpoint's own response, or left empty when the gate itself could
+# not be evaluated (an infra failure is never dressed up as a specific
+# business reason).
+#
+# CREDENTIAL MODEL: reuses the SAME already-fleet-propagated env vars the
+# legacy roster gate and standing_gate.py both use —
+# FLEET_STANDING_GATE_HEADER / FLEET_STANDING_GATE_SECRET /
+# FLEET_STANDING_BOX_SLUG (seeded fleet-wide by
+# scripts/fleet-standing/propagate-fleet-standing-gate.sh) — the SAME n8n
+# httpHeaderAuth credential that authenticates system-standing-check. No new
+# secret needs provisioning on any box that already has the legacy
+# propagation.
+#
+# FAIL CLOSED, always. Idempotent (read-only network calls; never writes).
+STANDING_SYSTEM="conversational_ai"
+STANDING_CHECK_URL="${FLEET_SYSTEM_STANDING_CHECK_URL:-https://main.blackceoautomations.com/webhook/system-standing-check}"
+STANDING_NOTIFY_URL="${FLEET_SYSTEM_ACCESS_REJECTION_NOTIFY_URL:-https://main.blackceoautomations.com/webhook/system-access-rejection-notify}"
+STANDING_HEADER_NAME="${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}"
+STANDING_HEADER_VALUE="${FLEET_STANDING_GATE_SECRET:-}"
+
+# box_slug resolution: 1. explicit env  2. openclaw.json env.vars  3. hostname
+# — identical in spirit to standing_gate.py's resolve_box_slug() / update-
+# skills.sh's fleet_standing_resolve_slug(), so a box already provisioned for
+# the legacy gate needs nothing new to answer this question either.
+_standing_resolve_box_slug() {
+  if [ -n "${FLEET_STANDING_BOX_SLUG:-}" ]; then
+    printf '%s' "$FLEET_STANDING_BOX_SLUG"
+    return 0
+  fi
+  local oc_json=""
+  if [ -n "${OC_JSON:-}" ] && [ -f "${OC_JSON:-}" ]; then
+    oc_json="$OC_JSON"
+  elif [ -f "$HOME/.openclaw/openclaw.json" ]; then
+    oc_json="$HOME/.openclaw/openclaw.json"
+  elif [ -f "/data/.openclaw/openclaw.json" ]; then
+    oc_json="/data/.openclaw/openclaw.json"
+  fi
+  if [ -n "$oc_json" ] && command -v python3 >/dev/null 2>&1; then
+    local v=""
+    v="$(python3 -c '
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+    v = ((d.get("env") or {}).get("vars") or {}).get("FLEET_STANDING_BOX_SLUG", "")
+    print(str(v).strip())
+except Exception:
+    print("")
+' "$oc_json" 2>/dev/null)" || v=""
+    if [ -n "$v" ]; then
+      printf '%s' "$v"
+      return 0
+    fi
+  fi
+  hostname -s 2>/dev/null | cut -d. -f1 || true
+}
+STANDING_BOX_SLUG="$(_standing_resolve_box_slug)"
+
+# is_transient: mirrors standing_gate.py's _is_transient() exactly (empty/000
+# or any 5xx is a transient failure worth one retry; anything else is not).
+_standing_is_transient() {
+  case "$1" in
+    ""|"000") return 0 ;;
+    5??) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+# POST a JSON body via curl; the header value rides a curl config on STDIN
+# (`curl -K -`), never argv, never disk — mirrors podbean_publish.sh's and
+# standing_gate.py's proven secret-hygiene idiom exactly. One bounded retry on
+# a transient failure only. Prints "BODY\nHTTPCODE"; never raises.
+_standing_curl_post() {
+  local url="$1" body="$2" cfg="" attempt=1 raw="" code=""
+  cfg="$(mktemp 2>/dev/null)" || { printf '\n'; return 0; }
+  {
+    printf 'request = "POST"\n'
+    printf 'url = "%s"\n' "$url"
+    printf 'silent\nshow-error\nlocation\n'
+    printf 'max-time = 10\n'
+    printf 'header = "Content-Type: application/json"\n'
+    if [ -n "$STANDING_HEADER_NAME" ] && [ -n "$STANDING_HEADER_VALUE" ]; then
+      printf 'header = "%s: %s"\n' "$STANDING_HEADER_NAME" "$STANDING_HEADER_VALUE"
+    fi
+  } > "$cfg"
+  while :; do
+    raw="$(curl -K "$cfg" --data-binary "$body" -w '\n%{http_code}' 2>/dev/null)" || raw=""
+    code="${raw##*$'\n'}"
+    if _standing_is_transient "$code" && [ "$attempt" -lt 2 ]; then
+      attempt=$((attempt + 1))
+      continue
+    fi
+    break
+  done
+  rm -f "$cfg" 2>/dev/null || true
+  printf '%s' "$raw"
+}
+
+_standing_approved="0"
+_standing_reason_code=""
+_standing_note=""
+
+if [ -z "$STANDING_BOX_SLUG" ]; then
+  _standing_note="box_slug could not be resolved"
+elif [ -z "$STANDING_HEADER_VALUE" ]; then
+  _standing_note="FLEET_STANDING_GATE_SECRET not set on this box"
+else
+  _standing_body="$(printf '{"system":"%s","box_slug":"%s"}' "$STANDING_SYSTEM" "$STANDING_BOX_SLUG")"
+  _standing_raw="$(_standing_curl_post "$STANDING_CHECK_URL" "$_standing_body")"
+  _standing_code="${_standing_raw##*$'\n'}"
+  _standing_resp="${_standing_raw%$'\n'*}"
+  if [ "$_standing_code" != "200" ]; then
+    _standing_note="standing-check returned HTTP ${_standing_code:-<none>}"
+  elif ! command -v python3 >/dev/null 2>&1; then
+    _standing_note="python3 not available to parse standing-check response — refusing (fail closed)"
+  else
+    _standing_verdict="$(printf '%s' "$_standing_resp" | python3 -c '
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    if not isinstance(d, dict) or d.get("ok") is not True or "approved" not in d:
+        print("MALFORMED")
+    elif d.get("approved") is True:
+        print("APPROVED")
+    else:
+        rc = d.get("reason_code") or ""
+        if rc in ("standing", "not_enrolled"):
+            print("REFUSED:" + rc)
+        else:
+            print("REFUSED:")
+except Exception:
+    print("MALFORMED")
+' 2>/dev/null)" || _standing_verdict="MALFORMED"
+    case "$_standing_verdict" in
+      APPROVED) _standing_approved="1" ;;
+      REFUSED:*)
+        _standing_reason_code="${_standing_verdict#REFUSED:}"
+        _standing_note="not approved (${_standing_reason_code:-reason_code unrecognized})"
+        ;;
+      *) _standing_note="unexpected response shape from standing-check" ;;
+    esac
+  fi
+fi
+
+if [ "$_standing_approved" != "1" ]; then
+  echo "$PASS_PREFIX BLOCKED: this box is not currently approved for the conversational_ai system."
+  case "$_standing_reason_code" in
+    standing)
+      echo "  reason: there is a standing matter to resolve (fleet_standing.good_standing is false)." ;;
+    not_enrolled)
+      echo "  reason: the account is in good standing; conversational_ai has not been added yet (fleet_standing.conversational_ai_approved is false)." ;;
+    *)
+      echo "  reason: could not be determined — ${_standing_note:-standing-check unavailable}." ;;
+  esac
+  echo "  Skill 38 will NOT proceed. This is a fleet approval-gate refusal (Item 10), not a technical error to work around."
+  # Best-effort notify; NEVER changes the refusal decision above and never
+  # blocks on a failure — mirrors standing_gate.py's notify_rejection().
+  _standing_notify_body="$(printf '{"system":"%s","box_slug":"%s","reason":"%s"}' \
+    "$STANDING_SYSTEM" "$STANDING_BOX_SLUG" "$_standing_reason_code")"
+  _standing_notify_raw="$(_standing_curl_post "$STANDING_NOTIFY_URL" "$_standing_notify_body")"
+  _standing_notify_code="${_standing_notify_raw##*$'\n'}"
+  echo "  rejection notifier called (HTTP ${_standing_notify_code:-<none>})"
+  exit 1
+fi
+echo "$PASS_PREFIX conversational_ai standing check OK (box approved). Proceeding."
 
 # ----------------------------------------------------------------------------
 # STEP B — Skill presence checks (presence)
