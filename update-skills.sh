@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.42"
+ONBOARDING_VERSION="v21.4.43"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1227,7 +1227,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.42 - safe_json_edit
+# v21.4.43 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4176,6 +4176,42 @@ for (m, target, directive) in real_sections:
     if begin_marker in existing:
         # Already merged for this target — skip
         continue
+
+    # SELF-HEAL an orphan END (END present, BEGIN absent).
+    #
+    # The idempotency guard above only looks for the BEGIN marker, so a block
+    # whose BEGIN was lost — an interrupted write, an external edit, a
+    # summariser — becomes invisible to it: the END is never detected, never
+    # repaired, and stays orphaned forever. Measured 2026-07-31: three of four
+    # sampled fleet boxes carried the SAME orphan
+    # (`16-summarize-youtube:agents  BEGIN=0 END=1`).
+    #
+    # Consequences: every BEGIN/END pair-balance check on that box fails, and
+    # scripts/dedup-agents-md.py deliberately refuses to worsen wiring, so the
+    # box's duplicate blocks never get cleaned either. One orphan line blocks
+    # the whole self-heal path.
+    #
+    # Narrowly scoped on purpose: only the end_marker for THIS skill_folder and
+    # THIS target, and only when its BEGIN is genuinely absent. A matched pair is
+    # never touched. Failure here is non-fatal — we fall through and append a
+    # clean pair regardless, because a duplicate marker is recoverable while a
+    # crashed updater is not.
+    if end_marker in existing:
+        try:
+            repaired = existing.replace(end_marker + '\n', '').replace(end_marker, '')
+            with open(target_file, 'w', encoding='utf-8') as fh:
+                fh.write(repaired)
+            print(
+                f'[CORE_UPDATES] repaired orphan END marker (no matching BEGIN) '
+                f'for skill:{skill_folder}:{target} in {os.path.basename(target_file)}',
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(
+                f'[CORE_UPDATES] WARN: could not repair orphan END for '
+                f'skill:{skill_folder}:{target} ({exc}) — appending a fresh pair anyway',
+                file=sys.stderr,
+            )
 
     # Append wrapped block
     with open(target_file, 'a', encoding='utf-8') as fh:

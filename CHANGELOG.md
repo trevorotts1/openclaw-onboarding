@@ -1,3 +1,37 @@
+## [v21.4.43]  -  2026-07-31  -  self-heal the orphan END marker that blocked AGENTS.md dedup fleet-wide
+
+### Why
+
+The CORE_UPDATES merge's idempotency guard only tests for the BEGIN marker
+(`if begin_marker in existing: continue`), so a block whose BEGIN was lost is
+invisible to it -- the stray END is never detected and never repaired.
+
+Measured on real fleet data 2026-07-31: THREE of four sampled boxes carried the
+same orphan, `16-summarize-youtube:agents  BEGIN=0 END=1`. Consequence beyond
+cosmetics: every BEGIN/END pair-balance check on those boxes fails, and
+scripts/dedup-agents-md.py correctly refuses to worsen wiring -- so those boxes
+also never got their duplicate blocks cleaned. One stray line blocked the whole
+self-heal path on most of the fleet.
+
+### What changed
+
+- update-skills.sh CORE_UPDATES merge now repairs an orphan END (END present,
+  BEGIN absent) before appending a clean pair. Narrowly scoped to the same
+  skill_folder and target, only when its BEGIN is genuinely absent; a matched
+  pair is never touched. Failure is non-fatal -- it falls through and appends
+  regardless, because a duplicate marker is recoverable and a crashed updater
+  is not.
+- New regression test tests/unit/core-updates-orphan-end-repair.test.sh covers
+  orphan repaired, matched pair untouched, and other skills unaffected.
+
+### Verification
+
+Verified against a real box's AGENTS.md: `BEGIN=0 END=1` -> whole file balanced,
+and dedup then proceeded cleanly (180,647 -> 165,193 bytes, 15,454 saved) with
+no carried-over imbalance. Suites: orphan-repair 7/0, dedup 29/0,
+core-updates-all-skills-wired 18/0, scripts-tree 23/0, CC runtime 8/0,
+resume-cron 20/0. no-client-names and no-full-env-dump gates pass.
+
 ## [v21.4.42]  -  2026-07-31  -  mechanical AGENTS.md deduplicator: self-heal the marker-guard re-append bug already on disk
 
 ### Why
