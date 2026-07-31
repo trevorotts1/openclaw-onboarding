@@ -1,53 +1,3 @@
-## [v21.4.38]  -  2026-07-31  -  converge Command Center even when skills content is already current
-
-### Why
-
-A client box was found **97 commits behind `origin/main` on Command Center**
-while every post-roll check reported green.
-
-Root cause: the CONTENT RECHECK short-circuit calls `exit 0` roughly **3,100
-lines before** the Command Center refresh (`run-full-install.sh --update-only`
--> `cc_route_update_through_canonical_path()` -> `update.sh` ->
-`atomic-deploy.sh`). Any box whose skills stamp AND skills content were already
-current therefore exited before its Command Center was ever converged.
-
-Verification could not catch it, because the documented post-roll check reads
-the `.onboarding-version` stamp — and that stamp was legitimately current.
-Command Center currency is INDEPENDENT of skills-content currency. **A stamp is
-not a CC signal.**
-
-Two related defects were silent in the same path: a dirty CC checkout (which
-cannot fast-forward) produced no clear message, and a fatally-failed CC refresh
-still left a current stamp behind.
-
-### What changed
-
-- New self-contained `_cc_currency_probe`, run *before* the CONTENT RECHECK
-  early exit. It returns non-zero **only** when the checkout is CLEAN but behind
-  origin — the one case where a full pass actually repairs something. Absent,
-  dirty, unknown and already-current all still exit early, because a full sync
-  cannot fix those and forcing one would burn a rebuild for no repair.
-- The dirty-checkout case is now loud: it names the dirty files and states
-  plainly that nothing is stashed, reset, or discarded. Uncommitted work on a
-  client box is load-bearing and is never touched.
-- Emits a greppable `[CC CURRENCY] state=<absent|current|behind|dirty|unknown>`
-  line and writes `~/.openclaw/skills/.command-center-state`, so post-roll
-  verification can check CC currency directly instead of trusting the stamp.
-- The probe never mutates the checkout: no stash, reset, checkout, clean, or
-  pull. It is read-only and idempotent.
-
-Self-contained by necessity: `cc_is_valid_checkout()` and U6d's candidate list
-are both defined later in the file and are not callable from the recheck block.
-
-### Verification
-
-`bash -n` clean; no new shellcheck findings. Probe unit-tested against real git
-fixtures across all four states (absent / current / behind / dirty) — only
-clean-but-behind returns 1. Non-mutation proven: the dirty fixture kept its
-uncommitted file with zero stashes, and the behind fixture's HEAD was unchanged
-after probing. Existing suites still green: update-command-center-runtime-config
-8/0, update-skills-full-scripts-tree 23/0, update-skills-resume-cron 20/0.
-
 ## [v21.4.39]  -  2026-07-31  -  fleet standing gate: fix RULE 5.6 slug-chain drift, redact a client name from update-skills.sh, and document the Relay Brain sha256 recipe
 
 ### Why
@@ -102,6 +52,58 @@ existing fail-open guarantee is unchanged. LOW for the `update-skills.sh` commen
 Both required suites pass unchanged on this branch: `tests/unit/fleet-standing-gate.test.sh`
 — 14 passed, 0 failed; `tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed
 (section 10 covers the RULE 5.6 / `cron-prompt.txt` owner-chat checks specifically).
+
+---
+
+## [v21.4.38]  -  2026-07-31  -  converge Command Center even when skills content is already current
+
+### Why
+
+A client box was found **97 commits behind `origin/main` on Command Center**
+while every post-roll check reported green.
+
+Root cause: the CONTENT RECHECK short-circuit calls `exit 0` roughly **3,100
+lines before** the Command Center refresh (`run-full-install.sh --update-only`
+-> `cc_route_update_through_canonical_path()` -> `update.sh` ->
+`atomic-deploy.sh`). Any box whose skills stamp AND skills content were already
+current therefore exited before its Command Center was ever converged.
+
+Verification could not catch it, because the documented post-roll check reads
+the `.onboarding-version` stamp — and that stamp was legitimately current.
+Command Center currency is INDEPENDENT of skills-content currency. **A stamp is
+not a CC signal.**
+
+Two related defects were silent in the same path: a dirty CC checkout (which
+cannot fast-forward) produced no clear message, and a fatally-failed CC refresh
+still left a current stamp behind.
+
+### What changed
+
+- New self-contained `_cc_currency_probe`, run *before* the CONTENT RECHECK
+  early exit. It returns non-zero **only** when the checkout is CLEAN but behind
+  origin — the one case where a full pass actually repairs something. Absent,
+  dirty, unknown and already-current all still exit early, because a full sync
+  cannot fix those and forcing one would burn a rebuild for no repair.
+- The dirty-checkout case is now loud: it names the dirty files and states
+  plainly that nothing is stashed, reset, or discarded. Uncommitted work on a
+  client box is load-bearing and is never touched.
+- Emits a greppable `[CC CURRENCY] state=<absent|current|behind|dirty|unknown>`
+  line and writes `~/.openclaw/skills/.command-center-state`, so post-roll
+  verification can check CC currency directly instead of trusting the stamp.
+- The probe never mutates the checkout: no stash, reset, checkout, clean, or
+  pull. It is read-only and idempotent.
+
+Self-contained by necessity: `cc_is_valid_checkout()` and U6d's candidate list
+are both defined later in the file and are not callable from the recheck block.
+
+### Verification
+
+`bash -n` clean; no new shellcheck findings. Probe unit-tested against real git
+fixtures across all four states (absent / current / behind / dirty) — only
+clean-but-behind returns 1. Non-mutation proven: the dirty fixture kept its
+uncommitted file with zero stashes, and the behind fixture's HEAD was unchanged
+after probing. Existing suites still green: update-command-center-runtime-config
+8/0, update-skills-full-scripts-tree 23/0, update-skills-resume-cron 20/0.
 
 ---
 
