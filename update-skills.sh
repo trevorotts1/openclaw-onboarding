@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.40"
+ONBOARDING_VERSION="v21.4.41"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1227,7 +1227,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.40 - safe_json_edit
+# v21.4.41 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5409,7 +5409,7 @@ PYEOF
         # permanent no-op, the confirmed root cause of the RULE 5.6 drift.
         _WOU_JOB_ID=""
         _WOU_JOB_KIND=""
-        if [ -n "$_OC_RAW_JSON" ] && command -v python3 >/dev/null 2>&1; then
+        if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3 >/dev/null 2>&1; then
           _WOU_ID_KIND=$(OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
 import json, os
 raw = os.environ.get('OC_CRON_JSON', '')

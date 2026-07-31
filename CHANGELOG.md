@@ -1,3 +1,64 @@
+## [v21.4.41]  -  2026-07-31  -  fix: unbound-$_OC_RAW_JSON abort in the weekly-cron-message-refresh path on any box without python3
+
+### Why
+
+PR #796 (v21.4.40, same day) added the weekly-onboarding-update cron message refresh: when
+the job is already installed with no old auto-announce wiring, `update-skills.sh` tries to
+resolve the job's id/kind from the cron list JSON it fetched a few lines earlier while
+detecting old wiring — `_OC_RAW_JSON=$(openclaw cron list --json ...)`, but that assignment
+only ever runs inside `if command -v python3 >/dev/null 2>&1; then`. The refresh step's own
+lookup then referenced `$_OC_RAW_JSON` completely outside that guard:
+`if [ -n "$_OC_RAW_JSON" ] && command -v python3 >/dev/null 2>&1; then`. Under this script's
+`set -euo pipefail` (active since line 128, never disabled), bash evaluates the left operand
+of `&&` first — on any box where `oc_cron_present` confirms the job present via jq alone
+(jq is checked first and does not need python3) but python3 is genuinely absent, `_OC_RAW_JSON`
+was never assigned anywhere in that run, so referencing it is an **unbound-variable reference
+under `set -u`**, which aborts the ENTIRE update mid-run instead of completing. This is a new
+exposure: every pre-existing reference to `$_OC_RAW_JSON` was already inside the python3 guard
+that assigns it; the refresh step's added reference was the first to step outside it. An update
+that dies partway on a python3-less box is a worse outcome than the stale-cron-message drift the
+refresh was built to fix.
+
+Verified the mechanism with a standalone repro (`set -euo pipefail`; reference an unset var
+inside `[ -n "$x" ]`) reproducing bash's `unbound variable` abort with a nonzero exit, and
+confirmed against both the unfixed and fixed code with the real extracted
+`WEEKLY-CRON-FULL-REGISTRATION-V1` block run under a genuine bash interpreter (this repo's own
+test harness needed to be invoked via `bash`, not the operator's login shell, to see bash's real
+`set -u` semantics rather than a permissive shell built-in emulation of the same construct).
+
+### What changed
+
+- **`update-skills.sh`**: one-line fix — `if [ -n "$_OC_RAW_JSON" ] && command -v python3` →
+  `if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3`, a `set -u`-safe default that treats
+  a never-assigned `_OC_RAW_JSON` as empty (falls through to the existing "could not resolve
+  job id" SKIP path, exactly as intended) instead of aborting. The four other variables this
+  same merge introduced (`_WOU_JOB_ID`, `_WOU_JOB_KIND`, `_WOU_ID_KIND`,
+  `_WOU_PROMPT_TMP`, and `_CRON_HAS_OLD_WIRING`) were individually reviewed for the identical
+  class of mistake — each is unconditionally assigned earlier in the same execution path
+  before its first reference, so none needed the same treatment. Nothing else in the refresh
+  feature (the `refresh_weekly_cron_message` function body, the compare-before-write logic, or
+  the `openclaw cron edit --message` in-place patching) was touched.
+- **`tests/unit/weekly-cron-message-refresh.test.sh`**: added subtest (e) — job present, no
+  old wiring, python3 unavailable (simulated via a curated `PATH` containing no python3
+  anywhere, with `oc_cron_present` overridden to report the job present) — proving the
+  refresh path reaches its end and logs the SKIP line instead of dying on an unbound-variable
+  error. Confirmed this subtest fails (3 assertions) against the unfixed v21.4.40 code with the
+  exact `_OC_RAW_JSON: unbound variable` abort, and passes clean against the fix — a genuine
+  regression guard, not a vacuous pass.
+
+### Risk
+
+LOW. A strictly-safer one-line change: it only removes an abort path (`${VAR:-}` is a no-op
+whenever `_OC_RAW_JSON` was already set, which is every case that isn't the new defect) and
+touches no other logic, no schedule/timezone/delivery field, and no other cron. All three
+guarding suites pass clean: `tests/unit/fleet-standing-gate.test.sh` — 14 passed, 0 failed;
+`tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed;
+`tests/unit/weekly-cron-message-refresh.test.sh` — 31 passed, 0 failed (27 existing + 4 new).
+`bash -n update-skills.sh` is clean. No box was written to, SSH'd, or probed; no fleet roll or
+`update-skills.sh`/`check-updates.sh` execution was performed as part of this change.
+
+---
+
 ## [v21.4.40]  -  2026-07-31  -  weekly-onboarding-update cron: refresh the stored payload from cron-prompt.txt instead of leaving it frozen forever
 
 ### Why

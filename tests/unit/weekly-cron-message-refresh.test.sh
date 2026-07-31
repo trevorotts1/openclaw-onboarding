@@ -349,6 +349,49 @@ out="$(FAKE_CURL_CONTENT_FILE="$TMP/content.txt" FAKE_OC_EDIT_FAIL=1 run_registr
 [ "$(job_field j1 payload.message)" = "ORIGINAL CONTENT" ] && ok "rejected edit leaves the OLD message in place (never blank/partial)" || bad "message must be unchanged when edit is rejected: $(job_field j1 payload.message)"
 [[ "$out" == *"WARN"* ]] && ok "rejected edit logs a WARN (visible, not silent)" || bad "rejected edit should log a WARN: $out"
 
+echo "== (e) job EXISTS, no old wiring, python3 UNAVAILABLE -> refresh path must not abort (v21.4.41 fix: \$_OC_RAW_JSON unbound-variable regression) =="
+# _OC_RAW_JSON is only ever assigned inside `if command -v python3 ...; then`
+# a few lines above (the old-wiring detector). oc_cron_present only needs ONE
+# of jq/python3 to confirm the job is present, so a box with jq but genuinely
+# NO python3 reaches this "already installed" branch with _OC_RAW_JSON never
+# assigned at all. The refresh sub-block used to reference $_OC_RAW_JSON
+# completely outside that guard -- an unbound-variable abort under
+# `set -euo pipefail` on exactly that box shape. This subtest forces the
+# shape directly: oc_cron_present() overridden to report "present" (so we hit
+# the branch) with NO python3 anywhere on PATH, proving the block reaches the
+# end and falls back to the SKIP log line instead of dying.
+NOPY_BIN="$TMP/bin-nopython3"
+mkdir -p "$NOPY_BIN"
+NOPY_CALLS="$TMP/nopy-calls.log"
+: > "$NOPY_CALLS"
+cat > "$NOPY_BIN/openclaw" <<EOF
+#!/bin/bash
+echo "\$@" >> "$NOPY_CALLS"
+exit 0
+EOF
+chmod +x "$NOPY_BIN/openclaw"
+
+run_registration_no_python3() {
+  ( set -euo pipefail
+    export PATH="$NOPY_BIN"
+    # shellcheck source=/dev/null
+    source "$CRON_LIB"
+    # Simulate a box where the job is confirmed present (e.g. via jq) but
+    # python3 is genuinely absent -- override AFTER sourcing cron-lib.sh so
+    # this replaces its real jq/python3-probing implementation outright.
+    oc_cron_present() { return 0; }
+    # shellcheck source=/dev/null
+    source "$BLOCK"
+    echo "__REACHED_END__"
+  ) 2>&1
+}
+
+out="$(run_registration_no_python3)"
+[[ "$out" == *"__REACHED_END__"* ]] && ok "python3-unavailable run reaches end (no unbound-variable abort)" || bad "python3-unavailable run must not abort: $out"
+[[ "$out" == *"unbound variable"* || "$out" == *"parameter not set"* ]] && bad "python3-unavailable run must NEVER hit an unbound/unset parameter error: $out" || ok "no unbound-variable error surfaced"
+[[ "$out" == *"could not resolve job id for weekly-onboarding-update"* ]] && ok "falls back to the SKIP log line when python3 is unavailable to resolve the job id" || bad "expected the no-python3 SKIP log line: $out"
+[ ! -s "$NOPY_CALLS" ] && ok "python3-unavailable path never shells out to openclaw at all" || bad "unexpected openclaw call(s) in python3-unavailable path: $(cat "$NOPY_CALLS")"
+
 echo
 echo "passed=$PASS failed=$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
