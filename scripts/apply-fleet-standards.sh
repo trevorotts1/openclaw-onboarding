@@ -746,6 +746,58 @@ else:
     print(f"[apply-fleet-standards] core-bootstrap size guard: {total:,} chars within target {target:,} (workspace {ws}) — OK")
 SIZEEOF
 
+# ─── 5a-SIZEGUARD-HARDCAP. Silent-truncation loud alarm (WARN-ONLY, no content edited) ─
+# 2026-07-31 fleet root-cause audit: the SOFT target above (150,000) is a token-
+# burn guideline, not the actual gateway injection ceiling. Live sampling of
+# `systemPromptReport.injectedWorkspaceFiles[]` across the fleet during that
+# audit showed the runtime silently truncating the injected core-file set once
+# the RAW total crosses somewhere between 283,709 chars (NOT truncated, one box)
+# and 443,125 / 590,882 chars (BOTH truncated, two other boxes) -- and in EVERY
+# truncated case observed, injectedChars landed at exactly 399,999. That is a
+# hard ceiling, not a cost concern: bytes past it are dropped from the agent's
+# context with NO error, NO warning, and NO log line anywhere except this one.
+# HARD_CAP defaults to a safety margin below the observed 399,999 cutoff so this
+# fires BEFORE truncation, not after. Overridable (FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS)
+# in case a future gateway version moves the real ceiling -- re-measure via
+# `openclaw agent --agent <id> --message "hi" --json` -> systemPromptReport if this
+# ever fires on a box that is NOT actually truncated (or misses one that is).
+FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS="${FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS:-380000}"
+WORKSPACE_DIR="$WORKSPACE_DIR" \
+FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS="$FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS" \
+python3 - <<'HARDCAPEOF' || true
+import os
+ws = os.environ.get("WORKSPACE_DIR", "")
+try:
+    hard_cap = int(os.environ.get("FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS", "380000"))
+except ValueError:
+    hard_cap = 380000
+CORE = ["AGENTS.md", "MEMORY.md", "TOOLS.md", "SOUL.md", "IDENTITY.md", "USER.md", "HEARTBEAT.md"]
+total = 0
+rows = []
+for name in CORE:
+    p = os.path.join(ws, name)
+    try:
+        n = len(open(p, encoding="utf-8", errors="replace").read()) if os.path.isfile(p) else 0
+    except Exception:
+        n = 0
+    if n:
+        rows.append((name, n))
+        total += n
+rows.sort(key=lambda x: -x[1])
+if total > hard_cap:
+    print(f"[apply-fleet-standards] ⛔ SILENT TRUNCATION LIKELY ACTIVE: CORE-BOOTSTRAP {total:,} chars EXCEEDS the empirical hard cap {hard_cap:,} (workspace {ws})")
+    print(f"[apply-fleet-standards]       This is NOT a token-cost warning -- past this point the gateway silently DROPS bytes from the")
+    print(f"[apply-fleet-standards]       agent's injected context every turn, with NO error, NO warning, and NO log line anywhere else.")
+    print(f"[apply-fleet-standards]       CONFIRM: openclaw agent --agent <default-agent-id> --message \"hi\" --json | look for")
+    print(f"[apply-fleet-standards]                systemPromptReport.injectedWorkspaceFiles[].truncated == true (costs one real model turn).")
+    for name, n in rows:
+        print(f"[apply-fleet-standards]       {name:<13} {n:>8,} chars")
+    print(f"[apply-fleet-standards]       FIX: dedupe/trim core files (a re-stamped marker block appearing more than once is the #1 cause) --")
+    print(f"[apply-fleet-standards]       see 'grep -c \"^## \" {ws}/AGENTS.md' vs 'grep \"^## \" {ws}/AGENTS.md | sort -u | wc -l' for a quick duplicate check.")
+else:
+    print(f"[apply-fleet-standards] core-bootstrap hard-cap guard: {total:,} chars within empirical hard cap {hard_cap:,} (workspace {ws}) — OK, truncation unlikely")
+HARDCAPEOF
+
 ROLE_DISC_MARKER="<!-- ROLE_DISCIPLINE_V1 -->"
 if grep -qF "$ROLE_DISC_MARKER" "$AGENTS_FILE_EARLY"; then
   echo "[apply-fleet-standards] ROLE DISCIPLINE already present in $AGENTS_FILE_EARLY — no-op"

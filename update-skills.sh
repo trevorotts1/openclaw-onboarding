@@ -4035,7 +4035,16 @@ except:
     fi
 
     echo "    Registering GHL community MCP under mcp.servers (port $GHL_MCP_PORT)..."
-    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\"}" >> "$LOG_FILE" 2>&1; then
+    # BUG FIX (Q2.7 root-cause fleet audit): this registration was missing
+    # connectionTimeoutMs, unlike the sibling stamper in ghl-mcp-autostart.sh
+    # (which sets connectionTimeoutMs:30000 for the identical server entry).
+    # Without a bounded timeout, `openclaw doctor` (and any other command that
+    # enumerates/health-checks mcp.servers) hangs indefinitely whenever the
+    # local ghl-community-mcp process is down, crashed, or port-conflicted --
+    # this is the exact "doctor hangs in a timeout loop" defect. Matching the
+    # autostart script's value closes the gap without changing behavior when
+    # the server IS healthy.
+    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\",\"connectionTimeoutMs\":30000}" >> "$LOG_FILE" 2>&1; then
       echo "    GHL MCP: registered under mcp.servers (ghl-community-mcp → localhost:${GHL_MCP_PORT})"
     else
       echo "    GHL MCP: registration attempt completed (see $LOG_FILE for details)"
