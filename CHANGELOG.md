@@ -1,3 +1,44 @@
+## [v21.4.35]  -  2026-07-31  -  podcast/broker docs stop framing an operator credential as something a client box holds (Skill 58 v0.1.24)
+
+### Why
+
+Three separate times an agent read Skill 58's docs and `install.sh`, paraphrased the "the
+client box holds five variables" / "a client box holds ... token" framing back to the
+operator, and told him his own webhook credential goes to his clients. It does not: the
+client box's only role is to TRIGGER the operator's n8n webhook, and the operator's n8n
+performs the entire publish (auth, upload, create-episode, permalink) — the operator's
+token is never disclosed to, requested from, or handled by a client or their agent. The
+doc's wording was the source of the repeated misstatement, not any one agent's mistake, so
+the fix has to live in the docs every future agent and human reads.
+
+### What changed
+
+Wording only, zero code/variable/behaviour changes:
+- `58-podcast-production-engine/SKILL.md`: the per-client Podbean bullet's "the client box
+  holds five variables" opening, and the "Ownership, stated plainly" block, now lead with
+  the operator's model — the client box's role is to TRIGGER, the operator's n8n performs
+  the ENTIRE publish, and `PODBEAN_PUBLISH_TOKEN` is an operator-owned value the operator
+  places onto the client box during provisioning, never the client's password.
+- `58-podcast-production-engine/config/n8n/README.md`: the broker-workflow intro
+  paragraph, the one-time env-setup step for `PODBEAN_BROKER_TOKEN`, and the
+  `PODBEAN_PUBLISH_TOKEN` provisioning-table row are reframed the same way; the broker
+  intro also now restates (consistent with the rest of this file) that the broker is the
+  unused fallback, not the live default.
+- `install.sh`: the discovery-list comment block near the Podbean broker credentials
+  (~line 2204) is reframed from "a client box holds ONLY the broker pair" to the client
+  box's role being to trigger the broker webhook, and the stale "publishing goes through
+  the broker" framing is corrected to state the broker is an unused fallback (the
+  publish-proxy pair is the fleet default).
+
+### Risk
+
+None to behavior. Every edit is inside a Markdown doc or a `#`-prefixed shell comment;
+`git diff --stat` shows only the three touched files, no code, variable, or logic line
+changed. `bash -n install.sh` still parses clean. No client names, emails, or channel ids
+in the diff.
+
+---
+
 ## [v21.4.34]  -  2026-07-31  -  anthology engine refuses a book build at intake when the box is not approved for the anthology system (Skill 59 v0.1.11)
 
 ### Why
