@@ -2713,6 +2713,110 @@ u004_assert_doctrine_provenance() {
   echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
 }
 
+  # ── CC CURRENCY PROBE ────────────────────────────────────────────────────
+  # WHY THIS EXISTS. The CONTENT RECHECK below `exit 0`s whenever the skills
+  # stamp AND skills content are current -- roughly 3,100 lines BEFORE the
+  # Command Center refresh (`run-full-install.sh --update-only`). But CC
+  # currency is INDEPENDENT of skills-content currency, so every box with
+  # current skills silently never converged its Command Center checkout.
+  # Observed in the field: a client box sat 97 commits behind origin/main on
+  # Command Center while every post-roll check reported green -- because
+  # verification reads the .onboarding-version stamp, and that stamp was
+  # legitimately current. A stamp is not a CC signal.
+  #
+  # Deliberately SELF-CONTAINED: cc_is_valid_checkout() and U6d's candidate
+  # list are both defined LATER in this file and are not callable from here.
+  # The list below is the union of the vps and mac candidates so the probe
+  # does not depend on OPENCLAW_PLATFORM being set this early.
+  #
+  # CONTRACT: returns 1 ONLY when a full pass would actually repair something
+  # -- i.e. the checkout is CLEAN but behind origin. Returns 0 for absent,
+  # dirty, unknown, or already-current, because a full sync cannot fix those
+  # and forcing one would burn a rebuild for no repair. NEVER mutates the
+  # checkout: no stash, no reset, no checkout, no clean. Emits a greppable
+  # `[CC CURRENCY] state=...` line and writes a marker file so post-roll
+  # verification can check CC currency directly instead of trusting the stamp.
+  _cc_write_marker() {
+    local _f="$1" _mstate="$2" _mdir="$3" _mhead="$4" _mbranch="$5" _ts
+    _ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+    mkdir -p "$(dirname "$_f")" 2>/dev/null || return 0
+    {
+      printf 'state=%s\n'       "$_mstate"
+      printf 'dir=%s\n'         "$_mdir"
+      printf 'head=%s\n'        "$_mhead"
+      printf 'branch=%s\n'      "$_mbranch"
+      printf 'checked_utc=%s\n' "$_ts"
+    } > "$_f" 2>/dev/null || true
+    return 0
+  }
+
+  _cc_currency_probe() {
+    local _p _d="" _remote="" _dirty="" _def="" _head="" _marker
+    _marker="${HOME}/.openclaw/skills/.command-center-state"
+
+    for _p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+              "$HOME/projects/command-center" "/data/projects/command-center" \
+              "$HOME/projects/blackceo-command-center" \
+              "/data/projects/blackceo-command-center" \
+              "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+              "/opt/mission-control" "/app"; do
+      [ -n "$_p" ] || continue
+      if [ -d "$_p/.git" ]; then _d="$_p"; break; fi
+    done
+
+    if [ -z "$_d" ]; then
+      echo "  — [CC CURRENCY] state=absent — no Command Center checkout on this box (informational, not a failure)."
+      _cc_write_marker "$_marker" "absent" "" "" ""
+      return 0
+    fi
+
+    if _remote="$(git -C "$_d" remote get-url origin 2>/dev/null)"; then :; else _remote=""; fi
+    case "$_remote" in
+      *command-center*) : ;;
+      *)
+        echo "  — [CC CURRENCY] state=absent — $_d is not a Command Center checkout (remote mismatch) — SKIP."
+        _cc_write_marker "$_marker" "absent" "$_d" "" ""
+        return 0
+        ;;
+    esac
+
+    if _head="$(git -C "$_d" rev-parse --short HEAD 2>/dev/null)"; then :; else _head=""; fi
+    if _dirty="$(git -C "$_d" status --porcelain 2>/dev/null)"; then :; else _dirty=""; fi
+
+    if [ -n "$_dirty" ]; then
+      echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
+      echo "    Command Center has UNCOMMITTED changes, so it cannot fast-forward and will NOT be refreshed."
+      echo "    Nothing is stashed, reset, or discarded here — uncommitted work on a client box is load-bearing."
+      printf '%s\n' "$_dirty" | head -n 10 | sed 's/^/      /'
+      _cc_write_marker "$_marker" "dirty" "$_d" "$_head" ""
+      return 0
+    fi
+
+    git -C "$_d" fetch --quiet origin 2>/dev/null || true
+
+    if _def="$(git -C "$_d" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; then
+      _def="${_def#origin/}"
+    else
+      _def=""
+    fi
+    [ -n "$_def" ] || _def="main"
+
+    if git -C "$_d" rev-parse --verify --quiet "origin/$_def" >/dev/null 2>&1; then
+      if git -C "$_d" merge-base --is-ancestor "origin/$_def" HEAD 2>/dev/null; then
+        echo "  ✓ [CC CURRENCY] state=current head=${_head:-unknown} branch=$_def"
+        _cc_write_marker "$_marker" "current" "$_d" "$_head" "$_def"
+        return 0
+      fi
+      echo "  ✗ [CC CURRENCY] state=behind head=${_head:-unknown} branch=$_def — Command Center is NOT current with origin/$_def."
+      _cc_write_marker "$_marker" "behind" "$_d" "$_head" "$_def"
+      return 1
+    fi
+
+    echo "  — [CC CURRENCY] state=unknown head=${_head:-unknown} — could not resolve origin/$_def (offline?) — not forcing a pass."
+    _cc_write_marker "$_marker" "unknown" "$_d" "$_head" "$_def"
+    return 0
+  }
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -2747,9 +2851,18 @@ u004_assert_doctrine_provenance() {
       fi
     done
     if [ -z "$_RECHECK_DRIFT" ]; then
-      echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
-      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-      exit 0
+      # Skills content is current. Command Center currency is a SEPARATE
+      # question and must be answered BEFORE we are allowed to exit -- a
+      # clean-but-behind CC is the one case where falling through actually
+      # repairs something, because the full pass reaches the
+      # `run-full-install.sh --update-only` refresh ~3,100 lines below.
+      if _cc_currency_probe; then
+        echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
+        rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+        exit 0
+      fi
+      echo "  ✗ [CONTENT RECHECK] skills content is current, but Command Center is BEHIND origin."
+      echo "    Proceeding with a full pass so the Command Center refresh runs — the version stamp is not a CC signal."
     fi
     echo "  ✗ [CONTENT RECHECK] stamp is current but these trees DRIFTED:${_RECHECK_DRIFT}"
     echo "    Proceeding with a full content sync — version strings are not a sync signal."
