@@ -223,10 +223,42 @@ echo "$PASS_PREFIX Cloudflare API key found at $cf_token_source. Proceeding."
 # secret needs provisioning on any box that already has the legacy
 # propagation.
 #
+# URL RESOLUTION (deliberately NO hardcoded literal endpoint in this file —
+# Skill 38 is the UNIVERSAL skill and scripts/qc-no-personal-data.sh machine-
+# enforces that no operator-specific hostname is ever baked into its source):
+# an explicit FLEET_SYSTEM_STANDING_CHECK_URL / FLEET_SYSTEM_ACCESS_REJECTION_
+# NOTIFY_URL env var wins if set; otherwise the origin (scheme+host) is
+# derived at RUNTIME from the already-fleet-propagated FLEET_STANDING_GATE_URL
+# (the legacy roster gate's own endpoint, seeded onto every box by the same
+# propagate-fleet-standing-gate.sh) with the correct webhook path appended —
+# so a box with the existing legacy propagation needs nothing new to reach
+# the Item 1 endpoint. If neither resolves, the gate fails closed (a missing
+# URL is treated exactly like an unreachable endpoint), never guesses.
+#
 # FAIL CLOSED, always. Idempotent (read-only network calls; never writes).
 STANDING_SYSTEM="conversational_ai"
-STANDING_CHECK_URL="${FLEET_SYSTEM_STANDING_CHECK_URL:-https://main.blackceoautomations.com/webhook/system-standing-check}"
-STANDING_NOTIFY_URL="${FLEET_SYSTEM_ACCESS_REJECTION_NOTIFY_URL:-https://main.blackceoautomations.com/webhook/system-access-rejection-notify}"
+
+# Derive an origin (scheme://host) from FLEET_STANDING_GATE_URL and append a
+# given webhook path. Prints nothing and returns 1 if the base var is unset.
+_standing_derive_url() {
+  local base="${FLEET_STANDING_GATE_URL:-}" scheme="" rest="" host=""
+  [ -n "$base" ] || return 1
+  scheme="${base%%://*}"
+  rest="${base#*://}"
+  [ "$scheme" != "$base" ] || return 1
+  host="${rest%%/*}"
+  [ -n "$host" ] || return 1
+  printf '%s://%s/%s' "$scheme" "$host" "$1"
+}
+
+STANDING_CHECK_URL="${FLEET_SYSTEM_STANDING_CHECK_URL:-}"
+if [ -z "$STANDING_CHECK_URL" ]; then
+  STANDING_CHECK_URL="$(_standing_derive_url "webhook/system-standing-check")" || STANDING_CHECK_URL=""
+fi
+STANDING_NOTIFY_URL="${FLEET_SYSTEM_ACCESS_REJECTION_NOTIFY_URL:-}"
+if [ -z "$STANDING_NOTIFY_URL" ]; then
+  STANDING_NOTIFY_URL="$(_standing_derive_url "webhook/system-access-rejection-notify")" || STANDING_NOTIFY_URL=""
+fi
 STANDING_HEADER_NAME="${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}"
 STANDING_HEADER_VALUE="${FLEET_STANDING_GATE_SECRET:-}"
 
@@ -313,6 +345,8 @@ _standing_note=""
 
 if [ -z "$STANDING_BOX_SLUG" ]; then
   _standing_note="box_slug could not be resolved"
+elif [ -z "$STANDING_CHECK_URL" ] || [ -z "$STANDING_NOTIFY_URL" ]; then
+  _standing_note="standing-check URL could not be resolved (set FLEET_SYSTEM_STANDING_CHECK_URL / FLEET_SYSTEM_ACCESS_REJECTION_NOTIFY_URL, or ensure FLEET_STANDING_GATE_URL is propagated on this box)"
 elif [ -z "$STANDING_HEADER_VALUE" ]; then
   _standing_note="FLEET_STANDING_GATE_SECRET not set on this box"
 else
