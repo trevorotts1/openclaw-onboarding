@@ -1,3 +1,55 @@
+## [v21.4.33]  -  2026-07-30  -  weekly Sunday update tells a delinquent client why nothing installed, instead of going silent
+
+### Why
+
+`update-skills.sh`'s `FLEET-STANDING-GATE-V1` block (shipped v21.4.30) already enforces
+entitlement on all three update paths, including the Sunday `openclaw cron` job's own
+RULE 9 2-hour LOW/MEDIUM auto-apply — every path runs that script, so a delinquent
+client's install was already being withheld correctly. What was missing was politeness:
+the client got no explanation. Their Sunday check simply produced no summary and no
+install, which reads as the assistant being broken, not as an account issue. This adds
+the missing message without adding a second enforcement point.
+
+### What changed
+
+- `cron-prompt.txt`: new RULE 5.6, inserted between RULE 5.5 and RULE 6. Before composing
+  the RULE 6 update summary, it POSTs the same gate check `update-skills.sh` performs
+  (`{"boxName":"<slug>","action":"update","source":"cron-prompt"}`, reading
+  `$FLEET_STANDING_GATE_URL` / `$FLEET_STANDING_GATE_HEADER` / `$FLEET_STANDING_GATE_SECRET` /
+  `$FLEET_STANDING_BOX_SLUG` from the environment). It fails open exactly like the script
+  gate: an unset env var, unreachable gate, non-200 status, malformed body, or any verdict
+  other than the literal string `"blocked"` (including `unmatched`/`held`) all continue
+  straight to RULE 6 as normal. Only an explicit `blocked` verdict sends the client a plain-
+  English explanation ("there's a new version available, but I'm not able to install it
+  right now because the account isn't current... nothing on your system has changed") to
+  `CLIENT_CHAT` (the RULE 1 operator-rejecting resolver — never `allowFrom[0]`, never a
+  fallback to an operator id) and exits before RULE 6-12 run.
+- `cron-prompt.txt` RULE 9: one-line note that the 2-hour auto-apply is never reached for a
+  `blocked` verdict because RULE 5.6 already exited; if RULE 5.6 were ever skipped,
+  `update-skills.sh`'s own chokepoint still refuses the install, just silently.
+- `cron-prompt.txt` RULE 13 (Forbidden): one new bullet codifying the same rule — no install
+  options offered, no update applied, for a `blocked` verdict.
+- `~/.claude/skills/temp-fleet-standing-gate/SKILL.md`: two GOTCHAS rows from this task —
+  backticks inside a bash-quoted `python3 -c "..."` string get shell-executed as command
+  substitution before Python ever sees them (use a standalone `.py` file or a quoted
+  heredoc instead), and a background subagent with no completion notification yet may
+  still be running, not dead (check `TaskList` and the work's real end state before
+  re-dispatching).
+- All 10 repo version markers bumped v21.4.32 -> v21.4.33 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. No enforcement logic changed — `update-skills.sh`'s `FLEET-STANDING-GATE-V1` chokepoint
+and its fail-open guarantee are untouched, and `tests/unit/fleet-standing-gate.test.sh`
+(14 cases) still passes unmodified. The new RULE 5.6 is additive prose in a prompt file
+executed by an LLM, not new code, and it fails open on every path except an explicit
+`blocked` verdict, so a gate outage still lets every client be offered their update as
+before. `tests/unit/cron-owner-chat-guard.test.sh` (136 assertions, including the section-10
+checks specific to `cron-prompt.txt`) passes unmodified, confirming the new client-facing
+send still resolves through `CLIENT_CHAT` / `resolve_owner_chat_id` and never `allowFrom[0]`.
+
+---
+
 ## [v21.4.32]  -  2026-07-30  -  durably record the fleet standing gate: propagation script, refreshed n8n workflow backups, and two hard-won matching/wiring lessons
 
 ### Why
