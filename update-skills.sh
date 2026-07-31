@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.38"
+ONBOARDING_VERSION="v21.4.39"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1227,7 +1227,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.38 - safe_json_edit
+# v21.4.39 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -6019,9 +6019,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # initial pairing, long before Skill 23's interview — using the same
     # openclaw.json field order as install.sh's resolve_owner_name(). Operator
     # ruling (2026-07-28): default PERMANENTLY to the client's name-derived
-    # slug — Jennifer's production slug is literally "jennifer", derived this
-    # same way, and has been fine in production. No rename/migration path is
-    # built here; the name-derived slug is the final answer for this box.
+    # slug — e.g. a client named "Jane Doe" gets slug "jane" (first name only,
+    # lowercased), derived this same way; this pattern already runs in
+    # production without issue. No rename/migration path is built here; the
+    # name-derived slug is the final answer for this box.
     if [ -z "$_CC_SLUG" ]; then
       _CC_OWNER_NAME=""
       if [ -n "${OC_JSON:-}" ] && [ -f "${OC_JSON:-}" ]; then

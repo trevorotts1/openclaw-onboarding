@@ -48,6 +48,63 @@ uncommitted file with zero stashes, and the behind fixture's HEAD was unchanged
 after probing. Existing suites still green: update-command-center-runtime-config
 8/0, update-skills-full-scripts-tree 23/0, update-skills-resume-cron 20/0.
 
+## [v21.4.39]  -  2026-07-31  -  fleet standing gate: fix RULE 5.6 slug-chain drift, redact a client name from update-skills.sh, and document the Relay Brain sha256 recipe
+
+### Why
+
+Three loose ends from the fleet standing gate build:
+
+1. `cron-prompt.txt` RULE 5.6 resolved the box slug from `$FLEET_STANDING_BOX_SLUG` alone,
+   while `update-skills.sh`'s `fleet_standing_resolve_slug()` — the real enforcement
+   chokepoint — falls back to `openclaw.json`'s `env.vars.FLEET_STANDING_BOX_SLUG` and then
+   `hostname -s`. On a box where only the env var was missing, RULE 5.6 would send an empty
+   `boxName`, get `unmatched` back, and offer the update anyway; `update-skills.sh` would
+   then correctly refuse the install regardless — a confusing silent no-op, which is
+   precisely what RULE 5.6's own text says it exists to prevent.
+2. A comment in `update-skills.sh` (the Command Center bootstrap slug fallback) named a
+   real client and stated their production slug. This file ships to all 38 client boxes.
+3. `scripts/fleet-standing/README.md` told a future agent to assert the `Relay Brain`
+   node's sha256 without saying what bytes to hash. Hashing `jsCode` alone, or the
+   compact-separator form of the sort-keyed node, both produce different, plausible-looking
+   digests from the recorded value — a future agent landing on either would raise a false
+   alarm over a non-existent edit (or worse, treat a real edit as clean under the wrong
+   baseline). The correct recipe was verified against the live node before writing it down.
+
+A fourth, related fix shipped the same session but touches no file in this repo: operator-
+local `standing.sh` (`~/clawd/fleet-standing/standing.sh`, not tracked here) gained a
+`--slug` exact-match escape hatch for two-box clients, an actionable `--all` path for
+intentional bulk updates on ambiguous matches, and cursor-based pagination on the
+`fleet_standing` rows fetch (confirmed live: the n8n data-table API paginates by opaque
+`nextCursor`, not `offset`/`skip`, and hard-caps `limit` at 250).
+
+### What changed
+
+- **`cron-prompt.txt` RULE 5.6**: box-slug resolution now mirrors
+  `fleet_standing_resolve_slug()`'s exact three-step chain — explicit
+  `$FLEET_STANDING_BOX_SLUG`, then `openclaw.json`'s
+  `env.vars.FLEET_STANDING_BOX_SLUG`, then `hostname -s` — instead of the env var alone.
+- **`update-skills.sh`**: rewrote the Command Center slug-fallback comment to describe the
+  name-derived-slug pattern with a neutral placeholder (a client named "Jane Doe" gets slug
+  "jane") instead of a real client's name and production slug. Comment-only; no behavior
+  change.
+- **`scripts/fleet-standing/README.md`**: documented the exact sha256 recipe for the
+  `Relay Brain` assertion — hash the sort-keyed node object (keys `id`, `name`, `parameters`,
+  `position`, `type`, `typeVersion`) with Python's default `json.dumps` separators, never
+  `jsCode` alone and never the compact-separator form — plus both wrong-recipe digests as a
+  false-alarm tripwire and two corroborating checks (34,835-char `jsCode`; exact key set).
+
+### Risk
+
+MEDIUM for the RULE 5.6 change — client-facing cron-prompt logic, but purely corrective:
+any resolution failure still falls through to an empty slug exactly as before, so the
+existing fail-open guarantee is unchanged. LOW for the `update-skills.sh` comment rewrite
+(comment-only) and the README documentation addition (docs-only, no executable code).
+Both required suites pass unchanged on this branch: `tests/unit/fleet-standing-gate.test.sh`
+— 14 passed, 0 failed; `tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed
+(section 10 covers the RULE 5.6 / `cron-prompt.txt` owner-chat checks specifically).
+
+---
+
 ## [v21.4.37]  -  2026-07-31  -  teach the prebuilt-index guard about the published prebuilt-index-v2.4.2 asset (SPEC Item 14)
 
 ### Why
