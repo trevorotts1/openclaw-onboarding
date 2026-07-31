@@ -1,3 +1,41 @@
+## [v21.4.37]  -  2026-07-31  -  teach the prebuilt-index guard about the published prebuilt-index-v2.4.2 asset (SPEC Item 14)
+
+### Why
+
+`main` went RED at `1552bacd` (02:26) — the operator's own direct commit pointing
+`shared-utils/prebuilt-index/INDEX-MANIFEST.json` at `prebuilt-index-v2.4.2`. That commit is
+correct: `prebuilt-index-v2.4.2` is a real, published release (2026-07-24,
+`gemini-index.sqlite.gz`, 93,576,416 bytes). `tests/unit/prebuilt-index-section-tagged.test.sh`
+was what was stale — it carried a hardcoded allow-list (`KNOWN_TAGS` / `KNOWN_SHAS`) that
+stopped at `prebuilt-index-v2.4.1`, so three assertions (B5, B8, B9) failed against a
+manifest that was actually correct. All three approval-gate PRs (#791/#792/#793) merged
+with this check red because nothing in their scope touched this test.
+
+### What changed
+
+- `tests/unit/prebuilt-index-section-tagged.test.sh`: added `prebuilt-index-v2.4.2` to
+  `KNOWN_TAGS` and `KNOWN_SHAS`. The sha256 added
+  (`042aed12827cdfa09aeb996155e652266db68bb7d0405fb971dbdce33573ffa2`) was **independently
+  computed**, not copied out of the manifest: downloaded the real release asset
+  (`gh release download prebuilt-index-v2.4.2 -p 'gemini-index.sqlite.gz'`, 93,576,416
+  bytes), hashed it locally (`shasum -a 256`), and confirmed it matches the manifest's
+  claimed sha256 exactly before adding it to the allow-list. `INDEX-MANIFEST.json` itself
+  was not touched — it was already correct.
+- Updated stale header comments (top-of-file summary, the (B) MANIFEST-asserts block, and
+  the B5 check label) that still described the allow-list as ending at v2.4.1, so the next
+  person extending this test isn't misled the same way.
+- Proved the test can still fail: ran it against a scratch copy of the manifest with the
+  sha256 corrupted to a placeholder value — B9 failed as expected (24 passed, 1 failed).
+  The real manifest was never touched during this proof.
+
+### Risk
+
+Test-only change to an allow-list; no production code, no manifest edit, no index rebuild.
+Local run: 25 passed, 0 failed on the real manifest. The corrupted-copy proof confirms B9
+still bites on a bad hash, so this is not a change that defeats the assertion's purpose.
+
+---
+
 ## [v21.4.36]  -  2026-07-31  -  fleet approval gate: refuse a Skill 38 (conversational AI) run when the box is not approved (SPEC Item 10, Skill 38 v1.9.6)
 
 ### Why

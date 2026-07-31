@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/prebuilt-index-section-tagged.test.sh
 # ─────────────────────────────────────────────────────────────────────────────
-# Acceptance test for prebuilt-index v2.4.x dual-path provisioning.
+# Acceptance test for prebuilt-index v2.2.x-v2.4.2 dual-path provisioning.
 #
 # Asserts that BOTH install.sh and update-skills.sh provision the same
 # section-tagged 99-persona DB + GHL funnel catalog, via the shared helper.
@@ -18,16 +18,16 @@
 #
 #   (B) MANIFEST asserts (python3 json) — prove:
 #       - persona_count == 99
-#       - chunk_count == 1411 (v2.4.1 15-section format, 99 personas)
+#       - chunk_count == 1411 (v2.4.1+ 15-section format, 99 personas)
 #       - asset_rebuild_required is false (published) OR base_tag/base_sha256/base_asset_url
 #         are present and valid (pre-release: a newer tag pre-staged over a published base)
 #       - section_tagged is true
-#       - release_tag is one of the KNOWN_TAGS (v2.2.0 / v2.2.1 / v2.3.0 / v2.4.0 / v2.4.1)
+#       - release_tag is one of the KNOWN_TAGS (v2.2.0 / v2.2.1 / v2.3.0 / v2.4.0 / v2.4.1 / v2.4.2)
 #       - schema.columns_required contains section_number + mode
 #       - the PUBLISHED asset URL (asset_url when rebuild not required; base_asset_url
 #         when pre-release) ends with /<known-tag>/gemini-index.sqlite.gz
 #       - the VERIFIED sha256 (sha256 when published; base_sha256 when pre-release) is
-#         either the v2.2.0 or v2.2.1 real hash (not a pending placeholder)
+#         one of the KNOWN_SHAS real hashes (not a pending placeholder)
 #
 #   (C) FIXTURE structural assert — open the committed fixture SQLite
 #       (tests/fixtures/prebuilt-index-section-tagged.fixture.sqlite) and assert:
@@ -150,8 +150,12 @@ KNOWN_SHAS = {
     "prebuilt-index-v2.3.0": "6cc5f9a1b649aab64cd7d4dc2fde1d9df72b2ee244607cf1e7567358a5fa3cdf",
     "prebuilt-index-v2.4.0": "25f8933c42e799121ac81e855e9951af3e8131fac3a0f75fdd87e51370ab50c7",
     "prebuilt-index-v2.4.1": "131fa25cc8318f44a03775cbadd124cca3f15fa2f34bc764241138f376c1a973",
+    # v2.4.2: independently downloaded via `gh release download prebuilt-index-v2.4.2
+    # -p 'gemini-index.sqlite.gz'` and hashed with `shasum -a 256` (NOT copied from the
+    # manifest) on 2026-07-31 — matches the manifest's claimed sha256 exactly.
+    "prebuilt-index-v2.4.2": "042aed12827cdfa09aeb996155e652266db68bb7d0405fb971dbdce33573ffa2",
 }
-KNOWN_TAGS = {"prebuilt-index-v2.2.0", "prebuilt-index-v2.2.1", "prebuilt-index-v2.3.0", "prebuilt-index-v2.4.0", "prebuilt-index-v2.4.1"}
+KNOWN_TAGS = {"prebuilt-index-v2.2.0", "prebuilt-index-v2.2.1", "prebuilt-index-v2.3.0", "prebuilt-index-v2.4.0", "prebuilt-index-v2.4.1", "prebuilt-index-v2.4.2"}
 
 m = json.load(open(sys.argv[1]))
 results = []
@@ -186,7 +190,7 @@ check("B3: asset state valid (published or pre-release with base present)",
       f"asset_rebuild_required={rebuild_pending}, base_tag={base_tag!r}")
 check("B4: section_tagged is true", m.get("section_tagged") is True,
       f"got {m.get('section_tagged')}")
-check("B5: release_tag in known tags",
+check("B5: release_tag in known tags (v2.2.0-v2.4.2)",
       m.get("release_tag") in KNOWN_TAGS,
       f"got {m.get('release_tag')}")
 check("B6: schema.columns_required contains section_number",
