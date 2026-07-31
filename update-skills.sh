@@ -2993,6 +2993,379 @@ u004_assert_doctrine_provenance() {
     return 0
   }
 
+  # >>> CONTENT-RECHECK-CONVERGENCE-PROBES-BEGIN (extracted verbatim by
+  #     tests/unit/content-recheck-convergence-probes.test.sh)
+  # ── FLEET-ROLL COVERAGE AUDIT GAP #8: RUNTIME/DB CONVERGENCE PROBES ──────
+  # WHY THIS EXISTS. _cc_currency_probe above (audit gap fix, v21.4.38) closed
+  # ONE of several convergence steps that live BELOW the CONTENT RECHECK
+  # `exit 0` and are therefore never reached on a content-current re-roll:
+  # U6b (persona-index provisioning), U6c/U6c2 (SOP library + SOP-embeddings
+  # row-count ingest), weekly-onboarding-update cron registration, and
+  # apply-fleet-standards.sh's AGENTS.md dedup / orphan-END repair. A box
+  # whose skills content and version stamp are both current can sit forever
+  # behind on ALL FOUR of these -- exactly the same "stamp is not a signal
+  # for this" defect _cc_currency_probe fixed for Command Center, just not
+  # yet extended to the rest of the list. These four probes extend that same
+  # proven pattern to every remaining convergence step named in that audit.
+  #
+  # Each probe below mirrors _cc_currency_probe's contract EXACTLY (see its
+  # header comment above): read-only, returns 1 ONLY when a full pass would
+  # ACTUALLY repair something on THIS box, 0 for absent / unknown / already-
+  # current / any read error. None of them ever writes, deletes, or invokes
+  # a mutating CLI subcommand (no `cron create/edit/delete`, no SQL INSERT/
+  # UPDATE/DELETE, no file write) -- every read is a plain query, a read-only
+  # sqlite `?mode=ro` connection, a `cat`, or a `cron list`.
+  #
+  # SELF-CONTAINED BY DESIGN, same reason _cc_currency_probe gives for not
+  # calling cc_is_valid_checkout()/U6d's candidate list: the real U6b/U6c/
+  # U6c2 logic and shared-utils/cron-lib.sh's oc_cron_present/oc_cron_tombstoned
+  # are inline code or functions that either do not exist as callable units or
+  # live thousands of lines BELOW this point (and, for cron-lib.sh, carry a
+  # DIFFERENT error-handling contract than a probe is allowed -- see the cron
+  # probe's own header). Each probe below instead calls the SAME underlying
+  # resolvers those steps call (resolve_db.find_dashboard_db(), the identical
+  # manifest JSON reads) rather than reimplementing DB/manifest discovery, so
+  # a probe and the real step it stands in for can never disagree about which
+  # DB or manifest is the one that matters.
+
+  # ── SOP LIBRARY / SOP-EMBEDDINGS CURRENCY PROBE ─────────────────────────
+  # WHY THIS EXISTS. U6c (SOP V2 library ingest -- `sops` row count vs
+  # SOP-LIBRARY-MANIFEST.json's canonical_sop_count) and U6c2 (SOP-embeddings
+  # -- `sop_embeddings` row count vs SOP-EMBEDDINGS-MANIFEST.json's sop_count)
+  # both live ~600 lines BELOW this exit and are gated on non-overlapping
+  # under-population signals of their own. A content-current box can sit
+  # under-populated on either forever. This probe reads both SAME signals via
+  # the SAME DB resolution U6c/U6c2 use -- resolve_db.find_dashboard_db(),
+  # called directly, not reimplemented -- so it can never disagree with them
+  # about which mission-control.db is the one that matters.
+  #
+  # CONTRACT: returns 1 ONLY when a mission-control.db resolves AND is
+  # genuinely under either canonical count. No DB on this box, no manifest,
+  # missing python3/sqlite3, or any read error -> 0 (advisory, never forces a
+  # pass). READ-ONLY: every query opens the DB `?mode=ro` -- this probe can
+  # never write to mission-control.db.
+  _sop_library_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1; then
+      echo "  — [SOP LIBRARY] state=unknown — python3 or sqlite3 missing — not forcing a pass."
+      return 0
+    fi
+
+    local _slp_db=""
+    _slp_db="$(python3 -c '
+import sys
+from pathlib import Path
+su = Path(sys.argv[1])
+sys.path.insert(0, str(su))
+try:
+    from resolve_db import find_dashboard_db, is_db_found
+    p = find_dashboard_db()
+    print(str(p) if is_db_found(p) else "")
+except Exception:
+    print("")' "$SKILLS_DIR/shared-utils" 2>/dev/null || true)"
+
+    if [ -z "$_slp_db" ] || [ ! -f "$_slp_db" ]; then
+      echo "  — [SOP LIBRARY] state=absent — no mission-control.db resolved on this box — not forcing a pass."
+      return 0
+    fi
+
+    local _slp_lib_manifest="$SKILLS_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+    [ -f "$_slp_lib_manifest" ] || _slp_lib_manifest="$EXTRACTED_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+    local _slp_canon=2555
+    if [ -f "$_slp_lib_manifest" ]; then
+      _slp_canon="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("canonical_sop_count") or 2555))
+except Exception:
+    print(2555)' "$_slp_lib_manifest" 2>/dev/null || echo 2555)"
+    fi
+
+    local _slp_rows=0
+    _slp_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+    if [ "${_slp_rows:-0}" -lt "${_slp_canon:-2555}" ] 2>/dev/null; then
+      echo "  ✗ [SOP LIBRARY] state=under-populated rows=$_slp_rows canonical=$_slp_canon db=$_slp_db"
+      return 1
+    fi
+
+    local _slp_emb_manifest="$SKILLS_DIR/shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+    [ -f "$_slp_emb_manifest" ] || _slp_emb_manifest="$EXTRACTED_DIR/shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+    if [ -f "$_slp_emb_manifest" ]; then
+      local _slp_emb_count=0
+      _slp_emb_count="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("sop_count") or 0))
+except Exception:
+    print(0)' "$_slp_emb_manifest" 2>/dev/null || echo 0)"
+      if [ "${_slp_emb_count:-0}" -gt 0 ] 2>/dev/null; then
+        local _slp_emb_table=0 _slp_emb_rows=0
+        _slp_emb_table="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+        if [ "${_slp_emb_table:-0}" = "1" ]; then
+          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+        fi
+        if [ "${_slp_emb_rows:-0}" -lt "${_slp_emb_count:-0}" ] 2>/dev/null; then
+          echo "  ✗ [SOP LIBRARY] state=embeddings-under-populated rows=$_slp_emb_rows manifest_count=$_slp_emb_count db=$_slp_db"
+          return 1
+        fi
+      fi
+    fi
+
+    echo "  ✓ [SOP LIBRARY] state=current sops=${_slp_rows}/${_slp_canon} db=$_slp_db"
+    return 0
+  }
+
+  # ── PERSONA-INDEX CURRENCY PROBE ────────────────────────────────────────
+  # WHY THIS EXISTS. U6b's own D3 completion re-assertion (which this probe
+  # mirrors) compares the on-disk `.prebuilt-index-version` sentinel against
+  # the PULLED manifest's release_tag; a mismatch (or a missing sentinel --
+  # never provisioned) means U6b has real work to do. U6b lives ~500 lines
+  # BELOW this exit, so that comparison cannot be CALLED from here -- it runs
+  # inline, after sourcing provision-persona-index.sh, both far below this
+  # point. This probe re-reads the SAME two files with the SAME comparison.
+  #
+  # CONTRACT: returns 1 ONLY when the manifest resolves (so a real release_tag
+  # exists to compare against) AND the sentinel is missing or stale. Manifest
+  # unreadable/absent, or python3 missing -> 0 (advisory). READ-ONLY: reads
+  # two files, writes nothing.
+  _persona_index_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [PERSONA INDEX] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_manifest="$SKILLS_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+    [ -f "$_pip_manifest" ] || _pip_manifest="$EXTRACTED_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+    if [ ! -f "$_pip_manifest" ]; then
+      echo "  — [PERSONA INDEX] state=absent — no INDEX-MANIFEST.json resolved — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_release_tag=""
+    _pip_release_tag="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("release_tag",""))
+except Exception:
+    print("")' "$_pip_manifest" 2>/dev/null || true)"
+    if [ -z "$_pip_release_tag" ]; then
+      echo "  — [PERSONA INDEX] state=unknown — manifest has no release_tag — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_db_dir="$HOME/.openclaw/workspace/data/coaching-personas"
+    [ -d "/data/.openclaw" ] && _pip_db_dir="/data/.openclaw/workspace/data/coaching-personas"
+    local _pip_sentinel=""
+    _pip_sentinel="$(cat "$_pip_db_dir/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
+
+    if [ "$_pip_sentinel" = "$_pip_release_tag" ]; then
+      echo "  ✓ [PERSONA INDEX] state=current sentinel==release_tag ($_pip_release_tag)"
+      return 0
+    fi
+
+    echo "  ✗ [PERSONA INDEX] state=stale sentinel=${_pip_sentinel:-<missing>} release_tag=$_pip_release_tag"
+    return 1
+  }
+
+  # ── WEEKLY-CRON REGISTRATION PROBE ──────────────────────────────────────
+  # WHY THIS EXISTS. weekly-onboarding-update registration lives ~2,400 lines
+  # BELOW this exit and is SKIPPED ENTIRELY on a content-current box -- a box
+  # that never got the cron (pre-v9.2.0, or one where it was removed
+  # out-of-band without a tombstone) never gets it from a same-version
+  # re-roll.
+  #
+  # SELF-CONTAINED BY DESIGN -- NOT a call into shared-utils/cron-lib.sh's
+  # oc_cron_present/oc_cron_tombstoned:
+  #   * oc_cron_present deliberately FAILS OPEN (treats an unreadable
+  #     `cron list --json` as "absent") because ITS caller's asymmetry favors
+  #     attempting a redundant, idempotent registration over silently never
+  #     registering. THIS probe's asymmetry is the opposite: forcing a full
+  #     pass on a transient CLI hiccup means a full pass on every one of 38
+  #     boxes on a bad network day. So a genuine parse failure here is
+  #     advisory (return 0), never "treat as absent".
+  #   * the tombstone check below is a pure file-existence READ. It
+  #     deliberately does NOT source cron-lib.sh's oc_cron_tombstone_dir(),
+  #     which mkdir -p's its marker directory as a side effect -- a probe
+  #     must never write anything, even a directory. It mirrors that
+  #     function's OWN path formula (the job name has no characters
+  #     oc_cron_tombstone_path's sanitizer would change) as a plain
+  #     `[ -f ... ]` instead.
+  #
+  # CONTRACT: returns 1 ONLY when `openclaw cron list --json` returns a
+  # PARSEABLE answer AND that answer definitively shows the job absent AND it
+  # is not tombstoned. openclaw missing, the call failing, or unparseable
+  # output -> 0 (advisory, never forces a pass on a CLI/gateway hiccup).
+  # READ-ONLY: only ever runs `cron list`, never `cron create`/`edit`/`delete`.
+  _weekly_cron_currency_probe() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+      echo "  — [WEEKLY CRON] state=unknown — openclaw CLI not found — not forcing a pass."
+      return 0
+    fi
+
+    local _wcp_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _wcp_root="/data/.openclaw"
+    local _wcp_tomb="$_wcp_root/workspace/.cron-tombstones/weekly-onboarding-update"
+    if [ -f "$_wcp_tomb" ]; then
+      echo "  ✓ [WEEKLY CRON] state=tombstoned — deliberately removed; not treated as outstanding work."
+      return 0
+    fi
+
+    local _wcp_raw="" _wcp_rc=0
+    if ! _wcp_raw="$(openclaw cron list --json 2>/dev/null)"; then
+      _wcp_rc=$?
+    fi
+    if [ -z "$_wcp_raw" ]; then
+      echo "  — [WEEKLY CRON] state=unknown — 'openclaw cron list --json' returned nothing (rc=$_wcp_rc) — not forcing a pass."
+      return 0
+    fi
+
+    local _wcp_present=""
+    if command -v jq >/dev/null 2>&1; then
+      local _wcp_jq_rc=0
+      if printf '%s' "$_wcp_raw" | jq -e '
+          ( if type=="array" then . else .jobs // [] end)
+          | map(select(.name=="weekly-onboarding-update"))
+          | length > 0
+        ' >/dev/null 2>&1; then
+        _wcp_jq_rc=0
+      else
+        _wcp_jq_rc=$?
+      fi
+      case "$_wcp_jq_rc" in
+        0) _wcp_present=1 ;;
+        1) _wcp_present=0 ;;
+        *) echo "  — [WEEKLY CRON] state=unknown — jq could not parse cron list JSON (rc=$_wcp_jq_rc) — not forcing a pass."; return 0 ;;
+      esac
+    elif command -v python3 >/dev/null 2>&1; then
+      local _wcp_py_rc=0
+      if OC_CRON_RAW="$_wcp_raw" python3 -c '
+import json, os, sys
+try:
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+except Exception:
+    sys.exit(2)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+sys.exit(0 if any(j.get("name") == "weekly-onboarding-update" for j in jobs) else 1)
+' 2>/dev/null; then
+        _wcp_py_rc=0
+      else
+        _wcp_py_rc=$?
+      fi
+      case "$_wcp_py_rc" in
+        0) _wcp_present=1 ;;
+        1) _wcp_present=0 ;;
+        *) echo "  — [WEEKLY CRON] state=unknown — could not parse cron list JSON (rc=$_wcp_py_rc) — not forcing a pass."; return 0 ;;
+      esac
+    else
+      echo "  — [WEEKLY CRON] state=unknown — jq and python3 both unavailable — not forcing a pass."
+      return 0
+    fi
+
+    if [ "$_wcp_present" = "1" ]; then
+      echo "  ✓ [WEEKLY CRON] state=registered"
+      return 0
+    fi
+    echo "  ✗ [WEEKLY CRON] state=absent — weekly-onboarding-update is NOT registered and NOT tombstoned."
+    return 1
+  }
+
+  # ── AGENTS.md HYGIENE PROBE ─────────────────────────────────────────────
+  # WHY THIS EXISTS. apply-fleet-standards.sh's AGENTS.md dedup (5a-DEDUP,
+  # scripts/dedup-agents-md.py) and update-skills.sh's own orphan-END
+  # self-heal (CORE_UPDATES merge, ~1,700 lines BELOW this exit) both only
+  # run as part of a full pass. A box already carrying duplicate marker-
+  # guarded blocks or an orphan BEGIN/END pair (measured on the fleet: 3 of 4
+  # sampled boxes carried the same orphan) keeps carrying them forever once
+  # content is current.
+  #
+  # SIGNAL CHOSEN (deliberately CHEAP, not a dedup dry-run). Even
+  # dedup-agents-md.py's own default dry-run mode means fully parsing the
+  # file into heading-delimited blocks on every one of 38 boxes, every roll.
+  # Just as reliable for what a full pass would actually DO differently here:
+  #   (a) any single-token `<!-- MARKER -->` stamp line repeated more than
+  #       once -- these are exactly the tokens apply-fleet-standards.sh's own
+  #       idempotency guards stamp ONCE each (e.g. <!-- ROLE_DISCIPLINE_V1 -->),
+  #       so a second copy of the SAME token is the exact re-append defect
+  #       dedup exists to clean up. Near-zero false-positive rate, unlike a
+  #       bare heading-count: two different blocks can legitimately share a
+  #       heading like "## Notes"; they cannot legitimately share the same
+  #       singleton marker token.
+  #   (b) any `<!-- BEGIN skill:X:Y -->` / `<!-- END skill:X:Y -->` pair that
+  #       is not 1:1 -- the orphan the CORE_UPDATES merge self-heals.
+  # Both are a single regex pass over one file already capped at ~400,000
+  # chars by the size guard elsewhere in this pipeline -- negligible cost.
+  #
+  # CONTRACT: returns 1 ONLY when the workspace resolves, AGENTS.md exists,
+  # AND at least one of the two signals above is found. Unresolvable
+  # workspace, missing file, or any read/parse error -> 0 (advisory).
+  # READ-ONLY: opens AGENTS.md for reading only.
+  _agents_md_hygiene_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+    if ! oc_resolve_workspace_announced "AGENTS.md hygiene probe" 2>/dev/null; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — workspace not resolvable — not forcing a pass."
+      return 0
+    fi
+    local _amh_file="$OC_WS_RESOLVED/AGENTS.md"
+    if [ ! -f "$_amh_file" ]; then
+      echo "  — [AGENTS.MD HYGIENE] state=absent — no AGENTS.md at $_amh_file — not forcing a pass."
+      return 0
+    fi
+
+    local _amh_report="" _amh_rc=0
+    if _amh_report="$(python3 -c '
+import re, sys
+path = sys.argv[1]
+try:
+    text = open(path, encoding="utf-8", errors="replace").read()
+except Exception:
+    print("error")
+    sys.exit(0)
+marker_re = re.compile(r"^<!--\s*(\S+)\s*-->\s*$")
+begin_re  = re.compile(r"^<!--\s*BEGIN\s+skill:(.+?):(.+?)\s*-->\s*$")
+end_re    = re.compile(r"^<!--\s*END\s+skill:(.+?):(.+?)\s*-->\s*$")
+markers = {}
+begins = {}
+ends = {}
+for ln in text.splitlines():
+    m = marker_re.match(ln)
+    if m:
+        markers[m.group(1)] = markers.get(m.group(1), 0) + 1
+        continue
+    m = begin_re.match(ln)
+    if m:
+        k = (m.group(1), m.group(2))
+        begins[k] = begins.get(k, 0) + 1
+        continue
+    m = end_re.match(ln)
+    if m:
+        k = (m.group(1), m.group(2))
+        ends[k] = ends.get(k, 0) + 1
+dup_markers = sum(1 for v in markers.values() if v > 1)
+orphan_pairs = sum(1 for k in set(begins) | set(ends) if begins.get(k, 0) != ends.get(k, 0))
+print(f"{dup_markers} {orphan_pairs}")
+' "$_amh_file" 2>/dev/null)"; then
+      :
+    else
+      _amh_rc=$?
+    fi
+
+    if [ "$_amh_rc" -ne 0 ] || [ -z "$_amh_report" ] || [ "$_amh_report" = "error" ]; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — could not parse $_amh_file — not forcing a pass."
+      return 0
+    fi
+
+    local _amh_dup _amh_orphan
+    _amh_dup="$(printf '%s' "$_amh_report" | awk '{print $1}')"
+    _amh_orphan="$(printf '%s' "$_amh_report" | awk '{print $2}')"
+
+    if [ "${_amh_dup:-0}" -gt 0 ] 2>/dev/null || [ "${_amh_orphan:-0}" -gt 0 ] 2>/dev/null; then
+      echo "  ✗ [AGENTS.MD HYGIENE] state=dirty duplicate-marker-tokens=${_amh_dup:-0} orphan-BEGIN/END-pairs=${_amh_orphan:-0} file=$_amh_file"
+      return 1
+    fi
+    echo "  ✓ [AGENTS.MD HYGIENE] state=clean file=$_amh_file"
+    return 0
+  }
+  # <<< CONTENT-RECHECK-CONVERGENCE-PROBES-END
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -3027,18 +3400,34 @@ u004_assert_doctrine_provenance() {
       fi
     done
     if [ -z "$_RECHECK_DRIFT" ]; then
-      # Skills content is current. Command Center currency is a SEPARATE
-      # question and must be answered BEFORE we are allowed to exit -- a
-      # clean-but-behind CC is the one case where falling through actually
-      # repairs something, because the full pass reaches the
-      # `run-full-install.sh --update-only` refresh ~3,100 lines below.
-      if _cc_currency_probe; then
+      # Skills content is current. But CONTENT currency and RUNTIME/DB
+      # convergence are SEPARATE questions that must be answered BEFORE we
+      # are allowed to exit -- a clean-but-behind Command Center, an
+      # under-populated SOP library/embeddings table, a stale persona-index
+      # sentinel, a never-registered weekly cron, or a duplicated/orphaned
+      # AGENTS.md are each a case where falling through actually repairs
+      # something, because the full pass reaches every one of those steps
+      # further below (see CONTENT-RECHECK-CONVERGENCE-PROBES above for why
+      # each probe is self-contained and what signal it reads). Every probe
+      # runs regardless of what an earlier one found, so the log always shows
+      # the FULL set of outstanding items, not just the first.
+      # >>> CONTENT-RECHECK-CONVERGENCE-GATE-BEGIN (extracted verbatim by
+      #     tests/unit/content-recheck-convergence-probes.test.sh)
+      _CONVERGENCE_TRIGGERS=""
+      _cc_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center currency"
+      _sop_library_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }SOP library/embeddings population"
+      _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
+      _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
+      _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+
+      if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
         rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
         exit 0
       fi
-      echo "  ✗ [CONTENT RECHECK] skills content is current, but Command Center is BEHIND origin."
-      echo "    Proceeding with a full pass so the Command Center refresh runs — the version stamp is not a CC signal."
+      echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
+      echo "    Proceeding with a full pass so they run — the version/content stamp is not a signal for any of them."
+      # <<< CONTENT-RECHECK-CONVERGENCE-GATE-END
     fi
     echo "  ✗ [CONTENT RECHECK] stamp is current but these trees DRIFTED:${_RECHECK_DRIFT}"
     echo "    Proceeding with a full content sync — version strings are not a sync signal."
