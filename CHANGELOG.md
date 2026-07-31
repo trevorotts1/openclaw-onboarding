@@ -1,3 +1,48 @@
+## [v21.4.48]  -  2026-07-31  -  fix: v21.4.47 rolled only 2 of the 10 version markers, which took `main` red on two checks
+
+### Why
+
+`v21.4.47` (PR #803) set `/version` and `install.sh ONBOARDING_VERSION` to `v21.4.47` and left the
+other **eight** markers at `v21.4.46`. That is exactly the drift `scripts/bump-version.sh` exists to
+make impossible: the marker SET is enumerated once in `scripts/version-markers.json` and rolling it by
+hand, one file at a time, is mathematically guaranteed to miss some.
+
+Two checks on `main` went red, and they were the SAME defect wearing two faces — which is worth
+recording, because the second one looks unrelated:
+
+1. **Verify all version markers agree** — `bump-version.sh --check` reported `DRIFT DETECTED`, with
+   `README.md` (both markers), `update-skills.sh`, `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`,
+   `cc-compat.json`, `23-ai-workforce-blueprint/SKILL.md`, its `skill-version.txt` and
+   `templates/role-library/_index.json` all still on `v21.4.46`.
+2. **QC static invariants** — the Skill-23 repo-consistency fixture test T1 ("clean repo should exit
+   0") got `rc=6`. That gate reads the same `scripts/version-markers.json` manifest as the VERSION-MARKERS
+   dimension, so marker drift makes the *clean-repo* fixture fail. Nothing was wrong with the fixture.
+
+The drift was confirmed to originate in `0679f671` itself, not in the merge that followed it: the stale
+marker values are present in that commit read directly, so this is not a merge artifact.
+
+### What changed
+
+`scripts/bump-version.sh v21.4.48` — nothing hand-edited. All 10 markers now agree at `v21.4.48`.
+
+Bumping to the next patch rather than re-rolling `v21.4.47` is the tool's own instruction. The
+release-integrity guard REFUSED `bump-version.sh v21.4.47` outright:
+
+    COLLIDING VERSION: target v21.4.47 is not strictly ahead of origin/main (v21.4.47).
+    origin/main has already shipped v21.4.47. Rolling the markers to v21.4.47 would
+    either re-issue a released version or move it backwards, and git would auto-merge
+    the identical marker edits with no conflict — so nothing downstream would notice.
+
+It is also the precedent already set in this repo: `v21.4.26` did the same thing for `v21.4.25`.
+
+A second benefit: the `v21.4.47` tag sits at `0679f671` and does not contain `4840c64b`, which is the
+`v21.4.25` signature the tag-containment advisory warns about. Cutting `v21.4.48` on a commit that
+carries all of the work retires that warning instead of leaving it outstanding.
+
+### Risk
+
+None to runtime — version markers only, plus this entry.
+
 ## [v21.4.47]  -  2026-07-31  -  fix: install.sh seeded UNRESOLVABLE model pins (silent agent death) + new `verify-model-pins.py`
 
 ### Why
