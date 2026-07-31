@@ -248,6 +248,15 @@ When the master orchestrator selects a model for sub-agents or for itself, it fo
 2. **Ollama cloud models (very low cost):**
    - `ollama/kimi-k2.6:cloud` — preferred for orchestration when subscription unavailable
    - `ollama/deepseek-v4-pro:cloud` — preferred for sub-agents (30-min timeout)
+
+   > ⚠ **Provider-prefix caveat.** The `ollama/` prefix is valid ONLY on a box that registers
+   > `models.providers.ollama`. A box onboarded with `--auth-choice ollama-cloud` registers
+   > `ollama-cloud` instead, where the correct id is `ollama-cloud/<model>` with NO `:cloud`
+   > suffix. Using the wrong prefix does not error at write time — it falls through to the
+   > implicit LOCAL daemon at `127.0.0.1:11434` and the agent dies at launch with
+   > "Unknown model … Ollama requires authentication", which misdirects diagnosis to the
+   > client's credentials. Always derive the prefix from the box. Verify with
+   > `scripts/verify-model-pins.py`.
 3. **OpenRouter (priced per token):**
    - `openrouter/xiaomi/mimo-v2-pro` with `reasoning: true`
    - `openrouter/moonshot/kimi-k2.6` with `thinking: high`
