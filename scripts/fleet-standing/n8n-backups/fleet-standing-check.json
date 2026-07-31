@@ -20,7 +20,7 @@
       "credentials": {
         "httpHeaderAuth": {
           "id": "8HTB7khC7fDcRVhN",
-          "name": "Podcast Publish Gate"
+          "name": "fleetStandingCheck Header Auth"
         }
       },
       "webhookId": "8388514e-e477-4ab7-9d45-e384b6f39843"
@@ -42,18 +42,7 @@
           "mode": "name",
           "value": "fleet_standing"
         },
-        "matchType": "allConditions",
-        "filters": {
-          "conditions": [
-            {
-              "keyName": "box_slug",
-              "condition": "eq",
-              "keyValue": "={{ ((($json.body || $json).boxName) || '').trim() }}"
-            }
-          ]
-        },
-        "returnAll": false,
-        "limit": 1
+        "returnAll": true
       },
       "alwaysOutputData": true,
       "onError": "continueRegularOutput"
@@ -69,7 +58,7 @@
       ],
       "parameters": {
         "language": "javaScript",
-        "jsCode": "// Fleet Standing Check verdict logic\nconst webhookJson = $('Webhook \u2014 Fleet Standing Check').first().json;\nconst body = webhookJson.body || webhookJson;\nconst boxName = (body.boxName || '').trim();\nconst action = (body.action || 'escalate');\nconst ticketId = (body.ticketId || '');\n\nconst nowUtc = new Date();\nconst yyyy = nowUtc.getUTCFullYear();\nconst mm = String(nowUtc.getUTCMonth()+1).padStart(2, '0');\nconst dd = String(nowUtc.getUTCDate()).padStart(2, '0');\nconst day_key = boxName + '|' + yyyy + '-' + mm + '-' + dd;\nconst requested_at = nowUtc.toISOString();\n\nconst inputItems = $input.all();\nconst lookupErrored = inputItems.length > 0 && inputItems[0].json && inputItems[0].json.error;\nconst rows = lookupErrored ? [] : inputItems.map((i) => i.json).filter((r) => r && typeof r === 'object' && Object.keys(r).length > 0);\n\n// Default outputs\nlet verdict = 'unmatched';\nlet reason = '';\nlet client_message = \"I'd normally escalate this to the Rescue Rangers team for you. Before I do \u2014 it looks like the account may not be current on payments, so let me confirm with management before I put the request in. I'll come back to you as soon as I hear.\";\nlet good_standing = false;\n\nif (lookupErrored) {\n  verdict = 'held';\n  reason = 'lookup_error';\n} else if (!boxName) {\n  verdict = 'unmatched';\n  reason = 'missing_or_empty_boxName';\n} else if (rows.length === 0) {\n  verdict = 'unmatched';\n  reason = 'no_record_found';\n} else {\n  const row = rows[0];\n  if (row.good_standing === true) {\n    verdict = 'allowed';\n    reason = '';\n    client_message = '';\n    good_standing = true;\n  } else if (row.good_standing === false) {\n    verdict = 'blocked';\n    reason = 'good_standing_is_false';\n  } else if (row.good_standing === null || row.good_standing === '' || typeof row.good_standing !== 'boolean') {\n    verdict = 'unmatched';\n    reason = 'good_standing_null_or_not_boolean';\n  }\n}\n\n// Assemble response body\nconst responseBody = {\n  ok: verdict === 'allowed',\n  good_standing,\n  verdict,\n  reason,\n  client_message,\n};\n\n// Prepare ledger row\nconst ledgerRow = {\n  ticket_id: ticketId,\n  box_slug: boxName,\n  client_label: rows[0]?.client_label || '',\n  agent_name: rows[0]?.agent_name || '',\n  action,\n  verdict,\n  reason,\n  day_key,\n  requested_at,\n};\n\nreturn [{ json: { responseBody, ledgerRow } }];"
+        "jsCode": "// Fleet standing verdict.\n// Matching is DELIBERATELY fuzzy-tolerant: boxName is free text an LLM fills in from\n// a hint, and three different slug conventions exist across the fleet\n// (openclaw-0ht9 / vps-widget-co / rescue-jane-doe). An exact box_slug\n// match would return `unmatched` on drift, and unmatched PROCEEDS -- so the clients\n// we want blocked would sail through. We therefore match on box_slug, every alias,\n// and client_label.\nconst wh = $('Webhook \u2014 Fleet Standing Check').first().json;\nconst body = wh.body || wh;\n\nconst norm = (s) => String(s == null ? '' : s).trim().toLowerCase();\nconst boxName    = norm(body.boxName);\nconst clientName = norm(body.clientName || body.client);\nconst agentName  = norm(body.agentName  || body.agent);\nconst action     = String(body.action || 'escalate');\nconst ticketId   = String(body.ticketId || '');\n\nconst now = new Date();\nconst day = now.toISOString().slice(0, 10);\nconst requested_at = now.toISOString();\n\nconst inputItems = $input.all();\nconst lookupErrored = inputItems.length > 0 && inputItems[0].json && inputItems[0].json.error;\nconst rows = lookupErrored ? [] : inputItems\n  .map(i => i.json)\n  .filter(r => r && typeof r === 'object' && Object.keys(r).length > 0 && r.box_slug);\n\n// candidate identifiers supplied by the caller\nconst supplied = [boxName, clientName, agentName].filter(Boolean);\n\nfunction rowMatches(r) {\n  const keys = [];\n  if (r.box_slug)     keys.push(norm(r.box_slug));\n  if (r.client_label) keys.push(norm(r.client_label));\n  if (r.aliases)      String(r.aliases).split('|').forEach(a => { const n = norm(a); if (n) keys.push(n); });\n  return supplied.some(s => keys.includes(s));\n}\n\nlet matched = rows.filter(rowMatches);\n\nconst MSG = \"I'd normally escalate this to the Rescue Rangers team for you. Before I do \u2014 it looks like the account may not be current on payments, so let me confirm with management before I put the request in. I'll come back to you as soon as I hear.\";\n\nlet verdict = 'unmatched', reason = 'no_record_found', good_standing = false, client_message = MSG;\nlet matchedRow = null;\n\nif (lookupErrored) {\n  verdict = 'held'; reason = 'lookup_error';\n} else if (supplied.length === 0) {\n  verdict = 'unmatched'; reason = 'no_identifier_supplied';\n} else if (matched.length === 0) {\n  verdict = 'unmatched'; reason = 'no_record_found';\n} else {\n  // if ANY matched row is explicitly not in good standing, that wins -- a client with\n  // two records must not slip through on the good one.\n  const bad = matched.find(r => r.good_standing === false);\n  matchedRow = bad || matched[0];\n  if (bad) {\n    verdict = 'blocked'; reason = 'good_standing_is_false';\n  } else if (matchedRow.good_standing === true) {\n    verdict = 'allowed'; reason = ''; good_standing = true; client_message = '';\n  } else {\n    verdict = 'unmatched'; reason = 'good_standing_null_or_not_boolean';\n  }\n}\n\nconst responseBody = { ok: verdict === 'allowed', good_standing, verdict, reason, client_message };\n\nconst ledgerRow = {\n  ticket_id: ticketId,\n  box_slug: (matchedRow && matchedRow.box_slug) || boxName || clientName || '',\n  client_label: (matchedRow && matchedRow.client_label) || '',\n  agent_name: (matchedRow && matchedRow.agent_name) || agentName || '',\n  action,\n  verdict,\n  reason,\n  day_key: ((matchedRow && matchedRow.box_slug) || boxName || clientName || 'unknown') + '|' + day,\n  requested_at,\n};\n\nreturn [{ json: { responseBody, ledgerRow } }];"
       }
     },
     {

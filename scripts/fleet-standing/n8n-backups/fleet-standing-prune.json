@@ -1,6 +1,6 @@
 {
   "name": "fleet-standing-prune",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "id": "schedule-trigger",
@@ -64,7 +64,7 @@
             }
           ]
         },
-        "dryRun": true,
+        "dryRun": false,
         "returnData": true
       }
     }

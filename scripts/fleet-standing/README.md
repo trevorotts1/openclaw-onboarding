@@ -33,6 +33,34 @@ That test earned its keep: it caught a fail-closed bug during development. Under
 parsing the verdict — so any malformed gate reply would have aborted `update-skills.sh`
 outright, silently, on every box.
 
+## Match on aliases, never an exact slug
+
+The `boxName` field in a rescue escalation payload is free text an LLM fills in from a
+hint ("Hostname or compose-project label"), and **three** slug conventions exist across
+the fleet for the same box — a short hash-style id (e.g. `openclaw-0ht9`), a VPS
+container name derived from the client's business, and a rescue SSH alias derived from
+the client's own name. An exact `box_slug` match returns `unmatched`, and `unmatched`
+**PROCEEDS**, so the gate silently blocks nobody while appearing to work.
+
+Fix: load all rows and match `box_slug` + `client_label` + every pipe-delimited
+`aliases` token, case-insensitive and trimmed. Also: if a caller matches multiple rows
+and **any** is not in good standing, that wins — nobody slips through on a duplicate
+good record.
+
+Never fall back to name matching — there are ten same-first-name customers in one
+Stripe account.
+
+## n8n fires a node on the FIRST predecessor, not when all of them do
+
+Seven parallel branches fed one input port of a Code node; the node ran the instant the
+first branch completed and threw on branches that had not started yet. It would have
+failed **silently every night** and no offline logic test would have caught it — only a
+real execution did.
+
+Fix: a `Merge` node (`n8n-nodes-base.merge`, typeVersion 3.2, `mode: append`,
+`numberInputs: N`) as an explicit barrier, with all branches wired into it and its
+single output feeding the consumer.
+
 ## Pieces
 
 | Piece | Where |
@@ -77,3 +105,7 @@ Check **charges AND invoices AND subscriptions**, across **both** Stripe account
 on email or `stripe_customer_id` — never on name. `fleet-standing-stripe-sync` is
 REPORT-ONLY and must never auto-write standing; its most valuable output is the list of
 delinquent customers it could *not* attribute to any fleet box.
+
+`stripe_customer_id` is pipe-delimited: one person can hold **seven** Stripe customer
+records under different business names. Split on `|` and compare per-token — comparing
+the whole joined string against a single id matches nothing.

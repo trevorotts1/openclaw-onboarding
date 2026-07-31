@@ -1,6 +1,6 @@
 {
   "name": "fleet-standing-stripe-sync",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "id": "0d33e2ba-d0f7-4164-92a4-ca597a33e9c9",
@@ -458,7 +458,7 @@
       "parameters": {
         "mode": "runOnceForAllItems",
         "language": "javaScript",
-        "jsCode": "// ---- Node-name -> account label map (this is how each result is tagged) ----\nconst ACCOUNT_BY_NODE = {\n  'Stripe BCEO Main: Charges': 'bceo_main',\n  'Stripe BCEO Main: Invoices': 'bceo_main',\n  'Stripe BCEO Main: Subscriptions': 'bceo_main',\n  'Stripe Convert&Flow: Charges': 'convert_and_flow',\n  'Stripe Convert&Flow: Invoices': 'convert_and_flow',\n  'Stripe Convert&Flow: Subscriptions': 'convert_and_flow',\n};\n\nfunction normEmail(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\nfunction normKey(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\n\n// Flatten every paginated page of a Stripe list node into one flat array of\n// objects, tagging each with the account label the node belongs to.\nfunction flatten(nodeName) {\n  const account = ACCOUNT_BY_NODE[nodeName];\n  const pages = $(nodeName).all();\n  const out = [];\n  for (const page of pages) {\n    const body = page.json || {};\n    const data = Array.isArray(body.data) ? body.data : [];\n    for (const obj of data) {\n      out.push({ obj, account });\n    }\n  }\n  return out;\n}\n\nconst charges = [\n  ...flatten('Stripe BCEO Main: Charges'),\n  ...flatten('Stripe Convert&Flow: Charges'),\n];\nconst invoices = [\n  ...flatten('Stripe BCEO Main: Invoices'),\n  ...flatten('Stripe Convert&Flow: Invoices'),\n];\nconst subscriptions = [\n  ...flatten('Stripe BCEO Main: Subscriptions'),\n  ...flatten('Stripe Convert&Flow: Subscriptions'),\n];\n\nconst fleetRows = $('Load Fleet Standing').all().map(i => i.json || {});\n\n// records: key -> record\nconst records = new Map();\n\nfunction getRecord(account, key, seedId, seedEmail, seedName) {\n  const fullKey = account + '::' + key;\n  if (!records.has(fullKey)) {\n    records.set(fullKey, {\n      account: account,\n      key: fullKey,\n      customer_id: seedId || null,\n      emails: new Set(),\n      names: new Set(),\n      failed_charge_count: 0,\n      last_failed_charge_at: null,\n      open_invoice_count: 0,\n      max_attempt_count: 0,\n      oldest_open_invoice_at: null,\n      bad_subscription_statuses: new Set(),\n    });\n  }\n  const rec = records.get(fullKey);\n  if (!rec.customer_id && seedId) rec.customer_id = seedId;\n  if (seedEmail) rec.emails.add(normEmail(seedEmail));\n  if (seedName) rec.names.add(seedName.toString().trim());\n  return rec;\n}\n\nfunction keyFor(customerId, email) {\n  if (customerId) return { key: 'cust::' + customerId, id: customerId };\n  if (email) return { key: 'email::' + normEmail(email), id: null };\n  return null;\n}\n\n// ---- Failed charges (status === 'failed') ----\nfor (const { obj: charge, account } of charges) {\n  if (charge.status !== 'failed') continue;\n  const customerId = typeof charge.customer === 'string' ? charge.customer : (charge.customer && charge.customer.id) || null;\n  const email = (charge.billing_details && charge.billing_details.email) || charge.receipt_email || null;\n  const name = (charge.billing_details && charge.billing_details.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue; // no id and no email -> cannot key or attribute, skip\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.failed_charge_count += 1;\n  if (charge.created && (!rec.last_failed_charge_at || charge.created > rec.last_failed_charge_at)) {\n    rec.last_failed_charge_at = charge.created;\n  }\n}\n\n// ---- Open / uncollectible invoices ----\nfor (const { obj: invoice, account } of invoices) {\n  if (invoice.status !== 'open' && invoice.status !== 'uncollectible') continue;\n  const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer && invoice.customer.id) || null;\n  const email = invoice.customer_email || (invoice.customer && invoice.customer.email) || null;\n  const name = invoice.customer_name || (invoice.customer && invoice.customer.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.open_invoice_count += 1;\n  const attemptCount = invoice.attempt_count || 0;\n  if (attemptCount > rec.max_attempt_count) rec.max_attempt_count = attemptCount;\n  if (invoice.created && (!rec.oldest_open_invoice_at || invoice.created < rec.oldest_open_invoice_at)) {\n    rec.oldest_open_invoice_at = invoice.created;\n  }\n}\n\n// ---- Bad subscription statuses (past_due / unpaid) ----\nfor (const { obj: sub, account } of subscriptions) {\n  if (sub.status !== 'past_due' && sub.status !== 'unpaid') continue;\n  const customerObj = sub.customer;\n  const customerId = typeof customerObj === 'object' ? customerObj.id : customerObj;\n  const email = typeof customerObj === 'object' ? customerObj.email : null;\n  const name = typeof customerObj === 'object' ? customerObj.name : null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.bad_subscription_statuses.add(sub.status);\n}\n\n// ---- Determine delinquency + serialize records ----\nconst delinquentRecords = [];\nfor (const rec of records.values()) {\n  const delinquent =\n    rec.failed_charge_count >= 2 ||\n    rec.max_attempt_count >= 2 ||\n    rec.bad_subscription_statuses.size > 0;\n  if (!delinquent) continue;\n  delinquentRecords.push({\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: Array.from(rec.emails).filter(Boolean),\n    names: Array.from(rec.names).filter(Boolean),\n    failed_charge_count: rec.failed_charge_count,\n    last_failed_charge_at: rec.last_failed_charge_at,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    oldest_open_invoice_at: rec.oldest_open_invoice_at,\n    bad_subscription_statuses: Array.from(rec.bad_subscription_statuses),\n  });\n}\n\n// ---- Attribution: match each delinquent record to a fleet_standing row ----\n// Build fleet-row match-key sets once.\nconst fleetMatchIndex = fleetRows.map(row => {\n  const aliasTokens = (row.aliases || '').split('|').map(t => normKey(t)).filter(Boolean);\n  const clientLabelKey = normKey(row.client_label);\n  const boxSlugKey = normKey(row.box_slug);\n  const stripeCustIdKey = normKey(row.stripe_customer_id);\n  return { row, aliasTokens, clientLabelKey, boxSlugKey, stripeCustIdKey };\n});\n\nconst attributed = [];\nconst unattributed = [];\n\nfor (const rec of delinquentRecords) {\n  let matchedRow = null;\n  let matchedVia = null;\n\n  const custIdKey = normKey(rec.customer_id);\n  const emailKeys = rec.emails.map(normEmail);\n  const nameKeys = rec.names.map(n => normKey(n));\n\n  for (const fx of fleetMatchIndex) {\n    // 1) Strongest: exact Stripe customer id match against the row's stored id.\n    if (custIdKey && fx.stripeCustIdKey && fx.stripeCustIdKey === custIdKey) {\n      matchedRow = fx.row; matchedVia = 'stripe_customer_id'; break;\n    }\n    // 2) Email match against alias tokens (primary signal per investigation).\n    if (emailKeys.some(e => fx.aliasTokens.includes(e))) {\n      matchedRow = fx.row; matchedVia = 'email_in_aliases'; break;\n    }\n    // 3) Customer id appearing as an alias token (e.g. seeded manually).\n    if (custIdKey && fx.aliasTokens.includes(custIdKey)) {\n      matchedRow = fx.row; matchedVia = 'customer_id_in_aliases'; break;\n    }\n    // 4) Fallback name match against client_label (weak signal - business\n    //    names on Stripe customers are known to defeat this; kept only as a\n    //    last resort per the build spec).\n    if (fx.clientLabelKey && nameKeys.includes(fx.clientLabelKey)) {\n      matchedRow = fx.row; matchedVia = 'name_in_client_label'; break;\n    }\n  }\n\n  const summary = {\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: rec.emails,\n    names: rec.names,\n    failed_charge_count: rec.failed_charge_count,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    bad_subscription_statuses: rec.bad_subscription_statuses,\n  };\n\n  if (matchedRow) {\n    attributed.push({\n      box_slug: matchedRow.box_slug,\n      client_label: matchedRow.client_label,\n      good_standing: matchedRow.good_standing === true,\n      matched_via: matchedVia,\n      signal: summary,\n    });\n  } else {\n    unattributed.push(summary);\n  }\n}\n\n// ---- Totals per signal type and per account ----\nconst totals = { bceo_main: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 },\n                  convert_and_flow: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 } };\nfor (const rec of delinquentRecords) {\n  const t = totals[rec.account];\n  if (!t) continue;\n  t.delinquent_customers += 1;\n  if (rec.failed_charge_count >= 2) t.failed_charges += 1;\n  if (rec.max_attempt_count >= 2) t.open_invoices += 1;\n  if (rec.bad_subscription_statuses.length > 0) t.bad_subscriptions += 1;\n}\n\nreturn [{\n  json: {\n    fleetRows: fleetRows,\n    attributed: attributed,\n    unattributed: unattributed,\n    totals: totals,\n    counts: {\n      charges_pulled: charges.length,\n      invoices_pulled: invoices.length,\n      subscriptions_pulled: subscriptions.length,\n      delinquent_customers: delinquentRecords.length,\n    },\n  },\n}];"
+        "jsCode": "// ---- Node-name -> account label map (this is how each result is tagged) ----\nconst ACCOUNT_BY_NODE = {\n  'Stripe BCEO Main: Charges': 'bceo_main',\n  'Stripe BCEO Main: Invoices': 'bceo_main',\n  'Stripe BCEO Main: Subscriptions': 'bceo_main',\n  'Stripe Convert&Flow: Charges': 'convert_and_flow',\n  'Stripe Convert&Flow: Invoices': 'convert_and_flow',\n  'Stripe Convert&Flow: Subscriptions': 'convert_and_flow',\n};\n\nfunction normEmail(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\nfunction normKey(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\n\n// Flatten every paginated page of a Stripe list node into one flat array of\n// objects, tagging each with the account label the node belongs to.\nfunction flatten(nodeName) {\n  const account = ACCOUNT_BY_NODE[nodeName];\n  const pages = $(nodeName).all();\n  const out = [];\n  for (const page of pages) {\n    const body = page.json || {};\n    const data = Array.isArray(body.data) ? body.data : [];\n    for (const obj of data) {\n      out.push({ obj, account });\n    }\n  }\n  return out;\n}\n\nconst charges = [\n  ...flatten('Stripe BCEO Main: Charges'),\n  ...flatten('Stripe Convert&Flow: Charges'),\n];\nconst invoices = [\n  ...flatten('Stripe BCEO Main: Invoices'),\n  ...flatten('Stripe Convert&Flow: Invoices'),\n];\nconst subscriptions = [\n  ...flatten('Stripe BCEO Main: Subscriptions'),\n  ...flatten('Stripe Convert&Flow: Subscriptions'),\n];\n\nconst fleetRows = $('Load Fleet Standing').all().map(i => i.json || {});\n\n// records: key -> record\nconst records = new Map();\n\nfunction getRecord(account, key, seedId, seedEmail, seedName) {\n  const fullKey = account + '::' + key;\n  if (!records.has(fullKey)) {\n    records.set(fullKey, {\n      account: account,\n      key: fullKey,\n      customer_id: seedId || null,\n      emails: new Set(),\n      names: new Set(),\n      failed_charge_count: 0,\n      last_failed_charge_at: null,\n      open_invoice_count: 0,\n      max_attempt_count: 0,\n      oldest_open_invoice_at: null,\n      bad_subscription_statuses: new Set(),\n    });\n  }\n  const rec = records.get(fullKey);\n  if (!rec.customer_id && seedId) rec.customer_id = seedId;\n  if (seedEmail) rec.emails.add(normEmail(seedEmail));\n  if (seedName) rec.names.add(seedName.toString().trim());\n  return rec;\n}\n\nfunction keyFor(customerId, email) {\n  if (customerId) return { key: 'cust::' + customerId, id: customerId };\n  if (email) return { key: 'email::' + normEmail(email), id: null };\n  return null;\n}\n\n// ---- Failed charges (status === 'failed') ----\nfor (const { obj: charge, account } of charges) {\n  if (charge.status !== 'failed') continue;\n  const customerId = typeof charge.customer === 'string' ? charge.customer : (charge.customer && charge.customer.id) || null;\n  const email = (charge.billing_details && charge.billing_details.email) || charge.receipt_email || null;\n  const name = (charge.billing_details && charge.billing_details.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue; // no id and no email -> cannot key or attribute, skip\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.failed_charge_count += 1;\n  if (charge.created && (!rec.last_failed_charge_at || charge.created > rec.last_failed_charge_at)) {\n    rec.last_failed_charge_at = charge.created;\n  }\n}\n\n// ---- Open / uncollectible invoices ----\nfor (const { obj: invoice, account } of invoices) {\n  if (invoice.status !== 'open' && invoice.status !== 'uncollectible') continue;\n  const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer && invoice.customer.id) || null;\n  const email = invoice.customer_email || (invoice.customer && invoice.customer.email) || null;\n  const name = invoice.customer_name || (invoice.customer && invoice.customer.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.open_invoice_count += 1;\n  const attemptCount = invoice.attempt_count || 0;\n  if (attemptCount > rec.max_attempt_count) rec.max_attempt_count = attemptCount;\n  if (invoice.created && (!rec.oldest_open_invoice_at || invoice.created < rec.oldest_open_invoice_at)) {\n    rec.oldest_open_invoice_at = invoice.created;\n  }\n}\n\n// ---- Bad subscription statuses (past_due / unpaid) ----\nfor (const { obj: sub, account } of subscriptions) {\n  if (sub.status !== 'past_due' && sub.status !== 'unpaid') continue;\n  const customerObj = sub.customer;\n  const customerId = typeof customerObj === 'object' ? customerObj.id : customerObj;\n  const email = typeof customerObj === 'object' ? customerObj.email : null;\n  const name = typeof customerObj === 'object' ? customerObj.name : null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.bad_subscription_statuses.add(sub.status);\n}\n\n// ---- Determine delinquency + serialize records ----\nconst delinquentRecords = [];\nfor (const rec of records.values()) {\n  const delinquent =\n    rec.failed_charge_count >= 2 ||\n    rec.max_attempt_count >= 2 ||\n    rec.bad_subscription_statuses.size > 0;\n  if (!delinquent) continue;\n  delinquentRecords.push({\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: Array.from(rec.emails).filter(Boolean),\n    names: Array.from(rec.names).filter(Boolean),\n    failed_charge_count: rec.failed_charge_count,\n    last_failed_charge_at: rec.last_failed_charge_at,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    oldest_open_invoice_at: rec.oldest_open_invoice_at,\n    bad_subscription_statuses: Array.from(rec.bad_subscription_statuses),\n  });\n}\n\n// ---- Attribution: match each delinquent record to a fleet_standing row ----\n// Build fleet-row match-key sets once.\nconst fleetMatchIndex = fleetRows.map(row => {\n  const aliasTokens = (row.aliases || '').split('|').map(t => normKey(t)).filter(Boolean);\n  const aliasEmailTokens = aliasTokens.filter(t => t.includes('@'));\n  const boxSlugKey = normKey(row.box_slug);\n  // stripe_customer_id can hold MULTIPLE pipe-delimited ids for one person.\n  const stripeCustIdTokens = (row.stripe_customer_id || '').split('|').map(t => normKey(t)).filter(Boolean);\n  return { row, aliasEmailTokens, boxSlugKey, stripeCustIdTokens };\n});\n\nconst attributed = [];\nconst unattributed = [];\n\nfor (const rec of delinquentRecords) {\n  let matchedRow = null;\n  let matchedVia = null;\n\n  const custIdKey = normKey(rec.customer_id);\n  const emailKeys = rec.emails.map(normEmail);\n\n  for (const fx of fleetMatchIndex) {\n    // 1) Strongest: exact Stripe customer id match against any of the row's\n    //    (possibly multiple, pipe-delimited) stored ids.\n    if (custIdKey && fx.stripeCustIdTokens.includes(custIdKey)) {\n      matchedRow = fx.row; matchedVia = 'stripe_customer_id'; break;\n    }\n    // 2) Email match against @-containing alias tokens. No name-matching\n    //    fallback: Stripe customer names are unreliable (duplicate first\n    //    names, business names instead of person names) and would produce\n    //    false attributions, which are worse than no attribution.\n    if (emailKeys.some(e => fx.aliasEmailTokens.includes(e))) {\n      matchedRow = fx.row; matchedVia = 'email_in_aliases'; break;\n    }\n  }\n\n  const summary = {\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: rec.emails,\n    names: rec.names,\n    failed_charge_count: rec.failed_charge_count,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    bad_subscription_statuses: rec.bad_subscription_statuses,\n  };\n\n  if (matchedRow) {\n    attributed.push({\n      box_slug: matchedRow.box_slug,\n      client_label: matchedRow.client_label,\n      good_standing: matchedRow.good_standing === true,\n      matched_via: matchedVia,\n      signal: summary,\n    });\n  } else {\n    unattributed.push(summary);\n  }\n}\n\n// ---- Totals per signal type and per account ----\nconst totals = { bceo_main: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 },\n                  convert_and_flow: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 } };\nfor (const rec of delinquentRecords) {\n  const t = totals[rec.account];\n  if (!t) continue;\n  t.delinquent_customers += 1;\n  if (rec.failed_charge_count >= 2) t.failed_charges += 1;\n  if (rec.max_attempt_count >= 2) t.open_invoices += 1;\n  if (rec.bad_subscription_statuses.length > 0) t.bad_subscriptions += 1;\n}\n\nreturn [{\n  json: {\n    fleetRows: fleetRows,\n    attributed: attributed,\n    unattributed: unattributed,\n    totals: totals,\n    counts: {\n      charges_pulled: charges.length,\n      invoices_pulled: invoices.length,\n      subscriptions_pulled: subscriptions.length,\n      delinquent_customers: delinquentRecords.length,\n    },\n  },\n}];"
       }
     },
     {
@@ -488,7 +488,7 @@
       "parameters": {
         "resource": "message",
         "operation": "sendMessage",
-        "chatId": "",
+        "chatId": "5252140759",
         "text": "={{ $json.text }}",
         "additionalFields": {}
       },
@@ -499,6 +499,20 @@
         }
       },
       "webhookId": "67d5c596-fc09-49f2-96ce-a3a2e443ab7a"
+    },
+    {
+      "id": "6be0d69c-c32b-4f0a-8963-361f2fdea046",
+      "name": "Wait For All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -360,
+        480
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 7
+      }
     }
   ],
   "connections": {
@@ -543,83 +557,6 @@
         ]
       ]
     },
-    "Stripe BCEO Main: Charges": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stripe BCEO Main: Invoices": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stripe BCEO Main: Subscriptions": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stripe Convert&Flow: Charges": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stripe Convert&Flow: Invoices": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Stripe Convert&Flow: Subscriptions": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Load Fleet Standing": {
-      "main": [
-        [
-          {
-            "node": "Aggregate Delinquency Signals",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
     "Aggregate Delinquency Signals": {
       "main": [
         [
@@ -636,6 +573,94 @@
         [
           {
             "node": "Telegram: Send Delinquency Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Charges": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Invoices": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Charges": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Invoices": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Load Fleet Standing": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Wait For All Sources": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Delinquency Signals",
             "type": "main",
             "index": 0
           }
