@@ -1,3 +1,91 @@
+## [v21.4.42]  -  2026-07-31  -  mechanical AGENTS.md deduplicator: self-heal the marker-guard re-append bug already on disk
+
+### Why
+
+`scripts/apply-fleet-standards.sh` stamps ~10 marker-guarded blocks into the live AGENTS.md
+using the idiom `if grep -qF "$MARKER" file; then <no-op>; else cat >> file; fi`. That guard
+false-negatives whenever a historical stamp predates the marker (or the marker text drifted),
+so the block RE-APPENDS on every later run. Measured live on a fleet box: up to 8 copies of
+one heading (`## Persona Reflex`), ~23,000 bytes of pure repetition in a 180,694-byte
+AGENTS.md, with five of the eight bodies byte-identical. Total prompt injection is
+empirically capped at ~400,000 chars — two boxes were already observed capped at exactly
+`injectedChars=399,999` with `truncated=true` and NO error, NO warning, and NO log line
+anywhere. Past that cap the agent silently loses its own rules every turn. The prior fix
+(a4f94e89) stops FUTURE re-appends by adding real markers, but does nothing for the
+duplicates that are already on disk — a box that was already duplicated before that fix
+stays duplicated forever.
+
+### What changed
+
+- **`scripts/dedup-agents-md.py`** (new): a strictly mechanical, no-model/no-LLM-judgment
+  deduplicator for the live (gateway-injected) AGENTS.md. Resolves the file via
+  `shared-utils/resolve_injected_core_files.py` (the repo's one sanctioned workspace-path
+  resolver — never assumes `~/.openclaw/workspace`; correctly falls back to `~/clawd` on
+  boxes provisioned under the legacy Mac layout), parses it into blocks by markdown heading
+  (`^#{1,3} `, skipping headings found inside fenced code blocks), and removes ONLY
+  byte-identical duplicate blocks (same heading AND same body) — always keeping exactly one,
+  preferring the copy that carries its own `<!-- MARKER -->` stamp line over an unmarked
+  copy, otherwise the first occurrence. Near-duplicates (same heading, bodies differing by
+  even one byte) are left completely untouched and reported as `NEAR-DUP (manual review)`.
+  Verifies programmatically that collapsing duplicates never leaves a
+  `<!-- BEGIN skill:NN:agents -->` / `<!-- END skill:NN:agents -->` wiring pair unbalanced —
+  if it would, nothing is written and the script exits non-zero with a loud message. Backs up
+  to a timestamped sibling file before writing and verifies that backup byte-for-byte
+  (`filecmp.cmp`, `shallow=False`) before proceeding. Idempotent — a second run removes
+  nothing and says so; a file with zero duplicates is left byte-identical (no write, no
+  backup). Defaults to `--dry-run` (report only) and says so explicitly; `--apply` performs
+  the write. Never prints file body content or secrets. Always prints exactly one
+  `[AGENTS DEDUP] before=N after=N saved=N blocks_removed=N near_dups=N` line so a caller (or
+  a post-roll `grep`) can see the outcome regardless of what else is suppressed.
+- **`scripts/apply-fleet-standards.sh`**: wired the deduplicator in as a new `5a-DEDUP` step,
+  called immediately after `AGENTS_FILE_EARLY` is resolved and BEFORE every marker-guarded
+  stamp that follows (`ROLE_DISCIPLINE_V1` through `PLATFORM_FACTS_V1`) and before the
+  existing `5a-SIZEGUARD` / `5a-SIZEGUARD-HARDCAP` measurement guards, so (a) the reclaimed
+  space is reflected in those size measurements, and (b) the surviving copy of each historical
+  stamp is the one carrying its own marker, so the `grep -qF "$MARKER"` guard immediately
+  below it correctly no-ops instead of re-appending again — the exact false-negative this
+  fixes. This is the single seam both existing callers of `apply-fleet-standards.sh`
+  (`install.sh:8388` and `update-skills.sh`, via `$_PERSIST_SCRIPTS`/`$ONBOARDING_DIR`
+  fallback) share, so both get the self-heal with no additional wiring and no caller can
+  forget it. Advisory only, exactly like the adjacent size guards: a dedup failure, refusal,
+  or missing script is logged and the run CONTINUES — never fails `apply-fleet-standards.sh`,
+  `install.sh`, or `update-skills.sh`, and never withholds the version stamp. The greppable
+  summary line is re-echoed immediately before the `5a-SIZEGUARD-HARDCAP` alarm so the reclaim
+  and the residual size land next to each other in the log.
+- **`update-skills.sh`**: the `apply-fleet-standards.sh` call site previously redirected ALL
+  of its output to `/dev/null`, discarding the new summary line along with everything else.
+  Changed to append to the run's own `$LOG_FILE` instead (no behavior change otherwise — same
+  `&&`/`||` success/failure branching), and added a one-line `grep` against that log so the
+  `[AGENTS DEDUP] ...` outcome is echoed to the console too. `install.sh`'s call site was
+  already unsuppressed and needed no change.
+- **`tests/unit/dedup-agents-md.test.sh`** (new): exercises the deduplicator directly against
+  constructed fixtures — exact duplicates removed, near-duplicates preserved, the marked copy
+  preferred over an unmarked one, a genuine BEGIN/END-imbalance case refused with nothing
+  written, idempotency on a second run, a no-duplicates file left byte-identical, and a
+  missing-file clean skip — plus a static check that `apply-fleet-standards.sh` invokes the
+  script before its first marker-guarded stamp.
+
+### Risk
+
+LOW-MEDIUM. Governs a file injected into every agent's context on every turn across all 38
+fleet boxes, so it was built and verified with a fail-closed bias throughout: dry-run is the
+default and is announced explicitly; every write is backed up and the backup is verified
+byte-for-byte before the original is touched; a projected BEGIN/END imbalance refuses the
+write entirely rather than guessing; and every failure mode (missing script, exception,
+refused write) degrades to an advisory log line, never a hard failure of the calling script.
+Verified: `bash -n` clean on both modified shell scripts; `shellcheck --shell=bash -x`
+introduces zero new findings on either (line-number-only diff against the pre-change
+baseline); 30/30 constructed fixture assertions pass (including realistic mixed exact-dup +
+near-dup scenarios modeled on the measured fleet data); existing suites unaffected —
+`tests/unit/update-command-center-runtime-config.test.sh` 8/8,
+`tests/unit/update-skills-full-scripts-tree.test.sh` 23/23 (confirms the new script ships to
+every box via the existing recursive `scripts/` delivery with no manifest edit),
+`tests/unit/update-skills-resume-cron.test.sh` 20/20. Not yet exercised: a real fleet roll
+against a live box's AGENTS.md (this ships on a branch only — no box was touched, no roll was
+run). The realistic-but-constructed BEGIN/END-imbalance fixture proves the refusal path fires
+correctly, but the true frequency of that specific cross-mechanism edge case on real fleet
+data is unverified.
+
 ## [v21.4.41]  -  2026-07-31  -  fix: unbound-$_OC_RAW_JSON abort in the weekly-cron-message-refresh path on any box without python3
 
 ### Why

@@ -5590,7 +5590,18 @@ PYEOF
   FLEET_STD="$_PERSIST_SCRIPTS/apply-fleet-standards.sh"
   [ -f "$FLEET_STD" ] || FLEET_STD="$ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
   if [ -f "$FLEET_STD" ]; then
-    bash "$FLEET_STD" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
+    # v21.4.41: redirect to LOG_FILE instead of /dev/null (was discarding ALL
+    # output, including the AGENTS.md dedup step's greppable one-line summary
+    # -- see scripts/dedup-agents-md.py, wired inside apply-fleet-standards.sh
+    # 5a-DEDUP). Surfacing to LOG_FILE lets post-roll verification `grep` for
+    # it without spamming this console with the full config-merge dump.
+    if bash "$FLEET_STD" >> "$LOG_FILE" 2>&1; then
+      echo "  ✓ Fleet standards applied"
+    else
+      echo "  ⚠ Fleet standards application reported errors (update continues)"
+    fi
+    _DEDUP_LOG_LINE="$(grep -m1 '^\[apply-fleet-standards\] \[AGENTS DEDUP\]' "$LOG_FILE" 2>/dev/null || true)"
+    [ -n "$_DEDUP_LOG_LINE" ] && echo "  (check) $_DEDUP_LOG_LINE"
   else
     echo "  ⚠ Fleet standards script not found"
   fi

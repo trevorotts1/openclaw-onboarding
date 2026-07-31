@@ -769,6 +769,63 @@ mkdir -p "$WORKSPACE_DIR"
 AGENTS_FILE_EARLY="$WORKSPACE_DIR/AGENTS.md"
 touch "$AGENTS_FILE_EARLY"
 
+# ─── 5a-DEDUP. Mechanical AGENTS.md duplicate-block remover (self-heal) ──────
+# ROOT CAUSE THIS FIXES: every marker-guarded stamp below (ROLE_DISCIPLINE_V1,
+# CEO_ROUTING_NO_LOOPHOLES, PRESENTATION_ROUTING_REFLEX, SKILL_INTENT_ROUTING_
+# REFLEX, CREDENTIAL_CHECK, PERSONA_REFLEX_V1, FULL_CONTEXT_HANDOFF_V1,
+# OWNER_REPORTING_V1, PLATFORM_FACTS_V1) is guarded by the idiom
+# `if grep -qF "$MARKER" file; then <no-op>; else cat >> file; fi`. On a box
+# where a HISTORICAL stamp predates the marker (or the marker text drifted),
+# that guard false-negatives and RE-APPENDS the block on every later run.
+# Measured on a fleet box: up to 8 copies of one heading, ~23,000 bytes of
+# pure repetition in one AGENTS.md. Past the empirical ~400,000-char
+# injection ceiling (see 5a-SIZEGUARD-HARDCAP immediately below) that bloat
+# SILENTLY TRUNCATES the file the gateway injects every turn — the agent
+# loses its own rules with no error, no warning, no log line anywhere.
+#
+# This step is the MECHANICAL CLEANUP for duplicates already on disk (the
+# grep-guard itself already stops FUTURE re-appends). It runs HERE — BEFORE
+# both size guards below (so their measurements reflect the reclaimed space)
+# and BEFORE every marker-guard check that follows (so the surviving copy of
+# each historical stamp is the one carrying its own <!-- MARKER -->, and the
+# grep-guard below it correctly no-ops instead of re-appending again — the
+# exact false-negative this fixes).
+#
+# Fully mechanical — no summarizing, no rewriting, no judgment: removes ONLY
+# byte-identical duplicate blocks (same heading + same body), always keeps
+# ONE (preferring the marked copy), leaves any near-duplicate (bodies differ
+# by so much as one byte) untouched and flagged for manual review, and
+# refuses to write at all if collapsing duplicates would unbalance a
+# <!-- BEGIN skill:NN:agents --> / <!-- END skill:NN:agents --> pair.
+#
+# ADVISORY, NEVER FATAL: any failure here (script missing, exception, refused
+# write) is logged and the run CONTINUES — a box that stays duplicated is far
+# better than a roll that dies. Portable: this calls python3 (present on every
+# box), not bash 4 — apply-fleet-standards.sh itself must stay bash-3.2-safe
+# for macOS. See scripts/dedup-agents-md.py.
+_DEDUP_SCRIPT=""
+for _dcand in \
+  "$_FS_SCRIPT_DIR/dedup-agents-md.py" \
+  "$OC_ROOT/scripts/dedup-agents-md.py" \
+  "$HOME/.openclaw/scripts/dedup-agents-md.py"; do
+  [ -f "$_dcand" ] && _DEDUP_SCRIPT="$_dcand" && break
+done
+_DEDUP_SUMMARY_LINE=""
+if [ -n "$_DEDUP_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+  if _DEDUP_OUT="$(python3 "$_DEDUP_SCRIPT" --apply --file "$AGENTS_FILE_EARLY" 2>&1)"; then
+    _DEDUP_RC=0
+  else
+    _DEDUP_RC=$?
+  fi
+  printf '%s\n' "$_DEDUP_OUT"
+  _DEDUP_SUMMARY_LINE="$(printf '%s\n' "$_DEDUP_OUT" | grep -m1 '^\[AGENTS DEDUP\]' || true)"
+  if [ "$_DEDUP_RC" -ne 0 ]; then
+    echo "WARNING: [apply-fleet-standards] AGENTS.md dedup exited $_DEDUP_RC (advisory only — file left as-is; run continues)" >&2
+  fi
+else
+  echo "[apply-fleet-standards] AGENTS.md dedup script not found (checked script dir, \$OC_ROOT/scripts, ~/.openclaw/scripts) — SKIPPING dedup this run (advisory; no duplicates removed)"
+fi
+
 # ─── 5a-SIZEGUARD. Core-bootstrap size guard (WARN-ONLY — never edits content) ─
 # MEASURED (fleet, 2026-07-09): several boxes carry a compiled core bootstrap
 # (the gateway-injected AGENTS/MEMORY/TOOLS/SOUL/IDENTITY/USER/HEARTBEAT) of
@@ -813,6 +870,12 @@ if total > target:
 else:
     print(f"[apply-fleet-standards] core-bootstrap size guard: {total:,} chars within target {target:,} (workspace {ws}) — OK")
 SIZEEOF
+
+# The 5a-DEDUP result (just above) — re-echoed here, right before the hard-cap
+# alarm, so the reclaim and the residual size land next to each other in the log.
+if [ -n "$_DEDUP_SUMMARY_LINE" ]; then
+  echo "[apply-fleet-standards] $_DEDUP_SUMMARY_LINE"
+fi
 
 # ─── 5a-SIZEGUARD-HARDCAP. Silent-truncation loud alarm (WARN-ONLY, no content edited) ─
 # 2026-07-31 fleet root-cause audit: the SOFT target above (150,000) is a token-
