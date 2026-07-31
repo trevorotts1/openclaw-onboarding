@@ -1,3 +1,71 @@
+## [v21.4.45]  -  2026-07-31  -  docs: fleet standing gate README — the Relay payload trap, the placeholder denylist, prune date semantics, the Sunday cron refresh, and `standing.sh` usage
+
+### Why
+
+`scripts/fleet-standing/README.md` documented the gate's design (fail-open rule, alias
+matching, the `Relay Brain` sha256 recipe) but predated a day of hardening across the fleet
+standing system. Several genuinely dangerous, already-fixed behaviors were confirmed live but
+never written down, leaving a future agent with no way to know they exist before undoing one:
+
+1. An n8n `httpRequest` node **replaces** the item JSON with the response body. The standing
+   check sits ahead of `Relay Brain` in the `Rescue Rangers Relay` workflow; `Relay Brain`
+   reads `$json.body` and has zero `$('…')` references back to the trigger, so the gate's
+   verdict silently became `Relay Brain`'s only input — `message` resolved empty and it
+   posted nothing, for every escalation, on all 38 boxes, with no error and no stored
+   execution to catch it. `Restore Rescue Payload` (`return
+   [$('Auth Check (soft)').first()];`) exists solely to undo that; removing it re-breaks
+   Rescue Rangers fleet-wide, silently.
+2. The `Relay Brain` sha256 recipe was already documented correctly by a prior change
+   (PR #795) — verified against the live node's key set and `jsCode` length; left unchanged.
+3. The alias-matching denylist: the literal string `TBD` sat in the `aliases` column of 13
+   rows, one delinquent. With exact-per-token matching and "any matched row not in good
+   standing wins," a caller supplying that same placeholder would have matched all 13 rows
+   and been refused — 12 paying clients denied service over a shared placeholder value.
+   `norm()` now denylists `tbd, n/a, na, none, unknown, null, -, ?, tba, ''` on both sides of
+   every comparison.
+4. The weekly prune's `requested_at lt` filter compares only the calendar day, inclusively,
+   so a naive `now − 30d` cutoff also deletes 29-day-old rows. The cutoff is deliberately
+   `now − 31d`, truncated to midnight UTC. The node was also once named "Dry Run …" while
+   `dryRun` was `false` — it deleted rows for real, weekly, unattended, under a name that said
+   otherwise.
+5. `standing.sh` (`~/clawd/fleet-standing/standing.sh`, operator-local, not tracked here) had
+   no documented usage: `off`/`on`/`list`/`check`, `--slug` for deterministic single-row
+   targeting on two-box clients, `--all` for intentional bulk flips, refuse-on-ambiguity
+   (exit 1, lists matches), and cursor-based pagination (`nextCursor`, `limit` capped at 250,
+   `offset`/`skip` rejected with HTTP 400).
+6. `update-skills.sh` used to register the `weekly-onboarding-update` cron only when absent,
+   freezing a box's stored cron rules at provisioning time forever after. A refresh path
+   (`refresh_weekly_cron_message()`) now patches the stored message in place via `openclaw
+   cron edit <id> --message` whenever it drifts from `cron-prompt.txt` — a field-level patch
+   that leaves schedule/timezone/sessionTarget/wakeMode/timeout/delivery untouched by
+   construction, fails safe on every error path, and can never abort an update.
+7. Data tables must be referenced by ID, not name, so a table rename or recreate cannot
+   silently redirect the thing that decides who gets service.
+8. Any new variable referenced inside the `update-skills.sh` gate block must use `${VAR:-}`
+   — under `set -euo pipefail`, a bare reference to a variable unset on some code path
+   aborts the update across all 38 boxes.
+
+### What changed
+
+- **`scripts/fleet-standing/README.md`** — added the eight items above as new sections /
+  paragraphs (`## The Relay payload trap`, a `set -u` note in `## The one rule`, a denylist
+  paragraph in `## Match on aliases, never an exact slug`, `## The prune's date semantics`,
+  `## Operator control: standing.sh`, `## The Sunday cron refresh`, a data-table-by-ID bullet
+  in `## Security rules`, plus two new rows in the `## Pieces` table). No section that was
+  already correct was rewritten; nothing was padded. Documentation only — no code, no n8n
+  workflow, and no box was touched.
+
+### Risk
+
+LOW. Docs-only change to a README; zero executable code, test, or n8n workflow touched. The
+required suites are unchanged and pass: `tests/unit/fleet-standing-gate.test.sh` — 14 passed,
+0 failed; `tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed;
+`tests/unit/weekly-cron-message-refresh.test.sh` — 31 passed, 0 failed. No secret, credential,
+or client name is present in the diff; the `TBD`/denylist example uses only the generic
+"a delinquent client" phrasing already established elsewhere in this file.
+
+---
+
 ## [v21.4.44]  -  2026-07-31  -  fix: restamp stale content_sha for 20 healer templates + 1 SOP (PR #796 regression blocking main)
 
 ### Why
