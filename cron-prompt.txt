@@ -49,11 +49,30 @@ RULE 5.6 — Fleet standing gate check (politeness pass, NOT enforcement).
   When updates ARE detected (any repo's has_update is true) and BEFORE composing the RULE 6 summary,
   ask the gate what THIS box's standing verdict is. Read the connection details from the environment —
   they are seeded on every box, never hardcode them: $FLEET_STANDING_GATE_URL,
-  $FLEET_STANDING_GATE_HEADER, $FLEET_STANDING_GATE_SECRET, $FLEET_STANDING_BOX_SLUG.
+  $FLEET_STANDING_GATE_HEADER, $FLEET_STANDING_GATE_SECRET.
+
+  Resolve the box slug with the SAME three-step chain update-skills.sh's fleet_standing_resolve_slug()
+  uses — do NOT send $FLEET_STANDING_BOX_SLUG alone. A box missing just that one env var would send an
+  empty boxName here, the gate would reply "unmatched", and this rule would offer the update — then
+  update-skills.sh's own chokepoint (which resolves the slug correctly) would still refuse the install,
+  leaving the client with exactly the confusing silent no-op this rule exists to prevent:
+    BOX_SLUG="${FLEET_STANDING_BOX_SLUG:-}"
+    if [ -z "$BOX_SLUG" ] && [ -f "$OC_ROOT/openclaw.json" ] && command -v python3 >/dev/null 2>&1; then
+      BOX_SLUG="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    print(((d.get('env') or {}).get('vars') or {}).get('FLEET_STANDING_BOX_SLUG','') or '')
+except Exception:
+    print('')
+" "$OC_ROOT/openclaw.json" 2>/dev/null)"
+    fi
+    [ -z "$BOX_SLUG" ] && BOX_SLUG="$(hostname -s 2>/dev/null || printf '')"
+
     curl -s -m 15 --connect-timeout 8 -X POST "$FLEET_STANDING_GATE_URL" \
       -H "Content-Type: application/json" \
       -H "${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}: $FLEET_STANDING_GATE_SECRET" \
-      -d "{\"boxName\":\"$FLEET_STANDING_BOX_SLUG\",\"action\":\"update\",\"source\":\"cron-prompt\"}"
+      -d "{\"boxName\":\"$BOX_SLUG\",\"action\":\"update\",\"source\":\"cron-prompt\"}"
 
   FAIL OPEN — identical rule to the script gate, never relax this: the ONLY thing that changes RULE
   5.6's behavior is a response body whose verdict is the literal string "blocked". Every other outcome

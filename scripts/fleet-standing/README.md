@@ -95,6 +95,25 @@ Escape hatches: `FLEET_STANDING_GATE_BYPASS=1` (skip), `FLEET_STANDING_GATE_SHAD
 - **Never let an AI builder edit `Relay Brain`** (34,835-char Code node holding the whole
   routing engine). Assert its sha256 before and after any change to that workflow.
 
+  **What to hash.** Fetch the node object for `Relay Brain` from workflow `GdymshUbNb9eaOAC`
+  (e.g. `n8n_get_workflow` with `mode: filtered`, `nodeNames: ["Relay Brain"]`) — a dict with
+  exactly these keys: `id`, `name`, `parameters`, `position`, `type`, `typeVersion`. Hash the
+  **whole sort-keyed node object with Python's default JSON separators** — not `jsCode` alone,
+  and not the compact separator form:
+  ```python
+  hashlib.sha256(json.dumps(node, sort_keys=True).encode()).hexdigest()
+  ```
+  The current known-good value is `580566e019c7f0258191d57949ce0e7a6a1ac11082b7954e967f9387afe9b405`.
+  Two wrong recipes produce *different, plausible-looking* digests — landing on either means
+  you used the wrong recipe, not that you found a real edit:
+  - hashing `jsCode` alone → `e0d5e52ab4a4eeb4c80ce2e21eb37ecc16409e392b353ae89baebcc2f214e38d`
+  - sort-keyed node with compact `separators=(",", ":")` → `f1e9fd621ff59323db25abe5fc0d73e1971c0147c1fad79b3cc786d9f9b09990`
+
+  Corroborating checks (verify these before trusting any digest): `jsCode` is 34,835 chars,
+  and the node's key set is exactly `['id','name','parameters','position','type','typeVersion']`
+  (sorted). Never paste the node's own contents (client names, aliases, roster) into this repo
+  or any committed file while checking this — read it, hash it, discard it.
+
 ## Standing is set manually — Stripe is advisory only
 
 `good_standing` is set by hand and manual wins. Stripe `past_due` alone caught **zero** of
