@@ -1,3 +1,91 @@
+## [v21.4.46]  -  2026-07-31  -  fix: fleet-roll coverage audit — CC-state marker path on VPS, CC currency probe never running on a version-bump roll, offline-fetch false "current", SOP-embeddings reaching already-populated boxes, stale onboarding-dir stamp, non-recursive hooks copy, and a deterministic direct-to-agent update message
+
+### Why
+
+A code-inspection coverage audit of `update-skills.sh` and its Skill-32 SOP-library path found
+seven confirmed defects, four of them blocking real signal on the fleet:
+
+1. `.command-center-state`'s marker path was hardcoded to `${HOME}/.openclaw/skills`, which does
+   not exist on VPS/Contabo (the active skills dir there is `/data/.openclaw/skills`, per
+   `discover_skills_dir()`). Verification reads the resolved path, so the marker reported MISSING
+   on all 10 VPS boxes. `get_current_version()` had the identical bug — it searched only `$HOME`
+   paths and returned empty on every VPS/Contabo box.
+2. `_cc_currency_probe()` was called from exactly ONE place — inside the same-version recheck
+   branch, which is never entered on a version-bump roll (the normal case). PROVEN LIVE: a canary
+   run going v21.1.0 -> v21.4.43 produced no `[CC CURRENCY]` line at all, so the marker was never
+   written on a normal roll.
+3. `_cc_currency_probe`'s `git fetch --quiet origin 2>/dev/null || true` swallowed a fetch failure
+   and fell through to the ancestor check against a possibly-stale local `origin/<default>` ref —
+   able to report `state=current` for a box that is genuinely behind.
+4. `ingest-sop-library.sh`'s ALREADY-POPULATED SKIP GATE and `update-skills.sh`'s U6c both gate on
+   SOP *content* row-count (`sops` table) vs the canonical count. A box already at/above that
+   threshold never re-invokes the ingester, so the free, sha256-pinned, already-published
+   SOP-embeddings asset (`sop-embeddings-v1.0.0`) never reaches it — `sop_embeddings` can stay
+   empty forever and semantic SOP search stays keyword-only, despite content-population reporting
+   green. `ingest-sop-library.sh` also carried a stale comment claiming no embeddings asset had
+   ever been published; a real one shipped 2026-07-20 (`asset_rebuild_required: false`).
+5. (Should-fix) `ONBOARDING_DIR` points at the temp clone, deleted at the end of every run — so
+   `~/.openclaw/onboarding`'s CONTENT is never refreshed by this script, but its
+   `.onboarding-version` stamp was bumped anyway on every roll: a stale tree advertising the
+   current version, the same lie `reap_dead_skill_manifest()` was written to kill for
+   `.skill-manifest.json`.
+6. (Should-fix) `hooks/` delivery used a non-recursive top-level `*.sh` glob with `2>/dev/null ||
+   true`, then printed `✓ hooks/ library persisted` unconditionally regardless of whether anything
+   actually copied.
+7. (Should-fix) `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` told the receiving agent to fetch the repo and
+   interpret a 32 KB prose playbook itself — fanned out to N agents, that produces N divergent
+   interpretations of the same update.
+
+### What changed
+
+- **update-skills.sh** — `_cc_currency_probe()`'s marker path now uses the already-resolved
+  `$SKILLS_DIR` instead of a hardcoded `$HOME` path; `get_current_version()` now checks
+  `$SKILLS_DIR/.onboarding-version` first, ahead of its `$HOME`-only fallback list. The probe is
+  now also called (marker-write/report only, return value discarded, never gates control flow)
+  once on the full-pass path near the Command Center refresh, in addition to the untouched
+  same-version-recheck call. The git-fetch failure path now captures the real exit code (safe
+  `if ! cmd; then rc=$?; fi` idiom under `set -euo pipefail`) and reports `state=unknown` instead
+  of falling through to a possibly-stale ancestor check. A new Step U6c2 checks `sop_embeddings`
+  row count against `SOP-EMBEDDINGS-MANIFEST.json`'s `sop_count` — independent of U6c's content
+  gate — and provisions directly via `provision_sop_embeddings.py` when under-populated; strictly
+  advisory (never fails the roll, never withholds the stamp, never touches `_U6C_SOPLIB_FAIL`).
+  `.onboarding-version` is no longer bumped inside `~/.openclaw/onboarding` (the directory is left
+  alone, not deleted — just stops lying about its version). `hooks/` delivery is now a recursive
+  `cp -Rf ".../hooks/." dest/`, and the `✓` is only printed when the copy actually succeeds
+  (otherwise an explicit `✗ ... FAILED` advisory message).
+- **32-command-center-setup/scripts/ingest-sop-library.sh** — corrected the two stale comments
+  that claimed no SOP-embeddings asset had ever been published; the real published asset and its
+  live provisioning behavior are now documented, including the pointer to U6c2 for boxes that take
+  the already-populated skip gate above (which is left otherwise untouched — its "no download, no
+  write, DB untouched" contract and the existing regression suite both depend on that).
+- **DIRECT-TO-AGENT-UPDATE-MESSAGE.md** — replaced the fetch-the-repo-and-read-a-playbook body
+  with one deterministic command (`bash <(curl -fsSL .../update-skills.sh)`) plus an explicit
+  proof-of-completion instruction (report `.onboarding-version` and the last 20 lines of output).
+  The `**vX.Y.Z**` marker line (`scripts/version-markers.json` marker #8) is unchanged in format.
+- **tests/unit/sop-embeddings-independent-gate.test.sh** (new) — extracts the U6c2 block verbatim
+  from `update-skills.sh` (mirrors `scripts/test-updater-traps-1-and-3.sh`'s method) and proves,
+  fully offline: it provisions embeddings for a box whose SOP content is already "populated"; it
+  is idempotent/byte-identical on an already-canonical box; it degrades cleanly with no
+  `mission-control.db`; and it never reads U6c's content row-count variables or its stamp-gating
+  failure flag.
+
+### Verification
+
+`bash -n` clean on `update-skills.sh`, `ingest-sop-library.sh`, and the new test.
+`shellcheck --shell=bash -x` on both modified shell files: zero NEW findings (`update-skills.sh`
+14/14 identical findings before/after by code+message; `ingest-sop-library.sh` 0/0).
+Six required suites all pass: `dedup-agents-md` 29/0, `core-updates-orphan-end-repair` 7/0,
+`core-updates-all-skills-wired` 18/0, `update-skills-full-scripts-tree` 23/0,
+`update-command-center-runtime-config` 8/0, `update-skills-resume-cron` 20/0. New test
+`sop-embeddings-independent-gate` 12/0. Pre-existing sibling suite
+`sop-library-update-path-ingest` unaffected, 25/0 (confirmed identical against the untouched
+baseline file). `qc-assert-no-client-names.sh` and `qc-assert-no-full-env-dump.py` both pass
+(rc=0); the latter's one flagged `pm2 jlist` line in `update-skills.sh` is pre-existing on
+`origin/main` (same finding, different line number, confirmed by diffing against the baseline
+tree) and untouched by this change. `sop-library-membership-check.test.sh`'s pre-existing 3
+failures are confirmed identical on `origin/main` before this change — unrelated, not introduced
+or fixed here.
+
 ## [v21.4.45]  -  2026-07-31  -  docs: fleet standing gate README — the Relay payload trap, the placeholder denylist, prune date semantics, the Sunday cron refresh, and `standing.sh` usage
 
 ### Why

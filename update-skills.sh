@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.45"
+ONBOARDING_VERSION="v21.4.46"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1139,14 +1139,22 @@ check_update_pending() {
 # after a successful update → perpetual "needs update" false-positive (Bug B).
 # ----------------------------------------------------------
 get_current_version() {
-  # Active dir first (mirrors discover_skills_dir priority)
+  # Active dir first (mirrors discover_skills_dir priority). SKILLS_DIR is
+  # resolved by discover_skills_dir() (VPS/Contabo -> /data/.openclaw/skills,
+  # Mac -> $HOME/.openclaw/skills) and is already set by the time this is
+  # called (main() sets it before the version gate). Bug A: this list used to
+  # check only $HOME paths, so on every VPS/Contabo box the active version
+  # file at /data/.openclaw/skills/.onboarding-version was never checked --
+  # get_current_version() returned empty even on a fully up-to-date box.
   local VERSION_PATHS=(
+    "${SKILLS_DIR:+$SKILLS_DIR/.onboarding-version}"
     "$HOME/.openclaw/skills/.onboarding-version"
     "$HOME/Downloads/openclaw-master-files/.onboarding-version"
     "$HOME/.openclaw/onboarding/.onboarding-version"
   )
 
   for VERSION_FILE in "${VERSION_PATHS[@]}"; do
+    [ -n "$VERSION_FILE" ] || continue
     if [ -f "$VERSION_FILE" ]; then
       cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]'
       return
@@ -1227,7 +1235,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.45 - safe_json_edit
+# v21.4.46 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2897,8 +2905,14 @@ u004_assert_doctrine_provenance() {
   }
 
   _cc_currency_probe() {
-    local _p _d="" _remote="" _dirty="" _def="" _head="" _marker
-    _marker="${HOME}/.openclaw/skills/.command-center-state"
+    local _p _d="" _remote="" _dirty="" _def="" _head="" _marker _fetch_rc
+    # Bug A: this used to hardcode ${HOME}/.openclaw/skills, which does not
+    # exist on VPS/Contabo (active skills dir is /data/.openclaw/skills there
+    # -- see discover_skills_dir()). Verification reads the SKILLS_DIR-resolved
+    # path, so the marker was written to a location nothing ever checks on
+    # those boxes -- reported MISSING on all of them. SKILLS_DIR is exported
+    # by main() before this function can be reached.
+    _marker="${SKILLS_DIR}/.command-center-state"
 
     for _p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
               "$HOME/projects/command-center" "/data/projects/command-center" \
@@ -2938,7 +2952,23 @@ u004_assert_doctrine_provenance() {
       return 0
     fi
 
-    git -C "$_d" fetch --quiet origin 2>/dev/null || true
+    # Bug C: `git fetch ... || true` swallowed a fetch failure (offline box,
+    # DNS hiccup, transient GitHub outage) and fell straight through to the
+    # ancestor check below against the last-known-good, possibly-stale local
+    # origin/<default> ref -- which can report state=current for a box that is
+    # genuinely behind. Capture the real exit code (safe idiom under
+    # set -euo pipefail: `if ! cmd; then rc=$?; fi`, never `cmd; rc=$?`) and
+    # bail to state=unknown -- same as an unresolvable ref below -- which
+    # already returns 0 and does not force a pass.
+    _fetch_rc=0
+    if ! git -C "$_d" fetch --quiet origin 2>/dev/null; then
+      _fetch_rc=$?
+    fi
+    if [ "$_fetch_rc" -ne 0 ]; then
+      echo "  — [CC CURRENCY] state=unknown head=${_head:-unknown} — git fetch failed (rc=$_fetch_rc, offline?) — not forcing a pass."
+      _cc_write_marker "$_marker" "unknown" "$_d" "$_head" ""
+      return 0
+    fi
 
     if _def="$(git -C "$_d" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; then
       _def="${_def#origin/}"
@@ -3717,6 +3747,78 @@ except Exception:
       fi
     fi
   fi
+
+  # ----------------------------------------------------------
+  # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
+  # Step U6c2: SOP-embeddings population check (Bug D).
+  #
+  # WHY THIS IS SEPARATE FROM U6c ABOVE. U6c's gate is CONTENT row-count (the
+  # `sops` table) vs the SOP-LIBRARY manifest's canonical_sop_count. A box
+  # already at/above that threshold takes the "touch nothing" branch above
+  # and ingest-sop-library.sh is NEVER INVOKED AT ALL from this updater -- so
+  # the SOP-embeddings asset (a separate, free, sha256-pinned download that
+  # makes ZERO embedding API calls) never reaches an already-populated box:
+  # semantic SOP search stays keyword-only on that box forever. This step
+  # reads its OWN signal -- `sop_embeddings` row count vs
+  # SOP-EMBEDDINGS-MANIFEST.json's sop_count -- and provisions directly via
+  # provision_sop_embeddings.py, independent of whatever U6c decided above.
+  # provision_sop_embeddings.py carries its own idempotency gate (marker
+  # table + row count vs manifest), so calling it here is safe even on the
+  # under-populated path above, where U6c's own ingest already called it too.
+  #
+  # ADVISORY ONLY: never fails the roll, never withholds the version stamp,
+  # never latches _U6C_SOPLIB_FAIL or any other stamp-gating flag. No client
+  # key is ever billed -- this is a sha256-verified download + sqlite
+  # ATTACH/INSERT, never an embedding API call.
+  # ----------------------------------------------------------
+  _U6C2_EMBED_DIR="$SKILLS_DIR/shared-utils/sop-embed-once"
+  [ -d "$_U6C2_EMBED_DIR" ] || _U6C2_EMBED_DIR="$EXTRACTED_DIR/shared-utils/sop-embed-once"
+  _U6C2_MANIFEST="$_U6C2_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json"
+  _U6C2_PROVISION_PY="$_U6C2_EMBED_DIR/provision_sop_embeddings.py"
+
+  echo ""
+  echo "  Step U6c2: SOP-embeddings population check (independent of U6c content gate)..."
+  if [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    echo "  — SOP embeddings: no mission-control.db resolved on this box — SKIP (informational, not a failure)."
+  elif [ ! -f "$_U6C2_MANIFEST" ] || [ ! -f "$_U6C2_PROVISION_PY" ]; then
+    echo "  — SOP embeddings: manifest or provisioner not found on this box — SKIP (informational, not a failure)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "  — SOP embeddings: python3 MISSING — SKIP (informational, not a failure)."
+  else
+    _U6C2_SOP_COUNT=0
+    if _U6C2_SOP_COUNT_RAW="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("sop_count") or 0))
+except Exception:
+    print(0)' "$_U6C2_MANIFEST" 2>/dev/null)"; then
+      _U6C2_SOP_COUNT="$_U6C2_SOP_COUNT_RAW"
+    fi
+    _U6C2_EMB_TABLE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+    _U6C2_EMB_ROWS=0
+    if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
+      _U6C2_EMB_ROWS="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+    fi
+    echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
+    if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
+      echo "  — SOP embeddings: manifest sop_count missing/zero — SKIP (informational, no trustworthy count)."
+    elif [ "${_U6C2_EMB_ROWS:-0}" -lt "${_U6C2_SOP_COUNT:-0}" ] 2>/dev/null; then
+      echo "  → SOP embeddings under-populated ($_U6C2_EMB_ROWS < $_U6C2_SOP_COUNT) — provisioning shipped asset (download + sqlite ATTACH/INSERT only, ZERO embedding API calls)..."
+      _U6C2_OUT=""
+      if _U6C2_OUT="$(python3 "$_U6C2_PROVISION_PY" "$_U6C2_MANIFEST" "$_U6C_DB" 2>&1)"; then
+        _U6C2_RC=0
+      else
+        _U6C2_RC=$?
+      fi
+      printf '%s\n' "$_U6C2_OUT" >> "$LOG_FILE"
+      echo "  $(printf '%s' "$_U6C2_OUT" | tail -n 1)"
+      if [ "$_U6C2_RC" -ne 0 ]; then
+        echo "  ⚠ SOP-embeddings provisioning returned non-zero (rc=$_U6C2_RC) — ADVISORY, does not fail the roll or withhold the version stamp."
+      fi
+    else
+      echo "  ✓ SOP embeddings already at/above manifest sop_count ($_U6C2_EMB_ROWS >= $_U6C2_SOP_COUNT) — SKIP, nothing to provision."
+    fi
+  fi
+  # <<< U6C2-SOP-EMBEDDINGS-END
 
   # ----------------------------------------------------------
   # Step U6d: Command Center runtime configuration reconciliation.
@@ -5122,10 +5224,26 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   # exact false-"done" condition this fix eliminates).
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
-  # Sync version marker to legacy locations if they exist
-  for _LEGACY_MARKER in \
-      "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
-      "$HOME/.openclaw/onboarding/.onboarding-version"; do
+  # Sync version marker to legacy locations if they exist.
+  #
+  # Bug E: $HOME/.openclaw/onboarding is DELIBERATELY EXCLUDED from this loop.
+  # ONBOARDING_DIR is set (~line 2648: ONBOARDING_DIR="$EXTRACTED_DIR") to the
+  # TEMP clone, which is `rm -rf`'d a few lines below (Cleanup) -- nothing in
+  # this script ever refreshes $HOME/.openclaw/onboarding's CONTENT. It is
+  # written once, by install.sh, during a full install, and never again. This
+  # loop used to bump its .onboarding-version stamp anyway, which made a
+  # stale tree advertise the current version -- the exact lie
+  # reap_dead_skill_manifest() was written to kill for .skill-manifest.json.
+  # A stale tree with a stale stamp is honest; a stale tree with a current
+  # stamp is not. Do not delete the directory here (other things may read
+  # it) -- just stop lying about its version.
+  #
+  # (Array, not a bare word -- keeps this extensible without a shellcheck
+  # SC2066 "loop will only run once" false-flag on a single-element list.)
+  _LEGACY_MARKERS=(
+    "$HOME/Downloads/openclaw-master-files/.onboarding-version"
+  )
+  for _LEGACY_MARKER in "${_LEGACY_MARKERS[@]}"; do
     if [ -f "$_LEGACY_MARKER" ]; then
       echo "$ONBOARDING_VERSION" > "$_LEGACY_MARKER" 2>/dev/null || true
     fi
@@ -5166,9 +5284,18 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
   mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
   if [ -d "$EXTRACTED_DIR/hooks" ]; then
-    cp -f "$EXTRACTED_DIR/hooks/"*.sh "$_OC_HOOKS_DEST/" 2>/dev/null || true
-    chmod +x "$_OC_HOOKS_DEST/"*.sh 2>/dev/null || true
-    echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
+    # Bug F: the old top-level `hooks/*.sh` glob was non-recursive (silently
+    # dropped anything under a subdirectory) and always printed a bare ✓
+    # regardless of whether the copy actually succeeded (`|| true` swallowed
+    # the failure). Recursive copy of hooks/'s CONTENTS via the trailing
+    # `/.` so subdirectories survive, and gate the ✓ on the copy's own exit
+    # code -- advisory only, still never fails the roll.
+    if cp -Rf "$EXTRACTED_DIR/hooks/." "$_OC_HOOKS_DEST/" 2>/dev/null; then
+      find "$_OC_HOOKS_DEST" -type f -name '*.sh' -exec chmod +x {} + 2>/dev/null || true
+      echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
+    else
+      echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
+    fi
   fi
 
   # Cleanup
@@ -6261,6 +6388,21 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
   fi
+
+  # Bug B fix: _cc_currency_probe was called from exactly ONE place in this
+  # script -- inside the _SAME_VERSION_RECHECK branch far above, which is
+  # ONLY entered on a same-version re-roll. On a version-bump roll (the
+  # NORMAL case -- every box's version differs from the new release) that
+  # branch is never reached, so .command-center-state was never written at
+  # all. PROVEN LIVE: a canary run going v21.1.0 -> v21.4.43 produced no
+  # `[CC CURRENCY]` line whatsoever. Call it here too, unconditionally, on
+  # every full pass -- this call is MARKER-WRITE/REPORT ONLY: the return
+  # value is intentionally discarded and must NEVER gate or alter anything
+  # below (the full pass already performs the actual CC refresh via
+  # run-full-install.sh in the branches that follow). The recheck-branch call
+  # above is untouched and still gates its own early exit.
+  _cc_currency_probe || true
+
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
   #
   # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):
