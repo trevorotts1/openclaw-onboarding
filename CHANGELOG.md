@@ -1,3 +1,45 @@
+## [v21.4.36]  -  2026-07-31  -  fleet approval gate: refuse a Skill 38 (conversational AI) run when the box is not approved (SPEC Item 10, Skill 38 v1.9.6)
+
+### Why
+
+`fleet_standing.conversational_ai_approved` is a real column on every one of the 38 fleet
+rows and, until now, nothing in Skill 38 ever read it. The operator ratified this system as
+gated ("we want to get that skill set also if they're not in good standing"), matching the
+same defect class Item 2 fixed for the anthology engine and Item 1's generic per-system
+standing endpoint was built to serve.
+
+### What changed
+
+- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` gained a new STEP A2,
+  immediately after the Cloudflare key check (Rule 10 requires that check stay first among
+  prerequisites) and before every other prerequisite check. It calls Item 1's fleet-wide
+  standing endpoint (`POST /webhook/system-standing-check`,
+  `{"system":"conversational_ai","box_slug":"<box>"}`) and FAILS CLOSED — refuses — on an
+  unreachable endpoint, a non-200 reply, a missing credential, an unparseable body, or an
+  unrecognised `reason_code`. On refusal it calls the shared rejection notifier
+  (`system-access-rejection-notify`, `system: "conversational_ai"`) and exits 1 (this
+  file's own existing refusal idiom for every other blocking prerequisite — no new exit
+  code introduced).
+- This is a **shell-native equivalent** of `59-anthology-engine/scripts/standing_gate.py`
+  (Item 2), not an import of it: Skill 38 must not assume Skill 59 is installed on the same
+  box (this file's own STEP B already models a cross-skill dependency as an explicit
+  presence check, never an assumed one). The contract matches `standing_gate.py` exactly —
+  identical env var names/defaults (`FLEET_STANDING_GATE_HEADER` /
+  `FLEET_STANDING_GATE_SECRET` / `FLEET_STANDING_BOX_SLUG`, the same already-fleet-
+  propagated n8n httpHeaderAuth credential), identical curl-config-on-stdin secret hygiene,
+  and the same never-guess-a-reason rule. No new credential provisioning needed.
+- `38-conversational-ai-system/skill-version.txt` bumped 1.9.5 -> 1.9.6 with its own
+  CHANGELOG entry. No protocol/reference/script/journey file was added or removed, so the
+  skill's disk self-counts (51 protocols, 92 scripts, 25 references, 8 journeys, highest-
+  numbered-script 33) are unchanged from before this change.
+
+### Risk
+
+Read-only network calls; the script never writes anything and every other prerequisite
+check in the file is untouched. An unreachable standing-check endpoint now refuses the
+install where it previously would have proceeded silently — intended fail-closed behavior,
+not a regression. No client names, emails, or channel ids.
+
 ## [v21.4.35]  -  2026-07-31  -  podcast/broker docs stop framing an operator credential as something a client box holds (Skill 58 v0.1.24)
 
 ### Why

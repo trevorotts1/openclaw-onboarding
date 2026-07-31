@@ -1,3 +1,41 @@
+## [1.9.6] - 2026-07-31 - fix (SPEC Item 10): fleet approval gate — refuse when the box is not approved for conversational_ai
+
+### Why
+`fleet_standing.conversational_ai_approved` was a real column on every one of the 38 fleet
+rows and nothing in Skill 38 ever read it — the operator ratified this system as gated
+("we want to get that skill set also if they're not in good standing"), but a not-approved
+box could still run the full install. Same class of defect Item 2 fixed for the anthology
+engine.
+
+### Added
+- **STEP A2 in `scripts/00-verify-prerequisites.sh`** — immediately after the Cloudflare key
+  check (Rule 10 requires that check stay first) and before every other prerequisite,
+  asks the Item 1 fleet-wide standing endpoint (`POST /webhook/system-standing-check`,
+  `{"system":"conversational_ai","box_slug":"<box>"}`) whether this box's `fleet_standing`
+  row is approved (`good_standing===true && conversational_ai_approved===true`, computed
+  read-time by the endpoint, never stored here). FAILS CLOSED on an unreachable endpoint,
+  a non-200 reply, a missing credential, an unparseable body, or an unrecognised
+  `reason_code` — all treated identically to an explicit refusal. On refusal it calls the
+  shared rejection notifier (`POST /webhook/system-access-rejection-notify`,
+  `system: "conversational_ai"`) so the client is told on whichever channel reaches them,
+  then exits 1 (this file's own existing refusal idiom — no new exit code introduced).
+- **Shell-native equivalent of `59-anthology-engine/scripts/standing_gate.py` (Item 2),
+  not an import of it** — Skill 38 must not assume Skill 59 is installed on this box (this
+  file's own STEP B already models cross-skill dependencies as an explicit presence check,
+  not an assumed one). The contract matches `standing_gate.py` exactly: identical env var
+  names/defaults (`FLEET_STANDING_GATE_HEADER` / `FLEET_STANDING_GATE_SECRET` /
+  `FLEET_STANDING_BOX_SLUG`, the same already-fleet-propagated n8n httpHeaderAuth
+  credential), identical curl-config-on-stdin secret hygiene (the header value never
+  touches argv, a log line, or an error message), and the same never-guess-a-reason rule.
+  No new credential provisioning needed on any box that already has the legacy
+  fleet-standing propagation.
+
+### Risk
+Read-only network calls; the script never writes anything and every other prerequisite
+check is unchanged. An unreachable standing-check endpoint now refuses the install where
+it previously would have proceeded — this is the intended fail-closed behavior, not a
+regression. No client names, emails, or channel ids.
+
 ## [1.9.2] - 2026-07-16 - GK-27/U89: relationship lattice pointer + citation tripwire
 
 ### Added
