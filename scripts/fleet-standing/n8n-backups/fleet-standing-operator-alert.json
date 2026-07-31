@@ -1,0 +1,74 @@
+{
+  "name": "fleet-standing-operator-alert",
+  "active": true,
+  "nodes": [
+    {
+      "id": "opalert-webhook",
+      "name": "Webhook \u2014 Operator Alert",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "fleet-standing-alert",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {
+          "noResponseBody": false,
+          "responseData": "={\"ok\": true}"
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "8HTB7khC7fDcRVhN",
+          "name": "fleetStandingCheck Header Auth"
+        }
+      },
+      "webhookId": "1767f4d5-2495-4c9a-b6cf-5f4564dff8af"
+    },
+    {
+      "id": "opalert-telegram",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "-1003865262028",
+        "text": "={{ $json.body.text }}",
+        "additionalFields": {
+          "messageThreadId": 3,
+          "disableWebPagePreview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "JpuCdFX5QXQoxyJJ",
+          "name": "Rescue Rangers Bot"
+        }
+      },
+      "webhookId": "1f82e80c-4771-4697-9ab5-b5763c0833ce"
+    }
+  ],
+  "connections": {
+    "Webhook \u2014 Operator Alert": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}
