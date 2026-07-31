@@ -1,3 +1,69 @@
+## [v21.4.48]  -  2026-07-31  -  fix: fleet-roll coverage audit gap #8 — CONTENT RECHECK skipped SOP-library/embeddings, persona-index, weekly-cron, and AGENTS.md hygiene convergence
+
+### Why
+
+`v21.4.38` fixed the CONTENT RECHECK early exit for exactly ONE runtime/DB convergence step
+(`_cc_currency_probe()`, Command Center git currency) — the `exit 0` a same-version re-roll hits
+once skills content matches source sits ~600–2,400 lines ABOVE every other convergence step: U6b
+(persona-index provisioning), U6c/U6c2 (SOP V2 library ingest + SOP-embeddings row count), the
+`weekly-onboarding-update` cron registration, and `apply-fleet-standards.sh`'s AGENTS.md dedup /
+orphan-BEGIN/END self-heal. Nothing else got that treatment. A box whose skills content and
+version stamp are both current can therefore sit forever behind on all four: an under-populated
+SOP library or embeddings table, a stale/never-provisioned persona index, a cron that never got
+registered (or was removed out-of-band without a tombstone), and duplicated/orphaned AGENTS.md
+blocks — all invisible to every check that reads the stamp, because none of those steps is ever
+reached on a content-current re-roll.
+
+### What changed
+
+- **update-skills.sh** — four new read-only probes evaluated immediately before the CONTENT
+  RECHECK `exit 0`, mirroring `_cc_currency_probe()`'s contract exactly (return non-zero ONLY when
+  a full pass would actually repair something; absent/unknown/current/any read error → 0, never
+  forcing a pass):
+  - `_sop_library_currency_probe()` — `sops` row count vs `SOP-LIBRARY-MANIFEST.json`'s
+    `canonical_sop_count` AND `sop_embeddings` row count vs `SOP-EMBEDDINGS-MANIFEST.json`'s
+    `sop_count`, resolving the DB via the SAME `resolve_db.find_dashboard_db()` call U6c/U6c2 use
+    (not reimplemented) so the probe and the real steps can never disagree about which DB matters.
+  - `_persona_index_currency_probe()` — mirrors U6b's own D3 completion re-assertion: the on-disk
+    `.prebuilt-index-version` sentinel vs the pulled manifest's `release_tag`.
+  - `_weekly_cron_currency_probe()` — is `weekly-onboarding-update` registered? Deliberately NOT a
+    call into `shared-utils/cron-lib.sh`'s `oc_cron_present` (which fails OPEN — treats an
+    unreadable `cron list --json` as "absent" — a defensible choice for a registrar deciding
+    whether to attempt an idempotent create, but wrong for a probe deciding whether to force a
+    full pass on all 38 boxes over a transient CLI hiccup). A genuine parse failure here returns 0
+    (advisory), never 1. The tombstone check is a pure file-existence read — never the mkdir-p'ing
+    `oc_cron_tombstone_dir()` — so the probe never writes anything, even a directory.
+  - `_agents_md_hygiene_probe()` — a duplicated single-token `<!-- MARKER -->` stamp line (the
+    exact re-append defect `dedup-agents-md.py` exists to clean up; near-zero false-positive rate
+    vs a bare heading count, since two different blocks can legitimately share a heading but not a
+    singleton marker token) OR an unbalanced `<!-- BEGIN skill:X:Y -->` / `<!-- END skill:X:Y -->`
+    pair. Chosen over invoking `dedup-agents-md.py`'s own dry-run to keep the per-box, per-roll
+    cost to a single regex pass over one already-size-capped file.
+  - The aggregation gate runs all five probes (the pre-existing CC probe plus these four)
+    unconditionally — not short-circuiting on the first failure — so the printed message always
+    names every outstanding convergence step, not just the first one found.
+- **tests/unit/content-recheck-convergence-probes.test.sh** (new) — extracts the probes and the
+  gate verbatim from `update-skills.sh` (mirrors `sop-embeddings-independent-gate.test.sh`'s
+  method) and proves, fully offline: each probe in both directions (converged → 0, outstanding →
+  1) against real fixtures (a fixture `mission-control.db`, manifest JSON, a mocked `openclaw` CLI,
+  fixture `AGENTS.md` files); that the gate's fast `exit 0` still fires only when every probe
+  converges; that it falls through and names the trigger the instant any ONE probe reports
+  outstanding work; and idempotency (re-running the gate on an already-converged box exits 0
+  again). Nothing under the real `$HOME`, `/data/.openclaw`, or any real DB is ever touched.
+
+### Verification
+
+`bash -n` clean on `update-skills.sh` and the new test. `shellcheck --shell=bash -x` on
+`update-skills.sh`: zero NEW findings vs `origin/main` (identical by code+message once
+filenames/line-numbers are normalized). Required suites all pass: `dedup-agents-md` 29/0,
+`core-updates-orphan-end-repair` 7/0, `core-updates-all-skills-wired` 18/0,
+`update-skills-full-scripts-tree` 23/0, `update-command-center-runtime-config` 8/0,
+`update-skills-resume-cron` 20/0, `sop-embeddings-independent-gate` 12/0. New test
+`content-recheck-convergence-probes` 48/0. `qc-assert-no-client-names.sh` and
+`qc-assert-no-full-env-dump.py` both pass (rc=0); the latter's one flagged `pm2 jlist` line in
+`update-skills.sh` is the same pre-existing finding as `origin/main` (confirmed unchanged content,
+line number shifted only because of the lines added above it).
+
 ## [v21.4.47]  -  2026-07-31  -  fix: install.sh seeded UNRESOLVABLE model pins (silent agent death) + new `verify-model-pins.py`
 
 ### Why
