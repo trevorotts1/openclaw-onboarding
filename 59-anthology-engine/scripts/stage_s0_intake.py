@@ -16,7 +16,7 @@ Persona (PRD Section 13): none (deterministic code, anthology-producer-orchestra
 
 Exit codes (SPEC 3.4 row 6; house: 1 unexpected error):
   0  stage complete and persisted
-  2  prover or guard refusal (route-secret / validation)
+  2  prover or guard refusal (route-secret / validation / anthology standing gate)
   3  held (a collaborator not yet wired)
   5  unresolved slot
 """
@@ -152,10 +152,16 @@ def _resolve(rel):
 
 
 def classify_child_rc(rc):
-    """FIXED contract: map a collaborator exit code to this stage's exit code."""
+    """FIXED contract: map a collaborator exit code to this stage's exit code.
+    6 (intake_router.py's EX_STANDING, Item 2: the anthology standing-gate
+    refusal) classifies as EX_PROVER alongside 2/4 -- it is a deliberate guard
+    refusal (this box is not approved for the anthology system), not an
+    unexpected error, and it must short-circuit the WIRING chain exactly like a
+    route-secret refusal does: no participant upsert, no board card, no Drive
+    tree runs after it."""
     if rc == 0:
         return EX_OK
-    if rc in (2, 4):
+    if rc in (2, 4, 6):
         return EX_PROVER
     if rc == 3:
         return EX_HELD
@@ -286,6 +292,9 @@ def self_test():
     assert classify_child_rc(0) == EX_OK
     assert classify_child_rc(2) == EX_PROVER
     assert classify_child_rc(4) == EX_PROVER
+    assert classify_child_rc(6) == EX_PROVER, \
+        "Item 2: intake_router.py's EX_STANDING (anthology standing-gate refusal) " \
+        "must classify as a guard refusal, not an unexpected error"
     assert classify_child_rc(3) == EX_HELD
     assert classify_child_rc(5) == EX_SLOT
     assert classify_child_rc(99) == EX_ERR

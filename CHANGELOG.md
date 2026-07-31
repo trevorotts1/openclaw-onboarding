@@ -1,3 +1,89 @@
+## [v21.4.34]  -  2026-07-31  -  anthology engine refuses a book build at intake when the box is not approved for the anthology system (Skill 59 v0.1.11)
+
+### Why
+
+`fleet_standing.anthology_approved` is a real boolean on all 38 rows and, before this
+change, nothing in the Anthology Engine ever read it — two clients marked not-approved
+for the book project were not actually blocked from starting one. The podcast engine
+already gates at Step 0/1; the anthology engine had no equivalent, despite having its
+own S0 intake front door (`intake_router.py`, the deterministic single entry point every
+real submission and every exceptions-queue replay passes through before any Drive
+provisioning, board card, or model call).
+
+### What changed
+
+- `59-anthology-engine/scripts/standing_gate.py` (new): calls the fleet-wide generic
+  standing-check endpoint (Item 1, n8n `fleet-system-standing-check` /
+  `POST https://main.blackceoautomations.com/webhook/system-standing-check`,
+  body `{system, box_slug}` -> `{ok, approved, reason_code}`) and, on refusal, the shared
+  `system-access-rejection-notify` webhook. FAIL CLOSED: an unreachable endpoint, a
+  non-200 reply, a missing credential, or an unexpected/malformed JSON body are ALL
+  treated as NOT approved — the opposite of the legacy `update-skills.sh` roster gate's
+  deliberate fail-OPEN doctrine, and intentionally so (a book build spends real model and
+  media cost; a false PROCEED is far more expensive than a false REFUSE). Never invents or
+  hedges a reason: `reason_code` passes through only the two values the endpoint itself
+  returns (`standing` / `not_enrolled`), or `""` when the gate could not get a definite
+  answer — safe to leave empty because the shared notifier computes its OWN authoritative
+  reason independently from the same `fleet_standing` table (confirmed by reading its
+  "Resolve Target + Plan Channels" node) and only threads the caller's reason into its own
+  ledger note, so an uncertain reason here can never cause it to tell a client the wrong
+  thing. Credential/identity reuse (no new box provisioning needed): reuses the ALREADY
+  fleet-propagated `FLEET_STANDING_GATE_HEADER` / `FLEET_STANDING_GATE_SECRET` /
+  `FLEET_STANDING_BOX_SLUG` env vars the legacy roster gate uses
+  (`scripts/fleet-standing/propagate-fleet-standing-gate.sh`) — confirmed by reading each
+  live n8n workflow that this is literally the SAME httpHeaderAuth credential
+  (`8HTB7khC7fDcRVhN`, "fleetStandingCheck Header Auth") that also authenticates
+  `system-access-rejection-notify`, `podcast-standing-check`, and the podcast publish gate,
+  and proven live with a real call (`box_slug=blackceomacmini`, `system=anthology` -> HTTP
+  200). Box-slug resolution mirrors `update-skills.sh`'s `fleet_standing_resolve_slug()`
+  exactly (explicit env, then `openclaw.json`'s `env.vars`, then hostname). Secret hygiene
+  mirrors `58-podcast-production-engine/scripts/podbean_publish.sh`'s proven idiom: the
+  header value rides a curl config document piped to curl over stdin (`curl -K -`), never
+  in argv, never on disk, never printed.
+- `59-anthology-engine/scripts/intake_router.py`: new step 1.5 in `route()`, immediately
+  after the route-secret check and before the dedup claim, the participant upsert, the
+  board-card mirror, the Drive-tree provision, or any spawn — a refusal here spends
+  nothing. New exit code `EX_STANDING = 6` (anthology standing-gate refusal), new
+  `engine-config` key `standing_check_mode` (default `"required"`; `"off"` only for the
+  offline self-test battery, which stays network-free by construction). `self_test()`
+  gained an offline, monkeypatched battery (mirroring the file's own existing
+  `upsert_participant` injection style) proving: a refused verdict returns `EX_STANDING`
+  and creates no participant row; the notifier is called with `system: "anthology"`; an
+  approved verdict proceeds exactly as before with no regression; the notifier is never
+  called on an approved verdict; an "unavailable" (infra failure) verdict also fails
+  closed and never invents a `reason_code`.
+- `59-anthology-engine/scripts/stage_s0_intake.py`: `classify_child_rc` now maps exit `6`
+  to `EX_PROVER` (a guard refusal, not an unexpected error) alongside the existing `2`/`4`,
+  so an exceptions-queue replay that hits the standing gate short-circuits the WIRING
+  chain exactly like a route-secret refusal already does. `self_test()` gained the
+  matching assertion.
+- `59-anthology-engine/tests/test_standing_gate.py` (new, 22 cases): hermetic, network-free
+  contract tests for `standing_gate.py` — box-slug resolution precedence, credential
+  resolution, the curl secret-hygiene idiom (asserts the secret never appears in argv),
+  transient-vs-deterministic retry classification, and the full fail-closed contract
+  (network error, non-200, malformed JSON, missing `approved` key, an unrecognized
+  `reason_code`, an unresolvable `box_slug`, a missing secret — every one of those
+  resolves to `approved: False` and none of them invent a `reason_code`).
+- `59-anthology-engine/skill-version.txt` 0.1.10 -> 0.1.11; `59-anthology-engine/SKILL.md`
+  frontmatter `version:` kept in lockstep.
+- All 10 lockstep repo version markers bumped v21.4.33 -> v21.4.34 via
+  `scripts/bump-version.sh`.
+
+### Risk
+
+Low for existing behavior, by design higher-consequence for a not-approved box (which is
+the point). `intake_router.py --self-test` (54 checks) and the full
+`59-anthology-engine/tests/` suite (193 cases including the 22 new ones) pass. The route
+secret check, dedup/idempotency contract, tenant check, and exceptions capture are
+untouched — the new step runs strictly between the secret check and hidden-field
+extraction, and only ever short-circuits when the standing gate itself refuses or cannot
+be reached. No client names, no secret values, no Anthropic runtime identifiers in the
+diff. The one live-risk surface — this box's own `FLEET_STANDING_GATE_SECRET` actually
+authenticating the shared credential against the real endpoint — was verified with a real
+call before writing any of this code, independent of this change.
+
+---
+
 ## [v21.4.33]  -  2026-07-30  -  weekly Sunday update tells a delinquent client why nothing installed, instead of going silent
 
 ### Why
