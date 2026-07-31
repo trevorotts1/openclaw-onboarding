@@ -1291,27 +1291,57 @@ safe_json_edit() {
 
 # ----------------------------------------------------------
 # v10.15.51 -- link_shared_core_files
+# AMENDED (N29, authorized by Trevor 2026-07-31): copy-on-run, not symlink.
 # ----------------------------------------------------------
 # Zero-Human-Workforce file model: on EVERY box, ALL of that account's agents
 # + sub-agents SHARE the box's ONE canonical AGENTS.md / TOOLS.md / USER.md
-# (symlinked, NOT duplicated). Per-agent files (IDENTITY.md, SOUL.md, MEMORY.md,
-# HEARTBEAT.md) stay each agent's OWN real files -- never touched here (except
-# additive content preservation into IDENTITY.md, see below).
+# CONTENT, via a real file copy. Per-agent files (IDENTITY.md, SOUL.md,
+# MEMORY.md, HEARTBEAT.md) stay each agent's OWN real files -- never touched
+# here (except additive content preservation into IDENTITY.md, see below).
+#
+# WHY A COPY AND NOT A SYMLINK (this function used to symlink -- do not
+# "restore" that): the OpenClaw runtime enforces a workspace-root boundary
+# guard (applyResolvedSymlinkHop, reached via readWorkspaceFileWithGuards) that
+# REJECTS any symlink whose realpath resolves outside the reading agent's own
+# workspace. A rejected symlink is reported missing:true and a ~107-char
+# [MISSING] stub is injected in its place -- the agent then runs with
+# essentially no instructions, silently, with no error anywhere. Proven live:
+# a client's dept-master-orchestrator reported rawChars:0 / injectedChars:107 /
+# missing:true while its 335KB AGENTS.md sat intact on disk, and answered that
+# it had no defined CEO routing/escalation procedure. No config key, env var,
+# or flag reaches that call site, and the guard is unchanged between OpenClaw
+# 2026.6.11 and 2026.7.1-2 (newer is stricter). A real file copy is invisible
+# to that guard, so it is now the ONLY correct mechanism here.
 #
 # CANON_DIR = the box's DEFAULT AGENT WORKSPACE (agents.defaults.workspace, with
 # the same resolver as obs_resolve_workspace / install.sh Step 10). The canonical
-# AGENTS.md/TOOLS.md/USER.md live there. The symlink target is ALWAYS this LOCAL
+# AGENTS.md/TOOLS.md/USER.md live there. The copy source is ALWAYS this LOCAL
 # box's own canonical -- NEVER a hardcoded path and NEVER a cross-box/cross-account
-# path. The client is the USER; a client box links to the CLIENT's own files only.
-# This is the co-mingling guard (N0): we read THIS box's openclaw.json and resolve
-# THIS box's workspace -- we never write a foreign path into a client's symlink.
+# path. The client is the USER; a client box copies from the CLIENT's own files
+# only. This is the co-mingling guard (N0): we read THIS box's openclaw.json and
+# resolve THIS box's workspace -- we never write a foreign path's content into a
+# client's copy.
 #
 # NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
 # is an internal workflow micro-agent and is NEVER touched.
 #
-# Idempotent: a second run produces no new backups and no churn -- a symlink that
-# already points at CANON_DIR/<f> is a no-op; an absent file is left absent.
-# Every action is logged with the [link-shared] prefix.
+# Idempotent: if an agent's copy already byte-matches canonical, it is a no-op
+# -- no rewrite, no backup churn. A pre-existing SYMLINK (relic of the
+# pre-amendment behavior) is MIGRATED to a real copy, unconditionally -- the
+# runtime guard rejects it regardless of what it points to. A real file that
+# DIFFERS from canonical is backed up (never deleted), its unique content
+# preserved additively into IDENTITY.md, then overwritten with canonical
+# content. An absent file is left absent.
+#
+# FAIL-OPEN (regression guard for 5e181ceb, which once emptied a shared
+# AGENTS.md when the updater could not read it): if the canonical source
+# itself is unreadable or empty, EVERY agent's existing copy of that file is
+# left EXACTLY as-is and a loud warning is printed to stderr. This function
+# must never write an empty or truncated core file. Every write is verified by
+# content hash (read back + compare) before being counted as a success; a
+# verify failure is logged loudly and the pre-existing file/backup is left
+# intact. File mode/ownership are preserved across the rewrite. Every action
+# is logged with the [link-shared] prefix.
 # ----------------------------------------------------------
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
@@ -1373,6 +1403,83 @@ link_shared_core_files() {
   local TS
   TS="$(date +%Y%m%d-%H%M%S)"
 
+  # ---- content-hash + stat helpers (N29 amendment: copy semantics) --------
+  # _lsc_sha256 PATH -> sha256 hex digest on stdout, or empty if PATH is
+  # missing/unreadable. PATH travels via an env var (never interpolated into
+  # the python source) so paths with spaces/quotes are safe.
+  _lsc_sha256() {
+    LSC_HASH_PATH="$1" python3 -c '
+import hashlib, os, sys
+p = os.environ.get("LSC_HASH_PATH", "")
+try:
+    with open(p, "rb") as fh:
+        data = fh.read()
+    sys.stdout.write(hashlib.sha256(data).hexdigest())
+except Exception:
+    pass
+' 2>/dev/null
+  }
+
+  # _lsc_mode_owner PATH -> "<mode>|<uid>:<gid>" for an existing file, or ""
+  # if PATH doesn't exist. Tries BSD stat(1) syntax (Mac) then GNU stat(1)
+  # syntax (Linux/VPS/Docker) -- the same fallback pattern already used
+  # elsewhere in this file (see the INSTALL_FLAG age check above).
+  _lsc_mode_owner() {
+    local _p="$1" _m="" _o=""
+    [ -e "$_p" ] || return 0
+    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
+    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    printf '%s|%s' "$_m" "$_o"
+  }
+
+  # _lsc_write_copy SRC DEST MODE OWNER -> atomically copy SRC's bytes to DEST
+  # (same-directory temp file + rename, so a mid-write crash can never leave
+  # DEST truncated), apply MODE/OWNER if given, then verify by hash. Prints
+  # "OK" on a verified match, "FAIL" otherwise. Every step is guarded so this
+  # never raises under `set -euo pipefail`.
+  _lsc_write_copy() {
+    local _src="$1" _dest="$2" _mode="$3" _owner="$4"
+    local _tmp="$_dest.tmp-unify-$$"
+    if ! cp -f "$_src" "$_tmp" 2>/dev/null; then
+      echo "FAIL"; return 0
+    fi
+    [ -n "$_mode" ] && chmod "$_mode" "$_tmp" 2>/dev/null
+    [ -n "$_owner" ] && chown "$_owner" "$_tmp" 2>/dev/null
+    if ! mv -f "$_tmp" "$_dest" 2>/dev/null; then
+      rm -f "$_tmp" 2>/dev/null
+      echo "FAIL"; return 0
+    fi
+    local _srchash _desthash
+    _srchash="$(_lsc_sha256 "$_src")"
+    _desthash="$(_lsc_sha256 "$_dest")"
+    if [ -n "$_srchash" ] && [ "$_srchash" = "$_desthash" ]; then
+      echo "OK"
+    else
+      echo "FAIL"
+    fi
+  }
+
+  # Precompute each canonical file's hash ONCE (not per-workspace; this repo
+  # targets bash 3.2 on Mac, so no associative arrays -- three scalars).
+  # FAIL-OPEN: a canonical file that is missing/unreadable/EMPTY skips every
+  # workspace for that filename entirely. Nothing is ever overwritten with
+  # emptiness.
+  local CANON_HASH_AGENTS="" CANON_HASH_TOOLS="" CANON_HASH_USER=""
+  for f in AGENTS.md TOOLS.md USER.md; do
+    local _ch=""
+    if [ -s "$CANON_REAL/$f" ]; then
+      _ch="$(_lsc_sha256 "$CANON_REAL/$f")"
+    fi
+    if [ -z "$_ch" ]; then
+      echo "  ⛔ [link-shared] WARN: canonical $f is empty or unreadable at $CANON_REAL/$f -- leaving EVERY agent's existing copy of $f untouched (fail-open, no overwrite, no truncation)" >&2
+    fi
+    case "$f" in
+      AGENTS.md) CANON_HASH_AGENTS="$_ch" ;;
+      TOOLS.md)  CANON_HASH_TOOLS="$_ch" ;;
+      USER.md)   CANON_HASH_USER="$_ch" ;;
+    esac
+  done
+
   # --- Enumerate agent workspaces ------------------------------------------
   # Sources: (a) every agents[].workspace declared in THIS box's openclaw.json,
   # (b) a scan of the workspaces/ dir (immediate children + agents/* role dirs).
@@ -1422,7 +1529,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local LINKED=0 REPOINTED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
 
   # Dedup workspace list, then process each.
   local W
@@ -1453,24 +1560,50 @@ PYEOF
       local TARGET="$CANON_REAL/$f"
       local LINKPATH="$W_REAL/$f"
 
+      # Resolve this file's precomputed canonical hash (no associative arrays
+      # -- see the bash-3.2 note above). Empty means canonical was bad; the
+      # fail-open warning already fired once above, so skip silently here.
+      local TARGET_HASH=""
+      case "$f" in
+        AGENTS.md) TARGET_HASH="$CANON_HASH_AGENTS" ;;
+        TOOLS.md)  TARGET_HASH="$CANON_HASH_TOOLS" ;;
+        USER.md)   TARGET_HASH="$CANON_HASH_USER" ;;
+      esac
+      if [ -z "$TARGET_HASH" ]; then
+        continue
+      fi
+
       if [ -L "$LINKPATH" ]; then
-        # Already a symlink -- repoint ONLY if it points somewhere wrong.
+        # MIGRATION: a symlink is a relic of the pre-amendment behavior, and
+        # the runtime boundary guard rejects it at read time regardless of
+        # what it points to. Replace with a verified real copy, always.
         local CUR
         CUR="$(readlink "$LINKPATH" 2>/dev/null || echo '')"
-        # Resolve current target to a real path for comparison.
-        local CUR_REAL
-        CUR_REAL="$(cd "$(dirname "$LINKPATH")" 2>/dev/null && cd "$(dirname "$CUR")" 2>/dev/null && pwd -P 2>/dev/null)/$(basename "$CUR")"
-        if [ "$CUR" = "$TARGET" ] || [ "$CUR_REAL" = "$TARGET" ]; then
-          NOOP=$((NOOP + 1))   # idempotent: correct link, no churn
+        local MODE_OWNER
+        MODE_OWNER="$(_lsc_mode_owner "$TARGET")"   # no real prior file to inherit mode from -- mirror canonical's own
+        local M_MODE="${MODE_OWNER%%|*}" M_OWNER="${MODE_OWNER#*|}"
+        rm -f "$LINKPATH" 2>/dev/null
+        if [ "$(_lsc_write_copy "$TARGET" "$LINKPATH" "$M_MODE" "$M_OWNER")" = "OK" ]; then
+          echo "  [link-shared] MIGRATE (symlink -> copy) $LINKPATH (was -> $CUR)"
+          MIGRATED=$((MIGRATED + 1))
         else
-          ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
-            && { echo "  [link-shared] REPOINT $LINKPATH -> $TARGET (was: $CUR)"; REPOINTED=$((REPOINTED + 1)); } \
-            || echo "  [link-shared] WARN: could not repoint $LINKPATH"
+          echo "  ✗ [link-shared] WARN: verified copy FAILED for $LINKPATH (was a symlink -> $CUR) -- see above" >&2
+          FAILED=$((FAILED + 1))
         fi
 
       elif [ -f "$LINKPATH" ]; then
-        # A REAL file. Back it up (NEVER delete), preserve unique content into
-        # this agent's OWN IDENTITY.md (additive only), then replace with a link.
+        # A REAL file. Idempotent fast path: already byte-identical to
+        # canonical -> no-op. No rewrite, no backup churn.
+        local CUR_HASH
+        CUR_HASH="$(_lsc_sha256 "$LINKPATH")"
+        if [ -n "$CUR_HASH" ] && [ "$CUR_HASH" = "$TARGET_HASH" ]; then
+          NOOP=$((NOOP + 1))
+          continue
+        fi
+
+        # DIVERGENT: back it up (NEVER delete), preserve unique content into
+        # this agent's OWN IDENTITY.md (additive only), then overwrite with
+        # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
         cp -p "$LINKPATH" "$BAK" 2>/dev/null \
           && { echo "  [link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
@@ -1527,11 +1660,18 @@ PYEOF
           fi
         fi
 
-        # Replace the real file with a symlink to the box's own canonical.
-        rm -f "$LINKPATH" 2>/dev/null
-        ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
-          && { echo "  [link-shared] LINK $LINKPATH -> $TARGET"; LINKED=$((LINKED + 1)); } \
-          || echo "  [link-shared] WARN: could not create symlink $LINKPATH"
+        # Overwrite with a verified real copy of canonical content, preserving
+        # this agent's existing mode/ownership (captured BEFORE the rewrite).
+        local MODE_OWNER
+        MODE_OWNER="$(_lsc_mode_owner "$LINKPATH")"
+        local M_MODE="${MODE_OWNER%%|*}" M_OWNER="${MODE_OWNER#*|}"
+        if [ "$(_lsc_write_copy "$TARGET" "$LINKPATH" "$M_MODE" "$M_OWNER")" = "OK" ]; then
+          echo "  [link-shared] COPY $LINKPATH <- $TARGET (canonical)"
+          COPIED=$((COPIED + 1))
+        else
+          echo "  ✗ [link-shared] WARN: verified copy FAILED for $LINKPATH -- original is safe in $BAK" >&2
+          FAILED=$((FAILED + 1))
+        fi
 
       else
         # Absent → leave absent. (No churn.)
@@ -1542,8 +1682,14 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  echo "  [link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
+
+  if [ "$FAILED" -gt 0 ]; then
+    echo "  ✗ [link-shared] WARN: $FAILED verified-write failure(s) -- see WARN lines above; every original is preserved (backup or left untouched)" >&2
+    return 1
+  fi
+  return 0
 }
 
 # >>> TRAP1-PRECLEAR-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
@@ -4548,12 +4694,15 @@ else:
   # v10.15.51: SHARED CORE FILE UNIFICATION (Zero-Human-Workforce file model).
   # AFTER skills + workspaces + CORE_UPDATES wiring + workforce migration, every
   # agent/sub-agent on THIS box shares the box's ONE canonical AGENTS.md /
-  # TOOLS.md / USER.md via symlink. Per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT stay
-  # each agent's own. Nested workflow agents exempt. Idempotent. Reads THIS box's
-  # openclaw.json only (co-mingling guard) -- never a foreign/hardcoded target.
+  # TOOLS.md / USER.md via a real file COPY (N29 amended -- the OpenClaw
+  # runtime rejects a symlink whose realpath resolves outside the reading
+  # agent's own workspace; see link_shared_core_files() above). Per-agent
+  # IDENTITY/SOUL/MEMORY/HEARTBEAT stay each agent's own. Nested workflow
+  # agents exempt. Idempotent. Reads THIS box's openclaw.json only
+  # (co-mingling guard) -- never a foreign/hardcoded target.
   # ----------------------------------------------------------
   echo ""
-  echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
+  echo "  Unifying shared core files (AGENTS/TOOLS/USER copied from this box's canonical)..."
   if link_shared_core_files; then
     :
   else
