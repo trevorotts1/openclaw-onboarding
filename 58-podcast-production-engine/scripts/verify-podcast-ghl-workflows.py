@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
-"""verify-podcast-ghl-workflows.py — LIVE QC gate for the podcast GHL snapshot.
+"""verify-podcast-ghl-workflows.py -- LIVE QC gate for the podcast GHL snapshot.
 
 Re-GETs the four required workflows in the podcast TEMPLATE sub-account via the
-GHL internal rail (Firebase JWT — the same backend.leadconnectorhq.com rail the
+GHL internal rail (Firebase JWT -- the same backend.leadconnectorhq.com rail the
 Skill-44 caf builder uses) and ASSERTS each is:
   * status == "published"
   * has exactly one trigger, active == True, of the EXPECTED trigger type
   * has >= 1 action step
 
 WHY THIS EXISTS: the first podcast build shipped the four workflows as INACTIVE
-shells with no triggers wired, and nothing detected it — the operator had to add
+shells with no triggers wired, and nothing detected it -- the operator had to add
 the triggers by hand.  This gate makes that failure loud and re-runnable before a
 snapshot is cut.  It is READ-ONLY (never writes).
 
@@ -24,7 +24,8 @@ Exit 0 = all four PASS; exit 1 = any FAIL / auth error.
 from __future__ import annotations
 import argparse, json, os, ssl, sys, urllib.request, urllib.error
 
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY_DEFAULT = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"  # GHL public Firebase web-app identifier - shared, non-secret, same value GHL embeds in its own SPA
+FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY") or FIREBASE_API_KEY_DEFAULT
 BASE = "https://backend.leadconnectorhq.com"
 CTX = ssl.create_default_context()
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -85,10 +86,12 @@ def _get(tok, path):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--location", default=os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or DEFAULT_LOC)
+    ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
     ap.add_argument("--token-env", default="PODCAST_ENGINE_GHL_FIREBASE_REFRESH_TOKEN,GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
     args = ap.parse_args()
-    loc = args.location
+    loc = args.location or DEFAULT_LOC
+    if not args.location and loc == DEFAULT_LOC:
+        print("WARNING: defaulting to the golden template location - read-only", file=sys.stderr)
     names = [n.strip() for n in args.token_env.split(",") if n.strip()]
 
     _source_secrets_if_needed(names)
@@ -112,7 +115,7 @@ def main() -> int:
     rows = [r for r in listing.get("rows", []) if r.get("type") == "workflow"]
     by_name = {r.get("name", ""): r for r in rows}
 
-    print(f"== LIVE podcast-workflow QC — location {loc} ({len(rows)} workflows) ==")
+    print(f"== LIVE podcast-workflow QC -- location {loc} ({len(rows)} workflows) ==")
     all_ok = True
     for name_sub, exp_type, label in EXPECTED:
         match = next((r for n, r in by_name.items() if name_sub in n), None)
