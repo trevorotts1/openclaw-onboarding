@@ -46,14 +46,19 @@
       "passionate": ["passionate", "passion"]
     },
     "episode_type": {
+      "full": ["full", "full episode", "regular", "standard", "full_episode", "full-episode"],
+      "trailer": ["trailer", "preview", "teaser"],
+      "bonus": ["bonus", "extra", "bonus episode", "bonus_episode", "bonus-episode", "special"]
+    },
+    "preset": {
       "interview": ["interview", "interview_style_podcast"],
       "solo": ["solo", "personal", "personal_podcast_style"],
       "season_strategy": ["season_strategy", "season strategy", "season-strategy", "season plan"],
       "episode_asset_pack": ["episode_asset_pack", "episode asset pack", "asset pack", "asset-pack"]
     },
     "explicit": {
-      "yes": ["yes", "true", "1", "explicit", "y"],
-      "no": ["no", "false", "0", "clean", "n", ""]
+      "explicit": ["yes", "true", "1", "explicit", "y"],
+      "clean": ["no", "false", "0", "clean", "n", ""]
     }
   },
   "boolean_true_tokens": ["true", "1", "yes", "y", "on"],

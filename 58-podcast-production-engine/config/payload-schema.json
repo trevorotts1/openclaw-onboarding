@@ -122,7 +122,7 @@
   "x-canonical-hash-fields": [
     "mode", "style", "show_name", "host_name", "first_name", "last_name", "preferred_pronoun",
     "q1_answer", "q2_answer", "q3_answer", "q4_answer", "q5_answer", "q6_answer", "q7_answer",
-    "additional_info", "target_runtime", "tts_model", "podcast_id", "location_id", "contact_id",
+    "transparency_answer", "additional_info", "target_runtime", "tts_model", "podcast_id", "location_id", "contact_id",
     "publish_timestamp", "episode_type", "explicit"
   ],
   "x-canonical-hash-note": "Build canonical_submission from exactly these fields when present, after meaning-mapping. Normalize: trim whitespace, collapse internal whitespace runs in answer text to single spaces, lowercase enum values, drop empty or null fields. Serialize as key=value lines sorted by key, joined with newlines, then hash. Any field not in this list, including volatile transport fields, writing_model, web_research_tool, workflow_trigger, preset, retry, and _test, is excluded so a redelivery cannot make a second episode while a genuinely changed answer does.",
