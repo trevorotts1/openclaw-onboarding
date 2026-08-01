@@ -73,6 +73,8 @@ All attempts draw from the ONE shared per-episode content-token budget metered b
 
 An episode is deliverable only when all sixteen Tier 1 checks pass AND all ten rubric dimensions score eight or higher AND the per-episode checklist is honestly complete and reproduced in the delivery report. A genuine input limitation is noted plainly in the delivery report, never faked into a pass. Misreporting any check is an absolute failure.
 
+Once this gate passes, publishing is delegated to the operator's n8n account (https://main.blackceoautomations.com). The Podbean OAuth app client_id/client_secret live ONLY in n8n's credential vault -- never in this repo, this skill, or a client box. Client boxes hold only the publish-proxy webhook token and the client's non-secret Channel ID.
+
 ## 7. OPERATOR RUNBOOK (PROVE THE GATE)
 
 - Run the deterministic Tier 1 prover on a deliverable, machine-readable:
