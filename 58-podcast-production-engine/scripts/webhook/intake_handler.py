@@ -89,9 +89,14 @@ ENV_ROUTE = "PODCAST_INTAKE_ROUTE_ID"
 ENV_SESSION = "PODCAST_INTAKE_SESSION_KEY"
 ENV_CONTROLLER = "PODCAST_INTAKE_CONTROLLER_ID"
 ENV_INBOUND_SECRET = "PODCAST_INTAKE_INBOUND_SECRET"
+ENV_MAX_PAYLOAD_BYTES = "PODCAST_INTAKE_MAX_PAYLOAD_BYTES"
+ENV_MAX_FIELD_CHARS = "PODCAST_INTAKE_MAX_FIELD_CHARS"
 
 SIGNATURE_HEADER = "X-Podcast-Intake-Signature"
 SIGNATURE_PREFIX = "sha256="
+
+MAX_PAYLOAD_BYTES_DEFAULT = 512000
+MAX_FIELD_CHARS_DEFAULT = 20000
 
 
 def _verify_signature(raw_bytes, header_value, secret):
@@ -113,6 +118,40 @@ def _verify_signature(raw_bytes, header_value, secret):
     except Exception:
         return False
     return hmac.compare_digest(expected, digest_hex)
+
+
+def _read_max_payload_bytes():
+    val = os.environ.get(ENV_MAX_PAYLOAD_BYTES)
+    if val is None:
+        return MAX_PAYLOAD_BYTES_DEFAULT
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        print("WARNING: invalid %s, using default %d" % (ENV_MAX_PAYLOAD_BYTES,
+              MAX_PAYLOAD_BYTES_DEFAULT), file=sys.stderr)
+        return MAX_PAYLOAD_BYTES_DEFAULT
+
+
+def _read_max_field_chars():
+    val = os.environ.get(ENV_MAX_FIELD_CHARS)
+    if val is None:
+        return MAX_FIELD_CHARS_DEFAULT
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        print("WARNING: invalid %s, using default %d" % (ENV_MAX_FIELD_CHARS,
+              MAX_FIELD_CHARS_DEFAULT), file=sys.stderr)
+        return MAX_FIELD_CHARS_DEFAULT
+
+
+def _check_field_lengths(canonical, max_chars):
+    """Check every string field in the canonical dict against the per-field char
+    limit. Returns a list of (field_name, actual_length) for over-limit fields."""
+    over = []
+    for field, value in canonical.items():
+        if isinstance(value, str) and len(value) > max_chars:
+            over.append((field, len(value)))
+    return over
 
 
 def _iso_now():
@@ -262,6 +301,24 @@ def handle(body, config, tables=None, client=None):
                             summary="wrong-tenant payload quarantined")
         return verdict
 
+    # Per-field string-length limit (checked after mapping; Section R-33).
+    max_field_chars = _read_max_field_chars()
+    over_fields = _check_field_lengths(canonical, max_field_chars)
+    if over_fields:
+        over_names = [f for f, _ in over_fields]
+        verdict = {"ack_http": 200, "status": "rejected", "job": None,
+                   "reason": "field_length_limit",
+                   "overlimit_fields": over_names}
+        verdict["operator_alert"] = emit_operator_alert(
+            "field_length_limit", base,
+            detail="fields over %d chars: %s" % (max_field_chars,
+                  ", ".join(over_names)))
+        _short_circuit_flow(client, config,
+                            {"podcast_webhook_terminal": "rejected",
+                             "reason": "field_length_limit"}, base, verdict,
+                            fail=True, summary="over-limit fields rejected")
+        return verdict
+
     # Job key. contact_id anchors it; a needs_input payload missing contact_id gets
     # a degraded no-identity key so it is still persisted and deduped.
     jk, err = job_key.compute_job_key(canonical)
@@ -343,7 +400,7 @@ def _safe_verdict(verdict):
     labels only. The raw body and canonical answers never appear here."""
     keep = ("ack_http", "status", "job", "decision", "state", "delivery_count",
             "missing", "flow_id", "advance", "test", "retry", "quarantine",
-            "flow_op", "operator_alert")
+            "flow_op", "operator_alert", "overlimit_fields", "reason")
     return {k: verdict[k] for k in keep if k in verdict}
 
 
@@ -370,6 +427,15 @@ def main(argv=None):
     except OSError as exc:
         print("FATAL: cannot read --payload: %s" % exc, file=sys.stderr)
         return EXIT_USAGE
+
+    # Payload-size limit: checked on the raw bytes BEFORE signature verification
+    # and parsing, so a multi-megabyte payload is rejected at the boundary with no
+    # further processing (Section R-33).
+    max_bytes = _read_max_payload_bytes()
+    if len(raw_bytes) > max_bytes:
+        print("REJECT: payload size %d exceeds limit %d (%s)" %
+              (len(raw_bytes), max_bytes, ENV_MAX_PAYLOAD_BYTES), file=sys.stderr)
+        return EXIT_HANDLER_ERROR
 
     # Inbound HMAC-SHA256 signature verification (before any parsing).
     secret = os.environ.get(ENV_INBOUND_SECRET)
@@ -522,6 +588,56 @@ def self_test():
           len(fake.task_runtimes) == runs_before)
     rec = ledger.read_record(vtf["job"], tmp3)
     check("trigger-flow records flow_id in ledger", rec.get("flow_id") == vtf["flow_id"])
+
+    # 10) PAYLOAD-SIZE LIMIT: a multi-megabyte payload is rejected BEFORE signature
+    # verification or parsing (Section R-33). Override the env to a low limit and
+    # verify that raw bytes exceeding it are rejected with EXIT_HANDLER_ERROR.
+    small_limit = 200
+    os.environ[ENV_MAX_PAYLOAD_BYTES] = str(small_limit)
+    tmp_payload_file = tmp + "/oversize_payload.json"
+    with open(tmp_payload_file, "w", encoding="utf-8") as fh:
+        json.dump({"data": {"mode": "Interview", "contactId": "CNTpayloadtest00001",
+                   "locationId": loc, "q1": "x" * (small_limit + 50)}}, fh)
+    # Simulate the main() payload-size check path by calling main with test args.
+    exit_code = main(["handle", "--payload", tmp_payload_file,
+                      "--base", tmp, "--mode", "no-flow"])
+    check("oversize payload rejected before signature verification",
+          exit_code == EXIT_HANDLER_ERROR)
+    # A payload AT the limit should pass; use main() with env vars so the
+    # payload-size gate in main() is actually exercised.
+    os.environ[ENV_LOCATION] = loc
+    at_limit_data = {"data": {"mode": "Interview", "contactId": "CNTattest99",
+                     "locationId": loc, "q1": "ok"}}
+    with open(tmp_payload_file, "w", encoding="utf-8") as fh:
+        json.dump(at_limit_data, fh)
+    actual_size = Path(tmp_payload_file).stat().st_size
+    os.environ[ENV_MAX_PAYLOAD_BYTES] = str(actual_size)
+    exit_code_at = main(["handle", "--payload", tmp_payload_file,
+                          "--base", tmp, "--mode", "no-flow"])
+    check("payload at limit accepted", exit_code_at == EXIT_OK)
+    # Restore the env so later tests are not affected.
+    del os.environ[ENV_MAX_PAYLOAD_BYTES]
+
+    # 11) FIELD-CHARACTER LIMIT: a string field exceeding the configurable max is
+    # rejected with a clear reason (Section R-33). Override the env to a low limit
+    # and verify the verdict.
+    small_field_limit = 100
+    os.environ[ENV_MAX_FIELD_CHARS] = str(small_field_limit)
+    over_field_cfg = dict(base_cfg)
+    over_field_tmp = tempfile.mkdtemp(prefix="pd-handler-fieldlimit-")
+    over_field_cfg["base"] = over_field_tmp
+    vf_over = handle(full_payload(q1="x" * (small_field_limit + 1)),
+                     dict(over_field_cfg), tables)
+    check("over-limit field rejected", vf_over["status"] == "rejected"
+          and vf_over.get("reason") == "field_length_limit"
+          and "q1_answer" in vf_over.get("overlimit_fields", []))
+    check("over-limit field alert fired",
+          vf_over.get("operator_alert", {}).get("condition") == "field_length_limit")
+    # A field AT the limit should be accepted.
+    vf_at = handle(full_payload(q1="x" * small_field_limit),
+                   dict(over_field_cfg), tables)
+    check("field at limit accepted", vf_at["status"] == "accepted")
+    del os.environ[ENV_MAX_FIELD_CHARS]
 
     print("== intake_handler self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
