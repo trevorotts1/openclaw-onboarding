@@ -1,0 +1,120 @@
+name: capacity dual-key heal guard
+
+# WS-8 — keeps scripts/capacity-monitor.sh healing BOTH concurrency keys.
+#
+# THE INCIDENT THIS CLOSES (2026-08-01). Two keys govern concurrency:
+#   agents.defaults.maxConcurrent            — cap on ALL agent runs
+#   agents.defaults.subagents.maxConcurrent  — cap on subagent fanout
+# Both were set to 500 out-of-band on an operator box. capacity-monitor.sh
+# reconciled ONLY the subagents key: its 15-minute tick healed that key 500 -> 12,
+# logged success, and left the TOP-LEVEL key at 500 — managed by NOTHING — for
+# five days. 500 concurrent runs on a 12-core/24GB box exhausted RAM, thrashed
+# swap, and made every response crawl; repeated manual fixes "did not stick"
+# because the healer was blind to the key that mattered. This script ships to
+# every box from this repo, so the blind spot was fleet-wide.
+#
+# This guard fails the build if:
+#   - the writer stops reconciling agents.defaults.maxConcurrent (back to the
+#     single-key writer), or
+#   - a config with the top-level key at 500 and the subagents key ALREADY safe
+#     is reported "in sync" and left unhealed (the exact incident), or
+#   - the writer starts CREATING agents.defaults.maxConcurrent when it is absent.
+#     AgentDefaultsSchema is .strict(), so injecting that key on a runtime that
+#     predates it makes the runtime reject the box's WHOLE config — the same
+#     failure class as the v11.3.1 agents.defaults.tools.exec defect, or
+#   - install.sh goes back to hard-overwriting subagents.maxConcurrent to 100
+#     (the "100 everywhere" half of WS-8, which also RE-CLOBBERED, on every
+#     install, whatever the monitor had already healed), or
+#   - the OC_CAP_* deliberate-raise escape hatch stops warning loudly when the
+#     computed cap lands above min(cores*4, 64). The overrides are kept on
+#     purpose; silence about them is what let 500 sit for five days.
+#
+# Hermetic: the test runs entirely against a temp HOME. No gateway, no network,
+# no credentials, no writes outside its own mktemp dir.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface in the run steps.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "scripts/capacity-monitor.sh"
+      - "tests/unit/capacity-dual-key-heal.test.sh"
+      - ".github/workflows/capacity-dual-key-heal-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "install.sh"
+      - "scripts/capacity-monitor.sh"
+      - "tests/unit/capacity-dual-key-heal.test.sh"
+      - ".github/workflows/capacity-dual-key-heal-guard.yml"
+
+jobs:
+  capacity-dual-key-heal-guard:
+    name: capacity-monitor heals both maxConcurrent keys
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n install.sh
+          bash -n scripts/capacity-monitor.sh
+          bash -n tests/unit/capacity-dual-key-heal.test.sh
+
+      - name: "writer must reconcile agents.defaults.maxConcurrent (regression guard)"
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! grep -q 'defaults\["maxConcurrent"\] = safe' scripts/capacity-monitor.sh; then
+            echo "FAIL: capacity-monitor.sh no longer assigns agents.defaults.maxConcurrent."
+            echo "      That is the single-key writer that left 500 unhealed for 5 days."
+            exit 1
+          fi
+          echo "OK: dual-key writer present."
+
+      - name: capacity dual-key heal self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/capacity-dual-key-heal.test.sh
+
+      - name: "ANTI-VACUITY: the single-key writer must turn this suite RED"
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp scripts/capacity-monitor.sh /tmp/capacity-monitor.sh.orig
+          # Reconstruct the pre-fix, subagents-only writer.
+          python3 - <<'PY'
+          p = "scripts/capacity-monitor.sh"
+          s = open(p).read()
+          a = 'defaults_changed = has_defaults_key and (prev_defaults != safe)'
+          b = 'if has_defaults_key:\n    defaults["maxConcurrent"] = safe\n'
+          assert a in s and b in s, "mutation anchors missing — update this guard"
+          s = s.replace(a, 'defaults_changed = False').replace(b, '')
+          open(p, "w").write(s)
+          PY
+          if bash tests/unit/capacity-dual-key-heal.test.sh > /tmp/mutant.txt 2>&1; then
+            cp /tmp/capacity-monitor.sh.orig scripts/capacity-monitor.sh
+            echo "FAIL: the suite PASSED against the single-key writer — it cannot detect the defect it exists for."
+            cat /tmp/mutant.txt
+            exit 1
+          fi
+          cp /tmp/capacity-monitor.sh.orig scripts/capacity-monitor.sh
+          echo "OK: single-key writer is caught. Failures observed:"
+          grep 'FAIL:' /tmp/mutant.txt || true
+
+      - name: Summary
+        shell: bash
+        run: |
+          echo "capacity-dual-key-heal-guard: PASS — both keys reconciled, strict-schema key never created, install.sh clamps down instead of overwriting to 100, runaway overrides warn loudly."

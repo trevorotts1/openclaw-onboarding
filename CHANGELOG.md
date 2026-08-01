@@ -1,3 +1,46 @@
+## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot
+
+Two keys govern agent concurrency:
+
+    agents.defaults.maxConcurrent            — cap on ALL agent runs
+    agents.defaults.subagents.maxConcurrent  — cap on subagent fanout
+
+`scripts/capacity-monitor.sh` reconciled only the second one. On a box where BOTH had been set to
+500 out-of-band, the 15-minute tick healed the subagents key 500 -> 12, logged success, and left the
+TOP-LEVEL key at 500 — managed by NOTHING — for five days. 500 concurrent runs on a 12-core/24GB box
+exhausted RAM, thrashed swap, and made every response crawl; repeated manual fixes appeared not to
+"stick" because the healer was blind to the key that actually mattered. This script ships to every
+box from this repo, so every box had the same blind spot.
+
+- **Dual-key heal.** The writer now reconciles BOTH keys to the computed safe value, and "changed"
+  is true if EITHER differs — the incident config (top-level 500, subagents already safe) previously
+  read as "in sync" and was never healed.
+- **The top-level key is healed PRESENT-ONLY, never created.** The runtime's `AgentDefaultsSchema`
+  is `.strict()`, so injecting that key on a runtime that predates it would make the runtime reject
+  the box's WHOLE config — the same failure class as the v11.3.1 `agents.defaults.tools.exec`
+  defect. Absent means the runtime's own default is in force and there is nothing to clobber.
+- **Both previous values are recorded.** `.capacity-profile.json` gains
+  `previousDefaultsMaxConcurrent` (and `defaultsMaxConcurrentPresent`) alongside
+  `previousMaxConcurrent`; the HEAL log line names both keys and both previous values.
+- **Runaway overrides now warn loudly.** The `OC_CAP_*` env overrides are the deliberate-raise path
+  and are kept as-is, but a computed cap above `min(cores*4, 64)` emits a `RUNAWAY CAP` WARN on
+  every tick. Silence about an out-of-band raise is what let 500 sit for five days. The WARN informs
+  only — it does not clamp, and exit 0 is preserved so the escape hatch stays usable.
+- **install.sh no longer hard-overwrites `subagents.maxConcurrent` to 100.** The old rule
+  (`max(100, prev)`) was the "100 everywhere" bug WS-8 exists to kill — an 8GB Mac mini and a 64GB
+  VPS both got 100 — and because it could only ever RAISE the number, every install re-clobbered
+  whatever capacity-monitor had already healed, so boxes ping-ponged forever. It now clamps DOWN to
+  the box's ceiling and never raises: prefer `.capacity-profile.json`, else 12 Mac / 8 VPS (the same
+  clamp as the monitor), and preserve any existing value at or below that ceiling.
+
+Guarded by `tests/unit/capacity-dual-key-heal.test.sh` (15 checks, fully offline against a temp
+HOME) and `.github/workflows/capacity-dual-key-heal-guard.yml`. Mutation-proven: the workflow
+reconstructs the pre-fix single-key writer and REQUIRES the suite to go red, so the guard can never
+become a check that cannot fail. The suite also refuses to run its write cases on a host with
+`/data/.openclaw`, where the script would target the real config instead of the fixture.
+
+Rollout: fleet boxes pick this up via the normal fleet-roll. No box was touched by this change.
+
 ## [v21.4.51]  -  2026-08-01  -  fix(release): bump version markers for PR #810 G3 skill-content change
 
 ### Why
@@ -10344,7 +10387,6 @@ Fleet Operator Co-Mingling Audit remediation — client boxes no longer ship the
 ## v12.31.1 — 2026-06-18 — content-manifest restamp + QC-static repo-consistency fix
 
 - Content-manifest restamp + QC-static repo-consistency fix for the v12.31.0 presentation edits. The v12.31.0 commit restamped `23-ai-workforce-blueprint/templates/role-library/_index.json` (a Skill-23 file) without moving the skill version, tripping the version-consistency guards (G3 "skill content change requires skill-version.txt bump" + the "9 markers must agree / skill-version.txt == /version" rule). This patch bumps the whole version in lockstep so all 9 markers + `cc-compat.json onboardingVersion` read `v12.31.1`, and re-runs `hash-content-manifest.py` so the per-artifact content_sha manifest stays consistent. No functional change beyond v12.31.0.
-
 
 
 ## v12.31.0 — 2026-06-18 — Presentation Friday-critical fixes + roster-regen materialization fix
