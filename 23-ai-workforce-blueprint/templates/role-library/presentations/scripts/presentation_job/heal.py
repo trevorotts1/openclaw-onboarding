@@ -55,29 +55,34 @@ def rung3_alt_route(engine, phase):
     if not alt_cmd:
         return EXIT_EXECUTOR_FAILED
     alt_cmd = alt_cmd.replace("{run_dir}", str(engine.run_dir))
-    ps = engine._phase_state(phase.id)
-    record_heal_event(engine.state, phase.id, engine.store, ps,
-                      rung=3, attempt=1, reason="alternate route")
-    try:
-        budget = phase.budget_minutes * 60
-        r = subprocess.run(alt_cmd, shell=True, cwd=str(engine.run_dir),
-                           timeout=budget, capture_output=False)
-        if r.returncode == 0:
-            return EXIT_OK
-    except (subprocess.TimeoutExpired, OSError):
-        pass
+    for attempt in range(1, HEAL_CAP_ALT_ROUTE + 1):
+        try:
+            budget = phase.budget_minutes * 60
+            r = subprocess.run(alt_cmd, shell=True, cwd=str(engine.run_dir),
+                               timeout=budget, capture_output=False)
+            if r.returncode == 0:
+                return EXIT_OK
+        except (subprocess.TimeoutExpired, OSError):
+            pass
+        if attempt < HEAL_CAP_ALT_ROUTE:
+            time.sleep(min(60, 5 * (2 ** (attempt - 1))))
     return EXIT_EXECUTOR_FAILED
 
 
 def rung4_regate(engine, failed_keys):
     from .gates import Gates
-    ps = engine._phase_state("CLOSE")
-    record_heal_event(engine.state, "CLOSE", engine.store, ps,
-                      rung=4, attempt=1,
-                      reason=f"re-evaluating gates: {', '.join(failed_keys)}")
     gates_obj = Gates(engine.run_dir, engine.state)
-    all_gates = gates_obj.evaluate_all()
     result = {}
-    for k in failed_keys:
-        result[k] = all_gates.get(k, {"state": "fail", "reason": "not evaluated"})
+    for attempt in range(1, HEAL_CAP_REGATE + 1):
+        ps = engine._phase_state("CLOSE")
+        record_heal_event(engine.state, "CLOSE", engine.store, ps,
+                          rung=4, attempt=attempt,
+                          reason=f"re-evaluating gates: {', '.join(failed_keys)}")
+        all_gates = gates_obj.evaluate_all()
+        for k in failed_keys:
+            result[k] = all_gates.get(k, {"state": "fail", "reason": "not evaluated"})
+        if all(result.get(k, {}).get("state") == "pass" for k in failed_keys):
+            break
+        if attempt < HEAL_CAP_REGATE:
+            time.sleep(min(60, 5 * (2 ** (attempt - 1))))
     return result

@@ -192,6 +192,9 @@ class Engine:
         # Rung 3: alternate route -- MECHANISM ONLY, NO CLIENT POLICY
         rc3 = heal.rung3_alt_route(self, phase)
         if rc3 == EXIT_OK:
+            _r3 = 3
+            heal.record_heal_event(self.state, phase.id, self.store, ps,
+                                   rung=_r3, attempt=1, reason="alternate route")
             return EXIT_OK
 
         return self._block(phase, f"script executor failed after {heal.HEAL_CAP_TRANSIENT} attempts")
