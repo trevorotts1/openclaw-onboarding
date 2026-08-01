@@ -57,6 +57,7 @@ FIREBASE_TOKEN_URL="https://securetoken.googleapis.com/v1/token?key=${FIREBASE_A
 # Env-var resolution order — IDENTICAL to seed-ghl-auth.py and transport.py.
 REFRESH_ENV_VARS=(
   "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN"
+  "PODCAST_ENGINE_GHL_FIREBASE_REFRESH_TOKEN"
   "CAF_FIREBASE_REFRESH_TOKEN"
   "GHL_FIREBASE_REFRESH_TOKEN"
 )
