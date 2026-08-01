@@ -999,8 +999,21 @@ if ! http_request GET "$PODBEAN_API/episodes?access_token=${ACCESS_TOKEN}&offset
   fi
   die "could not list episodes for numbering (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
 fi
-EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
+# The n8n publish workflow reads .total from this endpoint -- Podbean's API
+# returns the total episode count under 'total' (count is the page size).
+EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field total)"
+if ! [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]]; then
+  EPISODE_COUNT="$(printf '%s' "$RESP_BODY" | json_field count)"
+fi
 [[ "$EPISODE_COUNT" =~ ^[0-9]+$ ]] || EPISODE_COUNT=0
+# Sanity: if the resolved count is 0, verify the response did not actually
+# carry episodes (would indicate .count was the page size, not the total).
+if [ "$EPISODE_COUNT" -eq 0 ]; then
+  _has_eps="$(printf '%s' "$RESP_BODY" | json_field episodes)"
+  if [ -n "$_has_eps" ] && [ "$_has_eps" != "[]" ]; then
+    log "WARNING: resolved episode count is 0 but the response carries episodes; count may be page-size, not total"
+  fi
+fi
 EPISODE_NUMBER=$(( EPISODE_COUNT + 1 ))
 log "existing episode count ${EPISODE_COUNT}; this episode is number ${EPISODE_NUMBER}"
 
