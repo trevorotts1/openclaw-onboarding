@@ -1,0 +1,61 @@
+name: Fleet-standing fail-open guard
+
+# Proves the FLEET-STANDING-GATE-V1 block in update-skills.sh cannot regress
+# from fail-open to fail-closed. That block is the single chokepoint every
+# update path (the Sunday `openclaw cron` job, the legacy silent shell cron,
+# and the operator's fleet-roll SSH push) runs through before applying an
+# update, and it exists to hold back an update ONLY when the entitlement
+# gate returns an explicit "blocked" verdict. Every other outcome --
+# unconfigured box, dead port, HTTP error (even one carrying a blocked
+# body), garbage body, empty body, an unmatched/held verdict -- must
+# proceed, because wrongly blocking freezes updates across the entire
+# fleet the moment n8n hiccups, while wrongly allowing costs one update
+# cycle for one delinquent box.
+#
+# tests/unit/fleet-standing-gate.test.sh extracts the FLEET-STANDING-GATE-V1
+# block VERBATIM from update-skills.sh (no reimplementation), stands up a
+# stub HTTP gate server it controls per-case, and asserts 14 properties:
+#   - 8 fail-open cases: unconfigured box, unreachable gate, HTTP 500 (even
+#     carrying a blocked body), garbage body, empty body, verdict=unmatched,
+#     verdict=held, verdict=allowed
+#   - 1 legitimate stop: verdict=blocked halts the update AND prints the
+#     polite client-facing message
+#   - 2 escape hatches: FLEET_STANDING_GATE_BYPASS=1 and
+#     FLEET_STANDING_GATE_SHADOW=1 (including its "would have BLOCKED" report)
+#   - 1 secret-hygiene check: the gate secret must never appear in output
+#
+# This test existed but was wired into no GitHub Actions workflow -- a
+# future edit to update-skills.sh could silently break fail-open with
+# every other check still green. This guard closes that gap.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields like PR title/body/commit message), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "tests/unit/fleet-standing-gate.test.sh"
+      - ".github/workflows/fleet-standing-fail-open-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "tests/unit/fleet-standing-gate.test.sh"
+      - ".github/workflows/fleet-standing-fail-open-guard.yml"
+
+jobs:
+  fleet-standing-fail-open-guard:
+    name: Fleet-standing gate stays fail-open (only an explicit blocked verdict may stop an update)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run fleet-standing-gate fail-open regression suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/fleet-standing-gate.test.sh
+          echo "fleet-standing-fail-open-guard: PASS"
