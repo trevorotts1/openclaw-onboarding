@@ -133,4 +133,86 @@ side exposes no mutation beyond token revocation.
 14 Gate A 8.5 rubric: scored on the onboarding SESSION-LOG entry for this
    slice before the merge trains run.
 
+Board caller (producer side)
+-------------------------
+
+The Podcast department producer-side board caller (`scripts/cc_board.py`)
+cards episode runs onto the Command Center Kanban board. It is a FAIL-SOFT
+caller -- a board outage never fails an episode run.
+
+CLI subcommands:
+
+  run-begin   --job-id <id> --client-label <label> --episode-title <title>
+              [--department podcast]
+              Creates one card on the CC board in the Podcast workspace.
+              Card title: "Episode: <title> (<client>)".
+              Idempotent: re-calling with the same job-id returns the cached
+              task_id without creating a duplicate.
+              Prints the task_id to stdout on success.
+
+  patch-phase --job-id <id> --phase <slug> --status <status>
+              Updates the card's phase annotation (phase_id) and CC-native
+              status. Valid phases: received, researching, writing, in_qc,
+              generating_art, producing_audio, publishing, enrolling, complete.
+              Valid statuses: in_progress, review, done, blocked.
+
+  close       --job-id <id> --status done|blocked [--note <text>]
+              Terminal patch for the episode card.
+
+API endpoints targeted:
+
+  POST  {CC_BASE_URL}/api/tasks/ingest
+        Creates the task in the podcast workspace (via department_slug=podcast).
+        Sends: title, department_slug, source, source_ref, idempotency_key.
+        Source file: src/app/api/tasks/ingest/route.ts
+        Returns: {ok, task_id, workspace_id, status}
+
+  PATCH {CC_BASE_URL}/api/tasks/{task_id}
+        Updates the card's status, phase_id, and optional note.
+        Source file: src/app/api/tasks/[id]/route.ts
+        Returns: the updated task object.
+
+Env contract:
+
+  CC_BASE_URL     Base URL of the Command Center (e.g. http://localhost:4000).
+                  Absent -> board disabled (clean no-op).
+  MC_API_TOKEN    Long-lived bearer token for the middleware auth layer.
+                  Optional; sent as Authorization: Bearer header when set.
+  WEBHOOK_SECRET  HMAC secret for the per-route signature layer.
+                  Optional; sent as x-webhook-signature header when set.
+  CC_BOARD_TIMEOUT Per-request timeout in seconds (default 5).
+
+State persistence:
+
+  Job-id -> task-id mapping is persisted in
+  ~/.openclaw/podcast-engine/board-map.json (0600) so patch/close can find
+  the card after a restart. The file is loaded at call time (no in-memory
+  cache needed); atomic replace on write.
+
+Phase-to-lane mapping (the 9 podcast production phases):
+
+  Phase             Suggested CC status for in-flight work
+  ------------      --------------------------------------
+  received          in_progress
+  researching       in_progress
+  writing           in_progress
+  in_qc             review
+  generating_art    in_progress
+  producing_audio   in_progress
+  publishing        in_progress
+  enrolling         in_progress
+  complete          done
+
+  Use close --status blocked to park a stuck episode.
+
+FAIL-SOFT posture:
+
+  - CC_BASE_URL unset -> every subcommand exits 0 (no-op).
+  - Any HTTP error (4xx, 5xx, unreachable, timeout) -> logged to stderr
+    as "[cc_board] <message>" and exits 0.
+  - Only a usage error (missing required args, invalid phase/status) exits
+    with code 2.
+  - Bounded 5s timeout per request, one retry on network error only.
+  - A board outage never fails an episode run.
+
 END OF WIRING NOTE
