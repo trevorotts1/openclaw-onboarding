@@ -192,6 +192,59 @@ else
   echo "  Info -- n8n deployment drift probe skipped (N8N_API_URL or N8N_API_KEY not set)"
 fi
 
+# -- onb-10: n8n workflow schema validation + credential scan ------------------
+# Validate every *.workflow.json under config/n8n. The validator script is a
+# pre-flight check; a genuine validation failure (exit 1) is a hard FAIL.
+# When the validator itself errors on environment (exit 2) or python3 is
+# missing, it is a non-fatal WARNING.  The credential vault --check scan
+# gates on plaintext secrets (exit 0 clean / 1 dirty = FAIL).
+VALIDATOR="$SKILL_DIR/scripts/validate_n8n_workflow.py"
+VAULT_CHECK="$SKILL_DIR/scripts/vault_n8n_credential.py"
+N8N_WF_DIR="$SKILL_DIR/config/n8n"
+
+if ! command -v python3 >/dev/null 2>&1; then
+  yellow "  .WARN -- python3 not found; skipping n8n workflow validation + credential scan"; WARN=$((WARN+1))
+else
+  echo ""
+  echo "--- n8n workflow validation + credential scan (onb-10) ---"
+  for wf in "$N8N_WF_DIR"/*.workflow.json; do
+    [ -f "$wf" ] || continue
+    wf_name="$(basename "$wf")"
+
+    # Schema validation
+    VAL_RC=0
+    VAL_OUT=$(python3 "$VALIDATOR" "$wf" 2>&1) || VAL_RC=$?
+    if [ "$VAL_RC" -eq 0 ]; then
+      green "  . PASS -- n8n workflow valid: $wf_name ($VAL_OUT)"
+      PASS=$((PASS+1))
+    elif [ "$VAL_RC" -eq 2 ]; then
+      yellow "  .WARN -- n8n workflow validation error (environment): $wf_name ($VAL_OUT)"
+      WARN=$((WARN+1))
+    else
+      red "  . FAIL -- n8n workflow INVALID: $wf_name ($VAL_OUT)"
+      FAIL=$((FAIL+1))
+    fi
+
+    # Credential vault scan
+    VAULT_RC=0
+    VAULT_OUT=$(python3 "$VAULT_CHECK" --check "$wf" 2>&1) || VAULT_RC=$?
+    if [ "$VAULT_RC" -eq 0 ]; then
+      green "  . PASS -- credential scan clean: $wf_name"
+      PASS=$((PASS+1))
+    elif [ "$VAULT_RC" -eq 2 ]; then
+      yellow "  .WARN -- credential scan error (environment): $wf_name ($VAULT_OUT)"
+      WARN=$((WARN+1))
+    else
+      red "  . FAIL -- credential scan DIRTY: $wf_name (plaintext secrets found)"
+      FAIL=$((FAIL+1))
+    fi
+  done
+  WF_COUNT=$(find "$N8N_WF_DIR" -maxdepth 1 -name '*.workflow.json' -type f 2>/dev/null | wc -l | tr -d ' ')
+  if [ "${WF_COUNT:-0}" -eq 0 ]; then
+    yellow "  .WARN -- no *.workflow.json files found under $N8N_WF_DIR"; WARN=$((WARN+1))
+  fi
+fi
+
 echo ""
 echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings ==="
 [ $FAIL -gt 0 ] && { red "Skill 58 QC FAILED"; exit 1; } || { green "Skill 58 QC PASS"; exit 0; }

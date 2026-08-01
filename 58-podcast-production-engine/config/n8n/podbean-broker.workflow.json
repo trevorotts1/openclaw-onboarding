@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: explicit workflow version + schema-validation marker."
+  },
   "name": "Podbean Broker (Skill 58)",
   "nodes": [
     {
