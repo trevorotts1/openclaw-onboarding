@@ -922,6 +922,15 @@ if [ "$BROKER_MODE" = "1" ]; then
   CHANNEL_SCOPE_PROVEN=1
   log "Channel-scoped access token acquired from broker (value not shown)"
 else
+  # LOCAL MODE GUARD: the BlackCEO shared Podbean app secret must never be used
+  # on a client box. Require an explicit operator flag (PODBEAN_LOCAL_MODE_OK=1)
+  # to prove the operator has knowingly placed the secret on this box. Without
+  # it, refuse to proceed and direct the caller to the proxy fleet default.
+  if [ "${PODBEAN_LOCAL_MODE_OK:-0}" != "1" ]; then
+    echo "HARD STOP: LOCAL Podbean mode requires PODBEAN_LOCAL_MODE_OK=1 to confirm this is the operator's OWN box. The fleet default is the publish-proxy: configure PODBEAN_PUBLISH_WEBHOOK_URL + PODBEAN_PUBLISH_TOKEN, which require NO Podbean app secret on this box." >&2
+    exit 1
+  fi
+  echo "WARNING: LOCAL MODE: Podbean app secret is on this box - operator box only" >&2
   log "requesting a client_credentials access token from BlackCEO's shared Podbean app (local fallback, operator box only)"
   if ! USE_BASIC=1 http_request POST "$PODBEAN_API/oauth/token" \
     --data-urlencode "grant_type=client_credentials"; then

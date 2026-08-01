@@ -201,6 +201,16 @@ ERR
   exit 13
 fi
 
+# PODBEAN SHARED SECRET GUARD: provisioning NEVER copies BlackCEO's shared Podbean
+# OAuth app secret (PODBEAN_CLIENT_SECRET / OPENCLAW_PODBEAN_CLIENT_SECRET) to a
+# client box. The fleet default publish-proxy requires no Podbean app secret here;
+# the proxy host performs the entire publish server-side. If PODBEAN_CLIENT_SECRET
+# is present in this environment it was placed by the operator for their OWN box
+# only and will NOT be injected into the client's secrets file.
+if [ -n "${PODBEAN_CLIENT_SECRET:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
+  log "PODBEAN SHARED SECRET GUARD: Podbean OAuth app secret detected in env; it WILL NOT be provisioned to the client box (fail-closed). The shared secret belongs on the OPERATOR'S OWN BOX ONLY."
+fi
+
 ledger_init
 ledger_fact "timezone" "$CLIENT_TZ"
 
@@ -231,12 +241,12 @@ log "provision: slug=$SLUG dash=$DASH_HOST tz=$CLIENT_TZ dry_run=$DRY_RUN"
 # --------------------------------------------------------------------------- #
 # STEP 0 (snapshot): request the AUTOMATED snapshot push into the client's Convert
 # and Flow sub-account, BEFORE the box-side STEP 0 credential/field gate
-# (ghl_credential_gate.py full, SKILL.md ~line 193) is attempted — that gate
+# (ghl_credential_gate.py full, SKILL.md ~line 193) is attempted; that gate
 # hard-stops until the 28 podcast custom fields exist, so the snapshot MUST be in the
 # sub-account first. Mirrors 59-anthology-engine step 7.5. Best-effort + NON-BLOCKING;
 # the box-side STEP 0 gate remains the genuine-completion check. FAIL-CLOSED until
 # Trevor cuts the podcast golden snapshot and sets PODCAST_SNAPSHOT_ID in n8n (the
-# webhook returns 409 and this step records the manual fallback — never worse than manual).
+# webhook returns 409 and this step records the manual fallback; never worse than manual).
 # The shared token is resolved BY LABEL inside the helper and is NEVER printed.
 # --------------------------------------------------------------------------- #
 provision_snapshot() {
@@ -552,7 +562,7 @@ provision_fb_ads() {
        --fb-pixel "${PODCAST_FB_PIXEL:-}" --fb-token "${PODCAST_FB_CAPI_TOKEN:-}" >/dev/null 2>&1; then
     ledger_step "fb-ads-connect" "OK" "filled + published the 4 FB workflows (add the FB Lead Form trigger in the builder to complete 02/02a/03)"
   else
-    ledger_step "fb-ads-connect" "PENDING" "activator returned nonzero (usually a FB field still blank — GHL refuses to publish a FB workflow with an empty required attribute); supply all --fb-* ids the workflow uses and re-run"
+    ledger_step "fb-ads-connect" "PENDING" "activator returned nonzero (usually a FB field still blank; GHL refuses to publish a FB workflow with an empty required attribute); supply all --fb-* ids the workflow uses and re-run"
   fi
 }
 provision_fb_ads

@@ -1195,17 +1195,24 @@ PYEOF
         warn "Only one of OPENCLAW_PODBEAN_BROKER_URL / OPENCLAW_PODBEAN_BROKER_TOKEN set — both required. Skipping Podbean broker injection."
     fi
 
-    # Podbean shared OAuth app credentials — operator OWN box / legacy fallback ONLY.
+    # Podbean shared OAuth app credentials -- operator OWN box / legacy fallback ONLY.
     # For client boxes prefer the broker pair above so BlackCEO's app secret never
     # lands on a client box. These are BlackCEO's single shared app (one Podbean
     # account hosts every client show), never the client's, and never asked from the client.
+    # GUARD: provisioning MUST NOT copy the shared secret to a client box. This path
+    # requires an explicit PODBEAN_INSTALL_LOCAL_MODE_OK=1 in the operator's env
+    # to prove the operator is intentionally placing the shared secret on THIS box.
     if [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] && [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
-        _shared_write_env "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
-        _shared_write_env "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
-        _shared_write_ocjson "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
-        _shared_write_ocjson "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
-        success "Podbean shared OAuth app credentials injected from operator env (operator/legacy fallback; chmod 600)"
-        injected_count=$((injected_count + 2))
+        if [ "${PODBEAN_INSTALL_LOCAL_MODE_OK:-0}" != "1" ]; then
+            warn "OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET are set but PODBEAN_INSTALL_LOCAL_MODE_OK != 1; refusing to copy the shared Podbean app secret to this box. This is the fleet-default fail-closed: the shared secret belongs on the OPERATOR'S OWN BOX ONLY. Use the publish-proxy pair (OPENCLAW_PODBEAN_PUBLISH_URL + OPENCLAW_PODBEAN_PUBLISH_TOKEN) for client boxes, or set PODBEAN_INSTALL_LOCAL_MODE_OK=1 on the operator's own box."
+        else
+            _shared_write_env "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
+            _shared_write_env "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
+            _shared_write_ocjson "PODBEAN_CLIENT_ID" "$OPENCLAW_PODBEAN_CLIENT_ID"
+            _shared_write_ocjson "PODBEAN_CLIENT_SECRET" "$OPENCLAW_PODBEAN_CLIENT_SECRET"
+            success "Podbean shared OAuth app credentials injected from operator env (operator OWN box only; local mode confirmed via PODBEAN_INSTALL_LOCAL_MODE_OK=1; chmod 600)"
+            injected_count=$((injected_count + 2))
+        fi
     elif [ -n "${OPENCLAW_PODBEAN_CLIENT_ID:-}" ] || [ -n "${OPENCLAW_PODBEAN_CLIENT_SECRET:-}" ]; then
         warn "Only one of OPENCLAW_PODBEAN_CLIENT_ID / OPENCLAW_PODBEAN_CLIENT_SECRET set — both required. Skipping Podbean injection."
     fi
