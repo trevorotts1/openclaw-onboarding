@@ -112,3 +112,12 @@ def test_missing_captured_at_rejected():
          "client_request_quote": "yes sir"}
     with pytest.raises(WaiverError, match="(?i)captured_at"):
         validate_waiver(w, rd)
+
+def test_non_dict_waiver_element_rejected():
+    # U013 fix-list item 5: load_waivers must reject a non-dict element in
+    # waivers.json with a clean WaiverError instead of silently skipping it
+    # (a bare string/number element used to slip through the old `if isinstance(w, dict):`
+    # guard, which only validated dicts and ignored everything else).
+    rd = _rd(); _wj(rd, "waivers.json", ["not-a-waiver-object"])
+    with pytest.raises(WaiverError, match="(?i)expected an object"):
+        load_waivers(rd)
