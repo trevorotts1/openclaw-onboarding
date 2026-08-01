@@ -104,6 +104,67 @@ PER-CLIENT FACEBOOK-ADS CONNECT CHECKLIST (do these in order):
 """
 
 
+def _match_workflow(rows, expected_name):
+    """Match a workflow by full normalized name (case-insensitive, trimmed).
+
+    Returns the first row whose name matches *exactly* after stripping
+    and lowercasing both sides.  Returns None when no row matches.
+    """
+    target = expected_name.strip().lower()
+    return next((r for r in rows if r.get("name", "").strip().lower() == target), None)
+
+
+# --------------------------------------------------------------------------- #
+# Self-test
+# --------------------------------------------------------------------------- #
+def self_test():
+    """Run in-process assertions against _match_workflow only.  No network."""
+    ok = True
+
+    def check(label, cond):
+        nonlocal ok
+        ok = ok and cond
+        print("  [%s] %s" % ("PASS" if cond else "FAIL", label))
+
+    rows = [
+        {"id": "1", "name": "01a - Update Facebook audience"},
+        {"id": "2", "name": "02-Fb Podcast Lead That DID NOT COMPLETE"},
+        {"id": "3", "name": "02a-2nd Fb Podcast Interview"},
+        {"id": "4", "name": "03-Podcast LeadForm Fb Ad"},
+        {"id": "5", "name": "01a-fake-decoy-workflow-that-shares-prefix"},
+    ]
+
+    print("== self-test: exact match passes ==")
+    m = _match_workflow(rows, "01a - Update Facebook audience")
+    check("exact-match-found", m is not None and m["id"] == "1")
+    check("exact-match-no-false-hit-on-prefix-rival",
+          m is not None and m["name"] == "01a - Update Facebook audience")
+
+    m2 = _match_workflow(rows, "02-Fb Podcast Lead That DID NOT COMPLETE")
+    check("exact-match-long-name", m2 is not None and m2["id"] == "2")
+
+    print("== self-test: prefix-only match is rejected ==")
+    m_pfx = _match_workflow(rows, "01a")
+    check("prefix-only-rejected", m_pfx is None)
+
+    m_pfx2 = _match_workflow(rows, "01a -")
+    check("partial-name-rejected", m_pfx2 is None)
+
+    print("== self-test: case/whitespace variants match ==")
+    m_case = _match_workflow(rows, "  03-podcast leadform fb ad  ")
+    check("lowercase-and-whitespace-ok", m_case is not None and m_case["id"] == "4")
+
+    m_mixed = _match_workflow(rows, "02a-2ND FB PODCAST INTERVIEW")
+    check("mixed-case-ok", m_mixed is not None and m_mixed["id"] == "3")
+
+    print("== self-test: fully-missing name yields None ==")
+    m_nope = _match_workflow(rows, "NON-EXISTENT WORKFLOW")
+    check("missing-name-returns-none", m_nope is None)
+
+    print("== self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    return 0 if ok else 1
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
@@ -113,7 +174,10 @@ def main() -> int:
     ap.add_argument("--fb-pixel", default="")
     ap.add_argument("--fb-token", default="")
     ap.add_argument("--execute", action="store_true")
+    ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args()
+    if args.self_test:
+        return self_test()
     if not args.location:
         print("FAIL: --location (or GHL_LOCATION_ID / PODCAST_ENGINE_GHL_LOCATION_ID env) is required - "
               "this script WRITES to the target sub-account", file=sys.stderr)
@@ -138,7 +202,7 @@ def main() -> int:
     rows = [r for r in (listing.get("rows", []) if isinstance(listing, dict) else []) if r.get("type") == "workflow"]
     ok_all = True
     for key, sub, uses in FB_WORKFLOWS:
-        match = next((r for r in rows if sub[:12] in r.get("name", "")), None)
+        match = _match_workflow(rows, sub)
         if not match:
             print(f"[MISS] {key}: no workflow matching {sub!r}"); ok_all = False; continue
         wid = match["id"]
