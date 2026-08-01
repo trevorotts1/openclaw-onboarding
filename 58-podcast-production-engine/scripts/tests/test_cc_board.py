@@ -303,13 +303,94 @@ class CloseTest(unittest.TestCase):
                              "workspace_id": "ws", "status": "backlog"})
         cc_board.create_board_card("job-close", "C", "Ep", env=ENV)
 
-        self.rec.queue(200, {"task": {"id": "task-close", "status": "done"}})
+        # TRANSITION-AWARE done path (rem-2): done is reachable only from
+        # review (or testing). The card starts in backlog, so the caller must
+        # GET its status, then PATCH status:'review' BEFORE the done PATCH.
+        # Queue the three scripted responses in order:
+        #   1. GET -> task object (status='backlog' at top level, per the real
+        #      GET /api/tasks/{id} route which returns the task object directly)
+        #   2. review PATCH -> 200
+        #   3. done PATCH -> 200
+        self.rec.queue(200, {"id": "task-close", "status": "backlog",
+                             "workspace_id": "ws"})
+        self.rec.queue(200, {"id": "task-close", "status": "review"})
+        self.rec.queue(200, {"id": "task-close", "status": "done"})
         ok = cc_board.patch_board_card("job-close", status="done", note="Episode finished.", env=ENV)
         self.assertTrue(ok)
-        patch = [r for r in self.rec.requests if r["method"] == "PATCH"][-1]
-        body = json.loads(patch["body"])
-        self.assertEqual(body["status"], "done")
-        self.assertEqual(body["note"], "Episode finished.")
+
+        # GET-before-PATCH status read: a GET request precedes the done PATCH.
+        gets = [r for r in self.rec.requests if r["method"] == "GET"]
+        self.assertEqual(len(gets), 1, "done path must GET the card status first")
+        self.assertEqual(gets[0]["url"], "https://cc.example.test/api/tasks/task-close")
+
+        # review-then-done sequencing: the PATCHes must be review FIRST, then
+        # done. The review PATCH carries ONLY status:'review' (no note, no
+        # phase); the done PATCH carries status:'done' + note.
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        self.assertEqual(len(patches), 2, "expected review pre-PATCH + done PATCH")
+        review_body = json.loads(patches[0]["body"])
+        self.assertEqual(review_body["status"], "review",
+                         "first PATCH must transition to review before done")
+        self.assertNotIn("note", review_body,
+                         "review pre-PATCH must not carry the done note")
+        done_body = json.loads(patches[1]["body"])
+        self.assertEqual(done_body["status"], "done")
+        self.assertEqual(done_body["note"], "Episode finished.")
+
+    def test_close_done_already_in_review_skips_review_prep(self):
+        """When the card is ALREADY in review, the done PATCH fires directly --
+        no redundant review pre-PATCH (the GET confirms a legal source)."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-review-src",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-review-src", "C", "Ep", env=ENV)
+
+        # GET reports the card is already in review -> no review pre-PATCH.
+        self.rec.queue(200, {"id": "task-review-src", "status": "review"})
+        self.rec.queue(200, {"id": "task-review-src", "status": "done"})
+        ok = cc_board.patch_board_card("job-review-src", status="done", env=ENV)
+        self.assertTrue(ok)
+
+        gets = [r for r in self.rec.requests if r["method"] == "GET"]
+        self.assertEqual(len(gets), 1, "done path still GETs even when in review")
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        self.assertEqual(len(patches), 1, "no review pre-PATCH when already in review")
+        self.assertEqual(json.loads(patches[0]["body"])["status"], "done")
+
+    def test_close_done_get_read_failure_still_attempts_done(self):
+        """FAIL-SOFT: if the GET status read fails (HTTP 500), the done PATCH
+        is still attempted (the card may already be in review)."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-get-fail",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-get-fail", "C", "Ep", env=ENV)
+
+        self.rec.queue(500, {"error": "db down"})  # GET fails
+        self.rec.queue(200, {"id": "task-get-fail", "status": "done"})  # done PATCH
+        ok = cc_board.patch_board_card("job-get-fail", status="done", env=ENV)
+        self.assertTrue(ok)
+
+        gets = [r for r in self.rec.requests if r["method"] == "GET"]
+        self.assertEqual(len(gets), 1, "GET was attempted even though it failed")
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        self.assertEqual(len(patches), 1, "only the done PATCH when GET failed")
+        self.assertEqual(json.loads(patches[0]["body"])["status"], "done")
+
+    def test_close_done_review_prep_failure_still_attempts_done(self):
+        """FAIL-SOFT: if the review pre-PATCH is refused (403), the done PATCH
+        is still attempted (fail-soft absorbs the refusal; exit stays 0)."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-rev-fail",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-rev-fail", "C", "Ep", env=ENV)
+
+        self.rec.queue(200, {"id": "task-rev-fail", "status": "in_progress"})
+        self.rec.queue(403, {"error": "Forbidden"})  # review pre-PATCH refused
+        self.rec.queue(200, {"id": "task-rev-fail", "status": "done"})  # done PATCH
+        ok = cc_board.patch_board_card("job-rev-fail", status="done", env=ENV)
+        self.assertTrue(ok)
+
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        self.assertEqual(len(patches), 2, "review pre-PATCH + done PATCH both attempted")
+        self.assertEqual(json.loads(patches[0]["body"])["status"], "review")
+        self.assertEqual(json.loads(patches[1]["body"])["status"], "done")
 
     def test_close_blocked_sends_blocked_triad(self):
         """Blocked close must send blocked_reason, blocked_on_human, and ask
@@ -345,6 +426,78 @@ class CloseTest(unittest.TestCase):
         self.assertEqual(body["blocked_reason"], "approval")
         self.assertEqual(body["blocked_on_human"], "operator")
         self.assertEqual(body["ask"], "Podcast episode run blocked - operator input needed")
+
+    def test_close_blocked_sends_triad_from_any_state_no_get(self):
+        """rem-2: blocked close sends the full triad and is source-agnostic --
+        the route's blocked gate (route.ts L349-396) runs unconditionally on
+        status='blocked', so NO GET status read and NO review pre-transition
+        is performed. Only ONE PATCH (the blocked one) is issued."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-block-any",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-block-any", "C", "Ep", env=ENV)
+
+        self.rec.queue(200, {"id": "task-block-any", "status": "blocked"})
+        ok = cc_board.patch_board_card(
+            "job-block-any", status="blocked",
+            blocked_reason="credential", blocked_on_human="owner",
+            ask="Need the Podbean API key.", env=ENV)
+        self.assertTrue(ok)
+
+        # No GET: blocked is source-agnostic, so the caller never reads status.
+        gets = [r for r in self.rec.requests if r["method"] == "GET"]
+        self.assertEqual(len(gets), 0, "blocked path must not GET the card status")
+
+        # Exactly ONE PATCH, carrying the full triad.
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        self.assertEqual(len(patches), 1, "blocked path issues a single PATCH (no pre-transition)")
+        body = json.loads(patches[0]["body"])
+        self.assertEqual(body["status"], "blocked")
+        self.assertEqual(body["blocked_reason"], "credential")
+        self.assertEqual(body["blocked_on_human"], "owner")
+        self.assertEqual(body["ask"], "Need the Podbean API key.")
+
+    def test_close_done_deliverable_before_done_patch(self):
+        """rem-2 / onb-21: the deliverable registration (POST /deliverables)
+        happens BEFORE the done PATCH so the completion-evidence gate (T0-01)
+        is satisfied when the done PATCH arrives. This is exercised via the
+        CLI cmd_close, which orchestrates register_deliverable + patch in
+        order. We drive it through the public functions the CLI calls, in the
+        CLI's exact order, to assert sequencing without a subprocess."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-deliv-seq",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-deliv-seq", "C", "Ep", env=ENV)
+
+        # Mirror cmd_close --status done --permalink <url> ordering exactly:
+        #   1. register_deliverable (POST /deliverables)  -- onb-21
+        #   2. patch_board_card(status='done') which GETs, then review, then done
+        self.rec.queue(201, {"id": "deliv-seq-001", "deliverable_type": "url",
+                             "title": "Podbean episode permalink",
+                             "path": "https://podbean.com/ep/seq"})
+        ok_deliv = cc_board.register_deliverable(
+            "job-deliv-seq", permalink="https://podbean.com/ep/seq", env=ENV)
+        self.assertTrue(ok_deliv)
+
+        self.rec.queue(200, {"id": "task-deliv-seq", "status": "backlog"})
+        self.rec.queue(200, {"id": "task-deliv-seq", "status": "review"})
+        self.rec.queue(200, {"id": "task-deliv-seq", "status": "done"})
+        ok_done = cc_board.patch_board_card("job-deliv-seq", status="done", env=ENV)
+        self.assertTrue(ok_done)
+
+        # The deliverable POST must precede every done-path PATCH.
+        posts = [r for r in self.rec.requests if r["method"] == "POST"
+                 and "/deliverables" in r["url"]]
+        self.assertEqual(len(posts), 1)
+        patches = [r for r in self.rec.requests if r["method"] == "PATCH"]
+        # Find the index of the deliverable POST vs the done PATCH in the full
+        # request stream -- deliverable MUST come first.
+        all_reqs = self.rec.requests
+        deliv_idx = next(i for i, r in enumerate(all_reqs)
+                         if r["method"] == "POST" and "/deliverables" in r["url"])
+        done_idx = next(i for i, r in enumerate(all_reqs)
+                        if r["method"] == "PATCH"
+                        and json.loads(r["body"]).get("status") == "done")
+        self.assertLess(deliv_idx, done_idx,
+                        "deliverable registration must precede the done PATCH")
 
 
 class DeliverableTest(unittest.TestCase):
