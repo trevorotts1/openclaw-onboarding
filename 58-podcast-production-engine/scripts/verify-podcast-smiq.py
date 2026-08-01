@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-"""verify-podcast-smiq.py — re-runnable, fail-loud health gate for the SMIQ capture, the
+"""verify-podcast-smiq.py -- re-runnable, fail-loud health gate for the SMIQ capture, the
 Facebook-ad workflows' template boundary, and the ops pipeline.
 
 Complements verify-podcast-ghl-workflows.py (which gates the required 4 intake/completion
 workflows). This one asserts the FB/SMIQ/pipeline functionalization work stayed correct:
 
-  SMIQ (Trevor: "very important — rock solid"):
+  SMIQ (Trevor: "very important -- rock solid"):
     * SMIQ Answer Tracker: published + committed; contact_changed trigger ACTIVE on
       contact.podcast_interview_smiq (the canonical field the podcast SMIQ answer always
       lands in); step writes contact.smiq_history; accumulator reads
@@ -22,7 +22,8 @@ Read-only. Exit 0 = all PASS. Auth identical to verify-podcast-ghl-workflows.py.
 from __future__ import annotations
 import argparse, json, os, ssl, sys, urllib.request, urllib.error
 
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY_DEFAULT = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"  # GHL public Firebase web-app identifier - shared, non-secret, same value GHL embeds in its own SPA
+FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY") or FIREBASE_API_KEY_DEFAULT
 BASE = "https://backend.leadconnectorhq.com"
 CTX = ssl.create_default_context()
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -80,10 +81,12 @@ def _get(tok, path):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--location", default=os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or DEFAULT_LOC)
+    ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
     ap.add_argument("--token-env", default="PODCAST_ENGINE_GHL_FIREBASE_REFRESH_TOKEN,GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
     args = ap.parse_args()
-    loc = args.location
+    loc = args.location or DEFAULT_LOC
+    if not args.location and loc == DEFAULT_LOC:
+        print("WARNING: defaulting to the golden template location - read-only", file=sys.stderr)
     names = [n.strip() for n in args.token_env.split(",") if n.strip()]
     _source_secrets(names)
     refresh = next((os.environ[n] for n in names if os.environ.get(n, "").strip()), "")
@@ -101,9 +104,9 @@ def main() -> int:
     def check(label, cond, detail=""):
         nonlocal ok_all
         ok_all = ok_all and cond
-        print(f"[{'PASS' if cond else 'FAIL'}] {label}{(' — ' + detail) if detail else ''}")
+        print(f"[{'PASS' if cond else 'FAIL'}] {label}{(' -- ' + detail) if detail else ''}")
 
-    print(f"== SMIQ + FB + pipeline health — location {loc} ({len(rows)} workflows) ==")
+    print(f"== SMIQ + FB + pipeline health -- location {loc} ({len(rows)} workflows) ==")
 
     # SMIQ Answer Tracker
     t = by("SMIQ Answer Tracker")

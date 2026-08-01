@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""activate-podcast-fb-workflows.py — PER-CLIENT Facebook-ads activation for the podcast
+"""activate-podcast-fb-workflows.py -- PER-CLIENT Facebook-ads activation for the podcast
 snapshot's four Facebook-ad workflows.
 
 WHY THIS EXISTS: the four FB-ad workflows (01a Update FB audience, 02 Fb Lead didn't
 complete, 02a 2nd Fb interview, 03 LeadForm Fb Ad) ship in the template STRUCTURALLY
-CORRECT but DRAFT with their Facebook account/audience/pixel/token fields BLANK — because
+CORRECT but DRAFT with their Facebook account/audience/pixel/token fields BLANK -- because
 the Facebook connection is inherently per-client (each client connects their own Facebook
 Business account and picks their own Lead Forms / Custom Audiences / Pixel). Nothing about
 Facebook can be fabricated in a fleet template. Once a client is ready to run ads and has
@@ -15,7 +15,7 @@ PREREQUISITE (done by the client in the GHL UI, NOT here): connect the Facebook 
 account under Settings -> Integrations, then note the ad-account id (act_...), the Custom
 Audience id(s), and the Pixel id + Conversions API access token. The Facebook Lead Form
 TRIGGER (which page/form fires 02/02a/03) is added in the workflow builder because it must
-select a live connected form — see the printed checklist.
+select a live connected form -- see the printed checklist.
 
 Auth (never printed): a Firebase refresh token, same internal rail as
 verify-podcast-ghl-workflows.py. Reads --token-env (default the client refresh var, then
@@ -26,7 +26,8 @@ Pass --execute to write. Demote-trap-safe publish (re-asserts status/version/tem
 from __future__ import annotations
 import argparse, json, os, ssl, sys, time, copy, urllib.request, urllib.error
 
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
+FIREBASE_API_KEY_DEFAULT = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"  # GHL public Firebase web-app identifier - shared, non-secret, same value GHL embeds in its own SPA
+FIREBASE_API_KEY = os.environ.get("FIREBASE_API_KEY") or FIREBASE_API_KEY_DEFAULT
 BASE = "https://backend.leadconnectorhq.com"
 CTX = ssl.create_default_context()
 UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
@@ -105,7 +106,7 @@ PER-CLIENT FACEBOOK-ADS CONNECT CHECKLIST (do these in order):
 
 def main() -> int:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--location", default=os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or DEFAULT_LOC)
+    ap.add_argument("--location", default=os.environ.get("GHL_LOCATION_ID") or os.environ.get("PODCAST_ENGINE_GHL_LOCATION_ID") or "")
     ap.add_argument("--token-env", default="PODCAST_ENGINE_GHL_FIREBASE_REFRESH_TOKEN,GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN")
     ap.add_argument("--fb-account", default="")
     ap.add_argument("--fb-audience", default="")
@@ -113,6 +114,10 @@ def main() -> int:
     ap.add_argument("--fb-token", default="")
     ap.add_argument("--execute", action="store_true")
     args = ap.parse_args()
+    if not args.location:
+        print("FAIL: --location (or GHL_LOCATION_ID / PODCAST_ENGINE_GHL_LOCATION_ID env) is required - "
+              "this script WRITES to the target sub-account", file=sys.stderr)
+        return 1
     loc = args.location
     names = [n.strip() for n in args.token_env.split(",") if n.strip()]
     _source_secrets(names)
@@ -124,7 +129,7 @@ def main() -> int:
         print("FAIL: could not mint id_token", file=sys.stderr); return 1
 
     have_fb = any([args.fb_account, args.fb_audience, args.fb_pixel, args.fb_token])
-    print(f"== FB-ads activation — location {loc} ==")
+    print(f"== FB-ads activation -- location {loc} ==")
     print(CHECKLIST)
     if not have_fb:
         print("No --fb-* values supplied: reporting current state only (nothing written).")
