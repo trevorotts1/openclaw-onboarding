@@ -23,7 +23,7 @@
       "label": "Agnes AI API Key (AGNES_AI_API_KEY)",
       "check": { "envVar": "AGNES_AI_API_KEY" },
       "severity": "required",
-      "satisfy": "AGNES_AI_API_KEY is fleet-provisioned infrastructure (the same key backs the registered agnes/agnes-2.0-flash model on the boxes). This skill only REFERENCES it — verify SET/NOT-SET with `openclaw config get AGNES_AI_API_KEY` and NEVER print the value. If NOT-SET, escalate to the operator as an infrastructure gap; do not invent or substitute a key."
+      "satisfy": "AGNES_AI_API_KEY is fleet-provisioned infrastructure (the same key backs the registered agnes/agnes-2.5-flash model on the boxes). This skill only REFERENCES it — verify SET/NOT-SET with `openclaw config get AGNES_AI_API_KEY` and NEVER print the value. If NOT-SET, escalate to the operator as an infrastructure gap; do not invent or substitute a key."
     }
   ]
 }

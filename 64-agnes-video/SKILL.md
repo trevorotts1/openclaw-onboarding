@@ -8,7 +8,7 @@ description: >
   and reading the returned size/seconds/metadata as the source of truth.
 metadata:
 
-  version: "1.0.0"
+  version: "1.0.1"
   priority: HIGH
 ---
 
@@ -20,7 +20,7 @@ optionally an image, or a set of keyframes) and it returns a rendered `.mp4`.
 
 This skill is a REFERENCE, not an installer for a new account. The fleet already
 carries the `AGNES_AI_API_KEY` credential (the same key that backs the registered
-`agnes/agnes-2.0-flash` model on the boxes, endpoint `apihub.agnes-ai.com/v1`).
+`agnes/agnes-2.5-flash` model on the boxes, endpoint `apihub.agnes-ai.com/v1`).
 This skill teaches an agent the exact request/response shape so that when it is
 told "use the Agnes video skill", it knows the two-step async flow cold.
 
@@ -198,7 +198,7 @@ render a specific client's logo accurately and will invent a lookalike instead.
 ## Credential Note
 
 The credential is `AGNES_AI_API_KEY`. It is ALREADY provisioned on the fleet
-(the same key backs `agnes/agnes-2.0-flash`). This skill only REFERENCES it.
+(the same key backs `agnes/agnes-2.5-flash`). This skill only REFERENCES it.
 
 - Verify presence with SET / NOT-SET only, e.g.
   `openclaw config get AGNES_AI_API_KEY` (check that it is set) — NEVER print,

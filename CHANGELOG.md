@@ -148,6 +148,25 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.53]  -  2026-08-01  -  fix: Agnes text/reasoning model updated to Agnes 2.5 Flash (skills 63/64 + install model pin)
+
+The fleet's registered Agnes TEXT/reasoning model moved from `agnes/agnes-2.0-flash`
+to `agnes/agnes-2.5-flash`, but every repo reference to it was still pinned to 2.0.
+The image model (`agnes-image-2.1-flash`) and video model (`agnes-video-v2.0`) are
+unchanged — only the shared TEXT-model references were updated:
+
+- **install.sh** — the provider-aware subagent model-pin seed used
+  `agnes/agnes-2.0-flash` as the NON-Ollama fallback; now `agnes/agnes-2.5-flash`
+  (matches the registered `agnes/agnes-2.5-flash` model on the boxes).
+- **Skill 63** — SKILL.md, INSTALL.md, PREREQS.json, QC.md, CORE_UPDATES.md,
+  agnes-image-full.md: `agnes / agnes-2.0-flash` → `agnes / agnes-2.5-flash`.
+- **Skill 64** — SKILL.md, INSTALL.md, PREREQS.json, agnes-video-full.md:
+  `agnes/agnes-2.0-flash` → `agnes/agnes-2.5-flash`.
+- Both skills bumped to `v1.0.1` (`skill-version.txt` + SKILL.md frontmatter + CHANGELOG),
+  and README.md skill-table version stamps updated to match.
+- No API shape, endpoint, credential, or model-id changed — a version-reference
+  correction only.
+
 ## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot (+ EWS installed with ZERO crons via a non-existent CLI flag)
 
 Two keys govern agent concurrency:

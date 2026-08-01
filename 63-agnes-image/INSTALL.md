@@ -58,7 +58,7 @@ STEP 1: CONFIRM THE CREDENTIAL (SET / NOT-SET ONLY)
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 AGNES_AI_API_KEY is an EXISTING fleet credential — the same key the registered
-`agnes` / `agnes-2.0-flash` model already uses against apihub.agnes-ai.com/v1.
+`agnes` / `agnes-2.5-flash` model already uses against apihub.agnes-ai.com/v1.
 This skill REFERENCES that key. Do NOT mint a new one, and do NOT print the
 value.
 
