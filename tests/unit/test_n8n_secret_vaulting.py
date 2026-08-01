@@ -159,3 +159,79 @@ def test_scanner_allows_expressions_env_references_and_credential_placeholders(
 
     result = run_scanner(tmp_path)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def _run_vault_check(workflow_path: Path) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(TRANSFORMER), "--check", str(workflow_path)],
+        cwd=REPO_ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_vault_check_exits_clean_for_replace_with_placeholder(tmp_path: Path) -> None:
+    """--check treats a REPLACE_WITH_...CREDENTIAL... placeholder as CLEAN (exit 0).
+
+    Placeholders are the sanctioned sanitized form this transformer emits and
+    that committed exports ship; rejecting them would condemn the transformer's
+    own output and the broker workflow, so clean-is-correct (R-11 intent).
+    """
+    workflow = {
+        "name": "Placeholder credential fixture",
+        "nodes": [
+            {
+                "name": "Token Node",
+                "type": "n8n-nodes-base.httpRequest",
+                "typeVersion": 4.4,
+                "parameters": {
+                    "method": "POST",
+                    "url": "https://example.invalid/oauth/token",
+                    "authentication": "predefinedCredentialType",
+                    "nodeCredentialType": "httpBasicAuth",
+                },
+                "credentials": {
+                    "httpBasicAuth": {
+                        "id": "REPLACE_WITH_PODBEAN_BASIC_CREDENTIAL",
+                        "name": "BlackCEO Podbean App (connect me)",
+                    }
+                },
+            }
+        ],
+        "active": False,
+    }
+    path = tmp_path / "placeholder.workflow.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+
+    result = _run_vault_check(path)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "CLEAN" in result.stdout
+
+
+def test_vault_check_exits_dirty_for_plaintext_secret(tmp_path: Path) -> None:
+    """--check flags a plaintext client_secret literal as DIRTY (exit 1)."""
+    workflow = {
+        "name": "Plaintext secret fixture",
+        "nodes": [
+            {
+                "name": "Leaky Code Node",
+                "type": "n8n-nodes-base.code",
+                "typeVersion": 2,
+                "position": [0, 0],
+                "parameters": {
+                    "jsCode": (
+                        'const client_secret = "sk_test_FAKE_PLAINTEXT_0000000000";\n'
+                        "return [{ json: { ok: true } }];"
+                    )
+                },
+            }
+        ],
+        "active": False,
+    }
+    path = tmp_path / "plaintext.workflow.json"
+    path.write_text(json.dumps(workflow), encoding="utf-8")
+
+    result = _run_vault_check(path)
+    assert result.returncode == 1, result.stdout + result.stderr
+    assert "DIRTY" in result.stderr

@@ -3,6 +3,13 @@
 
 This program reads and writes local workflow JSON only. It has no networking
 code and never accepts a secret value as a command-line argument.
+
+--check placeholder semantics: a REPLACE_WITH_...CREDENTIAL... placeholder is
+the sanctioned sanitized form this transformer emits for credential IDs (see
+CREDENTIAL_ID_PLACEHOLDER) and the form shipped in committed workflow exports.
+--check therefore treats a placeholder value as CLEAN (exit 0) and only flags
+plaintext secret literals (exit 1). Rejecting placeholders would condemn the
+transformer's own output and the committed broker export, so clean-is-correct.
 """
 
 from __future__ import annotations
@@ -425,7 +432,12 @@ SECRET_PATTERNS = [
 
 
 def _matches_secret_pattern(value: str) -> bool:
-    """True if `value` looks like a secret (not env ref, not placeholder)."""
+    """True if `value` looks like a plaintext secret.
+
+    env references (={{ $env.X }} / $env.X) and REPLACE_WITH_...CREDENTIAL...
+    placeholders are the sanctioned sanitized forms this transformer emits and
+    that committed exports ship, so they are NOT secrets and return False.
+    """
     if not isinstance(value, str):
         return False
     stripped = value.strip()
@@ -499,7 +511,15 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("credential_name", nargs="?", help="target n8n credential name")
     parser.add_argument("--credential-name", dest="credential_name_option", help="target n8n credential name")
     parser.add_argument("--output", type=Path, help="output path (default: rewrite the input atomically)")
-    parser.add_argument("--check", action="store_true", help="read-only scan for plaintext secrets (exit 0=clean, 1=dirty)")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help=(
+            "read-only scan for plaintext secrets "
+            "(exit 0=clean, 1=dirty). REPLACE_WITH_...CREDENTIAL... "
+            "placeholders are the sanctioned sanitized form and exit 0 (clean)."
+        ),
+    )
     args = parser.parse_args(argv)
 
     if args.check:
