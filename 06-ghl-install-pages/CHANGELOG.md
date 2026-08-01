@@ -4,6 +4,11 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## [v21.4.54] - 2026-08-01 - docs: document preview-URL 301 redirect host discovery
+
+### Added
+- **PREVIEW-URL HOST DISCOVERY (empirical, 2026-07).** `app.convertandflow.com/preview/<id>` does NOT render on that host — it 301-redirects to `sites.leadconnectorhq.com/preview/<id>`, which is where the page actually renders. No API field reveals this; verification must follow the redirect and check the marker in the rendered host's DOM.
+
 ## [v20.0.90] - 2026-07-21 - T0-18: the P4->P5 handoff now binds the verified verdict
 
 ### Fixed
