@@ -686,10 +686,28 @@ if [ "$TEST_RUN" = "1" ]; then
   log "test run: validating inputs and short-circuiting before any Podbean call"
 fi
 
+# Transport precedence (per box): PROXY, then BROKER, then LOCAL (S58-U14).
+# PROXY wins when both PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN
+# resolve: n8n performs the entire publish and this box holds no Podbean
+# credential at all (S58 spec Section 2). Detected BEFORE input validation so
+# --audio can be gated to broker/local modes only (R-29 / onb-19).
+PROXY_MODE=0
+if [ -n "${PODBEAN_PUBLISH_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_PUBLISH_TOKEN:-}" ]; then
+  PROXY_MODE=1
+fi
+
 # --------------------------------------------------------- validate the inputs --
-[ -n "$AUDIO" ] || { usage; die "--audio is required"; }
 [ -n "$TITLE" ] || { usage; die "--title is required"; }
-[ -f "$AUDIO" ] || die "audio file not found: $AUDIO"
+if [ "$PROXY_MODE" = "1" ]; then
+  # Proxy mode: n8n downloads from --audio-url, the local file is never used.
+  # --audio is optional; warn when absent, never die (R-29 / onb-19).
+  if [ -z "$AUDIO" ]; then
+    log "--audio was not supplied (proxy mode uses --audio-url for the download; the local file is not needed)"
+  fi
+else
+  [ -n "$AUDIO" ] || { usage; die "--audio is required in broker/local mode (the mastered MP3 to upload)"; }
+  [ -f "$AUDIO" ] || die "audio file not found: $AUDIO"
+fi
 if [ -n "$COVER" ] && [ ! -f "$COVER" ]; then die "cover file not found: $COVER"; fi
 case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, premium, or private" ;; esac
 
@@ -697,16 +715,8 @@ case "$EP_TYPE" in public|premium|private) ;; *) die "--type must be public, pre
 # The Channel ID is the ONLY per-client Podbean value and is required in BOTH modes.
 : "${PODBEAN_PODCAST_ID:?PODBEAN_PODCAST_ID is NOT SET (the client Podbean Channel ID / podcast_id)}"
 
-# Transport precedence (per box): PROXY, then BROKER, then LOCAL (S58-U14).
-# PROXY wins when both PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN
-# resolve: n8n performs the entire publish and this box holds no Podbean
-# credential at all, not even a broker-scoped one (S58 spec Section 2). When
-# PROXY is not configured, the BROKER/LOCAL selection below is unchanged and
-# runs exactly as it did before this unit (byte-identical block, only gated).
-PROXY_MODE=0
-if [ -n "${PODBEAN_PUBLISH_WEBHOOK_URL:-}" ] && [ -n "${PODBEAN_PUBLISH_TOKEN:-}" ]; then
-  PROXY_MODE=1
-fi
+# When PROXY is not configured, the BROKER/LOCAL selection below is unchanged
+# and runs exactly as it did before this unit (byte-identical block, only gated).
 
 BROKER_MODE=0
 if [ "$PROXY_MODE" != "1" ]; then
@@ -849,6 +859,11 @@ print(json.dumps(d))
     EPISODE_ID="$(printf '%s' "$RESP_BODY" | proxy_field episode_id)"
     EPISODE_NUMBER="$(printf '%s' "$RESP_BODY" | proxy_field episode_number)"
     PROXY_SCHEDULED="$(printf '%s' "$RESP_BODY" | proxy_field scheduled)"
+    # R-29 / onb-19: extract durable media keys from the proxy reply when present.
+    # The n8n proxy may return mp3_media_key / cover_image_key alongside the
+    # permalink. Absent fields simply skip (forward-compatible).
+    PROXY_MP3_KEY="$(printf '%s' "$RESP_BODY" | proxy_field mp3_media_key)"
+    PROXY_COVER_KEY="$(printf '%s' "$RESP_BODY" | proxy_field cover_image_key)"
     RESP_BODY=""
     [ -n "$PERMALINK" ] || die "publish-proxy replied ok:true but carried no permalink_url"
 
@@ -858,6 +873,24 @@ print(json.dumps(d))
         log "permalink recorded via podcast_state.py for job ${JOB_ID}"
       else
         log "warning: podcast_state.py did not record the permalink; caller must persist it"
+      fi
+      # R-29 / onb-19: record durable media keys from the proxy reply, exactly like
+      # the broker/local branch does. Best-effort: warnings, never fatal (the
+      # permalink already landed and the episode is live). Forward-compatible:
+      # absent fields from the proxy just skip.
+      if [ -n "$PROXY_MP3_KEY" ]; then
+        if python3 "$SW" output --job-id "$JOB_ID" --field mp3_media_key --value "$PROXY_MP3_KEY" >&2; then
+          log "mp3 media key recorded via podcast_state.py for job ${JOB_ID}"
+        else
+          log "warning: podcast_state.py did not record the mp3 media key; caller must persist it"
+        fi
+      fi
+      if [ -n "$PROXY_COVER_KEY" ]; then
+        if python3 "$SW" output --job-id "$JOB_ID" --field cover_image_key --value "$PROXY_COVER_KEY" >&2; then
+          log "cover media key recorded via podcast_state.py for job ${JOB_ID}"
+        else
+          log "warning: podcast_state.py did not record the cover media key; caller must persist it"
+        fi
       fi
     fi
 
