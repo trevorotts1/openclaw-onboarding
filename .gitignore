@@ -64,3 +64,9 @@ client-roster.txt
 .openclaw-client-roster.txt
 # Keep the placeholder-only template tracked.
 !scripts/client-roster.example.txt
+
+# ─── Runtime-generated per-box model-map (NEVER commit) ───────────────
+# 59-anthology-engine/preflight.sh writes a resolved per-box model-map.json
+# (real model names, not <CLIENT_*> placeholders) into the skill dir at runtime.
+# The engine docs explicitly forbid committing it.
+59-anthology-engine/model-map.json
