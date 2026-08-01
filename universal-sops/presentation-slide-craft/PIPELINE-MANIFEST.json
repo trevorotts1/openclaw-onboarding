@@ -198,7 +198,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-CONVERTER",
@@ -226,7 +230,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0A-INTAKE",
@@ -285,7 +293,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0B-PRIORITY",
@@ -346,7 +358,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-STYLE-PREVIEW",
@@ -369,7 +385,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SHIFT-QC",
@@ -393,7 +413,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P1Q-COPY-QC",
@@ -439,7 +463,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P3-ARC",
@@ -481,7 +509,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-3.5-RESEARCH-MAP",
@@ -505,7 +537,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-COPY",
@@ -535,7 +571,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "PF-DESIGN",
@@ -555,7 +595,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-TYPO-QC",
@@ -578,7 +622,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-PROMPT",
@@ -600,7 +648,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-PROMPT-QC",
@@ -622,7 +674,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-RENDER",
@@ -658,7 +714,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-IMAGE-QC",
@@ -688,7 +748,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8-ASSEMBLE",
@@ -713,7 +777,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8.1-PDF-EXPORT",
@@ -733,7 +801,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8.2-GUIDE",
@@ -753,7 +825,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9-SPEECH",
@@ -775,7 +851,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8.4-FISH-TAG",
@@ -795,7 +875,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9.1-SPEECH-PDF",
@@ -815,7 +899,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SPEECH-QC",
@@ -837,7 +925,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9.5-NOTES-SYNC",
@@ -855,7 +947,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9.2-GHL-UPLOAD",
@@ -875,7 +971,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P7-TELEPROMPTER",
@@ -895,7 +995,11 @@
       "executor": {
         "kind": "script",
         "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9-DELIVER",
@@ -917,7 +1021,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-CLAIM",
@@ -939,7 +1047,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-INTAKE",
@@ -965,7 +1077,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-INTAKE-TRACE",
@@ -987,7 +1103,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-STRUCTURE",
@@ -1017,7 +1137,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-P3-HYGIENE",
@@ -1039,7 +1163,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     }
   ],
   "autofails": [

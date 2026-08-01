@@ -1,0 +1,97 @@
+{
+  "name": "fleet-standing-prune",
+  "active": true,
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Schedule Weekly Prune",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "triggerTimes": [
+          {
+            "mode": "everyWeek",
+            "weekday": "sunday",
+            "hour": 4,
+            "minute": 0,
+            "interval": 1
+          }
+        ]
+      }
+    },
+    {
+      "id": "code-30days-ago",
+      "name": "30 Days Ago Timestamp",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        300,
+        0
+      ],
+      "parameters": {
+        "language": "javaScript",
+        "jsCode": "const now = new Date();\nconst thirtyDaysAgoUTC = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);\nreturn [{ json: { threshold_timestamp: thirtyDaysAgoUTC.toISOString() } }];"
+      }
+    },
+    {
+      "id": "prune-data-table",
+      "name": "Dry Run Prune Rescue Request Ledger",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "deleteRows",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "name",
+          "value": "rescue_request_ledger"
+        },
+        "filters": {
+          "type": "and",
+          "conditions": [
+            {
+              "columnName": "requested_at",
+              "condition": "lt",
+              "value": "={{ $json.threshold_timestamp }}"
+            }
+          ]
+        },
+        "dryRun": false,
+        "returnData": true
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Weekly Prune": {
+      "main": [
+        [
+          {
+            "node": "30 Days Ago Timestamp",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "30 Days Ago Timestamp": {
+      "main": [
+        [
+          {
+            "node": "Dry Run Prune Rescue Request Ledger",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {}
+}

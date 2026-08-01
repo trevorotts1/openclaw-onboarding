@@ -132,6 +132,43 @@ else
 fi
 export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
 
+# ─── 1c. Enumerate BUNDLED plugin IDs for plugins.allow (dynamic, box-specific) ──
+# SECURITY: the repo never set plugins.allow, so every box inherits the gateway's
+# permissive default — ANY discovered plugin (bundled OR third-party/unvetted)
+# auto-loads. Observed on a client box: `moonshot`, `perplexity` auto-loading
+# from ~/.openclaw/npm/projects/... with no vetting.
+#
+# We do NOT hardcode a plugin-ID list — different boxes ship different plugin
+# sets, and a fixed list would break any box whose bundle differs. Instead we
+# ask THIS box, right now, what it reports as "bundled" (shipped with its own
+# OpenClaw install — the vetted set) via `openclaw plugins list --json`, and
+# allow exactly that set. Non-bundled plugins (npm/marketplace/local installs)
+# are excluded — that IS the fix.
+#
+# FAIL-OPEN: if the CLI is missing, the command fails, or it enumerates ZERO
+# bundled ids, we log loudly to stderr and SKIP writing plugins.allow entirely
+# this run — the existing config (present or absent) is left untouched. We
+# never write an empty or partial allowlist: an empty plugins.allow[] would
+# disable every plugin fleet-wide, including trusted bundled ones the box
+# depends on. Idempotent: re-running with an unchanged bundle re-derives the
+# identical list (no-op); an OpenClaw upgrade that changes the bundled set is
+# picked up automatically on the next run.
+FLEET_PLUGINS_JSON_FILE=""
+FLEET_PLUGINS_ENUM_OK=0
+if command -v openclaw >/dev/null 2>&1; then
+  _plugins_tmp=$(mktemp); _APPLY_TMPFILES+=("$_plugins_tmp")
+  if openclaw plugins list --json >"$_plugins_tmp" 2>/dev/null && [ -s "$_plugins_tmp" ]; then
+    FLEET_PLUGINS_JSON_FILE="$_plugins_tmp"
+    FLEET_PLUGINS_ENUM_OK=1
+  else
+    echo "WARNING: [apply-fleet-standards] 'openclaw plugins list --json' failed or returned empty output — SKIPPING plugins.allow this run (fail-open; existing config left untouched)" >&2
+  fi
+else
+  echo "WARNING: [apply-fleet-standards] 'openclaw' CLI not found on PATH — cannot enumerate bundled plugins — SKIPPING plugins.allow this run (fail-open; existing config left untouched)" >&2
+fi
+export FLEET_PLUGINS_JSON_FILE
+export FLEET_PLUGINS_ENUM_OK
+
 # ─── 2. Deep-merge the canonical fleet block into openclaw.json ──────────────
 python3 - "$OC_CONFIG" <<'PYEOF'
 import json
@@ -251,6 +288,37 @@ def deep_merge(dst, src):
 
 # Apply the canonical block.
 deep_merge(cfg, CANONICAL)
+
+# ─── DYNAMIC plugins.allow — vetted-bundled-only plugin gate (box-specific) ──
+# See "1c" above for the full rationale. This is intentionally NOT part of the
+# static CANONICAL dict above: CANONICAL is the same literal block on every
+# box, but the correct plugins.allow value differs per box (whatever it
+# currently reports as bundled), so it is computed here from the bash-side
+# enumeration (FLEET_PLUGINS_JSON_FILE) instead of hardcoded.
+# FAIL-OPEN: any failure/empty result below leaves cfg["plugins"]["allow"]
+# exactly as found — never write an empty or partial allowlist.
+_plugins_enum_ok = os.environ.get("FLEET_PLUGINS_ENUM_OK", "0") == "1"
+_plugins_json_file = os.environ.get("FLEET_PLUGINS_JSON_FILE", "")
+if _plugins_enum_ok and _plugins_json_file:
+    try:
+        _plugins_data = json.loads(Path(_plugins_json_file).read_text())
+        _bundled_ids = sorted({
+            p["id"] for p in _plugins_data.get("plugins", [])
+            if isinstance(p, dict)
+            and p.get("origin") == "bundled"
+            and isinstance(p.get("id"), str)
+            and p["id"]
+        })
+    except Exception as _e:
+        print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
+        _bundled_ids = []
+    if _bundled_ids:
+        cfg.setdefault("plugins", {})["allow"] = _bundled_ids
+        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-bundled plugin id(s) — non-bundled/third-party plugins will no longer auto-load")
+    else:
+        print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
+else:
+    print("[apply-fleet-standards] plugins.allow enumeration unavailable this run (see WARNING above, if any) — leaving existing plugins.allow untouched (fail-open)")
 
 # DEFECT 1 (v13.1.3) — schema-version-aware no-refusal baseline.
 _agents_defaults = cfg.setdefault("agents", {}).setdefault("defaults", {})
@@ -701,6 +769,63 @@ mkdir -p "$WORKSPACE_DIR"
 AGENTS_FILE_EARLY="$WORKSPACE_DIR/AGENTS.md"
 touch "$AGENTS_FILE_EARLY"
 
+# ─── 5a-DEDUP. Mechanical AGENTS.md duplicate-block remover (self-heal) ──────
+# ROOT CAUSE THIS FIXES: every marker-guarded stamp below (ROLE_DISCIPLINE_V1,
+# CEO_ROUTING_NO_LOOPHOLES, PRESENTATION_ROUTING_REFLEX, SKILL_INTENT_ROUTING_
+# REFLEX, CREDENTIAL_CHECK, PERSONA_REFLEX_V1, FULL_CONTEXT_HANDOFF_V1,
+# OWNER_REPORTING_V1, PLATFORM_FACTS_V1) is guarded by the idiom
+# `if grep -qF "$MARKER" file; then <no-op>; else cat >> file; fi`. On a box
+# where a HISTORICAL stamp predates the marker (or the marker text drifted),
+# that guard false-negatives and RE-APPENDS the block on every later run.
+# Measured on a fleet box: up to 8 copies of one heading, ~23,000 bytes of
+# pure repetition in one AGENTS.md. Past the empirical ~400,000-char
+# injection ceiling (see 5a-SIZEGUARD-HARDCAP immediately below) that bloat
+# SILENTLY TRUNCATES the file the gateway injects every turn — the agent
+# loses its own rules with no error, no warning, no log line anywhere.
+#
+# This step is the MECHANICAL CLEANUP for duplicates already on disk (the
+# grep-guard itself already stops FUTURE re-appends). It runs HERE — BEFORE
+# both size guards below (so their measurements reflect the reclaimed space)
+# and BEFORE every marker-guard check that follows (so the surviving copy of
+# each historical stamp is the one carrying its own <!-- MARKER -->, and the
+# grep-guard below it correctly no-ops instead of re-appending again — the
+# exact false-negative this fixes).
+#
+# Fully mechanical — no summarizing, no rewriting, no judgment: removes ONLY
+# byte-identical duplicate blocks (same heading + same body), always keeps
+# ONE (preferring the marked copy), leaves any near-duplicate (bodies differ
+# by so much as one byte) untouched and flagged for manual review, and
+# refuses to write at all if collapsing duplicates would unbalance a
+# <!-- BEGIN skill:NN:agents --> / <!-- END skill:NN:agents --> pair.
+#
+# ADVISORY, NEVER FATAL: any failure here (script missing, exception, refused
+# write) is logged and the run CONTINUES — a box that stays duplicated is far
+# better than a roll that dies. Portable: this calls python3 (present on every
+# box), not bash 4 — apply-fleet-standards.sh itself must stay bash-3.2-safe
+# for macOS. See scripts/dedup-agents-md.py.
+_DEDUP_SCRIPT=""
+for _dcand in \
+  "$_FS_SCRIPT_DIR/dedup-agents-md.py" \
+  "$OC_ROOT/scripts/dedup-agents-md.py" \
+  "$HOME/.openclaw/scripts/dedup-agents-md.py"; do
+  [ -f "$_dcand" ] && _DEDUP_SCRIPT="$_dcand" && break
+done
+_DEDUP_SUMMARY_LINE=""
+if [ -n "$_DEDUP_SCRIPT" ] && command -v python3 >/dev/null 2>&1; then
+  if _DEDUP_OUT="$(python3 "$_DEDUP_SCRIPT" --apply --file "$AGENTS_FILE_EARLY" 2>&1)"; then
+    _DEDUP_RC=0
+  else
+    _DEDUP_RC=$?
+  fi
+  printf '%s\n' "$_DEDUP_OUT"
+  _DEDUP_SUMMARY_LINE="$(printf '%s\n' "$_DEDUP_OUT" | grep -m1 '^\[AGENTS DEDUP\]' || true)"
+  if [ "$_DEDUP_RC" -ne 0 ]; then
+    echo "WARNING: [apply-fleet-standards] AGENTS.md dedup exited $_DEDUP_RC (advisory only — file left as-is; run continues)" >&2
+  fi
+else
+  echo "[apply-fleet-standards] AGENTS.md dedup script not found (checked script dir, \$OC_ROOT/scripts, ~/.openclaw/scripts) — SKIPPING dedup this run (advisory; no duplicates removed)"
+fi
+
 # ─── 5a-SIZEGUARD. Core-bootstrap size guard (WARN-ONLY — never edits content) ─
 # MEASURED (fleet, 2026-07-09): several boxes carry a compiled core bootstrap
 # (the gateway-injected AGENTS/MEMORY/TOOLS/SOUL/IDENTITY/USER/HEARTBEAT) of
@@ -745,6 +870,64 @@ if total > target:
 else:
     print(f"[apply-fleet-standards] core-bootstrap size guard: {total:,} chars within target {target:,} (workspace {ws}) — OK")
 SIZEEOF
+
+# The 5a-DEDUP result (just above) — re-echoed here, right before the hard-cap
+# alarm, so the reclaim and the residual size land next to each other in the log.
+if [ -n "$_DEDUP_SUMMARY_LINE" ]; then
+  echo "[apply-fleet-standards] $_DEDUP_SUMMARY_LINE"
+fi
+
+# ─── 5a-SIZEGUARD-HARDCAP. Silent-truncation loud alarm (WARN-ONLY, no content edited) ─
+# 2026-07-31 fleet root-cause audit: the SOFT target above (150,000) is a token-
+# burn guideline, not the actual gateway injection ceiling. Live sampling of
+# `systemPromptReport.injectedWorkspaceFiles[]` across the fleet during that
+# audit showed the runtime silently truncating the injected core-file set once
+# the RAW total crosses somewhere between 283,709 chars (NOT truncated, one box)
+# and 443,125 / 590,882 chars (BOTH truncated, two other boxes) -- and in EVERY
+# truncated case observed, injectedChars landed at exactly 399,999. That is a
+# hard ceiling, not a cost concern: bytes past it are dropped from the agent's
+# context with NO error, NO warning, and NO log line anywhere except this one.
+# HARD_CAP defaults to a safety margin below the observed 399,999 cutoff so this
+# fires BEFORE truncation, not after. Overridable (FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS)
+# in case a future gateway version moves the real ceiling -- re-measure via
+# `openclaw agent --agent <id> --message "hi" --json` -> systemPromptReport if this
+# ever fires on a box that is NOT actually truncated (or misses one that is).
+FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS="${FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS:-380000}"
+WORKSPACE_DIR="$WORKSPACE_DIR" \
+FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS="$FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS" \
+python3 - <<'HARDCAPEOF' || true
+import os
+ws = os.environ.get("WORKSPACE_DIR", "")
+try:
+    hard_cap = int(os.environ.get("FLEET_CORE_BOOTSTRAP_HARD_CAP_CHARS", "380000"))
+except ValueError:
+    hard_cap = 380000
+CORE = ["AGENTS.md", "MEMORY.md", "TOOLS.md", "SOUL.md", "IDENTITY.md", "USER.md", "HEARTBEAT.md"]
+total = 0
+rows = []
+for name in CORE:
+    p = os.path.join(ws, name)
+    try:
+        n = len(open(p, encoding="utf-8", errors="replace").read()) if os.path.isfile(p) else 0
+    except Exception:
+        n = 0
+    if n:
+        rows.append((name, n))
+        total += n
+rows.sort(key=lambda x: -x[1])
+if total > hard_cap:
+    print(f"[apply-fleet-standards] ⛔ SILENT TRUNCATION LIKELY ACTIVE: CORE-BOOTSTRAP {total:,} chars EXCEEDS the empirical hard cap {hard_cap:,} (workspace {ws})")
+    print(f"[apply-fleet-standards]       This is NOT a token-cost warning -- past this point the gateway silently DROPS bytes from the")
+    print(f"[apply-fleet-standards]       agent's injected context every turn, with NO error, NO warning, and NO log line anywhere else.")
+    print(f"[apply-fleet-standards]       CONFIRM: openclaw agent --agent <default-agent-id> --message \"hi\" --json | look for")
+    print(f"[apply-fleet-standards]                systemPromptReport.injectedWorkspaceFiles[].truncated == true (costs one real model turn).")
+    for name, n in rows:
+        print(f"[apply-fleet-standards]       {name:<13} {n:>8,} chars")
+    print(f"[apply-fleet-standards]       FIX: dedupe/trim core files (a re-stamped marker block appearing more than once is the #1 cause) --")
+    print(f"[apply-fleet-standards]       see 'grep -c \"^## \" {ws}/AGENTS.md' vs 'grep \"^## \" {ws}/AGENTS.md | sort -u | wc -l' for a quick duplicate check.")
+else:
+    print(f"[apply-fleet-standards] core-bootstrap hard-cap guard: {total:,} chars within empirical hard cap {hard_cap:,} (workspace {ws}) — OK, truncation unlikely")
+HARDCAPEOF
 
 ROLE_DISC_MARKER="<!-- ROLE_DISCIPLINE_V1 -->"
 if grep -qF "$ROLE_DISC_MARKER" "$AGENTS_FILE_EARLY"; then

@@ -136,7 +136,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Strike-capable overlay support:**
 
-pptx_text_overlays.json entries may contain a `strike: true` property on any run. This is the documented fallback for struck-through prices that failed two render attempts in Phase 4/5 (per master SOP Section 7.4). The assembly script must handle the `strike` property on every run-level entry and apply the correct OOXML attribute to the text run.
+pptx_text_overlays.json entries may contain a `strike: true` property on any run. This is the documented fallback for struck-through prices that failed two render attempts in Phase 4/5 (per SOP-DESIGN-01-CREATIVE-TYPOGRAPHY-GUIDE (PRESENTATION-MASTER-DOCTRINE.md §4)). The assembly script must handle the `strike` property on every run-level entry and apply the correct OOXML attribute to the text run.
 
 Each entry in pptx_text_overlays.json follows this schema:
 ```json

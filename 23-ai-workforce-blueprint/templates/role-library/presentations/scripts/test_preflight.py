@@ -3305,6 +3305,51 @@ def test_sp_wrappers():
     return fails
 
 
+def _slide_geometry_probe_root() -> Path:
+    """Build a run dir with one REAL 2048x1152 PNG render (build_deck.py's own
+    RESOLUTION="2K" / ASPECT_RATIO="16:9" constants) plus the slides.json copy and
+    intake.json the three slide_geometry.py checks read. Shared by the
+    AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED coverage probes below."""
+    import tempfile as _tmp_sg
+    root = Path(_tmp_sg.mkdtemp(prefix="deck_slide_geometry_probe_"))
+    (root / "renders").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    from PIL import Image as _PilImage
+    _PilImage.new("RGB", (2048, 1152), (30, 30, 30)).save(
+        str(root / "renders" / "slide-01.png"))
+    (root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": 1, "scene": "x", "copy": "Approved Headline Text"}]))
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({}))
+    return root
+
+
+def _slide_geometry_probe(word_box, run_dir=None):
+    """Monkeypatch slide_geometry.py's OCR layer to an ALWAYS-AVAILABLE engine plus a
+    single fixed word box (bypassing the real tesseract binary, which a CI box may not
+    have installed), call the three build_deck._chk_ wrappers the manifest's py_symbol
+    lockstep resolves against, and return their (text_fits, spelling, type_size) reasons.
+    Environment-independent by construction — the same monkeypatch technique
+    test_ocr_engine_preflight already uses on prompt_gate.ocr_engine_diagnostic.
+    Returns ("", "", "") when slide_geometry.py cannot be imported (degrades like the
+    real _chk_ wrappers do)."""
+    sg = build_deck._import_slide_geometry()
+    if sg is None:
+        return "", "", ""
+    root = run_dir if run_dir is not None else _slide_geometry_probe_root()
+    orig_engine = sg.ocr_engine
+    orig_boxes = sg.word_boxes
+    try:
+        sg.ocr_engine = lambda: (object(), object())
+        sg.word_boxes = lambda png_path: [word_box]
+        r_fits = build_deck._chk_text_fits(root)
+        r_spell = build_deck._chk_spelling(root)
+        r_size = build_deck._chk_type_size(root)
+    finally:
+        sg.ocr_engine = orig_engine
+        sg.word_boxes = orig_boxes
+    return r_fits, r_spell, r_size
+
+
 def emit_af_coverage():
     """Drive every build_deck-enforced gate to FAILURE and record which AF codes
     a deliberately-failing fixture actually triggers. Writes working/af-coverage.json
@@ -3996,6 +4041,69 @@ def emit_af_coverage():
     if _spi and _sps and _spn:
         for _code, _name, _rd in _sp_adversarial_cases(_spi, _sps, _spn):
             record(_code, getattr(build_deck, _name)(_rd))
+
+    # ---- Guard A closure (gate_integrity_check.py) — five previously-untested /
+    # dead-symbol build_deck-enforced gates. ----
+
+    # AF-OCR-ENGINE-MISSING (MASTER-SPEC 7.4) — Phase-0 OCR-engine-AVAILABILITY
+    # preflight. Mirrors test_ocr_engine_preflight's monkeypatch of
+    # prompt_gate.ocr_engine_diagnostic (no dependency on this box's real OCR install).
+    _pg_probe = build_deck._import_prompt_gate()
+    if _pg_probe is not None:
+        _orig_diag = _pg_probe.ocr_engine_diagnostic
+        try:
+            _pg_probe.ocr_engine_diagnostic = lambda: {
+                "available": False, "engine": None,
+                "reason": "pytesseract-import-failed",
+                "detail": "No module named 'pytesseract'"}
+            record("AF-OCR-ENGINE-MISSING",
+                   build_deck.ocr_engine_preflight(_g4_run_dir("deck_g4_ocrengine_cov_")))
+        finally:
+            _pg_probe.ocr_engine_diagnostic = _orig_diag
+
+    # AF-DECK-TYPE-UNSET (U021) — deck_type unset, past the migration window, with the
+    # gate flipped to its terminal "enforce" stage -> _chk_deck_type FAILS. (Production
+    # default stays "warn" until MIGRATION_WINDOW_UNTIL; this proves the enforce path
+    # the gate already ships for — same technique
+    # test_U021_deck_type_absent_enforce_past_window uses.)
+    import datetime as _dt_probe
+    _orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    _orig_date = build_deck.date
+
+    class _LaterDate(_dt_probe.date):
+        @classmethod
+        def today(cls):
+            return cls(2099, 1, 1)
+    try:
+        build_deck.DECK_TYPE_GATE_STAGE = "enforce"
+        build_deck.date = _LaterDate
+        record("AF-DECK-TYPE-UNSET", build_deck._chk_deck_type(
+            _deck_type_fixture({"interview_confirmed": True})))
+    finally:
+        build_deck.DECK_TYPE_GATE_STAGE = _orig_stage
+        build_deck.date = _orig_date
+
+    # AF-TEXT-OVERFLOW — a word box sitting at the slide's top-left corner (left=top=0)
+    # is within SLIDE_GEOMETRY_EDGE_MARGIN_FRAC of both edges -> check_text_fits FAILS.
+    _r_fits, _, _ = _slide_geometry_probe(
+        {"text": "HEADLINE", "conf": 95.0, "left": 0, "top": 0,
+         "width": 40, "height": 20, "line_num": 1})
+    record("AF-TEXT-OVERFLOW", _r_fits)
+
+    # AF-SPELLING — a rendered word absent from the approved copy, the proper-noun
+    # allowlist, and the system word list -> check_spelling FAILS.
+    _, _r_spell, _ = _slide_geometry_probe(
+        {"text": "ZQXVWKPLURG", "conf": 95.0, "left": 500, "top": 500,
+         "width": 80, "height": 30, "line_num": 1})
+    record("AF-SPELLING", _r_spell)
+
+    # AF-TYPE-SIZE-MEASURED — an 8px-tall word box at a 1152px render height is far
+    # below the derived floor (px_per_pt(1152) * FONT_BODY_PT_FLOOR ~= 38.4px at the
+    # default 18pt floor) -> check_type_size FAILS.
+    _, _, _r_size = _slide_geometry_probe(
+        {"text": "tiny", "conf": 95.0, "left": 500, "top": 500,
+         "width": 30, "height": 8, "line_num": 1})
+    record("AF-TYPE-SIZE-MEASURED", _r_size)
 
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)

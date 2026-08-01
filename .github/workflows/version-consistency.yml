@@ -23,6 +23,13 @@ name: Version consistency
 #     a matching annotated git tag (vX.Y.Z). Fires ONLY when the version file
 #     has changed vs the previous commit on main so new PRs are not blocked
 #     while the tag is created by QC merge.
+#  G1b (released-version-without-truthful-tag): the DURABLE half of G1. G1's
+#     "fires only when the version file changed" scoping means the finding
+#     disappears the moment any next commit lands, which is how six releases in
+#     the v21.4 series ended up untagged with main green. G1b walks every version
+#     that has ever been on main's first-parent history and requires an annotated
+#     tag whose own commit carries that string, so a missed tag stays red until
+#     it is pushed. See scripts/check-released-versions-tagged.py.
 #  G2 (tag-without-changelog): every tag that matches vX.Y.Z must have a
 #     corresponding entry in CHANGELOG.md. Accepts both "## [vX.Y.Z]" and
 #     "## vX.Y.Z" header formats.
@@ -160,6 +167,64 @@ jobs:
           fi
 
           echo "✓ Annotated tag $CURRENT_VER found (type=tag)."
+
+  # ── Guard G1b: EVERY release ever on main must keep a truthful tag ─────────
+  # G1 above is TRANSIENT BY CONSTRUCTION. It compares HEAD to HEAD^1 and fires
+  # only on the single push where /version changed; the instant any next commit
+  # lands, CURRENT_VER == PREV_VER and it exits 0. The missing tag is then never
+  # looked at again. G2 and G4 cannot cover the gap because both iterate TAGS,
+  # and an untagged release has no tag to iterate.
+  #
+  # Measured, not theorised. On 2026-07-31 six releases in the v21.4 series had
+  # shipped with no tag at all -- v21.4.39, v21.4.40, v21.4.41 and v21.4.42
+  # CONSECUTIVELY -- with main fully green, after three earlier passes had
+  # hand-backfilled v21.4.32, v21.4.33 and v21.4.38 without anyone noticing the
+  # defect was structural. The mechanism was then caught live in the same
+  # session: G1 FAILED on 5e07faec (the v21.4.45 bump) and PASSED on 903691d7
+  # one commit later, with the tag still missing and nothing left to flag it.
+  #
+  # G1b walks the RELEASE set instead of the tag set, so the finding is durable:
+  # a missed tag stays red until the tag is pushed rather than evaporating on the
+  # next commit. It runs on PRs too, because a PR merge is what erases G1's
+  # signal, so the PR that is about to do that should show the outstanding debt.
+  #
+  #   G1  — /version bumped      -> an annotated tag must exist          (this push)
+  #   G1b — /version EVER bumped -> an annotated + TRUTHFUL tag must exist (durable)
+  #   G2  — a tag exists         -> CHANGELOG.md must document it
+  #   G4  — a tag exists         -> it must point at a commit on main
+  #
+  # Security note: consumes only repo content and git metadata -- no untrusted
+  # GitHub event fields -- so there is no injection surface in the run: block.
+  check-released-versions-tagged:
+    name: G1b — every release on main must keep a truthful annotated tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout full history + tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Ensure origin/main is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The release set is a property of main, never of a PR's diff, so the
+          # walk is always anchored to origin/main. Fetch it explicitly rather
+          # than letting the guard fall back to a PR's merge ref.
+          git fetch --quiet origin +refs/heads/main:refs/remotes/origin/main
+          git rev-parse --short refs/remotes/origin/main
+
+      - name: Verify every release at or above the floor has a truthful tag
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-released-versions-tagged.py \
+            --ref refs/remotes/origin/main
 
   # ── PRD 2.2 Guard G2: every annotated tag must have a CHANGELOG entry ──────
   # Checks that for every vX.Y.Z annotated tag in the repo (v11.x.x and above),

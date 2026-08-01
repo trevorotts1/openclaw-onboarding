@@ -5919,11 +5919,14 @@ def _import_slide_geometry():
 
 def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-TEXT-OVERFLOW wrapper — the geometry lives in slide_geometry.py; this is the
-    build_deck-side symbol the manifest's py_symbol lockstep resolves against."""
+    build_deck-side symbol the manifest's py_symbol lockstep resolves against. Passes
+    SLIDE_GEOMETRY_EDGE_MARGIN_FRAC in explicitly so build_deck's declared margin and
+    slide_geometry.py's enforced margin can never silently diverge."""
     sg = _import_slide_geometry()
     if sg is None:
         return ""    # module absent -> defer, exactly as _import_prompt_gate callers do
-    return sg.check_text_fits(run_dir, slides_path)
+    return sg.check_text_fits(
+        run_dir, slides_path, edge_margin_frac=SLIDE_GEOMETRY_EDGE_MARGIN_FRAC)
 
 
 def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
@@ -5935,9 +5938,9 @@ def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 
 
 def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """AF-TYPE-SIZE-MEASURED wrapper. Passes the FLOOR CONSTANTS and the dark-theme
-    decision in, so the measured floor and check_font_floor's declared floor are the
-    same number by construction."""
+    """AF-TYPE-SIZE-MEASURED wrapper. Passes the FLOOR CONSTANTS, the reference render
+    height, and the dark-theme decision in, so the measured floor and check_font_floor's
+    declared floor are the same number by construction."""
     sg = _import_slide_geometry()
     if sg is None:
         return ""
@@ -5945,7 +5948,8 @@ def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return sg.check_type_size(
         run_dir, slides_path,
         pt_floor=(DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR),
-        dark=dark)
+        dark=dark,
+        pt_reference_height_px=SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX)
 
 
 def _engine_name_for_code(code: str) -> str:

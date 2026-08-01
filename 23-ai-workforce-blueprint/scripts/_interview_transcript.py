@@ -3,7 +3,7 @@
 _interview_transcript.py — the ONE shared reader for the interview transcript
 (workforce-interview-answers.md), plaintext OR encrypted (U048).
 
-WHY THIS EXISTS (2026-07-30 incident, Cassandra Henriquez / rescue-cassandra-henriquez):
+WHY THIS EXISTS (2026-07-30 incident on a client Mac mini box / its rescue agent):
 The Command Center added transcript encryption at rest (U048,
 blackceo-command-center src/lib/interview/crypto.ts): the canonical transcript
 is written to `workforce-interview-answers.md.enc` — a chacha20-poly1305

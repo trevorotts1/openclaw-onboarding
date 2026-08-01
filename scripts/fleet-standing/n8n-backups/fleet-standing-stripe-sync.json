@@ -1,0 +1,674 @@
+{
+  "name": "fleet-standing-stripe-sync",
+  "active": true,
+  "nodes": [
+    {
+      "id": "0d33e2ba-d0f7-4164-92a4-ca597a33e9c9",
+      "name": "Schedule Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.3,
+      "position": [
+        -900,
+        500
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "days",
+              "daysInterval": 1,
+              "triggerAtHour": 5,
+              "triggerAtMinute": 0
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "0f553c94-78c9-4849-930f-4f37a9d21283",
+      "name": "Stripe BCEO Main: Charges",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        -60
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/charges",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "le8GvARrlrFFJbVo",
+          "name": "Stripe \u2014 BlackCEO Main (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "3beefff8-1b0d-4f0e-879e-3be069f82395",
+      "name": "Stripe BCEO Main: Invoices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        120
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/invoices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "status",
+              "value": "open"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "le8GvARrlrFFJbVo",
+          "name": "Stripe \u2014 BlackCEO Main (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "567682fd-c323-474b-b4c5-9d74c4e13d14",
+      "name": "Stripe BCEO Main: Subscriptions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        300
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/subscriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "all"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "expand[]",
+              "value": "data.customer"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "le8GvARrlrFFJbVo",
+          "name": "Stripe \u2014 BlackCEO Main (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "bb1d3e9d-e82d-4559-898d-f74e2be367f8",
+      "name": "Stripe Convert&Flow: Charges",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        480
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/charges",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "100"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "dkLLdxgywOxYAzX2",
+          "name": "Stripe \u2014 Convert & Flow (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "8b2047fc-ba86-4f58-a671-39f72e47c9e0",
+      "name": "Stripe Convert&Flow: Invoices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        660
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/invoices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "status",
+              "value": "open"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "dkLLdxgywOxYAzX2",
+          "name": "Stripe \u2014 Convert & Flow (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "36ca29ea-65f5-48c6-8d7c-f1572a35638c",
+      "name": "Stripe Convert&Flow: Subscriptions",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -560,
+        840
+      ],
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.stripe.com/v1/subscriptions",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "stripeApi",
+        "sendQuery": true,
+        "specifyQuery": "keypair",
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "all"
+            },
+            {
+              "name": "limit",
+              "value": "100"
+            },
+            {
+              "name": "expand[]",
+              "value": "data.customer"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "specifyHeaders": "keypair",
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Stripe-Version",
+              "value": "2024-06-20"
+            }
+          ]
+        },
+        "options": {
+          "pagination": {
+            "pagination": {
+              "paginationMode": "updateAParameterInEachRequest",
+              "parameters": {
+                "parameters": [
+                  {
+                    "type": "qs",
+                    "name": "starting_after",
+                    "value": "={{ $response.body.data && $response.body.data.length ? $response.body.data[$response.body.data.length - 1].id : undefined }}"
+                  }
+                ]
+              },
+              "paginationCompleteWhen": "other",
+              "completeExpression": "={{ $response.body.has_more === false }}",
+              "limitPagesFetched": true,
+              "maxRequests": 50,
+              "requestInterval": 250
+            }
+          }
+        }
+      },
+      "credentials": {
+        "stripeApi": {
+          "id": "dkLLdxgywOxYAzX2",
+          "name": "Stripe \u2014 Convert & Flow (fleet standing, restricted)"
+        }
+      }
+    },
+    {
+      "id": "fa10ca9a-3c51-4b78-b509-0e6de2d192c2",
+      "name": "Load Fleet Standing",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        -560,
+        1020
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "aoLFsegM1aDIrcDj"
+        },
+        "returnAll": true
+      }
+    },
+    {
+      "id": "89b22a7d-56ab-44c0-a0e3-5771b86bf666",
+      "name": "Aggregate Delinquency Signals",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// ---- Node-name -> account label map (this is how each result is tagged) ----\nconst ACCOUNT_BY_NODE = {\n  'Stripe BCEO Main: Charges': 'bceo_main',\n  'Stripe BCEO Main: Invoices': 'bceo_main',\n  'Stripe BCEO Main: Subscriptions': 'bceo_main',\n  'Stripe Convert&Flow: Charges': 'convert_and_flow',\n  'Stripe Convert&Flow: Invoices': 'convert_and_flow',\n  'Stripe Convert&Flow: Subscriptions': 'convert_and_flow',\n};\n\nfunction normEmail(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\nfunction normKey(v) {\n  return (v || '').toString().trim().toLowerCase();\n}\n\n// Flatten every paginated page of a Stripe list node into one flat array of\n// objects, tagging each with the account label the node belongs to.\nfunction flatten(nodeName) {\n  const account = ACCOUNT_BY_NODE[nodeName];\n  const pages = $(nodeName).all();\n  const out = [];\n  for (const page of pages) {\n    const body = page.json || {};\n    const data = Array.isArray(body.data) ? body.data : [];\n    for (const obj of data) {\n      out.push({ obj, account });\n    }\n  }\n  return out;\n}\n\nconst charges = [\n  ...flatten('Stripe BCEO Main: Charges'),\n  ...flatten('Stripe Convert&Flow: Charges'),\n];\nconst invoices = [\n  ...flatten('Stripe BCEO Main: Invoices'),\n  ...flatten('Stripe Convert&Flow: Invoices'),\n];\nconst subscriptions = [\n  ...flatten('Stripe BCEO Main: Subscriptions'),\n  ...flatten('Stripe Convert&Flow: Subscriptions'),\n];\n\nconst fleetRows = $('Load Fleet Standing').all().map(i => i.json || {});\n\n// records: key -> record\nconst records = new Map();\n\nfunction getRecord(account, key, seedId, seedEmail, seedName) {\n  const fullKey = account + '::' + key;\n  if (!records.has(fullKey)) {\n    records.set(fullKey, {\n      account: account,\n      key: fullKey,\n      customer_id: seedId || null,\n      emails: new Set(),\n      names: new Set(),\n      failed_charge_count: 0,\n      last_failed_charge_at: null,\n      open_invoice_count: 0,\n      max_attempt_count: 0,\n      oldest_open_invoice_at: null,\n      bad_subscription_statuses: new Set(),\n    });\n  }\n  const rec = records.get(fullKey);\n  if (!rec.customer_id && seedId) rec.customer_id = seedId;\n  if (seedEmail) rec.emails.add(normEmail(seedEmail));\n  if (seedName) rec.names.add(seedName.toString().trim());\n  return rec;\n}\n\nfunction keyFor(customerId, email) {\n  if (customerId) return { key: 'cust::' + customerId, id: customerId };\n  if (email) return { key: 'email::' + normEmail(email), id: null };\n  return null;\n}\n\n// ---- Failed charges (status === 'failed') ----\nfor (const { obj: charge, account } of charges) {\n  if (charge.status !== 'failed') continue;\n  const customerId = typeof charge.customer === 'string' ? charge.customer : (charge.customer && charge.customer.id) || null;\n  const email = (charge.billing_details && charge.billing_details.email) || charge.receipt_email || null;\n  const name = (charge.billing_details && charge.billing_details.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue; // no id and no email -> cannot key or attribute, skip\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.failed_charge_count += 1;\n  if (charge.created && (!rec.last_failed_charge_at || charge.created > rec.last_failed_charge_at)) {\n    rec.last_failed_charge_at = charge.created;\n  }\n}\n\n// ---- Open / uncollectible invoices ----\nfor (const { obj: invoice, account } of invoices) {\n  if (invoice.status !== 'open' && invoice.status !== 'uncollectible') continue;\n  const customerId = typeof invoice.customer === 'string' ? invoice.customer : (invoice.customer && invoice.customer.id) || null;\n  const email = invoice.customer_email || (invoice.customer && invoice.customer.email) || null;\n  const name = invoice.customer_name || (invoice.customer && invoice.customer.name) || null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.open_invoice_count += 1;\n  const attemptCount = invoice.attempt_count || 0;\n  if (attemptCount > rec.max_attempt_count) rec.max_attempt_count = attemptCount;\n  if (invoice.created && (!rec.oldest_open_invoice_at || invoice.created < rec.oldest_open_invoice_at)) {\n    rec.oldest_open_invoice_at = invoice.created;\n  }\n}\n\n// ---- Bad subscription statuses (past_due / unpaid) ----\nfor (const { obj: sub, account } of subscriptions) {\n  if (sub.status !== 'past_due' && sub.status !== 'unpaid') continue;\n  const customerObj = sub.customer;\n  const customerId = typeof customerObj === 'object' ? customerObj.id : customerObj;\n  const email = typeof customerObj === 'object' ? customerObj.email : null;\n  const name = typeof customerObj === 'object' ? customerObj.name : null;\n  const k = keyFor(customerId, email);\n  if (!k) continue;\n  const rec = getRecord(account, k.key, customerId, email, name);\n  rec.bad_subscription_statuses.add(sub.status);\n}\n\n// ---- Determine delinquency + serialize records ----\nconst delinquentRecords = [];\nfor (const rec of records.values()) {\n  const delinquent =\n    rec.failed_charge_count >= 2 ||\n    rec.max_attempt_count >= 2 ||\n    rec.bad_subscription_statuses.size > 0;\n  if (!delinquent) continue;\n  delinquentRecords.push({\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: Array.from(rec.emails).filter(Boolean),\n    names: Array.from(rec.names).filter(Boolean),\n    failed_charge_count: rec.failed_charge_count,\n    last_failed_charge_at: rec.last_failed_charge_at,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    oldest_open_invoice_at: rec.oldest_open_invoice_at,\n    bad_subscription_statuses: Array.from(rec.bad_subscription_statuses),\n  });\n}\n\n// ---- Attribution: match each delinquent record to a fleet_standing row ----\n// Build fleet-row match-key sets once.\nconst fleetMatchIndex = fleetRows.map(row => {\n  const aliasTokens = (row.aliases || '').split('|').map(t => normKey(t)).filter(Boolean);\n  const aliasEmailTokens = aliasTokens.filter(t => t.includes('@'));\n  const boxSlugKey = normKey(row.box_slug);\n  // stripe_customer_id can hold MULTIPLE pipe-delimited ids for one person.\n  const stripeCustIdTokens = (row.stripe_customer_id || '').split('|').map(t => normKey(t)).filter(Boolean);\n  return { row, aliasEmailTokens, boxSlugKey, stripeCustIdTokens };\n});\n\nconst attributed = [];\nconst unattributed = [];\n\nfor (const rec of delinquentRecords) {\n  let matchedRow = null;\n  let matchedVia = null;\n\n  const custIdKey = normKey(rec.customer_id);\n  const emailKeys = rec.emails.map(normEmail);\n\n  for (const fx of fleetMatchIndex) {\n    // 1) Strongest: exact Stripe customer id match against any of the row's\n    //    (possibly multiple, pipe-delimited) stored ids.\n    if (custIdKey && fx.stripeCustIdTokens.includes(custIdKey)) {\n      matchedRow = fx.row; matchedVia = 'stripe_customer_id'; break;\n    }\n    // 2) Email match against @-containing alias tokens. No name-matching\n    //    fallback: Stripe customer names are unreliable (duplicate first\n    //    names, business names instead of person names) and would produce\n    //    false attributions, which are worse than no attribution.\n    if (emailKeys.some(e => fx.aliasEmailTokens.includes(e))) {\n      matchedRow = fx.row; matchedVia = 'email_in_aliases'; break;\n    }\n  }\n\n  const summary = {\n    account: rec.account,\n    customer_id: rec.customer_id,\n    emails: rec.emails,\n    names: rec.names,\n    failed_charge_count: rec.failed_charge_count,\n    open_invoice_count: rec.open_invoice_count,\n    max_attempt_count: rec.max_attempt_count,\n    bad_subscription_statuses: rec.bad_subscription_statuses,\n  };\n\n  if (matchedRow) {\n    attributed.push({\n      box_slug: matchedRow.box_slug,\n      client_label: matchedRow.client_label,\n      good_standing: matchedRow.good_standing === true,\n      matched_via: matchedVia,\n      signal: summary,\n    });\n  } else {\n    unattributed.push(summary);\n  }\n}\n\n// ---- Totals per signal type and per account ----\nconst totals = { bceo_main: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 },\n                  convert_and_flow: { failed_charges: 0, open_invoices: 0, bad_subscriptions: 0, delinquent_customers: 0 } };\nfor (const rec of delinquentRecords) {\n  const t = totals[rec.account];\n  if (!t) continue;\n  t.delinquent_customers += 1;\n  if (rec.failed_charge_count >= 2) t.failed_charges += 1;\n  if (rec.max_attempt_count >= 2) t.open_invoices += 1;\n  if (rec.bad_subscription_statuses.length > 0) t.bad_subscriptions += 1;\n}\n\nreturn [{\n  json: {\n    fleetRows: fleetRows,\n    attributed: attributed,\n    unattributed: unattributed,\n    totals: totals,\n    counts: {\n      charges_pulled: charges.length,\n      invoices_pulled: invoices.length,\n      subscriptions_pulled: subscriptions.length,\n      delinquent_customers: delinquentRecords.length,\n    },\n  },\n}];"
+      }
+    },
+    {
+      "id": "2fdaef95-9cb4-4d9e-b38a-35ce8b550692",
+      "name": "Build Delinquency Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        160,
+        480
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "const input = $input.first().json;\nconst fleetRows = input.fleetRows || [];\nconst attributed = input.attributed || [];\nconst unattributed = input.unattributed || [];\nconst totals = input.totals || {};\nconst counts = input.counts || {};\n\n// box_slug -> list of attributed delinquency entries for that box\nconst byBox = new Map();\nfunction byBoxAdd(k, a) {\n  if (!byBox.has(k)) byBox.set(k, []);\n  byBox.get(k).push(a);\n}\nfor (const a of attributed) {\n  const k = a.box_slug || '(no box_slug)';\n  byBoxAdd(k, a);\n}\n\nfunction fmtSignal(s) {\n  const parts = [];\n  if (s.failed_charge_count >= 2) parts.push('failed_charges=' + s.failed_charge_count);\n  if (s.max_attempt_count >= 2) parts.push('open_invoice(attempt=' + s.max_attempt_count + ',count=' + s.open_invoice_count + ')');\n  if (s.bad_subscription_statuses && s.bad_subscription_statuses.length) parts.push('subscription=' + s.bad_subscription_statuses.join('/'));\n  return parts.join(', ');\n}\n\nconst lines = [];\nlines.push('FLEET STANDING <-> STRIPE -- DELINQUENCY REPORT (report-only, no writes)');\nlines.push('Generated: ' + new Date().toISOString());\nlines.push('Fleet boxes: ' + fleetRows.length + ' | Charges/Invoices/Subs pulled: ' + counts.charges_pulled + '/' + counts.invoices_pulled + '/' + counts.subscriptions_pulled);\nlines.push('Delinquent Stripe customers found: ' + counts.delinquent_customers + ' (attributed=' + attributed.length + ', unattributed=' + unattributed.length + ')');\nlines.push('');\n\n// Section 1: ACTION -- delinquent AND currently good_standing = true\nconst actionRows = [];\nfor (const [boxSlug, entries] of byBox.entries()) {\n  const anyGood = entries.some(e => e.good_standing === true);\n  if (anyGood) actionRows.push({ boxSlug, entries });\n}\nlines.push('1) ACTION -- delinquent but good_standing=TRUE (' + actionRows.length + ')');\nif (actionRows.length === 0) {\n  lines.push('  none');\n} else {\n  let shown = 0;\n  for (const r of actionRows) {\n    if (shown >= 20) { lines.push('  (+' + (actionRows.length - shown) + ' more)'); break; }\n    const e = r.entries[0];\n    lines.push('  - ' + r.boxSlug + ' (' + (e.client_label || '') + ') [' + e.signal.account + '] ' + fmtSignal(e.signal) + ' via=' + e.matched_via);\n    shown++;\n  }\n}\nlines.push('');\n\n// Section 2: OK -- delinquent and already good_standing = false (count only)\nlet okCount = 0;\nfor (const entries of byBox.values()) {\n  if (entries.every(e => e.good_standing === false)) okCount++;\n}\nlines.push('2) OK -- delinquent, good_standing already FALSE: ' + okCount + ' box(es)');\nlines.push('');\n\n// Section 3: REVIEW -- good_standing=false but NO delinquency signal found\nconst flaggedSlugs = new Set(byBox.keys());\nconst reviewRows = fleetRows.filter(r => r.good_standing === false && !flaggedSlugs.has(r.box_slug));\nlines.push('3) REVIEW -- good_standing=FALSE, no Stripe delinquency signal (' + reviewRows.length + ')');\nif (reviewRows.length === 0) {\n  lines.push('  none');\n} else {\n  let shown = 0;\n  for (const r of reviewRows) {\n    if (shown >= 20) { lines.push('  (+' + (reviewRows.length - shown) + ' more)'); break; }\n    lines.push('  - ' + r.box_slug + ' (' + (r.client_label || '') + ')');\n    shown++;\n  }\n}\nlines.push('');\n\n// Section 4: UNATTRIBUTED delinquents\nlines.push('4) UNATTRIBUTED delinquents -- no fleet box match (' + unattributed.length + ')');\nif (unattributed.length === 0) {\n  lines.push('  none');\n} else {\n  let shown = 0;\n  for (const u of unattributed) {\n    if (shown >= 20) { lines.push('  (+' + (unattributed.length - shown) + ' more)'); break; }\n    const emailStr = (u.emails && u.emails.length) ? u.emails.join(',') : '(no email)';\n    const nameStr = (u.names && u.names.length) ? u.names.join('/') : '(no name)';\n    lines.push('  - [' + u.account + '] cust=' + (u.customer_id || '(none)') + ' email=' + emailStr + ' name=' + nameStr + ' ' + fmtSignal(u));\n    shown++;\n  }\n}\nlines.push('');\n\n// Section 5: Totals per signal type and per account\nlines.push('5) TOTALS');\nfor (const acct of Object.keys(totals)) {\n  const t = totals[acct];\n  lines.push('  ' + acct + ': delinquent=' + t.delinquent_customers + ' failed_charges=' + t.failed_charges + ' open_invoices=' + t.open_invoices + ' bad_subscriptions=' + t.bad_subscriptions);\n}\n\nlet report = lines.join('\\n');\nif (report.length > 3500) {\n  report = report.slice(0, 3450) + '\\n...[truncated, ' + report.length + ' chars total]';\n}\n\nreturn [{ json: { text: report } }];"
+      }
+    },
+    {
+      "id": "67f6b7d6-c839-46ca-a7a7-be01bc3fb89d",
+      "name": "Telegram: Send Delinquency Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        460,
+        480
+      ],
+      "parameters": {
+        "resource": "message",
+        "operation": "sendMessage",
+        "chatId": "5252140759",
+        "text": "={{ $json.text }}",
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "JpuCdFX5QXQoxyJJ",
+          "name": "Rescue Rangers Bot"
+        }
+      },
+      "webhookId": "67d5c596-fc09-49f2-96ce-a3a2e443ab7a"
+    },
+    {
+      "id": "6be0d69c-c32b-4f0a-8963-361f2fdea046",
+      "name": "Wait For All Sources",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -360,
+        480
+      ],
+      "parameters": {
+        "mode": "append",
+        "numberInputs": 7
+      }
+    }
+  ],
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Stripe BCEO Main: Charges",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stripe BCEO Main: Invoices",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stripe BCEO Main: Subscriptions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stripe Convert&Flow: Charges",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stripe Convert&Flow: Invoices",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Stripe Convert&Flow: Subscriptions",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Load Fleet Standing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Delinquency Signals": {
+      "main": [
+        [
+          {
+            "node": "Build Delinquency Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Delinquency Report": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send Delinquency Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Charges": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Invoices": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Stripe BCEO Main: Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Charges": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 3
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Invoices": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 4
+          }
+        ]
+      ]
+    },
+    "Stripe Convert&Flow: Subscriptions": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 5
+          }
+        ]
+      ]
+    },
+    "Load Fleet Standing": {
+      "main": [
+        [
+          {
+            "node": "Wait For All Sources",
+            "type": "main",
+            "index": 6
+          }
+        ]
+      ]
+    },
+    "Wait For All Sources": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Delinquency Signals",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

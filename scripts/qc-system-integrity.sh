@@ -530,14 +530,26 @@ check "9.8" "Master AGENTS.md / TOOLS.md / USER.md exist at workspace root" \
   "[ -f \"$WORKSPACE/AGENTS.md\" ] && [ -f \"$WORKSPACE/TOOLS.md\" ] && [ -f \"$WORKSPACE/USER.md\" ]" \
   "Bootstrap missing — re-run install.sh"
 
-# 9.9 (v10.15.51) — Shared core-file unification (Zero-Human-Workforce file model):
-# every non-workflow-agent workspace's AGENTS.md / TOOLS.md / USER.md MUST be a
-# symlink resolving to THIS box's canonical (agents.defaults.workspace). Per-agent
-# IDENTITY/SOUL/MEMORY/HEARTBEAT are NOT checked here (they stay each agent's own).
-# Nested workflow agents (*/workflows/*/agents/*) are EXEMPT. The expected target is
-# resolved from THIS box's own openclaw.json — never a foreign/hardcoded path.
+# 9.9 (v10.15.51, N29 AMENDED 2026-07-31) — Shared core-file unification
+# (Zero-Human-Workforce file model): every non-workflow-agent workspace's
+# AGENTS.md / TOOLS.md / USER.md MUST be a REAL FILE, byte-identical (content
+# hash) to THIS box's canonical (agents.defaults.workspace) -- NOT a symlink.
+# A symlink is now itself a FAIL: the OpenClaw runtime's workspace-root
+# boundary guard rejects any symlink whose realpath resolves outside the
+# reading agent's own workspace (reported missing:true + a stub injected),
+# regardless of what it points to, so a symlink that happens to resolve to
+# the right canonical bytes still fails at runtime even though it would have
+# passed a pure byte-comparison. This check must catch that case, not just
+# content drift, or QC 9.9 would go green while the agent is running blind
+# (the exact failure this amendment exists to fix). Per-agent
+# IDENTITY/SOUL/MEMORY/HEARTBEAT are NOT checked here (they stay each agent's
+# own). Nested workflow agents (*/workflows/*/agents/*) are EXEMPT. The
+# canonical target is resolved from THIS box's own openclaw.json -- never a
+# foreign/hardcoded path. FAIL-OPEN mirrors link_shared_core_files(): if
+# canonical itself is missing/unreadable/empty, that filename is skipped
+# (not measurable) rather than false-failing every workspace.
 UNIFY_BAD=$(OCJSON="$OCJSON" python3 - <<'PYEOF' 2>/dev/null || echo "ERR"
-import json, os
+import hashlib, json, os
 ocjson = os.environ["OCJSON"]
 try:
     cfg = json.load(open(ocjson))
@@ -558,6 +570,20 @@ if not canon:
 if not canon:
     canon = "/data/.openclaw/workspace" if os.path.isdir("/data/.openclaw") else os.path.expanduser("~/.openclaw/workspace")
 canon_real = os.path.realpath(canon)
+
+# Precompute each canonical file's hash ONCE. A canonical file that is itself
+# missing/unreadable/EMPTY is skipped (fail-open, not this check's job to
+# flag every workspace for a broken canonical source).
+canon_hash = {}
+for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
+    cp = os.path.join(canon_real, f)
+    try:
+        with open(cp, "rb") as fh:
+            data = fh.read()
+        if data:
+            canon_hash[f] = hashlib.sha256(data).hexdigest()
+    except Exception:
+        pass
 
 # Enumerate candidate agent workspaces: openclaw.json agents[].workspace plus a
 # scan of the workspace's agents/ + departments/ trees.
@@ -584,12 +610,20 @@ for w in cands:
         continue
     for f in ("AGENTS.md", "TOOLS.md", "USER.md"):
         p = os.path.join(wr, f)
-        if not os.path.exists(p):
+        if f not in canon_hash:
+            continue  # canonical itself unreadable/empty -- not measurable here
+        if os.path.islink(p):
+            bad.append("%s/%s is a SYMLINK (N29 amended: the runtime rejects cross-workspace symlinks -- must be a real file copy)" % (wr, f))
+            continue
+        if not os.path.isfile(p):
             continue  # absent is allowed (left absent by the unifier)
-        if not os.path.islink(p):
-            bad.append("%s/%s NOT a symlink" % (wr, f)); continue
-        if os.path.realpath(p) != os.path.join(canon_real, f):
-            bad.append("%s/%s -> %s (expected canonical)" % (wr, f, os.path.realpath(p)))
+        try:
+            with open(p, "rb") as fh:
+                p_bytes = fh.read()
+        except Exception:
+            bad.append("%s/%s unreadable" % (wr, f)); continue
+        if hashlib.sha256(p_bytes).hexdigest() != canon_hash[f]:
+            bad.append("%s/%s content differs from canonical (hash mismatch)" % (wr, f))
 print(len(bad))
 for b in bad[:10]:
     print("    "+b)
@@ -597,14 +631,14 @@ PYEOF
 )
 UNIFY_COUNT=$(printf '%s\n' "$UNIFY_BAD" | head -1)
 if [ "$UNIFY_COUNT" = "0" ]; then
-  green "  ✓ 9.9  All non-workflow-agent workspaces share AGENTS/TOOLS/USER via canonical symlink"; PASS=$((PASS+1))
+  green "  ✓ 9.9  All non-workflow-agent workspaces' AGENTS/TOOLS/USER are real files, byte-identical to canonical"; PASS=$((PASS+1))
 elif [ "$UNIFY_COUNT" = "ERR" ]; then
   warn_check "9.9" "Shared core-file unification (could not read openclaw.json — skipped)" "false" \
     "openclaw.json unreadable; re-run after install completes"
 else
-  red "  ✗ 9.9  $UNIFY_COUNT non-workflow-agent core file(s) not symlinked to canonical:"; FAIL=$((FAIL+1))
+  red "  ✗ 9.9  $UNIFY_COUNT non-workflow-agent core file(s) not unified with canonical:"; FAIL=$((FAIL+1))
   printf '%s\n' "$UNIFY_BAD" | tail -n +2
-  FAILURES+=("9.9|Shared core files not unified (AGENTS/TOOLS/USER must symlink to canonical workspace)|Run link_shared_core_files (re-run update-skills.sh or install.sh Step 10a)")
+  FAILURES+=("9.9|Shared core files not unified (AGENTS/TOOLS/USER must be a real file, byte-identical to canonical -- N29 amended: symlinks are rejected by the runtime's workspace-root boundary guard)|Run link_shared_core_files (re-run update-skills.sh or install.sh Step 10a)")
 fi
 
 # ─── CROSS-CUTTING ───────────────────────────────────────────────────────────

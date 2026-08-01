@@ -184,7 +184,7 @@ The whole thing is one pipeline. A break anywhere downstream of Skill 22 cascade
 | 9.6 | Bootstrap config propagated to every agent | `jq '.agents.list[] \| {id, bootstrapMaxChars, bootstrapTotalMaxChars}' ~/.openclaw/openclaw.json` | Every entry: `200000` / `400000` |
 | 9.7 | Sub-agent thinking="high" on every agent | `jq '.agents.list[] \| .subagents.thinking' ~/.openclaw/openclaw.json` | Every line = `"high"` |
 | 9.8 | Master AGENTS.md/TOOLS.md/USER.md exists at workspace root | `ls -la ~/clawd/{AGENTS,TOOLS,USER}.md` | Three regular files (not symlinks) |
-| 9.9 | Dept AGENTS.md/TOOLS.md/USER.md SYMLINKED to master | `ls -la ~/clawd/zero-human-company/*/departments/*/{AGENTS,TOOLS,USER}.md \| grep "^l"` | All entries are symlinks pointing to `../../../../<file>.md` |
+| 9.9 | Dept AGENTS.md/TOOLS.md/USER.md are real-file copies of master, byte-identical (N29 amended 2026-07-31: copy-on-run, not symlink) | `ls -la ~/clawd/zero-human-company/*/departments/*/{AGENTS,TOOLS,USER}.md \| grep "^l"` (expect empty) `&&` `for d in ~/clawd/zero-human-company/*/departments/*/; do for f in AGENTS TOOLS USER; do cmp -s ~/clawd/$f.md "$d$f.md" \|\| echo "DIFF: $d$f.md"; done; done` | First command prints **nothing** (no entry is a symlink — a symlink is now itself a FAIL, since the OpenClaw runtime rejects any symlink whose realpath resolves outside the reading agent's own workspace regardless of target); second command prints **nothing** (every dept file's content hash matches master) |
 | 9.10 | No legacy `~/clawd/departments/` content drift | `diff ~/clawd/departments/ ~/clawd/zero-human-company/<slug>/departments/ 2>/dev/null` | Either legacy folder doesn't exist OR is mirror of canonical |
 
 ---
@@ -214,7 +214,7 @@ Each row above has a remediation recipe in `qc-system-integrity.sh`. The runner 
 | Dashboard shows 17 departments but I picked 15 | 7.1 | Rerun `python3 32/scripts/seed-workspaces.py` after confirming `departments.json` count |
 | Marketing Director keeps using Seth Godin for every task | 8.4 | Check `selector-cache.json` doesn't exist; if it does, delete it. Selector must run fresh per task. |
 | Tasks pile up in "In Progress" never reaching Done | 9.x (DA wiring) | Verify Devil's Advocate SOP.md exists for that dept; check Skill 32 DA-gate config (v9.7.0+) |
-| Marketing Director updates TOOLS.md but Sales Director doesn't see it | 9.9 (symlinks) | Re-run `build-workforce.py` for that company — the symlinks were broken/missing |
+| Marketing Director updates TOOLS.md but Sales Director doesn't see it | 9.9 (copy propagation) | Expected until the next run under N29 amended (copy-on-run, not symlink -- a real-file copy propagates on the NEXT `update-skills.sh` / `install.sh` run, not instantly). Re-run `update-skills.sh` (or `install.sh` Step 10a) to re-copy canonical content into every dept's files; if content still diverges after that run, `build-workforce.py` may not have written the canonical file at all |
 | Persona selection always returns the same winner | 4.7 + 5.3 + 8.4 | Gemini index stale OR no semantic scores OR 5-layer scoring broken. Run `gemini-indexer.py` then re-test selector. |
 | SOPs still have `[Step 1 - to be personalized]` | 2.6 | Run `populate-sops-from-manifest.py --manifest <path>` |
 | Brand colors are neutral/generic in dashboard | 7.2 + 7.6 | Either `company-config.json` missing brand fields OR frontend not reading `companies.config` |
