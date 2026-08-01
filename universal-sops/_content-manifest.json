@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-01T16:59:05Z",
+  "generated_at": "2026-08-01T17:27:04Z",
   "file_count": 107,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -241,8 +241,8 @@
       "bytes": 11879
     },
     "podcast-craft/SOP-PODCAST-05-EPISODE-QC.md": {
-      "sha256": "5959f4e5711390d6451e66646140054c6647ab98857ae6bad1099db617ffbd67",
-      "bytes": 11292
+      "sha256": "a016211837c64b11b940fa463eb56b7df636888459cdac904b17bdf69bd47d8d",
+      "bytes": 11639
     },
     "podcast-craft/SOP-PODCAST-06-BOOK-TEASER.md": {
       "sha256": "062a57abb52ede5aae98ff2f14509426997a2688a798ee8aee1fcea9d51f3b1e",

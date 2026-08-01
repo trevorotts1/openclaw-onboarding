@@ -219,6 +219,40 @@ missing or invalid signatures are rejected with no flow created and the
 rejection logged. When the secret is NOT configured, the handler logs a one-line
 warning and proceeds (backward compatibility for existing unsigned senders).
 
+## Step ownership (binding)
+
+Director of Podcast (`director-of-podcast`) owns the run end to end, the kanban card, preset
+selection, and the three-strike escalation to the founder. Per-step specialist ownership is
+shown below; every step listed as `director-of-podcast` is the default lane when no specialist
+is assigned.
+
+| Step | Name | Owning role |
+|---|---|---|
+| 0 | First-run smoke test | director-of-podcast |
+| 1 | Ingest | director-of-podcast |
+| 2 | Select engines | director-of-podcast |
+| 3 | Research Assistant stage | research-assistant |
+| 4 | Size | director-of-podcast |
+| 5 | Blueprint | podcast-host |
+| 6 | Draft | podcast-host |
+| 7 | Improvement pass | podcast-host |
+| 8 | Read-aloud pass | podcast-host |
+| 9 | Quality control (episode gate) | qc-specialist-podcast |
+| 10 | Cover art | audio-post-producer |
+| 11 | Audio | audio-post-producer |
+| 12 | Documents | director-of-podcast |
+| 13 | Book teaser (Interview only) | director-of-podcast |
+| 14 | Store media | director-of-podcast |
+| 15 | Publish to Podbean | director-of-podcast |
+| 16 | Link back | director-of-podcast |
+| 17 | Trigger and enroll | director-of-podcast |
+| 18 | Deliver | director-of-podcast |
+
+The qc-specialist-podcast at Step 9 MUST be a different persona from whichever persona drafted
+(Steps 5 to 8); the independence rule is non-negotiable. podcast-producer supports
+director-of-podcast for Season-Strategy presets. podcast-editor and mastering support
+audio-post-producer repair passes at Steps 10 and 11.
+
 ## The canonical 18-step pipeline
 
 Step 0 runs once per client before their first episode; Steps 1 to 18 run per episode. Every
@@ -256,7 +290,7 @@ raised to the OPERATOR, never guessed.
 STEP 2, SELECT ENGINES. status `writing`. Load the matching Style Engine (Counter Intuitive,
 Vulnerable, Provocative, or Passionate) and Mode rules; confirm arc beats and proportional word
 budgets. The engine's arc, persuasion mechanism, and FORMAT are unchanged by this; per the D1
-binding ruling (Skill 6 U98) the script's WRITTEN VOICE is GOVERNED by the blend directive —
+binding ruling (Skill 6 U98) the script's WRITTEN VOICE is GOVERNED by the blend directive;
 `scripts/blend_voice_governance.py` resolves it for the selected engine before STEP 6 DRAFT.
 
 STEP 3, RESEARCH ASSISTANT STAGE. status `researching`. Improve and expand every answer without
@@ -570,7 +604,7 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 If the repo is not updated, it is not done. A sub-agent's claim of done is a hypothesis until
 independently verified.
 
-## n8n workflow deployment (manual — fleet action)
+## n8n workflow deployment (manual; fleet action)
 
 The n8n workflow files in `config/n8n/` are **NOT auto-deployed** to the n8n host. A merge or
 commit that changes a workflow JSON file on disk does NOT update the running workflow on the
@@ -609,6 +643,6 @@ and scope of the deployment gap.
 
 **A build agent that modifies any file under `config/n8n/` MUST note in its commit message which
 workflows the operator must re-import.** A merge that changes a workflow JSON without a
-corresponding manual re-import leaves the running instance out of sync with the repository —
+corresponding manual re-import leaves the running instance out of sync with the repository;
 the workflow on disk is the source of truth, and the fleet is correct only when the instance
 matches.
