@@ -20,7 +20,16 @@ import re
 # Section 3.1 step 1: exactly these canonical fields participate in the hash.
 # NOTE: writing_model, web_research_tool, workflow_trigger, retry, and _test are
 # canonical fields the mapper carries, but they are intentionally NOT in this list,
-# so they never affect the job key.
+# so they never affect the job key. preset is also a canonical field (OPTION A,
+# rem-5) but is hash-excluded (see payload-schema.json x-canonical-hash-note),
+# so an intake-supplied preset change never defeats dedup.
+# transparency_answer IS hashed: the mapper maps podcast_interview_smiq/smiq to a
+# DISTINCT transparency_answer canonical field, and two submissions differing
+# ONLY in that answer are genuinely different episodes that MUST produce
+# different job keys; excluding it would let the second be deduped as a false
+# duplicate. This list is synced to the production job_key.HASH_FIELDS
+# (scripts/webhook/job_key.py) and to payload-schema.json x-canonical-hash-fields
+# (enforced by tests/webhook/test_r09_schema_hash_fields.py).
 HASH_FIELDS = [
     "mode",
     "style",
@@ -36,6 +45,7 @@ HASH_FIELDS = [
     "q5_answer",
     "q6_answer",
     "q7_answer",
+    "transparency_answer",
     "additional_info",
     "target_runtime",
     "tts_model",
@@ -49,7 +59,11 @@ HASH_FIELDS = [
 
 # Enum-shaped fields are lowercased during hash normalization (Section 3.1 step 3).
 # Free-text answers and names keep their case; only whitespace is normalized.
-ENUM_HASH_FIELDS = {"mode", "style", "preferred_pronoun", "episode_type", "explicit", "tts_model"}
+# Synced to the production job_key.ENUM_HASH_FIELDS (scripts/webhook/job_key.py):
+# mode, style, episode_type, explicit. preferred_pronoun and tts_model are NOT
+# enum-lowercased in the production hash (preferred_pronoun keeps its case;
+# tts_model is a model id, not an enum token), so they are excluded here to match.
+ENUM_HASH_FIELDS = {"mode", "style", "episode_type", "explicit"}
 
 _WHITESPACE = re.compile(r"\s+")
 
