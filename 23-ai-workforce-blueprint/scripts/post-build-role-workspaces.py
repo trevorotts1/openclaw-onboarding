@@ -54,7 +54,7 @@ from create_role_workspaces import (  # type: ignore
 )
 
 
-def process_company(company_root: Path, dry_run: bool = False) -> dict:
+def process_company(company_root: Path, workspace_root: Path, dry_run: bool = False) -> dict:
     """Walk a company and augment every dept + ensure CEO at company root."""
     counts = {
         "depts_scanned": 0,
@@ -62,7 +62,6 @@ def process_company(company_root: Path, dry_run: bool = False) -> dict:
         "role_files_written": 0,
         "ceo_created_or_augmented": False,
     }
-    workspace_root = company_root  # symlinks resolve here
 
     # 1. Master Orchestrator (CEO) — lives at company root
     ceo_path = company_root / "master-orchestrator"
@@ -159,7 +158,7 @@ def main():
     total = {"depts_scanned": 0, "role_folders_augmented": 0, "role_files_written": 0, "ceos": 0}
     for company in companies:
         print(f"\n=== Company: {company.name} ===")
-        result = process_company(company, dry_run=args.dry_run)
+        result = process_company(company, Path(paths["workspace"]), dry_run=args.dry_run)
         for k in ["depts_scanned", "role_folders_augmented", "role_files_written"]:
             total[k] += result[k]
         if result["ceo_created_or_augmented"]:
