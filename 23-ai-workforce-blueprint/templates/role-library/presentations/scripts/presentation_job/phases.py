@@ -16,6 +16,7 @@ from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
 from . import heal
+from . import persona
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -107,6 +108,12 @@ class Engine:
         self.state["current_phase"] = phase.id
         self.state.setdefault("heartbeat", {})["phase_started_at"] = utcnow()
         self._checkpoint(phase.id, status="running", attempts=ps.get("attempts", 0) + 1)
+
+        # U024 — blended-persona governance (once per mapped phase)
+        try:
+            persona.resolve_for_phase(self.run_dir, phase.id)
+        except Exception as exc:
+            return self._block(phase, f"persona governance resolution failed: {exc}")
 
         start_msg = (phase.client_report.get("start_template") or
                      f"Starting {phase.id} ({phase.owning_role})")
@@ -276,6 +283,15 @@ class Engine:
 
     # -- the loop ---------------------------------------------------------
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
+        # U024 — sacred-structure warn check at engine start-up (never blocks)
+        warn = persona.structure_warn_check()
+        if warn.get("mismatched"):
+            self.report.event("warn",
+                f"sacred-structure mismatch: {warn['mismatched']}")
+        elif not warn.get("pin_file_found"):
+            self.report.event("warn",
+                "sacred-structure pin file not found — skipping structure check")
+
         phases = self.manifest.phases
         if only:
             phases = [self.manifest.phase(only)]

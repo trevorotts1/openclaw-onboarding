@@ -16,6 +16,7 @@ from .phases import Engine
 from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 from .sweep import reconcile_sweep
+from . import persona
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -257,6 +258,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         manifest.verify_pin(state.get("manifest_sha256", ""))
 
         engine = Engine(run_dir, manifest, store, state, dry_run=args.dry_run)
+
+        # U024 — blended-persona governance banner at engine start
+        print(persona.governance_banner(), flush=True)
+
         if args.close:
             return engine.close()
         if args.resume:
