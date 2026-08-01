@@ -157,9 +157,29 @@ CLI subcommands:
               Valid statuses: in_progress, review, done, blocked.
 
   close       --job-id <id> --status done|blocked [--note <text>]
+              [--reason <decision|approval|credential|payment>]
+              [--blocked-on-human <owner|operator>] [--permalink <url>]
               Terminal patch for the episode card.
 
-API endpoints targeted:
+              Blocked (--status blocked):
+                Sends the full blocked triad matching the CC blocked-column
+                gate (route.ts L349-377): blocked_reason (from --reason,
+                default approval), blocked_on_human (from --blocked-on-human,
+                default operator), and ask (from --note, default sensible
+                string). blocked_reason must be one of decision, approval,
+                credential, payment. A job that hit an error or needs
+                re-routing should call POST /api/tasks/{id}/return-to-orchestrator
+                instead.
+
+              Done (--status done):
+                When --permalink is provided, registers it as a task
+                deliverable via POST /api/tasks/{id}/deliverables before
+                the done patch so the completion-evidence gate (T0-01,
+                completion-evidence.ts L118) passes. Without --permalink,
+                logs a stderr warning and still attempts (fail-soft absorbs
+                the gate refusal).
+
+  API endpoints targeted:
 
   POST  {CC_BASE_URL}/api/tasks/ingest
         Creates the task in the podcast workspace (via department_slug=podcast).
@@ -169,8 +189,19 @@ API endpoints targeted:
 
   PATCH {CC_BASE_URL}/api/tasks/{task_id}
         Updates the card's status, phase_id, and optional note.
+        When status=blocked, requires the full blocked triad:
+        blocked_reason, blocked_on_human, ask (route.ts L349-377).
+        When status=done, a task_deliverables row registered via the
+        endpoint below must exist (completion-evidence gate T0-01,
+        completion-evidence.ts L118).
         Source file: src/app/api/tasks/[id]/route.ts
         Returns: the updated task object.
+
+  POST  {CC_BASE_URL}/api/tasks/{task_id}/deliverables
+        Registers a task deliverable (e.g. the Podbean episode permalink).
+        Sends: {deliverable_type, title, path}.
+        Source file: src/app/api/tasks/[id]/deliverables/route.ts
+        Returns: the created deliverable object (HTTP 201).
 
 Env contract:
 
@@ -203,7 +234,12 @@ Phase-to-lane mapping (the 9 podcast production phases):
   enrolling         in_progress
   complete          done
 
-  Use close --status blocked to park a stuck episode.
+  Use close --status blocked --reason <decision|approval|credential|payment>
+  to park a stuck episode. The blocked-column gate (route.ts L349-377)
+  requires the full triad: blocked_reason (one of the four enumerated values),
+  blocked_on_human (owner or operator), and ask (a non-blank human-actionable
+  request string). Calls lacking any of these three fields are rejected with
+  HTTP 400.
 
 FAIL-SOFT posture:
 
