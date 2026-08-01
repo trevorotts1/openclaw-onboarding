@@ -9,7 +9,7 @@ description: >
   publish-with-approval, all without the human touching the builder.
 metadata:
   
-  version: "v21.4.53"
+  version: "v21.4.54"
   priority: HIGH
 ---
 
@@ -506,6 +506,16 @@ the RENDERED DOM via `ghl_verify.render_check`. GoHighLevel objects MUST be real
   False. This catches a page that renders 200 + marker but ships stale or
   placeholder copy. The gate is opt-in (pages without copy assertions are
   unaffected).
+- **PREVIEW-URL HOST DISCOVERY (empirical, 2026-07).** The preview URL
+  `app.convertandflow.com/preview/<id>` does NOT render on that host — it
+  301-redirects to `sites.leadconnectorhq.com/preview/<id>`, which is where the
+  page actually renders. **No API field reveals this** — the builder/preview
+  payloads carry the `app.convertandflow.com` path and never the render host. It
+  only matters when no custom domain is connected (a page on a custom domain
+  serves from that domain). So for verification, resolve the redirect: fetch
+  `app.convertandflow.com/preview/<id>`, follow the 301 to
+  `sites.leadconnectorhq.com/preview/<id>`, and verify the marker in THAT rendered
+  DOM. Do not hardcode either host as the render source — follow the redirect.
   `ghl_gate require-pass` reads ONLY `scorecard/verify-summary.json` written by
   `ghl_verify`; it ignores ledger files and `.md` files. A 201 autosave, a marker
   grep on stored bytes, a hand-written ledger, or a non-200 re-labeled "API
