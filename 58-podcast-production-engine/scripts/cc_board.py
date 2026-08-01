@@ -44,6 +44,23 @@ REQUEST CONTRACT
     return:  200 -> task object
     status vocabulary (CC TaskStatus): backlog | in_progress | review | blocked | done
 
+  READ     GET {base}/api/tasks/{task_id}
+    headers: same as CREATE
+    return:  200 -> task object (carries the current `status`)
+
+STATE MACHINE (rem-2)
+  The CC PATCH route enforces a state machine (task-lifecycle.ts):
+  `done` is reachable ONLY from `review` (or `testing`). Any other
+  source status PATCHed to `done` is rejected (403 / illegal-edge).
+  `blocked` is accepted from any non-done source (the route's blocked
+  gate at lines 349-396 runs unconditionally on status='blocked').
+  This caller is TRANSITION-AWARE: before a `done` PATCH it reads the
+  card's current status (GET /api/tasks/{id}) and, when that status is
+  not `review` or `testing`, PATCHes `status:'review'` FIRST so the
+  subsequent `done` PATCH lands on a legal edge. The deliverable
+  registration (onb-21) stays BEFORE the done patch. The fail-soft
+  contract is unchanged: a refused transition is logged, not fatal.
+
 CLI SUBCOMMANDS
   run-begin   --job-id --client-label --episode-title [--department podcast]
               Create the episode card on the CC board. Card title convention:
@@ -70,6 +87,13 @@ CLI SUBCOMMANDS
                 the done patch so the completion-evidence gate (T0-01)
                 passes. Without --permalink, warns on stderr and still
                 attempts (fail-soft absorbs the gate refusal).
+                TRANSITION-AWARE (rem-2): before the done PATCH the
+                caller reads the card's current status via GET; when it
+                is not 'review' (or 'testing') it PATCHes
+                status:'review' FIRST so the done PATCH lands on a legal
+                state-machine edge. Blocked close sends the triad and
+                works from any non-done state (the route's blocked gate
+                is source-agnostic).
 
 STATE PERSISTENCE
   Job-id -> task-id mapping is persisted in
@@ -218,6 +242,43 @@ def _set_task_id(job_id: str, task_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# READ -- GET /api/tasks/{task_id} (transition-aware done path, rem-2)
+# ---------------------------------------------------------------------------
+# Statuses from which a `done` PATCH is a LEGAL state-machine edge. The CC
+# PATCH route (route.ts) + task-lifecycle.ts allow `done` only from `review`
+# or `testing`; any other source is refused (403 / illegal-edge). Keeping this
+# set local to the caller (not imported from the TS route) is deliberate: the
+# caller is the side that must sequence the transition, and a TS schema change
+# does not silently widen what this Python caller does.
+_DONE_SOURCE_STATUSES = {"review", "testing"}
+
+
+def get_card_status(task_id: str, *, env: Optional[dict] = None) -> Optional[str]:
+    """Read the current CC status of a card via GET /api/tasks/{task_id}.
+
+    Returns the status string ('backlog'|'in_progress'|'review'|'blocked'|
+    'done'|'testing'|...) on success, or None on any board problem (board
+    disabled, card missing, HTTP error, network error). FAIL-SOFT: never
+    raises."""
+    cfg = board_config(env)
+    if cfg is None:
+        return None
+
+    url = f"{cfg['base_url']}/api/tasks/{task_id}"
+    try:
+        st, body = _request_with_retry("GET", url, None, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"GET {task_id} failed ({type(exc).__name__}: {exc}).")
+        return None
+
+    if st == 200 and isinstance(body, dict) and body.get("status"):
+        return str(body["status"])
+
+    _log(f"GET {task_id} non-OK (HTTP {st}): {body}.")
+    return None
+
+
+# ---------------------------------------------------------------------------
 # CREATE -- POST /api/tasks/ingest (idempotent via job-id map)
 # ---------------------------------------------------------------------------
 def create_board_card(
@@ -300,6 +361,45 @@ def patch_board_card(
         _log("patch skipped -- nothing to update.")
         return False
 
+    # ── TRANSITION-AWARE done path (rem-2) ────────────────────────────────
+    # The CC PATCH route enforces a state machine (task-lifecycle.ts): `done`
+    # is reachable ONLY from `review` (or `testing`). A `done` PATCH from any
+    # other source status is refused (403 / illegal-edge). So before the
+    # `done` PATCH we READ the card's current status (GET /api/tasks/{id})
+    # and, when it is not already a legal `done` source, we PATCH
+    # `status:'review'` FIRST so the subsequent `done` PATCH lands on a legal
+    # edge. The deliverable registration (onb-21) is done by the CALLER
+    # (cmd_close / cmd_patch_phase) before this function is reached, so the
+    # completion-evidence gate is already satisfied by the time `done` PATCHes.
+    # `blocked` is source-agnostic (the route's blocked gate runs on any
+    # non-done status), so no pre-transition is needed there.
+    # FAIL-SOFT: every step is absorbed -- a refused review transition or a
+    # read failure is logged and the done PATCH is still attempted (the route
+    # may yet accept it, e.g. the card was already in review); a failure of
+    # the done PATCH itself returns False (never raises).
+    pre_patched_review = False
+    if status == "done":
+        cur = get_card_status(task_id, env=env)
+        if cur is not None and cur not in _DONE_SOURCE_STATUSES:
+            _log(f"transition-aware done: card {task_id} in '{cur}' -- "
+                 f"PATCHing status:'review' before done.")
+            review_payload: dict = {"status": "review"}
+            review_url = f"{cfg['base_url']}/api/tasks/{task_id}"
+            try:
+                rst, rbody = _request_with_retry("PATCH", review_url, review_payload, cfg)
+            except (urllib.error.URLError, OSError, ValueError) as exc:
+                _log(f"review pre-PATCH {task_id} failed ({type(exc).__name__}: {exc}); "
+                     f"attempting done anyway.")
+                rst = None
+            if rst == 200:
+                pre_patched_review = True
+            elif rst is not None:
+                _log(f"review pre-PATCH {task_id} non-OK (HTTP {rst}): {rbody}; "
+                     f"attempting done anyway.")
+        elif cur is None:
+            _log(f"transition-aware done: could not read status for {task_id}; "
+                 f"attempting done PATCH directly (fail-soft).")
+
     payload: dict = {}
     if phase:
         payload["phase_id"] = phase
@@ -320,7 +420,8 @@ def patch_board_card(
         return False
 
     if st == 200:
-        _log(f"board card patched: task_id={task_id} phase={phase} status={status}.")
+        _log(f"board card patched: task_id={task_id} phase={phase} status={status}"
+             f"{' (pre-transitioned review)' if pre_patched_review else ''}.")
         return True
 
     _log(f"PATCH {task_id} non-OK (HTTP {st}): {body}.")
