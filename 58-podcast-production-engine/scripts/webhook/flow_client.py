@@ -22,6 +22,8 @@
 #                 sourceId?, parentTaskId?, agentId?, runId?, label?, notifyPolicy?
 #   get_flow    : flowId(req)                 -> flow carries revision, status,
 #                                                stateJson, goal, timestamps
+#   find_latest_flow : (no params)            -> returns the most recently created
+#                                                flow visible to this route
 #   resume_flow : flowId, expectedRevision(int>=0), status?(queued|running),
 #                 currentStep?, stateJson?
 #   finish_flow : flowId, expectedRevision, stateJson?
@@ -336,7 +338,7 @@ def self_test():
     check("create_flow ok", st == 200 and resp["ok"] and fid)
     check("job_key carried in stateJson", flow["stateJson"]["job_key"] == job)
 
-    st2, resp2 = client.run_task(fid, "read the intake ledger and execute Step 1", runtime="subagent")
+    st2, resp2 = client.run_task(fid, "research the intake ledger format and draft Step 1 outline", runtime="subagent")
     check("run_task ok", st2 == 200 and resp2["ok"])
 
     # happy-path finish (no conflict)
