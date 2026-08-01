@@ -28,6 +28,15 @@ tree PASSED (exit 0, `PRE-PUSH: client-name gate PASSED`). Neither throwaway ref
 
 ---
 
+## [v21.4.49]  -  2026-07-31  -  fix(U010): restore two QC-2 Class A enforcer sites on main + repair stale content_sha for 2 touched files
+
+Concurrent release from PR #806 (`14a51abd`): restored two QC-2 Class A enforcer sites on main
+(`ee188174`), then repaired the stale `content_sha` for the 2 touched files and bumped the G3
+skill-version in lockstep (`e6669faf`). This release was tagged at `14a51abd`, which does NOT
+contain the pre-push client-name gate — that ships in v21.4.50.
+
+---
+
 ## [v21.4.48]  -  2026-07-31  -  fix: fleet-roll coverage audit gap #8 — CONTENT RECHECK skipped SOP-library/embeddings, persona-index, weekly-cron, and AGENTS.md hygiene convergence
 
 ### Why
