@@ -73,14 +73,18 @@ def ocr_engine():
     return pytesseract, Image
 
 
-def px_per_pt(image_height_px: int) -> float:
+def px_per_pt(image_height_px: int, reference_height_px: float = PT_REFERENCE_HEIGHT_PX) -> float:
     """Pixels per pt-equivalent for a render of this height.
 
-        px_per_pt = PT_PER_REFERENCE_PIXEL * image_height_px / PT_REFERENCE_HEIGHT_PX
+        px_per_pt = PT_PER_REFERENCE_PIXEL * image_height_px / reference_height_px
 
-    At the canonical 2K render height this is 2.1333…, so an 18-pt floor is 38.4 px.
-    Derived from the PNG, never from RESOLUTION or from any literal image size."""
-    return PT_PER_REFERENCE_PIXEL * image_height_px / PT_REFERENCE_HEIGHT_PX
+    At the canonical 2K render height (reference_height_px == PT_REFERENCE_HEIGHT_PX)
+    this is 2.1333…, so an 18-pt floor is 38.4 px. Derived from the PNG, never from
+    RESOLUTION or from any literal image size. `reference_height_px` defaults to this
+    module's own PT_REFERENCE_HEIGHT_PX but check_type_size's build_deck.py wrapper
+    passes build_deck.SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX explicitly so the two
+    modules' reference height can never silently diverge."""
+    return PT_PER_REFERENCE_PIXEL * image_height_px / reference_height_px
 
 
 def word_boxes(png_path) -> list:
@@ -254,12 +258,18 @@ def _get_renders(run_dir: Path) -> list:
 
 # ── The three checks ─────────────────────────────────────────────────────────
 
-def check_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """AF-TEXT-OVERFLOW — no word box within TEXT_EDGE_MARGIN_FRAC of any edge, and no
+def check_text_fits(run_dir: Path, slides_path: Optional[Path] = None,
+                     *, edge_margin_frac: float = TEXT_EDGE_MARGIN_FRAC) -> str:
+    """AF-TEXT-OVERFLOW — no word box within edge_margin_frac of any edge, and no
     two word boxes overlapping by more than TEXT_OVERLAP_AREA_FRAC of the smaller box.
 
     Margins are computed PER AXIS from the real image: margin_x = round(frac * W),
     margin_y = round(frac * H). At the canonical 2K render size that is 41 px and 23 px.
+
+    `edge_margin_frac` defaults to this module's own TEXT_EDGE_MARGIN_FRAC but the
+    build_deck.py wrapper (_chk_text_fits) passes
+    build_deck.SLIDE_GEOMETRY_EDGE_MARGIN_FRAC explicitly so the two modules' margin
+    can never silently diverge.
 
     Overlap ignores box pairs on the same OCR line_num — adjacent words on one line
     legitimately touch. Deck-level: reports every offending slide, then fails once.
@@ -282,10 +292,6 @@ def check_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
         return ""
 
     problems = []
-    edge_margin_frac = getattr(
-        __import__("build_deck", fromlist=["SLIDE_GEOMETRY_EDGE_MARGIN_FRAC"]),
-        "SLIDE_GEOMETRY_EDGE_MARGIN_FRAC", TEXT_EDGE_MARGIN_FRAC,
-    ) if False else TEXT_EDGE_MARGIN_FRAC  # use local constant
 
     for png_path in renders:
         slide_id = png_path.stem
@@ -459,7 +465,8 @@ def check_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 
 
 def check_type_size(run_dir: Path, slides_path: Optional[Path] = None,
-                    *, pt_floor: float = 18.0, dark: bool = False) -> str:
+                    *, pt_floor: float = 18.0, dark: bool = False,
+                    pt_reference_height_px: float = PT_REFERENCE_HEIGHT_PX) -> str:
     """AF-TYPE-SIZE-MEASURED — the smallest word-box height on every slide is at least
     the pt floor scaled to that slide's own height.
 
@@ -467,7 +474,10 @@ def check_type_size(run_dir: Path, slides_path: Optional[Path] = None,
 
     The floor constants and the dark-theme decision are IMPORTED FROM build_deck (the
     wrapper passes them in) so the measured check and check_font_floor's declared check
-    can never disagree about which floor applies.
+    can never disagree about which floor applies. `pt_reference_height_px` defaults to
+    this module's own PT_REFERENCE_HEIGHT_PX but the build_deck.py wrapper
+    (_chk_type_size) passes build_deck.SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX explicitly
+    so the two modules' reference height can never silently diverge either.
 
     MEASURES the OCR word-box height, which is the only height the engine reports. That
     is >= glyph cap height and <= full ascender-to-descender extent, so it is a
@@ -507,7 +517,7 @@ def check_type_size(run_dir: Path, slides_path: Optional[Path] = None,
             W, H = im.size
         except Exception:  # noqa: BLE001
             continue
-        floor_px = px_per_pt(H) * pt_floor
+        floor_px = px_per_pt(H, pt_reference_height_px) * pt_floor
         provenance[f"{slide_id}_WxH"] = [W, H]
         provenance[f"{slide_id}_derived_floor_px"] = round(floor_px, 2)
         provenance[f"{slide_id}_boxes"] = len(boxes)

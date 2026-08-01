@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import json
 import os
+import shlex
 import subprocess
 from typing import Any, Dict, Optional
 
@@ -29,13 +30,28 @@ def _parse_minutes(ts: str) -> float:
 def dispatch(chat_id: str, kind: str, message: str) -> bool:
     """Transport boundary. Returns True only on CONFIRMED delivery.
 
-    Standalone for callers without a StateStore (e.g. the watchdog).
+    Standalone for callers without a StateStore (e.g. the watchdog, and
+    __main__.cmd_sweep_undeliverable). This is the ONLY implementation of the
+    PRESENTATION_NOTIFY_CMD dispatch path anywhere in this package --
+    Reporter._dispatch delegates here instead of re-running its own
+    subprocess.run. A second, independently-maintained copy of this logic is
+    exactly how U069 shipped with a live shell-injection hole: the class
+    method got the tokenise-first fix and this module-level twin did not, so
+    watchdog.py (which imports this function directly) stayed exploitable.
     """
     cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
     if not cmd:
         return False
+    # U069: tokenise, refuse on unparseable, shell=False.
     try:
-        r = subprocess.run(cmd, shell=True, input=json.dumps(
+        argv = shlex.split(cmd)
+    except ValueError as exc:
+        raise ValueError(
+            f"PRESENTATION_NOTIFY_CMD is not a valid argument vector ({exc}). "
+            "Fix the environment variable; this is not sanitised for you."
+        ) from exc
+    try:
+        r = subprocess.run(argv, shell=False, input=json.dumps(
             {"chat_id": chat_id, "kind": kind, "message": message}),
             text=True, capture_output=True, timeout=30)
         return r.returncode == 0
@@ -142,13 +158,8 @@ class Reporter:
         return False
 
     def _dispatch(self, chat_id: str, kind: str, message: str) -> bool:
-        cmd = os.environ.get("PRESENTATION_NOTIFY_CMD")
-        if not cmd:
-            return False
-        try:
-            r = subprocess.run(cmd, shell=True, input=json.dumps(
-                {"chat_id": chat_id, "kind": kind, "message": message}),
-                text=True, capture_output=True, timeout=30)
-            return r.returncode == 0
-        except (subprocess.TimeoutExpired, OSError):
-            return False
+        # U069: delegates to the module-level dispatch() -- do not re-derive
+        # the tokenise-first / shell=False logic here. See dispatch()'s
+        # docstring: a second copy of this is precisely the bypass U069
+        # closure exists to prevent.
+        return dispatch(chat_id, kind, message)

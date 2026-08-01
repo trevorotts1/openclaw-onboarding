@@ -1,7 +1,7 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-07-28T16:42:38Z",
+  "generated_at": "2026-08-01T01:50:55Z",
   "file_count": 107,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
@@ -289,12 +289,12 @@
       "bytes": 11642
     },
     "presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md": {
-      "sha256": "7da89ac49a28b07ea9b73fc5186a9b31a87463641a7f907ef1face803dc05a93",
-      "bytes": 91231
+      "sha256": "0ec579a2adaff776c1ad529d77c3bf5c88d140709cc07a4bb7d5e090d0393fc8",
+      "bytes": 105945
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "20065a118716bf008de7319733742bd57b1fe35c844e0f792ae38ecbce8aa1e2",
-      "bytes": 119298
+      "sha256": "842b7afa53f8f47646467e8bcb6572692989cbce6cd1a4a902430e821fdb1416",
+      "bytes": 133639
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
@@ -309,16 +309,16 @@
       "bytes": 11497
     },
     "presentation-slide-craft/SOP-SLIDE-03-HOOK-DOCTRINE.md": {
-      "sha256": "39fb4cbd6377e05b39bf15f9588c6e21b8ca91727bbba592bffc881640446b08",
-      "bytes": 12744
+      "sha256": "99ba590e5af344ad0d59a57ac6488b17bcb2c03f824980e7260bbbd9e3056538",
+      "bytes": 13408
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
-      "sha256": "4d1fbfc407be7998d35fe89614c17392840dd76155670f7dcdaf9aeb35bc6ede",
-      "bytes": 10781
+      "sha256": "5ff0ef0146b2a0e342e2fb9b62ef4be10381a160f0e34896b7ab1457a9ce371c",
+      "bytes": 11162
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
-      "sha256": "68164ada6a00478538242f3afbd29c43bb7cbaa6b2506537f4079987df30e3db",
-      "bytes": 11700
+      "sha256": "f73b0dc1b88262d9f102a0aa60c90636e0b0ce5f6d5a967fde6ec6ae7873eab2",
+      "bytes": 11688
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
       "sha256": "a7a350115ded486b946bfbc45b5a3c28931d7818988273b09826e36c91a36ac5",

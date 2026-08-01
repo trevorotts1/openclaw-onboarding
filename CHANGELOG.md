@@ -1,3 +1,2291 @@
+## [v21.4.50]  -  2026-08-01  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
+
+Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
+(`scripts/qc-assert-no-client-names.sh` — which falls back to a roster DERIVED structurally from
+`~/clawd/accounts/accounts.md`, a real roster-based check) and `core.hooksPath = .githooks` with a
+tracked `.githooks/pre-commit`, but there was NO pre-push hook, so a client name could still reach
+`origin` — CI cannot catch it there by design (a bare GitHub runner has no roster). The new pre-push
+runs the SAME gate and refuses the push (exit 1) when it reports hits.
+
+- Tiering is EXACTLY the gate's own, so the hook and pre-commit and CI can never disagree on what
+  "hits" means: curated roster -> roster derived from accounts.md -> neither (fail-closed exit 2 on
+  the operator box, since a real roster source exists there; only CI treats that state as
+  report-only). Reuses the script, never reimplements it.
+- Blocking rule is only the gate's own verdict: gate exit 1 (roster/always-on-token hit) or exit 2
+  (structural fail-closed) refuses the push; gate exit 0 (clean) always allows it — the hook can
+  never block another session's legitimate push of clean content.
+- Failure output prints paths and counts only (the same `path:line` filter CI uses), never a matched
+  name.
+- README documents the one-time activation: `git config core.hooksPath .githooks` (already set on
+  operator clones).
+
+Mutation-proven both directions in an isolated scratch worktree off `origin/main`:
+(a) a REAL derived-roster term planted in a tracked file (handled entirely by file redirection, so
+the name never entered any command text) made `git push --dry-run` to a throwaway ref REFUSE
+(exit 1, `PRE-PUSH BLOCKED`, hit shown as `path:line` only); (b) the identical push on the clean
+tree PASSED (exit 0, `PRE-PUSH: client-name gate PASSED`). Neither throwaway ref ever reached
+`origin` (verified via `git ls-remote`). All four repo gates exit 0.
+
+---
+
+## [v21.4.49]  -  2026-07-31  -  fix(U010): restore two QC-2 Class A enforcer sites on main + repair stale content_sha for 2 touched files
+
+Concurrent release from PR #806 (`14a51abd`): restored two QC-2 Class A enforcer sites on main
+(`ee188174`), then repaired the stale `content_sha` for the 2 touched files and bumped the G3
+skill-version in lockstep (`e6669faf`). This release was tagged at `14a51abd`, which does NOT
+contain the pre-push client-name gate — that ships in v21.4.50.
+
+---
+
+## [v21.4.48]  -  2026-07-31  -  fix: fleet-roll coverage audit gap #8 — CONTENT RECHECK skipped SOP-library/embeddings, persona-index, weekly-cron, and AGENTS.md hygiene convergence
+
+### Why
+
+`v21.4.38` fixed the CONTENT RECHECK early exit for exactly ONE runtime/DB convergence step
+(`_cc_currency_probe()`, Command Center git currency) — the `exit 0` a same-version re-roll hits
+once skills content matches source sits ~600–2,400 lines ABOVE every other convergence step: U6b
+(persona-index provisioning), U6c/U6c2 (SOP V2 library ingest + SOP-embeddings row count), the
+`weekly-onboarding-update` cron registration, and `apply-fleet-standards.sh`'s AGENTS.md dedup /
+orphan-BEGIN/END self-heal. Nothing else got that treatment. A box whose skills content and
+version stamp are both current can therefore sit forever behind on all four: an under-populated
+SOP library or embeddings table, a stale/never-provisioned persona index, a cron that never got
+registered (or was removed out-of-band without a tombstone), and duplicated/orphaned AGENTS.md
+blocks — all invisible to every check that reads the stamp, because none of those steps is ever
+reached on a content-current re-roll.
+
+### What changed
+
+- **update-skills.sh** — four new read-only probes evaluated immediately before the CONTENT
+  RECHECK `exit 0`, mirroring `_cc_currency_probe()`'s contract exactly (return non-zero ONLY when
+  a full pass would actually repair something; absent/unknown/current/any read error → 0, never
+  forcing a pass):
+  - `_sop_library_currency_probe()` — `sops` row count vs `SOP-LIBRARY-MANIFEST.json`'s
+    `canonical_sop_count` AND `sop_embeddings` row count vs `SOP-EMBEDDINGS-MANIFEST.json`'s
+    `sop_count`, resolving the DB via the SAME `resolve_db.find_dashboard_db()` call U6c/U6c2 use
+    (not reimplemented) so the probe and the real steps can never disagree about which DB matters.
+  - `_persona_index_currency_probe()` — mirrors U6b's own D3 completion re-assertion: the on-disk
+    `.prebuilt-index-version` sentinel vs the pulled manifest's `release_tag`.
+  - `_weekly_cron_currency_probe()` — is `weekly-onboarding-update` registered? Deliberately NOT a
+    call into `shared-utils/cron-lib.sh`'s `oc_cron_present` (which fails OPEN — treats an
+    unreadable `cron list --json` as "absent" — a defensible choice for a registrar deciding
+    whether to attempt an idempotent create, but wrong for a probe deciding whether to force a
+    full pass on all 38 boxes over a transient CLI hiccup). A genuine parse failure here returns 0
+    (advisory), never 1. The tombstone check is a pure file-existence read — never the mkdir-p'ing
+    `oc_cron_tombstone_dir()` — so the probe never writes anything, even a directory.
+  - `_agents_md_hygiene_probe()` — a duplicated single-token `<!-- MARKER -->` stamp line (the
+    exact re-append defect `dedup-agents-md.py` exists to clean up; near-zero false-positive rate
+    vs a bare heading count, since two different blocks can legitimately share a heading but not a
+    singleton marker token) OR an unbalanced `<!-- BEGIN skill:X:Y -->` / `<!-- END skill:X:Y -->`
+    pair. Chosen over invoking `dedup-agents-md.py`'s own dry-run to keep the per-box, per-roll
+    cost to a single regex pass over one already-size-capped file.
+  - The aggregation gate runs all five probes (the pre-existing CC probe plus these four)
+    unconditionally — not short-circuiting on the first failure — so the printed message always
+    names every outstanding convergence step, not just the first one found.
+- **tests/unit/content-recheck-convergence-probes.test.sh** (new) — extracts the probes and the
+  gate verbatim from `update-skills.sh` (mirrors `sop-embeddings-independent-gate.test.sh`'s
+  method) and proves, fully offline: each probe in both directions (converged → 0, outstanding →
+  1) against real fixtures (a fixture `mission-control.db`, manifest JSON, a mocked `openclaw` CLI,
+  fixture `AGENTS.md` files); that the gate's fast `exit 0` still fires only when every probe
+  converges; that it falls through and names the trigger the instant any ONE probe reports
+  outstanding work; and idempotency (re-running the gate on an already-converged box exits 0
+  again). Nothing under the real `$HOME`, `/data/.openclaw`, or any real DB is ever touched.
+
+### Verification
+
+`bash -n` clean on `update-skills.sh` and the new test. `shellcheck --shell=bash -x` on
+`update-skills.sh`: zero NEW findings vs `origin/main` (identical by code+message once
+filenames/line-numbers are normalized). Required suites all pass: `dedup-agents-md` 29/0,
+`core-updates-orphan-end-repair` 7/0, `core-updates-all-skills-wired` 18/0,
+`update-skills-full-scripts-tree` 23/0, `update-command-center-runtime-config` 8/0,
+`update-skills-resume-cron` 20/0, `sop-embeddings-independent-gate` 12/0. New test
+`content-recheck-convergence-probes` 48/0. `qc-assert-no-client-names.sh` and
+`qc-assert-no-full-env-dump.py` both pass (rc=0); the latter's one flagged `pm2 jlist` line in
+`update-skills.sh` is the same pre-existing finding as `origin/main` (confirmed unchanged content,
+line number shifted only because of the lines added above it).
+
+## [v21.4.47]  -  2026-07-31  -  fix: install.sh seeded UNRESOLVABLE model pins (silent agent death) + new `verify-model-pins.py`
+
+### Why
+
+`install.sh` seeded a hardcoded sub-agent fallback chain:
+
+    ['ollama/kimi-k2.6:cloud', 'openrouter/xiaomi/mimo-v2.5-pro', 'deepseek/deepseek-v4-pro']
+
+All three are unusable on any box that does not happen to match that shape:
+
+1. `ollama/<model>:cloud` resolves ONLY where `models.providers.ollama` exists. A box onboarded
+   with `--auth-choice ollama-cloud` registers `ollama-cloud` instead, so the pin falls through to
+   the IMPLICIT local Ollama provider (`127.0.0.1:11434`). With no daemon there the agent dies at
+   launch with `Unknown model ... Ollama requires authentication` — an AUTH message for what is
+   really a namespace typo, which sends diagnosis at the client's credentials instead of the pin.
+2. `openrouter/xiaomi/mimo-v2.5-pro` is absent from the model allowlist.
+3. `deepseek/deepseek-v4-pro` names a provider that is never configured.
+
+Nothing validates a model pin until an agent LAUNCHES — not `config validate`, not `doctor`, not
+any health check — so a bad pin is invisible until that department is finally given real work.
+
+PROVEN LIVE 2026-07-31: a client's Web Development Department Head died 2 ms after dispatch, twice,
+with zero work events, while the gateway reported healthy and the board showed "in progress". A
+read-only sweep of 23 boxes found 8 still carrying these literal strings, and 316 agents fleet-wide
+with NO fallback chain at all (AGENTS.md N31) — which is what turns one bad pin into a
+company-wide outage instead of one degraded department. An Ollama Cloud cap/429 is ACCOUNT-level,
+so an all-Ollama chain fails as a single unit.
+
+### What changed
+
+- `install.sh` — the seed is now derived from the provider THIS box registers, filtered to this
+  box's allowlist, always terminates on a NON-Ollama provider, seeds `primary` alongside
+  `fallbacks`, and REFUSES to write a pin it cannot resolve rather than planting a silent
+  landmine. Verified against five box shapes: `ollama-cloud`, legacy `ollama`, fresh/empty
+  allowlist, no-ollama-provider, and nothing-resolvable (correctly refuses).
+- `scripts/verify-model-pins.py` (NEW) — read-only validator. Flags unregistered providers
+  (fatal), missing fallback chains, all-Ollama chains, non-allowlisted ids, and Anthropic pins on
+  client boxes. Exit 1 on fatal; `--strict` also fails on warnings; `--json` for tooling.
+  Self-tested: reports clean on a repaired box, finds real issues elsewhere.
+- `INSTALL-CONTRACT.md` + the install-time guidance note — document the provider-prefix caveat so
+  the docs stop teaching a prefix that is wrong on boxes registering `ollama-cloud`.
+
+### Operator note
+
+Run `scripts/verify-model-pins.py` on a box before trusting a green health check. A healthy
+gateway proves the process is up; it proves nothing about whether its agents can resolve a model.
+
+## [v21.4.46]  -  2026-07-31  -  fix: fleet-roll coverage audit — CC-state marker path on VPS, CC currency probe never running on a version-bump roll, offline-fetch false "current", SOP-embeddings reaching already-populated boxes, stale onboarding-dir stamp, non-recursive hooks copy, and a deterministic direct-to-agent update message
+
+### Why
+
+A code-inspection coverage audit of `update-skills.sh` and its Skill-32 SOP-library path found
+seven confirmed defects, four of them blocking real signal on the fleet:
+
+1. `.command-center-state`'s marker path was hardcoded to `${HOME}/.openclaw/skills`, which does
+   not exist on VPS/Contabo (the active skills dir there is `/data/.openclaw/skills`, per
+   `discover_skills_dir()`). Verification reads the resolved path, so the marker reported MISSING
+   on all 10 VPS boxes. `get_current_version()` had the identical bug — it searched only `$HOME`
+   paths and returned empty on every VPS/Contabo box.
+2. `_cc_currency_probe()` was called from exactly ONE place — inside the same-version recheck
+   branch, which is never entered on a version-bump roll (the normal case). PROVEN LIVE: a probe
+   run going v21.1.0 -> v21.4.43 produced no `[CC CURRENCY]` line at all, so the marker was never
+   written on a normal roll.
+3. `_cc_currency_probe`'s `git fetch --quiet origin 2>/dev/null || true` swallowed a fetch failure
+   and fell through to the ancestor check against a possibly-stale local `origin/<default>` ref —
+   able to report `state=current` for a box that is genuinely behind.
+4. `ingest-sop-library.sh`'s ALREADY-POPULATED SKIP GATE and `update-skills.sh`'s U6c both gate on
+   SOP *content* row-count (`sops` table) vs the canonical count. A box already at/above that
+   threshold never re-invokes the ingester, so the free, sha256-pinned, already-published
+   SOP-embeddings asset (`sop-embeddings-v1.0.0`) never reaches it — `sop_embeddings` can stay
+   empty forever and semantic SOP search stays keyword-only, despite content-population reporting
+   green. `ingest-sop-library.sh` also carried a stale comment claiming no embeddings asset had
+   ever been published; a real one shipped 2026-07-20 (`asset_rebuild_required: false`).
+5. (Should-fix) `ONBOARDING_DIR` points at the temp clone, deleted at the end of every run — so
+   `~/.openclaw/onboarding`'s CONTENT is never refreshed by this script, but its
+   `.onboarding-version` stamp was bumped anyway on every roll: a stale tree advertising the
+   current version, the same lie `reap_dead_skill_manifest()` was written to kill for
+   `.skill-manifest.json`.
+6. (Should-fix) `hooks/` delivery used a non-recursive top-level `*.sh` glob with `2>/dev/null ||
+   true`, then printed `✓ hooks/ library persisted` unconditionally regardless of whether anything
+   actually copied.
+7. (Should-fix) `DIRECT-TO-AGENT-UPDATE-MESSAGE.md` told the receiving agent to fetch the repo and
+   interpret a 32 KB prose playbook itself — fanned out to N agents, that produces N divergent
+   interpretations of the same update.
+
+### What changed
+
+- **update-skills.sh** — `_cc_currency_probe()`'s marker path now uses the already-resolved
+  `$SKILLS_DIR` instead of a hardcoded `$HOME` path; `get_current_version()` now checks
+  `$SKILLS_DIR/.onboarding-version` first, ahead of its `$HOME`-only fallback list. The probe is
+  now also called (marker-write/report only, return value discarded, never gates control flow)
+  once on the full-pass path near the Command Center refresh, in addition to the untouched
+  same-version-recheck call. The git-fetch failure path now captures the real exit code (safe
+  `if ! cmd; then rc=$?; fi` idiom under `set -euo pipefail`) and reports `state=unknown` instead
+  of falling through to a possibly-stale ancestor check. A new Step U6c2 checks `sop_embeddings`
+  row count against `SOP-EMBEDDINGS-MANIFEST.json`'s `sop_count` — independent of U6c's content
+  gate — and provisions directly via `provision_sop_embeddings.py` when under-populated; strictly
+  advisory (never fails the roll, never withholds the stamp, never touches `_U6C_SOPLIB_FAIL`).
+  `.onboarding-version` is no longer bumped inside `~/.openclaw/onboarding` (the directory is left
+  alone, not deleted — just stops lying about its version). `hooks/` delivery is now a recursive
+  `cp -Rf ".../hooks/." dest/`, and the `✓` is only printed when the copy actually succeeds
+  (otherwise an explicit `✗ ... FAILED` advisory message).
+- **32-command-center-setup/scripts/ingest-sop-library.sh** — corrected the two stale comments
+  that claimed no SOP-embeddings asset had ever been published; the real published asset and its
+  live provisioning behavior are now documented, including the pointer to U6c2 for boxes that take
+  the already-populated skip gate above (which is left otherwise untouched — its "no download, no
+  write, DB untouched" contract and the existing regression suite both depend on that).
+- **DIRECT-TO-AGENT-UPDATE-MESSAGE.md** — replaced the fetch-the-repo-and-read-a-playbook body
+  with one deterministic command (`bash <(curl -fsSL .../update-skills.sh)`) plus an explicit
+  proof-of-completion instruction (report `.onboarding-version` and the last 20 lines of output).
+  The `**vX.Y.Z**` marker line (`scripts/version-markers.json` marker #8) is unchanged in format.
+- **tests/unit/sop-embeddings-independent-gate.test.sh** (new) — extracts the U6c2 block verbatim
+  from `update-skills.sh` (mirrors `scripts/test-updater-traps-1-and-3.sh`'s method) and proves,
+  fully offline: it provisions embeddings for a box whose SOP content is already "populated"; it
+  is idempotent/byte-identical on an already-canonical box; it degrades cleanly with no
+  `mission-control.db`; and it never reads U6c's content row-count variables or its stamp-gating
+  failure flag.
+
+### Verification
+
+`bash -n` clean on `update-skills.sh`, `ingest-sop-library.sh`, and the new test.
+`shellcheck --shell=bash -x` on both modified shell files: zero NEW findings (`update-skills.sh`
+14/14 identical findings before/after by code+message; `ingest-sop-library.sh` 0/0).
+Six required suites all pass: `dedup-agents-md` 29/0, `core-updates-orphan-end-repair` 7/0,
+`core-updates-all-skills-wired` 18/0, `update-skills-full-scripts-tree` 23/0,
+`update-command-center-runtime-config` 8/0, `update-skills-resume-cron` 20/0. New test
+`sop-embeddings-independent-gate` 12/0. Pre-existing sibling suite
+`sop-library-update-path-ingest` unaffected, 25/0 (confirmed identical against the untouched
+baseline file). `qc-assert-no-client-names.sh` and `qc-assert-no-full-env-dump.py` both pass
+(rc=0); the latter's one flagged `pm2 jlist` line in `update-skills.sh` is pre-existing on
+`origin/main` (same finding, different line number, confirmed by diffing against the baseline
+tree) and untouched by this change. `sop-library-membership-check.test.sh`'s pre-existing 3
+failures are confirmed identical on `origin/main` before this change — unrelated, not introduced
+or fixed here.
+
+## [v21.4.45]  -  2026-07-31  -  docs: fleet standing gate README — the Relay payload trap, the placeholder denylist, prune date semantics, the Sunday cron refresh, and `standing.sh` usage
+
+### Why
+
+`scripts/fleet-standing/README.md` documented the gate's design (fail-open rule, alias
+matching, the `Relay Brain` sha256 recipe) but predated a day of hardening across the fleet
+standing system. Several genuinely dangerous, already-fixed behaviors were confirmed live but
+never written down, leaving a future agent with no way to know they exist before undoing one:
+
+1. An n8n `httpRequest` node **replaces** the item JSON with the response body. The standing
+   check sits ahead of `Relay Brain` in the `Rescue Rangers Relay` workflow; `Relay Brain`
+   reads `$json.body` and has zero `$('…')` references back to the trigger, so the gate's
+   verdict silently became `Relay Brain`'s only input — `message` resolved empty and it
+   posted nothing, for every escalation, on all 38 boxes, with no error and no stored
+   execution to catch it. `Restore Rescue Payload` (`return
+   [$('Auth Check (soft)').first()];`) exists solely to undo that; removing it re-breaks
+   Rescue Rangers fleet-wide, silently.
+2. The `Relay Brain` sha256 recipe was already documented correctly by a prior change
+   (PR #795) — verified against the live node's key set and `jsCode` length; left unchanged.
+3. The alias-matching denylist: the literal string `TBD` sat in the `aliases` column of 13
+   rows, one delinquent. With exact-per-token matching and "any matched row not in good
+   standing wins," a caller supplying that same placeholder would have matched all 13 rows
+   and been refused — 12 paying clients denied service over a shared placeholder value.
+   `norm()` now denylists `tbd, n/a, na, none, unknown, null, -, ?, tba, ''` on both sides of
+   every comparison.
+4. The weekly prune's `requested_at lt` filter compares only the calendar day, inclusively,
+   so a naive `now − 30d` cutoff also deletes 29-day-old rows. The cutoff is deliberately
+   `now − 31d`, truncated to midnight UTC. The node was also once named "Dry Run …" while
+   `dryRun` was `false` — it deleted rows for real, weekly, unattended, under a name that said
+   otherwise.
+5. `standing.sh` (`~/clawd/fleet-standing/standing.sh`, operator-local, not tracked here) had
+   no documented usage: `off`/`on`/`list`/`check`, `--slug` for deterministic single-row
+   targeting on two-box clients, `--all` for intentional bulk flips, refuse-on-ambiguity
+   (exit 1, lists matches), and cursor-based pagination (`nextCursor`, `limit` capped at 250,
+   `offset`/`skip` rejected with HTTP 400).
+6. `update-skills.sh` used to register the `weekly-onboarding-update` cron only when absent,
+   freezing a box's stored cron rules at provisioning time forever after. A refresh path
+   (`refresh_weekly_cron_message()`) now patches the stored message in place via `openclaw
+   cron edit <id> --message` whenever it drifts from `cron-prompt.txt` — a field-level patch
+   that leaves schedule/timezone/sessionTarget/wakeMode/timeout/delivery untouched by
+   construction, fails safe on every error path, and can never abort an update.
+7. Data tables must be referenced by ID, not name, so a table rename or recreate cannot
+   silently redirect the thing that decides who gets service.
+8. Any new variable referenced inside the `update-skills.sh` gate block must use `${VAR:-}`
+   — under `set -euo pipefail`, a bare reference to a variable unset on some code path
+   aborts the update across all 38 boxes.
+
+### What changed
+
+- **`scripts/fleet-standing/README.md`** — added the eight items above as new sections /
+  paragraphs (`## The Relay payload trap`, a `set -u` note in `## The one rule`, a denylist
+  paragraph in `## Match on aliases, never an exact slug`, `## The prune's date semantics`,
+  `## Operator control: standing.sh`, `## The Sunday cron refresh`, a data-table-by-ID bullet
+  in `## Security rules`, plus two new rows in the `## Pieces` table). No section that was
+  already correct was rewritten; nothing was padded. Documentation only — no code, no n8n
+  workflow, and no box was touched.
+
+### Risk
+
+LOW. Docs-only change to a README; zero executable code, test, or n8n workflow touched. The
+required suites are unchanged and pass: `tests/unit/fleet-standing-gate.test.sh` — 14 passed,
+0 failed; `tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed;
+`tests/unit/weekly-cron-message-refresh.test.sh` — 31 passed, 0 failed. No secret, credential,
+or client name is present in the diff; the `TBD`/denylist example uses only the generic
+"a delinquent client" phrasing already established elsewhere in this file.
+
+---
+
+## [v21.4.44]  -  2026-07-31  -  fix: restamp stale content_sha for 20 healer templates + 1 SOP (PR #796 regression blocking main)
+
+### Why
+
+PR #796 (v21.4.40) legitimately edited the "Note on shared-core boxes" paragraph in 20
+department `healer-*.md` role templates plus `templates/role-library/healer/chief-healer.md`,
+`templates/role-library/healer/dept-healer-template.md`, and
+`templates/role-library/graphics/sops/SOP--healer-graphics-sops.md` (commits `10e4f017`
+`fix(N29): shared core files are copied, not symlinked` and `61f0104d` `docs(N29): stop healer
+templates instructing symlink restoration`), but never re-ran `hash-content-manifest.py` to
+restamp the recorded `content_sha` values in `templates/role-library/_index.json`. Every push
+since (PR #796's merge `918e4ec5`/v21.4.40 through v21.4.42) shipped with those 21 entries
+stale, tripping two required checks on every commit since: **QC static invariants**
+(`qc-assert-repo-consistency.py`'s ARTIFACT-COVERAGE CONTENT-HASH dimension returns `rc=6`, so
+`test-repo-consistency.sh`'s T1 clean-repo fixture — which runs both the consistency and
+artifact sub-gates together — fails expecting `rc=0` but getting `rc=6`) and **Role/SOP/persona/
+dept library lockstep** (`hash-content-manifest.py --check` fails outright: `content-manifest
+CHECK FAIL — 21 problem(s)`, one per stale role/SOP). Confirmed the regression is ours and not
+pre-existing by running both gates locally against `970956a1` (the commit before PR #796,
+clean/green on both) versus `918e4ec5` (PR #796's merge, first commit where both fail).
+
+### What changed
+
+- Ran `23-ai-workforce-blueprint/scripts/hash-content-manifest.py` (the exact remediation named
+  in its own `--check` failure message) to restamp `templates/role-library/_index.json`: 21
+  `content_sha` / `content_version` / `content_hashed_at` entries updated to match the
+  already-correct on-disk content from PR #796. No role, SOP, or department template content
+  changed by this commit — only the recorded hash catches up to content that was already
+  correct and already reviewed.
+- Nothing else touched. No gate, test, or check was edited, weakened, or skipped to get green;
+  no cron-refresh code (`refresh_weekly_cron_message()`, the compare-before-write, `openclaw
+  cron edit --message`, the `${_OC_RAW_JSON:-}` guard, `tests/unit/weekly-cron-message-refresh.
+  test.sh`) was touched.
+
+### Risk
+
+LOW. Data-only restamp of a generated, checked-in manifest field; the underlying template
+content is unchanged (the diff is confined to `_index.json` hash/timestamp/version fields —
+zero `.md` template bytes touched). Verified locally before landing: `hash-content-manifest.py
+--check` PASS (440 roles + 140 sops + 19 personas), `register-library-additions.py --check`
+PASS, `test-library-register.sh` 14/14, `qc-assert-repo-consistency.py` PASS (rc=0, both
+consistency and artifact dimensions), `test-repo-consistency.sh` 8/8 (T1 now rc=0),
+`tests/unit/fleet-standing-gate.test.sh` 14 passed / 0 failed, `tests/unit/cron-owner-chat-
+guard.test.sh` 136 passed / 0 failed, `tests/unit/weekly-cron-message-refresh.test.sh` 31
+passed / 0 failed, `bash -n update-skills.sh` clean.
+## [v21.4.43]  -  2026-07-31  -  self-heal the orphan END marker that blocked AGENTS.md dedup fleet-wide
+
+### Why
+
+The CORE_UPDATES merge's idempotency guard only tests for the BEGIN marker
+(`if begin_marker in existing: continue`), so a block whose BEGIN was lost is
+invisible to it -- the stray END is never detected and never repaired.
+
+Measured on real fleet data 2026-07-31: THREE of four sampled boxes carried the
+same orphan, `16-summarize-youtube:agents  BEGIN=0 END=1`. Consequence beyond
+cosmetics: every BEGIN/END pair-balance check on those boxes fails, and
+scripts/dedup-agents-md.py correctly refuses to worsen wiring -- so those boxes
+also never got their duplicate blocks cleaned. One stray line blocked the whole
+self-heal path on most of the fleet.
+
+### What changed
+
+- update-skills.sh CORE_UPDATES merge now repairs an orphan END (END present,
+  BEGIN absent) before appending a clean pair. Narrowly scoped to the same
+  skill_folder and target, only when its BEGIN is genuinely absent; a matched
+  pair is never touched. Failure is non-fatal -- it falls through and appends
+  regardless, because a duplicate marker is recoverable and a crashed updater
+  is not.
+- New regression test tests/unit/core-updates-orphan-end-repair.test.sh covers
+  orphan repaired, matched pair untouched, and other skills unaffected.
+
+### Verification
+
+Verified against a real box's AGENTS.md: `BEGIN=0 END=1` -> whole file balanced,
+and dedup then proceeded cleanly (180,647 -> 165,193 bytes, 15,454 saved) with
+no carried-over imbalance. Suites: orphan-repair 7/0, dedup 29/0,
+core-updates-all-skills-wired 18/0, scripts-tree 23/0, CC runtime 8/0,
+resume-cron 20/0. no-client-names and no-full-env-dump gates pass.
+
+## [v21.4.42]  -  2026-07-31  -  mechanical AGENTS.md deduplicator: self-heal the marker-guard re-append bug already on disk
+
+### Why
+
+`scripts/apply-fleet-standards.sh` stamps ~10 marker-guarded blocks into the live AGENTS.md
+using the idiom `if grep -qF "$MARKER" file; then <no-op>; else cat >> file; fi`. That guard
+false-negatives whenever a historical stamp predates the marker (or the marker text drifted),
+so the block RE-APPENDS on every later run. Measured live on a fleet box: up to 8 copies of
+one heading (`## Persona Reflex`), ~23,000 bytes of pure repetition in a 180,694-byte
+AGENTS.md, with five of the eight bodies byte-identical. Total prompt injection is
+empirically capped at ~400,000 chars — two boxes were already observed capped at exactly
+`injectedChars=399,999` with `truncated=true` and NO error, NO warning, and NO log line
+anywhere. Past that cap the agent silently loses its own rules every turn. The prior fix
+(a4f94e89) stops FUTURE re-appends by adding real markers, but does nothing for the
+duplicates that are already on disk — a box that was already duplicated before that fix
+stays duplicated forever.
+
+### What changed
+
+- **`scripts/dedup-agents-md.py`** (new): a strictly mechanical, no-model/no-LLM-judgment
+  deduplicator for the live (gateway-injected) AGENTS.md. Resolves the file via
+  `shared-utils/resolve_injected_core_files.py` (the repo's one sanctioned workspace-path
+  resolver — never assumes `~/.openclaw/workspace`; correctly falls back to `~/clawd` on
+  boxes provisioned under the legacy Mac layout), parses it into blocks by markdown heading
+  (`^#{1,3} `, skipping headings found inside fenced code blocks), and removes ONLY
+  byte-identical duplicate blocks (same heading AND same body) — always keeping exactly one,
+  preferring the copy that carries its own `<!-- MARKER -->` stamp line over an unmarked
+  copy, otherwise the first occurrence. Near-duplicates (same heading, bodies differing by
+  even one byte) are left completely untouched and reported as `NEAR-DUP (manual review)`.
+  Verifies programmatically that collapsing duplicates never leaves a
+  `<!-- BEGIN skill:NN:agents -->` / `<!-- END skill:NN:agents -->` wiring pair unbalanced —
+  if it would, nothing is written and the script exits non-zero with a loud message. Backs up
+  to a timestamped sibling file before writing and verifies that backup byte-for-byte
+  (`filecmp.cmp`, `shallow=False`) before proceeding. Idempotent — a second run removes
+  nothing and says so; a file with zero duplicates is left byte-identical (no write, no
+  backup). Defaults to `--dry-run` (report only) and says so explicitly; `--apply` performs
+  the write. Never prints file body content or secrets. Always prints exactly one
+  `[AGENTS DEDUP] before=N after=N saved=N blocks_removed=N near_dups=N` line so a caller (or
+  a post-roll `grep`) can see the outcome regardless of what else is suppressed.
+- **`scripts/apply-fleet-standards.sh`**: wired the deduplicator in as a new `5a-DEDUP` step,
+  called immediately after `AGENTS_FILE_EARLY` is resolved and BEFORE every marker-guarded
+  stamp that follows (`ROLE_DISCIPLINE_V1` through `PLATFORM_FACTS_V1`) and before the
+  existing `5a-SIZEGUARD` / `5a-SIZEGUARD-HARDCAP` measurement guards, so (a) the reclaimed
+  space is reflected in those size measurements, and (b) the surviving copy of each historical
+  stamp is the one carrying its own marker, so the `grep -qF "$MARKER"` guard immediately
+  below it correctly no-ops instead of re-appending again — the exact false-negative this
+  fixes. This is the single seam both existing callers of `apply-fleet-standards.sh`
+  (`install.sh:8388` and `update-skills.sh`, via `$_PERSIST_SCRIPTS`/`$ONBOARDING_DIR`
+  fallback) share, so both get the self-heal with no additional wiring and no caller can
+  forget it. Advisory only, exactly like the adjacent size guards: a dedup failure, refusal,
+  or missing script is logged and the run CONTINUES — never fails `apply-fleet-standards.sh`,
+  `install.sh`, or `update-skills.sh`, and never withholds the version stamp. The greppable
+  summary line is re-echoed immediately before the `5a-SIZEGUARD-HARDCAP` alarm so the reclaim
+  and the residual size land next to each other in the log.
+- **`update-skills.sh`**: the `apply-fleet-standards.sh` call site previously redirected ALL
+  of its output to `/dev/null`, discarding the new summary line along with everything else.
+  Changed to append to the run's own `$LOG_FILE` instead (no behavior change otherwise — same
+  `&&`/`||` success/failure branching), and added a one-line `grep` against that log so the
+  `[AGENTS DEDUP] ...` outcome is echoed to the console too. `install.sh`'s call site was
+  already unsuppressed and needed no change.
+- **`tests/unit/dedup-agents-md.test.sh`** (new): exercises the deduplicator directly against
+  constructed fixtures — exact duplicates removed, near-duplicates preserved, the marked copy
+  preferred over an unmarked one, a genuine BEGIN/END-imbalance case refused with nothing
+  written, idempotency on a second run, a no-duplicates file left byte-identical, and a
+  missing-file clean skip — plus a static check that `apply-fleet-standards.sh` invokes the
+  script before its first marker-guarded stamp.
+
+### Risk
+
+LOW-MEDIUM. Governs a file injected into every agent's context on every turn across all 38
+fleet boxes, so it was built and verified with a fail-closed bias throughout: dry-run is the
+default and is announced explicitly; every write is backed up and the backup is verified
+byte-for-byte before the original is touched; a projected BEGIN/END imbalance refuses the
+write entirely rather than guessing; and every failure mode (missing script, exception,
+refused write) degrades to an advisory log line, never a hard failure of the calling script.
+Verified: `bash -n` clean on both modified shell scripts; `shellcheck --shell=bash -x`
+introduces zero new findings on either (line-number-only diff against the pre-change
+baseline); 30/30 constructed fixture assertions pass (including realistic mixed exact-dup +
+near-dup scenarios modeled on the measured fleet data); existing suites unaffected —
+`tests/unit/update-command-center-runtime-config.test.sh` 8/8,
+`tests/unit/update-skills-full-scripts-tree.test.sh` 23/23 (confirms the new script ships to
+every box via the existing recursive `scripts/` delivery with no manifest edit),
+`tests/unit/update-skills-resume-cron.test.sh` 20/20. Not yet exercised: a real fleet roll
+against a live box's AGENTS.md (this ships on a branch only — no box was touched, no roll was
+run). The realistic-but-constructed BEGIN/END-imbalance fixture proves the refusal path fires
+correctly, but the true frequency of that specific cross-mechanism edge case on real fleet
+data is unverified.
+
+## [v21.4.41]  -  2026-07-31  -  fix: unbound-$_OC_RAW_JSON abort in the weekly-cron-message-refresh path on any box without python3
+
+### Why
+
+PR #796 (v21.4.40, same day) added the weekly-onboarding-update cron message refresh: when
+the job is already installed with no old auto-announce wiring, `update-skills.sh` tries to
+resolve the job's id/kind from the cron list JSON it fetched a few lines earlier while
+detecting old wiring — `_OC_RAW_JSON=$(openclaw cron list --json ...)`, but that assignment
+only ever runs inside `if command -v python3 >/dev/null 2>&1; then`. The refresh step's own
+lookup then referenced `$_OC_RAW_JSON` completely outside that guard:
+`if [ -n "$_OC_RAW_JSON" ] && command -v python3 >/dev/null 2>&1; then`. Under this script's
+`set -euo pipefail` (active since line 128, never disabled), bash evaluates the left operand
+of `&&` first — on any box where `oc_cron_present` confirms the job present via jq alone
+(jq is checked first and does not need python3) but python3 is genuinely absent, `_OC_RAW_JSON`
+was never assigned anywhere in that run, so referencing it is an **unbound-variable reference
+under `set -u`**, which aborts the ENTIRE update mid-run instead of completing. This is a new
+exposure: every pre-existing reference to `$_OC_RAW_JSON` was already inside the python3 guard
+that assigns it; the refresh step's added reference was the first to step outside it. An update
+that dies partway on a python3-less box is a worse outcome than the stale-cron-message drift the
+refresh was built to fix.
+
+Verified the mechanism with a standalone repro (`set -euo pipefail`; reference an unset var
+inside `[ -n "$x" ]`) reproducing bash's `unbound variable` abort with a nonzero exit, and
+confirmed against both the unfixed and fixed code with the real extracted
+`WEEKLY-CRON-FULL-REGISTRATION-V1` block run under a genuine bash interpreter (this repo's own
+test harness needed to be invoked via `bash`, not the operator's login shell, to see bash's real
+`set -u` semantics rather than a permissive shell built-in emulation of the same construct).
+
+### What changed
+
+- **`update-skills.sh`**: one-line fix — `if [ -n "$_OC_RAW_JSON" ] && command -v python3` →
+  `if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3`, a `set -u`-safe default that treats
+  a never-assigned `_OC_RAW_JSON` as empty (falls through to the existing "could not resolve
+  job id" SKIP path, exactly as intended) instead of aborting. The four other variables this
+  same merge introduced (`_WOU_JOB_ID`, `_WOU_JOB_KIND`, `_WOU_ID_KIND`,
+  `_WOU_PROMPT_TMP`, and `_CRON_HAS_OLD_WIRING`) were individually reviewed for the identical
+  class of mistake — each is unconditionally assigned earlier in the same execution path
+  before its first reference, so none needed the same treatment. Nothing else in the refresh
+  feature (the `refresh_weekly_cron_message` function body, the compare-before-write logic, or
+  the `openclaw cron edit --message` in-place patching) was touched.
+- **`tests/unit/weekly-cron-message-refresh.test.sh`**: added subtest (e) — job present, no
+  old wiring, python3 unavailable (simulated via a curated `PATH` containing no python3
+  anywhere, with `oc_cron_present` overridden to report the job present) — proving the
+  refresh path reaches its end and logs the SKIP line instead of dying on an unbound-variable
+  error. Confirmed this subtest fails (3 assertions) against the unfixed v21.4.40 code with the
+  exact `_OC_RAW_JSON: unbound variable` abort, and passes clean against the fix — a genuine
+  regression guard, not a vacuous pass.
+
+### Risk
+
+LOW. A strictly-safer one-line change: it only removes an abort path (`${VAR:-}` is a no-op
+whenever `_OC_RAW_JSON` was already set, which is every case that isn't the new defect) and
+touches no other logic, no schedule/timezone/delivery field, and no other cron. All three
+guarding suites pass clean: `tests/unit/fleet-standing-gate.test.sh` — 14 passed, 0 failed;
+`tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed;
+`tests/unit/weekly-cron-message-refresh.test.sh` — 31 passed, 0 failed (27 existing + 4 new).
+`bash -n update-skills.sh` is clean. No box was written to, SSH'd, or probed; no fleet roll or
+`update-skills.sh`/`check-updates.sh` execution was performed as part of this change.
+
+---
+
+## [v21.4.40]  -  2026-07-31  -  weekly-onboarding-update cron: refresh the stored payload from cron-prompt.txt instead of leaving it frozen forever
+
+### Why
+
+The client-facing Sunday update runs from an OpenClaw cron job named
+`weekly-onboarding-update`. Its instructions are the numbered RULES in this repo's
+`cron-prompt.txt` — but the job does not read that file at runtime; the rules text is baked
+into the cron record's stored `payload.message` inside each box's own OpenClaw state at
+creation time. `update-skills.sh`'s registrar only ever fetched `cron-prompt.txt` inside
+`if ! oc_cron_present "weekly-onboarding-update"; then` — i.e. only when the job was ABSENT,
+or (via the v14.19.1 migration) still carried the old auto-announce wiring. Once a box had a
+silent, already-installed job, the branch that ran for it printed "already installed" and
+stopped — cron-prompt.txt was never fetched, never compared, never applied again. RULE 5.6
+(the payment-standing politeness pass, added 2026-07-30) landed in the repo file but could
+never reach an already-provisioned box: `openclaw cron get` on the operator box confirmed a
+6,866-char frozen `payload.message` last written 2026-07-26, RULES 1-14 only, RULE 5.6
+absent, and still containing the `allowFrom[0]` client-ID pattern this repo's own RULE 1 now
+calls a leak. Consequence: `FLEET-STANDING-GATE-V1` enforcement still ran correctly against a
+delinquent box (nothing installed), but the frozen RULE 12 in the stale copy then told the
+agent to report "Done. Updated: …" — a false success claim to the client.
+
+### What changed
+
+- **`update-skills.sh`**: added `refresh_weekly_cron_message()` (new
+  `WEEKLY-CRON-MESSAGE-REFRESH-V1` block) and wired it into the existing
+  "already installed" branch (now `WEEKLY-CRON-FULL-REGISTRATION-V1`). When the cron already
+  exists and is not on the old auto-announce wiring, the update now fetches the CURRENT
+  `cron-prompt.txt`, reads the job's presently-stored message via `openclaw cron get <id>`,
+  and — only if the two differ — patches the message in place with
+  `openclaw cron edit <id> --message` (or `--system-event` for a systemEvent-kind job).
+  `cron edit` is a confirmed field-level PATCH (`openclaw cron edit --help`: "Edit a cron job
+  (patch fields)"), so schedule, timezone, `sessionTarget`, wake mode, timeout, and delivery
+  are never touched because they are never passed — deliberately NOT a delete+recreate, which
+  would require this code to already know every other field well enough to reproduce it
+  exactly, and any single wrong guess would silently reset it. Identical content is a no-op
+  (idempotent, no needless rewrite on every run); the absent-job creation path is unchanged.
+  Every new step is guarded: a missing CLI, an unreachable job, an empty/failed
+  `cron-prompt.txt` fetch, or a rejected `cron edit` is logged and the update continues —
+  never a hard failure, and never a blank or partial payload (the old message is always left
+  in place on any failure).
+- **`tests/unit/weekly-cron-message-refresh.test.sh`** (new): extracts the real
+  `WEEKLY-CRON-FULL-REGISTRATION-V1` block from `update-skills.sh` and runs it against a
+  self-contained fake `openclaw` + `curl` (scoped to this suite only; does not touch the
+  shared `tests/fixtures/fake-openclaw-cron.py` used elsewhere). 27 assertions covering: job
+  absent → created fresh from `cron-prompt.txt`; job present with stale content → message
+  refreshed, schedule/timezone/delivery untouched; job present with identical content → zero
+  `cron edit` calls across two consecutive runs (idempotent); and four fail-safe cases — curl
+  failure, an empty fetch, a failed `cron get`, and a rejected `cron edit` — each proving the
+  update reaches its end and the OLD message survives unchanged.
+
+### Risk
+
+MEDIUM. Touches the client-facing weekly maintenance cron's live payload on every one of the
+38 boxes once this ships via the operator's own update-skills.sh roll — but the change is
+additive and narrowly scoped (message-only field patch, gated by an equality check, fully
+guarded against every failure mode `set -euo pipefail` can turn into an aborted update), and
+the two suites that specifically guard cron registration and owner-chat targeting are
+unchanged: `tests/unit/fleet-standing-gate.test.sh` — 14 passed, 0 failed;
+`tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed. New suite
+`tests/unit/weekly-cron-message-refresh.test.sh` — 27 passed, 0 failed. Verified read-only on
+the operator box only (`openclaw cron get`, `openclaw cron edit --help`); no box was written
+to, and no client box was touched, SSH'd, or probed.
+
+---
+
+## [v21.4.39]  -  2026-07-31  -  fleet standing gate: fix RULE 5.6 slug-chain drift, redact a client name from update-skills.sh, and document the Relay Brain sha256 recipe
+
+### Why
+
+Three loose ends from the fleet standing gate build:
+
+1. `cron-prompt.txt` RULE 5.6 resolved the box slug from `$FLEET_STANDING_BOX_SLUG` alone,
+   while `update-skills.sh`'s `fleet_standing_resolve_slug()` — the real enforcement
+   chokepoint — falls back to `openclaw.json`'s `env.vars.FLEET_STANDING_BOX_SLUG` and then
+   `hostname -s`. On a box where only the env var was missing, RULE 5.6 would send an empty
+   `boxName`, get `unmatched` back, and offer the update anyway; `update-skills.sh` would
+   then correctly refuse the install regardless — a confusing silent no-op, which is
+   precisely what RULE 5.6's own text says it exists to prevent.
+2. A comment in `update-skills.sh` (the Command Center bootstrap slug fallback) named a
+   real client and stated their production slug. This file ships to all 38 client boxes.
+3. `scripts/fleet-standing/README.md` told a future agent to assert the `Relay Brain`
+   node's sha256 without saying what bytes to hash. Hashing `jsCode` alone, or the
+   compact-separator form of the sort-keyed node, both produce different, plausible-looking
+   digests from the recorded value — a future agent landing on either would raise a false
+   alarm over a non-existent edit (or worse, treat a real edit as clean under the wrong
+   baseline). The correct recipe was verified against the live node before writing it down.
+
+A fourth, related fix shipped the same session but touches no file in this repo: operator-
+local `standing.sh` (`~/clawd/fleet-standing/standing.sh`, not tracked here) gained a
+`--slug` exact-match escape hatch for two-box clients, an actionable `--all` path for
+intentional bulk updates on ambiguous matches, and cursor-based pagination on the
+`fleet_standing` rows fetch (confirmed live: the n8n data-table API paginates by opaque
+`nextCursor`, not `offset`/`skip`, and hard-caps `limit` at 250).
+
+### What changed
+
+- **`cron-prompt.txt` RULE 5.6**: box-slug resolution now mirrors
+  `fleet_standing_resolve_slug()`'s exact three-step chain — explicit
+  `$FLEET_STANDING_BOX_SLUG`, then `openclaw.json`'s
+  `env.vars.FLEET_STANDING_BOX_SLUG`, then `hostname -s` — instead of the env var alone.
+- **`update-skills.sh`**: rewrote the Command Center slug-fallback comment to describe the
+  name-derived-slug pattern with a neutral placeholder (a client named "Jane Doe" gets slug
+  "jane") instead of a real client's name and production slug. Comment-only; no behavior
+  change.
+- **`scripts/fleet-standing/README.md`**: documented the exact sha256 recipe for the
+  `Relay Brain` assertion — hash the sort-keyed node object (keys `id`, `name`, `parameters`,
+  `position`, `type`, `typeVersion`) with Python's default `json.dumps` separators, never
+  `jsCode` alone and never the compact-separator form — plus both wrong-recipe digests as a
+  false-alarm tripwire and two corroborating checks (34,835-char `jsCode`; exact key set).
+
+### Risk
+
+MEDIUM for the RULE 5.6 change — client-facing cron-prompt logic, but purely corrective:
+any resolution failure still falls through to an empty slug exactly as before, so the
+existing fail-open guarantee is unchanged. LOW for the `update-skills.sh` comment rewrite
+(comment-only) and the README documentation addition (docs-only, no executable code).
+Both required suites pass unchanged on this branch: `tests/unit/fleet-standing-gate.test.sh`
+— 14 passed, 0 failed; `tests/unit/cron-owner-chat-guard.test.sh` — 136 passed, 0 failed
+(section 10 covers the RULE 5.6 / `cron-prompt.txt` owner-chat checks specifically).
+
+---
+
+## [v21.4.38]  -  2026-07-31  -  converge Command Center even when skills content is already current
+
+### Why
+
+A client box was found **97 commits behind `origin/main` on Command Center**
+while every post-roll check reported green.
+
+Root cause: the CONTENT RECHECK short-circuit calls `exit 0` roughly **3,100
+lines before** the Command Center refresh (`run-full-install.sh --update-only`
+-> `cc_route_update_through_canonical_path()` -> `update.sh` ->
+`atomic-deploy.sh`). Any box whose skills stamp AND skills content were already
+current therefore exited before its Command Center was ever converged.
+
+Verification could not catch it, because the documented post-roll check reads
+the `.onboarding-version` stamp — and that stamp was legitimately current.
+Command Center currency is INDEPENDENT of skills-content currency. **A stamp is
+not a CC signal.**
+
+Two related defects were silent in the same path: a dirty CC checkout (which
+cannot fast-forward) produced no clear message, and a fatally-failed CC refresh
+still left a current stamp behind.
+
+### What changed
+
+- New self-contained `_cc_currency_probe`, run *before* the CONTENT RECHECK
+  early exit. It returns non-zero **only** when the checkout is CLEAN but behind
+  origin — the one case where a full pass actually repairs something. Absent,
+  dirty, unknown and already-current all still exit early, because a full sync
+  cannot fix those and forcing one would burn a rebuild for no repair.
+- The dirty-checkout case is now loud: it names the dirty files and states
+  plainly that nothing is stashed, reset, or discarded. Uncommitted work on a
+  client box is load-bearing and is never touched.
+- Emits a greppable `[CC CURRENCY] state=<absent|current|behind|dirty|unknown>`
+  line and writes `~/.openclaw/skills/.command-center-state`, so post-roll
+  verification can check CC currency directly instead of trusting the stamp.
+- The probe never mutates the checkout: no stash, reset, checkout, clean, or
+  pull. It is read-only and idempotent.
+
+Self-contained by necessity: `cc_is_valid_checkout()` and U6d's candidate list
+are both defined later in the file and are not callable from the recheck block.
+
+### Verification
+
+`bash -n` clean; no new shellcheck findings. Probe unit-tested against real git
+fixtures across all four states (absent / current / behind / dirty) — only
+clean-but-behind returns 1. Non-mutation proven: the dirty fixture kept its
+uncommitted file with zero stashes, and the behind fixture's HEAD was unchanged
+after probing. Existing suites still green: update-command-center-runtime-config
+8/0, update-skills-full-scripts-tree 23/0, update-skills-resume-cron 20/0.
+
+---
+
+## [v21.4.37]  -  2026-07-31  -  teach the prebuilt-index guard about the published prebuilt-index-v2.4.2 asset (SPEC Item 14)
+
+### Why
+
+`main` went RED at `1552bacd` (02:26) — the operator's own direct commit pointing
+`shared-utils/prebuilt-index/INDEX-MANIFEST.json` at `prebuilt-index-v2.4.2`. That commit is
+correct: `prebuilt-index-v2.4.2` is a real, published release (2026-07-24,
+`gemini-index.sqlite.gz`, 93,576,416 bytes). `tests/unit/prebuilt-index-section-tagged.test.sh`
+was what was stale — it carried a hardcoded allow-list (`KNOWN_TAGS` / `KNOWN_SHAS`) that
+stopped at `prebuilt-index-v2.4.1`, so three assertions (B5, B8, B9) failed against a
+manifest that was actually correct. All three approval-gate PRs (#791/#792/#793) merged
+with this check red because nothing in their scope touched this test.
+
+### What changed
+
+- `tests/unit/prebuilt-index-section-tagged.test.sh`: added `prebuilt-index-v2.4.2` to
+  `KNOWN_TAGS` and `KNOWN_SHAS`. The sha256 added
+  (`042aed12827cdfa09aeb996155e652266db68bb7d0405fb971dbdce33573ffa2`) was **independently
+  computed**, not copied out of the manifest: downloaded the real release asset
+  (`gh release download prebuilt-index-v2.4.2 -p 'gemini-index.sqlite.gz'`, 93,576,416
+  bytes), hashed it locally (`shasum -a 256`), and confirmed it matches the manifest's
+  claimed sha256 exactly before adding it to the allow-list. `INDEX-MANIFEST.json` itself
+  was not touched — it was already correct.
+- Updated stale header comments (top-of-file summary, the (B) MANIFEST-asserts block, and
+  the B5 check label) that still described the allow-list as ending at v2.4.1, so the next
+  person extending this test isn't misled the same way.
+- Proved the test can still fail: ran it against a scratch copy of the manifest with the
+  sha256 corrupted to a placeholder value — B9 failed as expected (24 passed, 1 failed).
+  The real manifest was never touched during this proof.
+
+### Risk
+
+Test-only change to an allow-list; no production code, no manifest edit, no index rebuild.
+Local run: 25 passed, 0 failed on the real manifest. The corrupted-copy proof confirms B9
+still bites on a bad hash, so this is not a change that defeats the assertion's purpose.
+
+---
+
+## [v21.4.36]  -  2026-07-31  -  fleet approval gate: refuse a Skill 38 (conversational AI) run when the box is not approved (SPEC Item 10, Skill 38 v1.9.6)
+
+### Why
+
+`fleet_standing.conversational_ai_approved` is a real column on every one of the 38 fleet
+rows and, until now, nothing in Skill 38 ever read it. The operator ratified this system as
+gated ("we want to get that skill set also if they're not in good standing"), matching the
+same defect class Item 2 fixed for the anthology engine and Item 1's generic per-system
+standing endpoint was built to serve.
+
+### What changed
+
+- `38-conversational-ai-system/scripts/00-verify-prerequisites.sh` gained a new STEP A2,
+  immediately after the Cloudflare key check (Rule 10 requires that check stay first among
+  prerequisites) and before every other prerequisite check. It calls Item 1's fleet-wide
+  standing endpoint (`POST /webhook/system-standing-check`,
+  `{"system":"conversational_ai","box_slug":"<box>"}`) and FAILS CLOSED — refuses — on an
+  unreachable endpoint, a non-200 reply, a missing credential, an unparseable body, or an
+  unrecognised `reason_code`. On refusal it calls the shared rejection notifier
+  (`system-access-rejection-notify`, `system: "conversational_ai"`) and exits 1 (this
+  file's own existing refusal idiom for every other blocking prerequisite — no new exit
+  code introduced).
+- This is a **shell-native equivalent** of `59-anthology-engine/scripts/standing_gate.py`
+  (Item 2), not an import of it: Skill 38 must not assume Skill 59 is installed on the same
+  box (this file's own STEP B already models a cross-skill dependency as an explicit
+  presence check, never an assumed one). The contract matches `standing_gate.py` exactly —
+  identical env var names/defaults (`FLEET_STANDING_GATE_HEADER` /
+  `FLEET_STANDING_GATE_SECRET` / `FLEET_STANDING_BOX_SLUG`, the same already-fleet-
+  propagated n8n httpHeaderAuth credential), identical curl-config-on-stdin secret hygiene,
+  and the same never-guess-a-reason rule. No new credential provisioning needed.
+- `38-conversational-ai-system/skill-version.txt` bumped 1.9.5 -> 1.9.6 with its own
+  CHANGELOG entry. No protocol/reference/script/journey file was added or removed, so the
+  skill's disk self-counts (51 protocols, 92 scripts, 25 references, 8 journeys, highest-
+  numbered-script 33) are unchanged from before this change.
+
+### Risk
+
+Read-only network calls; the script never writes anything and every other prerequisite
+check in the file is untouched. An unreachable standing-check endpoint now refuses the
+install where it previously would have proceeded silently — intended fail-closed behavior,
+not a regression. No client names, emails, or channel ids.
+
+## [v21.4.35]  -  2026-07-31  -  podcast/broker docs stop framing an operator credential as something a client box holds (Skill 58 v0.1.24)
+
+### Why
+
+Three separate times an agent read Skill 58's docs and `install.sh`, paraphrased the "the
+client box holds five variables" / "a client box holds ... token" framing back to the
+operator, and told him his own webhook credential goes to his clients. It does not: the
+client box's only role is to TRIGGER the operator's n8n webhook, and the operator's n8n
+performs the entire publish (auth, upload, create-episode, permalink) — the operator's
+token is never disclosed to, requested from, or handled by a client or their agent. The
+doc's wording was the source of the repeated misstatement, not any one agent's mistake, so
+the fix has to live in the docs every future agent and human reads.
+
+### What changed
+
+Wording only, zero code/variable/behaviour changes:
+- `58-podcast-production-engine/SKILL.md`: the per-client Podbean bullet's "the client box
+  holds five variables" opening, and the "Ownership, stated plainly" block, now lead with
+  the operator's model — the client box's role is to TRIGGER, the operator's n8n performs
+  the ENTIRE publish, and `PODBEAN_PUBLISH_TOKEN` is an operator-owned value the operator
+  places onto the client box during provisioning, never the client's password.
+- `58-podcast-production-engine/config/n8n/README.md`: the broker-workflow intro
+  paragraph, the one-time env-setup step for `PODBEAN_BROKER_TOKEN`, and the
+  `PODBEAN_PUBLISH_TOKEN` provisioning-table row are reframed the same way; the broker
+  intro also now restates (consistent with the rest of this file) that the broker is the
+  unused fallback, not the live default.
+- `install.sh`: the discovery-list comment block near the Podbean broker credentials
+  (~line 2204) is reframed from "a client box holds ONLY the broker pair" to the client
+  box's role being to trigger the broker webhook, and the stale "publishing goes through
+  the broker" framing is corrected to state the broker is an unused fallback (the
+  publish-proxy pair is the fleet default).
+
+### Risk
+
+None to behavior. Every edit is inside a Markdown doc or a `#`-prefixed shell comment;
+`git diff --stat` shows only the three touched files, no code, variable, or logic line
+changed. `bash -n install.sh` still parses clean. No client names, emails, or channel ids
+in the diff.
+
+---
+
+## [v21.4.34]  -  2026-07-31  -  anthology engine refuses a book build at intake when the box is not approved for the anthology system (Skill 59 v0.1.11)
+
+### Why
+
+`fleet_standing.anthology_approved` is a real boolean on all 38 rows and, before this
+change, nothing in the Anthology Engine ever read it — two clients marked not-approved
+for the book project were not actually blocked from starting one. The podcast engine
+already gates at Step 0/1; the anthology engine had no equivalent, despite having its
+own S0 intake front door (`intake_router.py`, the deterministic single entry point every
+real submission and every exceptions-queue replay passes through before any Drive
+provisioning, board card, or model call).
+
+### What changed
+
+- `59-anthology-engine/scripts/standing_gate.py` (new): calls the fleet-wide generic
+  standing-check endpoint (Item 1, n8n `fleet-system-standing-check` /
+  `POST https://main.blackceoautomations.com/webhook/system-standing-check`,
+  body `{system, box_slug}` -> `{ok, approved, reason_code}`) and, on refusal, the shared
+  `system-access-rejection-notify` webhook. FAIL CLOSED: an unreachable endpoint, a
+  non-200 reply, a missing credential, or an unexpected/malformed JSON body are ALL
+  treated as NOT approved — the opposite of the legacy `update-skills.sh` roster gate's
+  deliberate fail-OPEN doctrine, and intentionally so (a book build spends real model and
+  media cost; a false PROCEED is far more expensive than a false REFUSE). Never invents or
+  hedges a reason: `reason_code` passes through only the two values the endpoint itself
+  returns (`standing` / `not_enrolled`), or `""` when the gate could not get a definite
+  answer — safe to leave empty because the shared notifier computes its OWN authoritative
+  reason independently from the same `fleet_standing` table (confirmed by reading its
+  "Resolve Target + Plan Channels" node) and only threads the caller's reason into its own
+  ledger note, so an uncertain reason here can never cause it to tell a client the wrong
+  thing. Credential/identity reuse (no new box provisioning needed): reuses the ALREADY
+  fleet-propagated `FLEET_STANDING_GATE_HEADER` / `FLEET_STANDING_GATE_SECRET` /
+  `FLEET_STANDING_BOX_SLUG` env vars the legacy roster gate uses
+  (`scripts/fleet-standing/propagate-fleet-standing-gate.sh`) — confirmed by reading each
+  live n8n workflow that this is literally the SAME httpHeaderAuth credential
+  (`8HTB7khC7fDcRVhN`, "fleetStandingCheck Header Auth") that also authenticates
+  `system-access-rejection-notify`, `podcast-standing-check`, and the podcast publish gate,
+  and proven live with a real call (`box_slug=blackceomacmini`, `system=anthology` -> HTTP
+  200). Box-slug resolution mirrors `update-skills.sh`'s `fleet_standing_resolve_slug()`
+  exactly (explicit env, then `openclaw.json`'s `env.vars`, then hostname). Secret hygiene
+  mirrors `58-podcast-production-engine/scripts/podbean_publish.sh`'s proven idiom: the
+  header value rides a curl config document piped to curl over stdin (`curl -K -`), never
+  in argv, never on disk, never printed.
+- `59-anthology-engine/scripts/intake_router.py`: new step 1.5 in `route()`, immediately
+  after the route-secret check and before the dedup claim, the participant upsert, the
+  board-card mirror, the Drive-tree provision, or any spawn — a refusal here spends
+  nothing. New exit code `EX_STANDING = 6` (anthology standing-gate refusal), new
+  `engine-config` key `standing_check_mode` (default `"required"`; `"off"` only for the
+  offline self-test battery, which stays network-free by construction). `self_test()`
+  gained an offline, monkeypatched battery (mirroring the file's own existing
+  `upsert_participant` injection style) proving: a refused verdict returns `EX_STANDING`
+  and creates no participant row; the notifier is called with `system: "anthology"`; an
+  approved verdict proceeds exactly as before with no regression; the notifier is never
+  called on an approved verdict; an "unavailable" (infra failure) verdict also fails
+  closed and never invents a `reason_code`.
+- `59-anthology-engine/scripts/stage_s0_intake.py`: `classify_child_rc` now maps exit `6`
+  to `EX_PROVER` (a guard refusal, not an unexpected error) alongside the existing `2`/`4`,
+  so an exceptions-queue replay that hits the standing gate short-circuits the WIRING
+  chain exactly like a route-secret refusal already does. `self_test()` gained the
+  matching assertion.
+- `59-anthology-engine/tests/test_standing_gate.py` (new, 22 cases): hermetic, network-free
+  contract tests for `standing_gate.py` — box-slug resolution precedence, credential
+  resolution, the curl secret-hygiene idiom (asserts the secret never appears in argv),
+  transient-vs-deterministic retry classification, and the full fail-closed contract
+  (network error, non-200, malformed JSON, missing `approved` key, an unrecognized
+  `reason_code`, an unresolvable `box_slug`, a missing secret — every one of those
+  resolves to `approved: False` and none of them invent a `reason_code`).
+- `59-anthology-engine/skill-version.txt` 0.1.10 -> 0.1.11; `59-anthology-engine/SKILL.md`
+  frontmatter `version:` kept in lockstep.
+- All 10 lockstep repo version markers bumped v21.4.33 -> v21.4.34 via
+  `scripts/bump-version.sh`.
+
+### Risk
+
+Low for existing behavior, by design higher-consequence for a not-approved box (which is
+the point). `intake_router.py --self-test` (54 checks) and the full
+`59-anthology-engine/tests/` suite (193 cases including the 22 new ones) pass. The route
+secret check, dedup/idempotency contract, tenant check, and exceptions capture are
+untouched — the new step runs strictly between the secret check and hidden-field
+extraction, and only ever short-circuits when the standing gate itself refuses or cannot
+be reached. No client names, no secret values, no Anthropic runtime identifiers in the
+diff. The one live-risk surface — this box's own `FLEET_STANDING_GATE_SECRET` actually
+authenticating the shared credential against the real endpoint — was verified with a real
+call before writing any of this code, independent of this change.
+
+---
+
+## [v21.4.33]  -  2026-07-30  -  weekly Sunday update tells a delinquent client why nothing installed, instead of going silent
+
+### Why
+
+`update-skills.sh`'s `FLEET-STANDING-GATE-V1` block (shipped v21.4.30) already enforces
+entitlement on all three update paths, including the Sunday `openclaw cron` job's own
+RULE 9 2-hour LOW/MEDIUM auto-apply — every path runs that script, so a delinquent
+client's install was already being withheld correctly. What was missing was politeness:
+the client got no explanation. Their Sunday check simply produced no summary and no
+install, which reads as the assistant being broken, not as an account issue. This adds
+the missing message without adding a second enforcement point.
+
+### What changed
+
+- `cron-prompt.txt`: new RULE 5.6, inserted between RULE 5.5 and RULE 6. Before composing
+  the RULE 6 update summary, it POSTs the same gate check `update-skills.sh` performs
+  (`{"boxName":"<slug>","action":"update","source":"cron-prompt"}`, reading
+  `$FLEET_STANDING_GATE_URL` / `$FLEET_STANDING_GATE_HEADER` / `$FLEET_STANDING_GATE_SECRET` /
+  `$FLEET_STANDING_BOX_SLUG` from the environment). It fails open exactly like the script
+  gate: an unset env var, unreachable gate, non-200 status, malformed body, or any verdict
+  other than the literal string `"blocked"` (including `unmatched`/`held`) all continue
+  straight to RULE 6 as normal. Only an explicit `blocked` verdict sends the client a plain-
+  English explanation ("there's a new version available, but I'm not able to install it
+  right now because the account isn't current... nothing on your system has changed") to
+  `CLIENT_CHAT` (the RULE 1 operator-rejecting resolver — never `allowFrom[0]`, never a
+  fallback to an operator id) and exits before RULE 6-12 run.
+- `cron-prompt.txt` RULE 9: one-line note that the 2-hour auto-apply is never reached for a
+  `blocked` verdict because RULE 5.6 already exited; if RULE 5.6 were ever skipped,
+  `update-skills.sh`'s own chokepoint still refuses the install, just silently.
+- `cron-prompt.txt` RULE 13 (Forbidden): one new bullet codifying the same rule — no install
+  options offered, no update applied, for a `blocked` verdict.
+- `~/.claude/skills/temp-fleet-standing-gate/SKILL.md`: two GOTCHAS rows from this task —
+  backticks inside a bash-quoted `python3 -c "..."` string get shell-executed as command
+  substitution before Python ever sees them (use a standalone `.py` file or a quoted
+  heredoc instead), and a background subagent with no completion notification yet may
+  still be running, not dead (check `TaskList` and the work's real end state before
+  re-dispatching).
+- All 10 repo version markers bumped v21.4.32 -> v21.4.33 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. No enforcement logic changed — `update-skills.sh`'s `FLEET-STANDING-GATE-V1` chokepoint
+and its fail-open guarantee are untouched, and `tests/unit/fleet-standing-gate.test.sh`
+(14 cases) still passes unmodified. The new RULE 5.6 is additive prose in a prompt file
+executed by an LLM, not new code, and it fails open on every path except an explicit
+`blocked` verdict, so a gate outage still lets every client be offered their update as
+before. `tests/unit/cron-owner-chat-guard.test.sh` (136 assertions, including the section-10
+checks specific to `cron-prompt.txt`) passes unmodified, confirming the new client-facing
+send still resolves through `CLIENT_CHAT` / `resolve_owner_chat_id` and never `allowFrom[0]`.
+
+---
+
+## [v21.4.32]  -  2026-07-30  -  durably record the fleet standing gate: propagation script, refreshed n8n workflow backups, and two hard-won matching/wiring lessons
+
+### Why
+
+The fleet standing gate (`update-skills.sh` block `FLEET-STANDING-GATE-V1`, shipped
+v21.4.30/#787) gates all three update paths — the Sunday `openclaw cron`, the legacy
+silent shell cron, and the operator's fleet-roll SSH push — at their single common
+chokepoint, so it never needs to be re-derived per caller. That gate depends on env
+vars seeded per box and on n8n workflows whose current behavior was undocumented
+outside n8n itself. This durably records the propagation tooling, a point-in-time
+backup of the four supporting workflows, and two bugs found only by running the real
+thing that would otherwise be re-broken by the next person to touch this: an exact
+`box_slug` match silently defeats the gate because `unmatched` proceeds (fixed by
+matching aliases, `client_label`, and pipe-delimited tokens instead of an exact
+string), and n8n fires a fan-in node on its first predecessor rather than waiting for
+all of them, which would have failed the Stripe sync silently every night until a
+`Merge` barrier node was added.
+
+### What changed
+
+- `scripts/fleet-standing/propagate-fleet-standing-gate.sh`: seeds the four
+  `FLEET_STANDING_*` env vars onto every fleet box (Mac, VPS, mac-rescue), mirroring
+  `propagate-rescue-webhook.sh`. Client boxes get only the narrow header secret, never
+  an n8n API key. Unreachable box => skip and continue.
+- `scripts/fleet-standing/n8n-backups/`: refreshed exports of `fleet-standing-check`,
+  `fleet-standing-operator-alert`, `fleet-standing-prune`, and `fleet-standing-stripe-sync`
+  from the live n8n instance (`name`/`nodes`/`connections`/`settings`/`active` only).
+  The `Rescue Rangers Relay` workflow is deliberately NOT exported here — its Code node
+  holds a hardcoded client roster and this repo ships to every client box.
+- `scripts/fleet-standing/README.md`: documents the alias-matching fix (never an exact
+  slug match, never a name-matching fallback, blocked wins on a multi-row match) and
+  the n8n fan-in barrier fix (`n8n-nodes-base.merge`, `mode: append`, explicit
+  `numberInputs`).
+- All 10 repo version markers bumped v21.4.31 -> v21.4.32 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. No code path outside `scripts/fleet-standing/` changed; `tests/unit/fleet-standing-gate.test.sh`
+(14 cases) still passes unmodified. The workflow backups are read-only exports — no n8n
+workflow was created, edited, activated, or deactivated. Scanned for client personal
+names against the live box registry before commit; one leak was caught and fixed
+(an example slug in a code comment reproduced a real client's SSH alias) and no
+others were found.
+
+---
+
+## [v21.4.31]  -  2026-07-30  -  state PODBEAN_PUBLISH_TOKEN ownership in Skill 58 docs; an agent invented a credential-handoff procedure because the docs never said who supplies it
+
+### Why
+
+An agent (this one) told the operator to hand a client's assistant the value of
+`PODBEAN_PUBLISH_TOKEN` so she could provision her own box. The operator corrected it
+sharply and correctly: he does not give a client his Podbean publish token, that is not
+how the system works. The doctrine was never wrong -- `install.sh` has carried it since
+the publish-proxy pair shipped ("this box never holds a Podbean credential in proxy mode",
+"both-or-neither... a lone URL or a lone token is refused, never half-seeded") -- but it
+lived only in a code comment nobody reads while working the skill. `58-podcast-production-engine/SKILL.md`
+(the Podbean bullet under "Per-client credentials") and `config/n8n/README.md` ("Provisioning
+a client box for Step 15 publish") both correctly listed the five variables a client box
+needs, but neither ever stated WHO supplies them or HOW. A reader is left to infer the
+client provides them, which is exactly the wrong inference, and it is the one an agent drew.
+The fix is not a new rule; it is making an existing, already-true rule visible where it
+actually gets read.
+
+### What changed
+
+- `58-podcast-production-engine/SKILL.md` (Per-client credentials, Podbean bullet, line
+  517): added that `PODBEAN_PUBLISH_TOKEN` is operator-injected only from
+  `OPENCLAW_PODBEAN_PUBLISH_TOKEN` at install time, is never asked from or shown to the
+  client, must never be routed through a person/chat/client's agent, is not a Podbean
+  credential (it is the `X-Podcast-Publish-Token` header gate on the operator's own n8n
+  webhook, distinct from the vaulted Podbean OAuth app `client_id`/`client_secret`),
+  both-or-neither still applies, and an unreachable client box is a tunnel/connectivity
+  problem to fix, never a reason to hand the token to a human as a workaround.
+- `58-podcast-production-engine/config/n8n/README.md` ("Provisioning a client box for
+  Step 15 publish (proxy mode)", line 357): added the same ownership statement in the
+  file's own prose style, immediately after the existing operator-side-injection
+  paragraph.
+- No code, variable name, behavior, or the five-variable list itself changed -- the design
+  was correct; only its visibility was fixed.
+- `58-podcast-production-engine/skill-version.txt` and the `SKILL.md` frontmatter
+  `version:` field bumped 0.1.22 -> 0.1.23 (skill content changed).
+- All 10 repo version markers bumped v21.4.30 -> v21.4.31 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. Both edits are additive prose inserted into existing sections, in each file's own
+style, with no restructuring. `bash -n` on `scripts/podbean_publish.sh` confirms no code
+was touched. `qc-assert-skill-frontmatter-version.sh` confirms the Skill 58 version bump
+is internally consistent.
+
+---
+
+## [v21.4.30]  -  2026-07-30  -  repoint 4 of the last 17 dangling doctrine citations (Section 11 -> Section 17) in two presentations role files; the remaining 13 stay blocked
+
+### Why
+
+The session-handoff ledger (`ledgers/session-handoff-podcast-step15-and-ci-green-2026-07-30.md`)
+left 17 doctrine citations unresolved after the v21.4.28 repointing pass: 4 bare "(Section 11)"
+citations in `image-grounding-steward.md` and `representation-casting-director.md`, and 13 "Section
+9A" citations in `presenters-speech-writer-sops.md`.
+
+Both role files number their own "Handoffs (Value Stream Map)" section as Section 11, so the bare
+"(Section 11)" citations were not obviously broken by a missing target -- the section exists, it
+just does not describe DIU-imagery re-verification or per-client mix overrides. Reading each citing
+sentence in full paragraph context (not just the line) showed the wording was boilerplate carried
+over from the standard role-template's "department restructure -> update Section 11 (Handoffs)"
+idiom, applied to a different concept without updating the pointer. Both files already carry their
+own Edge Case entry whose Trigger/Action text is a near-verbatim match for what the citation is
+actually describing: Edge Case 17.4 ("DIU-Sourced Background Is Generic") in the grounding steward,
+Edge Case 17.5 ("DIU-Sourced Background Imagery Contains People") in the casting director.
+
+The 13 "Section 9A" references were left alone. `presenters-speech-writer.md` still carries
+duplicated `SOP 9.1`-`SOP 9.4` and `Gate 1`-`Gate 5` headings -- the signature of an in-flight,
+mid-build unit -- and has no `Section 9A` or successor heading anywhere on disk. Authoring the
+missing section to make the citations resolve would be restructuring someone else's in-flight unit,
+not citation repair, so this batch stops at 4 of 17 and reports the remaining 13 as still blocked.
+
+### What changed
+
+- `image-grounding-steward.md` -- Common Mistakes row 6 and Update Trigger 5 repointed from
+  `(Section 11)` to `(Section 17, Edge Case 17.4)` / `(Section 17, Edge Cases, must be extended)`.
+- `representation-casting-director.md` -- the same two citations repointed to
+  `(Section 17, Edge Case 17.5)` / `(Section 17, Edge Cases, must be extended)`.
+- `templates/role-library/_index.json` -- content hashes re-stamped for the two edited role files
+  via `hash-content-manifest.py`; confirmed with `--check`.
+- All 10 version markers bumped v21.4.29 -> v21.4.30 via `scripts/bump-version.sh`.
+
+### Risk
+
+Low. Both edits are parenthetical citation text inside Markdown tables/lists; no code path, gate,
+schema, or SOP numbering changed, and the target section (`## 17. Edge Cases for This Role`) was
+confirmed to exist in both files before the citation was written. The 13 `Section 9A` references
+in `presenters-speech-writer-sops.md` were deliberately left untouched: `presenters-speech-writer.md`
+still carries duplicated `SOP 9.1`-`9.4` and `Gate 1`-`5` headings (an in-flight unit), so authoring
+the missing section here would risk colliding with that unit's own build.
+
+---
+
+## [v21.4.29]  -  2026-07-30  -  bump-version.sh computed the next version from the working tree, so two same-day PRs shipped colliding versions and a tag that does not contain its own work
+
+### Why
+
+`scripts/bump-version.sh` rolls all 10 markers to whatever target the caller hands it, and callers
+derive that target by reading the WORKING TREE's `./version` and adding one -- never the tip of
+`origin/main`. Two pull requests cut from the same base therefore compute the SAME next version.
+Git then auto-merges the byte-identical `version` edit with **no conflict**, so the second merge
+carries real content while its markers are identical to its parent's: the version never advances
+for that change, and the annotated tag ends up pointing at a commit that does not contain the work
+it claims to ship.
+
+This is not a hypothetical -- it happened on 2026-07-30 and is recorded in the v21.4.26 entry
+below. PR #778 and PR #779 were both cut from `f9c6efb4` at `v21.4.24` and both bumped to
+`v21.4.25`. #778 merged first and took the annotated tag at `9bac4243`. Re-verified independently
+while building this fix:
+
+- `v21.4.25` resolves to commit `9bac4243`.
+- `git merge-base --is-ancestor 1fff3038 v21.4.25` returns **false** -- the presentations doctrine
+  fix that release claimed is **NOT** in it. (The same command against `v21.4.26` returns true,
+  which is what the follow-up bump corrected.)
+- It also turned CI guard `G3` red on `main` until `v21.4.26` landed.
+
+Every existing gate was green through all of it, because each one asked a question that the
+collision does not violate: `G1` saw a matching tag exist, `G2` saw a CHANGELOG entry for it, `G4`
+(`tag-ancestry-guard.yml`) saw the tag was an ancestor of `main`, and `bump-version.sh --check` saw
+all 10 markers agree. They agreed on the wrong number. Nothing anywhere asserted the reverse
+direction -- that a tag CONTAINS the work it is named for. Anyone auditing releases by tag gets a
+false answer, and `update-skills.sh` can tell a client box it is current when it is not.
+
+**It recurred while this very fix was in review.** This branch was cut from `b3f463fc` at
+`v21.4.27` and bumped to `v21.4.28`. While its checks were running, PR #783 merged at `f27484ee`,
+also claiming `v21.4.28`, and took the `v21.4.28` tag. Merging `origin/main` back into this branch
+produced a conflict in `CHANGELOG.md` **only** -- all 10 version markers auto-merged silently,
+byte-identical, exactly as described above. The new guard refused the collision on the spot rather
+than letting it through, which is why this entry ships as `v21.4.29`:
+
+```
+COLLIDING VERSION: target v21.4.28 is not strictly ahead of origin/main (v21.4.28).
+FIX:  git fetch origin main && git merge origin/main
+      then bump to the next patch AFTER v21.4.28.
+```
+
+That is two occurrences of the same defect in a single day. The guard is not defending against a
+theoretical race.
+
+### What changed
+
+`scripts/bump-version.sh` -- two additions, no change to what the 10 markers are:
+
+- **`release_integrity_guard()` (fail-closed, runs before any file is written).** Fetches
+  `origin/main` and compares the requested target against `origin/main`'s `./version` -- the real
+  shipped release floor -- instead of trusting the working tree. It refuses with a non-zero exit
+  and a specific message on three conditions: STALE BASE (working tree `./version` is behind
+  `origin/main`, the root cause of the collision), COLLIDING VERSION (target is not strictly ahead
+  of the released floor), and TAG ALREADY EXISTS (the target tag is present locally or on the
+  remote). There is deliberately **no bypass flag**: a blocked bump costs one `git merge`, and a
+  wrong tag lies to every release audit.
+- **Offline degradation.** A failed `git fetch` is never fatal. The guard falls back to the
+  last-known `origin/main` ref plus the local tag list and prints, line by line, which checks it
+  could not perform, so a legitimate bump on a bare CI runner or an offline machine still
+  completes. Verified: with an unreachable remote a legitimate bump exits 0 and rolls all 10
+  markers, and a stale base is STILL refused off the stale ref.
+- **`tag_containment_advisory()` on `--check`.** If a tag matching `./version` exists but does not
+  contain HEAD, `--check` now says so loudly. This is the exact assertion that would have caught
+  the incident. It is ADVISORY ONLY -- it never mutates a file, always returns 0, and leaves
+  `--check`'s exit code untouched -- because a hard assert would be wrong in two ordinary
+  situations: on a feature branch the tag does not exist yet (it is cut after merge), and on `main`
+  there is a legitimate window between a merge landing and its tag being pushed. Hard enforcement
+  belongs at bump time, where the collision can still be PREVENTED rather than merely reported.
+- `semver_cmp()` helper: numeric vX.Y.Z comparison, so `v21.4.9` vs `v21.4.10` cannot sort wrong as
+  text.
+
+Mutation-proved in both directions rather than merely declared. The guard was fired on all three
+refusal conditions (each exits 1 with zero files modified), and the advisory was run against the
+real incident commit `b2a91133`, where it prints the containment WARN while the pre-existing drift
+check on that same commit still reports "All 10 version markers agree" -- the precise blind spot.
+A normal bump `v21.4.27 -> v21.4.28` still succeeds cleanly and rolls all 10 markers.
+
+### Risk
+
+Low, and confined to release tooling. No role file, SOP, department, persona, skill content, or
+runtime code path is touched; nothing a client box installs changes behavior. The `--check` exit
+contract is unchanged, so `version-consistency.yml` (which delegates to it) cannot go red on the
+new advisory. The one behavioral change is intended: `bump-version.sh <version>` now refuses a bump
+that would collide with `origin/main` or an existing tag. A release cut from a stale base fails
+loudly instead of silently shipping a tag that does not contain its own work.
+
+
+## [v21.4.28]  -  2026-07-30  -  104 more dead "Section N.N" doctrine citations pointed into the void; Guard B could not see them because they spell the citation three other ways
+
+### Why
+v21.4.26 (PR #779) repaired 88 dead `master SOP Section N.N` citations in the Presentations role
+library by repointing each to its live home via the ratified crosswalk in
+`universal-sops/PRESENTATION-MASTER-DOCTRINE.md` Section 4. That pass was bounded by what Guard B
+(`doctrine_residual_check.py`, pattern `master-sop-section-n-citation`) can match:
+`(?:master SOP\s+Sections?\s+\d|CLIENT-WEBINAR-DECK-SOP\.md\s*\(?Sections?\s+\d)`. 104 citations
+in the same tree carry the identical defect and survived only because they are spelled differently:
+
+1. **`master Section 5.4`** (33) - the word `SOP` is missing between `master` and `Section`, so the
+   first alternative never fires.
+2. **`` `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 11.3 ``** (34) - the citation IS
+   doc-prefixed, but the closing backtick sits between `.md` and `Section`. The pattern's
+   `\s*\(?` matches whitespace or an open paren, not a backtick, so the second alternative never
+   fires either.
+3. **Bare `(Section 4.3)` / `the master 7.5 exemplar`** (37) - no document prefix at all.
+
+The rot is identical in every case: `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` contains only
+Sections 0, 0.5, 1 through 9, and 9a. Citations to 3.1, 3.2, 3.4, 4.1, 4.2, 4.2A, 4.3, 4.4, 5.1,
+5.2, 5.4, 5.5, 6.1, 7.2, 7.3, 7.4, 7.5, 9.0 and 11.3 resolve to nothing. An agent that follows one
+lands nowhere and either invents behaviour or stalls -- the exact failure mode
+`PRESENTATION-MASTER-DOCTRINE.md` Section 0 was written to end.
+
+### What changed
+Every one of the 104 citations was read in its own context and repointed to the live home named by
+the Section 4 crosswalk, using the exact substitution idiom PR #779 established (commit
+`1fff3038`), including the trailing `(PRESENTATION-MASTER-DOCTRINE.md §4)` provenance marker.
+**Every target was verified to exist on disk before it was written**: `SOP-SIGPRES-01`,
+`SOP-MODE-00`, `SOP-STORY-01`, `SOP-PRIORITY-02`, `SOP-PITCH-01/02/05`, `SOP-PROCLAMATION-01`,
+`SOP-OBJECTION-01`, `SOP-SLIDE-00/03/04`, `SOP-DESIGN-01/03`, `SOP-IMG-01`, `SOP-ENGINE-00`,
+`universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json`,
+`presentations/intake/deck-intake-questions.json`, and the named role SOP mirrors.
+
+34 files touched: 16 top-level role files, 17 `sops/` mirrors, and the regenerated
+`role-library/_index.json` (32 `content_sha` bumps). No code constant, threshold, floor, ceiling,
+gate, or auto-fail code was changed, and no threshold was relaxed.
+
+**Five citations were deliberately LEFT rather than repointed**, because a citation repointed into
+a second void looks fixed and is worse than one that is honestly broken:
+
+- `sops/SOP-IMG-01-KIE-CALL-MECHANICS.md` Section 10.5 (the gate table) and Section 10.1 (render
+  noise) - neither number has a crosswalk row; their true live home is unresolved.
+- `sops/assembled-slide-legibility-qc-sops.md` Section 6.2 and Section 12 (gates are blocking; the
+  artifact is the gate token) - no crosswalk row. This file is also the SOP mirror of a role
+  retired under `role-assembled-slide-legibility-qc-retired`.
+- `sops/SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md` line 569, `SOP-SLIDE-04 Section 2.1` -
+  **verified correct and left because it is right**: `SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md`
+  really does carry a `### 2.1 REQUIRED SLIDE-TYPE BEATS` heading.
+
+Two further groups were left and are reported rather than forced:
+
+- The 13 `Section 9A` references in `sops/presenters-speech-writer-sops.md` (the 11-stage webinar
+  arc). `presenters-speech-writer.md` has no Section 9A, and it currently carries duplicated
+  `SOP 9.1` through `SOP 9.4` headings -- the signature of an in-flight unit mid-build. Authoring
+  the missing section is restructuring someone else's work, not a citation repair.
+- The four bare `Section 11` references in `image-grounding-steward.md` and
+  `representation-casting-director.md` ("re-verify grounding (Section 11)", "enforce the
+  per-client mix override on any DIU imagery (Section 11)"). Section 11 of both role files is
+  *Handoffs (Value Stream Map)*, which does not fit either sentence; the intended target is
+  genuinely ambiguous.
+
+Nothing was mass-labelled "historical" to make it disappear.
+
+### Risk
+Low, and documentation-only. No Python, JSON schema, manifest, threshold, or gate was touched;
+the only non-`.md` file in the diff is `role-library/_index.json`, whose `content_sha` values are
+mechanically regenerated by `hash-content-manifest.py`. The substitutions were applied by an
+abort-on-mismatch script that asserted an exact expected hit count for each of the 72 distinct
+replacement strings before writing any file, so a silent over-match was not possible. Per-citation
+reading (rather than blind number substitution) is what kept `presenter-coach.md` correct: its
+citations govern PRESENTER NOTE standards and the spoken hook, and a slide-side rule must never be
+pasted over them. Gates: `sync_check` rc=0 (IN SYNC), `doctrine_residual_check` (Guard B) rc=0
+(CLEAN), `test_preflight` rc=0, `qc-assert-no-client-names` rc=0, `hash-content-manifest --check`
+rc=0, `qc-assert-repo-consistency` rc=0 (10 OK / 0 DRIFT), `persona-task-mode-wiring` 7/7,
+`bump-version.sh --check` rc=0. An independent second scan of the diff found no client name,
+email address, URL, credential, or channel identifier in any added line.
+
+## [v21.4.27]  -  2026-07-30  -  Skill 38's "91 scripts" figure had drifted to 92, and closed the actual gap: bump-version.sh never checked the scripts/ total
+
+### Why
+The prior fix (v21.4.25, "Skill 38 INSTALL.md self-contradicted its own protocol count") recounted
+disk and explicitly flagged, in its own Risk section, that `SKILL.md`'s `91 scripts` figure had
+drifted separately to 92 after `qc-lattice-pointer.sh` shipped in v1.9.2 -- and that this was "not
+checked by the advisory." That is the actual root cause: `scripts/bump-version.sh`'s Skill 38 doc
+self-count advisory (`skill38_doc_selfcount_advisory`, FIX-XC-13c) has run on every `--check` and
+every version bump for months, printing WARNs for `protocols=`, `references=`, and
+`highest-numbered-script=` drift -- but it never computed or compared a scripts/ GRAND TOTAL. The
+`qc-lattice-pointer.sh` addition (v1.9.2, GK-27/U89) pushed disk from 91 to 92 `.sh` files and
+nothing caught it, not because the advisory malfunctioned, but because the check for that specific
+number never existed. Correcting the digit alone would leave the exact same blind spot for the
+next script add/remove, so the tripwire itself is the substance of this change, not a footnote.
+
+`38-conversational-ai-system/SKILL.md` states three different script counts and they are NOT three
+attempts at one number: `18 scripts` (What This Skill Ships bullet) is the v1.8.0 CloseBot
+Alignment Upgrade delta -- `31-generate-workflow-visual.sh` + `32-verify-model-failover-support.sh`
++ 7 QC gates x2 (`.sh` + `.test.sh`) + `qc-playbook-engine.sh` + the previously-missing
+`qc-f45-f47-substance.test.sh` = 18, verified by enumerating those 18 filenames on disk. `3
+scripts` (SELF-COUNTS comment) is the v1.9.0 (P3-07) delta -- `33-runtime-tool-gating-prover.sh` +
+`qc-runtime-tool-gating.sh` + `qc-runtime-tool-gating.test.sh` = 3, also verified on disk. Neither
+is a stale total; both are historical per-version addition deltas and were left unchanged. The
+grand total (`91 scripts` / `scripts/=91`) is the only wrong figure: `find scripts -maxdepth 1
+-name '*.sh' -type f | wc -l` = 92 today. It is 92, not 93 (all files including
+`scripts/import_aa_handoff.py`) -- the SELF-COUNTS comment's own verify command is explicit
+(`` ls -1 protocols/*.md scripts/*.sh references/*.md ``, a `.sh`-only glob), `bump-version.sh`'s
+matching checklist command uses the identical `scripts/*.sh` glob, and `import_aa_handoff.py` is
+never mentioned anywhere in `SKILL.md`'s own "What This Skill Ships" prose -- it is a
+cross-skill Avatar-Alchemist handoff adapter (added by the U061 commit spanning 4 skills), not one
+of the scripts this bullet is counting.
+
+### What changed
+`38-conversational-ai-system/SKILL.md`:
+- SELF-COUNTS comment: `scripts/=91` -> `scripts/=92`, with a new `v1.9.2 (GK-27/U89) added 1
+  script (qc-lattice-pointer.sh)` delta line alongside the existing v1.9.0/v1.8.0 delta history.
+- "What This Skill Ships" bullet: `**91 scripts**` -> `**92 scripts**`, with a matching `v1.9.2
+  added 1: qc-lattice-pointer.sh` clause.
+- `18 scripts` and `3 scripts` were left unchanged -- both independently verified against disk as
+  correct historical deltas, not the drifted total.
+
+`scripts/bump-version.sh` (`skill38_doc_selfcount_advisory`, FIX-XC-13d):
+- Added `s=$(ls -1 "$d"/scripts/*.sh | wc -l)`, printed in the advisory header
+  (`disk: protocols=$p references=$r scripts=$s highest-numbered-script=$hi`).
+- Added a new WARN, matching the exact idiom of the existing protocol/reference checks: `grep -q
+  "$s script" SKILL.md` (case-sensitive substring match, non-fatal) -- if it fails, prints `WARN:
+  38-conversational-ai-system/SKILL.md does not state '$s script...' -- total script count may
+  have drifted`.
+- Scoped to `SKILL.md` only (not looped into `INSTALL.md` like the protocol/reference checks):
+  `INSTALL.md` documents the numbered script range + a named-script list, never a bare "NN
+  scripts" total, so adding this check to that file would be a permanent false WARN. Documented
+  the reasoning inline and in the version-bump-checklist header comment.
+- Proved the check can actually fire: temporarily set `SKILL.md`'s stated total to `99` (disk
+  still 92) and confirmed `./scripts/bump-version.sh --check` printed exactly one new WARN line
+  (`does not state '92 script...'`); restored `92` and confirmed the WARN disappeared and the
+  advisory returned to zero WARN lines.
+
+Bumped `38-conversational-ai-system/skill-version.txt` 1.9.4 -> 1.9.5 and the repo version to
+v21.4.27 via `scripts/bump-version.sh`.
+
+### Risk
+None to runtime or install behavior -- doc + advisory-only change. `skill38_doc_selfcount_advisory`
+remains ADVISORY ONLY: it never mutates a file and always returns 0, so `bump-version.sh`'s exit
+behavior under `set -e` is unchanged; a WARN still cannot fail a bump or a CI job. Does not touch
+`INSTALL.md` (already correct as of v21.4.25) or `INSTRUCTIONS.md`'s unrelated `27 protocols`
+Phase-5 subset (a distinct, uncounted quantity, out of scope here).
+
+## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
+
+Investigated after a report that "the live ledger... the checklist... the to-do list" were not
+being updated while work was reported complete. The instruction was to find why these two
+specific files stopped updating and either wire them into the merge path or remove them.
+They are neither stale nor removable: they were never created in this repository, at any point,
+on any branch.
+
+**Measured, not assumed:**
+- `git log --all --full-history -- CONTROL/LEDGER.md` and the same for `CONTROL/CHECKLIST.md`:
+  zero commits, checked against all 3,846 commits reachable from every local ref/branch of
+  `origin` (`git rev-list --all --count`).
+- `git log --follow --all` on both paths: zero commits.
+- `git log --all --diff-filter=ACMR --name-only` filtered to anything ever added under
+  `CONTROL/`: only `CONTROL/CHANGELOG.md`, `CONTROL/heartbeats/fix-unit.hb`, and a since-removed
+  `CONTROL/QUESTIONS-FOR-HUMAN.md` -- never a `LEDGER.md` or `CHECKLIST.md` sibling.
+- Full-tree `grep -a -rn` for the literal strings `LEDGER.md` and `CHECKLIST.md` across every
+  script, workflow, hook and doc: the only hits are unrelated files under different directories
+  (`ledgers/skill58-podbean-proxy-2026-07-16.md`'s `.gitattributes` merge rule,
+  `project-prds/anthology-engine/CHECKLIST.md`, `22-book-to-persona-coaching-leadership-system/
+  CHECKLIST.md`, `23-ai-workforce-blueprint/.../SOP-CAST-01-...-LEDGER.md`) -- none reference a
+  `CONTROL/` path, and no script, hook, or CI workflow ever wrote or read one.
+- GitHub's own code search corroborates the local clone: `gh api search/code -f
+  q="filename:LEDGER.md repo:trevorotts1/openclaw-onboarding"` and the `CHECKLIST.md` equivalent
+  both return `"total_count": 0`.
+- `CONTROL/` on `origin/main` today holds exactly `CHANGELOG.md` and `heartbeats/` -- confirmed
+  by directory listing, not inference.
+
+**Conclusion:** there is no drift to quantify (no PRs merged "since the last update" -- there was
+never a first update), no stale file to delete, and no automation gap to wire, because there was
+never anything to wire. This entry exists so this exact pair of filenames is never chased again
+as a live-tracking regression; if a *different* pair of tracking files was actually meant
+(a different path, or a different repo such as `blackceo-command-center`), that is a separate,
+new investigation -- this closes only the two literal paths reported.
+
+The operator's underlying need -- a ledger and a checklist that cannot silently drift -- is
+already met by mechanisms that DO exist and ARE wired into the merge path, under different
+names:
+- **The ledger**: `ledgers/*.md`, enforced on every PR and every push to main by
+  `.github/workflows/ledger-truth-gate.yml` -> `scripts/ledger-truth-gate.py` -> `unit-status.sh`,
+  which independently re-derives DONE / NOT-DONE / UNKNOWN from live git ancestry and paginated
+  CI check-run history and fails the build if a row's own `verified`/`done` claim disagrees with
+  that independent check. It cannot silently stop tracking without the CI gate turning red.
+- **The unit changelog**: this file and `CONTROL/CHANGELOG.md`, both updated on every merge/ripple
+  and current as of the commit before this one.
+
+## [Unreleased]  -  U012: add the six missing manifest phases and their executors
+
+`PIPELINE-MANIFEST.json` was missing all six phases the audit's B2 table called for --
+`P7-TELEPROMPTER`, `P8.1-PDF-EXPORT`, `P8.2-GUIDE`, `P8.4-FISH-TAG`, `P9.1-SPEECH-PDF`,
+`P9.2-GHL-UPLOAD` -- and the engine walks only `manifest["phases"]`, so it could never reach
+them: `Manifest.phase()` died with `unknown phase id ... (26 phases)`, `EXIT_USAGE=2`. This is
+the actual root cause behind the five deliverable orphans PR #732 exposed (`deck_pdf`,
+`guide_pdf`, `speech_pdf`, `speech_fish_md`, `teleprompter_html`) -- previously misdescribed as
+an open design question in `test_producers.py`'s `known_missing_producers`. They were this
+unit's unfinished wiring, not a design decision. The producer scripts already existed
+(`build_teleprompter.py`, `pdf_export.py`, `presenter_guide.py`, `speech_spec_build.py`,
+`presenters_speech_pdf.py`, `speech_fish_tag.py`, `ghl_media_push.py`) and
+`phase_verifiers.PHASE_VERIFIERS` already had all six registered; only the manifest phase
+objects and their executor blocks were missing.
+
+Added all six phases at the card-declared `order` / `owning_role` / `produces_artifact` values
+(`SPEC/units/U012.md` step 9), each with a real `executor: {"kind": "script", "cmd": ...}`
+pointing at its existing producer, `client_report` templates matching the other 26 phases, and
+`gate_codes: []` (the card names no AF-* code for any of the six; inventing one without a
+matching `autofails` entry would be fabrication, so it is left empty pending a real gate
+definition -- flagged, not silently guessed). `manifest_version` 31 -> 32,
+`MIN_MANIFEST_VERSION` in `presentation_job/manifest.py` bumped to match (U019 step 8), and
+`MANIFEST-SOURCE.txt`'s `content_sha256` re-cut in the same commit -- a stale stamp is exit 7 on
+every engine invocation. `tests/test_producers.py`'s `known_missing_producers` now holds only
+`infographic_png` (no producer by design, audit Q4, out of this unit's scope); the guard's
+bidirectional assertion (fails on a real orphan, fails again if a fixed key is not removed from
+the set) proves the fix rather than merely asserting it.
+
+**Left deliberately unfixed, and reported rather than papered over (Part B of this fix):**
+every one of the 26 pre-existing phases still declares no `executor` (`sync_check.py`'s W1
+warning class, advisory-only, now covers 32 of 32 phases instead of 26 of 26). Declaring
+executors for those 26 needs each one individually verified against a real script or a genuine
+agent-authored judgment call -- bulk-declaring them here would be exactly the kind of
+unverified mass change this programme has been damaged by. A synthetic job (seeded artifacts,
+`--dry-run`) advances cleanly past `P-CONVERTER` through all 21 upstream phases and reaches
+`P8.1-PDF-EXPORT` -- one of the six new phases -- dispatching it as a real script rather than
+stalling or dying with `unknown phase id`.
+
+Verified: `tests/test_producers.py` 17 passed (0 skipped, `known_missing_producers` down from 5
+open entries to just the one out-of-scope key); `sync_check.py` exits 0, `IN SYNC`; bleed test
+(revert the manifest additions -> test goes red naming the exact five keys -> restore -> green
+again) confirmed. Full suite from
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`: 15 failed, 443 passed,
+13 skipped both before and after, and the 15 failing test **names** are byte-identical to
+`origin/main` -- zero new failures, zero regressions.
+
+
+## [Unreleased]  -  2026-07-30  -  U006: restore the entry script's explicit scripts-dir refusal (silently reverted by a stale U025 branch merge)
+
+`presentation-canonical-entry.sh`'s `resolve_scripts_dir()` was back to the seven-candidate
+autodetect loop U006 was supposed to have retired — with no refusal behaviour. Ancestry said
+otherwise: U006's fix (commit `edc8a2fd`, "stop entry script guessing scripts dir") and its
+"Land U006" merge (`e9b73432`) are both ancestors of `main`. Content disagreed — the loop was
+back, verbatim.
+
+**Root cause.** `unit/U025-retire-front-door-build-guard` was cut from a commit (`5e181ceb`)
+*before* `edc8a2fd` landed, and its own commit rewrote the same section of the entry script
+starting from the pre-fix seven-candidate version (needed for its own, unrelated GATE 0
+relocation work). "Land U025" (`166aef55`) merged that branch into `main` on 2026-07-27, two
+days *before* "Land U006" (`e9b73432`, 2026-07-29) merged U006's branch in. By the time U006
+landed, `main`'s copy of the file had already diverged via U025; the merge kept `main`'s
+(U025's, pre-fix) version of `resolve_scripts_dir()` and only carried over U006's tests,
+installers and docs — the six files "Land U006" actually touched never included the script
+itself.
+
+**Fix:** restored verbatim from `edc8a2fd` — not a reinterpretation. The seven-candidate loop
+(`$SCRIPTS_DIR`, `$SELF_DIR`, the skills-template copy, `$RUN_DIR/departments/...`,
+`$RUN_DIR/../scripts`, `$RUN_DIR/scripts`, `$HOME/departments/...`) is replaced by an explicit
+two-candidate resolver: `--scripts-dir` / `$SCRIPTS_DIR` (caller-stated), else the materialized
+department default (`$OPENCLAW_WORKSPACE/departments/Presentations/scripts`, `$HOME/.openclaw/workspace`
+if unset) — nothing else. A caller-stated-but-wrong directory refuses (exit 2, "Refusing to
+autodetect") rather than falling through to a guess; an unstated, unmaterialized department
+refuses the same way and names the exact directory it looked for and the flag to pass instead.
+The skills-TEMPLATE copy is refused by name even when explicitly stated, closing the specific
+wrong answer the old loop used to land on. U025's later, legitimate GATE 0 rework (intake-ledger
+check relocated into this script, replacing the retired `deck-build-guard.sh`) is untouched.
+
+**New regression test:** `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_canonical_entry_scripts_dir.py`
+— static checks that the seven-candidate loop shape is absent, plus five executing checks
+(refuses with no `--scripts-dir` and no materialized department; refuses a stated-but-wrong
+directory; refuses the skills-template copy by name; succeeds end-to-end with a valid stated
+directory). Verified as a bleed test: reintroducing the old loop fails all seven; removing it
+passes all seven. `sync_check.py` still exits 0 (front door not re-bricked).
+
+
+## [v21.4.26]  -  2026-07-30  -  Two PRs claimed v21.4.25 on the same day; the presentations doctrine fix shipped under a tag that predates it
+
+### Why
+
+PR #778 (Skill 38 INSTALL.md count drift) and PR #779 (the presentations Guard B doctrine fix)
+were both cut from `f9c6efb4` at `v21.4.24` and both bumped to `v21.4.25` independently. #778
+merged first and took the annotated `v21.4.25` tag at merge commit `9bac4243`. When #779 merged
+at `b2a91133`, git auto-merged the two identical `v21.4.24 -> v21.4.25` edits with no conflict --
+so the merge carried real skill-content changes while its `version` and `skill-version.txt`
+markers were byte-identical to its parent.
+
+Two consequences, both real:
+- **`G3 — skill content change requires skill-version.txt bump` went red on `main`.** #779 changed
+  17 role files under `23-ai-workforce-blueprint` without an accompanying marker bump, because the
+  marker had already been consumed by #778.
+- **The `v21.4.25` tag does not contain the doctrine fix.** Anyone checking out `v21.4.25` gets
+  #778's tree, not the corrected presentations role library.
+
+The version-bump convention is not collision-safe when two same-day PRs branch from the same base:
+`bump-version.sh` reads the working tree's `version`, not the tip of `origin/main`, so both PRs
+computed the same "next patch" and neither could see the other.
+
+### What changed
+
+- Version markers bumped `v21.4.25 -> v21.4.26` across all 10 tracked locations via
+  `./scripts/bump-version.sh` (not hand-edited).
+- Annotated tag `v21.4.26` pushed onto this merge so the presentations doctrine fix from #779 is
+  covered by a released version that actually contains it.
+
+### Risk
+
+None to behavior -- version markers and this entry only. No role file, SOP, script, gate, or code
+constant is touched. This restores `G3` to green and closes the tag-coverage gap; it does not
+alter anything #779 shipped.
+
+
+## [v21.4.25]  -  2026-07-30  -  Skill 38 INSTALL.md self-contradicted its own protocol count and understated references/script range
+
+### Why
+`scripts/bump-version.sh --check` has carried a standing Skill-38 doc self-count advisory
+(`skill38_doc_selfcount_advisory`, FIX-XC-13c) that WARNs on every run when
+`38-conversational-ai-system/INSTALL.md` disagrees with what is actually on disk. On
+investigation the drift was worse than a single stale number: `INSTALL.md` stated **both**
+`45 protocols` (the "What this installs" total) **and** `32 v5.14 protocol files` (a Phase-5
+sub-count, in "Where to read next") without ever reconciling that these are different
+quantities, and separately understated `22 reference documents` and the numbered-script range
+as `` `00`-`30` ``.
+
+Recounted from disk against the exact method `skill38_doc_selfcount_advisory` uses
+(`ls -1 protocols/*.md`, `ls -1 references/*.md`, and the numeric prefix of `ls -1 scripts/`):
+**51 protocol files, 25 reference documents, numbered scripts `00`-`33`.** `SKILL.md` already
+carried the correct 51/25 figures (its SELF-COUNTS block was maintained through v1.9.0); only
+`INSTALL.md` had drifted.
+
+The `45` vs `32` pair was not two competing attempts at one number -- `45` was `INSTALL.md`'s
+stale copy of the skill-wide protocol TOTAL as of the v1.5.12 baseline (before the six v1.8.0
+CloseBot-alignment protocols and later Round-2/Round-3 additions), while `32` is, and remains,
+the count of protocol files that shipped VERBATIM from the original v5.14 source playbook
+before any Round-2/Round-3/v1.8.0 protocol was added on top (51 current total − 19 later
+additions enumerated in `SKILL.md`'s SELF-COUNTS history = 32, independently confirmed by
+enumerating all 51 files on disk against that history). `32` needed no change; `45` did.
+
+### What changed
+`38-conversational-ai-system/INSTALL.md`:
+- "What this installs" protocol bullet: `45 protocols` -> `51 protocols` (line 7).
+- Numbered-script range: `` `00`-`30` `` -> `` `00`-`33` ``, and named the two previously-unlisted
+  scripts `31-generate-workflow-visual.sh` / `32-verify-model-failover-support.sh` (line 10).
+- Reference-document bullet: `22 reference documents` -> `25 reference documents` (line 11).
+- Install-order comment block: `through 30` -> `through 33`, `23-30` -> `23-33`, and added
+  `31-generate-workflow-visual`, `32-verify-model-failover-support`,
+  `33-runtime-tool-gating-prover` to the walk-through list (lines 51-58).
+- The `32 v5.14 protocol files, verbatim from the source playbook` line (line 87) was left
+  unchanged -- it is a different, still-accurate quantity, not the stale one.
+
+No protocol, reference, or script file was touched -- the artifacts were already correct; only
+the docs describing them were wrong. Bumped `38-conversational-ai-system/skill-version.txt`
+1.9.3 -> 1.9.4 and the repo version to v21.4.25 via `scripts/bump-version.sh`.
+
+### Risk
+None to runtime or install behavior -- doc-only change. `scripts/bump-version.sh --check` now
+prints the Skill 38 advisory header with zero WARN lines. Does not touch
+`INSTRUCTIONS.md`'s unrelated `27 protocols` (a distinct Phase-5 step-mapping subset, not a
+total, and not checked by the advisory) or `SKILL.md`'s `91 scripts` figure (drifted separately
+to 92 after `qc-lattice-pointer.sh` shipped in v1.9.2; also not checked by the advisory and out
+of scope for this fix) -- both are flagged here for visibility, neither was changed.
+
+
+## [v21.4.25]  -  2026-07-30  -  Guard B was red because the role files still ordered two retired doctrines: the >= 7 hook padding floor and a 1,500/5,000-char prompt floor
+
+### Why
+
+`main` had exactly one failing check: `Presentations SOP/manifest/code lockstep (sync_check)`.
+`sync_check.py` itself exits 0 and Guard A exits 0 -- the red step was Guard B
+(`doctrine_residual_check.py`), reporting **107 offenders across 17 files** (measured, not the
+20 files initially assumed). Guard B is the retired-doctrine residual lint: it fails when a
+doctrine value that was explicitly retired reappears as a LIVE instruction rather than as
+documented history.
+
+The 107 were not noise. Two of the three root causes were live doctrine contradictions in which
+a role file gave an agent an order that the enforcing code refuses:
+
+1. **The retired `>= 7` hook FLOOR.** `SOP-SLIDE-03-HOOK-DOCTRINE` retired it because it
+   produced the reference-case 40-slide footer-stamping: the system floored the count and
+   stamped footers because that is exactly what it was told to do. The live rule is a
+   **3 to 4 dedicated-slide CEILING**. `slide-copywriter.md` was half-migrated -- it stated the
+   ceiling on one line and ordered "insert hook refrains ... until the count reaches 7" a few
+   lines later. `devils-advocate-presentations.md` shipped a worked PASS example citing
+   **9 hook appearances**, which the live gate vetoes as AF-HOOK-1.
+2. **The retired prompt-char floor.** `build_deck.py` and `prompt_gate.py` both pin
+   `PROMPT_CHAR_FLOOR = 9000`. `slide-image-creator.md` told the author the renderer's HARD floor
+   was **1,500** chars with a **5,000** soft minimum. Any prompt authored to that instruction is
+   sub-floor and is refused, not run. Docs were corrected UP to the code; the code was not
+   touched.
+
+The third cause was the documented doctrine schism (P3-01(c)6): 88 citations of a numbered
+"master SOP Section N.N" that no longer resolves. `CLIENT-WEBINAR-DECK-SOP.md` today has only
+sections 0-9a, so cited sections 4.3 / 7.2 / 7.5 / 11.3 / 11.4 point into a void.
+
+### What changed
+
+- **Hook floor -> ceiling (13 offenders, 5 files).** `slide-copywriter.md` (role summary, KPI
+  row, SOP step 7, failure mode, ten-components self-check), `devils-advocate-presentations.md`
+  (doctrine-point heading, the doctrine bullet, and the worked PASS example rewritten to 4
+  hook-carrying slides), `qc-specialist-presentations.md` (assembled-deck check k, Gate 12),
+  `director-of-presentations.md` (checklist_of_promises line item).
+  **Not** mass-substituted: `presenter-coach.md` governs the SPOKEN hook, whose live band is
+  5-20 (`AF-SPEECH-HOOK-COUNT`, `pitch_engines_check.py`), not the 3-4 slide ceiling. It was
+  corrected to 5-20.
+- **Prompt floor -> 9,000 (6 offenders + 1 uncaught contradiction).**
+  `slide-image-creator.md` (the 1,500 HARD-floor claim at the renderer contract -- not
+  Guard-B-caught but the sharpest code contradiction in the set -- plus the 5,000 references),
+  `qc-specialist-presentations.md` (KPI row, AF-P1 row). The AF-P1 "fails unless it carries a
+  documented reason" escape hatch was removed: `build_deck.py` grants no such exception.
+  `slide-submitter.md` truncated prompts at a stale **15,000**; raised to the real AF-P2 ceiling
+  of **18,000** (`PROMPT_CHAR_CEILING`), which also cleared a Guard B regex false positive
+  (`5[,.]?000[\s-]*char` matches inside "1**5,000 char**acters").
+- **88 dead section citations repointed** across 16 role files, using the ratified crosswalk in
+  `universal-sops/PRESENTATION-MASTER-DOCTRINE.md` Section 4 and matching the convention the
+  dept `sops/` mirrors already use: `<live SOP> (PRESENTATION-MASTER-DOCTRINE.md §4)`. The
+  mirrors had already been repaired; the top-level role files were missed. Every repoint target
+  was confirmed to exist on disk first.
+- Content-manifest re-stamped (17 role content_sha bumps).
+
+### Risk
+
+Low, and doc-only. **No code constant, threshold, or gate was changed** -- every edit moves a
+doc toward the value the code already enforces, and no threshold was relaxed. `sync_check.py`
+and Guard A were exit-0 before and after. The behavioral change is that agents reading these
+role files are no longer instructed to pad decks to 7 hook appearances (which the AF-HOOK gate
+vetoes) or to author 1,500-char prompts (which the renderer refuses) -- i.e. the docs now fail
+in the same direction as the code instead of against it.
+
+Not in scope, and deliberately left: roughly 80 bare `master Section N.N` references that carry
+no `master SOP` / `CLIENT-WEBINAR-DECK-SOP.md` prefix. Guard B does not match them, and
+per-citation repair of that form is the A6 unit's assignment under
+`PRESENTATION-MASTER-DOCTRINE.md` §5. They are the same defect class and still resolve into a
+void.
+
+
+## [v21.4.24]  -  2026-07-30  -  The same client name came straight back on the next PR, which is the actual finding
+
+### Why
+v21.4.23 (merged ~40 minutes earlier) redacted a real client's name from two Skill-23 scripts.
+PR #775 (`09db4090`, merged as `91576159`) put the same name back on `main` in four new places
+before that fix even landed:
+
+- `23-ai-workforce-blueprint/scripts/qc-interview-completion.py:19` and `:586`
+- `23-ai-workforce-blueprint/scripts/test-qc-mandatory-fields-transcript-match.py:4` and `:208`
+
+Both PRs were describing the same 2026-07-30 incident and both reached for the client's name to
+do it. Neither author was warned, because `scripts/qc-assert-no-client-names.sh` is
+roster-dependent and a GitHub Actions runner has no roster: it reads
+`$OPENCLAW_CLIENT_ROSTER`, then `~/.openclaw/client-roster.txt`, then derives one from
+`~/clawd/accounts/accounts.md`, and none of those exist in CI (`accounts.md` is deliberately not
+in the repo). The gate reported success on every run of both PRs.
+
+**This is the finding, not the two redactions.** A fleet-wide privacy invariant that only fires
+on an operator box is not enforced -- it is documentation. The name will keep coming back on
+every PR that describes this incident until the check can fail in CI.
+
+### What changed
+Redacted all four references to a non-identifying description of the same incident. Comment and
+docstring prose only -- no code, no behavior. `test-qc-mandatory-fields-transcript-match.py`
+(PR #775's own lock) still passes 9/9. Re-scanned forename and surname independently: zero hits
+repo-wide; gate exits 0.
+
+### Risk
+None to runtime. Does NOT close the detection gap -- that needs a roster-independent check or a
+CI-side roster secret, which is a design decision left to the owner.
+
+
+## [v21.4.23]  -  2026-07-30  -  A real client name was committed to this fleet-wide repo, and CI structurally cannot see it
+
+### Why
+`scripts/qc-assert-no-client-names.sh` exits 1 on `origin/main` (`3b945650`): a real client's
+full name — and the same name again inside a rescue-agent slug — sits in the module docstrings of
+`23-ai-workforce-blueprint/scripts/_interview_transcript.py:6` and
+`23-ai-workforce-blueprint/scripts/test-interview-transcript-decryption.py:4`, both added
+2026-07-30 by `411cf502` (PR #772). This repo is fleet-wide and ships to every client box, so
+AGENTS.md rule N0 (no co-mingling) forbids it.
+
+The reason nobody caught it: **this gate is roster-dependent, and CI has no roster.** The script
+loads client names from `$OPENCLAW_CLIENT_ROSTER`, then `~/.openclaw/client-roster.txt`, then
+derives one structurally from `~/clawd/accounts/accounts.md`. None of those exist on a GitHub
+Actions runner, and `accounts.md` is deliberately not in the repo — so in CI the roster is empty,
+no name can match, and the `QC static checks` job reports success. It has been green on `main`
+throughout (`30567044167`, `30563428843`, `30560676911`, `30560663618`). The violation is only
+visible on an operator box, where the derived roster is real. Green CI here means "could not
+check", not "clean".
+
+### What changed
+Replaced both docstring references with a non-identifying description of the same incident
+(`a 2026-07-30 incident on a client Mac mini box / its rescue agent`). Only comment prose
+changed — no code, no behavior, no test. Re-scanned for forename and surname independently
+(the two-scan discipline, because the slug form `rescue-<first>-<last>` is lowercase-hyphenated
+and would not match a capitalized-name pattern): zero hits repo-wide. The gate now exits 0.
+
+### Risk
+None to runtime. The bump rolls all 10 version markers so boxes comparing skill versions pick up
+the redaction. Note the gate remains blind in CI for the same structural reason — this change
+removes the current leak, it does not close the detection gap; a roster-independent check (or a
+CI-side roster secret) is the separate fix.
+
+
+## [v21.4.22]  -  2026-07-30  -  G3 skill-version bump for every skill it flagged that day, not only the red one
+
+### Why
+Entry backfilled 2026-07-31. `v21.4.22` shipped to `main` at `feb92c1b` (merge `3b945650`) and
+was never given a CHANGELOG entry and never given an annotated tag. It sat between two
+documented releases with nothing recorded, which is how the version-to-tag audit below found it.
+
+The release itself: G3 (`.github/workflows/version-consistency.yml`, "skill content change
+requires skill-version.txt bump") had gone red because PR #766 changed
+`23-ai-workforce-blueprint` content without bumping that skill's `skill-version.txt`. Rather
+than bumping only the skill named in the red check, every merge from that day was diffed
+against its own parent and each skill that would independently fail the same rule was bumped:
+`23-ai-workforce-blueprint` (via `scripts/bump-version.sh v21.4.22`, so all 10 repo-wide
+markers moved in lockstep), plus the two skills that carry independent per-skill versions,
+`31-upgraded-memory-system` and `58-podcast-production-engine`.
+
+### Risk
+None to runtime — version markers and per-skill version strings only.
+
+
+## [v21.4.21]  -  2026-07-30  -  Renderer hash pin re-stamped after Land U028 (masked by the FIVE bug fixed in v21.4.20)
+
+### Why
+PR #745 (v21.4.20, "turn main green") merged to `main` at `2769b8c0` before its own follow-up
+commit could land. Fixing v21.4.20's `test_preflight.py` FIVE->CLIENT_PACKAGE bug let the
+`sync_check` job's steps run further than `main` ever had before, unmasking a stale
+`CANONICAL-RENDERER-PIN.sha256`: Land U028 (`1ff47035`) added 108 lines to `build_deck.py`
+without regenerating the renderer hash pin, so the CI step that recomputes and compares it
+was failing every run -- just never reached, because the FIVE bug always aborted the job first.
+
+Two sibling defects found the same way (`test_cc_board.py`'s stale U030 PATCH/POST contract
+assertions, and a stale `universal-sops/_content-manifest.json` after U012's six added manifest
+phases) were fixed independently in parallel by `fix/cc-board-stale-contract-tests` (#757) and
+`fix/manifest-restamp-guard` (#756) before this branch could push its own copies; those two
+files were resolved by taking the already-landed, equivalent fix rather than re-doing the work.
+
+### What changed
+Recomputed `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/CANONICAL-RENDERER-PIN.sha256`
+over the current (unchanged-by-this-PR) `build_deck.py` + `run_signature_deck.py` per the
+workflow's own prescribed remedy. No renderer behavior changed -- the pin now matches content
+that was already correct and already on `main`.
+
+A separate, pre-existing gap surfaced independently: PR #745 bumped `/version` to v21.4.20 and
+merged before an annotated tag was pushed, so G1 (annotated tag required) went red on `main`.
+Pushed the missing `v21.4.20` annotated tag directly onto the merge commit (not part of this
+version bump).
+
+### Left deliberately unfixed (pre-existing, out of scope, not introduced by this or the #745 merge)
+- **Presentation-deps install + QC hard-fail guard** -- `tests/unit/presentation-deps-gate.test.sh`'s
+  bypass-scan family calls `presentation-canonical-entry.sh` without `--scripts-dir`/`SCRIPTS_DIR`,
+  relying on autodetection U006 deliberately removed. Reproduced identically against a plain
+  pre-#745 `main` export and via `gh run list --workflow=presentation-deps-gate.yml --branch main`
+  failing on every push for weeks. (A separate branch, `fix/presentation-deps-gate-ci`, appears to
+  already be addressing this in parallel.)
+- **gate_integrity_check.py (Guard A)** -- 6 violations (2 dead symbols never wired into
+  `build_deck.py`'s enforcement path, 4 gates with no negative-test fixture) and
+  **doctrine_residual_check.py (Guard B)** -- 107 retired "master SOP Section N" citations across
+  6 role files. Both reproduce identically against a plain pre-#745 `main` export using the same
+  `af-coverage.json`. They were masked by the FIVE bug; `main`'s own `sync_check` job will now
+  reach and fail on them too. Fixing either is a substantial, unrelated body of work (rewriting 107
+  citations across 6 files; wiring or retiring 2 dead symbols; authoring 4 new negative-test
+  fixtures) and is out of scope here.
+
+### Risk
+One hash value recomputed over unchanged source files, plus the version-marker bump this change
+itself requires (G3). No renderer, gate, or credential behavior changed.
+
+
+## [v21.4.20]  -  2026-07-30  -  Turn main green: four checks had been failing on main, three of them for long enough to be treated as background noise
+
+### Why
+`main` was shipping red on four checks. Three were long-standing; the fourth (G3) regressed at
+`7c2ce02d` when PR #740 changed presentations engine code without bumping the owning skill's
+`skill-version.txt`. A permanently-red main is worse than the individual failures: it trains
+everyone to ignore CI, so the next real regression lands unnoticed. Each of these was a genuine
+defect with a deterministic fix, not a flaky test.
+
+### What changed
+
+**G3 — skill content change requires skill-version.txt bump.** PR #740 edited
+`23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (`__main__.py`,
+`gates.py`, `report.py`, plus four test files) while `23-ai-workforce-blueprint/skill-version.txt`
+stayed at `21.4.19`. Bumping the repo to v21.4.20 rolls that skill-version marker with it, which
+is what the gate asks for. Left unfixed, a box comparing skill versions would not see the changed
+skill as changed.
+
+**Presentations SOP/manifest/code lockstep (sync_check).** `test_preflight.py` died with
+`AttributeError: module 'delivery_gate' has no attribute 'FIVE'`. U019 (ratified 2026-07-26)
+renamed that constant to `CLIENT_PACKAGE` when the client package went from five files to six --
+`delivery_gate.py` even carries the comment explaining the rename was done so a future seventh
+addition would not force another rename -- but this one call site was never updated. Fixed the
+reference and corrected the now-wrong "clean 5-file package" assertion message to
+"clean client package" so it does not re-rot on the next count change.
+
+**Leadership / Task-Mode fires at task time.** Assertion (E) requires every role file whose
+section 2 is "Persona Governance Override" to also carry the concrete "How to load the persona's
+Task Mode" step, so a role is self-sufficient and naming a persona cannot substitute for loading
+its governance. 22 role files -- the entire `presentations` department -- had the section 2
+heading with no load step. Inserted the canonical block (verbatim from the passing exemplar
+`_brainstorming-buddy-template.md`) into all 22. No other department was affected.
+
+**QC static invariants.** `test-how-to-use-docs.sh` reported the department guides stale against
+their renderer. Regenerated with `generate_how_to_use_docs.py`; only the `presentations` guide had
+actually drifted, which is consistent with the role-file gap above.
+
+Role-file edits invalidate stored content hashes, so `_index.json` was re-stamped with
+`hash-content-manifest.py` in the same change.
+
+### Risk
+One functional line (`delivery_gate.FIVE` -> `delivery_gate.CLIENT_PACKAGE`, in a test), one
+assertion string, 22 documentation blocks inserted verbatim from an existing passing exemplar, one
+regenerated derived guide, and the content-hash restamp those edits require. No engine behaviour,
+no gate thresholds, no credentials. All four checks verified green locally before push:
+`test-how-to-use-docs.sh` 7/0, `persona-task-mode-wiring.test.sh` 7/0, `sync_check.py` rc=0
+(IN SYNC), `test_preflight.py` ALL PREFLIGHT TESTS PASSED.
+
+
+## [Unreleased]  -  ocr_readback gate blocks close() instead of only warning
+
+**Presentations engine: the `ocr_readback` gate now blocks `close()` instead of only warning.**
+`presentation_job/gates.py` carried `ocr_readback` inside `WARN_ONLY_GATES`, and every one of
+`_ocr_gate`'s failure branches set `"warn_only": True`. `phases.py`'s `close()` routes any gate
+result carrying `warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of
+`failures` — so a job with zero OCR-verified slides (no sidecars, an unchecked engine, or a
+mismatched readback) could reach `DONE`. `MASTER-SPEC-2026-07-25.md` §7.4 and decision D10 are
+unambiguous: *"An unchecked slide-content readback blocks the job"* and *"[i]t is the one gate
+not waivable at all... no waiver can make it [a pass]."* U013 had staged both `qc` and
+`ocr_readback` into warn-mode together, reasoning (correctly, at the time) that neither gate had
+a producing phase in the 32-phase manifest and a gate with no producer fails every job on day
+one. That reasoning still holds for `qc` — no phase writes `final_qc_report.json` — but it does
+not license a *permanent* silent pass on the one check the spec names as the department's floor
+against "the check that reads a finished slide and is allowed to switch itself off"
+(source audit Cause 4).
+
+Fixed: `WARN_ONLY_GATES` is now `("qc",)` — `ocr_readback` was removed — and `_ocr_gate` sets
+`warn_only: False` on every branch (pass and fail), so `close()`'s existing fail-closed path
+(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers a
+missing, unchecked, or mismatched OCR sidecar exactly like the other four hard gates.
+`ocr_readback` stays in `NON_WAIVABLE_GATES` unchanged — this fix does not touch waiver handling
+at all.
+
+**Known, accepted risk, disclosed rather than hidden:** measured this session, the OCR engine
+(`pytesseract`) is not importable under the interpreter this pipeline actually runs
+(`/opt/homebrew/opt/python@3.14/bin/python3.14` — confirmed via `prompt_gate._ocr_engine_available()`
+returning `(None, None)`), so on this operator box every real render will produce `checked: false`
+sidecars and this gate will block every close until that binding is installed for that
+interpreter. That is the fail-closed behaviour §7.4's fourth bullet asks for in spirit (fail on
+a missing dependency rather than silently pass), though the "minute zero, before any paid
+generation" half of that bullet is a separate, larger unit: `presentation_job/preflight_deps.py`
+already contains a warn-mode dependency probe (`probe_ocr`, from a prior unit) but it is not
+wired into engine start anywhere in `phases.py`. Wiring it — and deciding whether to flip it to
+fail-closed — is intentionally left to that unit, not folded in here silently.
+
+
+## [Unreleased]  -  2026-07-30  -  U069: close report.py's module-level `dispatch()` shell-injection bypass (two more sites, not the one named)
+
+U069's merge (#734) fixed `Reporter._dispatch()` in `presentation_job/report.py` — tagged `# U069:`,
+tokenising `PRESENTATION_NOTIFY_CMD` with `shlex.split` before `subprocess.run(argv, shell=False, ...)`.
+A few lines **above** it, a module-level `dispatch(chat_id, kind, message)` function, reading the same
+`PRESENTATION_NOTIFY_CMD` environment variable, was left calling `subprocess.run(cmd, shell=True, ...)`
+unchanged. `presentation_job/watchdog.py` imports and calls that function directly
+(`from .report import dispatch`), so the watchdog's stall-notification path stayed exploitable even
+though the class method next to it was closed. Two independent QC passes reported this file clean
+because the review brief that drove them named only `phases.py` and `heal.py` — the two files U069's
+`heal.py` bypass touched — not `report.py`, so neither pass ever grepped it.
+
+A full-package grep for executable `shell=True` (not just the named files) turned up a **third**,
+previously unknown site: `presentation_job/__main__.py::cmd_sweep_undeliverable` held its own,
+independently hand-rolled `subprocess.run(cmd, shell=True, ...)` over the identical
+`PRESENTATION_NOTIFY_CMD` value — a third parallel implementation of the same transport, not called from
+either `report.dispatch()` or `Reporter._dispatch()`.
+
+Closed by consolidation rather than a second (or fourth) parallel fix: `report.dispatch()` is now the
+**single** implementation of the `PRESENTATION_NOTIFY_CMD` transport in the package — tokenise with
+`shlex.split`, `subprocess.run(argv, shell=False, ...)`, raise `ValueError` on an unparseable command
+(same refuse-loud behaviour U069 established, matching the existing precedent in this file rather than
+inventing new error semantics). `Reporter._dispatch()` now delegates to it instead of re-running its own
+copy of the subprocess call; `watchdog.py`'s import is unchanged (it already called the module-level
+function, which is now fixed at the source); `__main__.cmd_sweep_undeliverable` now imports and calls
+`report.dispatch()` instead of hand-rolling a third copy. A subsequent full-package grep for executable
+`shell=True` (excluding comments/docstrings) returns zero matches.
+
+Proof: `tests/test_watchdog.py::TestU069ModuleDispatchBypassClosed` (3 tests) and
+`tests/test_heal.py::TestSweep::test_injection_blocked` drive a `PRESENTATION_NOTIFY_CMD` payload
+containing a shell metacharacter and a `$(touch ...)` command substitution through `report.dispatch()`
+directly, through `watchdog.py`'s call site (with a `subprocess.run` spy proving the argv reaching the OS
+is a tokenised list, not a shell string), and through `cmd_sweep_undeliverable`'s call site; each asserts
+the sentinel file is never created while the harmless `echo` still runs (mechanical success, `rc == 0`).
+Bled: reverting `dispatch()` to `subprocess.run(cmd, shell=True, ...)` makes all four fail with the
+sentinel present; restoring the fix makes them pass again. One pre-existing test,
+`tests/test_watchdog.py::test_one_notification_per_scan`, itself relied on shell interpretation of a raw
+`cat >> {log}` redirect and would otherwise have become a new failure under `shell=False`; it now points
+`PRESENTATION_NOTIFY_CMD` at a real script (the same pattern already used throughout
+`tests/test_report.py`), preserving its original intent (exactly one notification per scan).
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): 15 pre-existing failing test names identical before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`); 4 new tests added, all passing;
+zero new failures. Note: `reportlab` **is** installed in this environment (v4.4.10, verified via
+`pip show reportlab`), contradicting this ticket's brief that it was absent — `tests/test_producers.py`
+collected and ran its full 17 tests (all passing, both before and after) rather than being excluded.
+
+## [Unreleased]  -  Close the self-issuable waiver hole: intake_field quotes were never checked against the client's own words
+
+`presentation_job/waivers.py::validate_waiver()` had exactly one enabled waiver path -- `source:
+"intake_field"` -- and it only checked that the named key existed in `intake.json`. It never compared
+`client_request_quote` against that key's *value*. The correctly-built path, `source: "transcript"`,
+does a real substring match against recorded client turns, but is hard-disabled at
+`TRANSCRIPT_WAIVERS_ACCEPTED = False`, so the only path anyone could actually use was the unprotected
+one. Reproduced live: a fabricated quote nobody ever said, attached to real intake field `"topic"`, was
+accepted by `validate_waiver()`, and a synthetic job closed with `terminal: DONE`, exit 0, gate recorded
+`"state": "waived"` -- while the `teleprompter` gate it was supposedly excusing had never actually passed.
+This is the self-issued-waiver failure the programme's own fix plan named by number: if the engine
+accepts any `waiver.json` it finds, the agent writes its own permission slip.
+
+Fix: the `intake_field` path now requires (a) the cited field's value to be a string -- a boolean/flag
+field carries no client words to check a quote against, so citing one is now rejected outright -- and
+(b) `client_request_quote`, normalised for case and whitespace (`_norm`, already used by the transcript
+path), to be a genuine substring of that value. A quote the client did not write is rejected with a
+plain-language error naming the field: `"waiver for 'X' quotes text that does not appear in intake field
+'Y'. Recorded value of 'Y' does not contain the quoted words -- the quote must be the client's own words
+as recorded in intake.json, not text the agent supplied."`
+
+`TRANSCRIPT_WAIVERS_ACCEPTED` stays `False` -- a decision, not an oversight, now recorded directly above
+the flag in `waivers.py`. Its substring match is correct and is not why it is off; it stays off because
+of two problems this change does not touch: no requester identity on the route script that produces the
+transcript, and the transcript living in a database, which breaks the offline-authoritative rule (audit
+D3:1016-1019). Flipping it is a separate decision for whenever both close.
+
+`tests/test_waivers.py::test_valid_intake_waiver` cited a boolean intake field (`{"no_teleprompter":
+True}`) with an unrelated quote -- it never exercised quote content, which is why it never caught this.
+Rewritten to use a string field the quote is genuinely drawn from, plus new tests: a case/whitespace-
+insensitive match, a forged quote against a real field (the reproduced defect, rejected), and a non-string
+field value (rejected). `tests/test_gates.py::test_valid_intake_waiver_loads` had the same shape of
+defect (`{"skip_qc": True}` with an unrelated quote) and was updated the same way.
+
+Bleed test (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`): forged quote
+against a real field -> `WaiverError`, plain-language, names the field. Verbatim quote from the same
+field -> accepted. Reverting the fix -> both new rejection tests fail with "DID NOT RAISE," reproducing
+the original hole; 26 of 28 waiver/gate tests unaffected either way. Driven end to end with the real
+`presentation_job.py --close` entry point against a synthetic run dir with a legitimate `script`,
+`prompt_floor`, and `ghl_upload` pass and only `teleprompter` depending on the forged waiver: pre-fix,
+exit 0, `terminal: DONE`; post-fix, exit 9 (`EXIT_WAIVER_INVALID`), stderr `FATAL: waiver for
+'teleprompter' quotes text that does not appear in intake field 'topic' ...`, `terminal` never set.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`; `reportlab` was present in this environment so `tests/test_producers.py`
+collected and is included): 15 failed / 446 passed / 13 skipped. `diff` of sorted failing-test names
+against the pre-change baseline (same worktree, before this edit) is empty -- zero new failures, same 15
+pre-existing names (`test_cc_board.py`, `test_preflight.py`, `tests/test_resume.py`), none touching
+waivers. No version bump -- release PR #738 is open.
+
+
+## [v21.4.19]  -  2026-07-30  -  install.sh still told the operator the retired Podbean broker was "PREFERRED" for client boxes
+
+### Why
+v21.4.18 corrected the Skill 58 docs that pointed operators and agents at the abandoned Podbean
+credential broker, but it did not reach `install.sh`. The provisioning path itself -- the thing an
+operator actually reads while standing up a client box -- still labelled the broker pair
+`OPENCLAW_PODBEAN_BROKER_URL` / `_TOKEN` as "PREFERRED for client boxes" and listed the
+publish-proxy pair third, below the operator-only legacy `client_id`/`client_secret` pair. An
+operator following that comment provisions a box into a mode that cannot publish: the broker
+workflow is not deployed on the live n8n instance, so the box falls through to local mode and
+hard-stops demanding a Podbean app secret that must never sit on a client box. That is the same
+defect v21.4.18 fixed, surviving in the one file most likely to be followed literally.
+
+### What changed
+`install.sh` only. Four edits, all comment/message text -- no control flow, no injection logic:
+
+- Operator setup comment block: publish-proxy is now listed FIRST and named the fleet default,
+  with the real webhook URL and a note that n8n performs the entire publish so the box holds no
+  Podbean credential and needs no n8n of its own. The broker pair is demoted to "UNUSED FALLBACK"
+  with an explicit "do NOT import a broker workflow to satisfy it". The legacy app-credential pair
+  is marked operator-own-box only, "NEVER set these on a client box".
+- The broker injection block's header comment: retitled from "PREFERRED for client boxes" to
+  "UNUSED FALLBACK", and now states that broker mode engages only when the publish-proxy pair is
+  absent, and that setting the broker pair without a deployed broker workflow fails at publish time.
+- The `injected_count == 0` operator note: now names `OPENCLAW_PODBEAN_PUBLISH_URL` /
+  `_TOKEN` as the fleet default plus `OPENCLAW_PODCAST_CLIENT_LAST_NAME` /
+  `_EMAIL` (the roster identity tuple Step 15 requires and which the old note never mentioned).
+- The half-configured publish-proxy warning: no longer says the box "falls back to broker/local
+  mode" as though that were serviceable. It now states that neither fallback can publish on a
+  client box and that Step 15 will hard-stop until both values are set.
+
+The five variables a client box needs for Step 15 are unchanged and are documented in
+`58-podcast-production-engine/config/n8n/README.md`: `PODBEAN_PUBLISH_WEBHOOK_URL`,
+`PODBEAN_PUBLISH_TOKEN`, `PODBEAN_PODCAST_ID`, `PODCAST_CLIENT_LAST_NAME`, `PODCAST_CLIENT_EMAIL`.
+
+### Risk
+Comment and operator-message text only. `bash -n install.sh` passes. No node edits, no credential
+touches, no n8n API calls, no change to the injection blocks' conditions or to publish behaviour.
+The publish path was already correct in code and is untouched.
+
+
+## [v21.4.18]  -  2026-07-30  -  Skill 58 Step 15 publish docs contradicted the code; fixed the docs, not the code
+
+### Why
+A client's assistant read stale Skill 58 (Podcast Production Engine) docs that still described the
+credential broker as the fleet default and instructed a manual n8n workflow import. She concluded the
+client needed her own n8n instance and needed BlackCEO's Podbean OAuth app credentials, and escalated a
+blocker that does not exist. The code (`podbean_publish.sh`, precedence PROXY > BROKER > LOCAL, landed at
+tag v20.0.67) was already correct; the docs were not.
+
+### What changed
+- `58-podcast-production-engine/scripts/podbean_publish.sh`: the `PODBEAN_CLIENT_ID is NOT SET` die
+  message named only the broker and the local Podbean app secret, so a box simply missing the proxy pair
+  was told to go deploy a broker. It now names `PODBEAN_PUBLISH_WEBHOOK_URL` + `PODBEAN_PUBLISH_TOKEN`
+  first as the fleet default, the broker as fallback, and local as operator-own-box-only. Message text
+  only -- no control flow or precedence change.
+- `58-podcast-production-engine/SKILL.md`: the credentials-section Podbean bullet said "Broker mode (fleet
+  default)", directly contradicting Step 15's own correct statement (line ~321) that publish-proxy is the
+  fleet default. Rewritten to lead with proxy mode and its five variables, broker as fallback (flagged as
+  an unused fallback not deployed on the live instance), local as operator-own-box-only, and the explicit
+  selection rule (proxy if the publish webhook URL and token both resolve, else broker if the broker pair
+  both resolve, else local). Frontmatter `version:` bumped 0.1.20 -> 0.1.21; `skill-version.txt` bumped to
+  match.
+- `58-podcast-production-engine/config/n8n/README.md`: added a top banner stating publish-proxy to the
+  live `/webhook/podbean-publish` workflow is the current and only live path, that the broker in this
+  directory is an unused fallback that is not deployed and must not be imported, and that no client needs
+  their own n8n instance or Podbean OAuth app credentials. Retitled and reframed the "Import" section as
+  fallback-only, not a required onboarding step. Fixed the "Skill side" section's stale "broker mode ...
+  fleet default" claim to state the real PROXY > BROKER > LOCAL precedence. Added a new "Provisioning a
+  client box for Step 15 publish (proxy mode)" section listing the five box variables, the operator-side
+  `OPENCLAW_*` injection variables, and the `--dry-run` standing-check reachability probe as the no-spend
+  verification step. Also removed the pinned, already-stale `versionId` / `activeVersionId` capture-
+  metadata pointer for the live n8n workflow (`TkL0rn2SH3q32SeB`) in favor of stating the graph shape (51
+  nodes / 35 connections / active), re-verified live on 2026-07-30, with the reason a version pointer is
+  deliberately never pinned here again (it changes on every live edit and would manufacture false audit
+  drift).
+- Repo version bumped v21.4.17 -> v21.4.18 via `scripts/bump-version.sh` (all 10 tracked markers verified
+  in agreement).
+
+### Risk
+Documentation and one error-message string only. No change to publish-path behavior, precedence, or
+control flow; `podbean_publish.sh` still passes `bash -n`.
+
+
+## [v21.4.17]  -  2026-07-30  -  Un-freeze update-skills.sh after fourteen releases of drift
+
+`update-skills.sh` carried `ONBOARDING_VERSION="v21.4.2"` while `/version`, `install.sh` and every other
+marker had moved to v21.4.16. Fourteen releases of drift, and `scripts/bump-version.sh --check` reported
+`DRIFT DETECTED` throughout without anyone acting on it.
+
+**Root cause, and it was not neglect.** `.githooks/pre-commit` rule 4 blocks any `.sh` that references
+`secrets/.env` without containing a `chmod 600` call. `update-skills.sh` references the path (it computes
+`_U6B_OC_SECRETS_ENV` and hands it to `wire_ghl_funnel_catalog`) but contained no `chmod 600` of its own,
+so **every commit touching the file was rejected** -- including a version bump. The file could not be
+version-stamped without also satisfying a rule it appeared to violate.
+
+**The credential handling was never actually broken.** The real writes live in
+`shared-utils/provision-persona-index.sh`, which `chmod 600`s correctly on `touch` and again after each
+append. The hook's check is per-file and cannot see that delegation.
+
+Fixed truthfully rather than worked around: a defensive
+`[ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600` at the point the path is computed. That also tightens a
+secrets file which may ALREADY exist with loose permissions from an older install -- something nothing on
+this code path previously did. The hook was **not** bypassed and `--no-verify` was **not** used; it
+reported `Pre-commit QC: all gates passed.`
+
+All 10 version markers verified in agreement at v21.4.17 via `scripts/bump-version.sh --check`, including
+`README.md` (both the repo-version line and the `Current Version:` line), `cc-compat.json`,
+`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `23-ai-workforce-blueprint/SKILL.md`, `skill-version.txt` and
+`templates/role-library/_index.json`.
+
+**Also released here** -- fifteen commits had accumulated on `main` since the v21.4.16 tag with no version
+roll: the manifest-stamp re-cut (#729), `MIN_MANIFEST_VERSION` 30 -> 31 (#731), the woken
+deliverable/producer guard (#732), U069's shell-injection fix and its `heal.py` bypass (#734), U015's
+`sys.modules` restore (#737), and the interview rate-limiter session-key fix (#736). The U015 and U069
+entries below were written as `[Unreleased]` at merge time and are folded into this release.
+
+**Known, deliberately NOT closed here:** `38-conversational-ai-system/INSTALL.md` still reports stale
+self-counts (45 vs 51 protocols, 22 vs 25 references, script range `00`-`30` vs `00`-`33`) and
+`SKILL.md:29` still says "the rest of the 32 protocols" while `SKILL.md:91` correctly says 51. The
+bump-time advisory that surfaces this is `ADVISORY ONLY -- it never changes the exit code`, so it does not
+block a release. It is fixed in a separate change that also makes the guard a contradiction scan and
+makes `--check` exit non-zero, so the drift can no longer ship silently.
+
+
+## [v21.4.17]  -  2026-07-30  -  U015: stop TestModuleBoundaries from corrupting sys.modules for the rest of the suite
+
+`tests/test_presentation_job.py::TestModuleBoundaries::test_import_state_does_not_import_phases` deleted
+every `presentation_job.*` entry from `sys.modules` to force a clean re-import, but never restored them
+afterward. Any later test in the same pytest session that imports `presentation_job.report`, `.phases`,
+etc. fresh got a SECOND, distinct module object; a `Reporter` class captured at an earlier module
+top-level import still pointed at the ORIGINAL module's globals, so a monkeypatch applied to the new
+object (e.g. `Test8MessageBound` patching `_parse_minutes` in `tests/test_report.py`) silently did nothing
+to the code path actually exercised. This is exactly the shape of defect that keeps a full-suite run red
+while every fixer who reruns only the file they touched sees green — `tests/test_report.py::Test8MessageBound::test_message_bound`
+had been dismissed as an ordering flake that "passes in isolation."
+
+Fix (cherry-picked from `unit/U015-announce-heal-escalate`, commit `798a003b`, onto current `main` --
+that branch was 118 commits behind and its full diff did not apply cleanly, so only this one test's
+payload was hand-threaded past `TestU069ShellInjectionFix`, which did not exist when U015 was written):
+snapshot the `presentation_job.*` entries before deleting them, wrap the existing assertion in
+try/finally, and restore the snapshot afterward regardless of outcome. The test's own purpose (assert
+state.py does not import phases.py) is unchanged.
+
+Verified (run from `23-ai-workforce-blueprint/templates/role-library/presentations/scripts` with
+`python3 -m pytest -q`): before this fix, full suite = 16 failed / 442 passed / 13 skipped, including
+`Test8MessageBound::test_message_bound` (`AssertionError: expected 6-20 messages, got 3 (throttled=63)`)
+-- confirmed failing in the full suite and passing in isolation. After this fix: 15 failed / 443 passed /
+13 skipped; `comm` diff of sorted failing-test names shows zero new failures and exactly one name
+disappeared, `Test8MessageBound::test_message_bound`. The remaining 15 failures (`test_cc_board.py`,
+`test_preflight.py`, `tests/test_resume.py`) are pre-existing and unrelated to this change. Bleed test:
+reverting the try/finally reproduced the original failure; restoring it turned the suite green again.
+No version bump -- PRs #733/#735 already contend over that.
+
+
+## [v21.4.17]  -  2026-07-30  -  U069: shell-injection fix landed + a live heal.py bypass closed
+
+U069's original fix (tokenise `executor.cmd` with `shlex.split` before substituting `{run_dir}`, then
+`subprocess.run(argv, shell=False)`, in `presentation_job/phases.py::_run_script_phase`) was correctly
+**declined at the merge gate**: `presentation_job/heal.py`'s retry rungs — `rung2_regenerate` (the
+regeneration retry after a phase reports success but its declared artifact is missing) and
+`rung3_alt_route` (the alternate-command fallback after the primary attempts are exhausted) —
+independently re-derived the command with `cmd.replace("{run_dir}", str(engine.run_dir))` and ran it via
+`subprocess.run(cmd, shell=True, ...)`. That is the exact vulnerable pattern U069 removed from the primary
+path, duplicated a second time and left untouched, so any phase that healed through rung 2 or rung 3 was
+still exploitable via a `run_dir` or a manifest `executor.cmd`/`alt_cmd` crafted with shell metacharacters
+— a fix with a live bypass, which reads as closed but is not.
+
+Closed by extracting the tokenise-first/substitute-second logic into a single method,
+`Engine._build_executor_argv()`, and routing `_run_script_phase`, `rung2_regenerate`, and
+`rung3_alt_route` all through it. There is now exactly one place in the package that turns an
+`executor.cmd`/`alt_cmd` string into an argv; the two heal rungs can no longer drift back into
+re-implementing (and re-breaking) the fix independently. `PhaseExecutorContractError` (an unparseable
+`executor.cmd`) is raised from that single builder for every call site, including the heal rungs, instead
+of only the primary path.
+
+Proof: `tests/test_heal.py::TestU069HealBypassClosed` drives real injection payloads — a `;`-chained
+manifest `executor.cmd`, a `;`-chained `alt_cmd`, and a `run_dir` whose directory *name* contains a shell
+command-substitution payload (`$(touch ...)`) — through `rung2_regenerate` and `rung3_alt_route` directly,
+and asserts the injected side effect (a sentinel file) never appears, while the harmless part of the
+command (`echo`) still runs and returns success. One test drives the identical `run_dir` payload through
+both the primary path (`_run_script_phase`) and the heal path (`rung2_regenerate`) in the same test to
+prove they now share one safety guarantee, not two that can diverge.
+
+Full suite (`23-ai-workforce-blueprint/templates/role-library/presentations/scripts`, run with
+`python3 -m pytest -q`): identical 16 pre-existing failing test names before and after (unrelated to this
+change — `test_cc_board.py`, `test_preflight.py`, `test_report.py`, `tests/test_resume.py`); 7 new tests
+added (3 from U069's original commit, 4 heal-bypass-closure tests), all passing. Zero new failures.
+
+
+## [v21.4.16]  -  2026-07-29  -  Batch of 3 units (U008, U073, U028)
+
+**Backfilled 2026-07-30.** This tag shipped with no CHANGELOG entry at all, which is a live Guard G2
+violation (`every annotated tag must have a CHANGELOG entry`) and the cause of the
+`WARNING: version (v21.4.16) != CHANGELOG.md top entry (v21.4.15)` that the pre-commit hook printed on
+every commit to this repo for a day without anyone acting on it. Reconstructed from the annotated tag's
+own message rather than from memory.
+
+- **U008** -- merge the 22 duplicated role folders down to one each. PASS 8.80.
+- **U073** -- make the repository's commit hook actually run. PASS, gate 8.6.
+- **U028** -- generalise checkpoint and resume; checkpoint before the paid call. PASS on round 9. Its
+  eight prior failures were caused by a **spec defect, not by the code**: the card declared
+  `tests/test_checkpoint.py` as NEW when it already existed on `main` from U014, so each attempt
+  faithfully followed the instruction and silently deleted U014's coverage for seven validator functions,
+  with no merge conflict to warn anyone. The round-9 repair merges instead of overwriting and the card now
+  reads MODIFY.
+
+
+## [v21.4.15]  -  2026-07-29  -  Reconcile Presentations department: add 2 missing role-library files (PR #728) + full CI-green cascade
+
+Two role-library files existed only as SOP mirrors, not as their own role-library docs:
+`image-grounding-steward.md` and `representation-casting-director.md` (department: presentations). Added both
+under `23-ai-workforce-blueprint/templates/role-library/presentations/`, registered them in `_index.json`
+(`manifest_version` 30 -> 31 in `universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json`, each role
+carrying `owns_phase: null`), and ran `register-library-additions.py --apply` to restamp `_index.json`.
+
+Adding two roles to a version-tracked skill directory (`23-ai-workforce-blueprint/`) obliged the full cascade
+CI itself requires — none of it was a new feature, all of it was closing gaps the PR's content change exposed:
+
+1. **G3 (skill-version.txt bump)** — `23-ai-workforce-blueprint/skill-version.txt` had not moved alongside the
+   library content change. Rolled via `scripts/bump-version.sh v21.4.15` (this branch was rebased onto `main`'s
+   concurrent `v21.4.13`/`v21.4.14` ripples mid-review — see the merge commit — so the PR's own version landed one
+   patch later than originally cut), which also rippled all 10 repo-wide version markers plus the
+   06-ghl-install-pages G3-lockstep markers (browser-manager version strings and its own `skill-version.txt`) in
+   the same run.
+2. **Skill-23 provisioning tests — count agreement (T7) + canonical-role folders (T1)** — the presentations
+   roster file (`23-ai-workforce-blueprint/suggested-roles/presentations-suggested-roles.md`) still declared
+   32 roles; `_index.json` now declared 34. Added roster entries #32/#33 for the two new roles (slug, what-it-does,
+   SOPs-to-build, role type) so roster == index == instantiated-folder count agree at 34.
+3. **Leadership / Task-Mode (E: ROLE-FILES-SELF-SUFFICIENT)** — both new role files carried a
+   "## 2. Persona Governance Override" section without the concrete Task-Mode load step every sibling role file
+   carries. Added the same load-step blockquote (persona search -> Section 4 Agent Governance Framework ->
+   build-to-standard) used by every other presentations role file.
+4. **Content-hash manifest drift** — editing the two role files after they were first hashed left `_index.json`'s
+   stored `content_sha` stale. Re-ran `scripts/hash-content-manifest.py` to restamp.
+5. **universal-sops content manifest** — `universal-sops/_content-manifest.json` was already stale against five
+   files (including `PIPELINE-MANIFEST.json`) before this PR touched it further; ran
+   `scripts/hash-universal-sops-manifest.py` (the real restamp mechanism) to regenerate it, closing that
+   pre-existing drift as a side effect of the PR's own manifest edit.
+6. **how-to-use-this-department guide** — the presentations department's owner-facing guide was stale against
+   the new 34-role roster. Regenerated via `generate_how_to_use_docs.py` (every other department's guide
+   regenerated byte-identical; only presentations changed).
+
+Confirmed via a parallel `origin/main` worktree that two CI failures are pre-existing and out of this PR's
+scope, not introduced here: (a) `update-skills.sh`'s `ONBOARDING_VERSION` has been stuck at `v21.4.2` since that
+version — the file writes to `secrets/.env` with no `chmod 600` call anywhere in it, so the repo's own
+pre-commit hook (chmod-600 coverage gate) blocks any commit that touches the file, and no PR since v21.4.2 has
+rolled it; this repo-wide "Verify all version markers agree" gate and the artifact-gate VERSION-MARKERS
+dimension it feeds (surfacing inside `qc-assert-repo-consistency.py`'s T1/T8 fixtures and the QC static
+invariants job) fail identically on `main`. (b) `test_preflight.py`'s `test_delivery_gate()` throws
+`AttributeError: module 'delivery_gate' has no attribute 'FIVE'` identically on `main`, unrelated to the
+presentations role-library change (the `sync_check.py` step of the same CI job passes cleanly, IN SYNC). Neither
+was touched here.
+
+Touches: `23-ai-workforce-blueprint/templates/role-library/presentations/{image-grounding-steward.md,
+representation-casting-director.md}`, `23-ai-workforce-blueprint/templates/role-library/_index.json`,
+`23-ai-workforce-blueprint/templates/role-library/presentations/how-to-use-this-department.md`,
+`23-ai-workforce-blueprint/suggested-roles/presentations-suggested-roles.md`,
+`universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json`, `universal-sops/_content-manifest.json`,
+plus the version-bump ripple via `scripts/bump-version.sh` (`version`, `cc-compat.json`, `README.md`,
+`DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `install.sh`, `23-ai-workforce-blueprint/skill-version.txt`,
+`23-ai-workforce-blueprint/SKILL.md`, `06-ghl-install-pages/SKILL.md`, `06-ghl-install-pages/skill-version.txt`,
+`06-ghl-install-pages/tools/browser_manager.{py,sh}`, `scripts/agent-browser-reaper.sh`,
+`scripts/guard-agent-browser-managed.sh`). `update-skills.sh` deliberately EXCLUDED from this commit — see (a)
+above; its marker remains at `v21.4.2`, unchanged by this release, as it has been since that version.
+
+## [v21.4.14]  -  2026-07-29  -  Ripple v21.4.14: batch of 1 unit (U024)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`ba79dd37`) already carries.
+
+## [v21.4.13]  -  2026-07-29  -  Ripple v21.4.13: batch of 2 units (U010, U058)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`0e5550d8`) already carries.
+
+## [v21.4.12]  -  2026-07-29  -  Ripple v21.4.12: batch verification (U006, U027, U070 confirmed) + ticket corrections
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`0da9100f`) already carries.
+
+## [v21.4.11]  -  2026-07-29  -  Ripple v21.4.11: U019
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`4ae4129f`) already carries.
+
+## [v21.4.10]  -  2026-07-29  -  Ripple v21.4.10: 4-unit batch (U006, U027, U049, U070)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`fefaf8ca`) already carries.
+
+## [v21.4.9]  -  2026-07-29  -  Ripple v21.4.9: U013
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`abd29891`) already carries.
+
+## [v21.4.8]  -  2026-07-29  -  Ripple v21.4.8: 7-unit batch (U011, U015, U023, U045, U055, U056, U057)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`7aa04398`) already carries.
+
+## [v21.4.7]  -  2026-07-29  -  Ripple v21.4.7: 3-unit batch (U005, U004, U042) + 5 ticket back-fills (U003, U020, U025, U046, U059)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`630690fd`) already carries.
+
+## [v21.4.6]  -  2026-07-29  -  Ripple v21.4.6: U054
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`020f7f7e`) already carries.
+
+## [v21.4.5]  -  2026-07-28  -  Ripple v21.4.5: batch of 3 units (U001, U010, U012)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`ad841747`) already carries.
+
+## [v21.4.4]  -  2026-07-28  -  Land U053: Step6 QC system integrity — merge + ticket + digest
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`862c4315`) already carries.
+
+## [v21.4.3]  -  2026-07-28  -  Ripple v21.4.3: batch of 7 units (U045, U055, U056, U021, U026, U047, U048)
+
+Entry added retroactively: the tag was cut without one, which failed the G2 gate ("every v11+ annotated tag
+must have a CHANGELOG entry") on every subsequent pull request. No code change accompanies this entry beyond
+what the tag's own commit (`0a1d8301`) already carries.
+
 ## [v21.4.2]  -  2026-07-28  -  CI GREEN: four stale main-branch gates fixed (syntax, half-add SOPs, manifest restamp, sync drift)
 
 Five checks were failing on `main` (Library lockstep appeared twice across recent runs); all pre-dated and were unrelated to

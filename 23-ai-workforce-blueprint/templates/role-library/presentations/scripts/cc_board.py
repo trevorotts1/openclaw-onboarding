@@ -121,6 +121,41 @@ _PERSONA = "Director of Presentations"
 # (see the if status in _CERT_BEARING_STATUSES block below) — one constant, one
 # truth, so the two can never drift apart.
 _CERT_BEARING_STATUSES = frozenset({"review", "done"})
+_REQUESTER_ENV_KEYS = (
+    "PRESENTATION_REQUESTER_CHAT_ID",
+    "ROUTE_PRES_REQUESTER_CHAT_ID",
+    "MC_ROUTE_REQUESTER_CHAT_ID",
+)
+
+
+def resolve_requester(run_dir, env: Optional[dict] = None) -> tuple:
+    """Resolve (chat_id, channel) for the client who asked for this deck.
+
+    Order: intake.json (working/copy/intake.json -> requester_chat_id) first, because
+    it is per-deck and durable; then the env keys above, which is how the CEO's route
+    helper and the orchestrator pass it today. Returns ("", "") when nothing resolves —
+    an operator-initiated build legitimately has no client requester.
+    Never raises: an unreadable/absent intake.json is treated as "not declared".
+    """
+    src = env if env is not None else os.environ
+    chat = ""
+    channel = ""
+    try:
+        obj = json.loads((Path(run_dir) / "working" / "copy" / "intake.json").read_text())
+        if isinstance(obj, dict):
+            chat = str(obj.get("requester_chat_id") or "").strip()
+            channel = str(obj.get("requester_channel") or "").strip()
+    except Exception:  # noqa: BLE001 — absent/unreadable intake is an expected state
+        pass
+    if not chat:
+        for key in _REQUESTER_ENV_KEYS:
+            val = str(src.get(key) or "").strip()
+            if val:
+                chat = val
+                break
+    if chat and not channel:
+        channel = str(src.get("PRESENTATION_REQUESTER_CHANNEL") or "").strip() or "telegram"
+    return (chat, channel) if chat else ("", "")
 
 # Authoritative Command Center TaskStatus enum — the 10 values of UpdateTaskSchema
 # in the CC repo src/lib/validation.ts. Kept here as the single source of truth on
@@ -467,6 +502,8 @@ def ingest_deck_task(
     description: str,
     priority: str = "medium",
     env: Optional[dict] = None,
+    requester_chat_id: Optional[str] = None,
+    requester_channel: Optional[str] = None,
 ) -> Optional[str]:
     """Ingest (or idempotently re-fetch) a deck task on the CC board.
 
@@ -510,6 +547,14 @@ def ingest_deck_task(
         "external_session_id": source_ref,
         "idempotency_key": idempotency_key,
     }
+
+    rcid = (requester_chat_id or "").strip()
+    rchan = (requester_channel or "").strip()
+    if not rcid:
+        rcid, rchan = resolve_requester(run_dir, env)
+    if rcid:
+        payload["requester_chat_id"] = rcid
+        payload["requester_channel"] = rchan or "telegram"
 
     url = f"{cfg['base_url']}/api/tasks/ingest"
     try:

@@ -10,9 +10,12 @@ read sad", "would this person be in this room", "is the hair authentic" — but 
 PROMPT-SIDE REQUIREMENT is fully deterministic: the required token string must be
 PRESENT in the people/scene prompt (or the required beat tag must be present, in
 slide order, in the copy). This script enforces that mechanical half as a binary
-auto-fail. The vision VERDICT half stays subjective but is LOGGED to
-working/qc/vision_qc_log.json (already required non-empty by AF-NO-VISION-QC) so it
-is auditable. This is exactly how the Slide-00 binary-auto-fail principle is kept
+auto-fail. The vision VERDICT half stays subjective but is LOGGED to the per-slide rows of
+working/qc/image_qc_report.json, which AF-IMAGE-QC-VISION requires to carry a declared vision
+engine and a per-slide observation for EVERY rendered slide (build_deck.check_image_qc_vision
++ _image_qc_report_defects). AF-NO-VISION-QC, which this docstring previously cited, was
+RETIRED 2026-07-26: it was never implemented, and working/qc/vision_qc_log.json is written and
+read by nothing in this pipeline. This is exactly how the Slide-00 binary-auto-fail principle is kept
 true for perceptual engines: the GATEABLE half is the mechanical prompt-token
 assertion; vision QC is the checker for the perceptual half.
 
@@ -52,7 +55,7 @@ CODES ENFORCED HERE (all registered in SOP-SLIDE-00 Section 8b + PIPELINE-MANIFE
 
 The verdict-half codes (AF-FACE-MOOD, AF-WORLD-IMAGE-MISMATCH/world-grounding,
 AF-LIGHT-SKINTONE, AF-HAIR-INAUTHENTIC vision verdict) are owned by Image-QC and
-read from vision_qc_log.json; this script only asserts the mechanical prompt half
+read from image_qc_report.json; this script only asserts the mechanical prompt half
 and that the vision log carries a per-slide record so the verdict was actually run.
 
 ZERO third-party deps (stdlib json / re / pathlib only).
@@ -705,7 +708,7 @@ def main():
             print(f"\n{len(problems)} engine auto-fail(s). Each is the MECHANICAL half "
                   "of an INTELLIGENCE engine; fix the prompt token / copy beat named "
                   "above. The vision VERDICT half is graded separately at Image-QC and "
-                  "logged to vision_qc_log.json.", file=sys.stderr)
+                  "logged to image_qc_report.json.", file=sys.stderr)
 
     sys.exit(4 if problems else 0)
 

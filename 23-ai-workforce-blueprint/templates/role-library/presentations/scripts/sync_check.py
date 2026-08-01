@@ -40,6 +40,7 @@ EXIT CODES:
     4 — drift (distinct from build_deck's 1/2/3 so a caller can tell lockstep
         drift from a render/config/preflight failure).
     2 — sync_check could not run (an input is missing/unparseable).
+       Warn-mode (W*) findings never change the exit code; see --json "warn_count".
 
 USAGE:
     python3 sync_check.py            # human report, exit 0 / 4
@@ -66,6 +67,8 @@ from pathlib import Path
 # the check runs identically in the repo and on a deployed client box.
 # ---------------------------------------------------------------------------
 HERE = Path(__file__).resolve().parent                       # .../presentations/scripts
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 PRES_DIR = HERE.parent                                       # .../presentations
 SOPS_DIR = PRES_DIR / "sops"
 BUILD_DECK = HERE / "build_deck.py"
@@ -75,27 +78,7 @@ BUILD_DECK = HERE / "build_deck.py"
 PROMPT_GATE = HERE / "prompt_gate.py"
 TEST_PREFLIGHT = HERE / "test_preflight.py"
 
-# The manifest + MASTER ruleset live in the universal-sops/presentation-slide-craft
-# cluster in the repo, and are deployed next to the sops dir on a client box. Try
-# both so the same script works in either layout.
-def _first_existing(paths):
-    for p in paths:
-        if p.exists():
-            return p
-    return paths[0]  # return the canonical (repo) path for the error message
-
-# repo root = .../openclaw-onboarding (walk up until universal-sops is found)
-def _find_repo_root(start: Path):
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
-
-_REPO_ROOT = _find_repo_root(HERE)
+_REPO_ROOT = find_repo_root(HERE)
 _CLUSTER_REPO = (_REPO_ROOT / "universal-sops" / "presentation-slide-craft") if _REPO_ROOT else None
 
 # The RETIRED render module (templates/presentation-render/render_deck.py). It is no
@@ -109,17 +92,15 @@ RENDER_DECK = (
      / "render_deck.py") if _REPO_ROOT else None
 )
 
-MANIFEST = _first_existing([
-    *( [_CLUSTER_REPO / "PIPELINE-MANIFEST.json"] if _CLUSTER_REPO else [] ),
-    SOPS_DIR / "PIPELINE-MANIFEST.json",
-    PRES_DIR / "PIPELINE-MANIFEST.json",
-])
-MASTER_RULESET = _first_existing([
-    *( [_CLUSTER_REPO / "MASTER-QC-AUTOFAIL-RULESET.md"] if _CLUSTER_REPO else [] ),
-    SOPS_DIR / "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md",
-    SOPS_DIR / "MASTER-QC-AUTOFAIL-RULESET.md",
-    PRES_DIR / "MASTER-QC-AUTOFAIL-RULESET.md",
-])
+MANIFEST, MANIFEST_PROVENANCE = resolve_manifest(HERE)
+MASTER_RULESET, RULESET_PROVENANCE = resolve_ruleset(HERE)
+
+# Measured 2026-07-25 via parse_master_ruleset_section5() against the cluster
+# registry at universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md.
+# The cluster registry is a growing file (134 codes against 153 manifest autofails
+# at time of measurement), so this is a FLOOR, not an equality — a future increase
+# is expected and must not refuse.
+RULESET_MIN_SECTION5_CODES = 134
 
 AF_RE = re.compile(r'AF-[A-Z0-9]+(?:-[A-Z0-9]+)*')
 
@@ -386,6 +367,18 @@ EXTENSION_STEP = {
     "E2": "step (i) — add heartbeat_minutes to the long_running phase in PIPELINE-MANIFEST.json",
 }
 
+# WARN-MODE classes. These are ADVISORY: they are collected in a SEPARATE list from
+# `drift`, they never contribute to the exit code, and they never flip --json's
+# "in_sync". Letter W is chosen because A/B/C/D/E/V are all in use as drift classes
+# (A1-A8, B1-B2, C1, D1-D2, E1-E2 in EXTENSION_STEP, plus V1/V2/V3 emitted by
+# value_checks()). Reusing A7 — as an earlier draft proposed — would have attached
+# an exit-0 meaning to the live sop_refs integrity class at :587-596.
+WARN_STEP = {
+    "W1": "step (i) — declare executor and verifier on the phase in PIPELINE-MANIFEST.json "
+          "(the step contract). ADVISORY until every phase carries both; then this class "
+          "is promoted to fail-closed in a separate unit.",
+}
+
 
 # ---------------------------------------------------------------------------
 # (V) VALUE-LEVEL DRIFT — the cited NUMBER must match the code constant.
@@ -498,6 +491,32 @@ def value_checks(manifest_text):
                     f"PIPELINE-MANIFEST.json cites a {n}-char ceiling but build_deck.py "
                     f"PROMPT_CHAR_CEILING={ceiling}. Reconcile the manifest prose to {ceiling}.")
     return drift
+
+
+def warn_checks(manifest):
+    """W1 — the STEP CONTRACT, in warn-mode (Rule 3.5 stage 1).
+
+    Every phase should declare BOTH `executor` (who runs the step) and `verifier` (what
+    proves it ran). Measured 2026-07-25: zero of 20 phases in the installed v18 manifest
+    and zero of 26 in the canonical v25 manifest declare `executor`, and `verifier` is
+    not a field in either. A fail-closed version of this check would therefore fail every
+    phase on day one, so it reports and returns; the count IS the work list.
+
+    Returns a list of {check, item, detail} dicts for the SEPARATE warnings list. It must
+    never be added to `drift`: main() exits 4 on any drift entry, and two callers treat
+    non-zero as a hard stop (the CI lockstep job, and presentation-canonical-entry.sh's
+    GATE 3, which maps it to AF-CANONICAL-RENDER-BYPASS / exit 7)."""
+    warns = []
+    for ph in manifest["phases"]:
+        missing = [k for k in ("executor", "verifier") if not ph.get(k)]
+        if missing:
+            warns.append({
+                "check": "W1",
+                "item": ph["id"],
+                "detail": (f"phase {ph['id']} declares no {' and no '.join(missing)}. "
+                           f"{WARN_STEP['W1']}"),
+            })
+    return warns
 
 
 def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
@@ -720,7 +739,17 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
 # ---------------------------------------------------------------------------
 # Reporting
 # ---------------------------------------------------------------------------
-def report_human(drift, manifest, explain):
+def _print_warnings(warnings, manifest):
+    if warnings:
+        print(f"\n(W) STEP-CONTRACT WARNINGS — ADVISORY, exit code unaffected "
+              f"({len(warnings)} of {len(manifest['phases'])} phases):", file=sys.stderr)
+        for w in warnings:
+            print(f"  WARN {w['check']}: [{w['item']}] {w['detail']}", file=sys.stderr)
+        print(f"\n{len(warnings)} warning(s). These do NOT fail the check. Drive the count "
+              f"to zero, then promote W1 to fail-closed in a separate change.", file=sys.stderr)
+
+
+def report_human(drift, warnings, manifest, explain):
     if not drift:
         print("=== sync_check: PRESENTATIONS SOP <-> build_deck.py LOCKSTEP ===")
         print(f"manifest_version: {manifest['manifest_version']}")
@@ -728,10 +757,12 @@ def report_human(drift, manifest, explain):
               f"roles: {len(manifest['roles'])}")
         print("IN SYNC — the Python renderer, the MASTER ruleset Section-5 table, the "
               "role roster, and the SOP set all match PIPELINE-MANIFEST.json.")
+        _print_warnings(warnings, manifest)
         return
     a = [d for d in drift if d["check"].startswith("A")]
     b = [d for d in drift if d["check"].startswith("B")]
     c = [d for d in drift if d["check"].startswith("C")]
+    d_items = [x for x in drift if x["check"].startswith("D")]
     e = [d for d in drift if d["check"].startswith("E")]
     v = [d for d in drift if d["check"].startswith("V")]
     print("=== sync_check: DRIFT DETECTED — LOCKSTEP BROKEN (AF-SYNC) ===", file=sys.stderr)
@@ -750,6 +781,11 @@ def report_human(drift, manifest, explain):
               "an AF code the manifest does not declare (HOLE B):", file=sys.stderr)
         for d in c:
             print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
+    if d_items:
+        print("\n(D) DELIVERABLE-KEY DRIFT — a required deliverable key is declared on one "
+              "side of the contract and not the other:", file=sys.stderr)
+        for d in d_items:
+            print(f"  DRIFT {d['check']}: [{d['item']}] {d['detail']}", file=sys.stderr)
     if e:
         print("\n(E) PHASE-STRUCTURE DRIFT — a manifest phase is missing a required "
               "structural block (client_report, heartbeat_minutes on long_running):",
@@ -765,6 +801,7 @@ def report_human(drift, manifest, explain):
           "change to a Presentations SOP/role/gate MUST update PIPELINE-MANIFEST.json "
           "(+ bump manifest_version), build_deck.py, the MASTER ruleset, and a test.",
           file=sys.stderr)
+    _print_warnings(warnings, manifest)
 
 
 def main():
@@ -775,11 +812,17 @@ def main():
     manifest = load_manifest()
     bd = parse_build_deck()
     ruleset_codes = parse_master_ruleset_section5()
+    if len(ruleset_codes) < RULESET_MIN_SECTION5_CODES:
+        refuse(f"Section-5 registry at {MASTER_RULESET} declares {len(ruleset_codes)} codes; "
+               f"the canonical cluster registry declares {RULESET_MIN_SECTION5_CODES}. "
+               f"provenance={RULESET_PROVENANCE}. Refusing to check drift against a truncated registry.")
     role_stems, sop_files = scan_roles_and_sops()
 
     drift = run_checks(manifest, bd, ruleset_codes, role_stems, sop_files)
     # (V) value-level drift — the cited NUMBER must equal the code constant.
     drift += value_checks(MANIFEST.read_text())
+    # (W) warn-mode. SEPARATE list. Never merged into `drift` — see warn_checks().
+    warnings = warn_checks(manifest)
 
     if as_json:
         print(json.dumps({
@@ -789,9 +832,11 @@ def main():
                        "autofails": len(manifest["autofails"]),
                        "roles": len(manifest["roles"])},
             "drift": drift,
+            "warnings": warnings,
+            "warn_count": len(warnings),
         }, indent=2))
     else:
-        report_human(drift, manifest, explain)
+        report_human(drift, warnings, manifest, explain)
 
     sys.exit(4 if drift else 0)
 

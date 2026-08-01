@@ -222,6 +222,18 @@ assert_entry_has "entry: owner_skip_approval token"        'owner_skip_approval'
 assert_entry_has "entry: dispatches run_signature_deck.py" 'run_signature_deck\.py'
 assert_entry_has "entry: version pin via sync_check.py"    'sync_check\.py'
 
+# U006 — entry script no longer guesses the scripts directory.
+assert_entry_has "entry: refuses to autodetect the scripts dir"  'Refusing to autodetect'
+assert_entry_has "entry: names the department default"           'departments/Presentations/scripts'
+assert_entry_has "entry: refuses the skills-template copy"       'templates/role-library/presentations/scripts'
+assert_entry_has "entry: prints the scripts-dir provenance"      'source: materialized department default'
+
+assert_entry_lacks() {
+    local label="$1" re="$2"
+    if grep -Eq -e "$re" "$ENTRY"; then fail "$label (still present: $re)"; else pass "$label"; fi
+}
+assert_entry_lacks "entry: seven-candidate list is gone" 'RUN_DIR/\.\./scripts'
+
 # Agent-facing doctrine: exactly one sanctioned command; python3 working/*.py forbidden.
 assert_file_has "BUILDER-PROMPT names the canonical command" "$BUILDER_PROMPT" 'presentation-canonical-entry\.sh'
 assert_file_has "BUILDER-PROMPT forbids python3 working/*.py" "$BUILDER_PROMPT" 'python3 working/\*\.py'
@@ -245,6 +257,36 @@ write_complete_ledger() {
 LEDGER
 }
 
+# HERMETICITY FIX (presentation-deps-gate CI red-check root cause): every functional
+# entry-script invocation below MUST pass --scripts-dir at a self-contained fixture.
+# Without it, resolve_scripts_dir() falls through to the materialized-department
+# default ($OC_WORKSPACE/departments/Presentations/scripts), and what happens next
+# depends entirely on the box the test runs on:
+#   - a fresh CI runner never materializes that department at all, so the resolver
+#     fails outright (rc=2, "Refusing to autodetect") before GATE 2 is ever reached;
+#   - a box with a REAL materialized department (e.g. an operator box) resolves fine,
+#     but then GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) trips: the materialized
+#     ghl_media.py is a thin shim that walks up its OWN parents looking for a sibling
+#     48-facebook-ad-generator/tools/ghl_media.py, which does not exist next to a
+#     standalone materialized department (rc=8, PRESENTATION_GHL_MODULE_MISSING).
+# Both are environment-dependent accidents, not the thing this section means to test
+# (GATE 2 bypass-scan behavior). Building one self-contained fixture — with a REAL,
+# import-standalone ghl_media.py (the Skill-06 copy, not the sibling-walking shim) —
+# and pointing every invocation at it with --scripts-dir makes the test hermetic
+# everywhere: CI, this box, and any other box, regardless of what is or isn't
+# materialized under $OC_WORKSPACE.
+FAKE_SCRIPTS="$TMPDIR_TEST/fake-scripts"
+mkdir -p "$FAKE_SCRIPTS"
+cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py" "$FAKE_SCRIPTS/build_deck.py" 2>/dev/null || touch "$FAKE_SCRIPTS/build_deck.py"
+# GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
+# co-located in SCRIPTS_DIR or it refuses before we ever reach GATE 2 (bypass-scan).
+cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
+cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
+import os, sys
+print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))
+sys.exit(0)
+FAKERUNNER
+
 # Functional: bypass-scan TRIPS (exit 5) on a hand-rolled renderer in the run dir.
 SCAN_RUN="$TMPDIR_TEST/scan-run"
 mkdir -p "$SCAN_RUN/working/checkpoints"
@@ -262,7 +304,7 @@ def hook():
     slide.shapes.add_text_box(1, 1, 1, 1)
 PYBAD
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-trip.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -eq 5 ]; then
@@ -283,7 +325,7 @@ cat > "$SCAN_RUN/working/checkpoints/process_manifest.json" <<'PMOK'
 ]}
 PMOK
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$SCAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$SCAN_RUN/slides.json" --out "$SCAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/scan-waived.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "OWNER-APPROVED" "$TMPDIR_TEST/scan-waived.log"; then
@@ -301,7 +343,7 @@ touch "$CLEAN_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$CLEAN_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$CLEAN_RUN/slides.json"
 ENTRY_RC=0
-QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" \
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$CLEAN_RUN" --scripts-dir "$FAKE_SCRIPTS" \
     --slides "$CLEAN_RUN/slides.json" --out "$CLEAN_RUN/out.pptx" \
     > "$TMPDIR_TEST/clean-scan.log" 2>&1 || ENTRY_RC=$?
 if [ "$ENTRY_RC" -ne 5 ] && grep -q "no hand-rolled renderer" "$TMPDIR_TEST/clean-scan.log"; then
@@ -334,18 +376,9 @@ touch "$ENV_RUN/working/checkpoints/.test-context"
 write_complete_ledger "$ENV_RUN"
 echo '[{"slide":1,"scene":"x","copy":["hi"]}]' > "$ENV_RUN/slides.json"
 
-FAKE_SCRIPTS="$TMPDIR_TEST/fake-scripts"
-mkdir -p "$FAKE_SCRIPTS"
-cp "$REPO_ROOT/23-ai-workforce-blueprint/templates/role-library/presentations/scripts/build_deck.py" "$FAKE_SCRIPTS/build_deck.py" 2>/dev/null || touch "$FAKE_SCRIPTS/build_deck.py"
-# GATE 1b (SKILL-48 GHL MODULE CO-LOCATION) needs a real, importable ghl_media.py
-# co-located in SCRIPTS_DIR or it refuses before we ever reach the orchestrator dispatch.
-cp "$REPO_ROOT/06-ghl-install-pages/tools/ghl_media.py" "$FAKE_SCRIPTS/ghl_media.py" 2>/dev/null || true
-cat > "$FAKE_SCRIPTS/run_signature_deck.py" <<'FAKERUNNER'
-import os, sys
-print("KIE_PROMPT_GATE=" + os.environ.get("KIE_PROMPT_GATE", "<UNSET>"))
-sys.exit(0)
-FAKERUNNER
-
+# $FAKE_SCRIPTS was already built above (before section (C)) as the one shared,
+# self-contained scripts-dir fixture used by every functional entry-script
+# invocation in this file.
 ENTRY_RC=0
 QC_SKIP_PRESENTATION_DEPS=1 SCRIPTS_DIR="$FAKE_SCRIPTS" bash "$ENTRY" --run-dir "$ENV_RUN" \
     --slides "$ENV_RUN/slides.json" --out "$ENV_RUN/out.pptx" \
@@ -368,6 +401,32 @@ else
     fail "entry: explicit KIE_PROMPT_GATE=off override was clobbered (rc=$ENTRY_RC)"
     sed -n '1,25p' "$TMPDIR_TEST/env-run-override.log" | sed 's/^/    > /'
 fi
+
+echo
+echo "(E) U006 — entry script refuses rather than guessing the scripts directory"
+# EXECUTING test — run the script and observe the refusal, don't read the file for it.
+# Primary observable is the EXIT CODE; the message match is secondary and uses a shell
+# `case` on captured runtime output, never a search over a file on disk.
+EX_RUN="$TMPDIR_TEST/refuse-run"; mkdir -p "$EX_RUN/working/checkpoints"
+EX_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
+    --scripts-dir "$TMPDIR_TEST/no-such-scripts-dir" --plan \
+    > "$TMPDIR_TEST/refuse.out" 2> "$TMPDIR_TEST/refuse.err" || EX_RC=$?
+[ "$EX_RC" -eq 2 ] \
+    && pass "entry: a stated-but-wrong --scripts-dir EXITS 2 (executed, not read)" \
+    || fail "entry: stated-but-wrong --scripts-dir exited $EX_RC, expected 2"
+case "$(cat "$TMPDIR_TEST/refuse.err")" in
+    *"Refusing to autodetect"*) pass "entry: the refusal is on stderr at runtime" ;;
+    *) fail "entry: nothing on stderr said 'Refusing to autodetect' (rc=$EX_RC)" ;;
+esac
+# Negative control: a CORRECT --scripts-dir must NOT take the refusal path.
+OK_RC=0
+QC_SKIP_PRESENTATION_DEPS=1 bash "$ENTRY" --run-dir "$EX_RUN" \
+    --scripts-dir "$FAKE_SCRIPTS" --plan \
+    > "$TMPDIR_TEST/accept.out" 2> "$TMPDIR_TEST/accept.err" || OK_RC=$?
+[ "$OK_RC" -ne 2 ] \
+    && pass "entry: a valid --scripts-dir is NOT refused (rc=$OK_RC)" \
+    || fail "entry: a valid --scripts-dir was refused with exit 2 — the resolver refuses everything"
 
 echo
 echo "============================================"

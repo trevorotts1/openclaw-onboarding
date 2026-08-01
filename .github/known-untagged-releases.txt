@@ -1,0 +1,33 @@
+# Releases at or above G1b's floor that shipped on main WITHOUT a truthful
+# annotated tag and cannot be repaired.
+#
+# Read by scripts/check-released-versions-tagged.py (guard G1b).
+#
+# THIS FILE IS DELIBERATELY EMPTY.
+#
+# All six in-scope untagged releases found when G1b was written — v21.4.15,
+# v21.4.22, v21.4.39, v21.4.40, v21.4.41, v21.4.42 — were REPAIRED by publishing
+# the annotated tag at the commit that actually carries each version string, not
+# grandfathered. A seventh, v21.4.45, was caught by this guard in the same
+# session, minutes after it shipped, and repaired the same way.
+#
+# ENFORCED IN BOTH DIRECTIONS, exactly like .github/known-orphan-tags.txt:
+#   * an untagged release NOT listed here fails the build (catches regressions);
+#   * an entry here that is NO LONGER untagged ALSO fails the build, so the list
+#     is forced to shrink as debt is repaid and can never rot into a blanket
+#     exemption that quietly swallows the next real defect.
+#
+# DO NOT ADD A LINE HERE TO MAKE A RED CHECK GO AWAY. A red G1b almost always
+# means a release just shipped and its tag was not pushed. The fix is the tag:
+#
+#   scripts/push-version-tag.sh vX.Y.Z <the-commit-that-carries-it>
+#
+# The only qualifying condition for a line here is that NO COMMIT in this
+# repository has ever carried that version string, so no tag can be truthful.
+# Verify before adding:
+#
+#   git log --all --format=%H -- version \
+#     | while read -r s; do git show "$s:version" 2>/dev/null | head -1; done \
+#     | grep -cx vX.Y.Z        # must print 0
+#
+# Format: vX.Y.Z  # reason

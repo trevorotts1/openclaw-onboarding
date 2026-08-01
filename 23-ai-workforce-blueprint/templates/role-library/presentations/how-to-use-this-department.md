@@ -32,10 +32,10 @@ Reach for this department when you want any of the following:
 
 - Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO.
 - Creates and owns the STYLE BLOCK (800-1,500 characters).
-- Capacity and Reliability Engineer for the company, the specialist responsible for ensuring every deck run.
+- Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
 - The front door for one specific request.
 - Owns Phase 6+ multi-destination deck delivery.
-- The first time (or anyone on their team) touches this department, you are the welcome.
+- First-Time-User Onboarding specialist for the Presentations department at BlackCEO.
 
 If you are not sure whether a request belongs here, ask anyway. The department
 head will either take it or hand it to the right department. You never have to
@@ -74,14 +74,14 @@ and it will pick the right one, or you can ask for a specialist by name.
 | --- | --- |
 | **Audio Demonstration Specialist** | Turns the QC-passed Presenters Speech into a marketable AUDIO DEMO. |
 | **Brand Steward** | Creates and owns the STYLE BLOCK (800-1,500 characters). |
-| **Capacity Reliability Engineer** | Capacity and Reliability Engineer for the company, the specialist responsible for ensuring every deck run has. |
+| **Capacity Reliability Engineer** | Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has. |
 | **Content To Presentation Architect** | The front door for one specific request. |
 | **Delivery Concierge** | Owns Phase 6+ multi-destination deck delivery. |
-| **First Time Onboarding Presentations** | The first time (or anyone on their team) touches this department, you are the welcome. |
+| **First Time Onboarding Presentations** | First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells. |
 | **Fish Audio / Expression Specialist** | Makes the audio demonstration of the Presenter's Speech sound like a real. |
 | **Hook Strategist** | Owns the Hook Lab end-to-end. |
-| **Media Librarian GHL Updater** | Media Librarian and GHL Updater for the company, the specialist responsible for two critical tasks in the CLIENT. |
-| **Offer Price Strategist** | Offer and Price Strategist for the company, the specialist who owns the single highest-stakes choreography in any. |
+| **Media Librarian GHL Updater** | Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR. |
+| **Offer Price Strategist** | Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar. |
 | **Pptx Assembly Specialist** | Assembles the final PowerPoint from QC-passed images using python-pptx (13.333 x 7.5 inch slides, full-bleed). |
 | **Presenter Coach** | Owns the live-presentation preparation layer. |
 | **Presenters Guide Specialist** | Converts the QC-passed deck + the Presenter Coach talk track into a beautiful speaker-facing OUTLINE (one block per. |
@@ -93,6 +93,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 | **Prompt Author** | You write each slide's rich image prompt to the 9,000-to-18,000-character density standard (hard floor 9,000. |
 | **Attention Content Strategist** | Owns the strategic CONTENT SPINE of every deck at Phase P0B-PRIORITY (order 0.2), between intake and the arc. |
 | **Signature Presentation Architect** | Owns the Signature Presentation deck type end to end (Skill 51). |
+| **Image-Grounding Steward ("The Witness")** | You own one question no other role owns. |
+| **Per-Client Representation and Casting Director ("The Mirror")** | You own one question end to end. |
 
 ### What each specialist is for, with an example request
 
@@ -108,8 +110,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Capacity Reliability Engineer**
 
-- *What it is for:* Capacity and Reliability Engineer for the company, the specialist responsible for ensuring every deck run has.
-- *Example request:* "Have the Capacity Reliability Engineer take this on: Capacity and Reliability Engineer for the company."
+- *What it is for:* Capacity and Reliability Engineer for BlackCEO, the specialist responsible for ensuring every deck run has.
+- *Example request:* "Have the Capacity Reliability Engineer take this on: Capacity and Reliability Engineer for BlackCEO."
 
 **Content To Presentation Architect**
 
@@ -123,8 +125,8 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **First Time Onboarding Presentations**
 
-- *What it is for:* The first time (or anyone on their team) touches this department, you are the welcome.
-- *Example request:* "Have the First Time Onboarding Presentations take this on: The first time (or anyone on their team) touches this department, you are the welcome."
+- *What it is for:* First-Time-User Onboarding specialist for the Presentations department at BlackCEO, the Onboarding Host Nadia Wells.
+- *Example request:* "Have the First Time Onboarding Presentations take this on: First-Time-User Onboarding specialist for the Presentations department at BlackCEO."
 
 **Fish Audio / Expression Specialist**
 
@@ -138,13 +140,13 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 **Media Librarian GHL Updater**
 
-- *What it is for:* Media Librarian and GHL Updater for the company, the specialist responsible for two critical tasks in the CLIENT.
-- *Example request:* "Have the Media Librarian GHL Updater take this on: Media Librarian and GHL Updater for the company."
+- *What it is for:* Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two critical tasks in the CLIENT WEBINAR.
+- *Example request:* "Have the Media Librarian GHL Updater take this on: Media Librarian and GHL Updater for BlackCEO, the specialist responsible for two."
 
 **Offer Price Strategist**
 
-- *What it is for:* Offer and Price Strategist for the company, the specialist who owns the single highest-stakes choreography in any.
-- *Example request:* "Have the Offer Price Strategist take this on: Offer and Price Strategist for the company, the specialist who owns the single."
+- *What it is for:* Offer and Price Strategist for BlackCEO, the specialist who owns the single highest-stakes choreography in any webinar.
+- *Example request:* "Have the Offer Price Strategist take this on: Offer and Price Strategist for BlackCEO, the specialist who owns the single."
 
 **Pptx Assembly Specialist**
 
@@ -200,6 +202,16 @@ and it will pick the right one, or you can ask for a specialist by name.
 
 - *What it is for:* Owns the Signature Presentation deck type end to end (Skill 51).
 - *Example request:* "Have the Signature Presentation Architect take this on: Owns the Signature Presentation deck type end to end (Skill 51)."
+
+**Image-Grounding Steward ("The Witness")**
+
+- *What it is for:* You own one question no other role owns.
+- *Example request:* "Have the Image-Grounding Steward ("The Witness") take this on: You own one question no other role owns."
+
+**Per-Client Representation and Casting Director ("The Mirror")**
+
+- *What it is for:* You own one question end to end.
+- *Example request:* "Have the Per-Client Representation and Casting Director ("The Mirror") take this on: You own one question end to end."
 
 
 ---

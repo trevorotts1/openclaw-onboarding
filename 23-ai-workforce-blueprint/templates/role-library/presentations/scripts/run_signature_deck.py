@@ -20,6 +20,13 @@ WHAT IT GUARANTEES
     owner_approved:true). That is not a free flag — absent the signed record, the
     precondition is unmet and the run aborts.
   * Phase-0 PRE-FLIGHT (before ANY dispatch/render):
+      - OCR-ENGINE availability pre-flight (MASTER-SPEC 7.4): HARD-ABORTS
+        (AF-OCR-ENGINE-MISSING, exit 4) before ANY phase — not merely before
+        render — when this render environment has no OCR engine (pytesseract /
+        Pillow / the tesseract binary unreachable from the exact interpreter that
+        will render). SHARED with build_deck.ocr_engine_preflight. The missing
+        OCR dependency fails at minute zero, before any paid generation, never
+        after images have already been rendered.
       - detect_platform() box-type resource note (mac -> fewer workers; vps ->
         more) recorded into the brief/attestation.
       - Kie.ai BALANCE pre-flight (GET https://api.kie.ai/api/v1/chat/credit):
@@ -41,7 +48,8 @@ WHAT IT GUARANTEES
 EXIT CODES
     0 — all phases attested (or owner-authorized skips), pre-flight clean.
     2 — phase-precondition violation (AF-PHASE-SKIPPED) or usage error.
-    4 — Phase-0 balance abort (AF-KIE-BALANCE).
+    4 — Phase-0 balance abort (AF-KIE-BALANCE) or Phase-0 OCR-engine abort
+        (AF-OCR-ENGINE-MISSING, MASTER-SPEC 7.4).
     3 — a build_deck.py subprocess (render phase) failed preflight/render.
     5 — canonical-render guard hard-block (AF-CANONICAL-RENDER-BYPASS /
         AF-LOCAL-CANVAS / AF-IMAGE-QC-VISION / incomplete attestation chain).
@@ -97,12 +105,15 @@ import importlib
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 import time
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 
 # Reuse build_deck.py's primitives — do NOT reimplement (detect_platform,
 # find_run_dir, the shared Kie balance pre-flight, the run-dir JSON reader).
@@ -193,6 +204,17 @@ NOTES_SYNC_PHASE_ID = "P9.5-NOTES-SYNC"
 # Exit codes for the loops (distinct from guard=5, balance=4, render=3, skip=2).
 EXIT_QC_ROUTEBACK = 6   # routeback written; downstream phase BLOCKED pending re-author
 EXIT_QC_EXHAUSTED = 7   # re-author cap exhausted / harmony fail, no owner override — refusal
+EXIT_EXECUTOR_FAILED = 8  # a phase's declared manifest executor exited non-zero (or was
+                          # malformed) — the phase is NOT attested (see _dispatch_generic_executor)
+
+
+class PhaseExecutorContractError(RuntimeError):
+    """A phase's manifest executor.cmd is not a parseable argument vector, or an
+    executor.cmd segment (split on a trusted, manifest-authored `&&`) is empty.
+    Named to mirror presentation_job/phases.py's identical U069 contract error —
+    this is the SAME dispatch contract, reimplemented here because
+    run_signature_deck.py (not presentation_job/phases.py) is the runner
+    presentation-canonical-entry.sh actually invokes."""
 
 # Per-phase wiring tables (keyed by the loop's logical phase name).
 _REAUTHOR_ROLE = {
@@ -225,31 +247,12 @@ _QC_PRODUCES_ARTIFACT = {
 # ---------------------------------------------------------------------------
 # Manifest resolution (same cluster-or-deployed layout sync_check uses)
 # ---------------------------------------------------------------------------
-def _find_repo_root(start: Path):
-    cur = start
-    for _ in range(12):
-        if (cur / "universal-sops").is_dir():
-            return cur
-        if cur.parent == cur:
-            break
-        cur = cur.parent
-    return None
+_MANIFEST_PATH, _MANIFEST_PROVENANCE = resolve_manifest(HERE)
+_MASTER_RULESET, _RULESET_PROVENANCE = resolve_ruleset(HERE)
 
 
 def load_manifest() -> dict:
-    repo = _find_repo_root(HERE)
-    candidates = []
-    if repo:
-        candidates.append(repo / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json")
-    candidates += [
-        HERE.parent / "sops" / "PIPELINE-MANIFEST.json",
-        HERE.parent / "PIPELINE-MANIFEST.json",
-    ]
-    for c in candidates:
-        if c.exists():
-            return json.loads(c.read_text())
-    print("FATAL: PIPELINE-MANIFEST.json not found.", file=sys.stderr)
-    sys.exit(2)
+    return json.loads(_MANIFEST_PATH.read_text())
 
 
 # ---------------------------------------------------------------------------
@@ -906,8 +909,11 @@ def _slide_count(run_dir: Path, slides_path: Path) -> int:
 
 def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
                      adhoc: bool = False) -> None:
-    """Phase-0: detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
-    (exit 4) on AF-KIE-BALANCE before any phase is dispatched."""
+    """Phase-0: OCR-engine availability pre-flight (AF-OCR-ENGINE-MISSING, MASTER-SPEC
+    7.4) + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
+    (exit 4) on AF-OCR-ENGINE-MISSING or AF-KIE-BALANCE before any phase is
+    dispatched — this runs before research/copy/QC as well as before render, the
+    earliest possible point in the entire run."""
     platform = bd.detect_platform(run_dir, override=platform_override)
     worker_note = "mac -> fewer parallel render workers" if platform == "mac" else \
                   "vps -> more parallel render workers"
@@ -917,11 +923,27 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
     print(f"=== PHASE-0 — deck slide_count={slide_count} ===", flush=True)
 
     if adhoc:
-        print("=== PHASE-0 — adhoc (owner-authorized): Kie balance pre-flight skipped ===",
-              flush=True)
+        print("=== PHASE-0 — adhoc (owner-authorized): OCR-engine + Kie balance "
+              "pre-flight skipped ===", flush=True)
         attest_phase(run_dir, "P-0-PREFLIGHT", "run_signature_deck",
                      "preflight_ok_adhoc", artifact_sha="preflight-no-artifact")
         return
+
+    # MASTER-SPEC 7.4 / AF-OCR-ENGINE-MISSING — checked FIRST (fast, local, no
+    # network) and BEFORE the Kie API key is even loaded, so a box with no OCR
+    # engine refuses before any network call, let alone before any phase or paid
+    # render. Same in-process bd.ocr_engine_preflight() build_deck.py's own
+    # Phase-0 block calls for a direct-invocation bypass — checking it HERE too
+    # means the run refuses before research/copy/QC time is spent, not merely
+    # before render.
+    ocr_reason = bd.ocr_engine_preflight(run_dir)
+    if ocr_reason:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: " + ocr_reason, file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
+    print("=== PHASE-0 — OCR-engine pre-flight PASSED (engine available in this "
+          "render environment) ===", flush=True)
 
     api_key = ""
     try:
@@ -1501,8 +1523,18 @@ def _board_ingest_preflight(run_dir, adhoc: bool = False) -> None:
         if cc_board._read_manifest(run_dir).get("cc_task_id"):
             return  # already ingested earlier this run
         slug = _deck_slug(run_dir)
+        rcid, rchan = cc_board.resolve_requester(run_dir)
+        if not rcid:
+            # Rule 3.5 WARN-MODE, stage 1 of 3
+            print("[cc_board] WARN-REQUESTER-MISSING: this deck has no requester chat id "
+                  "(checked working/copy/intake.json and the PRESENTATION_REQUESTER_CHAT_ID / "
+                  "ROUTE_PRES_REQUESTER_CHAT_ID / MC_ROUTE_REQUESTER_CHAT_ID environment keys). "
+                  "The client will receive NO acknowledgement, progress or completion message "
+                  "for this build. Route presentation requests with the chat id set.",
+                  file=sys.stderr, flush=True)
         cc_board.ingest_deck_task(
-            run_dir, slug, title=slug, description=f"Deck build: {slug}")
+            run_dir, slug, title=slug, description=f"Deck build: {slug}",
+            requester_chat_id=rcid, requester_channel=rchan)
     except Exception as exc:  # noqa: BLE001 — board is best-effort, never a gate
         print(f"[cc_board] Phase-0 pre-flight ingest raised ({exc}) — run continues; "
               "the card will be (re)ingested idempotently at render-begin.",
@@ -1857,6 +1889,44 @@ def main():
             # never raises, never blocks.
             _board_close_delivery(run_dir)
 
+        # OPT-IN EXECUTOR DISPATCH — the central fix: a phase whose manifest entry
+        # declares a non-null, well-formed script executor (currently P8.1-PDF-EXPORT,
+        # P8.2-GUIDE, P8.4-FISH-TAG, P9.1-SPEECH-PDF, P9.2-GHL-UPLOAD, P7-TELEPROMPTER —
+        # and any future phase declaring the same shape, e.g. P-QC-AGGREGATE) is
+        # DISPATCHED here, before the produces_artifact check below. Dispatch is
+        # strictly opt-in: a phase with executor: null (the large majority — agent-
+        # attested, produced out of band by a human/agent) leaves `_executor` None and
+        # this whole block is skipped, falling straight into the pre-existing
+        # artifact-present + verify + attest logic UNCHANGED. A declared executor whose
+        # kind is not "script" (e.g. an explicit future {"kind": "agent"}) is likewise
+        # left alone — only "script" is ever dispatched. A malformed non-null executor
+        # (wrong type, "script" kind with an empty/missing cmd) is a manifest contract
+        # error and FAILS LOUD rather than silently skipping or silently dispatching
+        # something ambiguous. An executor that fails (non-zero exit, or cannot even
+        # start) exits here — the artifact-present/attest code below is never reached,
+        # so the phase is NEVER attested on a failed executor.
+        _executor = target.get("executor") if target else None
+        if isinstance(_executor, dict) and str(_executor.get("kind", "")).strip() == "script":
+            if not str(_executor.get("cmd", "")).strip():
+                print(
+                    f"FATAL: phase {args.phase!r} declares executor kind='script' but "
+                    f"cmd is empty/missing ({_executor!r}) — fix the manifest; refusing "
+                    "to guess what to run.",
+                    file=sys.stderr,
+                )
+                sys.exit(EXIT_EXECUTOR_FAILED)
+            _rc = _dispatch_generic_executor(run_dir, _executor, args.phase)
+            if _rc != 0:
+                sys.exit(_rc)
+        elif _executor is not None and not isinstance(_executor, dict):
+            print(
+                f"FATAL: phase {args.phase!r} declares a malformed executor "
+                f"{_executor!r} (expected an object with kind/cmd, got "
+                f"{type(_executor).__name__}) — fix the manifest; refusing to guess.",
+                file=sys.stderr,
+            )
+            sys.exit(EXIT_EXECUTOR_FAILED)
+
         # Non-render phase: verify the artifact landed + run substance verifier +
         # emit done-report + compute sha + attest.
         _art_spec = target.get("produces_artifact", "") if target else ""
@@ -1939,6 +2009,107 @@ def main():
     )
     print_plan(run_dir, phases)
     sys.exit(2)
+
+
+def _build_executor_argvs(executor_cmd: str, run_dir: Path, phase_id: str) -> list:
+    """Turn a manifest phase's executor.cmd into one or more argv lists, ready for
+    subprocess.run(argv, shell=False, ...).
+
+    TOKENISE FIRST, SUBSTITUTE SECOND — this mirrors presentation_job/phases.py's
+    Engine._build_executor_argv (the reference implementation this fix reuses; see
+    that module's own docstring for the full rationale) and is the ONLY sanctioned
+    way to turn an executor.cmd into an argv anywhere in this file. run_dir can
+    contain arbitrary characters (it is derived from client-controlled intake text
+    upstream) — if it were substituted into the raw command string before that
+    string is split, a run_dir crafted with shell metacharacters would be
+    re-interpreted as shell syntax. Splitting first means substitution only ever
+    lands inside an already-tokenised argument, so it can never introduce a new
+    token or a shell operator. shell=False at the call site (see
+    _dispatch_generic_executor) is what makes that guarantee hold; this function
+    does not itself run anything.
+
+    EXTENSION over the reference implementation: exactly one manifest executor
+    (P9.1-SPEECH-PDF) chains two commands with a trusted, manifest-authored ` && `
+    (never introducing shell=True — see below). That `&&` is split OUT of the raw
+    cmd string BEFORE shlex.split/substitution, on the raw executor.cmd TEMPLATE
+    itself (authored in PIPELINE-MANIFEST.json, not client-controlled), so the same
+    tokenise-then-substitute ordering — and the same run_dir-is-untrusted guarantee
+    — holds for every resulting stage. Returns a list of argv lists; the caller
+    must run each in order and stop at the first non-zero exit."""
+    raw = (executor_cmd or "").strip()
+    if not raw:
+        raise PhaseExecutorContractError(f"phase {phase_id!r}: executor.cmd is empty")
+    run_dir_str = str(run_dir)
+    argvs = []
+    for seg in re.split(r"\s+&&\s+", raw):
+        seg = seg.strip()
+        if not seg:
+            raise PhaseExecutorContractError(
+                f"phase {phase_id!r}: executor.cmd {raw!r} contains an empty "
+                "`&&`-chained segment")
+        try:
+            argv = shlex.split(seg)
+        except ValueError as exc:
+            raise PhaseExecutorContractError(
+                f"phase {phase_id!r}: executor.cmd segment {seg!r} is not a "
+                f"parseable argument vector ({exc}). Fix the manifest; this is not "
+                "sanitised for you.") from exc
+        if not argv:
+            raise PhaseExecutorContractError(
+                f"phase {phase_id!r}: executor.cmd segment {seg!r} tokenised to an "
+                "empty argument vector")
+        argv = [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+                for tok in argv]
+        argvs.append(argv)
+    return argvs
+
+
+def _dispatch_generic_executor(run_dir: Path, executor: dict, phase_id: str) -> int:
+    """OPT-IN dispatch for a manifest phase declaring {"kind": "script", "cmd": "..."}.
+
+    The caller (main()) has already confirmed `executor` is a dict with a non-empty
+    "script" cmd — this function tokenises+substitutes (via
+    _build_executor_argvs), then runs each resulting stage with shell=False,
+    streaming output exactly like the existing _dispatch_render /
+    _dispatch_notes_sync subprocess dispatchers (no capture, so the script's own
+    stdout/stderr is visible in the runner's output).
+
+    Script paths in executor.cmd are authored relative to the "presentations"
+    directory that CONTAINS this scripts/ dir (e.g. "scripts/pdf_export.py"
+    resolves to HERE/pdf_export.py, since HERE.name == "scripts") — the same
+    convention the manifest already uses for every declared executor — so the
+    subprocess cwd is HERE.parent, not run_dir.
+
+    Returns 0 iff every `&&`-chained stage exits 0. A non-zero return is the
+    caller's signal to sys.exit() WITHOUT reaching the produces_artifact/attest
+    code below it — an executor that fails is never attested."""
+    try:
+        argvs = _build_executor_argvs(executor.get("cmd"), run_dir, phase_id)
+    except PhaseExecutorContractError as exc:
+        print(f"FATAL: {exc}", file=sys.stderr)
+        return EXIT_EXECUTOR_FAILED
+    n = len(argvs)
+    for i, argv in enumerate(argvs, start=1):
+        stage = f" (stage {i}/{n})" if n > 1 else ""
+        print(f"=== DISPATCH {phase_id}{stage} (executor): {' '.join(argv)} ===", flush=True)
+        try:
+            proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+        except OSError as exc:
+            print(
+                f"FATAL: phase {phase_id!r} executor{stage} could not start "
+                f"({argv[0]!r}): {exc}. Phase NOT attested.",
+                file=sys.stderr,
+            )
+            return EXIT_EXECUTOR_FAILED
+        if proc.returncode != 0:
+            print(
+                f"FATAL: phase {phase_id!r} executor{stage} exited "
+                f"{proc.returncode}. Phase NOT attested.",
+                file=sys.stderr,
+            )
+            return EXIT_EXECUTOR_FAILED
+    print(f"=== EXECUTOR for {phase_id} completed — all {n} stage(s) exit 0 ===", flush=True)
+    return 0
 
 
 def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,

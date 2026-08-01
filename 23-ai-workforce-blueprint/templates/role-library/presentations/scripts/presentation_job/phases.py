@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shlex
 import subprocess
 import sys
 import time
@@ -9,13 +10,22 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .state import (
     StateStore, utcnow, sha256_file, EXIT_OK, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID,
+    ENTRY_COMMAND,
 )
 from .manifest import Manifest, Phase
 from .report import Reporter
-from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES
+from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
 from .artifacts import validate_artifact
+from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
+from . import persona
+
+# ---------------------------------------------------------------------------
+# U069: named error for unparseable executor.cmd.
+# ---------------------------------------------------------------------------
+class PhaseExecutorContractError(RuntimeError):
+    """U069: a phase's executor.cmd is not a parseable argument vector."""
 
 # ---------------------------------------------------------------------------
 # The engine.
@@ -112,6 +122,11 @@ class Engine:
                      f"Starting {phase.id} ({phase.owning_role})")
         self.report.to_requester("progress", start_msg)
 
+        try:
+            persona.resolve_for_phase(self.run_dir, phase.id)
+        except (RuntimeError, TimeoutError) as exc:
+            return self._block(phase, f"persona governance: {exc}")
+
         if phase.id == "P4-RENDER" and self.board:
             self.board.mark_in_progress()
 
@@ -142,24 +157,69 @@ class Engine:
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
+            # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            verifier_ok = None
+            verifier_notes = None
+            try:
+                import phase_verifiers
+                verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
+                if not verifier_ok:
+                    self.report.event("phase.verifier_warn",
+                                      f"{phase.id}: {'; '.join(verifier_notes)}")
+            except ImportError:
+                self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
+                                          "substance check skipped")
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
-                             artifacts=sorted(shas.keys()))
+                             artifacts=sorted(shas.keys()),
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
+            if self.board:
+                self.board.phase_progress(phase.id, done_msg)
         return rc
 
+    def _build_executor_argv(self, raw_cmd: Optional[str], phase_id: str) -> List[str]:
+        """U069: tokenise FIRST, substitute SECOND.
+
+        This is the ONLY sanctioned way to turn a manifest executor.cmd (or
+        alt_cmd) into an argv anywhere in this package. `run_dir` can contain
+        arbitrary characters (it is derived from client-controlled intake
+        text upstream) -- if it were substituted into a raw command string
+        before that string is split, a run_dir crafted with shell metacharacters
+        would be re-interpreted as shell syntax. Splitting first means
+        substitution only ever lands inside an already-tokenised argument,
+        so it can never introduce a new token or an operator.
+
+        heal.py's retry rungs (rung2_regenerate, rung3_alt_route) MUST call
+        this too instead of re-deriving a command themselves -- that
+        duplication is exactly how U069's original fix in this method left a
+        live bypass in the retry path.
+        """
+        raw = raw_cmd or ""
+        try:
+            argv = shlex.split(raw)
+        except ValueError as exc:
+            raise PhaseExecutorContractError(
+                f"phase {phase_id}: executor.cmd is not a valid argument vector "
+                f"({exc}). Fix the manifest; this is not sanitised for you."
+            ) from exc
+        run_dir_str = str(self.run_dir)
+        return [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+                for tok in argv]
+
     def _run_script_phase(self, phase: Phase) -> int:
-        cmd = (phase.executor_cmd or "").replace("{run_dir}", str(self.run_dir))
-        if not cmd:
+        # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
+        argv = self._build_executor_argv(phase.executor_cmd, phase.id)
+        if not argv:
             return self._block(phase, "executor kind is 'script' but no cmd is declared")
         if self.dry_run:
-            print(f"DRY-RUN {phase.id}: {cmd}", flush=True)
+            print(f"DRY-RUN {phase.id}: {' '.join(argv)}", flush=True)
             return EXIT_OK
 
         ps = self._phase_state(phase.id)
 
         # Checkpoint BEFORE the expensive call (invariant 3), so a resume never re-burns it.
-        self._checkpoint(phase.id, pending_cmd=cmd, pending_started_at=utcnow(),
+        self._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
                              str(m.relative_to(self.run_dir))
                              for rel in phase.produces_artifact
@@ -169,7 +229,7 @@ class Engine:
         budget = phase.budget_minutes * 60
         for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
-                r = subprocess.run(cmd, shell=True, cwd=str(self.run_dir),
+                r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
                                    timeout=budget, capture_output=False)
                 if r.returncode == 0:
                     return EXIT_OK
@@ -179,7 +239,7 @@ class Engine:
             except OSError as exc:
                 reason = f"could not start: {exc}"
 
-            heal.record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
+            record_heal_event(self.state, phase.id, self.store, ps, rung=1, attempt=attempt, reason=reason)
             # ANNOUNCE BEFORE RETRYING (invariant 6).
             self.report.to_requester(
                 "blocked",
@@ -290,7 +350,7 @@ class Engine:
             print(f"  lost     : {len(lost)} artifact(s) — will be rebuilt on resume",
                   file=sys.stderr)
         print("\n  continue with:", file=sys.stderr)
-        print(f"    python3 {Path(__file__).name} --resume --run-dir {self.run_dir}",
+        print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}",
               file=sys.stderr)
         print("=" * 72 + "\n", file=sys.stderr)
         return EXIT_GATE_BLOCKED
@@ -311,6 +371,13 @@ class Engine:
                 f"Got it. Building your presentation in {n} steps. "
                 "I will tell you as each step finishes, and immediately if anything stops.")
 
+        if self.board:
+            deck_slug = self.run_dir.name
+            intake = self.state.get("intake") or {}
+            title = intake.get("title") or f"Presentation {self.state.get('job_id', '?')[:8]}"
+            description = intake.get("description") or ""
+            self.board.open_card(deck_slug, title, description)
+
         for p in phases:
             rc = self.run_phase(p)
             if rc != EXIT_OK:
@@ -321,7 +388,6 @@ class Engine:
         return self.close()
 
     def close(self) -> int:
-        """Fail-closed. Every gate must pass or carry a valid waiver."""
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
             waivers = load_waivers(self.run_dir)
@@ -329,12 +395,14 @@ class Engine:
                 validate_waiver(w, self.run_dir)
         except WaiverError as exc:
             self.report.event("waiver.invalid", str(exc))
-            print(f"FATAL: {exc}", file=sys.stderr)
+            print("\nFATAL: " + str(exc), file=sys.stderr)
+            print("  Valid waiver: {rule, source, client_request_quote, intake_field?, captured_at, captured_from}", file=sys.stderr)
+            print("\n  Resume: python3 presentation_job.py --resume --run-dir " + str(self.run_dir), file=sys.stderr)
             return EXIT_WAIVER_INVALID
-        waived = {w["rule"] for w in waivers}
+        waived = {w.get("rule") for w in waivers if w.get("rule")}
         self.state["waivers"] = waivers
-
         failures = []
+        gate_warnings = []
         for k in ALL_GATE_KEYS:
             g = gates.get(k, {"state": "fail", "reason": "not evaluated"})
             if g.get("state") == "pass":
@@ -342,8 +410,13 @@ class Engine:
             if k in waived and k not in NON_WAIVABLE_GATES:
                 g["state"] = "waived"
                 continue
+            if g.get("warn_only", False):
+                gate_warnings.append({"gate": k, "reason": g.get("reason") or "failed"})
+                continue
             failures.append((k, g.get("reason") or "failed"))
-
+        if gate_warnings:
+            self.state["gate_warnings"] = gate_warnings
+            print(f"{len(gate_warnings)} gate(s) in warn-mode did not pass -- see state.json gate_warnings", file=sys.stderr)
         self.store.save(self.state)
         if failures:
             failed_keys = [k for k, _ in failures]
@@ -362,25 +435,30 @@ class Engine:
                 print("DONE — all gates passed after re-evaluation.", flush=True)
                 return EXIT_OK
             self.state["terminal"] = "BLOCKED"
+            # Symmetric with _block: write state["blocked"] here too, so a gate-failure
+            # park is recorded exactly like a phase-failure park and diagnose.py has one
+            # primary source to read (U017). "phase" is the sentinel "CLOSE" because no
+            # single manifest phase owns a gate.
+            self.state["blocked"] = {
+                "phase": "CLOSE",
+                "reason": f"{len(failures)} gate(s) did not pass: " +
+                          ", ".join(k for k, _ in failures),
+                "at": utcnow(),
+                "gates": [k for k, _ in failures],
+            }
             self.store.save(self.state)
             lines = "\n".join(f"    - {k}: {r}" for k, r in failures)
-            self.report.to_requester(
-                "blocked",
-                "Your presentation is finished building but cannot be delivered yet — "
-                f"{len(failures)} quality check(s) did not pass. We are on it.")
-            print("\nCANNOT CLOSE — fail-closed gates did not pass:\n" + lines, file=sys.stderr)
-            print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.",
-                  file=sys.stderr)
+            print("\nCANNOT CLOSE -- fail-closed gates did not pass:\n" + lines, file=sys.stderr)
+            print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.", file=sys.stderr)
+            print("\n  continue with:", file=sys.stderr)
+            print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
-
         if self.board:
             self.board.mark_review()
         self.state["terminal"] = "DONE"
         self.state["completed_at"] = utcnow()
         self.store.save(self.state)
-        self.report.to_requester(
-            "done", "Your presentation is ready. All quality checks passed.")
-        print("DONE — all gates passed.", flush=True)
+        print("DONE -- all gates passed.", flush=True)
         return EXIT_OK
 
 

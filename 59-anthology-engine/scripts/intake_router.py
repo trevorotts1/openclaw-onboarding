@@ -39,6 +39,14 @@ EXIT CODES (SPEC 3.4 row 2 -- DISTINCT from the house convention):
      a false success. On any retryable failure the dedup claim is RELEASED (deleted,
      not finalized 'in_progress'), so the re-delivery genuinely re-attempts and a
      submission is NEVER silently dropped (SPEC S0 cardinal guarantee).
+  6  anthology standing-gate refusal (fleet approval gate, Item 2): this BOX is not
+     currently approved for the anthology system (fleet_standing.anthology_approved,
+     gated behind good_standing) -- runs immediately after the route-secret check,
+     BEFORE the dedup claim, the participant upsert, the board card, the Drive tree,
+     or any model call, so a refusal spends nothing. FAIL CLOSED: an unreachable
+     standing-check endpoint, a non-200 reply, or an unparseable body is treated
+     identically to an explicit refusal (see standing_gate.py). See
+     scripts/standing_gate.py for the full credential and fail-closed contract.
 
 DOCTRINE (binding): move in silence (operator-verbose on stderr, client-silent);
 never print a secret value (labels + SET/NOT SET only; secret-bearing payload
@@ -74,6 +82,7 @@ EX_ERR = 1          # unexpected error (house)
 EX_SECRET = 2       # route-secret refusal
 EX_EXCEPTION = 3    # captured to Exceptions (typed reason)
 EX_LEDGER = 4       # ledger unreachable (durable write failed)
+EX_STANDING = 6     # anthology standing-gate refusal (Item 2; fail-closed, pre-spend)
 
 KEY_DELIM = "::"    # the LITERAL composite-key delimiter (mirrors anthology_state.participant_key)
 
@@ -89,6 +98,13 @@ SKILL_DIR = Path(__file__).resolve().parent.parent
 SCRIPTS = SKILL_DIR / "scripts"
 STATE_WRITER = SCRIPTS / "anthology_state.py"
 DEFAULT_STAGE_RUNNER = SCRIPTS / "stage_s0_intake.py"
+
+# Sibling import; defensive path insert so this resolves whether intake_router.py
+# is run directly (its own dir is already sys.path[0]) or imported as a module
+# from a test file elsewhere (mirrors the same defensive pattern self_test() below
+# already uses for anthology_state).
+sys.path.insert(0, str(SCRIPTS))
+import standing_gate  # noqa: E402 -- Item 2: fleet-wide anthology approval gate
 
 # Terminal dedup outcomes: a replay of any of these is an acknowledged no-op.
 _TERMINAL_PREFIXES = ("routed", "noop", "exception:")
@@ -106,6 +122,11 @@ BUILTIN_DEFAULTS = {
     #       a hardened box); absent/mismatch -> exit 2.
     #   off -> skip (trusted local replay/tests).
     "secret_mode": "verify_if_present",
+    # Item 2: fleet-wide anthology standing gate. "required" (the production
+    # default) calls the Item 1 endpoint and fails closed on any doubt; "off" is
+    # for offline self-tests / trusted local batteries that must stay
+    # network-free by construction (never set "off" on a real box).
+    "standing_check_mode": "required",
     "acknowledge_budget_seconds": 2,
     # tenant enforcement when the anthology exists but carries no location binding
     # yet: "continue" (warn to the operator and proceed) or "reject" (tenant_mismatch).
@@ -716,6 +737,35 @@ def route(raw_text, cfg, state_dir, args):
         _log("route-secret refusal: %s" % note)
         return ack("secret_refused", EX_SECRET, reason="route_secret")
 
+    # -- 1.5. anthology standing gate (Item 2) ---------------------------------
+    # A BUSINESS gate, distinct from the route secret (transport auth) above:
+    # is THIS box currently approved for the anthology system at all? Runs
+    # before the dedup claim, the participant upsert, the board card, the Drive
+    # tree, and any model call, so a refusal here spends nothing (SPEC WHERE:
+    # "BEFORE any model or media spend"). FAIL CLOSED by design (the opposite of
+    # the legacy roster gate's fail-open doctrine) -- see standing_gate.py for
+    # the full credential and fail-closed contract.
+    if cfg.get("standing_check_mode", "required") != "off":
+        standing = standing_gate.check_standing("anthology")
+        if not standing.get("approved"):
+            _log("anthology standing gate refused: %s" % standing.get("note"))
+            box_slug = standing_gate.resolve_box_slug()
+            label_bits = [b for b in (
+                extract(payload, "first_name", cfg) if payload is not None else None,
+                extract(payload, "last_name", cfg) if payload is not None else None,
+            ) if b]
+            client_email = (extract(payload, "email", cfg) if payload is not None else None) or ""
+            notify_code, notify_err = standing_gate.notify_rejection(
+                "anthology", box_slug, standing.get("reason_code", ""),
+                client_label=" ".join(label_bits), client_email=client_email)
+            if notify_err:
+                _log("standing-gate notifier call failed (non-fatal; the refusal "
+                     "above already stands): %s" % notify_err)
+            else:
+                _log("standing-gate notifier called (HTTP %s)" % notify_code)
+            return ack("standing_refused", EX_STANDING,
+                       reason=(standing.get("reason_code") or "gate_unavailable"))
+
     # -- extract the hidden ids and the stage ----------------------------------
     contact_id = extract(payload, "contact_id", cfg) if payload is not None else None
     anthology_id = extract(payload, "anthology_id", cfg) if payload is not None else None
@@ -916,6 +966,11 @@ def self_test():
 
     cfg = load_config()
     cfg["secret_mode"] = "verify_if_present"
+    # Item 2's standing gate is network-calling by design; the pre-existing
+    # battery below stays network-free by explicitly turning it off, exactly
+    # like this file already does for secret_mode above. The gate's OWN
+    # behavior is exercised separately, offline, further down (monkeypatched).
+    cfg["standing_check_mode"] = "off"
 
     class NS:
         def __init__(self, **kw):
@@ -1085,6 +1140,83 @@ def self_test():
         con.close()
     record("replay actually created the participant (proves it was not a no-op)",
            _pr is not None)
+
+    # -- Item 2: anthology standing gate, exercised OFFLINE via monkeypatch -------
+    # standing_check_mode is "off" for the whole battery above; here it is
+    # switched to "required" (the real production default) with
+    # standing_gate.check_standing / notify_rejection substituted for network-free
+    # fakes -- the exact same injection style this file already uses above for
+    # upsert_participant (_boom_upsert). Proves: (a) a refused verdict returns
+    # EX_STANDING and spends nothing (no participant row, no dedup claim held
+    # open as routed), (b) the notifier is called with the refused reason_code,
+    # (c) an approved verdict proceeds exactly as before, (d) the notifier is
+    # NEVER called on an approved verdict.
+    _real_check_standing = standing_gate.check_standing
+    _real_notify_rejection = standing_gate.notify_rejection
+    _notify_calls = []
+
+    def _fake_notify(system, box_slug, reason_code, client_label="", client_email=""):
+        _notify_calls.append({
+            "system": system, "box_slug": box_slug, "reason_code": reason_code,
+            "client_label": client_label, "client_email": client_email,
+        })
+        return "200", None
+
+    cfg["standing_check_mode"] = "required"
+    try:
+        # (a) + (b): refused verdict -> EX_STANDING, notifier called, nothing persisted
+        standing_gate.check_standing = lambda system: {
+            "approved": False, "reason_code": "not_enrolled", "note": "fake: not approved"}
+        standing_gate.notify_rejection = _fake_notify
+        refused = dict(good, contact_id="CGATEREFUSED")
+        code, body = call(refused)
+        record("standing gate refused -> exit 6 EX_STANDING",
+               code == EX_STANDING and body.get("action") == "standing_refused")
+        record("standing gate refused -> ack carries the reason_code",
+               body.get("reason") == "not_enrolled")
+        record("standing gate refused -> notifier called exactly once with system=anthology",
+               len(_notify_calls) == 1 and _notify_calls[0]["system"] == "anthology"
+               and _notify_calls[0]["reason_code"] == "not_enrolled")
+        con = _mirror_ro(state)
+        _pr = _ro_query_one(
+            con, "SELECT participant_key FROM participants WHERE participant_key=?",
+            ("CGATEREFUSED::ANTH1",))
+        if con:
+            con.close()
+        record("standing gate refused -> NO participant row created (nothing spent)",
+               _pr is None)
+
+        # (c) + (d): approved verdict -> proceeds normally, notifier never called
+        _notify_calls.clear()
+        standing_gate.check_standing = lambda system: {
+            "approved": True, "reason_code": "", "note": "fake: approved"}
+        approved_submission = dict(good, contact_id="CGATEAPPROVED")
+        code, body = call(approved_submission)
+        record("standing gate approved -> exit 0 routed (no regression)",
+               code == EX_OK and body.get("action") == "routed")
+        record("standing gate approved -> notifier never called", len(_notify_calls) == 0)
+        con = _mirror_ro(state)
+        _pr = _ro_query_one(
+            con, "SELECT participant_key FROM participants WHERE participant_key=?",
+            ("CGATEAPPROVED::ANTH1",))
+        if con:
+            con.close()
+        record("standing gate approved -> participant row DOES exist", _pr is not None)
+
+        # fail-closed shape check: an unreachable/malformed endpoint refuses too,
+        # and never guesses a reason_code it was not given.
+        standing_gate.check_standing = lambda system: {
+            "approved": False, "reason_code": "", "note": "fake: endpoint unreachable"}
+        _notify_calls.clear()
+        code, body = call(dict(good, contact_id="CGATEUNAVAILABLE"))
+        record("standing gate unavailable -> exit 6 EX_STANDING (fails closed)",
+               code == EX_STANDING)
+        record("standing gate unavailable -> never invents a reason_code",
+               body.get("reason") == "gate_unavailable" and _notify_calls[0]["reason_code"] == "")
+    finally:
+        standing_gate.check_standing = _real_check_standing
+        standing_gate.notify_rejection = _real_notify_rejection
+        cfg["standing_check_mode"] = "off"
 
     # cross-check our local constants against the sibling writer, if importable
     try:

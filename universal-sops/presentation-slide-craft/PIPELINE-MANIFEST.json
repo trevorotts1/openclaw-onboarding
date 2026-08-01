@@ -1,5 +1,5 @@
 {
-  "manifest_version": 28,
+  "manifest_version": 34,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -68,7 +68,7 @@
       "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
     }
   ],
-  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the FIVE files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist). The four build-only artifacts (speech_md, speech_fish_md, infographic_png, teleprompter_html) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (FIVE); the per-artifact existence/size gate reads build_bundle_files (NINE).",
+  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the SIX files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist) -- as of D02 (ratified 2026-07-26) this now includes teleprompter_html. The three remaining build-only artifacts (speech_md, speech_fish_md, infographic_png) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (SIX); the per-artifact existence/size gate reads build_bundle_files (NINE).",
   "build_bundle_files": [
     "deck_pptx",
     "deck_pdf",
@@ -85,7 +85,8 @@
     "deck_pdf",
     "guide_pdf",
     "speech_pdf",
-    "audio_mp3"
+    "audio_mp3",
+    "teleprompter_html"
   ],
   "phases": [
     {
@@ -197,7 +198,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-CONVERTER",
@@ -225,7 +230,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0A-INTAKE",
@@ -284,7 +293,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P0B-PRIORITY",
@@ -345,7 +358,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-STYLE-PREVIEW",
@@ -368,7 +385,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SHIFT-QC",
@@ -392,7 +413,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P1Q-COPY-QC",
@@ -438,7 +463,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P3-ARC",
@@ -480,7 +509,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-3.5-RESEARCH-MAP",
@@ -504,7 +537,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-COPY",
@@ -534,7 +571,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "PF-DESIGN",
@@ -554,7 +595,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-TYPO-QC",
@@ -577,7 +622,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-PROMPT",
@@ -599,7 +648,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-PROMPT-QC",
@@ -621,7 +674,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P4-RENDER",
@@ -657,7 +714,11 @@
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
       },
       "long_running": true,
-      "heartbeat_minutes": 10
+      "heartbeat_minutes": 10,
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-IMAGE-QC",
@@ -687,7 +748,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P8-ASSEMBLE",
@@ -712,7 +777,59 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P8.1-PDF-EXPORT",
+      "order": 8.1,
+      "name": "Deck PDF Export",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/*-FINAL.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P8.2-GUIDE",
+      "order": 8.2,
+      "name": "Presenter Guide PDF",
+      "owning_role": "presenters-guide-specialist",
+      "sop_refs": [
+        "presenters-guide-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTER-GUIDE.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9-SPEECH",
@@ -734,7 +851,59 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"},
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P8.4-FISH-TAG",
+      "order": 8.52,
+      "name": "Speech Fish-Audio Tagging",
+      "owning_role": "fish-audio-expression-specialist",
+      "sop_refs": [
+        "fish-audio-expression-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P9.1-SPEECH-PDF",
+      "order": 8.55,
+      "name": "Presenter's Speech PDF (Teleprompter Print)",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/PRESENTERS-SPEECH.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SPEECH-QC",
@@ -756,7 +925,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9.5-NOTES-SYNC",
@@ -774,7 +947,59 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P9.2-GHL-UPLOAD",
+      "order": 8.9,
+      "name": "GHL Media Library Upload",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/checkpoints/media_library.json",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"},
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P7-TELEPROMPTER",
+      "order": 8.95,
+      "name": "Presenter Teleprompter HTML",
+      "owning_role": "presenters-speech-writer",
+      "sop_refs": [
+        "presenters-speech-writer-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/presenter-teleprompter.html",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P9-DELIVER",
@@ -796,7 +1021,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"},
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-CLAIM",
@@ -818,7 +1047,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-INTAKE",
@@ -844,7 +1077,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-INTAKE-TRACE",
@@ -866,7 +1103,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-STRUCTURE",
@@ -896,7 +1137,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     },
     {
       "id": "P-SP-P3-HYGIENE",
@@ -918,7 +1163,11 @@
       "client_report": {
         "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
         "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
-      }
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
     }
   ],
   "autofails": [
@@ -1012,7 +1261,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "delivery interlock \u2014 the five-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
+      "trigger": "delivery interlock \u2014 the six-file client package (client_package_files) is not assembled / a required artifact is missing or empty",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
@@ -1030,7 +1279,7 @@
       "stage": "Done",
       "level": "DECK",
       "in_ruleset": false,
-      "trigger": "five-file bundle / infographic / GHL upload incomplete",
+      "trigger": "six-file bundle / infographic / GHL upload incomplete",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
@@ -1310,15 +1559,6 @@
       "level": "DECK",
       "in_ruleset": true,
       "trigger": "generation used a non-manifest model",
-      "enforced_by": "closeout_gate",
-      "py_symbol": null
-    },
-    {
-      "code": "AF-NO-VISION-QC",
-      "stage": "5/6",
-      "level": "DECK",
-      "in_ruleset": true,
-      "trigger": "no multimodal image-QC pass over rendered slides",
       "enforced_by": "closeout_gate",
       "py_symbol": null
     },
@@ -1686,6 +1926,18 @@
       ]
     },
     {
+      "code": "AF-OCR-ENGINE-MISSING",
+      "stage": "Phase-0",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "MASTER-SPEC 7.4 ('Quality that is measured, not asserted'): 'The missing OCR dependency fails at minute zero, before any paid generation, not after 62 images.' Phase-0 OCR-engine-AVAILABILITY pre-flight (distinct from the postflight OCR-readback sidecar-verification gate, which can only audit a slide once it has already been rendered and paid for). Fires when pytesseract / Pillow is not importable, or the tesseract binary is not reachable, in the EXACT interpreter/environment that will perform the render. HARD-ABORTS before ANY phase is dispatched (run_signature_deck.phase0_preflight, the earliest point in the entire run) and, defense-in-depth, before any render in build_deck.py's own direct-invocation Phase-0 block, so a box with no OCR engine never spends a single Kie.ai render on a deck whose OCR-readback audit can never pass. Skipped only in --adhoc mode, which forces an empty api_key and so can never spend real credit regardless of OCR state (same carve-out AF-KIE-BALANCE takes).",
+      "enforced_by": "build_deck",
+      "py_symbol": "ocr_engine_preflight",
+      "secondary_py_symbols": [
+        "_import_prompt_gate"
+      ]
+    },
+    {
       "code": "AF-PHASE-SKIPPED",
       "stage": "Runner",
       "level": "DECK",
@@ -1742,6 +1994,15 @@
       "secondary_py_symbols": [
         "_chk_image_qc"
       ]
+    },
+    {
+      "code": "AF-OCR-READBACK",
+      "stage": "Postflight",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render — NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch — waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_ocr_readback"
     },
     {
       "code": "AF-NO-RUN-DIR",
@@ -2713,6 +2974,16 @@
     {
       "id": "qc-specialist-signature-presentations",
       "owns_phase": null
+    },
+    {
+      "id": "image-grounding-steward",
+      "owns_phase": null,
+      "description": "Brief-grounding owner for the visual layer (\"The Witness\"): scores whether people-or-scene-bearing imagery depicts a concrete moment from the client's specific content, or generic on-brand stock. Custom BlackCEO addition (SOP-PRES-CUSTOM-09 through 12); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
+    },
+    {
+      "id": "representation-casting-director",
+      "owns_phase": null,
+      "description": "Per-client representation owner (\"The Mirror\"): enforces that the deck-wide cast matches the client's captured REPRESENTATION_MIX at prompt, image, and final-deck stages, with no invented demographic default. Custom BlackCEO addition (SOP-PRES-CUSTOM-05 through 08); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
     }
   ]
 }

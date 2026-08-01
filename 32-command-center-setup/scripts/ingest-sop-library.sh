@@ -235,11 +235,20 @@ echo "[sop-library] population verified: $FINAL_COUNT sops rows (>= canonical $C
 
 # P4-03 step 2 — provision the shipped SOP-embeddings asset (zero client-key
 # embed calls for the shared library). Runs AFTER the SOP content ingest so
-# `sops` rows exist to join against. Additive/idempotent: no-ops when no asset
-# has been published yet (SOP-EMBEDDINGS-MANIFEST.json asset_rebuild_required),
-# skips a re-download when the box is already canonical, and NEVER blocks this
-# script's own exit code (mirrors install.sh Step 6b / update-skills.sh U6b's
-# additive treatment of provision_persona_index).
+# `sops` rows exist to join against. Additive/idempotent: a real asset was
+# published 2026-07-20 (release sop-embeddings-v1.0.0; SOP-EMBEDDINGS-MANIFEST.json
+# now carries asset_rebuild_required:false), so this is a LIVE provisioning
+# step, not a no-op — it skips a re-download when the box is already
+# canonical (per its own marker-table + row-count gate), and NEVER blocks
+# this script's own exit code (mirrors install.sh Step 6b / update-skills.sh
+# U6b's additive treatment of provision_persona_index). NOTE: this call sits
+# on the fresh-ingest path only — a box that takes the ALREADY-POPULATED
+# SKIP GATE above (exits before reaching here) gets its SOP-embeddings
+# coverage from update-skills.sh's independent Step U6c2 instead, which
+# checks `sop_embeddings` row count against this same manifest regardless of
+# whether this script ever runs (Bug D: content row-count and embeddings
+# row-count are different signals, so a box already at canonical CONTENT
+# population must not be assumed to also be embeddings-current).
 SOP_EMBED_DIR="$(cd "$SCRIPT_DIR/../../shared-utils/sop-embed-once" 2>/dev/null && pwd || true)"
 if [ -n "$SOP_EMBED_DIR" ] && [ -f "$SOP_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json" ]; then
   python3 "$SOP_EMBED_DIR/provision_sop_embeddings.py" \
@@ -253,12 +262,15 @@ fi
 # EMBEDDING-COST TRANSPARENCY (v20.1.0). Ingesting CONTENT rows costs nothing —
 # every write above is a local sqlite upsert and provision_sop_embeddings.py
 # makes ZERO embedding API calls (it is a straight ATTACH+INSERT of a shipped
-# asset, and it no-ops entirely while SOP-EMBEDDINGS-MANIFEST.json carries
-# asset_rebuild_required:true, which it does today — no embeddings asset has
-# ever been published). So the rows this script just landed are UNEMBEDDED.
-# Say so OUT LOUD: embedding them is a real, metered cost on the CLIENT's own
-# Gemini key and must stay an explicit operator decision, never an invisible
-# side effect of an update.
+# asset). A real asset was published 2026-07-20 (release sop-embeddings-v1.0.0;
+# asset_rebuild_required is now false), so the shared-library rows landed
+# above should already be embedded by the provisioning step just above. Any
+# rows still reported unembedded below are outside that shared asset — e.g.
+# client-authored SOPs (sop_proposals) or starter seeds, which are
+# backfill-sop-embeddings.ts's job (step 3), not this script's. Say so OUT
+# LOUD: embedding those is a real, metered cost on the CLIENT's own Gemini
+# key and must stay an explicit operator decision, never an invisible side
+# effect of an update.
 # ----------------------------------------------------------------------------
 EMB_ROWS="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
 if [ "${EMB_ROWS:-0}" -lt "${FINAL_COUNT:-0}" ] 2>/dev/null; then

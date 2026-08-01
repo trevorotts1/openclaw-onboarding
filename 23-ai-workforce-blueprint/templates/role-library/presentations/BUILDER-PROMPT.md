@@ -81,7 +81,9 @@ bash <ENTRY>/presentation-canonical-entry.sh \
 check**, a **bypass-scan** that refuses to start if any hand-rolled renderer/assembler
 exists in your run directory, and a **version/hash pin** that confirms the deployed
 renderer is the pinned governed one — and only then hands off to the canonical
-orchestrator (`run_signature_deck.py` → `build_deck.py`). That canonical path, for every
+orchestrator (`run_signature_deck.py` → `build_deck.py`). The scripts directory defaults
+to the materialized department's `scripts/` folder; `--scripts-dir` overrides it. The
+script refuses rather than searching. That canonical path, for every
 slide, reads the pre-authored rich prompt **verbatim**, calls KIE.ai, polls, downloads
 and verifies the PNG, retries up to 3x on failure, assembles all PNGs into a 16:9
 `.pptx` (one full-bleed image per slide, **zero** text boxes), runs the postflight

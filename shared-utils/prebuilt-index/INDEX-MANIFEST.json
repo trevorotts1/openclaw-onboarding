@@ -5,12 +5,12 @@
   "persona_count": 99,
   "chunk_count": 1411,
   "file_count": 99,
-  "sha256": "131fa25cc8318f44a03775cbadd124cca3f15fa2f34bc764241138f376c1a973",
-  "build_date": "2026-07-06",
-  "release_tag": "prebuilt-index-v2.4.1",
-  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.4.1/gemini-index.sqlite.gz",
-  "gz_size_bytes": 93644283,
-  "gz_size_mb": 89.31,
+  "sha256": "042aed12827cdfa09aeb996155e652266db68bb7d0405fb971dbdce33573ffa2",
+  "build_date": "2026-07-24",
+  "release_tag": "prebuilt-index-v2.4.2",
+  "asset_url": "https://github.com/trevorotts1/openclaw-onboarding/releases/download/prebuilt-index-v2.4.2/gemini-index.sqlite.gz",
+  "gz_size_bytes": 93576416,
+  "gz_size_mb": 89.24,
   "source_db_bytes": 108150784,
   "hormozi_leads_rows": 99,
   "canonical_persona_count": 99,
@@ -19,7 +19,7 @@
   "persona_set_md5": "62deb4e36d3cbd34336938fa7b993513",
   "persona_set_version": "2026-07-14",
   "persona_set_note": "md5 + lastUpdated of the canonical 22-…/persona-categories.json this asset was built against. The N38 count-triad assertion (qc-assert-repo-consistency.py:_persona_set_triad_failures) and persona-set-asset-consistency-guard.yml fail CI if blueprint dirs != categories keys != persona_count != canonical_persona_count. v2.4.1: the published asset embeds 99 personas (the v2.4.0 83-persona base + 16 new social-media/content/growth/persuasion/communication/landing-page titles); persona_count/canonical_persona_count/embedded_persona_count are all 99 (verified against the published gemini-index.sqlite.gz: 1411 rows / 99 distinct persona_id / single (gemini, gemini-embedding-2, 3072) / 0 null-provider rows). persona_set_md5 above is RE-STAMPED against the 99-key persona-categories.json (md5 dd789993156530f3be1a4d7497fb403d) shipped in this same change. Rebuild deltas incrementally via shared-utils/prebuilt-index/build-and-publish.sh (HASH-SKIP embeds only the delta) — NEVER a full re-embed. v19.1.0: persona-categories.json advanced to schemaVersion 1.3 (additive audiences/topics/voice_style/usable_as on all 99 personas + audienceTags/topicTags vocab); persona_set_md5 RE-STAMPED to dd789993156530f3be1a4d7497fb403d. The tag layer is metadata read directly by the Skill-23 blend matcher — it is NOT embedded in the gemini-index asset (which embeds blueprint bodies, unchanged), so the published asset and embedded_persona_count=99 remain valid and NO re-embed is required. A-U3/schema-1.4 (2026-07-14): persona-categories.json advanced to schemaVersion 1.4 (additive emotional_register/audience_resonance/conversion_style on all 99 personas, synthesized from each persona's already-catalogued voice_style via pipeline/backfill-schema14-registers.py); persona_set_md5 RE-STAMPED to 62deb4e36d3cbd34336938fa7b993513 via the sanctioned persona_fleet.py set-manifest-counts writer (counts stay 99). The three new fields are metadata read by the Skill-23 blend matcher, NOT embedded in the gemini-index asset (blueprint bodies unchanged), so asset_rebuild_required stays false and NO re-embed is required.",
-  "manifest_last_updated": "2026-07-14",
+  "manifest_last_updated": "2026-07-30",
   "asset_rebuild_required": false,
   "section_tagged": true,
   "section_tag_note": "embeddings table carries section_number + mode columns. coaching rows at section_number=3, leadership/governance rows at section_number=4. mode values: {both, coaching, leadership}. Section-tagged rows allow mode-aware retrieval without a full re-index.",
@@ -73,7 +73,7 @@
       "russell-brunson-traffic-secrets"
     ]
   },
-  "notes": "v2.4.1 — canonical 99-persona SECTION-TAGGED asset with GA gemini-embedding-2 @3072: 99 personas / 1411 section rows, one row per '## Section N' with section_number + mode tags (coaching=3, leadership=4; mode in {both, coaching, leadership}). Every vector is 12288-byte float32 @ dim 3072; every row is stamped provider=gemini/model=gemini-embedding-2/dim=3072. Expands the 83-persona v2.4.0 asset by 16 personas (social-media, content, growth, persuasion, communication, and landing-page/funnel titles). Built incrementally (HASH-SKIP delta embed of the 16 new personas over the v2.4.0 base) — gzip + sha256 + GitHub Release upload only. Clients download this asset instead of re-embedding per box; SHA256 verified against the published release asset before install. FLEET NOTE: this manifest points update-skills.sh at the v2.4.1 asset (via provision-persona-index.sh, which reads asset_url + sha256 + release_tag from here). TRIAD NOTE: the persona-set-asset-consistency-guard requires blueprint dirs == categories keys == persona_count == canonical_persona_count == 99; those repo-side counts reach 99 via the 16 new blueprint dirs + persona-categories.json keys in the SAME mergeable change as this manifest.",
-  "published_at": "2026-07-06",
-  "asset_verified": "2026-07-06: the published v2.4.1 release asset (gemini-index.sqlite.gz) was re-downloaded (no auth) and inspected — sha256 = 131fa25cc8318f44a03775cbadd124cca3f15fa2f34bc764241138f376c1a973 matches this manifest's top-level sha256, gz size 93644283 bytes, uncompressed 108150784 bytes; 1411 rows / 99 distinct persona_id; every vector 12288-byte float32 @ dim 3072; single (provider,model,dim) = (gemini, gemini-embedding-2, 3072); 0 null-provider rows; section_number + mode columns present. Built by shared-utils/prebuilt-index/build-and-publish.sh as a HASH-SKIP delta of the 16 new personas over the verified v2.4.0 base."
+  "notes": "v2.4.2 — canonical 99-persona SECTION-TAGGED asset with GA gemini-embedding-2 @3072: 99 personas / 1411 section rows, one row per '## Section N' with section_number + mode tags (coaching=3, leadership=4; mode in {both, coaching, leadership}). Every vector is 12288-byte float32 @ dim 3072; every row is stamped provider=gemini/model=gemini-embedding-2/dim=3072. Incremental rebuild of the v2.4.1 99-persona asset — same persona composition, delta re-embedded (HASH-SKIP) per the release body ('Incremental persona-index rebuild: 99 personas / 1411 chunks (delta-embedded, HASH-SKIP)') — gzip + sha256 + GitHub Release upload only. Clients download this asset instead of re-embedding per box; SHA256 verified against the published release asset before install. FLEET NOTE: this manifest points update-skills.sh at the v2.4.2 asset (via provision-persona-index.sh, which reads asset_url + sha256 + release_tag from here). TRIAD NOTE: the persona-set-asset-consistency-guard requires blueprint dirs == categories keys == persona_count == canonical_persona_count == 99; those repo-side counts remain at 99 (persona composition unchanged from v2.4.1 — this release re-embeds, it does not add personas).",
+  "published_at": "2026-07-24",
+  "asset_verified": "2026-07-30: the published v2.4.2 release asset (gemini-index.sqlite.gz) was re-downloaded (no auth) and inspected — sha256 = 042aed12827cdfa09aeb996155e652266db68bb7d0405fb971dbdce33573ffa2 matches this manifest's top-level sha256 (also matches the GitHub release asset digest), gz size 93576416 bytes, uncompressed 108150784 bytes; 1411 rows / 99 distinct persona_id; every vector 12288-byte float32 @ dim 3072; single (provider,model,dim) = (gemini, gemini-embedding-2, 3072); 0 null-provider rows; section_number + mode columns present. This fix also discovered the v2.4.2 publish had skipped this manifest commit (it still pointed at v2.4.1's release_tag/asset_url/sha256); release_tag, asset_url, sha256, gz_size_bytes/mb, build_date, and published_at are corrected here to the real v2.4.2 asset. Per the GitHub release body, v2.4.2 is an incremental rebuild (99 personas / 1411 chunks, delta-embedded, HASH-SKIP) — same persona composition as v2.4.1."
 }

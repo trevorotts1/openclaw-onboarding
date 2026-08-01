@@ -127,9 +127,166 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.4.2"
+ONBOARDING_VERSION="v21.4.50"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
+
+#=== BEGIN FLEET-STANDING-GATE-V1 ===
+# ============================================================
+#  FLEET STANDING GATE -- the single chokepoint for entitlement.
+#
+#  WHY HERE: a client box can be updated three different ways --
+#    1. the Sunday `openclaw cron` job (client-facing, cron-prompt.txt)
+#    2. the legacy silent shell cron (.update-restart-if-needed)
+#    3. the operator's fleet-roll SSH push
+#  ALL THREE ultimately execute THIS script. Gating each caller
+#  separately means three patches and three chances to miss one; a
+#  single early exit here covers every path at once.
+#
+#  FAIL OPEN -- READ THIS BEFORE CHANGING ANYTHING:
+#  Only an EXPLICIT `blocked` verdict stops an update. Unreachable
+#  gate, HTTP error, malformed reply, missing config, unknown box --
+#  every one of those PROCEEDS with the update. The reason is
+#  asymmetric blast radius: wrongly blocking freezes updates across
+#  the entire fleet the moment n8n hiccups, while wrongly allowing
+#  costs one update cycle for one delinquent box. Never "harden"
+#  this into fail-closed.
+#
+#  A box that has never been provisioned with the gate env vars is
+#  therefore unaffected -- this change is backward compatible and
+#  inert until FLEET_STANDING_GATE_URL is seeded.
+#
+#  Escape hatches:
+#    FLEET_STANDING_GATE_BYPASS=1   skip the gate entirely (operator)
+#    FLEET_STANDING_GATE_SHADOW=1   report the verdict, never block
+#
+#  NEVER prints the header secret.
+# ============================================================
+
+fleet_standing_resolve_slug() {
+    # 1. explicit env  2. openclaw.json env.vars  3. hostname
+    if [ -n "${FLEET_STANDING_BOX_SLUG:-}" ]; then
+        printf '%s' "$FLEET_STANDING_BOX_SLUG"; return 0
+    fi
+    local json="${OC_JSON:-}"
+    if [ -n "$json" ] && [ -f "$json" ] && command -v python3 >/dev/null 2>&1; then
+        local from_json
+        from_json="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    print(((d.get('env') or {}).get('vars') or {}).get('FLEET_STANDING_BOX_SLUG','') or '')
+except Exception:
+    print('')
+" "$json" 2>/dev/null || printf '')"
+        if [ -n "$from_json" ]; then printf '%s' "$from_json"; return 0; fi
+    fi
+    hostname -s 2>/dev/null || printf ''
+}
+
+fleet_standing_gate() {
+    if [ "${FLEET_STANDING_GATE_BYPASS:-0}" = "1" ]; then
+        echo "  [standing-gate] bypassed (FLEET_STANDING_GATE_BYPASS=1)"
+        return 0
+    fi
+
+    local url="${FLEET_STANDING_GATE_URL:-}"
+    local hdr_name="${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}"
+    local hdr_val="${FLEET_STANDING_GATE_SECRET:-}"
+
+    if [ -z "$url" ] || [ -z "$hdr_val" ]; then
+        echo "  [standing-gate] not configured on this box -- proceeding (fail open)"
+        return 0
+    fi
+
+    local slug; slug="$(fleet_standing_resolve_slug)"
+    if [ -z "$slug" ]; then
+        echo "  [standing-gate] could not resolve box slug -- proceeding (fail open)"
+        return 0
+    fi
+
+    local body resp code
+    body="{\"boxName\":\"${slug}\",\"action\":\"update\",\"source\":\"update-skills.sh\"}"
+
+    # Two attempts, short timeouts. Never let curl's exit code trip set -e.
+    local attempt
+    for attempt in 1 2; do
+        resp="$(curl -s -m 15 --connect-timeout 8 \
+                 -w $'\n%{http_code}' \
+                 -X POST "$url" \
+                 -H "Content-Type: application/json" \
+                 -H "${hdr_name}: ${hdr_val}" \
+                 -d "$body" 2>/dev/null || printf '\n000')"
+        code="$(printf '%s' "$resp" | tail -n1)"
+        [ "$code" = "200" ] && break
+        [ "$attempt" = "1" ] && sleep 3
+    done
+
+    if [ "$code" != "200" ]; then
+        echo "  [standing-gate] gate unreachable (HTTP ${code:-000}) -- proceeding (fail open)"
+        return 0
+    fi
+
+    local payload verdict
+    payload="$(printf '%s' "$resp" | sed '$d')"
+    # NOTE the `|| printf ''`: under `set -euo pipefail` a non-matching grep
+    # exits 1, which would kill this command substitution and abort the whole
+    # update -- i.e. a malformed gate reply would silently fail CLOSED across
+    # the fleet. Swallowing the failure is what keeps the "unrecognised reply
+    # -> proceed" branch below reachable. tests/unit/fleet-standing-gate.test.sh
+    # covers this exact regression.
+    verdict="$(printf '%s' "$payload" \
+                | grep -o '"verdict"[[:space:]]*:[[:space:]]*"[a-z_]*"' \
+                | head -n1 | sed 's/.*"\([a-z_]*\)"$/\1/' 2>/dev/null || printf '')"
+
+    case "$verdict" in
+        blocked) : ;;                                   # the only stop condition
+        allowed)
+            echo "  [standing-gate] account current -- proceeding"
+            return 0 ;;
+        unmatched|held)
+            echo "  [standing-gate] verdict '${verdict}' (box not on roster or lookup failed) -- proceeding (fail open)"
+            return 0 ;;
+        *)
+            echo "  [standing-gate] unrecognised reply -- proceeding (fail open)"
+            return 0 ;;
+    esac
+
+    if [ "${FLEET_STANDING_GATE_SHADOW:-0}" = "1" ]; then
+        echo "  [standing-gate] SHADOW MODE: would have BLOCKED this update (${slug}) -- proceeding anyway"
+        return 0
+    fi
+
+    # ---- blocked ----
+    local agents_md="${OC_CONFIG:-$HOME/.openclaw}/AGENTS.md"
+    local stamp; stamp="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    if [ -f "$agents_md" ] && ! grep -qF "OPENCLAW_UPDATE_HELD_BILLING" "$agents_md" 2>/dev/null; then
+        {
+            echo ""
+            echo "<!-- OPENCLAW_UPDATE_HELD_BILLING:${stamp} -->"
+            echo "## Update held -- account not current"
+            echo "An update was available on ${stamp} but was not applied because this"
+            echo "account is not current on payments. Nothing on this system was changed;"
+            echo "everything continues running as it is. The update will apply automatically"
+            echo "once the account is brought up to date."
+            echo "<!-- OPENCLAW_UPDATE_HELD_BILLING_END -->"
+        } >> "$agents_md" 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "============================================================"
+    echo "  Update held -- account not current on payments."
+    echo ""
+    echo "  Nothing on this system has been changed and everything"
+    echo "  keeps running as it is. As soon as the account is up to"
+    echo "  date the latest version will install on the next check."
+    echo "============================================================"
+    echo ""
+    exit 0
+}
+
+fleet_standing_gate
+#=== END FLEET-STANDING-GATE-V1 ===
 
 #=== BEGIN OPENCLAW-BACKUP-RETENTION-V1 ===
 # ============================================================
@@ -982,14 +1139,22 @@ check_update_pending() {
 # after a successful update → perpetual "needs update" false-positive (Bug B).
 # ----------------------------------------------------------
 get_current_version() {
-  # Active dir first (mirrors discover_skills_dir priority)
+  # Active dir first (mirrors discover_skills_dir priority). SKILLS_DIR is
+  # resolved by discover_skills_dir() (VPS/Contabo -> /data/.openclaw/skills,
+  # Mac -> $HOME/.openclaw/skills) and is already set by the time this is
+  # called (main() sets it before the version gate). Bug A: this list used to
+  # check only $HOME paths, so on every VPS/Contabo box the active version
+  # file at /data/.openclaw/skills/.onboarding-version was never checked --
+  # get_current_version() returned empty even on a fully up-to-date box.
   local VERSION_PATHS=(
+    "${SKILLS_DIR:+$SKILLS_DIR/.onboarding-version}"
     "$HOME/.openclaw/skills/.onboarding-version"
     "$HOME/Downloads/openclaw-master-files/.onboarding-version"
     "$HOME/.openclaw/onboarding/.onboarding-version"
   )
 
   for VERSION_FILE in "${VERSION_PATHS[@]}"; do
+    [ -n "$VERSION_FILE" ] || continue
     if [ -f "$VERSION_FILE" ]; then
       cat "$VERSION_FILE" 2>/dev/null | tr -d '[:space:]'
       return
@@ -1070,7 +1235,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.4.2 - safe_json_edit
+# v21.4.50 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -1134,27 +1299,57 @@ safe_json_edit() {
 
 # ----------------------------------------------------------
 # v10.15.51 -- link_shared_core_files
+# AMENDED (N29, authorized by Trevor 2026-07-31): copy-on-run, not symlink.
 # ----------------------------------------------------------
 # Zero-Human-Workforce file model: on EVERY box, ALL of that account's agents
 # + sub-agents SHARE the box's ONE canonical AGENTS.md / TOOLS.md / USER.md
-# (symlinked, NOT duplicated). Per-agent files (IDENTITY.md, SOUL.md, MEMORY.md,
-# HEARTBEAT.md) stay each agent's OWN real files -- never touched here (except
-# additive content preservation into IDENTITY.md, see below).
+# CONTENT, via a real file copy. Per-agent files (IDENTITY.md, SOUL.md,
+# MEMORY.md, HEARTBEAT.md) stay each agent's OWN real files -- never touched
+# here (except additive content preservation into IDENTITY.md, see below).
+#
+# WHY A COPY AND NOT A SYMLINK (this function used to symlink -- do not
+# "restore" that): the OpenClaw runtime enforces a workspace-root boundary
+# guard (applyResolvedSymlinkHop, reached via readWorkspaceFileWithGuards) that
+# REJECTS any symlink whose realpath resolves outside the reading agent's own
+# workspace. A rejected symlink is reported missing:true and a ~107-char
+# [MISSING] stub is injected in its place -- the agent then runs with
+# essentially no instructions, silently, with no error anywhere. Proven live:
+# a client's dept-master-orchestrator reported rawChars:0 / injectedChars:107 /
+# missing:true while its 335KB AGENTS.md sat intact on disk, and answered that
+# it had no defined CEO routing/escalation procedure. No config key, env var,
+# or flag reaches that call site, and the guard is unchanged between OpenClaw
+# 2026.6.11 and 2026.7.1-2 (newer is stricter). A real file copy is invisible
+# to that guard, so it is now the ONLY correct mechanism here.
 #
 # CANON_DIR = the box's DEFAULT AGENT WORKSPACE (agents.defaults.workspace, with
 # the same resolver as obs_resolve_workspace / install.sh Step 10). The canonical
-# AGENTS.md/TOOLS.md/USER.md live there. The symlink target is ALWAYS this LOCAL
+# AGENTS.md/TOOLS.md/USER.md live there. The copy source is ALWAYS this LOCAL
 # box's own canonical -- NEVER a hardcoded path and NEVER a cross-box/cross-account
-# path. The client is the USER; a client box links to the CLIENT's own files only.
-# This is the co-mingling guard (N0): we read THIS box's openclaw.json and resolve
-# THIS box's workspace -- we never write a foreign path into a client's symlink.
+# path. The client is the USER; a client box copies from the CLIENT's own files
+# only. This is the co-mingling guard (N0): we read THIS box's openclaw.json and
+# resolve THIS box's workspace -- we never write a foreign path's content into a
+# client's copy.
 #
 # NESTED WORKFLOW AGENT EXEMPTION: any workspace path matching */workflows/*/agents/*
 # is an internal workflow micro-agent and is NEVER touched.
 #
-# Idempotent: a second run produces no new backups and no churn -- a symlink that
-# already points at CANON_DIR/<f> is a no-op; an absent file is left absent.
-# Every action is logged with the [link-shared] prefix.
+# Idempotent: if an agent's copy already byte-matches canonical, it is a no-op
+# -- no rewrite, no backup churn. A pre-existing SYMLINK (relic of the
+# pre-amendment behavior) is MIGRATED to a real copy, unconditionally -- the
+# runtime guard rejects it regardless of what it points to. A real file that
+# DIFFERS from canonical is backed up (never deleted), its unique content
+# preserved additively into IDENTITY.md, then overwritten with canonical
+# content. An absent file is left absent.
+#
+# FAIL-OPEN (regression guard for 5e181ceb, which once emptied a shared
+# AGENTS.md when the updater could not read it): if the canonical source
+# itself is unreadable or empty, EVERY agent's existing copy of that file is
+# left EXACTLY as-is and a loud warning is printed to stderr. This function
+# must never write an empty or truncated core file. Every write is verified by
+# content hash (read back + compare) before being counted as a success; a
+# verify failure is logged loudly and the pre-existing file/backup is left
+# intact. File mode/ownership are preserved across the rewrite. Every action
+# is logged with the [link-shared] prefix.
 # ----------------------------------------------------------
 link_shared_core_files() {
   local CANON_DIR="${1:-}"
@@ -1216,6 +1411,83 @@ link_shared_core_files() {
   local TS
   TS="$(date +%Y%m%d-%H%M%S)"
 
+  # ---- content-hash + stat helpers (N29 amendment: copy semantics) --------
+  # _lsc_sha256 PATH -> sha256 hex digest on stdout, or empty if PATH is
+  # missing/unreadable. PATH travels via an env var (never interpolated into
+  # the python source) so paths with spaces/quotes are safe.
+  _lsc_sha256() {
+    LSC_HASH_PATH="$1" python3 -c '
+import hashlib, os, sys
+p = os.environ.get("LSC_HASH_PATH", "")
+try:
+    with open(p, "rb") as fh:
+        data = fh.read()
+    sys.stdout.write(hashlib.sha256(data).hexdigest())
+except Exception:
+    pass
+' 2>/dev/null
+  }
+
+  # _lsc_mode_owner PATH -> "<mode>|<uid>:<gid>" for an existing file, or ""
+  # if PATH doesn't exist. Tries BSD stat(1) syntax (Mac) then GNU stat(1)
+  # syntax (Linux/VPS/Docker) -- the same fallback pattern already used
+  # elsewhere in this file (see the INSTALL_FLAG age check above).
+  _lsc_mode_owner() {
+    local _p="$1" _m="" _o=""
+    [ -e "$_p" ] || return 0
+    _m="$(stat -f '%OLp' "$_p" 2>/dev/null || stat -c '%a' "$_p" 2>/dev/null || echo '')"
+    _o="$(stat -f '%u:%g' "$_p" 2>/dev/null || stat -c '%u:%g' "$_p" 2>/dev/null || echo '')"
+    printf '%s|%s' "$_m" "$_o"
+  }
+
+  # _lsc_write_copy SRC DEST MODE OWNER -> atomically copy SRC's bytes to DEST
+  # (same-directory temp file + rename, so a mid-write crash can never leave
+  # DEST truncated), apply MODE/OWNER if given, then verify by hash. Prints
+  # "OK" on a verified match, "FAIL" otherwise. Every step is guarded so this
+  # never raises under `set -euo pipefail`.
+  _lsc_write_copy() {
+    local _src="$1" _dest="$2" _mode="$3" _owner="$4"
+    local _tmp="$_dest.tmp-unify-$$"
+    if ! cp -f "$_src" "$_tmp" 2>/dev/null; then
+      echo "FAIL"; return 0
+    fi
+    [ -n "$_mode" ] && chmod "$_mode" "$_tmp" 2>/dev/null
+    [ -n "$_owner" ] && chown "$_owner" "$_tmp" 2>/dev/null
+    if ! mv -f "$_tmp" "$_dest" 2>/dev/null; then
+      rm -f "$_tmp" 2>/dev/null
+      echo "FAIL"; return 0
+    fi
+    local _srchash _desthash
+    _srchash="$(_lsc_sha256 "$_src")"
+    _desthash="$(_lsc_sha256 "$_dest")"
+    if [ -n "$_srchash" ] && [ "$_srchash" = "$_desthash" ]; then
+      echo "OK"
+    else
+      echo "FAIL"
+    fi
+  }
+
+  # Precompute each canonical file's hash ONCE (not per-workspace; this repo
+  # targets bash 3.2 on Mac, so no associative arrays -- three scalars).
+  # FAIL-OPEN: a canonical file that is missing/unreadable/EMPTY skips every
+  # workspace for that filename entirely. Nothing is ever overwritten with
+  # emptiness.
+  local CANON_HASH_AGENTS="" CANON_HASH_TOOLS="" CANON_HASH_USER=""
+  for f in AGENTS.md TOOLS.md USER.md; do
+    local _ch=""
+    if [ -s "$CANON_REAL/$f" ]; then
+      _ch="$(_lsc_sha256 "$CANON_REAL/$f")"
+    fi
+    if [ -z "$_ch" ]; then
+      echo "  ⛔ [link-shared] WARN: canonical $f is empty or unreadable at $CANON_REAL/$f -- leaving EVERY agent's existing copy of $f untouched (fail-open, no overwrite, no truncation)" >&2
+    fi
+    case "$f" in
+      AGENTS.md) CANON_HASH_AGENTS="$_ch" ;;
+      TOOLS.md)  CANON_HASH_TOOLS="$_ch" ;;
+      USER.md)   CANON_HASH_USER="$_ch" ;;
+    esac
+  done
+
   # --- Enumerate agent workspaces ------------------------------------------
   # Sources: (a) every agents[].workspace declared in THIS box's openclaw.json,
   # (b) a scan of the workspaces/ dir (immediate children + agents/* role dirs).
@@ -1265,7 +1537,7 @@ PYEOF
         done >> "$WS_LIST_FILE" 2>/dev/null || true
   done
 
-  local LINKED=0 REPOINTED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0
+  local COPIED=0 MIGRATED=0 BACKED_UP=0 PRESERVED=0 SKIPPED_ANT=0 NOOP=0 FAILED=0
 
   # Dedup workspace list, then process each.
   local W
@@ -1296,24 +1568,50 @@ PYEOF
       local TARGET="$CANON_REAL/$f"
       local LINKPATH="$W_REAL/$f"
 
+      # Resolve this file's precomputed canonical hash (no associative arrays
+      # -- see the bash-3.2 note above). Empty means canonical was bad; the
+      # fail-open warning already fired once above, so skip silently here.
+      local TARGET_HASH=""
+      case "$f" in
+        AGENTS.md) TARGET_HASH="$CANON_HASH_AGENTS" ;;
+        TOOLS.md)  TARGET_HASH="$CANON_HASH_TOOLS" ;;
+        USER.md)   TARGET_HASH="$CANON_HASH_USER" ;;
+      esac
+      if [ -z "$TARGET_HASH" ]; then
+        continue
+      fi
+
       if [ -L "$LINKPATH" ]; then
-        # Already a symlink -- repoint ONLY if it points somewhere wrong.
+        # MIGRATION: a symlink is a relic of the pre-amendment behavior, and
+        # the runtime boundary guard rejects it at read time regardless of
+        # what it points to. Replace with a verified real copy, always.
         local CUR
         CUR="$(readlink "$LINKPATH" 2>/dev/null || echo '')"
-        # Resolve current target to a real path for comparison.
-        local CUR_REAL
-        CUR_REAL="$(cd "$(dirname "$LINKPATH")" 2>/dev/null && cd "$(dirname "$CUR")" 2>/dev/null && pwd -P 2>/dev/null)/$(basename "$CUR")"
-        if [ "$CUR" = "$TARGET" ] || [ "$CUR_REAL" = "$TARGET" ]; then
-          NOOP=$((NOOP + 1))   # idempotent: correct link, no churn
+        local MODE_OWNER
+        MODE_OWNER="$(_lsc_mode_owner "$TARGET")"   # no real prior file to inherit mode from -- mirror canonical's own
+        local M_MODE="${MODE_OWNER%%|*}" M_OWNER="${MODE_OWNER#*|}"
+        rm -f "$LINKPATH" 2>/dev/null
+        if [ "$(_lsc_write_copy "$TARGET" "$LINKPATH" "$M_MODE" "$M_OWNER")" = "OK" ]; then
+          echo "  [link-shared] MIGRATE (symlink -> copy) $LINKPATH (was -> $CUR)"
+          MIGRATED=$((MIGRATED + 1))
         else
-          ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
-            && { echo "  [link-shared] REPOINT $LINKPATH -> $TARGET (was: $CUR)"; REPOINTED=$((REPOINTED + 1)); } \
-            || echo "  [link-shared] WARN: could not repoint $LINKPATH"
+          echo "  ✗ [link-shared] WARN: verified copy FAILED for $LINKPATH (was a symlink -> $CUR) -- see above" >&2
+          FAILED=$((FAILED + 1))
         fi
 
       elif [ -f "$LINKPATH" ]; then
-        # A REAL file. Back it up (NEVER delete), preserve unique content into
-        # this agent's OWN IDENTITY.md (additive only), then replace with a link.
+        # A REAL file. Idempotent fast path: already byte-identical to
+        # canonical -> no-op. No rewrite, no backup churn.
+        local CUR_HASH
+        CUR_HASH="$(_lsc_sha256 "$LINKPATH")"
+        if [ -n "$CUR_HASH" ] && [ "$CUR_HASH" = "$TARGET_HASH" ]; then
+          NOOP=$((NOOP + 1))
+          continue
+        fi
+
+        # DIVERGENT: back it up (NEVER delete), preserve unique content into
+        # this agent's OWN IDENTITY.md (additive only), then overwrite with
+        # canonical content -- as a real file, not a symlink.
         local BAK="$LINKPATH.bak-unify-$TS"
         cp -p "$LINKPATH" "$BAK" 2>/dev/null \
           && { echo "  [link-shared] BACKUP $LINKPATH -> $BAK"; BACKED_UP=$((BACKED_UP + 1)); } \
@@ -1370,11 +1668,18 @@ PYEOF
           fi
         fi
 
-        # Replace the real file with a symlink to the box's own canonical.
-        rm -f "$LINKPATH" 2>/dev/null
-        ln -sfn "$TARGET" "$LINKPATH" 2>/dev/null \
-          && { echo "  [link-shared] LINK $LINKPATH -> $TARGET"; LINKED=$((LINKED + 1)); } \
-          || echo "  [link-shared] WARN: could not create symlink $LINKPATH"
+        # Overwrite with a verified real copy of canonical content, preserving
+        # this agent's existing mode/ownership (captured BEFORE the rewrite).
+        local MODE_OWNER
+        MODE_OWNER="$(_lsc_mode_owner "$LINKPATH")"
+        local M_MODE="${MODE_OWNER%%|*}" M_OWNER="${MODE_OWNER#*|}"
+        if [ "$(_lsc_write_copy "$TARGET" "$LINKPATH" "$M_MODE" "$M_OWNER")" = "OK" ]; then
+          echo "  [link-shared] COPY $LINKPATH <- $TARGET (canonical)"
+          COPIED=$((COPIED + 1))
+        else
+          echo "  ✗ [link-shared] WARN: verified copy FAILED for $LINKPATH -- original is safe in $BAK" >&2
+          FAILED=$((FAILED + 1))
+        fi
 
       else
         # Absent → leave absent. (No churn.)
@@ -1385,8 +1690,14 @@ PYEOF
 
   rm -f "$WS_LIST_FILE" 2>/dev/null || true
 
-  echo "  [link-shared] done: linked=$LINKED repointed=$REPOINTED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP"
+  echo "  [link-shared] done: copied=$COPIED migrated=$MIGRATED backed-up=$BACKED_UP preserved=$PRESERVED workflow-agent-skipped=$SKIPPED_ANT already-ok=$NOOP failed=$FAILED"
   echo "  [link-shared] IDENTITY/SOUL/MEMORY/HEARTBEAT left as each agent's OWN files (per-agent, not shared)."
+
+  if [ "$FAILED" -gt 0 ]; then
+    echo "  ✗ [link-shared] WARN: $FAILED verified-write failure(s) -- see WARN lines above; every original is preserved (backup or left untouched)" >&2
+    return 1
+  fi
+  return 0
 }
 
 # >>> TRAP1-PRECLEAR-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
@@ -1927,6 +2238,35 @@ deliver_canonical_scripts_tree() {
   echo "  ✓ Full canonical scripts/ tree delivered and verified ($files files; additive, local-only files retained)"
 }
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
+# ----------------------------------------------------------
+# U006 — Co-locate the canonical presentation entry script + its guard
+# into the materialized Presentations department scripts/ directory.
+# ----------------------------------------------------------
+colocate_presentation_entry() {
+  if ! oc_resolve_workspace_announced "presentation entry co-location"; then
+    echo "  [U006] presentation entry co-location SKIPPED (workspace not resolvable)" >&2
+    return 0
+  fi
+  WORKSPACE_DIR="$OC_WS_RESOLVED"
+  local dept_scripts="$WORKSPACE_DIR/departments/Presentations/scripts"
+  if [ ! -d "$dept_scripts" ]; then
+    echo "  [U006] presentation entry co-location SKIPPED (department not materialized at $dept_scripts)" >&2
+    return 0
+  fi
+  local src_dir="$SKILLS_DIR/23-ai-workforce-blueprint/scripts"
+  local copied=0
+  for f in presentation-canonical-entry.sh deck-build-guard.sh; do
+    if [ -f "$src_dir/$f" ]; then
+      cp "$src_dir/$f" "$dept_scripts/$f" && chmod +x "$dept_scripts/$f" && copied=$((copied + 1))
+    fi
+  done
+  if [ "$copied" -eq 2 ]; then
+    echo "  [U006] co-located presentation-canonical-entry.sh + deck-build-guard.sh -> $dept_scripts/"
+  else
+    echo "  [U006] presentation entry co-location partial (copied $copied of 2 files -> $dept_scripts/)" >&2
+  fi
+}
+# <<< U006-COLOCATE-PRESENTATION-ENTRY-END
 
 # ----------------------------------------------------------
 # U001 — Dual Sunday cron mutex + legacy crontab retirement
@@ -2527,6 +2867,505 @@ u004_assert_doctrine_provenance() {
   echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
 }
 
+  # ── CC CURRENCY PROBE ────────────────────────────────────────────────────
+  # WHY THIS EXISTS. The CONTENT RECHECK below `exit 0`s whenever the skills
+  # stamp AND skills content are current -- roughly 3,100 lines BEFORE the
+  # Command Center refresh (`run-full-install.sh --update-only`). But CC
+  # currency is INDEPENDENT of skills-content currency, so every box with
+  # current skills silently never converged its Command Center checkout.
+  # Observed in the field: a client box sat 97 commits behind origin/main on
+  # Command Center while every post-roll check reported green -- because
+  # verification reads the .onboarding-version stamp, and that stamp was
+  # legitimately current. A stamp is not a CC signal.
+  #
+  # Deliberately SELF-CONTAINED: cc_is_valid_checkout() and U6d's candidate
+  # list are both defined LATER in this file and are not callable from here.
+  # The list below is the union of the vps and mac candidates so the probe
+  # does not depend on OPENCLAW_PLATFORM being set this early.
+  #
+  # CONTRACT: returns 1 ONLY when a full pass would actually repair something
+  # -- i.e. the checkout is CLEAN but behind origin. Returns 0 for absent,
+  # dirty, unknown, or already-current, because a full sync cannot fix those
+  # and forcing one would burn a rebuild for no repair. NEVER mutates the
+  # checkout: no stash, no reset, no checkout, no clean. Emits a greppable
+  # `[CC CURRENCY] state=...` line and writes a marker file so post-roll
+  # verification can check CC currency directly instead of trusting the stamp.
+  _cc_write_marker() {
+    local _f="$1" _mstate="$2" _mdir="$3" _mhead="$4" _mbranch="$5" _ts
+    _ts="$(date -u '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || echo unknown)"
+    mkdir -p "$(dirname "$_f")" 2>/dev/null || return 0
+    {
+      printf 'state=%s\n'       "$_mstate"
+      printf 'dir=%s\n'         "$_mdir"
+      printf 'head=%s\n'        "$_mhead"
+      printf 'branch=%s\n'      "$_mbranch"
+      printf 'checked_utc=%s\n' "$_ts"
+    } > "$_f" 2>/dev/null || true
+    return 0
+  }
+
+  _cc_currency_probe() {
+    local _p _d="" _remote="" _dirty="" _def="" _head="" _marker _fetch_rc
+    # Bug A: this used to hardcode ${HOME}/.openclaw/skills, which does not
+    # exist on VPS/Contabo (active skills dir is /data/.openclaw/skills there
+    # -- see discover_skills_dir()). Verification reads the SKILLS_DIR-resolved
+    # path, so the marker was written to a location nothing ever checks on
+    # those boxes -- reported MISSING on all of them. SKILLS_DIR is exported
+    # by main() before this function can be reached.
+    _marker="${SKILLS_DIR}/.command-center-state"
+
+    for _p in "${CC_APP_DIR:-}" "${BLACKCEO_COMMAND_CENTER_ROOT:-}" \
+              "$HOME/projects/command-center" "/data/projects/command-center" \
+              "$HOME/projects/blackceo-command-center" \
+              "/data/projects/blackceo-command-center" \
+              "$HOME/projects/mission-control" "$HOME/blackceo-command-center" \
+              "/opt/mission-control" "/app"; do
+      [ -n "$_p" ] || continue
+      if [ -d "$_p/.git" ]; then _d="$_p"; break; fi
+    done
+
+    if [ -z "$_d" ]; then
+      echo "  — [CC CURRENCY] state=absent — no Command Center checkout on this box (informational, not a failure)."
+      _cc_write_marker "$_marker" "absent" "" "" ""
+      return 0
+    fi
+
+    if _remote="$(git -C "$_d" remote get-url origin 2>/dev/null)"; then :; else _remote=""; fi
+    case "$_remote" in
+      *command-center*) : ;;
+      *)
+        echo "  — [CC CURRENCY] state=absent — $_d is not a Command Center checkout (remote mismatch) — SKIP."
+        _cc_write_marker "$_marker" "absent" "$_d" "" ""
+        return 0
+        ;;
+    esac
+
+    if _head="$(git -C "$_d" rev-parse --short HEAD 2>/dev/null)"; then :; else _head=""; fi
+    if _dirty="$(git -C "$_d" status --porcelain 2>/dev/null)"; then :; else _dirty=""; fi
+
+    if [ -n "$_dirty" ]; then
+      echo "  ✗ [CC CURRENCY] state=dirty head=${_head:-unknown} dir=$_d"
+      echo "    Command Center has UNCOMMITTED changes, so it cannot fast-forward and will NOT be refreshed."
+      echo "    Nothing is stashed, reset, or discarded here — uncommitted work on a client box is load-bearing."
+      printf '%s\n' "$_dirty" | head -n 10 | sed 's/^/      /'
+      _cc_write_marker "$_marker" "dirty" "$_d" "$_head" ""
+      return 0
+    fi
+
+    # Bug C: `git fetch ... || true` swallowed a fetch failure (offline box,
+    # DNS hiccup, transient GitHub outage) and fell straight through to the
+    # ancestor check below against the last-known-good, possibly-stale local
+    # origin/<default> ref -- which can report state=current for a box that is
+    # genuinely behind. Capture the real exit code (safe idiom under
+    # set -euo pipefail: `if ! cmd; then rc=$?; fi`, never `cmd; rc=$?`) and
+    # bail to state=unknown -- same as an unresolvable ref below -- which
+    # already returns 0 and does not force a pass.
+    _fetch_rc=0
+    if ! git -C "$_d" fetch --quiet origin 2>/dev/null; then
+      _fetch_rc=$?
+    fi
+    if [ "$_fetch_rc" -ne 0 ]; then
+      echo "  — [CC CURRENCY] state=unknown head=${_head:-unknown} — git fetch failed (rc=$_fetch_rc, offline?) — not forcing a pass."
+      _cc_write_marker "$_marker" "unknown" "$_d" "$_head" ""
+      return 0
+    fi
+
+    if _def="$(git -C "$_d" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null)"; then
+      _def="${_def#origin/}"
+    else
+      _def=""
+    fi
+    [ -n "$_def" ] || _def="main"
+
+    if git -C "$_d" rev-parse --verify --quiet "origin/$_def" >/dev/null 2>&1; then
+      if git -C "$_d" merge-base --is-ancestor "origin/$_def" HEAD 2>/dev/null; then
+        echo "  ✓ [CC CURRENCY] state=current head=${_head:-unknown} branch=$_def"
+        _cc_write_marker "$_marker" "current" "$_d" "$_head" "$_def"
+        return 0
+      fi
+      echo "  ✗ [CC CURRENCY] state=behind head=${_head:-unknown} branch=$_def — Command Center is NOT current with origin/$_def."
+      _cc_write_marker "$_marker" "behind" "$_d" "$_head" "$_def"
+      return 1
+    fi
+
+    echo "  — [CC CURRENCY] state=unknown head=${_head:-unknown} — could not resolve origin/$_def (offline?) — not forcing a pass."
+    _cc_write_marker "$_marker" "unknown" "$_d" "$_head" "$_def"
+    return 0
+  }
+
+  # >>> CONTENT-RECHECK-CONVERGENCE-PROBES-BEGIN (extracted verbatim by
+  #     tests/unit/content-recheck-convergence-probes.test.sh)
+  # ── FLEET-ROLL COVERAGE AUDIT GAP #8: RUNTIME/DB CONVERGENCE PROBES ──────
+  # WHY THIS EXISTS. _cc_currency_probe above (audit gap fix, v21.4.38) closed
+  # ONE of several convergence steps that live BELOW the CONTENT RECHECK
+  # `exit 0` and are therefore never reached on a content-current re-roll:
+  # U6b (persona-index provisioning), U6c/U6c2 (SOP library + SOP-embeddings
+  # row-count ingest), weekly-onboarding-update cron registration, and
+  # apply-fleet-standards.sh's AGENTS.md dedup / orphan-END repair. A box
+  # whose skills content and version stamp are both current can sit forever
+  # behind on ALL FOUR of these -- exactly the same "stamp is not a signal
+  # for this" defect _cc_currency_probe fixed for Command Center, just not
+  # yet extended to the rest of the list. These four probes extend that same
+  # proven pattern to every remaining convergence step named in that audit.
+  #
+  # Each probe below mirrors _cc_currency_probe's contract EXACTLY (see its
+  # header comment above): read-only, returns 1 ONLY when a full pass would
+  # ACTUALLY repair something on THIS box, 0 for absent / unknown / already-
+  # current / any read error. None of them ever writes, deletes, or invokes
+  # a mutating CLI subcommand (no `cron create/edit/delete`, no SQL INSERT/
+  # UPDATE/DELETE, no file write) -- every read is a plain query, a read-only
+  # sqlite `?mode=ro` connection, a `cat`, or a `cron list`.
+  #
+  # SELF-CONTAINED BY DESIGN, same reason _cc_currency_probe gives for not
+  # calling cc_is_valid_checkout()/U6d's candidate list: the real U6b/U6c/
+  # U6c2 logic and shared-utils/cron-lib.sh's oc_cron_present/oc_cron_tombstoned
+  # are inline code or functions that either do not exist as callable units or
+  # live thousands of lines BELOW this point (and, for cron-lib.sh, carry a
+  # DIFFERENT error-handling contract than a probe is allowed -- see the cron
+  # probe's own header). Each probe below instead calls the SAME underlying
+  # resolvers those steps call (resolve_db.find_dashboard_db(), the identical
+  # manifest JSON reads) rather than reimplementing DB/manifest discovery, so
+  # a probe and the real step it stands in for can never disagree about which
+  # DB or manifest is the one that matters.
+
+  # ── SOP LIBRARY / SOP-EMBEDDINGS CURRENCY PROBE ─────────────────────────
+  # WHY THIS EXISTS. U6c (SOP V2 library ingest -- `sops` row count vs
+  # SOP-LIBRARY-MANIFEST.json's canonical_sop_count) and U6c2 (SOP-embeddings
+  # -- `sop_embeddings` row count vs SOP-EMBEDDINGS-MANIFEST.json's sop_count)
+  # both live ~600 lines BELOW this exit and are gated on non-overlapping
+  # under-population signals of their own. A content-current box can sit
+  # under-populated on either forever. This probe reads both SAME signals via
+  # the SAME DB resolution U6c/U6c2 use -- resolve_db.find_dashboard_db(),
+  # called directly, not reimplemented -- so it can never disagree with them
+  # about which mission-control.db is the one that matters.
+  #
+  # CONTRACT: returns 1 ONLY when a mission-control.db resolves AND is
+  # genuinely under either canonical count. No DB on this box, no manifest,
+  # missing python3/sqlite3, or any read error -> 0 (advisory, never forces a
+  # pass). READ-ONLY: every query opens the DB `?mode=ro` -- this probe can
+  # never write to mission-control.db.
+  _sop_library_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1 || ! command -v sqlite3 >/dev/null 2>&1; then
+      echo "  — [SOP LIBRARY] state=unknown — python3 or sqlite3 missing — not forcing a pass."
+      return 0
+    fi
+
+    local _slp_db=""
+    _slp_db="$(python3 -c '
+import sys
+from pathlib import Path
+su = Path(sys.argv[1])
+sys.path.insert(0, str(su))
+try:
+    from resolve_db import find_dashboard_db, is_db_found
+    p = find_dashboard_db()
+    print(str(p) if is_db_found(p) else "")
+except Exception:
+    print("")' "$SKILLS_DIR/shared-utils" 2>/dev/null || true)"
+
+    if [ -z "$_slp_db" ] || [ ! -f "$_slp_db" ]; then
+      echo "  — [SOP LIBRARY] state=absent — no mission-control.db resolved on this box — not forcing a pass."
+      return 0
+    fi
+
+    local _slp_lib_manifest="$SKILLS_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+    [ -f "$_slp_lib_manifest" ] || _slp_lib_manifest="$EXTRACTED_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
+    local _slp_canon=2555
+    if [ -f "$_slp_lib_manifest" ]; then
+      _slp_canon="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("canonical_sop_count") or 2555))
+except Exception:
+    print(2555)' "$_slp_lib_manifest" 2>/dev/null || echo 2555)"
+    fi
+
+    local _slp_rows=0
+    _slp_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+    if [ "${_slp_rows:-0}" -lt "${_slp_canon:-2555}" ] 2>/dev/null; then
+      echo "  ✗ [SOP LIBRARY] state=under-populated rows=$_slp_rows canonical=$_slp_canon db=$_slp_db"
+      return 1
+    fi
+
+    local _slp_emb_manifest="$SKILLS_DIR/shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+    [ -f "$_slp_emb_manifest" ] || _slp_emb_manifest="$EXTRACTED_DIR/shared-utils/sop-embed-once/SOP-EMBEDDINGS-MANIFEST.json"
+    if [ -f "$_slp_emb_manifest" ]; then
+      local _slp_emb_count=0
+      _slp_emb_count="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("sop_count") or 0))
+except Exception:
+    print(0)' "$_slp_emb_manifest" 2>/dev/null || echo 0)"
+      if [ "${_slp_emb_count:-0}" -gt 0 ] 2>/dev/null; then
+        local _slp_emb_table=0 _slp_emb_rows=0
+        _slp_emb_table="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+        if [ "${_slp_emb_table:-0}" = "1" ]; then
+          _slp_emb_rows="$(sqlite3 "file:${_slp_db}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+        fi
+        if [ "${_slp_emb_rows:-0}" -lt "${_slp_emb_count:-0}" ] 2>/dev/null; then
+          echo "  ✗ [SOP LIBRARY] state=embeddings-under-populated rows=$_slp_emb_rows manifest_count=$_slp_emb_count db=$_slp_db"
+          return 1
+        fi
+      fi
+    fi
+
+    echo "  ✓ [SOP LIBRARY] state=current sops=${_slp_rows}/${_slp_canon} db=$_slp_db"
+    return 0
+  }
+
+  # ── PERSONA-INDEX CURRENCY PROBE ────────────────────────────────────────
+  # WHY THIS EXISTS. U6b's own D3 completion re-assertion (which this probe
+  # mirrors) compares the on-disk `.prebuilt-index-version` sentinel against
+  # the PULLED manifest's release_tag; a mismatch (or a missing sentinel --
+  # never provisioned) means U6b has real work to do. U6b lives ~500 lines
+  # BELOW this exit, so that comparison cannot be CALLED from here -- it runs
+  # inline, after sourcing provision-persona-index.sh, both far below this
+  # point. This probe re-reads the SAME two files with the SAME comparison.
+  #
+  # CONTRACT: returns 1 ONLY when the manifest resolves (so a real release_tag
+  # exists to compare against) AND the sentinel is missing or stale. Manifest
+  # unreadable/absent, or python3 missing -> 0 (advisory). READ-ONLY: reads
+  # two files, writes nothing.
+  _persona_index_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [PERSONA INDEX] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_manifest="$SKILLS_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+    [ -f "$_pip_manifest" ] || _pip_manifest="$EXTRACTED_DIR/shared-utils/prebuilt-index/INDEX-MANIFEST.json"
+    if [ ! -f "$_pip_manifest" ]; then
+      echo "  — [PERSONA INDEX] state=absent — no INDEX-MANIFEST.json resolved — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_release_tag=""
+    _pip_release_tag="$(python3 -c 'import json,sys
+try:
+    print(json.load(open(sys.argv[1])).get("release_tag",""))
+except Exception:
+    print("")' "$_pip_manifest" 2>/dev/null || true)"
+    if [ -z "$_pip_release_tag" ]; then
+      echo "  — [PERSONA INDEX] state=unknown — manifest has no release_tag — not forcing a pass."
+      return 0
+    fi
+
+    local _pip_db_dir="$HOME/.openclaw/workspace/data/coaching-personas"
+    [ -d "/data/.openclaw" ] && _pip_db_dir="/data/.openclaw/workspace/data/coaching-personas"
+    local _pip_sentinel=""
+    _pip_sentinel="$(cat "$_pip_db_dir/.prebuilt-index-version" 2>/dev/null | tr -d '[:space:]' || true)"
+
+    if [ "$_pip_sentinel" = "$_pip_release_tag" ]; then
+      echo "  ✓ [PERSONA INDEX] state=current sentinel==release_tag ($_pip_release_tag)"
+      return 0
+    fi
+
+    echo "  ✗ [PERSONA INDEX] state=stale sentinel=${_pip_sentinel:-<missing>} release_tag=$_pip_release_tag"
+    return 1
+  }
+
+  # ── WEEKLY-CRON REGISTRATION PROBE ──────────────────────────────────────
+  # WHY THIS EXISTS. weekly-onboarding-update registration lives ~2,400 lines
+  # BELOW this exit and is SKIPPED ENTIRELY on a content-current box -- a box
+  # that never got the cron (pre-v9.2.0, or one where it was removed
+  # out-of-band without a tombstone) never gets it from a same-version
+  # re-roll.
+  #
+  # SELF-CONTAINED BY DESIGN -- NOT a call into shared-utils/cron-lib.sh's
+  # oc_cron_present/oc_cron_tombstoned:
+  #   * oc_cron_present deliberately FAILS OPEN (treats an unreadable
+  #     `cron list --json` as "absent") because ITS caller's asymmetry favors
+  #     attempting a redundant, idempotent registration over silently never
+  #     registering. THIS probe's asymmetry is the opposite: forcing a full
+  #     pass on a transient CLI hiccup means a full pass on every one of 38
+  #     boxes on a bad network day. So a genuine parse failure here is
+  #     advisory (return 0), never "treat as absent".
+  #   * the tombstone check below is a pure file-existence READ. It
+  #     deliberately does NOT source cron-lib.sh's oc_cron_tombstone_dir(),
+  #     which mkdir -p's its marker directory as a side effect -- a probe
+  #     must never write anything, even a directory. It mirrors that
+  #     function's OWN path formula (the job name has no characters
+  #     oc_cron_tombstone_path's sanitizer would change) as a plain
+  #     `[ -f ... ]` instead.
+  #
+  # CONTRACT: returns 1 ONLY when `openclaw cron list --json` returns a
+  # PARSEABLE answer AND that answer definitively shows the job absent AND it
+  # is not tombstoned. openclaw missing, the call failing, or unparseable
+  # output -> 0 (advisory, never forces a pass on a CLI/gateway hiccup).
+  # READ-ONLY: only ever runs `cron list`, never `cron create`/`edit`/`delete`.
+  _weekly_cron_currency_probe() {
+    if ! command -v openclaw >/dev/null 2>&1; then
+      echo "  — [WEEKLY CRON] state=unknown — openclaw CLI not found — not forcing a pass."
+      return 0
+    fi
+
+    local _wcp_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _wcp_root="/data/.openclaw"
+    local _wcp_tomb="$_wcp_root/workspace/.cron-tombstones/weekly-onboarding-update"
+    if [ -f "$_wcp_tomb" ]; then
+      echo "  ✓ [WEEKLY CRON] state=tombstoned — deliberately removed; not treated as outstanding work."
+      return 0
+    fi
+
+    local _wcp_raw="" _wcp_rc=0
+    if ! _wcp_raw="$(openclaw cron list --json 2>/dev/null)"; then
+      _wcp_rc=$?
+    fi
+    if [ -z "$_wcp_raw" ]; then
+      echo "  — [WEEKLY CRON] state=unknown — 'openclaw cron list --json' returned nothing (rc=$_wcp_rc) — not forcing a pass."
+      return 0
+    fi
+
+    local _wcp_present=""
+    if command -v jq >/dev/null 2>&1; then
+      local _wcp_jq_rc=0
+      if printf '%s' "$_wcp_raw" | jq -e '
+          ( if type=="array" then . else .jobs // [] end)
+          | map(select(.name=="weekly-onboarding-update"))
+          | length > 0
+        ' >/dev/null 2>&1; then
+        _wcp_jq_rc=0
+      else
+        _wcp_jq_rc=$?
+      fi
+      case "$_wcp_jq_rc" in
+        0) _wcp_present=1 ;;
+        1) _wcp_present=0 ;;
+        *) echo "  — [WEEKLY CRON] state=unknown — jq could not parse cron list JSON (rc=$_wcp_jq_rc) — not forcing a pass."; return 0 ;;
+      esac
+    elif command -v python3 >/dev/null 2>&1; then
+      local _wcp_py_rc=0
+      if OC_CRON_RAW="$_wcp_raw" python3 -c '
+import json, os, sys
+try:
+    data = json.loads(os.environ.get("OC_CRON_RAW", ""))
+except Exception:
+    sys.exit(2)
+jobs = data if isinstance(data, list) else data.get("jobs", [])
+sys.exit(0 if any(j.get("name") == "weekly-onboarding-update" for j in jobs) else 1)
+' 2>/dev/null; then
+        _wcp_py_rc=0
+      else
+        _wcp_py_rc=$?
+      fi
+      case "$_wcp_py_rc" in
+        0) _wcp_present=1 ;;
+        1) _wcp_present=0 ;;
+        *) echo "  — [WEEKLY CRON] state=unknown — could not parse cron list JSON (rc=$_wcp_py_rc) — not forcing a pass."; return 0 ;;
+      esac
+    else
+      echo "  — [WEEKLY CRON] state=unknown — jq and python3 both unavailable — not forcing a pass."
+      return 0
+    fi
+
+    if [ "$_wcp_present" = "1" ]; then
+      echo "  ✓ [WEEKLY CRON] state=registered"
+      return 0
+    fi
+    echo "  ✗ [WEEKLY CRON] state=absent — weekly-onboarding-update is NOT registered and NOT tombstoned."
+    return 1
+  }
+
+  # ── AGENTS.md HYGIENE PROBE ─────────────────────────────────────────────
+  # WHY THIS EXISTS. apply-fleet-standards.sh's AGENTS.md dedup (5a-DEDUP,
+  # scripts/dedup-agents-md.py) and update-skills.sh's own orphan-END
+  # self-heal (CORE_UPDATES merge, ~1,700 lines BELOW this exit) both only
+  # run as part of a full pass. A box already carrying duplicate marker-
+  # guarded blocks or an orphan BEGIN/END pair (measured on the fleet: 3 of 4
+  # sampled boxes carried the same orphan) keeps carrying them forever once
+  # content is current.
+  #
+  # SIGNAL CHOSEN (deliberately CHEAP, not a dedup dry-run). Even
+  # dedup-agents-md.py's own default dry-run mode means fully parsing the
+  # file into heading-delimited blocks on every one of 38 boxes, every roll.
+  # Just as reliable for what a full pass would actually DO differently here:
+  #   (a) any single-token `<!-- MARKER -->` stamp line repeated more than
+  #       once -- these are exactly the tokens apply-fleet-standards.sh's own
+  #       idempotency guards stamp ONCE each (e.g. <!-- ROLE_DISCIPLINE_V1 -->),
+  #       so a second copy of the SAME token is the exact re-append defect
+  #       dedup exists to clean up. Near-zero false-positive rate, unlike a
+  #       bare heading-count: two different blocks can legitimately share a
+  #       heading like "## Notes"; they cannot legitimately share the same
+  #       singleton marker token.
+  #   (b) any `<!-- BEGIN skill:X:Y -->` / `<!-- END skill:X:Y -->` pair that
+  #       is not 1:1 -- the orphan the CORE_UPDATES merge self-heals.
+  # Both are a single regex pass over one file already capped at ~400,000
+  # chars by the size guard elsewhere in this pipeline -- negligible cost.
+  #
+  # CONTRACT: returns 1 ONLY when the workspace resolves, AGENTS.md exists,
+  # AND at least one of the two signals above is found. Unresolvable
+  # workspace, missing file, or any read/parse error -> 0 (advisory).
+  # READ-ONLY: opens AGENTS.md for reading only.
+  _agents_md_hygiene_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+    if ! oc_resolve_workspace_announced "AGENTS.md hygiene probe" 2>/dev/null; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — workspace not resolvable — not forcing a pass."
+      return 0
+    fi
+    local _amh_file="$OC_WS_RESOLVED/AGENTS.md"
+    if [ ! -f "$_amh_file" ]; then
+      echo "  — [AGENTS.MD HYGIENE] state=absent — no AGENTS.md at $_amh_file — not forcing a pass."
+      return 0
+    fi
+
+    local _amh_report="" _amh_rc=0
+    if _amh_report="$(python3 -c '
+import re, sys
+path = sys.argv[1]
+try:
+    text = open(path, encoding="utf-8", errors="replace").read()
+except Exception:
+    print("error")
+    sys.exit(0)
+marker_re = re.compile(r"^<!--\s*(\S+)\s*-->\s*$")
+begin_re  = re.compile(r"^<!--\s*BEGIN\s+skill:(.+?):(.+?)\s*-->\s*$")
+end_re    = re.compile(r"^<!--\s*END\s+skill:(.+?):(.+?)\s*-->\s*$")
+markers = {}
+begins = {}
+ends = {}
+for ln in text.splitlines():
+    m = marker_re.match(ln)
+    if m:
+        markers[m.group(1)] = markers.get(m.group(1), 0) + 1
+        continue
+    m = begin_re.match(ln)
+    if m:
+        k = (m.group(1), m.group(2))
+        begins[k] = begins.get(k, 0) + 1
+        continue
+    m = end_re.match(ln)
+    if m:
+        k = (m.group(1), m.group(2))
+        ends[k] = ends.get(k, 0) + 1
+dup_markers = sum(1 for v in markers.values() if v > 1)
+orphan_pairs = sum(1 for k in set(begins) | set(ends) if begins.get(k, 0) != ends.get(k, 0))
+print(f"{dup_markers} {orphan_pairs}")
+' "$_amh_file" 2>/dev/null)"; then
+      :
+    else
+      _amh_rc=$?
+    fi
+
+    if [ "$_amh_rc" -ne 0 ] || [ -z "$_amh_report" ] || [ "$_amh_report" = "error" ]; then
+      echo "  — [AGENTS.MD HYGIENE] state=unknown — could not parse $_amh_file — not forcing a pass."
+      return 0
+    fi
+
+    local _amh_dup _amh_orphan
+    _amh_dup="$(printf '%s' "$_amh_report" | awk '{print $1}')"
+    _amh_orphan="$(printf '%s' "$_amh_report" | awk '{print $2}')"
+
+    if [ "${_amh_dup:-0}" -gt 0 ] 2>/dev/null || [ "${_amh_orphan:-0}" -gt 0 ] 2>/dev/null; then
+      echo "  ✗ [AGENTS.MD HYGIENE] state=dirty duplicate-marker-tokens=${_amh_dup:-0} orphan-BEGIN/END-pairs=${_amh_orphan:-0} file=$_amh_file"
+      return 1
+    fi
+    echo "  ✓ [AGENTS.MD HYGIENE] state=clean file=$_amh_file"
+    return 0
+  }
+  # <<< CONTENT-RECHECK-CONVERGENCE-PROBES-END
+
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
   # Reached only via the same-version branch above. Decide on CONTENT:
   #   (1) every numbered skill, via the A3 digest manifest (SRC vs the box);
@@ -2561,9 +3400,34 @@ u004_assert_doctrine_provenance() {
       fi
     done
     if [ -z "$_RECHECK_DRIFT" ]; then
-      echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
-      rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
-      exit 0
+      # Skills content is current. But CONTENT currency and RUNTIME/DB
+      # convergence are SEPARATE questions that must be answered BEFORE we
+      # are allowed to exit -- a clean-but-behind Command Center, an
+      # under-populated SOP library/embeddings table, a stale persona-index
+      # sentinel, a never-registered weekly cron, or a duplicated/orphaned
+      # AGENTS.md are each a case where falling through actually repairs
+      # something, because the full pass reaches every one of those steps
+      # further below (see CONTENT-RECHECK-CONVERGENCE-PROBES above for why
+      # each probe is self-contained and what signal it reads). Every probe
+      # runs regardless of what an earlier one found, so the log always shows
+      # the FULL set of outstanding items, not just the first.
+      # >>> CONTENT-RECHECK-CONVERGENCE-GATE-BEGIN (extracted verbatim by
+      #     tests/unit/content-recheck-convergence-probes.test.sh)
+      _CONVERGENCE_TRIGGERS=""
+      _cc_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }Command Center currency"
+      _sop_library_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }SOP library/embeddings population"
+      _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
+      _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
+      _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+
+      if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
+        echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
+        rm -rf "$TEMP_EXTRACT" "$TEMP_ZIP"
+        exit 0
+      fi
+      echo "  ✗ [CONTENT RECHECK] skills content is current, but these convergence step(s) are OUTSTANDING: ${_CONVERGENCE_TRIGGERS}"
+      echo "    Proceeding with a full pass so they run — the version/content stamp is not a signal for any of them."
+      # <<< CONTENT-RECHECK-CONVERGENCE-GATE-END
     fi
     echo "  ✗ [CONTENT RECHECK] stamp is current but these trees DRIFTED:${_RECHECK_DRIFT}"
     echo "    Proceeding with a full content sync — version strings are not a sync signal."
@@ -2865,6 +3729,64 @@ u004_assert_doctrine_provenance() {
   fi
 
   # ----------------------------------------------------------
+  # U001 -- Presentations manifest+ruleset placement (canonical-home wiring)
+  #
+  # Copy the cluster-canonical PIPELINE-MANIFEST.json and
+  # MASTER-QC-AUTOFAIL-RULESET.md into the materialized Presentations department's
+  # sops/ directory so manifests_source.py's resolve_manifest() / resolve_ruleset()
+  # find the installed copy FIRST (provenance "installed"), before falling back to
+  # the cluster walk-up or legacy paths.  Also write MANIFEST-SOURCE.txt with the
+  # content_sha256 so the checker can refuse on mismatch instead of silently
+  # reading a stale manifest.  Guarded on the department existing; non-fatal;
+  # resolves the workspace through the same helper the surrounding blocks use
+  # (oc_resolve_workspace_announced, fallback $HOME/.openclaw/workspace).
+  # ----------------------------------------------------------
+  _u001_presentations_manifest_placement() {
+    if ! oc_resolve_workspace_announced "U001 presentations manifest placement" 2>/dev/null; then
+      echo "  [U001] presentations manifest placement SKIPPED (workspace not resolvable)" >&2
+      return 0
+    fi
+    local _dept_dir="$OC_WS_RESOLVED/departments/Presentations"
+    if [ ! -d "$_dept_dir" ]; then
+      echo "  [U001] presentations manifest placement SKIPPED (department not materialized at $_dept_dir)" >&2
+      return 0
+    fi
+    local _sops_dir="$_dept_dir/sops"
+    mkdir -p "$_sops_dir" 2>/dev/null
+    local _manifest_src="$SKILLS_DIR/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
+    local _ruleset_src="$SKILLS_DIR/universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md"
+    local _manifest_dest="$_sops_dir/PIPELINE-MANIFEST.json"
+    local _ruleset_dest="$_sops_dir/MASTER-QC-AUTOFAIL-RULESET.md"
+    local _source_txt="$_sops_dir/MANIFEST-SOURCE.txt"
+    if [ ! -f "$_manifest_src" ]; then
+      echo "  ⚠ U001: cluster manifest not found at $_manifest_src — placement skipped"
+      return 0
+    fi
+    if ! cp "$_manifest_src" "$_manifest_dest" 2>>"$LOG_FILE" || \
+       ! python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$_manifest_dest" 2>>"$LOG_FILE"; then
+      echo "  ⚠ U001: could not validate PIPELINE-MANIFEST.json at $_manifest_dest (see $LOG_FILE)"
+      return 0
+    fi
+    if [ -f "$_ruleset_src" ]; then
+      cp "$_ruleset_src" "$_ruleset_dest" 2>>"$LOG_FILE" || true
+    fi
+    local _git_sha=""
+    if git -C "$SKILLS_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+      _git_sha="$(git -C "$SKILLS_DIR" log -1 --format=%H -- universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json 2>/dev/null || true)"
+    fi
+    local _content_sha256
+    _content_sha256="$(python3 -c "import hashlib; print(hashlib.sha256(open('$_manifest_dest','rb').read()).hexdigest())" 2>/dev/null || true)"
+    {
+      printf 'source_path=%s\n' "$_manifest_src"
+      printf 'git_sha=%s\n' "$_git_sha"
+      printf 'content_sha256=%s\n' "$_content_sha256"
+      printf 'installed_at=%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    } > "$_source_txt"
+    echo "  ✓ U001: PIPELINE-MANIFEST.json + MASTER-QC-AUTOFAIL-RULESET.md placed at $_sops_dir"
+  }
+  _u001_presentations_manifest_placement
+
+  # ----------------------------------------------------------
   # UNIFIED COMPLETENESS-GATE LATCHES (D3/D4/D5 convergence). Initialized here,
   # BEFORE Step U6b, so every latch is set -u safe no matter which branch below
   # runs. PASS values by default (0 / "ok" / 1) -- flipped to FAIL only on a
@@ -2934,6 +3856,21 @@ u004_assert_doctrine_provenance() {
   [ -f "/data/.openclaw/openclaw.json" ] && _U6B_OC_JSON="/data/.openclaw/openclaw.json"
   _U6B_OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
   [ -d "/data/.openclaw" ] && _U6B_OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
+  # Defensive 0600 on the secrets file before anything is handed its path.
+  #
+  # The credential WRITES live in shared-utils/provision-persona-index.sh, which
+  # already chmod 600s correctly (on touch, and again after each append). This
+  # line is not duplicating that -- it tightens a file that may ALREADY exist
+  # with loose permissions from an older install, which nothing on this code
+  # path previously did.
+  #
+  # It also un-freezes this file. .githooks/pre-commit rule 4 blocks any .sh that
+  # references secrets/.env without containing a `chmod 600`; that check is
+  # per-file and cannot see the delegation above, so it had blocked every commit
+  # touching this script -- which is why ONBOARDING_VERSION sat at v21.4.2 while
+  # /version and install.sh moved to v21.4.16. The rule is a reasonable heuristic
+  # and this satisfies it truthfully rather than working around it.
+  [ -f "$_U6B_OC_SECRETS_ENV" ] && chmod 600 "$_U6B_OC_SECRETS_ENV" 2>/dev/null || true
 
   _U6B_HELPER="$SKILLS_DIR/shared-utils/provision-persona-index.sh"
   [ -f "$_U6B_HELPER" ] || _U6B_HELPER="$EXTRACTED_DIR/shared-utils/provision-persona-index.sh"
@@ -3199,6 +4136,78 @@ except Exception:
       fi
     fi
   fi
+
+  # ----------------------------------------------------------
+  # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
+  # Step U6c2: SOP-embeddings population check (Bug D).
+  #
+  # WHY THIS IS SEPARATE FROM U6c ABOVE. U6c's gate is CONTENT row-count (the
+  # `sops` table) vs the SOP-LIBRARY manifest's canonical_sop_count. A box
+  # already at/above that threshold takes the "touch nothing" branch above
+  # and ingest-sop-library.sh is NEVER INVOKED AT ALL from this updater -- so
+  # the SOP-embeddings asset (a separate, free, sha256-pinned download that
+  # makes ZERO embedding API calls) never reaches an already-populated box:
+  # semantic SOP search stays keyword-only on that box forever. This step
+  # reads its OWN signal -- `sop_embeddings` row count vs
+  # SOP-EMBEDDINGS-MANIFEST.json's sop_count -- and provisions directly via
+  # provision_sop_embeddings.py, independent of whatever U6c decided above.
+  # provision_sop_embeddings.py carries its own idempotency gate (marker
+  # table + row count vs manifest), so calling it here is safe even on the
+  # under-populated path above, where U6c's own ingest already called it too.
+  #
+  # ADVISORY ONLY: never fails the roll, never withholds the version stamp,
+  # never latches _U6C_SOPLIB_FAIL or any other stamp-gating flag. No client
+  # key is ever billed -- this is a sha256-verified download + sqlite
+  # ATTACH/INSERT, never an embedding API call.
+  # ----------------------------------------------------------
+  _U6C2_EMBED_DIR="$SKILLS_DIR/shared-utils/sop-embed-once"
+  [ -d "$_U6C2_EMBED_DIR" ] || _U6C2_EMBED_DIR="$EXTRACTED_DIR/shared-utils/sop-embed-once"
+  _U6C2_MANIFEST="$_U6C2_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json"
+  _U6C2_PROVISION_PY="$_U6C2_EMBED_DIR/provision_sop_embeddings.py"
+
+  echo ""
+  echo "  Step U6c2: SOP-embeddings population check (independent of U6c content gate)..."
+  if [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
+    echo "  — SOP embeddings: no mission-control.db resolved on this box — SKIP (informational, not a failure)."
+  elif [ ! -f "$_U6C2_MANIFEST" ] || [ ! -f "$_U6C2_PROVISION_PY" ]; then
+    echo "  — SOP embeddings: manifest or provisioner not found on this box — SKIP (informational, not a failure)."
+  elif ! command -v python3 >/dev/null 2>&1; then
+    echo "  — SOP embeddings: python3 MISSING — SKIP (informational, not a failure)."
+  else
+    _U6C2_SOP_COUNT=0
+    if _U6C2_SOP_COUNT_RAW="$(python3 -c 'import json,sys
+try:
+    print(int(json.load(open(sys.argv[1])).get("sop_count") or 0))
+except Exception:
+    print(0)' "$_U6C2_MANIFEST" 2>/dev/null)"; then
+      _U6C2_SOP_COUNT="$_U6C2_SOP_COUNT_RAW"
+    fi
+    _U6C2_EMB_TABLE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+    _U6C2_EMB_ROWS=0
+    if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
+      _U6C2_EMB_ROWS="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+    fi
+    echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
+    if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
+      echo "  — SOP embeddings: manifest sop_count missing/zero — SKIP (informational, no trustworthy count)."
+    elif [ "${_U6C2_EMB_ROWS:-0}" -lt "${_U6C2_SOP_COUNT:-0}" ] 2>/dev/null; then
+      echo "  → SOP embeddings under-populated ($_U6C2_EMB_ROWS < $_U6C2_SOP_COUNT) — provisioning shipped asset (download + sqlite ATTACH/INSERT only, ZERO embedding API calls)..."
+      _U6C2_OUT=""
+      if _U6C2_OUT="$(python3 "$_U6C2_PROVISION_PY" "$_U6C2_MANIFEST" "$_U6C_DB" 2>&1)"; then
+        _U6C2_RC=0
+      else
+        _U6C2_RC=$?
+      fi
+      printf '%s\n' "$_U6C2_OUT" >> "$LOG_FILE"
+      echo "  $(printf '%s' "$_U6C2_OUT" | tail -n 1)"
+      if [ "$_U6C2_RC" -ne 0 ]; then
+        echo "  ⚠ SOP-embeddings provisioning returned non-zero (rc=$_U6C2_RC) — ADVISORY, does not fail the roll or withhold the version stamp."
+      fi
+    else
+      echo "  ✓ SOP embeddings already at/above manifest sop_count ($_U6C2_EMB_ROWS >= $_U6C2_SOP_COUNT) — SKIP, nothing to provision."
+    fi
+  fi
+  # <<< U6C2-SOP-EMBEDDINGS-END
 
   # ----------------------------------------------------------
   # Step U6d: Command Center runtime configuration reconciliation.
@@ -3659,6 +4668,42 @@ for (m, target, directive) in real_sections:
         # Already merged for this target — skip
         continue
 
+    # SELF-HEAL an orphan END (END present, BEGIN absent).
+    #
+    # The idempotency guard above only looks for the BEGIN marker, so a block
+    # whose BEGIN was lost — an interrupted write, an external edit, a
+    # summariser — becomes invisible to it: the END is never detected, never
+    # repaired, and stays orphaned forever. Measured 2026-07-31: three of four
+    # sampled fleet boxes carried the SAME orphan
+    # (`16-summarize-youtube:agents  BEGIN=0 END=1`).
+    #
+    # Consequences: every BEGIN/END pair-balance check on that box fails, and
+    # scripts/dedup-agents-md.py deliberately refuses to worsen wiring, so the
+    # box's duplicate blocks never get cleaned either. One orphan line blocks
+    # the whole self-heal path.
+    #
+    # Narrowly scoped on purpose: only the end_marker for THIS skill_folder and
+    # THIS target, and only when its BEGIN is genuinely absent. A matched pair is
+    # never touched. Failure here is non-fatal — we fall through and append a
+    # clean pair regardless, because a duplicate marker is recoverable while a
+    # crashed updater is not.
+    if end_marker in existing:
+        try:
+            repaired = existing.replace(end_marker + '\n', '').replace(end_marker, '')
+            with open(target_file, 'w', encoding='utf-8') as fh:
+                fh.write(repaired)
+            print(
+                f'[CORE_UPDATES] repaired orphan END marker (no matching BEGIN) '
+                f'for skill:{skill_folder}:{target} in {os.path.basename(target_file)}',
+                file=sys.stderr,
+            )
+        except Exception as exc:
+            print(
+                f'[CORE_UPDATES] WARN: could not repair orphan END for '
+                f'skill:{skill_folder}:{target} ({exc}) — appending a fresh pair anyway',
+                file=sys.stderr,
+            )
+
     # Append wrapped block
     with open(target_file, 'a', encoding='utf-8') as fh:
         fh.write(f'\n\n{begin_marker}\n')
@@ -3776,7 +4821,16 @@ except:
     fi
 
     echo "    Registering GHL community MCP under mcp.servers (port $GHL_MCP_PORT)..."
-    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\"}" >> "$LOG_FILE" 2>&1; then
+    # BUG FIX (Q2.7 root-cause fleet audit): this registration was missing
+    # connectionTimeoutMs, unlike the sibling stamper in ghl-mcp-autostart.sh
+    # (which sets connectionTimeoutMs:30000 for the identical server entry).
+    # Without a bounded timeout, `openclaw doctor` (and any other command that
+    # enumerates/health-checks mcp.servers) hangs indefinitely whenever the
+    # local ghl-community-mcp process is down, crashed, or port-conflicted --
+    # this is the exact "doctor hangs in a timeout loop" defect. Matching the
+    # autostart script's value closes the gap without changing behavior when
+    # the server IS healthy.
+    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\",\"connectionTimeoutMs\":30000}" >> "$LOG_FILE" 2>&1; then
       echo "    GHL MCP: registered under mcp.servers (ghl-community-mcp → localhost:${GHL_MCP_PORT})"
     else
       echo "    GHL MCP: registration attempt completed (see $LOG_FILE for details)"
@@ -4167,12 +5221,15 @@ else:
   # v10.15.51: SHARED CORE FILE UNIFICATION (Zero-Human-Workforce file model).
   # AFTER skills + workspaces + CORE_UPDATES wiring + workforce migration, every
   # agent/sub-agent on THIS box shares the box's ONE canonical AGENTS.md /
-  # TOOLS.md / USER.md via symlink. Per-agent IDENTITY/SOUL/MEMORY/HEARTBEAT stay
-  # each agent's own. Nested workflow agents exempt. Idempotent. Reads THIS box's
-  # openclaw.json only (co-mingling guard) -- never a foreign/hardcoded target.
+  # TOOLS.md / USER.md via a real file COPY (N29 amended -- the OpenClaw
+  # runtime rejects a symlink whose realpath resolves outside the reading
+  # agent's own workspace; see link_shared_core_files() above). Per-agent
+  # IDENTITY/SOUL/MEMORY/HEARTBEAT stay each agent's own. Nested workflow
+  # agents exempt. Idempotent. Reads THIS box's openclaw.json only
+  # (co-mingling guard) -- never a foreign/hardcoded target.
   # ----------------------------------------------------------
   echo ""
-  echo "  Unifying shared core files (AGENTS/TOOLS/USER symlinked to this box's canonical)..."
+  echo "  Unifying shared core files (AGENTS/TOOLS/USER copied from this box's canonical)..."
   if link_shared_core_files; then
     :
   else
@@ -4556,10 +5613,26 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   # exact false-"done" condition this fix eliminates).
   echo "$ONBOARDING_VERSION" > "$SKILLS_DIR/.onboarding-version"
 
-  # Sync version marker to legacy locations if they exist
-  for _LEGACY_MARKER in \
-      "$HOME/Downloads/openclaw-master-files/.onboarding-version" \
-      "$HOME/.openclaw/onboarding/.onboarding-version"; do
+  # Sync version marker to legacy locations if they exist.
+  #
+  # Bug E: $HOME/.openclaw/onboarding is DELIBERATELY EXCLUDED from this loop.
+  # ONBOARDING_DIR is set (~line 2648: ONBOARDING_DIR="$EXTRACTED_DIR") to the
+  # TEMP clone, which is `rm -rf`'d a few lines below (Cleanup) -- nothing in
+  # this script ever refreshes $HOME/.openclaw/onboarding's CONTENT. It is
+  # written once, by install.sh, during a full install, and never again. This
+  # loop used to bump its .onboarding-version stamp anyway, which made a
+  # stale tree advertise the current version -- the exact lie
+  # reap_dead_skill_manifest() was written to kill for .skill-manifest.json.
+  # A stale tree with a stale stamp is honest; a stale tree with a current
+  # stamp is not. Do not delete the directory here (other things may read
+  # it) -- just stop lying about its version.
+  #
+  # (Array, not a bare word -- keeps this extensible without a shellcheck
+  # SC2066 "loop will only run once" false-flag on a single-element list.)
+  _LEGACY_MARKERS=(
+    "$HOME/Downloads/openclaw-master-files/.onboarding-version"
+  )
+  for _LEGACY_MARKER in "${_LEGACY_MARKERS[@]}"; do
     if [ -f "$_LEGACY_MARKER" ]; then
       echo "$ONBOARDING_VERSION" > "$_LEGACY_MARKER" 2>/dev/null || true
     fi
@@ -4600,9 +5673,18 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
   mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
   if [ -d "$EXTRACTED_DIR/hooks" ]; then
-    cp -f "$EXTRACTED_DIR/hooks/"*.sh "$_OC_HOOKS_DEST/" 2>/dev/null || true
-    chmod +x "$_OC_HOOKS_DEST/"*.sh 2>/dev/null || true
-    echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
+    # Bug F: the old top-level `hooks/*.sh` glob was non-recursive (silently
+    # dropped anything under a subdirectory) and always printed a bare ✓
+    # regardless of whether the copy actually succeeded (`|| true` swallowed
+    # the failure). Recursive copy of hooks/'s CONTENTS via the trailing
+    # `/.` so subdirectories survive, and gate the ✓ on the copy's own exit
+    # code -- advisory only, still never fails the roll.
+    if cp -Rf "$EXTRACTED_DIR/hooks/." "$_OC_HOOKS_DEST/" 2>/dev/null; then
+      find "$_OC_HOOKS_DEST" -type f -name '*.sh' -exec chmod +x {} + 2>/dev/null || true
+      echo "  ✓ hooks/ library persisted to $_OC_HOOKS_DEST"
+    else
+      echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
+    fi
   fi
 
   # Cleanup
@@ -4753,6 +5835,87 @@ PYEOF
   if command -v openclaw >/dev/null 2>&1 && oc_cron_tombstoned "weekly-onboarding-update"; then
     echo "  weekly-onboarding-update is TOMBSTONED (deliberately removed) — NOT re-registering. Un-tombstone: bash scripts/tombstone-cron.sh --remove weekly-onboarding-update"
   elif command -v openclaw >/dev/null 2>&1; then
+    #=== BEGIN WEEKLY-CRON-FULL-REGISTRATION-V1 ===
+    #=== BEGIN WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
+    # refresh_weekly_cron_message <job_id> <job_kind> <new_content>
+    #
+    # THE DRIFT BUG THIS CLOSES (2026-07-30): an EXISTING weekly-onboarding-update
+    # cron (the "already installed" branch a few lines below) was never touched
+    # again after creation. cron-prompt.txt could gain new RULES -- or drop a
+    # pattern this same repo now calls a leak -- forever without a single
+    # already-provisioned box ever seeing the change; only a box whose cron was
+    # ABSENT, or still carried the old auto-announce wiring, ever got a fresh
+    # payload. This function is the missing refresh path: it reads the job's
+    # CURRENTLY STORED message via `openclaw cron get`, and only when that
+    # differs from the freshly-fetched cron-prompt.txt does it patch the message
+    # in place with `openclaw cron edit <id> --message` (or `--system-event` for
+    # a systemEvent-kind job) -- confirmed via `openclaw cron edit --help` to be
+    # a field-level PATCH ("Edit a cron job (patch fields)"), so schedule, tz,
+    # sessionTarget, wakeMode, timeoutSeconds, and delivery are never touched
+    # because they are never passed. Deliberately NOT delete+recreate: that would
+    # require this function to already know every other field to preserve, and
+    # getting even one wrong would silently reset it -- an in-place patch cannot.
+    #
+    # FAIL-SAFE: every step that can fail (CLI missing, gateway unreachable,
+    # malformed JSON, python3 absent, edit rejected) is guarded and logs a
+    # SKIP/WARN instead of propagating a nonzero exit -- this function always
+    # returns 0 so it can never abort the enclosing `set -euo pipefail` run. A
+    # failed refresh leaves the OLD message in place (stale-but-safe), never a
+    # blank or partial one.
+    command -v refresh_weekly_cron_message >/dev/null 2>&1 || refresh_weekly_cron_message() {
+      local _job_id="$1" _job_kind="$2" _new_content="$3"
+      if [ -z "$_job_id" ] || [ -z "$_new_content" ]; then
+        echo "  [weekly-cron-refresh] SKIP — missing job id or empty new content; nothing changed"
+        return 0
+      fi
+      if ! command -v openclaw >/dev/null 2>&1; then
+        echo "  [weekly-cron-refresh] SKIP — openclaw CLI not found; nothing changed"
+        return 0
+      fi
+      local _current_json=""
+      _current_json=$(openclaw cron get "$_job_id" 2>/dev/null) || _current_json=""
+      if [ -z "$_current_json" ]; then
+        echo "  [weekly-cron-refresh] SKIP — could not read current cron job ($_job_id); nothing changed"
+        return 0
+      fi
+      local _current_message=""
+      if command -v python3 >/dev/null 2>&1; then
+        _current_message=$(OC_CRON_JOB_JSON="$_current_json" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+raw = os.environ.get("OC_CRON_JOB_JSON", "")
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+payload = data.get("payload") or {}
+msg = payload.get("message")
+if msg is None:
+    msg = payload.get("systemEvent")
+print(msg if isinstance(msg, str) else "", end="")
+PYEOF
+) || _current_message=""
+      fi
+      if [ -z "$_current_message" ]; then
+        echo "  [weekly-cron-refresh] SKIP — could not parse current message from cron get output; nothing changed"
+        return 0
+      fi
+      if [ "$_current_message" = "$_new_content" ]; then
+        echo "  [weekly-cron-refresh] OK — cron-prompt.txt content already current, no rewrite needed"
+        return 0
+      fi
+      local -a _edit_flags=(--message "$_new_content")
+      if [ "$_job_kind" = "systemEvent" ]; then
+        _edit_flags=(--system-event "$_new_content")
+      fi
+      if openclaw cron edit "$_job_id" "${_edit_flags[@]}" >/dev/null 2>&1; then
+        echo "  [weekly-cron-refresh] DONE — refreshed stale cron message from current cron-prompt.txt (schedule/tz/sessionTarget/delivery untouched -- cron edit patches only the flags passed)"
+      else
+        echo "  [weekly-cron-refresh] WARN — cron edit rejected/failed; message left as-is (stale but safe), will retry next run"
+      fi
+      return 0
+    }
+    #=== END WEEKLY-CRON-MESSAGE-REFRESH-V1 ===
+
     # CRON REWRITE MIGRATION (fix/existing-box-cron-rewrite v14.19.1):
     # Boxes provisioned BEFORE the silent-cron fix (v14.10.2) carry the OLD
     # weekly-onboarding-update cron wired with --announce --channel telegram
@@ -4792,6 +5955,40 @@ PYEOF
         # Fall through to creation block below (cron is now absent)
       else
         echo "  ✓ Sunday weekly update-check cron already installed (SILENT — no client auto-announce)"
+        # Refresh the stored message from the CURRENT cron-prompt.txt so a RULE
+        # change in the repo actually reaches a box whose cron already exists --
+        # see refresh_weekly_cron_message above; this branch used to be a
+        # permanent no-op, the confirmed root cause of the RULE 5.6 drift.
+        _WOU_JOB_ID=""
+        _WOU_JOB_KIND=""
+        if [ -n "${_OC_RAW_JSON:-}" ] && command -v python3 >/dev/null 2>&1; then
+          _WOU_ID_KIND=$(OC_CRON_JSON="$_OC_RAW_JSON" python3 - <<'PYEOF' 2>/dev/null
+import json, os
+raw = os.environ.get('OC_CRON_JSON', '')
+try:
+    data = json.loads(raw)
+except Exception:
+    raise SystemExit(0)
+jobs = data if isinstance(data, list) else data.get('jobs', [])
+for j in jobs:
+    if j.get('name') == 'weekly-onboarding-update':
+        print("%s\t%s" % (j.get('id', ''), (j.get('payload') or {}).get('kind', '')))
+        break
+PYEOF
+) || _WOU_ID_KIND=""
+          IFS=$'\t' read -r _WOU_JOB_ID _WOU_JOB_KIND <<< "$_WOU_ID_KIND" || true
+        fi
+        if [ -n "$_WOU_JOB_ID" ]; then
+          _WOU_PROMPT_TMP="/tmp/openclaw-cron-refresh-check-$$.txt"
+          if curl -fsSL --max-time 15 "https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/cron-prompt.txt" -o "$_WOU_PROMPT_TMP" 2>/dev/null && [ -s "$_WOU_PROMPT_TMP" ]; then
+            refresh_weekly_cron_message "$_WOU_JOB_ID" "$_WOU_JOB_KIND" "$(cat "$_WOU_PROMPT_TMP")"
+          else
+            echo "  [weekly-cron-refresh] SKIP — could not fetch cron-prompt.txt; nothing changed"
+          fi
+          rm -f "$_WOU_PROMPT_TMP" 2>/dev/null || true
+        else
+          echo "  [weekly-cron-refresh] SKIP — could not resolve job id for weekly-onboarding-update; nothing changed"
+        fi
       fi
     fi
     # Create cron only when it is absent (never existed, or just deleted above)
@@ -4864,6 +6061,7 @@ PYEOF
         echo "  ⚠ Could not fetch cron-prompt.txt -- agent can install cron manually later"
       fi
     fi
+    #=== END WEEKLY-CRON-FULL-REGISTRATION-V1 ===
   fi
 
   # ----------------------------------------------------------
@@ -4944,7 +6142,18 @@ PYEOF
   FLEET_STD="$_PERSIST_SCRIPTS/apply-fleet-standards.sh"
   [ -f "$FLEET_STD" ] || FLEET_STD="$ONBOARDING_DIR/scripts/apply-fleet-standards.sh"
   if [ -f "$FLEET_STD" ]; then
-    bash "$FLEET_STD" >/dev/null 2>&1 && echo "  ✓ Fleet standards applied" || echo "  ⚠ Fleet standards application reported errors (update continues)"
+    # v21.4.41: redirect to LOG_FILE instead of /dev/null (was discarding ALL
+    # output, including the AGENTS.md dedup step's greppable one-line summary
+    # -- see scripts/dedup-agents-md.py, wired inside apply-fleet-standards.sh
+    # 5a-DEDUP). Surfacing to LOG_FILE lets post-roll verification `grep` for
+    # it without spamming this console with the full config-merge dump.
+    if bash "$FLEET_STD" >> "$LOG_FILE" 2>&1; then
+      echo "  ✓ Fleet standards applied"
+    else
+      echo "  ⚠ Fleet standards application reported errors (update continues)"
+    fi
+    _DEDUP_LOG_LINE="$(grep -m1 '^\[apply-fleet-standards\] \[AGENTS DEDUP\]' "$LOG_FILE" 2>/dev/null || true)"
+    [ -n "$_DEDUP_LOG_LINE" ] && echo "  (check) $_DEDUP_LOG_LINE"
   else
     echo "  ⚠ Fleet standards script not found"
   fi
@@ -5371,6 +6580,10 @@ PYEOF
       echo "  ⚠ Check that Skill 32 is installed and build-workforce.py has produced department folders"
     fi
 
+  # U006 — Co-locate the canonical presentation entry script + guard into the
+  # materialized department's scripts/ directory.
+  colocate_presentation_entry
+
   # ----------------------------------------------------------
   # D5 — Command Center web-app refresh (v14.27.0):
   # git pull --ff-only + npm install + db:push + sync-departments + pm2 restart.
@@ -5564,6 +6777,21 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
       command -v obs_set_status >/dev/null 2>&1 && obs_set_status "32-command-center-setup" "downloaded"
     fi
   fi
+
+  # Bug B fix: _cc_currency_probe was called from exactly ONE place in this
+  # script -- inside the _SAME_VERSION_RECHECK branch far above, which is
+  # ONLY entered on a same-version re-roll. On a version-bump roll (the
+  # NORMAL case -- every box's version differs from the new release) that
+  # branch is never reached, so .command-center-state was never written at
+  # all. PROVEN LIVE: a canary run going v21.1.0 -> v21.4.43 produced no
+  # `[CC CURRENCY]` line whatsoever. Call it here too, unconditionally, on
+  # every full pass -- this call is MARKER-WRITE/REPORT ONLY: the return
+  # value is intentionally discarded and must NEVER gate or alter anything
+  # below (the full pass already performs the actual CC refresh via
+  # run-full-install.sh in the branches that follow). The recheck-branch call
+  # above is untouched and still gates its own early exit.
+  _cc_currency_probe || true
+
   # >>> TRAP3-CC-BOOTSTRAP-BRANCH-BEGIN  (extracted verbatim by scripts/test-updater-traps-1-and-3.sh)
   #
   # U005 -- EXIT-CODE CONTRACT (STAMP/CC-REFRESH ORDERING):
@@ -5634,9 +6862,10 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
     # initial pairing, long before Skill 23's interview — using the same
     # openclaw.json field order as install.sh's resolve_owner_name(). Operator
     # ruling (2026-07-28): default PERMANENTLY to the client's name-derived
-    # slug — Jennifer's production slug is literally "jennifer", derived this
-    # same way, and has been fine in production. No rename/migration path is
-    # built here; the name-derived slug is the final answer for this box.
+    # slug — e.g. a client named "Jane Doe" gets slug "jane" (first name only,
+    # lowercased), derived this same way; this pattern already runs in
+    # production without issue. No rename/migration path is built here; the
+    # name-derived slug is the final answer for this box.
     if [ -z "$_CC_SLUG" ]; then
       _CC_OWNER_NAME=""
       if [ -n "${OC_JSON:-}" ] && [ -f "${OC_JSON:-}" ]; then

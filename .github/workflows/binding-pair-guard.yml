@@ -1,0 +1,120 @@
+name: SPEC same-commit binding-pair guard
+
+# Enforces SPEC/INDEX.md's "Units that must land in the SAME commit" table
+# (~line 293) and its one landing-order row. SPEC/ is Super-Spec planning
+# documentation that lives OUTSIDE this repository (a sibling of this
+# checkout under the project root) -- it cannot be read from CI, so
+# scripts/binding-pairs.json is the repo-local, hand-maintained transcription
+# this guard actually reads. See scripts/check-binding-pairs.py's module
+# docstring for the full design rationale, what it does and does not catch,
+# and why this is a CI-on-PR check rather than a pre-commit hook (a
+# same-commit binding is a property of a whole PR/diff; a pre-commit hook
+# only ever sees the one commit being made right now and cannot see a
+# partner unit built on a different branch).
+#
+# WHY THIS EXISTS: an investigation (2026-07-30) found that nothing in
+# .githooks/, the ~100 workflows in .github/workflows/, scripts/, or CONTROL/
+# referenced these bindings, and 3 of the 4 verifiable pairs were violated at
+# landing time (U069+U011 landed in different commits with ~170 unrelated
+# commits between them; U012+U013 similarly split; U073's landing order
+# relative to U056/U057 was mixed). Only U002+U009 landed correctly, in one
+# merge commit. This guard is the first thing that checks the declaration
+# against a real diff.
+#
+# WHY MOST GROUPS DO NOT BLOCK TODAY: every currently-declared pair/row
+# describes units that are already fully landed and verified on disk. Making
+# them "enforce: true" now would not protect anything (nothing is left to
+# co-land) and would risk failing ordinary future maintenance to those same
+# files for unrelated reasons -- exactly the "guard that fires on legitimate
+# work" failure this project was warned against. They are recorded with
+# "enforce": false ("status": "landed") for the audit trail. The mechanism
+# is proven end-to-end by the self-test job below; it becomes a live,
+# blocking gate the next time SPEC/INDEX.md declares a new same-commit pair
+# for units that have not shipped yet and a maintainer flips that group's
+# "enforce" to true in scripts/binding-pairs.json.
+#
+# Runs on every pull_request (no path filter): a same-commit pair can name
+# files anywhere in the repository, so restricting the trigger to a path
+# list would silently exempt whichever files a future pair happens to touch.
+# The check itself is a handful of `git diff --name-only` + path-glob
+# comparisons -- cheap enough to run unconditionally.
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  selftest:
+    name: Prove the guard bites (fail / pass / no-fire) on a scratch repo
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: check-binding-pairs.py --selftest (must exit 0 -- proves FAIL/PASS/no-fire all work)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/check-binding-pairs.py --selftest
+
+  guard:
+    name: Check this PR's diff against scripts/binding-pairs.json
+    runs-on: ubuntu-latest
+    needs: selftest
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Same-commit pairs -- check this PR's base...head diff
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check-binding-pairs.py check --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Landing-order constraints -- check this PR's base...head diff
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          python3 scripts/check-binding-pairs.py order --base "$BASE_SHA" --head "$HEAD_SHA"
+
+  audit-history:
+    name: Audit-only report against full history (never fails, informational)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'workflow_dispatch'
+    steps:
+      - name: Checkout repo (full history)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: check-binding-pairs.py audit-history (report only, exit code ignored on purpose)
+        shell: bash
+        run: |
+          set -uo pipefail
+          ROOT_COMMIT=$(git rev-list --max-parents=0 HEAD | tail -1)
+          python3 scripts/check-binding-pairs.py audit-history --since "$ROOT_COMMIT"
+          echo "Audit is informational only -- see job log. Never blocks a merge."

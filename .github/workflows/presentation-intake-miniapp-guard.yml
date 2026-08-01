@@ -1,0 +1,45 @@
+name: presentation-intake-miniapp-guard
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - .github/workflows/presentation-intake-miniapp-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp/**
+      - 23-ai-workforce-blueprint/templates/role-library/presentations/intake/deck-intake-questions.json
+      - .github/workflows/presentation-intake-miniapp-guard.yml
+jobs:
+  intake-miniapp-guard:
+    name: Intake mini-app guard
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "22" }
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.11" }
+      - name: Worker unit tests
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: node --test test/test_worker.mjs
+      - name: Conditional evaluator tests
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: node --test test/test_conditionals.mjs
+      - name: Skip/defer module test
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: node --test test/test_skip_defer.cjs
+      - name: Skip/defer source integrity
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: node --test test/test_skip_defer_source.cjs
+      - name: Payload builder tests
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: python3 test/test_payload.py
+      - name: Bridge tests
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: python3 test/test_bridge.py
+      - name: Payload builder selftest
+        working-directory: 23-ai-workforce-blueprint/templates/role-library/presentations/intake-miniapp
+        run: python3 payload/build_questions_payload.py --selftest

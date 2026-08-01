@@ -1533,37 +1533,13 @@ def augment_role_folder(role_path, workspace_root, role_metadata=None):
             )
             written.append("SOP/00-INDEX.md")
 
-    symlinked = []
-    converted = []
-    for shared in V21_SYMLINKS:
-        link_path = role_path / shared
-        target = workspace_root / shared
-        if link_path.is_symlink():
-            if link_path.resolve() == target.resolve():
-                continue                      # already correct — nothing to do
-            link_path.unlink()                # wrong target: relink, no backup needed
-        elif link_path.exists():
-            # A stale REGULAR copy. Back it up before converting — its content
-            # exists nowhere else (no copy of it is in the repository).
-            ts = datetime.now().strftime("%Y%m%d-%H%M%S")
-            bak = link_path.with_name(f"{shared}.bak-unify-{ts}")
-            try:
-                link_path.replace(bak)
-            except OSError as e:
-                print(f"  WARN: could not back up {shared} before converting: {e}",
-                      file=sys.stderr)
-                continue                      # never destroy what we could not back up
-            converted.append(shared)
-        try:
-            link_path.symlink_to(target)
-            symlinked.append(shared)
-        except OSError as e:
-            print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
-
-    return {"written": written, "symlinked": symlinked, "converted": converted}
+    # U054: delegate symlink logic to the single canonical implementation
+    link_info = _link_shared_files_only(role_path, workspace_root)
+    return {"written": written, "symlinked": link_info["symlinked"],
+            "converted": link_info["converted"]}
 
 
-def _link_shared_files_only(role_path, workspace_root, results):
+def _link_shared_files_only(role_path, workspace_root):
     """
     U054: link shared files in a container that is correctly excluded from
     role augmentation (SKIP_NAMES — sops/, roles/, scripts/) but may still
@@ -1597,8 +1573,7 @@ def _link_shared_files_only(role_path, workspace_root, results):
             symlinked.append(shared)
         except OSError as e:
             print(f"  WARN: could not symlink {shared}: {e}", file=sys.stderr)
-    results.append({"role": role_path.name, "written": [], "symlinked": symlinked,
-                    "converted": converted, "skipped_container": True})
+    return {"symlinked": symlinked, "converted": converted}
 
 def _is_sops_library_dir(path):
     """True when `path` is a NAMED-SET `sops/` SOP-LIBRARY container, not a role.
@@ -1734,7 +1709,9 @@ def augment_all_existing_role_folders(dept_path, workspace_root, dry_run=False):
             agents_path.unlink()
             print(f"    [{entry.name}] unlinked AGENTS.md symlink")
         # Link TOOLS.md / USER.md via shared implementation
-        _link_shared_files_only(entry, workspace_root, results)
+        link_info = _link_shared_files_only(entry, workspace_root)
+        results.append({"role": entry.name, "written": [], "symlinked": link_info["symlinked"],
+                         "converted": link_info["converted"], "skipped_container": True})
 
 
     # ROOT-CAUSE FIX: after (re)materializing/augmenting a department's role
@@ -1905,9 +1882,14 @@ governing persona per task at runtime using the 5-layer scoring matrix
 (mission / owner_values / company_kpis / dept_kpis / task_fit).
 
 This file lists personas that have been **pre-qualified** for this department's
-work based on their domain alignment. The selector treats this list as a
-recommendation pool, but it can still pick from outside the pool when the
-task context warrants it.
+work based on their domain alignment. For Presentations the resolved BLEND is
+GOVERNING, not advisory: `blend_voice_governance.py` resolves one governing blend
+bundle per narrative phase through `shared-utils/persona_for_job.py` (blend=True)
+before slide authoring, and the engine records it in state.json. The selector may
+still draw a candidate from outside this pool when the task context warrants it —
+but whatever it resolves GOVERNS the written voice. The only exemption is the
+documented flag `SKILL51_BLEND_GOVERNS=0`, which reverts to intake-tone-only
+governance (Skill 51 SKILL.md, "Voice governance"; Skill 6 U98 / D1 ruling).
 
 ## Pre-qualified personas
 
@@ -2488,6 +2470,27 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
         if scripts_copied:
             written.setdefault("scripts", 0)
             written["scripts"] = scripts_copied
+
+        # U024 — post-materialization assertion for blend_voice_governance.py.
+        # A copy that silently diverges is worse than an absence, because
+        # `--prove` would attest to the wrong file.
+        _blend_src = lib_dir / "scripts" / "blend_voice_governance.py"
+        _blend_dst = scripts_target / "blend_voice_governance.py"
+        if _blend_src.is_file():
+            import hashlib as _hashlib
+            _src_hash = _hashlib.sha256(_blend_src.read_bytes()).hexdigest()
+            if not _blend_dst.is_file():
+                raise RuntimeError(
+                    f"blend_voice_governance.py source exists at {_blend_src} "
+                    f"but the materialized copy at {_blend_dst} is absent — "
+                    "the materializer loop should have copied it")
+            _dst_hash = _hashlib.sha256(_blend_dst.read_bytes()).hexdigest()
+            if _src_hash != _dst_hash:
+                raise RuntimeError(
+                    f"blend_voice_governance.py materialized copy has diverged "
+                    f"from its source. source sha256={_src_hash[:16]}... "
+                    f"copy sha256={_dst_hash[:16]}... — refusing to ship a "
+                    f"drifted governance file")
 
     return written
 

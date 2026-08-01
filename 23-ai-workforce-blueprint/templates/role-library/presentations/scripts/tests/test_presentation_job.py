@@ -335,6 +335,71 @@ class TestBoardMirror:
         assert rc == EXIT_GATE_BLOCKED, f"Expected EXIT_GATE_BLOCKED (3), got {rc}"
         assert state["terminal"] == "BLOCKED"
 
+    # Test 12: run_phase calls persona governance for a BLEND_PHASE_FOR-mapped phase
+    def test_run_phase_calls_persona_governance_for_mapped_phase(self, tmp_path, monkeypatch):
+        """run_phase must call persona.resolve_for_phase(run_dir, phase.id) for a
+        phase id that is one of the four BLEND_PHASE_FOR keys (e.g. P4-COPY).
+        This is the integration test that bleeds if the U024 call site in
+        phases.py is ever removed."""
+        from presentation_job.state import StateStore
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        import presentation_job.phases as phases_mod
+
+        run_dir = tmp_path / "run"
+        run_dir.mkdir()
+
+        manifest_path = tmp_path / "manifest.json"
+        manifest_json = {
+            "manifest_version": 25,
+            "phases": [{
+                "id": "P4-COPY",
+                "order": 1,
+                "owning_role": "test",
+                "produces_artifact": ["output.txt"],
+                "executor": {"kind": "none"},
+            }],
+        }
+        manifest_path.write_text(json.dumps(manifest_json))
+        manifest = Manifest(manifest_path)
+
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1,
+            "job_id": "test_job",
+            "run_dir": str(run_dir),
+            "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path),
+            "manifest_version": 25,
+            "manifest_sha256": manifest.sha256,
+            "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"},
+            "current_phase": None,
+            "phases": [],
+            "gates": {},
+            "waivers": [],
+            "events": [],
+            "sent": {},
+            "undeliverable": [],
+            "heartbeat": {},
+            "terminal": None,
+        }
+        store.save(state)
+
+        calls = []
+        stub = mock.MagicMock(side_effect=lambda run_dir, phase_id, *a, **kw:
+                               calls.append(phase_id) or None)
+        monkeypatch.setattr(phases_mod.persona, "resolve_for_phase", stub)
+
+        engine = Engine(run_dir, manifest, store, state, dry_run=True)
+        engine.run_phase(manifest.phase("P4-COPY"))
+
+        stub.assert_called_once()
+        assert calls == ["P4-COPY"], (
+            f"Expected persona.resolve_for_phase to be called with phase id "
+            f"'P4-COPY', got calls={calls}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # Test 12: Mutation guard — importing state must not import phases
@@ -374,3 +439,188 @@ class TestModuleBoundaries:
                 if k.startswith("presentation_job"):
                     del sys.modules[k]
             sys.modules.update(saved)
+
+
+# ---------------------------------------------------------------------------
+# U069: shell-injection fix --- three tests
+# ---------------------------------------------------------------------------
+class TestU069ShellInjectionFix:
+    """U069: Stop shell=True on manifest strings and run-dir path."""
+
+    def _make_engine_state(self, run_dir, manifest_path, manifest):
+        from presentation_job.state import StateStore
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "u069_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return store, state
+
+    def test_u069_space_in_run_dir_preserves_path(self, tmp_path):
+        """U069-a: space in run dir path must arrive as ONE argument."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        from presentation_job.state import EXIT_OK
+
+        run_dir = tmp_path / "run dir with spaces"
+        run_dir.mkdir()
+        (run_dir / "echo_argv.py").write_text(
+            "import json, sys\njson.dump(sys.argv, open('argv_out.json', 'w'))\n"
+        )
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["argv_out.json"],
+                        "executor": {"kind": "script",
+                                     "cmd": "python3 echo_argv.py {run_dir}"}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert rc == EXIT_OK, f"Phase should pass, got rc={rc}"
+        output = run_dir / "argv_out.json"
+        assert output.is_file()
+        argv_data = json.loads(output.read_text())
+        assert len(argv_data) >= 2
+        assert argv_data[1] == str(run_dir), (
+            f"argv[1]={argv_data[1]!r} expected {str(run_dir)!r}"
+        )
+
+    def test_u069_shell_injection_blocked(self, tmp_path):
+        """U069-b: shell metachar in executor.cmd must NOT be interpreted."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine
+        from presentation_job.state import EXIT_GATE_BLOCKED
+
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        sentinel = tmp_path / "PWNED_U069"
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["does_not_exist.txt"],
+                        "executor": {"kind": "script",
+                                     "cmd": "echo hello; touch " + str(sentinel)}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        rc = engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert rc == EXIT_GATE_BLOCKED
+        assert not sentinel.exists(), f"SECURITY FAILURE: sentinel {sentinel} exists!"
+        for p in state.get("phases", []):
+            if p["id"] == "P0A-INTAKE":
+                assert p.get("status") != "done"
+
+    def test_u069_unbalanced_quote_raises_contract_error(self, tmp_path):
+        """U069-c: unparseable executor.cmd raises PhaseExecutorContractError."""
+        from presentation_job.manifest import Manifest, Phase
+        from presentation_job.phases import Engine, PhaseExecutorContractError
+
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        manifest_path = tmp_path / "manifest.json"
+        manifest_path.write_text(json.dumps({
+            "manifest_version": 25,
+            "phases": [{"id": "P0A-INTAKE", "order": 1, "owning_role": "test",
+                        "produces_artifact": ["out.txt"],
+                        "executor": {"kind": "script",
+                                     "cmd": "echo \"unclosed quote"}}],
+        }))
+        manifest = Manifest(manifest_path)
+        store, state = self._make_engine_state(run_dir, manifest_path, manifest)
+        engine = Engine(run_dir, manifest, store, state, dry_run=False)
+        with pytest.raises(PhaseExecutorContractError) as exc_info:
+            engine.run_phase(manifest.phase("P0A-INTAKE"))
+        assert "P0A-INTAKE" in str(exc_info.value)
+        for p in state.get("phases", []):
+            if p["id"] == "P0A-INTAKE":
+                assert p.get("status") != "done"
+
+
+# ---------------------------------------------------------------------------
+# WARN_ONLY_GATES / ocr_readback contradiction: MASTER-SPEC 7.4 says an unchecked
+# slide-content readback BLOCKS the job; gates.py had ocr_readback in WARN_ONLY_GATES,
+# so close() routed a failing readback into the non-blocking gate_warnings list and a
+# job could reach DONE with zero OCR-verified slides. These drive Engine.close() itself
+# (not just Gates in isolation) to prove the observable, end-to-end behaviour.
+# ---------------------------------------------------------------------------
+class TestOCRReadbackGateBlocks:
+    def _seed_other_gates_passing(self, run_dir):
+        """Every gate except ocr_readback/qc satisfied, so a close() failure can only
+        be attributed to the one gate each test is about."""
+        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (run_dir / "renders").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
+        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
+            {"ghl_folder_id": "root",
+             "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
+             "pptx_ghl_media_id": "p9"}))
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(json.dumps({"average": 9.2}))
+
+    def _make_engine(self, run_dir):
+        from presentation_job.manifest import Manifest
+        from presentation_job.phases import Engine
+        manifest_path = run_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({"manifest_version": 25, "phases": []}))
+        manifest = Manifest(manifest_path)
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "ocr_gate_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return Engine(run_dir, manifest, store, state, dry_run=False)
+
+    def test_close_blocks_on_unchecked_readback(self, tmp_path, capsys):
+        """The exact scenario the contradiction describes: zero OCR-verified slides.
+        close() must exit EXIT_GATE_BLOCKED, never reach DONE, and name the gate in a
+        plain-language reason in the same '--close' output style as every other
+        fail-closed gate."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        # Deliberately no renders/*.ocr.json sidecars at all: the "zero OCR-verified
+        # slides" case from the bug report.
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "CANNOT CLOSE -- fail-closed gates did not pass:" in captured.err
+        assert "ocr_readback" in captured.err
+        assert engine.state.get("gate_warnings") is None or all(
+            w.get("gate") != "ocr_readback" for w in engine.state.get("gate_warnings", [])
+        ), "ocr_readback must never land in the non-blocking gate_warnings list"
+
+    def test_close_succeeds_with_fully_checked_readback(self, tmp_path, capsys):
+        """Bleed-test companion: a job whose every rendered slide really was OCR-verified
+        must still close DONE. Fixing the block must not break the good path."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "renders" / "slide-01.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        (run_dir / "renders" / "slide-02.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert "CANNOT CLOSE" not in captured.err

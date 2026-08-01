@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "_purpose": "Machine-checkable transcription of the 'Same commit as' bindings and the one landing-order constraint declared in SPEC/INDEX.md ('Units that must land in the SAME commit', ~line 293) and the individual SPEC/units/<ID>.md build cards. SPEC/ is Super-Spec planning documentation that lives OUTSIDE this git repository (a sibling directory of repos/openclaw-onboarding under the project root) -- CI cannot read it directly, so this file is the enforceable, repo-local translation. It is maintained by hand: whenever SPEC/INDEX.md's same-commit table gains a row, add the matching group here with \"enforce\": true (status \"pending\") while the units are still unbuilt; flip \"enforce\" to false and \"status\" to \"landed\" once a merge-writer confirms both sides landed together (or record the violation -- do not delete history).",
+  "_edge_symmetry_note": "Every group below is stored as an UNORDERED set of unit ids. The checker does not care which unit's own SPEC card carries the prose 'Same commit as:' line -- SPEC/INDEX.md:302 documents that U011's card declares the U069 pairing while, at the time of the investigation, U069 was the only place the reciprocal reasoning lived out in full; U002<->U009 and U012<->U013 happen to be declared on both cards. Modeling the binding as a graph edge (not as two independent one-directional prose claims) means a future pair that is declared on only one side is still enforced in both directions, because the parser only needs to find the edge ONCE.",
+  "units": {
+    "U002": {
+      "touches": [
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/sync_check.py"
+      ]
+    },
+    "U009": {
+      "touches": [
+        "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"
+      ]
+    },
+    "U011": {
+      "touches": [
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/**",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/__init__.py"
+      ]
+    },
+    "U069": {
+      "touches": [
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/report.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_presentation_job.py"
+      ]
+    },
+    "U012": {
+      "touches": [
+        "universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json",
+        "universal-sops/presentation-slide-craft/MANIFEST-SOURCE.txt",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenters_speech_pdf.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/speech_spec_build.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/pdf_export.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presenter_guide.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/speech_fish_tag.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/synthesize_full_speech.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_producers.py"
+      ]
+    },
+    "U013": {
+      "touches": [
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/gates.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/waivers.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/presentation_job/phases.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/phase_verifiers.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_gates.py",
+        "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_waivers.py"
+      ]
+    },
+    "U073": {
+      "touches": [
+        "scripts/install-git-hooks.sh",
+        "scripts/guard-hook-enforcement-parity.sh",
+        ".github/workflows/hook-enforcement-parity-guard.yml",
+        "scripts/tests/hook-enforcement-parity.negative-fixture.sh"
+      ]
+    },
+    "U056": {
+      "touches": [
+        "scripts/qc-assert-no-type-f-census.py",
+        ".github/workflows/type-f-census-guard.yml",
+        "scripts/tests/type-f-census-guard.negative-fixture.sh",
+        "scripts/qc-assert-no-type-f-census.allowlist"
+      ]
+    },
+    "U057": {
+      "touches": [
+        "scripts/qc-assert-no-full-env-dump.py",
+        ".github/workflows/full-env-dump-guard.yml",
+        "scripts/tests/full-env-dump-guard.negative-fixture.sh",
+        "scripts/qc-assert-no-full-env-dump.allowlist"
+      ]
+    }
+  },
+  "same_commit_groups": [
+    {
+      "id": "U002+U009",
+      "units": ["U002", "U009"],
+      "kind": "cross_unit_same_commit",
+      "enforce": false,
+      "status": "landed",
+      "landed_commit": "5a830b43",
+      "spec_ref": "SPEC/INDEX.md:297",
+      "why": "Removing the five non-roles without the inventory filter creates five new false findings."
+    },
+    {
+      "id": "U012+U013",
+      "units": ["U012", "U013"],
+      "kind": "cross_unit_same_commit",
+      "enforce": false,
+      "status": "landed",
+      "landed_commit": null,
+      "spec_ref": "SPEC/INDEX.md:298",
+      "why": "The gates check artifacts only the producers create; either alone breaks or does nothing.",
+      "audit_note": "`check-binding-pairs.py audit-history` (2026-07-30, run against this branch's full history) finds U012's own fix landed at fd41b3f5 (2026-07-27 18:36:47 -0400) and U013's at 27f646a6 (2026-07-28 19:07:07 -0400) -- 24.51h apart, 63 other commits landed on main in between. VIOLATED, not one commit. (The two units' later ceremonial 'Land Uxxx: merge + ticket' bookkeeping commits, 9ca6d9eb and eb6c19c7, are 11.86h apart with the 7-unit 'Ripple v21.4.8' batch between them -- a smaller number because that metric measures paperwork, not the code landing on main. Both readings agree on the verdict: violated.)"
+    },
+    {
+      "id": "U069+U011",
+      "units": ["U069", "U011"],
+      "kind": "cross_unit_same_commit",
+      "enforce": false,
+      "status": "landed",
+      "landed_commit": null,
+      "spec_ref": "SPEC/INDEX.md:302",
+      "why": "U069 replaces the shell execution path U011 creates. U011 alone ships a command-injection surface; U069 alone has nothing to replace.",
+      "audit_note": "`check-binding-pairs.py audit-history` (2026-07-30) finds U011's own fix landed at 29a229dd (2026-07-27 17:57:19 -0400) and U069's at 89b0e745 (2026-07-30 06:31:01 -0400) -- 60.56h apart, 171 other commits landed on main in between. VIOLATED, not one commit. (The ceremonial 'Land U011: merge + ticket' commit, 34eea3ab, and U069's eventual PR-merge commit, 7c2ce02d, are 24.13h apart -- a different, smaller number because 34eea3ab is a batched 'Ripple' merge recorded after the fact, not U011's own original landing. Both readings agree on the verdict: violated, and neither reproduces a clean '~30h' figure -- flagged here rather than silently asserted, see the PR description for the full reconciliation.)"
+    }
+  ],
+  "internal_atomicity_groups_out_of_scope": [
+    {
+      "id": "U034+its-four-fields",
+      "note": "SPEC/INDEX.md:299 names this a same-commit row, but it is a single unit's OWN Touches: files that must land together (not a second SPEC unit), and every one of its Touches: paths (src/lib/validation.ts, src/app/api/tasks/[id]/route.ts, tests/unit/u034-four-fields.test.ts) lives in the separate Command Center (mission-control) repository -- a DIFFERENT repository from openclaw-onboarding. Out of scope for this checker: not enforceable from this repo's CI, and not a cross-unit pairing in the sense this project targets."
+    },
+    {
+      "id": "U047+its-four-codes",
+      "note": "SPEC/INDEX.md:300 / U047's own card: 'Same commit as: its three new autofail codes... Six files, one commit.' This is U047's own internal completeness constraint (its own Touches: list must land as one diff), not a binding to a second unit. Already covered by the ordinary expectation that one unit == one PR == one commit; not modeled as a cross-unit group here."
+    },
+    {
+      "id": "U051+its-enforcer",
+      "note": "SPEC/INDEX.md:301, corrected 2026-07-26 in the index itself: U051 adds zero new manifest rows: what must land together is U051's OWN enforcer fills + wrappers + human_judged marks. Internal-to-unit, same reasoning as U047; out of scope for cross-unit enforcement."
+    }
+  ],
+  "order_constraints": [
+    {
+      "id": "U073-before-U057-and-U056step6",
+      "before": "U073",
+      "at_or_after": ["U057", "U056"],
+      "enforce": false,
+      "status": "landed",
+      "spec_ref": "SPEC/INDEX.md:303",
+      "why": "U073 makes the commit hook run at all. Until it does, U056's and U057's commit-time hook bans are doctrine, not enforcement -- they would pass a commit that violates them.",
+      "audit_note": "`check-binding-pairs.py audit-history` (2026-07-30) finds U073's own fix landed at 4460f6f4 (2026-07-27 17:53:47 -0400). U056's landed at c26c9bc4 (2026-07-27 19:07:02 -0400, 1.2h AFTER U073 -- order honored). U057's landed at b67e101b (2026-07-27 17:50:30 -0400, ~3 MINUTES BEFORE U073 -- order violated, but by minutes, not the 41 hours this row's prose cites). Using the alternate 'Land Uxxx: merge + ticket' ceremonial-commit metric instead (5323094a Land U073 at 2026-07-29 14:11:37, vs b1c04658/6459ea4d Land U056/U057 both at 2026-07-29 09:09:57): U073's ceremony landed ~5h AFTER U056/U057's, a real but much smaller violation than 41h. Recorded transparently: this checker corroborates a real, direction-mixed ordering problem (U057 by minutes on one reading, ~5h on another) but could NOT reproduce the cited 41-hour gap on either reading tried. Flagged for re-verification against CONTROL/dispatch-log.md rather than silently restated."
+    }
+  ]
+}

@@ -201,8 +201,10 @@ import sys
 import time
 import urllib.request
 import urllib.error
-from datetime import date
+from datetime import date, datetime, timezone
 from pathlib import Path
+
+from presentation_job.checkpoint import atomic_write_text, PREDICATES
 from typing import Optional
 from urllib.parse import urlparse, quote
 
@@ -361,6 +363,14 @@ COPY_SLIDE_TOTAL_CHAR_FLOOR = 40     # kills the "empty slide, one orphan word" 
 COPY_SLIDE_TOTAL_CHAR_CEILING = 180  # ~30 words @ ~6 chars/word -- preserves historical ceiling
 COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR = 12  # pure-typography HOOK / section-banner slides: the
                                         # hook line alone is allowed to be short
+
+# U067 stage 1 (Rule 3.5). The hook/section-banner exemption was unreachable on the
+# boolean arc_allocation schema, so every such slide has been judged against the
+# 40-char floor. Turning the exemption on flips slides from FAIL to PASS, which is
+# the fail-open direction and must never arrive in one step. While this is False the
+# gate still applies the standard floor and merely REPORTS which slides the exemption
+# would cover. Stage 3 (flipping this to True) is a SEPARATE unit.
+COPY_HOOK_EXEMPTION_ENFORCED = False
 
 # REQUIRED STRUCTURAL BLOCKS (AF-P1). A real rich prompt is not just long enough — it
 # carries the load-bearing structural scaffolding: an [ARCHETYPE ...] layout declaration,
@@ -619,6 +629,10 @@ OVERLAY_FORBIDDEN_FILES = (
 AF_CANONICAL_RENDER_BYPASS = "AF-CANONICAL-RENDER-BYPASS"  # a non-canonical hand-rolled renderer/assembler produced (part of) the deck
 AF_LOCAL_CANVAS            = "AF-LOCAL-CANVAS"             # a slide PNG was drawn on a LOCAL Pillow canvas (Image.new 2048x1152) instead of kie.ai
 AF_IMAGE_QC_VISION         = "AF-IMAGE-QC-VISION"          # image-QC "passed" without a real pixel/vision read (rubber-stamp number / flat card / overlay-blessing rubric)
+
+# U027 (not FIX-2, but reuses the same _owner_skip_approved helper): the postflight
+# OCR text-readback audit. See check_ocr_readback() below.
+AF_OCR_READBACK            = "AF-OCR-READBACK"             # a rendered slide's baked text was never read back against its approved copy (checked:false — NEVER waivable), or the readback found a mismatch (matched:false — waivable ONLY by a logged owner_skip_approval)
 
 # The canonical render/assemble tools. A *.py file inside a run/working dir whose
 # name is NOT in this set, and that defines a slide canvas / native text box /
@@ -1474,6 +1488,91 @@ def verify_png(path: Path) -> None:
 # Per-slide render with retry
 # ---------------------------------------------------------------------------
 
+
+
+# ---------------------------------------------------------------------------
+# U028 -- pre-call task-id checkpointing (see presentation_job/checkpoint.py)
+# ---------------------------------------------------------------------------
+
+def _pending_tasks_path(run_dir: Path) -> Path:
+    return run_dir / "working" / "checkpoints" / "pending_tasks.json"
+
+
+def _checkpoint_pending_task(run_dir: Path, ordinal: int, task_id: str,
+                             attempt: int) -> None:
+    try:
+        p = _pending_tasks_path(run_dir)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        existing: dict = {}
+        if p.exists():
+            try: existing = json.loads(p.read_text())
+            except (json.JSONDecodeError, ValueError): pass
+        existing[str(ordinal)] = {"task_id": task_id, "attempt": attempt,
+                                   "submitted_at": datetime.now(timezone.utc).isoformat()}
+        atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _read_pending_tasks(run_dir: Path) -> dict:
+    p = _pending_tasks_path(run_dir)
+    if not p.exists(): return {}
+    try: return json.loads(p.read_text())
+    except (json.JSONDecodeError, ValueError, OSError): return {}
+
+
+def _record_completed_task(run_dir: Path, ordinal: int, task_id: str,
+                           out_path: Path) -> None:
+    try: sha = hashlib.sha256(out_path.read_bytes()).hexdigest()
+    except Exception: return
+    try:
+        p = _pending_tasks_path(run_dir)
+        existing = _read_pending_tasks(run_dir)
+        existing[str(ordinal)] = {"task_id": task_id, "completed": True,
+                                   "output_path": str(out_path), "sha256": sha,
+                                   "completed_at": datetime.now(timezone.utc).isoformat()}
+        atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception: pass  # noqa: BLE001
+
+
+def _clear_pending_task(run_dir: Path, ordinal: int) -> None:
+    """Remove a terminal/exhausted pending task record so a future resume
+    submits fresh instead of re-polling the same dead task id forever."""
+    try:
+        p = _pending_tasks_path(run_dir)
+        existing = _read_pending_tasks(run_dir)
+        if str(ordinal) in existing:
+            del existing[str(ordinal)]
+            atomic_write_text(p, json.dumps(existing, indent=2))
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def _resume_pending_task(run_dir: Path, ordinal: int, api_key: str) -> Optional[str]:
+    pending = _read_pending_tasks(run_dir)
+    rec = pending.get(str(ordinal))
+    if not rec: return None
+    task_id = rec.get("task_id")
+    if not task_id: return None
+    if rec.get("completed"):
+        out_p = rec.get("output_path")
+        sha = rec.get("sha256")
+        if out_p and sha:
+            if PREDICATES["image"](Path(out_p), sha256=sha):
+                return "__COMPLETED__"
+        return None
+    try:
+        result_url = poll_task(task_id, api_key)
+        print(f"    [resume] pending taskId={task_id} completed -- reusing.")
+        return result_url
+    except Exception:
+        print(f"    [resume] pending taskId={task_id} is terminal/exhausted -- "
+              f"will submit fresh.", flush=True)
+        _clear_pending_task(run_dir, ordinal)
+        return None
+
+
+
 def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                  has_official_logo: bool = False, logo_url: Optional[str] = None) -> dict:
     """
@@ -1491,6 +1590,23 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
     out_path = renders_dir / f"{name}.png"
     prompt = load_rich_prompt(slide, run_dir)
 
+    # U028 -- resume: poll a pending task id from a prior killed run before
+    # paying for a fresh submission.  This is the entire saving.
+    resumed_url = _resume_pending_task(run_dir, ordinal, api_key)
+    if resumed_url == "__COMPLETED__":
+        print(f"  [{name}] resume found completed artifact -- skipping.")
+        return {"slide": ordinal, "file": str(out_path),
+                "taskId": "resumed-completed"}
+    if resumed_url is not None:
+        print(f"  [{name}] resume polling succeeded -- downloading result.")
+        download_unauthenticated(resumed_url, out_path)
+        verify_png(out_path)
+        _verify_aspect_and_readback(out_path, slide, ordinal)
+        size = out_path.stat().st_size
+        print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
+        _record_completed_task(run_dir, ordinal, "resumed", out_path)
+        return {"slide": ordinal, "file": str(out_path), "taskId": "resumed"}
+
     last_err = None
     for attempt in range(1, SLIDE_MAX_ATTEMPTS + 1):
         print(f"  [{name}] attempt {attempt}/{SLIDE_MAX_ATTEMPTS}", flush=True)
@@ -1504,6 +1620,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                     print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
                     time.sleep(RATE_LIMIT_SLEEP_S)
             print(f"    submitted -> taskId={task_id}", flush=True)
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
             result_url = poll_task(task_id, api_key)
             print(f"    success resultUrls[0]={result_url}", flush=True)
             download_unauthenticated(result_url, out_path)
@@ -1515,6 +1632,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _verify_aspect_and_readback(out_path, slide, ordinal)
             size = out_path.stat().st_size
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
+            _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
@@ -3278,13 +3396,27 @@ def _load_slide_arc_tags(run_dir: Path) -> dict:
         if not isinstance(ordinal, int):
             continue
         tokens = []
-        for k in ("arc_section", "section", "beat", "tag", "type", "role"):
+        for k in ("arc_section", "section", "beat", "tag", "type", "role", "phase"):
             v = s.get(k)
             if isinstance(v, str):
                 tokens.append(v.lower())
         tags = s.get("tags")
         if isinstance(tags, list):
             tokens += [str(t).lower() for t in tags]
+        # U067: one arc_allocation schema marks hook and section-banner slides as
+        # BOOLEANS, not strings. Measured 2026-07-26 on the only in-repository
+        # arc_allocation.json: 103 slots, 8 with "hook": true, 4 with
+        # "label_slide": true, and _is_hook_or_banner_slide returned False for all
+        # 103, because the loop above keeps only isinstance(v, str) values and
+        # neither key is even in the tuple. Emit the marker token the classifier
+        # already recognises. This is an ALLOWLIST of exactly two flags: do NOT
+        # generalise it to "every true boolean". "case_study" is also a boolean on
+        # this schema (true on 2 of 103) and case-study slides are the DENSEST in
+        # the deck; exempting them from the body-copy floor is the opposite of what
+        # this exemption is for.
+        for flag, marker in (("hook", "hook"), ("label_slide", "section-banner")):
+            if s.get(flag) is True:
+                tokens.append(marker)
         out[ordinal] = " ".join(tokens)
     return out
 
@@ -3371,13 +3503,18 @@ def _chk_copy_density(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 
         total = sum(len(f) for f in fields)
         tag_blob = arc_tags.get(ordinal, "")
-        exempt = _is_hook_or_banner_slide(tag_blob)
+        exempt_eligible = _is_hook_or_banner_slide(tag_blob)
+        exempt = exempt_eligible and COPY_HOOK_EXEMPTION_ENFORCED
         floor = COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR if exempt else COPY_SLIDE_TOTAL_CHAR_FLOOR
         if not (floor <= total <= COPY_SLIDE_TOTAL_CHAR_CEILING):
             offenders.append(
                 f"slide {ordinal:02d} SLIDE TOTAL: {total} chars, outside "
                 f"{floor}-{COPY_SLIDE_TOTAL_CHAR_CEILING} band"
                 + (" (hook/section-banner exemption applied)" if exempt else ""))
+            if exempt_eligible and not COPY_HOOK_EXEMPTION_ENFORCED:
+                offenders[-1] += (" [U067 ADVISORY: this slide is hook/section-banner and "
+                                  f"would clear a {COPY_HOOK_SLIDE_TOTAL_CHAR_FLOOR}-char "
+                                  "floor once the exemption is enforced]")
 
     if offenders:
         return ("AF-COPY-BAND: per-slide copy character-count floor/ceiling FAILED for "
@@ -4732,6 +4869,109 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
 
 
 # ---------------------------------------------------------------------------
+# MASTER-SPEC 7.4 — OCR-engine AVAILABILITY pre-flight (AF-OCR-ENGINE-MISSING).
+# Phase-0 of the signature runner (mirrors kie_balance_preflight's placement/
+# calling convention exactly) and a shared pre-render gate inside build_deck.py's
+# own direct-invocation Phase-0 block. HARD-ABORTS before any phase is dispatched
+# (run_signature_deck.phase0_preflight) — and, defense-in-depth, before any render
+# (build_deck.main()'s own Phase-0) — when this render environment has no OCR
+# engine, so the deck is never rendered (and never paid for) on a box whose
+# postflight OCR-readback audit can never actually run.
+# ---------------------------------------------------------------------------
+def ocr_engine_preflight(run_dir: Path) -> str:
+    """MASTER-SPEC 7.4 (§7.4, 'Quality that is measured, not asserted'): 'The missing
+    OCR dependency fails at minute zero, before any paid generation, not after 62
+    images.' This is that refusal.
+
+    prompt_gate.ocr_readback()'s own docstring documents that OCR is intentionally
+    PROVENANCE-RECORDED-OPTIONAL and 'never hard-fails purely for a missing engine' —
+    correct for THAT function (a healthy-engine box must keep rendering; a box mid-
+    decision records the absence rather than silently skipping it) — but nothing
+    UPSTREAM of it was refusing on a missing engine, so a box with no OCR engine
+    rendered and paid for every slide, then produced unverifiable OCR sidecars with
+    nothing hard-failing. This is the ENGINE-AVAILABILITY probe ('does an OCR engine
+    exist on this box at all'), run BEFORE a single slide is dispatched — distinct
+    from a POSTFLIGHT sidecar-verification gate (a separate concern: auditing the
+    per-slide renders/*.ocr.json records once they exist) that can only audit a
+    slide once it has already been rendered and paid for.
+
+    Called from TWO sites, both non-adhoc only (an --adhoc-no-process run forces an
+    empty api_key — see main() — so it can never spend real Kie.ai credit regardless
+    of OCR state, exactly the same carve-out kie_balance_preflight already takes):
+      1. run_signature_deck.phase0_preflight() — the REAL orchestrated path
+         (presentation-canonical-entry.sh -> run_signature_deck.py -> build_deck.py),
+         checked in-process BEFORE any phase (research/copy/QC/render) is dispatched —
+         the earliest possible point in the entire run.
+      2. build_deck.main()'s own Phase-0 block — so a DIRECT `python3 build_deck.py`
+         invocation that bypasses the runner is equally refused, exactly as
+         kie_balance_preflight and the P0B-PRIORITY binding in run_preflight() already
+         refuse a direct-invocation bypass of other Phase-0/Phase-0b gates.
+
+    Unconditional: never defers on run_dir state. An OCR-blind box can never satisfy
+    a postflight OCR-readback audit later, regardless of what phase the run is in, so
+    there is no state in which deferring would be correct.
+
+    ENVIRONMENT TRAP THIS CLOSES: probes prompt_gate.ocr_engine_diagnostic() in THIS
+    process — the SAME interpreter/environment that will actually render (run_signature_
+    deck.py launches the build_deck.py render subprocess via `sys.executable`, inheriting
+    this process's environment, so what this process sees is what the render subprocess
+    sees). A user-site-packages install of pytesseract (~/Library/Python/*/lib/python/
+    site-packages) is invisible under PYTHONNOUSERSITE=1, inside a venv without
+    --system-site-packages, under sudo, and to launchd/cron (whose default PATH carries
+    no Homebrew, so no tesseract binary either) — a probe run from a DIFFERENT
+    interpreter/shell than the one that renders proves nothing about the render's own
+    environment. Returns "" on pass, else a fatal AF-OCR-ENGINE-MISSING message naming
+    exactly what is missing and how to install it."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return ("AF-OCR-ENGINE-MISSING: prompt_gate.py could not be imported at all "
+                "(it ships beside build_deck.py) — cannot verify OCR engine availability "
+                "in this render environment. MASTER-SPEC 7.4: 'The missing OCR dependency "
+                "fails at minute zero, before any paid generation, not after 62 images.'")
+    try:
+        diag = pg.ocr_engine_diagnostic()
+    except Exception as exc:  # noqa: BLE001 — a broken diagnostic is itself fail-closed
+        return (f"AF-OCR-ENGINE-MISSING: prompt_gate.ocr_engine_diagnostic() raised "
+                f"({exc}) instead of returning a status — cannot verify OCR engine "
+                "availability. MASTER-SPEC 7.4: 'The missing OCR dependency fails at "
+                "minute zero, before any paid generation, not after 62 images.'")
+    if diag.get("available"):
+        return ""
+    reason = diag.get("reason", "unknown")
+    detail = diag.get("detail", "")
+    install_hint = {
+        "pytesseract-import-failed": (
+            "install pytesseract INTO THE EXACT interpreter that runs build_deck.py / "
+            "run_signature_deck.py (e.g. `<that interpreter> -m pip install "
+            "pytesseract`). A user-site-packages install is INVISIBLE under "
+            "PYTHONNOUSERSITE=1, inside a venv without --system-site-packages, under "
+            "sudo, and to launchd/cron — install into the interpreter's OWN "
+            "site-packages if this render runs under any of those."
+        ),
+        "pillow-import-failed": (
+            "install Pillow INTO THE EXACT interpreter that runs build_deck.py / "
+            "run_signature_deck.py (same interpreter-site caveat as pytesseract above)."
+        ),
+        "tesseract-binary-not-found": (
+            "install the tesseract binary and ensure it is on PATH for the render "
+            "process (e.g. `brew install tesseract` on macOS). launchd/cron's default "
+            "PATH is typically /usr/bin:/bin:/usr/sbin:/sbin — NO Homebrew — so a "
+            "scheduled/cron-driven render needs an explicit PATH (or the tesseract "
+            "binary's full path) configured in the launchd plist / cron environment, "
+            "not merely in an interactive shell's PATH."
+        ),
+    }.get(reason, "install pytesseract + Pillow + the tesseract binary, reachable from "
+                   "the EXACT interpreter/environment that will run build_deck.py / "
+                   "run_signature_deck.py.")
+    return (
+        f"AF-OCR-ENGINE-MISSING: no OCR engine is available in this render environment "
+        f"({reason}{': ' + detail if detail else ''}). MASTER-SPEC 7.4: 'The missing OCR "
+        "dependency fails at minute zero, before any paid generation, not after 62 "
+        f"images.' Fix: {install_hint}"
+    )
+
+
+# ---------------------------------------------------------------------------
 # 3C — phase-precondition gate (AF-PHASE-SKIPPED). The deterministic runner
 #      (run_signature_deck.py) makes skipping/reordering a phase structurally
 #      impossible: before dispatching phase N+1 it proves every lower-order phase
@@ -5165,6 +5405,98 @@ def check_image_qc_vision(run_dir: Path, slides_path: Optional[Path] = None) -> 
     return ""
 
 
+def check_ocr_readback(run_dir: Path) -> str:
+    """U027 — AF-OCR-READBACK postflight gate.
+
+    This audits the per-slide OCR sidecar records (renders/slide-*.ocr.json) that
+    _record_ocr_readback() writes beside every rendered PNG once
+    _verify_aspect_and_readback() calls prompt_gate.ocr_readback() against it. That
+    pair PRODUCES the readback; this function READS it back and decides pass/fail —
+    the two must never be the same code path, or a broken producer could never be
+    caught by its own consumer.
+
+    DEFERS (returns "") ONLY when there are no rendered PNGs yet (the genuine
+    pre-render state — nothing to audit). Once PNGs exist, every one of them MUST
+    carry a well-formed sidecar:
+
+      * missing sidecar, or a sidecar that is not valid JSON -> FAIL. A gate that
+        cannot even confirm the engine ran is not a pass.
+      * sidecar carries checked:false (or `checked` missing/falsy) -> FAIL, and this
+        branch is NEVER waivable. A checked:false record means the OCR engine did
+        not run against that render at all; a self-disabled check is not a pass, and
+        no owner_skip_approval token — however well-formed, whatever af_code/gate
+        value it declares — can waive it (MASTER-SPEC 7.4 / D10).
+      * sidecar carries checked:true, matched:false -> FAIL, UNLESS a logged
+        owner_skip_approval token for AF-OCR-READBACK is present in
+        working/checkpoints/process_manifest.json (_owner_skip_approved). Unlike
+        checked:false, a genuine mismatch the owner has reviewed and accepted (e.g.
+        a stylised headline OCR legitimately cannot read) IS waivable.
+      * checked:true, matched:true on every rendered slide -> PASS ("").
+
+    Returns "" on pass/defer, or a fatal AF-OCR-READBACK message naming the
+    offending slide(s) and the count/denominator (e.g. "1 of 2")."""
+    pngs = _gather_rendered_pngs(run_dir)
+    if not pngs:
+        return ""
+
+    total = len(pngs)
+    missing: list = []      # no sidecar, or sidecar is not valid JSON
+    unchecked: list = []    # sidecar exists but checked is false/absent
+    mismatched: list = []   # checked:true but matched is false
+
+    for png in pngs:
+        sidecar = png.with_suffix(".ocr.json")
+        if not sidecar.is_file():
+            missing.append(png.name)
+            continue
+        obj = _read_json(sidecar)
+        if not isinstance(obj, dict) or "__parse_error__" in obj:
+            missing.append(png.name)
+            continue
+        if not obj.get("checked"):
+            unchecked.append(png.name)
+            continue
+        if obj.get("matched") is False:
+            mismatched.append(png.name)
+
+    if missing:
+        extra = "" if len(missing) <= 5 else f" (+{len(missing) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(missing)} of {total} slide(s) missing or unreadable "
+            f"OCR sidecar(s): {', '.join(missing[:5])}{extra}. Every rendered PNG must "
+            "carry a renders/<slide>.ocr.json readback record written by "
+            "ocr_readback()/_record_ocr_readback() before this gate can pass."
+        )
+
+    if unchecked:
+        extra = "" if len(unchecked) <= 5 else f" (+{len(unchecked) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(unchecked)} of {total} slide(s) failed OCR readback "
+            f"(checked:false): {', '.join(unchecked[:5])}{extra}. A checked:false record "
+            "means the OCR engine never ran against this render — a self-disabled check "
+            "is not a pass. This branch is NOT waivable: no owner_skip_approval token, "
+            "however well-formed, can waive it."
+        )
+
+    if mismatched:
+        skip = _owner_skip_approved(run_dir, AF_OCR_READBACK)
+        if skip is not None:
+            print(f"  NOTE  AF-OCR-READBACK waived by logged owner_skip_approval "
+                  f"(approved_by={skip.get('approved_by')!r}, reason={skip.get('reason')!r}).",
+                  file=sys.stderr)
+            return ""
+        extra = "" if len(mismatched) <= 5 else f" (+{len(mismatched) - 5} more)"
+        return (
+            f"AF-OCR-READBACK: {len(mismatched)} of {total} slide(s) mismatched the "
+            f"approved copy: {', '.join(mismatched[:5])}{extra}. The rendered text does "
+            "not match the slide's approved copy (garbled/unreadable bake). Re-prompt/"
+            "re-render the affected slide(s), or waive with a logged owner_skip_approval "
+            "token for AF-OCR-READBACK in working/checkpoints/process_manifest.json."
+        )
+
+    return ""
+
+
 def check_canonical_render_path(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-CANONICAL-RENDER-BYPASS / AF-LOCAL-CANVAS — the canonical render path is
     build_deck.py / run_signature_deck.py ONLY (FIX-2).
@@ -5587,11 +5919,14 @@ def _import_slide_geometry():
 
 def _chk_text_fits(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-TEXT-OVERFLOW wrapper — the geometry lives in slide_geometry.py; this is the
-    build_deck-side symbol the manifest's py_symbol lockstep resolves against."""
+    build_deck-side symbol the manifest's py_symbol lockstep resolves against. Passes
+    SLIDE_GEOMETRY_EDGE_MARGIN_FRAC in explicitly so build_deck's declared margin and
+    slide_geometry.py's enforced margin can never silently diverge."""
     sg = _import_slide_geometry()
     if sg is None:
         return ""    # module absent -> defer, exactly as _import_prompt_gate callers do
-    return sg.check_text_fits(run_dir, slides_path)
+    return sg.check_text_fits(
+        run_dir, slides_path, edge_margin_frac=SLIDE_GEOMETRY_EDGE_MARGIN_FRAC)
 
 
 def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
@@ -5603,9 +5938,9 @@ def _chk_spelling(run_dir: Path, slides_path: Optional[Path] = None) -> str:
 
 
 def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
-    """AF-TYPE-SIZE-MEASURED wrapper. Passes the FLOOR CONSTANTS and the dark-theme
-    decision in, so the measured floor and check_font_floor's declared floor are the
-    same number by construction."""
+    """AF-TYPE-SIZE-MEASURED wrapper. Passes the FLOOR CONSTANTS, the reference render
+    height, and the dark-theme decision in, so the measured floor and check_font_floor's
+    declared floor are the same number by construction."""
     sg = _import_slide_geometry()
     if sg is None:
         return ""
@@ -5613,7 +5948,8 @@ def _chk_type_size(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     return sg.check_type_size(
         run_dir, slides_path,
         pt_floor=(DARK_THEME_BODY_PT_FLOOR if dark else FONT_BODY_PT_FLOOR),
-        dark=dark)
+        dark=dark,
+        pt_reference_height_px=SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX)
 
 
 def _engine_name_for_code(code: str) -> str:
@@ -6879,10 +7215,11 @@ def _sp_active(run_dir: Path) -> bool:
 
 def _sp_prover(mod_name: str):
     """Lazily import a Skill-51 prover module by name, searching build_deck's own scripts
-    dir (deployed: install copies the provers here) and the sibling
-    51-signature-presentation/scripts/ (repo/worktree layout). Cached. Returns the module,
-    or None when it cannot be located/imported. Only reached for a signature deck (the
-    wrappers defer first via _sp_active)."""
+    dir first and then the sibling 51-signature-presentation/scripts/
+    (repo/worktree layout). On a materialized department the provers resolve only via the
+    sibling fallback because the install does not copy them into the engine's scripts dir.
+    Cached. Returns the module, or None when it cannot be located/imported. Only reached
+    for a signature deck (the wrappers defer first via _sp_active)."""
     if mod_name in _SP_PROVER_CACHE:
         return _SP_PROVER_CACHE[mod_name]
     import importlib.util
@@ -7419,6 +7756,21 @@ PREFLIGHT_REQUIRED = [
      "pixel read, not a self-typed number (AF-IMAGE-QC-VISION)",
      "Phase Image-QC / Postflight — Image QC Specialist pixel read (AF-IMAGE-QC-VISION)",
      check_image_qc_vision),
+    # U027 — OCR-READBACK postflight gate (AF-OCR-READBACK). Audits the per-slide OCR
+    # sidecar records (renders/slide-*.ocr.json) that _record_ocr_readback() writes
+    # beside every rendered PNG once _verify_aspect_and_readback() calls
+    # prompt_gate.ocr_readback() against it. A missing/unparseable sidecar, or a
+    # checked:false record (the OCR engine never ran), FAILS and is NEVER waivable;
+    # a checked:true/matched:false mismatch FAILS but is waivable ONLY by a logged
+    # owner_skip_approval token for AF-OCR-READBACK. Defers ONLY pre-render (no
+    # rendered PNGs yet). Run-dir-scoped (None sentinel).
+    (None,
+     "OCR readback — every rendered PNG carries a renders/<slide>.ocr.json sidecar "
+     "proving the baked text was read back and matched the approved copy; a "
+     "missing/unparseable sidecar or a checked:false record (OCR engine never ran) "
+     "is NEVER waivable (AF-OCR-READBACK)",
+     "Postflight — render closeout OCR audit (U027, AF-OCR-READBACK)",
+     check_ocr_readback),
     # === POWERFUL-PRESENTATION DOCTRINE GATES (manifest v18) ===
     # All DEFER unless Phase P0B-PRIORITY produced working/copy/priority_shift_spec.json
     # (the no-regression master switch), so a legacy / ad-hoc build is never broken.
@@ -9341,8 +9693,16 @@ def main():
             else:
                 _cc_title = deck_slug
                 _cc_desc = f"Deck build: {deck_slug}"
+                _rcid, _rchan = _cc_board.resolve_requester(run_dir)
+                if not _rcid:
+                    # Rule 3.5 WARN-MODE, stage 1 of 3 — standalone twin
+                    print("[cc_board] WARN-REQUESTER-MISSING: standalone build_deck run with "
+                          "no requester chat id; the client will receive no acknowledgement, "
+                          "progress or completion message for this build.",
+                          file=sys.stderr, flush=True)
                 _cc_task_id = _cc_board.ingest_deck_task(
-                    run_dir, deck_slug, title=_cc_title, description=_cc_desc
+                    run_dir, deck_slug, title=_cc_title, description=_cc_desc,
+                    requester_chat_id=_rcid, requester_channel=_rchan
                 )
                 if _cc_task_id:
                     _cc_board.stamp_task_id(run_dir, _cc_task_id)
@@ -9400,6 +9760,15 @@ def main():
         _box_type = detect_platform(run_dir, platform_arg)
         print(f"=== PHASE-0 PRE-FLIGHT — box_type={_box_type}; "
               f"Kie balance floor check before render ===", flush=True)
+        # MASTER-SPEC 7.4 / AF-OCR-ENGINE-MISSING — checked FIRST (fast, local, no
+        # network) so a box with no OCR engine refuses before the network-dependent
+        # Kie-balance call, let alone before any render. Defense-in-depth for a direct
+        # `python3 build_deck.py` invocation that bypasses run_signature_deck.
+        # phase0_preflight()'s identical check.
+        _ocr_engine_reason = ocr_engine_preflight(run_dir)
+        if _ocr_engine_reason:
+            print("\nFATAL: " + _ocr_engine_reason, file=sys.stderr)
+            sys.exit(4)
         _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
         if _balance_reason:
             print("\nFATAL: " + _balance_reason, file=sys.stderr)

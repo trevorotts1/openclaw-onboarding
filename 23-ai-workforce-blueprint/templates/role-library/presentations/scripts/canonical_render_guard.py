@@ -249,17 +249,43 @@ def attested_phase_ids(run_dir: Path) -> set:
     return ids
 
 
-def missing_attestations(run_dir: Path, phases: list, phase_skip_approvals=None) -> list:
+# The delivery phase id — mirrors run_signature_deck.DELIVERY_PHASE_ID exactly. Kept
+# as a self-contained constant here (not imported) to avoid a guard<->runner import
+# cycle: run_signature_deck imports THIS module as `guard`. Used as the default
+# target_phase_id below because guard_pre_delivery, by construction, only ever gates
+# the delivery phase.
+DELIVERY_PHASE_ID = "P9-DELIVER"
+
+
+def missing_attestations(run_dir: Path, phases: list, phase_skip_approvals=None,
+                         target_phase_id=DELIVERY_PHASE_ID) -> list:
     """Return the ordered list of governed phase ids that are neither attested nor
     covered by a logged owner skip. phase_skip_approvals (from the runner's
-    phase_skip_approvals.json) and process_manifest owner_skip_approval BOTH count."""
+    phase_skip_approvals.json) and process_manifest owner_skip_approval BOTH count.
+
+    Only phases with `order` strictly LESS THAN target_phase_id's own order are
+    swept — this mirrors check_phase_preconditions' `order < target_order` exclusion
+    (run_signature_deck.py:855-857 / build_deck.py's shared check_phase_preconditions,
+    called with prior_phase_ids only) exactly. Without this exclusion, the phase
+    currently being dispatched (target_phase_id — e.g. P9-DELIVER itself, when this
+    runs pre-delivery) appears in its OWN missing list: a phase structurally CANNOT
+    attest itself before the guard gating its own dispatch has passed, so omitting
+    the exclusion made every delivery an unconditional, unwinnable refusal. If
+    target_phase_id is None or not present in `phases`, no phase is excluded by
+    order and every phase is swept (the pre-fix behavior) — callers that know their
+    target phase id should always pass it."""
     attested = attested_phase_ids(run_dir)
     owner_skips = load_owner_skip_approvals(run_dir)
     phase_skips = set(phase_skip_approvals or set())
+    by_id = {ph.get("id"): ph for ph in phases if ph.get("id")}
+    target = by_id.get(target_phase_id) if target_phase_id else None
+    target_order = target.get("order", 0) if target is not None else None
     missing = []
     for ph in sorted(phases, key=lambda p: p.get("order", 0)):
         pid = ph.get("id")
         if not pid:
+            continue
+        if target_order is not None and ph.get("order", 0) >= target_order:
             continue
         if pid in attested or pid in owner_skips or pid in phase_skips:
             continue
@@ -409,11 +435,18 @@ def guard_pre_render(run_dir: Path) -> str:
 
 
 def guard_pre_delivery(run_dir: Path, phases: list, slides_path=None,
-                       phase_skip_approvals=None) -> str:
+                       phase_skip_approvals=None,
+                       target_phase_id=DELIVERY_PHASE_ID) -> str:
     """PRE-DELIVERY guard. Return "" only when ALL of the following hold:
       1. The run dir is free of hand-rolled renderers (or waived by owner token).
       2. The full process_manifest attestation chain is present — every governed
-         phase attested (or covered by a logged owner skip).
+         phase THAT SHOULD ALREADY BE COMPLETE (i.e. every phase with `order` <
+         target_phase_id's own order — target_phase_id defaults to P9-DELIVER, the
+         phase this checkpoint gates) is attested, or covered by a logged owner
+         skip. target_phase_id itself is deliberately EXCLUDED from the sweep: it
+         is the in-flight phase this very guard call is a precondition for, so it
+         cannot possibly have attested itself yet — requiring that was the bug (see
+         missing_attestations' docstring).
       3. The Fix-2 pixel/vision checks pass (or waived by owner token).
     Otherwise return a fatal AF message. Delivery MUST be refused on a non-empty
     return. This is what makes 'Done' impossible to fake."""
@@ -426,8 +459,9 @@ def guard_pre_delivery(run_dir: Path, phases: list, slides_path=None,
     for f in blocking:
         problems.append(f"  [{f['af_code']}] {f['file']}:{f['line']} — {f['reason']}")
 
-    # (2) full attestation chain.
-    missing = missing_attestations(run_dir, phases, phase_skip_approvals)
+    # (2) full attestation chain for every phase that should already be complete —
+    # excludes target_phase_id itself (see docstring above and missing_attestations).
+    missing = missing_attestations(run_dir, phases, phase_skip_approvals, target_phase_id)
     if missing:
         problems.append("  [AF-PHASE-SKIPPED] incomplete attestation chain — these "
                         "governed phases are neither attested nor owner-skip-approved: "

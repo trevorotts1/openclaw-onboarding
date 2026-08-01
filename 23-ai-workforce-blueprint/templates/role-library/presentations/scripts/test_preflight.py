@@ -2545,6 +2545,56 @@ def test_kie_balance_preflight():
     return fails
 
 
+def test_ocr_engine_preflight():
+    """MASTER-SPEC 7.4 AF-OCR-ENGINE-MISSING: Phase-0 OCR-engine-AVAILABILITY
+    pre-flight. An absent engine (pytesseract not importable, Pillow not
+    importable, or the tesseract BINARY not reachable) HARD-ABORTS (returns a
+    fatal AF-OCR-ENGINE-MISSING string naming the missing piece + how to fix
+    it); an available engine PASSES (returns ""). Monkeypatches
+    prompt_gate.ocr_engine_diagnostic (no dependency on this test box's real
+    OCR install), restores the original after — same pattern _kie_balance_probe
+    uses for _fetch_kie_balance."""
+    fails = []
+    root = _g4_run_dir("deck_g4_ocrengine_")
+    pg = build_deck._import_prompt_gate()
+    if pg is None:
+        fails.append("OCR-ENGINE: prompt_gate module could not be imported for the test")
+        print(f"OCR-ENGINE-PREFLIGHT (MASTER-SPEC 7.4) -> {'PASS' if not fails else 'FAIL'}")
+        return fails
+    orig = pg.ocr_engine_diagnostic
+    try:
+        # pytesseract itself not importable.
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": False, "engine": None,
+            "reason": "pytesseract-import-failed", "detail": "No module named 'pytesseract'"}
+        r = build_deck.ocr_engine_preflight(root)
+        if not r or "AF-OCR-ENGINE-MISSING" not in r:
+            fails.append(f"OCR-ENGINE: missing pytesseract should FAIL, got {r!r}")
+        if "pytesseract" not in r.lower():
+            fails.append(f"OCR-ENGINE: message should name the missing piece, got {r!r}")
+
+        # pytesseract importable, but the tesseract BINARY is not reachable (the
+        # launchd/cron/stripped-PATH trap this gate exists to catch).
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": False, "engine": None,
+            "reason": "tesseract-binary-not-found", "detail": "TesseractNotFoundError"}
+        r2 = build_deck.ocr_engine_preflight(root)
+        if not r2 or "AF-OCR-ENGINE-MISSING" not in r2:
+            fails.append(f"OCR-ENGINE: missing tesseract binary should FAIL, got {r2!r}")
+        if "tesseract" not in r2.lower() or "path" not in r2.lower():
+            fails.append(f"OCR-ENGINE: binary-missing message should mention PATH, got {r2!r}")
+
+        # Available engine PASSES.
+        pg.ocr_engine_diagnostic = lambda: {
+            "available": True, "engine": "pytesseract", "version": "5.5.2"}
+        if build_deck.ocr_engine_preflight(root):
+            fails.append("OCR-ENGINE: available engine should PASS but failed")
+    finally:
+        pg.ocr_engine_diagnostic = orig
+    print(f"OCR-ENGINE-PREFLIGHT (MASTER-SPEC 7.4) -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
 def test_check_phase_preconditions():
     """3C AF-PHASE-SKIPPED: dispatching a phase before a prior phase is attested
     FAILS; an attested prior PASSES; an owner-authorized skip PASSES."""
@@ -3255,6 +3305,51 @@ def test_sp_wrappers():
     return fails
 
 
+def _slide_geometry_probe_root() -> Path:
+    """Build a run dir with one REAL 2048x1152 PNG render (build_deck.py's own
+    RESOLUTION="2K" / ASPECT_RATIO="16:9" constants) plus the slides.json copy and
+    intake.json the three slide_geometry.py checks read. Shared by the
+    AF-TEXT-OVERFLOW / AF-SPELLING / AF-TYPE-SIZE-MEASURED coverage probes below."""
+    import tempfile as _tmp_sg
+    root = Path(_tmp_sg.mkdtemp(prefix="deck_slide_geometry_probe_"))
+    (root / "renders").mkdir(parents=True, exist_ok=True)
+    (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    from PIL import Image as _PilImage
+    _PilImage.new("RGB", (2048, 1152), (30, 30, 30)).save(
+        str(root / "renders" / "slide-01.png"))
+    (root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": 1, "scene": "x", "copy": "Approved Headline Text"}]))
+    (root / "working" / "copy" / "intake.json").write_text(json.dumps({}))
+    return root
+
+
+def _slide_geometry_probe(word_box, run_dir=None):
+    """Monkeypatch slide_geometry.py's OCR layer to an ALWAYS-AVAILABLE engine plus a
+    single fixed word box (bypassing the real tesseract binary, which a CI box may not
+    have installed), call the three build_deck._chk_ wrappers the manifest's py_symbol
+    lockstep resolves against, and return their (text_fits, spelling, type_size) reasons.
+    Environment-independent by construction — the same monkeypatch technique
+    test_ocr_engine_preflight already uses on prompt_gate.ocr_engine_diagnostic.
+    Returns ("", "", "") when slide_geometry.py cannot be imported (degrades like the
+    real _chk_ wrappers do)."""
+    sg = build_deck._import_slide_geometry()
+    if sg is None:
+        return "", "", ""
+    root = run_dir if run_dir is not None else _slide_geometry_probe_root()
+    orig_engine = sg.ocr_engine
+    orig_boxes = sg.word_boxes
+    try:
+        sg.ocr_engine = lambda: (object(), object())
+        sg.word_boxes = lambda png_path: [word_box]
+        r_fits = build_deck._chk_text_fits(root)
+        r_spell = build_deck._chk_spelling(root)
+        r_size = build_deck._chk_type_size(root)
+    finally:
+        sg.ocr_engine = orig_engine
+        sg.word_boxes = orig_boxes
+    return r_fits, r_spell, r_size
+
+
 def emit_af_coverage():
     """Drive every build_deck-enforced gate to FAILURE and record which AF codes
     a deliberately-failing fixture actually triggers. Writes working/af-coverage.json
@@ -3577,6 +3672,14 @@ def emit_af_coverage():
          "note": "all slides look good", "triggered_autofails": []}))
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
+
+    # AF-OCR-READBACK (U027) — a rendered PNG whose sidecar carries checked:false
+    # (the OCR engine never ran against that render) FAILS check_ocr_readback; this
+    # branch is NEVER waivable. Guard-A negative-test coverage for the postflight
+    # OCR gate (mirrors the same fixture family as test_ocr_checked_false_fails).
+    _ocr_cov_root = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False})
+    record("AF-OCR-READBACK", build_deck.check_ocr_readback(_ocr_cov_root))
 
     # ---- Quality-layer gate probes (AF-P13, AF-P14, AF-P-DENSITY, AF-P-VERBATIM,
     #      AF-COPY-QC, AF-INTELLIGENCE-ENGINES) ----
@@ -3939,6 +4042,69 @@ def emit_af_coverage():
         for _code, _name, _rd in _sp_adversarial_cases(_spi, _sps, _spn):
             record(_code, getattr(build_deck, _name)(_rd))
 
+    # ---- Guard A closure (gate_integrity_check.py) — five previously-untested /
+    # dead-symbol build_deck-enforced gates. ----
+
+    # AF-OCR-ENGINE-MISSING (MASTER-SPEC 7.4) — Phase-0 OCR-engine-AVAILABILITY
+    # preflight. Mirrors test_ocr_engine_preflight's monkeypatch of
+    # prompt_gate.ocr_engine_diagnostic (no dependency on this box's real OCR install).
+    _pg_probe = build_deck._import_prompt_gate()
+    if _pg_probe is not None:
+        _orig_diag = _pg_probe.ocr_engine_diagnostic
+        try:
+            _pg_probe.ocr_engine_diagnostic = lambda: {
+                "available": False, "engine": None,
+                "reason": "pytesseract-import-failed",
+                "detail": "No module named 'pytesseract'"}
+            record("AF-OCR-ENGINE-MISSING",
+                   build_deck.ocr_engine_preflight(_g4_run_dir("deck_g4_ocrengine_cov_")))
+        finally:
+            _pg_probe.ocr_engine_diagnostic = _orig_diag
+
+    # AF-DECK-TYPE-UNSET (U021) — deck_type unset, past the migration window, with the
+    # gate flipped to its terminal "enforce" stage -> _chk_deck_type FAILS. (Production
+    # default stays "warn" until MIGRATION_WINDOW_UNTIL; this proves the enforce path
+    # the gate already ships for — same technique
+    # test_U021_deck_type_absent_enforce_past_window uses.)
+    import datetime as _dt_probe
+    _orig_stage = build_deck.DECK_TYPE_GATE_STAGE
+    _orig_date = build_deck.date
+
+    class _LaterDate(_dt_probe.date):
+        @classmethod
+        def today(cls):
+            return cls(2099, 1, 1)
+    try:
+        build_deck.DECK_TYPE_GATE_STAGE = "enforce"
+        build_deck.date = _LaterDate
+        record("AF-DECK-TYPE-UNSET", build_deck._chk_deck_type(
+            _deck_type_fixture({"interview_confirmed": True})))
+    finally:
+        build_deck.DECK_TYPE_GATE_STAGE = _orig_stage
+        build_deck.date = _orig_date
+
+    # AF-TEXT-OVERFLOW — a word box sitting at the slide's top-left corner (left=top=0)
+    # is within SLIDE_GEOMETRY_EDGE_MARGIN_FRAC of both edges -> check_text_fits FAILS.
+    _r_fits, _, _ = _slide_geometry_probe(
+        {"text": "HEADLINE", "conf": 95.0, "left": 0, "top": 0,
+         "width": 40, "height": 20, "line_num": 1})
+    record("AF-TEXT-OVERFLOW", _r_fits)
+
+    # AF-SPELLING — a rendered word absent from the approved copy, the proper-noun
+    # allowlist, and the system word list -> check_spelling FAILS.
+    _, _r_spell, _ = _slide_geometry_probe(
+        {"text": "ZQXVWKPLURG", "conf": 95.0, "left": 500, "top": 500,
+         "width": 80, "height": 30, "line_num": 1})
+    record("AF-SPELLING", _r_spell)
+
+    # AF-TYPE-SIZE-MEASURED — an 8px-tall word box at a 1152px render height is far
+    # below the derived floor (px_per_pt(1152) * FONT_BODY_PT_FLOOR ~= 38.4px at the
+    # default 18pt floor) -> check_type_size FAILS.
+    _, _, _r_size = _slide_geometry_probe(
+        {"text": "tiny", "conf": 95.0, "left": 500, "top": 500,
+         "width": 30, "height": 8, "line_num": 1})
+    record("AF-TYPE-SIZE-MEASURED", _r_size)
+
     triggered_sorted = sorted(triggered)
     AF_COVERAGE_PATH.parent.mkdir(parents=True, exist_ok=True)
     AF_COVERAGE_PATH.write_text(json.dumps(
@@ -4244,7 +4410,7 @@ def test_delivery_gate() -> list:
     # Re-assert the clean-pass and the AF-DH1 extra-file fail directly.
     with tempfile.TemporaryDirectory() as t:
         base = Path(t)
-        pkg = delivery_gate._mk_pkg(base, delivery_gate.FIVE)
+        pkg = delivery_gate._mk_pkg(base, delivery_gate.CLIENT_PACKAGE)
         delivery_gate._write_media(base, {"pptx_ghl_media_id": "id1"})
         delivery_gate._write_plan(base, {"destinations": [
             {"type": "ghl"},
@@ -4252,7 +4418,7 @@ def test_delivery_gate() -> list:
         ]})
         ok, reasons = delivery_gate.delivery_gate(base)
         if not ok:
-            failures.append(f"DELIVERY-GATE-A: clean 5-file package should PASS, got {reasons}")
+            failures.append(f"DELIVERY-GATE-A: clean client package should PASS, got {reasons}")
         # Now drop in a stray script -> AF-DH1 must trigger.
         (pkg / "fix_render.py").write_text("x")
         ok2, reasons2 = delivery_gate.delivery_gate(base)
@@ -4425,8 +4591,75 @@ def test_engine_checks() -> list:
     return failures
 
 
+def test_hook_banner_exemption():
+    """U067 - prove hook/section-banner exemption fires on boolean schema (stage 1).
+
+    Returns a list of failure strings ([] = all passed)."""
+    failures = []
+    import tempfile
+    import pathlib
+
+    # (a) boolean schema, "hook": true -> True.
+    rd_a = pathlib.Path(tempfile.mkdtemp())
+    (rd_a / "working" / "copy").mkdir(parents=True)
+    (rd_a / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "hook": True}]}))
+    tags_a = build_deck._load_slide_arc_tags(rd_a)
+    if not build_deck._is_hook_or_banner_slide(tags_a.get(1, "")):
+        failures.append("U067-a: boolean hook=true should classify True")
+
+    # (b) boolean schema, "label_slide": true -> True.
+    rd_b = pathlib.Path(tempfile.mkdtemp())
+    (rd_b / "working" / "copy").mkdir(parents=True)
+    (rd_b / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "label_slide": True}]}))
+    tags_b = build_deck._load_slide_arc_tags(rd_b)
+    if not build_deck._is_hook_or_banner_slide(tags_b.get(1, "")):
+        failures.append("U067-b: boolean label_slide=true should classify True")
+
+    # (c) boolean schema, "case_study": true, nothing else -> False (regression guard).
+    rd_c = pathlib.Path(tempfile.mkdtemp())
+    (rd_c / "working" / "copy").mkdir(parents=True)
+    (rd_c / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Purpose Pitch", "case_study": True}]}))
+    tags_c = build_deck._load_slide_arc_tags(rd_c)
+    if build_deck._is_hook_or_banner_slide(tags_c.get(1, "")):
+        failures.append("U067-c: boolean case_study=true must NOT classify True (regression guard)")
+
+    # (d) string schema, {"slide": 1, "section": "HOOK-OPEN"} -> True (unchanged).
+    rd_d = pathlib.Path(tempfile.mkdtemp())
+    (rd_d / "working" / "copy").mkdir(parents=True)
+    (rd_d / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "section": "HOOK-OPEN"}]}))
+    tags_d = build_deck._load_slide_arc_tags(rd_d)
+    if not build_deck._is_hook_or_banner_slide(tags_d.get(1, "")):
+        failures.append("U067-d: string schema section=HOOK-OPEN should classify True (unchanged)")
+
+    # (e) gate level: with COPY_HOOK_EXEMPTION_ENFORCED = False, a 19-char hook slide
+    #     is still an offender, and its offender string contains U067 ADVISORY.
+    rd_e = pathlib.Path(tempfile.mkdtemp())
+    (rd_e / "working" / "copy").mkdir(parents=True)
+    (rd_e / "working" / "copy" / "arc_allocation.json").write_text(json.dumps(
+        {"slots": [{"slide": 1, "arc_section": "Avatar", "hook": True}]}))
+    (rd_e / "working" / "copy" / "slides.json").write_text(json.dumps(
+        {"slides": [{"slide": 1, "copy": ["Nineteen chars xyz"]}]}))
+    r = build_deck._chk_copy_density(rd_e)
+    if not r:
+        failures.append("U067-e: gate must be NONEMPTY for a 19-char hook slide under stage 1")
+    elif "slide 01 SLIDE TOTAL" not in r:
+        failures.append("U067-e: hook slide must still be an offender in stage 1")
+    elif "U067 ADVISORY" not in r:
+        failures.append("U067-e: offender string missing U067 ADVISORY")
+
+    print(f"U067 HOOK-BANNER EXEMPTION   -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
 def main():
     failures = []
+
+    # U067 - hook/section-banner exemption on boolean schema (stage 1, warn-mode).
+    failures += test_hook_banner_exemption()
 
     # Fix #6 — deterministic font-floor / type-scale / contrast rejector.
     failures += test_chk_font_floor()
@@ -4556,6 +4789,11 @@ def main():
     failures += test_kie_balance_preflight()
     failures += test_check_phase_preconditions()
 
+    # MASTER-SPEC 7.4 — OCR-engine AVAILABILITY pre-flight (AF-OCR-ENGINE-MISSING).
+    # Minute-zero fail-closed gate on the real render path, distinct from the
+    # postflight OCR-readback sidecar audit.
+    failures += test_ocr_engine_preflight()
+
     # v16.1.5 (Defect 1) — a phase attested via the RUNNER's own attest path is SEEN by
     # the shared precondition gate (no false AF-PHASE-SKIPPED); a genuine skip STILL trips.
     failures += test_runner_attestation_seen_by_preconditions()
@@ -4585,6 +4823,12 @@ def main():
     # deck PASSES all three _chk_sp_* wrappers; a NON-signature deck DEFERS (the binding
     # defer-unless-signature regression guard); one adversarial FAIL per AF-SP code trips.
     failures += test_sp_wrappers()
+
+    # U027 -- check_ocr_readback (AF-OCR-READBACK): no renders defers; missing
+    # sidecars/checked:false/matched:false/malformed-JSON/partial-missing all FAIL;
+    # checked:false is NEVER waivable (owner token or not); matched:false alone is
+    # waivable by a genuine owner token; all-good passes.
+    failures += test_ocr_readback_u027()
 
     # GUARD A — emit working/af-coverage.json listing every build_deck-enforced AF
     # code a deliberately-failing fixture actually triggered. gate_integrity_check.py
@@ -5388,6 +5632,170 @@ def test_chk_cc_registered() -> list:
           f"{'PASS' if 'CC-REG-E' not in str(fails) else 'FAIL'}")
 
     print(f"CC-REGISTERED (gate tests)   -> {'PASS' if not fails else 'FAIL'}")
+    return fails
+
+
+# ---------------------------------------------------------------------------
+# U027 — AF-OCR-READBACK fixture suite (check_ocr_readback)
+# ---------------------------------------------------------------------------
+
+def _make_ocr_run_dir(sidecar_gen, *, n=2, token=None):
+    """Create a temp run dir with n rendered PNGs and optional sidecars + token."""
+    import json as _json, tempfile as _tempfile
+    rd = Path(_tempfile.mkdtemp(prefix="u027_ocr_"))
+    (rd / "renders").mkdir(parents=True)
+    (rd / "working" / "checkpoints").mkdir(parents=True)
+    PNG = b"\x89PNG\r\n\x1a\n" + b"\x00" * 60000  # above 51,200-byte floor
+    for i in range(1, n + 1):
+        (rd / "renders" / f"slide-{i:02d}.png").write_bytes(PNG)
+        sd = sidecar_gen(i)
+        if sd is not None:
+            sc_path = rd / "renders" / f"slide-{i:02d}.ocr.json"
+            sc_path.write_text(sd if isinstance(sd, str) else _json.dumps(sd))
+    if token is not None:
+        (rd / "working" / "checkpoints" / "process_manifest.json").write_text(
+            _json.dumps({"owner_skip_approval": token}))
+    return rd
+
+
+OCR_OWNER_TOKEN = {
+    "owner_approved": True,
+    "af_code": "AF-OCR-READBACK",
+    "approved_by": "owner",
+    "reason": "stylised headline",
+    "timestamp": "2026-07-25T00:00:00Z",
+}
+
+
+def test_ocr_no_renders_defers():
+    """U027 fixture 1: no PNGs at all -> '' (defer)."""
+    rd = Path(tempfile.mkdtemp(prefix="u027_ocr_empty_"))
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", f"expected defer on empty dir, got: {result!r}"
+
+
+def test_ocr_no_sidecars_fails():
+    """U027 fixture 2: PNG with no sidecar -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(lambda i: None)
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for missing sidecars"
+    assert "AF-OCR-READBACK" in result
+    assert "of 2" in result  # denominator present
+
+
+def test_ocr_checked_false_fails():
+    """U027 fixture 3: PNG with checked:false -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for checked:false"
+    assert "AF-OCR-READBACK" in result
+    assert "checked:false" in result.lower()
+
+
+def test_ocr_checked_false_not_waivable():
+    """U027 fixture 4: checked:false + full owner token -> still FAILs (NOT waivable)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": False, "matched": None, "available": False},
+        token=OCR_OWNER_TOKEN)
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", (
+        f"checked:false MUST NOT be waivable; got empty (PASS) with owner token. "
+        f"A self-disabled check is not a pass.")
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_matched_false_fails():
+    """U027 fixture 5: checked:true, matched:false -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": False, "misses": ["HEADLINE"]})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "expected failure for matched:false"
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_matched_false_waivable():
+    """U027 fixture 6: checked:true, matched:false + owner token -> '' (PASS)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": False, "misses": ["X"]},
+        token=OCR_OWNER_TOKEN)
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", (
+        f"matched:false WITH owner token should waive (stylised headline), "
+        f"got: {result!r}")
+
+
+def test_ocr_all_good_passes():
+    """U027 fixture 7: checked:true, matched:true -> '' (PASS)."""
+    rd = _make_ocr_run_dir(
+        lambda i: {"checked": True, "matched": True, "misses": []})
+    result = build_deck.check_ocr_readback(rd)
+    assert result == "", f"all-good should pass, got: {result!r}"
+
+
+def test_ocr_malformed_json_fails():
+    """U027 fixture 8: sidecar is malformed JSON -> non-empty (FAIL)."""
+    rd = _make_ocr_run_dir(lambda i: "{not json")
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "malformed JSON sidecar must fail"
+    assert "AF-OCR-READBACK" in result
+
+
+def test_ocr_partial_missing_fails():
+    """U027 fixture 9: one of two slides missing sidecar -> FAILs with count/denominator."""
+    rd = _make_ocr_run_dir(
+        lambda i: None if i == 1 else {"checked": True, "matched": True})
+    result = build_deck.check_ocr_readback(rd)
+    assert result != "", "one of two missing must fail"
+    assert "AF-OCR-READBACK" in result
+    assert "1 of 2" in result  # count with denominator
+
+
+def test_ocr_owner_token_does_not_waive_checked_false_against_variants():
+    """U027: all four owner-token shapes fail to waive checked:false (QC-3)."""
+    import json as _json
+    tokens = {
+        "none": None,
+        "AF-OCR-READBACK full": OCR_OWNER_TOKEN,
+        "wildcard gate": {
+            "owner_approved": True, "gate": "*",
+            "approved_by": "o", "reason": "r", "timestamp": "t"},
+        "AF-BUNDLE-COMPLETE wrong code": {
+            "owner_approved": True, "af_code": "AF-BUNDLE-COMPLETE",
+            "approved_by": "o", "reason": "r", "timestamp": "t"},
+    }
+    failures = []
+    for label, tok in tokens.items():
+        rd = _make_ocr_run_dir(
+            lambda i: {"checked": False, "matched": None}, token=tok, n=1)
+        result = build_deck.check_ocr_readback(rd)
+        if result == "":
+            failures.append(
+                f"checked:false wrongly waived by token={label!r}")
+    assert not failures, "; ".join(failures)
+
+
+# Alias for the main()-driven all-in-one runner (runs all ten cases via individual
+# pytest functions above, and returns aggregated failures).
+def test_ocr_readback_u027() -> list:
+    """U027 -- check_ocr_readback (AF-OCR-READBACK) gate tests. Returns empty list
+    on full pass."""
+    fails = []
+    for fn in [test_ocr_no_renders_defers,
+               test_ocr_no_sidecars_fails,
+               test_ocr_checked_false_fails,
+               test_ocr_checked_false_not_waivable,
+               test_ocr_matched_false_fails,
+               test_ocr_matched_false_waivable,
+               test_ocr_all_good_passes,
+               test_ocr_malformed_json_fails,
+               test_ocr_partial_missing_fails,
+               test_ocr_owner_token_does_not_waive_checked_false_against_variants]:
+        try:
+            fn()
+        except AssertionError as e:
+            fails.append(f"{fn.__name__}: {e}")
+    print(f"OCR-READBACK-U027 (gate tests) -> {'PASS' if not fails else 'FAIL'}")
     return fails
 
 
