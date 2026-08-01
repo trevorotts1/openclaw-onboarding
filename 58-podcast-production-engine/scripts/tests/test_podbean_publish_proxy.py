@@ -59,6 +59,60 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
+# Canonical-UTC normalization helper. The shipped script normalizes
+# --release-date through to_epoch then emits date -u -r <epoch> +%Y-%m-%dT%H:%M:%SZ
+# (with a GNU date fallback) per the n8n contract-v2, so a bare local-time input
+# like "2026-08-01T10:00:00" is NOT passed through verbatim; it is converted to
+# canonical ISO-8601 UTC. This helper mirrors that exact normalization so the
+# expected value in assertions stays correct regardless of the test machine's
+# local timezone (onb-8 made the script canonical; the test was stale).
+def _canonical_utc(release_date: str) -> str:
+    """Return the canonical ISO-8601 UTC string the script emits for a
+    --release-date input, computed the same way to_epoch + date -u does."""
+    # to_epoch: pure-seconds passthrough, else GNU date -d, else BSD date -j -f.
+    if release_date.isdigit():
+        epoch = release_date
+    elif subprocess.run(
+        ["date", "-d", release_date, "+%s"],
+        capture_output=True, text=True,
+    ).returncode == 0:
+        epoch = subprocess.run(
+            ["date", "-d", release_date, "+%s"],
+            capture_output=True, text=True,
+        ).stdout.strip()
+    else:
+        # Strip a trailing timezone offset the way to_epoch does before parsing.
+        stripped = release_date
+        # Cut a trailing +HH:MM / -HH:MM offset (regex-free, two-digit pairs).
+        if len(stripped) >= 6 and stripped[-3] in "+-" and stripped[-6] == stripped[-3]:
+            stripped = stripped[:-6]
+        elif len(stripped) >= 6 and stripped[-6] in "+-" and stripped[-3] == ":":
+            stripped = stripped[:-6]
+        for fmt in ("%Y-%m-%dT%H:%M:%S", "%Y-%m-%dT%H:%M", "%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+            proc = subprocess.run(
+                ["date", "-j", "-f", fmt, stripped, "+%s"],
+                capture_output=True, text=True,
+            )
+            if proc.returncode == 0:
+                epoch = proc.stdout.strip()
+                break
+        else:
+            raise AssertionError("could not parse release-date like to_epoch: " + release_date)
+    # Emit canonical UTC the same way the script does (BSD -r first, GNU @ second).
+    proc = subprocess.run(
+        ["date", "-u", "-r", str(epoch), "+%Y-%m-%dT%H:%M:%SZ"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode == 0:
+        return proc.stdout.strip()
+    proc = subprocess.run(
+        ["date", "-u", "-d", "@" + str(epoch), "+%Y-%m-%dT%H:%M:%SZ"],
+        capture_output=True, text=True,
+    )
+    if proc.returncode == 0:
+        return proc.stdout.strip()
+    raise AssertionError("could not format epoch as canonical UTC: " + str(epoch))
+
 _HERE = Path(__file__).resolve()
 _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 
@@ -324,7 +378,12 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(req["description"], "Show notes for the full-contract test.")
         self.assertEqual(req["audio_url"], "https://media.example.test/a.mp3")
         self.assertEqual(req["image_url"], "https://media.example.test/i.jpg")
-        self.assertEqual(req["publish_date"], "2026-08-01T10:00:00")
+        # publish_date is the canonical ISO-8601 UTC normalization of
+        # --release-date (onb-8 routes it through to_epoch then
+        # date -u -r <epoch> +%Y-%m-%dT%H:%M:%SZ); it is NOT raw passthrough.
+        # Compute the expected value the same way the script does so the
+        # assertion holds on any test machine regardless of local timezone.
+        self.assertEqual(req["publish_date"], _canonical_utc("2026-08-01T10:00:00"))
         self.assertEqual(req["idempotency_key"], "pd-full-contract")
         # Populated OPTIONAL fields (spec Section 3, rows 5, 12-16).
         self.assertEqual(req["client_first_name"], "Alex")
