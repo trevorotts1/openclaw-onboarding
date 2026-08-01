@@ -62,6 +62,16 @@ _SECRET_ENV = "PODCAST_INTAKE_HOOK_SECRET"
 
 CONFLICT_MAX_ATTEMPTS = 3
 
+# R-04: bounded exponential backoff retry for transient transport failures.
+# Mirrors podbean_publish.sh's backoff_delay contract: delay for attempt N is
+# BASE * 2^(N-1), capped at CAP: 2s, 4s, 8s by default.  PODCAST_FLOW_RETRY_DELAY
+# lets the test harness shrink sleeps (like PODBEAN_RETRY_BASE_DELAY).  4xx stays
+# non-retried and immediate; only URLError/connection-level and HTTP 5xx retry.
+_RETRY_DELAY_ENV = "PODCAST_FLOW_RETRY_DELAY"
+_RETRY_BASE_DELAY = 2
+_RETRY_CAP = 8
+_RETRY_MAX_ATTEMPTS = 3
+
 
 class FlowError(Exception):
     """Transport or configuration failure. Messages carry labels only, no secrets."""
@@ -78,6 +88,15 @@ class FlowClient:
         self._sleep = sleep
 
     # -- transport -----------------------------------------------------------
+    @staticmethod
+    def _retry_delay(attempt):
+        """Bounded exponential backoff: BASE * 2^(attempt-1), capped at CAP.
+        Mirrors podbean_publish.sh's backoff_delay contract (2s, 4s, 8s)."""
+        base = int(os.environ.get(_RETRY_DELAY_ENV, str(_RETRY_BASE_DELAY)))
+        cap = _RETRY_CAP
+        d = base * (1 << (attempt - 1))
+        return min(d, cap)
+
     def _http_transport(self, action):
         if not self.route_id:
             raise FlowError("route id not set (env %s)" % _ROUTE_ENV)
@@ -89,19 +108,40 @@ class FlowClient:
         req = urllib.request.Request(url, data=data, method="POST")
         req.add_header("Content-Type", "application/json")
         req.add_header("Authorization", "Bearer %s" % secret)
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                body = resp.read().decode("utf-8") or "{}"
-                return resp.status, json.loads(body)
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8") if exc.fp else ""
+        last_error = None
+        for attempt in range(1, _RETRY_MAX_ATTEMPTS + 1):
             try:
-                parsed = json.loads(body) if body else {}
-            except ValueError:
-                parsed = {"error": body}
-            return exc.code, parsed
-        except urllib.error.URLError as exc:
-            raise FlowError("gateway unreachable at %s: %s" % (self.base_url, exc.reason))
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    body = resp.read().decode("utf-8") or "{}"
+                    return resp.status, json.loads(body)
+            except urllib.error.HTTPError as exc:
+                body = exc.read().decode("utf-8") if exc.fp else ""
+                try:
+                    parsed = json.loads(body) if body else {}
+                except ValueError:
+                    parsed = {"error": body}
+                # 4xx (incl. 409) is terminal -- no retry
+                if exc.code < 500:
+                    return exc.code, parsed
+                # 5xx is transient -- retry
+                last_error = ("HTTP %d" % exc.code, exc, None)
+            except urllib.error.URLError as exc:
+                # Connection-level failure is transient -- retry
+                last_error = ("connection error", exc, exc)
+            if attempt < _RETRY_MAX_ATTEMPTS:
+                delay = self._retry_delay(attempt)
+                print("flow_client: %s on attempt %d/%d; retrying in %ds (url %s)" %
+                      (last_error[0], attempt, _RETRY_MAX_ATTEMPTS, delay, url),
+                      file=sys.stderr)
+                self._sleep(delay)
+        # All retries exhausted
+        if last_error and last_error[2] is not None:
+            # URLError -- raise FlowError (same surface as before)
+            raise FlowError("gateway unreachable at %s: %s" %
+                            (self.base_url, last_error[2].reason))
+        # 5xx exhaustion -- return last HTTP response as-is
+        return last_error[1].code, json.loads(last_error[1].read().decode("utf-8") or "{}") \
+            if last_error[1].fp else {"error": last_error[0]}
 
     def call(self, action_name, **params):
         action = {"action": action_name}
