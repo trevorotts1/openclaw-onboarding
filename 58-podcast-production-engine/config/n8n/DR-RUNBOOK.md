@@ -11,7 +11,7 @@ Workflows exported from: main.blackceoautomations.com
    - `podcast-standing-check.workflow.json`
    - `podcast-draft-cleanup.workflow.json`
    - `podcast-draft-test.workflow.json`
-   - `podbean-publish.workflow.live-2026-08-01.json`
+   - `podbean-publish.workflow.json`
 
 3. **Rebind webhook credentials.** After import, open each workflow and confirm that the "Podcast Publish Gate (restored 2026-08-01)" header-auth credential is mapped to the matching Credential record in the target instance. All four workflows share this webhook credential.
 
@@ -42,4 +42,4 @@ These n8n-native data tables must exist and contain the expected schema. Restore
 - `staticData` and `pinData` are stripped. If pinData was used for cached values (auth tokens, lookup results), the first execution after restore will repopulate it automatically.
 - Node names in the exported JSON use double-hyphen (` -- `) instead of em dashes found in the live instance. This is a cosmetic-only difference and does not affect execution.
 - The `dataTableId` references use id-mode values (e.g. `3anOzegbKtLcgVud`). These are instance-specific and must be updated if the target instance generates different IDs for the same data tables.
-- The publish workflow (`podbean-publish.workflow.live-2026-08-01.json`) was exported from an active live deployment. The standing-check, draft-test, and draft-cleanup workflows were exported from the same instance on the same date.
+- The publish workflow (`podbean-publish.workflow.json`) was exported from an active live deployment on 2026-08-01 and is the authoritative export. The standing-check, draft-test, and draft-cleanup workflows were exported from the same instance on the same date. The stale pre-audit export is preserved as `podbean-publish.workflow.legacy-2026-07.json` (51 nodes) and must not be imported; it predates the idempotency ledger, standing gate, and media preflight added to the live workflow.

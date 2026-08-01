@@ -30,6 +30,7 @@ import os
 import sys
 import urllib.request
 import urllib.error
+import urllib.parse
 from pathlib import Path
 from typing import Any
 
@@ -66,6 +67,46 @@ def _call_n8n_api(
         return (-1, {"error": f"connection failed: {exc.reason}"})
     except OSError as exc:
         return (-1, {"error": f"network error: {exc}"})
+
+
+def _fetch_all_workflows(
+    api_url: str,
+    api_key: str,
+    *,
+    timeout: int = 15,
+    page_size: int = 100,
+) -> tuple[int, list[dict]]:
+    """Fetch every workflow from the live n8n instance, paging until exhausted.
+
+    The n8n REST API defaults to 100 workflows per page and returns an opaque
+    `nextCursor` when more pages remain. A live instance with 295 workflows
+    therefore needs three pages; fetching only the first silently truncates and
+    can hide the publish workflow. We request `limit=<page_size>` and loop on
+    `nextCursor` until it comes back null/absent, accumulating every page's
+    `data` array into one flat list.
+
+    Returns (0, all_workflows) on success, (status, []) on failure. The status
+    is 0 on success, an HTTP code on HTTPError, or -1 on a connection/network
+    error -- mirroring _call_n8n_api's contract so the caller's UNREACHABLE
+    branch is unchanged.
+    """
+    all_workflows: list[dict] = []
+    cursor: str | None = None
+    while True:
+        path = f"/workflows?limit={page_size}"
+        if cursor:
+            path += f"&cursor={urllib.parse.quote(cursor, safe='')}"
+        code, data = _call_n8n_api(api_url, api_key, path, timeout=timeout)
+        if code != 0:
+            return (code, [])
+        page = data.get("data", []) if isinstance(data, dict) else []
+        if not isinstance(page, list):
+            page = []
+        all_workflows.extend(page)
+        cursor = data.get("nextCursor") if isinstance(data, dict) else None
+        if not cursor:
+            break
+    return (0, all_workflows)
 
 
 def _extract_webhook_paths(workflow: dict) -> list[str]:
@@ -187,15 +228,16 @@ def main(argv: list[str] | None = None) -> int:
         print(f"No *.workflow.json files found in {config_dir}", file=sys.stderr)
         return 2
 
-    # Fetch live workflow list from n8n
+    # Fetch live workflow list from n8n (paginated: limit=100 + nextCursor loop)
     print(f"n8n deployment drift check -- {api_url} (API key {_redacted(api_key)})")
     print(f"Comparing {len(workflow_files)} exported workflow(s) against live instance\n")
 
-    code, data = _call_n8n_api(api_url, api_key, "/workflows", timeout=args.timeout)
+    code, live_workflows = _fetch_all_workflows(
+        api_url, api_key, timeout=args.timeout,
+    )
     if code != 0:
-        print(f"UNREACHABLE -- cannot fetch live workflows: {data.get('error', 'unknown error')}")
+        print("UNREACHABLE -- cannot fetch live workflows (paginated fetch failed)")
         return 2
-    live_workflows: list[dict] = data.get("data", []) if isinstance(data, dict) else []
 
     print(f"Live instance has {len(live_workflows)} workflow(s)\n")
 

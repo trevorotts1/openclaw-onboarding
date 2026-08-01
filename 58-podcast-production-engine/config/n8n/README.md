@@ -71,14 +71,18 @@ asset above, this workflow already exists and runs live on the instance; the
 file in this repo is not something to import, it is a durable structural
 record of what production runs, captured for audit and onboarding.
 
-Captured state (live API re-read): 51 nodes, 36 connections, `active: true`,
-`updatedAt` `2026-07-20T02:51:32Z`. Re-verified live on 2026-07-30: the graph
-shape is structurally unchanged (still 51 nodes / 36 connections / active). The
-`versionId` / `activeVersionId` pointer is deliberately NOT pinned here  --  it
-changes on every edit to the workflow, so a pinned value goes stale on the next
-live edit and manufactures false audit drift against a workflow this repo does
-not own; read it live from the instance if a specific version pointer is ever
-needed.
+Captured state (live API re-read on 2026-08-01, the authoritative export):
+62 nodes, 38 connections. The export carries the idempotency ledger, standing
+gate, and media preflight added since the 2026-07 export. The `active` flag is
+dropped from the export (sanitization, below) -- read it live; the live
+workflow is `active: true`. The `versionId` / `activeVersionId` pointer is
+deliberately NOT pinned here  --  it changes on every edit to the workflow, so a
+pinned value goes stale on the next live edit and manufactures false audit
+drift against a workflow this repo does not own; read it live from the instance
+if a specific version pointer is ever needed. The stale pre-audit export (51
+nodes, 36 connections) is preserved as
+`podbean-publish.workflow.legacy-2026-07.json` for provenance only and must not
+be imported -- it predates the three governance layers above.
 
 Sanitization applied before commit (spec `SKILL 58 PODBEAN SERVER-SIDE
 PUBLISH  --  MASTER SPEC v1`, unit U12):
