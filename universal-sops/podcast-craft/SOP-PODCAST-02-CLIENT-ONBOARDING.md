@@ -40,7 +40,9 @@ Via Skill 44 `caf` workflow listing, resolve both workflow names to IDs and reco
 
 ### 2.5 Podbean podcast_id capture
 
-Capture the client's Podbean Channel ID (`podcast_id`) at onboarding into the per-client state and env store. This is the ONLY Podbean value the client supplies - it selects their show under BlackCEO's single host account and is NOT a secret. The canonical payload REQUIRES it and the mapper refuses to guess it; Step 15 cannot select the channel without it. The Podbean OAuth app `client_id`/`client_secret` are BlackCEO's single shared app and are NEVER asked from the client: confirm the n8n Podbean broker is reachable and can mint a Channel-scoped token (a dirt-cheap probe, not a publish); on the operator's own box the local `client_credentials` fallback is confirmed instead. Never place the Podbean app client_id/client_secret on a client box.
+Capture the client's Podbean Channel ID (`podcast_id`) at onboarding into the per-client state and env store. This is the ONLY Podbean value the client supplies - it selects their show under BlackCEO's single host account and is NOT a secret. The canonical payload REQUIRES it and the mapper refuses to guess it; Step 15 cannot select the channel without it.
+
+Publishing is delegated to the operator's n8n account (https://main.blackceoautomations.com). The Podbean OAuth app client_id/client_secret live ONLY in n8n's credential vault -- never in this repo, this skill, or a client box. Client boxes hold only the publish-proxy webhook token and the client's non-secret Channel ID.
 
 ### 2.6 Running spreadsheet creation (Personal mode)
 

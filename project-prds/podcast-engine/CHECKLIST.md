@@ -70,8 +70,11 @@ BOOK TEASER (Interview mode only; skipped entirely for Personal mode)
 - [ ] Link written to the book_teaser field, or the founder reminder surfaced if the field is absent (never silently created, never fails the episode).
 
 MEDIA, PUBLISHING, LINK-BACK, ENROLLMENT
+
+Publishing is delegated to the operator's n8n account (https://main.blackceoautomations.com). The Podbean OAuth app client_id/client_secret live ONLY in n8n's credential vault -- never in this repo, this skill, or a client box. Client boxes hold only the publish-proxy webhook token and the client's non-secret Channel ID.
+
 - [ ] MP3 and cover uploaded to the client's Convert and Flow media library folders; URLs captured and HEAD-verified publicly reachable.
-- [ ] Episode published to the client's OWN Podbean channel; permalink captured; scheduled when a future release date exists.
+- [ ] Episode published to the client's Channel under BlackCEO's single host Podbean account, via the operator's n8n publish workflow; permalink captured; scheduled when a future release date exists.
 - [ ] Title, description, Episode Package link, Speech Script link written first in one batch; contact.podcast_survey_episode_url written ALONE and LAST; every write read back byte-for-byte.
 - [ ] Interview mode: enrollment into both workflows verified per the discovered trigger mechanism, after publish and field writes only, double-enrollment guarded. Personal mode: running spreadsheet updated, no workflows, no messages.
 - [ ] Engine STOPPED at the boundary: zero SMS, zero email, zero customer messages from the agent.
