@@ -414,6 +414,83 @@ def atomic_write(path: Path, content: str) -> None:
         raise
 
 
+# -- plaintext secret patterns for --check scan (exit-0-clean / exit-1-dirty) ------
+
+# patterns that look like non-trivial secrets (long random-looking strings, API keys, tokens)
+SECRET_PATTERNS = [
+    re.compile(r"[A-Za-z0-9]{32,}"),                # 32+ char alphanumeric (tokens, keys)
+    re.compile(r"[A-Za-z0-9+/=]{40,}"),              # base64-ish
+    re.compile(r"(?:sk|pk|api[_-]?key|secret|token|password|passwd)[=:]\s*\S+", re.IGNORECASE),
+]
+
+
+def _matches_secret_pattern(value: str) -> bool:
+    """True if `value` looks like a secret (not env ref, not placeholder)."""
+    if not isinstance(value, str):
+        return False
+    stripped = value.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("={{") and stripped.endswith("}}"):
+        return False
+    if "$env." in stripped.casefold():
+        return False
+    if PLACEHOLDER_RE.fullmatch(stripped):
+        return False
+    for pat in SECRET_PATTERNS:
+        if pat.search(stripped):
+            return True
+    return False
+
+
+def _collect_secrets(value: Any, path: str, findings: list[str]) -> None:
+    """Recurse through the workflow tree and collect plaintext-secret locations."""
+    if isinstance(value, dict):
+        for raw_key, child in value.items():
+            child_path = f"{path}.{raw_key}"
+            if isinstance(child, str) and secret_key(raw_key) and _matches_secret_pattern(child):
+                findings.append(f"{child_path} = <redacted> (plaintext {secret_key(raw_key)})")
+            else:
+                _collect_secrets(child, child_path, findings)
+    elif isinstance(value, list):
+        for idx, child in enumerate(value):
+            _collect_secrets(child, f"{path}[{idx}]", findings)
+    elif isinstance(value, str):
+        # scan code/JS strings embedded in node parameters
+        for match in KEY_ASSIGNMENT_RE.finditer(value):
+            literal = match.group("value")
+            raw_key = (
+                match.group("bracket_key")
+                or match.group("quoted_key")
+                or match.group("bare_key")
+            )
+            kind = secret_key(raw_key)
+            if kind and is_plain_literal(literal):
+                findings.append(f"{path} = <redacted> (plaintext {kind} in code)")
+
+
+def check_workflow(workflow_text: str) -> tuple[bool, list[str]]:
+    """Read-only scan for plaintext secrets (--check). Returns (clean, findings)."""
+    try:
+        data = json.loads(workflow_text)
+    except (ValueError, TypeError) as exc:
+        return False, [f"not valid JSON: {exc}"]
+    if not isinstance(data, dict):
+        return False, ["workflow JSON must be an object"]
+
+    findings: list[str] = []
+    nodes = data.get("nodes")
+    if isinstance(nodes, list):
+        for idx, node in enumerate(nodes):
+            if not isinstance(node, dict):
+                continue
+            raw_name = node.get("name")
+            node_name = raw_name if isinstance(raw_name, str) and raw_name else f"<node-{idx}>"
+            _collect_secrets(node, node_name, findings)
+
+    return not findings, findings
+
+
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Remove plaintext Podbean client credentials from an offline n8n workflow export.",
@@ -422,7 +499,13 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("credential_name", nargs="?", help="target n8n credential name")
     parser.add_argument("--credential-name", dest="credential_name_option", help="target n8n credential name")
     parser.add_argument("--output", type=Path, help="output path (default: rewrite the input atomically)")
+    parser.add_argument("--check", action="store_true", help="read-only scan for plaintext secrets (exit 0=clean, 1=dirty)")
     args = parser.parse_args(argv)
+
+    if args.check:
+        # --check does not require a credential name
+        args.resolved_credential_name = args.credential_name_option or args.credential_name or ""
+        return args
 
     if args.credential_name and args.credential_name_option:
         parser.error("provide the credential name either positionally or with --credential-name, not both")
@@ -435,6 +518,29 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv if argv is not None else sys.argv[1:])
     source = args.workflow.resolve()
+
+    # --- --check: read-only plaintext-secret scan --------------------------------
+    if args.check:
+        try:
+            text = source.read_text(encoding="utf-8")
+        except FileNotFoundError:
+            print(f"ERROR: workflow file not found: {source}", file=sys.stderr)
+            return 2
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            print(f"ERROR: workflow file is not readable valid JSON: {source}", file=sys.stderr)
+            return 2
+
+        clean, findings = check_workflow(text)
+        if clean:
+            print(f"CLEAN: no plaintext secrets found in {source.name}")
+            return 0
+        else:
+            for f in findings:
+                print(f"DIRTY: {f}", file=sys.stderr)
+            print(f"DIRTY: {len(findings)} plaintext secret(s) found in {source.name}", file=sys.stderr)
+            return 1
+
+    # --- transform (vault) ------------------------------------------------------
     destination = (args.output or args.workflow).resolve()
 
     try:
@@ -465,7 +571,7 @@ def main(argv: list[str] | None = None) -> int:
         for change in changes:
             print(
                 f"- node {change['node']!r}: {change['location']} "
-                f"[{change['key']}] — {change['action']}"
+                f"[{change['key']}] -- {change['action']}"
             )
     else:
         print("- no plaintext client credential literals found in supported nodes")
