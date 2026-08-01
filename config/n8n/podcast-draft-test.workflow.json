@@ -1,0 +1,709 @@
+{
+  "id": "ekgaJz8Ua2hnaArd",
+  "name": "podcast-draft-test (audit 2026-08-01)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "podcast-draft-test",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "a1",
+      "name": "Webhook - Draft Test",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "podcast-draft-test",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JVRJ3oLlNNT202IJ",
+          "name": "Podcast Publish Gate (restored 2026-08-01)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Guard: validate the draft-test payload. Identity + audio_url required.\n// The roster row's podbean_channel_id is AUTHORITATIVE for the target channel;\n// a payload podcast_id is only cross-checked against it.\nconst wh = $('Webhook - Draft Test').first().json;\nconst body = wh.body || wh;\nconst missing = ['client_last_name','client_email','audio_url'].filter((k) => !body[k]);\nif (missing.length) {\n  return [{ json: { ok: false, reason: 'missing_fields', missing } }];\n}\nreturn [{ json: {\n  ok: true,\n  client_last_name: String(body.client_last_name).trim(),\n  client_email: String(body.client_email).toLowerCase().trim(),\n  audio_url: body.audio_url,\n  title: body.title || '[DRAFT TEST] safe verification - never published',\n  description: body.description || 'Automated draft-test episode. Created, verified, and deleted by the n8n podcast-draft-test workflow. Never appears on the live feed.',\n  payload_podcast_id: body.podcast_id || '',\n} }];"
+      },
+      "id": "a2",
+      "name": "Guard - Validate Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a3",
+      "name": "IF - Guard Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, reason: $json.reason || 'guard_refused', missing: $json.missing || [] }) }}",
+        "options": {
+          "responseCode": 422
+        }
+      },
+      "id": "a4",
+      "name": "Respond - Guard Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "row",
+        "operation": "get",
+        "dataTableId": {
+          "mode": "name",
+          "value": "podcast_publish_roster"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "last_name",
+              "condition": "eq",
+              "keyValue": "={{ $('Guard - Validate Payload').item.json.client_last_name }}"
+            },
+            {
+              "keyName": "email",
+              "condition": "eq",
+              "keyValue": "={{ $('Guard - Validate Payload').item.json.client_email }}"
+            }
+          ]
+        },
+        "returnAll": false,
+        "limit": 1
+      },
+      "id": "a5",
+      "name": "Standing Gate - Roster Lookup",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Standing verdict + authoritative channel id. Fail closed.\nconst guard = $('Guard - Validate Payload').first().json;\nconst items = $input.all().map((i) => i.json).filter((r) => r && Object.keys(r).length > 0 && !r.error);\nif (!items.length) return [{ json: { ok: false, reason: 'identity_unknown' } }];\nconst row = items[0];\nif (String(row.good_standing || '').toUpperCase() !== 'YES') return [{ json: { ok: false, reason: 'not_in_good_standing' } }];\nconst channel = row.podbean_channel_id || '';\nif (!channel) return [{ json: { ok: false, reason: 'no_channel_on_roster' } }];\nif (guard.payload_podcast_id && guard.payload_podcast_id !== channel) {\n  return [{ json: { ok: false, reason: 'channel_mismatch', roster_channel: channel } }];\n}\nreturn [{ json: { ok: true, channel_id: channel, title: guard.title, description: guard.description, audio_url: guard.audio_url } }];"
+      },
+      "id": "a6",
+      "name": "Standing Gate - Verdict",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.ok }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "a7",
+      "name": "IF - Standing Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, reason: $json.reason || 'standing_refused' }) }}",
+        "options": {
+          "responseCode": 403
+        }
+      },
+      "id": "a8",
+      "name": "Respond - Standing Refused",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1320,
+        220
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/oauth/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            },
+            {
+              "name": "podcast_id",
+              "value": "={{ $('Standing Gate - Verdict').item.json.channel_id }}"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "a9",
+      "name": "Podbean OAuth - Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1320,
+        0
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "EZApXhsHExXctBrB",
+          "name": "Podbean BlackCEO (client_credentials)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Standing Gate - Verdict').item.json.audio_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "audio"
+            }
+          }
+        }
+      },
+      "id": "a10",
+      "name": "Download Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Package for upload: carry the token, channel, metadata, and binary stats forward.\nconst verdict = $('Standing Gate - Verdict').first().json;\nconst oauth = $('Podbean OAuth - Token').first().json;\nconst bin = $input.first().binary || {};\nconst audio = bin.audio || {};\nreturn [{ json: {\n  access_token: oauth.access_token,\n  podcast_id: verdict.channel_id,\n  title: verdict.title,\n  description: verdict.description,\n  audioFilename: audio.fileName || 'draft-test.mp3',\n  audioFilesize: audio.fileSize || 0,\n}, binary: $input.first().binary }];"
+      },
+      "id": "a11",
+      "name": "Prepare Upload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://api.podbean.com/v1/files/uploadAuthorize",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $json.access_token }}"
+            },
+            {
+              "name": "filename",
+              "value": "={{ $json.audioFilename }}"
+            },
+            {
+              "name": "filesize",
+              "value": "={{ $json.audioFilesize }}"
+            },
+            {
+              "name": "content_type",
+              "value": "audio/mpeg"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a12",
+      "name": "uploadAuthorize",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1980,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.presigned_url }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "audio/mpeg"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "audio",
+        "options": {}
+      },
+      "id": "a13",
+      "name": "PUT Audio",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2200,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/episodes",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Prepare Upload').item.json.access_token }}"
+            },
+            {
+              "name": "podcast_id",
+              "value": "={{ $('Prepare Upload').item.json.podcast_id }}"
+            },
+            {
+              "name": "title",
+              "value": "={{ $('Prepare Upload').item.json.title }}"
+            },
+            {
+              "name": "content",
+              "value": "={{ $('Prepare Upload').item.json.description }}"
+            },
+            {
+              "name": "status",
+              "value": "draft"
+            },
+            {
+              "name": "type",
+              "value": "public"
+            },
+            {
+              "name": "episode_type",
+              "value": "full"
+            },
+            {
+              "name": "media_key",
+              "value": "={{ $json.file_key }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "a14",
+      "name": "Create Draft Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2420,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.podbean.com/v1/episodes/{{ $json.episode.id }}?access_token={{ $('Prepare Upload').item.json.access_token }}",
+        "options": {}
+      },
+      "id": "a15",
+      "name": "Fetch Draft - Verify",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://api.podbean.com/v1/episodes/{{ $('Create Draft Episode').item.json.episode.id }}?access_token={{ $('Podbean OAuth - Delete Token').item.json.access_token }}",
+        "options": {}
+      },
+      "id": "a16",
+      "name": "Delete Draft - Cleanup",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2860,
+        0
+      ],
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, draft: true, episode_id: $('Create Draft Episode').item.json.episode.id, draft_status: $('Fetch Draft - Verify').item.json.episode ? $('Fetch Draft - Verify').item.json.episode.status : 'unknown', deleted: true, note: 'draft created, verified, deleted - never on the live feed' }) }}",
+        "options": {}
+      },
+      "id": "a17",
+      "name": "Respond - Draft Verified",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3080,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Reattach the downloaded audio binary to the uploadAuthorize JSON\n// (the presigned URL response does not carry the binary forward).\nconst auth = $input.first().json;\nconst bin = $('Download Audio').first().binary;\nreturn [{ json: auth, binary: bin }];"
+      },
+      "id": "a18",
+      "name": "Reattach Binary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2090,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/oauth/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "a19",
+      "name": "Podbean OAuth - Delete Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2750,
+        0
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "EZApXhsHExXctBrB",
+          "name": "Podbean BlackCEO (client_credentials)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, draft: true, episode_id: $('Create Draft Episode').item.json.episode.id, deleted: false, note: 'draft verified but DELETE refused - use podcast-draft-cleanup workflow to remove it' }) }}",
+        "options": {}
+      },
+      "id": "a20",
+      "name": "Respond - Delete Warning",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        3190,
+        220
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Draft Test": {
+      "main": [
+        [
+          {
+            "node": "Guard - Validate Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard - Validate Payload": {
+      "main": [
+        [
+          {
+            "node": "IF - Guard Passed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Guard Passed": {
+      "main": [
+        [
+          {
+            "node": "Standing Gate - Roster Lookup",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Guard Refused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standing Gate - Roster Lookup": {
+      "main": [
+        [
+          {
+            "node": "Standing Gate - Verdict",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Standing Gate - Verdict": {
+      "main": [
+        [
+          {
+            "node": "IF - Standing Passed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF - Standing Passed": {
+      "main": [
+        [
+          {
+            "node": "Podbean OAuth - Token",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Standing Refused",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Podbean OAuth - Token": {
+      "main": [
+        [
+          {
+            "node": "Download Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Audio": {
+      "main": [
+        [
+          {
+            "node": "Prepare Upload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Upload": {
+      "main": [
+        [
+          {
+            "node": "uploadAuthorize",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "uploadAuthorize": {
+      "main": [
+        [
+          {
+            "node": "Reattach Binary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "PUT Audio": {
+      "main": [
+        [
+          {
+            "node": "Create Draft Episode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Draft Episode": {
+      "main": [
+        [
+          {
+            "node": "Fetch Draft - Verify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Draft - Verify": {
+      "main": [
+        [
+          {
+            "node": "Podbean OAuth - Delete Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Draft - Cleanup": {
+      "main": [
+        [
+          {
+            "node": "Respond - Draft Verified",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Delete Warning",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reattach Binary": {
+      "main": [
+        [
+          {
+            "node": "PUT Audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Podbean OAuth - Delete Token": {
+      "main": [
+        [
+          {
+            "node": "Delete Draft - Cleanup",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

@@ -1,0 +1,176 @@
+{
+  "id": "2ZoGNafrdEBjEaLs",
+  "name": "podcast-draft-cleanup (audit 2026-08-01)",
+  "description": null,
+  "active": false,
+  "isArchived": false,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "podcast-draft-cleanup",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "c1",
+      "name": "Webhook - Cleanup",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "podcast-draft-cleanup",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "JVRJ3oLlNNT202IJ",
+          "name": "Podcast Publish Gate (restored 2026-08-01)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const wh = $('Webhook - Cleanup').first().json;\nconst body = wh.body || wh;\nif (!body.episode_id) return [{ json: { ok: false, reason: 'missing_episode_id' } }];\nreturn [{ json: { ok: true, episode_id: String(body.episode_id) } }];"
+      },
+      "id": "c2",
+      "name": "Guard - Episode ID",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.podbean.com/v1/oauth/token",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "grant_type",
+              "value": "client_credentials"
+            }
+          ]
+        },
+        "options": {},
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpBasicAuth"
+      },
+      "id": "c3",
+      "name": "Podbean OAuth - Account Token",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        0
+      ],
+      "credentials": {
+        "httpBasicAuth": {
+          "id": "EZApXhsHExXctBrB",
+          "name": "Podbean BlackCEO (client_credentials)"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "=https://api.podbean.com/v1/episodes/{{ $('Guard - Episode ID').item.json.episode_id }}?access_token={{ $json.access_token }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "fullResponse": true,
+              "responseFormat": "text"
+            }
+          }
+        },
+        "alwaysOutputData": true
+      },
+      "id": "c4",
+      "name": "Delete Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, episode_id: $('Guard - Episode ID').item.json.episode_id, http_code: $json.statusCode, body: typeof $json.body === 'string' ? $json.body.slice(0, 200) : $json.body }) }}",
+        "options": {}
+      },
+      "id": "c5",
+      "name": "Respond - Deleted",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        0
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook - Cleanup": {
+      "main": [
+        [
+          {
+            "node": "Guard - Episode ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Guard - Episode ID": {
+      "main": [
+        [
+          {
+            "node": "Podbean OAuth - Account Token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Podbean OAuth - Account Token": {
+      "main": [
+        [
+          {
+            "node": "Delete Episode",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Delete Episode": {
+      "main": [
+        [
+          {
+            "node": "Respond - Deleted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
