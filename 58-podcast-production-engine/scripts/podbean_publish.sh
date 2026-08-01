@@ -578,11 +578,12 @@ print(json.dumps(d))
 # proxy_request URL BODY: POST BODY to URL with the shared header token. Sets
 # RESP_BODY / RESP_CODE. Retries ONCE, matching Section 3's box-side contract
 # ("one retry on network error with the same idempotency_key"), but ONLY on a
-# network-level failure (curl could not get a status line at all, code 000) or
-# an n8n-side HTTP 5xx. A 2xx/403/409/422 is a deterministic verdict from the
-# gate and is returned to the caller on the FIRST reply - retrying it can never
-# change the answer (Section 8: 409/403 need a human or a different key, not a
-# tight retry loop). Never returns non-zero; the caller inspects RESP_CODE.
+# network-level failure (curl could not get a status line at all, code 000),
+# an n8n-side HTTP 5xx, or an HTTP 429 rate-limit from the n8n gate (which is
+# transient and will clear). A 2xx/403/409/422 is a deterministic verdict from
+# the gate and is returned to the caller on the FIRST reply - retrying it can
+# never change the answer (Section 8: 409/403 need a human or a different key,
+# not a tight retry loop). Never returns non-zero; the caller inspects RESP_CODE.
 RESP_BODY=""; RESP_CODE=""
 proxy_request() {
   local url="$1" body="$2" attempt=1 out
@@ -590,7 +591,7 @@ proxy_request() {
     out="$(curl -K <(proxy_cfg_lines "$url") --data-binary "$body" -w $'\n%{http_code}' 2>/dev/null || true)"
     RESP_CODE="${out##*$'\n'}"
     RESP_BODY="${out%$'\n'*}"
-    if [ -z "$RESP_CODE" ] || [ "$RESP_CODE" = "000" ] || [[ "$RESP_CODE" =~ ^5[0-9][0-9]$ ]]; then
+    if [ -z "$RESP_CODE" ] || [ "$RESP_CODE" = "000" ] || [ "$RESP_CODE" = "429" ] || [[ "$RESP_CODE" =~ ^5[0-9][0-9]$ ]]; then
       if [ "$attempt" -ge 2 ]; then return 0; fi
       log "publish-proxy attempt ${attempt} returned HTTP ${RESP_CODE:-000}; retrying once (same idempotency_key)"
       sleep 1
@@ -796,7 +797,21 @@ if [ "$PROXY_MODE" = "1" ]; then
 
   # Standing-check endpoint (U13), derived from the publish webhook URL unless
   # explicitly overridden. Both endpoints share the same header credential.
-  PODBEAN_STANDING_CHECK_URL="${PODBEAN_STANDING_CHECK_URL:-${PODBEAN_PUBLISH_WEBHOOK_URL%/webhook/podbean-publish}/webhook/podcast-standing-check}"
+  if [ -z "${PODBEAN_STANDING_CHECK_URL:-}" ]; then
+    case "${PODBEAN_PUBLISH_WEBHOOK_URL:-}" in
+      */webhook/podbean-publish)
+        if ! printf '%s\n' "$PODBEAN_PUBLISH_WEBHOOK_URL" | grep -q '/webhook/'; then
+          printf 'PODBEAN_STANDING_CHECK_URL is not set and PODBEAN_PUBLISH_WEBHOOK_URL (%s) does not contain "/webhook/"; cannot derive the standing-check endpoint. Set PODBEAN_STANDING_CHECK_URL explicitly.\n' "$PODBEAN_PUBLISH_WEBHOOK_URL" >&2
+          exit 1
+        fi
+        ;;
+      *)
+        printf 'PODBEAN_STANDING_CHECK_URL is not set and PODBEAN_PUBLISH_WEBHOOK_URL (%s) does not end with /webhook/podbean-publish; cannot derive the standing-check endpoint. Set PODBEAN_STANDING_CHECK_URL explicitly.\n' "$PODBEAN_PUBLISH_WEBHOOK_URL" >&2
+        exit 1
+        ;;
+    esac
+    PODBEAN_STANDING_CHECK_URL="${PODBEAN_PUBLISH_WEBHOOK_URL%/webhook/podbean-publish}/webhook/podcast-standing-check"
+  fi
 
   if [ "$DRY_RUN" = "1" ]; then
     log "dry-run (publish-proxy): probing the standing-check endpoint for reachability; no publish call"
