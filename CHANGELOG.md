@@ -146,7 +146,93 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 `final_qc_report.json` — plus a manifest phase entry (bumping `manifest_version` and
 `MIN_MANIFEST_VERSION` together per U019 step 8) so the engine actually runs it. Until that
 aggregation phase exists, every real job either supplies a genuine report out of band or is
-=======
+blocked at the gate, cleanly and audibly. Exactly fail-closed.
+
+## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot (+ EWS installed with ZERO crons via a non-existent CLI flag)
+
+Two keys govern agent concurrency:
+
+    agents.defaults.maxConcurrent            — cap on ALL agent runs
+    agents.defaults.subagents.maxConcurrent  — cap on subagent fanout
+
+`scripts/capacity-monitor.sh` reconciled only the second one. On a box where BOTH had been set to
+500 out-of-band, the 15-minute tick healed the subagents key 500 -> 12, logged success, and left the
+TOP-LEVEL key at 500 — managed by NOTHING — for five days. 500 concurrent runs on a 12-core/24GB box
+exhausted RAM, thrashed swap, and made every response crawl; repeated manual fixes appeared not to
+"stick" because the healer was blind to the key that actually mattered. This script ships to every
+box from this repo, so every box had the same blind spot.
+
+- **Dual-key heal.** The writer now reconciles BOTH keys to the computed safe value, and "changed"
+  is true if EITHER differs — the incident config (top-level 500, subagents already safe) previously
+  read as "in sync" and was never healed.
+- **The top-level key is healed PRESENT-ONLY, never created.** The runtime's `AgentDefaultsSchema`
+  is `.strict()`, so injecting that key on a runtime that predates it would make the runtime reject
+  the box's WHOLE config — the same failure class as the v11.3.1 `agents.defaults.tools.exec`
+  defect. Absent means the runtime's own default is in force and there is nothing to clobber.
+- **Both previous values are recorded.** `.capacity-profile.json` gains
+  `previousDefaultsMaxConcurrent` (and `defaultsMaxConcurrentPresent`) alongside
+  `previousMaxConcurrent`; the HEAL log line names both keys and both previous values.
+- **Runaway overrides now warn loudly.** The `OC_CAP_*` env overrides are the deliberate-raise path
+  and are kept as-is, but a computed cap above `min(cores*4, 64)` emits a `RUNAWAY CAP` WARN on
+  every tick. Silence about an out-of-band raise is what let 500 sit for five days. The WARN informs
+  only — it does not clamp, and exit 0 is preserved so the escape hatch stays usable.
+- **install.sh no longer hard-overwrites `subagents.maxConcurrent` to 100.** The old rule
+  (`max(100, prev)`) was the "100 everywhere" bug WS-8 exists to kill — an 8GB Mac mini and a 64GB
+  VPS both got 100 — and because it could only ever RAISE the number, every install re-clobbered
+  whatever capacity-monitor had already healed, so boxes ping-ponged forever. It now clamps DOWN to
+  the box's ceiling and never raises: prefer `.capacity-profile.json`, else 12 Mac / 8 VPS (the same
+  clamp as the monitor), and preserve any existing value at or below that ceiling.
+
+Guarded by `tests/unit/capacity-dual-key-heal.test.sh` (15 checks, fully offline against a temp
+HOME) and `.github/workflows/capacity-dual-key-heal-guard.yml`. Mutation-proven: the workflow
+reconstructs the pre-fix single-key writer and REQUIRES the suite to go red, so the guard can never
+become a check that cannot fail. The suite also refuses to run its write cases on a host with
+`/data/.openclaw`, where the script would target the real config instead of the fixture.
+
+### Same failure class, second site: the Early Warning System installed with ZERO crons
+
+`60-zhc-early-warning-system/install.sh` registered both of its crons with a `--schedule` flag that
+does not exist on OpenClaw — the real flag is `--cron`, and `--schedule` is absent from the CLI
+entirely. Both calls are wrapped in `|| echo WARN`, so EWS reported a successful install while
+registering NOTHING: the 15-minute tick and the operator-box aggregator were never created. A guard
+that silently does not run is the same defect class as the cap that silently never healed — and this
+is the very guard whose `config/monitored-keys.json` watches both `maxConcurrent` keys as a P1
+"cap raise". Had it been alive, it would have caught the 500 on day one.
+
+- Both `openclaw cron add` calls now pass `--cron` (flag verified against `openclaw cron add --help`
+  on 2026.7.1-2, which lists `--cron <expr>` and no `--schedule`; `--name`, `--command` and
+  `--no-deliver` were re-verified as real on the same output).
+- The skill's `--self-test` gains a cron-flag case. The existing install cases run with `NO_CRON=1`
+  and never execute those lines, which is exactly why a dead flag survived: the new check is static,
+  anchored to real invocations so it cannot match its own diagnostics, and fails if any
+  `openclaw cron add` uses `--schedule` or if none passes `--cron`. Mutation-proven: restoring
+  `--schedule` on either line turns the self-test red (exit 1).
+- Skill 60 version 0.1.3 -> 0.1.4 (skill-version.txt + SKILL.md frontmatter, in lockstep).
+
+Rollout: fleet boxes pick this up via the normal fleet-roll. No box was touched by this change.
+
+## [v21.4.51]  -  2026-08-01  -  fix(release): bump version markers for PR #810 G3 skill-content change
+
+### Why
+PR #810 (unit/U015-announce-heal-escalate) changed 5 files under
+`23-ai-workforce-blueprint/templates/role-library/presentations/` (heal.py, phases.py,
+report.py, test_heal.py, test_report.py) but did NOT bump
+`23-ai-workforce-blueprint/skill-version.txt`. CI gate G3
+("skill content change requires skill-version.txt bump") failed on the merge commit
+`e5314af2`. The fix is a no-op version bump: no content changed apart from the 10
+marker files, which were all at v21.4.50 and are now at v21.4.51.
+
+### What changed
+- Ran `scripts/bump-version.sh v21.4.51`, which atomically rolls all 10 version
+  markers including `23-ai-workforce-blueprint/skill-version.txt` from `21.4.50` to
+  `21.4.51`. No code, template, or logic changes.
+
+### Risk
+None. Pure marker roll. The one commit difference vs the parent release is the
+version labels in 15 files (10 markers + 4 script-embedded version strings +
+`06-ghl-install-pages/skill-version.txt`), all moving from v21.4.50 to v21.4.51.
+Four repo gates exit 0.
+
 ## [v21.4.50]  -  2026-08-01  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
 
 Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
@@ -1487,7 +1573,6 @@ None to runtime or install behavior -- doc + advisory-only change. `skill38_doc_
 remains ADVISORY ONLY: it never mutates a file and always returns 0, so `bump-version.sh`'s exit
 behavior under `set -e` is unchanged; a WARN still cannot fail a bump or a CI job. Does not touch
 Phase-5 subset (a distinct, uncounted quantity, out of scope here).
->>>>>>> origin/main
 
 ## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed
 
@@ -10471,7 +10556,6 @@ Fleet Operator Co-Mingling Audit remediation — client boxes no longer ship the
 ## v12.31.1 — 2026-06-18 — content-manifest restamp + QC-static repo-consistency fix
 
 - Content-manifest restamp + QC-static repo-consistency fix for the v12.31.0 presentation edits. The v12.31.0 commit restamped `23-ai-workforce-blueprint/templates/role-library/_index.json` (a Skill-23 file) without moving the skill version, tripping the version-consistency guards (G3 "skill content change requires skill-version.txt bump" + the "9 markers must agree / skill-version.txt == /version" rule). This patch bumps the whole version in lockstep so all 9 markers + `cc-compat.json onboardingVersion` read `v12.31.1`, and re-runs `hash-content-manifest.py` so the per-artifact content_sha manifest stays consistent. No functional change beyond v12.31.0.
-
 
 
 ## v12.31.0 — 2026-06-18 — Presentation Friday-critical fixes + roster-regen materialization fix

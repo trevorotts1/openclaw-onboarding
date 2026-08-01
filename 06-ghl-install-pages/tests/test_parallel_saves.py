@@ -567,13 +567,20 @@ class TestHermeticConcurrency:
             f"teardown (close) must be recorded at least once.\nLog:\n{log_text}"
         )
 
-        # All 5 eval starts must appear.
+        # All 5 fan-out page evals must appear, PLUS exactly one extra eval:
+        # bm_ensure's own session-expired login-check (2026-07-30 circuit
+        # breaker — _bm_guard_session_or_heal calls _bm_login_state, which
+        # issues ONE `eval` right after the agency-root `open` and before
+        # control ever reaches parallel_saves.sh's fan-out). It runs
+        # sequentially, completes, and only THEN does the 5-wide concurrent
+        # batch begin — so it does not affect the peak-concurrency assertion
+        # above, but it does add one more line to the raw EVAL_START count.
         eval_starts = [
             line for line in log_text.splitlines()
             if line.startswith("EVAL_START")
         ]
-        assert len(eval_starts) == 5, (
-            f"All 5 page evals must have started.\nLog:\n{log_text}"
+        assert len(eval_starts) == 6, (
+            f"Expected 5 page evals + 1 bm_ensure login-check eval = 6.\nLog:\n{log_text}"
         )
 
     def test_cap_3_with_5_pages_peak_at_most_3(self, tmp_path):

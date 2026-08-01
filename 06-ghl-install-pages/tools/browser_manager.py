@@ -54,11 +54,12 @@ import re
 import signal
 import subprocess
 import sys
+import time
 from datetime import datetime
 from typing import Callable, Iterator, Optional
 
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_PY_VERSION = "v21.4.50"
+BROWSER_MANAGER_PY_VERSION = "v21.4.51"
 
 # Tunables mirror browser_manager.sh / the ADVISORY openclaw.json
 # browser.agentBrowser block (agent-browser ignores that config natively — the
@@ -232,6 +233,221 @@ def assert_agent_browser_version(env: Optional[dict] = None) -> None:
         )
         return
     raise RuntimeError(msg)
+
+
+# ── SESSION-EXPIRED (GHL login-bounce) circuit breaker ────────────────────────
+# INCIDENT (2026-07-30, operator box): a GHL Firebase ID token is short-lived
+# (securetoken confirms ``expires_in: 3600`` — a hard ONE HOUR). When it lapsed
+# mid-session the SPA silently bounced navigation to
+# ``app.gohighlevel.com/login`` instead of the requested page, and NOTHING
+# detected it: the caller kept retrying against a session that could never
+# self-recover, opening a NEW Chrome page every cycle (renderer spawn ages
+# tightened 40min -> 11 -> 11 -> 11 -> 2 -> 1s before a human killed it by
+# hand). The defect was never "the session expired" — GHL sessions expire
+# routinely, on a fixed one-hour clock — it was that expiry produced an
+# infinite retry loop instead of ONE bounded self-heal or ONE loud, actionable
+# failure.
+#
+# Detection mirrors the ALREADY-PROVEN "onLogin" heuristic used by
+# ghl_form_builder.py's ``_LOGIN_CHECK_JS``, ghl_survey_builder.py, and
+# inject-ghl-auth.sh (identical pathname + ``logout=true`` query + password-
+# field check) — this is the SAME doctrine, not a newly-invented detector, so
+# it carries the same live-proven confidence those three copies already have.
+#
+# These are PURE, hermetic functions — no subprocess, no network, no browser —
+# so the retry/self-heal shape below is unit-testable with fake stub
+# callables. The LIVE wiring (spawning ``seed-ghl-auth.py`` to mint a fresh
+# token, then ``inject-ghl-auth.sh`` to write it into the browser, capped at
+# ONE re-seed attempt per operation) lives in ``browser_manager.sh`` — the
+# actual singleton gateway that owns the box lock + the live agent-browser
+# process — because a Python caller here has no live browser handle to re-seed
+# into (see the module docstring: EMITTER-ONLY, no live-process management).
+GHL_LOGIN_CHECK_JS = (
+    "(() => {"
+    "  const pwd = !!document.querySelector('input[type=password]');"
+    "  const onLogin = /[?&]logout=true/.test(location.href) || /\\/login(\\b|$)/.test(location.pathname) || pwd;"
+    "  return (onLogin ? 'login:' : 'app:') + location.pathname;"
+    "})()"
+)
+
+
+class SessionExpiredError(RuntimeError):
+    """Raised when navigation has landed on the GHL login page (or a re-seed
+    attempt failed to recover from that state). This is a TERMINAL condition
+    — an expired session cookie/token, never a transient network blip — and
+    callers MUST NOT retry past it beyond the one permitted re-seed attempt
+    ``bounded_retry_with_reseed`` already applies. Never carries token/cookie
+    content in its message; only session/profile names and remediation steps."""
+
+
+def classify_login_check_result(result: Optional[str]) -> str:
+    """Classify the string returned by evaluating ``GHL_LOGIN_CHECK_JS``.
+
+    Returns:
+      "SESSION_EXPIRED" — result starts with the ``"login:"`` prefix (a
+        positive login-bounce signal).
+      "OK"              — result starts with the ``"app:"`` prefix.
+      "UNKNOWN"         — anything else (empty, a timeout string, unparseable
+        output). Deliberately NOT treated as expired: only a POSITIVE login
+        signal is terminal. An inconclusive read must fall through to the
+        ordinary bounded-transient-retry path instead of manufacturing a false
+        terminal failure from a flaky eval call.
+    """
+    text = (result or "").strip()
+    if text.startswith("login:"):
+        return "SESSION_EXPIRED"
+    if text.startswith("app:"):
+        return "OK"
+    return "UNKNOWN"
+
+
+def is_login_url(url: Optional[str]) -> bool:
+    """URL-only fallback (no DOM/eval access) — true when the path carries a
+    ``logout=true`` bounce marker or looks like GHL's login route. Mirrors the
+    pathname/query half of ``GHL_LOGIN_CHECK_JS`` for callers that only have a
+    resulting URL (e.g. a CDP target list) and no eval channel. Deliberately
+    domain-agnostic (GHL is white-labeled across gohighlevel.com,
+    convertandflow.com, and client-custom domains) — same as the JS check,
+    which never inspects the hostname either."""
+    if not url:
+        return False
+    return bool(re.search(r"[?&]logout=true", url)) or bool(re.search(r"/login(?:\b|$)", url))
+
+
+def session_expired_message(session: str, profile_hint: Optional[str] = None) -> str:
+    """The ONE actionable message for a detected/unrecovered session expiry.
+    Names the profile + session and the exact remedy — never a bare stack
+    trace, and NEVER a token/cookie value (only names and paths)."""
+    profile = profile_hint or "the OpenClaw browser profile (~/.openclaw/browser/openclaw/user-data)"
+    return (
+        f"SESSION EXPIRED (GHL login bounce) on session '{session}': navigation "
+        "landed on the GoHighLevel /login page instead of the requested page. "
+        "This is TERMINAL, not transient. Remedy: re-authenticate "
+        f"{profile} — re-run seed-ghl-auth.py to mint a fresh Firebase ID token "
+        "(the token is a hard one-hour expiry) and inject-ghl-auth.sh to "
+        "re-seed the browser session — then re-run the build. Do NOT retry "
+        "blindly: a stale/revoked refresh token will bounce to /login again "
+        "every time."
+    )
+
+
+def bounded_retry(
+    fn: Callable[[int], object],
+    *,
+    max_attempts: int = 3,
+    base_delay: float = 2.0,
+    sleep: Optional[Callable[[float], None]] = None,
+    on_retry: Optional[Callable[[int, BaseException], None]] = None,
+) -> object:
+    """Generic bounded-retry-with-exponential-backoff circuit breaker.
+
+    Calls ``fn(attempt)`` (1-based). On success, returns the value. On
+    ``SessionExpiredError``, re-raises IMMEDIATELY — no sleep, no further
+    attempt, regardless of attempts remaining: an expired session is terminal,
+    never transient. On any OTHER exception, retries with exponential backoff
+    (``base_delay * 2 ** (attempt - 1)``) up to ``max_attempts`` total tries,
+    then re-raises the last exception. This is the shape
+    ``browser_manager.sh``'s open-retry loop follows too (bounded attempts,
+    exponential backoff, session-expiry short-circuits to zero further
+    retries) — kept here as the one Python-side reference implementation so a
+    future Python-only caller never has to invent its own retry shape.
+    """
+    _sleep = sleep or time.sleep
+    if max_attempts < 1:
+        max_attempts = 1
+    last_exc: Optional[BaseException] = None
+    for attempt in range(1, max_attempts + 1):
+        try:
+            return fn(attempt)
+        except SessionExpiredError:
+            raise
+        except Exception as exc:  # noqa: BLE001 - deliberately broad: any transient failure
+            last_exc = exc
+            if attempt >= max_attempts:
+                raise
+            if on_retry is not None:
+                on_retry(attempt, exc)
+            _sleep(base_delay * (2 ** (attempt - 1)))
+    if last_exc is not None:  # pragma: no cover - unreachable, keeps type-checkers honest
+        raise last_exc
+    raise RuntimeError("bounded_retry: exhausted with no exception recorded")  # pragma: no cover
+
+
+def bounded_retry_with_reseed(
+    operation: Callable[[], object],
+    *,
+    check_session: Callable[[object], str],
+    reseed: Callable[[], bool],
+    max_transient_attempts: int = 3,
+    max_reseed_attempts: int = 1,
+    base_delay: float = 2.0,
+    sleep: Optional[Callable[[float], None]] = None,
+) -> object:
+    """Self-heal circuit breaker: bounded transient retry PLUS a hard-capped
+    (default: exactly ONE) re-seed-then-retry-once path for a detected expired
+    session. Mirrors ``browser_manager.sh``'s
+    ``_bm_guard_session_or_heal`` / ``_bm_self_heal_reseed`` shell functions
+    for any Python caller that wants the identical circuit-breaker semantics
+    without shelling to the gateway itself.
+
+    - ``operation()`` performs the real navigation/action and returns a
+      result (or raises).
+    - ``check_session(result)`` classifies that result: return
+      ``"SESSION_EXPIRED"`` for a detected login bounce, anything else (e.g.
+      ``"OK"``) means the operation is done and its result is returned as-is.
+    - On ``"SESSION_EXPIRED"``: calls ``reseed()`` at most
+      ``max_reseed_attempts`` times TOTAL across the whole call (default 1 —
+      "at most one re-seed per operation", the exact cap that prevents a
+      smarter infinite loop). ``reseed()`` returns True on success.
+        * Re-seed succeeds -> ``operation()`` is retried exactly once more
+          (no sleep — a freshly re-authenticated session is not a
+          rate-limit/backoff case).
+        * Re-seed fails, OR the retried operation is STILL
+          ``"SESSION_EXPIRED"`` after a successful re-seed, OR the re-seed
+          budget is already spent -> raises :class:`SessionExpiredError`
+          immediately. No further attempt of any kind.
+    - Any OTHER exception from ``operation()`` is treated as transient and
+      retried up to ``max_transient_attempts`` with exponential backoff
+      (independent of, and never resetting, the re-seed budget).
+    """
+    _sleep = sleep or time.sleep
+    if max_transient_attempts < 1:
+        max_transient_attempts = 1
+    reseed_used = 0
+    attempt = 1
+    while True:
+        try:
+            result = operation()
+        except SessionExpiredError:
+            raise
+        except Exception:  # noqa: BLE001 - deliberately broad: any transient failure
+            if attempt >= max_transient_attempts:
+                raise
+            _sleep(base_delay * (2 ** (attempt - 1)))
+            attempt += 1
+            continue
+
+        state = check_session(result)
+        if state != "SESSION_EXPIRED":
+            return result
+
+        if reseed_used >= max_reseed_attempts:
+            raise SessionExpiredError(
+                "session still expired after the permitted re-seed attempt(s) "
+                f"({reseed_used}/{max_reseed_attempts}) — STOP, no further retry. "
+                "Re-authenticate the OpenClaw browser profile manually."
+            )
+        reseed_used += 1
+        if not reseed():
+            raise SessionExpiredError(
+                "re-seed FAILED — STOP, no further retry (re-seed budget spent: "
+                f"{reseed_used}/{max_reseed_attempts}). Supply a fresh Firebase "
+                "refresh token and re-run."
+            )
+        # Re-seed succeeded: loop retries `operation()` exactly once more. The
+        # transient-attempt counter is untouched — the re-seed budget and the
+        # transient-retry budget are independent axes, never conflated.
+        continue
 
 
 # ── Canonical session name (mirrors bm_session_name in browser_manager.sh) ────

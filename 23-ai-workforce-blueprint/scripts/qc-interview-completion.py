@@ -1477,7 +1477,21 @@ def build_verdict(
             f"Question count {count} is borderline (target 25-35). Human review required."
         )
     if count_result.get("disagreeWarning"):
-        warnings.append(count_result["disagreeWarning"])
+        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident): a
+        # lastQuestionNumber that disagrees with the transcript's real Q-block
+        # count by more than 3 questions used to be a WARNING ONLY — the count
+        # check above still used the (correct) transcript count, so a genuinely
+        # complete interview could pass check #1 even while the disagreement
+        # itself, which is direct evidence the progress-counter write path is
+        # broken, sat in `warnings[]` where nothing reads it before marking
+        # complete. In the incident this covers, the transcript held 19
+        # questions while state.interviewProgress.lastQuestionNumber was frozen
+        # at 11 (a gap of 8) — the interview was ALSO short on count and
+        # mandatory fields, but the disagreement itself must independently
+        # refuse: "a completion claim that disagrees with the transcript by 8
+        # questions should refuse, not warn." A stale counter is evidence the
+        # write pipeline lost data even when unrelated checks would pass.
+        hard_failures.append(count_result["disagreeWarning"])
 
     # Jargon check
     if jargon_hits:
@@ -1680,6 +1694,15 @@ def write_state_qc(state_path: Path, details: dict) -> None:
         "nudgesWired": details["nudgesWired"],
         "ranAt": details["ranAt"],
         "rubricVerdict": details.get("rubricVerdict"),
+        # "reasons" (2026-07-30 fix): blackceo-command-center's
+        # extractQcReasons() (src/lib/interview/... POST /api/interview/complete
+        # route) looks for one of reasons/failures/issues/findings/errors/notes
+        # on interviewQc to surface WHY a completion was refused — none of
+        # those keys were ever written here, so a refused/failed completion
+        # showed the owner/operator an empty reasons list even though
+        # hardFailures/softFailures were fully populated in-process. Persist
+        # them under the key the web route already reads.
+        "reasons": list(details.get("hardFailures", [])) + list(details.get("softFailures", [])),
     }
 
     tmp = Path(str(state_path) + f".tmp.{os.getpid()}")

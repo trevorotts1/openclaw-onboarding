@@ -25,10 +25,20 @@
 #   scripts/orphan-temp-sweep.sh handles BSD-vs-GNU `stat`). Liveness keys off
 #   PROCESS + descriptor mtime, NEVER a .pid file (there are none on the box).
 #
-# AUTH MODEL UNCHANGED: this gateway is purely a lifecycle wrapper. It does NOT
-#   touch the D7 token-only auth model and re-uses the D6 headless guard VERBATIM
-#   (the same unset+force AGENT_BROWSER_HEADED=false / exit-75 refusal / AB()
-#   wrapper that lived in inject-ghl-auth.sh lines 53-83).
+# AUTH MODEL: this gateway is primarily a lifecycle wrapper and re-uses the D6
+#   headless guard VERBATIM (the same unset+force AGENT_BROWSER_HEADED=false /
+#   exit-75 refusal / AB() wrapper that lived in inject-ghl-auth.sh lines
+#   53-83). It does NOT invent a new auth mechanism. ONE exception (2026-07-30,
+#   session-expired circuit breaker): a live securetoken check confirmed the
+#   GHL Firebase ID token is a hard ONE-HOUR expiry, and an expired token used
+#   to bounce navigation to /login FOREVER (infinite retry, a new Chrome page
+#   every cycle — verified live on the operator box). `_bm_guard_session_or_heal`
+#   now detects that bounce (the same onLogin heuristic ghl_form_builder.py /
+#   ghl_survey_builder.py / inject-ghl-auth.sh already use) and ORCHESTRATES
+#   — never reimplements — the EXISTING D7 token-only auth tool chain
+#   (seed-ghl-auth.py to mint, inject-ghl-auth.sh to seed the browser) exactly
+#   ONCE per operation. A re-seed that does not recover the session is
+#   terminal (STOP, non-zero, actionable message) — never retried further.
 #
 # USAGE (callers source this, never invoke agent-browser directly):
 #   source "$(dirname "$0")/browser_manager.sh"
@@ -47,7 +57,7 @@
 #   bash browser_manager.sh auth-stale [-- <session>]  # F5-b: exit 0=STALE, 1=FRESH
 #
 # Version marker (kept in sync by scripts/bump-version.sh):
-BROWSER_MANAGER_VERSION="v21.4.50"
+BROWSER_MANAGER_VERSION="v21.4.51"
 
 # B1 VERSION-GATE FLOOR (v14.1.4) — the version where the BOX-LEVEL headless LOCK
 # landed (install.sh pins AGENT_BROWSER_HEADED=false in the gateway-inherited env,
@@ -544,6 +554,186 @@ bm_stale_env_preflight() {
   return 0
 }
 
+# ── SESSION-EXPIRED (GHL login-bounce) circuit breaker ────────────────────────
+# INCIDENT (2026-07-30, operator box): a live securetoken exchange confirmed
+# the GHL Firebase ID token is a hard ONE-HOUR expiry (`expires_in: 3600`).
+# When it lapsed mid-build, navigation silently bounced to
+# app.gohighlevel.com/login instead of the requested page, and nothing
+# detected it — a caller kept retrying against a session that could never
+# self-recover, opening a NEW Chrome page every cycle (renderer spawn ages
+# tightened 40min -> 11 -> 11 -> 11 -> 2 -> 1s before a human killed it). The
+# defect was never "the session expired" (GHL sessions expire on a fixed
+# clock, routinely) — it was that expiry produced an infinite retry instead
+# of ONE bounded self-heal or ONE loud, actionable failure.
+#
+# Detection mirrors the ALREADY-PROVEN "onLogin" heuristic used by
+# ghl_form_builder.py's `_LOGIN_CHECK_JS`, ghl_survey_builder.py, and
+# inject-ghl-auth.sh (identical pathname + logout=true query + password-field
+# check; also mirrored, verbatim-in-spirit, as GHL_LOGIN_CHECK_JS /
+# classify_login_check_result() in browser_manager.py) — the SAME doctrine,
+# consolidated here so every caller through this gateway gets it, instead of
+# each builder re-implementing (or forgetting to implement) its own copy.
+_BM_LOGIN_CHECK_JS='(() => { const pwd = !!document.querySelector("input[type=password]"); const onLogin = /[?&]logout=true/.test(location.href) || /\/login(\b|$)/.test(location.pathname) || pwd; return (onLogin ? "login:" : "app:") + location.pathname; })()'
+
+# Cap is intentionally NOT env-overridable — an operator raising it would
+# silently reintroduce the very infinite-loop failure mode this fixes.
+_BM_REESEED_MAX=1
+_BM_REESEED_ATTEMPTED=0   # per-process (= "per operation"): fresh 0 every invocation
+_BM_LAST_HEAL_APPLIED=0   # set by _bm_guard_session_or_heal so callers know to re-navigate
+
+# _bm_login_state <session> — PURE classifier (never mutates anything). Prints
+# exactly one of OK / LOGIN / UNKNOWN. An eval failure (timeout, stale
+# session) prints UNKNOWN rather than guessing LOGIN — only a POSITIVE login
+# signal is ever treated as session-expired.
+_bm_login_state() {
+  local session="$1" result
+  result="$(AB --session "$session" eval "$_BM_LOGIN_CHECK_JS" 2>/dev/null)" || { echo "UNKNOWN"; return 0; }
+  case "$result" in
+    login:*) echo "LOGIN" ;;
+    app:*)   echo "OK" ;;
+    *)       echo "UNKNOWN" ;;
+  esac
+}
+
+# Mirrors inject-ghl-auth.sh's own GHL_INJECT_KEEP_SESSION=1 teardown branch
+# EXACTLY (release box lock + lease + TTL, NEVER `close` the session) — reused
+# here so the self-heal below can hand the lock to inject-ghl-auth.sh without
+# ever nesting a second flock/mkdir acquisition inside our own held one. A
+# flock is scoped to an open file description, never re-entrant across a
+# parent/child process boundary — a subprocess re-acquiring the SAME lock file
+# while we still hold it would block for AB_LOCK_WAIT (900s default) and then
+# REFUSE, trading one hang for another. Releasing first, then reacquiring once
+# the child hands back, avoids that class of bug entirely.
+_bm_release_lock_keep_session() {
+  local session="$1"
+  [ -n "$_TTL_PID" ] && kill "$_TTL_PID" 2>/dev/null || true
+  flock -u 9 2>/dev/null || true
+  if [ "$_BM_LOCK_MODE" = "mkdir" ]; then
+    # A bare `rmdir` FAILS on a non-empty directory — `ab.lock.d/pid` is still
+    # inside it. Remove the pid file first, then rmdir, with the SAME `rm -rf`
+    # fallback `_bm_lock_acquire`'s own stale-lock reclaim already uses. Without
+    # this, the directory survives, our own PID is still recorded+alive inside
+    # it, and the reacquire two lines below in _bm_self_heal_reseed spins the
+    # full AB_LOCK_WAIT waiting on a lock WE ourselves just "released" before
+    # REFUSING (exit 75) — self-deadlock, verified live in this fix's own test
+    # suite before this line was added.
+    rm -f "$LOCKDIR/ab.lock.d/pid" 2>/dev/null || true
+    rmdir "$LOCKDIR/ab.lock.d" 2>/dev/null || rm -rf "$LOCKDIR/ab.lock.d" 2>/dev/null || true
+  fi
+  rm -f "$LOCKDIR/leases/${session}.lease" 2>/dev/null || true
+  _BM_LOCK_HELD=0
+}
+
+# _bm_self_heal_reseed <session> — mint a fresh Firebase ID token
+# (seed-ghl-auth.py --out; LEAK-SAFE, NEVER --print-seed) and write it into
+# THIS session's browser (inject-ghl-auth.sh --pre-open), then re-verify. Only
+# ever called once per operation (the caller, _bm_guard_session_or_heal, owns
+# the cap). Returns 0 (healed — safe to retry the original navigation once) or
+# 79 (terminal — a distinct, actionable message was already printed).
+#
+# SECRET HYGIENE: stdout/stderr of BOTH subprocesses are discarded
+# (>/dev/null 2>&1) — only the exit code is ever inspected. The seed file
+# (which DOES contain a live id_token/refresh_token) is written chmod-600 by
+# seed-ghl-auth.py itself into a tempdir THIS function creates and always
+# removes; its path is used, its content is NEVER read, echoed, or logged here.
+_bm_self_heal_reseed() {
+  local session="$1" self_dir py seed_dir seed_file mint_rc=0 inject_rc=0 state
+  self_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" >/dev/null 2>&1 && pwd)"
+  py="$(command -v python3 || true)"
+  if [ -z "$py" ] || [ ! -f "$self_dir/seed-ghl-auth.py" ] || [ ! -f "$self_dir/inject-ghl-auth.sh" ]; then
+    echo "REFUSE (session-expired self-heal): python3, seed-ghl-auth.py, or inject-ghl-auth.sh is unavailable on this box — cannot mint/re-seed automatically. Re-authenticate the OpenClaw browser profile manually and re-run." >&2
+    return 79
+  fi
+
+  seed_dir="$(mktemp -d "${TMPDIR:-/tmp}/ghl-bm-reseed.XXXXXX")" || {
+    echo "REFUSE (session-expired self-heal): could not create a tempdir for the re-seed file." >&2
+    return 79
+  }
+  seed_file="$seed_dir/ghl-auth-reseed.json"
+
+  # ── STEP 1: mint (no lock involved — a plain network subprocess) ───────────
+  "$py" "$self_dir/seed-ghl-auth.py" --out "$seed_file" >/dev/null 2>&1
+  mint_rc=$?
+  if [ "$mint_rc" -ne 0 ]; then
+    case "$mint_rc" in
+      2) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: no usable Firebase refresh token (checked GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN / CAF_FIREBASE_REFRESH_TOKEN / GHL_FIREBASE_REFRESH_TOKEN). Not transient — supply a fresh refresh token (Convert and Flow Token Grabber) and re-run. STOP." >&2 ;;
+      3) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: refresh token REVOKED/EXPIRED (INVALID_REFRESH_TOKEN / TOKEN_EXPIRED / USER_DISABLED). Re-grab it via the Convert and Flow Token Grabber Chrome extension from the client's own logged-in browser and update ~/.openclaw/secrets/.env. STOP." >&2 ;;
+      *) echo "REFUSE (session-expired self-heal): re-seed mint FAILED — marker: seed-ghl-auth.py exited $mint_rc (unclassified). STOP." >&2 ;;
+    esac
+    rm -rf "$seed_dir" 2>/dev/null || true
+    return 79
+  fi
+
+  # ── STEP 2: hand the lock to inject-ghl-auth.sh (composable seeder mode) ───
+  # _BM_SELF_HEAL_IN_PROGRESS=1 is inherited by the child's environment ONLY
+  # (inline prefix — never exported into our own shell) so that if the child's
+  # OWN bm_ensure (line 191 of inject-ghl-auth.sh) hits this SAME guard on its
+  # preliminary --pre-open, it skips detection entirely: that preliminary open
+  # is EXPECTED to land on /login (nothing has been seeded yet) — that is
+  # normal pre-seed state, never a session-expiry signal, and treating it as
+  # one would recurse (heal -> inject-ghl-auth.sh -> its own bm_ensure -> heal
+  # -> ...).
+  _bm_release_lock_keep_session "$session"
+  if command -v timeout >/dev/null 2>&1; then
+    _BM_SELF_HEAL_IN_PROGRESS=1 GHL_INJECT_KEEP_SESSION=1 timeout "${AB_REESEED_TIMEOUT_S:-200}" \
+      bash "$self_dir/inject-ghl-auth.sh" "$session" "$seed_file" --pre-open >/dev/null 2>&1
+  else
+    _BM_SELF_HEAL_IN_PROGRESS=1 GHL_INJECT_KEEP_SESSION=1 \
+      bash "$self_dir/inject-ghl-auth.sh" "$session" "$seed_file" --pre-open >/dev/null 2>&1
+  fi
+  inject_rc=$?
+  rm -rf "$seed_dir" 2>/dev/null || true
+
+  # ── STEP 3: reacquire — the child released the lock on exit (KEEP_SESSION) ─
+  _bm_lock_acquire
+  _bm_write_lease "$session"
+  _bm_start_ttl "$session"
+
+  if [ "$inject_rc" -ne 0 ]; then
+    echo "REFUSE (session-expired self-heal): re-seed MINTED but the browser-side inject-ghl-auth.sh activation FAILED (exit $inject_rc). The one permitted re-seed attempt is spent — re-authenticate the OpenClaw browser profile manually and re-run. STOP." >&2
+    return 79
+  fi
+
+  state="$(_bm_login_state "$session")"
+  if [ "$state" = "LOGIN" ]; then
+    echo "REFUSE (session-expired self-heal): re-seed completed but session '$session' is STILL on the GHL login page. The one permitted re-seed did not recover it — STOP, no second re-seed. Re-authenticate the OpenClaw browser profile manually (a fresh refresh token may be needed) and re-run." >&2
+    return 79
+  fi
+
+  echo "INFO (session-expired self-heal): re-seed succeeded — session '$session' re-authenticated. Continuing (one bounded retry)." >&2
+  return 0
+}
+
+# _bm_guard_session_or_heal <session> — the ONE call site every navigation
+# routes through. Returns 0 when it is safe to proceed (session was already
+# OK/UNKNOWN, or a single re-seed just healed it — check
+# _BM_LAST_HEAL_APPLIED to know which). Returns 79 (terminal, message already
+# printed) when the session is expired and the one-reseed-per-operation
+# budget is exhausted or the heal itself failed.
+_bm_guard_session_or_heal() {
+  local session="$1" state rc
+  _BM_LAST_HEAL_APPLIED=0
+  if [ "${_BM_SELF_HEAL_IN_PROGRESS:-0}" = "1" ]; then
+    return 0   # nested inside our OWN self-heal's inject-ghl-auth.sh child — see above
+  fi
+  state="$(_bm_login_state "$session")"
+  if [ "$state" != "LOGIN" ]; then
+    return 0
+  fi
+  if [ "$_BM_REESEED_ATTEMPTED" -ge "$_BM_REESEED_MAX" ]; then
+    echo "REFUSE (session-expired circuit breaker): navigation on session '$session' landed on the GHL login page again, after the one permitted re-seed already ran this operation. STOP — no second re-seed, no retry, no new page. Re-authenticate the OpenClaw browser profile (~/.openclaw/browser/openclaw/user-data): re-run seed-ghl-auth.py + inject-ghl-auth.sh (or re-grab the refresh token if that fails too), then re-run the build." >&2
+    return 79
+  fi
+  _BM_REESEED_ATTEMPTED=$(( _BM_REESEED_ATTEMPTED + 1 ))
+  rc=0
+  _bm_self_heal_reseed "$session" || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    _BM_LAST_HEAL_APPLIED=1
+    return 0
+  fi
+  return "$rc"
+}
+
 # ── bm_ensure — the one entrypoint callers use before the first open ──────────
 # breaker-check → acquire lock → write lease → start TTL timer → open canonical
 # session → register the EXIT/INT/TERM/HUP teardown trap.
@@ -576,16 +766,32 @@ bm_ensure() {
   # nothing to do with the box; promoting this to a hard failure without a
   # bounded retry would convert a blip into a build abort. AB() already applies
   # its own per-call timeout, so the worst case here is
-  # AB_OPEN_MAX_ATTEMPTS * AB_CALL_TIMEOUT plus the backoff.
+  # AB_OPEN_MAX_ATTEMPTS * AB_CALL_TIMEOUT plus the backoff — now EXPONENTIAL
+  # (2^(attempt-1) * base), not linear, so the retry tail never grows only
+  # arithmetically on a box that leaves the default attempt count raised.
+  #
+  # SESSION-EXPIRED CIRCUIT BREAKER (2026-07-30): a successful open (open_rc=0)
+  # is NOT automatically "done" — the open can still have LANDED on the GHL
+  # login page (an expired token silently bounces navigation, it does not fail
+  # the HTTP-level open). _bm_guard_session_or_heal checks for exactly that,
+  # attempts ONE capped re-seed if so, and turns open_rc into the terminal 79
+  # if the session is still expired afterward. This NEVER re-enters the
+  # transient while-loop above — a session-expiry is terminal, never retried
+  # via the ordinary backoff path.
   local open_url="${GHL_AGENCY_URL:-https://app.convertandflow.com}/"
-  local open_rc=0 attempt=1 max_attempts="${AB_OPEN_MAX_ATTEMPTS:-3}"
+  local open_rc=0 attempt=1 max_attempts="${AB_OPEN_MAX_ATTEMPTS:-3}" _bm_guard_rc
   while :; do
     open_rc=0
     AB --session "$session" open "$open_url" >/dev/null 2>&1 || open_rc=$?
-    [ "$open_rc" -eq 0 ] && break
+    if [ "$open_rc" -eq 0 ]; then
+      _bm_guard_rc=0
+      _bm_guard_session_or_heal "$session" || _bm_guard_rc=$?
+      [ "$_bm_guard_rc" -ne 0 ] && open_rc="$_bm_guard_rc"
+      break
+    fi
     [ "$attempt" -ge "$max_attempts" ] && break
     echo "WARN: browser open attempt $attempt/$max_attempts failed (exit $open_rc) for session=$session — retrying." >&2
-    sleep "$(( attempt * ${AB_OPEN_RETRY_BASE_S:-2} ))"
+    sleep "$(( (2 ** (attempt - 1)) * ${AB_OPEN_RETRY_BASE_S:-2} ))"
     attempt=$(( attempt + 1 ))
   done
   if [ "$open_rc" -ne 0 ]; then
@@ -635,6 +841,30 @@ if [ "${BASH_SOURCE[0]:-$0}" = "$0" ]; then
       # Drop a leading literal "--" if the caller used `verb -- args`.
       [ "${1:-}" = "--" ] && shift
       AB --session "$(bm_session_name)" "$_verb" "$@"
+      _bm_verb_rc=$?
+      # SESSION-EXPIRED CIRCUIT BREAKER (2026-07-30): `open` is what actually
+      # navigates to a CALLER-SPECIFIC page (e.g. contacts/smart_list/all) —
+      # bm_ensure above only ever opens the agency ROOT, so an expired session
+      # can independently bounce THIS navigation to /login even when the root
+      # open looked fine. Same guard, same one-reseed-per-operation cap
+      # (shared via _BM_REESEED_ATTEMPTED — this is still ONE operation).
+      if [ "$_verb" = "open" ] && [ "$_bm_verb_rc" -eq 0 ]; then
+        _bm_guard_rc=0
+        _bm_guard_session_or_heal "$(bm_session_name)" || _bm_guard_rc=$?
+        if [ "$_bm_guard_rc" -ne 0 ]; then
+          exit "$_bm_guard_rc"
+        fi
+        if [ "$_BM_LAST_HEAL_APPLIED" = "1" ]; then
+          # The heal's inject-ghl-auth.sh --pre-open landed on the ORIGIN root,
+          # not this call's requested URL. Re-issue the SAME open exactly
+          # once — bounded by the re-seed cap already spent above, never a
+          # fresh retry budget of its own — so the caller actually lands on
+          # the page it asked for.
+          AB --session "$(bm_session_name)" "$_verb" "$@"
+          _bm_verb_rc=$?
+        fi
+      fi
+      exit "$_bm_verb_rc"
       ;;
     run-detached)
       # Approach 0 graft: launch a build through the manager in a DETACHED subtree

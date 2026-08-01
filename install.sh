@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.4.50"
+ONBOARDING_VERSION="v21.4.51"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -846,7 +846,7 @@ PHASE 1 — Read the docs first (do not skip):
 1. Read ~/.openclaw/Start Here.md end to end.
 2. Read ~/.openclaw/INSTALL-CONTRACT.md end to end. Non-negotiable: Rule 0 (wave cap = 10), Rule 1 (read every .md first), Rule 16 (read INSTALL-GOTCHAS.md).
 3. Run web research pre-flight: bash ~/.openclaw/scripts/web-research-preflight.sh
-4. Settings: maxChars=200000, maxTotalChars=400000, maxSpawnDepth=4, maxChildren=20, maxConcurrent=100, thinking=high.
+4. Settings: maxChars=200000, maxTotalChars=400000, maxSpawnDepth=4, maxChildren=20, maxConcurrent=capacity-aware (12 Mac / 8 VPS ceiling, set by scripts/capacity-monitor.sh), thinking=high.
 5. Set up workspace files (USER.md, AGENTS.md, TOOLS.md at workspace root, symlinked into per-role workspaces).
 
 PHASE 2 — Install skills in waves, with PROGRESS UPDATES to __OWNER_NAME__:
@@ -3105,13 +3105,39 @@ sub = defaults.setdefault('subagents', {})
 # Hard-overwrite numeric limits (protocol gates)
 sub['maxChildrenPerAgent'] = 20
 sub['maxSpawnDepth']       = 4
-# maxConcurrent: hard-overwrite to 100, with a min-clamp of 50 (never less)
-prev_concurrent = sub.get('maxConcurrent', 100)
+# maxConcurrent: CAPACITY-AWARE (WS-8 dual-key fix, 2026-08-01).
+#
+# WAS: `max(100, prev) if prev >= 50 else 100` — a hard-overwrite to 100 on
+# EVERY box. This is the "100 everywhere" bug WS-8 exists to kill: a base 8GB
+# Mac mini and a 64GB VPS both got 100, and worse, the old rule could only ever
+# RAISE the number, so every install/re-install CLOBBERED a value that
+# scripts/capacity-monitor.sh had already healed down to the box's real
+# capacity. Boxes ping-ponged between healed and 100 forever.
+#
+# NOW: clamp DOWN to the box's capacity ceiling and never raise.
+#   * prefer .capacity-profile.json (written by capacity-monitor.sh — the single
+#     source of truth the 15-minute tick maintains),
+#   * else the platform ceiling: 12 Mac / 8 VPS (same clamp as the monitor),
+#   * an existing value at or below the ceiling is PRESERVED (it is either an
+#     operator choice or an already-healed value — do not touch it).
+# Only agents.defaults.subagents.maxConcurrent is written here.
+# agents.defaults.maxConcurrent is deliberately NOT created: AgentDefaultsSchema
+# is .strict(), so injecting that key on a runtime that predates it would make
+# the runtime reject the whole config. capacity-monitor.sh reconciles that key
+# when it is present.
+cap_ceiling = 8 if os.path.isdir('/data/.openclaw') else 12
 try:
-    prev_concurrent = int(prev_concurrent)
+    with open(os.path.join(os.path.dirname(path), '.capacity-profile.json')) as _pf:
+        _profiled = int(json.load(_pf).get('maxConcurrentAgents'))
+    if _profiled > 0:
+        cap_ceiling = _profiled
+except Exception:
+    pass
+try:
+    prev_concurrent = int(sub.get('maxConcurrent'))
 except (TypeError, ValueError):
-    prev_concurrent = 100
-sub['maxConcurrent'] = max(100, prev_concurrent) if prev_concurrent >= 50 else 100
+    prev_concurrent = None
+sub['maxConcurrent'] = cap_ceiling if (prev_concurrent is None or prev_concurrent > cap_ceiling) else prev_concurrent
 # Hard set thinking level
 sub['thinking'] = 'high'
 
@@ -3188,7 +3214,7 @@ defaults['bootstrapTotalMaxChars']  = 400000
 print(f"  ✓ bootstrapMaxChars: {prev_max} → 200000")
 print(f"  ✓ bootstrapTotalMaxChars: {prev_total} → 400000")
 print(f"  ✓ subagents.maxChildrenPerAgent → 20")
-print(f"  ✓ subagents.maxConcurrent → {sub['maxConcurrent']} (min-clamp 50)")
+print(f"  ✓ subagents.maxConcurrent → {sub['maxConcurrent']} (capacity ceiling {cap_ceiling}; clamp-down only, never raised)")
 print(f"  ✓ subagents.maxSpawnDepth → 4")
 print(f"  ✓ subagents.thinking → high")
 
@@ -4299,7 +4325,8 @@ fi
 # Step 0 via configure_subagent_and_bootstrap_canonical(). The legacy
 # configure_concurrency() function (renamed _LEGACY_UNUSED) used wrong
 # field names (maxQueue/maxDepth) and lower values (50/10/4). Step 0 sets
-# maxChildrenPerAgent=20, maxConcurrent=100 (min-clamp 50), maxSpawnDepth=4,
+# maxChildrenPerAgent=20, maxConcurrent=capacity ceiling (12 Mac / 8 VPS,
+# clamp-down only), maxSpawnDepth=4,
 # bootstrapMaxChars=200000, bootstrapTotalMaxChars=400000, plus the
 # allowAgents=["*"] wildcard on every agents.list entry.
 note "Step 7: Sub-agent + bootstrap config already applied in Step 0 — skipping"
@@ -5512,7 +5539,7 @@ Gateway-restart guard (per INSTALL-CONTRACT.md Rule 5):
 - ANY sub-agent spawned for heavy-reasoning work (Skill 22 phases, Skill 23 interview, persona synthesis, complex analysis) must have timeout ≥ 1800s (30 min). 60 min preferred.
 - Mid-tier sub-agents (creative, routine): min 600s (10 min).
 - Fast/bulk sub-agents: min 300s (5 min).
-- The maxConcurrent=100 ceiling protects against runaway parallel spawn; per-spawn timeout protects each one from premature kill.
+- The maxConcurrent ceiling (capacity-aware: 12 Mac / 8 VPS, maintained by scripts/capacity-monitor.sh) protects against runaway parallel spawn; per-spawn timeout protects each one from premature kill.
 
 ---
 
@@ -8334,7 +8361,8 @@ PHASE 1 — Read the docs first (don't skip):
      info is current:
         bash $skills_dir/web-research-preflight.sh
   4. Confirm settings: maxChars=200000, maxTotalChars=400000,
-     maxSpawnDepth=4, maxChildren=20, maxConcurrent=100, thinking=high.
+     maxSpawnDepth=4, maxChildren=20, maxConcurrent=capacity-aware
+     (12 Mac / 8 VPS ceiling), thinking=high.
   5. Set up canonical workspace files (USER.md, AGENTS.md, TOOLS.md
      at workspace root, symlinked into every per-role workspace).
 

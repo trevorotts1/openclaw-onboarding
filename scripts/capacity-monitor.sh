@@ -26,11 +26,30 @@
 #      they never all fire in the same minute (the collision Trevor described).
 #        stagger_seconds = max( MIN_STAGGER_SEC,
 #                               floor(HEARTBEAT_WINDOW_SEC / max(1, safe)) )
-#   4. Write the computed maxConcurrent into
-#        agents.defaults.subagents.maxConcurrent
-#      (the SAME schema-valid key install.sh already uses — verified valid on
-#      2026.5.22) ONLY when it differs, with a timestamped backup + atomic write.
+#   4. Write the computed maxConcurrent into BOTH concurrency keys:
+#        agents.defaults.maxConcurrent            ← cap on ALL agent runs
+#        agents.defaults.subagents.maxConcurrent  ← cap on subagent fanout
+#      ONLY when either differs, with a timestamped backup + atomic write.
 #      Reconciles the "100 everywhere" bug down to the box's real capacity.
+#
+#      WHY BOTH (incident 2026-08-01 — the 5-day unhealed cap):
+#        This script used to reconcile ONLY the subagents key. On the operator
+#        box BOTH keys were set to 500 out-of-band on 2026-07-27. The 15-minute
+#        tick dutifully healed subagents 500 -> 12 and reported success, while
+#        agents.defaults.maxConcurrent — the TOP-LEVEL cap governing every agent
+#        run — stayed at 500 for five days, managed by NOTHING. A 12-core/24GB
+#        box allowing 500 concurrent runs exhausted RAM, thrashed swap, and made
+#        every response crawl. Repeated manual fixes "did not stick" because the
+#        healer was blind to the key that mattered. Fleet-wide blind spot: this
+#        script ships to every box.
+#
+#      PRESENT-ONLY HEAL for agents.defaults.maxConcurrent (deliberate):
+#        The runtime's AgentDefaultsSchema is .strict(). Injecting this key into
+#        a config on a runtime that predates it would make the runtime reject
+#        the box's ENTIRE config. So the top-level key is reconciled when it is
+#        PRESENT and never created when absent — an absent key means the runtime
+#        applies its own default and there is nothing to clobber. The subagents
+#        key is created as before (install.sh already writes it fleet-wide).
 #   5. Write a machine-readable .capacity-profile.json next to openclaw.json so
 #      check-wave-concurrency.sh, the heartbeat scheduler, and the fleet
 #      heartbeat can all read ONE source of truth instead of three.
@@ -49,6 +68,11 @@
 #   OC_CAP_MIN_STAGGER_SEC    min seconds between heartbeats      (default 20)
 #   OC_CAP_FORCE              "1" = rewrite config even if unchanged
 #   OC_CAP_DRY_RUN            "1" = compute + log, never write
+#
+#   The overrides are the DELIBERATE-RAISE path and are intentionally kept
+#   (OC_CAP_MAX_AGENTS is how an operator raises a cap on purpose). But a raise
+#   that lands above min(cores*4, 64) now emits a loud WARN on every tick, so an
+#   out-of-band 500 can never sit silent for five days again.
 #
 # Exit codes:
 #   0  computed successfully (config in sync, or updated, or dry-run)
@@ -155,6 +179,16 @@ EOF
 
 log "INFO" "platform=$PLATFORM cores=$CORES ram=${RAM_GB}GB → safe maxConcurrent=$SAFE, heartbeat stagger=${STAGGER}s (window=${HEARTBEAT_WINDOW}s)"
 
+# ─── Runaway-override guard (incident 2026-08-01) ─────────────────────────────
+# The computed value can only exceed min(cores*4, 64) when OC_CAP_* overrides
+# were used. That is a legitimate escape hatch, so this does NOT clamp or fail —
+# it makes the raise IMPOSSIBLE to miss on the 15-minute tick.
+WARN_CEILING=$(( CORES * 4 ))
+[[ "$WARN_CEILING" -gt 64 ]] && WARN_CEILING=64
+if [[ "$SAFE" -gt "$WARN_CEILING" ]]; then
+  log "WARN" "RUNAWAY CAP: computed maxConcurrent=$SAFE exceeds the safety ceiling $WARN_CEILING (min(cores*4=$((CORES * 4)), 64)) on a ${CORES}-core/${RAM_GB}GB box. Only OC_CAP_* env overrides can produce this. A cap this high lets cron storms, heartbeat waves and subagent fanout exhaust RAM and thrash swap (live incident 2026-08-01: 500 on a 12-core box crushed it for 5 days). Confirm this is a DELIBERATE operator raise, or unset the OC_CAP_* overrides."
+fi
+
 # ─── 4/5. Reconcile config + write the capacity profile (atomic, backed up) ───
 export OC_CONFIG_FILE="$CONFIG_FILE" OC_PROFILE_FILE="$PROFILE_FILE"
 export OC_SAFE="$SAFE" OC_STAGGER="$STAGGER" OC_PLATFORM="$PLATFORM"
@@ -180,8 +214,19 @@ except Exception as e:
     print(f"ERR\tconfig unreadable: {e}")
     sys.exit(0)
 
-sub = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("subagents", {})
+defaults = cfg.setdefault("agents", {}).setdefault("defaults", {})
+sub = defaults.setdefault("subagents", {})
+
+# Key 1 — agents.defaults.subagents.maxConcurrent (created if absent; install.sh
+# already writes this key on every box, so it is schema-proven fleet-wide).
 prev = sub.get("maxConcurrent")
+
+# Key 2 — agents.defaults.maxConcurrent, the top-level cap on ALL agent runs.
+# PRESENT-ONLY: AgentDefaultsSchema is .strict(), so creating this key on a
+# runtime that predates it would reject the box's whole config. Absent = the
+# runtime's own default is in force and there is nothing to reconcile.
+has_defaults_key = "maxConcurrent" in defaults
+prev_defaults = defaults.get("maxConcurrent")
 
 # Always write the capacity profile (source of truth for readers).
 profile = {
@@ -194,6 +239,8 @@ profile = {
     "heartbeatStaggerSeconds": stagger,
     "heartbeatWindowSeconds": int(os.environ["OC_HEARTBEAT_WINDOW"]),
     "previousMaxConcurrent": prev,
+    "previousDefaultsMaxConcurrent": prev_defaults,
+    "defaultsMaxConcurrentPresent": has_defaults_key,
     "source": "capacity-monitor.sh (WS-8)",
 }
 if not dry:
@@ -206,12 +253,27 @@ if not dry:
     except Exception as e:
         print(f"WARN\tcould not write profile: {e}")
 
-changed = (prev != safe)
+# "changed" is true if EITHER key is out of sync. The 2026-08-01 incident is
+# exactly the case where the subagents key was already healed and only the
+# top-level key was still at 500 — under the old single-key test that read as
+# "in sync" and the box was never healed.
+sub_changed = (prev != safe)
+defaults_changed = has_defaults_key and (prev_defaults != safe)
+changed = sub_changed or defaults_changed
+
+def _keysum():
+    d = f"defaults.maxConcurrent {prev_defaults} -> {safe}" if has_defaults_key \
+        else "defaults.maxConcurrent absent (runtime default; not created — .strict() schema)"
+    return f"subagents.maxConcurrent {prev} -> {safe}; {d}"
+
 if not changed and not force:
-    print(f"OK\tmaxConcurrent already {safe} (in sync); profile written")
+    seen = f"subagents.maxConcurrent={safe}" + (
+        f", defaults.maxConcurrent={prev_defaults}" if has_defaults_key
+        else ", defaults.maxConcurrent absent (runtime default)")
+    print(f"OK\tboth concurrency keys already in sync at {safe} ({seen}); profile written")
     sys.exit(0)
 if dry:
-    print(f"DRY\twould set maxConcurrent {prev} -> {safe} (dry-run)")
+    print(f"DRY\twould set {_keysum()} (dry-run)")
     sys.exit(0)
 
 # Backup + atomic write of openclaw.json.
@@ -222,13 +284,15 @@ try:
 except Exception:
     backup = "(backup failed)"
 sub["maxConcurrent"] = safe
+if has_defaults_key:
+    defaults["maxConcurrent"] = safe
 try:
     fd, tmp = tempfile.mkstemp(prefix=".openclaw.", suffix=".json.tmp",
                                dir=os.path.dirname(cfg_file))
     with os.fdopen(fd, "w") as f:
         json.dump(cfg, f, indent=2); f.write("\n")
     os.replace(tmp, cfg_file)
-    print(f"HEAL\tmaxConcurrent {prev} -> {safe}; backup {backup}")
+    print(f"HEAL\t{_keysum()}; backup {backup}")
 except Exception as e:
     if os.path.exists(tmp):
         os.remove(tmp)
