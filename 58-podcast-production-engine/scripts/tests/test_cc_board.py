@@ -311,17 +311,97 @@ class CloseTest(unittest.TestCase):
         self.assertEqual(body["status"], "done")
         self.assertEqual(body["note"], "Episode finished.")
 
-    def test_close_blocked(self):
+    def test_close_blocked_sends_blocked_triad(self):
+        """Blocked close must send blocked_reason, blocked_on_human, and ask
+        (the CC blocked-column gate requires all three fields -- route.ts L349-377)."""
         self.rec.queue(201, {"ok": True, "task_id": "task-blocked",
                              "workspace_id": "ws", "status": "backlog"})
         cc_board.create_board_card("job-blocked", "C", "Ep", env=ENV)
 
         self.rec.queue(200, {"task": {"id": "task-blocked", "status": "blocked"}})
-        ok = cc_board.patch_board_card("job-blocked", status="blocked", note="Stuck on approval.", env=ENV)
+        ok = cc_board.patch_board_card("job-blocked", status="blocked", blocked_reason="approval",
+                                        blocked_on_human="operator",
+                                        ask="Stuck on approval.", env=ENV)
         self.assertTrue(ok)
         patch = [r for r in self.rec.requests if r["method"] == "PATCH"][-1]
         body = json.loads(patch["body"])
         self.assertEqual(body["status"], "blocked")
+        self.assertEqual(body["blocked_reason"], "approval")
+        self.assertEqual(body["blocked_on_human"], "operator")
+        self.assertEqual(body["ask"], "Stuck on approval.")
+
+    def test_close_blocked_defaults(self):
+        """Blocked close without explicit triad uses sensible defaults."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-blocked-defaults",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-blocked-defaults", "C", "Ep", env=ENV)
+
+        self.rec.queue(200, {"task": {"id": "task-blocked-defaults", "status": "blocked"}})
+        ok = cc_board.patch_board_card("job-blocked-defaults", status="blocked", env=ENV)
+        self.assertTrue(ok)
+        patch = [r for r in self.rec.requests if r["method"] == "PATCH"][-1]
+        body = json.loads(patch["body"])
+        self.assertEqual(body["status"], "blocked")
+        self.assertEqual(body["blocked_reason"], "approval")
+        self.assertEqual(body["blocked_on_human"], "operator")
+        self.assertEqual(body["ask"], "Podcast episode run blocked - operator input needed")
+
+
+class DeliverableTest(unittest.TestCase):
+    """Test deliverable registration via POST /api/tasks/{id}/deliverables."""
+
+    def setUp(self):
+        self.rec = _Recorder()
+        self._orig = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = self.rec
+        self._tmp_state = tempfile.TemporaryDirectory()
+        self._orig_state = cc_board._STATE_FILE
+        cc_board._STATE_DIR = Path(self._tmp_state.name)
+        cc_board._STATE_FILE = cc_board._STATE_DIR / "board-map.json"
+
+    def tearDown(self):
+        cc_board.urllib.request.urlopen = self._orig
+        cc_board._STATE_DIR = Path.home() / ".openclaw" / "podcast-engine"
+        cc_board._STATE_FILE = self._orig_state
+        self._tmp_state.cleanup()
+
+    def test_register_deliverable(self):
+        """register_deliverable POSTs to /api/tasks/{id}/deliverables with correct payload."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-deliv",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-deliv", "C", "Ep", env=ENV)
+
+        self.rec.queue(201, {"id": "deliv-001", "deliverable_type": "url",
+                             "title": "Podbean episode permalink",
+                             "path": "https://podbean.com/ep/123"})
+        ok = cc_board.register_deliverable("job-deliv",
+                                            permalink="https://podbean.com/ep/123", env=ENV)
+        self.assertTrue(ok)
+        posts = [r for r in self.rec.requests if r["method"] == "POST" and
+                 "/deliverables" in r["url"]]
+        self.assertEqual(len(posts), 1)
+        body = json.loads(posts[0]["body"])
+        self.assertEqual(body["deliverable_type"], "url")
+        self.assertEqual(body["title"], "Podbean episode permalink")
+        self.assertEqual(body["path"], "https://podbean.com/ep/123")
+
+    def test_register_deliverable_fails_soft(self):
+        """register_deliverable is fail-soft on HTTP error."""
+        self.rec.queue(201, {"ok": True, "task_id": "task-deliv-fail",
+                             "workspace_id": "ws", "status": "backlog"})
+        cc_board.create_board_card("job-deliv-fail", "C", "Ep", env=ENV)
+
+        self.rec.queue(500, {"error": "db down"})
+        ok = cc_board.register_deliverable("job-deliv-fail",
+                                            permalink="https://podbean.com/ep/456", env=ENV)
+        self.assertFalse(ok)
+
+    def test_register_deliverable_no_task_id(self):
+        """register_deliverable returns False when no task is mapped."""
+        ok = cc_board.register_deliverable("no-such-job",
+                                            permalink="https://podbean.com/ep/789", env=ENV)
+        self.assertFalse(ok)
+        self.assertEqual(len(self.rec.requests), 0)
 
 
 class CliExitCodeTest(unittest.TestCase):
@@ -408,6 +488,29 @@ class CliExitCodeTest(unittest.TestCase):
         """close with invalid status => exit 2."""
         r = self._run("close", "--job-id", "j1", "--status", "bogus")
         self.assertEqual(r.returncode, 2, f"Expected exit 2, got {r.returncode}. stderr={r.stderr}")
+
+    def test_close_blocked_invalid_reason_exit_2(self):
+        """close blocked with invalid reason => exit 2."""
+        r = self._run("close", "--job-id", "j1", "--status", "blocked", "--reason", "bogus")
+        self.assertEqual(r.returncode, 2, f"Expected exit 2, got {r.returncode}. stderr={r.stderr}")
+
+    def test_close_done_without_permalink_warns(self):
+        """close done without --permalink logs stderr warning but exits 0 (fail-soft)."""
+        env = {**self._env, "CC_BASE_URL": "https://cc-down.example.test"}
+        r = self._run("close", "--job-id", "j1", "--status", "done",
+                       env=env, timeout=12)
+        self.assertEqual(r.returncode, 0, f"Expected exit 0, got {r.returncode}. stderr={r.stderr}")
+        self.assertIn("warning", r.stderr.lower(),
+                      f"Expected permalink warning in stderr, got: {r.stderr}")
+
+    def test_patch_phase_done_without_permalink_warns(self):
+        """patch-phase --status done without --permalink logs stderr warning but exits 0."""
+        env = {**self._env, "CC_BASE_URL": "https://cc-down.example.test"}
+        r = self._run("patch-phase", "--job-id", "j1", "--phase", "complete",
+                       "--status", "done", env=env, timeout=12)
+        self.assertEqual(r.returncode, 0, f"Expected exit 0, got {r.returncode}. stderr={r.stderr}")
+        self.assertIn("warning", r.stderr.lower(),
+                      f"Expected permalink warning in stderr, got: {r.stderr}")
 
 
 class LegalPhasesTest(unittest.TestCase):

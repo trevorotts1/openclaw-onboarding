@@ -49,9 +49,27 @@ CLI SUBCOMMANDS
               Create the episode card on the CC board. Card title convention:
               "Episode: <title> (<client>)".
   patch-phase --job-id --phase <slug> --status <in_progress|review|done|blocked>
+              [--permalink <url>]
               Update the card's phase annotation and CC-native status.
-  close       --job-id --status done|blocked [--note]
+              When --status done, use --permalink to register a deliverable
+              (Podbean episode URL) before the done patch so the CC
+              completion-evidence gate (T0-01) passes.
+  close       --job-id --status done|blocked [--note <text>]
+              [--reason <decision|approval|credential|payment>]
+              [--blocked-on-human <owner|operator>] [--permalink <url>]
               Terminal patch for the episode card.
+              Blocked (--status blocked):
+                Sends the full blocked triad: blocked_reason (from --reason,
+                default approval), blocked_on_human (from --blocked-on-human,
+                default operator), and ask (from --note, default sensible
+                string). Required by the CC blocked-column gate
+                (route.ts lines 349-377).
+              Done (--status done):
+                When --permalink is provided, registers it as a task
+                deliverable (POST /api/tasks/{id}/deliverables) before
+                the done patch so the completion-evidence gate (T0-01)
+                passes. Without --permalink, warns on stderr and still
+                attempts (fail-soft absorbs the gate refusal).
 
 STATE PERSISTENCE
   Job-id -> task-id mapping is persisted in
@@ -262,6 +280,9 @@ def patch_board_card(
     phase: Optional[str] = None,
     status: Optional[str] = None,
     note: Optional[str] = None,
+    blocked_reason: Optional[str] = None,
+    blocked_on_human: Optional[str] = None,
+    ask: Optional[str] = None,
     env: Optional[dict] = None,
 ) -> bool:
     """PATCH the episode card's phase annotation and/or CC-native status.
@@ -286,6 +307,10 @@ def patch_board_card(
         payload["status"] = status
     if note:
         payload["note"] = note
+    if status == "blocked":
+        payload["blocked_reason"] = blocked_reason or "approval"
+        payload["blocked_on_human"] = blocked_on_human or "operator"
+        payload["ask"] = ask or "Podcast episode run blocked - operator input needed"
 
     url = f"{cfg['base_url']}/api/tasks/{task_id}"
     try:
@@ -299,6 +324,50 @@ def patch_board_card(
         return True
 
     _log(f"PATCH {task_id} non-OK (HTTP {st}): {body}.")
+    return False
+
+
+# ---------------------------------------------------------------------------
+# DELIVERABLE REGISTRATION -- POST /api/tasks/{task_id}/deliverables
+# ---------------------------------------------------------------------------
+def register_deliverable(
+    job_id: str,
+    *,
+    permalink: str,
+    deliverable_type: str = "url",
+    title: str = "Podbean episode permalink",
+    env: Optional[dict] = None,
+) -> bool:
+    """Register a task deliverable (the Podbean episode permalink) with the CC
+    board so the completion-evidence gate passes. FAIL-SOFT: returns False
+    (never raises) on any board problem."""
+    cfg = board_config(env)
+    if cfg is None:
+        return False
+
+    task_id = _get_task_id(job_id)
+    if not task_id:
+        _log(f"deliverable skipped -- no task_id mapped for job_id={job_id}.")
+        return False
+
+    payload: dict = {
+        "deliverable_type": deliverable_type,
+        "title": title,
+        "path": permalink,
+    }
+
+    url = f"{cfg['base_url']}/api/tasks/{task_id}/deliverables"
+    try:
+        st, body = _request_with_retry("POST", url, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(f"deliverable POST {task_id} failed ({type(exc).__name__}: {exc}).")
+        return False
+
+    if st == 201:
+        _log(f"deliverable registered: task_id={task_id} permalink={permalink}.")
+        return True
+
+    _log(f"deliverable POST {task_id} non-OK (HTTP {st}): {body}.")
     return False
 
 
@@ -356,6 +425,18 @@ def cmd_patch_phase(args: argparse.Namespace) -> None:
     if args.status not in valid_statuses:
         _fail_usage(f"patch-phase: invalid status {args.status!r}; must be one of {sorted(valid_statuses)}")
 
+    if args.status == "done":
+        if args.permalink:
+            register_deliverable(
+                job_id=args.job_id,
+                permalink=args.permalink,
+                deliverable_type="url",
+                title="Podbean episode permalink",
+            )
+        else:
+            print("cc_board: warning: no permalink - done transition may be refused by the completion-evidence gate",
+                  file=sys.stderr, flush=True)
+
     ok = patch_board_card(
         job_id=args.job_id,
         phase=args.phase,
@@ -372,13 +453,41 @@ def cmd_close(args: argparse.Namespace) -> None:
     if args.status not in ("done", "blocked"):
         _fail_usage("close: --status must be 'done' or 'blocked'")
 
+    if args.status == "blocked":
+        reason = args.reason or "approval"
+        if reason not in ("decision", "approval", "credential", "payment"):
+            _fail_usage(f"close: --reason must be one of decision|approval|credential|payment, got {reason!r}")
+        ask = args.note or "Podcast episode run blocked - operator input needed"
+        ok = patch_board_card(
+            job_id=args.job_id,
+            status="blocked",
+            blocked_reason=reason,
+            blocked_on_human=args.blocked_on_human or "operator",
+            ask=ask,
+        )
+        if not ok:
+            _fail_soft_and_exit("close blocked failed (board unreachable or card not found); run continues.")
+        return
+
+    # --status done
+    if args.permalink:
+        register_deliverable(
+            job_id=args.job_id,
+            permalink=args.permalink,
+            deliverable_type="url",
+            title="Podbean episode permalink",
+        )
+    else:
+        print("cc_board: warning: no permalink - done transition may be refused by the completion-evidence gate",
+              file=sys.stderr, flush=True)
+
     ok = patch_board_card(
         job_id=args.job_id,
-        status=args.status,
+        status="done",
         note=args.note,
     )
     if not ok:
-        _fail_soft_and_exit("close failed (board unreachable or card not found); run continues.")
+        _fail_soft_and_exit("close done failed (board unreachable or card not found); run continues.")
 
 
 def main() -> None:
@@ -401,13 +510,19 @@ def main() -> None:
     p_phase.add_argument("--job-id", required=True, help="Podcast job identifier")
     p_phase.add_argument("--phase", required=True, help="Phase slug (received|researching|writing|in_qc|generating_art|producing_audio|publishing|enrolling|complete)")
     p_phase.add_argument("--status", required=True, help="CC status (in_progress|review|done|blocked)")
+    p_phase.add_argument("--permalink", default=None, help="Podbean episode permalink URL (required for done transitions to pass the completion-evidence gate)")
     p_phase.set_defaults(func=cmd_patch_phase)
 
     # close
     p_close = sub.add_parser("close", help="Terminal patch for the episode card")
     p_close.add_argument("--job-id", required=True, help="Podcast job identifier")
     p_close.add_argument("--status", required=True, choices=["done", "blocked"], help="Terminal status")
-    p_close.add_argument("--note", default=None, help="Optional closing note")
+    p_close.add_argument("--note", default=None, help="Optional closing note (serves as the 'ask' for blocked status)")
+    p_close.add_argument("--reason", default=None, choices=["decision", "approval", "credential", "payment"],
+                         help="Blocked reason (required for --status blocked; default: approval)")
+    p_close.add_argument("--blocked-on-human", default=None, choices=["owner", "operator"],
+                         help="Who must act to unblock (default: operator)")
+    p_close.add_argument("--permalink", default=None, help="Podbean episode permalink URL (required for done transitions to pass the completion-evidence gate)")
     p_close.set_defaults(func=cmd_close)
 
     args = parser.parse_args()
