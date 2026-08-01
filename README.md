@@ -316,3 +316,16 @@ Runs automatically at install (`install.sh` Step 10a) and on every update
 
 - Gemini Engine is installed by `install.sh` before platform skills. There is no separate Gemini Engine skill folder.
 - If you fork this repo for client delivery, update `install.sh` to point at your fork.
+- **Git hooks (client-name gate on commit AND push):** this repo ships its hooks in the tracked
+  `.githooks/` directory — `pre-commit` (version consistency + fleet QC invariants) and
+  `pre-push` (refuses any push whose tracked files hit the client-name gate in
+  `scripts/qc-assert-no-client-names.sh`, so a real client name can never be pushed to this
+  public repo). Activate them once per clone with:
+
+  ```bash
+  git config core.hooksPath .githooks
+  ```
+
+  The pre-push gate tiers exactly like the script does — curated roster, then the roster derived
+  from `~/clawd/accounts/accounts.md`, fail-closed when neither is available — and only blocks a
+  push when the gate actually reports hits; it never blocks a clean tree.
