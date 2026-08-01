@@ -8227,8 +8227,9 @@ def write_process_manifest(run_dir: Path, rendered, task_ids, model_used,
 # and supports resume: re-running the script re-reads the ledger and only
 # re-checks artifacts that are not yet verified.
 #
-# IMPORTANT: this script builds only the deck_pptx. The other five artifacts
-# are produced by upstream roles. The ledger records whatever state they are
+# IMPORTANT: this script builds only the deck_pptx. The other eight build
+# artifacts (the rest of the nine-key DELIVERABLES_REQUIRED build bundle) are
+# produced by upstream roles. The ledger records whatever state they are
 # in when the postflight gate runs. If any are absent or below threshold the
 # gate fails loud (AF-BUNDLE-COMPLETE, exit 5).
 
@@ -9891,8 +9892,9 @@ def main():
               file=sys.stderr, flush=True)
 
     # DELIVERABLES LEDGER — mark the deck_pptx as built now that assembly succeeded.
-    # The other five artifacts are produced by upstream roles; the postflight gate
-    # will check their actual presence on disk.
+    # The other eight build artifacts (the rest of the nine-key build bundle) are
+    # produced by upstream roles; the postflight gate will check their actual
+    # presence on disk.
     pptx_size = out_path.stat().st_size if out_path.exists() else 0
     update_deliverable_status(ledger_path, "deck_pptx", "built", size=pptx_size)
 

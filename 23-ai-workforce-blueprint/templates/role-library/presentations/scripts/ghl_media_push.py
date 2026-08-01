@@ -71,7 +71,7 @@ GHL_UPLOAD_GATE = "AF-DELIVERY-COMPLETE"
 # push_deck_media() now runs the boundary gate over every deck artifact (.pptx/.pdf) it
 # is about to host, in PRE-TRANSPORT mode (the deck's own GHL upload is what is about to
 # happen, so the SOP-9.4 upload-record sub-check is deferred — but artifact provenance,
-# kie provenance, no-run-dir, the AF-DH1 five-file package, and the teleprompter are all
+# kie provenance, no-run-dir, the AF-DH1 six-file package, and the teleprompter are all
 # enforced). A rejection ABORTS the upload (fail-closed): nothing is hosted. The ONLY
 # bypass is a logged owner_skip_approval token, honored inside gate_delivered_artifact.
 # ---------------------------------------------------------------------------
