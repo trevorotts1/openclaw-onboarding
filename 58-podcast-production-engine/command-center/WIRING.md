@@ -169,7 +169,9 @@ CLI subcommands:
                 string). blocked_reason must be one of decision, approval,
                 credential, payment. A job that hit an error or needs
                 re-routing should call POST /api/tasks/{id}/return-to-orchestrator
-                instead.
+                instead. This call requires Authorization: Bearer $MC_API_TOKEN --
+                the Command Center write-back API is fail-closed and 401s without
+                it (never $OPENCLAW_GATEWAY_TOKEN here).
 
               Done (--status done):
                 When --permalink is provided, registers it as a task
@@ -177,7 +179,9 @@ CLI subcommands:
                 the done patch so the completion-evidence gate (T0-01,
                 completion-evidence.ts L118) passes. Without --permalink,
                 logs a stderr warning and still attempts (fail-soft absorbs
-                the gate refusal).
+                the gate refusal). This call also requires Authorization: Bearer
+                $MC_API_TOKEN -- the Command Center write-back API is fail-closed
+                and 401s without it (never $OPENCLAW_GATEWAY_TOKEN here).
 
   API endpoints targeted:
 
@@ -189,6 +193,9 @@ CLI subcommands:
 
   PATCH {CC_BASE_URL}/api/tasks/{task_id}
         Updates the card's status, phase_id, and optional note.
+        Requires Authorization: Bearer $MC_API_TOKEN -- the Command Center
+        write-back API is fail-closed and 401s without it (never
+        $OPENCLAW_GATEWAY_TOKEN here).
         When status=blocked, requires the full blocked triad:
         blocked_reason, blocked_on_human, ask (route.ts L349-377).
         When status=done, a task_deliverables row registered via the

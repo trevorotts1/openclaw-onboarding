@@ -1,3 +1,20 @@
+## [Unreleased]  -  Skill 58 WIRING.md: satisfy guard-taskapi-auth-docs (401 write-back auth doctrine)
+
+Three write-back API examples in `58-podcast-production-engine/command-center/WIRING.md`
+(the `return-to-orchestrator` handback reference, the `deliverables` POST reference, and the
+bare `PATCH {CC_BASE_URL}/api/tasks/{task_id}` status-change reference) carried no
+`Authorization: Bearer $MC_API_TOKEN` mention nearby, so `guard-taskapi-auth-docs.sh` (the
+Command Center task-API write-back auth doctrine gate) flagged them as copyable,
+unauthenticated write-back examples -- an agent copying one verbatim would get a silent 401
+and the finished task would freeze `in_progress` until a stale sweep discarded it. Added the
+required Authorization line to each of the three call sites, in this file's own plain-prose
+convention (no triple-backtick fences, ` -- ` in place of an em dash, per WIRING.md's own
+stated writing rules) rather than introducing the fenced-block convention used elsewhere in
+the repo. `58-podcast-production-engine/skill-version.txt` and its `SKILL.md` frontmatter
+`version:` bumped 0.1.24 -> 0.1.25 together (G3 skill-content-without-version-bump; skill 58
+carries an independent per-skill version, not one of the 10 repo-wide markers in
+`scripts/version-markers.json`). No repo `/version` bump, no tag -- skill-content-only fix.
+
 ## [Unreleased]  -  Reconcile manifest_version collision with `fix/build-deck-check-ocr-readback` (33 -> 34)
 
 **Merge-only unit, no logic changes.** `fix/build-deck-check-ocr-readback` (PR #755) and this
