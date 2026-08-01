@@ -1,4 +1,4 @@
-## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot
+## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot (+ EWS installed with ZERO crons via a non-existent CLI flag)
 
 Two keys govern agent concurrency:
 
@@ -38,6 +38,26 @@ HOME) and `.github/workflows/capacity-dual-key-heal-guard.yml`. Mutation-proven:
 reconstructs the pre-fix single-key writer and REQUIRES the suite to go red, so the guard can never
 become a check that cannot fail. The suite also refuses to run its write cases on a host with
 `/data/.openclaw`, where the script would target the real config instead of the fixture.
+
+### Same failure class, second site: the Early Warning System installed with ZERO crons
+
+`60-zhc-early-warning-system/install.sh` registered both of its crons with a `--schedule` flag that
+does not exist on OpenClaw — the real flag is `--cron`, and `--schedule` is absent from the CLI
+entirely. Both calls are wrapped in `|| echo WARN`, so EWS reported a successful install while
+registering NOTHING: the 15-minute tick and the operator-box aggregator were never created. A guard
+that silently does not run is the same defect class as the cap that silently never healed — and this
+is the very guard whose `config/monitored-keys.json` watches both `maxConcurrent` keys as a P1
+"cap raise". Had it been alive, it would have caught the 500 on day one.
+
+- Both `openclaw cron add` calls now pass `--cron` (flag verified against `openclaw cron add --help`
+  on 2026.7.1-2, which lists `--cron <expr>` and no `--schedule`; `--name`, `--command` and
+  `--no-deliver` were re-verified as real on the same output).
+- The skill's `--self-test` gains a cron-flag case. The existing install cases run with `NO_CRON=1`
+  and never execute those lines, which is exactly why a dead flag survived: the new check is static,
+  anchored to real invocations so it cannot match its own diagnostics, and fails if any
+  `openclaw cron add` uses `--schedule` or if none passes `--cron`. Mutation-proven: restoring
+  `--schedule` on either line turns the self-test red (exit 1).
+- Skill 60 version 0.1.3 -> 0.1.4 (skill-version.txt + SKILL.md frontmatter, in lockstep).
 
 Rollout: fleet boxes pick this up via the normal fleet-roll. No box was touched by this change.
 

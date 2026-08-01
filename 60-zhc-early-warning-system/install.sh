@@ -68,11 +68,11 @@ PY
     # register the ONE cron tick (+ aggregator on the operator box)
     if [ "$NO_CRON" -eq 0 ] && command -v openclaw >/dev/null 2>&1; then
         echo "$TAG registering the 15-minute tick cron (--no-deliver, operator-only)..."
-        openclaw cron add --name "ews-tick-${BOX}" --schedule "*/15 * * * *" --no-deliver \
+        openclaw cron add --name "ews-tick-${BOX}" --cron "*/15 * * * *" --no-deliver \
             --command "bash $SELF_DIR/ews-entry.sh tick" >/dev/null 2>&1 \
             && echo "$TAG tick cron registered" || echo "$TAG WARN: cron add failed (register manually)"
         if [ "$ROLE" = "operator" ]; then
-            openclaw cron add --name "ews-aggregator" --schedule "0 * * * *" --no-deliver \
+            openclaw cron add --name "ews-aggregator" --cron "0 * * * *" --no-deliver \
                 --command "bash $SELF_DIR/ews-entry.sh fleet cycle" >/dev/null 2>&1 \
                 && echo "$TAG aggregator cron registered (operator box)" || echo "$TAG WARN: aggregator cron add failed"
         fi
@@ -116,6 +116,23 @@ JSON
     m2="$(python3 -c "import os;print(os.path.getmtime('$td/ews/baseline.json'))")"
     [ "$m1" = "$m2" ] || { echo "$TAG self-test FAIL: re-run re-pinned the baseline" >&2; return 1; }
     echo "  idempotent case: PASS (re-run did NOT re-pin the baseline)"
+    # cron-flag case: the two `openclaw cron add` calls must use flags the CLI
+    # actually accepts. They shipped with `--schedule`, which does NOT exist on
+    # OpenClaw (the real flag is `--cron`; `--schedule` is absent from the CLI
+    # entirely). Both calls are wrapped in `|| echo WARN`, so EWS installed
+    # "successfully" with ZERO crons registered — a silently dead guard, the
+    # same failure class EWS exists to catch. The install cases above run with
+    # NO_CRON=1 and never execute these lines, so only a static check sees them.
+    local cron_lines bad
+    # Anchored to real invocations (line starts with the command), so this
+    # check can never match its own diagnostic strings below.
+    cron_lines="$(grep -nE '^[[:space:]]*openclaw cron add' "$SELF_DIR/install.sh" || true)"
+    [ -n "$cron_lines" ] || { echo "$TAG self-test FAIL: no 'openclaw cron add' calls found" >&2; return 1; }
+    bad="$(printf '%s\n' "$cron_lines" | grep -- '--schedule' || true)"
+    [ -z "$bad" ] || { echo "$TAG self-test FAIL: 'openclaw cron add' uses the non-existent --schedule flag (use --cron): $bad" >&2; return 1; }
+    printf '%s\n' "$cron_lines" | grep -q -- '--cron' \
+        || { echo "$TAG self-test FAIL: no 'openclaw cron add' call passes --cron" >&2; return 1; }
+    echo "  cron-flag case: PASS ($(printf '%s\n' "$cron_lines" | grep -c -- '--cron') cron add call(s) use --cron, none use --schedule)"
     rm -rf "$td"
     unset EWS_STATE_DIR EWS_OPENCLAW_ROOT EWS_CONFIG_PATH
     echo "$TAG self-test: PASS"
