@@ -1,4 +1,4 @@
-## [v21.4.49]  -  2026-07-31  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
+## [v21.4.50]  -  2026-08-01  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
 
 Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
 (`scripts/qc-assert-no-client-names.sh` — which falls back to a roster DERIVED structurally from
@@ -25,6 +25,15 @@ the name never entered any command text) made `git push --dry-run` to a throwawa
 (exit 1, `PRE-PUSH BLOCKED`, hit shown as `path:line` only); (b) the identical push on the clean
 tree PASSED (exit 0, `PRE-PUSH: client-name gate PASSED`). Neither throwaway ref ever reached
 `origin` (verified via `git ls-remote`). All four repo gates exit 0.
+
+---
+
+## [v21.4.49]  -  2026-07-31  -  fix(U010): restore two QC-2 Class A enforcer sites on main + repair stale content_sha for 2 touched files
+
+Concurrent release from PR #806 (`14a51abd`): restored two QC-2 Class A enforcer sites on main
+(`ee188174`), then repaired the stale `content_sha` for the 2 touched files and bumped the G3
+skill-version in lockstep (`e6669faf`). This release was tagged at `14a51abd`, which does NOT
+contain the pre-push client-name gate — that ships in v21.4.50.
 
 ---
 
