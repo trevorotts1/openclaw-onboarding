@@ -1,3 +1,25 @@
+## [v21.4.51]  -  2026-08-01  -  fix(release): bump version markers for PR #810 G3 skill-content change
+
+### Why
+PR #810 (unit/U015-announce-heal-escalate) changed 5 files under
+`23-ai-workforce-blueprint/templates/role-library/presentations/` (heal.py, phases.py,
+report.py, test_heal.py, test_report.py) but did NOT bump
+`23-ai-workforce-blueprint/skill-version.txt`. CI gate G3
+("skill content change requires skill-version.txt bump") failed on the merge commit
+`e5314af2`. The fix is a no-op version bump: no content changed apart from the 10
+marker files, which were all at v21.4.50 and are now at v21.4.51.
+
+### What changed
+- Ran `scripts/bump-version.sh v21.4.51`, which atomically rolls all 10 version
+  markers including `23-ai-workforce-blueprint/skill-version.txt` from `21.4.50` to
+  `21.4.51`. No code, template, or logic changes.
+
+### Risk
+None. Pure marker roll. The one commit difference vs the parent release is the
+version labels in 15 files (10 markers + 4 script-embedded version strings +
+`06-ghl-install-pages/skill-version.txt`), all moving from v21.4.50 to v21.4.51.
+Four repo gates exit 0.
+
 ## [v21.4.50]  -  2026-08-01  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
 
 Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
