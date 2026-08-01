@@ -1,4 +1,4 @@
-## [v21.4.49]  -  2026-07-31  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
+## [v21.4.50]  -  2026-08-01  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
 
 Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
 (`scripts/qc-assert-no-client-names.sh` — which falls back to a roster DERIVED structurally from
