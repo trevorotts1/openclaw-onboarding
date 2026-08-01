@@ -207,6 +207,18 @@ a job; a UNIQUE (client_id, submission_fingerprint) constraint plus the intake l
 exclusive-create claim make a redelivered webhook a no-op. A redelivered webhook can never make
 a second episode. A one-answer change produces a new job key and therefore a new episode.
 
+### Webhook / intake authentication
+
+Inbound webhook payloads are verified with HMAC-SHA256 via the shared secret
+`PODCAST_INTAKE_INBOUND_SECRET`. Every inbound request must carry an
+`X-Podcast-Intake-Signature` header formatted as `sha256=<hex digest of the raw
+payload bytes>`. Verification runs BEFORE any parsing: the handler hashes the
+raw bytes with HMAC-SHA256 and compares using `hmac.compare_digest` for timing-
+attack resistance. When the secret IS configured, the handler FAILS CLOSED:
+missing or invalid signatures are rejected with no flow created and the
+rejection logged. When the secret is NOT configured, the handler logs a one-line
+warning and proceeds (backward compatibility for existing unsigned senders).
+
 ## The canonical 18-step pipeline
 
 Step 0 runs once per client before their first episode; Steps 1 to 18 run per episode. Every
