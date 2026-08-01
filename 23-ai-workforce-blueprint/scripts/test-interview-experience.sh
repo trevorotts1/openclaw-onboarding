@@ -60,6 +60,15 @@ make_clean_state() {
   local f="$1"
   local complete="${2:-false}"
   local last_q_offset_h="${3:-2}"
+  # 4th arg (2026-07-30 fix): interviewProgress.lastQuestionNumber, so callers
+  # whose transcript has a DIFFERENT real question count than the 30-question
+  # default can keep state/transcript in agreement. A caller that fixtures a
+  # 20- or 24-question transcript but leaves this at the hardcoded default of
+  # 30 now trips the (correct, newly hard-failing) transcript/counter
+  # disagreement check for reasons unrelated to what that test is actually
+  # exercising (count-exemption / jargon / etc) — see qc-interview-completion.py
+  # build_verdict()'s disagreeWarning promotion to hard_failures.
+  local last_qnum="${4:-30}"
   local last_q_at
   last_q_at=$(python3 -c "
 from datetime import datetime, timezone, timedelta
@@ -69,6 +78,7 @@ print(dt.strftime('%Y-%m-%dT%H:%M:%SZ'))
   jq -n \
     --arg last_q_at "$last_q_at" \
     --argjson complete "$complete" \
+    --argjson last_qnum "$last_qnum" \
     '{
       "version": 1,
       "interviewComplete": $complete,
@@ -91,7 +101,7 @@ print(dt.strftime('%Y-%m-%dT%H:%M:%SZ'))
         "detectedAt": "2026-06-10T00:00:00Z"
       },
       "interviewProgress": {
-        "lastQuestionNumber": 30,
+        "lastQuestionNumber": $last_qnum,
         "lastQuestionPhase": "phase5",
         "lastQuestionAt": $last_q_at
       }
@@ -226,7 +236,7 @@ make_transcript_n_questions() {
 (
   STATE="$TMPDIR_TEST/t5-state.json"
   TRANSCRIPT="$TMPDIR_TEST/t5-transcript.md"
-  make_clean_state "$STATE"
+  make_clean_state "$STATE" "false" "2" "24"  # lastQuestionNumber matches the 24-Q transcript (no disagreement)
   make_transcript_n_questions "$TRANSCRIPT" 24 "clean"
   rc=0
   out=$(python3 "$QC_GATE" \
@@ -693,7 +703,7 @@ run_gate_json() {
 (
   STATE="$TMPDIR_TEST/t14-state.json"
   TRANSCRIPT="$TMPDIR_TEST/t14-transcript.md"
-  make_clean_state "$STATE"                 # NOT a legacy-flagged state
+  make_clean_state "$STATE" "false" "2" "20"  # NOT a legacy-flagged state; lastQuestionNumber matches the 20-Q transcript
   make_legacy_transcript "$TRANSCRIPT" 20 "no"
   rc=0
   out=$(run_gate_json "$TRANSCRIPT" "$STATE" --legacy-interview) || rc=$?
@@ -728,7 +738,7 @@ run_gate_json() {
 (
   STATE="$TMPDIR_TEST/t16-state.json"
   TRANSCRIPT="$TMPDIR_TEST/t16-transcript.md"
-  make_clean_state "$STATE"                 # NOT legacy-flagged in state
+  make_clean_state "$STATE" "false" "2" "20"  # NOT legacy-flagged in state; lastQuestionNumber matches the 20-Q transcript
   make_legacy_transcript "$TRANSCRIPT" 20 "marker"
   rc=0
   out=$(run_gate_json "$TRANSCRIPT" "$STATE") || rc=$?   # NO --legacy-interview flag

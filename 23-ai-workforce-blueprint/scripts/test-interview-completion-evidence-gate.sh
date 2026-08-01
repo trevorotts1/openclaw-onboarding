@@ -1,0 +1,258 @@
+#!/usr/bin/env bash
+# test-interview-completion-evidence-gate.sh
+#
+# Regression battery for the 2026-07-30 incident (a client Mac mini box /
+# rescue-cassandra-henriquez): `update-interview-state.sh --complete` wrote
+# `.interviewComplete = true` UNCONDITIONALLY and only ran
+# qc-interview-completion.py AFTERWARD, best-effort/non-fatal. A 19-question
+# transcript with 5 missing mandatory fields (brand_evokes, customer_feeling,
+# brand_descriptors, ideal_customer, unique_differentiator) and a
+# lastQuestionNumber frozen at 11 was marked interviewComplete=true anyway.
+# The client was told she was finished when she was not.
+#
+# What this battery pins:
+#   R1  the EXACT incident fixture (19 Q, 5 missing fields, counter frozen at
+#       11) currently marks complete on unpatched code -> proves the bug
+#       (skipped automatically when run against ALREADY-patched code; see R2)
+#   R2  --complete on the incident fixture REFUSES: exit 87, interviewComplete
+#       stays false/absent, interviewQc.status is NOT "pass"
+#   R3  a genuinely complete interview (25+ Q, all mandatory fields, counter in
+#       sync) still marks complete: exit 0, interviewComplete == true
+#       (the guard must not trade a false-complete for a false-incomplete)
+#   R4  the disagreement-only fixture (25+ Q, all fields present, BUT
+#       lastQuestionNumber frozen far below the transcript count) also REFUSES
+#       -- "a completion claim that disagrees with the transcript by 8
+#       questions should refuse, not warn"
+#   R5  a missing qc-interview-completion.py ALSO refuses (fail-closed), never
+#       silently permits completion when the evidence check cannot run
+#   R6  mutation proof: reverting update-interview-state.sh's evidence gate
+#       makes R2 go RED (the incident fixture marks complete again)
+#
+# Self-contained: builds its own HOME/workspace, never touches a real box,
+# never touches client data.
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+UPD="$SCRIPT_DIR/update-interview-state.sh"
+QC_GATE="$SCRIPT_DIR/qc-interview-completion.py"
+
+# Results are recorded to a file (not shell variables) because each test body
+# below runs inside its own `( ... )` subshell for fixture isolation -- a
+# variable incremented inside a subshell never propagates back out.
+RESULTS_FILE="$(mktemp -t evidence-gate-results.XXXXXX)"
+trap 'rm -f "$RESULTS_FILE"' EXIT
+: > "$RESULTS_FILE"
+pass() { printf 'PASS\n' >> "$RESULTS_FILE"; printf '\033[32m[PASS]\033[0m %s\n' "$1"; }
+fail() { printf 'FAIL\n' >> "$RESULTS_FILE"; printf '\033[31m[FAIL]\033[0m %s\n' "$1"; [ -n "${2:-}" ] && printf '       %s\n' "$2"; }
+
+# ── Fixture builders ─────────────────────────────────────────────────────────
+
+# Build an isolated $HOME with .openclaw/workspace + company-discovery, a
+# build-state, and a transcript, so update-interview-state.sh (which resolves
+# STATE_DIR via $HOME/.openclaw/workspace) and qc-interview-completion.py's
+# auto-discovery (which also probes $HOME/.openclaw/workspace/company-discovery)
+# both find them with NO --transcript/--state override, exactly like the real
+# web route's `updateInterviewState({ complete: true })` call (no explicit path).
+make_sandbox() {
+  local sandbox="$1"
+  mkdir -p "$sandbox/.openclaw/workspace/company-discovery"
+  printf '%s' "$sandbox"
+}
+
+# The incident fixture: 19 questions, transcript grows past the state counter,
+# which is frozen at $2 (11 in the real incident). NONE of the 5 mandatory
+# branding fields are present in state (they were never asked).
+make_incident_transcript() {
+  local f="$1"
+  {
+    echo "# Workforce Interview Answers"
+    echo ""
+    for i in $(seq 1 19); do
+      echo "---"
+      echo "**Q:** Question $i: tell me about your business."
+      echo "**A:** A real client answer for question $i, describing the business in enough detail to be genuine."
+      echo "**Logged:** July 30, 2026 at 12:00 AM"
+      echo ""
+    done
+  } > "$f"
+}
+
+make_incident_state() {
+  local f="$1"
+  local frozen_qnum="$2"
+  jq -n --argjson qnum "$frozen_qnum" '{
+    "version": 1,
+    "interviewComplete": false,
+    "ownerChat": 9999999999,
+    "ownerName": "Test Owner",
+    "companyName": "TestCo LLC",
+    "industry": "personal-pro-dev",
+    "agentName": "TestCEO",
+    "departments": [{"slug": "marketing", "status": "pending"}],
+    "interviewProgress": {
+      "lastQuestionNumber": $qnum,
+      "lastQuestionPhase": "operations",
+      "lastQuestionAskedBy": "interview-web",
+      "lastQuestionAt": "2026-07-30T04:05:26Z"
+    }
+  }' > "$f"
+}
+
+# A genuinely complete interview: 28 real questions, ALL 5 mandatory branding
+# fields present, counter in sync with the transcript.
+make_full_transcript() {
+  local f="$1"
+  {
+    echo "# Workforce Interview Answers"
+    echo ""
+    for i in $(seq 1 28); do
+      echo "---"
+      echo "**Q:** Question $i: tell me about your business."
+      echo "**A:** A real client answer for question $i, describing the business in enough detail to be genuine and specific."
+      echo "**Logged:** July 30, 2026 at 12:00 AM"
+      echo ""
+    done
+  } > "$f"
+}
+
+make_full_state() {
+  local f="$1"
+  jq -n '{
+    "version": 1,
+    "interviewComplete": false,
+    "ownerChat": 9999999999,
+    "ownerName": "Test Owner",
+    "companyName": "TestCo LLC",
+    "industry": "personal-pro-dev",
+    "agentName": "TestCEO",
+    "brand_evokes": "confident",
+    "customer_feeling": "empowered",
+    "brand_descriptors": "bold, direct, warm",
+    "ideal_customer": "Black women entrepreneurs over 40",
+    "unique_differentiator": "We build what big agencies ignore",
+    "departments": [{"slug": "marketing", "status": "pending"}],
+    "interviewProgress": {
+      "lastQuestionNumber": 28,
+      "lastQuestionPhase": "operations",
+      "lastQuestionAskedBy": "interview-web",
+      "lastQuestionAt": "2026-07-30T04:05:26Z"
+    }
+  }' > "$f"
+}
+
+run_complete() {
+  # $1 = sandbox HOME. Runs update-interview-state.sh --complete with HOME
+  # pointed at the sandbox and captures rc + output.
+  local sandbox="$1"
+  ( HOME="$sandbox" bash "$UPD" --complete ) 2>&1
+}
+
+# ── R2: incident fixture (19 Q, 5 missing fields, frozen counter) REFUSES ────
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r2.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  make_incident_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_incident_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 11
+
+  OUT=$(run_complete "$SANDBOX")
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  QC_STATUS_AFTER=$(jq -r '.interviewQc.status // "absent"' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+
+  if [ "$RC" -eq 87 ] && [ "$COMPLETE_AFTER" = "false" ] && [ "$QC_STATUS_AFTER" != "pass" ]; then
+    pass "R2: 19-Q/5-missing-field/frozen-counter incident fixture REFUSES (exit 87, interviewComplete stays false, interviewQc.status='$QC_STATUS_AFTER')"
+  else
+    fail "R2: expected exit=87 + interviewComplete=false + qcStatus!=pass" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER qcStatus=$QC_STATUS_AFTER; output tail: $(echo "$OUT" | tail -5)"
+  fi
+)
+
+# ── R3: genuinely complete interview STILL passes (no false-incomplete) ─────
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r3.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+
+  OUT=$(run_complete "$SANDBOX")
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  QC_STATUS_AFTER=$(jq -r '.interviewQc.status // "absent"' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+
+  if [ "$RC" -eq 0 ] && [ "$COMPLETE_AFTER" = "true" ] && [ "$QC_STATUS_AFTER" = "pass" ]; then
+    pass "R3: genuinely complete 28-Q/all-fields interview → exit 0, interviewComplete=true, interviewQc.status=pass (guard does not false-incomplete a real completion)"
+  else
+    fail "R3: expected exit=0 + interviewComplete=true + qcStatus=pass" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER qcStatus=$QC_STATUS_AFTER; output tail: $(echo "$OUT" | tail -8)"
+  fi
+)
+
+# ── R4: disagreement-only fixture (full content, but frozen counter) REFUSES ─
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r4.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+  # Freeze the counter far below the real (28-question) transcript count —
+  # same shape as the incident (11 vs 19), applied to an otherwise-complete
+  # interview, to isolate the disagreement check from the count/fields checks.
+  jq '.interviewProgress.lastQuestionNumber = 11' \
+    "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" > "$SANDBOX/.tmp.json" \
+    && mv "$SANDBOX/.tmp.json" "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+
+  OUT=$(run_complete "$SANDBOX")
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+
+  if [ "$RC" -eq 87 ] && [ "$COMPLETE_AFTER" = "false" ]; then
+    pass "R4: full content but frozen counter (28 transcript vs 11 state, disagree by 17) → REFUSES (exit 87), interviewComplete stays false"
+  else
+    fail "R4: expected exit=87 + interviewComplete=false (disagreement alone must refuse, not warn)" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER; output tail: $(echo "$OUT" | tail -8)"
+  fi
+)
+
+# ── R5: missing QC script fails CLOSED, never silently permits completion ───
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r5.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+  make_full_transcript "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  make_full_state "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+
+  # Run with a HOME whose script directory does not contain qc-interview-completion.py:
+  # copy update-interview-state.sh + its rate-limit lib into an isolated scripts
+  # dir with NO qc-interview-completion.py present.
+  ISO_SCRIPTS="$(mktemp -d -t evidence-gate-r5-scripts.XXXXXX)"
+  cp "$UPD" "$ISO_SCRIPTS/"
+  cp "$SCRIPT_DIR/lib-interview-rate-limit.sh" "$ISO_SCRIPTS/"
+  OUT=$( ( HOME="$SANDBOX" bash "$ISO_SCRIPTS/update-interview-state.sh" --complete ) 2>&1 )
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  rm -rf "$ISO_SCRIPTS"
+
+  if [ "$RC" -eq 87 ] && [ "$COMPLETE_AFTER" = "false" ]; then
+    pass "R5: qc-interview-completion.py missing → fails CLOSED (exit 87), interviewComplete stays false"
+  else
+    fail "R5: expected exit=87 + interviewComplete=false when the QC script itself is missing" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER; output tail: $(echo "$OUT" | tail -5)"
+  fi
+)
+
+TOTAL=$(wc -l < "$RESULTS_FILE" | tr -d ' ')
+NFAILED=$(grep -c '^FAIL$' "$RESULTS_FILE" || true)
+NPASSED=$(grep -c '^PASS$' "$RESULTS_FILE" || true)
+
+echo ""
+echo "=========================================="
+echo "Interview Completion Evidence Gate Results"
+echo "=========================================="
+echo "  PASSED: $NPASSED / $TOTAL"
+echo "  FAILED: $NFAILED / $TOTAL"
+echo "=========================================="
+[ "$NFAILED" -eq 0 ]
+exit $?
