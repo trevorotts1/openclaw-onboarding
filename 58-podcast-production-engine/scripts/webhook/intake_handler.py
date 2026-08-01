@@ -30,6 +30,16 @@
 #                  Model Context Protocol and Step 1 onward is tool-bearing (Convert
 #                  and Flow REST, Podbean, custom-field writes, enrollment).
 #
+# INBOUND SIGNATURE VERIFICATION (webhook authentication):
+#   When PODCAST_INTAKE_INBOUND_SECRET is set, every inbound payload MUST carry
+#   an X-Podcast-Intake-Signature header formatted as "sha256=<hex hmac of raw
+#   payload bytes>". The handler hashes the raw bytes with HMAC-SHA256 and
+#   compares using hmac.compare_digest. Missing or invalid signatures are
+#   rejected (FAIL CLOSED): no flow is created, and the rejection is logged.
+#   When the secret is NOT configured, the handler logs a one-line warning and
+#   proceeds without verification (backward compatibility for existing unsigned
+#   senders).
+#
 # Silence discipline: this layer emits ZERO client-facing messages. Operator
 # alerts (needs_input, tenant mismatch, 409 exhaustion, ledger corruption) are
 # written to a durable operator-alert log for alert-dedup.py to route to the
@@ -39,14 +49,24 @@
 #       class fast-ACKs) / 2 handler error (5xx) / 3 usage.
 # USAGE:
 #   python3 intake_handler.py handle --payload FILE [--mode no-flow|in-flow|trigger-flow]
-#       [--flow-id ID] [--base DIR] [--json]
+#       [--flow-id ID] [--base DIR] [--json] [--signature HEADER_VALUE]
 #   python3 intake_handler.py --self-test
 # Tenant + test-contact identifiers come from the environment; the tenant value is
 # never printed (match / mismatch only).
 # =============================================================================
-"""Deterministic Podcast Engine intake handler implementing the fast-ACK contract."""
+"""Deterministic Podcast Engine intake handler implementing the fast-ACK contract.
+
+Inbound webhook signature verification (HMAC-SHA256):
+- Env label: PODCAST_INTAKE_INBOUND_SECRET
+- Expected header: X-Podcast-Intake-Signature, format ``sha256=<hex digest>``
+- The raw payload bytes are hashed BEFORE any parsing.
+- Secret configured -> FAIL CLOSED (missing/invalid signature rejected).
+- Secret NOT configured -> warning logged, proceed (backward compat).
+- Uses hmac.compare_digest for timing-attack resistance.
+"""
 
 import argparse
+import hmac
 import json
 import os
 import sys
@@ -68,6 +88,31 @@ ENV_TEST_CONTACT = "PODCAST_TEST_CONTACT_ID"
 ENV_ROUTE = "PODCAST_INTAKE_ROUTE_ID"
 ENV_SESSION = "PODCAST_INTAKE_SESSION_KEY"
 ENV_CONTROLLER = "PODCAST_INTAKE_CONTROLLER_ID"
+ENV_INBOUND_SECRET = "PODCAST_INTAKE_INBOUND_SECRET"
+
+SIGNATURE_HEADER = "X-Podcast-Intake-Signature"
+SIGNATURE_PREFIX = "sha256="
+
+
+def _verify_signature(raw_bytes, header_value, secret):
+    """Verify an HMAC-SHA256 inbound signature against the raw payload bytes.
+
+    The expected header format is ``sha256=<hex-digest>``. Uses
+    hmac.compare_digest for timing-attack resistance.
+
+    Returns True when the signature matches, False on mismatch/malformed header.
+    Returns True when secret is None (caller must decide whether to fail open).
+    """
+    if secret is None:
+        return True
+    if not header_value or not header_value.startswith(SIGNATURE_PREFIX):
+        return False
+    digest_hex = header_value[len(SIGNATURE_PREFIX):]
+    try:
+        expected = hmac.HMAC(secret.encode("utf-8"), raw_bytes, "sha256").hexdigest()
+    except Exception:
+        return False
+    return hmac.compare_digest(expected, digest_hex)
 
 
 def _iso_now():
@@ -310,6 +355,7 @@ def main(argv=None):
     ap.add_argument("--flow-id", dest="flow_id", help="in-flow mode: the plugin-created flowId")
     ap.add_argument("--base", help="ledger base dir (default ~/.openclaw/state/podcast-engine)")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--signature", help="X-Podcast-Intake-Signature header value for HMAC verification")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
 
@@ -320,9 +366,28 @@ def main(argv=None):
     if not args.payload or not Path(args.payload).is_file():
         ap.error("handle needs --payload FILE")
     try:
-        body = json.loads(Path(args.payload).read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
+        raw_bytes = Path(args.payload).read_bytes()
+    except OSError as exc:
         print("FATAL: cannot read --payload: %s" % exc, file=sys.stderr)
+        return EXIT_USAGE
+
+    # Inbound HMAC-SHA256 signature verification (before any parsing).
+    secret = os.environ.get(ENV_INBOUND_SECRET)
+    sig_header = os.environ.get(SIGNATURE_HEADER)
+    if args.signature:
+        sig_header = args.signature  # CLI override for testing
+    if secret is not None:
+        if not _verify_signature(raw_bytes, sig_header, secret):
+            print("REJECT: inbound signature missing or invalid", file=sys.stderr)
+            return EXIT_HANDLER_ERROR
+    else:
+        print("WARNING: no PODCAST_INTAKE_INBOUND_SECRET configured; proceeding without "
+              "inbound signature verification", file=sys.stderr)
+
+    try:
+        body = json.loads(raw_bytes)
+    except (ValueError) as exc:
+        print("FATAL: cannot parse --payload JSON: %s" % exc, file=sys.stderr)
         return EXIT_USAGE
 
     config = _config_from_env(args)
