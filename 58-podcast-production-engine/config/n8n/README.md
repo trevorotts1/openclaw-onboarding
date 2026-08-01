@@ -71,9 +71,9 @@ asset above, this workflow already exists and runs live on the instance; the
 file in this repo is not something to import, it is a durable structural
 record of what production runs, captured for audit and onboarding.
 
-Captured state (live API re-read): 51 nodes, 35 connections, `active: true`,
+Captured state (live API re-read): 51 nodes, 36 connections, `active: true`,
 `updatedAt` `2026-07-20T02:51:32Z`. Re-verified live on 2026-07-30: the graph
-shape is structurally unchanged (still 51 nodes / 35 connections / active). The
+shape is structurally unchanged (still 51 nodes / 36 connections / active). The
 `versionId` / `activeVersionId` pointer is deliberately NOT pinned here — it
 changes on every edit to the workflow, so a pinned value goes stale on the next
 live edit and manufactures false audit drift against a workflow this repo does
@@ -470,3 +470,35 @@ operator-deferred plaintext-credential debt inside workflows
 not done by this pass" above) is unaffected and remains open; per standing
 doctrine, agents must never read, quote, or export either workflow's Code
 node contents.
+
+## Deployment and drift
+
+Deployment is **manual-only**. The fleet n8n API key is read-scoped (the API
+returns `AUTHENTICATION_ERROR` on write attempts), so no script in this
+repository creates, updates, or activates workflows on the live instance.
+Workflows are imported and activated by hand through the n8n UI.
+
+### Drift detection
+
+`scripts/verify-n8n-deploy.py` is a read-only reconciliation against the live
+n8n instance. For each workflow exported under `config/n8n/*.workflow.json`, it
+finds the live counterpart by webhook path or name and compares node count,
+connection count, active state, and webhook paths. It prints a per-workflow
+MATCH/DRIFT report and exits:
+- 0 on all MATCH
+- 1 on any DRIFT
+- 2 on unreachable (non-fatal)
+
+Requires `N8N_API_URL` and `N8N_API_KEY` environment variables. The API key is
+never printed — secrets appear by label only (`[N chars, set]`).
+Deterministic; no model calls.
+
+```bash
+N8N_API_URL=https://main.blackceoautomations.com/api/v1 \
+N8N_API_KEY=... \
+python3 58-podcast-production-engine/scripts/verify-n8n-deploy.py
+```
+
+This probe is also wired into `qc-podcast.sh` as an optional gate — it runs
+only when `N8N_API_URL` and `N8N_API_KEY` are both set, and an unreachable
+instance (exit 2) produces a warning, never a failure.
