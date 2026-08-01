@@ -149,14 +149,25 @@ class LedgerLinkageCliEndToEnd(unittest.TestCase):
             fh.write("{corrupt")
 
         adv = self._ps("advance", "--job-id", jid, "--to", "researching")
-        # AC3: the advance is NON-successful (LedgerLinkageError -> exit 1).
+        # AC3: the advance is NON-successful (LedgerLinkageError -> exit 1). The
+        # fail-loud safety is preserved: a broken ledger linkage must never let
+        # an advance silently succeed.
         self.assertEqual(adv.returncode, 1, adv.stdout + adv.stderr)
         self.assertIn("ledger", adv.stderr.lower())
-        # The honest report: the SQLite transition committed, the advance did not.
-        self.assertIn("ledger_sync=broken", adv.stdout)
+        # U043 (d25b4c8c) evolved the failure contract from the T0-22 "honest
+        # report after commit" model to an atomic sync-before-commit model: the
+        # ledger sync now runs INSIDE the SQLite transaction, and a broken
+        # linkage ROLLS BACK the transition and raises instead of committing
+        # the SQLite move and then emitting a ledger_sync=broken report line on
+        # stdout. The stronger property: the roster never advances without
+        # ledger evidence. So stdout carries no honest-report line (the move
+        # did not happen) and the SQLite status stays at its pre-advance value.
+        self.assertNotIn("ledger_sync=broken", adv.stdout)
+        self.assertEqual(adv.stdout.strip(), "")
+        self.assertIn("rolled back", adv.stderr.lower())
         status = sqlite3.connect(self.db).execute(
             "SELECT status FROM podcast_jobs WHERE job_id = ?", (jid,)).fetchone()[0]
-        self.assertEqual(status, "researching")  # committed, reported honestly
+        self.assertEqual(status, "received")  # rolled back, not committed
 
     def test_advance_succeeds_when_no_ledger_configured(self):
         # No --job-key: the job never came through the webhook intake layer, so
