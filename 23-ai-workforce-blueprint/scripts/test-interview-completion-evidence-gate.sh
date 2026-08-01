@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # test-interview-completion-evidence-gate.sh
 #
-# Regression battery for the 2026-07-30 incident (Cassandra Henriquez /
+# Regression battery for the 2026-07-30 incident (a client Mac mini box /
 # rescue-cassandra-henriquez): `update-interview-state.sh --complete` wrote
 # `.interviewComplete = true` UNCONDITIONALLY and only ran
 # qc-interview-completion.py AFTERWARD, best-effort/non-fatal. A 19-question

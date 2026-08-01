@@ -5,7 +5,7 @@
 # bug where lastQuestionNumber was stuck at 1 forever because no per-question
 # writer existed.
 #
-# EVIDENCE-GATED COMPLETION (2026-07-30 incident, Cassandra Henriquez /
+# EVIDENCE-GATED COMPLETION (2026-07-30 incident, a client Mac mini box /
 # rescue-cassandra-henriquez): `--complete` used to write
 # `.interviewComplete = true` UNCONDITIONALLY and only ran
 # qc-interview-completion.py AFTERWARD, best-effort/non-fatal ("WARN ...
@@ -243,7 +243,7 @@ elif [ -n "$PHASE" ] || [ -n "$QNUM" ]; then
   fi
 fi
 
-# ── EVIDENCE GATE (2026-07-30 fix, Cassandra Henriquez / rescue-cassandra-henriquez) ──
+# ── EVIDENCE GATE (2026-07-30 fix, a client Mac mini box / rescue-cassandra-henriquez) ──
 # `--complete` used to write `.interviewComplete = true` UNCONDITIONALLY (see the
 # write block below) and only ran qc-interview-completion.py AFTERWARD,
 # best-effort/non-fatal ("WARN ... non-fatal - interviewQc.status stays pending").

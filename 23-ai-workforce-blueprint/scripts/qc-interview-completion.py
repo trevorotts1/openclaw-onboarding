@@ -1477,7 +1477,7 @@ def build_verdict(
             f"Question count {count} is borderline (target 25-35). Human review required."
         )
     if count_result.get("disagreeWarning"):
-        # HARD FAIL (2026-07-30 fix, Cassandra Henriquez incident): a
+        # HARD FAIL (2026-07-30 fix, a client Mac mini box incident): a
         # lastQuestionNumber that disagrees with the transcript's real Q-block
         # count by more than 3 questions used to be a WARNING ONLY — the count
         # check above still used the (correct) transcript count, so a genuinely
