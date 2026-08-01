@@ -2553,6 +2553,186 @@ if [ "$OC_ROOT" = "/data/.openclaw" ]; then
   chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
 fi
 
+# ─── 5j. Stamp the Rescue Rangers escalation section (RESCUE_ESCALATION_BOXNAME_V1)
+# WHY. The escalation section in a box's AGENTS.md historically pre-filled
+# "boxName" with the box's HOSTNAME or docker compose-project label. A hostname
+# is not a join key: the Fleet Standing Gate matches on the canonical slug
+# (fleet_standing.box_slug), so a hostname makes every request from that box
+# ledger as unmatched / no_record_found, renders operator ticket headers as
+# "(unknown)", and silently neutralises the gate for that box. The gate is
+# fail-open by design, so bad identity does not error — it just stops gating.
+#
+# WHAT. Re-render the escalation section from the ONE canonical template,
+# scripts/rescue-escalation-section.md.tpl (shipped beside this script and
+# persisted on-box by update-skills.sh), with boxName bound to this box's
+# FLEET_STANDING_BOX_SLUG, and replace the existing section in place.
+#
+# SINGLE SOURCE OF TRUTH. The template is authoritative. This script renders it;
+# so does the standalone stamp-rescue-escalation-section.sh in the Rescue
+# Rangers role library. Neither carries its own copy of the prose. Editing the
+# template is the only way to change what boxes are taught.
+#
+# CONTRACT.
+#   - Marker PAIR <!-- RESCUE_ESCALATION_BOXNAME_V1 --> / <!-- END ... -->,
+#     the same convention every other block in this script uses, so a re-stamp
+#     REPLACES rather than appends. (This script has re-appended unmarked blocks
+#     up to 8x on a single box; the pair is what prevents that.)
+#   - Idempotent BY CONTENT: re-render, compare, write only on a real diff.
+#     A second run is a no-op even though the marker is already present, and a
+#     hand-edited boxName is repaired on the next roll. Self-healing, not
+#     one-shot.
+#   - PRESERVES per-box identity. clientName / agentName / boxType / returnTo
+#     are harvested from whatever is already in the box's section and carried
+#     forward verbatim. Only boxName is asserted from FLEET_STANDING_BOX_SLUG.
+#     A fleet roll therefore cannot downgrade identity a per-box propagation run
+#     already wrote.
+#   - NEVER CREATES a section. A box with no escalation section is left alone
+#     and logged as a wiring gap: creating one needs roster data this script
+#     does not have, and the operator box deliberately has no such section.
+#     Section creation stays with propagate-rescue-webhook.sh /
+#     stamp-rescue-escalation-section.sh.
+#   - FAIL-OPEN everywhere: no slug, no template, no section, parse error or
+#     write error => log and skip WITHOUT writing the marker, so a later roll
+#     retries. This step can never fail a roll.
+# Spec: scripts/fleet-standing/NEW-BOX-WIRING.md §2.
+RESCUE_ESC_MARKER="<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
+RESCUE_ESC_TPL="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/rescue-escalation-section.md.tpl"
+
+if [ ! -f "$AGENTS_FILE" ]; then
+  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — no AGENTS.md at $AGENTS_FILE"
+elif [ ! -f "$RESCUE_ESC_TPL" ]; then
+  echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — template not found beside this script ($RESCUE_ESC_TPL); older bundle, next roll retries"
+else
+  # Resolve the canonical slug exactly the way update-skills.sh's
+  # FLEET-STANDING-GATE-V1 block does: env var first, then openclaw.json
+  # env.vars. The secrets store is deliberately NOT read — the slug is written
+  # to both by propagate-fleet-standing-gate.sh, and reading openclaw.json keeps
+  # this step away from secret material entirely.
+  _RESCUE_BOX_SLUG="${FLEET_STANDING_BOX_SLUG:-}"
+  if [ -z "$_RESCUE_BOX_SLUG" ] && [ -f "$OC_CONFIG" ]; then
+    _RESCUE_BOX_SLUG="$(python3 - "$OC_CONFIG" <<'SLUGPY' 2>/dev/null || true
+import json, sys
+try:
+    d = json.load(open(sys.argv[1], encoding="utf-8"))
+    print((((d.get("env") or {}).get("vars") or {}).get("FLEET_STANDING_BOX_SLUG", "") or "").strip())
+except Exception:
+    print("")
+SLUGPY
+)"
+  fi
+
+  if [ -z "$_RESCUE_BOX_SLUG" ]; then
+    echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — FLEET_STANDING_BOX_SLUG not seeded on this box (run propagate-fleet-standing-gate.sh; marker NOT written, next roll retries)"
+  else
+    _RESCUE_IS_VPS=0
+    [ "$OC_ROOT" = "/data/.openclaw" ] && _RESCUE_IS_VPS=1
+    _RESCUE_ESC_RESULT=""
+    _RESCUE_ESC_RESULT="$(
+      RESCUE_BOX_SLUG="$_RESCUE_BOX_SLUG" RESCUE_TPL="$RESCUE_ESC_TPL" \
+      _RESCUE_IS_VPS="$_RESCUE_IS_VPS" \
+      python3 - "$AGENTS_FILE" 2>/dev/null <<'ESCPY'
+import os, re, sys
+
+path = sys.argv[1]
+slug = os.environ["RESCUE_BOX_SLUG"]
+tpl_path = os.environ["RESCUE_TPL"]
+
+START = "<!-- RESCUE_ESCALATION_BOXNAME_V1 -->"
+END   = "<!-- END RESCUE_ESCALATION_BOXNAME_V1 -->"
+
+try:
+    txt = open(path, encoding="utf-8").read()
+    tpl = open(tpl_path, encoding="utf-8").read()
+except Exception:
+    print("error"); raise SystemExit(0)
+
+# --- locate the block we own -------------------------------------------------
+# Preferred: the marker pair (previous stamp, or a per-box propagation that
+# already wrote v2). Fallback: the bare heading through the next top-level "## "
+# heading — the same boundary propagate-rescue-webhook.sh uses — which is the
+# one-time upgrade path from an unmarked section.
+si = txt.find(START)
+ei = txt.find(END)
+if si != -1 and ei != -1 and ei > si:
+    cur_start, cur_end = si, ei + len(END)
+    mode = "replace"
+else:
+    m = re.search(r'^## Escalate to Rescue Rangers.*?(?=^## |\Z)',
+                  txt, re.MULTILINE | re.DOTALL)
+    if not m:
+        # No section at all. Do NOT create one — see the contract above.
+        print("absent"); raise SystemExit(0)
+    cur_start, cur_end = m.start(), m.end()
+    mode = "upgrade"
+
+current = txt[cur_start:cur_end]
+
+# --- carry per-box identity forward -----------------------------------------
+def harvest(field, default):
+    mm = re.search(r'"%s"\s*:\s*"([^"]*)"' % field, current)
+    if mm and mm.group(1).strip() and not mm.group(1).startswith("<"):
+        return mm.group(1)
+    return default
+
+# boxType default from the platform this script already detected.
+default_boxtype = "VPS" if os.environ.get("_RESCUE_IS_VPS") == "1" else "Mac Mini"
+tokens = {
+    "BOX_NAME":  slug,                                   # authoritative
+    "CLIENT":    harvest("clientName", slug),
+    "AGENT":     harvest("agentName", "main"),
+    "BOX_TYPE":  harvest("boxType", default_boxtype),
+    "RETURN_TO": harvest("returnTo", ""),
+}
+
+rendered = tpl
+for k, v in tokens.items():
+    rendered = rendered.replace("{{%s}}" % k, v)
+if re.search(r'\{\{[A-Z_]+\}\}', rendered):
+    # An unrendered token would teach the box a literal {{...}} — refuse.
+    print("unrendered"); raise SystemExit(0)
+rendered = rendered.rstrip("\n") + "\n"
+
+if current.rstrip("\n") + "\n" == rendered:
+    print("noop"); raise SystemExit(0)
+
+out = txt[:cur_start] + rendered + txt[cur_end:]
+tmp = path + ".tmp-rescue-esc"
+try:
+    with open(tmp, "w", encoding="utf-8") as fh:
+        fh.write(out)
+    os.replace(tmp, path)
+except Exception:
+    try: os.unlink(tmp)
+    except Exception: pass
+    print("error"); raise SystemExit(0)
+
+print("%s:%d:%d" % (mode, len(current), len(rendered)))
+ESCPY
+    )" || _RESCUE_ESC_RESULT="error"
+    [ -n "$_RESCUE_ESC_RESULT" ] || _RESCUE_ESC_RESULT="error"
+    case "$_RESCUE_ESC_RESULT" in
+      replace:*)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 re-stamped in $AGENTS_FILE (boxName=\"$_RESCUE_BOX_SLUG\"; ${_RESCUE_ESC_RESULT#replace:} chars old:new)" ;;
+      upgrade:*)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 upgraded the unmarked escalation section in $AGENTS_FILE (boxName=\"$_RESCUE_BOX_SLUG\"; ${_RESCUE_ESC_RESULT#upgrade:} chars old:new)" ;;
+      noop)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 already current in $AGENTS_FILE — no-op" ;;
+      absent)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — no '## Escalate to Rescue Rangers' section on this box; not creating one (WIRING GAP for a client box: propagate the section first). Marker NOT written." ;;
+      unrendered)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — template left an unrendered {{TOKEN}}; refusing to write (fail-open, next roll retries)" ;;
+      *)
+        echo "[apply-fleet-standards] RESCUE_ESCALATION_BOXNAME_V1 skipped — could not rewrite $AGENTS_FILE (fail-open; marker NOT written, next roll retries)" ;;
+    esac
+    unset _RESCUE_ESC_RESULT
+  fi
+  unset _RESCUE_BOX_SLUG
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
 echo ""
 echo "[apply-fleet-standards] DONE"
 echo "[apply-fleet-standards] Backup: $OC_BACKUP"
