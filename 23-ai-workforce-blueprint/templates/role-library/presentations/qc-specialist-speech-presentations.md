@@ -387,7 +387,7 @@ Per-speech average >= 8.5 across all scored criteria. No single scored criterion
 | 3 | Missing a claim because it was a personal-result story ("I made $50K in one month") | Personal results still require source-tracing to the intake interview |
 | 4 | Confusing Fish S1 and S2 tag formats | S2 uses [bracket] free-form; S1 uses (parenthesis) fixed-set; EL v3 uses [named keyword] |
 | 5 | Granting a PASS to the hook section when the hook refrain is shown but NOT spoken | The hook must be spoken at the scheduled beat -- visual-only is AF-SPEECH-COVERAGE-3 |
-| 6 | Missing AF-SPEECH-PITCHDOCTRINE because the doctrine line was framed as a value statement | Look for any sentence that restates a Section 4.3 principle verbatim or near-verbatim |
+| 6 | Missing AF-SPEECH-PITCHDOCTRINE because the doctrine line was framed as a value statement | Look for any sentence that restates a SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) principle verbatim or near-verbatim |
 | 7 | Self-grading (Speech Writer re-checking their own speech) | The Speech QC Specialist and Speech Writer are always separate agents |
 
 ---

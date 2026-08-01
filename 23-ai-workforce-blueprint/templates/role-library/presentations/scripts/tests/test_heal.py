@@ -6,7 +6,7 @@ _scripts_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_scripts_dir))
 from presentation_job.state import StateStore, EXIT_OK, EXIT_EXECUTOR_FAILED
 from presentation_job.manifest import Manifest
-from presentation_job.heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, record_heal_event, rung2_regenerate, rung3_alt_route, rung4_regate
+from presentation_job.heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event, rung2_regenerate, rung3_alt_route, rung4_regate
 from presentation_job.phases import Engine
 
 def _mkmanifest(tmp_path, phases=None, cmd="echo ok"):
@@ -134,6 +134,74 @@ class TestRecord:
         st={"schema_version":1,"job_id":"t","run_dir":str(rd),"created_at":"","manifest_path":"/x","manifest_version":25,"manifest_sha256":"0"*64,"presentation_type":"from_scratch","requester":{"chat_id":"t"},"phases":[],"gates":{},"waivers":[],"events":[],"sent":{},"undeliverable":[],"heartbeat":{},"terminal":None}
         pd={};record_heal_event(st,"TP",store,pd,1,1,"a");record_heal_event(st,"TP",store,pd,2,1,"b");record_heal_event(st,"TP",store,pd,4,1,"c")
         assert len(pd.get("heal_events",[]))==3;assert sorted(x["rung"] for x in pd["heal_events"])==[1,2,4]
+
+class TestHealCapRegression:
+    """Regression: HEAL_CAP_ALT_ROUTE and HEAL_CAP_REGATE have real readers."""
+    def test_caps_have_readers(self):
+        """Prove HEAL_CAP_ALT_ROUTE and HEAL_CAP_REGATE are referenced beyond
+        their own definitions by running an AST census.  Each must appear as a
+        Name node in at least two sites (definition + at least one reader)."""
+        import ast, pathlib
+        want = {"HEAL_CAP_ALT_ROUTE", "HEAL_CAP_REGATE"}
+        seen = {w: [] for w in want}
+        heal_p = pathlib.Path(__file__).resolve().parent.parent / "presentation_job" / "heal.py"
+        t = ast.parse(heal_p.read_text())
+        for n in ast.walk(t):
+            if isinstance(n, ast.Name) and n.id in want:
+                seen[n.id].append(n.lineno)
+        for k in sorted(want):
+            assert len(seen[k]) >= 2, f"{k} has {len(seen[k])} Name site(s) in heal.py ({seen[k]}) — needs >=2"
+
+    def test_rung_census_excludes_3(self):
+        """Regression: static census finds [1,2,3,4] -- rung 3 is now statically
+        present because rung3_alt_route calls record_heal_event internally
+        (U069 close brought it into the function body)."""
+        import ast, pathlib
+        pkg = pathlib.Path(__file__).resolve().parent.parent / "presentation_job"
+        rungs = set()
+        for f in sorted(pkg.glob("*.py")):
+            t = ast.parse(f.read_text())
+            for n in ast.walk(t):
+                func_attr = None
+                if isinstance(n, ast.Call):
+                    if isinstance(n.func, ast.Attribute) and n.func.attr == "record_heal_event":
+                        func_attr = "record_heal_event"
+                    elif isinstance(n.func, ast.Name) and n.func.id == "record_heal_event":
+                        func_attr = "record_heal_event"
+                    if func_attr:
+                        for k in n.keywords:
+                            if k.arg == "rung" and isinstance(k.value, ast.Constant):
+                                rungs.add(k.value.value)
+        assert rungs == {1, 2, 3, 4}, f"expected rungs {{1,2,3,4}}, got {rungs}"
+
+    def test_rung3_heal_event_only_on_success(self, tmp_path, monkeypatch):
+        """Regression: rung=3 heal_event recorded internally by rung3_alt_route
+        on successful alt_cmd execution (post-U069 merge, the function itself
+        calls record_heal_event)."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        (tmp_path / "r").mkdir(exist_ok=True)
+        (tmp_path / "r" / "o.txt").write_text("h")
+        # Phase with alt_cmd that will succeed
+        m = _mkmanifest(tmp_path, phases=[{"id":"TP","order":1,"owning_role":"t",
+            "produces_artifact":["o.txt"],
+            "executor":{"kind":"script","cmd":"exit 1","alt_cmd":"echo ok"}}])
+        e, s = _mkengine(tmp_path, m)
+        rc = rung3_alt_route(e, m.phase("TP"))
+        assert rc == EXIT_OK  # rung3 succeeded; heal event recorded internally
+        ps = e._phase_state("TP")
+        he = ps.get("heal_events", [])
+        assert len(he) == 1
+        assert he[0]["rung"] == 3
+
+    def test_rung3_noop_no_heal_event(self, tmp_path, monkeypatch):
+        """Regression: when no alt_cmd, rung3 is a no-op and records nothing."""
+        monkeypatch.delenv("PRESENTATION_NOTIFY_CMD", raising=False)
+        m = _mkmanifest(tmp_path)
+        e, s = _mkengine(tmp_path, m)
+        rc = rung3_alt_route(e, m.phase("TP"))
+        assert rc == EXIT_EXECUTOR_FAILED  # no alt_cmd — no-op
+        ps = e._phase_state("TP")
+        assert len(ps.get("heal_events", [])) == 0
 
 
 # ---------------------------------------------------------------------------

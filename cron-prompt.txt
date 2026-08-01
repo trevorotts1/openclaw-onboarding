@@ -40,6 +40,63 @@ RULE 5.5 — v10.10.0 P0 — Drop AGENTS.md DETECTION flag (triple-fire N22 sub-
     <!-- OPENCLAW_UPDATE_DETECTED_END -->
   This way: even if the user misses the Telegram message, the agent reading AGENTS.md will surface the pending update. The flag remains until the user replies (RULE 10) or until next Sunday's check.
 
+RULE 5.6 — Fleet standing gate check (politeness pass, NOT enforcement).
+  Enforcement already exists: update-skills.sh's FLEET-STANDING-GATE-V1 block runs on every install
+  path — including the RULE 9 auto-apply below — and refuses to install anything for a delinquent
+  client. RULE 5.6 adds nothing to that enforcement. It exists only because, without it, a delinquent
+  client's Sunday update silently doesn't apply and they never hear why. This rule is what tells them.
+
+  When updates ARE detected (any repo's has_update is true) and BEFORE composing the RULE 6 summary,
+  ask the gate what THIS box's standing verdict is. Read the connection details from the environment —
+  they are seeded on every box, never hardcode them: $FLEET_STANDING_GATE_URL,
+  $FLEET_STANDING_GATE_HEADER, $FLEET_STANDING_GATE_SECRET.
+
+  Resolve the box slug with the SAME three-step chain update-skills.sh's fleet_standing_resolve_slug()
+  uses — do NOT send $FLEET_STANDING_BOX_SLUG alone. A box missing just that one env var would send an
+  empty boxName here, the gate would reply "unmatched", and this rule would offer the update — then
+  update-skills.sh's own chokepoint (which resolves the slug correctly) would still refuse the install,
+  leaving the client with exactly the confusing silent no-op this rule exists to prevent:
+    BOX_SLUG="${FLEET_STANDING_BOX_SLUG:-}"
+    if [ -z "$BOX_SLUG" ] && [ -f "$OC_ROOT/openclaw.json" ] && command -v python3 >/dev/null 2>&1; then
+      BOX_SLUG="$(python3 -c "
+import json,sys
+try:
+    d=json.load(open(sys.argv[1]))
+    print(((d.get('env') or {}).get('vars') or {}).get('FLEET_STANDING_BOX_SLUG','') or '')
+except Exception:
+    print('')
+" "$OC_ROOT/openclaw.json" 2>/dev/null)"
+    fi
+    [ -z "$BOX_SLUG" ] && BOX_SLUG="$(hostname -s 2>/dev/null || printf '')"
+
+    curl -s -m 15 --connect-timeout 8 -X POST "$FLEET_STANDING_GATE_URL" \
+      -H "Content-Type: application/json" \
+      -H "${FLEET_STANDING_GATE_HEADER:-X-Fleet-Standing-Secret}: $FLEET_STANDING_GATE_SECRET" \
+      -d "{\"boxName\":\"$BOX_SLUG\",\"action\":\"update\",\"source\":\"cron-prompt\"}"
+
+  FAIL OPEN — identical rule to the script gate, never relax this: the ONLY thing that changes RULE
+  5.6's behavior is a response body whose verdict is the literal string "blocked". Every other outcome
+  means "continue to RULE 6 as normal, as if this rule never ran":
+    • $FLEET_STANDING_GATE_URL or $FLEET_STANDING_GATE_SECRET is unset or empty
+    • the curl call errors, times out, or the gate is otherwise unreachable
+    • the HTTP status is anything other than 200
+    • the body is not valid JSON, or has no parseable "verdict" field
+    • the verdict is "unmatched", "held", "allowed", or anything else that isn't literally "blocked"
+  Do not treat this as a shortcut — it is required. A gate outage, an n8n hiccup, or a box that
+  predates this feature must never stop the whole fleet from being offered its weekly update. Wrongly
+  withholding one client's update summary is a small mistake; wrongly withholding every client's
+  update summary because a webhook had a bad moment is a large one.
+
+  If and only if the verdict is "blocked": do NOT continue to RULE 6. Send this message to CLIENT_CHAT
+  (the operator-rejecting chat resolved in RULE 1 — NEVER allowFrom[0]), then exit the entire cron run
+  without composing the RULE 6 summary, without offering any install option, and without running RULE
+  7 through RULE 12:
+    openclaw message send --channel telegram --target "$CLIENT_CHAT" --message "Sunday update check — [DATE]. There's a new version available, but I'm not able to install it right now because the account isn't current on payments. Nothing on your system has changed and everything keeps running as it is. As soon as the account is up to date I'll bring you to the latest version on the next check. If you think this is a mistake, just reply here and I'll flag it for management."
+  If CLIENT_CHAT is empty (RULE 1 resolved no non-operator owner), do NOT send this message and do NOT
+  fall back to an operator id — log "weekly-update: standing gate verdict=blocked, no client owner
+  chat resolved — skipping client send (log-only)" and still exit before RULE 6. This mirrors RULE
+  5/RULE 8's existing behaviour. An operator chat id must NEVER receive a client-facing message.
+
 RULE 6 — If updates ARE available, compose a SUMMARY Telegram message in this exact structure (plain English, no jargon, headlines-first, over-60 friendly):
 
   ──────────────────────────────────────────
@@ -78,6 +135,11 @@ RULE 9 — Wait for the client's reply. Do not exit. Stay alive until they respo
   • LOW or MEDIUM risk — auto-apply update-skills.sh (DO run the install) then send: "You didn't reply in 2 hours so I went ahead and applied the [LOW/MEDIUM]-risk update. Done. Here's what changed: [summary]. Let me know if anything looks off."
   • HIGH risk — do NOT auto-apply. Send: "I didn't hear back and this update is HIGH risk, so I made no changes. I'll ask again next Sunday. If you want it sooner, just tell me 'install all'." and exit.
   (Risk level = the highest risk level among all repos that have an available update.)
+  If RULE 5.6 found this box's standing verdict to be "blocked", this rule is never reached — RULE 5.6
+  already sent the client the explanation and exited the whole cron run before RULE 6. If RULE 5.6 was
+  somehow skipped, update-skills.sh's own FLEET-STANDING-GATE-V1 chokepoint will still refuse the
+  install for real — but silently, leaving the client with a confusing no-op instead of an
+  explanation, so never skip RULE 5.6 when updates are offered.
 
 RULE 10 — Act on the client's response:
   (a) "install all" — run all relevant update commands:
@@ -108,6 +170,7 @@ RULE 13 — Forbidden:
   • Do NOT silently auto-update HIGH-risk updates without explicit owner approval — see RULE 9 for the LOW/MEDIUM auto-apply exception
   • Do NOT push to GitHub
   • Do NOT message anyone other than the configured client target and (optionally per Rule 10f) the operator (resolved via env.vars.OPERATOR_ESCALATION_CHAT_ID; OPT-IN — if unset, do NOT message any operator; there is no hardcoded operator chat)
+  • Do NOT offer install options, and do NOT apply any update, for a client whose standing gate verdict (RULE 5.6) is "blocked" — send the RULE 5.6 message and exit instead
 
 RULE 14 — Communication style:
   • Plain English, no acronyms unless explained

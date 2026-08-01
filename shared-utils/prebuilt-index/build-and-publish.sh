@@ -42,12 +42,14 @@ SK22="$REPO_ROOT/22-book-to-persona-coaching-leadership-system"
 
 NEW_TAG=""
 DRY_RUN=0
+NO_GIT_COMMIT=0
 PERSONA_IDS=()
 while [ $# -gt 0 ]; do
     case "$1" in
         --new-tag) NEW_TAG="$2"; shift 2 ;;
         --persona-id) PERSONA_IDS+=("$2"); shift 2 ;;
         --dry-run) DRY_RUN=1; shift ;;
+        --no-git-commit) NO_GIT_COMMIT=1; shift ;;
         -h|--help) sed -n '2,40p' "${BASH_SOURCE[0]}"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 2 ;;
     esac
@@ -316,4 +318,44 @@ else
 fi
 
 rm -f "$REBUILT_GZ"
-echo "DONE. Commit the updated INDEX-MANIFEST.json (release_tag=$NEW_TAG). The N38 triad gate + persona-set-asset-consistency-guard CI will verify it."
+
+# ── 7) Commit + push the bumped manifest (Q2.2 root-cause fleet audit fix) ────
+# BREAK: v2.4.2 shipped (GitHub Release live, step 6 above) 2026-07-24 but
+# INDEX-MANIFEST.json stayed on v2.4.1 in git until a manual commit landed a
+# WEEK later (1552bacd) -- every fresh provision in that window installed the
+# stale index. The gap: this script bumped the manifest FILE (step 5) and
+# published the asset (step 6) but left "commit it" as a printed reminder, a
+# manual step with no enforcement and no deadline. The persona-SET count triad
+# CI gate (persona-set-asset-consistency-guard.yml) only fires on a push that
+# touches these paths and only fails on a COUNT mismatch -- a same-count
+# rebuild (bug fix, model change, re-embed) leaves it silently green while the
+# release_tag/sha256/asset_url drift from what is actually live on GitHub.
+# Auto-committing here closes the window to zero: a release can no longer
+# complete without the manifest landing in the SAME operation. Fail-open --
+# the GitHub Release from step 6 already succeeded; a commit/push failure here
+# must be a LOUD reminder, not a script failure that implies the release
+# itself failed. --no-git-commit preserves the old manual-commit workflow for
+# an operator who wants to review the diff before it lands (e.g. protected
+# branch requiring a PR).
+if [ "$DRY_RUN" = "1" ]; then
+    echo "→ [7/7] [dry-run] would: git add/commit/push $MANIFEST (release_tag=$NEW_TAG)"
+elif [ "$NO_GIT_COMMIT" = "1" ]; then
+    echo "→ [7/7] --no-git-commit set — NOT committing. MANUAL ACTION REQUIRED:"
+    echo "        git -C \"$REPO_ROOT\" add \"$MANIFEST\" && git -C \"$REPO_ROOT\" commit -m \"chore: bump persona index manifest to $NEW_TAG\" && git -C \"$REPO_ROOT\" push"
+    echo "        Until this lands, every fresh provision installs the STALE index (the exact v2.4.1/v2.4.2 gap this step exists to close)."
+else
+    echo "→ [7/7] committing + pushing bumped manifest (release_tag=$NEW_TAG)"
+    if git -C "$REPO_ROOT" diff --quiet -- "$MANIFEST" && git -C "$REPO_ROOT" diff --cached --quiet -- "$MANIFEST"; then
+        echo "  (no changes to $MANIFEST — nothing to commit)"
+    elif git -C "$REPO_ROOT" add "$MANIFEST" \
+         && git -C "$REPO_ROOT" commit -m "chore(prebuilt-index): bump manifest to $NEW_TAG ($DIR_PERSONAS personas / $CHUNKS chunks)" >/dev/null \
+         && git -C "$REPO_ROOT" push; then
+        echo "  ✓ manifest committed + pushed (release_tag=$NEW_TAG)"
+    else
+        echo "  ⛔ WARNING: git commit/push FAILED. The GitHub Release ($NEW_TAG) is LIVE but INDEX-MANIFEST.json is" >&2
+        echo "     NOT yet committed — fresh provisions will install the STALE index until this is fixed by hand:" >&2
+        echo "       git -C \"$REPO_ROOT\" add \"$MANIFEST\" && git -C \"$REPO_ROOT\" commit -m \"chore: bump persona index manifest to $NEW_TAG\" && git -C \"$REPO_ROOT\" push" >&2
+    fi
+fi
+
+echo "DONE. The N38 triad gate + persona-set-asset-consistency-guard CI will verify the manifest on push."

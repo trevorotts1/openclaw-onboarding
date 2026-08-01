@@ -34,7 +34,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    SLIDE [N]
    SECTION: [arc section name]
    PURPOSE: [the one big idea, one sentence]
-   ARCHETYPE: [A1-A5 from master Section 7.2]
+   ARCHETYPE: [A1-A5 from SOP-DESIGN-03-VARIABLE-LAYOUT-ANTI-TEMPLATE + brand-steward SOP (PRESENTATION-MASTER-DOCTRINE.md §4)]
    LADDER: [none | ANCHOR | BUILDUP | DROP1 | DROP2 | DROP3 | FINAL]
    HEADLINE: [max 9 words, active voice, no em dash]
    EMPHASIS: [which word(s) get accent color]
@@ -49,7 +49,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
    HOOK VARIANT: [if this slide contains a hook appearance, write the exact hook variant used]
    ---
    ```
-3. Apply the hard limits (master Section 5.1):
+3. Apply the hard limits (SOP-SLIDE-04-DECK-DENSITY-AND-PACING + slide-copywriter SOP + SOP-SLIDE-00 AF-C8/AF-OBI (PRESENTATION-MASTER-DOCTRINE.md §4)):
    - Headline: 9 words maximum. Count every word including articles and prepositions. Target 4 to 7.
    - Subhead (sub-copy): 18 words maximum. One line.
    - Maximum 3 text blocks per slide (headline + sub-copy + one supporting element such as a stat, label, or CTA chip). The supporting line stays short.
@@ -135,7 +135,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **When to run:** Mode B runs only (per SOP 9.3 of director-of-presentations -- Enhancement Gap Analysis).
 
-**The absolute rule (master Section 3.4):** in Mode B you do not change their intent, you do not change their words, you do not change their methodology. Add on to, improve upon, NEVER change. The client's words ship verbatim. There is NO non-preserving rewrite path in Mode B -- not for headlines, not for subheads, not for body, not for any field. Any improvement you see is a PROPOSAL, never an edit.
+**The absolute rule (SOP-MODE-00-THREE-CREATION-MODES (PRESENTATION-MASTER-DOCTRINE.md §4)):** in Mode B you do not change their intent, you do not change their words, you do not change their methodology. Add on to, improve upon, NEVER change. The client's words ship verbatim. There is NO non-preserving rewrite path in Mode B -- not for headlines, not for subheads, not for body, not for any field. Any improvement you see is a PROPOSAL, never an edit.
 
 **Inputs:**
 - working/copy/enhancement_gap.json (from Director)
@@ -199,7 +199,7 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
 **Outputs:**
 - slides_copy.md slides written doctrine-compliant on the first pass
-- A short doctrine self-check note at the bottom of slides_copy.md confirming per-section intrigue coverage, per-Secret compare/contrast coverage, the care-first open, that both emotion and logic are served in the offer section, that cost-vs-value was answered before the close, AND that all ten required presentation components are present (master Section 4.4): the promise leads, the hook sings on EXACTLY 3 to 4 DEDICATED pure-typography slides and nowhere else, never a footer (the banded ceiling that replaced the retired >= 7x floor), a who-says-so external-proof beat is woven between the drops, a Wall of Wins slide exists near the close, one big idea per slide, a guarantee beat, a real scarcity beat in the close, a short-term-fix-vs-long-term-identity Story Arc beat, the spread price ladder, and the copywriter's own checklist of these promises is walked before handoff
+- A short doctrine self-check note at the bottom of slides_copy.md confirming per-section intrigue coverage, per-Secret compare/contrast coverage, the care-first open, that both emotion and logic are served in the offer section, that cost-vs-value was answered before the close, AND that all ten required presentation components are present (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)): the promise leads, the hook sings on EXACTLY 3 to 4 DEDICATED pure-typography slides and nowhere else, never a footer (the banded ceiling that replaced the retired >= 7x floor), a who-says-so external-proof beat is woven between the drops, a Wall of Wins slide exists near the close, one big idea per slide, a guarantee beat, a real scarcity beat in the close, a short-term-fix-vs-long-term-identity Story Arc beat, the spread price ladder, and the copywriter's own checklist of these promises is walked before handoff
 
 **Hand to:** QC Specialist -- Presentations (Phase 1Q criterion 12, Doctrine compliance)
 

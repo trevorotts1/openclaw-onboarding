@@ -76,6 +76,23 @@ from canonical_decline import (  # noqa: E402
     decision_coverage as _shared_decision_coverage,
 )
 
+# ── SHARED TRANSCRIPT READER (2026-07-30, U048 encrypted-transcript fix) ────
+# The Command Center encrypts workforce-interview-answers.md at rest
+# (chacha20-poly1305, .md.enc envelope — see blackceo-command-center
+# src/lib/interview/crypto.ts). _genuine_interview_answers_file() and
+# verify_interview_complete() below previously read the file with a bare
+# open()/os.path.getsize(), which sees only ciphertext for an encrypted
+# client — a genuine interview then reads as 0 **Q:** blocks and the
+# fabrication guard REFUSES the build on a real, complete interview. This
+# shared reader (also used by qc-interview-completion.py) resolves plaintext
+# OR .enc transcripts and decrypts in-memory so both gates can never disagree
+# about whether a transcript exists. Imported defensively: on failure both
+# functions fall back to their ORIGINAL plaintext-only behavior.
+try:
+    import _interview_transcript as _shared_transcript_reader  # noqa: E402
+except Exception:  # noqa: BLE001
+    _shared_transcript_reader = None
+
 # ── WS-2: import the role-library instantiation helpers from the sibling
 # create_role_workspaces module so the PRIMARY build INSTANTIATES the 121
 # pre-written SOPs (copy + token-personalize) instead of writing empty
@@ -891,6 +908,17 @@ def _genuine_interview_answers_file():
     count). Deliberately IGNORES the bare interviewComplete flag — a flag is not
     proof and the fabricating path sets it too. This closes the re-run vector where
     a prior synthetic build would otherwise be read back as a "real" interview.
+
+    U048 (2026-07-30): the transcript may be PLAINTEXT or an encrypted `.enc`
+    envelope (Command Center transcript encryption at rest). Each candidate is
+    resolved via the shared _interview_transcript reader (decrypted in-memory
+    if needed) and the SAME substance checks below run against the resulting
+    text — decryption is a path-resolution detail, never a way to relax the
+    anti-fabrication bar. "size" is measured on the resolved (decrypted)
+    content, not the on-disk ciphertext length, since an encrypted blob's byte
+    size does not reflect the plaintext's. If _interview_transcript failed to
+    import, this degrades to the ORIGINAL plaintext-only read (unchanged
+    behavior for that failure mode).
     """
     home = os.path.expanduser("~")
     candidates = []
@@ -902,19 +930,35 @@ def _genuine_interview_answers_file():
         candidates.append(os.path.join(COMPANY_DISCOVERY_DIR, "workforce-interview-answers.md"))
     for base in ("/data/.openclaw/workspace", os.path.join(home, ".openclaw", "workspace")):
         candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
+
+    if _shared_transcript_reader is None:
+        # Defensive fallback: ORIGINAL plaintext-only behavior, unchanged.
+        for cand in candidates:
+            if not os.path.isfile(cand):
+                continue
+            try:
+                size = os.path.getsize(cand)
+                text = open(cand, errors="ignore").read()
+            except OSError:
+                continue
+            if NON_INTERACTIVE_ANSWERS_HEADER in text:
+                continue
+            q_count = len([ln for ln in text.splitlines() if ln.strip().startswith("**Q:**")])
+            if q_count >= 3 and size > 512:
+                return cand
+        return None
+
     for cand in candidates:
-        if not os.path.isfile(cand):
-            continue
-        try:
-            size = os.path.getsize(cand)
-            text = open(cand, errors="ignore").read()
-        except OSError:
-            continue
+        result = _shared_transcript_reader.read_transcript_at(cand)
+        if not result.ok:
+            continue  # not-found or undecryptable at THIS candidate — try the next
+        text = result.content
         if NON_INTERACTIVE_ANSWERS_HEADER in text:
             continue  # synthetic / fabricated transcript — does NOT count as genuine
         q_count = len([ln for ln in text.splitlines() if ln.strip().startswith("**Q:**")])
+        size = len(text.encode("utf-8"))
         if q_count >= 3 and size > 512:
-            return cand
+            return result.source_path
     return None
 
 
@@ -2147,26 +2191,41 @@ def verify_interview_complete(answers_path=None):
     ):
         candidates.append(os.path.join(base, "company-discovery", "workforce-interview-answers.md"))
 
+    # U048 (2026-07-30): each candidate may be plaintext OR an encrypted `.enc`
+    # envelope. read_transcript_at() resolves + decrypts in-memory (never
+    # writes plaintext to disk); "size" below is the resolved content's byte
+    # length, not the on-disk ciphertext size, since those differ for an
+    # encrypted file. Falls back to the original plaintext-only open() when
+    # the shared reader failed to import (defensive, unchanged behavior).
     for cand in candidates:
-        if not os.path.isfile(cand):
-            continue
-        try:
-            size = os.path.getsize(cand)
-            text = open(cand, errors="ignore").read()
-        except OSError:
-            continue
+        if _shared_transcript_reader is not None:
+            probe = _shared_transcript_reader.read_transcript_at(cand)
+            if not probe.ok:
+                continue
+            text = probe.content
+            size = len(text.encode("utf-8"))
+            resolved_path = probe.source_path
+        else:
+            if not os.path.isfile(cand):
+                continue
+            try:
+                size = os.path.getsize(cand)
+                text = open(cand, errors="ignore").read()
+            except OSError:
+                continue
+            resolved_path = cand
         # Count real Q-blocks (the template has zero; real answers have ≥ 1 per question)
         q_count = len([ln for ln in text.splitlines() if ln.strip().startswith("**Q:**")])
         if q_count >= 3 and size > 512:
             result["complete"] = True
             result["method"] = "answers_file"
-            result["answers_path"] = cand
+            result["answers_path"] = resolved_path
             result["question_count"] = q_count
             result["file_size"] = size
             return result
         elif q_count > 0:
             # Partial - file has SOME answers but fewer than the minimum.
-            result["answers_path"] = cand
+            result["answers_path"] = resolved_path
             result["question_count"] = q_count
             result["file_size"] = size
             # Don't override flag-based completion if the flag is already set.

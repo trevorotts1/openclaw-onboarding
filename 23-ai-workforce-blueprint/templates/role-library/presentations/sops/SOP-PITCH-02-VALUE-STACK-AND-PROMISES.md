@@ -43,7 +43,7 @@ This SOP is the authored doctrine behind the LIVE Offer Price Strategist SOP 9.2
 
 | Rule | Live enforcement (already wired) | PASS | FAIL |
 |---|---|---|---|
-| 1 promises before the anchor | Offer Price Strategist SOP 9.2 `promise_inventory`; QC named-component presence (Section 4.4) | a promises beat exists before the anchor; inventory recorded | no promises stated before the first number |
+| 1 promises before the anchor | Offer Price Strategist SOP 9.2 `promise_inventory`; QC named-component presence (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)) | a promises beat exists before the anchor; inventory recorded | no promises stated before the first number |
 | 2 itemized with values | Offer Price Strategist SOP 9.2 Offer Stack construction | every component named with its value (or priceless frame) | a bare offer with no itemized components |
 | 3 stack slide sums to a total | Offer Price Strategist SOP 9.2 TOTAL STACK VALUE | a stack slide lists components and sums to a total | no itemized stack slide, or no summed total |
 | 4 total exceeds anchor before cheapest price | Offer Price Strategist SOP 9.2 TALLY slide == anchor (FIX-5a) | a tally slide proves the total ties to/exceeds the anchor before Drop 1 | tally missing, or after the cheapest price |
@@ -76,4 +76,4 @@ A deck missing a required named component (stack, tally, promises, value-gap) fa
 
 ## 6. INTEGRATION NOTE
 
-The value-stack and promises doctrine is already enforced in the live repo by the Offer Price Strategist SOP 9.2 (Offer Stack and Value-Anchor Construction, with FIX-5 VALUE-GAP, FIX-5a TALLY == anchor, FIX-5b PROMISE SLIDE BETWEEN DROPS and the `promise_inventory`) and the QC named-component presence gates (Section 4.4). This SOP is the authored, single-page doctrine those checks implement; it adds no new code and introduces no contradictory numbers. Cross-reference SOP-PITCH-01 (slow drop), SOP-PITCH-03 (re-pitch, which restates the stack after the final price), and SOP-PITCH-04 (Wall of Wins).
+The value-stack and promises doctrine is already enforced in the live repo by the Offer Price Strategist SOP 9.2 (Offer Stack and Value-Anchor Construction, with FIX-5 VALUE-GAP, FIX-5a TALLY == anchor, FIX-5b PROMISE SLIDE BETWEEN DROPS and the `promise_inventory`) and the QC named-component presence gates (director-of-presentations SOP checklist_of_promises + qc-specialist-presentations SOP 9.5 (PRESENTATION-MASTER-DOCTRINE.md §4)). This SOP is the authored, single-page doctrine those checks implement; it adds no new code and introduces no contradictory numbers. Cross-reference SOP-PITCH-01 (slow drop), SOP-PITCH-03 (re-pitch, which restates the stack after the final price), and SOP-PITCH-04 (Wall of Wins).

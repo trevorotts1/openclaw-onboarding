@@ -463,6 +463,8 @@ for ck in candidate_keys:
 
 # ── Scan models.providers for a block referencing a candidate key ─────────────
 block_found = False
+auth_gate_missing = False       # NEW: block references the key but lacks the
+matched_block_name = None       # runtime's auth:"api-key" gate (silent-ignore trap)
 for cfg_path in config_candidates:
     if not os.path.isfile(cfg_path):
         continue
@@ -488,6 +490,13 @@ for cfg_path in config_candidates:
                 api_key_val.strip() == f"${ck}" or
                 api_key_val.strip() == f"${{{ck}}}"):
                 block_found = True
+                matched_block_name = block_name
+                # RUNTIME TRAP (Q2.3 root-cause fleet audit): an explicit
+                # provider apiKey is SILENTLY IGNORED by the gateway unless
+                # auth:"api-key" is ALSO set on the same block -- a stored
+                # auth-profile wins instead, with no error. block_found=True
+                # alone is NOT proof the key is actually live; check the gate.
+                auth_gate_missing = block_cfg.get("auth") != "api-key"
                 break
         if block_found:
             break
@@ -503,6 +512,19 @@ if where_found:
 else:
     verdict = "GENUINELY-ABSENT"
     exit_code = 1
+
+# AUTH-GATE WARNING (Q2.3 root-cause fleet audit): PRESENT_WITH_BLOCK is only
+# an honest "the key is live" verdict when the matched block also carries
+# auth:"api-key". Without it the gateway silently prefers a stored
+# auth-profile and this apiKey is dead weight -- same failure shape N33 exists
+# to prevent, just one gate deeper. Surfaced as a loud stderr warning, NOT a
+# verdict/exit-code change, so no existing caller's contract breaks.
+if verdict == "PRESENT_WITH_BLOCK" and auth_gate_missing:
+    print(f"WARNING: models.providers.{matched_block_name} references this key via apiKey "
+          f"but does NOT set auth:\"api-key\" -- the gateway will SILENTLY IGNORE this "
+          f"apiKey in favor of a stored auth-profile. PRESENT_WITH_BLOCK does NOT mean "
+          f"the key is actually live; add \"auth\": \"api-key\" to the {matched_block_name} "
+          f"block to close the gap.", file=sys.stderr)
 
 # ── Smoke check ───────────────────────────────────────────────────────────────
 smoke_result = "not_run"
@@ -522,6 +544,7 @@ if out_mode == "--json":
         "where_found": where_found,
         "block_found": block_found,
         "live_env_checked": live_env_checked,
+        "auth_gate_missing": bool(block_found and auth_gate_missing),
     }
     if verdict == "NEEDS_BLOCK":
         tmpl = PROVIDER_BLOCK_TEMPLATES.get(prov)
@@ -545,6 +568,10 @@ else:
     print()
     if verdict == "PRESENT_WITH_BLOCK":
         print("STATUS: PRESENT_WITH_BLOCK — key live and a models.providers block references it.")
+        if auth_gate_missing:
+            print(f"  ⚠ AUTH GATE MISSING: {matched_block_name}.auth is not \"api-key\" — the gateway will "
+                  f"SILENTLY IGNORE this apiKey in favor of a stored auth-profile. This key is NOT "
+                  f"actually live until \"auth\": \"api-key\" is added to the {matched_block_name} block.")
     elif verdict == "NEEDS_BLOCK":
         key_ref = found_key or candidate_keys[0]
         print("STATUS: NEEDS_BLOCK — key IS present in env/stores but NO models.providers block references it.")

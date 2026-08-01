@@ -433,7 +433,7 @@ Telegram message from watchdog: "[enrollment-on-autopilot] watchdog: no new imag
 ## 16. Research Sources (Where to Look for Best Practice)
 
 **Tier 1:**
-- universal-sops/CLIENT-WEBINAR-DECK-SOP.md Section 2.1 (Step 0.5 capacity probe) and Phase 7 (resilience cron)
+- PIPELINE-MANIFEST.json produces_artifact paths + director-of-presentations SOP 9.x (the Step 0.5 capacity probe and the resilience cron phase) (PRESENTATION-MASTER-DOCTRINE.md §4)
 - OpenClaw documentation (docs.openclaw.ai) for env store locations and model routing configuration
 
 **Tier 2:**

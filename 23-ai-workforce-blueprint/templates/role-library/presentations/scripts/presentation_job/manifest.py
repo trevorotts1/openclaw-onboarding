@@ -214,7 +214,6 @@ def _as_list(v: Any) -> List[str]:
 # it has never heard of.
 
 
-MIN_MANIFEST_VERSION = 34  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 # (SPEC/units/U019.md:409-410, :440-441, :1093): "set MIN_MANIFEST_VERSION to that same new value,
 # in the same commit" — the floor and the manifest move TOGETHER. A floor one behind the manifest is
 # the split-brain that step 8 exists to prevent: the engine keeps accepting the older, fewer-key
@@ -223,19 +222,19 @@ MIN_MANIFEST_VERSION = 34  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
 # test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below fails the build if not.
 # (31 -> 32: U012 added the six missing manifest phases — P7-TELEPROMPTER,
 # P8.1-PDF-EXPORT, P8.2-GUIDE, P8.4-FISH-TAG, P9.1-SPEECH-PDF, P9.2-GHL-UPLOAD — and their
-# executor blocks, raising manifest_version to 32 in the same commit.)
-# (32 -> 33 on fix/qc-gate-fail-closed: the qc-gate-fail-closed fix made `qc` a hard, fail-closed
-# gate over working/qc/final_qc_report.json, but no phase produced that file. This adds
-# P-QC-AGGREGATE (order 8.65, executor scripts/qc_aggregate.py --phase-mode) -- the aggregation
-# phase that reads the six domain QC reports, verifies provenance via qc_generator_guard.py, and
-# writes final_qc_report.json -- raising manifest_version to 33 in that branch.)
-# (32 -> 33 independently on fix/build-deck-check-ocr-readback (merged to main first as 33):
-# SOP-SLIDE-06 wiring of the U027 OCR-readback postflight gate — added the AF-OCR-READBACK
-# autofails[] entry (enforced_by:build_deck, py_symbol:check_ocr_readback), raising
-# manifest_version to 33 on main.)
-# (33 -> 34: reconciling the two independent 33s above onto one manifest -- both
-# AF-OCR-READBACK and P-QC-AGGREGATE are present -- raising manifest_version to 34 in the
-# merge commit.)
+# executor blocks, raising manifest_version to 32 in the same commit.
+# 32 -> 33: SOP-SLIDE-06 wiring of the U027 OCR-readback postflight gate — added the
+# AF-OCR-READBACK autofails[] entry (enforced_by:build_deck, py_symbol:check_ocr_readback),
+# raising manifest_version to 33 in the same commit.
+# 33 -> 34: fix/ocr-engine-preflight-real-path added AF-OCR-ENGINE-MISSING — the
+# MASTER-SPEC 7.4 Phase-0 OCR-engine-availability pre-flight on the REAL render path
+# (build_deck.ocr_engine_preflight / run_signature_deck.phase0_preflight) — raising
+# manifest_version to 34 in the same commit.
+# 34 -> 35: merging fix/qc-gate-fail-closed adds P-QC-AGGREGATE (the aggregation phase that reads
+# the six domain QC reports, verifies provenance, and writes final_qc_report.json) while main's
+# v34 carries AF-OCR-ENGINE-MISSING — neither parent had both features at v34, so the combined
+# manifest is bumped to 35 to keep the floor and the manifest in lockstep.
+MIN_MANIFEST_VERSION = 35  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

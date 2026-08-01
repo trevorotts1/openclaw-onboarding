@@ -61,8 +61,8 @@ These five are the spine. A deck that trips any of them is NOT final, full stop.
 ### RULE 2 -- AUDIENCE-FACING ONLY (slide-level veto, six categories)
 - **Trigger 2a (AF-AUD-1):** a speaker SAY line on the face. Detection: line phrased as presenter speech (narrates the moment, "remember this", "stay right here", "hold on", first-person guide-talk) appears in slide copy or rendered text.
   - Failure message: `AF-AUD-1: slide {N} carries a speaker SAY line: "{line}". Route to the Presenter's Speech.`
-- **Trigger 2b (AF-AUD-2):** internal pitch-doctrine printed as a caption. Detection: line restates a master Section 4.3 principle (price-vs-value mechanics, "the lower the price the greater the value", "in the next breath the real number").
-  - Failure message: `AF-AUD-2: slide {N} prints internal build doctrine: "{line}". Section 4.3 is build-logic, never slide copy. Delete.`
+- **Trigger 2b (AF-AUD-2):** internal pitch-doctrine printed as a caption. Detection: line restates a SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) principle (price-vs-value mechanics, "the lower the price the greater the value", "in the next breath the real number").
+  - Failure message: `AF-AUD-2: slide {N} prints internal build doctrine: "{line}". The Pitch Doctrine is build-logic, never slide copy. Delete.`
 - **Trigger 2c (AF-AUD-3):** image-narration caption. Detection: caption describes what the slide's own image brief already depicts.
   - Failure message: `AF-AUD-3: slide {N} narrates the image: "{line}". The audience can see it. Delete the caption.`
 - **Trigger 2d (AF-AUD-4):** meta-telegraphing or the word "webinar" or a technique self-label. Detection: case-insensitive literal match on "webinar"; plus matches on "this is not just", "one last proof", "an intrigue gap", "hold onto this line", and other format/technique announcements.
@@ -150,7 +150,7 @@ These are deck-level and are evaluated against arc_allocation.json and slide ord
 | AF-HOOK-6 | 5/6 | slide | hook misspelled/garbled on render | spell/glyph check on rendered hook line |
 | AF-HOOK-7 | 1Q/5 | slide | signature quote conflated with main hook | main hook present on the signature-quote slide |
 | AF-AUD-1 | 1Q/5 | slide | speaker SAY line on the face | presenter-speech phrasing in slide/rendered text |
-| AF-AUD-2 | 1Q/5 | slide | internal pitch doctrine as caption | restates a Section 4.3 principle |
+| AF-AUD-2 | 1Q/5 | slide | internal pitch doctrine as caption | restates a SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) principle |
 | AF-AUD-3 | 1Q/5 | slide | image-narration caption | caption describes what the image already shows |
 | AF-AUD-4 | 1Q/5 | slide | meta-telegraph / "webinar" / technique label | literal "webinar" + format/technique-announcement match |
 | AF-AUD-5 | 1Q/5 | slide | credential/justification dump | resume/credential paragraph as body copy |

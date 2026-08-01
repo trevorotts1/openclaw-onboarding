@@ -102,7 +102,7 @@ class Reporter:
             else:
                 self.state.setdefault("undeliverable", []).append(
                     {"at": utcnow(), "kind": kind, "message": message,
-                     "chat_id_present": True, "attempts": 1})
+                     "chat_id": chat_id, "attempts": 1})
         else:
             throttled = self.state.setdefault("throttled", 0)
             self.state["throttled"] = throttled + 1

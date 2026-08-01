@@ -19,11 +19,10 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 ---
 
 ### SOP 9.1 -- Signature Deck Arc Design (Start With The End In Mind)
-
 > Gating enforcer: `P-SP-INTAKE-TRACE` / `build_deck._chk_sp_intake_trace` (fail-closed preflight, phase order 0.16); the QC/Healer scan enforces the same check out-of-band.
 
 **SOP ID:** SOP-PRES-CUSTOM-01 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 4.1 (17-row allocation), Section 4.2 (seven-section proven flow), Section 4.3 (pitch doctrine)
+**Library pointer:** SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE + director-of-presentations SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) (17-row allocation), SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4) (seven-section proven flow), SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine)
 **When to run:** When a deck arrives from the Director with complete intake and requires a narrative architecture before copy begins.
 **Frequency:** On-demand, per deck.
 **Inputs:** Complete intake.json (strongest-promise candidates, proof assets, offer details, PRICE_MODE, audience composition, hook seed), the slide-math ceiling from the Director, the proven exemplar deck.
@@ -33,7 +32,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 2. Design backward from the finished signature deck (DR-20): state the end-state the client will reproduce on demand, then work backward to the opening.
 3. Extract the PROMISE spine (DR-2): identify what the product is promising, not what it is. Every persuasive beat will pitch the promise.
 4. Select the strongest promise as the HOOK SEED (DR-3) and hand it to the Hook Strategist; place the hook from the first content slide and mark it to recur about ten times through the deck (sing the chorus from the first verse).
-5. Map the seven-section proven flow against the slide-math ceiling using the master Section 4.1 17-row allocation. Place the cost-of-inaction beat AND the value-of-action beat (DR-7, cost versus value); place third-party proof beats answering "who says so other than you?" (DR-6); place the light-pitch lines on teaching slides from the front (DR-10).
+5. Map the seven-section proven flow against the slide-math ceiling using the SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE + director-of-presentations SOP 9.3 (PRESENTATION-MASTER-DOCTRINE.md §4) 17-row allocation. Place the cost-of-inaction beat AND the value-of-action beat (DR-7, cost versus value); place third-party proof beats answering "who says so other than you?" (DR-6); place the light-pitch lines on teaching slides from the front (DR-10).
 6. Mark the value-anchor placements that feed the slow-drop ladder (DR-4, DR-5) and hand them to the Offer Price Strategist: ANCHOR is a gradual value plant, not a drop; every drop adds value.
 7. Apply the appetizer-not-dinner guardrail (DR-9): mark any beat that over-teaches and trim it so the deck proves value and creates desire without fully solving the problem for free.
 
@@ -48,7 +47,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 
 **SOP ID:** SOP-PRES-CUSTOM-02 (BlackCEO)
-**Library pointer:** `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 4.3 (pitch doctrine), Section 5.5 (spread ladder)
+**Library pointer:** SOP-PITCH-* + SOP-PROCLAMATION-01 (Pitch Doctrine points 1-18 reproduced in devils-advocate-presentations SOP 9.1) (PRESENTATION-MASTER-DOCTRINE.md §4) (pitch doctrine), SOP-PITCH-01-SLOW-DROP-PROCESS + offer-price-strategist SOP 9.x (PRESENTATION-MASTER-DOCTRINE.md §4) (spread ladder)
 **When to run:** After the Copywriter and Offer Price Strategist execute, before the deck advances to image prompts.
 **Frequency:** Per deck, at least once; re-run after any pitch revision.
 **Inputs:** The drafted slide copy, the price_ladder.json, the hook package, the narrative architecture from SOP 9.1.
@@ -74,7 +73,7 @@ Master authority: `51-signature-presentation/MASTERDOC.md` (Prime Directives 1-1
 
 
 **SOP ID:** SOP-PRES-CUSTOM-03 (BlackCEO)
-**Library pointer:** Signature Presentation Theory (governing intelligence); `universal-sops/CLIENT-WEBINAR-DECK-SOP.md` Section 4.2
+**Library pointer:** Signature Presentation Theory (governing intelligence); SOP-STORY-01-VILLAIN-HERO-ARC + SOP-PRIORITY-02-EIGHT-MOVE-BUILD-SEQUENCE (PRESENTATION-MASTER-DOCTRINE.md §4)
 **When to run:** During arc design, for every deck (the SEE journey is the spine the seven-section flow hangs on).
 **Frequency:** Per deck.
 **Inputs:** The narrative architecture, the client's audience composition, the client's methodology and story material.

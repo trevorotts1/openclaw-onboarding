@@ -346,15 +346,26 @@ _register_command_cron() {
     # script through the shell. Silent (no --channel/--to) so it never announces
     # to a chat — it runs in the main agent's own context, mirroring the
     # 38-conversational-ai-system 2026.5.27-targeted registration pattern.
+    #
+    # BUG FIX (Q2.5 root-cause fleet audit): this was the ONE cron-registration
+    # script in the repo using --best-effort-deliver instead of the fleet-wide
+    # silence-doctrine flag --no-deliver (every other registrar --
+    # 04-register-crons.sh, lib-onboarding-resume-cron.sh,
+    # install-closeout-resume-cron.sh, provision-podcast-client.sh -- uses
+    # --no-deliver). On legacy CLIs this job runs with no established session
+    # channel; --best-effort-deliver still attempts a fallback delivery and can
+    # hard-fail with "Delivering to Telegram requires target <chatId>" when no
+    # target resolves. --no-deliver never attempts delivery, matching the
+    # documented "Silent" comment above and closing the failure mode.
     local msg
     msg="[PIPELINE-CRON ${name}] Run this exact shell command now and report only on failure: bash ${script}"
     out=$(openclaw cron add --name "$name" --cron "$schedule" \
-            --agent main --light-context --best-effort-deliver \
+            --agent main --light-context --no-deliver \
             --message "$msg" --json 2>/dev/null) || out=""
     # Some 5.x builds reject --json; retry without it (cron still registers).
     if [[ -z "$out" ]]; then
       if openclaw cron add --name "$name" --cron "$schedule" \
-            --agent main --light-context --best-effort-deliver \
+            --agent main --light-context --no-deliver \
             --message "$msg" >/dev/null 2>&1; then
         out="{}"
       fi

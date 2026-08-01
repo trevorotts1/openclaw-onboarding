@@ -1,17 +1,27 @@
 # Direct-to-Agent Update Message Template
-# Version 2.3 | 2026-05-30 (v10.15.12)
+# Version 3.0 | 2026-07-31 (v21.4.45)
 #
 # Copy-paste this to any client's agent on Telegram via Skill 15 (BlackCEO Management).
-# Works for clients on ANY version (v2-v10.x). Kept in sync with `version` at repo root.
+# Kept in sync with `version` at repo root.
+#
+# WHY THIS IS ONE DETERMINISTIC COMMAND, NOT A PLAYBOOK (coverage-audit Bug G,
+# 2026-07-30): the old body told the receiving agent to fetch the repo and
+# interpret a 32 KB prose playbook (UPDATE-PLAYBOOK.md) itself. Fanned out to
+# N agents, that produces N divergent interpretations. This message must
+# never ask an agent to read, improvise on, or summarise a playbook — it runs
+# the one script that already contains every step, gate, and rollback.
 
 ---
 
-There is a major update available for your OpenClaw / BlackCEO system. The latest version is **v21.4.21**. Follow these instructions carefully.
+There is an update available for your OpenClaw / BlackCEO system. The latest version is **v21.4.50**.
 
-**FIRST: Check your current version.** Look at the "version" file in your onboarding installation. This tells you how far behind you are.
+Run exactly this command. Do not read a playbook, do not improvise, do not summarise:
 
-**SECOND: Go to https://github.com/trevorotts1/openclaw-onboarding and download the full repo.**
+```
+bash <(curl -fsSL https://raw.githubusercontent.com/trevorotts1/openclaw-onboarding/main/update-skills.sh)
+```
 
-**THIRD: Open UPDATE-PLAYBOOK.md and follow every step exactly. Do not skip steps.**
+When it finishes, report back — as proof of completion, not a summary:
 
-The playbook will walk you through: backup first, read the changelog, check credentials, check dependencies, risk assessment, apply updates, handle core file changes. Follow it step by step.
+1. The contents of `~/.openclaw/skills/.onboarding-version` (on a VPS/Contabo box: `/data/.openclaw/skills/.onboarding-version`).
+2. The last 20 lines of the command's output.

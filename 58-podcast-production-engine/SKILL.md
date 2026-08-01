@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: 0.1.21
+version: 0.1.24
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -501,8 +501,10 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
   client's show under BlackCEO's host account, captured at onboarding, never a secret, never
   guessed by the mapper. The Podbean OAuth app client_id and client_secret are BlackCEO's SINGLE
   shared app, NOT the client's, and no client box ever needs them. Publish-proxy mode (fleet
-  default): the client box holds five variables - PODBEAN_PUBLISH_WEBHOOK_URL (the operator's
-  n8n publish webhook, not a secret) + PODBEAN_PUBLISH_TOKEN (the shared webhook header token,
+  default): the client box's role is to TRIGGER the operator's n8n publish webhook - it is
+  provisioned with five variables for that trigger call only, never as credentials it owns:
+  PODBEAN_PUBLISH_WEBHOOK_URL (the operator's n8n publish webhook, not a secret) + PODBEAN_PUBLISH_TOKEN
+  (an operator-owned header token that authorizes the trigger call, placed by the operator,
   NOT a Podbean credential) + PODBEAN_PODCAST_ID (the Channel ID above) + PODCAST_CLIENT_LAST_NAME
   + PODCAST_CLIENT_EMAIL (the roster identity tuple), plus optional PODCAST_CLIENT_FIRST_NAME for
   display only. n8n performs the entire publish server-side (good-standing plus identity gate,
@@ -514,6 +516,23 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
   is the operator's OWN box only, last resort. Selection is per box: proxy if
   PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN both resolve, else broker if
   PODBEAN_BROKER_WEBHOOK_URL and PODBEAN_BROKER_TOKEN both resolve, else local.
+  Ownership, stated plainly: the client box's ONLY role in publish-proxy mode
+  is to TRIGGER the operator's n8n webhook - the operator's n8n performs the
+  ENTIRE publish (good-standing/identity gate, token mint, upload, create-episode,
+  permalink). PODBEAN_PUBLISH_TOKEN is an operator-owned value that the operator
+  places onto the client box during provisioning, sourced from
+  OPENCLAW_PODBEAN_PUBLISH_TOKEN in the operator's own env at install time; the
+  client is never asked for it, never shown it, and it must never be handed off
+  through a person, a chat message, or a client's own agent. It is NOT a Podbean
+  credential and it is never the client's password - it is the header gate on
+  the operator's own n8n webhook (X-Podcast-Publish-Token); the actual Podbean
+  OAuth app client_id/client_secret is the separate thing named above, vaulted
+  only inside the operator's n8n and never placed on any client box. Conflating
+  the two is the exact trap: the client's only Podbean value, ever, stays the
+  Channel ID above. Both-or-neither still holds for the pair (a lone URL or a
+  lone token is refused, never half-seeded). A client box that cannot be reached
+  to provision this pair is a tunnel or connectivity problem to fix - never a
+  reason to hand the token to a human as a workaround.
 - Ollama Cloud API key or OpenRouter API key: client env (the ollama-cloud provider needs a
   baseUrl, not an apiKey slotting).
 - PODCAST_INTAKE_HOOK_SECRET and PODCAST_DASHBOARD_TOKEN: generated at provisioning, stored in
