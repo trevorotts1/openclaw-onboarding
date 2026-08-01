@@ -278,17 +278,17 @@ validate_episode_metadata() {
 
   desc_len="$(printf '%s' "$description" | wc -m | tr -d ' ')"
   if [ "$desc_len" -gt "$PODBEAN_MAX_DESCRIPTION_LEN" ]; then
-    die "pre-flight: show notes are ${desc_len} chars, over the Podbean limit of ${PODBEAN_MAX_DESCRIPTION_LEN} — shorten the --description before publishing (the API would reject this)"
+    die "pre-flight: show notes are ${desc_len} chars, over the Podbean limit of ${PODBEAN_MAX_DESCRIPTION_LEN}; shorten the --description before publishing (the API would reject this)"
   fi
 
   title_len="$(printf '%s' "$title" | wc -m | tr -d ' ')"
   if [ "$title_len" -gt "$PODBEAN_MAX_TITLE_LEN" ]; then
-    die "pre-flight: episode title is ${title_len} chars, over the Podbean limit of ${PODBEAN_MAX_TITLE_LEN} — shorten the --title before publishing (the API would reject this)"
+    die "pre-flight: episode title is ${title_len} chars, over the Podbean limit of ${PODBEAN_MAX_TITLE_LEN}; shorten the --title before publishing (the API would reject this)"
   fi
 
   case " $PODBEAN_EPISODE_TYPES " in
     *" $episode_type "*) : ;;  # allowed episode type
-    *) die "pre-flight: episode type '${episode_type}' is not allowed — must be one of:$(printf ' %s' $PODBEAN_EPISODE_TYPES) (the API would reject this)" ;;
+    *) die "pre-flight: episode type '${episode_type}' is not allowed; must be one of:$(printf ' %s' $PODBEAN_EPISODE_TYPES) (the API would reject this)" ;;
   esac
 
   return 0
@@ -826,8 +826,13 @@ print(json.dumps(d))
   [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it)"
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
 
-  PROXY_PUBLISH_DATE="$RELEASE_DATE"
-  [ -n "$PROXY_PUBLISH_DATE" ] || PROXY_PUBLISH_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  if [ -n "$RELEASE_DATE" ]; then
+    rel_epoch="$(to_epoch "$RELEASE_DATE" || true)"
+    [ -n "$rel_epoch" ] || die "could not parse --release-date: $RELEASE_DATE"
+    PROXY_PUBLISH_DATE="$(date -u -r "$rel_epoch" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d "@${rel_epoch}" +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || die "could not format release date from epoch $rel_epoch")"
+  else
+    PROXY_PUBLISH_DATE="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  fi
 
   log "publish-proxy: sending the v2 payload to n8n (identity and urls only; no Podbean or n8n secret in the body)"
   PROXY_PAYLOAD="$(build_proxy_payload)"
@@ -933,8 +938,8 @@ else
   # ---------------------------------------------- isolation: own channel only ---
   # Confirm the configured podcast_id belongs to this account. This is the anti
   # commingling guard: refuse to publish to any channel that is not the target channel.
-  # T0-19: EVERY scoping failure is fatal. This block had exactly one hard stop —
-  # the configured channel not appearing on the account — and three paths that
+  # T0-19: EVERY scoping failure is fatal. This block had exactly one hard stop:
+  # the configured channel not appearing on the account; and three paths that
   # logged a warning and carried on holding the ACCOUNT-WIDE token: the listing
   # call failing, the identifier list parsing empty, and the scoped-token request
   # failing or returning nothing. On a shared account hosting several channels,
