@@ -1,3 +1,33 @@
+## [v21.4.49]  -  2026-07-31  -  feat(hooks): pre-push client-name gate — a real client name can never be pushed to this public repo
+
+Ships the missing `.githooks/pre-push` hook. The repo already had the client-name gate
+(`scripts/qc-assert-no-client-names.sh` — which falls back to a roster DERIVED structurally from
+`~/clawd/accounts/accounts.md`, a real roster-based check) and `core.hooksPath = .githooks` with a
+tracked `.githooks/pre-commit`, but there was NO pre-push hook, so a client name could still reach
+`origin` — CI cannot catch it there by design (a bare GitHub runner has no roster). The new pre-push
+runs the SAME gate and refuses the push (exit 1) when it reports hits.
+
+- Tiering is EXACTLY the gate's own, so the hook and pre-commit and CI can never disagree on what
+  "hits" means: curated roster -> roster derived from accounts.md -> neither (fail-closed exit 2 on
+  the operator box, since a real roster source exists there; only CI treats that state as
+  report-only). Reuses the script, never reimplements it.
+- Blocking rule is only the gate's own verdict: gate exit 1 (roster/always-on-token hit) or exit 2
+  (structural fail-closed) refuses the push; gate exit 0 (clean) always allows it — the hook can
+  never block another session's legitimate push of clean content.
+- Failure output prints paths and counts only (the same `path:line` filter CI uses), never a matched
+  name.
+- README documents the one-time activation: `git config core.hooksPath .githooks` (already set on
+  operator clones).
+
+Mutation-proven both directions in an isolated scratch worktree off `origin/main`:
+(a) a REAL derived-roster term planted in a tracked file (handled entirely by file redirection, so
+the name never entered any command text) made `git push --dry-run` to a throwaway ref REFUSE
+(exit 1, `PRE-PUSH BLOCKED`, hit shown as `path:line` only); (b) the identical push on the clean
+tree PASSED (exit 0, `PRE-PUSH: client-name gate PASSED`). Neither throwaway ref ever reached
+`origin` (verified via `git ls-remote`). All four repo gates exit 0.
+
+---
+
 ## [v21.4.48]  -  2026-07-31  -  fix: fleet-roll coverage audit gap #8 — CONTENT RECHECK skipped SOP-library/embeddings, persona-index, weekly-cron, and AGENTS.md hygiene convergence
 
 ### Why

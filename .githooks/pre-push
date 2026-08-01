@@ -1,0 +1,79 @@
+#!/bin/bash
+# Pre-push hook: refuse a push that would carry a real client name into a
+# public repo. This repo is a PUBLIC fleet-wide template — a client name,
+# business name, or owner-identifying token pushed to origin is a privacy
+# violation that CI cannot catch (a bare GitHub runner has no roster by
+# design), so the push itself is where it must be stopped.
+#
+# Gate: scripts/qc-assert-no-client-names.sh — REUSED, never reimplemented.
+# The tiering is EXACTLY the gate's own, so this hook and the pre-commit hook
+# and CI can never disagree on what "hits" means:
+#   1. Curated roster ($OPENCLAW_CLIENT_ROSTER or ~/.openclaw/client-roster.txt)
+#   2. Roster DERIVED structurally from ~/clawd/accounts/accounts.md
+#   3. Neither available -> structural mode (operator-path + .example
+#      placeholder-leak tokens only). Fail-closed here (exit 2) because a real
+#      roster source exists on operator boxes; only CI treats that state as
+#      report-only. This hook runs on the operator's own box, never on a bare
+#      CI runner, so exit 2 is the correct, hard block.
+#
+# Blocking rule — ONLY ever block on the gate's own verdict:
+#   * gate exit 1 (roster/always-on-token hit)  -> REFUSE the push.
+#   * gate exit 2 (structural, fail-closed)     -> REFUSE the push.
+#   * gate exit 0 (clean)                        -> allow; never block a clean tree.
+# No other condition can refuse a push. A transient environment problem must
+# not hold up another session's legitimate push of clean content.
+#
+# Failure output shows paths and counts only, never matched name content:
+# strip everything after `path:line` with the same filter CI uses.
+
+set -uo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$REPO_ROOT" || exit 1
+
+GATE="scripts/qc-assert-no-client-names.sh"
+if [ ! -f "$GATE" ]; then
+  echo "PRE-PUSH: $GATE missing — cannot verify this push (fail-closed)."
+  exit 1
+fi
+
+OUT="$(bash "$GATE" 2>&1)"
+GATE_RC=$?
+
+case "$GATE_RC" in
+  0)
+    # Clean — allow the push. Nothing may refuse a push on a clean tree.
+    echo "PRE-PUSH: client-name gate PASSED (exit 0) — push allowed."
+    exit 0
+    ;;
+  1)
+    echo ""
+    echo "PRE-PUSH BLOCKED: real client names detected in tracked files."
+    echo "A client name can never be pushed to this public repo."
+    echo "Replace each with a generic placeholder (see the gate's output)."
+    echo "Hit locations (path:line only — matched content withheld):"
+    echo "$OUT" | sed -E 's/^([^:]+:[0-9]+):.*/\1/' | grep -E ':[0-9]+' || true
+    exit 1
+    ;;
+  2)
+    echo ""
+    echo "PRE-PUSH BLOCKED: client-name gate could not verify (exit 2,"
+    echo "fail-closed). Neither a curated roster nor an accounts.md-derived"
+    echo "roster is available in this environment, so the per-name scan did"
+    echo "not run. Fix by providing a curated roster or an accounts.md source"
+    echo "(see \$OPENCLAW_ACCOUNTS_MD), then retry the push."
+    echo ""
+    echo "Gate output (for diagnosis):"
+    echo "$OUT" | sed -E 's/^([^:]+:[0-9]+):.*/\1/'
+    exit 1
+    ;;
+  *)
+    # Unexpected gate failure (missing python3, etc.) — refuse loudly rather
+    # than let an unverifiable push through. Never print matched content.
+    echo ""
+    echo "PRE-PUSH BLOCKED: client-name gate exited unexpectedly ($GATE_RC)."
+    echo "A push that cannot be verified must not proceed. See gate output:"
+    echo "$OUT" | sed -E 's/^([^:]+:[0-9]+):.*/\1/'
+    exit 1
+    ;;
+esac
