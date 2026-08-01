@@ -139,6 +139,25 @@ BOOK_TEASER_FIELD = "book_teaser"  # Interview-mode only; ABSENT is reported, ne
 SINGLE_UNDERSCORE_TRAP = "podcast_survey_additional_info"  # never a valid substitute.
 
 # --------------------------------------------------------------------------- #
+# Podbean credential keys (Step 0 full mode only; presence checks only).
+# Three publish-transport pairs in precedence order. A half-configured pair
+# (one member set, the other not) fails the gate. PODBEAN_PODCAST_ID is the
+# ONE per-client Podbean value and must always be present.
+#
+# Reference: qc-podcast.sh lines 78-112 perform a similar presence sweep plus
+# a bounded reachability HEAD (U031) against the resolved n8n host; this gate
+# duplicates the presence logic but NOT the network call -- the SKILL.md
+# Step 15 publish gate is the reachability enforcement point.
+# --------------------------------------------------------------------------- #
+PODBEAN_PUBLISH_URL_KEYS = ["PODBEAN_PUBLISH_WEBHOOK_URL"]
+PODBEAN_PUBLISH_TOKEN_KEYS = ["PODBEAN_PUBLISH_TOKEN", "OPENCLAW_PODBEAN_PUBLISH_TOKEN"]
+PODBEAN_BROKER_URL_KEYS = ["PODBEAN_BROKER_WEBHOOK_URL"]
+PODBEAN_BROKER_TOKEN_KEYS = ["PODBEAN_BROKER_TOKEN"]
+PODBEAN_CLIENT_ID_KEYS = ["PODBEAN_CLIENT_ID"]
+PODBEAN_CLIENT_SECRET_KEYS = ["PODBEAN_CLIENT_SECRET"]
+PODBEAN_PODCAST_ID_KEYS = ["PODBEAN_PODCAST_ID"]
+
+# --------------------------------------------------------------------------- #
 # HTTP / rate config
 # --------------------------------------------------------------------------- #
 DEFAULT_API_BASE = "https://services.leadconnectorhq.com"
@@ -685,6 +704,83 @@ class Verdict:
 
 
 # --------------------------------------------------------------------------- #
+# Podbean credential check (Step 0 full mode; presence checks only)
+# --------------------------------------------------------------------------- #
+def _any_set(keys: List[str], stores: List[Tuple[str, Dict[str, str]]]) -> bool:
+    """Return True if any key in `keys` resolves to a non-empty value across stores."""
+    for _label, kv in stores:
+        for key in keys:
+            val = kv.get(key)
+            if val and isinstance(val, str) and val.strip():
+                return True
+    return False
+
+
+def _resolve_first(keys: List[str],
+                   stores: List[Tuple[str, Dict[str, str]]]) -> Tuple[Optional[str], Optional[str]]:
+    """Return the (value, winner_key) for the first found alias across stores."""
+    for _label, kv in stores:
+        for key in keys:
+            val = kv.get(key)
+            if val and isinstance(val, str) and val.strip():
+                return val, key
+    return None, None
+
+
+def _check_podbean_creds(stores: List[Tuple[str, Dict[str, str]]]) -> Dict[str, object]:
+    """Presence-only Podbean credential check (Step 0 full mode).
+
+    Checks the three publish-transport pairs in precedence order, then the
+    Podcast ID. A half-configured pair (one key present, the other absent)
+    fails the gate. Returns a dict with verdict 'OK' or 'FAIL' plus detail.
+    Presence checks only; no network call (Step 15's publish gate and
+    qc-podcast.sh's U031 probe enforce reachability).
+    """
+    pairs = [
+        ("proxy", PODBEAN_PUBLISH_URL_KEYS, PODBEAN_PUBLISH_TOKEN_KEYS),
+        ("broker", PODBEAN_BROKER_URL_KEYS, PODBEAN_BROKER_TOKEN_KEYS),
+        ("local", PODBEAN_CLIENT_ID_KEYS, PODBEAN_CLIENT_SECRET_KEYS),
+    ]
+
+    checked: Dict[str, object] = {}
+
+    for name, url_keys, token_keys in pairs:
+        url_set = _any_set(url_keys, stores)
+        token_set = _any_set(token_keys, stores)
+        checked[name] = {"url_set": url_set, "token_set": token_set}
+        if url_set and token_set:
+            checked["resolved_pair"] = name
+            break
+        if url_set != token_set:  # half-configured
+            present = "url" if url_set else "token"
+            absent = "token" if url_set else "url"
+            return {
+                "verdict": "FAIL",
+                "reason": (
+                    f"podbean {name} publish pair is half-configured: "
+                    f"{present} is set but {absent} is not; "
+                    f"set both or unset both before proceeding."
+                ),
+                "details": checked,
+            }
+    else:
+        # No pair fully configured -- the triple-alternative all failed.
+        checked["resolved_pair"] = None
+
+    # Check PODBEAN_PODCAST_ID presence.
+    podcast_id, _winner_key = _resolve_first(PODBEAN_PODCAST_ID_KEYS, stores)
+    checked["podcast_id_present"] = bool(podcast_id)
+    if not podcast_id:
+        return {
+            "verdict": "FAIL",
+            "reason": "PODBEAN_PODCAST_ID is not set; the client Channel ID is always required.",
+            "details": checked,
+        }
+
+    return {"verdict": "OK", "reason": "Podbean credentials present.", "details": checked}
+
+
+# --------------------------------------------------------------------------- #
 # The gate itself
 # --------------------------------------------------------------------------- #
 class CredentialGate:
@@ -922,6 +1018,20 @@ class CredentialGate:
             )
         v.checks["rate"] = rate_check
 
+        # CHECK 7b: Podbean credential presence (full mode only; Step 0 SKILL.md).
+        # Three publish-transport pairs checked in precedence order. A
+        # half-configured pair (one set, the other unset) fails the gate.
+        # PODBEAN_PODCAST_ID is the client's Channel ID and is always required.
+        # Presence checks only; no network call. Step 15's publish gate plus
+        # qc-podcast.sh's U031 probe are the reachability enforcement points.
+        podbean_check = _check_podbean_creds(stores)
+        v.checks["podbean"] = podbean_check
+        if podbean_check["verdict"] != "OK":
+            return v.finish(
+                "MISSING", EXIT_MISSING,
+                "Podbean credential gate failed: " + podbean_check["reason"],
+            )
+
         # CHECK 8: write verdict/state for cached mode (never as root).
         patch: Dict[str, object] = {
             "client": self.client,
@@ -1132,6 +1242,12 @@ def _selftest() -> int:
             kv["CONVERTFLOW_API_KEY"] = pit  # exercise a branded alias.
         if loc:
             kv["GHL_LOCATION_ID"] = loc
+        # Default Podbean publish-proxy transport so all existing GHL tests pass
+        # without adding Podbean-specific stores. Individual Podbean tests
+        # (cases 10-13) override these.
+        kv.setdefault("PODBEAN_PUBLISH_WEBHOOK_URL", "https://n8n.example.com/webhook/podcast-publish")
+        kv.setdefault("PODBEAN_PUBLISH_TOKEN", "test-publish-token")
+        kv.setdefault("PODBEAN_PODCAST_ID", "test-podcast-id")
         return [("live-process-env(self)", kv)]
 
     with tempfile.TemporaryDirectory() as td:
@@ -1232,6 +1348,65 @@ def _selftest() -> int:
         reports.append(f"[{'PASS' if not leak else 'FAIL'}] secrecy: PIT absent from JSON verdict")
         passed += int(not leak)
         failed += int(leak)
+
+        # 10. PODBEAN: proxy pair fully configured passes.
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme10"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_with(FAKE_PIT, GOOD_LOC),
+        )
+        check("podbean proxy pair OK", g.run().exit_code, EXIT_PASS)
+
+        # 11. PODBEAN: missing PODBEAN_PODCAST_ID fails.
+        pod_stores_missing_id: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                # PODBEAN_PODCAST_ID intentionally absent
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme11"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=pod_stores_missing_id,
+        )
+        check("podbean missing podcast_id", g.run().exit_code, EXIT_MISSING)
+
+        # 12. PODBEAN: half-configured proxy pair (URL set, token missing) fails.
+        pod_stores_half: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                # PODBEAN_PUBLISH_TOKEN intentionally absent
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme12"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=pod_stores_half,
+        )
+        check("podbean half-configured pair", g.run().exit_code, EXIT_MISSING)
+
+        # 13. PODBEAN: broker pair resolves when proxy is absent.
+        pod_stores_broker: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_BROKER_WEBHOOK_URL": "https://n8n.example.com/webhook/broker",
+                "PODBEAN_BROKER_TOKEN": "test-broker-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme13"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=pod_stores_broker,
+        )
+        check("podbean broker pair OK", g.run().exit_code, EXIT_PASS)
 
     for line in reports:
         REDACTOR.out(line)

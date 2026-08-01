@@ -118,7 +118,7 @@ FORWARD_ORDER = [
 ]
 
 # Holding / terminal states outside the linear path.
-HOLDING_STATES = {"queued_credit_out"}
+HOLDING_STATES = {"queued_credit_out", "blocked_standing"}
 TERMINAL_STATES = {"complete", "failed"}
 
 STATUS_SET = set(FORWARD_ORDER) | HOLDING_STATES | {"failed"}
@@ -137,6 +137,7 @@ CLIENT_LABEL = {
     "enrolling": "Finalizing",
     "complete": "Live",
     "queued_credit_out": "On hold",
+    "blocked_standing": "On hold",
     "failed": "Needs attention",
 }
 
@@ -160,6 +161,7 @@ STATUS_TO_LEDGER_STATE = {
     "enrolling": "enrolling",
     "complete": "complete",
     "queued_credit_out": "queued_credit_out",
+    "blocked_standing": "blocked_standing",
     "failed": "failed",
 }
 
@@ -333,7 +335,7 @@ CREATE TABLE IF NOT EXISTS podcast_jobs (
   status            TEXT NOT NULL DEFAULT 'received' CHECK (status IN (
                       'received','researching','writing','in_qc','generating_art',
                       'producing_audio','publishing','enrolling','complete',
-                      'failed','queued_credit_out')),
+                      'failed','queued_credit_out','blocked_standing')),
   resume_stage      TEXT,
   attempt_count     INTEGER NOT NULL DEFAULT 0,
   failed_step       TEXT,
@@ -684,6 +686,25 @@ def check_transition(row: sqlite3.Row, to_status: str, preset: str | None = None
             )
         return
 
+    # blocked_standing: reachable from received (standing gate refuses at ingest).
+    # Resumable to received or researching when standing is restored. Use `advance`.
+    if to_status == "blocked_standing":
+        if frm == "blocked_standing":
+            raise TransitionError("already blocked on standing")
+        if frm not in ("received",):
+            raise TransitionError(
+                f"blocked_standing is only reachable from 'received', not '{frm}'"
+            )
+        return
+
+    # Leaving blocked_standing: back to received or forward to researching.
+    if frm == "blocked_standing":
+        if to_status not in ("received", "researching"):
+            raise TransitionError(
+                f"blocked_standing may only resume to 'received' or 'researching', not '{to_status}'"
+            )
+        return
+
     # QC revision loop.
     if frm == "in_qc" and to_status == "writing":
         if int(row["attempt_count"]) >= 3:
@@ -744,7 +765,7 @@ class LedgerLinkageError(Exception):
 
     T0-22: this used to be indistinguishable from "no ledger is configured".
     Both returned None, `_sync_ledger` returned immediately, no warning was
-    emitted, and the advance reported success — while the intake ledger, which
+    emitted, and the advance reported success -- while the intake ledger, which
     is the atomic-claim mechanism, was never updated. A job that never had an
     index is a legitimate no-op; a job whose index is present but malformed,
     unreadable, or missing its job_key is a BROKEN LINKAGE and must be loud."""
@@ -785,7 +806,7 @@ def _atomic_write(path: str, text: str) -> None:
     U043: fsync the temp file before rename so the data hits stable storage
     before the directory entry is updated. Also fsync the directory after
     rename so the rename itself is durable. A crash at any point leaves
-    either the old file or the new file — never a partial write."""
+    either the old file or the new file -- never a partial write."""
     d = os.path.dirname(path)
     if d and not os.path.isdir(d):
         os.makedirs(d, mode=0o700, exist_ok=True)
@@ -840,11 +861,11 @@ def _sync_ledger(job_id: str, status: str, queue_state: str) -> str:
     mechanism. Read-modify-write preserves fields the webhook layer owns.
 
     Returns one of:
-      "not_configured" — no job index for this job; nothing to mirror (a no-op the
+      "not_configured" -- no job index for this job; nothing to mirror (a no-op the
                          skill documents, e.g. a job that never came through the
                          webhook intake layer);
-      "synced"         — the ledger record was written;
-      "broken"         — the linkage exists but could not be resolved or written.
+      "synced"         --  the ledger record was written;
+      "broken"         --  the linkage exists but could not be resolved or written.
 
     T0-22: every one of those three used to be an unconditional `return None`,
     so a broken linkage produced no update, no warning, and an advance that
@@ -931,7 +952,7 @@ def cmd_create(conn, args):
     # never disagree. Previously this layer hashed a NARROWER field set
     # (contact_id + style + q1..q10 + additional_info), so a submission the webhook
     # treats as NEW (e.g. differs only in transparency_answer / show_name / target
-    # runtime — fields the webhook hashes but the local fingerprint ignored) would
+    # runtime --  fields the webhook hashes but the local fingerprint ignored) would
     # be seen here as a duplicate and NO episode would ever be created. Keying off
     # the webhook job_key closes that never-create/drop hole. When no job_key is
     # supplied (standalone CLI use, no webhook) we fall back to the local content
@@ -1089,7 +1110,7 @@ def cmd_advance(conn, args):
         # roster advanced without ledger evidence: if the ledger sync is broken,
         # we ROLLBACK the SQLite transition and raise. If a crash occurs after
         # the ledger write but before COMMIT, SQLite WAL recovery rolls back the
-        # uncommitted transition — the ledger is ahead (recoverable on the next
+        # uncommitted transition --  the ledger is ahead (recoverable on the next
         # advance), never behind.
         ledger_sync = _sync_ledger(args.job_id, to_status, row["queue_state"])
         if ledger_sync == "broken":
@@ -1277,7 +1298,7 @@ def cmd_sweep_aged_out(conn, args):
             if ledger_sync == "broken":
                 conn.execute("ROLLBACK")
                 sys.stderr.write(
-                    f"warning: age-out for {job_id} rolled back — ledger linkage broken\n"
+                    f"warning: age-out for {job_id} rolled back --  ledger linkage broken\n"
                 )
                 continue  # skip this job; it stays held for the next sweep
             conn.execute("COMMIT")
@@ -1540,7 +1561,7 @@ def _emit(args, obj, force_json=False):
 
 
 # ---------------------------------------------------------------------------
-# Episode roster — atomic write + timestamped backups (U046)
+# Episode roster --  atomic write + timestamped backups (U046)
 # ---------------------------------------------------------------------------
 
 class RosterWriteError(Exception):
@@ -1553,7 +1574,7 @@ def _rotate_roster_backups(roster_path: str, keep: int = 5) -> None:
     """Keep the last `keep` timestamped backups of the roster, newest first.
 
     Backups are named `<roster>.bak.<epoch>.json`. After adding a new backup,
-    any beyond `keep` are removed (oldest first). Never raises — a backup
+    any beyond `keep` are removed (oldest first). Never raises --  a backup
     rotation failure must not block the write."""
     bak_dir = os.path.dirname(roster_path) or "."
     base = os.path.basename(roster_path)
@@ -1569,7 +1590,7 @@ def _rotate_roster_backups(roster_path: str, keep: int = 5) -> None:
             except OSError:
                 pass  # best-effort cleanup
     except OSError:
-        pass  # listdir failed — skip rotation entirely
+        pass  # listdir failed --  skip rotation entirely
 
 
 def write_roster(roster_path: str, entries: list, *, keep_backups: int = 5) -> None:
