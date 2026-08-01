@@ -400,7 +400,7 @@ Notes on the unverified cells:
 
 - Variable: `AGNES_AI_API_KEY`.
 - This is an EXISTING fleet credential — the same key the registered `agnes` /
-  `agnes-2.0-flash` model on the boxes already uses against
+  `agnes-2.5-flash` model on the boxes already uses against
   `apihub.agnes-ai.com/v1`. This skill REFERENCES it; it does not create a new
   one.
 - It rides the `Authorization: Bearer <AGNES_AI_API_KEY>` header on every call.

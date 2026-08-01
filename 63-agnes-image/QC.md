@@ -24,7 +24,7 @@ output shape. The image endpoint is synchronous — one request returns the imag
 ## 3. Dependency Checks
 - [ ] TYP (Skill 01) and BYUP (Skill 02) are installed first.
 - [ ] `AGNES_AI_API_KEY` is present (SET) — the same key the existing `agnes` /
-      `agnes-2.0-flash` model uses. QC checks presence only, never the value.
+      `agnes-2.5-flash` model uses. QC checks presence only, never the value.
 - [ ] `curl` is available for the verification call.
 - [ ] The installer understands the image endpoint is SYNCHRONOUS (no polling)
       and that the Agnes VIDEO endpoint is a separate, asynchronous service.

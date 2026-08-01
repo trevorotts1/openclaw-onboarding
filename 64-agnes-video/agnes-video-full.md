@@ -406,7 +406,7 @@ Notes:
 - The daily video quota (500 sec/day) is **identical across all three paid
   tiers**, and all three share one Token-Plan RPM pool. For a video/image
   workload, paying Pro over Starter buys **zero** extra throughput — only the
-  agnes-2.0-flash TEXT request quota scales with tier.
+  agnes-2.5-flash TEXT request quota scales with tier.
 - Which tier a given account is on is a live property; read it from the Agnes
   console (Usage / Billing). Do not assume it statically.
 - Billing period (monthly vs one-time) for the Token Plan tiers is UNVERIFIED in

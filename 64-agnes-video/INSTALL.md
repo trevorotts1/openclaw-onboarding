@@ -50,7 +50,7 @@ AGNES VIDEO V2.0 — INSTALLATION GUIDE
 
 This is a REFERENCE skill. It does NOT create an Agnes account or write a new
 credential. The `AGNES_AI_API_KEY` is ALREADY provisioned fleet-wide (the same
-key that backs the registered `agnes/agnes-2.0-flash` model, endpoint
+key that backs the registered `agnes/agnes-2.5-flash` model, endpoint
 `apihub.agnes-ai.com/v1`). Installation = confirm the reference is present, the
 existing key is visible, the endpoint responds, and the core files carry a lean
 pointer.

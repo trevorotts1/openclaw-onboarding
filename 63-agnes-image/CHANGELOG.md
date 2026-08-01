@@ -4,6 +4,14 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.0.1] - August 1, 2026
+
+### Changed
+- Updated the referenced Agnes text/reasoning model from `agnes-2.0-flash` to
+  `agnes-2.5-flash` in the shared-credential notes (SKILL.md, INSTALL.md,
+  PREREQS.json, QC.md, CORE_UPDATES.md, agnes-image-full.md). The image model
+  itself (`agnes-image-2.1-flash`) is unchanged.
+
 ## [v1.0.0] - July 21, 2026
 
 ### Added
