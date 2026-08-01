@@ -91,6 +91,7 @@ class TestPodbeanTransientRetry(unittest.TestCase):
             "PODBEAN_PODCAST_ID": "12345",
             "PODBEAN_CLIENT_ID": "test-client-id",
             "PODBEAN_CLIENT_SECRET": "test-client-secret",
+            "PODBEAN_LOCAL_MODE_OK": "1",
             "PODBEAN_RETRY_BASE_DELAY": "1",   # shrink backoff: 1s, 2s (bounded)
             "MOCK_SCRIPT": str(self.status_file),
             "MOCK_CALL_LOG": str(self.call_log),
