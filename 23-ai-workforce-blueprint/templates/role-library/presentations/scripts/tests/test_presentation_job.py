@@ -13,7 +13,7 @@ import pytest
 _scripts_dir = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(_scripts_dir))
 
-from presentation_job.state import StateStore, RunLock, EXIT_OK, EXIT_LOCK_HELD, EXIT_STATE_CORRUPT, EXIT_GATE_BLOCKED
+from presentation_job.state import StateStore, RunLock, EXIT_OK, EXIT_LOCK_HELD, EXIT_STATE_CORRUPT, EXIT_GATE_BLOCKED, EXIT_WAIVER_INVALID
 from presentation_job.manifest import Manifest, Phase, PHASE_BUDGET_MINUTES, MIN_MANIFEST_VERSION, MIN_MANIFEST_PHASES
 from presentation_job.manifest import _assert_manifest_current, resolve_manifest
 from presentation_job.board import BoardMirror
@@ -624,3 +624,330 @@ class TestOCRReadbackGateBlocks:
         assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
         assert engine.state["terminal"] == "DONE"
         assert "CANNOT CLOSE" not in captured.err
+
+
+# ---------------------------------------------------------------------------
+# qc gate fail-open: gates.py carried `qc` in WARN_ONLY_GATES with every one of
+# _qc_gate's failure branches setting "warn_only": True. close() routes any gate result
+# carrying warn_only: True into the non-blocking state["gate_warnings"] list instead of
+# failures -- so a job with NO working/qc/final_qc_report.json at all (the real situation
+# on every run today: no phase in the manifest produces that file) could reach DONE with
+# zero QC score. The department's ratified strictness decision (D10) is fail-closed: no
+# close without QC >= 8.5, with a client-quoted waiver as the only bypass. These drive
+# Engine.close() itself (not just Gates in isolation) to prove the observable,
+# end-to-end behaviour -- the same shape as TestOCRReadbackGateBlocks above.
+# ---------------------------------------------------------------------------
+class TestQCGateBlocks:
+    def _seed_other_gates_passing(self, run_dir):
+        """Every gate except qc satisfied for real, so a close() failure can only be
+        attributed to qc."""
+        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (run_dir / "renders").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
+        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
+            {"ghl_folder_id": "root",
+             "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
+             "pptx_ghl_media_id": "p9"}))
+        (run_dir / "renders" / "slide-01.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+        # Deliberately no working/qc/final_qc_report.json.
+
+    def _make_engine(self, run_dir):
+        from presentation_job.manifest import Manifest
+        from presentation_job.phases import Engine
+        manifest_path = run_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({"manifest_version": 25, "phases": []}))
+        manifest = Manifest(manifest_path)
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "qc_gate_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return Engine(run_dir, manifest, store, state, dry_run=False)
+
+    def test_close_blocks_with_no_qc_report(self, tmp_path, capsys):
+        """The exact scenario the fail-open bug describes: no phase ever wrote
+        final_qc_report.json. close() must exit EXIT_GATE_BLOCKED, never reach DONE, and
+        name the gate in the same '--close' output style as every other fail-closed gate."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "CANNOT CLOSE -- fail-closed gates did not pass:" in captured.err
+        assert "qc" in captured.err
+        assert engine.state.get("gate_warnings") is None or all(
+            w.get("gate") != "qc" for w in engine.state.get("gate_warnings", [])
+        ), "qc must never land in the non-blocking gate_warnings list"
+
+    def test_close_blocks_below_threshold_qc_score(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(
+            json.dumps({"average": 6.0}))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "qc" in captured.err
+
+    def test_close_succeeds_with_genuine_passing_qc_report(self, tmp_path, capsys):
+        """Bleed-test companion: a job with a real, passing QC score must still close
+        DONE. Fixing the block must not break the good path."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "qc" / "final_qc_report.json").write_text(
+            json.dumps({"average": 9.2}))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert "CANNOT CLOSE" not in captured.err
+
+    def test_close_succeeds_with_client_quoted_qc_waiver(self, tmp_path, capsys):
+        """The only sanctioned bypass: a waiver quoting the client's own recorded words.
+        Must not be weakened by this fix (waivers.py is untouched)."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+        (run_dir / "waivers.json").write_text(json.dumps([
+            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
+             "client_request_quote": "skip the QC check",
+             "captured_at": "2026-01-01T00:00:00Z"}]))
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert engine.state["gates"]["qc"]["state"] == "waived"
+
+
+# ---------------------------------------------------------------------------
+# P-QC-AGGREGATE end-to-end: qc_aggregate.py is the producer the fail-closed qc
+# gate above was missing. These run the REAL script (subprocess, exactly what the
+# manifest's script executor invokes: `python3 scripts/qc_aggregate.py --run-dir
+# {run_dir} --phase-mode`) against a run dir carrying the six domain QC reports,
+# then drive Engine.close() to prove the observable end-to-end behaviour: a
+# flawless set of six genuine reports reaches DONE; a missing/sub-threshold/
+# untrusted domain BLOCKS with EXIT_GATE_BLOCKED and names the problem; a forged
+# qc waiver exits EXIT_WAIVER_INVALID; a genuine one still closes DONE.
+# ---------------------------------------------------------------------------
+class TestQCAggregatePhaseEndToEnd:
+    def _seed_other_gates_passing(self, run_dir):
+        (run_dir / "working" / "deliverables").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "prompts").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "qc").mkdir(parents=True, exist_ok=True)
+        (run_dir / "renders").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "deliverables" / "PRESENTERS-SPEECH.md").write_text("x" * 3000)
+        (run_dir / "working" / "deliverables" / "presenter-teleprompter.html").write_text("y" * 12000)
+        (run_dir / "working" / "prompts" / "slide-01.txt").write_text("p" * 9500)
+        (run_dir / "working" / "checkpoints" / "media_library.json").write_text(json.dumps(
+            {"ghl_folder_id": "root",
+             "slides": [{"slide_number": 1, "ghl_media_id": "m1", "ghl_upload_status": "complete"}],
+             "pptx_ghl_media_id": "p9"}))
+        (run_dir / "renders" / "slide-01.ocr.json").write_text(
+            json.dumps({"checked": True, "matched": True}))
+
+    def _genuine_domain_report(self, gate, average=9.4):
+        return {"gate": gate, "average": average, "pass": average >= 8.5,
+                "triggered_autofails": [],
+                "qc_independence": {"graded_by": "qc-specialist-independent-reviewer",
+                                    "independent": True}}
+
+    def _genuine_priority_shift_report(self, passing=True):
+        return {"schema": "priority_shift_report/v1", "gate": "AF-PRIORITY-SHIFT",
+                "phase": "P-SHIFT-QC (order 7.5)", "pass": passing,
+                "items": [{"item": f"item_{i}", "pass": passing, "evidence": "ok"}
+                          for i in range(15)]}
+
+    def _seed_six_domain_reports(self, run_dir, average=9.4):
+        qc = run_dir / "working" / "qc"
+        qc.mkdir(parents=True, exist_ok=True)
+        (qc / "copy_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase 1Q", average)))
+        (qc / "typography_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase Typography-QC", average)))
+        (qc / "prompt_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase Prompt-QC", average)))
+        (qc / "image_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase Image-QC", average)))
+        (qc / "speech_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase Speech-QC", average)))
+        (qc / "priority_shift_report.json").write_text(
+            json.dumps(self._genuine_priority_shift_report(True)))
+
+    def _run_qc_aggregate(self, run_dir, phase_mode=True):
+        """Runs the REAL qc_aggregate.py as a subprocess -- exactly the command
+        the manifest's P-QC-AGGREGATE executor invokes."""
+        import subprocess
+        cmd = [sys.executable, str(_scripts_dir / "qc_aggregate.py"),
+               "--run-dir", str(run_dir)]
+        if phase_mode:
+            cmd.append("--phase-mode")
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+
+    def _make_engine(self, run_dir):
+        from presentation_job.manifest import Manifest
+        from presentation_job.phases import Engine
+        manifest_path = run_dir / "manifest.json"
+        manifest_path.write_text(json.dumps({"manifest_version": 25, "phases": []}))
+        manifest = Manifest(manifest_path)
+        store = StateStore(run_dir)
+        state = {
+            "schema_version": 1, "job_id": "qc_aggregate_e2e_test",
+            "run_dir": str(run_dir), "created_at": "2026-01-01T00:00:00+00:00",
+            "manifest_path": str(manifest_path), "manifest_version": 25,
+            "manifest_sha256": manifest.sha256, "presentation_type": "from_scratch",
+            "requester": {"chat_id": "test"}, "current_phase": None,
+            "phases": [], "gates": {}, "waivers": [], "events": [],
+            "sent": {}, "undeliverable": [], "heartbeat": {}, "terminal": None,
+        }
+        store.save(state)
+        return Engine(run_dir, manifest, store, state, dry_run=False)
+
+    def test_flawless_six_reports_reach_done(self, tmp_path, capsys):
+        """Reproduces the QC agent's exact scenario: speech, teleprompter, a
+        9,500-char prompt, a full media library, a passing OCR sidecar, and all
+        six genuine domain QC reports at score 9.4. qc_aggregate.py (run for
+        real, as a subprocess) must aggregate them into a passing
+        final_qc_report.json, and close() must reach DONE."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir, average=9.4)
+
+        agg = self._run_qc_aggregate(run_dir)
+        assert agg.returncode == 0, f"phase-mode must exit 0: {agg.stdout}{agg.stderr}"
+        final = json.loads((run_dir / "working" / "qc" / "final_qc_report.json").read_text())
+        assert final["pass"] is True, final
+        assert final["average"] == 9.4, final
+
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        print(agg.stdout)  # surfaced in the real pytest -s output for the demonstration
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert engine.state["gates"]["qc"]["state"] == "pass"
+        assert engine.state["gates"]["qc"]["score"] == 9.4
+
+    def test_missing_domain_blocks_and_names_it(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir)
+        (run_dir / "working" / "qc" / "speech_qc_report.json").unlink()
+
+        agg = self._run_qc_aggregate(run_dir)
+        assert agg.returncode == 0  # phase-mode: mechanically written regardless of verdict
+
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED, f"expected EXIT_GATE_BLOCKED, got {rc}"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "speech_qc_report.json" in captured.err, captured.err
+        assert "P-SPEECH-QC" in captured.err, captured.err
+
+    def test_sub_threshold_domain_blocks_non_zero(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir)
+        (run_dir / "working" / "qc" / "image_qc_report.json").write_text(
+            json.dumps(self._genuine_domain_report("Phase Image-QC", 6.0)))
+
+        agg = self._run_qc_aggregate(run_dir)
+        assert agg.returncode == 0
+
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED
+        assert rc != 0, "sub-threshold must exit non-zero"
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "6.0" in captured.err
+
+    def test_ungoverned_generator_blocks_via_existing_af_codes(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir)
+        (run_dir / "_build_qc_report.py").write_text(
+            "def score_prompt_length(text):\n"
+            "    words = len(text.split())\n"
+            "    return 10 if 80 <= words <= 180 else 3\n"
+            "import json\n"
+            "json.dump({'average': 10}, open('working/qc/rogue_qc_report.json', 'w'))\n")
+
+        agg = self._run_qc_aggregate(run_dir)
+        assert agg.returncode == 0
+        final = json.loads((run_dir / "working" / "qc" / "final_qc_report.json").read_text())
+        assert final["pass"] is False
+        codes = {f["af_code"] for f in final["generator_guard"]["blocking"]}
+        assert "AF-QC-GENERATOR-UNGOVERNED" in codes
+
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_GATE_BLOCKED
+        assert engine.state["terminal"] == "BLOCKED"
+        assert "AF-QC-GENERATOR-UNGOVERNED" in captured.err, captured.err
+
+    def test_forged_qc_waiver_exits_waiver_invalid(self, tmp_path, capsys):
+        """A forged waiver (quote nobody said, attached to a real intake field) must
+        exit EXIT_WAIVER_INVALID (9) -- waivers.py's existing quote-substring check,
+        untouched by this change."""
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir)
+        (run_dir / "working" / "qc" / "speech_qc_report.json").unlink()  # force a real qc failure
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(
+            json.dumps({"topic": "Our Q3 sales roadmap"}))
+        (run_dir / "waivers.json").write_text(json.dumps([
+            {"rule": "qc", "source": "intake_field", "intake_field": "topic",
+             "client_request_quote": "the client said we can skip QC entirely",
+             "captured_at": "2026-01-01T00:00:00Z"}]))
+
+        self._run_qc_aggregate(run_dir)
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        assert rc == EXIT_WAIVER_INVALID, f"expected exit 9, got {rc}"
+        assert engine.state["terminal"] is None, \
+            "an invalid waiver must not resolve the job to any terminal state"
+
+    def test_genuine_client_quoted_waiver_still_closes_done(self, tmp_path, capsys):
+        run_dir = tmp_path / "run"; run_dir.mkdir()
+        self._seed_other_gates_passing(run_dir)
+        self._seed_six_domain_reports(run_dir)
+        (run_dir / "working" / "qc" / "speech_qc_report.json").unlink()  # force a real qc failure
+        (run_dir / "working" / "copy").mkdir(parents=True, exist_ok=True)
+        (run_dir / "working" / "copy" / "intake.json").write_text(json.dumps(
+            {"skip_qc": "Please skip the QC check for this run, we are on a deadline."}))
+        (run_dir / "waivers.json").write_text(json.dumps([
+            {"rule": "qc", "source": "intake_field", "intake_field": "skip_qc",
+             "client_request_quote": "skip the QC check",
+             "captured_at": "2026-01-01T00:00:00Z"}]))
+
+        self._run_qc_aggregate(run_dir)
+        engine = self._make_engine(run_dir)
+        rc = engine.close()
+        captured = capsys.readouterr()
+        assert rc == EXIT_OK, f"expected EXIT_OK, got {rc}; stderr={captured.err}"
+        assert engine.state["terminal"] == "DONE"
+        assert engine.state["gates"]["qc"]["state"] == "waived"

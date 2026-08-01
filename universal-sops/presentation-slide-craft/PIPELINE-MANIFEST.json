@@ -1,5 +1,5 @@
 {
-  "manifest_version": 34,
+  "manifest_version": 35,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -802,9 +802,6 @@
         "kind": "script",
         "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/pdf_export.py --run-dir {run_dir}"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -826,9 +823,6 @@
         "kind": "script",
         "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/presenter_guide.py --run-dir {run_dir}"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -854,7 +848,8 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"},
+        "cmd": "python3 scripts/speech_build_harness.py --intake {run_dir}/working/copy/intake.json --slides {run_dir}/working/copy/slides_copy.md --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --workdir {run_dir}/working/presenter-speech"
+      },
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -876,9 +871,6 @@
         "kind": "script",
         "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/speech_fish_tag.py --run-dir {run_dir}"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -900,9 +892,6 @@
         "kind": "script",
         "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/speech_spec_build.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --arc {run_dir}/working/copy/arc_allocation.json --out {run_dir}/working/deliverables/speech_spec.json && python3 scripts/presenters_speech_pdf.py --spec {run_dir}/working/deliverables/speech_spec.json --out {run_dir}/working/deliverables/PRESENTERS-SPEECH.pdf"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -930,6 +919,26 @@
         "kind": "agent"
       },
       "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-QC-AGGREGATE",
+      "order": 8.65,
+      "name": "Final QC Aggregation \u2014 combines the six domain QC reports (Copy/Typography/Prompt/Image/Priority-Shift/Speech) into working/qc/final_qc_report.json, sequenced AFTER every domain QC phase; verifies independent-reviewer + anti-bypass provenance via qc_generator_guard.py before computing the combined score",
+      "owning_role": "qc-specialist-presentations",
+      "sop_refs": [
+        "qc-specialist-presentations-sops.md"
+      ],
+      "produces_artifact": "working/qc/final_qc_report.json",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode"
+      }
     },
     {
       "id": "P9.5-NOTES-SYNC",
@@ -972,9 +981,6 @@
         "kind": "script",
         "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/ghl_media_push.py --run-dir {run_dir}"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -996,9 +1002,6 @@
         "kind": "script",
         "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"
       },
-      "executor": {
-        "kind": "script",
-        "cmd": "python3 scripts/build_teleprompter.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --intake {run_dir}/working/copy/intake.json --out {run_dir}/working/deliverables/presenter-teleprompter.html"},
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -1024,7 +1027,8 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"},
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
+      },
       "verifier": "phase_verifiers.verify"
     },
     {
@@ -2000,7 +2004,7 @@
       "stage": "Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render — NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch — waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
+      "trigger": "U027 postflight OCR gate. A rendered slide's baked text was never read back against its approved copy, or the readback found a mismatch. Fires when working/renders/*.png exists and any slide's renders/<slide>.ocr.json sidecar is missing/unparseable, or carries checked:false (the OCR engine never ran against that render \u2014 NEVER waivable, no owner_skip_approval token can waive it), or carries checked:true/matched:false (a genuine copy-vs-render mismatch \u2014 waivable ONLY by a logged owner_skip_approval token for AF-OCR-READBACK in process_manifest.json). Defers ONLY pre-render (no rendered PNGs yet).",
       "enforced_by": "build_deck",
       "py_symbol": "check_ocr_readback"
     },
@@ -2798,10 +2802,12 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box — measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions",
+      "trigger": "a rendered slide has a text bounding box within 2% of any slide edge, or two text boxes on different lines overlapping by more than 10% of the smaller box \u2014 measured over the baked PNG with OCR word geometry, thresholds derived from the actual image dimensions",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_text_fits",
-      "secondary_py_symbols": ["SLIDE_GEOMETRY_EDGE_MARGIN_FRAC"],
+      "secondary_py_symbols": [
+        "SLIDE_GEOMETRY_EDGE_MARGIN_FRAC"
+      ],
       "sop_ref": "SOP-SLIDE-00-MASTER-QC-AUTOFAIL-RULESET.md#slide-geometry"
     },
     {
@@ -2809,7 +2815,7 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list — measured over OCR output from the baked PNG, never over the prompt",
+      "trigger": "a word rendered onto a slide is accounted for by neither the approved copy for that slide, nor the per-client proper-noun allowlist, nor the system word list \u2014 measured over OCR output from the baked PNG, never over the prompt",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_spelling"
     },
@@ -2818,11 +2824,14 @@
       "stage": "5/6/Postflight",
       "level": "DECK",
       "in_ruleset": true,
-      "trigger": "the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) — measured, not read off the design brief",
+      "trigger": "the smallest rendered text box on a slide is below the body-type floor scaled to that slide's own pixel height (px_per_pt = 2 x image_height / 1080; 18pt = 38.4px at 1152px tall, 22pt on a dark-theme opt-in) \u2014 measured, not read off the design brief",
       "enforced_by": "build_deck",
       "py_symbol": "_chk_type_size",
-      "secondary_py_symbols": ["FONT_BODY_PT_FLOOR", "DARK_THEME_BODY_PT_FLOOR",
-                               "SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX"]
+      "secondary_py_symbols": [
+        "FONT_BODY_PT_FLOOR",
+        "DARK_THEME_BODY_PT_FLOOR",
+        "SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX"
+      ]
     }
   ],
   "roles": [
@@ -2978,12 +2987,12 @@
     {
       "id": "image-grounding-steward",
       "owns_phase": null,
-      "description": "Brief-grounding owner for the visual layer (\"The Witness\"): scores whether people-or-scene-bearing imagery depicts a concrete moment from the client's specific content, or generic on-brand stock. Custom BlackCEO addition (SOP-PRES-CUSTOM-09 through 12); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
+      "description": "Brief-grounding owner for the visual layer (\"The Witness\"): scores whether people-or-scene-bearing imagery depicts a concrete moment from the client's specific content, or generic on-brand stock. Custom BlackCEO addition (SOP-PRES-CUSTOM-09 through 12); mechanisable checks not yet wired into build_deck.py preflight/postflight \u2014 owns no phase pending that wiring decision."
     },
     {
       "id": "representation-casting-director",
       "owns_phase": null,
-      "description": "Per-client representation owner (\"The Mirror\"): enforces that the deck-wide cast matches the client's captured REPRESENTATION_MIX at prompt, image, and final-deck stages, with no invented demographic default. Custom BlackCEO addition (SOP-PRES-CUSTOM-05 through 08); mechanisable checks not yet wired into build_deck.py preflight/postflight — owns no phase pending that wiring decision."
+      "description": "Per-client representation owner (\"The Mirror\"): enforces that the deck-wide cast matches the client's captured REPRESENTATION_MIX at prompt, image, and final-deck stages, with no invented demographic default. Custom BlackCEO addition (SOP-PRES-CUSTOM-05 through 08); mechanisable checks not yet wired into build_deck.py preflight/postflight \u2014 owns no phase pending that wiring decision."
     }
   ]
 }

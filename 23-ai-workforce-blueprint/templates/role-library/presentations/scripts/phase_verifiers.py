@@ -583,6 +583,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P9-SPEECH":          _verify_text_artifact("working/presenter-speech/PRESENTERS-SPEECH.md", 200),
     # Phase 8.6   Speech QC
     "P-SPEECH-QC":        _verify_json_artifact("working/qc/speech_qc_report.json"),
+    # Phase 8.65  Final QC Aggregation (combines the six domain QC reports)
+    "P-QC-AGGREGATE":     _verify_json_artifact("working/qc/final_qc_report.json", ("schema", "pass")),
     # Phase 8.7   Notes-Pane Sync (reorder — AF-EMPTY-NOTES-PANE)
     "P9.5-NOTES-SYNC":    _verify_notes_sync,
     # Phase 9     Delivery

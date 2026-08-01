@@ -1,3 +1,153 @@
+## [Unreleased]  -  Reconcile manifest_version collision with `fix/build-deck-check-ocr-readback` (33 -> 34)
+
+**Merge-only unit, no logic changes.** `fix/build-deck-check-ocr-readback` (PR #755) and this
+branch (`fix/qc-gate-fail-closed`) each independently bumped `manifest_version` 32 -> 33 —
+main's 33 adds `AF-OCR-READBACK` (157 autofails, 32 phases); this branch's 33 adds the
+`P-QC-AGGREGATE` phase (33 phases, 156 autofails). Main merged first, so this branch's 33 was
+stale against `origin/main`. Merged `origin/main` in and renumbered to **34**: both
+`AF-OCR-READBACK` and `P-QC-AGGREGATE` are present in the reconciled manifest (33 phases,
+157 autofails), `MIN_MANIFEST_VERSION` in `presentation_job/manifest.py` moves to 34 in the same
+commit (U019 step 8), `MANIFEST-SOURCE.txt`'s `content_sha256` is re-stamped against the merged
+`PIPELINE-MANIFEST.json` (verified via `shasum -a 256`), and
+`universal-sops/_content-manifest.json` is regenerated via
+`scripts/hash-universal-sops-manifest.py` (never hand-merged — hand-editing that stamp is what
+went stale twice this week). `sync_check.py` exits 0 post-merge.
+
+## [Unreleased]  -  P-QC-AGGREGATE: the fail-closed qc gate's missing producer
+
+**Ships the producer the qc-gate fail-closed fix above (same PR) explicitly disclosed as
+missing.** That fix made `_qc_gate` block `close()` unless `working/qc/final_qc_report.json`
+exists, parses, and carries a numeric `average >= 8.5` — correct, but no phase wrote that file,
+so the fixed gate blocked EVERY job, including a flawless one. Independent QC proved this by
+seeding a flawless run (speech, teleprompter, a 9,500-char prompt, a full media library, a
+passing OCR sidecar, and all six genuine domain QC reports at score 9.4) and confirming `--close`
+still printed `CANNOT CLOSE -- qc: no final QC report at working/qc/final_qc_report.json` and
+exited 3. The gate was correct; it simply had no input to check.
+
+**Added:** `scripts/qc_aggregate.py` and manifest phase `P-QC-AGGREGATE` (order 8.65, sequenced
+after every domain QC phase including `P-SPEECH-QC` at 8.6, before `P9.5-NOTES-SYNC` at 8.7;
+`executor.kind: script`, `cmd: python3 scripts/qc_aggregate.py --run-dir {run_dir} --phase-mode`).
+It reads the six domain QC reports from the paths the manifest itself declares
+(`P1Q-COPY-QC` → `copy_qc_report.json`, `P-TYPO-QC` → `typography_qc_report.json`,
+`P-PROMPT-QC` → `prompt_qc_report.json`, `P-IMAGE-QC` → `image_qc_report.json`,
+`P-SHIFT-QC` → `priority_shift_report.json`, `P-SPEECH-QC` → `speech_qc_report.json`), verifies
+provenance using the EXISTING mechanisms only — `qc_generator_guard.guard_qc_generators()`
+(`AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT` / `AF-QC-REPORT-UNTRUSTED`, a whole-run-dir
+sweep) and `build_deck._qc_independence_reason()` (the same self/builder-graded-report check every
+legacy per-domain gate already uses) — computes the combined score as the mean of the five numeric
+domain averages plus the priority-shift ship gate's own pass/fail (a 14-item checklist, not a 0-10
+rubric, so it gates rather than averages), and writes `final_qc_report.json`. No new trust
+mechanism was invented.
+
+**Never fabricates a score.** The gate-facing `average` field is populated ONLY on a genuine, full
+pass (all six domains present, trusted, individually >= 8.5, priority-shift passing, generator
+guard clean) — on ANY blocking finding it is `null`, never a partial or masked number that could
+slip past `_qc_gate`'s `score >= 8.5` check. `computed_average` is a separate, diagnostic-only
+field (the honest five-domain mean, populated whenever the numbers are readable, pass or fail) —
+informational for humans, never read by the gate. `blocking_reasons` names every finding by
+domain, phase id, and (where applicable) AF code.
+
+**Deliberately out of scope:** re-running build_deck.py's deep per-domain substance teeth (the
+prompt-file re-measure behind `_chk_prompt_qc`, the pixel/vision cross-check behind
+`_chk_image_qc`). Those already gate their OWN phases via build_deck's preflight framework and
+`phase_verifiers.py`'s warn-mode substance checks; re-running them here would be a third parallel
+path duplicating rather than reusing existing logic, and the task at hand is provenance +
+aggregation, not re-grading.
+
+**`gates.py`:** `_qc_gate` now folds `final_qc_report.json`'s `blocking_reasons` list (when
+present) into its own `reason` string — purely additive: a report with no `blocking_reasons` key
+(every existing fixture) is byte-for-byte unaffected; proven by the untouched
+`test_qc_gate_below_threshold_is_hard_failure` / `test_qc_gate_no_numeric_score_is_hard_failure`
+still passing verbatim. This is what turns "no numeric score" into "no final QC report — Speech QC
+(P-SPEECH-QC): missing domain report at working/qc/speech_qc_report.json" at `close()` time.
+
+**Manifest discipline (U019 step 8):** `manifest_version` and `MIN_MANIFEST_VERSION` both move
+32 → 33 in this commit. `MANIFEST-SOURCE.txt`'s `content_sha256` and
+`universal-sops/_content-manifest.json` (via `scripts/hash-universal-sops-manifest.py`) are
+re-stamped against the final content. `sync_check.py` reports IN SYNC (33 phases, 156 autofails,
+34 roles) — the new phase declares `gate_codes: []` and `preflight: null` (no new AF-* code, no
+`_chk_*` checker reference), matching the shape of the other script-executor phases from U012, so
+it introduces zero lockstep drift. `phase_verifiers.py` and `PHASE_BUDGET_MINUTES` both gained a
+`P-QC-AGGREGATE` entry.
+
+**Proof (`tests/test_qc_aggregate.py`, `tests/test_gates.py`, `tests/test_presentation_job.py::
+TestQCAggregatePhaseEndToEnd`):** a flawless run (all six genuine reports, average 9.4) reaches
+`DONE` via the REAL `qc_aggregate.py` subprocess + `Engine.close()`. A missing domain report
+BLOCKS and names it. A sub-threshold domain average BLOCKS, exit non-zero. An ungoverned/corrupt
+QC-report generator BLOCKS via the existing `AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT`
+codes. A self-graded (no independent-reviewer provenance) report BLOCKS via `AF-QC-INDEPENDENCE`.
+A forged `qc` waiver exits `EXIT_WAIVER_INVALID` (9); a genuine client-quoted one still closes
+`DONE`. A parametrized sweep proves `average` is never fabricated across every blocking scenario.
+Bleed-tested (reverting `_qc_gate`'s `blocking_reasons` fold and confirming the new gate tests
+fail, then restoring). Zero new failing test names versus this branch's own pre-change baseline
+(`comm -13`/`comm -23` both empty, 509 passed vs. 482 before, exactly +27 new tests, 15
+pre-existing unrelated failures unchanged). Note: comparing against `origin/main` directly (not
+just this branch's own baseline) surfaces 3 test names — `test_cc_board.py::AuthAndContractTest::
+test_patch_phase_contract`, `test_patch_unknown_status_is_rejected`, `test_preflight.py::
+test_delivery_gate` — that fail on this branch but not on `main`; these predate this change (they
+were already failing before any edit in this unit, per the branch's own pre-change baseline) and
+are branch-staleness from this branch sitting ~20 commits behind `main` (missing PR #757's
+`test_cc_board.py` re-point and an unrelated `test_delivery_gate` fix), not a regression this unit
+introduced.
+
+## [Unreleased]  -  qc gate blocks close() instead of only warning (fail-open closed)
+
+**Presentations engine: the `qc` gate now blocks `close()` instead of only warning.**
+`presentation_job/gates.py` carried `qc` inside `WARN_ONLY_GATES`, and every failure branch of
+`_qc_gate` set `"warn_only": True`. `phases.py`'s `close()` routes any gate result carrying
+`warn_only: True` into the non-blocking `state["gate_warnings"]` list instead of `failures` — so
+a job with **no QC report at all** could reach `DONE`. This is the identical defect shape the
+`ocr_readback` fix just above closed, flagged by a QC review of that very fix: D10's own doctrine
+names it directly — *"a check that defers because its input is missing is a fail-open wearing a
+fail-closed label."* The department's ratified strictness decision is fail-closed: no close
+without QC >= 8.5 (`QC_PASS_THRESHOLD`), with the client's own quoted request (`waivers.json`,
+validated against `intake.json` or the transcript by `waivers.py`) as the ONLY bypass.
+
+**Investigation, verified by grep across the whole repo:** no phase anywhere writes
+`working/qc/final_qc_report.json` — the file `_qc_gate` checks for. The manifest's six QC phases
+(`P1Q-COPY-QC`, `P-TYPO-QC`, `P-PROMPT-QC`, `P-IMAGE-QC`, `P-SHIFT-QC`, `P-SPEECH-QC`) each write
+their own domain report (`copy_qc_report.json`, `typography_qc_report.json`,
+`prompt_qc_report.json`, `image_qc_report.json`, `priority_shift_report.json`,
+`speech_qc_report.json`), and nothing aggregates them into `final_qc_report.json`. `phases.py`
+imports `WARN_ONLY_GATES` (line 16) but never branches on it — confirmed dead code; `close()`'s
+actual branch (`g.get("warn_only", False)`) keys off each gate's own per-branch dict entry, which
+is exactly what let `ocr_readback` and `qc` diverge in the first place.
+
+Fixed: `WARN_ONLY_GATES` is now `()` — `qc` was removed, mirroring the `ocr_readback` fix exactly
+— and `_qc_gate` sets `warn_only: False` on every branch (missing report, unreadable report, no
+numeric score, sub-threshold score, and pass), so `close()`'s existing fail-closed path
+(`CANNOT CLOSE -- fail-closed gates did not pass:`, exit `EXIT_GATE_BLOCKED` = 3) now covers `qc`
+exactly like the other four hard gates. Unlike `ocr_readback`, `qc` stays in `GATE_KEYS` (not
+`NON_WAIVABLE_GATES`) — a client-quoted waiver remains the sanctioned bypass, unchanged from
+today's forged-waiver fix in `waivers.py`.
+
+**Before/after proof** (`Engine.close()`, every other gate genuinely satisfied, no
+`final_qc_report.json` present): pre-fix, `close()` printed `1 gate(s) in warn-mode did not pass`
+and then `DONE -- all gates passed.`, exit `0`, `terminal: DONE`. Post-fix, the same run-dir
+prints `CANNOT CLOSE -- fail-closed gates did not pass:\n    - qc: no final QC report at
+working/qc/final_qc_report.json ...`, exit `3` (`EXIT_GATE_BLOCKED`), `terminal: BLOCKED`. A
+genuine passing report (`{"average": 9.2}`) and a client-quoted waiver
+(`rule=qc, client_request_quote` verified against `intake.json`) both still close `DONE` —
+confirmed by new regression tests in `tests/test_gates.py` (`test_qc_gate_*`,
+`test_no_gate_is_warn_only_anymore`) and `tests/test_presentation_job.py`
+(`TestQCGateBlocks`), bleed-tested by reverting `_qc_gate`'s missing-report branch to
+`warn_only: True` and confirming both `test_qc_gate_missing_report_is_hard_failure_not_warn_only`
+and `TestQCGateBlocks::test_close_blocks_with_no_qc_report` fail, then restoring and confirming
+both pass again.
+
+**Known, accepted risk, disclosed rather than hidden — same shape as the OCR risk above:** this
+fix makes `qc` block every real job today, because no phase produces
+`working/qc/final_qc_report.json` yet. That is the fail-closed behaviour D10 asks for (fail on a
+missing input rather than silently pass), not a defect in this fix. The larger, separate unit
+this leaves undone: an aggregation phase that reads the six domain QC reports above, verifies
+each carries genuine independent-reviewer provenance (guarded against hand-rolled generators by
+`qc_generator_guard.py`'s `AF-QC-GENERATOR-UNGOVERNED` / `AF-QC-RUBRIC-CORRUPT` /
+`AF-QC-REPORT-UNTRUSTED` checks), computes a combined score, and writes
+`final_qc_report.json` — plus a manifest phase entry (bumping `manifest_version` and
+`MIN_MANIFEST_VERSION` together per U019 step 8) so the engine actually runs it. Until that
+aggregation phase exists, every real job either supplies a genuine report out of band or is
+blocked at the gate, cleanly and audibly. Exactly fail-closed.
+
 ## [v21.4.52]  -  2026-08-01  -  fix(WS-8): capacity-monitor healed only ONE of the two concurrency keys — a 500 cap sat unhealed for 5 days, fleet-wide blind spot (+ EWS installed with ZERO crons via a non-existent CLI flag)
 
 Two keys govern agent concurrency:
@@ -1422,7 +1572,6 @@ v21.4.27 via `scripts/bump-version.sh`.
 None to runtime or install behavior -- doc + advisory-only change. `skill38_doc_selfcount_advisory`
 remains ADVISORY ONLY: it never mutates a file and always returns 0, so `bump-version.sh`'s exit
 behavior under `set -e` is unchanged; a WARN still cannot fail a bump or a CI job. Does not touch
-`INSTALL.md` (already correct as of v21.4.25) or `INSTRUCTIONS.md`'s unrelated `27 protocols`
 Phase-5 subset (a distinct, uncounted quantity, out of scope here).
 
 ## [Unreleased]  -  2026-07-30  -  `CONTROL/LEDGER.md` and `CONTROL/CHECKLIST.md` never existed -- closing the false alarm, no removal needed

@@ -200,8 +200,11 @@ class TestNullExecutorRegressionCLI:
     def test_null_executor_phase_unaffected_no_dispatch_line(self, tmp_path):
         manifest = rsd.load_manifest()
         by_id = {p["id"]: p for p in manifest["phases"]}
-        assert not by_id["P0A-INTAKE"].get("executor"), (
-            "P0A-INTAKE is expected to be an executor: null phase in the real manifest")
+        p0a_executor_kind = (by_id["P0A-INTAKE"].get("executor") or {}).get("kind")
+        assert p0a_executor_kind != "script", (
+            f"P0A-INTAKE executor changed to kind={p0a_executor_kind!r} — "
+            "this test requires a non-dispatchable (null/agent) executor phase in the "
+            "real manifest. If kind is 'script', pick a different phase for this test.")
         run_dir, slides, out = self._setup(tmp_path)
         proc = _run_cli(run_dir, "P0A-INTAKE", slides, out)
         assert proc.returncode == 0, f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"

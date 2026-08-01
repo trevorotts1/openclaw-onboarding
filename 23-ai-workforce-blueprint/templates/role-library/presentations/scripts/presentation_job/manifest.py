@@ -63,6 +63,10 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P-IMAGE-QC": 30,
     "P-SHIFT-QC": 20,
     "P-SPEECH-QC": 20,
+    # Final QC Aggregation -- purely mechanical (read six small JSON files, run the
+    # existing qc_generator_guard.py sweep, write one JSON file); no agent authoring,
+    # no render, no network call.
+    "P-QC-AGGREGATE": 10,
 }
 
 # ---------------------------------------------------------------------------
@@ -210,7 +214,6 @@ def _as_list(v: Any) -> List[str]:
 # it has never heard of.
 
 
-MIN_MANIFEST_VERSION = 34  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 # (SPEC/units/U019.md:409-410, :440-441, :1093): "set MIN_MANIFEST_VERSION to that same new value,
 # in the same commit" — the floor and the manifest move TOGETHER. A floor one behind the manifest is
 # the split-brain that step 8 exists to prevent: the engine keeps accepting the older, fewer-key
@@ -226,12 +229,12 @@ MIN_MANIFEST_VERSION = 34  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_versio
 # 33 -> 34: fix/ocr-engine-preflight-real-path added AF-OCR-ENGINE-MISSING — the
 # MASTER-SPEC 7.4 Phase-0 OCR-engine-availability pre-flight on the REAL render path
 # (build_deck.ocr_engine_preflight / run_signature_deck.phase0_preflight) — raising
-# manifest_version to 34 in the same commit. NOTE: this constant lives in
-# presentation_job/, a package with zero production callers (build_deck.py imports only
-# presentation_job.checkpoint); it is updated here SOLELY because
-# test_assert_manifest_current_accepts_bumped_and_rejects_one_version_below asserts
-# MIN_MANIFEST_VERSION == the real on-disk manifest_version and would otherwise fail —
-# this is NOT new wiring into presentation_job.Engine.)
+# manifest_version to 34 in the same commit.
+# 34 -> 35: merging fix/qc-gate-fail-closed adds P-QC-AGGREGATE (the aggregation phase that reads
+# the six domain QC reports, verifies provenance, and writes final_qc_report.json) while main's
+# v34 carries AF-OCR-ENGINE-MISSING — neither parent had both features at v34, so the combined
+# manifest is bumped to 35 to keep the floor and the manifest in lockstep.
+MIN_MANIFEST_VERSION = 35  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

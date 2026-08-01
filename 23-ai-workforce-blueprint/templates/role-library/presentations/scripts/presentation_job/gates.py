@@ -12,7 +12,28 @@ QC_PASS_THRESHOLD = 8.5
 # in warn-mode because no phase declared a producer for renders/slide-*.ocr.json; that
 # producer question is orthogonal to whether a missing/unchecked record should ever be
 # allowed to reach DONE, and the spec's answer for "unchecked" is unconditional: no.
-WARN_ONLY_GATES = ("qc",)
+#
+# `qc` was removed from this tuple for the identical reason, in a follow-up fix. It was left
+# behind when ocr_readback was fixed with a "that reasoning still holds for qc" note (see
+# CHANGELOG) -- but a QC review of that very fix flagged it as the same defect shape, still
+# open: no phase anywhere writes working/qc/final_qc_report.json (verified by grep across the
+# whole repo -- the manifest's six QC phases each write their OWN domain report --
+# copy_qc_report.json, typography_qc_report.json, prompt_qc_report.json, image_qc_report.json,
+# priority_shift_report.json, speech_qc_report.json -- and nothing aggregates them into
+# final_qc_report.json), so this gate's input was permanently absent, and being warn-only meant
+# a job could reach DONE with NO QC score at all. D10's own doctrine names this shape directly:
+# "a check that defers because its input is missing is a fail-open wearing a fail-closed label."
+# The correct fix mirrors ocr_readback exactly: _qc_gate below now sets warn_only=False on every
+# branch, so close() always routes a missing/unreadable/sub-threshold QC report into the
+# blocking `failures` list, never the non-blocking `gate_warnings` list. Unlike ocr_readback,
+# `qc` stays a member of GATE_KEYS (not NON_WAIVABLE_GATES) -- the department's ratified
+# strictness decision is fail-closed by default, with the client's own quoted request (via
+# waivers.json, validated by waivers.py) as the ONLY bypass. A genuine producer for
+# final_qc_report.json (an aggregation phase over the six domain reports) does not exist yet;
+# until it does, every real job either produces one (out of band) or is blocked here, on
+# purpose -- see CHANGELOG [Unreleased] qc-gate-fail-closed for the full account of why
+# blocking, not a silent pass, is the only honest behaviour for a gate whose input is absent.
+WARN_ONLY_GATES = ()
 class Gates:
     def __init__(self, run_dir: Path, state: Dict[str, Any]) -> None:
         self.run_dir = run_dir
@@ -69,13 +90,41 @@ class Gates:
         if missing: return {**base,"state":"fail","reason":"; ".join(missing)}
         return {**base,"state":"pass","reason":None}
     def _qc_gate(self) -> Dict[str, Any]:
+        # MASTER-SPEC / D10, same fail-closed contract as _ocr_gate: warn_only is always False
+        # here, on every branch, so a missing, unreadable, unscored, or sub-threshold QC report
+        # lands in close()'s blocking `failures` list, never the non-blocking `gate_warnings`
+        # list. See the WARN_ONLY_GATES comment above for the full account of why this gate
+        # used to defer (no phase produces final_qc_report.json) and why deferring is exactly
+        # the fail-open shape the doctrine forbids: a missing input BLOCKS, it does not pass.
         p = self.run_dir / "working" / "qc" / "final_qc_report.json"
-        if not p.is_file(): return {"state":"fail","reason":"no final QC report","warn_only":True}
+        if not p.is_file():
+            return {"state":"fail","warn_only":False,
+                    "reason":f"no final QC report at {p.relative_to(self.run_dir)} -- no phase "
+                             "in the current manifest produces this file, so the deck's overall "
+                             f"QC score (>= {QC_PASS_THRESHOLD} required) cannot be verified. "
+                             "This cannot close silently: either a genuine final_qc_report.json "
+                             "must be produced, or the client must be asked to waive this gate "
+                             "(waivers.json, rule=qc, quoting the client's own words)."}
         try: obj = json.loads(p.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError) as exc: return {"state":"fail","reason":f"QC report unreadable: {exc}","warn_only":True}
+        except (json.JSONDecodeError, OSError) as exc:
+            return {"state":"fail","warn_only":False,"reason":f"QC report unreadable: {exc}"}
         score = obj.get("average") or obj.get("score")
-        if not isinstance(score, (int, float)): return {"state":"fail","reason":"QC report carries no numeric score","warn_only":True}
-        if score < QC_PASS_THRESHOLD: return {"state":"fail","score":score,"warn_only":True,"reason":f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"}
+        # qc_aggregate.py (the final_qc_report.json producer, P-QC-AGGREGATE) records
+        # WHY the score is missing/absent in "blocking_reasons" -- e.g. which of the six
+        # domain reports is missing, which AF-QC-* provenance code fired, which domain
+        # scored below threshold. When present, fold it into the reason so "no numeric
+        # score" is never the whole story a human sees. Purely additive: a report with no
+        # blocking_reasons key (every existing test fixture) is unaffected.
+        reasons = obj.get("blocking_reasons")
+        detail = "; ".join(str(r) for r in reasons) if isinstance(reasons, list) and reasons else ""
+        if not isinstance(score, (int, float)):
+            base = "QC report carries no numeric score"
+            return {"state":"fail","warn_only":False,
+                    "reason": f"{base} -- {detail}" if detail else base}
+        if score < QC_PASS_THRESHOLD:
+            base = f"QC score {score} is below the {QC_PASS_THRESHOLD} threshold"
+            return {"state":"fail","score":score,"warn_only":False,
+                    "reason": f"{base} -- {detail}" if detail else base}
         return {"state":"pass","score":score,"per_dimension":obj.get("per_dimension"),"reason":None,"warn_only":False}
     def _ocr_gate(self) -> Dict[str, Any]:
         # MASTER-SPEC 7.4 / D10: the slide-content readback is the one gate that fail-closes
