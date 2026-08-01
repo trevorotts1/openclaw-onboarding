@@ -1,4 +1,9 @@
 {
+  "meta": {
+    "version": "1.0.0",
+    "minN8nSchemaVersion": "1.0",
+    "note": "U041: sanitized live export from 2026-08-01 audit -- podcast-standing-check workflow."
+  },
   "id": "EF3xsMuSQheZ98U6",
   "name": "podcast-standing-check",
   "description": "",
