@@ -132,6 +132,43 @@ else
 fi
 export FLEET_WRITE_DEFAULTS_TOOLS="$WRITE_DEFAULTS_TOOLS"
 
+# ─── 1c. Enumerate BUNDLED plugin IDs for plugins.allow (dynamic, box-specific) ──
+# SECURITY: the repo never set plugins.allow, so every box inherits the gateway's
+# permissive default — ANY discovered plugin (bundled OR third-party/unvetted)
+# auto-loads. Observed on a client box: `moonshot`, `perplexity` auto-loading
+# from ~/.openclaw/npm/projects/... with no vetting.
+#
+# We do NOT hardcode a plugin-ID list — different boxes ship different plugin
+# sets, and a fixed list would break any box whose bundle differs. Instead we
+# ask THIS box, right now, what it reports as "bundled" (shipped with its own
+# OpenClaw install — the vetted set) via `openclaw plugins list --json`, and
+# allow exactly that set. Non-bundled plugins (npm/marketplace/local installs)
+# are excluded — that IS the fix.
+#
+# FAIL-OPEN: if the CLI is missing, the command fails, or it enumerates ZERO
+# bundled ids, we log loudly to stderr and SKIP writing plugins.allow entirely
+# this run — the existing config (present or absent) is left untouched. We
+# never write an empty or partial allowlist: an empty plugins.allow[] would
+# disable every plugin fleet-wide, including trusted bundled ones the box
+# depends on. Idempotent: re-running with an unchanged bundle re-derives the
+# identical list (no-op); an OpenClaw upgrade that changes the bundled set is
+# picked up automatically on the next run.
+FLEET_PLUGINS_JSON_FILE=""
+FLEET_PLUGINS_ENUM_OK=0
+if command -v openclaw >/dev/null 2>&1; then
+  _plugins_tmp=$(mktemp); _APPLY_TMPFILES+=("$_plugins_tmp")
+  if openclaw plugins list --json >"$_plugins_tmp" 2>/dev/null && [ -s "$_plugins_tmp" ]; then
+    FLEET_PLUGINS_JSON_FILE="$_plugins_tmp"
+    FLEET_PLUGINS_ENUM_OK=1
+  else
+    echo "WARNING: [apply-fleet-standards] 'openclaw plugins list --json' failed or returned empty output — SKIPPING plugins.allow this run (fail-open; existing config left untouched)" >&2
+  fi
+else
+  echo "WARNING: [apply-fleet-standards] 'openclaw' CLI not found on PATH — cannot enumerate bundled plugins — SKIPPING plugins.allow this run (fail-open; existing config left untouched)" >&2
+fi
+export FLEET_PLUGINS_JSON_FILE
+export FLEET_PLUGINS_ENUM_OK
+
 # ─── 2. Deep-merge the canonical fleet block into openclaw.json ──────────────
 python3 - "$OC_CONFIG" <<'PYEOF'
 import json
@@ -251,6 +288,37 @@ def deep_merge(dst, src):
 
 # Apply the canonical block.
 deep_merge(cfg, CANONICAL)
+
+# ─── DYNAMIC plugins.allow — vetted-bundled-only plugin gate (box-specific) ──
+# See "1c" above for the full rationale. This is intentionally NOT part of the
+# static CANONICAL dict above: CANONICAL is the same literal block on every
+# box, but the correct plugins.allow value differs per box (whatever it
+# currently reports as bundled), so it is computed here from the bash-side
+# enumeration (FLEET_PLUGINS_JSON_FILE) instead of hardcoded.
+# FAIL-OPEN: any failure/empty result below leaves cfg["plugins"]["allow"]
+# exactly as found — never write an empty or partial allowlist.
+_plugins_enum_ok = os.environ.get("FLEET_PLUGINS_ENUM_OK", "0") == "1"
+_plugins_json_file = os.environ.get("FLEET_PLUGINS_JSON_FILE", "")
+if _plugins_enum_ok and _plugins_json_file:
+    try:
+        _plugins_data = json.loads(Path(_plugins_json_file).read_text())
+        _bundled_ids = sorted({
+            p["id"] for p in _plugins_data.get("plugins", [])
+            if isinstance(p, dict)
+            and p.get("origin") == "bundled"
+            and isinstance(p.get("id"), str)
+            and p["id"]
+        })
+    except Exception as _e:
+        print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
+        _bundled_ids = []
+    if _bundled_ids:
+        cfg.setdefault("plugins", {})["allow"] = _bundled_ids
+        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-bundled plugin id(s) — non-bundled/third-party plugins will no longer auto-load")
+    else:
+        print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
+else:
+    print("[apply-fleet-standards] plugins.allow enumeration unavailable this run (see WARNING above, if any) — leaving existing plugins.allow untouched (fail-open)")
 
 # DEFECT 1 (v13.1.3) — schema-version-aware no-refusal baseline.
 _agents_defaults = cfg.setdefault("agents", {}).setdefault("defaults", {})

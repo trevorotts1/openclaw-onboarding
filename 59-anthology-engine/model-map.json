@@ -1,0 +1,131 @@
+{
+  "skill": "anthology-engine",
+  "resolved_per_box": true,
+  "note": "Resolved from the CLIENT's OWN configured models (openclaw.json) via the fleet shared-utils/select_model.py. NEVER an Anthropic-family id, NEVER operator keys, NEVER a substituted default; credentials are referenced by LABEL only.",
+  "deny_policy": {
+    "rule": "Anthropic-family model identifiers are DENIED at resolution time and again at call time by model_router.py deny patterns, and statically over every shipped file by guard-no-anthropic-runtime.py. A resolved tier whose provider or model matches an Anthropic-family shape fails closed (AF-AE-ANTHROPIC).",
+    "enforced_by": [
+      "preflight.sh --check",
+      "model_router.py",
+      "guard-no-anthropic-runtime.py"
+    ]
+  },
+  "tiers": {
+    "HEAVY-WRITER": {
+      "work": "S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter",
+      "parameters": {
+        "thinking": "high",
+        "temperature": 0.3
+      },
+      "chain": [
+        {
+          "provider": "ollama-cloud",
+          "model": "deepseek-v4-pro:cloud",
+          "credential_label": "OLLAMA_API_KEY",
+          "slotting": "baseUrl",
+          "baseUrl": "https://ollama.com/v1",
+          "order": 1,
+          "maxTokens": 65536
+        },
+        {
+          "provider": "ollama-cloud",
+          "model": "kimi-k2.6:cloud",
+          "credential_label": "OLLAMA_API_KEY",
+          "slotting": "baseUrl",
+          "baseUrl": "https://ollama.com/v1",
+          "order": 2
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "credential_label": "DEEPSEEK_API_KEY",
+          "slotting": "apiKey",
+          "order": 3
+        },
+        {
+          "provider": "openrouter",
+          "model": "xiaomi/mimo-v2.5-pro",
+          "credential_label": "OPENROUTER_API_KEY",
+          "slotting": "apiKey",
+          "order": 4
+        },
+        {
+          "order": 5,
+          "provider": "HOLD",
+          "model": "durable HOLD + ONE deduped founder Telegram alert through the OpenClaw gateway, never bypassed (hold_queue.py + alert-dedup.py)"
+        }
+      ]
+    },
+    "LIGHT": {
+      "work": "extraction (aw-12 primary-goal), classification, routing-adjacent text chores",
+      "parameters": {},
+      "chain": [
+        {
+          "provider": "ollama-cloud",
+          "model": "deepseek-v4-flash:cloud",
+          "credential_label": "OLLAMA_API_KEY",
+          "slotting": "baseUrl",
+          "baseUrl": "https://ollama.com/v1",
+          "order": 1
+        },
+        {
+          "provider": "openrouter",
+          "model": "deepseek/deepseek-v4-flash",
+          "credential_label": "OPENROUTER_API_KEY",
+          "slotting": "apiKey",
+          "order": 2
+        }
+      ]
+    },
+    "JUDGE": {
+      "work": "Gate B semantic checks and the Tier 2 ten-dimension rubric",
+      "parameters": {
+        "temperature": 0
+      },
+      "independence_law": "The JUDGE resolution is ALWAYS different from the tier that drafted the piece under review (judge_harness.py enforces AF-AE-JUDGE-INDEPENDENCE); the judge never runs the persona or tier that drafted.",
+      "chain": [
+        {
+          "provider": "openrouter",
+          "model": "xiaomi/mimo-v2.5-pro",
+          "credential_label": "OPENROUTER_API_KEY",
+          "slotting": "apiKey",
+          "order": 1
+        }
+      ]
+    },
+    "LONGCTX": {
+      "work": "S9 whole-manuscript compile (optional, about 1M context)",
+      "optional": true,
+      "parameters": {
+        "thinking": "high"
+      },
+      "absent_behavior": "When the client configured NO long-context key, S9 chunks on HEAVY-WRITER instead.",
+      "chain": [
+        {
+          "provider": "ollama-cloud",
+          "model": "deepseek-v4-pro:cloud",
+          "credential_label": "OLLAMA_API_KEY",
+          "slotting": "baseUrl",
+          "baseUrl": "https://ollama.com/v1",
+          "order": 1
+        },
+        {
+          "provider": "deepseek",
+          "model": "deepseek-v4-pro",
+          "credential_label": "DEEPSEEK_API_KEY",
+          "slotting": "apiKey",
+          "order": 2
+        },
+        {
+          "provider": "ollama-cloud",
+          "model": "kimi-k2.6:cloud",
+          "credential_label": "OLLAMA_API_KEY",
+          "slotting": "baseUrl",
+          "baseUrl": "https://ollama.com/v1",
+          "order": 3
+        }
+      ]
+    }
+  },
+  "no_formatter_tier": true
+}
