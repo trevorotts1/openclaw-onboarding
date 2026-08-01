@@ -588,7 +588,12 @@ def preset_flags(preset: str | None) -> dict:
 def resolve_preset(conn: sqlite3.Connection | None, job_id: str, mode: str) -> str | None:
     """Resolve a job's preset: an explicit, in-enum preset from the stored intake
     payload wins; otherwise derive the default from the production mode. Never
-    raises (a producing mode always resolves to a full-deliverable default)."""
+    raises (a producing mode always resolves to a full-deliverable default).
+
+    The intake mapper (scripts/webhook/mapper.py) normalizes an intake-supplied
+    preset via enum_normalization.preset to one of PRESET_ENUM (OPTION A, rem-5),
+    so a canonical payload carrying an explicit preset is honored here; a payload
+    with no preset falls through to the mode-derived default, unchanged."""
     preset = None
     if conn is not None:
         try:

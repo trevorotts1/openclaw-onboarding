@@ -78,10 +78,10 @@ CANONICAL_FIELDS = (
     "q5_answer", "q6_answer", "q7_answer", "transparency_answer", "additional_info",
     "target_runtime", "tts_model", "writing_model", "web_research_tool", "podcast_id",
     "location_id", "contact_id", "publish_timestamp", "episode_type", "explicit",
-    "workflow_trigger", "retry", "_test",
+    "preset", "workflow_trigger", "retry", "_test",
 )
 
-ENUM_FIELDS = ("mode", "style", "episode_type", "explicit")
+ENUM_FIELDS = ("mode", "style", "episode_type", "explicit", "preset")
 ID_FIELDS = ("location_id", "contact_id")
 BOOL_FIELDS = ("retry", "_test")
 ANSWER_TEXT_FIELDS = ("q1_answer", "q2_answer", "q3_answer", "q4_answer", "q5_answer",
@@ -829,6 +829,87 @@ def self_test():
           rpv["canonical"].get("style") == "counter_intuitive")
     check("E1 route: personal-variant barry_q1 routed via the resolved style",
           rpv["canonical"].get("q1_answer") == "Personal-variant routed thesis.")
+
+    # -------------------------------------------------------------------------
+    # R-09 / onb-1 mandate: preset and episode_type both resolve to VALID,
+    # DISTINCTLY-HASHED canonical values. Under OPTION A preset is a true
+    # canonical field (CANONICAL_FIELDS + ENUM_FIELDS + field_aliases.preset +
+    # enum_normalization.preset), so an intake-supplied preset is normalized to a
+    # PRESET_ENUM token that resolve_preset() honors, while episode_type is a
+    # hashed enum. The two must map INDEPENDENTLY (no alias collision) and each
+    # must normalize to a valid token. preset is hash-EXCLUDED (per
+    # payload-schema.json x-canonical-hash-note, like retry/_test), so the
+    # distinctly-hashed check applies to episode_type; preset's check is that it
+    # resolves to a valid, in-enum token distinct from episode_type's token.
+    # -------------------------------------------------------------------------
+    import job_key as _jk
+    PRESET_TOKENS = ("interview", "solo", "season_strategy", "episode_asset_pack")
+    EP_TOKENS = ("full", "trailer", "bonus")
+
+    def _base_for(slot_contact):
+        return {"data": {"mode": "Personal", "style": "vulnerable",
+                         "contactId": slot_contact, "locationId": loc,
+                         "podcastId": "pb-r09", "firstName": "Pat", "q1": "y"}}
+
+    # preset: an explicit intake value normalizes to a valid PRESET_ENUM token.
+    pp = _base_for("CNTr09preset00000001")
+    pp["data"]["preset"] = "Season Strategy"
+    rpp = map_payload(pp, tables, expected_location_id=loc)
+    check("R-09: preset resolves to a valid PRESET_ENUM token",
+          rpp["canonical"].get("preset") in PRESET_TOKENS
+          and rpp["canonical"].get("preset") == "season_strategy")
+
+    # preset alias routing: output_preset alias also lands in preset (not episode_type).
+    ppa = _base_for("CNTr09preset00000002")
+    ppa["data"]["output_preset"] = "episode asset pack"
+    rppa = map_payload(ppa, tables, expected_location_id=loc)
+    check("R-09: preset alias output_preset -> preset canonical (not episode_type)",
+          rppa["canonical"].get("preset") == "episode_asset_pack"
+          and "episode_type" not in rppa["canonical"])
+
+    # episode_type: an explicit intake value normalizes to a valid enum token.
+    et = _base_for("CNTr09episod0000001")
+    et["data"]["episode_type"] = "trailer"
+    ret = map_payload(et, tables, expected_location_id=loc)
+    check("R-09: episode_type resolves to a valid enum token",
+          ret["canonical"].get("episode_type") in EP_TOKENS
+          and ret["canonical"].get("episode_type") == "trailer")
+
+    # preset and episode_type map INDEPENDENTLY in one payload (no collision).
+    both = _base_for("CNTr09both000000001")
+    both["data"]["preset"] = "interview"
+    both["data"]["episode_type"] = "bonus"
+    rboth = map_payload(both, tables, expected_location_id=loc)
+    check("R-09: preset and episode_type resolve independently (distinct tokens)",
+          rboth["canonical"].get("preset") == "interview"
+          and rboth["canonical"].get("episode_type") == "bonus"
+          and rboth["canonical"].get("preset") != rboth["canonical"].get("episode_type"))
+
+    # episode_type is hashed: two submissions differing ONLY in episode_type
+    # produce distinct job keys (the distinctly-hashed check).
+    et_full = _base_for("CNTr09hash000000001")
+    et_full["data"]["episode_type"] = "full"
+    et_trailer = _base_for("CNTr09hash000000001")
+    et_trailer["data"]["episode_type"] = "trailer"
+    ret_f = map_payload(et_full, tables, expected_location_id=loc)
+    ret_t = map_payload(et_trailer, tables, expected_location_id=loc)
+    kf, _ = _jk.compute_job_key(ret_f["canonical"])
+    kt, _ = _jk.compute_job_key(ret_t["canonical"])
+    check("R-09: episode_type is distinctly hashed (full vs trailer diverge)",
+          kf is not None and kt is not None and kf != kt)
+
+    # preset is hash-EXCLUDED: two submissions differing ONLY in preset produce
+    # the SAME job key (preset never defeats dedup, matching the schema note).
+    pe_solo = _base_for("CNTr09hash000000002")
+    pe_solo["data"]["preset"] = "solo"
+    pe_int = _base_for("CNTr09hash000000002")
+    pe_int["data"]["preset"] = "interview"
+    rpe_s = map_payload(pe_solo, tables, expected_location_id=loc)
+    rpe_i = map_payload(pe_int, tables, expected_location_id=loc)
+    ks, _ = _jk.compute_job_key(rpe_s["canonical"])
+    ki, _ = _jk.compute_job_key(rpe_i["canonical"])
+    check("R-09: preset is hash-excluded (solo vs interview collide)",
+          ks is not None and ki is not None and ks == ki)
 
     print("== mapper self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return 0 if ok else 1
