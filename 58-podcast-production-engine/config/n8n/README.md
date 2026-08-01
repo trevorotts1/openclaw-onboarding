@@ -93,10 +93,13 @@ PUBLISH  --  MASTER SPEC v1`, unit U12):
   the operator's own address (refusal paths  --  never a client's).
 - Credentials appear only as `{id, name}` reference pairs, exactly as the n8n
   API returns them  --  the API never serves credential secret values over
-  these endpoints, so there was no value to strip: `Podcast Publish Gate`
-  (`httpHeaderAuth`, id `8HTB7khC7fDcRVhN`) on the webhook node, and `Podbean
-  BlackCEO (client_credentials)` (`httpBasicAuth`, id `EZApXhsHExXctBrB`) on
-  the OAuth node. Neither credential's value is anywhere in this repository.
+  these endpoints, so there was no value to strip: `Podcast Publish Gate
+  (restored 2026-08-01)` (`httpHeaderAuth`, id `JVRJ3oLlNNT202IJ`, header
+  `X-Podcast-Publish-Token`) on the webhook node  --  the original
+  `Podcast Publish Gate` (id `8HTB7khC7fDcRVhN`) was rotated 2026-07-30
+  --  and `Podbean BlackCEO (client_credentials)` (`httpBasicAuth`, id
+  `EZApXhsHExXctBrB`) on the OAuth node. Neither credential's value is
+  anywhere in this repository.
 - `staticData`, `meta`, `shared` (project/owner metadata), `versionCounter`,
   `triggerCount`, and `sourceWorkflowId` were dropped as export noise with no
   audit value.
@@ -456,9 +459,12 @@ export" above) shows both are now closed on the live workflow itself, out of
 band from this repository:
 
 1. **Auth gate  --  CLOSED.** The webhook node now carries
-   `authentication: headerAuth` with the `Podcast Publish Gate` credential
-   (id `8HTB7khC7fDcRVhN`), the same header-auth pattern this broker uses.
-   An unauthenticated POST no longer reaches the workflow.
+   `authentication: headerAuth` with the `Podcast Publish Gate (restored
+   2026-08-01)` credential (id `JVRJ3oLlNNT202IJ`, header
+   `X-Podcast-Publish-Token`)  --  the original `Podcast Publish Gate`
+   (id `8HTB7khC7fDcRVhN`) was rotated 2026-07-30  --  the same header-auth
+   pattern this broker uses. An unauthenticated POST no longer reaches the
+   workflow.
 2. **Plaintext credentials  --  CLOSED, for this workflow.** The Podbean OAuth
    node authenticates via the vaulted `httpBasicAuth` credential `Podbean
    BlackCEO (client_credentials)` (id `EZApXhsHExXctBrB`); no `client_id` /
