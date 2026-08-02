@@ -136,7 +136,7 @@ gate_fail() {
 # ===========================================================================
 # GATE 1 — DEPS CHECK (python3; exit 6 AW_DEPS_MISSING)
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (python3)"
+note "GATE 1/4 — DEPS CHECK (python3)"
 if command -v python3 >/dev/null 2>&1; then
     echo "  OK: python3 present"
 else
@@ -174,7 +174,7 @@ else
 fi
 
 # ===========================================================================
-# GATE 2 — BYPASS-SCAN (refuse hand-rolled external uploaders/notifiers)
+# GATE 3 — BYPASS-SCAN (refuse hand-rolled external uploaders/notifiers)
 # AF-AW-ENTRY-BYPASS
 # ===========================================================================
 note "GATE 3/4 — BYPASS-SCAN (hand-rolled Drive/Slack/Gmail/n8n/Airtable detection)"
@@ -236,7 +236,7 @@ else
 fi
 
 # ===========================================================================
-# GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
+# GATE 4 — VERSION/HASH PIN (content hash of the enforcement set)
 # ===========================================================================
 note "GATE 4/4 — VERSION/HASH PIN (orchestrator + provers + common)"
 ENFORCE_FILES=(

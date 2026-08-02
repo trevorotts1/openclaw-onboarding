@@ -85,33 +85,12 @@ elif [ "$INTERACTIVE_MODE" = "false" ]; then
 else
     IS_TTY=false; [ -t 0 ] && IS_TTY=true
 fi
-INTERACTIVE_MODE="$INTERACTIVE_MODE" IS_TTY="$IS_TTY" TEMPLATE="$TEMPLATE" OUT_DIR="$OUT_DIR" python3 - <<'PY'
+# Step 1: always write the placeholder scaffold first. This heredoc is SAFE —
+# it never calls input(), so consuming stdin as the program source is fine.
+INTERACTIVE_MODE="$INTERACTIVE_MODE" TEMPLATE="$TEMPLATE" OUT_DIR="$OUT_DIR" python3 - <<'PY'
 import json, os, re, sys
-
-def prompt_tiers(tiers):
-    """Interactive guided config: ask the user for provider + model per tier."""
-    print("\n  === Interactive Model-Map Configuration ===", file=sys.stderr)
-    print("  For each tier, enter the provider ID and model ID for your box.", file=sys.stderr)
-    print("  Press Enter to accept the default shown in [brackets].", file=sys.stderr)
-    print("  No provider/model may start with 'claude-', 'anthropic/', or 'us.anthropic.'.", file=sys.stderr)
-    result = {}
-    for name, t in sorted(tiers.items()):
-        print("\n  --- Tier: %s (%s) ---" % (name, t.get("role", "")), file=sys.stderr)
-        def_provider = os.environ.get("AW_PROVIDER_" + name, "")
-        def_model    = os.environ.get("AW_MODEL_" + name, "")
-        provider = input("  Provider for %s: " % name).strip()
-        if not provider:
-            provider = def_provider
-        model = input("  Model for %s: " % name).strip()
-        if not model:
-            model = def_model
-        result[name] = {"role": t.get("role", ""), "provider": provider or "",
-                        "model": model or "", "maxTokens": t.get("maxTokens")}
-    return result
-
 tmpl = json.load(open(os.environ["TEMPLATE"]))
 banned = re.compile(r"claude-|anthropic/|us\.anthropic\.")
-blob = json.dumps(tmpl)
 tiers = tmpl.get("tiers", {})
 for name, t in tiers.items():
     for k in ("provider", "model"):
@@ -119,25 +98,15 @@ for name, t in tiers.items():
         if banned.search(v):
             print("AF-AW-ANTHROPIC: template tier %s.%s carries a banned id %r" % (name, k, v), file=sys.stderr)
             sys.exit(2)
-
-is_tty = os.environ.get("IS_TTY", "false") == "true"
-interactive_mode = os.environ.get("INTERACTIVE_MODE", "")
-
-if is_tty:
-    # Interactive mode: prompt per tier so the resolved map is ready-to-run.
-    resolved_tiers = prompt_tiers(tiers)
-    note_text = "Resolved interactively — provider/model values entered by operator. NEVER Anthropic, NEVER operator keys."
+# Non-interactive: emit placeholders requiring manual resolution or fleet-installer fill.
+resolved_tiers = {name: {"role": t.get("role", ""),
+                          "provider": t.get("provider", "<CLIENT_PROVIDER_ID>"),
+                          "model": t.get("model", "<CLIENT_MODEL>"),
+                          "maxTokens": t.get("maxTokens")} for name, t in tiers.items()}
+if os.environ.get("INTERACTIVE_MODE", "") == "false":
+    note_text = "Placeholder scaffold — CI/automation run. Run 'preflight.sh --resolve --interactive' to fill provider/model values, or hand-edit model-map.json. NEVER Anthropic, NEVER operator keys."
 else:
-    # Non-interactive: emit placeholders requiring manual resolution or fleet-installer fill.
-    resolved_tiers = {name: {"role": t.get("role", ""),
-                              "provider": t.get("provider", "<CLIENT_PROVIDER_ID>"),
-                              "model": t.get("model", "<CLIENT_MODEL>"),
-                              "maxTokens": t.get("maxTokens")} for name, t in tiers.items()}
-    if interactive_mode == "false":
-        note_text = "Placeholder scaffold — CI/automation run. Run 'preflight.sh --resolve --interactive' to fill provider/model values, or hand-edit model-map.json. NEVER Anthropic, NEVER operator keys."
-    else:
-        note_text = "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER Anthropic, NEVER operator keys."
-
+    note_text = "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER Anthropic, NEVER operator keys."
 resolved = {
     "skill": "anthology-writer",
     "resolved_per_box": True,
@@ -147,20 +116,25 @@ resolved = {
 }
 out = os.path.join(os.environ["OUT_DIR"], "model-map.json")
 json.dump(resolved, open(out, "w"), indent=2)
-print("  resolved model-map.json ->", out)
-for name in resolved_tiers:
-    prov = resolved_tiers[name].get("provider", "<PLACEHOLDER>")
-    mod  = resolved_tiers[name].get("model", "<PLACEHOLDER>")
-    print("   tier %-13s provider=%s model=%s" % (name, prov, mod))
+print("  scaffold model-map.json ->", out)
 PY
 rc=$?
-if [ "$rc" -eq 0 ]; then
-    if [ "$IS_TTY" = "true" ]; then
+[ "$rc" -eq 0 ] || exit "$rc"
+
+# Step 2: if interactive, resolve the placeholders by prompting the operator.
+# This runs as a REAL SCRIPT FILE (not a heredoc) so python3's stdin stays
+# attached to the terminal / piped answers. A heredoc would feed the program
+# text on stdin, leaving input() at EOF — every prompt would die with EOFError.
+if [ "$IS_TTY" = "true" ]; then
+    python3 "$SELF_DIR/scripts/_resolve_model_map_interactive.py" "$OUT_DIR/model-map.json"
+    rc=$?
+    if [ "$rc" -eq 0 ]; then
         echo "preflight: PASS (resolved interactively; ready-to-run model-map.json written)"
-    else
-        echo "preflight: PASS (placeholder scaffold written; no Anthropic id)"
-        echo "  Next: run 'preflight.sh --resolve --interactive' to interactively configure provider keys,"
-        echo "  or hand-edit model-map.json to replace <CLIENT_PROVIDER_ID>/<CLIENT_MODEL> placeholders."
     fi
+    exit "$rc"
 fi
-exit "$rc"
+
+echo "preflight: PASS (placeholder scaffold written; no Anthropic id)"
+echo "  Next: run 'preflight.sh --resolve --interactive' to interactively configure provider keys,"
+echo "  or hand-edit model-map.json to replace <CLIENT_PROVIDER_ID>/<CLIENT_MODEL> placeholders."
+exit 0
