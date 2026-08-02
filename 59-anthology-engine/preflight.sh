@@ -45,7 +45,7 @@
 #
 # Exit 0 = ok; 2 = banned id / residual placeholder / broker not configured
 #          (fail-closed); 3 = usage.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TEMPLATE="$SELF_DIR/config/model-map.template.json"
 DRIVE_ADAPTER="$SELF_DIR/scripts/drive_adapter.py"

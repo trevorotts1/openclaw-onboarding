@@ -13,7 +13,7 @@
 #
 # Exit 0 = box ready (or ready-pending-provisioning, clearly reported);
 #          2 = a named hard prerequisite is missing.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SELF_DIR/scripts"
 note() { echo "=== [install.sh] $* ==="; }

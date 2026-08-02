@@ -43,7 +43,7 @@
 # EXIT: 0 all executed tests observed PASS (structure sound; deferred allowed
 #       unless --require-live); 4 a failing test id emitted; 3 battery held
 #       (unreachable/unregistered under --require-live); 2 usage.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SKILL_DIR="$(cd "$SELF_DIR/.." && pwd)"

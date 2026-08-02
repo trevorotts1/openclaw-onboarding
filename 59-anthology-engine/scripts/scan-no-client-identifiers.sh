@@ -35,7 +35,7 @@
 # EXIT CODES (SPEC 3.4; guard family): 0 clean; 1 error; 2 usage; 3 dep (git for
 #   --changed, or an unreadable denylist file); 4 VIOLATION (a client identifier present).
 # ----------------------------------------------------------------------------
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 EX_CLEAN=0; EX_ERR=1; EX_USAGE=2; EX_DEP=3; EX_VIOLATION=4
 
