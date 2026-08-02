@@ -159,6 +159,17 @@ provers) is preserved untouched. Layer 3 adapters are stateless functions whose
 every external write is followed by a read-back in the same job. Layer 4 holds NO
 base credential; its only write path is shelling `anthology_state.py`.
 
+### Deliberate omission: fleet CONTROL files
+
+This engine does NOT ship SESSION-LOG, DIGEST, RULEBOOK, or INDEX files. That
+omission is by design. The SQLite ledger (`anthology_state.py`, sole writer)
+and `ENGINE-MANIFEST.json` serve as the dispatch and integrity source of truth
+in their place. The ledger holds every participant row, stage cursor, artifact
+record, and gate state; the manifest holds the per-stage contract, autofail
+table, and artifact map. Together they provide the same dispatch, audit, and
+reconciliation surface that CONTROL files supply in other fleet projects, tuned
+for a multi-tenant anthology scheduler that may pause for months between stages.
+
 ## The canonical pipeline S0 to S9
 
 Every stage is ONE idempotent job: an event arrives, the router advances exactly
