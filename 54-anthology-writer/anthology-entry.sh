@@ -10,17 +10,17 @@
 # fail-closed gates and mints a run-scoped nonce the orchestrator requires:
 #
 #   1. DEPS CHECK       — python3 must be present (exit 6, AW_DEPS_MISSING).
-#   1b. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
+#   2. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
 #                         it must carry NO <CLIENT_*> placeholder and no Anthropic
 #                         id (exit 8, AF-AW-UNRESOLVED-MODELMAP). preflight.sh is
 #                         the resolver; here it runs as a fail-closed pre-gate.
-#   2. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
+#   3. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
 #                         exists in the run directory: a Google Drive upload, a
 #                         Slack post, a Gmail/SMTP send, an n8n webhook, or an
 #                         Airtable write. The Anthology Writer is LOCAL-ONLY;
 #                         delivery is a labeled bundle in ~/Downloads (exit 5,
 #                         AF-AW-ENTRY-BYPASS). Nothing leaves the box from here.
-#   3. VERSION/HASH PIN — content hash of the enforcement set (run_anthology.py +
+#   4. VERSION/HASH PIN — content hash of the enforcement set (run_anthology.py +
 #                         the provers + _aw_common.py); if ENGINE-PIN.sha256 is
 #                         present the hash MUST match (exit 7, AF-AW-HASH-PIN).
 #
@@ -148,13 +148,13 @@ else
 fi
 
 # ===========================================================================
-# GATE 1b — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
+# GATE 2 — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
 # preflight.sh is the resolver AND (here) a fail-closed pre-gate: a resolved
 # run-dir model-map.json that still carries <CLIENT_*> placeholders (installer
 # not run) or a banned Anthropic id is refused BEFORE any authoring/QC. A missing
 # map is a clean pass (the fleet installer resolves per box).
 # ===========================================================================
-note "GATE 1b/3 — MODEL-MAP PRE-GATE (preflight.sh --check)"
+note "GATE 2/4 — MODEL-MAP PRE-GATE (preflight.sh --check)"
 if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
     if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
         :
@@ -164,9 +164,7 @@ if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/pr
             MODEL_MAP_PATH="$RUN_DIR/model-map.json"
             gate_fail "AF-AW-UNRESOLVED-MODELMAP" 8 "the run-dir $MODEL_MAP_PATH still carries \
 <CLIENT_PROVIDER_ID> or <CLIENT_MODEL> placeholders (or a banned Anthropic id). \
-To fix: open $MODEL_MAP_PATH, replace every '<CLIENT_PROVIDER_ID>' with a real provider id \
-(e.g. 'openrouter', 'ollama-cloud') and every '<CLIENT_MODEL>' with a real model name for your box \
-(e.g. 'qwen/qwen3-coder', 'deepseek/deepseek-v4-pro'). Then re-run anthology-entry.sh."
+Run: preflight.sh --resolve --interactive to configure your provider keys."
         else
             echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"
         fi
@@ -179,7 +177,7 @@ fi
 # GATE 2 — BYPASS-SCAN (refuse hand-rolled external uploaders/notifiers)
 # AF-AW-ENTRY-BYPASS
 # ===========================================================================
-note "GATE 2/3 — BYPASS-SCAN (hand-rolled Drive/Slack/Gmail/n8n/Airtable detection)"
+note "GATE 3/4 — BYPASS-SCAN (hand-rolled Drive/Slack/Gmail/n8n/Airtable detection)"
 if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
     SCAN_OUT="$(RUN_DIR="$RUN_DIR" SELF_DIR="$SELF_DIR" python3 - <<'PY' 2>&1
 import os, re, sys
@@ -240,7 +238,7 @@ fi
 # ===========================================================================
 # GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (orchestrator + provers + common)"
+note "GATE 4/4 — VERSION/HASH PIN (orchestrator + provers + common)"
 ENFORCE_FILES=(
     "$RUNNER"
     "$SCRIPTS/_aw_common.py"
