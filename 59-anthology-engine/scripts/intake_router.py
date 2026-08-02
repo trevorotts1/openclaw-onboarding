@@ -745,7 +745,8 @@ def route(raw_text, cfg, state_dir, args):
     # "BEFORE any model or media spend"). FAIL CLOSED by design (the opposite of
     # the legacy roster gate's fail-open doctrine) -- see standing_gate.py for
     # the full credential and fail-closed contract.
-    if cfg.get("standing_check_mode", "required") != "off":
+    standing_mode = getattr(args, "standing_check_mode", None) or cfg.get("standing_check_mode", "required")
+    if standing_mode != "off":
         standing = standing_gate.check_standing("anthology")
         if not standing.get("approved"):
             _log("anthology standing gate refused: %s" % standing.get("note"))
@@ -1251,6 +1252,9 @@ def build_parser():
     ap.add_argument("--secret-mode", dest="secret_mode",
                     choices=["verify_if_present", "required", "off"],
                     help="override the route-secret verification mode")
+    ap.add_argument("--standing-check-mode", dest="standing_check_mode",
+                    choices=["required", "off"],
+                    help="override the fleet standing gate (Item 2) behavior")
     ap.add_argument("--trusted", action="store_true",
                     help="trusted local invocation (exceptions replay): skip the secret check")
     ap.add_argument("--no-spawn", action="store_true",
