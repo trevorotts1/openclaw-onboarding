@@ -1674,6 +1674,15 @@ def main(argv=None):
             sp.add_argument("--form-ids", default="", help="JSON map of form ids")
             sp.add_argument("--drive-folder", default="")
 
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    # Normalize --self-test / --selftest -> positional self-test subcommand
+    # so argparse's required=True subparser never rejects the flag form.
+    if "--self-test" in argv:
+        argv = ["self-test" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["self-test" if a == "--selftest" else a for a in argv]
     args = ap.parse_args(argv)
     field_map = Path(args.field_map).expanduser()
     reg_path = registry_path(args.registry)

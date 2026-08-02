@@ -720,6 +720,15 @@ def main(argv=None):
     ap.add_argument("cmd", choices=["provision-custom-values", "verify-imported",
                                     "stamp-version", "plan", "self-test"])
 
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    # Normalize --self-test / --selftest -> positional self-test subcommand
+    # so argparse's required positional cmd never rejects the flag form.
+    if "--self-test" in argv:
+        argv = ["self-test" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["self-test" if a == "--selftest" else a for a in argv]
     args = ap.parse_args(argv)
     jsonout = sys.stdout if args.json else None
 

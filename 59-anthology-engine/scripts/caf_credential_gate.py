@@ -1247,6 +1247,7 @@ def self_test():
     #     pair to disagree); both set and matching -> clean.
     code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
                               "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                              "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token,
                               "CAF_ALLOWED_LOCATION_IDS": "locA,locB",
                               "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
                      store_paths=[], do_scan=False)
@@ -1255,6 +1256,7 @@ def self_test():
     assert rep["allowlist_labels"] is None, rep
     code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
                               "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                              "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token,
                               "CAF_ALLOWED_LOCATION_IDS": "locA",
                               "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
                      store_paths=[], do_scan=False)
@@ -1264,12 +1266,14 @@ def self_test():
     # Only one label set -> no pair to disagree -> clean.
     code, _ = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
                             "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                            "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token,
                             "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
                    store_paths=[], do_scan=False)
     assert code == EX_OK
     # Neither label set -> clean.
     code, _ = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                            "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
+                            "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                            "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token},
                    store_paths=[], do_scan=False)
     assert code == EX_OK
     print("  [20] allowlist-label consistency: match->PASS, mismatch->exit4 "
@@ -1295,6 +1299,12 @@ def _parse_expected(args):
 
 
 def main(argv=None):
+    # Normalize $0 self-test / $0 selftest -> --self-test
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    if argv and argv[0] in ("self-test", "selftest"):
+        argv[0] = "--self-test"
     ap = argparse.ArgumentParser(
         description="Convert and Flow credential gate for the Anthology Engine (W2.3): "
                     "label resolution live-process-first across the three env stores, "
