@@ -52,7 +52,25 @@ fi
 
 note "STEP 3/4 -- credential labels (SET or NOT SET only, never a value)"
 if [ -f "$SCRIPTS/caf_credential_gate.py" ]; then
-    python3 "$SCRIPTS/caf_credential_gate.py" || echo "  (credential gate reported missing labels; see its output -- resolve on a configured box)"
+    GATE_RC=0
+    python3 "$SCRIPTS/caf_credential_gate.py" || GATE_RC=$?
+    case "$GATE_RC" in
+        0)
+            # gate passed
+            ;;
+        4)
+            echo "HARD-STOP: credential gate flagged an INLINE_EXPOSURE in a file -- review the gate output above, remove the exposed value, then re-run install.sh." >&2
+            exit 2
+            ;;
+        2)
+            echo "NOT READY: credential gate reported missing required labels -- see the gate output above. Resolve missing labels before re-running install.sh." >&2
+            exit 2
+            ;;
+        *)
+            echo "NOT READY: credential gate exited with unexpected code $GATE_RC -- see the gate output above." >&2
+            exit 2
+            ;;
+    esac
 else
     echo "  PENDING: scripts/caf_credential_gate.py (W2.3) not present yet; credential resolution deferred to provisioning."
 fi
