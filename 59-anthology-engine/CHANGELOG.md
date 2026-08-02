@@ -1,3 +1,8 @@
+### v0.1.13 -- warfix batch 2 (2026-08-02)
+
+Landed 3 more Skill 59 warfix fixes:
+FIX-11 (S9 assembly hermetic per-run frozen chapters + distinct FROZEN-MISSING), FIX-12a (participant preview: cmd_status emits outline_text + preview_urls), FIX-14 (gate_engine deep-links point at /participant/<token> + /workspace/anthology).
+
 ### v0.1.12 -- warfix batch 1 (2026-08-02)
 
 Landed 20 Skill 59 warfix fixes (wave 1, batch 1):
