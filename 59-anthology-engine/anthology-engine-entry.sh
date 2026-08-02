@@ -39,6 +39,7 @@
 #   6  -- DEPS CHECK failed (AE_DEPS_MISSING)
 #   7  -- VERSION/HASH PIN failed (hash mismatch, no owner skip)
 #   8  -- MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic-family id)
+#   4  -- malformed participant key (must be <contact>::<anthology>)
 # ============================================================================
 
 set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
@@ -83,6 +84,17 @@ while [ $# -gt 0 ]; do
         *) die "unknown argument: $1 (run with --help)" ;;
     esac
 done
+
+# Require --participant-key to carry a <contact>::<anthology> contract.
+# A bare string without '::' is an input error, not a hold -- give the
+# operator a distinct code and message so they can distinguish.
+if [ -n "$KEY" ] && ! echo "$KEY" | grep -q '::'; then
+    echo >&2
+    echo "ERROR [$PROG]: --participant-key '$KEY' is malformed." >&2
+    echo "  The key MUST be in <contact>::<anthology> format (a double-colon separator)." >&2
+    echo "  Example: alice-wonderland::grumpy-cat-adventures" >&2
+    exit 4
+fi
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS="$SELF_DIR/scripts"
