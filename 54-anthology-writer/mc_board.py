@@ -98,13 +98,29 @@ import hmac
 import json
 import os
 import sys
+import time
 import urllib.error
 import urllib.request
 from collections import deque
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional
 
 _DEFAULT_TIMEOUT = 8
+
+# U100 — the producer-reconcile pattern generalized from B-U13/U27
+# (06-ghl-install-pages/tools/cc_board.py) to this "mc_board six" producer.
+# Fixed subdir + filename for the opt-in board-ingest receipt `reconcile`
+# sweeps; distinct from the existing `working/checkpoints/mc-board.json`
+# per-run receipt above so this is purely additive (see _write_board_ingest_
+# receipt's own no-op-when-evidence_root-is-None contract).
+_EVIDENCE_ROUTING_SUBDIR = "routing"
+_BOARD_INGEST_RECEIPT_FILENAME = "board-ingest-receipt.json"
+
+
+def _ts() -> str:
+    """UTC timestamp, matches cc_board.py's ``_ts()`` byte-for-byte."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
 
 # Mirror of the CC server's TaskStatus enum + LEGAL_TRANSITIONS map, ported verbatim
 # from 48-facebook-ad-generator/scripts/cc_board.py (which reads them from
@@ -327,6 +343,52 @@ def _merge_receipt(run_dir, updates: dict) -> bool:
         return False
 
 
+def _write_board_ingest_receipt(
+    evidence_root: Optional[str],
+    *,
+    mc_url_set: bool,
+    ok: bool,
+    task_id: Optional[str],
+    department_slug: Optional[str] = None,
+    source: Optional[str] = None,
+    reason: str = "",
+) -> None:
+    """U100 — the producer-reconcile pattern generalized from B-U13/U27's
+    ``_write_board_ingest_receipt`` (06-ghl-install-pages/tools/cc_board.py).
+    Persists ONE receipt per ``card_open()`` call recording whether the board
+    was even configured and whether the card landed, so ``mc_board.py
+    reconcile`` can later distinguish "no card because nothing to build" from
+    "no card because the board was unreachable/unconfigured and the build
+    silently continued unregistered".
+
+    Best-effort / fail-soft: ``evidence_root=None`` (the default — every
+    EXISTING caller of ``card_open``/``begin_run`` is unaffected, matching the
+    module's own NO-OP-WHEN-DISABLED contract) is a clean no-op; any OSError
+    writing the receipt is swallowed. NEVER raises; NEVER changes
+    ``card_open()``'s return value."""
+    if not evidence_root:
+        return
+    try:
+        receipt_dir = os.path.join(evidence_root, _EVIDENCE_ROUTING_SUBDIR)
+        os.makedirs(receipt_dir, exist_ok=True)
+        record = {
+            "attempted_at": _ts(),
+            "mc_url_set": bool(mc_url_set),
+            "ok": bool(ok),
+            "task_id": task_id,
+            "department_slug": department_slug,
+            "source": source,
+            "reason": reason,
+        }
+        final_path = os.path.join(receipt_dir, _BOARD_INGEST_RECEIPT_FILENAME)
+        tmp_path = final_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(record, f, indent=2)
+        os.replace(tmp_path, final_path)
+    except OSError:
+        pass  # receipt is best-effort; card_open()'s return value is unaffected
+
+
 # ---------------------------------------------------------------------------
 # CREATE — POST /api/tasks/ingest (idempotent on idempotency_key server-side).
 # ---------------------------------------------------------------------------
@@ -341,18 +403,32 @@ def card_open(
     description: str = "",
     priority: str = "medium",
     env: Optional[dict] = None,
+    evidence_root: Optional[str] = None,
 ) -> Optional[str]:
     """Open (or idempotently re-fetch) this run's board card. Returns the task_id
     string on success, else None. FAIL-SOFT — a None return never blocks the run.
 
     A disabled board (no COMMAND_CENTER_URL/MISSION_CONTROL_URL) is a clean no-op
     that writes NOTHING. When enabled, the task_id is stamped into the receipt so a
-    later advance can recover it and a re-open reuses it (no duplicate card)."""
+    later advance can recover it and a re-open reuses it (no duplicate card).
+
+    ``evidence_root`` (U100, opt-in, default None): when a caller passes a
+    per-run evidence directory, ONE board-ingest receipt is ALSO written there
+    (``<evidence_root>/routing/board-ingest-receipt.json``) recording whether
+    the board was even configured and whether the card landed — the run-
+    evidence ledger ``mc_board.py reconcile`` sweeps. Every EXISTING caller
+    (evidence_root=None) is completely unaffected — this preserves the
+    module's own NO-OP-WHEN-DISABLED / byte-for-byte-identical contract."""
     if run_dir is None:
         return None
     cfg = board_config(env)
     if cfg is None:
         _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled (no-op); run continues.")
+        _write_board_ingest_receipt(
+            evidence_root, mc_url_set=False, ok=False, task_id=None,
+            department_slug=department, source=source or "productized-skill",
+            reason="COMMAND_CENTER_URL/MISSION_CONTROL_URL unset",
+        )
         return None
 
     # Idempotent: reuse a task_id already recorded for this run dir.
@@ -411,6 +487,11 @@ def card_open(
         status, body = _request("POST", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"ingest POST failed ({type(exc).__name__}: {exc}); run continues ungrouped.")
+        _write_board_ingest_receipt(
+            evidence_root, mc_url_set=True, ok=False, task_id=None,
+            department_slug=department_slug, source=source or "productized-skill",
+            reason=f"{type(exc).__name__}: {exc}",
+        )
         return None
 
     if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
@@ -418,9 +499,19 @@ def card_open(
         deduped = body.get("deduped", False)
         _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}")
         _merge_receipt(run_dir, {"mc_task_id": task_id})
+        _write_board_ingest_receipt(
+            evidence_root, mc_url_set=True, ok=True, task_id=task_id,
+            department_slug=department_slug, source=source or "productized-skill",
+            reason="deduped" if deduped else "created",
+        )
         return task_id
 
     _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
+    _write_board_ingest_receipt(
+        evidence_root, mc_url_set=True, ok=False, task_id=None,
+        department_slug=department_slug, source=source or "productized-skill",
+        reason=f"HTTP {status}: {body}",
+    )
     return None
 
 
@@ -551,13 +642,18 @@ def begin_run(
     source: str = "",
     description: str = "",
     env: Optional[dict] = None,
+    evidence_root: Optional[str] = None,
 ) -> Optional[str]:
     """Open the run's card and move it to in_progress. Returns the task_id or None.
-    Never raises — the board is a view, never a gate."""
+    Never raises — the board is a view, never a gate.
+
+    ``evidence_root`` (U100, opt-in, default None): forwarded to ``card_open``
+    — see its docstring."""
     try:
         tid = card_open(
             run_dir, slug=slug, title=title, department=department,
             persona=persona, source=source, description=description, env=env,
+            evidence_root=evidence_root,
         )
         if tid:
             note = "run started"
@@ -624,3 +720,185 @@ def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False
+
+
+# ---------------------------------------------------------------------------
+# RECONCILE (U100) — the producer-reconcile pattern generalized from B-U13/U27
+# to this "mc_board six" producer. Sweeps every run-evidence root a caller has
+# opted into (evidence_root= passed to card_open/begin_run) and reports
+# clean/drift/unwired per run. Read-only, non-gating, fail-soft, idempotent —
+# safe to run repeatedly (a health-probe cron tick or ad hoc from the CLI).
+# ---------------------------------------------------------------------------
+def resolve_state_dir(env: Optional[dict] = None) -> str:
+    """Resolve the run-evidence root to sweep for `reconcile` (U100 — cloned
+    from Skill 6's `resolve_evidence_base()`, B-U13/U27). Resolution order:
+      1. ``MC_BOARD_EVIDENCE_BASE_DIR`` env override (explicit, highest
+         precedence).
+      2. ``$HOME/.openclaw/data/<skill-dir-name>/runs`` — the productized-
+         skill runs-root convention (mirrors Skill 35's own
+         ``$HOME/.openclaw/data/skill-35/runs/<run-id>``). ``<skill-dir-name>``
+         is derived from this file's own containing directory (e.g.
+         ``49-signature-funnel``) so this module stays byte-for-byte identical
+         across every skill that vendors it.
+      3. ``""`` — no resolvable base (CI / a bare checkout with no HOME);
+         callers treat this as "not applicable", never as an error.
+
+    Never raises; never touches the network."""
+    env = env if env is not None else os.environ
+    explicit = (env.get("MC_BOARD_EVIDENCE_BASE_DIR") or "").strip()
+    if explicit:
+        return explicit
+    home = (env.get("HOME") or "").strip()
+    if not home:
+        return ""
+    try:
+        skill_dir_name = Path(__file__).resolve().parents[1].name
+    except (IndexError, OSError):
+        skill_dir_name = "unknown-skill"
+    return os.path.join(home, ".openclaw", "data", skill_dir_name, "runs")
+
+
+def list_evidence_runs(base_dir: str) -> List[str]:
+    """Every immediate subdirectory of ``base_dir`` — the run-evidence ledger
+    roots `reconcile` sweeps (each one is an ``evidence_root`` a caller may
+    have passed to ``card_open``/``begin_run``). Read-only; never raises (an
+    unreadable base_dir yields an empty list, never an exception)."""
+    runs: List[str] = []
+    try:
+        if not base_dir or not os.path.isdir(base_dir):
+            return runs
+        for name in sorted(os.listdir(base_dir)):
+            run_dir = os.path.join(base_dir, name)
+            if os.path.isdir(run_dir):
+                runs.append(run_dir)
+    except OSError:
+        return runs
+    return runs
+
+
+def _read_board_ingest_receipt(run_dir: str) -> Optional[dict]:
+    path = os.path.join(run_dir, _EVIDENCE_ROUTING_SUBDIR, _BOARD_INGEST_RECEIPT_FILENAME)
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else None
+    except (OSError, ValueError):
+        return None
+
+
+@dataclass
+class ReconcileReport:
+    base_dir: str
+    applicable: bool = True
+    total_runs: int = 0
+    clean: list = field(default_factory=list)       # run ids: receipt present + landed OK
+    drift: list = field(default_factory=list)        # [{run, reason}]
+    unwired: list = field(default_factory=list)       # run ids: no board-ingest receipt
+
+    def all_clean(self) -> bool:
+        return not self.drift
+
+    def as_dict(self) -> dict:
+        return {
+            "base_dir": self.base_dir,
+            "applicable": self.applicable,
+            "total_runs": self.total_runs,
+            "clean": self.clean,
+            "drift": self.drift,
+            "unwired": self.unwired,
+            "all_clean": self.all_clean(),
+        }
+
+
+def reconcile(base_dir: Optional[str] = None, *, env: Optional[dict] = None) -> ReconcileReport:
+    """Run ONE reconciliation pass (U100 — the producer-reconcile pattern
+    generalized from B-U13/U27 to this productized-skill's mc_board.py).
+
+    Never raises; never mutates anything; never blocks a build — this is a
+    read-only diagnostic sweep, safe to run repeatedly (idempotent) in the
+    daily maintenance window or ad hoc from the CLI."""
+    resolved = (base_dir or "").strip() or resolve_state_dir(env)
+    report = ReconcileReport(base_dir=resolved)
+
+    if not resolved or not os.path.isdir(resolved):
+        report.applicable = False
+        return report
+
+    for run_dir in list_evidence_runs(resolved):
+        run_id = os.path.basename(run_dir)
+        receipt = _read_board_ingest_receipt(run_dir)
+
+        if receipt is None:
+            # No board-ingest receipt: either a caller that has not threaded
+            # evidence_root= through to card_open()/begin_run() yet, or a run
+            # this producer never tried to board at all. Informational only —
+            # never counted as drift (mirrors B-U13's module note).
+            report.unwired.append(run_id)
+            continue
+
+        report.total_runs += 1
+
+        if not receipt.get("mc_url_set"):
+            report.drift.append({
+                "run": run_id,
+                "reason": "COMMAND_CENTER_URL/MISSION_CONTROL_URL unset at "
+                          "ingest — card never landed",
+            })
+            continue
+
+        if not receipt.get("ok") or not receipt.get("task_id"):
+            report.drift.append({
+                "run": run_id,
+                "reason": f"board configured but ingest failed: {receipt.get('reason', 'unknown')}",
+            })
+            continue
+
+        report.clean.append(run_id)
+
+    return report
+
+
+def _reconcile_cli(argv: Optional[list] = None) -> int:
+    """``mc_board.py reconcile [--base-dir DIR] [--json]`` (U100, cloned from
+    cc_board.py's B-U13/U27 CLI form). ALWAYS exits 0 — this is a non-gating,
+    fail-soft, read-only sweep. The verdict lives in the printed report's
+    ``all_clean`` / ``drift`` fields for the caller (operator, cron, or the
+    Command Center's health probe) to read — never in the process exit code.
+    """
+    import argparse
+
+    p = argparse.ArgumentParser(
+        prog="mc_board.py reconcile",
+        description="U100 — sweep this producer's run-evidence roots for "
+                     "board-ingest drift (non-gating; never flips a box red).",
+    )
+    p.add_argument("--base-dir", default="",
+                    help="Run-evidence root to sweep (default: "
+                         "MC_BOARD_EVIDENCE_BASE_DIR env, else "
+                         "$HOME/.openclaw/data/<skill-dir>/runs).")
+    p.add_argument("--json", action="store_true", help="Print the report as JSON.")
+    args = p.parse_args(argv)
+
+    report = reconcile(args.base_dir or None)
+    d = report.as_dict()
+
+    if args.json:
+        print(json.dumps(d, indent=2))
+    else:
+        print(f"Base dir: {d['base_dir']} (applicable={d['applicable']})")
+        print(f"Total runs (with a board-ingest receipt): {d['total_runs']}")
+        print(f"  Clean:   {len(d['clean'])} {d['clean']}")
+        print(f"  Drift:   {len(d['drift'])} {d['drift']}")
+        print(f"  Unwired: {len(d['unwired'])} {d['unwired']}")
+        print("RESULT:", "CLEAN" if d["all_clean"] else "ATTENTION NEEDED (non-gating)")
+
+    return 0  # non-gating — always exit 0, per B-U13/U27
+
+
+if __name__ == "__main__":
+    # U100 — literal ``mc_board.py reconcile [--base-dir DIR] [--json]``
+    # subcommand (cloned from cc_board.py's B-U13/U27 CLI form). This module
+    # previously had no CLI entrypoint at all (library-only, imported by each
+    # producer's orchestrator) — reconcile is purely additive.
+    if len(sys.argv) > 1 and sys.argv[1] == "reconcile":
+        sys.exit(_reconcile_cli(sys.argv[2:]))
