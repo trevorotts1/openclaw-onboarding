@@ -51,10 +51,11 @@ PROMPTS = _SKILL_DIR / "assets" / "prompts"
 # function, so the gate artifacts this orchestrator checks (working/intake.json,
 # working/avatar.md, working/tone-doc.md, ...) are exactly what the stages wrote.
 _ANTHOLOGY_ENGINE_SCRIPTS = _SKILL_DIR.parent / "59-anthology-engine" / "scripts"
-sys.path.insert(0, str(_ANTHOLOGY_ENGINE_SCRIPTS))
+sys.path.append(str(_ANTHOLOGY_ENGINE_SCRIPTS))
 try:
     from anthology_run_dir import resolve_participant_run_dir  # noqa: E402
 except Exception:  # pragma: no cover - resolver must resolve; fail loud at use site
+    print("FATAL: cannot import from %s (59-anthology-engine/scripts missing or broken)" % _ANTHOLOGY_ENGINE_SCRIPTS, file=sys.stderr)
     resolve_participant_run_dir = None
 
 PHASE_ORDER = ["P0-INTAKE", "P0A-AVATAR", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
@@ -999,6 +1000,12 @@ def main(argv=None):
                   "59-anthology-engine/scripts (U059 shared resolver).", file=sys.stderr)
             return EXIT_USAGE
         run_dir = resolve_participant_run_dir(args.participant_key)
+        if run_dir is None:
+            print("FATAL: resolve_participant_run_dir returned None for participant_key=%r "
+                  "(59-anthology-engine did not resolve a run dir)" % args.participant_key,
+                  file=sys.stderr)
+            return EXIT_USAGE
+        run_dir = Path(run_dir)
     else:
         run_dir = Path(args.run_dir).resolve()
     if not run_dir.is_dir():
