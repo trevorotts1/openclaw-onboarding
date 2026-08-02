@@ -70,9 +70,23 @@
 #   OC_CAP_DRY_RUN            "1" = compute + log, never write
 #
 #   The overrides are the DELIBERATE-RAISE path and are intentionally kept
-#   (OC_CAP_MAX_AGENTS is how an operator raises a cap on purpose). But a raise
-#   that lands above min(cores*4, 64) now emits a loud WARN on every tick, so an
-#   out-of-band 500 can never sit silent for five days again.
+#   (OC_CAP_MAX_AGENTS is how an operator raises a cap on purpose). Three
+#   independent checks make an absurd cap impossible to miss on the 15-minute
+#   tick — none of them clamps or fails:
+#     RUNAWAY CAP (computed)   the value this tick will write is above
+#                              min(cores*4, 64)
+#     RUNAWAY CAP (requested)  an EXPLICIT OC_CAP_MAX_AGENTS / OC_CAP_MIN_AGENTS
+#                              is above that ceiling. Needed because
+#                              OC_CAP_MAX_AGENTS is a CLAMP: raising it can never
+#                              push the computed value above cores*CORES_MULT,
+#                              so before 2026-08-02 the documented knob could not
+#                              reach the guard at all (OC_CAP_MAX_AGENTS=500 on a
+#                              12-core box warned exactly zero times).
+#     ABSURD CAP IN CONFIG     the value FOUND in openclaw.json is above the
+#                              ceiling. This is the case that actually happened:
+#                              a hand-written 500 the script never computed,
+#                              while the computed value was a healthy 12.
+#   Platform defaults (12 Mac / 8 VPS) never warn, so the guard stays credible.
 #
 # Exit codes:
 #   0  computed successfully (config in sync, or updated, or dry-run)
@@ -179,14 +193,83 @@ EOF
 
 log "INFO" "platform=$PLATFORM cores=$CORES ram=${RAM_GB}GB → safe maxConcurrent=$SAFE, heartbeat stagger=${STAGGER}s (window=${HEARTBEAT_WINDOW}s)"
 
-# ─── Runaway-override guard (incident 2026-08-01) ─────────────────────────────
-# The computed value can only exceed min(cores*4, 64) when OC_CAP_* overrides
-# were used. That is a legitimate escape hatch, so this does NOT clamp or fail —
-# it makes the raise IMPOSSIBLE to miss on the 15-minute tick.
+# ─── Runaway guard (incident 2026-08-01; reachability repaired 2026-08-02) ────
+# THE SAFETY CEILING: min(cores*4, 64).
 WARN_CEILING=$(( CORES * 4 ))
 [[ "$WARN_CEILING" -gt 64 ]] && WARN_CEILING=64
-if [[ "$SAFE" -gt "$WARN_CEILING" ]]; then
-  log "WARN" "RUNAWAY CAP: computed maxConcurrent=$SAFE exceeds the safety ceiling $WARN_CEILING (min(cores*4=$((CORES * 4)), 64)) on a ${CORES}-core/${RAM_GB}GB box. Only OC_CAP_* env overrides can produce this. A cap this high lets cron storms, heartbeat waves and subagent fanout exhaust RAM and thrash swap (live incident 2026-08-01: 500 on a 12-core box crushed it for 5 days). Confirm this is a DELIBERATE operator raise, or unset the OC_CAP_* overrides."
+
+# WHY THIS GUARD IS NOW THREE CHECKS, NOT ONE
+# -------------------------------------------
+# The original guard tested ONLY the COMPUTED value, and was therefore
+# UNREACHABLE through its own documented override:
+#
+#   safe = max(MIN_AGENTS, min(MAX_AGENTS, min(by_ram, cores*CORES_MULT)))
+#
+# OC_CAP_MAX_AGENTS is a CLAMP. Raising it can never push `safe` above
+# cores*CORES_MULT (default cores*2), while the guard fires above cores*4. So
+# on a 12-core box `OC_CAP_MAX_AGENTS=500` yielded safe=14 and ZERO warnings;
+# even `OC_CAP_RAM_PER_AGENT_GB=0.01` only reached 24, still silent. The only
+# knob that could ever trip it was OC_CAP_MIN_AGENTS — a floor, applied last —
+# which the rationale never mentions and no operator would reach for. The guard
+# read as protection while protecting nothing through the documented path.
+#
+#   (1) COMPUTED    — the value this tick will write.
+#   (2) REQUESTED   — an EXPLICIT OC_CAP_MAX_AGENTS / OC_CAP_MIN_AGENTS above
+#                     the ceiling. An operator who asks for 500 has asked for
+#                     500 and must be told so, whether or not today's RAM/core
+#                     model happens to grant it. Only explicit overrides count:
+#                     the platform defaults (12 Mac / 8 VPS) must never warn.
+#   (3) FOUND       — see the config scan below; that is the case that actually
+#                     happened.
+# None of the three clamps or fails: OC_CAP_* is a deliberate escape hatch. They
+# make a raise impossible to miss on the 15-minute tick.
+RUNAWAY_WHY=""
+[[ "$SAFE" -gt "$WARN_CEILING" ]] && RUNAWAY_WHY="computed maxConcurrent=$SAFE"
+if [[ -n "${OC_CAP_MAX_AGENTS:-}" && "$MAX_AGENTS" =~ ^[0-9]+$ && "$MAX_AGENTS" -gt "$WARN_CEILING" ]]; then
+  RUNAWAY_WHY="${RUNAWAY_WHY:+$RUNAWAY_WHY, }OC_CAP_MAX_AGENTS=$MAX_AGENTS requested"
+fi
+if [[ -n "${OC_CAP_MIN_AGENTS:-}" && "$MIN_AGENTS" =~ ^[0-9]+$ && "$MIN_AGENTS" -gt "$WARN_CEILING" ]]; then
+  RUNAWAY_WHY="${RUNAWAY_WHY:+$RUNAWAY_WHY, }OC_CAP_MIN_AGENTS=$MIN_AGENTS requested"
+fi
+if [[ -n "$RUNAWAY_WHY" ]]; then
+  log "WARN" "RUNAWAY CAP: $RUNAWAY_WHY exceeds the safety ceiling $WARN_CEILING (min(cores*4=$((CORES * 4)), 64)) on a ${CORES}-core/${RAM_GB}GB box. Only OC_CAP_* env overrides can produce this. A cap this high lets cron storms, heartbeat waves and subagent fanout exhaust RAM and thrash swap (live incident 2026-08-01: 500 on a 12-core box crushed it for 5 days). Confirm this is a DELIBERATE operator raise, or unset the OC_CAP_* overrides."
+fi
+
+# ─── Absurd-value-IN-CONFIG guard (the case that actually happened) ───────────
+# The runaway guard above watches values this script COMPUTES. The 2026-08-01
+# incident was not a computed value at all — it was a hand-written
+# `maxConcurrent: 500` sitting in openclaw.json, put there out-of-band. The
+# computed value was a healthy 12 the whole time, so a computed-value guard
+# would not have said a word about the very config that crushed the box.
+#
+# So: warn on what is FOUND in the config, before any heal is attempted. This
+# fires even under OC_CAP_DRY_RUN=1, and even on the tick that heals it, because
+# "an absurd value reached this config" is an event worth surfacing on its own —
+# something wrote it, and that something will likely write it again.
+read -r FOUND_SUB FOUND_DEF <<EOF
+$(python3 - "$CONFIG_FILE" <<'PYEOF'
+import json, sys
+try:
+    cfg = json.load(open(sys.argv[1]))
+except Exception:
+    print("- -"); raise SystemExit(0)
+d = (cfg.get("agents") or {}).get("defaults") or {}
+s = d.get("subagents") or {}
+def norm(v):
+    return str(v) if isinstance(v, int) and not isinstance(v, bool) else "-"
+print(f"{norm(s.get('maxConcurrent'))} {norm(d.get('maxConcurrent'))}")
+PYEOF
+)
+EOF
+FOUND_SUB="${FOUND_SUB:--}"
+FOUND_DEF="${FOUND_DEF:--}"
+FOUND_WHY=""
+[[ "$FOUND_SUB" =~ ^[0-9]+$ && "$FOUND_SUB" -gt "$WARN_CEILING" ]] && \
+  FOUND_WHY="agents.defaults.subagents.maxConcurrent=$FOUND_SUB"
+[[ "$FOUND_DEF" =~ ^[0-9]+$ && "$FOUND_DEF" -gt "$WARN_CEILING" ]] && \
+  FOUND_WHY="${FOUND_WHY:+$FOUND_WHY, }agents.defaults.maxConcurrent=$FOUND_DEF"
+if [[ -n "$FOUND_WHY" ]]; then
+  log "WARN" "ABSURD CAP IN CONFIG: $CONFIG_FILE holds $FOUND_WHY, above the safety ceiling $WARN_CEILING for this ${CORES}-core/${RAM_GB}GB box. This script did not compute that value — something wrote it out-of-band, and whatever wrote it can write it again. This is the exact shape of the 2026-08-01 incident (a hand-written 500 that sat unhealed for five days and exhausted RAM). This tick will reconcile it to $SAFE unless dry-run; find and fix the writer."
 fi
 
 # ─── 4/5. Reconcile config + write the capacity profile (atomic, backed up) ───
