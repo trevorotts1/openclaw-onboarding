@@ -110,9 +110,24 @@ def resolve_box_slug():
 def _resolve_header_auth():
     """Returns (header_name, header_value); value is '' when not configured. Reuses
     the legacy roster gate's already-propagated FLEET_STANDING_GATE_HEADER /
-    FLEET_STANDING_GATE_SECRET -- the SAME n8n credential, proven live 2026-07-31."""
+    FLEET_STANDING_GATE_SECRET -- the SAME n8n credential, proven live 2026-07-31.
+
+    3-tier resolution (IDENTICAL in spirit to resolve_box_slug() above):
+      1. explicit process env
+      2. openclaw.json env.vars
+      3. '' (absent -> fail closed by the caller, never this function)"""
     name = os.environ.get("FLEET_STANDING_GATE_HEADER", "").strip() or DEFAULT_HEADER_NAME
     value = os.environ.get("FLEET_STANDING_GATE_SECRET", "").strip()
+    if not value:
+        oc_json = _resolve_oc_json()
+        if oc_json.is_file():
+            try:
+                d = json.loads(oc_json.read_text(encoding="utf-8"))
+                v = ((d.get("env") or {}).get("vars") or {}).get("FLEET_STANDING_GATE_SECRET", "")
+                if v:
+                    value = str(v).strip()
+            except Exception:  # noqa: BLE001 - never let a config read crash the gate
+                pass
     return name, value
 
 

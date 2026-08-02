@@ -273,9 +273,11 @@ def _writer(subcmd_args, state_dir, timeout=30):
 
 
 def _intake(payload_json, state_dir, *, trusted=True, spawn=False,
-            secret_mode=None, timeout=45):
+            secret_mode=None, standing_mode=None, timeout=45):
     """intake_router.py replay: --trusted skips the route-secret check (operator
-    replay); --no-spawn keeps the CLI deterministic (the ledger holds the cursor)."""
+    replay); --no-spawn keeps the CLI deterministic (the ledger holds the cursor).
+    --standing-check-mode off is passed when trusted so the network-gate does not
+    block the operator's only recovery path for captured submissions."""
     if not INTAKE_ROUTER.exists():
         raise RuntimeError("intake router missing: %s" % INTAKE_ROUTER)
     argv = [PY, str(INTAKE_ROUTER), "--payload-json", payload_json,
@@ -286,6 +288,12 @@ def _intake(payload_json, state_dir, *, trusted=True, spawn=False,
         argv.append("--no-spawn")
     if secret_mode:
         argv.extend(["--secret-mode", secret_mode])
+    # When trusted, turn off the standing gate so the operator's recovery path
+    # (resolve-and-replay / reconcile) is not blocked by a network-calling gate
+    # that itself may be failing closed (e.g. missing secret on a dev box).
+    resolved_standing = standing_mode or ("off" if trusted else None)
+    if resolved_standing:
+        argv.extend(["--standing-check-mode", resolved_standing])
     return _run(argv, timeout)
 
 

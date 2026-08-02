@@ -85,8 +85,9 @@ def test_box_slug_malformed_openclaw_json_never_crashes(monkeypatch, tmp_path):
 # FLEET_STANDING_GATE_HEADER / FLEET_STANDING_GATE_SECRET -- proven live
 # 2026-07-31 to be the SAME n8n credential that authenticates this endpoint.
 # ---------------------------------------------------------------------------
-def test_header_name_defaults_when_unset(monkeypatch):
+def test_header_name_defaults_when_unset(monkeypatch, tmp_path):
     _clear_env(monkeypatch)
+    monkeypatch.setenv("OC_JSON", str(tmp_path / "does-not-exist.json"))
     name, value = standing_gate._resolve_header_auth()
     assert name == "X-Fleet-Standing-Secret"
     assert value == ""
@@ -261,9 +262,10 @@ def test_check_standing_fails_closed_when_box_slug_unresolvable(monkeypatch):
     assert r["approved"] is False
 
 
-def test_check_standing_fails_closed_when_secret_not_configured(monkeypatch):
+def test_check_standing_fails_closed_when_secret_not_configured(monkeypatch, tmp_path):
     _clear_env(monkeypatch)
     monkeypatch.setenv("FLEET_STANDING_BOX_SLUG", "test-box")
+    monkeypatch.setenv("OC_JSON", str(tmp_path / "does-not-exist.json"))
     r = standing_gate.check_standing("anthology")
     assert r["approved"] is False
     assert "not set" in r["note"].lower()
