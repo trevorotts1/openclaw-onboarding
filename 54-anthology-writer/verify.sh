@@ -93,6 +93,9 @@ run "golden model-role PASS"  "$PY" "$SCRIPTS/prove_aw_model_role.py" "$GOLD/RUN
 # 3) broken-variants reject — each attack fixture trips its distinct AF (fail-closed proof).
 expect_reject "intake-missing"        prove_aw_intake.py   "AF-AW-INTAKE-MISSING"    "$ATK/intake_missing.json"
 expect_reject "intake-credential"     prove_aw_intake.py   "AF-AW-INTAKE-CREDENTIAL" "$ATK/intake_credential.json"
+expect_reject "intake-bool-false"     prove_aw_intake.py   "AF-AW-INTAKE-TYPE"       "$ATK/intake_bool_false.json"
+expect_reject "intake-num-zero"       prove_aw_intake.py   "AF-AW-INTAKE-TYPE"       "$ATK/intake_num_zero.json"
+expect_reject "intake-num-42"         prove_aw_intake.py   "AF-AW-INTAKE-TYPE"       "$ATK/intake_num_42.json"
 expect_reject "avatar-missing"        prove_aw_avatar.py   "AF-AW-AVATAR-MISSING"        "$ATK/avatar_empty.md"
 expect_reject "avatar-handoff-drift"  prove_aw_avatar.py   "AF-AW-AVATAR-HANDOFF-DRIFT"  "$GOLD/avatar.md" --skill52-dir "$ATK/drifted-skill52"
 expect_reject "avatar-copied"         prove_aw_avatar.py   "AF-AW-AVATAR-COPIED"         "$GOLD/avatar.md" --scan-root "$ATK/copied-skill52-tree"
