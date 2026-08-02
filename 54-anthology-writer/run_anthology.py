@@ -445,7 +445,7 @@ def run(manifest, run_dir: Path, upto) -> int:
         # is already certified and the run-dir delivery/ bundle already byte-verified
         # (FIX-S36-55 — the SKILL-promised ~/Downloads bundle is now actually written).
         _assemble_downloads_bundle(run_dir, cert, proc)
-    print("ALL REQUESTED PHASES PASSED (through %s)." % stop_at)
+    print("ALL REQUESTED PHASES [PASS] (through %s)." % stop_at)
     return EXIT_PASS
 
 
@@ -914,7 +914,7 @@ def self_test() -> int:
         _ck("never touched a path outside the override root",
             not bdir.as_posix().startswith(real_home + "/Downloads") if real_home else True)
 
-    print("== run_anthology self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    print("== run_anthology self-test: %s ==" % ("ALL ASSERTIONS [PASS]" if ok else "[FAIL]"))
     return EXIT_PASS if ok else 1
 
 
