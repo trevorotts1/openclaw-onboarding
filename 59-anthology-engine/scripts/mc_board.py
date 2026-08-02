@@ -64,11 +64,13 @@ import hashlib
 import hmac
 import json
 import os
+import socket
 import sqlite3
 import sys
 import urllib.error
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 # --------------------------------------------------------------------------- #
 # Layout (mirrors every sibling script's resolution).
@@ -881,6 +883,17 @@ def plan():
     print("department   : %s   source marker : Source: %s" % (bcfg.department_slug, bcfg.source_tag))
     print("fail-soft    : board / mirror outage -> exit 0, logged, pipeline never blocked")
     print("never-done   : review -> done owned ONLY by the QC scorer at >= 8.5")
+    # cc-prod reachability probe: try a TCP connect to the resolved base_url's host:port.
+    probe_reachable = False
+    try:
+        pu = urlparse(bcfg.base_url)
+        host = pu.hostname or "localhost"
+        port = pu.port or (443 if pu.scheme == "https" else 80)
+        with socket.create_connection((host, port), timeout=3):
+            probe_reachable = True
+    except (OSError, ValueError):
+        probe_reachable = False
+    print("cc-prod reachable: %s (target %s)" % ("yes" if probe_reachable else "no", bcfg.base_url))
     print("participant stage_cursor -> card status:")
     for cur, st in STATUS_BY_CURSOR.items():
         print("  %-20s -> %s" % (cur, st))
