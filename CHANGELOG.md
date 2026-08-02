@@ -165,6 +165,25 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.55]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 2 (FIX-11..FIX-22)
+
+Ten more reviewed warfixes for `54-anthology-writer` landed on main via the
+merge train (each truth-gated to its reviewed headCommit and passed through the
+skill's full `verify.sh` self-verification gate):
+
+- **FIX-11** — department drift reconciled; department-consistency check in verify.sh.
+- **FIX-12** — version-of-record reconciled to 1.4.3 across manifest/SKILL.md/txt/changelog.
+- **FIX-13** — model-role correctness via `prove_aw_model_role.py` (joins enforcement set).
+- **FIX-15** — claim-before-act on shared run dir; PID-suffixed receipt atomic-merge propagated to canonical `50-email-engine/mc_board.py`.
+- **FIX-16** — GATE 2 bypass scan widened beyond `.py`.
+- **FIX-17** — boolean/numeric values blocked at intake gate (AF-AW-INTAKE-TYPE).
+- **FIX-18** — `owner_skip_approval` merge not clobber; `{gate:"*"}` wildcard rejected.
+- **FIX-19** — `_measure()` no longer swallows ImportError.
+- **FIX-21** — actionable recovery guidance on gate fail.
+- **FIX-22** — per-phase board heartbeat (`_mc_board_advance`).
+
+Skill 54 version bumped 1.4.3 → 1.4.4. ENGINE-PIN re-pinned per batch (959e2b7d → 389c5081).
+
 ## [v21.4.54]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 1 (FIX-01..FIX-10)
 
 Ten reviewed warfixes for `54-anthology-writer` landed on main via the merge

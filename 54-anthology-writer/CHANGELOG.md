@@ -1,5 +1,28 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.4 — 2026-08-02 — Warfix batch 2: FIX-11..FIX-22
+
+### Fixed (batch 2 — FIX-11 through FIX-22)
+- **FIX-11** — department drift reconciled (SKILL.md / role.md / run_anthology.py
+  all reference `marketing`); department-consistency check added to verify.sh.
+- **FIX-12** — version-of-record reconciled to 1.4.3 across manifest / SKILL.md /
+  skill-version.txt / CHANGELOG; version-consistency check added to verify.sh.
+- **FIX-13** — model-role correctness enforced via `prove_aw_model_role.py`
+  (joins enforcement set); ENGINE-PIN → 959e2b7d.
+- **FIX-15** — claim-before-act on shared run dir; PID-suffixed receipt atomic
+  merge propagated to canonical `50-email-engine/mc_board.py`; lock test added.
+- **FIX-16** — GATE 2 bypass scan widened beyond `.py`; working-dir bypass
+  fixtures added.
+- **FIX-17** — boolean/numeric values blocked at intake gate (AF-AW-INTAKE-TYPE);
+  ENGINE-PIN → 8d0c8675.
+- **FIX-18** — `owner_skip_approval` merge not clobber; `{gate:"*"}` wildcard
+  rejected through production path; ENGINE-PIN → 9b113eda.
+- **FIX-19** — `_measure()` no longer swallows ImportError; ENGINE-PIN → 54039c2b.
+- **FIX-21** — actionable recovery guidance on gate fail across provers/entry;
+  ENGINE-PIN → 67e5a498.
+- **FIX-22** — per-phase board heartbeat (`_mc_board_advance`); ENGINE-PIN →
+  389c5081.
+
 ## 1.4.3 — 2026-08-02 — Warfix batch 1: FIX-01..FIX-10
 
 ### Fixed (batch 1 — FIX-01 through FIX-10)
