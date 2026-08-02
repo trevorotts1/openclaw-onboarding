@@ -1,3 +1,8 @@
+### v0.1.14 -- warfix batch 3 (2026-08-02)
+
+Landed 4 more Skill 59 warfix fixes:
+FIX-20 (model_router retry-with-backoff on transient failures), FIX-30 (install.sh honest ready-PENDING-provisioning), FIX-7 (ENGINE-PIN.sha256 shipped, AF-AE-HASH-PIN gate armed), FIX-24 (all 42 scripts accept --self-test standalone + positional aliases).
+
 ### v0.1.13 -- warfix batch 2 (2026-08-02)
 
 Landed 3 more Skill 59 warfix fixes:
