@@ -1379,7 +1379,24 @@ def _mc_board_done(run_dir, task_id):
     try:
         sys.path.insert(0, str(_SKILL_DIR))
         import mc_board
-        mc_board.complete_run(run_dir, task_id, note=_deliver_card_note(run_dir))
+        # FIX-27: embed the absolute run dir, delivery bundle path, and certificate
+        # SHA in the card description so an operator finding the card has a path to
+        # the run dir on disk. The CC server schema strips note/deliverable_url from
+        # status PATCH bodies, so the description field is the durable channel.
+        desc_parts = ["[Run dir: %s]" % str(Path(run_dir).resolve())]
+        sha = ""
+        try:
+            rec = json.loads(_delivery_bundle_receipt(Path(run_dir)).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            rec = {}
+        if rec.get("delivered") and rec.get("bundle_dir"):
+            desc_parts.append("[Delivery: %s]" % rec["bundle_dir"])
+        sha = (rec.get("certificate_sha") or "")[:12]
+        if sha:
+            desc_parts.append("[Cert SHA: %s]" % sha)
+        description = " ".join(desc_parts)
+        mc_board.complete_run(run_dir, task_id, note=_deliver_card_note(run_dir),
+                            description=description)
     except Exception as exc:  # noqa: BLE001
         print("[mc_board] done best-effort skip (%s)" % exc, file=sys.stderr)
 

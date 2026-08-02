@@ -550,7 +550,7 @@ def _current_status(tid: str, cfg: dict) -> Optional[str]:
 # ADVANCE — move the card to (phase_id, status), walking the legal path.
 # ---------------------------------------------------------------------------
 def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
-               note: str = "", deliverable_url: str = "",
+               note: str = "", deliverable_url: str = "", description: str = "",
                blocked_reason: str = "", blocked_on_human: bool = False,
                ask: str = "") -> bool:
     """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
@@ -560,6 +560,8 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
         payload["note"] = note
     if deliverable_url:
         payload["deliverable_url"] = deliverable_url
+    if description:
+        payload["description"] = description
     # FIX-08: the CC server Blocked gate requires blocked_reason / blocked_on_human /
     # ask on a PATCH to "blocked"; without them it 400s and silently drops the move.
     if status == "blocked":
@@ -590,6 +592,7 @@ def card_advance(
     status: str,
     note: str = "",
     deliverable_url: str = "",
+    description: str = "",
     env: Optional[dict] = None,
     blocked_reason: str = "",
     blocked_on_human: bool = False,
@@ -629,6 +632,7 @@ def card_advance(
         # Card status unknown (board unreachable / card missing): attempt a single
         # direct move and let the server reject an illegal jump (fail-soft).
         return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url,
+                          description=description,
                           blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask)
     if current == target:
         _log(f"advance {phase_id}->{target} no-op (card already at {target}).", "INFO")
@@ -644,6 +648,7 @@ def card_advance(
             tid, phase_id, step, cfg,
             note=note if last else f"auto-step toward {target}",
             deliverable_url=deliverable_url if last else "",
+            description=description if last else "",
             blocked_reason=blocked_reason if last else "",
             blocked_on_human=blocked_on_human if last else False,
             ask=ask if last else "",
@@ -699,6 +704,7 @@ def begin_run(
 
 def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "deliver",
                  note: str = "", status: str = "review", deliverable_url: str = "",
+                 description: str = "",
                  env: Optional[dict] = None) -> bool:
     """Move the run's card to its TERMINAL producer status — `review` by default,
     NEVER `done`. review->done is owned exclusively by the independent QC scorer
@@ -715,7 +721,7 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
         default_note = "certified — awaiting QC promotion"
         return card_advance(run_dir, task_id, phase_id=phase_id, status=target,
                             note=note or default_note, deliverable_url=deliverable_url,
-                            env=env)
+                            description=description, env=env)
     except Exception as exc:  # noqa: BLE001
         _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).", "ERR")
         return False
