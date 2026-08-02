@@ -54,6 +54,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
@@ -164,6 +165,19 @@ class ProviderError(Exception):
         # detail is scrubbed of anything credential-shaped by the caller before storage.
         self.detail = detail
         super().__init__("%s %s (status=%s)" % (provider, error_class.value, status))
+
+
+# Error classes that are retryable on the SAME link (transient).
+_RETRYABLE_CLASSES = frozenset({ErrorClass.RATE_LIMIT, ErrorClass.TIMEOUT})
+
+
+def _is_retryable(exc: ProviderError) -> bool:
+    return exc.error_class in _RETRYABLE_CLASSES
+
+
+# Capped exponential backoff schedule: up to 2 extra attempts (total 3 tries).
+_RETRY_BACKOFF_DELAYS = (1.0, 2.0, 4.0)
+_MAX_RETRY_ATTEMPTS = 2  # max additional attempts after the first failure
 
 
 class ModelRouterError(Exception):
@@ -655,52 +669,70 @@ class ModelRouter:
             # Pre-meter (may block on the per-deliverable budget ceiling -> exit 4).
             self.pre_meter(context, tier, model, est_prompt)
 
-            # Call the provider.
-            try:
-                req = build_chat_request(link, provider, model, messages, params,
-                                         cred_value, self.parameter_encoder)
-                resp = self.transport(req, self.timeout)
-            except ProviderError as pe:
+            # Call the provider with capped exponential backoff for transient
+            # failures (429/5xx/timeout) on the SAME link before advancing.
+            attempts = 0
+            immediate_hold = False
+            while True:
+                try:
+                    req = build_chat_request(link, provider, model, messages, params,
+                                             cred_value, self.parameter_encoder)
+                    resp = self.transport(req, self.timeout)
+                except ProviderError as pe:
+                    if _is_retryable(pe) and attempts < _MAX_RETRY_ATTEMPTS:
+                        delay = _RETRY_BACKOFF_DELAYS[min(attempts, len(_RETRY_BACKOFF_DELAYS) - 1)]
+                        time.sleep(delay)
+                        attempts += 1
+                        continue
+                    degradations.append({"provider": provider, "order": order,
+                                         "class": pe.error_class.value,
+                                         "status": pe.status, "detail": pe.detail})
+                    if pe.error_class == ErrorClass.INSUFFICIENT_CREDITS:
+                        credit_seen = True
+                        if self.hold_immediately_on_credit_out:
+                            immediate_hold = True
+                    break
+
+                if 200 <= resp.status < 300:
+                    try:
+                        parsed = parse_chat_response(resp, model)
+                    except ProviderError as pe:
+                        degradations.append({"provider": provider, "order": order,
+                                             "class": pe.error_class.value,
+                                             "status": resp.status, "detail": pe.detail})
+                        break
+                    # Honest record: refuse if the provider echoed an Anthropic id
+                    # or if the provider omitted the 'model' field (trust failure).
+                    try:
+                        self._guard_model(parsed["model_used"], provider)
+                    except ProviderError as pe:
+                        degradations.append({"provider": provider, "order": order,
+                                             "class": pe.error_class.value,
+                                             "status": resp.status, "detail": pe.detail})
+                        break
+                    self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
+                    return RouteResult(
+                        tier=tier, provider=provider, model_used=parsed["model_used"],
+                        chain_order=order, text=parsed["text"], usage=parsed["usage"],
+                        degradations=degradations)
+
+                # Non-2xx: classify.
+                eclass = classify_http_error(resp.status, resp.body_text)
+                if eclass in _RETRYABLE_CLASSES and attempts < _MAX_RETRY_ATTEMPTS:
+                    delay = _RETRY_BACKOFF_DELAYS[min(attempts, len(_RETRY_BACKOFF_DELAYS) - 1)]
+                    time.sleep(delay)
+                    attempts += 1
+                    continue
                 degradations.append({"provider": provider, "order": order,
-                                     "class": pe.error_class.value,
-                                     "status": pe.status, "detail": pe.detail})
-                if pe.error_class == ErrorClass.INSUFFICIENT_CREDITS:
+                                     "class": eclass.value, "status": resp.status})
+                if eclass == ErrorClass.INSUFFICIENT_CREDITS:
                     credit_seen = True
                     if self.hold_immediately_on_credit_out:
-                        break
-                continue
+                        immediate_hold = True
+                break
 
-            if 200 <= resp.status < 300:
-                try:
-                    parsed = parse_chat_response(resp, model)
-                except ProviderError as pe:
-                    degradations.append({"provider": provider, "order": order,
-                                         "class": pe.error_class.value,
-                                         "status": resp.status, "detail": pe.detail})
-                    continue
-                # Honest record: refuse if the provider echoed an Anthropic id
-                # or if the provider omitted the 'model' field (trust failure).
-                try:
-                    self._guard_model(parsed["model_used"], provider)
-                except ProviderError as pe:
-                    degradations.append({"provider": provider, "order": order,
-                                         "class": pe.error_class.value,
-                                         "status": resp.status, "detail": pe.detail})
-                    continue
-                self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
-                return RouteResult(
-                    tier=tier, provider=provider, model_used=parsed["model_used"],
-                    chain_order=order, text=parsed["text"], usage=parsed["usage"],
-                    degradations=degradations)
-
-            # Non-2xx: classify and advance (or hold-now on credit_out if configured).
-            eclass = classify_http_error(resp.status, resp.body_text)
-            degradations.append({"provider": provider, "order": order,
-                                 "class": eclass.value, "status": resp.status})
-            if eclass == ErrorClass.INSUFFICIENT_CREDITS:
-                credit_seen = True
-                if self.hold_immediately_on_credit_out:
-                    break
+            if immediate_hold:
+                break
 
         # Chain exhausted -> durable HOLD + ONE deduped founder alert.
         reason = "credit_out" if credit_seen else "chain_exhausted"
@@ -934,19 +966,22 @@ def self_test() -> int:
     check("HEAVY-WRITER order-1 success", res.provider == "ollama-cloud"
           and res.model_used == "glm-5.2" and res.chain_order == 1 and res.text == "chapter body")
 
-    # t3: order-1 rate-limit(429) advances to order-2 (openrouter) success
-    tr = _ScriptedTransport([_err_response(429, "rate limited"), _ok_response("z-ai/glm-5.2")])
+    # t3: retry-with-backoff: two 503s then a 200 on the SAME provider recovers
+    # without advancing the chain (QC: 503,503,200 recovers on same provider).
+    tr = _ScriptedTransport([_err_response(503), _err_response(503),
+                             _ok_response("glm-5.2", "recovered after backoff")])
     router = ModelRouter(model_map=model_map, transport=tr,
                          pre_meter=lambda *a, **k: None, post_meter=lambda *a, **k: None,
                          hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
     res = router.route("HEAVY-WRITER", [{"role": "user", "content": "x"}], {"deliverable_key": "d2"})
-    check("rate-limit advances to fallback", res.provider == "openrouter"
-          and any(d["class"] == "rate_limit" for d in res.degradations))
+    check("retry-backoff: 503/503/200 recovers on same provider",
+          res.provider == "ollama-cloud" and res.chain_order == 1
+          and res.text == "recovered after backoff" and len(tr.calls) == 3)
 
-    # t4: all links fail (429 then timeout then 503) -> ChainExhaustedHold(chain_exhausted)
+    # t4: all links fail with non-retryable errors -> ChainExhaustedHold(chain_exhausted)
     holds, alerts = [], []
-    tr = _ScriptedTransport([_err_response(429), ProviderError("openrouter", ErrorClass.TIMEOUT),
-                             _err_response(503)])
+    tr = _ScriptedTransport([_err_response(401), _err_response(401),
+                             _err_response(401)])
     router = ModelRouter(model_map=model_map, transport=tr,
                          pre_meter=lambda *a, **k: None, post_meter=lambda *a, **k: None,
                          hold_fn=lambda ctx, reason, tier: holds.append(reason),
