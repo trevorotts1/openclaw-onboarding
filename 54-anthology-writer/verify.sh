@@ -284,7 +284,7 @@ fi
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
-    echo "RESULT: PASS — all Skill 54 self-verification checks green."
+    echo "RESULT: PASS — all Skill 54 self-verification checks passed."
     exit 0
 fi
 echo "RESULT: FAIL — $fails check(s) failed."

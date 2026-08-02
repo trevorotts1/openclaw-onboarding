@@ -41,7 +41,7 @@ if [ "$MODE" = "check" ]; then
 import json, os, re, sys
 mp = os.path.join(os.environ["OUT_DIR"], "model-map.json")
 if not os.path.isfile(mp):
-    print("  preflight --check: no resolved model-map.json (installer resolves per box) — OK")
+    print("  [PASS] preflight --check: no resolved model-map.json (installer resolves per box)")
     sys.exit(0)
 try:
     blob = open(mp, "r", encoding="utf-8").read()
@@ -62,7 +62,7 @@ for name, t in (data.get("tiers", {}) or {}).items():
             print("AF-AW-ANTHROPIC: resolved tier %s.%s carries a banned id %r" % (name, k, v),
                   file=sys.stderr)
             sys.exit(2)
-print("  preflight --check: resolved model-map.json OK (no residual placeholder, no Anthropic id)")
+print("  [PASS] preflight --check: resolved model-map.json (no residual placeholder, no Anthropic id)")
 sys.exit(0)
 PY
     exit $?
@@ -101,5 +101,5 @@ for name in tiers:
     print("   tier %-13s -> client's own NON-Anthropic model (resolved per box)" % name)
 PY
 rc=$?
-[ "$rc" -eq 0 ] && echo "preflight: PASS (no Anthropic id; client tiers scaffolded)"
+[ "$rc" -eq 0 ] && echo "[PASS] preflight (no Anthropic id; client tiers scaffolded)"
 exit "$rc"

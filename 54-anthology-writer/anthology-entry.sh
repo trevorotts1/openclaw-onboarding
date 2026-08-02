@@ -138,7 +138,7 @@ gate_fail() {
 # ===========================================================================
 note "GATE 1/3 — DEPS CHECK (python3)"
 if command -v python3 >/dev/null 2>&1; then
-    echo "  OK: python3 present"
+    echo "  [PASS] python3 present"
 else
     if owner_skip_approved "AW_DEPS_MISSING"; then
         echo "!! [$PROG] python3 missing but OWNER-APPROVED skip logged; proceeding." >&2
@@ -216,7 +216,7 @@ for root, dirs, files in os.walk(run_dir):
         elif re_air.search(src):
             findings.append((rel, "an Airtable write (the engine uses a local artifact store)"))
 if not findings:
-    print("  OK: no hand-rolled external uploader/notifier in the run directory")
+    print("  [PASS] no hand-rolled external uploader/notifier in the run directory")
     sys.exit(0)
 print("  HAND-ROLLED EXTERNAL SENDER(S) DETECTED:", file=sys.stderr)
 for rel, why in findings:
@@ -265,7 +265,7 @@ version_hash_pin() {
         if [ -n "$expected" ] && [ "$expected" != "$computed" ]; then
             echo "  PIN MISMATCH: expected $expected" >&2; return 7
         fi
-        echo "  OK: enforcement hash matches the pinned head"
+        echo "  [PASS] enforcement hash matches the pinned head"
     else
         echo "  (no ENGINE-PIN.sha256; hash recorded, not enforced)"
     fi
@@ -282,7 +282,7 @@ if [ "$PLAN" -eq 1 ]; then
     exec python3 "$RUNNER" --plan
 fi
 
-note "ALL GATES PASSED — dispatching run_anthology.py"
+note "ALL GATES PASS — dispatching run_anthology.py"
 NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.anthology-entry-nonce"
 mkdir -p "$NONCE_DIR"

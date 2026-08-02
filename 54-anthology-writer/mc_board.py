@@ -205,11 +205,11 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
         timeout = _DEFAULT_TIMEOUT
     status_tmpl = (env.get("CC_STATUS_PATH_TEMPLATE") or "/api/tasks/{id}").strip()
     if "{id}" not in status_tmpl:
-        _log(f"CC_STATUS_PATH_TEMPLATE missing '{{id}}' ({status_tmpl!r}); using default '/api/tasks/{{id}}'.")
+        _log(f"CC_STATUS_PATH_TEMPLATE missing '{{id}}' ({status_tmpl!r}); using default '/api/tasks/{{id}}'.", "WARN")
         status_tmpl = "/api/tasks/{id}"
     task_tmpl = (env.get("CC_TASK_PATH_TEMPLATE") or "/api/tasks/{id}").strip()
     if "{id}" not in task_tmpl:
-        _log(f"CC_TASK_PATH_TEMPLATE missing '{{id}}' ({task_tmpl!r}); using default '/api/tasks/{{id}}'.")
+        _log(f"CC_TASK_PATH_TEMPLATE missing '{{id}}' ({task_tmpl!r}); using default '/api/tasks/{{id}}'.", "WARN")
         task_tmpl = "/api/tasks/{id}"
     return {
         "base_url": base,
@@ -222,10 +222,10 @@ def board_config(env: Optional[dict] = None) -> Optional[dict]:
     }
 
 
-def _log(msg: str) -> None:
+def _log(msg: str, severity: str = "INFO") -> None:
     """Single, greppable degrade line. Board failures are logged, not silent,
     and never fatal."""
-    print(f"[mc_board] {msg}", file=sys.stderr, flush=True)
+    print(f"[mc_board:{severity}] {msg}", file=sys.stderr, flush=True)
 
 
 def _sign(secret: str, raw_body: bytes) -> Optional[str]:
@@ -323,7 +323,7 @@ def _merge_receipt(run_dir, updates: dict) -> bool:
         os.replace(tmp, p)
         return True
     except OSError as exc:
-        _log(f"receipt write failed ({exc}).")
+        _log(f"receipt write failed ({exc}).", "ERR")
         return False
 
 
@@ -352,7 +352,7 @@ def card_open(
         return None
     cfg = board_config(env)
     if cfg is None:
-        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled (no-op); run continues.")
+        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled (no-op); run continues.", "INFO")
         return None
 
     # Idempotent: reuse a task_id already recorded for this run dir.
@@ -374,7 +374,8 @@ def card_open(
         _log(
             f"UNRECOGNIZED department_slug {department!r} for slug={slug!r} — "
             f"re-routing card to '{GENERAL_TASK_SLUG}' (never silently dropped; "
-            f"this is the last-resort catch-all)."
+            f"this is the last-resort catch-all).",
+            "WARN"
         )
         department_slug = GENERAL_TASK_SLUG
         _merge_receipt(run_dir, {
@@ -410,17 +411,17 @@ def card_open(
     try:
         status, body = _request("POST", url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"ingest POST failed ({type(exc).__name__}: {exc}); run continues ungrouped.")
+        _log(f"ingest POST failed ({type(exc).__name__}: {exc}); run continues ungrouped.", "ERR")
         return None
 
     if status in (200, 201) and isinstance(body, dict) and body.get("task_id"):
         task_id = str(body["task_id"])
         deduped = body.get("deduped", False)
-        _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}")
+        _log(f"card {'deduped (reused)' if deduped else 'created'}: task_id={task_id} slug={slug}", "INFO")
         _merge_receipt(run_dir, {"mc_task_id": task_id})
         return task_id
 
-    _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.")
+    _log(f"ingest POST non-OK (HTTP {status}): {body}; run continues ungrouped.", "ERR")
     return None
 
 
@@ -436,7 +437,7 @@ def _current_status(tid: str, cfg: dict) -> Optional[str]:
     try:
         st, body = _request("GET", url, None, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"status GET failed for task {tid} ({type(exc).__name__}: {exc}).")
+        _log(f"status GET failed for task {tid} ({type(exc).__name__}: {exc}).", "ERR")
         return None
     if st != 200 or not isinstance(body, dict):
         return None
@@ -463,12 +464,12 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
     try:
         st, body = _request(cfg["status_method"], url, payload, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
-        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}).")
+        _log(f"advance {phase_id}->{status} failed ({type(exc).__name__}: {exc}).", "ERR")
         return False
     if 200 <= st < 300:
-        _log(f"advance {phase_id}->{status} OK (task_id={tid}).")
+        _log(f"advance {phase_id}->{status} [PASS] (task_id={tid}).", "INFO")
         return True
-    _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
+    _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.", "WARN")
     return False
 
 
@@ -497,17 +498,17 @@ def card_advance(
     target = (status or "").strip().lower()
     if target not in VALID_STATUSES:
         _log(f"advance refused — invalid target status {status!r} "
-             f"(allowed: {', '.join(VALID_STATUSES)}).")
+             f"(allowed: {', '.join(VALID_STATUSES)}).", "WARN")
         return False
     if target in _PRODUCER_FORBIDDEN:
         _log("advance BLOCKED — a producer must never post 'done' directly. The ONLY "
              "valid path to 'done' is review -> done via the independent QC scorer "
-             "(PASS >= 8.5). Post 'review' and let the QC sweep promote the card.")
+             "(PASS >= 8.5). Post 'review' and let the QC sweep promote the card.", "ERR")
         return False
 
     tid = task_id or _read_receipt(run_dir).get("mc_task_id")
     if not tid:
-        _log(f"advance {phase_id}->{target} skipped — no task_id (card never opened).")
+        _log(f"advance {phase_id}->{target} skipped — no task_id (card never opened).", "WARN")
         return False
     tid = str(tid)
 
@@ -517,11 +518,11 @@ def card_advance(
         # direct move and let the server reject an illegal jump (fail-soft).
         return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url)
     if current == target:
-        _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
+        _log(f"advance {phase_id}->{target} no-op (card already at {target}).", "INFO")
         return True
     path = _legal_path(current, target)
     if path is None:
-        _log(f"no legal path {current}->{target} for task {tid}; skipping (server owns the truth).")
+        _log(f"no legal path {current}->{target} for task {tid}; skipping (server owns the truth).", "WARN")
         return False
     ok = True
     for i, step in enumerate(path):
@@ -571,7 +572,7 @@ def begin_run(
                          note=note, env=env)
         return tid
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
-        _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).")
+        _log(f"begin_run best-effort skip ({type(exc).__name__}: {exc}).", "ERR")
         return None
 
 
@@ -588,14 +589,14 @@ def complete_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "del
         target = (status or "review").strip().lower() or "review"
         if target in _PRODUCER_FORBIDDEN:
             _log("complete_run refused 'done' — the terminal producer status is 'review'; "
-                 "the QC scorer owns review -> done. Falling back to 'review'.")
+                 "the QC scorer owns review -> done. Falling back to 'review'.", "ERR")
             target = "review"
         default_note = "certified — awaiting QC promotion"
         return card_advance(run_dir, task_id, phase_id=phase_id, status=target,
                             note=note or default_note, deliverable_url=deliverable_url,
                             env=env)
     except Exception as exc:  # noqa: BLE001
-        _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).")
+        _log(f"complete_run best-effort skip ({type(exc).__name__}: {exc}).", "ERR")
         return False
 
 
@@ -622,5 +623,5 @@ def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
         return card_advance(run_dir, task_id, phase_id=phase_id or "blocked",
                             status="blocked", note=detail, env=env)
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
-        _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
+        _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).", "ERR")
         return False
