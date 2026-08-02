@@ -198,6 +198,14 @@ PY
     exit "$exitcode"
 }
 
+# When --json is active, stdout must carry ONLY the final JSON object. Redirect
+# all gate/orchestrator chatter to stderr so `--json | jq` / `| python3 -m
+# json.tool` sees a single parseable JSON document on stdout.
+if [ "$JSON" -eq 1 ]; then
+    exec 3>&1   # save real stdout
+    exec 1>&2   # gate/orchestrator output -> stderr
+fi
+
 # ===========================================================================
 # GATE 1 — DEPS CHECK (python3; exit 6 AW_DEPS_MISSING)
 # ===========================================================================
@@ -347,7 +355,7 @@ version_hash_pin; VHP_RC=$?
 # ===========================================================================
 if [ "$PLAN" -eq 1 ]; then
     note "PLAN — printing the canonical phase plan (gates ran)"
-    exec python3 "$RUNNER" --plan
+    exec python3 "$RUNNER" --plan $json_flag
 fi
 
 note "ALL GATES PASS — dispatching run_anthology.py"
@@ -374,9 +382,51 @@ export OC_ANTHOLOGY_ENTRY_NONCE
 cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
 [ -n "$UPTO" ] && cmd+=(--upto "$UPTO")
 [ "$RESUME" -eq 1 ] && cmd+=(--resume)
-[ "$JSON" -eq 1 ] && cmd+=(--json)
 note "run: ${cmd[*]}"
+__json_start=0
+if [ "$JSON" -eq 1 ]; then
+    __json_start=$(date +%s)
+fi
 "${cmd[@]}"
 _rc=$?
 rm -f "$NONCE_FILE" 2>/dev/null || true
+
+if [ "$JSON" -eq 1 ]; then
+    __json_end=$(date +%s)
+    __duration=$(( __json_end - __json_start ))
+    __phases=0; __passed=0; __failed_phase="null"; __cert_sha="null"
+    __pm="$RUN_DIR/working/checkpoints/process_manifest.json"
+    if [ -f "$__pm" ] && command -v python3 >/dev/null 2>&1; then
+        __json_data="$(python3 - "$__pm" "$RUN_DIR" 2>/dev/null <<'PYEOF'
+import json, sys, os
+try:
+    pm = json.load(open(sys.argv[1]))
+except Exception:
+    pm = {}
+phases = pm.get("phases", [])
+passed = sum(1 for p in phases if p.get("passed"))
+failed_phase = pm.get("failed_phase")
+cert_sha = None
+cert_path = os.path.join(sys.argv[2], "delivery", "PROCESS-CERTIFICATE.json")
+if os.path.isfile(cert_path):
+    try:
+        cert_sha = json.load(open(cert_path)).get("certificate_sha")
+    except Exception:
+        pass
+print(json.dumps({"phases": len(phases), "passed": passed,
+    "failed_phase": failed_phase, "certificate_sha": cert_sha}))
+PYEOF
+)"
+        if [ -n "$__json_data" ]; then
+            __phases=$(echo "$__json_data" | python3 -c "import json,sys;print(json.load(sys.stdin)['phases'])" 2>/dev/null || echo 0)
+            __passed=$(echo "$__json_data" | python3 -c "import json,sys;print(json.load(sys.stdin)['passed'])" 2>/dev/null || echo 0)
+            __failed_phase=$(echo "$__json_data" | python3 -c "import json,sys;print(json.dumps(json.load(sys.stdin)['failed_phase']))" 2>/dev/null || echo "null")
+            __cert_sha=$(echo "$__json_data" | python3 -c "import json,sys;x=json.load(sys.stdin)['certificate_sha'];print(json.dumps(x))" 2>/dev/null || echo "null")
+        fi
+    fi
+    printf '{"phases":%s,"passed":%s,"failed_phase":%s,"certificate_sha":%s,"run_dir":"%s","duration":%s}\n' \
+        "$__phases" "$__passed" "$__failed_phase" "$__cert_sha" "$RUN_DIR" "$__duration" >&3
+    exec 1>&3 3>&-   # restore real stdout, close the saved fd
+fi
+
 exit "$_rc"

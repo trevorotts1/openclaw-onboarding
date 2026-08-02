@@ -20,10 +20,22 @@
 #      AF-AW-ENTRY-BYPASS .js sender, AF-AW-UNRESOLVED-MODELMAP placeholder map)
 #  11. ENGINE-PIN hash pin + tamper negative
 #
-# Usage:  bash 54-anthology-writer/verify.sh
+# Usage:  bash 54-anthology-writer/verify.sh [--quiet] [--verbose]
+#   --quiet     suppress per-check output; print only the summary
+#   --verbose   print full command output (including stdout) for every check
 # Exit:   0 = all checks passed;  nonzero = at least one check failed.
 # ==============================================================================
 set -uo pipefail
+
+QUIET=0
+VERBOSE=0
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --quiet)   QUIET=1; shift ;;
+        --verbose) VERBOSE=1; shift ;;
+        *) echo "Unknown option: $1; use --quiet or --verbose" >&2; exit 2 ;;
+    esac
+done
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
@@ -40,15 +52,25 @@ PY="${PYTHON:-python3}"
 export ANTHOLOGY_DELIVERY_ROOT="$(mktemp -d)"
 
 fails=0
+# Accumulate failed check names for enumeration at the end.
+failed_checks=()
+
 run() {
     local label="$1"; shift
     local log rc
     log="$("$@" 2>&1)"; rc=$?
     if [ "$rc" -eq 0 ]; then
-        printf '  [PASS] %s\n' "$label"
+        [ "$QUIET" -eq 0 ] && printf '  [PASS] %s\n' "$label"
     else
-        printf '  [FAIL] %s (rc=%s)\n' "$label" "$rc"
-        printf '%s\n' "$log" | sed 's/^/         /'
+        failed_checks+=("$label")
+        if [ "$QUIET" -eq 0 ]; then
+            printf '  [FAIL] %s (rc=%s)\n' "$label" "$rc"
+            if [ "$VERBOSE" -eq 1 ]; then
+                printf '  >>> full output >>>\n%s\n  <<< full output <<<\n' "$log"
+            else
+                printf '%s\n' "$log" | sed 's/^/         /'
+            fi
+        fi
         fails=$((fails + 1))
     fi
 }
@@ -60,15 +82,22 @@ expect_reject() {
     local out rc
     out="$("$PY" "$SCRIPTS/$prover" "$@" --json 2>&1)"; rc=$?
     if [ "$rc" -eq 2 ] && printf '%s' "$out" | grep -q "$code"; then
-        printf '  [PASS] reject %-28s -> %s\n' "$label" "$code"
+        [ "$QUIET" -eq 0 ] && printf '  [PASS] reject %-28s -> %s\n' "$label" "$code"
     else
-        printf '  [FAIL] reject %-28s (rc=%s, expected exit 2 + %s)\n' "$label" "$rc" "$code"
-        printf '%s\n' "$out" | sed 's/^/         /'
+        failed_checks+=("reject $label -> $code")
+        if [ "$QUIET" -eq 0 ]; then
+            printf '  [FAIL] reject %-28s (rc=%s, expected exit 2 + %s)\n' "$label" "$rc" "$code"
+            if [ "$VERBOSE" -eq 1 ]; then
+                printf '  >>> full output >>>\n%s\n  <<< full output <<<\n' "$out"
+            else
+                printf '%s\n' "$out" | sed 's/^/         /'
+            fi
+        fi
         fails=$((fails + 1))
     fi
 }
 
-echo "== Skill 54 (Anthology Writer) :: verify.sh =="
+[ "$QUIET" -eq 0 ] && echo "== Skill 54 (Anthology Writer) :: verify.sh =="
 
 # 1) the provers --self-test (+ the orchestrator's built-in gate self-test:
 #    P7 delivery gate + fail-closed unmapped-checker).
@@ -125,7 +154,7 @@ run "tone-core in lockstep"      "$PY" "$SCRIPTS/verify_tone_core_sync.py"
 #    id anywhere in the SHIPPED skill. Deliberately-broken fixtures under
 #    test-fixtures/attack/, broken-variants/, and drifted-prompts/ are EXCLUDED —
 #    they exist precisely to prove the runtime gate rejects an Anthropic id.
-echo "  -- no-Anthropic scan (AF-AW-ANTHROPIC) --"
+[ "$QUIET" -eq 0 ] && echo "  -- no-Anthropic scan (AF-AW-ANTHROPIC) --"
 if SKILL_DIR="$SKILL_DIR" "$PY" - <<'PY'
 import os, re, sys
 skill = os.environ["SKILL_DIR"]
@@ -157,13 +186,15 @@ print("no concrete Anthropic model id in the shipped skill (excluding deliberate
 sys.exit(0)
 PY
 then
-    printf '  [PASS] no-Anthropic scan (AF-AW-ANTHROPIC)\n'
+    [ "$QUIET" -eq 0 ] && printf '  [PASS] no-Anthropic scan (AF-AW-ANTHROPIC)\n'
 else
-    printf '  [FAIL] no-Anthropic scan (AF-AW-ANTHROPIC)\n'; fails=$((fails + 1))
+    failed_checks+=("no-Anthropic scan (AF-AW-ANTHROPIC)")
+    [ "$QUIET" -eq 0 ] && printf '  [FAIL] no-Anthropic scan (AF-AW-ANTHROPIC)\n'
+    fails=$((fails + 1))
 fi
 
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
-echo "  -- golden pilot through anthology-entry.sh --"
+[ "$QUIET" -eq 0 ] && echo "  -- golden pilot through anthology-entry.sh --"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}" "${EXTMP:-}" "${DTMP:-}" "${PTMP:-}" "${PRD:-}"' EXIT
 mkdir -p "$TMP/working"
@@ -173,15 +204,17 @@ done
 cp "$GOLD/model-map.json" "$TMP/model-map.json"
 if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
    && [ -f "$TMP/delivery/PROCESS-CERTIFICATE.json" ]; then
-    printf '  [PASS] golden pilot issues a process certificate\n'
+    [ "$QUIET" -eq 0 ] && printf '  [PASS] golden pilot issues a process certificate\n'
 else
-    printf '  [FAIL] golden pilot did not issue a certificate\n'; fails=$((fails + 1))
+    failed_checks+=("golden pilot issues a process certificate")
+    [ "$QUIET" -eq 0 ] && printf '  [FAIL] golden pilot did not issue a certificate\n'
+    fails=$((fails + 1))
 fi
 
 # 7) shipped worked example — regression-guard it in a THROWAWAY temp run-dir. A
 #    full pass must (a) issue a certificate and (b) reproduce the SHIPPED
 #    certificate_sha exactly (deterministic sha => idempotent).
-echo "  -- shipped example golden-unbroken-ground through the entry (temp run-dir) --"
+[ "$QUIET" -eq 0 ] && echo "  -- shipped example golden-unbroken-ground through the entry (temp run-dir) --"
 if [ -d "$EX" ]; then
     EXTMP="$(mktemp -d)"
     mkdir -p "$EXTMP/working"
@@ -194,18 +227,21 @@ if [ -d "$EX" ]; then
         FRESH_SHA="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["certificate_sha"])' "$EXTMP/delivery/PROCESS-CERTIFICATE.json" 2>/dev/null)"
         SHIP_SHA="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["certificate_sha"])' "$EX/delivery/PROCESS-CERTIFICATE.json" 2>/dev/null)"
         if [ -n "$FRESH_SHA" ] && [ "$FRESH_SHA" = "$SHIP_SHA" ]; then
-            printf '  [PASS] example re-issues the SHIPPED certificate_sha (%s…)\n' "${SHIP_SHA:0:12}"
+            [ "$QUIET" -eq 0 ] && printf '  [PASS] example re-issues the SHIPPED certificate_sha (%s…)\n' "${SHIP_SHA:0:12}"
         else
-            printf '  [FAIL] example certificate_sha drift (fresh=%s ship=%s)\n' "${FRESH_SHA:0:12}" "${SHIP_SHA:0:12}"
+            failed_checks+=("example re-issues the SHIPPED certificate_sha")
+            [ "$QUIET" -eq 0 ] && printf '  [FAIL] example certificate_sha drift (fresh=%s ship=%s)\n' "${FRESH_SHA:0:12}" "${SHIP_SHA:0:12}"
             fails=$((fails + 1))
         fi
     else
-        printf '  [FAIL] shipped example did not issue a certificate\n'; fails=$((fails + 1))
+        failed_checks+=("shipped example did not issue a certificate")
+        [ "$QUIET" -eq 0 ] && printf '  [FAIL] shipped example did not issue a certificate\n'
+        fails=$((fails + 1))
     fi
     rm -rf "$EXTMP"
 
     # 8) shipped example broken-variants — each must trip its distinct AF (exit 2).
-    echo "  -- shipped example broken-variants reject --"
+    [ "$QUIET" -eq 0 ] && echo "  -- shipped example broken-variants reject --"
     expect_reject "ex/intake-missing"       prove_aw_intake.py   "AF-AW-INTAKE-MISSING"    "$EBV/intake_missing.json"
     expect_reject "ex/intake-credential"    prove_aw_intake.py   "AF-AW-INTAKE-CREDENTIAL" "$EBV/intake_credential.json"
     expect_reject "ex/prompt-drift"         prove_aw_fidelity.py "AF-AW-PROMPT-DRIFT"      --prompts-dir "$EBV/drifted-prompts"
@@ -224,7 +260,7 @@ else
 fi
 
 # 9) seeded-defect E2E — a short chapter must BLOCK the run and issue NO certificate.
-echo "  -- seeded-defect E2E (short chapter -> no certificate) --"
+[ "$QUIET" -eq 0 ] && echo "  -- seeded-defect E2E (short chapter -> no certificate) --"
 DTMP="$(mktemp -d)"
 mkdir -p "$DTMP/working"
 for f in intake.json avatar.md tone-doc.md title.json outline.md RUN-LEDGER.json; do
@@ -361,9 +397,10 @@ if [ -f "$PIN_FILE" ]; then
     COMPUTED="$(_sha_concat "${ENFORCE_FILES[@]}")"
     EXPECTED="$(tr -d ' \t\n' < "$PIN_FILE")"
     if [ -n "$EXPECTED" ] && [ "$EXPECTED" = "$COMPUTED" ]; then
-        printf '  [PASS] ENGINE-PIN.sha256 matches the computed enforcement hash (%s…)\n' "${COMPUTED:0:12}"
+        [ "$QUIET" -eq 0 ] && printf '  [PASS] ENGINE-PIN.sha256 matches the computed enforcement hash (%s…)\n' "${COMPUTED:0:12}"
     else
-        printf '  [FAIL] ENGINE-PIN.sha256 drift (pinned=%s computed=%s)\n' "${EXPECTED:0:12}" "${COMPUTED:0:12}"
+        failed_checks+=("ENGINE-PIN.sha256 matches the computed enforcement hash")
+        [ "$QUIET" -eq 0 ] && printf '  [FAIL] ENGINE-PIN.sha256 drift (pinned=%s computed=%s)\n' "${EXPECTED:0:12}" "${COMPUTED:0:12}"
         fails=$((fails + 1))
     fi
 
@@ -378,14 +415,16 @@ if [ -f "$PIN_FILE" ]; then
     cp "$GOLD/model-map.json" "$PRD/model-map.json"
     bash "$PTMP/skill/anthology-entry.sh" --run-dir "$PRD" >/dev/null 2>&1; tamper_rc=$?
     if [ "$tamper_rc" -eq 7 ]; then
-        printf '  [PASS] tampered enforcement file trips AF-AW-HASH-PIN at the entry (exit 7)\n'
+        [ "$QUIET" -eq 0 ] && printf '  [PASS] tampered enforcement file trips AF-AW-HASH-PIN at the entry (exit 7)\n'
     else
-        printf '  [FAIL] tampered enforcement file did NOT trip the hash pin (rc=%s, expected 7)\n' "$tamper_rc"
+        failed_checks+=("tampered enforcement file trips AF-AW-HASH-PIN at the entry")
+        [ "$QUIET" -eq 0 ] && printf '  [FAIL] tampered enforcement file did NOT trip the hash pin (rc=%s, expected 7)\n' "$tamper_rc"
         fails=$((fails + 1))
     fi
     rm -rf "$PTMP" "$PRD"
 else
-    printf '  [FAIL] ENGINE-PIN.sha256 not shipped — GATE 3 hash pin can never fail (S36-54)\n'
+    failed_checks+=("ENGINE-PIN.sha256 not shipped")
+    [ "$QUIET" -eq 0 ] && printf '  [FAIL] ENGINE-PIN.sha256 not shipped — GATE 3 hash pin can never fail (S36-54)\n'
     fails=$((fails + 1))
 fi
 
@@ -604,4 +643,13 @@ if [ "$fails" -eq 0 ]; then
     exit 0
 fi
 echo "RESULT: FAIL — $fails check(s) failed."
+if [ ${#failed_checks[@]} -gt 0 ]; then
+    echo ""
+    echo "Failed checks:"
+    idx=1
+    for fc in "${failed_checks[@]}"; do
+        printf '  %d. %s\n' "$idx" "$fc"
+        idx=$((idx + 1))
+    done
+fi
 exit 1
