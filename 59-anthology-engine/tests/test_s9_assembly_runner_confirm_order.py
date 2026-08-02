@@ -133,17 +133,16 @@ def _safe(pk):
     return "".join(c if (c.isalnum() or c in "-_.") else "_" for c in pk)
 
 
-def _write_frozen_bodies():
+def _write_frozen_bodies(run_dir):
     """Drop each frozen chapter body where the runner's chapter_source reads it
-    (SKILL_DIR/state/runs/participants/<safe>/working/chapter.md). Returns the dirs
-    to remove. The literal is deliberately spelled out rather than taken from
-    stage_s9_assembly.participant_chapter_path(): the fixture must not be produced
-    by the code under test."""
+    (<run_dir>/working/<safe>/chapter.md). The literal is deliberately spelled out
+    rather than taken from stage_s9_assembly._chapter_source(): the fixture must
+    not be produced by the code under test. Returns the dirs to remove."""
     made = []
     for pk in KEYS:
-        d = SKILL_DIR / "state" / "runs" / "participants" / _safe(pk)
-        (d / "working").mkdir(parents=True, exist_ok=True)
-        (d / "working" / "chapter.md").write_bytes(BODIES[pk])
+        d = Path(run_dir) / "working" / _safe(pk)
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "chapter.md").write_bytes(BODIES[pk])
         made.append(d)
     return made
 
@@ -234,21 +233,11 @@ class _Sandbox:
         self.state_dir = self.tmp / "state"
         self.run_dir = self.tmp / "run"
         (self.run_dir / "working").mkdir(parents=True)
-        self.body_dirs = _write_frozen_bodies()
+        self.body_dirs = _write_frozen_bodies(str(self.run_dir))
         return self
 
     def __exit__(self, *exc):
-        for d in self.body_dirs:
-            shutil.rmtree(d, ignore_errors=True)
-        # best-effort: leave no empty state/runs/participants scaffolding behind
-        # (rmdir only succeeds while a directory is empty, so this never removes a
-        # dir in use).
-        for leftover in (SKILL_DIR / "state" / "runs" / "participants",
-                         SKILL_DIR / "state" / "runs", SKILL_DIR / "state"):
-            try:
-                leftover.rmdir()
-            except OSError:
-                break
+        # body_dirs now live under self.run_dir, cleaned up by rmtree(self.tmp).
         shutil.rmtree(self.tmp, ignore_errors=True)
         return False
 
@@ -419,10 +408,11 @@ def _make_final_router(order, seen):
     return _router
 
 
-def _gate_b_chapter_source(pk):
-    """Read a frozen body exactly where the runner's own chapter_source reads it, so a
-    test can re-run assembly Gate B over the REAL compiled manuscript out-of-band."""
-    p = SKILL_DIR / "state" / "runs" / "participants" / _safe(pk) / "working" / "chapter.md"
+def _gate_b_chapter_source(pk, run_dir=None):
+    """Read a frozen body exactly where the runner's own chapter_source reads it
+    (<run_dir>/working/<safe>/chapter.md), so a test can re-run assembly Gate B
+    over the REAL compiled manuscript out-of-band."""
+    p = Path(run_dir) / "working" / _safe(pk) / "chapter.md"
     data = p.read_bytes()
     return data, hashlib.sha256(data).hexdigest()
 
@@ -459,7 +449,7 @@ def _gate_b_over_compiled(state_dir, run_dir, ms_path):
     contributors = [{"participant_key": pk, "first_name": NAMES[pk][0],
                      "last_name": NAMES[pk][1]} for pk in CONFIRMED]
     eng = logic.S9Assembly(AID, state_dir=str(state_dir), run_dir=str(run_dir),
-                           chapter_source=_gate_b_chapter_source)
+                           chapter_source=lambda mk: _gate_b_chapter_source(mk, run_dir=str(run_dir)))
     return eng.assembly_gate_b(ms_path, CONFIRMED, contributors)
 
 
