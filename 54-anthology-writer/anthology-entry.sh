@@ -121,12 +121,12 @@ if [ -n "${RUN_DIR:-}" ]; then
 fi
 
 PROC_MANIFEST="${RUN_DIR:-}/working/checkpoints/process_manifest.json"
+json_flag=""  # set -u safe: defined at module scope for --status and --plan paths
 
 # --status: read-only surface — skip ALL gates, print status, exit.
 if [ "$STATUS" -eq 1 ]; then
     [ -n "$RUN_DIR" ] || die "--status requires --run-dir DIR"
     [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
-    json_flag=""
     [ "$JSON" -eq 1 ] && json_flag="--json"
     exec python3 "$RUNNER" --run-dir "$RUN_DIR" --status $json_flag
     exit 0
