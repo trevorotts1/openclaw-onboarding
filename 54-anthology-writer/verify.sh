@@ -439,6 +439,77 @@ else
     printf '  [SKIP] golden fixtures not found (%s) — skipping concurrent lock test\n' "$GOLD/intake.json"
 fi
 
+# 16) FIX-18 — owner_skip_approval clobber + wildcard gate "*" rejection.
+#     (a) _write_proc() must MERGE existing owner_skip_approvals, not clobber them.
+#     (b) A {gate:"*"} token must be REJECTED (one record disarming every gate).
+echo "  -- FIX-18: owner_skip_approval survives _write_proc() + wildcard rejection --"
+
+# (a) clobber: seed a valid token, call _write_proc() with a fresh dict, assert
+#     the token is still present.
+_clobber_out="$(SKILL_DIR="$SKILL_DIR" "$PY" -c '
+import json, sys, os, tempfile
+from pathlib import Path
+td = Path(tempfile.mkdtemp())
+pm = td / "working" / "checkpoints" / "process_manifest.json"
+pm.parent.mkdir(parents=True)
+pm.write_text(json.dumps({
+    "owner_skip_approvals": [{"gate":"AF-AW-HASH-PIN","approved":True,
+                              "approved_by":"operator1","reason":"known good drift"}]
+}), encoding="utf-8")
+sys.path.insert(0, os.environ["SKILL_DIR"])
+from run_anthology import _write_proc
+_write_proc(td, {"skill":"test","phases":[]}, failed=None)
+result = json.loads(pm.read_text(encoding="utf-8"))
+token = result.get("owner_skip_approvals") or result.get("owner_skip_approval")
+if isinstance(token, list) and len(token) == 1 and token[0].get("gate") == "AF-AW-HASH-PIN":
+    print("PASS: owner_skip_approval survived _write_proc merge")
+    sys.exit(0)
+else:
+    print("FAIL: owner_skip_approval was clobbered; result=%s" % token)
+    sys.exit(1)
+' 2>&1)"; _clobber_rc=$?
+if [ "$_clobber_rc" -eq 0 ]; then
+    printf '  [PASS] FIX-18 clobber: owner_skip_approval survives _write_proc()\n'
+else
+    printf '  [FAIL] FIX-18 clobber: %s\n' "$_clobber_out"
+    fails=$((fails + 1))
+fi
+
+# (b) wildcard: a {gate:"*"} token must be REJECTED at the entry.  Exercise
+#     the REAL production path — copy skill dir to a temp, seed a wildcard
+#     process_manifest.json, tamper one enforcement file to trip the hash pin,
+#     and run anthology-entry.sh so the rejection travels through gate_fail +
+#     owner_skip_approved, not a hollow inline reimplementation.
+WTMP="$(mktemp -d)"
+cp -R "$SKILL_DIR/." "$WTMP/skill/"
+printf '\n# tamper — verify.sh FIX-18 wildcard test\n' >> "$WTMP/skill/run_anthology.py"
+WRD="$(mktemp -d)"; mkdir -p "$WRD/working/checkpoints"
+"$PY" -c "
+import json
+manifest = {
+    'owner_skip_approvals': [{
+        'gate': '*', 'approved': True,
+        'approved_by': 'bad-actor', 'reason': 'disarm everything'
+    }]
+}
+with open('$WRD/working/checkpoints/process_manifest.json', 'w') as f:
+    json.dump(manifest, f)
+"
+for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
+    cp "$GOLD/$f" "$WRD/working/$f"
+done
+_wildcard_out="$(bash "$WTMP/skill/anthology-entry.sh" --run-dir "$WRD" 2>&1)"; _wildcard_rc=$?
+# owner_skip_approved exits 2 internally, but gate_fail catches it and returns 7
+# from the hash-pin gate. The wildcard rejection message IS printed to stderr.
+if [ "$_wildcard_rc" -eq 7 ] && printf '%s' "$_wildcard_out" | grep -q "wildcard"; then
+    printf '  [PASS] FIX-18 wildcard: {gate:"*"} rejected through production path (exit 7, wildcard spawned)\n'
+else
+    printf '  [FAIL] FIX-18 wildcard: rc=%s (expected 7 + wildcard rejection); output:\n' "$_wildcard_rc"
+    printf '%s\n' "$_wildcard_out" | sed 's/^/         /'
+    fails=$((fails + 1))
+fi
+rm -rf "$WTMP" "$WRD"
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 54 self-verification checks green."
