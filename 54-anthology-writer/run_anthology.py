@@ -553,11 +553,14 @@ def run(manifest, run_dir: Path, upto, resume: bool = False) -> int:
             return EXIT_GATE
         if pid == stop_at:
             break
-    _write_proc(run_dir, proc, failed=None)
+    cert = None
     if stop_at == "P7-DELIVER":
         cert = _write_certificate(run_dir, proc)
         if cert:
             print("CERTIFICATE ISSUED: %s (sha %s)" % (cert["path"], cert["sha"][:12]))
+    _write_proc(run_dir, proc, failed=None,
+                certificate_sha=(cert or {}).get("sha"))
+    if stop_at == "P7-DELIVER":
         # Assemble the labeled ~/Downloads bundle (chapter + tone doc + outline +
         # title + blurb + DELIVERY-NOTE + handoff + certificate). NON-FATAL: the run
         # is already certified and the run-dir delivery/ bundle already byte-verified
@@ -567,21 +570,37 @@ def run(manifest, run_dir: Path, upto, resume: bool = False) -> int:
     return EXIT_PASS
 
 
-def _write_proc(run_dir: Path, proc: dict, failed, started_arg=None,
-                completed_arg=None, phase_id=None):
+def _write_proc(run_dir: Path, proc: dict, failed, certificate_sha=None):
+    """Persist the process manifest with append-only verdict history (FIX-20 r2).
+
+    Each invocation appends a run entry to the runs[] array (never overwrites
+    prior history) so the manifest carries a full verdict trail across runs.
+    The dead started_arg/completed_arg/phase_id params were removed — callers
+    already stamp started_at/completed_at directly on each phase entry."""
+    import uuid
     proc["failed_phase"] = failed
-    if phase_id:
-        for ph in proc.get("phases", []):
-            if ph.get("id") == phase_id:
-                if started_arg is not None:
-                    ph["started_at"] = started_arg
-                if completed_arg is not None:
-                    ph["completed_at"] = completed_arg
-                break
-    out = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    # Append-only verdict history: load prior runs, append this one.
+    pm_path = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    existing_runs = []
+    if pm_path.is_file():
+        try:
+            prev = json.loads(pm_path.read_text(encoding="utf-8"))
+            existing_runs = prev.get("runs", [])
+        except (OSError, ValueError):
+            existing_runs = []
+    phases_passed = [p["id"] for p in proc.get("phases", []) if p.get("passed")]
+    phases_failed = [p["id"] for p in proc.get("phases", []) if not p.get("passed")]
+    existing_runs.append({
+        "run_id": str(uuid.uuid4()),
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "phases_passed": phases_passed,
+        "phases_failed": phases_failed,
+        "certificate_sha": certificate_sha,
+    })
+    proc["runs"] = existing_runs
     try:
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(proc, indent=2), encoding="utf-8")
+        pm_path.parent.mkdir(parents=True, exist_ok=True)
+        pm_path.write_text(json.dumps(proc, indent=2), encoding="utf-8")
     except OSError:
         pass
 
