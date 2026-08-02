@@ -200,6 +200,56 @@ done
 command -v python3 >/dev/null 2>&1 || { echo "[$PROG] FATAL: python3 required" >&2; exit "$EX_STOP"; }
 
 # --------------------------------------------------------------------------
+# Source the three canonical client .env stores into the process environment
+# (live process env takes precedence -- a key already set is never overwritten).
+# Bash 3.2 compatible: uses `tr` for lowercase, not ${var,,} (bash 4+).
+# --------------------------------------------------------------------------
+source_stores_into_env() {
+    local store store_path line key val
+    for store in \
+        "${HOME}/.openclaw/secrets/.env" \
+        "${HOME}/.openclaw/workspace/.env" \
+        "${HOME}/clawd/secrets/.env"
+    do
+        [ -f "$store" ] || continue
+        while IFS= read -r line || [ -n "$line" ]; do
+            # Skip empty and comment lines.
+            case "$line" in
+                ""|\#*) continue ;;
+            esac
+            # Strip optional leading 'export ' (case-insensitive, bash 3.2 compat).
+            case "$(printf '%s' "$line" | tr '[:upper:]' '[:lower:]')" in
+                export\ *) line="${line#export }" ;;
+            esac
+            # Bail on lines with no '='.
+            case "$line" in
+                *=*) ;;
+                *) continue ;;
+            esac
+            key="${line%%=*}"
+            # Trim leading/trailing whitespace from key (bash 3.2: no ${var//}).
+            key="$(printf '%s' "$key" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
+            val="${line#*=}"
+            # Strip surrounding quotes.
+            case "$val" in
+                \"*\"|\'*\') val="${val#?}"; val="${val%?}" ;;
+            esac
+            val="$(printf '%s' "$val" | sed 's/[[:space:]]*$//')"  # trailing ws
+            # Never overwrite a key already set in the live process env.
+            if ! printenv "$key" >/dev/null 2>&1; then
+                export "$key=$val"
+            fi
+        done < "$store"
+    done
+}
+
+# Make the credential stores visible to EVERY child (adapters resolve from env
+# first; os.environ IS the live process env this function populates). The
+# adapters' own _env_first store fallback is a DEFENSE IN DEPTH for direct
+# invocation, but the provision path runs through this env propagation too.
+source_stores_into_env
+
+# --------------------------------------------------------------------------
 # State dir resolution — MIRRORS anthology_state.py / anthology_registry.py so
 # every collaborator agrees on where per-box state lives.
 # --------------------------------------------------------------------------
