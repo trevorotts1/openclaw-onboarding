@@ -2,10 +2,10 @@
   "manifest_version": 1,
   "skill": "anthology-writer",
   "skill_number": 54,
-  "skill_version": "1.4.0",
+  "skill_version": "1.4.3",
   "shared_tone_core": "shared-utils/tone-writing-core",
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0 -> P0A-AVATAR -> P1..P7) with NO phase skips, one contributor at a time. P0A-AVATAR is the pre-P1 avatar handoff (W1.2 extension): it DELEGATES to Skill 52 avatar-alchemist prompts 01-03 BY PATH (see avatar_handoff below; NO file copied, tone core untouched; the avatar handoff itself adds NO source_prompt_pins entry — the aw-11/aw-12 baked-IP pins are added by the separate W1.3 prompt-completion extension) and produces working/avatar.md, which run_anthology.py's _chk_avatar gate REQUIRES fail-closed via scripts/prove_aw_avatar.py (AF-AW-AVATAR-*) BEFORE P1-FIDELITY runs; the dossier is consumed by the downstream tone/chapter authoring templates (carried_values), not read by the P1-FIDELITY checker itself. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
-  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier — NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
+  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Writer pipeline. The deterministic orchestrator run_anthology.py walks these phases IN ORDER (P0 -> P0A-AVATAR -> P1..P7) with NO phase skips, one contributor at a time. P0A-AVATAR is the pre-P1 avatar handoff (W1.2 extension): it DELEGATES to Skill 52 avatar-alchemist prompts 01-03 BY PATH (see avatar_handoff below; NO file copied, tone core untouched; the avatar handoff itself adds NO source_prompt_pins entry \u2014 the aw-11/aw-12 baked-IP pins are added by the separate W1.3 prompt-completion extension) and produces working/avatar.md, which run_anthology.py's _chk_avatar gate REQUIRES fail-closed via scripts/prove_aw_avatar.py (AF-AW-AVATAR-*) BEFORE P1-FIDELITY runs; the dossier is consumed by the downstream tone/chapter authoring templates (carried_values), not read by the P1-FIDELITY checker itself. Each phase declares its produces_artifact, its _chk_* preflight symbol, and its AF-AW-* gate codes. Every AF-AW-* code below is enforced by a fail-closed, model-free, stdlib-only prover in scripts/; py_symbol names the function that decides it. Editing this file is step (i) of any Anthology change: add the gate, add the AF code here with its trigger, add the checker, add the golden+attack fixture.",
+  "design_law": "Enforcement, not description. Bands and counts are measured on the STRIPPED text of the artifact; a model's self-reported word count is NEVER trusted. Client runtime uses the CLIENT's own provider chain (assets/model-map.template.json) resolved to the strongest NON-Anthropic model per tier \u2014 NEVER Anthropic/claude-* ids or operator keys (build-fix: everywhere the source said 'OpenRouter primary'/anthropic-* is implemented as 'the client's strongest NON-Anthropic model'). The deterministic gates are provider-neutral Python that run identically everywhere. A client-exact override wins over a default band and is recorded on the certificate.",
   "shared_tone_core_contract": "This skill bakes a lockstep copy of shared-utils/tone-writing-core/prompts/04..08 into prompts/ and proves it with scripts/verify_tone_core_sync.py at build/CI time. 54 is a SEPARATE skill sharing the ONE tone core (Trevor's standing decision), sibling of 53-book-writer.",
   "source_prompt_pins": {
     "assets/prompts/06-suggested-titles.md": "8961cfe40719301c9002ce98ad2a79b3475be9609dad92a337a61fb55bdf1bfc",
@@ -17,24 +17,28 @@
     "assets/prompts/12-primary-goal-extraction.md": "ca09a4b82d63349586389cdb093c922489e70e88d3ea45bd3f7dc4a76cf811f3"
   },
   "source_prompt_pins_provenance": {
-    "$note": "RUNTIME pin granularity reconciliation (W1.3). source_prompt_pins maps each baked SINGLE-FILE authoring asset (assets/prompts/NN-*.md) to the sha256 of its BYTES — the ONE granularity prove_aw_fidelity.py enforces at merge and runtime (SPEC 3.2 item 2). The pins live in ONE place: THIS manifest's source_prompt_pins (SINGLE SOURCE OF TRUTH); no second/parallel pins file ships in the repo. The n8n SOURCE prompts were multi-component (system/assistant/user); their per-component raw+pinned sha256 and the composite_pin are SOURCE provenance that lives OPERATOR-SIDE ONLY in .build-state/W0.2.json (never committed — the exports carry live keys) — this manifest deliberately ships neither that per-component/composite ledger nor any legacy n8n slot expression.",
-    "byte_proof_08_10": "aw-08 and aw-10 were byte-proved at W1.3 against their recorded pins (08 sha256 5a944eaf…, 10 sha256 56c4bf76…): BOTH MATCH the source-of-record — NO re-pin (the pin inventory ends COMPLETE either way, the actual law). Zero [UNCHANGED] placeholders remain in any baked body; a pin carrying an unrestored placeholder is a hard failure.",
+    "$note": "RUNTIME pin granularity reconciliation (W1.3). source_prompt_pins maps each baked SINGLE-FILE authoring asset (assets/prompts/NN-*.md) to the sha256 of its BYTES \u2014 the ONE granularity prove_aw_fidelity.py enforces at merge and runtime (SPEC 3.2 item 2). The pins live in ONE place: THIS manifest's source_prompt_pins (SINGLE SOURCE OF TRUTH); no second/parallel pins file ships in the repo. The n8n SOURCE prompts were multi-component (system/assistant/user); their per-component raw+pinned sha256 and the composite_pin are SOURCE provenance that lives OPERATOR-SIDE ONLY in .build-state/W0.2.json (never committed \u2014 the exports carry live keys) \u2014 this manifest deliberately ships neither that per-component/composite ledger nor any legacy n8n slot expression.",
+    "byte_proof_08_10": "aw-08 and aw-10 were byte-proved at W1.3 against their recorded pins (08 sha256 5a944eaf\u2026, 10 sha256 56c4bf76\u2026): BOTH MATCH the source-of-record \u2014 NO re-pin (the pin inventory ends COMPLETE either way, the actual law). Zero [UNCHANGED] placeholders remain in any baked body; a pin carrying an unrestored placeholder is a hard failure.",
     "new_pins_W1_3": {
-      "aw-11": "assets/prompts/11-cover-image-prompt.md — cover-image PROMPT generator, MID-WRITER author / IMAGE render; see the cover_prompt block",
-      "aw-12": "assets/prompts/12-primary-goal-extraction.md — LIGHT-tier primary-goal extraction wired as the final step of P0A-AVATAR (authoring_sequence); binds {{niche_primary_goal}}"
+      "aw-11": "assets/prompts/11-cover-image-prompt.md \u2014 cover-image PROMPT generator, MID-WRITER author / IMAGE render; see the cover_prompt block",
+      "aw-12": "assets/prompts/12-primary-goal-extraction.md \u2014 LIGHT-tier primary-goal extraction wired as the final step of P0A-AVATAR (authoring_sequence); binds {{niche_primary_goal}}"
     }
   },
   "avatar_handoff": {
-    "$note": "W1.2 Skill 54 extension. The pre-P1 phase P0A-AVATAR formally DELEGATES to Skill 52 avatar-alchemist. The three avatar-front prompts (aa-01..aa-03) are REUSED BY PATH and NEVER copied: the handoff reads Skill 52's own pinned assets at the paths below and produces working/avatar.md, which the P0A-AVATAR gate (prove_aw_avatar) REQUIRES fail-closed before P1-FIDELITY and which the downstream tone/chapter authoring templates consume (carried_values). This is the reference-only twin of Skill 53's baked P1-AVATAR (Skill 53 bakes copies into its own prompts/; Skill 54 references Skill 52 in place — PRD Section 7 Reuse map item 3 and SPEC 3.2 item 1). These pins are NOT in source_prompt_pins (that block is for Skill 54's OWN baked authoring IP, checked by prove_aw_fidelity against assets/prompts/); mixing them there would break prove_aw_fidelity. Delegation integrity is enforced by prove_aw_avatar.py (AF-AW-AVATAR-*): the referenced files must resolve at their pinned Skill 52 paths with sha256 == the pins below, or the gate fails closed rather than authoring from stale/tampered/absent IP.",
+    "$note": "W1.2 Skill 54 extension. The pre-P1 phase P0A-AVATAR formally DELEGATES to Skill 52 avatar-alchemist. The three avatar-front prompts (aa-01..aa-03) are REUSED BY PATH and NEVER copied: the handoff reads Skill 52's own pinned assets at the paths below and produces working/avatar.md, which the P0A-AVATAR gate (prove_aw_avatar) REQUIRES fail-closed before P1-FIDELITY and which the downstream tone/chapter authoring templates consume (carried_values). This is the reference-only twin of Skill 53's baked P1-AVATAR (Skill 53 bakes copies into its own prompts/; Skill 54 references Skill 52 in place \u2014 PRD Section 7 Reuse map item 3 and SPEC 3.2 item 1). These pins are NOT in source_prompt_pins (that block is for Skill 54's OWN baked authoring IP, checked by prove_aw_fidelity against assets/prompts/); mixing them there would break prove_aw_fidelity. Delegation integrity is enforced by prove_aw_avatar.py (AF-AW-AVATAR-*): the referenced files must resolve at their pinned Skill 52 paths with sha256 == the pins below, or the gate fails closed rather than authoring from stale/tampered/absent IP.",
     "source_skill": "52-avatar-alchemist",
     "source_skill_version_pinned": "1.5.0",
-    "reference_mode": "by-path — NO file copied; NOT baked into source_prompt_pins",
+    "reference_mode": "by-path \u2014 NO file copied; NOT baked into source_prompt_pins",
     "pin_provenance": "sha256 byte-verified against 52-avatar-alchemist/prompts on origin/main (W0.8 reuse-asset inventory) and re-confirmed against the build checkout; re-checked at runtime by prove_aw_avatar.py",
     "base_path_repo_relative": "52-avatar-alchemist/prompts",
     "sibling_relpath_from_skill_dir": "../52-avatar-alchemist/prompts",
     "consumed_by_phase": "P0A-AVATAR",
     "produces_artifact": "working/avatar.md",
-    "carried_values": ["niche_primary_goal", "questions_1_30", "questions_31_32"],
+    "carried_values": [
+      "niche_primary_goal",
+      "questions_1_30",
+      "questions_31_32"
+    ],
     "no_copy_law": "No file under 52-avatar-alchemist/prompts/{01,02,03}-* may be copied into 54-anthology-writer/ (prompts/, assets/prompts/, or anywhere in the skill tree). The avatar IP stays single-sourced in Skill 52. AF-AW-AVATAR-COPIED enforces.",
     "tone_core_untouched": "This extension adds NO tone stage and touches NO tone asset; prompts/04..08 and the 5 baked authoring prompts (assets/prompts/06-10) are unchanged, so prove_aw_fidelity and verify_tone_core_sync stay green.",
     "stages": [
@@ -54,7 +58,9 @@
         "pin_id": "aa-02",
         "stage_id": "02-avatar-questions-31-32",
         "tier": "MID-WRITER",
-        "depends_on": ["01-avatar-questions-1-30"],
+        "depends_on": [
+          "01-avatar-questions-1-30"
+        ],
         "research_pass": true,
         "research_note": "Questions 31-32 expect web-search findings injected as CONTEXT by the caller's Layer 2 tool step (engine search_detect.py; prefer Perplexity, degrade-plus-flag). The pinned prompt text is NEVER edited at runtime; the search is a tool step, not a model or prompt swap (SPEC S1). Absent a search tool the phase degrades with a receipt, it does not fail.",
         "prompt_dir": "52-avatar-alchemist/prompts/02-avatar-questions-31-32",
@@ -68,7 +74,10 @@
         "pin_id": "aa-03",
         "stage_id": "03-rewrite-avatar",
         "tier": "MID-WRITER",
-        "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"],
+        "depends_on": [
+          "01-avatar-questions-1-30",
+          "02-avatar-questions-31-32"
+        ],
         "prompt_dir": "52-avatar-alchemist/prompts/03-rewrite-avatar",
         "files": {
           "system.md": "a4d449cb3342cd65a304d6a557263328d0b7e626c58a4e9c56fd6bd14157fb40",
@@ -85,7 +94,12 @@
     "baked_asset": "assets/prompts/11-cover-image-prompt.md",
     "prompt_tier": "MID-WRITER",
     "render_tier": "IMAGE",
-    "inputs": ["artifact.title (locked title+subtitle, byte-exact from aw-06)", "intake.first_name", "intake.last_name", "artifact.blurb (aw-07)"],
+    "inputs": [
+      "artifact.title (locked title+subtitle, byte-exact from aw-06)",
+      "intake.first_name",
+      "intake.last_name",
+      "artifact.blurb (aw-07)"
+    ],
     "produces": "a single JSON cover-prompt object {prompt, aspect_ratio:'2:3', output_format:'png'}",
     "render_override": {
       "aspect_ratio": "2:3",
@@ -101,9 +115,9 @@
   "tiers": {
     "HEAVY-WRITER": "aw-09 chapter + aw-10 rewrite (client's strongest NON-Anthropic long-form model)",
     "MID-WRITER": "aw-01..08 tone/title/blurb/outline + aw-11 cover-image prompt (client's mid NON-Anthropic model)",
-    "LIGHT": "aw-12 primary-goal extraction — split/label the P0A avatar value into Avatar/Niche/Primary Goal (client's light/fast NON-Anthropic model; extraction, not authoring)",
+    "LIGHT": "aw-12 primary-goal extraction \u2014 split/label the P0A avatar value into Avatar/Niche/Primary Goal (client's light/fast NON-Anthropic model; extraction, not authoring)",
     "RESEARCHER": "optional client web-search tool (degraded:search receipt if absent)",
-    "IMAGE": "optional client image provider — renders the aw-11 cover prompt at 2:3 portrait 1024x1536 (degraded:image receipt if absent)"
+    "IMAGE": "optional client image provider \u2014 renders the aw-11 cover prompt at 2:3 portrait 1024x1536 (degraded:image receipt if absent)"
   },
   "phases": [
     {
@@ -111,8 +125,15 @@
       "order": 0,
       "name": "Intake (4 required fields, no credential-shaped keys)",
       "produces_artifact": "working/intake.json",
-      "preflight": {"required": true, "checker": "_chk_intake", "label": "working/intake.json present and prove_aw_intake.py PASS — anthology_title / first_name / last_name / chapter_premise all present and non-whitespace; no credential-shaped intake key."},
-      "gate_codes": ["AF-AW-INTAKE-MISSING", "AF-AW-INTAKE-CREDENTIAL"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_intake",
+        "label": "working/intake.json present and prove_aw_intake.py PASS \u2014 anthology_title / first_name / last_name / chapter_premise all present and non-whitespace; no credential-shaped intake key."
+      },
+      "gate_codes": [
+        "AF-AW-INTAKE-MISSING",
+        "AF-AW-INTAKE-CREDENTIAL"
+      ]
     },
     {
       "id": "P0A-AVATAR",
@@ -121,32 +142,72 @@
       "produces_artifact": "working/avatar.md",
       "delegates_to": "52-avatar-alchemist",
       "authoring_sequence": {
-        "$note": "The P0A avatar-handoff authoring order (run UPSTREAM on the CLIENT's own NON-Anthropic chain before the P0A gate; the pinned prompt text is NEVER edited at runtime). aa-01..aa-03 are the reference-by-path Skill 52 prompts (see avatar_handoff.stages; delegation integrity enforced by prove_aw_avatar.py). aw-12 is Skill 54's OWN baked LIGHT-tier primary-goal extraction step (assets/prompts/12-primary-goal-extraction.md, sha256-pinned in source_prompt_pins, fidelity-checked at P1-FIDELITY): it runs LAST — after aa-03 fuses avatar+niche+goal into one blob — and splits/labels that blob into the carried value niche_primary_goal that every downstream authoring stage (tone/title/outline/chapter/cover) consumes. This is the W1.3 prompt-completion wiring; the P0A gate (prove_aw_avatar) is unchanged (aw-12 is NOT a Skill 52 reference and is deliberately absent from avatar_handoff.stages).",
+        "$note": "The P0A avatar-handoff authoring order (run UPSTREAM on the CLIENT's own NON-Anthropic chain before the P0A gate; the pinned prompt text is NEVER edited at runtime). aa-01..aa-03 are the reference-by-path Skill 52 prompts (see avatar_handoff.stages; delegation integrity enforced by prove_aw_avatar.py). aw-12 is Skill 54's OWN baked LIGHT-tier primary-goal extraction step (assets/prompts/12-primary-goal-extraction.md, sha256-pinned in source_prompt_pins, fidelity-checked at P1-FIDELITY): it runs LAST \u2014 after aa-03 fuses avatar+niche+goal into one blob \u2014 and splits/labels that blob into the carried value niche_primary_goal that every downstream authoring stage (tone/title/outline/chapter/cover) consumes. This is the W1.3 prompt-completion wiring; the P0A gate (prove_aw_avatar) is unchanged (aw-12 is NOT a Skill 52 reference and is deliberately absent from avatar_handoff.stages).",
         "steps": [
-          {"pin_id": "aa-01", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)"},
-          {"pin_id": "aa-02", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)", "research_pass": true},
-          {"pin_id": "aa-03", "tier": "MID-WRITER", "source": "52-avatar-alchemist (referenced by path)"},
-          {"pin_id": "aw-12", "tier": "LIGHT", "source": "assets/prompts/12-primary-goal-extraction.md (Skill 54 baked IP, pinned)", "binding": "{{niche_primary_goal}}", "binding_confirmed": true, "produces_carried_value": "niche_primary_goal", "new_in": "W1.3"}
+          {
+            "pin_id": "aa-01",
+            "tier": "MID-WRITER",
+            "source": "52-avatar-alchemist (referenced by path)"
+          },
+          {
+            "pin_id": "aa-02",
+            "tier": "MID-WRITER",
+            "source": "52-avatar-alchemist (referenced by path)",
+            "research_pass": true
+          },
+          {
+            "pin_id": "aa-03",
+            "tier": "MID-WRITER",
+            "source": "52-avatar-alchemist (referenced by path)"
+          },
+          {
+            "pin_id": "aw-12",
+            "tier": "LIGHT",
+            "source": "assets/prompts/12-primary-goal-extraction.md (Skill 54 baked IP, pinned)",
+            "binding": "{{niche_primary_goal}}",
+            "binding_confirmed": true,
+            "produces_carried_value": "niche_primary_goal",
+            "new_in": "W1.3"
+          }
         ]
       },
-      "reuse_note": "REFERENCE-ONLY handoff (W1.2 ext): the three Skill 52 avatar prompts (aa-01..aa-03) are read at their pinned Skill 52 paths declared in avatar_handoff — NOT copied, NOT baked into source_prompt_pins. Produces the avatar dossier working/avatar.md, REQUIRED fail-closed by this phase's own gate (prove_aw_avatar) before P1-FIDELITY and consumed by the downstream author/rewrite user templates (carried values niche_primary_goal / questions_1_30 / questions_31_32). Tone core and the 5 baked authoring prompts are untouched, so prove_aw_fidelity + verify_tone_core_sync stay green. Inserts BETWEEN P0-INTAKE and P1-FIDELITY; run_anthology.py must carry P0A-AVATAR in PHASE_ORDER (after P0-INTAKE) and map _chk_avatar in _CHECKERS (see cross_file_needs).",
-      "preflight": {"required": true, "checker": "_chk_avatar", "label": "prove_aw_avatar.py PASS — working/avatar.md present and non-whitespace (the avatar dossier the Skill 52 handoff produced, consumed downstream by the tone/chapter authoring templates) AND every referenced Skill 52 prompt (aa-01/aa-02/aa-03 x system|user|methodology) resolves at its pinned 52-avatar-alchemist path with sha256 == the avatar_handoff pin (delegation integrity; Skill 52 missing/tampered/version-drifted fails closed, never authors from stale IP) AND no Skill 52 avatar prompt was copied into Skill 54's own tree (no-copy law)."},
-      "gate_codes": ["AF-AW-AVATAR-MISSING", "AF-AW-AVATAR-HANDOFF-DRIFT", "AF-AW-AVATAR-COPIED"]
+      "reuse_note": "REFERENCE-ONLY handoff (W1.2 ext): the three Skill 52 avatar prompts (aa-01..aa-03) are read at their pinned Skill 52 paths declared in avatar_handoff \u2014 NOT copied, NOT baked into source_prompt_pins. Produces the avatar dossier working/avatar.md, REQUIRED fail-closed by this phase's own gate (prove_aw_avatar) before P1-FIDELITY and consumed by the downstream author/rewrite user templates (carried values niche_primary_goal / questions_1_30 / questions_31_32). Tone core and the 5 baked authoring prompts are untouched, so prove_aw_fidelity + verify_tone_core_sync stay green. Inserts BETWEEN P0-INTAKE and P1-FIDELITY; run_anthology.py must carry P0A-AVATAR in PHASE_ORDER (after P0-INTAKE) and map _chk_avatar in _CHECKERS (see cross_file_needs).",
+      "preflight": {
+        "required": true,
+        "checker": "_chk_avatar",
+        "label": "prove_aw_avatar.py PASS \u2014 working/avatar.md present and non-whitespace (the avatar dossier the Skill 52 handoff produced, consumed downstream by the tone/chapter authoring templates) AND every referenced Skill 52 prompt (aa-01/aa-02/aa-03 x system|user|methodology) resolves at its pinned 52-avatar-alchemist path with sha256 == the avatar_handoff pin (delegation integrity; Skill 52 missing/tampered/version-drifted fails closed, never authors from stale IP) AND no Skill 52 avatar prompt was copied into Skill 54's own tree (no-copy law)."
+      },
+      "gate_codes": [
+        "AF-AW-AVATAR-MISSING",
+        "AF-AW-AVATAR-HANDOFF-DRIFT",
+        "AF-AW-AVATAR-COPIED"
+      ]
     },
     {
       "id": "P1-FIDELITY",
       "order": 1,
       "name": "Prompt fidelity + tone-core lockstep",
       "produces_artifact": "assets/prompts/*.md (pinned) + prompts/04..08 (tone-core lockstep)",
-      "preflight": {"required": true, "checker": "_chk_fidelity", "label": "prove_aw_fidelity.py PASS (sha256 of the 5 baked authoring prompts == manifest pins) AND verify_tone_core_sync.py PASS (baked tone stages byte-identical to shared-utils/tone-writing-core)."},
-      "gate_codes": ["AF-AW-PROMPT-DRIFT", "AF-AW-TONE-DRIFT"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_fidelity",
+        "label": "prove_aw_fidelity.py PASS (sha256 of the 5 baked authoring prompts == manifest pins) AND verify_tone_core_sync.py PASS (baked tone stages byte-identical to shared-utils/tone-writing-core)."
+      },
+      "gate_codes": [
+        "AF-AW-PROMPT-DRIFT",
+        "AF-AW-TONE-DRIFT"
+      ]
     },
     {
       "id": "P2-TONE-AUTHOR",
       "order": 2,
       "name": "Blended tone authoring (aw-01..05, MID-WRITER)",
       "produces_artifact": "working/tone-doc.md",
-      "preflight": {"required": true, "checker": "_chk_tone_authored", "label": "working/tone-doc.md present — 'The {First} {Last} Tone' synthesized from 4 tone-style influence analyses on the client's MID-WRITER tier."},
+      "preflight": {
+        "required": true,
+        "checker": "_chk_tone_authored",
+        "label": "working/tone-doc.md present \u2014 'The {First} {Last} Tone' synthesized from 4 tone-style influence analyses on the client's MID-WRITER tier."
+      },
       "gate_codes": []
     },
     {
@@ -154,23 +215,41 @@
       "order": 3,
       "name": "Tone QC (4 influences + stripped-word floor)",
       "produces_artifact": "working/qc/tone_qc_report.json",
-      "preflight": {"required": true, "checker": "_chk_tone_qc", "label": "prove_aw_tone.py PASS over working/tone-doc.md — exactly 4 influence analyses AND >= 3,000 stripped words (tone-core R7). A client-exact tone_word_floor override wins ONLY through the LOGGED, brief-tied working/overrides.json channel; an unlogged override fails closed."},
-      "gate_codes": ["AF-AW-TONE-4", "AF-AW-TONE-FLOOR", "AF-AW-OVERRIDE-UNLOGGED"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_tone_qc",
+        "label": "prove_aw_tone.py PASS over working/tone-doc.md \u2014 exactly 4 influence analyses AND >= 3,000 stripped words (tone-core R7). A client-exact tone_word_floor override wins ONLY through the LOGGED, brief-tied working/overrides.json channel; an unlogged override fails closed."
+      },
+      "gate_codes": [
+        "AF-AW-TONE-4",
+        "AF-AW-TONE-FLOOR",
+        "AF-AW-OVERRIDE-UNLOGGED"
+      ]
     },
     {
       "id": "P4-TITLE-LOCK",
       "order": 4,
       "name": "Title/subtitle lock (aw-06, MID-WRITER)",
       "produces_artifact": "working/title.json",
-      "preflight": {"required": true, "checker": "_chk_title_locked", "label": "working/title.json present with non-empty title + subtitle — the contributor-LOCKED identity carried byte-exact downstream."},
-      "gate_codes": ["AF-AW-TITLE-MISSING"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_title_locked",
+        "label": "working/title.json present with non-empty title + subtitle \u2014 the contributor-LOCKED identity carried byte-exact downstream."
+      },
+      "gate_codes": [
+        "AF-AW-TITLE-MISSING"
+      ]
     },
     {
       "id": "P5-CHAPTER-AUTHOR",
       "order": 5,
       "name": "Outline + chapter authoring (aw-08 outline, aw-09 chapter, HEAVY-WRITER; aw-07 blurb, MID-WRITER)",
       "produces_artifact": "working/chapter.md (+ working/outline.md + working/blurb.md)",
-      "preflight": {"required": true, "checker": "_chk_chapter_authored", "label": "working/outline.md AND working/chapter.md present (the one 2,000-3,500-word chapter for this contributor, authored on the client's HEAVY-WRITER tier). The aw-07 back-cover blurb (working/blurb.md, MID-WRITER) is authored in this window and is gated at P7-DELIVER (AF-AW-BLURB-MISSING)."},
+      "preflight": {
+        "required": true,
+        "checker": "_chk_chapter_authored",
+        "label": "working/outline.md AND working/chapter.md present (the one 2,000-3,500-word chapter for this contributor, authored on the client's HEAVY-WRITER tier). The aw-07 back-cover blurb (working/blurb.md, MID-WRITER) is authored in this window and is gated at P7-DELIVER (AF-AW-BLURB-MISSING)."
+      },
       "gate_codes": []
     },
     {
@@ -178,44 +257,249 @@
       "order": 6,
       "name": "Chapter QC (band + block + placeholder + title-lock + story placement + no-Anthropic)",
       "produces_artifact": "working/qc/chapter_qc_report.json",
-      "preflight": {"required": true, "checker": "_chk_chapter_qc", "label": "working/RUN-LEDGER.json is REQUIRED (fail-closed model provenance / no-Anthropic proof) AND prove_aw_chapter.py PASS over working/chapter.md (--mode chapter) AND working/outline.md (--mode outline) with --title + --intake, AND aw_build_check.py PASS over working/RUN-LEDGER.json. A client-exact chapter band override wins ONLY through the LOGGED, brief-tied working/overrides.json channel. ANY AF-AW-* violation blocks advance; a bounded rework loop (<=2, verifier != author) re-authors then re-proves. Writes the prover verdict to working/qc/chapter_qc_report.json."},
-      "gate_codes": ["AF-AW-CHAP-LEN", "AF-AW-VERIFY-BLOCK", "AF-AW-PLACEHOLDER", "AF-AW-TITLE-LOCK", "AF-AW-STORIES", "AF-AW-ANTHROPIC", "AF-AW-REWRITE-BUDGET", "AF-AW-PROVENANCE-MISSING", "AF-AW-OVERRIDE-UNLOGGED"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_chapter_qc",
+        "label": "working/RUN-LEDGER.json is REQUIRED (fail-closed model provenance / no-Anthropic proof) AND prove_aw_chapter.py PASS over working/chapter.md (--mode chapter) AND working/outline.md (--mode outline) with --title + --intake, AND aw_build_check.py PASS over working/RUN-LEDGER.json. A client-exact chapter band override wins ONLY through the LOGGED, brief-tied working/overrides.json channel. ANY AF-AW-* violation blocks advance; a bounded rework loop (<=2, verifier != author) re-authors then re-proves. Writes the prover verdict to working/qc/chapter_qc_report.json."
+      },
+      "gate_codes": [
+        "AF-AW-CHAP-LEN",
+        "AF-AW-VERIFY-BLOCK",
+        "AF-AW-PLACEHOLDER",
+        "AF-AW-TITLE-LOCK",
+        "AF-AW-STORIES",
+        "AF-AW-ANTHROPIC",
+        "AF-AW-REWRITE-BUDGET",
+        "AF-AW-PROVENANCE-MISSING",
+        "AF-AW-OVERRIDE-UNLOGGED"
+      ]
     },
     {
       "id": "P7-DELIVER",
       "order": 7,
       "name": "Deliver (labeled local bundle + certificate on a full pass)",
       "produces_artifact": "delivery/PROCESS-CERTIFICATE.json",
-      "preflight": {"required": true, "checker": "_chk_deliver", "label": "the labeled deliverable bundle is assembled locally from the QC'd working copies (chapter/tone-doc/outline/title/blurb) and byte-verified; a QC'd source that is MISSING fails closed (AF-AW-STAGE-SKIPPED) and a pre-existing delivery file that DISAGREES with its QC'd source is refused (AF-AW-DELIVER-MISMATCH). The promised back-cover blurb (working/blurb.md) is REQUIRED and must be finalized prose (non-empty, no unresolved placeholder, not a stub) or the phase fails closed (AF-AW-BLURB-MISSING). After certification the same artifacts are copied into the labeled ~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/ bundle (chapter, tone doc, outline, title, blurb, DELIVERY-NOTE.md, handoff.json, PROCESS-CERTIFICATE). NO n8n / Airtable / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P6 pass. Any push is per-client config through the client's own gateway, client-silent by default."},
-      "gate_codes": ["AF-AW-STAGE-SKIPPED", "AF-AW-PROCESS-INTEGRITY", "AF-AW-DELIVER-MISMATCH", "AF-AW-BLURB-MISSING"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_deliver",
+        "label": "the labeled deliverable bundle is assembled locally from the QC'd working copies (chapter/tone-doc/outline/title/blurb) and byte-verified; a QC'd source that is MISSING fails closed (AF-AW-STAGE-SKIPPED) and a pre-existing delivery file that DISAGREES with its QC'd source is refused (AF-AW-DELIVER-MISMATCH). The promised back-cover blurb (working/blurb.md) is REQUIRED and must be finalized prose (non-empty, no unresolved placeholder, not a stub) or the phase fails closed (AF-AW-BLURB-MISSING). After certification the same artifacts are copied into the labeled ~/Downloads/Anthology-<slug>-<MM-DD-YYYY>/ bundle (chapter, tone doc, outline, title, blurb, DELIVERY-NOTE.md, handoff.json, PROCESS-CERTIFICATE). NO n8n / Airtable / Google Drive / Slack / Gmail. A signed process certificate is issued only after a full P0->P6 pass. Any push is per-client config through the client's own gateway, client-silent by default."
+      },
+      "gate_codes": [
+        "AF-AW-STAGE-SKIPPED",
+        "AF-AW-PROCESS-INTEGRITY",
+        "AF-AW-DELIVER-MISMATCH",
+        "AF-AW-BLURB-MISSING"
+      ]
     }
   ],
   "autofails": [
-    {"code": "AF-AW-INTAKE-MISSING", "stage": "P0", "level": "intake", "trigger": "any of the 4 required fields (anthology_title / first_name / last_name / chapter_premise) missing, empty, or whitespace", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
-    {"code": "AF-AW-INTAKE-CREDENTIAL", "stage": "P0", "level": "intake", "trigger": "an intake key looks like a secret (api_key, token, openrouter, anthropic, password, ...) — provider keys never ride intake", "enforced_by": "prove_aw_intake", "py_symbol": "evaluate"},
-    {"code": "AF-AW-AVATAR-MISSING", "stage": "P0A", "level": "avatar", "trigger": "working/avatar.md is absent, empty, or whitespace-only at the pre-P1 avatar phase — the Skill 52 handoff produced no avatar dossier for the downstream authoring templates to consume", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
-    {"code": "AF-AW-AVATAR-HANDOFF-DRIFT", "stage": "P0A", "level": "avatar", "trigger": "a referenced Skill 52 avatar prompt (aa-01/aa-02/aa-03 x system|user|methodology) is missing at its pinned 52-avatar-alchemist path OR its sha256 != the avatar_handoff pin — Skill 52 not installed, tampered, or version-drifted; the reference-by-path delegation must resolve to the exact pinned IP or fail closed (no silent stale-IP fallback)", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
-    {"code": "AF-AW-AVATAR-COPIED", "stage": "P0A", "level": "avatar", "trigger": "a Skill 52 avatar prompt (01/02/03-*) was COPIED into Skill 54's own tree (prompts/, assets/prompts/, or elsewhere) instead of referenced by path — violates the handoff no-copy law (PRD Section 7 Reuse map item 3; avatar IP stays single-sourced in Skill 52)", "enforced_by": "prove_aw_avatar", "py_symbol": "evaluate"},
-    {"code": "AF-AW-PROMPT-DRIFT", "stage": "P1", "level": "assets", "trigger": "sha256 of a baked authoring prompt != its manifest pin, an asset is missing, or an unpinned prompt file appeared", "enforced_by": "prove_aw_fidelity", "py_symbol": "evaluate"},
-    {"code": "AF-AW-TONE-DRIFT", "stage": "P1", "level": "assets", "trigger": "a baked tone stage (prompts/04..08) drifts from shared-utils/tone-writing-core", "enforced_by": "verify_tone_core_sync", "py_symbol": "main"},
-    {"code": "AF-AW-TONE-4", "stage": "P3", "level": "tone", "trigger": "the blended tone doc does not reference exactly 4 distinct tone-style influence analyses (indices 1..4)", "enforced_by": "prove_aw_tone", "py_symbol": "evaluate"},
-    {"code": "AF-AW-TONE-FLOOR", "stage": "P3", "level": "tone", "trigger": "measured stripped word count of the tone doc below the 3,000 floor (tone-core R7; padding inert)", "enforced_by": "prove_aw_tone", "py_symbol": "evaluate"},
-    {"code": "AF-AW-TITLE-MISSING", "stage": "P4", "level": "title", "trigger": "working/title.json missing or its title/subtitle empty", "enforced_by": "run_anthology", "py_symbol": "_chk_title_locked"},
-    {"code": "AF-AW-CHAP-LEN", "stage": "P6", "level": "chapter", "trigger": "measured stripped word count of the chapter outside 2,000-3,500 (self-report ignored; whitespace padding inert)", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-VERIFY-BLOCK", "stage": "P6", "level": "chapter", "trigger": "the mandatory COMPLETION VERIFICATION block is absent from the chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-PLACEHOLDER", "stage": "P6", "level": "chapter", "trigger": "an unresolved {{..}} / [[..]] / <ALLCAPS> placeholder survived into a finalized artifact", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-TITLE-LOCK", "stage": "P6", "level": "chapter", "trigger": "the locked title and/or subtitle is not carried byte-exact into the outline and chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-STORIES", "stage": "P6", "level": "chapter", "trigger": "a non-N/A personal-story anchor is not placed in the outline and chapter", "enforced_by": "prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-ANTHROPIC", "stage": "P6", "level": "run", "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name is present in the run env (G-NOANTHROPIC build-fix)", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
-    {"code": "AF-AW-REWRITE-BUDGET", "stage": "P6", "level": "run", "trigger": "rewrite_count exceeds the max (2) — runaway rework", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
-    {"code": "AF-AW-PROVENANCE-MISSING", "stage": "P6", "level": "run", "trigger": "working/RUN-LEDGER.json is absent at P6, or it records NO resolved model id (empty/absent stages) — model provenance is required (fail-closed) so the no-Anthropic gate can never pass vacuously on an unproven run", "enforced_by": "aw_build_check", "py_symbol": "evaluate"},
-    {"code": "AF-AW-OVERRIDE-UNLOGGED", "stage": "P3/P6", "level": "override", "trigger": "a client-exact band override (working/overrides.json) was applied but is not provably logged and tied to the locked brief (missing source/approved_by/reason, or a brief_ref that does not match the intake) — an unlogged override is a silent floor-swap and fails closed", "enforced_by": "prove_aw_tone / prove_aw_chapter", "py_symbol": "evaluate"},
-    {"code": "AF-AW-DELIVER-MISMATCH", "stage": "P7", "level": "delivery", "trigger": "a pre-existing delivery/ artifact disagrees byte-for-byte with its QC'd working source (a swap-after-QC / planted deliverable), or a labeled copy did not round-trip byte-identical", "enforced_by": "run_anthology", "py_symbol": "_chk_deliver"},
-    {"code": "AF-AW-BLURB-MISSING", "stage": "P7", "level": "delivery", "trigger": "the promised back-cover blurb (working/blurb.md) is absent (AF-AW-STAGE-SKIPPED at the missing-artifact check) or present-but-unfinished — empty, an unresolved placeholder, or a stub under the anti-stub minimum — so it cannot ship in the labeled bundle", "enforced_by": "run_anthology", "py_symbol": "_chk_deliver"},
-    {"code": "AF-AW-UNRESOLVED-MODELMAP", "stage": "entry", "level": "run-dir", "trigger": "a resolved run-dir model-map.json still carries <CLIENT_*> placeholders — the fleet installer has not resolved this box's providers (preflight.sh --check pre-gate)", "enforced_by": "preflight / anthology-entry", "py_symbol": "check"},
-    {"code": "AF-AW-STAGE-SKIPPED", "stage": "orchestrator", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_anthology", "py_symbol": "run"},
-    {"code": "AF-AW-PROCESS-INTEGRITY", "stage": "P7", "level": "run", "trigger": "a certificate was requested without a full P0->P6 pass", "enforced_by": "run_anthology", "py_symbol": "_write_certificate"},
-    {"code": "AF-AW-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook / Airtable) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "anthology-entry", "py_symbol": "bypass_scan"},
-    {"code": "AF-AW-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)", "enforced_by": "anthology-entry", "py_symbol": "version_hash_pin"}
+    {
+      "code": "AF-AW-INTAKE-MISSING",
+      "stage": "P0",
+      "level": "intake",
+      "trigger": "any of the 4 required fields (anthology_title / first_name / last_name / chapter_premise) missing, empty, or whitespace",
+      "enforced_by": "prove_aw_intake",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-INTAKE-CREDENTIAL",
+      "stage": "P0",
+      "level": "intake",
+      "trigger": "an intake key looks like a secret (api_key, token, openrouter, anthropic, password, ...) \u2014 provider keys never ride intake",
+      "enforced_by": "prove_aw_intake",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-AVATAR-MISSING",
+      "stage": "P0A",
+      "level": "avatar",
+      "trigger": "working/avatar.md is absent, empty, or whitespace-only at the pre-P1 avatar phase \u2014 the Skill 52 handoff produced no avatar dossier for the downstream authoring templates to consume",
+      "enforced_by": "prove_aw_avatar",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-AVATAR-HANDOFF-DRIFT",
+      "stage": "P0A",
+      "level": "avatar",
+      "trigger": "a referenced Skill 52 avatar prompt (aa-01/aa-02/aa-03 x system|user|methodology) is missing at its pinned 52-avatar-alchemist path OR its sha256 != the avatar_handoff pin \u2014 Skill 52 not installed, tampered, or version-drifted; the reference-by-path delegation must resolve to the exact pinned IP or fail closed (no silent stale-IP fallback)",
+      "enforced_by": "prove_aw_avatar",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-AVATAR-COPIED",
+      "stage": "P0A",
+      "level": "avatar",
+      "trigger": "a Skill 52 avatar prompt (01/02/03-*) was COPIED into Skill 54's own tree (prompts/, assets/prompts/, or elsewhere) instead of referenced by path \u2014 violates the handoff no-copy law (PRD Section 7 Reuse map item 3; avatar IP stays single-sourced in Skill 52)",
+      "enforced_by": "prove_aw_avatar",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-PROMPT-DRIFT",
+      "stage": "P1",
+      "level": "assets",
+      "trigger": "sha256 of a baked authoring prompt != its manifest pin, an asset is missing, or an unpinned prompt file appeared",
+      "enforced_by": "prove_aw_fidelity",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-TONE-DRIFT",
+      "stage": "P1",
+      "level": "assets",
+      "trigger": "a baked tone stage (prompts/04..08) drifts from shared-utils/tone-writing-core",
+      "enforced_by": "verify_tone_core_sync",
+      "py_symbol": "main"
+    },
+    {
+      "code": "AF-AW-TONE-4",
+      "stage": "P3",
+      "level": "tone",
+      "trigger": "the blended tone doc does not reference exactly 4 distinct tone-style influence analyses (indices 1..4)",
+      "enforced_by": "prove_aw_tone",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-TONE-FLOOR",
+      "stage": "P3",
+      "level": "tone",
+      "trigger": "measured stripped word count of the tone doc below the 3,000 floor (tone-core R7; padding inert)",
+      "enforced_by": "prove_aw_tone",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-TITLE-MISSING",
+      "stage": "P4",
+      "level": "title",
+      "trigger": "working/title.json missing or its title/subtitle empty",
+      "enforced_by": "run_anthology",
+      "py_symbol": "_chk_title_locked"
+    },
+    {
+      "code": "AF-AW-CHAP-LEN",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "measured stripped word count of the chapter outside 2,000-3,500 (self-report ignored; whitespace padding inert)",
+      "enforced_by": "prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-VERIFY-BLOCK",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "the mandatory COMPLETION VERIFICATION block is absent from the chapter",
+      "enforced_by": "prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-PLACEHOLDER",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "an unresolved {{..}} / [[..]] / <ALLCAPS> placeholder survived into a finalized artifact",
+      "enforced_by": "prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-TITLE-LOCK",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "the locked title and/or subtitle is not carried byte-exact into the outline and chapter",
+      "enforced_by": "prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-STORIES",
+      "stage": "P6",
+      "level": "chapter",
+      "trigger": "a non-N/A personal-story anchor is not placed in the outline and chapter",
+      "enforced_by": "prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-ANTHROPIC",
+      "stage": "P6",
+      "level": "run",
+      "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name is present in the run env (G-NOANTHROPIC build-fix)",
+      "enforced_by": "aw_build_check",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-REWRITE-BUDGET",
+      "stage": "P6",
+      "level": "run",
+      "trigger": "rewrite_count exceeds the max (2) \u2014 runaway rework",
+      "enforced_by": "aw_build_check",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-PROVENANCE-MISSING",
+      "stage": "P6",
+      "level": "run",
+      "trigger": "working/RUN-LEDGER.json is absent at P6, or it records NO resolved model id (empty/absent stages) \u2014 model provenance is required (fail-closed) so the no-Anthropic gate can never pass vacuously on an unproven run",
+      "enforced_by": "aw_build_check",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-OVERRIDE-UNLOGGED",
+      "stage": "P3/P6",
+      "level": "override",
+      "trigger": "a client-exact band override (working/overrides.json) was applied but is not provably logged and tied to the locked brief (missing source/approved_by/reason, or a brief_ref that does not match the intake) \u2014 an unlogged override is a silent floor-swap and fails closed",
+      "enforced_by": "prove_aw_tone / prove_aw_chapter",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-AW-DELIVER-MISMATCH",
+      "stage": "P7",
+      "level": "delivery",
+      "trigger": "a pre-existing delivery/ artifact disagrees byte-for-byte with its QC'd working source (a swap-after-QC / planted deliverable), or a labeled copy did not round-trip byte-identical",
+      "enforced_by": "run_anthology",
+      "py_symbol": "_chk_deliver"
+    },
+    {
+      "code": "AF-AW-BLURB-MISSING",
+      "stage": "P7",
+      "level": "delivery",
+      "trigger": "the promised back-cover blurb (working/blurb.md) is absent (AF-AW-STAGE-SKIPPED at the missing-artifact check) or present-but-unfinished \u2014 empty, an unresolved placeholder, or a stub under the anti-stub minimum \u2014 so it cannot ship in the labeled bundle",
+      "enforced_by": "run_anthology",
+      "py_symbol": "_chk_deliver"
+    },
+    {
+      "code": "AF-AW-UNRESOLVED-MODELMAP",
+      "stage": "entry",
+      "level": "run-dir",
+      "trigger": "a resolved run-dir model-map.json still carries <CLIENT_*> placeholders \u2014 the fleet installer has not resolved this box's providers (preflight.sh --check pre-gate)",
+      "enforced_by": "preflight / anthology-entry",
+      "py_symbol": "check"
+    },
+    {
+      "code": "AF-AW-STAGE-SKIPPED",
+      "stage": "orchestrator",
+      "level": "run",
+      "trigger": "a phase was attempted out of order or the certificate chain is broken",
+      "enforced_by": "run_anthology",
+      "py_symbol": "run"
+    },
+    {
+      "code": "AF-AW-PROCESS-INTEGRITY",
+      "stage": "P7",
+      "level": "run",
+      "trigger": "a certificate was requested without a full P0->P6 pass",
+      "enforced_by": "run_anthology",
+      "py_symbol": "_write_certificate"
+    },
+    {
+      "code": "AF-AW-ENTRY-BYPASS",
+      "stage": "entry",
+      "level": "run-dir",
+      "trigger": "a hand-rolled uploader/notifier (Google Drive / Slack / Gmail / n8n webhook / Airtable) is present in the run directory, bypassing the local-labeled-deliverable handoff",
+      "enforced_by": "anthology-entry",
+      "py_symbol": "bypass_scan"
+    },
+    {
+      "code": "AF-AW-HASH-PIN",
+      "stage": "entry",
+      "level": "enforcement",
+      "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)",
+      "enforced_by": "anthology-entry",
+      "py_symbol": "version_hash_pin"
+    }
   ]
 }
