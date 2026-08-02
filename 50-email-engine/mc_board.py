@@ -423,7 +423,7 @@ def card_open(
         return None
     cfg = board_config(env)
     if cfg is None:
-        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled (no-op); run continues.")
+        _log("board disabled — set COMMAND_CENTER_URL (or MISSION_CONTROL_URL) to enable; run continues.")
         _write_board_ingest_receipt(
             evidence_root, mc_url_set=False, ok=False, task_id=None,
             department_slug=department, source=source or "productized-skill",
