@@ -260,15 +260,17 @@ version_hash_pin() {
     fi
     echo "  enforcement hash (sha256 of orchestrator+provers+common): $computed"
     local pin="$SELF_DIR/ENGINE-PIN.sha256"
-    if [ -f "$pin" ]; then
-        local expected; expected="$(tr -d ' \t\n' < "$pin")"
-        if [ -n "$expected" ] && [ "$expected" != "$computed" ]; then
-            echo "  PIN MISMATCH: expected $expected" >&2; return 7
-        fi
-        echo "  OK: enforcement hash matches the pinned head"
-    else
-        echo "  (no ENGINE-PIN.sha256; hash recorded, not enforced)"
+    if [ ! -f "$pin" ]; then
+        echo "  ENGINE-PIN.sha256 MISSING — the enforcement-set pin is not shipped" >&2; return 7
     fi
+    local expected; expected="$(tr -d ' \t\n' < "$pin")"
+    if [ -z "$expected" ]; then
+        echo "  ENGINE-PIN.sha256 is EMPTY — pin must carry the expected hash" >&2; return 7
+    fi
+    if [ "$expected" != "$computed" ]; then
+        echo "  PIN MISMATCH: expected $expected, computed $computed" >&2; return 7
+    fi
+    echo "  OK: enforcement hash matches the pinned head"
     return 0
 }
 version_hash_pin; VHP_RC=$?
