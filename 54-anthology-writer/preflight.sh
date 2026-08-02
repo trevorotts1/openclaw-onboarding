@@ -70,13 +70,34 @@ fi
 
 [ -f "$TEMPLATE" ] || { echo "FATAL: template not found: $TEMPLATE" >&2; exit 3; }
 
-TEMPLATE="$TEMPLATE" OUT_DIR="$OUT_DIR" python3 - <<'PY'
+IS_TTY=false; [ -t 0 ] && IS_TTY=true
+IS_TTY="$IS_TTY" TEMPLATE="$TEMPLATE" OUT_DIR="$OUT_DIR" python3 - <<'PY'
 import json, os, re, sys
+
+def prompt_tiers(tiers):
+    """Interactive guided config: ask the user for provider + model per tier."""
+    print("\n  === Interactive Model-Map Configuration ===", file=sys.stderr)
+    print("  For each tier, enter the provider ID and model ID for your box.", file=sys.stderr)
+    print("  Press Enter to accept the default shown in [brackets].", file=sys.stderr)
+    print("  No provider/model may start with 'claude-', 'anthropic/', or 'us.anthropic.'.", file=sys.stderr)
+    result = {}
+    for name, t in sorted(tiers.items()):
+        print("\n  --- Tier: %s (%s) ---" % (name, t.get("role", "")), file=sys.stderr)
+        def_provider = os.environ.get("AW_PROVIDER_" + name, "")
+        def_model    = os.environ.get("AW_MODEL_" + name, "")
+        provider = input("  Provider for %s: " % name).strip()
+        if not provider:
+            provider = def_provider
+        model = input("  Model for %s: " % name).strip()
+        if not model:
+            model = def_model
+        result[name] = {"role": t.get("role", ""), "provider": provider or "",
+                        "model": model or "", "maxTokens": t.get("maxTokens")}
+    return result
+
 tmpl = json.load(open(os.environ["TEMPLATE"]))
-# fail-closed: the shipped template must never carry an Anthropic id
 banned = re.compile(r"claude-|anthropic/|us\.anthropic\.")
 blob = json.dumps(tmpl)
-# the banned_model_id_prefixes LIST is documentation, not a resolved id; strip it
 tiers = tmpl.get("tiers", {})
 for name, t in tiers.items():
     for k in ("provider", "model"):
@@ -84,21 +105,35 @@ for name, t in tiers.items():
         if banned.search(v):
             print("AF-AW-ANTHROPIC: template tier %s.%s carries a banned id %r" % (name, k, v), file=sys.stderr)
             sys.exit(2)
+
+is_tty = os.environ.get("IS_TTY", "false") == "true"
+
+if is_tty:
+    # Interactive mode: prompt per tier so the resolved map is ready-to-run.
+    resolved_tiers = prompt_tiers(tiers)
+    note_text = "Resolved interactively — provider/model values entered by operator. NEVER Anthropic, NEVER operator keys."
+else:
+    # Non-interactive: emit placeholders requiring manual resolution.
+    resolved_tiers = {name: {"role": t.get("role", ""),
+                              "provider": t.get("provider", "<CLIENT_PROVIDER_ID>"),
+                              "model": t.get("model", "<CLIENT_MODEL>"),
+                              "maxTokens": t.get("maxTokens")} for name, t in tiers.items()}
+    note_text = "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER Anthropic, NEVER operator keys."
+
 resolved = {
     "skill": "anthology-writer",
     "resolved_per_box": True,
-    "note": "Scaffold — fleet installer fills provider/model from the CLIENT's own config. NEVER Anthropic, NEVER operator keys.",
-    "tiers": {name: {"role": t.get("role", ""),
-                     "provider": t.get("provider", "<CLIENT_PROVIDER_ID>"),
-                     "model": t.get("model", "<CLIENT_MODEL>"),
-                     "maxTokens": t.get("maxTokens")} for name, t in tiers.items()},
+    "note": note_text,
+    "tiers": resolved_tiers,
     "no_formatter_tier": True,
 }
 out = os.path.join(os.environ["OUT_DIR"], "model-map.json")
 json.dump(resolved, open(out, "w"), indent=2)
 print("  resolved model-map.json ->", out)
-for name in tiers:
-    print("   tier %-13s -> client's own NON-Anthropic model (resolved per box)" % name)
+for name in resolved_tiers:
+    prov = resolved_tiers[name].get("provider", "<PLACEHOLDER>")
+    mod  = resolved_tiers[name].get("model", "<PLACEHOLDER>")
+    print("   tier %-13s provider=%s model=%s" % (name, prov, mod))
 PY
 rc=$?
 [ "$rc" -eq 0 ] && echo "preflight: PASS (no Anthropic id; client tiers scaffolded)"
