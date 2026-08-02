@@ -165,6 +165,25 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.54]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 1 (FIX-01..FIX-10)
+
+Ten reviewed warfixes for `54-anthology-writer` landed on main via the merge
+train (one at a time, each truth-gated to its reviewed headCommit and passed
+through the skill's full `verify.sh` self-verification gate):
+
+- **FIX-01** — ENGINE-PIN.sha256 re-pinned (9cc672e884da…); GATE 3 fails closed on missing pin.
+- **FIX-02** — LLM authoring dispatch documented (INSTRUCTIONS.md step 3).
+- **FIX-03** — preflight vs Gate 1B happy-path dead-end documented.
+- **FIX-04** — seeded-defect E2E false-PASS oracle in verify.sh.
+- **FIX-05** — orphan assets wired (`assets/print-style.css` + retired formatters).
+- **FIX-06** — `mc_board.py` restored byte-identical to canonical `50-email-engine`.
+- **FIX-07** — partial `--upto` run advances card to `review`; pin → 451d6644db70.
+- **FIX-08** — CC Blocked-gate 400 fields (`blocked_reason`/`blocked_on_human`/`ask`); propagated to canonical `50-email-engine` copy.
+- **FIX-09** — subprocess execution timeout; pin → 4b3944e1.
+- **FIX-10** — SKILL.md frontmatter strict-parseable + verify_yaml_frontmatter.sh.
+
+Skill 54 version bumped 1.4.2 → 1.4.3.
+
 ## [v21.4.53]  -  2026-08-01  -  fix: Agnes text/reasoning model updated to Agnes 2.5 Flash (skills 63/64 + install model pin)
 
 The fleet's registered Agnes TEXT/reasoning model moved from `agnes/agnes-2.0-flash`

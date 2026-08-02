@@ -1,5 +1,26 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.3 — 2026-08-02 — Warfix batch 1: FIX-01..FIX-10
+
+### Fixed (batch 1 — FIX-01 through FIX-10)
+- **FIX-01** — ENGINE-PIN.sha256 re-pinned to the 9-file enforcement-set hash
+  (9cc672e884da…); GATE 3 fails CLOSED on a missing/empty pin.
+- **FIX-02** — LLM authoring dispatch documented (INSTRUCTIONS.md step 3).
+- **FIX-03** — preflight vs Gate 1B happy-path dead-end documented.
+- **FIX-04** — seeded-defect E2E false-PASS oracle added to verify.sh.
+- **FIX-05** — orphan assets wired: `assets/print-style.css` + retired HTML
+  formatters documented.
+- **FIX-06** — `mc_board.py` restored byte-identical to canonical
+  `50-email-engine`; byte-identity check added to verify.sh (section 12).
+- **FIX-07** — partial `--upto` run advances card to `review`, never parks at
+  `in_progress`; ENGINE-PIN re-pinned to 451d6644db70 (run_anthology.py changed).
+- **FIX-08** — CC Blocked-gate 400: blocked PATCH now carries
+  `blocked_reason`/`blocked_on_human`/`ask`; fix + 2 contract tests propagated
+  to canonical `50-email-engine/mc_board.py` to preserve byte-identity.
+- **FIX-09** — subprocess execution chain gains timeout; ENGINE-PIN re-pinned to
+  4b3944e1 (run_anthology.py changed).
+- **FIX-10** — SKILL.md frontmatter strict-parseable + verify_yaml_frontmatter.sh.
+
 ## 1.4.2 — 2026-08-01 — FIX-01: ENGINE-PIN.sha256 stale/missing; GATE 3 hardens on missing pin
 
 ### Fixed
