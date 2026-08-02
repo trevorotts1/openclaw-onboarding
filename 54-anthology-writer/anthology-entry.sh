@@ -49,7 +49,7 @@ usage() {
 $PROG — the ONE sanctioned command to run the Anthology Writer.
 
 USAGE:
-  bash $PROG --run-dir DIR [--plan] [--upto PHASE]
+  bash $PROG --run-dir DIR [--plan] [--upto PHASE] [--status] [--resume] [--json]
 
 REQUIRED:
   --run-dir DIR   the anthology run directory (contains working/)
@@ -57,6 +57,11 @@ REQUIRED:
 OPTIONS:
   --plan          print the canonical phase plan and exit (gates still run)
   --upto PHASE    run through this phase only (P0-INTAKE..P7-DELIVER)
+  --status        read process_manifest.json, print phase/progress/failed/certificate
+                  presence and exit 0 WITHOUT tripping any gates (read-only)
+  --resume        skip phases marked "passed" in process_manifest.json; resume at
+                  the failed_phase or the first unpassed phase
+  --json          machine-parseable output (applies to --status or --plan)
   -h | --help     this help
 
 There is NO other sanctioned way to run the engine. A hand-rolled external
@@ -66,12 +71,15 @@ EOF
     exit 2
 }
 
-RUN_DIR="" PLAN=0 UPTO=""
+RUN_DIR="" PLAN=0 UPTO="" STATUS=0 RESUME=0 JSON=0
 while [ $# -gt 0 ]; do
     case "$1" in
         --run-dir) RUN_DIR="${2:-}"; shift 2 ;;
         --plan)    PLAN=1; shift ;;
         --upto)    UPTO="${2:-}"; shift 2 ;;
+        --status)  STATUS=1; shift ;;
+        --resume)  RESUME=1; shift ;;
+        --json)    JSON=1; shift ;;
         -h|--help) usage ;;
         *) die "unknown argument: $1 (run with --help)" ;;
     esac
@@ -113,6 +121,16 @@ if [ -n "${RUN_DIR:-}" ]; then
 fi
 
 PROC_MANIFEST="${RUN_DIR:-}/working/checkpoints/process_manifest.json"
+
+# --status: read-only surface — skip ALL gates, print status, exit.
+if [ "$STATUS" -eq 1 ]; then
+    [ -n "$RUN_DIR" ] || die "--status requires --run-dir DIR"
+    [ -d "$RUN_DIR" ] || die "--run-dir not found: $RUN_DIR"
+    json_flag=""
+    [ "$JSON" -eq 1 ] && json_flag="--json"
+    exec python3 "$RUNNER" --run-dir "$RUN_DIR" --status $json_flag
+    exit 0
+fi
 
 owner_skip_approved() {
     local gate="$1"
@@ -355,6 +373,8 @@ export OC_ANTHOLOGY_ENTRY_NONCE
 
 cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
 [ -n "$UPTO" ] && cmd+=(--upto "$UPTO")
+[ "$RESUME" -eq 1 ] && cmd+=(--resume)
+[ "$JSON" -eq 1 ] && cmd+=(--json)
 note "run: ${cmd[*]}"
 "${cmd[@]}"
 _rc=$?
