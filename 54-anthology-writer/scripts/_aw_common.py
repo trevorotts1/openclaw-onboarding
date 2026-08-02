@@ -196,8 +196,17 @@ def story_phrases(intake: dict) -> list:
 # object that is recorded, approved, reasoned, and provably TIED to the locked
 # brief. An override applied without that log is a silent floor-swap and fails
 # CLOSED (AF-AW-OVERRIDE-UNLOGGED). Mirrors the Skill-57 override shape.
-def _slugify(text: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", str(text).strip().lower()).strip("-")
+def _slugify(data) -> str:
+    """Slugify a str or an intake dict. Accepts both types and returns a clean
+    lowercased dash-separated slug. A dict is treated as an intake record:
+    the slug is built from anthology_title + first_name + last_name."""
+    if isinstance(data, dict):
+        base = "%s %s %s" % (data.get("anthology_title", "anthology"),
+                             data.get("first_name", ""), data.get("last_name", ""))
+    else:
+        base = str(data or "anthology")
+    slug = re.sub(r"[^a-z0-9]+", "-", base.strip().lower()).strip("-")
+    return slug or "anthology"
 
 
 def brief_identity(brief) -> set:
@@ -257,6 +266,27 @@ def resolve_band_override(override, brief, keys):
             "(source=%r, approved_by=%r)" % (override.get("source"), override.get("approved_by")),
             applied)
 
+
+# ---- intake loading ----------------------------------------------------------
+def load_intake(run_dir: Path) -> dict:
+    """Load intake.json from a run dir's working/ subdirectory. Returns an empty
+    dict on any failure — callers handle the missing case downstream."""
+    ipath = run_dir / "working" / "intake.json"
+    if not ipath.is_file():
+        return {}
+    try:
+        return json.loads(ipath.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+# ---- bypass-scan regex patterns (shared constant list) ------------------------
+# Patterns used across provers to scan for unresolved placeholders, credential-
+# shaped keys, and other bypass indicators. Centralized here so every prover
+# wires the same patterns without copying them inline.
+_BYPASS_PATTERNS: list = [
+    (re.compile(r"\{\{[^}]+\}\}|\[\[[^\]]+\]\]|<[A-Z][A-Z0-9_]{2,}>"), "unresolved placeholders"),
+]
 
 # ---- result plumbing --------------------------------------------------------
 class Result:
