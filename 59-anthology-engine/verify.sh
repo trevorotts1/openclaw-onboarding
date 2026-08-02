@@ -165,6 +165,41 @@ for rel in owned:
     if banned.search(txt):
         fails.append("Anthropic-family id shape found in owned file: %s" % rel)
 
+# --- script-inventory-equals-shipped-set (bidirectional) ---
+# Every shipped scripts/* file MUST appear in ENGINE-MANIFEST.script_inventory
+# (with a matching basename); every script_inventory row whose 'script' field
+# names a scripts/* .py file MUST be present on disk. The check strips parenthetical
+# notes (e.g. "(ten runners)") before resolving names against os.listdir.
+scripts_dir = p("scripts")
+shipped_scripts = set()
+if os.path.isdir(scripts_dir):
+    for fn in os.listdir(scripts_dir):
+        if os.path.isfile(os.path.join(scripts_dir, fn)):
+            shipped_scripts.add(fn)
+
+inventory_script_names = set()
+if isinstance(man.get("script_inventory"), list):
+    for row in man["script_inventory"]:
+        raw = (row.get("script") or "")
+        raw = re.sub(r'\s*\([^)]+\)', '', raw)
+        for part in re.split(r', | / |/', raw):
+            part = part.strip()
+            if part:
+                inventory_script_names.add(part)
+
+# Only cross-check names that resolve to scripts/ basenames
+shipped_missing_from_inventory = shipped_scripts - inventory_script_names
+inventory_missing_from_disk = {n for n in inventory_script_names
+                               if n not in shipped_scripts and n.endswith('.py')}
+
+if shipped_missing_from_inventory:
+    for fn in sorted(shipped_missing_from_inventory):
+        fails.append("script shipped but NOT in ENGINE-MANIFEST script_inventory: scripts/%s" % fn)
+
+if inventory_missing_from_disk:
+    for fn in sorted(inventory_missing_from_disk):
+        fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
+
 if fails:
     print("verify: DRIFT (%d issue(s))" % len(fails))
     for m in fails: print("  - " + m)
