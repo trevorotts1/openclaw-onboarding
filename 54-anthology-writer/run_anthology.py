@@ -29,6 +29,7 @@ EXIT CODES:
 from __future__ import annotations
 
 import argparse
+import datetime
 import json
 import os
 import subprocess
@@ -406,26 +407,143 @@ def plan(manifest) -> int:
     return EXIT_PASS
 
 
-def run(manifest, run_dir: Path, upto) -> int:
+def _load_proc_manifest(run_dir: Path):
+    """Read the existing process_manifest.json; return {} if absent/broken."""
+    pm = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    if not pm.is_file():
+        return {}
+    try:
+        return json.loads(pm.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def do_status(run_dir: Path, json_fmt: bool = False) -> int:
+    """Print a human/machine status summary and exit 0 without tripping any gates."""
+    pm = _load_proc_manifest(run_dir)
+    phases = pm.get("phases", [])
+    failed = pm.get("failed_phase", None)
+    cert_present = (run_dir / "delivery" / "PROCESS-CERTIFICATE.json").is_file()
+
+    if json_fmt:
+        out = {
+            "skill": pm.get("skill", "anthology-writer"),
+            "run_dir": pm.get("run_dir", _portable_run_dir(run_dir)),
+            "failed_phase": failed,
+            "certificate_present": cert_present,
+            "phases": phases,
+        }
+        print(json.dumps(out, indent=2))
+        return EXIT_PASS
+
+    print("== Anthology Writer — status for %s ==" % (pm.get("run_dir", _portable_run_dir(run_dir))))
+    total = len(phases)
+    passed = sum(1 for p in phases if p.get("passed"))
+    print("  Progress: %d/%d phases passed" % (passed, total))
+    for p in phases:
+        pid = p.get("id", "?")
+        ok = "PASS" if p.get("passed") else "FAIL"
+        started = p.get("started_at", "")
+        completed = p.get("completed_at", "")
+        extra = ""
+        if started or completed:
+            parts = []
+            if started: parts.append("started %s" % started)
+            if completed: parts.append("completed %s" % completed)
+            extra = "  (%s)" % ", ".join(parts)
+        print("    %s  %s%s" % (ok, pid, extra))
+    if failed:
+        print("  FAILED at phase: %s" % failed)
+    else:
+        print("  No failed phase recorded.")
+    if cert_present:
+        print("  PROCESS-CERTIFICATE present (delivery/dir).")
+    else:
+        print("  No certificate present.")
+    return EXIT_PASS
+
+
+def _resume_skip_through(proc: dict) -> str | None:
+    """Return the first phase id to resume at. If a failed_phase is recorded,
+    resume there; otherwise resume at the first unpassed phase. Return None
+    when every recorded phase passed."""
+    failed = proc.get("failed_phase")
+    phases = proc.get("phases", [])
+    if failed:
+        return failed
+    for p in phases:
+        if not p.get("passed"):
+            return p.get("id")
+    return None  # all passed
+
+
+def run(manifest, run_dir: Path, upto, resume: bool = False) -> int:
     stop_at = upto or "P7-DELIVER"
     if stop_at not in PHASE_ORDER:
         print("FATAL: --upto %s is not a known phase" % stop_at, file=sys.stderr)
         return EXIT_USAGE
 
+    if resume:
+        prev = _load_proc_manifest(run_dir)
+        resume_phase = _resume_skip_through(prev)
+        if resume_phase is None:
+            print("== --resume: all recorded phases have passed; nothing to resume.")
+            return EXIT_PASS
+        print("== --resume: starting from %s (previously-passed phases will be skipped)" % resume_phase)
+    else:
+        prev = {}
+        resume_phase = None
+
     proc = {"skill": "anthology-writer", "run_dir": _portable_run_dir(run_dir), "phases": []}
+    # Carry forward previously-passed phases so the certificate sees the full chain.
+    if resume:
+        for prev_ph in prev.get("phases", []):
+            proc["phases"].append(dict(prev_ph))
+
     for pid in PHASE_ORDER:
+        if resume_phase is not None and PHASE_ORDER.index(pid) < PHASE_ORDER.index(resume_phase):
+            # Already passed — skip.
+            print("=== PHASE %s — (--resume: skipped, already passed) ===" % pid)
+            continue
+
         ph = _phase(manifest, pid)
         if not ph:
             print("FATAL: phase %s missing from manifest" % pid, file=sys.stderr)
             return EXIT_USAGE
         pre = ph.get("preflight") or {}
         print("=== PHASE %s — %s ===" % (pid, ph.get("name", "")))
+
+        t_started = datetime.datetime.now(datetime.timezone.utc).isoformat()
         phase_ok = True
+        if pid != resume_phase and resume and any(
+            p.get("id") == pid and p.get("passed") for p in prev.get("phases", [])
+        ):
+            # Already passed, but we are past the resume marker — re-use old entry.
+            print("   (--resume: already passed, skipped)")
+
         if pre.get("required"):
             ok, msg = _run_checker(pre["checker"], run_dir)
             print("   [%s] %s: %s" % ("OK" if ok else "FAIL", pre.get("checker"), msg))
             phase_ok = ok
-        proc["phases"].append({"id": pid, "passed": phase_ok})
+
+        # Update or append the phase entry.
+        existing_idx = None
+        for i, eph in enumerate(proc["phases"]):
+            if eph.get("id") == pid:
+                existing_idx = i
+                break
+        t_completed = datetime.datetime.now(datetime.timezone.utc).isoformat()
+        if existing_idx is not None:
+            proc["phases"][existing_idx] = {
+                "id": pid, "passed": phase_ok,
+                "started_at": t_started, "completed_at": t_completed,
+            }
+        else:
+            proc["phases"].append({
+                "id": pid, "passed": phase_ok,
+                "started_at": t_started, "completed_at": t_completed,
+            })
+
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
             _LAST_BLOCK.clear()
@@ -449,8 +567,17 @@ def run(manifest, run_dir: Path, upto) -> int:
     return EXIT_PASS
 
 
-def _write_proc(run_dir: Path, proc: dict, failed):
+def _write_proc(run_dir: Path, proc: dict, failed, started_arg=None,
+                completed_arg=None, phase_id=None):
     proc["failed_phase"] = failed
+    if phase_id:
+        for ph in proc.get("phases", []):
+            if ph.get("id") == phase_id:
+                if started_arg is not None:
+                    ph["started_at"] = started_arg
+                if completed_arg is not None:
+                    ph["completed_at"] = completed_arg
+                break
     out = run_dir / "working" / "checkpoints" / "process_manifest.json"
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -980,16 +1107,42 @@ def main(argv=None):
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run built-in gate self-tests (P7 delivery + unmapped-checker) and exit")
+    ap.add_argument("--status", action="store_true",
+                    help="print the run status from process_manifest.json and exit 0 (no gates tripped)")
+    ap.add_argument("--json", dest="json_fmt", action="store_true",
+                    help="machine-parseable output for --status or --plan")
+    ap.add_argument("--resume", action="store_true",
+                    help="resume from the last failed/unpassed phase recorded in process_manifest.json")
     args = ap.parse_args(argv)
 
     if args.self_test:
         return self_test()
 
+    # --plan with --json: machine-parseable phase plan.
+    if args.plan and args.json_fmt:
+        manifest = _load_manifest()
+        phases_out = []
+        for pid in PHASE_ORDER:
+            ph = _phase(manifest, pid)
+            if not ph:
+                continue
+            phases_out.append({
+                "id": pid,
+                "name": ph.get("name", ""),
+                "produces": ph.get("produces_artifact", "-"),
+                "gate": (ph.get("preflight") or {}).get("checker", "-"),
+                "gate_codes": ph.get("gate_codes", []),
+            })
+        print(json.dumps({"skill": "anthology-writer", "phases": phases_out}, indent=2))
+        return EXIT_PASS
+
     manifest = _load_manifest()
     if args.plan:
         return plan(manifest)
+
+    # Resolve run_dir.
     if not args.run_dir and not args.participant_key:
-        ap.error("--run-dir or --participant-key is required (or use --plan)")
+        ap.error("--run-dir or --participant-key is required (or use --plan/--status/--self-test)")
     if args.participant_key:
         # U059: resolve the gate-artifact directory through the SAME shared resolver
         # the Skill 59 stage dispatchers use, so this orchestrator checks exactly the
@@ -1004,13 +1157,16 @@ def main(argv=None):
     if not run_dir.is_dir():
         print("FATAL: --run-dir not found: %s" % run_dir, file=sys.stderr)
         return EXIT_USAGE
+    # --status: read-only surface; no gates, no nonce check.
+    if args.status:
+        return do_status(run_dir, json_fmt=args.json_fmt)
     if not _nonce_ok(run_dir):
         print("FATAL: front-door nonce missing/mismatch. Run THROUGH anthology-entry.sh "
               "(the ONE sanctioned entry); do not call this orchestrator directly.",
               file=sys.stderr)
         return EXIT_NONCE
     _mc_task = _mc_board_begin(run_dir)
-    rc = run(manifest, run_dir, args.upto)
+    rc = run(manifest, run_dir, args.upto, resume=args.resume)
     if rc == EXIT_PASS and not args.upto:
         _mc_board_done(run_dir, _mc_task)
     elif rc != EXIT_PASS:
