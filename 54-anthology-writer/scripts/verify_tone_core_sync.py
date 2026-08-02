@@ -44,6 +44,14 @@ def main() -> int:
         print(f"AF-AW-TONE-DRIFT: {len(drift)} tone-core drift(s) — skill baked copy != canonical shared core.")
         for d in drift:
             print(f"  DRIFT {d}")
+        # Recovery guidance
+        skill_dir = str(Path(__file__).resolve().parent.parent)
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        try:
+            import _aw_common as c
+            c.print_af_guidance("AF-AW-TONE-CORE-SYNC", skill_dir=skill_dir)
+        except Exception:
+            pass
         return 2
     print(f"PASS: all {len(TONE_STAGES)} tone stages in lockstep with shared-utils/tone-writing-core.")
     return 0

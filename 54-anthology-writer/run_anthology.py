@@ -89,6 +89,41 @@ def _phase(manifest, pid):
     return None
 
 
+def _af_codes_in_msg(msg: str) -> list:
+    """Extract known AF-AW-* codes referenced in a gate message string."""
+    import re
+    # Pull all AF-AW-* codes from the module-level imported _aw_common
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        import _aw_common as _c
+        known = set(_c.AF_CODE_GUIDANCE.keys()) if hasattr(_c, "AF_CODE_GUIDANCE") else set()
+    except Exception:
+        known = set()
+    if not known:
+        # Fallback: all AF-AW- patterns found in the message
+        return sorted(set(re.findall(r"AF-AW-[A-Z0-9-]+", msg)))
+    return sorted({code for code in known if code in msg})
+
+
+def _print_gate_guidance(msg: str, run_dir: str):
+    """Print recovery guidance for every AF code referenced in a gate-fail message."""
+    import re
+    codes = _af_codes_in_msg(msg)
+    if not codes:
+        return
+    sys.path.insert(0, str(SCRIPTS))
+    try:
+        import _aw_common as _c
+        for code in codes:
+            _c.print_af_guidance(code, file=sys.stderr, run_dir=run_dir,
+                                skill_dir=str(_SKILL_DIR))
+    except Exception:
+        # Recovery guidance is a view, never a gate
+        for code in codes:
+            print("    AF code %s -- see the prover output above for details." % code,
+                  file=sys.stderr)
+
+
 def _nonce_ok(run_dir: Path) -> bool:
     want = os.environ.get("OC_ANTHOLOGY_ENTRY_NONCE", "")
     nf = run_dir / "working" / "checkpoints" / ".anthology-entry-nonce"
@@ -432,6 +467,8 @@ def run(manifest, run_dir: Path, upto) -> int:
             _LAST_BLOCK.update({"phase_id": pid, "note": msg})
             print("BLOCKED at %s (fail-closed). No phase skips; fix and re-run." % pid,
                   file=sys.stderr)
+            # Print recovery guidance for every AF code referenced in the gate message
+            _print_gate_guidance(msg, str(run_dir))
             return EXIT_GATE
         if pid == stop_at:
             break

@@ -77,7 +77,8 @@ def evaluate(prompts_dir: Path, manifest_path: Path) -> c.Result:
 
 
 def prove(prompts_dir, manifest_path, as_json=False) -> int:
-    return evaluate(Path(prompts_dir), Path(manifest_path)).emit(as_json)
+    skill_dir = str(Path(prompts_dir).resolve().parent.parent) if prompts_dir else None
+    return evaluate(Path(prompts_dir), Path(manifest_path)).emit(as_json, skill_dir=skill_dir)
 
 
 def self_test() -> int:

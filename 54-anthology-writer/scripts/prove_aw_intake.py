@@ -55,7 +55,8 @@ def evaluate(intake: dict) -> c.Result:
 
 
 def prove(path, as_json=False) -> int:
-    return evaluate(c.read_json(path)).emit(as_json)
+    run_dir = str(Path(path).resolve().parent.parent) if path else None
+    return evaluate(c.read_json(path)).emit(as_json, run_dir=run_dir)
 
 
 def self_test() -> int:

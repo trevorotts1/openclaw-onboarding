@@ -80,7 +80,18 @@ def evaluate(text: str, override: dict = None, brief: dict = None) -> c.Result:
 def prove(path, override_path=None, brief_path=None, as_json=False) -> int:
     override = c.read_json(override_path) if override_path else None
     brief = c.read_json(brief_path) if brief_path else None
-    return evaluate(c.read_text(path), override=override, brief=brief).emit(as_json)
+    text = c.read_text(path)
+    words = c.word_count(text)
+    floor = c.TONE_WORD_FLOOR
+    if override:
+        status, _reason, applied = c.resolve_band_override(override, brief, ("tone_word_floor",))
+        if status == "applied":
+            floor = applied.get("tone_word_floor", floor)
+    measured = str(words) + " stripped words"
+    required = ">=%d stripped words" % floor
+    run_dir = str(Path(path).resolve().parent.parent) if path else None
+    return evaluate(text, override=override, brief=brief).emit(as_json,
+            run_dir=run_dir, measured=measured, required=required)
 
 
 def self_test() -> int:
