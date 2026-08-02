@@ -638,8 +638,13 @@ def run_self_test() -> int:  # noqa: C901 - a linear battery reads clearest inli
     record("alert carries stable content-strike key",
            bool(alert_calls) and alert_calls[0]["dedupe_key"]
            == "content-strike:%s:chapter" % key)
+    record("alert message names the failing checks",
+           bool(alert_calls) and "check5 em-dash" in alert_calls[0]["message"]
+           and "dim4 opening<8" in alert_calls[0]["message"])
     record("alert message carries the best-draft REFERENCE, not the body",
            bool(alert_calls) and "art_bestdraft_ref_0001" in alert_calls[0]["message"])
+
+
     record("alert never claims relaxed standards",
            bool(alert_calls) and "NOT relaxed" in alert_calls[0]["message"])
 
