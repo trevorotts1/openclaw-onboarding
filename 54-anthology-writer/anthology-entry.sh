@@ -305,7 +305,7 @@ version_hash_pin; VHP_RC=$?
 # ===========================================================================
 if [ "$PLAN" -eq 1 ]; then
     note "PLAN — printing the canonical phase plan (gates ran)"
-    exec python3 "$RUNNER" --plan
+    exec python3 "$RUNNER" --plan $json_flag
 fi
 
 note "ALL GATES PASSED — dispatching run_anthology.py"
