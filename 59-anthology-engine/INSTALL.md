@@ -141,7 +141,55 @@ bash 59-anthology-engine/install.sh
 
 ---
 
-## 8. Key files
+## 8. Airtable authoritative ledger (ANTHOLOGY_STATE_BASE_ID)
+
+The Anthology Engine writes its durable state to an **Airtable base** (the
+AUTHORITATIVE ledger -- SPEC Section 7.2 / 7.4) with a local SQLite mirror for
+fast read paths and crash recovery. The Airtable base is ONE per deployment,
+provisioned by the operator.
+
+### Credential
+
+| Label | What it is |
+|-------|------------|
+| `ANTHOLOGY_STATE_BASE_ID` | The Airtable base ID (e.g. `appXXXXXXXXXXXXXX`) |
+
+### Airtable API key resolution (alias chain, live-process-first)
+
+The Airtable personal access token or API key that authenticates to the base is
+resolved from the first present, non-empty value among these labels, in order:
+
+1. `ANTHOLOGY_STATE_AIRTABLE_KEY` -- dedicated per-engine label (preferred)
+2. `AIRTABLE_API_KEY` -- conventional key
+3. `AIRTABLE_TOKEN` -- token-style key
+4. `AIRTABLE_PAT` -- personal access token
+
+The values are resolved by `_env_first()` in `scripts/anthology_state.py` and
+are **never printed** (reported SET / NOT SET only).
+
+### Mirror-only fallback
+
+When `ANTHOLOGY_STATE_BASE_ID` is NOT set (or no Airtable credential resolves
+from the alias chain), the ledger runs in **mirror-only** mode: all writes
+commit to the local SQLite mirror, no base operations are attempted, and the
+engine exits 0 with an operator note. This is the default for an
+un-provisioned box or a unit test.
+
+An operator who never provisions the Airtable base will see the engine run
+successfully but all state will be local-only (no multi-box reconciliation,
+no base-wins conflict resolution).
+
+### Recommended per-client env store
+
+```
+# In the client's env store (e.g. ~/.openclaw/secrets/.env):
+ANTHOLOGY_STATE_BASE_ID=appXXXXXXXXXXXXXX
+ANTHOLOGY_STATE_AIRTABLE_KEY=pat...    # or one of the aliases above
+```
+
+---
+
+## 9. Key files
 
 | File | Role |
 |------|------|
