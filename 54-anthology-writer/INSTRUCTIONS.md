@@ -158,6 +158,16 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
 - Every model id must be NON-Anthropic; the run ledger is checked (AF-AW-ANTHROPIC).
 - A hand-rolled external uploader/notifier in the run dir aborts the run
   (AF-AW-ENTRY-BYPASS).
+- **Subprocess timeout (AF-AW-PROVER-TIMEOUT):** every prover call has a 300s
+  ceiling. A hung prover (deadlocked, infinite loop, stalled upstream model call)
+  is killed and the phase fails closed with `AF-AW-PROVER-TIMEOUT`. The stderr
+  message names the hung prover and offers clear diagnostic guidance. There is no
+  auto-retry — the operator must diagnose the hung prover before re-running.
+- **Degraded handling:** if the NON-Anthropic upstream model is unreachable or
+  returns an error, the authoring stage leaves no artifact; the corresponding QC
+  phase sees a missing artifact and fails closed. The orchestrator never falls
+  back to an alternate provider or retries automatically. Every behavior surface
+  is deterministic and observable through the process manifest + run ledger.
 
 ## Verify / CI
 ```
