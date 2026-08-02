@@ -165,6 +165,18 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.57]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 4 (FIX-31, FIX-33, FIX-34) — final batch
+
+The final three reviewed warfixes for `54-anthology-writer` landed on main via
+the merge train, completing all 30 fixes from the warroom pen:
+
+- **FIX-31** — SKILL.md `trigger` key added; orphan doc refs cleaned.
+- **FIX-33** — `sys.path.insert(0)` no longer shadows stdlib modules.
+- **FIX-34** — status vocabulary standardized across surfaces (INFO/WARN/ERR
+  severity on `mc_board._log`); propagated to canonical `50-email-engine` copy.
+
+Skill 54 version bumped 1.4.5 → 1.4.6. ENGINE-PIN re-pinned to 2a5f1e31.
+
 ## [v21.4.56]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 3 (FIX-23..FIX-30)
 
 Eight more reviewed warfixes for `54-anthology-writer` landed on main via the

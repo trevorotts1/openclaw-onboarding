@@ -1,5 +1,15 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.6 — 2026-08-02 — Warfix batch 4: FIX-31, FIX-33, FIX-34
+
+### Fixed (batch 4 — FIX-31, FIX-33, FIX-34)
+- **FIX-31** — SKILL.md `trigger` key added; orphan doc refs cleaned.
+- **FIX-33** — `sys.path.insert(0)` no longer shadows stdlib modules;
+  ENGINE-PIN → 9031d9c9.
+- **FIX-34** — status vocabulary standardized across surfaces (INFO/WARN/ERR
+  severity on `mc_board._log`); propagated to canonical `50-email-engine`
+  mc_board; ENGINE-PIN → 2a5f1e31.
+
 ## 1.4.5 — 2026-08-02 — Warfix batch 3: FIX-23..FIX-30
 
 ### Fixed (batch 3 — FIX-23 through FIX-30)
