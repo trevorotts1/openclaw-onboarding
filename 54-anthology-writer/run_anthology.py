@@ -61,6 +61,18 @@ MANIFEST = _SKILL_DIR / "ANTHOLOGY-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
 PROMPTS = _SKILL_DIR / "assets" / "prompts"
 
+# FIX-19: import _aw_common at module level so a missing module fails EARLY
+# (clear ImportError before any phase runs), never silently returning None.
+# The try/except produces a structured AF-AW-MEASURE-NULL gate failure instead
+# of a raw ModuleNotFoundError traceback (rejected: bare import crashed at
+# import time, making the _write_certificate null guard unreachable).
+sys.path.insert(0, str(SCRIPTS))
+try:
+    import _aw_common  # noqa: E402
+except ImportError:
+    print("AF-AW-MEASURE-NULL: _aw_common not importable", file=sys.stderr)
+    sys.exit(EXIT_GATE)
+
 # U059: the single durable per-participant run directory resolver lives in the
 # sibling engine (59-anthology-engine). Both this orchestrator and every Skill 59
 # stage dispatcher resolve the participant's working directory through the SAME
@@ -554,19 +566,16 @@ def _load_proc(run_dir: Path) -> dict:
 
 
 def _measure(run_dir: Path):
-    """Deterministic measured counts for the certificate (never self-reported)."""
-    sys.path.insert(0, str(SCRIPTS))
-    try:
-        import _aw_common as c  # noqa: E402
-    except Exception:
-        return {"chapter_words": None, "tone_words": None}
+    """Deterministic measured counts for the certificate (never self-reported).
+    _aw_common is imported at module level and fails EARLY if missing, so a
+    missing module never silently returns None into the certificate."""
     out = {"chapter_words": None, "tone_words": None}
     ch = run_dir / "working" / "chapter.md"
     tn = run_dir / "working" / "tone-doc.md"
     if ch.is_file():
-        out["chapter_words"] = c.word_count(ch.read_text(encoding="utf-8"))
+        out["chapter_words"] = _aw_common.word_count(ch.read_text(encoding="utf-8"))
     if tn.is_file():
-        out["tone_words"] = c.word_count(tn.read_text(encoding="utf-8"))
+        out["tone_words"] = _aw_common.word_count(tn.read_text(encoding="utf-8"))
     return out
 
 
@@ -783,13 +792,9 @@ def _load_client_override(run_dir: Path, intake: dict):
         ov = json.loads(ov_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    sys.path.insert(0, str(SCRIPTS))
-    try:
-        import _aw_common as c  # noqa: E402
-    except Exception:
-        return None
+    # FIX-19: _aw_common is imported at module level; no silent None path.
     keys = ("chapter_word_min", "chapter_word_max", "tone_word_floor")
-    status, _reason, applied = c.resolve_band_override(ov, intake, keys)
+    status, _reason, applied = _aw_common.resolve_band_override(ov, intake, keys)
     if status != "applied":
         return None
     return {"source": ov.get("source"), "approved_by": ov.get("approved_by"),
@@ -820,6 +825,14 @@ def _write_certificate(run_dir: Path, proc: dict):
               file=sys.stderr)
         return None
     measured = _measure(run_dir)
+    # FIX-19: validate all measure counts are non-null integers before certifying;
+    # a certificate with null measures violates the deterministic-certificate contract.
+    for key in ("chapter_words", "tone_words"):
+        if not isinstance(measured.get(key), int):
+            print("AF-AW-MEASURE-NULL: measured %s is null/missing — cannot issue a "
+                  "deterministic certificate. The chapter or tone-doc artifact may be "
+                  "missing or _aw_common may not be importable." % key, file=sys.stderr)
+            return None
     client_override = _load_client_override(run_dir, intake)
     contributor = ("%s %s" % (intake.get("first_name", ""), intake.get("last_name", ""))).strip()
     body = {
