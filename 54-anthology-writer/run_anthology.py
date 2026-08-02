@@ -30,10 +30,13 @@ from __future__ import annotations
 
 import argparse
 import datetime
+import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -87,6 +90,10 @@ try:
 except Exception:  # pragma: no cover - resolver must resolve; fail loud at use site
     print("FATAL: cannot import from %s (59-anthology-engine/scripts missing or broken)" % _ANTHOLOGY_ENGINE_SCRIPTS, file=sys.stderr)
     resolve_participant_run_dir = None
+
+# Module-level import of shared provers primitives (FIX-35: hoisted from inline).
+sys.path.insert(0, str(SCRIPTS))
+import _aw_common as _aw  # noqa: E402
 
 PHASE_ORDER = ["P0-INTAKE", "P0A-AVATAR", "P1-FIDELITY", "P2-TONE-AUTHOR", "P3-TONE-QC",
                "P4-TITLE-LOCK", "P5-CHAPTER-AUTHOR", "P6-CHAPTER-QC", "P7-DELIVER"]
@@ -422,7 +429,6 @@ def _blurb_defect(text: str):
     unresolved placeholder, and more than a stub. MASTERDOC sets NO SACRED blurb word
     floor, so the >=20-word bar is only an anti-stub sanity minimum (never a
     floor-swap of a client-exact ask)."""
-    import re
     stripped = (text or "").strip()
     if not stripped:
         return "working/blurb.md is empty (a finished back-cover blurb is required)"
@@ -446,7 +452,6 @@ def _chk_deliver(run_dir: Path):
     deliverable, AF-AW-DELIVER-MISMATCH). The orchestrator is the SOLE writer of the
     bundle. Was an unconditional `return True` before — an evidence-free no-op that
     let P7 pass (and certify) with no deliverable on disk (ported from Skill 55)."""
-    import hashlib
     work = {
         "chapter.md": run_dir / "working" / "chapter.md",
         "tone-doc.md": run_dir / "working" / "tone-doc.md",
@@ -464,13 +469,7 @@ def _chk_deliver(run_dir: Path):
     b_defect = _blurb_defect(work["blurb.md"].read_text(encoding="utf-8"))
     if b_defect:
         return False, "AF-AW-BLURB-MISSING: %s" % b_defect
-    intake = {}
-    ipath = run_dir / "working" / "intake.json"
-    if ipath.is_file():
-        try:
-            intake = json.loads(ipath.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            intake = {}
+    intake = _aw.load_intake(run_dir)
     slug = _slug(intake)
     out_dir = run_dir / "delivery"
     labeled = {
@@ -806,25 +805,20 @@ def _load_proc(run_dir: Path) -> dict:
 
 
 def _measure(run_dir: Path):
-    """Deterministic measured counts for the certificate (never self-reported).
-    _aw_common is imported at module level and fails EARLY if missing, so a
-    missing module never silently returns None into the certificate."""
+    """Deterministic measured counts for the certificate (never self-reported)."""
     out = {"chapter_words": None, "tone_words": None}
     ch = run_dir / "working" / "chapter.md"
     tn = run_dir / "working" / "tone-doc.md"
     if ch.is_file():
-        out["chapter_words"] = _aw_common.word_count(ch.read_text(encoding="utf-8"))
+        out["chapter_words"] = _aw.word_count(ch.read_text(encoding="utf-8"))
     if tn.is_file():
-        out["tone_words"] = _aw_common.word_count(tn.read_text(encoding="utf-8"))
+        out["tone_words"] = _aw.word_count(tn.read_text(encoding="utf-8"))
     return out
 
 
 def _slug(intake: dict) -> str:
-    import re
-    base = "%s %s %s" % (intake.get("anthology_title", "anthology"),
-                         intake.get("first_name", ""), intake.get("last_name", ""))
-    slug = re.sub(r"[^a-z0-9]+", "-", base.strip().lower()).strip("-")
-    return slug or "anthology"
+    """Delegate to the consolidated _aw._slugify (accepts both str and dict)."""
+    return _aw._slugify(intake)
 
 
 # ---------------------------------------------------------------------------
@@ -858,7 +852,6 @@ def _delivery_root(override=None):
 
 
 def _bundle_dir(root: Path, slug: str) -> Path:
-    import datetime
     stamp = datetime.datetime.now().strftime("%m-%d-%Y")
     base = root / ("Anthology-%s-%s" % (slug, stamp))
     # FIX-26: same-day same-participant collision — if the base dir already exists,
@@ -882,14 +875,7 @@ def _assemble_downloads_bundle(run_dir: Path, cert, proc: dict, delivery_root=No
     path + certificate sha. NON-FATAL: the run is already certified and the run-dir
     deliverable already byte-verified; a Downloads copy failure is logged LOUDLY and
     recorded (delivered:false) but never regresses the exit code."""
-    import datetime
-    intake = {}
-    ipath = run_dir / "working" / "intake.json"
-    if ipath.is_file():
-        try:
-            intake = json.loads(ipath.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            intake = {}
+    intake = _aw.load_intake(run_dir)
     slug = _slug(intake)
     src_dir = run_dir / "delivery"
     labeled = {
@@ -950,7 +936,6 @@ def _write_bundle_receipt(run_dir: Path, receipt: dict):
 
 
 def _delivery_note(intake: dict, slug: str, cert, proc: dict, files) -> str:
-    import datetime
     title = intake.get("anthology_title", slug)
     contributor = ("%s %s" % (intake.get("first_name", ""),
                               intake.get("last_name", ""))).strip()
@@ -990,7 +975,6 @@ def _delivery_note(intake: dict, slug: str, cert, proc: dict, files) -> str:
 
 
 def _handoff(run_dir: Path, intake: dict, slug: str, cert, bundle: Path, files) -> dict:
-    import datetime
     measured = _measure(run_dir)
     return {
         "schema": "anthology-writer-handoff-v1",
@@ -1041,7 +1025,7 @@ def _load_client_override(run_dir: Path, intake: dict):
         return None
     # FIX-19: _aw_common is imported at module level; no silent None path.
     keys = ("chapter_word_min", "chapter_word_max", "tone_word_floor")
-    status, _reason, applied = _aw_common.resolve_band_override(ov, intake, keys)
+    status, _reason, applied = _aw.resolve_band_override(ov, intake, keys)
     if status != "applied":
         return None
     return {"source": ov.get("source"), "approved_by": ov.get("approved_by"),
@@ -1055,15 +1039,7 @@ def _write_certificate(run_dir: Path, proc: dict):
     certificate_sha is computed over the ordered phase steps + the contributor
     identity + the MEASURED counts (not the wall clock), so re-running the same
     passing artifacts yields the same sha (idempotent)."""
-    import datetime
-    import hashlib
-    intake = {}
-    ipath = run_dir / "working" / "intake.json"
-    if ipath.is_file():
-        try:
-            intake = json.loads(ipath.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            intake = {}
+    intake = _aw.load_intake(run_dir)
     steps = [{"phase_id": ph["id"], "disposition": "verified", "ok": bool(ph.get("passed"))}
              for ph in proc.get("phases", [])]
     all_pass = all(s["ok"] for s in steps) and len(steps) == len(PHASE_ORDER)
@@ -1194,7 +1170,6 @@ def self_test() -> int:
     fail-closed unmapped-checker actually BITE (both were evidence-free no-ops
     before this fix). VALID fixture assembles + byte-verifies the labeled bundle;
     adversarial fixtures trip their AF codes. No nonce / run needed."""
-    import tempfile
     ok = True
 
     def _ck(label, cond):
