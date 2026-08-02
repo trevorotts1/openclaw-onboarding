@@ -282,6 +282,31 @@ else
     fails=$((fails + 1))
 fi
 
+# 11) version-consistency — ANTHOLOGY-MANIFEST.json skill_version equals
+#     skill-version.txt content equals SKILL.md frontmatter version equals
+#     latest CHANGELOG.md entry (version-of-record SINGLE SOURCE OF TRUTH gate).
+echo "  -- version-consistency check --"
+MANIFEST_VER=$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["skill_version"])' "$SKILL_DIR/ANTHOLOGY-MANIFEST.json" 2>/dev/null)
+TXT_VER=$(tr -d ' \t\n' < "$SKILL_DIR/skill-version.txt" 2>/dev/null)
+SKILLMD_VER=$(head -10 "$SKILL_DIR/SKILL.md" | grep '^version:' | sed 's/version: *//' | tr -d ' \t\n' 2>/dev/null)
+CHANGELOG_VER=$(head -5 "$SKILL_DIR/CHANGELOG.md" | grep -E '^## [0-9]' | head -1 | sed 's/^## *//' | sed 's/ .*//' | tr -d '\n' 2>/dev/null)
+ver_fails=0
+for pair in "ANTHOLOGY-MANIFEST.json:$MANIFEST_VER" "skill-version.txt:$TXT_VER" "SKILL.md:$SKILLMD_VER" "CHANGELOG.md:$CHANGELOG_VER"; do
+    src="${pair%%:*}" val="${pair##*:}"
+    if [ -z "$val" ]; then
+        printf '  [FAIL] version-consistency: could not extract version from %s\n' "$src"
+        ver_fails=$((ver_fails + 1))
+    fi
+done
+if [ "$ver_fails" -gt 0 ]; then
+    fails=$((fails + 1))
+elif [ "$MANIFEST_VER" = "$TXT_VER" ] && [ "$TXT_VER" = "$SKILLMD_VER" ] && [ "$SKILLMD_VER" = "$CHANGELOG_VER" ]; then
+    printf '  [PASS] version-consistency: all four surfaces read %s\n' "$MANIFEST_VER"
+else
+    printf '  [FAIL] version-consistency drift: manifest=%s txv=%s skillmd=%s changelog=%s\n' "$MANIFEST_VER" "$TXT_VER" "$SKILLMD_VER" "$CHANGELOG_VER"
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 54 self-verification checks green."
