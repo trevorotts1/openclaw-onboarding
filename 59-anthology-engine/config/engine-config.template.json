@@ -32,9 +32,8 @@
       "webhook_url_note": "The n8n Anthology Drive Broker webhook, e.g. https://main.blackceoautomations.com/webhook/anthology-drive. Resolved per box from the N8N_DRIVE_WEBHOOK_URL env or this slot; an unresolved slot keeps the box in local-SA mode. NOT a secret.",
       "webhook_token_label": "N8N_DRIVE_WEBHOOK_TOKEN",
       "workflow_asset": "config/n8n/anthology-drive-broker.workflow.json",
-      "implemented_actions": ["create_book_tree"],
-      "pending_broker_actions": ["create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text"],
-      "pending_note": "The per-Doc ops are designed extension points, stubbed not faked. Until they are brokered, a pure client box can mint the per-book tree through the broker but the per-Doc operations still require the operator's OWN box (local SA). See MASTERDOC floor #10."
+      "implemented_actions": ["create_book_tree", "create_participant_tree", "create_doc", "upload_pdf", "share_doc_edit", "pull_doc_text"],
+      "implemented_note": "The full action set (per-book tree + per-participant tree + per-Doc create/share/pull) is implemented and deployed. A pure client box runs the entire S0..S8 Drive path through the broker with no Google key on the box. Verified live: nbLpXv8hdizilHHt is the active 53-node workflow on webhook path anthology-drive at https://main.blackceoautomations.com/webhook/anthology-drive."
     }
   },
   "registry_defaults": {

@@ -7,22 +7,38 @@ broker webhook URL plus a low-privilege shared token. The privileged folder-tree
 creation and share happen inside n8n, so a compromised client box cannot leak Google
 creds because they were never there.
 
-## Import (manual — required)
+## Deployment state (live)
 
-The n8n management API key configured for the MCP could **not** authenticate at build
-time (`AUTHENTICATION_ERROR` on every write), so the workflow was **validated offline**
-but **not** created on the instance. Import it by hand:
+The shipped 53-node asset (`anthology-drive-broker.workflow.json`) is deployed and
+**active** on the n8n instance at `https://main.blackceoautomations.com`. Only one
+workflow on the `anthology-drive` webhook path is active:
+
+| Workflow ID | Name | Active | Nodes | Webhook |
+|---|---|---|---|---|
+| `nbLpXv8hdizilHHt` | Anthology Drive Broker | **active** | 53 | `anthology-drive` |
+| `F2X3SxZVhWRDxHOV` | Anthology Drive Broker (old 20-node) | inactive | 20 | `anthology-drive` |
+| `S8E6c41WfB8fAGiL` | Anthology Drive Broker (GK-02, 52-node) | inactive | 52 | `anthology-drive` |
+
+The GK-02 divergent workflow (`S8E6c41WfB8fAGiL`) was deactivated because it missed the
+Retry-with-Notification node on the producer editor share (the 53-node shipped asset added
+it). The old 20-node broker (`F2X3SxZVhWRDxHOV`) is a pre-tree-building stub, also inactive.
+The shipped 53-node asset is the sole active broker.
+
+## Import / re-import (if re-deploying from the shipped asset)
 
 1. n8n → **Workflows → Import from File** → select
    `59-anthology-engine/config/n8n/anthology-drive-broker.workflow.json`.
 2. The webhook path is `anthology-drive`, so the production URL is
    `https://main.blackceoautomations.com/webhook/anthology-drive` — this is the value a
    client box stores as `N8N_DRIVE_WEBHOOK_URL`.
-3. Leave the workflow **inactive** until steps 4–6 are done; nothing calls it yet.
+3. **Deactivate any other workflow on the `anthology-drive` webhook path FIRST** (a
+   webhook path can only be active on one workflow at a time). Use the n8n API:
+   `POST /api/v1/workflows/<id>/deactivate`.
+4. Leave the imported workflow inactive until steps 5–8 are done.
 
 ## One-time credential + env setup (inside n8n only)
 
-4. **Connect the Google credential (one-time).** Every Google HTTP Request node
+5. **Connect the Google credential (one-time).** Every Google HTTP Request node
    (the `create_book_tree` / `create_participant_tree` list+create+share nodes and the
    per-Doc `CD*` / `UP*` / `SD*` / `PD*` nodes) references a credential of type **Google
    Drive OAuth2 API** named *"BlackCEO Anthology Drive (connect me)"* with a placeholder
@@ -32,12 +48,18 @@ but **not** created on the instance. Import it by hand:
    `files.export` — so **no Documents scope is required**). This is the credential that
    never leaves n8n. Tip: import once, connect the credential on any one node, then use
    n8n's "apply to all nodes of this type" to fan it across the rest.
-5. Set two n8n **environment variables** (Settings → Variables/Env, or the container env):
+6. Set three n8n **environment variables** (Settings → Variables/Env, or the container env):
    - `ANTHOLOGY_DRIVE_BROKER_TOKEN` — the low-privilege shared token. It must equal the
      value a client box holds as `N8N_DRIVE_WEBHOOK_TOKEN`.
    - `ANTHOLOGY_DRIVE_ROOT_FOLDER` — the folder id of Trevor's Anthology root in his Drive
      (the tree `client_key / producer_email / book_title` is created under it).
-6. **Activate** the workflow.
+   - `N8N_BLOCK_ENV_ACCESS_IN_NODE` — **must** be set to `false`. n8n v2 blocks `$env`
+     access inside Code nodes by default; this broker's `Authorize & Dispatch` node reads
+     `$env.ANTHOLOGY_DRIVE_BROKER_TOKEN` and `$env.ANTHOLOGY_DRIVE_ROOT_FOLDER`, so it
+     requires this flag OFF. Without it the workflow activates but 500s on every call.
+7. Set env vars in a single batched call (Recreate-strategy, 1-replica deployment — every
+   pod recreation is an outage; three one-at-a-time calls is three outages).
+8. **Activate** the workflow: `POST /api/v1/workflows/<id>/activate`.
 
 ## Contract
 
