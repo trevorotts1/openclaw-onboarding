@@ -130,6 +130,24 @@ def classify_child_rc(rc):
     return EX_ERR
 
 
+def _collect_failing_checks(tier1_parsed, judge_parsed):
+    """Extract human-readable failing-check labels from the Tier 1 and Tier 2
+    parsed JSON output so the founder strike-out alert can NAME the check that
+    failed (C11 / G28)."""
+    labels = []
+    if isinstance(tier1_parsed, dict):
+        for f in (tier1_parsed.get("failures") or ()):
+            name = (f or {}).get("name", "")
+            if name:
+                labels.append("T1:" + name)
+    if isinstance(judge_parsed, dict):
+        for f in (judge_parsed.get("failures") or ()):
+            name = (f or {}).get("name", "")
+            if name:
+                labels.append("T2:" + name)
+    return labels
+
+
 def plan():
     print("STAGE %s  %s" % (STAGE.upper(), STAGE_NAME))
     print("persona: %s" % PERSONA)
@@ -190,7 +208,7 @@ def _invoke_wiring(key, run_dir=None):
     envelope = Path(rundir) / "envelope.json"
     envelope.write_text(json.dumps({"kind": "chapter", "artifact_path": str(chapter_path)},
                                    ensure_ascii=False), encoding="utf-8")
-    rc, _, tier1_rc = _step(2, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
+    rc, tier1_parsed, tier1_rc = _step(2, rel, [py, str(_resolve(rel)), "--envelope", str(envelope), "--json"])
     tier1_ok = (tier1_rc == 0)
 
     # 4. judge_harness.py -- the Tier 2 ten-dimension rubric on the JUDGE tier
@@ -201,17 +219,26 @@ def _invoke_wiring(key, run_dir=None):
         "kind": "chapter", "deliverable_path": str(chapter_path),
         "participant_key": pkey, "anthology_id": anthology_id,
     }, ensure_ascii=False), encoding="utf-8")
-    rc, _, judge_rc = _step(3, rel, [py, str(_resolve(rel)), "judge",
-                                    "--envelope", str(judge_envelope), "--json"])
+    rc, judge_parsed, judge_rc = _step(3, rel, [py, str(_resolve(rel)), "judge",
+                                               "--envelope", str(judge_envelope), "--json"])
     judge_ok = (judge_rc == 0)
 
     # 5. qc-strike-gate.py -- the internal QC attempts counter (max 3); the
     #    combined Tier 1 + Tier 2 outcome is ONE QC attempt for this deliverable.
+    #    C11 / G28: When Gate B fails, pass --failing-checks (the human-readable
+    #    check names from both prover layers) and --best-draft (a reference to
+    #    the current chapter draft) so the founder strike-out alert names the
+    #    specific failing checks rather than arriving empty.
     rel, _ = WIRING[4]
     qc_pass = tier1_ok and judge_ok
     strike_argv = [py, str(_resolve(rel)), "--json", "qc-attempt",
                   "--participant-key", pkey, "--deliverable", "chapter",
                   "--result", "pass" if qc_pass else "fail"]
+    if not qc_pass:
+        failing_labels = _collect_failing_checks(tier1_parsed, judge_parsed)
+        failing_str = "; ".join(failing_labels) if failing_labels else ""
+        strike_argv += ["--failing-checks", failing_str,
+                        "--best-draft", str(chapter_path)]
     rc, _, strike_rc = _step(4, rel, strike_argv)
     if not qc_pass:
         sys.stderr.write("[stage_%s] chapter did not clear Gate B this attempt "
