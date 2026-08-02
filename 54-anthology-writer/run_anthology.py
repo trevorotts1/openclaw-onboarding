@@ -33,6 +33,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 EXIT_PASS = 0
@@ -168,15 +169,27 @@ def _run_prover(script: str, *args) -> int:
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE
-    timeout = _prover_timeout()
-    try:
-        return subprocess.call([sys.executable, str(p), *args], timeout=timeout)
-    except subprocess.TimeoutExpired:
-        print("%s: prover %s hung after %ds — fail-closed as %s "
-              "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
-              " loops, or hung upstream model calls."
-              % (_AF_TIMEOUT, script, timeout, _AF_TIMEOUT), file=sys.stderr)
-        return EXIT_GATE
+    max_attempts = 3  # initial attempt + up to 2 retries
+    last_rc = 0
+    for attempt in range(max_attempts):
+        try:
+            last_rc = subprocess.call([sys.executable, str(p), *args], timeout=_prover_timeout())
+        except subprocess.TimeoutExpired:
+            print("%s: prover %s hung after %ds — fail-closed as %s "
+                  "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+                  " loops, or hung upstream model calls."
+                  % (_AF_TIMEOUT, script, _prover_timeout(), _AF_TIMEOUT), file=sys.stderr)
+            return EXIT_GATE
+        if last_rc == 0:
+            return last_rc
+        if attempt < max_attempts - 1:
+            delay = 2 ** attempt  # 1s, 2s
+            print("[_run_prover] attempt %d/%d for %s failed (rc=%d), retrying in %ds..."
+                  % (attempt + 1, max_attempts, script, last_rc, delay), file=sys.stderr)
+            time.sleep(delay)
+    print("[_run_prover] %s failed after %d attempts (rc=%d)"
+          % (script, max_attempts, last_rc), file=sys.stderr)
+    return last_rc
 
 
 def _run_prover_json(script: str, *args):
@@ -188,28 +201,41 @@ def _run_prover_json(script: str, *args):
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE, None
-    timeout = _prover_timeout()
-    try:
-        proc = subprocess.run([sys.executable, str(p), *args, "--json"],
-                              capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        print("%s: prover %s hung after %ds — fail-closed as %s "
-              "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
-              " loops, or hung upstream model calls."
-              % (_AF_TIMEOUT, script, timeout, _AF_TIMEOUT), file=sys.stderr)
-        return EXIT_GATE, {"prover": script, "returncode": EXIT_GATE,
-                           "error": "AF-AW-PROVER-TIMEOUT",
-                           "message": "prover %s timed out after %ds" % (script, timeout)}
-    if proc.stdout:
-        print(proc.stdout, end="")
-    if proc.stderr:
-        print(proc.stderr, end="", file=sys.stderr)
-    parsed = None
-    try:
-        parsed = json.loads(proc.stdout)
-    except (ValueError, TypeError):
-        parsed = {"prover": script, "raw": proc.stdout.strip(), "returncode": proc.returncode}
-    return proc.returncode, parsed
+    max_attempts = 3  # initial attempt + up to 2 retries
+    last_rc = 0
+    last_parsed = None
+    for attempt in range(max_attempts):
+        try:
+            proc = subprocess.run([sys.executable, str(p), *args, "--json"],
+                                  capture_output=True, text=True, timeout=_prover_timeout())
+        except subprocess.TimeoutExpired:
+            print("%s: prover %s hung after %ds — fail-closed as %s "
+                  "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+                  " loops, or hung upstream model calls."
+                  % (_AF_TIMEOUT, script, _prover_timeout(), _AF_TIMEOUT), file=sys.stderr)
+            return EXIT_GATE, {"prover": script, "returncode": EXIT_GATE,
+                               "error": "AF-AW-PROVER-TIMEOUT",
+                               "message": "prover %s timed out after %ds" % (script, _prover_timeout())}
+        if proc.stdout:
+            print(proc.stdout, end="")
+        if proc.stderr:
+            print(proc.stderr, end="", file=sys.stderr)
+        last_rc = proc.returncode
+        last_parsed = None
+        try:
+            last_parsed = json.loads(proc.stdout)
+        except (ValueError, TypeError):
+            last_parsed = {"prover": script, "raw": proc.stdout.strip(), "returncode": last_rc}
+        if last_rc == 0:
+            return last_rc, last_parsed
+        if attempt < max_attempts - 1:
+            delay = 2 ** attempt  # 1s, 2s
+            print("[_run_prover_json] attempt %d/%d for %s failed (rc=%d), retrying in %ds..."
+                  % (attempt + 1, max_attempts, script, last_rc, delay), file=sys.stderr)
+            time.sleep(delay)
+    print("[_run_prover_json] %s failed after %d attempts (rc=%d)"
+          % (script, max_attempts, last_rc), file=sys.stderr)
+    return last_rc, last_parsed
 
 
 def _write_qc_report(run_dir: Path, name: str, obj) -> None:
