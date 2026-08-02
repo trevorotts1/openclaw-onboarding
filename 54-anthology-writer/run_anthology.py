@@ -459,6 +459,18 @@ def _write_proc(run_dir: Path, proc: dict, failed):
         pass
 
 
+def _load_proc(run_dir: Path) -> dict:
+    """Read the process manifest back from disk (written by _write_proc). Returns an
+    empty dict when absent/unreadable — no phase data is better than a crash."""
+    procf = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    try:
+        if procf.is_file():
+            return json.loads(procf.read_text(encoding="utf-8"))
+    except (ValueError, OSError):
+        pass
+    return {}
+
+
 def _measure(run_dir: Path):
     """Deterministic measured counts for the certificate (never self-reported)."""
     sys.path.insert(0, str(SCRIPTS))
@@ -969,6 +981,113 @@ def _mc_board_blocked(run_dir, task_id):
         print("[mc_board] blocked best-effort skip (%s)" % exc, file=sys.stderr)
 
 
+def _mc_board_partial_pass(run_dir, task_id, upto_phase):
+    """FIX-07: on a partial --upto PASS (rc==0), advance the card to `review` so it
+    never parks at in_progress forever. Stores the certificate sha and bundle path as
+    evidence in the note. FAIL-SOFT — the board is a view, never a gate."""
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        # Read the delivery-bundle receipt for certificate sha + bundle path evidence.
+        ev = ""
+        try:
+            receipt_path = _delivery_bundle_receipt(Path(run_dir))
+            if receipt_path.is_file():
+                rec = json.loads(receipt_path.read_text(encoding="utf-8"))
+            else:
+                rec = {}
+        except Exception:
+            rec = {}
+        sha = (rec.get("certificate_sha") or "")[:12]
+        bundle = rec.get("bundle_dir") or ""
+        if sha or bundle:
+            if sha:
+                ev += " · cert sha %s" % sha
+            if bundle:
+                ev += " · bundle %s" % bundle
+        note = ("partial run through %s — all requested phases PASS; card advanced to review "
+                "(never parked at in_progress)%s" % (upto_phase, ev))
+        mc_board.card_advance(run_dir, task_id, phase_id=upto_phase,
+                            status="review", note=note)
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] partial-pass best-effort skip (%s)" % exc, file=sys.stderr)
+
+
+def _write_qc_ticket(run_dir: Path, proc: dict, upto=None, rc=0):
+    """FIX-07: write a durable QC ticket at QUALITY-CONTROL/tickets/ with prover
+    evidence on EVERY run, so a partial --upto PASS leaves permanent proof even when
+    the CC server strips the board card's note/deliverable_url/phase_id fields."""
+    import datetime
+    intake = {}
+    ipath = run_dir / "working" / "intake.json"
+    if ipath.is_file():
+        try:
+            intake = json.loads(ipath.read_text(encoding="utf-8"))
+        except (ValueError, OSError):
+            pass
+    slug = _slug(intake) if _slug(intake) else (run_dir.name or "run")
+    timestamp = datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    ticket_dir = _SKILL_DIR.parent / "QUALITY-CONTROL" / "tickets"
+    ticket_name = "54-anthology-writer-%s-%s.md" % (slug, timestamp)
+    ticket_path = ticket_dir / ticket_name
+
+    phases_summary = []
+    for ph in proc.get("phases", []):
+        phases_summary.append("| `%s` | %s |" % (
+            ph.get("id"), "**PASS**" if ph.get("passed") else "FAIL"))
+
+    phase_count = len(proc.get("phases", []))
+    phase_pass_count = sum(1 for ph in proc.get("phases", []) if ph.get("passed"))
+
+    # Collect prover evidence paths from the run dir.
+    qc_dir = run_dir / "working" / "qc"
+    prover_files = sorted(qc_dir.glob("*")) if qc_dir.is_dir() else []
+    prover_lines = []
+    for pf in prover_files:
+        prover_lines.append("- `%s`" % pf)
+
+    lines = [
+        "# Anthology Writer QC Ticket — %s" % slug,
+        "",
+        "| Field | Value |",
+        "|---|---|",
+        "| Skill | 54-anthology-writer |",
+        "| Slug | `%s` |" % slug,
+        "| Run dir | `%s` |" % run_dir,
+        "| Upto | `%s` |" % (upto or "P7-DELIVER"),
+        "| Exit code | `%d` |" % rc,
+        "| Failed phase | `%s` |" % (proc.get("failed_phase") or "none"),
+        "| Phases passed | %d / %d |" % (phase_pass_count, phase_count),
+        "| Timestamp | %s |" % timestamp,
+        "",
+        "## Phase Results",
+        "",
+        "| Phase | Result |",
+        "|---|---|",
+    ]
+    lines.extend(phases_summary)
+    lines.append("")
+    lines.append("## Prover Evidence")
+    lines.append("")
+    lines.append("Process manifest: `%s`"
+                 % (run_dir / "working" / "checkpoints" / "process_manifest.json"))
+    if prover_lines:
+        lines.append("")
+        lines.extend(prover_lines)
+    else:
+        lines.append("")
+        lines.append("_(no prover reports found in working/qc/)_")
+
+    try:
+        ticket_dir.mkdir(parents=True, exist_ok=True)
+        ticket_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        print("[qc-ticket] written: %s" % ticket_path, file=sys.stderr)
+        return ticket_path
+    except OSError as exc:
+        print("[qc-ticket] write failed (%s)" % exc, file=sys.stderr)
+        return None
+
+
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Anthology Writer orchestrator (Skill 54).")
     ap.add_argument("--run-dir", help="the anthology run directory (contains working/)")
@@ -1013,11 +1132,19 @@ def main(argv=None):
     rc = run(manifest, run_dir, args.upto)
     if rc == EXIT_PASS and not args.upto:
         _mc_board_done(run_dir, _mc_task)
+    elif rc == EXIT_PASS and args.upto:
+        # FIX-07: on a partial --upto PASS, advance the card to `review` so it
+        # never parks at in_progress forever. Never skip the board wire.
+        _mc_board_partial_pass(run_dir, _mc_task, args.upto)
     elif rc != EXIT_PASS:
         # A gate failure after the card was opened: mark it blocked so it never
         # strands invisibly at in_progress (FIX-XC-06). A partial `--upto` PASS is
         # neither done nor blocked (it legitimately stays in_progress).
         _mc_board_blocked(run_dir, _mc_task)
+    # FIX-07: write a durable QC ticket on EVERY run (partial or full, pass or fail)
+    # so there is permanent prover evidence even when the CC server strips
+    # note/deliverable_url/phase_id fields from the board card.
+    _write_qc_ticket(run_dir, _load_proc(run_dir), upto=getattr(args, "upto", None) if args.upto else None, rc=rc)
     return rc
 
 
