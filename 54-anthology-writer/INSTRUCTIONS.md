@@ -14,10 +14,126 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
 2. **Fill intake** at `<RUN_DIR>/working/intake.json` from
    `intake/aw-intake-template.md` (4 required fields; `personal_stories` may be
    `N/A`; NEVER put an API key/token in intake).
-3. **Author on the client's own providers** (upstream sub-agents write the
-   artifacts into `<RUN_DIR>/working/`): `tone-doc.md`, `title.json`,
-   `outline.md`, `chapter.md`, and a `RUN-LEDGER.json` recording the resolved
-   NON-Anthropic model per stage.
+3. **Author on the client's own providers** -- the upstream sub-agents execute
+   the deterministic, ordered prompt-by-prompt execution contract below and drop
+   every artifact into `<RUN_DIR>/working/`. This contract is the MINIMUM VIABLE
+   STEP-3: an agent reading it immediately knows which prompt to run, for which
+   tier, injecting which substitutions, writing to which path. The target is a
+   future `dispatch_authoring.py` dispatcher script that consumes this contract
+   declaratively; until that script ships, the documented contract is the single
+   executable specification.
+
+   **A. Avatar dossier (P0A-AVATAR: delegated to Skill 52 + aw-12 extraction).**
+   The avatar handoff produces `working/avatar.md` BEFORE the tone authoring
+   starts. Skill 54 DELEGATES to Skill 52 avatar-alchemist prompts aa-01..aa-03
+   by path (NEVER copied), then runs aw-12 as a LIGHT-tier extraction step.
+   See `ANTHOLOGY-MANIFEST.json` `avatar_handoff.authoring_sequence` for the
+   exact ordering. Step 3 expects `working/avatar.md` to exist before the first
+   LLM call in section B.
+
+   | Stage | Prompt asset | Tier | Produces | Input substitutions |
+   |---|---|---|---|---|
+   | aa-01 | `../52-avatar-alchemist/prompts/01-avatar-questions-1-30/` (system.md + user.md, by path) | MID-WRITER | (internal) | intake questions 1-30 |
+   | aa-02 | `../52-avatar-alchemist/prompts/02-avatar-questions-31-32/` (system.md + user.md, by path) | MID-WRITER | (internal) | intake questions 31-32; research pass (web-search tool) |
+   | aa-03 | `../52-avatar-alchemist/prompts/03-rewrite-avatar/` (system.md + user.md, by path) | MID-WRITER | (internal) | aa-01 + aa-02 outputs |
+   | aw-12 | `assets/prompts/12-primary-goal-extraction.md` | LIGHT | avatar.md (contributed) | aa-03 output via `{{niche_primary_goal}}` |
+   | RESULT | -- | -- | `working/avatar.md` | the full avatar dossier, consumed by every tone + chapter stage below |
+
+   **B. Blended tone (P2-TONE-AUTHOR: aw-01..aw-05, MID-WRITER).**
+   Four individual tone-style analyses feed one blended synthesis. Produce
+   `working/tone-doc.md` (the blended tone, >= 3,000 stripped words).
+
+   | Stage | Prompt asset | Tier | Produces | Input substitutions |
+   |---|---|---|---|---|
+   | aw-01 | `prompts/04-tone-style-1/system.md` + `user.md` | MID-WRITER | (internal -- fed to aw-05) | `{{intake.tone_style_1}}`, avatar dossier |
+   | aw-02 | `prompts/05-tone-style-2/system.md` + `user.md` | MID-WRITER | (internal -- fed to aw-05) | `{{intake.tone_style_2}}`, avatar dossier |
+   | aw-03 | `prompts/06-tone-style-3/system.md` + `user.md` | MID-WRITER | (internal -- fed to aw-05) | `{{intake.tone_style_3}}`, avatar dossier |
+   | aw-04 | `prompts/07-tone-style-4/system.md` + `user.md` | MID-WRITER | (internal -- fed to aw-05) | `{{intake.tone_style_4}}`, avatar dossier |
+   | aw-05 | `prompts/08-blended-tone/system.md` + `user.md` | MID-WRITER | `working/tone-doc.md` | `{{artifact.04-tone-style-1}}` through `{{artifact.07-tone-style-4}}`, `{{intake.first_name}}` `{{intake.last_name}}`, avatar dossier |
+   | RESULT | -- | -- | `working/tone-doc.md` | "The {First} {Last} Tone", >= 3,000 stripped words |
+
+   **C. Title lock (P4-TITLE-LOCK: aw-06, MID-WRITER).**
+   Lock the chapter title + subtitle before any prose is written. Produce
+   `working/title.json` with non-empty `title` and `subtitle` fields.
+
+   | Stage | Prompt asset | Tier | Produces | Input substitutions |
+   |---|---|---|---|---|
+   | aw-06 | `assets/prompts/06-suggested-titles.md` | MID-WRITER | `working/title.json` | `{{intake.anthology_title}}`, `{{intake.first_name}}` `{{intake.last_name}}`, `{{intake.chapter_premise}}`, `{{intake.subtitle_hint}}`, `{{artifact.tone_doc}}` |
+   | RESULT | -- | -- | `working/title.json` | JSON with `title` + `subtitle`, locked byte-exact for downstream |
+
+   **D. Outline, blurb, and chapter (P5-CHAPTER-AUTHOR: aw-07 MID-WRITER, aw-08 MID-WRITER, aw-09 HEAVY-WRITER).**
+   Author in this order: blurb first (so it can inform the chapter's framing),
+   then outline (so story placement is provable before prose), then chapter.
+
+   | Stage | Prompt asset | Tier | Produces | Input substitutions |
+   |---|---|---|---|---|
+   | aw-07 | `assets/prompts/07-book-blurb.md` | MID-WRITER | `working/blurb.md` | `{{intake.anthology_title}}`, `{{artifact.title}}`, `{{intake.chapter_premise}}`, `{{artifact.tone_doc}}` |
+   | aw-08 | `assets/prompts/08-create-outline.md` | MID-WRITER | `working/outline.md` | `{{artifact.title}}`, `{{intake.chapter_premise}}`, `{{intake.personal_stories}}`, `{{artifact.tone_doc}}` |
+   | aw-09 | `assets/prompts/09-write-chapter.md` | HEAVY-WRITER | `working/chapter.md` | `{{intake.first_name}}` `{{intake.last_name}}`, `{{intake.anthology_title}}`, `{{intake.chapter_premise}}`, `{{intake.personal_stories}}`, `{{artifact.tone_doc}}`, `{{artifact.title}}`, `{{artifact.outline}}` |
+   | RESULT | -- | -- | `working/blurb.md` + `working/outline.md` + `working/chapter.md` | blurb: 90-160 words; outline: 6-12 beats; chapter: 2,000-3,500 stripped words |
+
+   **E. RUN-LEDGER.json -- record model provenance.**
+   The ledger records every LLM stage that wrote an artifact, so the P6
+   no-Anthropic gate (`aw_build_check.py`) can prove every resolved model id is
+   NON-Anthropic. Write it alongside the artifacts as each stage completes.
+
+   ```json
+   {
+     "run_id": "<uuid4>",
+     "started_at": "<ISO-8601>",
+     "skill": "anthology-writer",
+     "anthology_title": "<from intake>",
+     "contributor": "<First Last>",
+     "rewrite_count": 0,
+     "phases": [
+       {
+         "stage": "aa-01-avatar-questions-1-30",  "tier": "MID-WRITER",
+         "prompt": "52-avatar-alchemist/prompts/01-avatar-questions-1-30",
+         "model": "<resolved NON-Anthropic model id>",
+         "input_artifacts": ["working/intake.json"],
+         "output_artifact": null,
+         "duration_ms": 0,
+         "status": "ok"
+       },
+       { "stage": "aa-02-avatar-questions-31-32",  "tier": "MID-WRITER", "prompt": "52-avatar-alchemist/prompts/02-avatar-questions-31-32",  "model": "...", "input_artifacts": ["working/intake.json"], "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aa-03-rewrite-avatar",           "tier": "MID-WRITER", "prompt": "52-avatar-alchemist/prompts/03-rewrite-avatar",           "model": "...", "input_artifacts": [],                        "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-12-primary-goal-extraction",   "tier": "LIGHT",      "prompt": "assets/prompts/12-primary-goal-extraction.md",   "model": "...", "input_artifacts": [],                        "output_artifact": "working/avatar.md", "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-01-tone-style-1",              "tier": "MID-WRITER", "prompt": "prompts/04-tone-style-1",                        "model": "...", "input_artifacts": ["working/avatar.md", "working/intake.json"], "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-02-tone-style-2",              "tier": "MID-WRITER", "prompt": "prompts/05-tone-style-2",                        "model": "...", "input_artifacts": ["working/avatar.md", "working/intake.json"], "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-03-tone-style-3",              "tier": "MID-WRITER", "prompt": "prompts/06-tone-style-3",                        "model": "...", "input_artifacts": ["working/avatar.md", "working/intake.json"], "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-04-tone-style-4",              "tier": "MID-WRITER", "prompt": "prompts/07-tone-style-4",                        "model": "...", "input_artifacts": ["working/avatar.md", "working/intake.json"], "output_artifact": null, "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-05-blended-tone",              "tier": "MID-WRITER", "prompt": "prompts/08-blended-tone",                        "model": "...", "input_artifacts": [],                        "output_artifact": "working/tone-doc.md",  "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-06-suggested-titles",          "tier": "MID-WRITER", "prompt": "assets/prompts/06-suggested-titles.md",          "model": "...", "input_artifacts": ["working/tone-doc.md"],   "output_artifact": "working/title.json",   "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-07-book-blurb",                "tier": "MID-WRITER", "prompt": "assets/prompts/07-book-blurb.md",                "model": "...", "input_artifacts": ["working/tone-doc.md", "working/title.json"], "output_artifact": "working/blurb.md", "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-08-create-outline",            "tier": "MID-WRITER", "prompt": "assets/prompts/08-create-outline.md",            "model": "...", "input_artifacts": ["working/tone-doc.md", "working/title.json"], "output_artifact": "working/outline.md", "duration_ms": 0, "status": "ok" },
+       { "stage": "aw-09-write-chapter",             "tier": "HEAVY-WRITER","prompt": "assets/prompts/09-write-chapter.md",            "model": "...", "input_artifacts": ["working/tone-doc.md", "working/title.json", "working/outline.md"], "output_artifact": "working/chapter.md", "duration_ms": 0, "status": "ok" }
+     ]
+   }
+   ```
+
+   Fields:
+   - `run_id` -- UUID v4, minted once at the start of step 3.
+   - `started_at` -- ISO-8601 UTC timestamp.
+   - `phases[].stage` -- the stage identifier (matches `ANTHOLOGY-MANIFEST.json` `tiers` and the prompt asset `# aw-NN` slug).
+   - `phases[].tier` -- one of HEAVY-WRITER, MID-WRITER, LIGHT, RESEARCHER, IMAGE.
+   - `phases[].prompt` -- relative path to the baked prompt asset.
+   - `phases[].model` -- the RESOLVED NON-Anthropic model id (per-box, client's provider).
+   - `phases[].input_artifacts` -- array of `<RUN_DIR>/working/` paths read before the call.
+   - `phases[].output_artifact` -- `<RUN_DIR>/working/` path written after the call, or null for intermediate stages.
+   - `phases[].duration_ms` -- wall-clock milliseconds for the LLM call.
+   - `phases[].status` -- "ok" on success; "failed" or "degraded" on non-fatal issues.
+
+   **F. Artifact summary -- the 7 artifacts produced in step 3:**
+   `working/avatar.md`, `working/tone-doc.md`, `working/title.json`,
+   `working/blurb.md`, `working/outline.md`, `working/chapter.md`,
+   `working/RUN-LEDGER.json`.
+
+   **G. Future target.** The `dispatch_authoring.py` dispatcher script will consume
+   `ANTHOLOGY-MANIFEST.json` and this contract declaratively, running each stage on
+   the client's own model-map resolved tiers. Until that script ships, the tables
+   above are the minimum viable step-3 -- an agent reading them immediately knows
+   which prompt to run, for which tier, injecting which substitutions, writing to
+   which path.
 4. **Run the engine THROUGH the one entry:**
    ```
    bash 54-anthology-writer/anthology-entry.sh --run-dir <RUN_DIR>
