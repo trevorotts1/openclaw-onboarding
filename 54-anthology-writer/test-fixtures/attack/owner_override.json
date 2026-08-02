@@ -1,0 +1,9 @@
+{
+  "_comment": "AF-AW-OVERRIDE-UNLOGGED negative fixture — owner override with approved:true but empty approved_by/reason (unlogged). Must NOT bypass the gate.",
+  "owner_skip_approval": {
+    "gate": "AF-AW-ENTRY-BYPASS",
+    "approved": true,
+    "approved_by": "",
+    "reason": ""
+  }
+}

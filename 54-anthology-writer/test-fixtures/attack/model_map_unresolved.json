@@ -1,0 +1,14 @@
+{
+  "_comment": "AF-AW-UNRESOLVED-MODELMAP negative fixture — still carries <CLIENT_*> placeholders. The preflight --check must refuse this, tripping exit 8.",
+  "skill": "anthology-writer",
+  "resolved_per_box": true,
+  "tiers": {
+    "HEAVY-WRITER": {
+      "role": "long-form chapter authoring + rewrite",
+      "provider": "<CLIENT_PROVIDER_ID>",
+      "model": "<CLIENT_MODEL>",
+      "maxTokens": 65536
+    }
+  },
+  "no_formatter_tier": true
+}
