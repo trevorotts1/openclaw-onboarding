@@ -1,0 +1,6 @@
+#!/bin/bash
+# Hand-rolled external sender - should trigger AF-AW-ENTRY-BYPASS
+# This is extensionless with smtp
+smtp_server="smtp.gmail.com"
+smtp_port=587
+echo "Sending notification via $smtp_server:$smtp_port"
