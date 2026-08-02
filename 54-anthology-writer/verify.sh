@@ -228,7 +228,38 @@ else
 fi
 rm -rf "$DTMP"
 
-# 10) ENGINE-PIN — the shipped ENGINE-PIN.sha256 must equal the computed hash of
+# 10) doc-consistency — the intake template fields match the schema required fields.
+echo "  -- doc-consistency (template fields match schema required fields) --"
+if CD_SKILL_DIR="$SKILL_DIR" "$PY" - <<'PY'
+import json, os, re, sys
+skill = os.environ["CD_SKILL_DIR"]
+schema_path = os.path.join(skill, "intake", "aw-intake-schema.json")
+template_path = os.path.join(skill, "intake", "aw-intake-template.md")
+with open(schema_path) as f: schema = json.load(f)
+schema_required = set(schema["required"])
+schema_fields = set(schema["properties"].keys())
+with open(template_path) as f: template = f.read()
+template_fields = set(m.group(1) for m in re.finditer(r'"(\w+)"\s*:', template))
+missing = schema_required - template_fields
+# Only flag template fields NOT in schema (template having extra things schema doesn't know about).
+# Schema fields that are optional but NOT in the template are fine.
+extra = template_fields - schema_fields
+if missing or extra:
+    if missing:
+        print("MISSING from template (required by schema, not in template):", sorted(missing), file=sys.stderr)
+    if extra:
+        print("EXTRA in template (in template but not in schema):", sorted(extra), file=sys.stderr)
+    sys.exit(2)
+print("doc-consistency: all %d required schema fields present in template" % len(schema_required))
+sys.exit(0)
+PY
+then
+    printf '  [PASS] doc-consistency (template fields match schema)\n'
+else
+    printf '  [FAIL] doc-consistency (template fields do not match schema)\n'; fails=$((fails + 1))
+fi
+
+# 11) ENGINE-PIN — the shipped ENGINE-PIN.sha256 must equal the computed hash of
 #     the enforcement set, AND a tampered enforcement file must trip GATE 3
 #     (AF-AW-HASH-PIN, exit 7) through the entry — proving the pin actually bites.
 echo "  -- ENGINE-PIN hash pin (AF-AW-HASH-PIN) --"

@@ -11,6 +11,9 @@ config, never through intake (`AF-AW-INTAKE-CREDENTIAL`).
   "first_name": "<contributor first name>",
   "last_name": "<contributor last name>",
   "chapter_premise": "<what this chapter is about and the turn it makes>",
+  "ideal_avatar": "<the contributor's ideal-reader / avatar description>",
+  "niche": "<the contributor's niche>",
+  "primary_goal": "<the contributor's primary goal>",
   "personal_stories": [
     "<short distinctive phrase for a real lived moment>",
     "<another real anchor>"
