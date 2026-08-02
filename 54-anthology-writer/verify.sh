@@ -77,6 +77,7 @@ for p in prove_aw_intake prove_aw_avatar prove_aw_fidelity prove_aw_tone prove_a
     fi
 done
 run "run_anthology.py --self-test" "$PY" "$SKILL_DIR/run_anthology.py" --self-test
+run "board-contract suite (test_cc_contract.py)" "$PY" "$SKILL_DIR/test_cc_contract.py"
 
 # 2) golden reproduce — each prover PASSes the golden bundle.
 run "golden intake PASS"    "$PY" "$SCRIPTS/prove_aw_intake.py"   "$GOLD/intake.json"
@@ -288,6 +289,51 @@ else
     printf '  [FAIL] ENGINE-PIN.sha256 not shipped — GATE 3 hash pin can never fail (S36-54)\n'
     fails=$((fails + 1))
 fi
+
+# 11) artifact-presence sweep — every SKILL.md-listed shipped artifact must exist.
+echo "  -- artifact-presence sweep --"
+ARTIFACTS=(
+    "$SKILL_DIR/anthology-entry.sh"
+    "$SKILL_DIR/ANTHOLOGY-MANIFEST.json"
+    "$SKILL_DIR/CHANGELOG.md"
+    "$SKILL_DIR/ENGINE-PIN.sha256"
+    "$SKILL_DIR/INSTRUCTIONS.md"
+    "$SKILL_DIR/MASTERDOC.md"
+    "$SKILL_DIR/mc_board.py"
+    "$SKILL_DIR/preflight.sh"
+    "$SKILL_DIR/REPAIRS.md"
+    "$SKILL_DIR/run_anthology.py"
+    "$SKILL_DIR/skill-version.txt"
+    "$SKILL_DIR/SKILL.md"
+    "$SKILL_DIR/verify.sh"
+    "$SKILL_DIR/verify-deps.sh"
+    "$SKILL_DIR/intake/aw-intake-schema.json"
+    "$SKILL_DIR/intake/aw-intake-template.md"
+    "$SKILL_DIR/roles/anthology-writer.role.md"
+    "$SKILL_DIR/assets/model-map.template.json"
+    "$SKILL_DIR/assets/prompts/06-suggested-titles.md"
+    "$SKILL_DIR/assets/prompts/07-book-blurb.md"
+    "$SKILL_DIR/assets/prompts/08-create-outline.md"
+    "$SKILL_DIR/assets/prompts/09-write-chapter.md"
+    "$SKILL_DIR/assets/prompts/10-chapter-rewrite.md"
+    "$SKILL_DIR/scripts/_aw_common.py"
+    "$SKILL_DIR/scripts/prove_aw_intake.py"
+    "$SKILL_DIR/scripts/prove_aw_avatar.py"
+    "$SKILL_DIR/scripts/prove_aw_fidelity.py"
+    "$SKILL_DIR/scripts/prove_aw_tone.py"
+    "$SKILL_DIR/scripts/prove_aw_chapter.py"
+    "$SKILL_DIR/scripts/aw_build_check.py"
+    "$SKILL_DIR/scripts/verify_tone_core_sync.py"
+    "$SKILL_DIR/test_cc_contract.py"
+)
+for af in "${ARTIFACTS[@]}"; do
+    if [ -f "$af" ]; then
+        printf '  [PASS] artifact %s\n' "${af#$SKILL_DIR/}"
+    else
+        printf '  [FAIL] artifact %s MISSING\n' "${af#$SKILL_DIR/}"
+        fails=$((fails + 1))
+    fi
+done
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
