@@ -309,12 +309,34 @@ def _chk_chapter_qc(run_dir: Path):
         report["parts"]["outline"] = p_ol
     rc_bc, p_bc = _run_prover_json("aw_build_check.py", str(ledger))
     report["parts"]["build_check"] = p_bc
-    ok = (rc_ch == 0 and rc_ol == 0 and rc_bc == 0)
+    # FIX-13: model-role correctness — every stage model must be non-Anthropic AND
+    # in the resolved model-map.json. This closes the gap where aw_build_check.py
+    # bans Anthropic but the engine never validates dispatch against the model map.
+    # The model map lives at the run-dir root (per preflight.sh convention).
+    model_map = run_dir / "model-map.json"
+    rc_mr, p_mr = 0, None
+    if model_map.is_file():
+        rc_mr, p_mr = _run_prover_json("prove_aw_model_role.py", str(ledger),
+                                        str(model_map))
+        report["parts"]["model_role"] = p_mr
+    else:
+        # Fail-closed: if model-map.json is absent, the run cannot prove its
+        # dispatch models are in the resolved tier map (the no-Anthropic gate
+        # alone is half-enforcement). The run MUST carry the resolved model map.
+        rc_mr = EXIT_GATE
+        p_mr = {"prover": "prove_aw_model_role", "passed": False,
+                "violations": [{"code": "AF-AW-MODEL-ROLE",
+                                "message": "model-map.json is absent — the "
+                                "resolved client model map is required to prove "
+                                "model-role correctness"}]}
+        report["parts"]["model_role"] = p_mr
+    ok = (rc_ch == 0 and rc_ol == 0 and rc_bc == 0 and rc_mr == 0)
     report["passed"] = ok
     _write_qc_report(run_dir, "chapter_qc_report.json", report)
     return ok, ("chapter QC PASS" if ok else
-                "chapter QC FAILED (chapter exit %d, outline exit %d, build-check exit %d)"
-                % (rc_ch, rc_ol, rc_bc))
+                "chapter QC FAILED (chapter exit %d, outline exit %d, build-check exit %d, "
+                "model-role exit %d)"
+                % (rc_ch, rc_ol, rc_bc, rc_mr))
 
 
 def _blurb_defect(text: str):

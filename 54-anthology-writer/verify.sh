@@ -69,7 +69,7 @@ echo "== Skill 54 (Anthology Writer) :: verify.sh =="
 
 # 1) the provers --self-test (+ the orchestrator's built-in gate self-test:
 #    P7 delivery gate + fail-closed unmapped-checker).
-for p in prove_aw_intake prove_aw_avatar prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_build_check; do
+for p in prove_aw_intake prove_aw_avatar prove_aw_fidelity prove_aw_tone prove_aw_chapter aw_build_check prove_aw_model_role; do
     if [ -f "$SCRIPTS/$p.py" ]; then
         run "$p.py --self-test" "$PY" "$SCRIPTS/$p.py" --self-test
     else
@@ -88,6 +88,7 @@ run "golden tone PASS"      "$PY" "$SCRIPTS/prove_aw_tone.py"      "$GOLD/tone-d
 run "golden chapter PASS"   "$PY" "$SCRIPTS/prove_aw_chapter.py"   "$GOLD/chapter.md" --mode chapter --title "$GOLD/title.json" --intake "$GOLD/intake.json"
 run "golden outline PASS"   "$PY" "$SCRIPTS/prove_aw_chapter.py"   "$GOLD/outline.md" --mode outline --title "$GOLD/title.json" --intake "$GOLD/intake.json"
 run "golden build-check PASS" "$PY" "$SCRIPTS/aw_build_check.py"   "$GOLD/RUN-LEDGER.json"
+run "golden model-role PASS"  "$PY" "$SCRIPTS/prove_aw_model_role.py" "$GOLD/RUN-LEDGER.json" "$GOLD/model-map.json"
 
 # 3) broken-variants reject — each attack fixture trips its distinct AF (fail-closed proof).
 expect_reject "intake-missing"        prove_aw_intake.py   "AF-AW-INTAKE-MISSING"    "$ATK/intake_missing.json"
@@ -107,6 +108,8 @@ expect_reject "chapter-placeholder"   prove_aw_chapter.py  "AF-AW-PLACEHOLDER"  
 expect_reject "ledger-anthropic"      aw_build_check.py    "AF-AW-ANTHROPIC"        "$ATK/ledger_anthropic.json"
 expect_reject "ledger-rewrite-budget" aw_build_check.py    "AF-AW-REWRITE-BUDGET"   "$ATK/ledger_rewrite_over_budget.json"
 expect_reject "ledger-no-provenance"  aw_build_check.py    "AF-AW-PROVENANCE-MISSING" "$ATK/ledger_no_provenance.json"
+expect_reject "model-role-anthropic"   prove_aw_model_role.py "AF-AW-MODEL-ROLE"        "$ATK/ledger_anthropic.json" "$GOLD/model-map.json"
+expect_reject "model-role-not-in-map"  prove_aw_model_role.py "AF-AW-MODEL-ROLE"        "$ATK/ledger_model_not_in_map.json" "$GOLD/model-map.json"
 
 # 4) prompt-fidelity pins + tone-core sync (named for clarity; covered above).
 run "prompt-fidelity pins match" "$PY" "$SCRIPTS/prove_aw_fidelity.py"
@@ -161,6 +164,7 @@ mkdir -p "$TMP/working"
 for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$TMP/working/$f"
 done
+cp "$GOLD/model-map.json" "$TMP/model-map.json"
 if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$TMP" >/dev/null 2>&1 \
    && [ -f "$TMP/delivery/PROCESS-CERTIFICATE.json" ]; then
     printf '  [PASS] golden pilot issues a process certificate\n'
@@ -178,6 +182,7 @@ if [ -d "$EX" ]; then
     for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
         cp "$EX/working/$f" "$EXTMP/working/$f"
     done
+    cp "$GOLD/model-map.json" "$EXTMP/model-map.json"
     if bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$EXTMP" >/dev/null 2>&1 \
        && [ -f "$EXTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
         FRESH_SHA="$("$PY" -c 'import json,sys;print(json.load(open(sys.argv[1]))["certificate_sha"])' "$EXTMP/delivery/PROCESS-CERTIFICATE.json" 2>/dev/null)"
@@ -219,6 +224,7 @@ mkdir -p "$DTMP/working"
 for f in intake.json avatar.md tone-doc.md title.json outline.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$DTMP/working/$f"
 done
+cp "$GOLD/model-map.json" "$DTMP/model-map.json"
 cp "$ATK/chapter_short.md" "$DTMP/working/chapter.md"
 e2e_out="$(bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$DTMP" 2>&1)"; e2e_rc=$?
 no_cert=; [ ! -f "$DTMP/delivery/PROCESS-CERTIFICATE.json" ] && no_cert=1
@@ -250,6 +256,7 @@ ENFORCE_FILES=(
     "$SCRIPTS/prove_aw_chapter.py"
     "$SCRIPTS/aw_build_check.py"
     "$SCRIPTS/verify_tone_core_sync.py"
+    "$SCRIPTS/prove_aw_model_role.py"
 )
 _sha_concat() {
     if command -v sha256sum >/dev/null 2>&1; then
@@ -277,6 +284,7 @@ if [ -f "$PIN_FILE" ]; then
     for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
         cp "$GOLD/$f" "$PRD/working/$f"
     done
+    cp "$GOLD/model-map.json" "$PRD/model-map.json"
     bash "$PTMP/skill/anthology-entry.sh" --run-dir "$PRD" >/dev/null 2>&1; tamper_rc=$?
     if [ "$tamper_rc" -eq 7 ]; then
         printf '  [PASS] tampered enforcement file trips AF-AW-HASH-PIN at the entry (exit 7)\n'

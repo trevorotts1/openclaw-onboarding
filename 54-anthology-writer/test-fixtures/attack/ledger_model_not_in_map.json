@@ -1,0 +1,10 @@
+{
+  "skill": "anthology-writer",
+  "contributor": "Marcus Bell",
+  "rewrite_count": 0,
+  "note": "SEEDED DEFECT — the HEAVY-WRITER tier resolved to a model id (openrouter/mistral/pixtral-large) that is NOT in the golden model-map.json (no tier carries this model). prove_aw_model_role.py must hard-fail this (AF-AW-MODEL-ROLE).",
+  "stages": [
+    {"stage_id": "aw-05-blended-tone", "tier": "MID-WRITER", "model": "openrouter/google/gemini-2.5-pro"},
+    {"stage_id": "aw-09-write-chapter", "tier": "HEAVY-WRITER", "model": "openrouter/mistral/pixtral-large"}
+  ]
+}

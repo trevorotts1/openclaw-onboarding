@@ -1,0 +1,29 @@
+{
+  "skill": "anthology-writer",
+  "resolved_per_box": true,
+  "tiers": {
+    "HEAVY-WRITER": {
+      "provider": "ollama-cloud",
+      "model": "ollama-cloud/qwen2.5:72b-instruct",
+      "maxTokens": 65536
+    },
+    "MID-WRITER": {
+      "provider": "openrouter",
+      "model": "openrouter/google/gemini-2.5-pro",
+      "maxTokens": 16384
+    },
+    "LIGHT": {
+      "provider": "openrouter",
+      "model": "openrouter/google/gemini-2.0-flash-001",
+      "maxTokens": 4096
+    },
+    "RESEARCHER": {
+      "provider": "perplexity",
+      "model": "perplexity/sonar-pro"
+    },
+    "IMAGE": {
+      "provider": "kie",
+      "model": "kie/gpt-image-2"
+    }
+  }
+}

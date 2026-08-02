@@ -251,6 +251,7 @@ ENFORCE_FILES=(
     "$SCRIPTS/prove_aw_chapter.py"
     "$SCRIPTS/aw_build_check.py"
     "$SCRIPTS/verify_tone_core_sync.py"
+    "$SCRIPTS/prove_aw_model_role.py"
 )
 version_hash_pin() {
     local computed=""
