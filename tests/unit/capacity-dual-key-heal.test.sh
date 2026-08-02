@@ -163,11 +163,29 @@ else
     fail "A3 .capacity-profile.json not written"
 fi
 
+# A4 — DID IT ACTUALLY WRITE? (mutation-hardened 2026-08-02)
+#
+# This check used to assert the HEAL LOG STRING and nothing else, so it could
+# not tell "logged a heal" from "performed a heal". Under a mutation that
+# deleted the atomic os.replace() the log line was still printed and A4 stayed
+# GREEN while the config on disk was untouched. A test that passes either way is
+# worthless, so A4 now asserts the PERSISTED CONFIG: both keys re-read from
+# disk, and no surviving 500 anywhere in the file. The log WORDING moved to A5,
+# which is deliberately not load-bearing.
+A4_DEF="$(cfgv "$CFG" "cfg['agents']['defaults']['maxConcurrent']")"
+A4_SUB="$(cfgv "$CFG" "cfg['agents']['defaults']['subagents']['maxConcurrent']")"
+A4_STALE="$(cfgv "$CFG" "500 in (cfg['agents']['defaults']['maxConcurrent'], cfg['agents']['defaults']['subagents']['maxConcurrent'])")"
+if [ "$A4_DEF" = "$SAFE_PIN" ] && [ "$A4_SUB" = "$SAFE_PIN" ] && [ "$A4_STALE" = "False" ]; then
+    pass "A4 the heal was PERFORMED, not just logged — both keys persisted to disk at $SAFE_PIN, no 500 survives"
+else
+    fail "A4 config on disk does not reflect the heal: defaults=$A4_DEF subagents=$A4_SUB stale500=$A4_STALE — the writer logged a heal it did not perform"
+fi
+
 if echo "$OUT" | grep -q "HEAL" && echo "$OUT" | grep -q "defaults.maxConcurrent 500 -> $SAFE_PIN" \
    && echo "$OUT" | grep -q "subagents.maxConcurrent 500 -> $SAFE_PIN"; then
-    pass "A4 HEAL log names BOTH keys and BOTH previous values"
+    pass "A5 HEAL log names BOTH keys and BOTH previous values (reporting only — A4 is the proof)"
 else
-    fail "A4 HEAL log does not name both keys: $(echo "$OUT" | grep -i heal | head -1)"
+    fail "A5 HEAL log does not name both keys: $(echo "$OUT" | grep -i heal | head -1)"
 fi
 echo ""
 
@@ -267,6 +285,94 @@ if [ "$RC" = "0" ]; then
     pass "E2 exit 0 preserved — the WARN informs, it does not clamp or fail the deliberate-raise path"
 else
     fail "E2 exit code changed to $RC — the OC_CAP_* escape hatch must stay usable"
+fi
+echo ""
+
+# ===========================================================================
+# F — the guard must be REACHABLE THROUGH ITS OWN DOCUMENTED KNOB
+#
+# E1 only ever passed because it sets OC_CAP_MIN_AGENTS=200 — a FLOOR, and a
+# knob the rationale never mentions. The documented raise knob is
+# OC_CAP_MAX_AGENTS, and it is a CLAMP: raising it cannot push `safe` above
+# cores*CORES_MULT, while the guard fires above cores*4. So on a 12-core box
+# OC_CAP_MAX_AGENTS=500 produced safe=14 and ZERO warnings, and even
+# OC_CAP_RAM_PER_AGENT_GB=0.01 only reached 24 — still silent. The guard read as
+# protection while protecting nothing through the path operators are told to use.
+# ===========================================================================
+echo "--- F: RUNAWAY guard reachable through the DOCUMENTED override ---"
+
+H="$(mk_root f "$BOTH_500")"
+OUT="$(env -i PATH="$PATH" HOME="$H" OC_CAP_MAX_AGENTS=500 OC_CAP_DRY_RUN=1 bash "$MON_SH" 2>&1)"
+RC=$?
+if echo "$OUT" | grep -q "RUNAWAY CAP"; then
+    pass "F1 OC_CAP_MAX_AGENTS=500 alone trips RUNAWAY CAP (the documented knob now reaches the guard)"
+else
+    fail "F1 OC_CAP_MAX_AGENTS=500 produced NO warning — the guard is unreachable through its own documented override: $(echo "$OUT" | tail -2)"
+fi
+if [ "$RC" = "0" ]; then
+    pass "F2 exit 0 preserved for the documented-override warn path"
+else
+    fail "F2 exit code changed to $RC"
+fi
+
+# No override at all -> the platform default (12 Mac / 8 VPS) must NEVER warn,
+# or the guard becomes noise on every tick of every small box and gets ignored.
+H="$(mk_root f2 "{\"agents\":{\"defaults\":{\"maxConcurrent\":2,\"subagents\":{\"maxConcurrent\":2}}}}")"
+OUT="$(env -i PATH="$PATH" HOME="$H" OC_CAP_DRY_RUN=1 bash "$MON_SH" 2>&1)"
+if echo "$OUT" | grep -q "RUNAWAY CAP"; then
+    fail "F3 platform-default MAX_AGENTS warned — a guard that cries wolf every tick will be ignored: $(echo "$OUT" | grep RUNAWAY | head -1)"
+else
+    pass "F3 no override, healthy config -> no RUNAWAY warning (guard stays credible)"
+fi
+echo ""
+
+# ===========================================================================
+# G — warn on the value FOUND IN CONFIG, which is what actually happened
+#
+# The 2026-08-01 incident was NOT a computed value: it was a hand-written
+# maxConcurrent: 500 in openclaw.json. The computed value was a healthy 12
+# throughout, so a computed-value guard would have said nothing about the very
+# config that crushed the box for five days.
+# ===========================================================================
+echo "--- G: absurd value FOUND in config warns (the real incident shape) ---"
+
+H="$(mk_root g "$BOTH_500")"
+OUT="$(env -i PATH="$PATH" HOME="$H" OC_CAP_DRY_RUN=1 bash "$MON_SH" 2>&1)"
+RC=$?
+if echo "$OUT" | grep -q "ABSURD CAP IN CONFIG"; then
+    pass "G1 a hand-written 500 in openclaw.json warns with ZERO OC_CAP_* overrides set"
+else
+    fail "G1 config holding 500 produced no warning — the monitor still watches only what it COMPUTES, not what it FINDS: $(echo "$OUT" | tail -2)"
+fi
+if echo "$OUT" | grep -q "agents.defaults.maxConcurrent=500" && echo "$OUT" | grep -q "subagents.maxConcurrent=500"; then
+    pass "G2 the warning names BOTH offending keys and their found values"
+else
+    fail "G2 warning does not name both found keys: $(echo "$OUT" | grep ABSURD | head -1)"
+fi
+if [ "$RC" = "0" ]; then
+    pass "G3 exit 0 preserved (the tick still heals; the warn is additive)"
+else
+    fail "G3 exit code changed to $RC"
+fi
+
+# Fires on the healing tick too, not only in dry-run: something wrote that value
+# out-of-band and will likely write it again, so the event must be surfaced even
+# when this tick repairs it.
+H="$(mk_root g2 "$BOTH_500")"
+OUT="$(run_mon "$H")"
+if echo "$OUT" | grep -q "ABSURD CAP IN CONFIG"; then
+    pass "G4 warning fires on the HEALING tick as well (the writer that put it there is still out there)"
+else
+    fail "G4 no warning on the healing tick — an out-of-band 500 heals silently and nobody learns it happened"
+fi
+
+# And a healthy config must stay completely quiet.
+H="$(mk_root g3 "{\"agents\":{\"defaults\":{\"maxConcurrent\":$SAFE_PIN,\"subagents\":{\"maxConcurrent\":$SAFE_PIN}}}}")"
+OUT="$(run_mon "$H")"
+if echo "$OUT" | grep -qE "ABSURD CAP IN CONFIG"; then
+    fail "G5 healthy in-sync config produced an ABSURD warning: $(echo "$OUT" | grep ABSURD | head -1)"
+else
+    pass "G5 healthy config produces no ABSURD warning (no false positives)"
 fi
 echo ""
 
