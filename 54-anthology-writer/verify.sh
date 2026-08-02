@@ -219,11 +219,18 @@ for f in intake.json avatar.md tone-doc.md title.json outline.md RUN-LEDGER.json
     cp "$GOLD/$f" "$DTMP/working/$f"
 done
 cp "$ATK/chapter_short.md" "$DTMP/working/chapter.md"
-bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$DTMP" >/dev/null 2>&1; e2e_rc=$?
-if [ "$e2e_rc" -ne 0 ] && [ ! -f "$DTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
-    printf '  [PASS] seeded short chapter blocks the run; NO certificate issued (rc=%s)\n' "$e2e_rc"
+e2e_out="$(bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$DTMP" 2>&1)"; e2e_rc=$?
+no_cert=; [ ! -f "$DTMP/delivery/PROCESS-CERTIFICATE.json" ] && no_cert=1
+af_found=; printf '%s' "$e2e_out" | grep -q "AF-AW-CHAP-LEN" && af_found=1
+if [ "$e2e_rc" -eq 2 ] && [ -n "$af_found" ] && [ -n "$no_cert" ]; then
+    printf '  [PASS] seeded short chapter blocks the run (rc=2, AF-AW-CHAP-LEN); NO certificate issued\n'
 else
-    printf '  [FAIL] seeded defect did not block the run / a certificate leaked (rc=%s)\n' "$e2e_rc"
+    reason=
+    [ "$e2e_rc" -ne 2 ] && reason="${reason}rc=$e2e_rc(expected 2) "
+    [ -z "$af_found" ]  && reason="${reason}AF-AW-CHAP-LEN missing "
+    [ -z "$no_cert" ]   && reason="${reason}certificate leaked "
+    printf '  [FAIL] seeded defect did not block correctly: %s\n' "$reason"
+    printf '%s\n' "$e2e_out" | sed 's/^/         /'
     fails=$((fails + 1))
 fi
 rm -rf "$DTMP"
