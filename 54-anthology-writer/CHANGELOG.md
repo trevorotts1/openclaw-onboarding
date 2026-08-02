@@ -1,5 +1,25 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.7 — 2026-08-02 — Warfix Round 2: FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37
+
+### Fixed (Round 2 — FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37)
+- **FIX-14** — interactive resolver heredoc no longer breaks operator input;
+  `preflight.sh --resolve --interactive` prompts per tier as a real script.
+- **FIX-20** — `--status` / `--resume` added; append-only verdict history in
+  `process_manifest.json` (`runs[]`); ENGINE-PIN re-pinned.
+- **FIX-27** — board card embeds run-dir / delivery path / cert SHA in
+  `description`; mirrored to canonical `50-email-engine` mc_board.
+- **FIX-32** — verify.sh EXIT trap extended to all 6 temp dirs (EXTMP/DTMP/
+  PTMP/PRD).
+- **FIX-35** — `_slug()`/`_slugify()` deduped (accepts str or dict); dead
+  `_BYPASS_PATTERNS` deleted.
+- **FIX-36** — `--json` stdout is pure JSON (gate chatter → stderr); ENGINE-PIN
+  restored; `--plan --json` forwards the flag.
+- **FIX-37** — CC board env vars documented (SKILL.md/INSTRUCTIONS.md);
+  verify-deps warns on missing `COMMAND_CENTER_URL`; board-disabled message
+  mirrored to `50-email-engine` mc_board.
+- ENGINE-PIN → fe02b312.
+
 ## 1.4.6 — 2026-08-02 — Warfix batch 4: FIX-31, FIX-33, FIX-34
 
 ### Fixed (batch 4 — FIX-31, FIX-33, FIX-34)

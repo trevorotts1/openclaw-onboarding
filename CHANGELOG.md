@@ -165,6 +165,28 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.58]  -  2026-08-02  -  Skill 54 anthology-writer warfix Round 2 (FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37)
+
+Seven reviewed warfixes for `54-anthology-writer` landed on main via the
+merge train (each truth-gated to its reviewed headCommit, byte-identity-checked
+for `mc_board.py`, and passed through the skill's full `verify.sh`
+self-verification gate):
+
+- **FIX-14** — interactive resolver heredoc no longer breaks operator input;
+  `preflight.sh --resolve --interactive` prompts per tier as a real script.
+- **FIX-20** — `--status` / `--resume` added; append-only verdict history in
+  `process_manifest.json` (`runs[]`).
+- **FIX-27** — board card embeds run-dir / delivery path / cert SHA in
+  `description`; mirrored to canonical `50-email-engine` mc_board.
+- **FIX-32** — verify.sh EXIT trap extended to all 6 temp dirs.
+- **FIX-35** — `_slug()`/`_slugify()` deduped; dead `_BYPASS_PATTERNS` deleted.
+- **FIX-36** — `--json` stdout is pure JSON (gate chatter → stderr); ENGINE-PIN
+  restored; `--plan --json` forwards the flag.
+- **FIX-37** — CC board env vars documented; verify-deps warns on missing
+  `COMMAND_CENTER_URL`; board-disabled message mirrored to `50-email-engine`.
+
+Skill 54 version bumped 1.4.6 → 1.4.7. ENGINE-PIN re-pinned to fe02b312.
+
 ## [v21.4.57]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 4 (FIX-31, FIX-33, FIX-34) — final batch
 
 The final three reviewed warfixes for `54-anthology-writer` landed on main via
