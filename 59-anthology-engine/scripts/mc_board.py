@@ -601,6 +601,20 @@ def post_status(task_id, status, note, bcfg, timeout=10):
               "card stays put, the ledger is truth, it reconciles on the tick"
               % (task_id, status))
         return False, "forbidden"
+    if code == 409:
+        # ILLEGAL_TRANSITION: the status route rejected this move because the
+        # current card status cannot legally transition to the requested status
+        # (e.g. 'backlog' -> 'review'). This is a state-machine gate on the
+        # Command Center side, not a scope/auth rejection -- the board is
+        # reachable and the caller is authorized, but the transition itself is
+        # illegal. Surface it as a distinct warning so the operator can see the
+        # mismatch; the ledger holds the truth and the card reconciles on the
+        # daily tick once the card is in a legal state.
+        _warn("ILLEGAL_TRANSITION (HTTP 409): card %s cannot legally move to '%s'; "
+              "the current card status forbids this transition. "
+              "Ledger holds the truth; card reconciles on the daily tick."
+              % (task_id, status))
+        return False, "illegal_transition"
     _warn("status move declined by the board (HTTP %s) for card %s -> %s; secret[%s]=%s "
           "bearer[%s]=%s; continuing fail-soft"
           % (code, task_id, status, label_s, "SET" if secret else "NOT SET",
