@@ -35,6 +35,29 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
 - A hand-rolled external uploader/notifier in the run dir aborts the run
   (AF-AW-ENTRY-BYPASS).
 
+## Command Center Board (optional)
+
+The `mc_board.py` helper gives each run a Kanban card on the Command Center
+board. It is **fail-soft**: every env var is OPTIONAL; absent base URL => board
+disabled (clean no-op, run continues). The board is a VIEW, never a gate.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `COMMAND_CENTER_URL` | (unset) | Base URL of the Command Center. Board disabled when unset. `MISSION_CONTROL_URL` is an accepted alias. |
+| `MISSION_CONTROL_URL` | (unset) | Alias for `COMMAND_CENTER_URL`. |
+| `CC_API_TOKEN` | (unset) | Long-lived bearer token for Authorization header. `MC_API_TOKEN` is an accepted alias. |
+| `MC_API_TOKEN` | (unset) | Alias for `CC_API_TOKEN`. |
+| `WEBHOOK_SECRET` | (unset) | HMAC-SHA256 secret for the `x-webhook-signature` header. `CC_WEBHOOK_SECRET` is an accepted alias. |
+| `CC_WEBHOOK_SECRET` | (unset) | Alias for `WEBHOOK_SECRET`. |
+| `CC_BOARD_TIMEOUT` | `8` | Per-request timeout in seconds (integer). |
+| `CC_STATUS_PATH_TEMPLATE` | `/api/tasks/{id}` | Status-write URL path; must contain the literal `{id}`. |
+| `CC_STATUS_METHOD` | `PATCH` | HTTP method for status writes. |
+| `CC_TASK_PATH_TEMPLATE` | `/api/tasks/{id}` | Task-read URL path; must contain the literal `{id}`. |
+| `MC_BOARD_EVIDENCE_BASE_DIR` | (unset) | Override run-evidence root for the `reconcile` sweep. |
+
+At minimum set `COMMAND_CENTER_URL` to enable the board. With a secured
+Command Center also set `CC_API_TOKEN` and `WEBHOOK_SECRET`.
+
 ## Verify / CI
 ```
 bash 54-anthology-writer/verify.sh      # read-only, idempotent, exits nonzero on regression

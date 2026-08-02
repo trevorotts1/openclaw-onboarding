@@ -14,6 +14,19 @@ if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; th
 else
     echo "  NOTE: no sha256 tool — the entry hash-pin gate is skipped (non-fatal)"
 fi
+# ---- Command Center board env check (OPTIONAL — board is fail-soft, never a gate) ----
+board_vars=("COMMAND_CENTER_URL" "CC_API_TOKEN" "WEBHOOK_SECRET")
+board_unset=0
+for var in "${board_vars[@]}"; do
+    if [ -z "${!var:-}" ]; then
+        board_unset=1
+    fi
+done
+if [ "$board_unset" -eq 1 ]; then
+    echo "  NOTE: one or more CC board env vars (COMMAND_CENTER_URL, CC_API_TOKEN, WEBHOOK_SECRET) are unset."
+    echo "        The board seam is OPTIONAL — runs will continue without it. Set COMMAND_CENTER_URL to enable."
+fi
+
 if [ "$missing" -eq 0 ]; then
     echo "verify-deps: PASS"; exit 0
 fi
