@@ -740,6 +740,12 @@ def build_parser():
 
 def main(argv=None):
     argv = list(sys.argv[1:] if argv is None else argv)
+    # Normalize --self-test / --selftest -> positional selftest subcommand
+    # so argparse's required=True subparser never rejects the flag form.
+    if "--self-test" in argv:
+        argv = ["selftest" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["selftest" if a == "--selftest" else a for a in argv]
     parser = build_parser()
     a = parser.parse_args(argv)
     # Normalize suppressed globals so handlers can read a.db / a.state_dir / a.json.

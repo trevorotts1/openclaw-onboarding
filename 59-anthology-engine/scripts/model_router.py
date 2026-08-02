@@ -779,6 +779,14 @@ def _cli_route(args) -> int:
 
 
 def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    # Normalize --self-test / --selftest -> positional self-test subcommand
+    if "--self-test" in argv:
+        argv = ["self-test" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["self-test" if a == "--selftest" else a for a in argv]
     ap = argparse.ArgumentParser(description="Anthology engine model router (SPEC 8).")
     ap.add_argument("--path", help="explicit model-map.json path")
     ap.add_argument("--run-dir", help="run dir holding a resolved model-map.json")

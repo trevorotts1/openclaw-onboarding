@@ -654,6 +654,8 @@ def _normalize_argv(argv):
     first = argv[0]
     if first in ("-h", "--help", "help"):
         return argv if first != "help" else ["-h"]
+    if first in ("--self-test", "--selftest"):
+        return ["selftest"] + argv[1:]
     if first in SUB_COMMANDS:
         return argv
     return ["send"] + argv

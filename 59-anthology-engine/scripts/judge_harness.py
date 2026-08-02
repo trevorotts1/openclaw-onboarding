@@ -511,6 +511,14 @@ def _cli_judge(args) -> int:
 
 
 def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    # Normalize --self-test / --selftest -> positional self-test subcommand
+    if "--self-test" in argv:
+        argv = ["self-test" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["self-test" if a == "--selftest" else a for a in argv]
     ap = argparse.ArgumentParser(
         description="Gate B judge harness: semantic checks 13-15 + the Tier 2 rubric on the "
                     "JUDGE tier (SPEC Section 4).")

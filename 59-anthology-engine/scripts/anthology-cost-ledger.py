@@ -911,6 +911,15 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    argv = list(argv)
+    # Normalize --self-test / --selftest -> positional self-test subcommand
+    # so argparse's required=True subparser never rejects the flag form.
+    if "--self-test" in argv:
+        argv = ["self-test" if a == "--self-test" else a for a in argv]
+    if "--selftest" in argv:
+        argv = ["self-test" if a == "--selftest" else a for a in argv]
     args = build_parser().parse_args(argv)
     try:
         return args.func(args)
