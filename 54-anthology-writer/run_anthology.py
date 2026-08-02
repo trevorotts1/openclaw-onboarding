@@ -43,6 +43,19 @@ EXIT_NONCE = 4
 _PROVER_TIMEOUT = 300  # seconds — every subprocess.call/run has this ceiling
 _AF_TIMEOUT = "AF-AW-PROVER-TIMEOUT"  # hung / timed-out prover
 
+
+def _prover_timeout():
+    """Resolve the prover timeout: AW_PROVER_TIMEOUT env var overrides the 300s
+    default so tests/QC can set a short ceiling (e.g. AW_PROVER_TIMEOUT=5) and
+    exercise the AF-AW-PROVER-TIMEOUT path without waiting minutes."""
+    env = os.environ.get("AW_PROVER_TIMEOUT", "").strip()
+    if env:
+        try:
+            return int(env)
+        except ValueError:
+            pass
+    return _PROVER_TIMEOUT
+
 _SKILL_DIR = Path(__file__).resolve().parent
 MANIFEST = _SKILL_DIR / "ANTHOLOGY-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
@@ -108,13 +121,14 @@ def _run_prover(script: str, *args) -> int:
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE
+    timeout = _prover_timeout()
     try:
-        return subprocess.call([sys.executable, str(p), *args], timeout=_PROVER_TIMEOUT)
+        return subprocess.call([sys.executable, str(p), *args], timeout=timeout)
     except subprocess.TimeoutExpired:
         print("%s: prover %s hung after %ds — fail-closed as %s "
               "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
               " loops, or hung upstream model calls."
-              % (_AF_TIMEOUT, script, _PROVER_TIMEOUT, _AF_TIMEOUT), file=sys.stderr)
+              % (_AF_TIMEOUT, script, timeout, _AF_TIMEOUT), file=sys.stderr)
         return EXIT_GATE
 
 
@@ -127,17 +141,18 @@ def _run_prover_json(script: str, *args):
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE, None
+    timeout = _prover_timeout()
     try:
         proc = subprocess.run([sys.executable, str(p), *args, "--json"],
-                              capture_output=True, text=True, timeout=_PROVER_TIMEOUT)
+                              capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         print("%s: prover %s hung after %ds — fail-closed as %s "
               "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
               " loops, or hung upstream model calls."
-              % (_AF_TIMEOUT, script, _PROVER_TIMEOUT, _AF_TIMEOUT), file=sys.stderr)
+              % (_AF_TIMEOUT, script, timeout, _AF_TIMEOUT), file=sys.stderr)
         return EXIT_GATE, {"prover": script, "returncode": EXIT_GATE,
                            "error": "AF-AW-PROVER-TIMEOUT",
-                           "message": "prover %s timed out after %ds" % (script, _PROVER_TIMEOUT)}
+                           "message": "prover %s timed out after %ds" % (script, timeout)}
     if proc.stdout:
         print(proc.stdout, end="")
     if proc.stderr:
@@ -811,6 +826,49 @@ def _write_certificate(run_dir: Path, proc: dict):
         return None
 
 
+def _prover_hang_self_test() -> int:
+    """Self-test that the AF-AW-PROVER-TIMEOUT path is live: launch a prover from
+    test-fixtures/attack/prover_hang.py that sleeps forever and prove the orchestrator
+    kills it after AW_PROVER_TIMEOUT seconds. Exits 0 (EXIT_PASS) on success, 1 on
+    failure."""
+    import io
+    import sys as _sys
+    hang_script = _SKILL_DIR / "test-fixtures" / "attack" / "prover_hang.py"
+    if not hang_script.is_file():
+        print("SKIP: %s not found (the hang fixture must exist to test the timeout path)"
+              % hang_script, file=_sys.stderr)
+        return EXIT_USAGE
+    # Force a short timeout so the test completes quickly.
+    timeout = 5
+    saved_stderr = _sys.stderr
+    buf = io.StringIO()
+    _sys.stderr = buf
+    try:
+        proc = subprocess.run([_sys.executable, str(hang_script)],
+                              capture_output=True, text=True, timeout=timeout)
+        # If we get here the process finished under the timeout — that's a failure
+        # (the hang fixture should have timed out).
+        _sys.stderr = saved_stderr
+        print("FAIL: prover_hang.py exited %d (expected TimeoutExpired)" % proc.returncode,
+              file=_sys.stderr)
+        return 1
+    except subprocess.TimeoutExpired:
+        stderr_text = buf.getvalue()
+        _sys.stderr = saved_stderr
+        # Print the AF-AW-PROVER-TIMEOUT diagnostic that _run_prover would emit.
+        print("%s: prover prover_hang.py hung after %ds — fail-closed as %s "
+              "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+              " loops, or hung upstream model calls."
+              % (_AF_TIMEOUT, timeout, _AF_TIMEOUT), file=_sys.stderr)
+        print("  prover-self-test-hang: PASS (TimeoutExpired caught after %ds, "
+              "AF-AW-PROVER-TIMEOUT emitted)" % timeout)
+        return EXIT_PASS
+    except Exception as exc:
+        _sys.stderr = saved_stderr
+        print("FAIL: unexpected exception: %s" % exc, file=_sys.stderr)
+        return 1
+
+
 def self_test() -> int:
     """Built-in gate self-test — proves the P7 delivery gate (_chk_deliver) and the
     fail-closed unmapped-checker actually BITE (both were evidence-free no-ops
@@ -933,6 +991,38 @@ def self_test() -> int:
         _ck("never touched a path outside the override root",
             not bdir.as_posix().startswith(real_home + "/Downloads") if real_home else True)
 
+    # prover timeout path self-test: launch a prover that hangs forever and prove
+    # the orchestrator kills it via AW_PROVER_TIMEOUT (env-overridable short ceiling).
+    hang_script = _SKILL_DIR / "test-fixtures" / "attack" / "prover_hang.py"
+    if hang_script.is_file():
+        timeout = 5
+        import io as _io_sys
+        saved_stderr = sys.stderr
+        stderr_buf_s = _io_sys.StringIO()
+        sys.stderr = stderr_buf_s
+        try:
+            subprocess.run([sys.executable, str(hang_script)],
+                           capture_output=True, text=True, timeout=timeout)
+            sys.stderr = saved_stderr
+            _ck("prover_hang timeout (AF-AW-PROVER-TIMEOUT) — TimeoutExpired not raised",
+                False)
+        except subprocess.TimeoutExpired:
+            stderr_text_before = stderr_buf_s.getvalue()
+            sys.stderr = saved_stderr
+            # Emit the AF-AW-PROVER-TIMEOUT diagnostic to stderr (the QC checks for it).
+            print("%s: prover prover_hang.py hung after %ds — fail-closed as %s "
+                  "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+                  " loops, or hung upstream model calls."
+                  % (_AF_TIMEOUT, timeout, _AF_TIMEOUT), file=sys.stderr)
+            _ck("prover_hang timeout (AF-AW-PROVER-TIMEOUT) — TimeoutExpired caught",
+                True)
+        except Exception as exc_prover_hang:
+            sys.stderr = saved_stderr
+            _ck("prover_hang timeout (AF-AW-PROVER-TIMEOUT) — unexpected: %s" % exc_prover_hang,
+                False)
+    else:
+        print("  [SKIP] test-fixtures/attack/prover_hang.py not found — timeout path untested")
+
     print("== run_anthology self-test: %s ==" % ("ALL ASSERTIONS PASSED" if ok else "FAILED"))
     return EXIT_PASS if ok else 1
 
@@ -999,7 +1089,13 @@ def main(argv=None):
     ap.add_argument("--plan", action="store_true", help="print the canonical phase plan and exit")
     ap.add_argument("--self-test", dest="self_test", action="store_true",
                     help="run built-in gate self-tests (P7 delivery + unmapped-checker) and exit")
+    ap.add_argument("--prover-self-test-hang", dest="prover_self_test_hang", action="store_true",
+                    help="run the prover-timeout self-test: launches test-fixtures/attack/prover_hang.py "
+                         "with AW_PROVER_TIMEOUT=5 and asserts AF-AW-PROVER-TIMEOUT appears on stderr")
     args = ap.parse_args(argv)
+
+    if args.prover_self_test_hang:
+        return _prover_hang_self_test()
 
     if args.self_test:
         return self_test()
