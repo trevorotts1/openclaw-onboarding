@@ -151,6 +151,14 @@ gate_fail() {
     exit "$exitcode"
 }
 
+# When --json is active, stdout must carry ONLY the final JSON object. Redirect
+# all gate/orchestrator chatter to stderr so `--json | jq` / `| python3 -m
+# json.tool` sees a single parseable JSON document on stdout.
+if [ "$JSON" -eq 1 ]; then
+    exec 3>&1   # save real stdout
+    exec 1>&2   # gate/orchestrator output -> stderr
+fi
+
 # ===========================================================================
 # GATE 1 — DEPS CHECK (python3; exit 6 AW_DEPS_MISSING)
 # ===========================================================================
@@ -367,7 +375,8 @@ PYEOF
         fi
     fi
     printf '{"phases":%s,"passed":%s,"failed_phase":%s,"certificate_sha":%s,"run_dir":"%s","duration":%s}\n' \
-        "$__phases" "$__passed" "$__failed_phase" "$__cert_sha" "$RUN_DIR" "$__duration"
+        "$__phases" "$__passed" "$__failed_phase" "$__cert_sha" "$RUN_DIR" "$__duration" >&3
+    exec 1>&3 3>&-   # restore real stdout, close the saved fd
 fi
 
 exit "$_rc"
