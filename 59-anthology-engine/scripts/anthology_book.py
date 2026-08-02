@@ -174,8 +174,13 @@ def build_intake_link(forms_base, form_id, anthology_id) -> str:
 def _run(argv):
     """Shell a sibling engine CLI. Returns (returncode, parsed_json_or_None). On a
     non-zero exit the sub-CLI's own operator surface is passed through to stderr."""
-    proc = subprocess.run([PY] + [str(x) for x in argv],
-                          capture_output=True, text=True)
+    try:
+        proc = subprocess.run([PY] + [str(x) for x in argv],
+                              capture_output=True, text=True, timeout=300)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[anthology_book] sub-CLI timed out after 300s: %s\n"
+                         % " ".join(str(x) for x in argv))
+        return -1, None
     parsed = None
     out = proc.stdout or ""
     try:

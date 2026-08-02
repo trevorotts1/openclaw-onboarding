@@ -371,8 +371,14 @@ def render_pdf(assembled_html, out_pdf, weasyprint_bin, source_date_epoch):
             f.write(assembled_html)
         env = os.environ.copy()
         env["SOURCE_DATE_EPOCH"] = str(int(source_date_epoch))
-        proc = subprocess.run([weasyprint_bin, html_path, out_pdf],
-                              env=env, capture_output=True, text=True)
+        try:
+            proc = subprocess.run([weasyprint_bin, html_path, out_pdf],
+                                  env=env, capture_output=True, text=True,
+                                  timeout=120)
+        except subprocess.TimeoutExpired:
+            sys.stderr.write("[pdf_render] weasyprint timed out after 120s; "
+                             "rendering aborted\n")
+            return -1, "", "[pdf_render] weasyprint timed out after 120s"
         return proc.returncode, proc.stdout, proc.stderr
 
 
