@@ -150,6 +150,7 @@ class ErrorClass(str, Enum):
     TIMEOUT = "timeout"
     REFUSAL = "refusal"
     UNKNOWN = "unknown"
+    TRUST = "trust"
 
 
 class ProviderError(Exception):
@@ -408,7 +409,7 @@ def parse_chat_response(resp: HttpResponse, configured_model: str) -> dict:
     if choices:
         msg = choices[0].get("message") or {}
         text = msg.get("content") or choices[0].get("text") or ""
-    model_used = data.get("model") or configured_model
+    model_used = data.get("model") if data.get("model") else "<unreported-by-provider>"
     usage = data.get("usage") or {}
     return {"text": text, "model_used": model_used, "usage": usage}
 
@@ -581,6 +582,11 @@ class ModelRouter:
         return "credit-hold:%s:%s" % (tier, anchor)
 
     def _guard_model(self, model: str, provider: str) -> None:
+        if not model or model == "<unreported-by-provider>":
+            raise ProviderError(
+                provider, ErrorClass.TRUST,
+                detail="AF-AE-TRUST: provider %r returned a 200 without a 'model' field "
+                "(reported as %r); trust failure — treated as non-2xx (HOLD)" % (provider, model))
         if is_anthropic_shaped(model) or is_anthropic_shaped(provider):
             raise DenyPatternRefusal(
                 "AF-AE-ANTHROPIC: resolved model %r on provider %r matches an Anthropic-shaped "
@@ -657,8 +663,15 @@ class ModelRouter:
                                          "class": pe.error_class.value,
                                          "status": resp.status, "detail": pe.detail})
                     continue
-                # Honest record: refuse if the provider echoed an Anthropic id.
-                self._guard_model(parsed["model_used"], provider)
+                # Honest record: refuse if the provider echoed an Anthropic id
+                # or if the provider omitted the 'model' field (trust failure).
+                try:
+                    self._guard_model(parsed["model_used"], provider)
+                except ProviderError as pe:
+                    degradations.append({"provider": provider, "order": order,
+                                         "class": pe.error_class.value,
+                                         "status": resp.status, "detail": pe.detail})
+                    continue
                 self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
                 return RouteResult(
                     tier=tier, provider=provider, model_used=parsed["model_used"],
