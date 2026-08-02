@@ -190,7 +190,41 @@ ANTHOLOGY_STATE_AIRTABLE_KEY=pat...    # or one of the aliases above
 
 ---
 
-## 9. Key files
+## 9. Hash-pin enforcement (ENGINE-PIN.sha256)
+
+The Anthology Engine entry enforces a content-hash pin at Gate 3 (AF-AE-HASH-PIN).
+The pin locks six enforcement candidates (the entry script, the manifest, and four
+guard scripts in `scripts/`). When `ENGINE-PIN.sha256` is present the gate is
+fail-closed: any mismatch exits 7. Without the pin file the hash is recorded but
+not enforced.
+
+### Stamping the pin
+
+After all guard scripts land, stamp the pin with verify.sh:
+
+```bash
+bash 59-anthology-engine/verify.sh stamp-pin
+```
+
+This computes the sha256 of the six enforcement candidates in their canonical order
+and writes `ENGINE-PIN.sha256`. Run `--plan` afterward to confirm:
+
+```bash
+bash 59-anthology-engine/anthology-engine-entry.sh --plan
+# Should print: "OK: enforcement hash matches the pinned head"
+```
+
+### Updating the pin
+
+When any enforcement candidate changes, re-stamp the pin:
+
+```bash
+bash 59-anthology-engine/verify.sh stamp-pin
+```
+
+The pin file must be committed alongside the enforcement candidates it covers.
+
+## 10. Key files
 
 | File | Role |
 |------|------|
