@@ -578,10 +578,41 @@ def _write_proc(run_dir: Path, proc: dict, failed, started_arg=None,
                 if completed_arg is not None:
                     ph["completed_at"] = completed_arg
                 break
+    import datetime as _dt
+    import uuid as _uuid
     out = run_dir / "working" / "checkpoints" / "process_manifest.json"
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps(proc, indent=2), encoding="utf-8")
+        existing = {}
+        if out.is_file():
+            try:
+                existing = json.loads(out.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                pass
+        # Carry forward the runs history (append-only verdict history).
+        runs = existing.get("runs", [])
+        if not isinstance(runs, list):
+            runs = []
+        run_rec = {
+            "run_id": _uuid.uuid4().hex[:12],
+            "timestamp": _dt.datetime.now(_dt.timezone.utc).isoformat(),
+            "phases_passed": sum(1 for p in proc.get("phases", []) if p.get("passed")),
+            "phases_failed": sum(1 for p in proc.get("phases", []) if not p.get("passed")),
+            "certificate_sha": None,
+        }
+        # If a certificate exists in delivery/, capture its sha.
+        cert_path = run_dir / "delivery" / "PROCESS-CERTIFICATE.json"
+        if cert_path.is_file():
+            try:
+                cert = json.loads(cert_path.read_text(encoding="utf-8"))
+                run_rec["certificate_sha"] = cert.get("certificate_sha")
+            except (OSError, ValueError):
+                pass
+        runs.append(run_rec)
+        merged = dict(existing)
+        merged.update(proc)
+        merged["runs"] = runs
+        out.write_text(json.dumps(merged, indent=2), encoding="utf-8")
     except OSError:
         pass
 
