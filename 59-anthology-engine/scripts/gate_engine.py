@@ -650,14 +650,19 @@ def _fire_release_tag(slug, subject_key, cfg, registry_location=None):
 def _gate_link(cfg, kind, subject_key, gate_id, token=None):
     """Build the deep link a nudge points at. Participant gates land on the token
     page; producer/assembly gates land on the board card. Bases come from config
-    when present, else safe relative defaults. The token (when supplied) rides the
-    participant link as a capability; it is NOT the ANTHOLOGY_GATE_TOKEN_SECRET."""
+    when present, else safe relative defaults to the real Command Center routes
+    (the participant page and the anthology workspace). The token (when supplied)
+    rides the participant link as a path-segment capability; it is NOT the
+    ANTHOLOGY_GATE_TOKEN_SECRET."""
     if kind == "participant":
-        base = ((cfg.get("gates") or {}).get("token_page_base_url")) or "/p/gate"
-        q = "t=%s" % token if token else "s=%s&g=%s" % (subject_key, gate_id)
+        base = ((cfg.get("gates") or {}).get("token_page_base_url")) or "/participant"
+        if token:
+            # token as a path segment — the participant page reads params.token[0]
+            return "%s/%s" % (base.rstrip("/"), token)
+        q = "s=%s&g=%s" % (subject_key, gate_id)
         sep = "&" if "?" in base else "?"
         return "%s%s%s" % (base, sep, q)
-    base = ((cfg.get("board") or {}).get("card_base_url")) or "/board"
+    base = ((cfg.get("board") or {}).get("card_base_url")) or "/workspace/anthology"
     sep = "&" if "?" in base else "?"
     return "%s%scard=%s" % (base, sep, subject_key)
 
@@ -1429,9 +1434,11 @@ def self_test():
     # door provenance mapping is exactly the two sole-writer door values.
     assert set(DOOR_VALUE.values()) == {"nudge_link", "dashboard"}
 
-    # link builder shapes (no config -> safe relative defaults).
-    assert _gate_link({}, "participant", pk, "s5_participant", token="TOK").startswith("/p/gate?t=")
-    assert _gate_link({}, "producer", pk, "s2_producer").startswith("/board?card=")
+    # link builder shapes (no config -> safe relative defaults to real CC routes).
+    assert _gate_link({}, "participant", pk, "s5_participant", token="TOK") == "/participant/TOK"
+    assert _gate_link({}, "participant", pk, "s5_participant") == (
+        "/participant?s=%s&g=s5_participant" % pk)
+    assert _gate_link({}, "producer", pk, "s2_producer") == "/workspace/anthology?card=%s" % pk
 
     # RELEASE-TAG BUS (SPEC §3): the slug map + the pure release decision.
     # every PRODUCER gate that exists today carries a §3 release slug.
