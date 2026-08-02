@@ -40,6 +40,9 @@ EXIT_GATE = 2
 EXIT_USAGE = 3
 EXIT_NONCE = 4
 
+_PROVER_TIMEOUT = 300  # seconds — every subprocess.call/run has this ceiling
+_AF_TIMEOUT = "AF-AW-PROVER-TIMEOUT"  # hung / timed-out prover
+
 _SKILL_DIR = Path(__file__).resolve().parent
 MANIFEST = _SKILL_DIR / "ANTHOLOGY-MANIFEST.json"
 SCRIPTS = _SKILL_DIR / "scripts"
@@ -105,7 +108,14 @@ def _run_prover(script: str, *args) -> int:
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE
-    return subprocess.call([sys.executable, str(p), *args])
+    try:
+        return subprocess.call([sys.executable, str(p), *args], timeout=_PROVER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print("%s: prover %s hung after %ds — fail-closed as %s "
+              "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+              " loops, or hung upstream model calls."
+              % (_AF_TIMEOUT, script, _PROVER_TIMEOUT, _AF_TIMEOUT), file=sys.stderr)
+        return EXIT_GATE
 
 
 def _run_prover_json(script: str, *args):
@@ -117,8 +127,17 @@ def _run_prover_json(script: str, *args):
     if not p.is_file():
         print("FATAL: prover not found at %s" % p, file=sys.stderr)
         return EXIT_USAGE, None
-    proc = subprocess.run([sys.executable, str(p), *args, "--json"],
-                          capture_output=True, text=True)
+    try:
+        proc = subprocess.run([sys.executable, str(p), *args, "--json"],
+                              capture_output=True, text=True, timeout=_PROVER_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        print("%s: prover %s hung after %ds — fail-closed as %s "
+              "(AF-AW-PROVER-TIMEOUT). Check the prover for deadlocks, infinite"
+              " loops, or hung upstream model calls."
+              % (_AF_TIMEOUT, script, _PROVER_TIMEOUT, _AF_TIMEOUT), file=sys.stderr)
+        return EXIT_GATE, {"prover": script, "returncode": EXIT_GATE,
+                           "error": "AF-AW-PROVER-TIMEOUT",
+                           "message": "prover %s timed out after %ds" % (script, _PROVER_TIMEOUT)}
     if proc.stdout:
         print(proc.stdout, end="")
     if proc.stderr:
