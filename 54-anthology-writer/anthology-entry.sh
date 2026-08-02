@@ -89,6 +89,29 @@ if [ "$PLAN" -eq 0 ]; then
     RUN_DIR="$(cd "$RUN_DIR" && pwd)"
 fi
 
+# ---------------------------------------------------------------------------
+# CLAIM-BEFORE-ACT: acquire a per-run-dir lock so two concurrent dispatchers
+# (or a retry + fresh run) can never race on the nonce or working/ state.
+# The lock is released on exit via trap (EXIT INT TERM HUP). If the lock is
+# contended we print the holder's PID and abort (claim-first, act-second).
+#
+# Uses mkdir (atomic on all filesystems) for portable mutual exclusion.
+# mkdir returns success only to the first caller; subsequent callers see
+# a lock-held message with the holder's PID and exit 9.
+# ---------------------------------------------------------------------------
+if [ -n "${RUN_DIR:-}" ]; then
+    LOCK_DIR="$RUN_DIR/.anthology.lock"
+    mkdir -p "$RUN_DIR"
+    if ! mkdir "$LOCK_DIR" 2>/dev/null; then
+        LOCK_HOLDER="$(cat "$LOCK_DIR/pid" 2>/dev/null | tr -d '[:space:]' || echo "unknown")"
+        echo "Another agent holds this run dir (PID $LOCK_HOLDER)" >&2
+        exit 9
+    fi
+    echo "$$" > "$LOCK_DIR/pid"
+    # Release the lock on any exit path (normal, interrupt, terminate, hangup).
+    trap 'rm -rf "$LOCK_DIR"' EXIT INT TERM HUP
+fi
+
 PROC_MANIFEST="${RUN_DIR:-}/working/checkpoints/process_manifest.json"
 
 owner_skip_approved() {
@@ -289,6 +312,7 @@ if [ "$PLAN" -eq 1 ]; then
 fi
 
 note "ALL GATES PASSED — dispatching run_anthology.py"
+
 NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.anthology-entry-nonce"
 mkdir -p "$NONCE_DIR"
@@ -307,7 +331,6 @@ OC_ANTHOLOGY_ENTRY_NONCE="$(_mint_nonce)"
 ( umask 077; printf '%s' "$OC_ANTHOLOGY_ENTRY_NONCE" > "$NONCE_FILE" )
 chmod 600 "$NONCE_FILE" 2>/dev/null || true
 export OC_ANTHOLOGY_ENTRY_NONCE
-trap 'rm -f "$NONCE_FILE" 2>/dev/null || true' EXIT INT TERM HUP
 
 cmd=(python3 "$RUNNER" --run-dir "$RUN_DIR")
 [ -n "$UPTO" ] && cmd+=(--upto "$UPTO")

@@ -328,13 +328,20 @@ def _read_receipt(run_dir) -> dict:
 
 
 def _merge_receipt(run_dir, updates: dict) -> bool:
-    """Merge `updates` into the receipt atomically. Never raises."""
+    """Merge `updates` into the receipt atomically. Never raises.
+
+    Uses a PID-suffixed temp file + atomic rename instead of a shared
+    read-merge-write on a single path, so two concurrent callers (e.g. a Skill 59
+    stage dispatcher and the orchestrator, or a retry + fresh run) can never
+    lose-update on the receipt. The PID-suffix produces a unique temp file per
+    process; the final os.replace() is atomic on POSIX."""
+    import os as _os_mod
     p = _receipt_path(run_dir)
     try:
         p.parent.mkdir(parents=True, exist_ok=True)
         receipt = _read_receipt(run_dir)
         receipt.update(updates)
-        tmp = p.with_suffix(".json.tmp")
+        tmp = p.with_suffix(f".json.tmp.{_os_mod.getpid()}")
         tmp.write_text(json.dumps(receipt, indent=2))
         os.replace(tmp, p)
         return True
