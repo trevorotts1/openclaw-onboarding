@@ -335,6 +335,12 @@ for af in "${ARTIFACTS[@]}"; do
     fi
 done
 
+# 12) mc_board.py byte-identity — the vendored copy is a CLONE of the canonical
+#     50-email-engine copy; any drift (stale pre-U100 fork, hand-edited
+#     divergences, accidental one-sided patch) is a hard failure.
+echo "  -- mc_board.py byte-identity vs canonical 50-email-engine --"
+run "mc_board.py byte-identical" diff "$SKILL_DIR/mc_board.py" "$SKILL_DIR/../50-email-engine/mc_board.py"
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 54 self-verification checks green."
