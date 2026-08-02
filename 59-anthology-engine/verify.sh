@@ -203,6 +203,19 @@ if inventory_missing_from_disk:
     for fn in sorted(inventory_missing_from_disk):
         fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
 
+    # --- no Google API key literal in any owned text file ---
+    _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
+    for rel in owned:
+        fp = p(rel)
+        if not os.path.isfile(fp): continue
+        try:
+            txt = io.open(fp, encoding="utf-8", errors="replace").read()
+        except Exception:
+            continue
+        if _google_api_re.search(txt):
+            fails.append("Google API key literal found in owned file: %s" % rel)
+
+
 if fails:
     print("verify: DRIFT (%d issue(s))" % len(fails))
     for m in fails: print("  - " + m)

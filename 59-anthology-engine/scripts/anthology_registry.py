@@ -390,16 +390,32 @@ class CafClient:
 # NEVER printed (SET / NOT SET only), same as every other credential in this
 # module.
 # ---------------------------------------------------------------------------
-FIREBASE_API_KEY = "AIzaSyB_w3vXmsI7WeQtrIOkjR6xTRVN5uOieiE"
-FIREBASE_TOKEN_URL = "https://securetoken.googleapis.com/v1/token?key=%s" % FIREBASE_API_KEY
 INTERNAL_API_BASE = "https://backend.leadconnectorhq.com"
 INTERNAL_VERSION_HEADER = "2021-07-28"
+
+FIREBASE_API_KEY_LABELS = (
+    "ANTHOLOGY_GHL_FIREBASE_API_KEY",
+    "GOHIGHLEVEL_FIREBASE_API_KEY",
+)
 
 FIREBASE_REFRESH_LABELS = (
     "ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN",
     "GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN",
     "GHL_FIREBASE_REFRESH_TOKEN",
 )
+
+FIREBASE_TOKEN_URL_TEMPLATE = "https://securetoken.googleapis.com/v1/token?key=%s"
+
+
+def _resolve_firebase_api_key():
+    """(label, key) or (None, None), first non-empty wins. NEVER printed."""
+    return _env_first(FIREBASE_API_KEY_LABELS)
+
+
+def _firebase_token_url(api_key: str) -> str:
+    """Build the token-exchange URL lazily at call time. The key is a resolved
+    label value -- NEVER a hardcoded literal."""
+    return FIREBASE_TOKEN_URL_TEMPLATE % api_key
 
 
 def resolve_firebase_refresh_token():
@@ -437,8 +453,9 @@ class InternalRailClient:
     exchange + HTTP GET, exactly as verify-podcast-ghl-workflows.py performs it.
     """
 
-    def __init__(self, refresh_token: str, timeout: int = 15, *, mint_fn=None, get_fn=None):
+    def __init__(self, refresh_token: str, api_key: str, timeout: int = 15, *, mint_fn=None, get_fn=None):
         self._refresh_token = refresh_token
+        self._api_key = api_key
         self._timeout = timeout
         self._id_token = None
         self._mint_fn = mint_fn
@@ -449,8 +466,9 @@ class InternalRailClient:
             if self._mint_fn is not None:
                 return self._mint_fn(self._refresh_token)
             body = ("grant_type=refresh_token&refresh_token=%s" % self._refresh_token).encode()
+            token_url = _firebase_token_url(self._api_key)
             req = urllib.request.Request(
-                FIREBASE_TOKEN_URL, data=body,
+                token_url, data=body,
                 headers={"Content-Type": "application/x-www-form-urlencoded"}, method="POST")
             with urllib.request.urlopen(req, timeout=self._timeout) as resp:
                 data = json.loads(resp.read().decode("utf-8"))
@@ -1538,14 +1556,14 @@ def self_test() -> int:
 
     # -- GK-09: InternalRailClient ladder (mint failure / empty token / HTTP
     #    error / success), fully injected -- zero network, zero real secrets --
-    rc_fail = InternalRailClient("rt", mint_fn=lambda rt: (_ for _ in ()).throw(RuntimeError("boom")))
+    rc_fail = InternalRailClient("rt", "test-api-key", mint_fn=lambda rt: (_ for _ in ()).throw(RuntimeError("boom")))
     try:
         rc_fail.list_pipelines("loc_test_QcDX")
         assert False, "a mint failure must raise InternalRailUnavailable"
     except InternalRailUnavailable:
         pass
 
-    rc_empty = InternalRailClient("rt", mint_fn=lambda rt: "")
+    rc_empty = InternalRailClient("rt", "test-api-key", mint_fn=lambda rt: "")
     try:
         rc_empty.list_pipelines("loc_test_QcDX")
         assert False, "an empty id_token must raise InternalRailUnavailable"
@@ -1554,7 +1572,7 @@ def self_test() -> int:
 
     def _get_403(path, tok):
         raise InternalRailUnavailable("internal rail HTTP 403 on %s" % path)
-    rc_http_err = InternalRailClient("rt", mint_fn=lambda rt: "id-ok", get_fn=_get_403)
+    rc_http_err = InternalRailClient("rt", "test-api-key", mint_fn=lambda rt: "id-ok", get_fn=_get_403)
     try:
         rc_http_err.list_pipelines("loc_test_QcDX")
         assert False, "an internal HTTP error must raise InternalRailUnavailable"
@@ -1569,7 +1587,7 @@ def self_test() -> int:
     def _get_ok(path, tok):
         _seen["path"], _seen["tok"] = path, tok
         return {"pipelines": [{"id": "pipe-1", "name": "Anthology Engine"}]}
-    rc_ok = InternalRailClient("rt", mint_fn=_mint_ok, get_fn=_get_ok)
+    rc_ok = InternalRailClient("rt", "test-api-key", mint_fn=_mint_ok, get_fn=_get_ok)
     pls = rc_ok.list_pipelines("loc_test_QcDX")
     assert pls == [{"id": "pipe-1", "name": "Anthology Engine"}]
     assert _seen["path"] == "/opportunities/pipelines?locationId=loc_test_QcDX"

@@ -303,7 +303,14 @@ def _pipelines_with_fallback(client, location_id: str, *, out, internal_rail_fac
                 "Convert and Flow session.\n" % (exc, ", ".join(reg.FIREBASE_REFRESH_LABELS)))
             raise
         try:
-            rail = factory(refresh)
+            api_label, api_key = reg._resolve_firebase_api_key()
+            if not api_key:
+                out.write(
+                    "[snapshot verify] public-surface edge block (%s). No Firebase API "
+                    "key is SET for the internal-rail fallback (checked: %s).\n"
+                    % (exc, ", ".join(reg.FIREBASE_API_KEY_LABELS)))
+                raise exc
+            rail = factory(refresh, api_key)
             pipelines = rail.list_pipelines(location_id)
         except reg.InternalRailUnavailable as rail_exc:
             out.write("[snapshot verify] public-surface edge block (%s); the Firebase-JWT "
@@ -528,8 +535,9 @@ class _FakeInternalRail:
     internal_rail_factory. Constructed with the resolved refresh token
     (mirrors the real factory signature); `outcome` selects the fixture path."""
 
-    def __init__(self, refresh_token, *, outcome="ok", pipelines=None):
+    def __init__(self, refresh_token, api_key, *, outcome="ok", pipelines=None):
         self._refresh_token = refresh_token
+        self._api_key = api_key
         self._outcome = outcome
         self._pipelines = pipelines if pipelines is not None else []
 
@@ -640,7 +648,8 @@ def self_test() -> int:
     # (a) edge block + NO Firebase refresh token configured -> unchanged HELD
     #     behavior (exact regression proof: this fallback must never turn an
     #     unconfigured client into a silent failure or a false pass).
-    _fb_saved = {n: os.environ.pop(n, None) for n in reg.FIREBASE_REFRESH_LABELS}
+    _fb_saved = {n: os.environ.pop(n, None) for n in
+                 tuple(reg.FIREBASE_REFRESH_LABELS) + tuple(reg.FIREBASE_API_KEY_LABELS)}
     try:
         rc = verify_imported(blocked, "loc_QcDX", contract, field_map, out=dev)
         assert rc == EX_HELD, "edge block with no Firebase token configured must HELD, got %s" % rc
@@ -648,10 +657,11 @@ def self_test() -> int:
 
         # (b) edge block + Firebase token configured + internal rail SUCCEEDS -> OK
         os.environ["ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN"] = "rt-fixture"
+        os.environ["ANTHOLOGY_GHL_FIREBASE_API_KEY"] = "test-api-key"
         dev2 = io.StringIO()
         rc = verify_imported(
             blocked, "loc_QcDX", contract, field_map, out=dev2,
-            internal_rail_factory=lambda rt: _FakeInternalRail(rt, outcome="ok", pipelines=good_pipelines))
+            internal_rail_factory=lambda rt, ak: _FakeInternalRail(rt, ak, outcome="ok", pipelines=good_pipelines))
         assert rc == EX_OK, "internal-rail fallback success must clear verify-imported, got %s" % rc
         assert "cleared via the Firebase-JWT internal rail" in dev2.getvalue()
 
@@ -659,7 +669,7 @@ def self_test() -> int:
         dev3 = io.StringIO()
         rc = verify_imported(
             blocked, "loc_QcDX", contract, field_map, out=dev3,
-            internal_rail_factory=lambda rt: _FakeInternalRail(rt, outcome="unavailable"))
+            internal_rail_factory=lambda rt, ak: _FakeInternalRail(rt, ak, outcome="unavailable"))
         assert rc == EX_HELD, "internal-rail fallback failure must still HELD (never a false pass), got %s" % rc
         assert "also did not clear" in dev3.getvalue()
     finally:
