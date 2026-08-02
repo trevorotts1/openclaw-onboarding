@@ -73,3 +73,35 @@ There is NO formatter tier — the five source HTML-formatter LLM calls are
 (G-NOANTHROPIC) hard-fails any `/anthropic|claude/i` id in the run ledger, and
 `verify.sh` statically scans the shipped skill for any concrete `claude-*` /
 `anthropic/*` id.
+
+## Timeout, retry, and degraded behavior
+
+- **Subprocess timeout (AF-AW-PROVER-TIMEOUT):** every `subprocess.call` and
+  `subprocess.run` through `_run_prover` and `_run_prover_json` is capped at 300
+  seconds. A prover that hangs past this ceiling is killed by the OS and the phase
+  fails closed. The stderr diagnostic names the script that hung. The orchestrator
+  (`run_anthology.py`) itself is dispatched by `anthology-entry.sh` via `exec` with
+  no timeout shell built-in — the 300s per-prover ceiling plus the entry-script
+  `trap ... EXIT INT TERM HUP` handler form the entire watchdog surface.
+- **No automatic retry:** a timed-out prover is NOT re-launched. The operator must
+  inspect the hung prover for deadlocks, infinite loops, or stalled upstream model
+  calls, fix the root cause, and re-run through `anthology-entry.sh`. The process
+  manifest records the failed phase for audit.
+- **Degraded upstream model handling:** the LLM authoring stages (P2, P5) are run
+  upstream on the client's NON-Anthropic providers, not by this orchestrator. If an
+  upstream model call is unreachable, times out, or returns a non-200 response, the
+  authoring sub-agent produces no artifact. The corresponding QC phase sees the
+  missing artifact and fails closed (never degraded-open). There is no automatic
+  provider fallback — the operator must re-configure the model map via `preflight.sh`
+  or re-run the authoring stage on a reachable box.
+- **Execution chain (anthology-entry.sh -> run_anthology.py):** `anthology-entry.sh`
+  dispatches `run_anthology.py` via `exec` (no subshell) and the entry script's
+  `trap ... EXIT INT TERM HUP` cleans up the nonce on any signal. The 300s
+  per-prover timeout in `run_anthology.py` is the sole ceiling for provers; the
+  entry script does not add a second global timeout because each prover already
+  carries its own.
+- **Non-watchdog note:** `anthology-entry.sh` itself has no built-in `timeout`
+  wrapper. The operator shell can optionally wrap the whole invocation with
+  `timeout` (e.g., `timeout 900 bash anthology-entry.sh --run-dir ...`) if a
+  run-level ceiling is desired, but this is external to the skill and NOT an engine
+  guarantee.
