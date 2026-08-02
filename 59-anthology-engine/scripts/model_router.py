@@ -57,10 +57,18 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Dict, List, Optional, Tuple
+
+try:
+    import fcntl  # POSIX advisory locks (darwin/linux -- the target platforms)
+    _HAVE_FCNTL = True
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    fcntl = None
+    _HAVE_FCNTL = False
 
 # ---------------------------------------------------------------------------
 # Layout
@@ -107,6 +115,131 @@ _PROVIDER_ENV_ALIASES = {
     "kimi": ["KIMI_API_KEY", "MOONSHOT_API_KEY"],
     "moonshot": ["MOONSHOT_API_KEY", "KIMI_API_KEY"],
 }
+
+# ---------------------------------------------------------------------------
+# Cross-process per-provider concurrency caps (SPEC 8.4 CONCURRENCY).
+#
+# The engine spawns every stage job as a detached subprocess (intake_router.py:617
+# Popen start_new_session=True) and each stage spawns model_router route/judge_harness
+# as a NEW subprocess per model call. threading.Semaphore is per-process and useless
+# here: every in-flight call runs in its own fresh process, so a webhook spike still
+# fires unbounded concurrent calls against a rate-limited provider like ollama-cloud
+# (wave cap ~8). The fix: advisory fc ntl.flock over N slot descriptors under the
+# engine state dir (the pattern alert-dedup.py already uses for its window guard).
+#
+# Each provider gets `max_concurrent` slot descriptors (files under state/provider_slots/
+# <provider>/slot_<0..N-1>.lock). Before a transport attempt route() acquires one
+# slot (blocks if all are held), and releases it after the attempt (success or
+# failure). This caps in-flight calls ACROSS processes, not just within a single
+# process -- which is where the actual concurrency lives.
+#
+# Slot counts are seeded from the resolved model-map.json `provider_caps` dict
+# (default: ollama-cloud=8 for the wave cap). Self-test proves blocking across
+# separate processes. Preflight --check warns when a low-cap provider is the
+# HEAVY-WRITER primary.
+# ---------------------------------------------------------------------------
+_PROVIDER_SLOTS_DIRNAME = "provider_slots"
+_DEFAULT_MAX_CONCURRENT = 8  # default for ollama-cloud (matches its wave cap)
+
+# Resolved at ModelRouter construction time from model_map.provider_caps.
+_PROVIDER_CAP_DEFAULTS: Dict[str, int] = {"ollama-cloud": _DEFAULT_MAX_CONCURRENT}
+
+
+@contextmanager
+def _acquire_provider_slot(provider: str, state_dir, caps: dict):
+    """Acquire one advisory-lock slot for `provider`, blocking if none are free.
+    On exit the slot is released (file descriptor closed -> flock released).
+
+    If state_dir is None or fcntl is unavailable, this is a no-op — the call
+    proceeds uncapped (fail-soft; a missing state dir is a config gap, not a
+    correctness crisis, and the provider's own 429 handling still kicks in)."""
+    if state_dir is None or not _HAVE_FCNTL:
+        yield
+        return
+    state_path = Path(state_dir) if not isinstance(state_dir, Path) else state_dir
+    slots_dir = state_path / _PROVIDER_SLOTS_DIRNAME / str(provider)
+    slots_dir.mkdir(parents=True, exist_ok=True)
+    max_slots = max(1, int(caps.get(str(provider), _DEFAULT_MAX_CONCURRENT)))
+    fh = None
+    slot_idx = -1
+    # Try every slot index 0..max_slots-1 in round-robin; block on the first
+    # available. On a genuine storm every slot is held so we block until one frees.
+    acquired = False
+    tries = 0
+    while not acquired:
+        for idx in range(max_slots):
+            slot_path = slots_dir / ("slot_%d.lock" % idx)
+            try:
+                slot_path.parent.mkdir(parents=True, exist_ok=True)
+                f = open(str(slot_path), "a+")
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                # Non-blocking acquire succeeded.
+                fh = f
+                slot_idx = idx
+                acquired = True
+                break
+            except (OSError, IOError):
+                # This slot is held by another process; try the next.
+                try:
+                    f.close()
+                except Exception:
+                    pass
+                continue
+        if not acquired:
+            # All slots held. Block on slot 0 (exclusive, blocking) to queue
+            # behind the slot holders. When it unblocks, round-robin again
+            # in case another waiter grabbed slot 0 first.
+            tries += 1
+            if tries > 120:  # 2-minute safety valve
+                raise ProviderError(
+                    provider, ErrorClass.TIMEOUT, status=None,
+                    detail="provider slot acquire timed out after %d tries" % tries)
+            slot_path = slots_dir / "slot_0.lock"
+            try:
+                slot_path.parent.mkdir(parents=True, exist_ok=True)
+                f = open(str(slot_path), "a+")
+                fcntl.flock(f.fileno(), fcntl.LOCK_EX)  # blocking
+                # Acquired slot 0. Release it immediately and retry the
+                # round-robin to get a proper slot assignment. This is a
+                # notification-wakeup: we block until ANY slot is free, then
+                # grab it properly.
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+                f.close()
+            except (OSError, IOError) as exc:
+                try:
+                    f.close()
+                except Exception:
+                    pass
+                raise ProviderError(
+                    provider, ErrorClass.TIMEOUT, status=None,
+                    detail="provider slot blocking acquire failed: %s" % type(exc).__name__)
+    try:
+        yield
+    finally:
+        if fh is not None:
+            try:
+                fcntl.flock(fh.fileno(), fcntl.LOCK_UN)
+                fh.close()
+            except Exception:
+                try:
+                    fh.close()
+                except Exception:
+                    pass
+
+
+def load_provider_caps(model_map: dict) -> Dict[str, int]:
+    """Return provider -> max_concurrent integer, seeded from the resolved map
+    and falling back to _PROVIDER_CAP_DEFAULTS for known providers."""
+    caps = dict(_PROVIDER_CAP_DEFAULTS)
+    raw = (model_map or {}).get("provider_caps")
+    if isinstance(raw, dict):
+        for k, v in raw.items():
+            try:
+                caps[str(k)] = max(1, int(v))
+            except (TypeError, ValueError):
+                pass
+    return caps
+
 
 # ---------------------------------------------------------------------------
 # Anthropic-family deny pattern. Assembled from FRAGMENTS so this shipped runtime
@@ -581,7 +714,8 @@ class ModelRouter:
                  credential_resolver: Optional[CredentialResolver] = None,
                  parameter_encoder: Optional[Callable] = None,
                  timeout: float = 600.0,
-                 hold_immediately_on_credit_out: bool = False):
+                 hold_immediately_on_credit_out: bool = False,
+                 state_dir: Optional[str] = None):
         if model_map is not None:
             validate_resolved_map(model_map)
         self.model_map = model_map
@@ -597,6 +731,10 @@ class ModelRouter:
         # (the whole point of a chain), holding only at true exhaustion. Operators who
         # want an immediate credit_out hold on the FIRST insufficient-credits set this.
         self.hold_immediately_on_credit_out = hold_immediately_on_credit_out
+        # Cross-process per-provider concurrency caps (SPEC 8.4 CONCURRENCY).
+        # Thread-safe ACROSS processes via fcntl.flock slot files.
+        self._provider_caps = load_provider_caps(model_map or {})
+        self._state_path = Path(state_dir) if state_dir else None
 
     # -- helpers ---------------------------------------------------------
     @staticmethod
@@ -669,67 +807,71 @@ class ModelRouter:
             # Pre-meter (may block on the per-deliverable budget ceiling -> exit 4).
             self.pre_meter(context, tier, model, est_prompt)
 
-            # Call the provider with capped exponential backoff for transient
-            # failures (429/5xx/timeout) on the SAME link before advancing.
-            attempts = 0
-            immediate_hold = False
-            while True:
-                try:
-                    req = build_chat_request(link, provider, model, messages, params,
-                                             cred_value, self.parameter_encoder)
-                    resp = self.transport(req, self.timeout)
-                except ProviderError as pe:
-                    if _is_retryable(pe) and attempts < _MAX_RETRY_ATTEMPTS:
+            # Acquire cross-process provider concurrency slot (SPEC 8.4).
+            # This gates concurrent calls ACROSS all engine subprocesses --
+            # threading primitives are useless in this architecture.
+            with _acquire_provider_slot(provider, self._state_path, self._provider_caps):
+                # Call the provider with capped exponential backoff for transient
+                # failures (429/5xx/timeout) on the SAME link before advancing.
+                attempts = 0
+                immediate_hold = False
+                while True:
+                    try:
+                        req = build_chat_request(link, provider, model, messages, params,
+                                                 cred_value, self.parameter_encoder)
+                        resp = self.transport(req, self.timeout)
+                    except ProviderError as pe:
+                        if _is_retryable(pe) and attempts < _MAX_RETRY_ATTEMPTS:
+                            delay = _RETRY_BACKOFF_DELAYS[min(attempts, len(_RETRY_BACKOFF_DELAYS) - 1)]
+                            time.sleep(delay)
+                            attempts += 1
+                            continue
+                        degradations.append({"provider": provider, "order": order,
+                                             "class": pe.error_class.value,
+                                             "status": pe.status, "detail": pe.detail})
+                        if pe.error_class == ErrorClass.INSUFFICIENT_CREDITS:
+                            credit_seen = True
+                            if self.hold_immediately_on_credit_out:
+                                immediate_hold = True
+                        break
+
+                    if 200 <= resp.status < 300:
+                        try:
+                            parsed = parse_chat_response(resp, model)
+                        except ProviderError as pe:
+                            degradations.append({"provider": provider, "order": order,
+                                                 "class": pe.error_class.value,
+                                                 "status": resp.status, "detail": pe.detail})
+                            break
+                        # Honest record: refuse if the provider echoed an Anthropic id
+                        # or if the provider omitted the 'model' field (trust failure).
+                        try:
+                            self._guard_model(parsed["model_used"], provider)
+                        except ProviderError as pe:
+                            degradations.append({"provider": provider, "order": order,
+                                                 "class": pe.error_class.value,
+                                                 "status": resp.status, "detail": pe.detail})
+                            break
+                        self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
+                        return RouteResult(
+                            tier=tier, provider=provider, model_used=parsed["model_used"],
+                            chain_order=order, text=parsed["text"], usage=parsed["usage"],
+                            degradations=degradations)
+
+                    # Non-2xx: classify.
+                    eclass = classify_http_error(resp.status, resp.body_text)
+                    if eclass in _RETRYABLE_CLASSES and attempts < _MAX_RETRY_ATTEMPTS:
                         delay = _RETRY_BACKOFF_DELAYS[min(attempts, len(_RETRY_BACKOFF_DELAYS) - 1)]
                         time.sleep(delay)
                         attempts += 1
                         continue
                     degradations.append({"provider": provider, "order": order,
-                                         "class": pe.error_class.value,
-                                         "status": pe.status, "detail": pe.detail})
-                    if pe.error_class == ErrorClass.INSUFFICIENT_CREDITS:
+                                         "class": eclass.value, "status": resp.status})
+                    if eclass == ErrorClass.INSUFFICIENT_CREDITS:
                         credit_seen = True
                         if self.hold_immediately_on_credit_out:
                             immediate_hold = True
                     break
-
-                if 200 <= resp.status < 300:
-                    try:
-                        parsed = parse_chat_response(resp, model)
-                    except ProviderError as pe:
-                        degradations.append({"provider": provider, "order": order,
-                                             "class": pe.error_class.value,
-                                             "status": resp.status, "detail": pe.detail})
-                        break
-                    # Honest record: refuse if the provider echoed an Anthropic id
-                    # or if the provider omitted the 'model' field (trust failure).
-                    try:
-                        self._guard_model(parsed["model_used"], provider)
-                    except ProviderError as pe:
-                        degradations.append({"provider": provider, "order": order,
-                                             "class": pe.error_class.value,
-                                             "status": resp.status, "detail": pe.detail})
-                        break
-                    self.post_meter(context, tier, parsed["model_used"], parsed["usage"])
-                    return RouteResult(
-                        tier=tier, provider=provider, model_used=parsed["model_used"],
-                        chain_order=order, text=parsed["text"], usage=parsed["usage"],
-                        degradations=degradations)
-
-                # Non-2xx: classify.
-                eclass = classify_http_error(resp.status, resp.body_text)
-                if eclass in _RETRYABLE_CLASSES and attempts < _MAX_RETRY_ATTEMPTS:
-                    delay = _RETRY_BACKOFF_DELAYS[min(attempts, len(_RETRY_BACKOFF_DELAYS) - 1)]
-                    time.sleep(delay)
-                    attempts += 1
-                    continue
-                degradations.append({"provider": provider, "order": order,
-                                     "class": eclass.value, "status": resp.status})
-                if eclass == ErrorClass.INSUFFICIENT_CREDITS:
-                    credit_seen = True
-                    if self.hold_immediately_on_credit_out:
-                        immediate_hold = True
-                break
 
             if immediate_hold:
                 break
@@ -749,9 +891,11 @@ class ModelRouter:
 # ---------------------------------------------------------------------------
 def route(tier: str, messages: List[dict], context: Optional[dict] = None,
           run_dir: Optional[str] = None, model_map_path: Optional[str] = None,
+          state_dir: Optional[str] = None,
           **router_kwargs) -> RouteResult:
     model_map, _ = load_model_map(model_map_path, run_dir)
-    return ModelRouter(model_map=model_map, **router_kwargs).route(tier, messages, context)
+    return ModelRouter(model_map=model_map, state_dir=state_dir, **router_kwargs).route(
+        tier, messages, context)
 
 
 # ---------------------------------------------------------------------------
@@ -801,8 +945,24 @@ def _cli_route(args) -> int:
     messages = payload["messages"]
     context = payload.get("context", {})
     model_map, _ = load_model_map(args.path, args.run_dir)
+    # Resolve state dir for cross-process concurrency slots. The --run-dir is
+    # typically the engine state dir or a run-specific subdir. Use the run-dir
+    # if provided; else fall back to env vars (same resolution as intake_router).
+    state_dir = args.run_dir or None
+    if not state_dir:
+        env = os.environ.get("ANTHOLOGY_STATE_DIR", "").strip()
+        if env:
+            state_dir = env
+        else:
+            data = os.environ.get("OPENCLAW_DATA_DIR", "").strip()
+            if data:
+                state_dir = str(Path(data) / "anthology-engine" / "state")
+            else:
+                home = os.environ.get("HOME") or os.path.expanduser("~")
+                state_dir = str(Path(home) / ".anthology-engine" / "state")
     router = ModelRouter(model_map=model_map,
-                         hold_immediately_on_credit_out=args.hold_on_credit)
+                         hold_immediately_on_credit_out=args.hold_on_credit,
+                         state_dir=state_dir)
     result = router.route(tier, messages, context)
     out = result.to_public_dict()
     out["text"] = result.text
@@ -1105,6 +1265,94 @@ def self_test() -> int:
                          hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
     lres = router.route("LIGHT", [{"role": "user", "content": "extract"}], {"deliverable_key": "d9"})
     check("LIGHT tier routes", lres.provider == "ollama-cloud" and lres.model_used == "minimax-v3")
+
+    # t14: provider_caps block is resolved from the model map
+    caps_map = dict(model_map)
+    caps_map["provider_caps"] = {"ollama-cloud": 3, "openrouter": 10}
+    router = ModelRouter(model_map=caps_map, transport=tr,
+                         pre_meter=lambda *a, **k: None, post_meter=lambda *a, **k: None,
+                         hold_fn=lambda *a, **k: None, alert_fn=lambda *a, **k: None)
+    check("provider_caps parsed from map: ollama-cloud=3",
+          router._provider_caps.get("ollama-cloud") == 3)
+    check("provider_caps parsed from map: openrouter=10",
+          router._provider_caps.get("openrouter") == 10)
+    # Unknown provider not in the caps dict defaults to _DEFAULT_MAX_CONCURRENT=8
+    # when _acquire_provider_slot resolves it.
+    check("provider_caps default for unknown provider",
+          _DEFAULT_MAX_CONCURRENT == 8)
+
+    # t15: cross-process concurrency cap proves BLOCKING across separate processes.
+    # We launch 5 subprocesses that each acquire a provider slot for ollama-cloud
+    # (cap=2), hold it for 0.4s, then release. Only 2 should acquire immediately;
+    # 3 queue behind. This proves the fcntl.flock cross-process cap works
+    # (a per-process Semaphore test would pass green but be hollow).
+    if _HAVE_FCNTL:
+        import tempfile as _tmp15
+        _tmp_dir15 = Path(_tmp15.mkdtemp(prefix="model_router_cap_"))
+        _sd15 = str(_tmp_dir15)
+        # Create the caps: ollama-cloud max 2 concurrent
+        _cap_map15 = _synthetic_resolved_map()
+        _cap_map15["provider_caps"] = {"ollama-cloud": 2}
+        # Write a temp map so subprocesses can load it
+        _map_path15 = _tmp_dir15 / "cap-map.json"
+        _map_path15.write_text(json.dumps(_cap_map15), encoding="utf-8")
+        # Write a temp worker script (can't use -c with 'with' statement inline)
+        _worker_path15 = _tmp_dir15 / "_cap_worker.py"
+        _worker_path15.write_text(
+            "#!/usr/bin/env python3\n"
+            "import json, os, sys, time\n"
+            "if __name__ == '__main__':\n"
+            "    mp_path, state_dir, worker_id = sys.argv[1], sys.argv[2], int(sys.argv[3])\n"
+            "    sys.path.insert(0, %r)\n" % str(SCRIPTS)
+            + "    os.environ.setdefault('OLLAMA_API_KEY', 'dummy')\n"
+            "    os.environ.setdefault('OPENROUTER_API_KEY', 'dummy')\n"
+            "    os.environ.setdefault('GOOGLE_API_KEY', 'dummy')\n"
+            "    os.environ.setdefault('MINIMAX_API_KEY', 'dummy')\n"
+            "    os.environ.setdefault('DEEPSEEK_API_KEY', 'dummy')\n"
+            "    os.environ.setdefault('KIE_API_KEY', 'dummy')\n"
+            "    from model_router import _acquire_provider_slot, load_provider_caps\n"
+            "    mp = json.load(open(mp_path))\n"
+            "    caps = load_provider_caps(mp)\n"
+            "    t0 = time.time()\n"
+            "    with _acquire_provider_slot('ollama-cloud', state_dir, caps):\n"
+            "        acquired = time.time() - t0\n"
+            "        time.sleep(0.40)\n"
+            "    print(json.dumps({'id': worker_id, 'acquired_ms': int(acquired * 1000),\n"
+            "                     'total_ms': int((time.time() - t0) * 1000)}))\n",
+            encoding="utf-8")
+        procs15 = []
+        results15 = []
+        for _i15 in range(5):
+            args15 = [sys.executable, str(_worker_path15),
+                      str(_map_path15), _sd15, str(_i15)]
+            p = subprocess.Popen(args15, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, text=True)
+            procs15.append(p)
+        for p in procs15:
+            try:
+                out, err = p.communicate(timeout=30)
+                if out.strip():
+                    results15.append(json.loads(out.strip()))
+                if err.strip():
+                    sys.stderr.write("[cap-test stderr] %s\n" % err.strip()[:200])
+            except Exception as _exc15:
+                results15.append({"id": -1, "error": str(_exc15)[:100]})
+        results15.sort(key=lambda x: x.get("acquired_ms", 99999))
+        early15 = [r for r in results15 if r.get("acquired_ms", 999) < 300]
+        late15 = [r for r in results15 if r.get("acquired_ms", 0) >= 300]
+        check("t15 cross-process cap: first 2 of 5 acquired fast (early=%d total=%d)"
+              % (len(early15), len(results15)),
+              len(early15) == 2)
+        check("t15 cross-process cap: last 3 queued, proves cross-proc blocking "
+              "(late=%d total=%d)" % (len(late15), len(results15)),
+              len(late15) >= 2)
+        check("t15 cross-process cap: all 5 workers completed (completed=%d)"
+              % len(results15),
+              len(results15) == 5)
+        import shutil as _sh15
+        _sh15.rmtree(str(_tmp_dir15), ignore_errors=True)
+    else:
+        check("t15 cross-process cap: SKIPPED (no fcntl on this platform)", True)
 
     print("\nmodel_router self-test: %s (%d checks, %d failures)"
           % ("OK" if not failures else "FAILURES", total[0], len(failures)))

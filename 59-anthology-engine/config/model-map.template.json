@@ -54,5 +54,15 @@
     }
   },
   "no_formatter_tier": true,
+  "provider_caps": {
+    "$note": "Per-provider maximum concurrent in-flight calls (SPEC 8.4 CONCURRENCY). advisory fcntl.flock slot files under state/provider_slots/<provider>/ cap concurrency ACROSS processes (intake_router spawns detached subprocesses; threading primitives are per-process and useless). The default caps match known provider wave limits; values can be tuned per box in the resolved model-map.json. Route-level backoff still applies within a capped slot.",
+    "ollama-cloud": 8,
+    "openrouter": 20,
+    "gemini": 20,
+    "minimax": 20,
+    "deepseek": 20,
+    "kimi": 20,
+    "moonshot": 20
+  },
   "formatter_note": "The five legacy LLM HTML-formatter calls are RETIRED. All document formatting is deterministic Python (pdf_render.py + config/pdf-house-style); there is NO formatter model tier."
 }
