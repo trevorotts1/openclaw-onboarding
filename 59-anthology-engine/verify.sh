@@ -15,6 +15,35 @@
 # Exit 0 = verified; 4 = drift found.
 set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+
+# -- stamp-pin: recompute the enforcement hash and write ENGINE-PIN.sha256
+if [ "${1:-}" = "stamp-pin" ]; then
+    SCRIPTS="$SELF_DIR/scripts"
+    ENFORCE_CANDIDATES=(
+        "$SELF_DIR/anthology-engine-entry.sh"
+        "$SELF_DIR/ENGINE-MANIFEST.json"
+        "$SCRIPTS/guard-prompt-pins.py"
+        "$SCRIPTS/guard-no-anthropic-runtime.py"
+        "$SCRIPTS/guard-font-floor.py"
+        "$SCRIPTS/guard-cron-inventory.py"
+    )
+    for f in "${ENFORCE_CANDIDATES[@]}"; do
+        if [ ! -f "$f" ]; then
+            echo "verify stamp-pin: missing enforcement candidate $f" >&2; exit 4
+        fi
+    done
+    PINFILE="$SELF_DIR/ENGINE-PIN.sha256"
+    if command -v sha256sum >/dev/null 2>&1; then
+        cat "${ENFORCE_CANDIDATES[@]}" | sha256sum | awk '{print $1}' > "$PINFILE"
+    elif command -v shasum >/dev/null 2>&1; then
+        cat "${ENFORCE_CANDIDATES[@]}" | shasum -a 256 | awk '{print $1}' > "$PINFILE"
+    else
+        echo "verify stamp-pin: no sha256 tool" >&2; exit 4
+    fi
+    echo "verify stamp-pin: ENGINE-PIN.sha256 written ($(cat "$PINFILE"))"
+    exit 0
+fi
+
 command -v python3 >/dev/null 2>&1 || { echo "verify: FATAL python3 required" >&2; exit 4; }
 
 SELF_DIR="$SELF_DIR" python3 - <<'PY'
