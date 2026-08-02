@@ -87,3 +87,21 @@ when the machine breaks or drifts. Built to the locked operator decisions D1-D9.
   correction. Companion rename in Skill 61 (`loop-protection-canary.sh` ->
   `loop-protection-first-proof.sh`, one-release shim retained at the old path) landed
   in the same unit; see `61-loop-protection-system/CHANGELOG.md`.
+
+- **Unit 6 - cron-registration failure now fails the install loudly** (version
+  0.1.5) - two defects fixed in `install.sh`, both reproduced before fixing. (1)
+  The `--self-test` cron-flag guard added in 0.1.4 matched only the FIRST PHYSICAL
+  LINE of each `openclaw cron add` invocation, so moving the (already-wrong)
+  `--schedule` flag onto a `\` continuation line evaded detection entirely and the
+  self-test still printed PASS - fixed by reconstructing each logical invocation
+  (joining continuations) before inspecting it. (2) The root cause: `|| echo WARN`
+  swallowed every cron-add failure and `do_install` returned `EX_OK` regardless, so
+  a broken installer reported success while registering ZERO monitoring crons -
+  fixed so a cron-registration failure now returns `EX_ERR` with an unmistakable
+  "INSTALL FAILED" block (`--no-cron` and "no gateway present" remain successes:
+  deliberately skipping is not failing). Self-test: 3 -> 5 cases, all pass.
+  Mutation-proven: removing the non-zero return while keeping the diagnostic text
+  turns the cron-failure self-test case red. `skill-version.txt` + SKILL.md
+  frontmatter bumped 0.1.4 -> 0.1.5 in this same commit (the prior merge to main
+  landed the `install.sh` fix without the version bump, tripping the repo's G3
+  skill-content-change gate; this closes that gap).
