@@ -237,14 +237,15 @@ def _invoke_wiring(key, run_dir=None):
     resolved_state_dir = str(ledger.default_state_dir())
 
     def _chapter_source(participant_key):
-        """Read a frozen chapter's body from the ONE canonical per-participant run
-        dir that stage_s5_chapter.py and stage_s6_rewrite.py write into
-        (state/runs/participants/<safe_key>/working/chapter.md). A live deployment
-        may instead read the Drive-hosted doc via drive_adapter.py; this local read
-        is the honest, real implementation available without a network call."""
-        p = participant_chapter_path(participant_key)
+        """Read a frozen chapter's body from the per-run state dir (--run-dir),
+        not from the hardcoded SKILL_DIR/state/runs path. The per-run dir makes
+        this hermetic and deterministic — a missing frozen chapter raises a
+        distinct S9Error rather than silently returning (b'',None) which would
+        masquerade as a byte-identity mismatch."""
+        safe = "".join(c if (c.isalnum() or c in "-_.") else "_" for c in (participant_key or "unknown"))
+        p = Path(rundir) / "working" / safe / "chapter.md"
         if not p.is_file():
-            return b"", None
+            raise logic.S9Error('AF-AE-S9-FROZEN-MISSING')
         data = p.read_bytes()
         return data, hashlib.sha256(data).hexdigest()
 
