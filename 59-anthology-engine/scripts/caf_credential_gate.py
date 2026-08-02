@@ -779,6 +779,20 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
 
     pairing = pairing_proof(resolutions_by_family)
 
+    # Anti-commingling allowlist-label consistency (FIX-31-LOW-GHL-ALLOWED).
+    # When both CAF_ALLOWED_LOCATION_IDS and GOHIGHLEVEL_ALLOWED_LOCATION_IDS are set
+    # they must hold identical location-id sets -- a mismatch means the box's
+    # anti-commingling fence is split across two disagreeing labels.
+    allowlist_consistency_verdict = None  # clean unless proven mismatched
+    caf_res = resolve_label("caf_allowed_location_ids", ALLOWED_LOCATION_LABELS, sources)
+    ghl_res = resolve_label("ghl_allowed_location_ids", ("GOHIGHLEVEL_ALLOWED_LOCATION_IDS",), sources)
+    if caf_res.present and ghl_res.present and caf_res.value != ghl_res.value:
+        allowlist_consistency_verdict = {
+            "reason": "allowlist_label_mismatch",
+            "detail": "CAF_ALLOWED_LOCATION_IDS and GOHIGHLEVEL_ALLOWED_LOCATION_IDS "
+                      "disagree (%d vs %d locations) -- the anti-commingling fence is split"
+                      % (len(caf_res.value.split(",")), len(ghl_res.value.split(",")))}
+
     # Anti-commingling over the resolved CLIENT Convert and Flow credentials.
     namespaced_index = index_namespaced_values(sources)
     # Deny fingerprints: explicit + the env-supplied list.
@@ -800,14 +814,16 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
                   "targets": [str(t) for t in targets]}
 
     # Exit precedence: 4 (violation) > 2 (missing, incl. delivery) > 0.
-    if not fp_verdict["clean"] or not inline["clean"]:
+    if not fp_verdict["clean"] or not inline["clean"] or allowlist_consistency_verdict:
         exit_code = EX_VIOLATION
-        if not inline["clean"] and fp_verdict["clean"]:
-            verdict = "INLINE_EXPOSURE"
-        elif not inline["clean"]:
-            verdict = "COMMINGLE_AND_INLINE_EXPOSURE"
-        else:
-            verdict = "COMMINGLE"
+        parts = []
+        if not fp_verdict["clean"]:
+            parts.append("COMMINGLE")
+        if not inline["clean"]:
+            parts.append("INLINE_EXPOSURE")
+        if allowlist_consistency_verdict:
+            parts.append("ALLOWLIST_LABEL_MISMATCH")
+        verdict = "_AND_".join(parts)
     elif missing or missing_delivery:
         exit_code = EX_MISSING
         verdict = "MISSING_LABEL"
@@ -824,6 +840,7 @@ def gate(environ=None, store_paths=None, extended_stores=False, scan_paths=None,
         "missing": missing,
         "pairing": pairing,
         "fingerprint": fp_verdict,
+        "allowlist_labels": allowlist_consistency_verdict,
         "inline_scan": inline,
         "delivery_gated": require_delivery,
         "delivery": {"resolutions": delivery_report, "missing": missing_delivery,
@@ -857,6 +874,9 @@ def render_human(report, show_fingerprints=False):
                     ", ".join(fpv["checks_inactive"]) or "none"))
     for rs in fpv["reasons"]:
         lines.append("    ! %s: %s -- %s" % (rs["credential"], rs["code"], rs["detail"]))
+    alv = report.get("allowlist_labels")
+    if alv:
+        lines.append("    ! allowlist labels: %s -- %s" % (alv["reason"], alv["detail"]))
     isc = report["inline_scan"]
     if isc.get("scanned"):
         lines.append("  inline-exposure scan: %s (%d finding(s))"
@@ -1213,6 +1233,41 @@ def self_test():
     assert rep["delivery"]["mode"] == "n8n_broker", rep
     print("  [19] n8n broker mode: broker pair replaces SA trio (PASS, no key on box, "
           "no token leak); half-configured -> exit 2: OK")
+
+    # 20. Anti-commingling allowlist-label consistency: when both
+    #     CAF_ALLOWED_LOCATION_IDS and GOHIGHLEVEL_ALLOWED_LOCATION_IDS are set, they must
+    #     carry identical location-id sets; a mismatch exits 4 with
+    #     ALLOWLIST_LABEL_MISMATCH. Neither label set -> clean; only one set -> clean (no
+    #     pair to disagree); both set and matching -> clean.
+    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
+                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                              "CAF_ALLOWED_LOCATION_IDS": "locA,locB",
+                              "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
+                     store_paths=[], do_scan=False)
+    assert code == EX_OK and rep["verdict"] == "PASS", ("agreeing allowlists "
+        "must pass, got %s" % rep)
+    assert rep["allowlist_labels"] is None, rep
+    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
+                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                              "CAF_ALLOWED_LOCATION_IDS": "locA",
+                              "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
+                     store_paths=[], do_scan=False)
+    assert code == EX_VIOLATION and "ALLOWLIST_LABEL_MISMATCH" in rep["verdict"], rep
+    assert rep["allowlist_labels"]["reason"] == "allowlist_label_mismatch", rep
+    assert "1 vs 2" in rep["allowlist_labels"]["detail"], rep
+    # Only one label set -> no pair to disagree -> clean.
+    code, _ = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
+                            "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                            "GOHIGHLEVEL_ALLOWED_LOCATION_IDS": "locA,locB"},
+                   store_paths=[], do_scan=False)
+    assert code == EX_OK
+    # Neither label set -> clean.
+    code, _ = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
+                            "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
+                   store_paths=[], do_scan=False)
+    assert code == EX_OK
+    print("  [20] allowlist-label consistency: match->PASS, mismatch->exit4 "
+          "ALLOWLIST_LABEL_MISMATCH (1 vs 2), one-label/neither->clean: OK")
 
     print("[caf_credential_gate] self-test: PASS")
     return EX_OK
