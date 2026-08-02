@@ -111,6 +111,14 @@ for key in ("owner_skip_approvals", "owner_skip_approval"):
 for r in recs:
     if not isinstance(r, dict): continue
     code = str(r.get("gate") or r.get("gate_code") or r.get("code") or "").strip()
+    # FIX-18: Reject a wildcard "*" gate code — one record disarming EVERY entry gate
+    # is a security defect. Require an exact AF code (AF-AW-HASH-PIN, AF-AW-ENTRY-BYPASS,
+    # AW_DEPS_MISSING, etc.) so each skip token gates exactly ONE failure mode.
+    if code == "*":
+        print("REJECTED: wildcard gate {'gate':'*'} in process_manifest.json disarms EVERY "
+              "entry gate from one record — require an exact AF code (AF-AW-HASH-PIN, "
+              "AF-AW-ENTRY-BYPASS, AW_DEPS_MISSING, ...)", file=sys.stderr)
+        sys.exit(2)
     if code not in (gate, "*"): continue
     if (r.get("approved") is True or r.get("owner_approved") is True) \
        and str(r.get("approved_by", "")).strip() and str(r.get("reason", "")).strip():

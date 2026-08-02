@@ -452,6 +452,32 @@ def run(manifest, run_dir: Path, upto) -> int:
 def _write_proc(run_dir: Path, proc: dict, failed):
     proc["failed_phase"] = failed
     out = run_dir / "working" / "checkpoints" / "process_manifest.json"
+    # Merge: read the existing manifest (if any) and preserve its owner_skip_approvals
+    # (and any other approvals the operator logged through anthology-entry.sh) so the
+    # token is never silently clobbered when run_anthology.py re-writes this file at
+    # every phase advance/block (FIX-18). The orchestrator OWNS the phase trace; the
+    # entry OWNS the approval token — neither should overwrite the other.
+    existing = {}
+    if out.is_file():
+        try:
+            existing = json.loads(out.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            existing = {}
+    if isinstance(existing, dict):
+        saved = {}
+        for key in ("owner_skip_approvals", "owner_skip_approval"):
+            val = existing.get(key)
+            if isinstance(val, (list, dict)):
+                saved[key] = val
+        # Fold saved approvals into the fresh proc dict (don't clobber).
+        # If the fresh dict has its own approvals key, merge lists; otherwise copy.
+        for key, val in saved.items():
+            if key in proc:
+                merged = (proc[key] if isinstance(proc[key], list) else [proc[key]])
+                incoming = (val if isinstance(val, list) else [val])
+                proc[key] = merged + incoming
+            else:
+                proc[key] = val
     try:
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_text(json.dumps(proc, indent=2), encoding="utf-8")

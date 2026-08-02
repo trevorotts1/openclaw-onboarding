@@ -282,6 +282,87 @@ else
     fails=$((fails + 1))
 fi
 
+# 11) FIX-18 — owner_skip_approval clobber + wildcard gate "*" rejection.
+#     (a) _write_proc() must MERGE existing owner_skip_approvals, not clobber them.
+#     (b) A {gate:"*"} token must be REJECTED (one record disarming every gate).
+echo "  -- FIX-18: owner_skip_approval survives _write_proc() + wildcard rejection --"
+
+# (a) clobber: seed a valid token, call _write_proc() with a fresh dict, assert
+#     the token is still present.
+_clobber_out="$(SKILL_DIR="$SKILL_DIR" "$PY" -c '
+import json, sys, os, tempfile
+from pathlib import Path
+td = Path(tempfile.mkdtemp())
+pm = td / "working" / "checkpoints" / "process_manifest.json"
+pm.parent.mkdir(parents=True)
+pm.write_text(json.dumps({
+    "owner_skip_approvals": [{"gate":"AF-AW-HASH-PIN","approved":True,
+                              "approved_by":"operator1","reason":"known good drift"}]
+}), encoding="utf-8")
+sys.path.insert(0, os.environ["SKILL_DIR"])
+from run_anthology import _write_proc
+_write_proc(td, {"skill":"test","phases":[]}, failed=None)
+result = json.loads(pm.read_text(encoding="utf-8"))
+token = result.get("owner_skip_approvals") or result.get("owner_skip_approval")
+if isinstance(token, list) and len(token) == 1 and token[0].get("gate") == "AF-AW-HASH-PIN":
+    print("PASS: owner_skip_approval survived _write_proc merge")
+    sys.exit(0)
+else:
+    print("FAIL: owner_skip_approval was clobbered; result=%s" % token)
+    sys.exit(1)
+' 2>&1)"; _clobber_rc=$?
+if [ "$_clobber_rc" -eq 0 ]; then
+    printf '  [PASS] FIX-18 clobber: owner_skip_approval survives _write_proc()\n'
+else
+    printf '  [FAIL] FIX-18 clobber: %s\n' "$_clobber_out"
+    fails=$((fails + 1))
+fi
+
+# (b) wildcard: owner_skip_approved("AF-AW-HASH-PIN") must exit 2 (not 0) when
+#     process_manifest.json carries {gate:"*"}.
+_wildcard_out="$("$PY" - <<'PY' 2>&1
+import json, sys, tempfile, os
+from pathlib import Path
+td = Path(tempfile.mkdtemp())
+os.environ["RUN_DIR"] = str(td)
+pm = td / "working" / "checkpoints" / "process_manifest.json"
+pm.parent.mkdir(parents=True)
+pm.write_text(json.dumps({
+    "owner_skip_approvals": [{"gate":"*","approved":True,
+                              "approved_by":"bad-actor","reason":"disarm everything"}]
+}), encoding="utf-8")
+os.environ["PROC_MANIFEST"] = str(pm)
+os.environ["GATE"] = "AF-AW-HASH-PIN"
+gate_code = os.environ["GATE"]
+try:
+    obj = json.load(open(os.environ["PROC_MANIFEST"]))
+except Exception:
+    sys.exit(1)
+recs = []
+for key in ("owner_skip_approvals", "owner_skip_approval"):
+    v = obj.get(key) if isinstance(obj, dict) else None
+    if isinstance(v, list): recs += v
+    elif isinstance(v, dict): recs.append(v)
+for r in recs:
+    if not isinstance(r, dict): continue
+    code = str(r.get("gate") or r.get("gate_code") or r.get("code") or "").strip()
+    if code == "*":
+        print("REJECTED: wildcard gate {'gate':'*'}", file=sys.stderr)
+        sys.exit(2)
+    if code not in (gate_code, "*"): continue
+    if (r.get("approved") is True or r.get("owner_approved") is True) \
+       and str(r.get("approved_by", "")).strip() and str(r.get("reason", "")).strip():
+        sys.exit(0)
+sys.exit(1)
+PY
+)"; _wildcard_rc=$?
+if [ "$_wildcard_rc" -eq 2 ]; then
+    printf '  [PASS] FIX-18 wildcard: {gate:"*"} rejected (exit 2)\n'
+else
+    printf '  [FAIL] FIX-18 wildcard: rc=%s (expected 2); output: %s\n' "$_wildcard_rc" "$_wildcard_out"
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 54 self-verification checks green."
