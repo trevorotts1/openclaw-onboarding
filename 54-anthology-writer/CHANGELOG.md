@@ -1,5 +1,24 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.5 — 2026-08-02 — Warfix batch 3: FIX-23..FIX-30
+
+### Fixed (batch 3 — FIX-23 through FIX-30)
+- **FIX-23** — `set -e` added to `preflight.sh` / `verify-deps.sh`; kept
+  `set -uo` in `verify.sh` and `anthology-entry.sh` (set -e broke the test
+  harness and gate_fail error capture). Dropped a stale
+  `skills/54-anthology-writer/verify.sh` duplicate.
+- **FIX-24** — transient prover failures retried (3 attempts, exponential
+  backoff); combined with FIX-09 timeout helper; ENGINE-PIN → dea4fcfb.
+- **FIX-25** — docs omit P0A-AVATAR; MASTERDOC + intake template updated.
+- **FIX-26** — same-day bundle collision no longer silently overwrites;
+  ENGINE-PIN → f3223749.
+- **FIX-28** — negative attack-vector E2E fixtures (AF-AW-OVERRIDE-UNLOGGED,
+  AF-AW-ENTRY-BYPASS .js, AF-AW-UNRESOLVED-MODELMAP).
+- **FIX-29** — enforcement set single-sourced in `ENFORCEMENT-FILES.list`
+  (incl. `prove_aw_model_role.py`).
+- **FIX-30** — gate numbering corrected to 4/4; overlong `--plan` lines
+  wrapped; ENGINE-PIN → 274a80d2.
+
 ## 1.4.4 — 2026-08-02 — Warfix batch 2: FIX-11..FIX-22
 
 ### Fixed (batch 2 — FIX-11 through FIX-22)

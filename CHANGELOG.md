@@ -165,6 +165,23 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.56]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 3 (FIX-23..FIX-30)
+
+Eight more reviewed warfixes for `54-anthology-writer` landed on main via the
+merge train (each truth-gated to its reviewed headCommit and passed through the
+skill's full `verify.sh` self-verification gate):
+
+- **FIX-23** — `set -e` on preflight/verify-deps; entry/verify kept `set -uo`
+  (set -e broke gate_fail capture); dropped stray `skills/` duplicate.
+- **FIX-24** — transient prover failures retried (3 attempts, backoff).
+- **FIX-25** — docs omit P0A-AVATAR; MASTERDOC + intake template updated.
+- **FIX-26** — same-day bundle collision no longer silently overwrites.
+- **FIX-28** — negative attack-vector E2E fixtures (override-unlogged, .js bypass, unresolved modelmap).
+- **FIX-29** — enforcement set single-sourced in `ENFORCEMENT-FILES.list`.
+- **FIX-30** — gate numbering corrected to 4/4; overlong `--plan` lines wrapped.
+
+Skill 54 version bumped 1.4.4 → 1.4.5. ENGINE-PIN re-pinned per batch (dea4fcfb → 274a80d2).
+
 ## [v21.4.55]  -  2026-08-02  -  Skill 54 anthology-writer warfix batch 2 (FIX-11..FIX-22)
 
 Ten more reviewed warfixes for `54-anthology-writer` landed on main via the
