@@ -1,6 +1,6 @@
 # Role recipe — Anthology Chapter Author
 
-**Department:** Content / Publishing (the Book engine department, O7).
+**Department:** marketing
 **Role slug:** `anthology-chapter-author`
 **Skill:** 54 — Anthology Writer.
 

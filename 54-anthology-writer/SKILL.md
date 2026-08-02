@@ -58,7 +58,7 @@ in any skill script or sub-agent prompt.
   (P0→P7, no phase skips, front-door nonce, signed certificate on a full pass).
 - `mc_board.py` — the shared, FAIL-SOFT Command Center board helper (byte-identical
   across the productized skills). Each run lands ONE mc-route Kanban card (department
-  **books**, persona **Anthology Writer**) and advances it: `in_progress` at start →
+  **marketing**, persona **Anthology Writer**) and advances it: `in_progress` at start →
   `review` on a certified deliverable (NEVER `done` — the independent QC scorer owns
   review→done) → `blocked` on a gate failure (so a failed run is VISIBLE, never
   stranded at in_progress). A box with no Command Center is a clean no-op; the board
