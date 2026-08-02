@@ -1,3 +1,8 @@
+### v0.1.12 -- warfix batch 1 (2026-08-02)
+
+Landed 20 Skill 59 warfix fixes (wave 1, batch 1):
+FIX-1 (Firebase key removed, label-based + fail-closed), FIX-2 (GATE-TOKEN-SECRET provisioned + documented, required), FIX-3 (n8n Drive Broker reconciled: shipped 53-node asset sole active on anthology-drive), FIX-5a (mc_board surfaces 409 distinctly), FIX-6 (SKILL.md frontmatter block scalar), FIX-8 (exceptions selftest 25/25 + standing-gate 3-tier), FIX-9 (install.sh honors gate exit codes), FIX-10 (IMAGE tier gated on KIE_API_KEY), FIX-13 (unreported model = trust failure), FIX-15 (manifest version 3-way check), FIX-16 (inventory +5 scripts), FIX-18 (Airtable docs), FIX-19 (cc-compat Skill 59), FIX-23 (strike-alert failing checks), FIX-25 (distinct participant-key exit), FIX-26 (set -uo comment convention), FIX-27 (subprocess timeouts), FIX-28 (cc-prod probe), FIX-29 (CONTROL-file substitution note), FIX-31 (allowlist reconciled).
+
 # Anthology Engine (Skill 59) -- Changelog
 
 ### FIX-15 -- version drift repair: ENGINE-MANIFEST skill_version synced to 0.1.11; verify.sh cross-checks skill-version.txt == SKILL.md == ENGINE-MANIFEST, exit 4 on drift (skill-version 0.1.10 -> 0.1.11, 2026-08-02)
