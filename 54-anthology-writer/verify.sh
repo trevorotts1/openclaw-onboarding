@@ -232,17 +232,10 @@ rm -rf "$DTMP"
 #     the enforcement set, AND a tampered enforcement file must trip GATE 3
 #     (AF-AW-HASH-PIN, exit 7) through the entry — proving the pin actually bites.
 echo "  -- ENGINE-PIN hash pin (AF-AW-HASH-PIN) --"
-ENFORCE_FILES=(
-    "$SKILL_DIR/run_anthology.py"
-    "$SCRIPTS/_aw_common.py"
-    "$SCRIPTS/prove_aw_intake.py"
-    "$SCRIPTS/prove_aw_avatar.py"
-    "$SCRIPTS/prove_aw_fidelity.py"
-    "$SCRIPTS/prove_aw_tone.py"
-    "$SCRIPTS/prove_aw_chapter.py"
-    "$SCRIPTS/aw_build_check.py"
-    "$SCRIPTS/verify_tone_core_sync.py"
-)
+ENFORCE_FILES=()
+while IFS= read -r f; do
+    [ -n "$f" ] && ENFORCE_FILES+=("$SKILL_DIR/$f")
+done < "$SCRIPTS/ENFORCEMENT-FILES.list"
 _sha_concat() {
     if command -v sha256sum >/dev/null 2>&1; then
         cat "$@" | sha256sum | awk '{print $1}'

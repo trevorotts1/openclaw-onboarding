@@ -238,17 +238,10 @@ fi
 # GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
 # ===========================================================================
 note "GATE 3/3 — VERSION/HASH PIN (orchestrator + provers + common)"
-ENFORCE_FILES=(
-    "$RUNNER"
-    "$SCRIPTS/_aw_common.py"
-    "$SCRIPTS/prove_aw_intake.py"
-    "$SCRIPTS/prove_aw_avatar.py"
-    "$SCRIPTS/prove_aw_fidelity.py"
-    "$SCRIPTS/prove_aw_tone.py"
-    "$SCRIPTS/prove_aw_chapter.py"
-    "$SCRIPTS/aw_build_check.py"
-    "$SCRIPTS/verify_tone_core_sync.py"
-)
+ENFORCE_FILES=()
+while IFS= read -r f; do
+    [ -n "$f" ] && ENFORCE_FILES+=("$SELF_DIR/$f")
+done < "$SCRIPTS/ENFORCEMENT-FILES.list"
 version_hash_pin() {
     local computed=""
     if command -v sha256sum >/dev/null 2>&1; then

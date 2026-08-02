@@ -1,0 +1,9 @@
+run_anthology.py
+scripts/_aw_common.py
+scripts/prove_aw_intake.py
+scripts/prove_aw_avatar.py
+scripts/prove_aw_fidelity.py
+scripts/prove_aw_tone.py
+scripts/prove_aw_chapter.py
+scripts/aw_build_check.py
+scripts/verify_tone_core_sync.py
