@@ -1,5 +1,15 @@
 # Changelog — Anthology Writer (Skill 54)
 
+## 1.4.2 — 2026-08-01 — FIX-01: ENGINE-PIN.sha256 stale/missing; GATE 3 hardens on missing pin
+
+### Fixed
+- **ENGINE-PIN.sha256** — recomputed against the 9 enforcement-set files
+  (9cc672e884da3b232431e63374c6d92225d9ea6d1c20c76ace9207e1abcf4fc5); the
+  previous pin was stale at HEAD and the file was deleted in the working tree.
+- **GATE 3** (`anthology-entry.sh` `version_hash_pin`) — now fails CLOSED when
+  `ENGINE-PIN.sha256` is MISSING or EMPTY (the old code fell through silently,
+  disarming the hash-pin gate entirely).
+
 ## 1.4.1 — 2026-07-12 — P2-07: mc_board.py never silently drops an unrecognized department_slug
 
 ### Fixed
