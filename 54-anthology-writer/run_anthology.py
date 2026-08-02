@@ -509,7 +509,7 @@ def plan(manifest) -> int:
     return EXIT_PASS
 
 
-def run(manifest, run_dir: Path, upto) -> int:
+def run(manifest, run_dir: Path, upto, mc_task=None) -> int:
     stop_at = upto or "P7-DELIVER"
     if stop_at not in PHASE_ORDER:
         print("FATAL: --upto %s is not a known phase" % stop_at, file=sys.stderr)
@@ -524,11 +524,18 @@ def run(manifest, run_dir: Path, upto) -> int:
         pre = ph.get("preflight") or {}
         print("=== PHASE %s — %s ===" % (pid, ph.get("name", "")))
         phase_ok = True
+        phase_note = "phase %s completed" % pid
         if pre.get("required"):
             ok, msg = _run_checker(pre["checker"], run_dir)
             print("   [%s] %s: %s" % ("OK" if ok else "FAIL", pre.get("checker"), msg))
             phase_ok = ok
+            phase_note = "%s: %s" % (pid, msg)
         proc["phases"].append({"id": pid, "passed": phase_ok})
+        if phase_ok:
+            # FIX-22: per-phase board heartbeat — advance the CC card in real-time
+            # so the Kanban board shows the active phase, not a static in_progress
+            # for the whole P0-P7 pipeline. Guarded by board_config availability.
+            _mc_board_advance(run_dir, mc_task, pid, phase_note)
         if not phase_ok:
             _write_proc(run_dir, proc, failed=pid)
             _LAST_BLOCK.clear()
@@ -1294,6 +1301,22 @@ def _write_qc_ticket(run_dir: Path, proc: dict, upto=None, rc=0):
         print("[qc-ticket] write failed (%s)" % exc, file=sys.stderr)
         return None
 
+def _mc_board_advance(run_dir, task_id, phase_id, note):
+    """FIX-22: per-phase board heartbeat — advance the CC card so the Kanban board
+    shows the active phase (P0 -> P1 -> P2 -> ...) instead of staying at in_progress
+    for the whole pipeline. Guarded by board_config availability; FAIL-SOFT."""
+    try:
+        sys.path.insert(0, str(_SKILL_DIR))
+        import mc_board
+        if mc_board.board_config() is None:
+            return
+        if not task_id:
+            return
+        mc_board.card_advance(run_dir, task_id, phase_id=phase_id,
+                              status="in_progress", note=note)
+    except Exception as exc:  # noqa: BLE001
+        print("[mc_board] advance best-effort skip (%s)" % exc, file=sys.stderr)
+
 
 def main(argv=None):
     ap = argparse.ArgumentParser(description="Deterministic Anthology Writer orchestrator (Skill 54).")
@@ -1342,7 +1365,7 @@ def main(argv=None):
               file=sys.stderr)
         return EXIT_NONCE
     _mc_task = _mc_board_begin(run_dir)
-    rc = run(manifest, run_dir, args.upto)
+    rc = run(manifest, run_dir, args.upto, mc_task=_mc_task)
     if rc == EXIT_PASS and not args.upto:
         _mc_board_done(run_dir, _mc_task)
     elif rc == EXIT_PASS and args.upto:
