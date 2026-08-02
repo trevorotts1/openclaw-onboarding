@@ -16,6 +16,7 @@ parallel and one blocked chapter never strands the others.
 | Phase | Produces | Gate (AF-AW-*) |
 |---|---|---|
 | P0 INTAKE | `working/intake.json` | INTAKE-MISSING, INTAKE-CREDENTIAL |
+| P0A AVATAR | `working/avatar.md` (via Skill 52 handoff + aw-12 extraction) | AVATAR-MISSING, AVATAR-HANDOFF-DRIFT, AVATAR-COPIED |
 | P1 FIDELITY | pinned prompts + tone-core lockstep | PROMPT-DRIFT, TONE-DRIFT |
 | P2 TONE-AUTHOR | `working/tone-doc.md` | — |
 | P3 TONE-QC | tone QC report | TONE-4, TONE-FLOOR |
