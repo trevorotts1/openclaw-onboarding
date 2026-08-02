@@ -690,7 +690,14 @@ def _delivery_root(override=None):
 def _bundle_dir(root: Path, slug: str) -> Path:
     import datetime
     stamp = datetime.datetime.now().strftime("%m-%d-%Y")
-    return root / ("Anthology-%s-%s" % (slug, stamp))
+    base = root / ("Anthology-%s-%s" % (slug, stamp))
+    # FIX-26: same-day same-participant collision — if the base dir already exists,
+    # append a -HHMMSS suffix so the second run gets its own labeled bundle instead
+    # of silently clobbering the first.
+    if base.exists():
+        ts = datetime.datetime.now().strftime("%H%M%S")
+        base = root / ("Anthology-%s-%s-%s" % (slug, stamp, ts))
+    return base
 
 
 def _delivery_bundle_receipt(run_dir: Path) -> Path:
