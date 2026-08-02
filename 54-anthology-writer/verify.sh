@@ -16,6 +16,9 @@
 #   7. shipped example re-issues the SHIPPED certificate_sha (deterministic => idempotent)
 #   8. shipped-example broken-variants reject
 #   9. seeded-defect E2E (a short chapter blocks the run; NO certificate issued)
+#  10. negative attack-vector E2E fixtures (AF-AW-OVERRIDE-UNLOGGED,
+#      AF-AW-ENTRY-BYPASS .js sender, AF-AW-UNRESOLVED-MODELMAP placeholder map)
+#  11. ENGINE-PIN hash pin + tamper negative
 #
 # Usage:  bash 54-anthology-writer/verify.sh
 # Exit:   0 = all checks passed;  nonzero = at least one check failed.
@@ -231,7 +234,69 @@ else
 fi
 rm -rf "$DTMP"
 
-# 10) ENGINE-PIN — the shipped ENGINE-PIN.sha256 must equal the computed hash of
+# 10) negative attack-vector E2E fixtures (AF-AW-OVERRIDE-UNLOGGED,
+#     AF-AW-ENTRY-BYPASS, AF-AW-UNRESOLVED-MODELMAP) — three additional attack
+#     vectors that had no automated fixtures; each must trip its expected exit code.
+# (a) AF-AW-OVERRIDE-UNLOGGED — an owner override with no log entry must NOT bypass
+#     a gate. We plant the GATE-2 bypass trigger (upload.sh referencing slack.com)
+#     AND an unlogged override; the gate must still fire (exit nonzero) because the
+#     override is missing approved_by/reason.
+echo "  -- AF-AW-OVERRIDE-UNLOGGED negative E2E (.json fixture in checkpoints/) --"
+OVTMP="$(mktemp -d)"
+mkdir -p "$OVTMP/working/checkpoints"
+for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
+    cp "$GOLD/$f" "$OVTMP/working/$f"
+done
+cp "$SKILL_DIR/test-fixtures/working/upload.sh" "$OVTMP/working/"
+cp "$ATK/owner_override.json" "$OVTMP/working/checkpoints/process_manifest.json"
+bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$OVTMP" >/dev/null 2>&1; ov_rc=$?
+if [ "$ov_rc" -ne 0 ] && [ ! -f "$OVTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
+    printf '  [PASS] AF-AW-OVERRIDE-UNLOGGED: unlogged override does NOT bypass gate (rc=%s)\n' "$ov_rc"
+else
+    printf '  [FAIL] AF-AW-OVERRIDE-UNLOGGED: unlogged override bypassed the gate (rc=%s)\n' "$ov_rc"
+    fails=$((fails + 1))
+fi
+rm -rf "$OVTMP"
+
+# (b) AF-AW-ENTRY-BYPASS — a .js sender with fetch to slack.com/api must trip exit 5.
+#     The bypass scanner (GATE 2) regex-matches slack\.com/api in any non-canonical
+#     file under the run dir.
+echo "  -- AF-AW-ENTRY-BYPASS .js sender negative E2E --"
+BPTMP="$(mktemp -d)"
+mkdir -p "$BPTMP/working"
+for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
+    cp "$GOLD/$f" "$BPTMP/working/$f"
+done
+cp "$ATK/bypass_notify.js" "$BPTMP/working/"
+bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$BPTMP" >/dev/null 2>&1; bp_rc=$?
+if [ "$bp_rc" -eq 5 ] && [ ! -f "$BPTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
+    printf '  [PASS] AF-AW-ENTRY-BYPASS: .js sender trips exit 5\n'
+else
+    printf '  [FAIL] AF-AW-ENTRY-BYPASS: .js sender did not trip exit 5 (rc=%s)\n' "$bp_rc"
+    fails=$((fails + 1))
+fi
+rm -rf "$BPTMP"
+
+# (c) AF-AW-UNRESOLVED-MODELMAP — a model-map.json with <CLIENT_PROVIDER_ID> and
+#     <CLIENT_MODEL> placeholders must trip exit 8 through the preflight --check
+#     pre-gate (GATE 1b).
+echo "  -- AF-AW-UNRESOLVED-MODELMAP negative E2E (placeholder map) --"
+MPTMP="$(mktemp -d)"
+mkdir -p "$MPTMP/working"
+for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
+    cp "$GOLD/$f" "$MPTMP/working/$f"
+done
+cp "$ATK/model_map_unresolved.json" "$MPTMP/model-map.json"
+bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$MPTMP" >/dev/null 2>&1; mp_rc=$?
+if [ "$mp_rc" -eq 8 ] && [ ! -f "$MPTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
+    printf '  [PASS] AF-AW-UNRESOLVED-MODELMAP: placeholder map trips exit 8\n'
+else
+    printf '  [FAIL] AF-AW-UNRESOLVED-MODELMAP: placeholder map did not trip exit 8 (rc=%s)\n' "$mp_rc"
+    fails=$((fails + 1))
+fi
+rm -rf "$MPTMP"
+
+# 11) ENGINE-PIN — the shipped ENGINE-PIN.sha256 must equal the computed hash of
 #     the enforcement set, AND a tampered enforcement file must trip GATE 3
 #     (AF-AW-HASH-PIN, exit 7) through the entry — proving the pin actually bites.
 echo "  -- ENGINE-PIN hash pin (AF-AW-HASH-PIN) --"
