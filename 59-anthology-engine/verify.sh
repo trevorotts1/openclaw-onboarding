@@ -165,6 +165,18 @@ for rel in owned:
     if banned.search(txt):
         fails.append("Anthropic-family id shape found in owned file: %s" % rel)
 
+    # --- no Google API key literal in any owned text file ---
+    _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
+    for rel in owned:
+        fp = p(rel)
+        if not os.path.isfile(fp): continue
+        try:
+            txt = io.open(fp, encoding="utf-8", errors="replace").read()
+        except Exception:
+            continue
+        if _google_api_re.search(txt):
+            fails.append("Google API key literal found in owned file: %s" % rel)
+
 if fails:
     print("verify: DRIFT (%d issue(s))" % len(fails))
     for m in fails: print("  - " + m)
