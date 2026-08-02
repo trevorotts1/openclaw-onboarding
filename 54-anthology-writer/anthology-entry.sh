@@ -211,9 +211,7 @@ if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/pr
             MODEL_MAP_PATH="$RUN_DIR/model-map.json"
             gate_fail "AF-AW-UNRESOLVED-MODELMAP" 8 "the run-dir $MODEL_MAP_PATH still carries \
 <CLIENT_PROVIDER_ID> or <CLIENT_MODEL> placeholders (or a banned Anthropic id). \
-To fix: open $MODEL_MAP_PATH, replace every '<CLIENT_PROVIDER_ID>' with a real provider id \
-(e.g. 'openrouter', 'ollama-cloud') and every '<CLIENT_MODEL>' with a real model name for your box \
-(e.g. 'qwen/qwen3-coder', 'deepseek/deepseek-v4-pro'). Then re-run anthology-entry.sh."
+Run: preflight.sh --resolve --interactive to configure your provider keys."
         else
             echo "  (preflight --check non-fatal rc=$PF_RC; continuing)"
         fi

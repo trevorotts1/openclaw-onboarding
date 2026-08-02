@@ -7,17 +7,31 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
 (Book Writer)** — the two share the tone core but are separate skills.
 
 ## One contributor, end to end
-1. **Preflight the box** (resolve the client's own NON-Anthropic tiers):
+1. **Preflight the box** (resolve the client's own NON-Anthropic tiers).
+   Choose one path:
+
+   **Interactive** (guides the operator through each tier):
    ```
-   bash 54-anthology-writer/preflight.sh --run-dir <RUN_DIR>
+   bash 54-anthology-writer/preflight.sh --resolve --interactive --run-dir <RUN_DIR>
    ```
-   This writes `model-map.json` into `<RUN_DIR>/` with `<CLIENT_PROVIDER_ID>` and
-   `<CLIENT_MODEL>` placeholder values for each tier. **After running preflight.sh,
-   you must resolve the `<CLIENT_PROVIDER_ID>` and `<CLIENT_MODEL>` placeholders in
-   `model-map.json` to real provider/model values for your box before proceeding to
-   step 4.** If you run preflight.sh interactively (stdin is a terminal) it will
-   prompt you for provider and model values per tier so the resolved map is
-   ready-to-run on the first pass.
+   Respond to each provider/model prompt. This writes a ready-to-run
+   `model-map.json` into `<RUN_DIR>/` on the first pass. No manual editing
+   required.
+
+   **Fleet-installer / automation** (emits placeholders; CI-safe):
+   ```
+   bash 54-anthology-writer/preflight.sh --non-interactive --run-dir <RUN_DIR>
+   ```
+   This writes `model-map.json` into `<RUN_DIR>/` with `<CLIENT_PROVIDER_ID>`
+   and `<CLIENT_MODEL>` placeholder values for each tier. After running, you
+   must resolve the placeholders by either:
+   - Running `preflight.sh --resolve --interactive` to fill them interactively, or
+   - Hand-editing `model-map.json` to replace every `<CLIENT_PROVIDER_ID>` with
+     a real provider id (e.g. `openrouter`, `ollama-cloud`) and every
+     `<CLIENT_MODEL>` with a real model name for your box (e.g.
+     `qwen/qwen3-coder`, `deepseek/deepseek-v4-pro`).
+   
+   In all cases, proceed to step 2 only after `model-map.json` is resolved.
 
 2. **Fill intake** at `<RUN_DIR>/working/intake.json` from
    `intake/aw-intake-template.md` (4 required fields; `personal_stories` may be
