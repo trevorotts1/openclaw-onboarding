@@ -669,8 +669,7 @@ def _load_client_override(run_dir: Path, intake: dict):
         return None
     try:
         ov = json.loads(ov_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError) as exc:
-        print("overrides.json could not be read: %s" % exc, file=sys.stderr)
+    except (OSError, ValueError):
         return None
     keys = ("chapter_word_min", "chapter_word_max", "tone_word_floor")
     status, _reason, applied = _aw.resolve_band_override(ov, intake, keys)

@@ -280,14 +280,6 @@ def load_intake(run_dir: Path) -> dict:
         return {}
 
 
-# ---- bypass-scan regex patterns (shared constant list) ------------------------
-# Patterns used across provers to scan for unresolved placeholders, credential-
-# shaped keys, and other bypass indicators. Centralized here so every prover
-# wires the same patterns without copying them inline.
-_BYPASS_PATTERNS: list = [
-    (re.compile(r"\{\{[^}]+\}\}|\[\[[^\]]+\]\]|<[A-Z][A-Z0-9_]{2,}>"), "unresolved placeholders"),
-]
-
 # ---- result plumbing --------------------------------------------------------
 class Result:
     """Accumulates AF-AW-* violations; decides the exit code fail-closed."""
