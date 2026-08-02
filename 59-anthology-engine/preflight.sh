@@ -53,14 +53,38 @@ OUT_DIR="$SELF_DIR"
 MODE="resolve"
 while [ $# -gt 0 ]; do
     case "$1" in
-        --run-dir)      OUT_DIR="${2:-}"; shift 2 ;;
-        --check)        MODE="check"; shift ;;
-        --broker-check) MODE="broker_check"; shift ;;
-        -h|--help) echo "usage: preflight.sh [--run-dir DIR] [--check] [--broker-check]"; exit 0 ;;
+        --run-dir)            OUT_DIR="${2:-}"; shift 2 ;;
+        --check)              MODE="check"; shift ;;
+        --broker-check)       MODE="broker_check"; shift ;;
+        --gate-credential|--gate-credential-check)
+                               MODE="gate_credential"; shift ;;
+        -h|--help) echo "usage: preflight.sh [--run-dir DIR] [--check] [--broker-check] [--gate-credential]"; exit 0 ;;
         *) echo "unknown arg: $1" >&2; exit 3 ;;
     esac
 done
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit 3; }
+
+if [ "$MODE" = "gate_credential" ]; then
+    CAF_CRED="$SELF_DIR/scripts/caf_credential_gate.py"
+    [ -f "$CAF_CRED" ] || { echo "FATAL: caf_credential_gate.py not found: $CAF_CRED" >&2; exit 3; }
+    RESULT_JSON="$(python3 "$CAF_CRED" --json 2>/dev/null || true)"
+    SECRET_PRESENT="$(printf '%s' "$RESULT_JSON" | python3 -c '
+import json, sys
+try:
+    rep = json.load(sys.stdin)
+except Exception:
+    print("error")
+    sys.exit(0)
+res = rep.get("resolutions", {}).get("anthology_gate_token_secret", {})
+print("true" if res.get("present") else "false")
+')"
+    if [ "$SECRET_PRESENT" = "true" ]; then
+        echo "preflight --gate-credential: ANTHOLOGY_GATE_TOKEN_SECRET SET -- PASS"
+        exit 0
+    fi
+    echo "AF-AE-GATE-TOKEN-SECRET: ANTHOLOGY_GATE_TOKEN_SECRET NOT SET. The gate engine mints participant tokens with this HMAC secret. Generate a 64-char hex value and set it in ~/.openclaw/secrets/secrets.env, then re-run." >&2
+    exit 2
+fi
 
 if [ "$MODE" = "broker_check" ]; then
     [ -f "$DRIVE_ADAPTER" ] || { echo "FATAL: drive_adapter.py not found: $DRIVE_ADAPTER" >&2; exit 3; }

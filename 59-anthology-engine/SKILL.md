@@ -58,6 +58,7 @@ across clients.
 | Aspect | Architecture |
 |--------|-------------|
 | Credential pair | `CONVERT_AND_FLOW_PIT` + `CONVERT_AND_FLOW_LOCATION_ID` -- one pair per client box |
+| Gate token secret | `ANTHOLOGY_GATE_TOKEN_SECRET` -- per-client 64-char hex HMAC secret for minting/verifying scoped participant gate tokens and PINs; resolved from the client env stores and required by `caf_credential_gate.py` |
 | Owner | The CLIENT's own GoHighLevel sub-account, provisioned in their own Convert and Flow instance |
 | Never | An operator-level, shared, fleet, or master API key. No single key drives multiple clients |
 | Resolution | Resolved per-box at install time by `caf_credential_gate.py` (W2.3), live process env first, then the three client env stores |

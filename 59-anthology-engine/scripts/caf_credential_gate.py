@@ -134,10 +134,13 @@ ALLOWED_LOCATION_LABELS = (
     "GOHIGHLEVEL_ALLOWED_LOCATION_IDS",
 )
 
-# The Convert and Flow PAIR is the gate's REQUIRED set (family key -> alias tuple).
+# The gate's REQUIRED set (family key -> alias tuple). The Convert and Flow PAIR
+# plus the per-client gate-token HMAC secret the Command Center's token page and the
+# participant nudge link depend on (AF-AE-GATE-TOKEN-SECRET, formerly informational).
 REQUIRED_FAMILIES = (
     ("convert_and_flow_pit", PIT_LABELS),
     ("convert_and_flow_location", LOCATION_LABELS),
+    ("anthology_gate_token_secret", ("ANTHOLOGY_GATE_TOKEN_SECRET",)),
 )
 
 # The wider PRD Section 14 credential family, resolved and reported for context under
@@ -153,7 +156,6 @@ INFORMATIONAL_FAMILIES = (
     ("deepseek_or_kimi_key_optional",
      ("DEEPSEEK_API_KEY", "KIMI_API_KEY", "MOONSHOT_API_KEY")),
     ("anthology_intake_hook_secret", ("ANTHOLOGY_INTAKE_HOOK_SECRET",)),
-    ("anthology_gate_token_secret", ("ANTHOLOGY_GATE_TOKEN_SECRET",)),
     ("search_tool_key_optional", ("PERPLEXITY_API_KEY", "PPLX_API_KEY")),
 )
 
@@ -897,11 +899,27 @@ def self_test():
     real_pit = "pit-" + "a1b2c3d4e5f6a7b8c9d0" * 2          # real-shaped, synthetic
     real_loc = "loc7Zx9Qw3Rt5Yu8Io2Pk4"
     other_pit = "pit-" + "9988776655443322110f" * 2
+    gate_token = "syntheticGateTokenHexUNIT20" + "0" * 16   # 64-char hex shape, synthetic
 
-    # 1. PASS: both members present, no collision, no exposure.
+    # The base required-credential dict for the DEFAULT gate (no --require-delivery,
+    # no promoted families). Every gate() call that currently expects EX_OK or needs
+    # to pass the missing-label check must include these three.
+    def _creds(**extra):
+        return dict({"CONVERT_AND_FLOW_PIT": real_pit,
+                     "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
+                     "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token}, **extra)
+
+    # 0. The gate-token secret is now REQUIRED (moved from INFORMATIONAL_FAMILIES).
+    #    Missing it when the pair is present must fail.
     code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
-                     store_paths=[], do_scan=False)
+                               "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
+                      store_paths=[], do_scan=False)
+    assert code == EX_MISSING and "anthology_gate_token_secret" in rep["missing"], rep
+    assert rep["resolutions"]["anthology_gate_token_secret"]["required"] is True, rep
+    print("  [0] gate-token secret REQUIRED (missing -> exit 2): OK")
+
+    # 1. PASS: all three required members present, no collision, no exposure.
+    code, rep = gate(environ=_creds(), store_paths=[], do_scan=False)
     assert code == EX_OK and rep["verdict"] == "PASS", rep
     assert rep["pairing"]["proven"], rep
     assert rep["resolutions"]["convert_and_flow_pit"]["source"] == "process-env", rep
@@ -917,13 +935,12 @@ def self_test():
     assert code == EX_MISSING, "half-pair must be exit 2, got %d" % code
     code, rep = gate(environ={}, store_paths=[], do_scan=False)
     assert code == EX_MISSING and set(rep["missing"]) == {
-        "convert_and_flow_pit", "convert_and_flow_location"}, rep
+        "convert_and_flow_pit", "convert_and_flow_location",
+        "anthology_gate_token_secret"}, rep
     print("  [2] MISSING label (half pair and empty) -> exit 2: OK")
 
     # 3. COMMINGLE via operator/shared value collision (config-free).
-    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-                              "OPERATOR_CAF_PIT": real_pit},   # same value under op label
+    code, rep = gate(environ=_creds(OPERATOR_CAF_PIT=real_pit),
                      store_paths=[], do_scan=False)
     assert code == EX_VIOLATION and rep["verdict"] == "COMMINGLE", rep
     codes = {r["code"] for r in rep["fingerprint"]["reasons"]}
@@ -931,9 +948,7 @@ def self_test():
     print("  [3] COMMINGLE via operator/shared value collision -> exit 4: OK")
 
     # 4. COMMINGLE via foreign-client value collision.
-    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-                              "CLIENT_XY_PIT": real_pit},
+    code, rep = gate(environ=_creds(CLIENT_XY_PIT=real_pit),
                      store_paths=[], do_scan=False)
     assert code == EX_VIOLATION, rep
     assert any(r["code"] == "foreign_client_value_collision"
@@ -942,27 +957,21 @@ def self_test():
 
     # 5. COMMINGLE via expected-own mismatch.
     wrong_fp = credential_fingerprint(other_pit)
-    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
-                     store_paths=[], do_scan=False,
+    code, rep = gate(environ=_creds(), store_paths=[], do_scan=False,
                      expected={"convert_and_flow_pit": wrong_fp})
     assert code == EX_VIOLATION, rep
     assert any(r["code"] == "expected_own_mismatch"
                for r in rep["fingerprint"]["reasons"]), rep
     # And the matching expected passes.
     right_fp = credential_fingerprint(real_pit)
-    code, _ = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                            "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
-                   store_paths=[], do_scan=False,
+    code, _ = gate(environ=_creds(), store_paths=[], do_scan=False,
                    expected={"convert_and_flow_pit": right_fp})
     assert code == EX_OK, "matching expected fp must pass"
     print("  [5] COMMINGLE via expected-own mismatch -> exit 4 (and match -> 0): OK")
 
     # 6. COMMINGLE via denylisted fingerprint (short prefix accepted).
     deny = credential_fingerprint(real_pit)[:16]
-    code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                              "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
-                     store_paths=[], do_scan=False, deny_fps=[deny])
+    code, rep = gate(environ=_creds(), store_paths=[], do_scan=False, deny_fps=[deny])
     assert code == EX_VIOLATION, rep
     assert any(r["code"] == "denylisted_fingerprint"
                for r in rep["fingerprint"]["reasons"]), rep
@@ -973,8 +982,10 @@ def self_test():
     with tempfile.TemporaryDirectory() as td:
         store = Path(td) / "store.env"
         store.write_text("CONVERT_AND_FLOW_PIT=%s\n"
-                         "CONVERT_AND_FLOW_LOCATION_ID=%s\n" % (other_pit, real_loc))
-        code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit},
+                         "CONVERT_AND_FLOW_LOCATION_ID=%s\n"
+                         "ANTHOLOGY_GATE_TOKEN_SECRET=%s\n" % (other_pit, real_loc, gate_token))
+        code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
+                                   "ANTHOLOGY_GATE_TOKEN_SECRET": gate_token},
                          store_paths=[store], do_scan=False)
         assert rep["resolutions"]["convert_and_flow_pit"]["source"] == "process-env", rep
         assert rep["resolutions"]["convert_and_flow_location"]["source"] == str(store), rep
@@ -994,9 +1005,7 @@ def self_test():
         assert "inline_provider_key_literal" in reasons, findings
         # And the token never appears in a finding.
         assert all("Z" * 40 not in json.dumps(f) for f in findings), findings
-        code, rep = gate(environ={"CONVERT_AND_FLOW_PIT": real_pit,
-                                  "CONVERT_AND_FLOW_LOCATION_ID": real_loc},
-                         store_paths=[], scan_paths=[leak])
+        code, rep = gate(environ=_creds(), store_paths=[], scan_paths=[leak])
         assert code == EX_VIOLATION and "INLINE_EXPOSURE" in rep["verdict"], rep
         print("  [8] INLINE exposure (literal header + inline key) -> exit 4: OK")
 
@@ -1074,7 +1083,7 @@ def self_test():
         print("  [11] sibling lockstep: caf_delivery not importable (%s), skipped" % exc)
 
     # 12. Idempotent no-op: a clean box run twice yields the same clean exit.
-    env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
+    env = _creds()
     c1, _ = gate(environ=env, store_paths=[], do_scan=False)
     c2, _ = gate(environ=env, store_paths=[], do_scan=False)
     assert c1 == c2 == EX_OK, "not idempotent"
@@ -1101,11 +1110,9 @@ def self_test():
     with tempfile.TemporaryDirectory() as td:
         sa = Path(td) / "blackceo-delivery-sa.json"
         sa.write_text('{"client_email":"svc","private_key":"NEVER_READ_HERE"}')
-        denv = {"CONVERT_AND_FLOW_PIT": real_pit,
-                "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-                "GOOGLE_SA_KEY_FILE": str(sa),
-                "GOOGLE_IMPERSONATE_USER": "delivery@blackceo.example",
-                "GOOGLE_DRIVE_ROOT_FOLDER": "0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7"}
+        denv = _creds(GOOGLE_SA_KEY_FILE=str(sa),
+                       GOOGLE_IMPERSONATE_USER="delivery@blackceo.example",
+                       GOOGLE_DRIVE_ROOT_FOLDER="0AKp8Qw3Rt5Yu8Io2Pk4Lz1Vt6Bn0Cy7")
         code, rep = gate(environ=denv, store_paths=[], do_scan=False, require_delivery=True)
         assert code == EX_OK and rep["verdict"] == "PASS", rep
         assert rep["delivery_gated"] is True and rep["delivery"]["missing"] == [], rep
@@ -1117,7 +1124,7 @@ def self_test():
 
     # 15. PER-CLIENT delivery MISSING: the gate is OPT-IN (the CnF pair alone still
     #     PASSes with delivery ungated), and each dropped lever -> exit 2 (LOUD STOP).
-    base = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
+    base = _creds()
     code, _ = gate(environ=base, store_paths=[], do_scan=False, require_delivery=False)
     assert code == EX_OK, "delivery must be opt-in (no --require-delivery -> not gated)"
     with tempfile.TemporaryDirectory() as td:
@@ -1139,9 +1146,9 @@ def self_test():
     #     MISSING file is not usable.
     with tempfile.TemporaryDirectory() as td:
         sa = Path(td) / "sa.json"; sa.write_text("{}")
-        env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-               "GOOGLE_SA_KEY_FILE": str(sa), "GOOGLE_IMPERSONATE_USER": "d@blackceo.example",
-               "GOOGLE_DRIVE_ROOT_FOLDER": "<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>"}
+        env = _creds(GOOGLE_SA_KEY_FILE=str(sa),
+                      GOOGLE_IMPERSONATE_USER="d@blackceo.example",
+                      GOOGLE_DRIVE_ROOT_FOLDER="<LABEL:GOOGLE_DRIVE_ROOT_FOLDER>")
         code, rep = gate(environ=env, store_paths=[], do_scan=False, require_delivery=True)
         assert code == EX_MISSING and "google_drive_root_folder" in rep["delivery"]["missing"], rep
         assert "slot" in rep["delivery"]["resolutions"]["google_drive_root_folder"].get("note", ""), rep
@@ -1158,11 +1165,11 @@ def self_test():
     #     AF-AE-COMMINGLE (only the client's OWN Convert and Flow keys are fingerprinted).
     with tempfile.TemporaryDirectory() as td:
         sa = Path(td) / "sa.json"; sa.write_text("{}")
-        env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-               "GOOGLE_SA_KEY_FILE": str(sa), "GOOGLE_IMPERSONATE_USER": "d@blackceo.example",
-               "GOOGLE_DRIVE_ROOT_FOLDER": "0ARealRootId1234567890abc",
-               "OPERATOR_GOOGLE_SA_KEY_FILE": str(sa),
-               "OPERATOR_GOOGLE_IMPERSONATE_USER": "d@blackceo.example"}
+        env = _creds(GOOGLE_SA_KEY_FILE=str(sa),
+                      GOOGLE_IMPERSONATE_USER="d@blackceo.example",
+                      GOOGLE_DRIVE_ROOT_FOLDER="0ARealRootId1234567890abc",
+                      OPERATOR_GOOGLE_SA_KEY_FILE=str(sa),
+                      OPERATOR_GOOGLE_IMPERSONATE_USER="d@blackceo.example")
         code, rep = gate(environ=env, store_paths=[], do_scan=False, require_delivery=True)
         assert code == EX_OK and rep["verdict"] == "PASS", rep
         assert rep["fingerprint"]["clean"], "delivery creds must never enter the commingle fingerprint"
@@ -1173,7 +1180,7 @@ def self_test():
     #     the promoted secret drives the verdict: UNSET -> exit 2 MISSING; SET -> exit 0.
     #     WITHOUT the flag the same unset secret must NOT gate (informational only), so a
     #     fresh box (secret generated later at provision step 7) is never falsely blocked.
-    base_env = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc}
+    base_env = _creds()
     code, rep = gate(environ=base_env, store_paths=[], do_scan=False,
                      require_families={"anthology_intake_hook_secret"})
     assert code == EX_MISSING and "anthology_intake_hook_secret" in rep["missing"], rep
@@ -1194,9 +1201,8 @@ def self_test():
     #     REPLACES the SA trio. With the broker configured, delivery PASSES with NO
     #     Google key on the box (Trevor's creds live ONLY in n8n); a half-configured
     #     broker fails loudly; and the low-privilege token VALUE never leaks.
-    brk = {"CONVERT_AND_FLOW_PIT": real_pit, "CONVERT_AND_FLOW_LOCATION_ID": real_loc,
-           "N8N_DRIVE_WEBHOOK_URL": "https://main.blackceoautomations.com/webhook/anthology-drive",
-           "N8N_DRIVE_WEBHOOK_TOKEN": "lowPrivBrokerTokenUNIT19"}
+    brk = _creds(N8N_DRIVE_WEBHOOK_URL="https://main.blackceoautomations.com/webhook/anthology-drive",
+                  N8N_DRIVE_WEBHOOK_TOKEN="lowPrivBrokerTokenUNIT19")
     code, rep = gate(environ=brk, store_paths=[], do_scan=False, require_delivery=True)
     assert code == EX_OK and rep["verdict"] == "PASS", rep
     assert rep["delivery"]["mode"] == "n8n_broker", rep
