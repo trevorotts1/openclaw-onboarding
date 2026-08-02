@@ -1,5 +1,7 @@
 # Anthology Engine (Skill 59) -- Changelog
 
+### FIX-15 -- version drift repair: ENGINE-MANIFEST skill_version synced to 0.1.11; verify.sh cross-checks skill-version.txt == SKILL.md == ENGINE-MANIFEST, exit 4 on drift (skill-version 0.1.10 -> 0.1.11, 2026-08-02)
+
 ### T2-05 -- one durable run directory across the authoring stages: S2 could never reach tone authoring (skill-version 0.1.9 -> 0.1.10, 2026-07-21)
 
 Every stage dispatcher resolved its OWN working directory:

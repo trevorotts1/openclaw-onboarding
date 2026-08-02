@@ -49,7 +49,7 @@ stage_files = [
 for f in stage_files:
     need(os.path.isfile(p("scripts", f)), "missing stage runner dispatcher: scripts/%s" % f)
 
-# --- version agreement (skill-version.txt == SKILL.md frontmatter version) ---
+# --- version agreement (skill-version.txt == SKILL.md == ENGINE-MANIFEST.skill_version) ---
 try:
     ver_txt = io.open(p("skill-version.txt"), encoding="utf-8").read().strip()
     skill_md = io.open(p("SKILL.md"), encoding="utf-8").read()
@@ -57,6 +57,9 @@ try:
     need(m is not None, "SKILL.md frontmatter has no 'version:' line")
     if m:
         need(m.group(1) == ver_txt, "version mismatch: skill-version.txt=%r SKILL.md=%r" % (ver_txt, m.group(1)))
+    man = json.load(io.open(p("ENGINE-MANIFEST.json"), encoding="utf-8"))
+    man_ver = man.get("skill_version", "")
+    need(man_ver == ver_txt, "version mismatch: ENGINE-MANIFEST skill_version=%r skill-version.txt=%r" % (man_ver, ver_txt))
 except Exception as exc:
     fails.append("version check error: %s" % exc)
 
