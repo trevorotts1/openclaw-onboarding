@@ -11,6 +11,14 @@ title/subtitle, blurb, and outline. For a single-author book use **Skill 53
    ```
    bash 54-anthology-writer/preflight.sh --run-dir <RUN_DIR>
    ```
+   This writes `model-map.json` into `<RUN_DIR>/` with `<CLIENT_PROVIDER_ID>` and
+   `<CLIENT_MODEL>` placeholder values for each tier. **After running preflight.sh,
+   you must resolve the `<CLIENT_PROVIDER_ID>` and `<CLIENT_MODEL>` placeholders in
+   `model-map.json` to real provider/model values for your box before proceeding to
+   step 4.** If you run preflight.sh interactively (stdin is a terminal) it will
+   prompt you for provider and model values per tier so the resolved map is
+   ready-to-run on the first pass.
+
 2. **Fill intake** at `<RUN_DIR>/working/intake.json` from
    `intake/aw-intake-template.md` (4 required fields; `personal_stories` may be
    `N/A`; NEVER put an API key/token in intake).
