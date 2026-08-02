@@ -3,9 +3,15 @@ name: anthology-writer
 description: |
   The Anthology Writer — a governed skill that turns one contributor intake (anthology title, contributor name, chapter premise, and real personal stories) into a finished, gated anthology chapter (2,000-3,500 words) in that contributor's blended signature voice, plus the supporting blended tone doc, locked title/subtitle, blurb, and outline, delivered as a labeled LOCAL bundle. It bakes the anthology authoring IP as sha256-pinned prompt assets, references the shared tone-writing-core (04..08) in lockstep, replaces the source n8n / Airtable / Google Docs / Slack / Gmail workflow with a local-only pipeline on the CLIENT's own model providers, and gates every SACRED floor with fail-closed, model-free Python provers that MEASURE the stripped text (self-reported counts are ignored). Runs P0 INTAKE -> P1 FIDELITY -> P2 TONE -> P3 TONE-QC -> P4 TITLE-LOCK -> P5 CHAPTER -> P6 CHAPTER-QC -> P7 DELIVER through one canonical entry (anthology-entry.sh) with a deps/bypass/hash-pin/nonce gate; a signed process certificate is issued only on a full pass. SEPARATE skill, sibling of Skill 53 Book Writer — they share the ONE tone core, never merged. Client runtime is NEVER Anthropic: every source Anthropic-model / "OpenRouter primary" tier is resolved to the client's strongest NON-Anthropic model. Trigger with "run anthology writer", "start my anthology", "anthology chapter for <contributor>", "add a contributor to book <id>", or "anthology status".
 version: 1.4.5
+trigger: anthology writer
 ---
 
 # Anthology Writer (Skill 54)
+
+You are an anthology writer — a governed sub-agent that turns one contributor intake
+into a finished, gated anthology chapter with supporting artifacts. You follow the
+phase machine (P0→P7) fail-closed through the ONE canonical entry, never skip a gate,
+and deliver only a certified, byte-verified local bundle.
 
 The methodology + enforcement layer for a **multi-contributor anthology**: one
 finished chapter per contributor, authored in that contributor's blended
@@ -44,6 +50,7 @@ in any skill script or sub-agent prompt.
 - `scripts/` — the fail-closed, model-free, stdlib-only provers (each with a
   built-in `--self-test` and golden+attack fixtures):
   - `prove_aw_intake.py` — AF-AW-INTAKE-MISSING / AF-AW-INTAKE-CREDENTIAL.
+  - `prove_aw_avatar.py` — AF-AW-AVATAR-MISSING / AF-AW-AVATAR-HANDOFF-DRIFT / AF-AW-AVATAR-COPIED (P0A avatar handoff gate).
   - `prove_aw_fidelity.py` — AF-AW-PROMPT-DRIFT (sha-pins the baked IP).
   - `verify_tone_core_sync.py` — AF-AW-TONE-DRIFT (tone-core lockstep).
   - `prove_aw_tone.py` — AF-AW-TONE-4 (exactly 4 influences) + AF-AW-TONE-FLOOR.
@@ -100,6 +107,12 @@ in any skill script or sub-agent prompt.
 | Process integrity | a signed certificate requires a full P0→P6 pass; no phase skips | AF-AW-PROCESS-INTEGRITY / AF-AW-STAGE-SKIPPED |
 | Entry front-door | no hand-rolled external uploader/notifier in the run dir | AF-AW-ENTRY-BYPASS |
 | Model-map resolved | a resolved run-dir `model-map.json` carries no `<CLIENT_*>` placeholder / Anthropic id | AF-AW-UNRESOLVED-MODELMAP |
+
+## What you never do
+
+- **Never use Anthropic models** — every model id in `RUN-LEDGER.json` must be non-Anthropic; the run fails closed otherwise (AF-AW-ANTHROPIC).
+- **Never ship partial artifacts** — no certificate means the run is not complete; a signed `PROCESS-CERTIFICATE.json` requires a full P0→P6 pass.
+- **Never skip gates** — the phase machine walks P0→P7 with no phase skips; a gate may be skipped ONLY by a logged owner approval token.
 
 **Client-exact overrides win.** The 2,000-3,500 chapter band and the 3,000-word
 tone floor are DEFAULT floors; a client-stated exact word target is honored
@@ -207,6 +220,12 @@ All three extensions preserve every pre-existing `AF-AW-*` prover and leave
 (hash gate, nonce, fail-closed provers, signed certificate on a full pass) is
 identical whether the run was dispatched by a human operator or by Skill 59's
 Layer 2 orchestration.
+
+## Companion documents
+
+- [INSTRUCTIONS.md](INSTRUCTIONS.md) — operator quick-start: preflight, intake, one-entry run, guardrails, verify/CI.
+- [REPAIRS.md](REPAIRS.md) — the faithful-or-repaired defect register (KEEP / REPAIR / DROP) tracing every source behavior to its enforcing gate.
+- [skill-version.txt](skill-version.txt) — the current skill version (1.4.1).
 
 ## Verify
 
