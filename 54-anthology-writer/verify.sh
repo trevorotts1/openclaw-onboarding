@@ -155,7 +155,7 @@ fi
 # 6) end-to-end golden pilot through the entry (a full pass issues a certificate).
 echo "  -- golden pilot through anthology-entry.sh --"
 TMP="$(mktemp -d)"
-trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}"' EXIT
+trap 'rm -rf "$TMP" "${ANTHOLOGY_DELIVERY_ROOT:-}" "${EXTMP:-}" "${DTMP:-}" "${PTMP:-}" "${PRD:-}"' EXIT
 mkdir -p "$TMP/working"
 for f in intake.json avatar.md tone-doc.md title.json outline.md chapter.md blurb.md RUN-LEDGER.json; do
     cp "$GOLD/$f" "$TMP/working/$f"
