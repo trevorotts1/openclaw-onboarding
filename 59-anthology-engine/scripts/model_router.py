@@ -455,7 +455,12 @@ def default_pre_meter(context: dict, tier: str, model: str, est_prompt_tokens: i
                   "--tier", tier, "--model", str(model),
                   "--prompt-tokens", str(int(est_prompt_tokens)),
                   "--qc-attempt", str((context or {}).get("qc_attempt", 0))]
-    rc = subprocess.call(argv)
+    try:
+        rc = subprocess.call(argv, timeout=15)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[model_router] cost-ledger pre-meter timed out; "
+                         "metering skipped (fail-soft)\n")
+        return
     if rc == EX_BUDGET:
         raise BudgetCeilingBlock(
             "anthology-cost-ledger.py blocked the call: per-deliverable budget ceiling "
@@ -474,7 +479,11 @@ def default_post_meter(context: dict, tier: str, model: str, usage: dict) -> Non
                   "--prompt-tokens", str(int(usage.get("prompt_tokens", 0) or 0)),
                   "--completion-tokens", str(int(usage.get("completion_tokens", 0) or 0)),
                   "--qc-attempt", str((context or {}).get("qc_attempt", 0))]
-    subprocess.call(argv)
+    try:
+        subprocess.call(argv, timeout=15)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[model_router] cost-ledger post-meter timed out; "
+                         "metering skipped (fail-soft)\n")
 
 
 def default_hold(context: dict, reason: str, tier: str) -> None:
@@ -493,7 +502,9 @@ def default_hold(context: dict, reason: str, tier: str) -> None:
         if ctx.get(k):
             argv += [flag, str(ctx[k])]
     try:
-        subprocess.call(argv)
+        subprocess.call(argv, timeout=15)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[model_router] hold_queue.py timed out; HOLD not persisted (fail-soft)\n")
     except Exception as exc:
         sys.stderr.write("[model_router] hold_queue.py call failed: %s\n" % type(exc).__name__)
 
@@ -508,7 +519,11 @@ def default_alert(dedupe_key: str, message: str) -> None:
         return
     try:
         subprocess.call(cmd + ["send", "--category", "credit-hold",
-                               "--key", dedupe_key, "--message", message])
+                               "--key", dedupe_key, "--message", message],
+                        timeout=30)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[model_router] alert-dedup.py timed out; "
+                         "founder alert not sent (fail-soft)\n")
     except Exception as exc:
         sys.stderr.write("[model_router] alert-dedup.py call failed: %s\n" % type(exc).__name__)
 

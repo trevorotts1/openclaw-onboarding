@@ -567,7 +567,10 @@ def check_7_pdf_font_floor(env: dict, text: str) -> CheckOutcome:
         return CheckOutcome(cid, CHECK_NAMES[cid], SKIP,
                             "guard-font-floor.py not present in this checkout; deferred")
     try:
-        rc = subprocess.call([sys.executable, str(guard), str(pdf)])
+        rc = subprocess.call([sys.executable, str(guard), str(pdf)], timeout=30)
+    except subprocess.TimeoutExpired:
+        return CheckOutcome(cid, CHECK_NAMES[cid], FAIL,
+                            "guard-font-floor.py timed out after 30s", _code(cid))
     except Exception as exc:  # fail-closed on an inability to run the real prover
         return CheckOutcome(cid, CHECK_NAMES[cid], FAIL,
                             "guard-font-floor.py could not run: %s" % type(exc).__name__, _code(cid))

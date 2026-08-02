@@ -197,7 +197,12 @@ def _db_flags(args) -> list:
 
 
 def _run(argv: list, env=None) -> int:
-    return subprocess.call(argv, env=env)
+    try:
+        return subprocess.call(argv, env=env, timeout=15)
+    except subprocess.TimeoutExpired:
+        sys.stderr.write("[qc-strike-gate] subprocess timed out after 15s: %s\n"
+                         % " ".join(str(x) for x in argv))
+        return 1
 
 
 def _set_counter(args, key: str, counter: str, value: int, runner=_run) -> None:
@@ -564,9 +569,12 @@ def run_self_test() -> int:  # noqa: C901 - a linear battery reads clearest inli
         checks.append((label, bool(ok)))
 
     def st(subargs):
-        return subprocess.call(
-            [sys.executable, str(STATE_WRITER)] + subargs + ["--db", str(db)],
-            env=env)
+        try:
+            return subprocess.call(
+                [sys.executable, str(STATE_WRITER)] + subargs + ["--db", str(db)],
+                env=env, timeout=15)
+        except subprocess.TimeoutExpired:
+            return 1
 
     # -- seed a producer -> anthology -> participant through the sole writer ----
     contact, anth = "contactSELFTEST01", "anthSELFTEST01"
@@ -589,7 +597,10 @@ def run_self_test() -> int:  # noqa: C901 - a linear battery reads clearest inli
     # A subprocess runner that forces the sanitized (mirror-only) env for the
     # real sole-writer child. Injected into the real _set_counter / _hold_strike.
     def state_runner(argv):
-        return subprocess.call(argv, env=env)
+        try:
+            return subprocess.call(argv, env=env, timeout=15)
+        except subprocess.TimeoutExpired:
+            return 1
 
     # Injected side-effects: counter + hold hit the REAL sole-writer (mirror-only
     # via the sanitized env); the founder alert is CAPTURED (alert-dedup.py is a
