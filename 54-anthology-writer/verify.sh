@@ -282,6 +282,21 @@ else
     fails=$((fails + 1))
 fi
 
+# 11) department-consistency — all three artifacts (SKILL.md, roles/anthology-writer.role.md,
+#     run_anthology.py) must reference the same Kanban department ("marketing").
+echo "  -- department-consistency check --"
+DEPT_REF="marketing"
+skill_dep=$(grep -o '\*\*marketing\*\*' "$SKILL_DIR/SKILL.md" 2>/dev/null | head -1)
+role_dep=$(grep -o 'Department:\*\* marketing' "$SKILL_DIR/roles/anthology-writer.role.md" 2>/dev/null | head -1)
+py_dep=$(grep -o 'department="marketing"' "$SKILL_DIR/run_anthology.py" 2>/dev/null | head -1)
+if [ -n "$skill_dep" ] && [ -n "$role_dep" ] && [ -n "$py_dep" ]; then
+    printf '  [PASS] department-consistency: all three artifacts reference "%s"\n' "$DEPT_REF"
+else
+    printf '  [FAIL] department-consistency: not all three artifacts reference "%s" (SKILL.md=%s role.md=%s run_anthology.py=%s)\n' \
+        "$DEPT_REF" "${skill_dep:-MISSING}" "${role_dep:-MISSING}" "${py_dep:-MISSING}"
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 54 self-verification checks green."
