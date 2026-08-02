@@ -47,7 +47,7 @@
 #   bash scripts/qc-snapshot-contract.sh --json     # machine output
 #   bash scripts/qc-snapshot-contract.sh --skill-dir /path/to/59-anthology-engine
 # ----------------------------------------------------------------------------
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"

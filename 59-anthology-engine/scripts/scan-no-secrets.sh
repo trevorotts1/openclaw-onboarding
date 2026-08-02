@@ -52,7 +52,7 @@
 #   4  VIOLATION: at least one secret value detected
 #   (5 read-back mismatch: not used by a static scan)
 # ----------------------------------------------------------------------------
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 EX_CLEAN=0; EX_ERR=1; EX_USAGE=2; EX_DEP=3; EX_VIOLATION=4
 

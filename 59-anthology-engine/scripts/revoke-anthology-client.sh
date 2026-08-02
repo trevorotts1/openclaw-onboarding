@@ -75,7 +75,7 @@
 #                        (else `openclaw cron list` is consulted when present).
 #   --allow-cron-delete  permit removing the anthology daily tick (churn needs it).
 #   -h | --help          usage.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SKILL_DIR="$(cd "$SELF_DIR/.." && pwd)"

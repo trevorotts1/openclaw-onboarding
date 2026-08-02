@@ -13,7 +13,7 @@
 # byte-compiles and passes --self-test; no Anthropic-family id in any owned file.
 #
 # Exit 0 = verified; 4 = drift found.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 command -v python3 >/dev/null 2>&1 || { echo "verify: FATAL python3 required" >&2; exit 4; }
 

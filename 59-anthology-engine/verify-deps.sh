@@ -7,7 +7,7 @@
 # Runtime delivery also needs a deterministic HTML-to-PDF renderer (WeasyPrint-class);
 # that is checked at install/preflight time on a client box and degrades to a
 # named prerequisite, never a crash. Exit 0 = ok, nonzero = a hard dep missing.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 missing=0
 if command -v python3 >/dev/null 2>&1; then
     echo "  OK: python3 ($(python3 --version 2>&1))"

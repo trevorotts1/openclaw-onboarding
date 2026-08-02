@@ -130,7 +130,7 @@
 # echoed; only SET / NOT SET. Location ids are MASKED. The two provisioning
 # secrets are written 0600 and never surfaced. All fixture / synthetic data in
 # --self-test is synthetic.
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 
 # --------------------------------------------------------------------------
 # Layout resolution.

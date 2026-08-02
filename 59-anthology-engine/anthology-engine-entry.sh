@@ -41,7 +41,7 @@
 #   8  -- MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic-family id)
 # ============================================================================
 
-set -uo pipefail
+set -uo pipefail  # Intentional: no -e; exit codes handled explicitly per house contract (ENGINE-MANIFEST.json rows 30-32)
 PROG="anthology-engine-entry.sh"
 
 die() { echo "FATAL [$PROG]: $*" >&2; exit 2; }
