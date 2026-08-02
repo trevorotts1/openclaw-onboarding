@@ -19,7 +19,7 @@
 #                       placeholder-laden resolved map can never reach a run.
 #
 # Exit 0 = ok; 2 = banned id / residual placeholder (fail-closed); 3 = usage.
-set -uo pipefail
+set -euo pipefail
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 TEMPLATE="$SELF_DIR/assets/model-map.template.json"
 OUT_DIR="$SELF_DIR"

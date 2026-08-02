@@ -38,7 +38,7 @@
 #   8  — MODEL-MAP PRE-GATE failed (residual <CLIENT_*> placeholder / Anthropic id)
 # ============================================================================
 
-set -uo pipefail
+set -euo pipefail
 PROG="anthology-entry.sh"
 
 die() { echo "FATAL [$PROG]: $*" >&2; exit 2; }

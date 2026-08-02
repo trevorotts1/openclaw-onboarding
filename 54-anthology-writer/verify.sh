@@ -20,7 +20,7 @@
 # Usage:  bash 54-anthology-writer/verify.sh
 # Exit:   0 = all checks passed;  nonzero = at least one check failed.
 # ==============================================================================
-set -uo pipefail
+set -euo pipefail
 
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 SCRIPTS="$SKILL_DIR/scripts"
@@ -219,7 +219,7 @@ for f in intake.json avatar.md tone-doc.md title.json outline.md RUN-LEDGER.json
     cp "$GOLD/$f" "$DTMP/working/$f"
 done
 cp "$ATK/chapter_short.md" "$DTMP/working/chapter.md"
-bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$DTMP" >/dev/null 2>&1; e2e_rc=$?
+bash "$SKILL_DIR/anthology-entry.sh" --run-dir "$DTMP" >/dev/null 2>&1 || true; e2e_rc=$?
 if [ "$e2e_rc" -ne 0 ] && [ ! -f "$DTMP/delivery/PROCESS-CERTIFICATE.json" ]; then
     printf '  [PASS] seeded short chapter blocks the run; NO certificate issued (rc=%s)\n' "$e2e_rc"
 else
@@ -269,7 +269,7 @@ if [ -f "$PIN_FILE" ]; then
     for f in intake.json tone-doc.md title.json outline.md chapter.md RUN-LEDGER.json; do
         cp "$GOLD/$f" "$PRD/working/$f"
     done
-    bash "$PTMP/skill/anthology-entry.sh" --run-dir "$PRD" >/dev/null 2>&1; tamper_rc=$?
+    bash "$PTMP/skill/anthology-entry.sh" --run-dir "$PRD" >/dev/null 2>&1 || true; tamper_rc=$?
     if [ "$tamper_rc" -eq 7 ]; then
         printf '  [PASS] tampered enforcement file trips AF-AW-HASH-PIN at the entry (exit 7)\n'
     else
