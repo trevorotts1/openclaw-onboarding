@@ -270,6 +270,48 @@ class BoardContractTest(unittest.TestCase):
         self.assertIn("email", notes,
                       "the original bad department_slug must appear as a board event note")
 
+    # ---- FIX-08: a move to blocked must carry blocked_reason / blocked_on_human
+    # / ask so the CC server's Blocked gate accepts the PATCH (was 400 without
+    # them). Regression coverage for the silent-drop bug. ----------------------
+    def test_block_run_payload_has_blocked_fields(self):
+        rec = _Recorder(current_status="in_progress")
+        self._patch(rec)
+        ok = mc_board.block_run(self.run_dir, "TASK-1", phase_id="P3-TONE-QC",
+                                note="AF-AW-TONE-BAND-UNDER", env=_ENABLED_ENV)
+        self.assertTrue(ok)
+        # Find the status write that targets "blocked"
+        blocked_writes = [c for c in rec.calls
+                          if isinstance(c["payload"], dict)
+                          and c["payload"].get("status") == "blocked"]
+        self.assertTrue(blocked_writes, "block_run must issue at least one blocked status write")
+        payload = blocked_writes[-1]["payload"]
+        self.assertIn("blocked_reason", payload,
+                      "a blocked PATCH must carry blocked_reason (else CC 400s)")
+        self.assertIn("blocked_on_human", payload,
+                      "a blocked PATCH must carry blocked_on_human (else CC 400s)")
+        self.assertTrue(payload.get("blocked_on_human"),
+                        "blocked_on_human must be True for a gate-failed block")
+        self.assertIn("ask", payload,
+                      "a blocked PATCH must carry ask (else CC 400s)")
+        self.assertIn("P3-TONE-QC", payload.get("blocked_reason", ""),
+                      "blocked_reason must name the failing phase")
+        self.assertIn("AF-AW-TONE-BAND-UNDER", payload.get("blocked_reason", ""),
+                      "blocked_reason must carry the AF code")
+
+    def test_block_run_without_note_still_has_blocked_fields(self):
+        rec = _Recorder(current_status="backlog")
+        self._patch(rec)
+        ok = mc_board.block_run(self.run_dir, "TASK-1", env=_ENABLED_ENV)
+        self.assertTrue(ok)
+        blocked_writes = [c for c in rec.calls
+                          if isinstance(c["payload"], dict)
+                          and c["payload"].get("status") == "blocked"]
+        self.assertTrue(blocked_writes)
+        payload = blocked_writes[-1]["payload"]
+        self.assertIn("blocked_reason", payload)
+        self.assertIn("blocked_on_human", payload)
+        self.assertIn("ask", payload)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

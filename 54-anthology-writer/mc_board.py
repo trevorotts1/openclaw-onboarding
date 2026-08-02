@@ -542,7 +542,9 @@ def _current_status(tid: str, cfg: dict) -> Optional[str]:
 # ADVANCE — move the card to (phase_id, status), walking the legal path.
 # ---------------------------------------------------------------------------
 def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
-               note: str = "", deliverable_url: str = "") -> bool:
+               note: str = "", deliverable_url: str = "",
+               blocked_reason: str = "", blocked_on_human: bool = False,
+               ask: str = "") -> bool:
     """Issue ONE status write honoring CC_STATUS_PATH_TEMPLATE / CC_STATUS_METHOD.
     Returns True on HTTP 200-2xx, else False. Never raises past urllib/OS."""
     payload: dict = {"phase_id": phase_id, "status": status}
@@ -550,6 +552,12 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
         payload["note"] = note
     if deliverable_url:
         payload["deliverable_url"] = deliverable_url
+    # FIX-08: the CC server Blocked gate requires blocked_reason / blocked_on_human /
+    # ask on a PATCH to "blocked"; without them it 400s and silently drops the move.
+    if status == "blocked":
+        payload["blocked_reason"] = blocked_reason or ("run-blocked-gate %s" % phase_id)
+        payload["blocked_on_human"] = blocked_on_human or True
+        payload["ask"] = ask or ("Check the run artifacts and fix the gate failure (%s)." % phase_id)
     url = f"{cfg['base_url']}{cfg['status_tmpl'].format(id=tid)}"
     try:
         st, body = _request(cfg["status_method"], url, payload, cfg)
@@ -559,7 +567,10 @@ def _move_once(tid: str, phase_id: str, status: str, cfg: dict,
     if 200 <= st < 300:
         _log(f"advance {phase_id}->{status} OK (task_id={tid}).")
         return True
-    _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
+    if st == 400:
+        _log(f"advance {phase_id}->{status} BLOCKED-gate 400 (full body): {body}.")
+    else:
+        _log(f"advance {phase_id}->{status} non-OK (HTTP {st}): {body}.")
     return False
 
 
@@ -572,6 +583,9 @@ def card_advance(
     note: str = "",
     deliverable_url: str = "",
     env: Optional[dict] = None,
+    blocked_reason: str = "",
+    blocked_on_human: bool = False,
+    ask: str = "",
 ) -> bool:
     """Advance this run's card to (phase_id, status), walking the shortest LEGAL
     path from its current status. FAIL-SOFT: returns False (never raises) on any
@@ -606,7 +620,8 @@ def card_advance(
     if current is None:
         # Card status unknown (board unreachable / card missing): attempt a single
         # direct move and let the server reject an illegal jump (fail-soft).
-        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url)
+        return _move_once(tid, phase_id, target, cfg, note=note, deliverable_url=deliverable_url,
+                          blocked_reason=blocked_reason, blocked_on_human=blocked_on_human, ask=ask)
     if current == target:
         _log(f"advance {phase_id}->{target} no-op (card already at {target}).")
         return True
@@ -621,6 +636,9 @@ def card_advance(
             tid, phase_id, step, cfg,
             note=note if last else f"auto-step toward {target}",
             deliverable_url=deliverable_url if last else "",
+            blocked_reason=blocked_reason if last else "",
+            blocked_on_human=blocked_on_human if last else False,
+            ask=ask if last else "",
         )
         if not ok:
             break
@@ -711,12 +729,19 @@ def block_run(run_dir, task_id: Optional[str] = None, *, phase_id: str = "",
     try:
         detail = (note or "").strip()
         if phase_id:
+            af_code = detail if detail else "gate-failed"
             prefix = "BLOCKED at %s (gate failed)" % phase_id
             detail = ("%s — %s" % (prefix, detail)) if detail else prefix
         elif not detail:
             detail = "run BLOCKED (a gate failed)"
+            af_code = "gate-failed"
+        else:
+            af_code = detail
         return card_advance(run_dir, task_id, phase_id=phase_id or "blocked",
-                            status="blocked", note=detail, env=env)
+                            status="blocked", note=detail, env=env,
+                            blocked_reason="%s %s" % (af_code, phase_id or "blocked"),
+                            blocked_on_human=True,
+                            ask=("Check the run artifacts and fix the gate failure (%s)." % (phase_id or "blocked")))
     except Exception as exc:  # noqa: BLE001 — board hookup must NEVER break the run.
         _log(f"block_run best-effort skip ({type(exc).__name__}: {exc}).")
         return False
