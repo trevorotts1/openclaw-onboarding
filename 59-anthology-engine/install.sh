@@ -83,5 +83,5 @@ else
     echo "  PENDING: scripts/provision-anthology-client.sh (W2.6) not present yet; route + cron + Drive root are set at provisioning."
 fi
 
-note "install bootstrap complete (box dependencies and tier map resolved; provisioning steps named above)"
+note "ready-PENDING-provisioning: bootstrap complete -- NOW RUN provision-anthology-client.sh"
 exit 0
