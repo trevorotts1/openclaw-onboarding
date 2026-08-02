@@ -18,6 +18,7 @@ Every client box requires exactly one Convert and Flow credential PAIR:
 |-------|---------------|------------|
 | `CONVERT_AND_FLOW_PIT` | `pit-...` | The CLIENT's own private integration token (also aliased as `CONVERT_AND_FLOW_API_KEY`, `GOHIGHLEVEL_API_KEY`, `GOHIGHLEVEL_PIT`, `GHL_API_KEY`) |
 | `CONVERT_AND_FLOW_LOCATION_ID` | hex string | The CLIENT's own GoHighLevel Location (sub-account) ID (also aliased as `GOHIGHLEVEL_LOCATION_ID`, `GHL_LOCATION_ID`) |
+| `ANTHOLOGY_GATE_TOKEN_SECRET` | hex string | Per-client 64-char hex HMAC secret for minting and verifying scoped participant gate tokens/PINs (resolved from `~/.openclaw/secrets/secrets.env` by `caf_credential_gate.py`; gate_engine.py resolves it via live-process-env first) |
 
 These are documented by LABEL only. No value is ever printed, committed, or revealed.
 
