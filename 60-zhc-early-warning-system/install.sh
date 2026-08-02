@@ -66,15 +66,34 @@ PY
     fi
 
     # register the ONE cron tick (+ aggregator on the operator box)
+    #
+    # ROOT CAUSE OF "INSTALLED WITH ZERO CRONS" (fixed 2026-08-02):
+    # These two calls used to end in `|| echo "$TAG WARN: ..."`, which swallowed
+    # EVERY failure, and do_install returned EX_OK regardless. So when both calls
+    # shipped with the non-existent `--schedule` flag, the installer printed a
+    # WARN nobody reads, exited 0, and EWS was live with ZERO crons registered —
+    # a guard that is silently dead is worse than no guard, and it is the exact
+    # failure class EWS exists to catch. A cron that does not register is an
+    # INSTALL FAILURE, not a warning.
+    CRON_FAILURES=0
+    CRON_FAILED_NAMES=""
     if [ "$NO_CRON" -eq 0 ] && command -v openclaw >/dev/null 2>&1; then
         echo "$TAG registering the 15-minute tick cron (--no-deliver, operator-only)..."
-        openclaw cron add --name "ews-tick-${BOX}" --cron "*/15 * * * *" --no-deliver \
-            --command "bash $SELF_DIR/ews-entry.sh tick" >/dev/null 2>&1 \
-            && echo "$TAG tick cron registered" || echo "$TAG WARN: cron add failed (register manually)"
+        if openclaw cron add --name "ews-tick-${BOX}" --cron "*/15 * * * *" --no-deliver \
+                --command "bash $SELF_DIR/ews-entry.sh tick" >/dev/null 2>&1; then
+            echo "$TAG tick cron registered"
+        else
+            echo "$TAG ERROR: 'openclaw cron add' FAILED for ews-tick-${BOX}" >&2
+            CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}ews-tick-${BOX} "
+        fi
         if [ "$ROLE" = "operator" ]; then
-            openclaw cron add --name "ews-aggregator" --cron "0 * * * *" --no-deliver \
-                --command "bash $SELF_DIR/ews-entry.sh fleet cycle" >/dev/null 2>&1 \
-                && echo "$TAG aggregator cron registered (operator box)" || echo "$TAG WARN: aggregator cron add failed"
+            if openclaw cron add --name "ews-aggregator" --cron "0 * * * *" --no-deliver \
+                    --command "bash $SELF_DIR/ews-entry.sh fleet cycle" >/dev/null 2>&1; then
+                echo "$TAG aggregator cron registered (operator box)"
+            else
+                echo "$TAG ERROR: 'openclaw cron add' FAILED for ews-aggregator" >&2
+                CRON_FAILURES=$((CRON_FAILURES + 1)); CRON_FAILED_NAMES="${CRON_FAILED_NAMES}ews-aggregator "
+            fi
         fi
     else
         echo "$TAG cron registration skipped (no gateway or --no-cron). Manual tick command:"
@@ -85,10 +104,28 @@ PY
     py ews_sentinel.py --no-send tick >/dev/null 2>&1 || true
     # confirm a ledger exists and is healthy
     if py ews_ledger.py init >/dev/null 2>&1; then
-        echo "$TAG ledger healthy. Install OK (role=$ROLE box=$BOX)."
+        echo "$TAG ledger healthy (role=$ROLE box=$BOX)."
     else
         echo "$TAG ERROR: ledger not healthy after install" >&2; return $EX_ERR
     fi
+
+    # FAIL LOUDLY on any cron that did not register. Deliberately AFTER the
+    # ledger check so the operator still gets the full diagnostic picture, but
+    # the exit code must not lie: an EWS with no tick never fires.
+    if [ "$CRON_FAILURES" -gt 0 ]; then
+        echo "" >&2
+        echo "$TAG ============================================================" >&2
+        echo "$TAG INSTALL FAILED: $CRON_FAILURES cron(s) did NOT register: ${CRON_FAILED_NAMES% }" >&2
+        echo "$TAG EWS IS INSTALLED BUT BLIND — the tick never fires, so nothing" >&2
+        echo "$TAG is ever checked and no alert can ever be raised. This exits" >&2
+        echo "$TAG NON-ZERO on purpose: a silently dead guard is worse than none." >&2
+        echo "$TAG Re-run the failing command by hand to see the real error:" >&2
+        echo "$TAG   openclaw cron add --name ews-tick-${BOX} --cron '*/15 * * * *' --no-deliver --command 'bash $SELF_DIR/ews-entry.sh tick'" >&2
+        echo "$TAG ============================================================" >&2
+        return $EX_ERR
+    fi
+
+    echo "$TAG Install OK (role=$ROLE box=$BOX)."
     return $EX_OK
 }
 
@@ -123,16 +160,74 @@ JSON
     # "successfully" with ZERO crons registered — a silently dead guard, the
     # same failure class EWS exists to catch. The install cases above run with
     # NO_CRON=1 and never execute these lines, so only a static check sees them.
-    local cron_lines bad
-    # Anchored to real invocations (line starts with the command), so this
-    # check can never match its own diagnostic strings below.
-    cron_lines="$(grep -nE '^[[:space:]]*openclaw cron add' "$SELF_DIR/install.sh" || true)"
-    [ -n "$cron_lines" ] || { echo "$TAG self-test FAIL: no 'openclaw cron add' calls found" >&2; return 1; }
-    bad="$(printf '%s\n' "$cron_lines" | grep -- '--schedule' || true)"
-    [ -z "$bad" ] || { echo "$TAG self-test FAIL: 'openclaw cron add' uses the non-existent --schedule flag (use --cron): $bad" >&2; return 1; }
-    printf '%s\n' "$cron_lines" | grep -q -- '--cron' \
-        || { echo "$TAG self-test FAIL: no 'openclaw cron add' call passes --cron" >&2; return 1; }
-    echo "  cron-flag case: PASS ($(printf '%s\n' "$cron_lines" | grep -c -- '--cron') cron add call(s) use --cron, none use --schedule)"
+    #
+    # THE GUARD WAS EVADABLE (fixed 2026-08-02). It matched FIRST PHYSICAL LINES
+    # only (`grep -nE '^[[:space:]]*openclaw cron add'`), but every real call
+    # here spans multiple lines via `\` continuations. Moving `--schedule` onto a
+    # continuation line reproduced the original defect verbatim while the
+    # self-test still printed PASS and exited 0 — the guard checked the one part
+    # of the invocation the bug was not in.
+    #
+    # It now reconstructs each LOGICAL invocation (joining `\` continuations)
+    # before inspecting it, so a flag is seen wherever in the call it sits.
+    local cron_check
+    cron_check="$(python3 - "$SELF_DIR/install.sh" <<'PY'
+import re, sys
+src = open(sys.argv[1], encoding="utf-8").read()
+# Join backslash-continuations so each invocation is ONE logical line.
+logical = re.sub(r"\\\n[ \t]*", " ", src).splitlines()
+# Only real invocations: the statement must START the line (after whitespace or
+# a shell operator like `if`), never a comment or a diagnostic string.
+calls = [l for l in logical
+         if re.match(r"^[ \t]*(if[ \t]+)?openclaw[ \t]+cron[ \t]+add\b", l)]
+if not calls:
+    print("FAIL\tno 'openclaw cron add' invocations found"); raise SystemExit(0)
+bad = [l.strip()[:120] for l in calls if re.search(r"(?<![\w-])--schedule\b", l)]
+if bad:
+    print("FAIL\tuses the non-existent --schedule flag (real flag is --cron): " + " || ".join(bad))
+    raise SystemExit(0)
+missing = [l.strip()[:120] for l in calls if not re.search(r"(?<![\w-])--cron\b", l)]
+if missing:
+    print("FAIL\tinvocation(s) pass NO --cron flag: " + " || ".join(missing))
+    raise SystemExit(0)
+print(f"OK\t{len(calls)} invocation(s) checked as whole logical lines; all pass --cron, none pass --schedule")
+PY
+)"
+    case "$cron_check" in
+        OK*)   echo "  cron-flag case: PASS (${cron_check#OK	})" ;;
+        *)     echo "$TAG self-test FAIL: ${cron_check#FAIL	}" >&2; return 1 ;;
+    esac
+
+    # cron-FAILURE case: a cron that does not register must FAIL the install.
+    # The root cause of "EWS installed with ZERO crons" was not only the wrong
+    # flag - it was that `|| echo WARN` swallowed the failure and do_install
+    # returned EX_OK, so a broken installer reported success. Simulate a failing
+    # `openclaw cron add` with a stub on PATH and require a non-zero exit.
+    local fakebin td2
+    td2="$(mktemp -d)"; fakebin="$td2/bin"; mkdir -p "$fakebin"
+    printf '#!/usr/bin/env bash\nexit 1\n' > "$fakebin/openclaw"; chmod +x "$fakebin/openclaw"
+    local rc_fail out_fail
+    out_fail="$(PATH="$fakebin:$PATH" NO_CRON=0 ROLE="client" BOX="selftest-box-example" do_install 2>&1)"; rc_fail=$?
+    if [ "$rc_fail" -eq 0 ]; then
+        echo "$TAG self-test FAIL: a FAILING 'openclaw cron add' still returned exit 0 - the installer reports success while EWS has ZERO crons and never ticks" >&2
+        rm -rf "$td2"; return 1
+    fi
+    if ! printf '%s\n' "$out_fail" | grep -q "INSTALL FAILED"; then
+        echo "$TAG self-test FAIL: cron registration failed but no unmistakable INSTALL FAILED message was printed" >&2
+        rm -rf "$td2"; return 1
+    fi
+    echo "  cron-failure case: PASS (failing cron add -> exit $rc_fail + explicit INSTALL FAILED message)"
+
+    # ...and the --no-cron path must STILL succeed (skipping is not failing).
+    local rc_skip
+    NO_CRON=1 ROLE="client" BOX="selftest-box-example" do_install >/dev/null 2>&1; rc_skip=$?
+    if [ "$rc_skip" -ne 0 ]; then
+        echo "$TAG self-test FAIL: --no-cron install returned $rc_skip - deliberately skipping cron must stay a success" >&2
+        rm -rf "$td2"; return 1
+    fi
+    echo "  cron-skip case: PASS (--no-cron still exits 0; only a real failure fails)"
+    rm -rf "$td2"
+
     rm -rf "$td"
     unset EWS_STATE_DIR EWS_OPENCLAW_ROOT EWS_CONFIG_PATH
     echo "$TAG self-test: PASS"
