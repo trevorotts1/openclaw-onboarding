@@ -605,5 +605,5 @@ def selftest_report(name: str, checks) -> int:
     for label, good in checks:
         print("  [%s] %s" % ("OK" if good else "XX", label))
         ok = ok and good
-    print("== %s self-test: %s ==" % (name, "ALL ASSERTIONS PASSED" if ok else "FAILED"))
+    print("== %s self-test: %s ==" % (name, "ALL ASSERTIONS [PASS]" if ok else "[FAIL]"))
     return 0 if ok else 1

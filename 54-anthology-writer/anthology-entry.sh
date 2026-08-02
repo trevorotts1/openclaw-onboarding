@@ -185,7 +185,7 @@ PY
 # ===========================================================================
 note "GATE 1/4 — DEPS CHECK (python3)"
 if command -v python3 >/dev/null 2>&1; then
-    echo "  OK: python3 present"
+    echo "  [PASS] python3 present"
 else
     if owner_skip_approved "AW_DEPS_MISSING"; then
         echo "!! [$PROG] python3 missing but OWNER-APPROVED skip logged; proceeding." >&2
@@ -272,7 +272,7 @@ for root, dirs, files in os.walk(run_dir):
         elif re_ext_req.search(src):
             findings.append((rel, "an HTTP request to an external host (delivery is local-only)"))
 if not findings:
-    print("  OK: no hand-rolled external uploader/notifier in the run directory")
+    print("  [PASS] no hand-rolled external uploader/notifier in the run directory")
     sys.exit(0)
 print("  HAND-ROLLED EXTERNAL SENDER(S) DETECTED:", file=sys.stderr)
 for rel, why in findings:
@@ -334,7 +334,7 @@ if [ "$PLAN" -eq 1 ]; then
     exec python3 "$RUNNER" --plan
 fi
 
-note "ALL GATES PASSED — dispatching run_anthology.py"
+note "ALL GATES PASS — dispatching run_anthology.py"
 
 NONCE_DIR="$RUN_DIR/working/checkpoints"
 NONCE_FILE="$NONCE_DIR/.anthology-entry-nonce"
