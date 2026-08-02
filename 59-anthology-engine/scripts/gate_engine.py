@@ -688,6 +688,57 @@ def _import_s9_logic():
     return stage_s9_assembly_logic
 
 
+def _participant_run_dir(subject_key):
+    """Resolve the durable per-participant run directory shared by EVERY authoring
+    stage (anthology_run_dir.py's canonical layout). Returns the 'working' dir or
+    None when the resolver cannot import / the key is empty."""
+    if not subject_key:
+        return None
+    try:
+        if str(SCRIPTS) not in sys.path:
+            sys.path.insert(0, str(SCRIPTS))
+        from anthology_run_dir import resolve_participant_run_dir  # noqa: E402
+        return resolve_participant_run_dir(subject_key) / "working"
+    except Exception:
+        return None
+
+
+def _read_working_text_file(working_dir, filename):
+    """Read a file from the participant's working/ dir and return stripped text,
+    or None when absent / empty / unreadable."""
+    try:
+        p = working_dir / filename
+        if p.is_file():
+            text = p.read_text(encoding="utf-8").strip()
+            return text if text else None
+    except Exception:
+        pass
+    return None
+
+
+def _participant_preview_urls(participant_key, state_dir):
+    """Best-effort read of the chapter doc_url / pdf_url from the artifacts mirror.
+    Returns (doc_url_or_None, pdf_url_or_None)."""
+    try:
+        con = _mirror_ro(state_dir)
+        if con is None:
+            return None, None
+        row = _read_one(con,
+            "SELECT doc_url, pdf_url FROM artifacts "
+            "WHERE participant_key=? AND type='chapter' "
+            "ORDER BY version DESC LIMIT 1",
+            (participant_key,))
+        try:
+            con.close()
+        except Exception:
+            pass
+        if row:
+            return row.get("doc_url"), row.get("pdf_url")
+    except Exception:
+        pass
+    return None, None
+
+
 def _safe_run_key(key):
     """The SAME run-dir key sanitizer stage_s9_assembly.py uses, so gate_engine
     resolves the IDENTICAL <skill>/state/runs/s9/<safe> path the runner reads."""
@@ -836,6 +887,25 @@ def cmd_status(args):
     if kind == "anthology" and row is not None:
         _enrich_assembly_status(base, args.subject_key, row, spec, state_dir,
                                 getattr(args, "run_dir", None))
+
+    # Emit content for participant gates so the token page can render the
+    # material being approved (G29/E19). S4 (outline) emits outline_text;
+    # S5 (chapter) emits a preview URL pair (view-only PDF + Doc link).
+    # S3 title selection emits nothing extra (the participant supplies the
+    # title, not the engine).
+    if kind == "participant" and spec is not None and row is not None:
+        if spec.gate_id == "s4_participant":
+            wd = _participant_run_dir(args.subject_key)
+            if wd:
+                ot = _read_working_text_file(wd, "outline.md")
+                if ot:
+                    base["outline_text"] = ot
+        elif spec.gate_id == "s5_participant":
+            doc_url, pdf_url = _participant_preview_urls(
+                args.subject_key, state_dir)
+            if doc_url or pdf_url:
+                base["preview_urls"] = {"doc_url": doc_url, "pdf_url": pdf_url}
+
     return _emit(base, args.json), EX_OK
 
 
