@@ -160,6 +160,22 @@ gate_fail() {
     echo "GATE FAILED [$code]: $*" >&2
     echo "Skippable ONLY by a logged owner token in $PROC_MANIFEST" >&2
     echo "  (owner_skip_approval: {gate:\"$code\", approved:true, approved_by, reason})." >&2
+    echo >&2
+    # Print recovery guidance via the shared _aw_common AF_CODE_GUIDANCE
+    if command -v python3 >/dev/null 2>&1; then
+        SKILL_DIR="$SELF_DIR" CODE="$code" RUN_DIR="${RUN_DIR:-}" python3 - <<'PY'
+import os, sys
+skill_dir = os.environ.get("SKILL_DIR", "")
+run_dir = os.environ.get("RUN_DIR", "")
+code = os.environ.get("CODE", "")
+sys.path.insert(0, os.path.join(skill_dir, "scripts"))
+try:
+    import _aw_common
+    _aw_common.print_af_guidance(code, run_dir=run_dir, skill_dir=skill_dir)
+except Exception:
+    pass
+PY
+    fi
     printf '!%.0s' {1..78} >&2; echo >&2
     exit "$exitcode"
 }

@@ -117,8 +117,22 @@ def prove(path, mode, title_path, intake_path, override_path=None,
     # The locked brief the override must cite; defaults to the intake (intake IS
     # the locked brief) when --brief is not passed explicitly.
     brief = c.read_json(brief_path) if brief_path else intake
-    return evaluate(c.read_text(path), mode=mode, title=title, intake=intake,
-                    override=override, brief=brief).emit(as_json)
+    # Compute measured vs required for recovery guidance
+    text = c.read_text(path)
+    words = c.word_count(text)
+    cmin, cmax = c.CHAPTER_WORD_MIN, c.CHAPTER_WORD_MAX
+    if override:
+        status, _reason, applied = c.resolve_band_override(
+            override, brief, ("chapter_word_min", "chapter_word_max"))
+        if status == "applied":
+            cmin = applied.get("chapter_word_min", cmin)
+            cmax = applied.get("chapter_word_max", cmax)
+    measured = str(words) + " stripped words"
+    required = "%d-%d stripped words" % (cmin, cmax)
+    run_dir = str(Path(path).resolve().parent.parent) if path else None
+    return evaluate(text, mode=mode, title=title, intake=intake,
+                    override=override, brief=brief).emit(as_json,
+                    run_dir=run_dir, measured=measured, required=required)
 
 
 def self_test() -> int:

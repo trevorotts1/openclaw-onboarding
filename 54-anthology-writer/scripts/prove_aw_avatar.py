@@ -174,8 +174,10 @@ def evaluate(avatar_path, manifest_path: Path, skill52_dir: Path, scan_root: Pat
 
 
 def prove(avatar_path, manifest_path, skill52_dir, scan_root, as_json=False) -> int:
+    run_dir = str(Path(avatar_path).resolve().parent.parent) if avatar_path else None
+    skill_dir = str(Path(manifest_path).resolve().parent) if manifest_path else None
     return evaluate(avatar_path, Path(manifest_path), Path(skill52_dir),
-                    Path(scan_root)).emit(as_json)
+                    Path(scan_root)).emit(as_json, run_dir=run_dir, skill_dir=skill_dir)
 
 
 def self_test() -> int:
