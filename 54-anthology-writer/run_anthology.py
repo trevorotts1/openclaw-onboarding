@@ -521,6 +521,29 @@ def _run_checker(name, run_dir: Path):
     return fn(run_dir)
 
 
+def _wrap_print(prefix, text, width=100):
+    """Print prefix + text, wrapping text at natural breakpoints to <=width."""
+    indent = " " * len(prefix)
+    avail = width - len(prefix)
+    if avail < 10:
+        avail = 10
+    parts = text.split(", ")
+    if len(parts) <= 1 or len(prefix) + len(text) <= width:
+        print(prefix + text)
+        return
+    line = prefix
+    for j, part in enumerate(parts):
+        sep = ", " if j < len(parts) - 1 else ""
+        cand = (line + part + sep) if line != prefix else (line + part + sep)
+        if len(cand) <= width:
+            line = cand
+        else:
+            print(line)
+            line = indent + part + sep
+    if line and line != indent:
+        print(line)
+
+
 def plan(manifest) -> int:
     print("== Anthology Writer — canonical phase plan ==")
     for i, pid in enumerate(PHASE_ORDER):
@@ -529,9 +552,11 @@ def plan(manifest) -> int:
             print("  %d. %s (MISSING FROM MANIFEST)" % (i, pid))
             continue
         pf = (ph.get("preflight") or {}).get("checker", "-")
-        print("  %d. %s — %s" % (i, pid, ph.get("name", "")))
-        print("       produces: %s" % ph.get("produces_artifact", "-"))
-        print("       gate    : %s | codes: %s" % (pf, ", ".join(ph.get("gate_codes", []))))
+        _wrap_print("  %d. %s — " % (i, pid), ph.get("name", ""))
+        _wrap_print("       produces: ",
+                    ph.get("produces_artifact", "-"))
+        _wrap_print("       gate    : %s | codes: " % pf,
+                    ", ".join(ph.get("gate_codes", [])))
     return EXIT_PASS
 
 

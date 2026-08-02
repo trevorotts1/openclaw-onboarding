@@ -10,17 +10,17 @@
 # fail-closed gates and mints a run-scoped nonce the orchestrator requires:
 #
 #   1. DEPS CHECK       — python3 must be present (exit 6, AW_DEPS_MISSING).
-#   1b. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
+#   2. MODEL-MAP PRE-GATE — if a resolved model-map.json exists in the run dir,
 #                         it must carry NO <CLIENT_*> placeholder and no Anthropic
 #                         id (exit 8, AF-AW-UNRESOLVED-MODELMAP). preflight.sh is
 #                         the resolver; here it runs as a fail-closed pre-gate.
-#   2. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
+#   3. BYPASS-SCAN      — refuse if any hand-rolled EXTERNAL uploader/notifier
 #                         exists in the run directory: a Google Drive upload, a
 #                         Slack post, a Gmail/SMTP send, an n8n webhook, or an
 #                         Airtable write. The Anthology Writer is LOCAL-ONLY;
 #                         delivery is a labeled bundle in ~/Downloads (exit 5,
 #                         AF-AW-ENTRY-BYPASS). Nothing leaves the box from here.
-#   3. VERSION/HASH PIN — content hash of the enforcement set (run_anthology.py +
+#   4. VERSION/HASH PIN — content hash of the enforcement set (run_anthology.py +
 #                         the provers + _aw_common.py); if ENGINE-PIN.sha256 is
 #                         present the hash MUST match (exit 7, AF-AW-HASH-PIN).
 #
@@ -183,7 +183,7 @@ PY
 # ===========================================================================
 # GATE 1 — DEPS CHECK (python3; exit 6 AW_DEPS_MISSING)
 # ===========================================================================
-note "GATE 1/3 — DEPS CHECK (python3)"
+note "GATE 1/4 — DEPS CHECK (python3)"
 if command -v python3 >/dev/null 2>&1; then
     echo "  OK: python3 present"
 else
@@ -195,13 +195,13 @@ else
 fi
 
 # ===========================================================================
-# GATE 1b — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
+# GATE 2 — MODEL-MAP PRE-GATE (preflight.sh --check; AF-AW-UNRESOLVED-MODELMAP)
 # preflight.sh is the resolver AND (here) a fail-closed pre-gate: a resolved
 # run-dir model-map.json that still carries <CLIENT_*> placeholders (installer
 # not run) or a banned Anthropic id is refused BEFORE any authoring/QC. A missing
 # map is a clean pass (the fleet installer resolves per box).
 # ===========================================================================
-note "GATE 1b/3 — MODEL-MAP PRE-GATE (preflight.sh --check)"
+note "GATE 2/4 — MODEL-MAP PRE-GATE (preflight.sh --check)"
 if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1 && [ -f "$SELF_DIR/preflight.sh" ]; then
     if bash "$SELF_DIR/preflight.sh" --run-dir "$RUN_DIR" --check; then
         :
@@ -223,10 +223,10 @@ else
 fi
 
 # ===========================================================================
-# GATE 2 — BYPASS-SCAN (refuse hand-rolled external uploaders/notifiers)
+# GATE 3 — BYPASS-SCAN (refuse hand-rolled external uploaders/notifiers)
 # AF-AW-ENTRY-BYPASS
 # ===========================================================================
-note "GATE 2/3 — BYPASS-SCAN (hand-rolled Drive/Slack/Gmail/n8n/Airtable detection)"
+note "GATE 3/4 — BYPASS-SCAN (hand-rolled Drive/Slack/Gmail/n8n/Airtable detection)"
 if [ "$PLAN" -eq 0 ] && command -v python3 >/dev/null 2>&1; then
     SCAN_OUT="$(RUN_DIR="$RUN_DIR" SELF_DIR="$SELF_DIR" python3 - <<'PY' 2>&1
 import os, re, sys
@@ -292,9 +292,9 @@ else
 fi
 
 # ===========================================================================
-# GATE 3 — VERSION/HASH PIN (content hash of the enforcement set)
+# GATE 4 — VERSION/HASH PIN (content hash of the enforcement set)
 # ===========================================================================
-note "GATE 3/3 — VERSION/HASH PIN (orchestrator + provers + common)"
+note "GATE 4/4 — VERSION/HASH PIN (orchestrator + provers + common)"
 ENFORCE_FILES=()
 while IFS= read -r f; do
     [ -n "$f" ] && ENFORCE_FILES+=("$SELF_DIR/$f")
