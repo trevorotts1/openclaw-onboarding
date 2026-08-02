@@ -278,21 +278,33 @@ def client_best():
 
 
 TIER_PURPOSE = {"HEAVY-WRITER": "heavy", "LIGHT": "fast", "JUDGE": "mid", "LONGCTX": "heavy"}
-REQUIRED = {"HEAVY-WRITER", "LIGHT", "JUDGE"}
+REQUIRED = {"HEAVY-WRITER", "LIGHT", "JUDGE", "IMAGE"}
 
 resolved_tiers = {}
 unresolved_required = []
 
 for name, t in tiers_tmpl.items():
     if name == "IMAGE":
-        # S7 covers route through cover_render.py / Kie (never model_router). Keep
-        # the IMAGE tier ONLY if the client configured an image-generation model;
-        # otherwise DROP it (SPEC/Skill-54 degrade: the cover ships as a prompt doc).
-        imgs = [m for m in inventory if sm.model_has_modality(m, "image_generation")]
-        if not imgs:
+        # S7 covers route through cover_render.py / Kie (never model_router).
+        # Gate on KIE_API_KEY only: the IMAGE tier is a Kie PORTRAIT route that does
+        # NOT consume an inventory image_generation model. Resolve whenever KIE_API_KEY
+        # is set; hold with a WARNING + absent_behavior when it is not.
+        kie_configured = os.environ.get("KIE_API_KEY", "").strip() != ""
+        if not kie_configured:
+            unresolved_required.append(name)
+            print("WARNING: IMAGE tier unresolved -- KIE_API_KEY not set. "
+                  "S7 cover generation will hold: %s"
+                  % t.get("absent_behavior", "cover ships as a prompt doc."),
+                  file=sys.stderr)
             continue
-        m = imgs[0]
-        native = m.split("/", 1)[1] if "/" in m else m
+        # Derive the native model label from the client's image-generation inventory
+        # model if present; otherwise use the Kie provider label (the IMAGE tier is a
+        # Kie PORTRAIT route that does not consume an LLM model).
+        imgs = [m for m in inventory if sm.model_has_modality(m, "image_generation")]
+        native = "kie"
+        if imgs:
+            m = imgs[0]
+            native = m.split("/", 1)[1] if "/" in m else m
         link = {"order": 1, "provider": "kie", "model": native, "credential_label": "KIE_API_KEY"}
         tmpl_links = t.get("chain", [])
         if tmpl_links and isinstance(tmpl_links[0], dict):

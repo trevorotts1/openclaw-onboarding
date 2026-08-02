@@ -33,6 +33,10 @@ _C = "clau" + "de-"
 BANNED = re.compile(_C + r"|" + _A + r"/|us\." + _A + r"\.", re.I)
 PLACEHOLDER = re.compile(r"<CLIENT[A-Z0-9_]*>|<CLIENT_[^>]*>")
 
+# A KIE_API_KEY value for resolving the IMAGE tier (never a real secret, only a
+# presence check; the RESOLVE mode gates on presence via os.environ).
+_KIE_DUMMY = "dummy-kie-not-a-real-secret"
+
 # A client who configured their OWN (non-Anthropic) models across ollama-cloud +
 # openrouter -- the exact fields the fleet harvests (agents.defaults.model /
 # agents.list[].model / models.list[]).
@@ -61,7 +65,7 @@ THIN_ONE_MODEL_CFG = {"agents": {"defaults": {"model": "openrouter/z-ai/glm-5.2"
                                  "list": []}, "models": {"list": []}}
 
 
-def _resolve(cfg_obj):
+def _resolve(cfg_obj, extra_env=None):
     """Run preflight.sh RESOLVE against a synthetic client openclaw.json in a temp
     run dir. Returns (returncode, run_dir(Path), CompletedProcess). The run_dir is
     kept alive by the caller's TemporaryDirectory."""
@@ -72,6 +76,8 @@ def _resolve(cfg_obj):
     run_dir.mkdir()
     env = dict(os.environ)
     env["OPENCLAW_CONFIG"] = str(cfg_path)
+    if extra_env:
+        env.update(extra_env)
     proc = subprocess.run(["bash", str(PREFLIGHT), "--run-dir", str(run_dir)],
                           capture_output=True, text=True, timeout=60, env=env)
     return proc.returncode, run_dir, proc, td
@@ -79,7 +85,7 @@ def _resolve(cfg_obj):
 
 # --------------------------------------------------------------------------- #
 def test_real_client_config_resolves_every_required_tier():
-    rc, run_dir, proc, _td = _resolve(GOOD_CFG)
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
     assert rc == 0, "resolve failed for a real client config:\n%s\n%s" % (proc.stdout, proc.stderr)
     mp = run_dir / "model-map.json"
     assert mp.is_file(), "no resolved model-map.json written"
@@ -104,9 +110,19 @@ def test_real_client_config_resolves_every_required_tier():
     # The client's OWN strongest heavy model is the HEAVY-WRITER primary.
     assert tiers["HEAVY-WRITER"]["chain"][0]["model"] == "deepseek-v4-pro:cloud"
 
+    # IMAGE tier resolved via Kie when KIE_API_KEY is set (S7 cover route).
+    assert "IMAGE" in tiers, "required IMAGE tier missing when KIE_API_KEY is set"
+    img_primary = tiers["IMAGE"]["chain"][0]
+    assert img_primary["provider"] == "kie"
+    assert img_primary["credential_label"] == "KIE_API_KEY"
+    assert img_primary["model"], "IMAGE tier must have a model label"
+    # The template IMAGE chain preserves endpoint/via fields.
+    assert img_primary.get("endpoint"), "IMAGE tier must carry endpoint from template"
+    assert img_primary.get("via"), "IMAGE tier must carry via from template"
+
 
 def test_resolved_map_routes_without_unresolvedmaperror():
-    rc, run_dir, proc, _td = _resolve(GOOD_CFG)
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
     assert rc == 0
     sys.path.insert(0, str(SCRIPTS))
     import model_router as mr  # noqa: E402
@@ -140,7 +156,7 @@ def test_resolved_map_routes_without_unresolvedmaperror():
 
 
 def test_resolved_map_passes_the_entry_pregate_check():
-    rc, run_dir, proc, _td = _resolve(GOOD_CFG)
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
     assert rc == 0
     # preflight.sh --check is the anthology-engine-entry GATE 1b pre-gate.
     r = subprocess.run(["bash", str(PREFLIGHT), "--run-dir", str(run_dir), "--check"],
@@ -160,7 +176,7 @@ def test_no_client_model_fails_closed_never_hardcodes():
 def test_judge_never_equals_heavy_writer_in_a_resolved_map():
     # Defense in depth on the happy path: whenever a map resolves cleanly, its JUDGE
     # primary must differ from its HEAVY-WRITER primary (independent QC at S9 Gate B).
-    rc, run_dir, proc, _td = _resolve(GOOD_CFG)
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
     assert rc == 0
     mm = json.loads((run_dir / "model-map.json").read_text(encoding="utf-8"))
     hw = mm["tiers"]["HEAVY-WRITER"]["chain"][0]
@@ -169,11 +185,30 @@ def test_judge_never_equals_heavy_writer_in_a_resolved_map():
         "JUDGE resolved to the same model as HEAVY-WRITER: %s" % jg
 
 
+def test_image_tier_fails_closed_when_kie_api_key_unset():
+    # IMAGE is a REQUIRED tier gated on KIE_API_KEY only (it's a Kie PORTRAIT route
+    # that does NOT consume an inventory image_generation model). When KIE_API_KEY is
+    # unset, RESOLVE must fail closed with exit 2 and emit the absent_behavior WARNING.
+    env_no_kie = {"KIE_API_KEY": ""}
+    rc, run_dir, proc, _td = _resolve(GOOD_CFG, extra_env=env_no_kie)
+    assert rc == 2, "IMAGE tier must fail closed when KIE_API_KEY is unset (got rc=%d)" % rc
+    combined = proc.stdout + proc.stderr
+    assert "AF-AE-UNRESOLVED-MODELMAP" in combined, \
+        "expected AF-AE-UNRESOLVED-MODELMAP when IMAGE is unresolved:\n%s" % combined
+    assert "IMAGE" in combined, \
+        "expected IMAGE in the unresolved report:\n%s" % combined
+    assert "WARNING" in combined, \
+        "expected the absent_behavior WARNING on stderr:\n%s" % combined
+    # No map written when a REQUIRED tier fails.
+    assert not (run_dir / "model-map.json").is_file(), \
+        "fail-closed must NOT write a map when IMAGE is unresolved"
+
+
 def test_thin_single_model_client_fails_closed_on_judge_independence():
     # A thin client with one usable model would resolve JUDGE == HEAVY-WRITER; that
     # passes tier-fill but trips judge_harness mid-run at S9 Gate B. Resolution must
     # fail CLOSED (exit 2, AF-AE-JUDGE-INDEPENDENCE) and write NO map.
-    rc, run_dir, proc, _td = _resolve(THIN_ONE_MODEL_CFG)
+    rc, run_dir, proc, _td = _resolve(THIN_ONE_MODEL_CFG, extra_env={"KIE_API_KEY": _KIE_DUMMY})
     assert rc == 2, "thin single-model client must fail closed (exit 2), got %d:\n%s" \
         % (rc, proc.stderr)
     assert "AF-AE-JUDGE-INDEPENDENCE" in proc.stderr, \
