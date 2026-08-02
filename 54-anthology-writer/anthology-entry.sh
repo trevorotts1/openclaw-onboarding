@@ -213,15 +213,17 @@ CANON = {"run_anthology.py", "prove_aw_intake.py", "prove_aw_avatar.py",
          "aw_build_check.py", "verify_tone_core_sync.py", "_aw_common.py"}
 re_drive = re.compile(r"googleapis\.com/drive|drive\.files\(|/files/[^ ]*/copy", re.I)
 re_slack = re.compile(r"slack\.com/api|chat\.postMessage|hooks\.slack\.com", re.I)
-re_gmail = re.compile(r"\bsmtplib\b|gmail\.com/|/messages/send|smtp\.gmail", re.I)
-re_n8n   = re.compile(r"/webhook/|n8n\.cloud|X-N8N-API-KEY", re.I)
+re_gmail = re.compile(r"\bsmtplib\b|gmail\.com/|/messages/send|smtp\.gmail|\bsmtp\b", re.I)
+re_n8n   = re.compile(r"/webhook/|n8n\.cloud|X-N8N-API-KEY|gohighlevel\.com", re.I)
 re_air   = re.compile(r"api\.airtable\.com|airtable\.com/v0", re.I)
+re_webhook = re.compile(r"\bwebhook\b", re.I)
+re_ext_req = re.compile(r"\brequests\b.*['\"](https?://[^'\"]+\.com|https?://[^'\"]+\.io|https?://[^'\"]+\.net)", re.I)
 findings = []
 for root, dirs, files in os.walk(run_dir):
     if os.path.realpath(root) == self_dir:
         dirs[:] = []; continue
     for fn in files:
-        if not fn.endswith(".py") or fn in CANON:
+        if fn in CANON:
             continue
         path = os.path.join(root, fn)
         if os.path.realpath(path).startswith(self_dir + os.sep):
@@ -241,6 +243,10 @@ for root, dirs, files in os.walk(run_dir):
             findings.append((rel, "an n8n webhook call (the engine replaces n8n entirely)"))
         elif re_air.search(src):
             findings.append((rel, "an Airtable write (the engine uses a local artifact store)"))
+        elif re_webhook.search(src):
+            findings.append((rel, "a webhook call (delivery is local-only)"))
+        elif re_ext_req.search(src):
+            findings.append((rel, "an HTTP request to an external host (delivery is local-only)"))
 if not findings:
     print("  OK: no hand-rolled external uploader/notifier in the run directory")
     sys.exit(0)
@@ -251,9 +257,10 @@ sys.exit(5)
 PY
 )"; SCAN_RC=$?
     printf '%s\n' "$SCAN_OUT"
-    if [ "$SCAN_RC" -eq 5 ]; then
-        gate_fail "AF-AW-ENTRY-BYPASS" 5 "a hand-rolled external uploader/notifier is present in $RUN_DIR. \
-The Anthology Writer delivers LOCAL-ONLY (a labeled bundle in ~/Downloads); no n8n / Airtable / Drive / Slack / Gmail. \
+    if [ "$SCAN_RC" -ne 0 ]; then
+        gate_fail "AF-AW-ENTRY-BYPASS" 5 "a hand-rolled external uploader/notifier is present in $RUN_DIR (or \
+scanner failed unexpectedly, rc=$SCAN_RC — refusing to proceed). \
+The Anthology Writer delivers LOCAL-ONLY (a labeled bundle in ~/Downloads); no n8n / Airtable / Drive / Slack / Gmail / webhooks / non-local HTTP. \
 Delete the hand-rolled sender(s) above and re-run."
     fi
 else
