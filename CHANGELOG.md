@@ -471,7 +471,7 @@ log, and four small correctness defects.
 ### Why
 
 **D6 - an unauthenticated, CRM-credentialed endpoint on every interface.** Measured on the
-canary: `lsof` reports `TCP *:8765 (LISTEN)`, `GET /tools` answers HTTP 200 with no
+operator box: `lsof` reports `TCP *:8765 (LISTEN)`, `GET /tools` answers HTTP 200 with no
 credential, and a hostile `Origin` yields 500 rather than the 403 the MCP specification
 requires. A fleet survey found **19 Mac client boxes** in exactly that state. The endpoint
 IS the credential: any local process, any host on the LAN, and any site the client visits
@@ -513,7 +513,7 @@ failure.
 **The probe was poisoning its own evidence.** `ghl-mcp-probe.sh` computed `LOG_DIR` itself and
 ignored `GHL_MCP_LOG_DIR` -- the very variable the autostart passes into every launch surface
 -- so the unit test had no way to redirect it and wrote real-looking OK/DEAF/NO_LISTENER/
-PROFILE_DRIFT verdicts into the box's production `probe.log`. The canary's log was found to be
+PROFILE_DRIFT verdicts into the box's production `probe.log`. The operator box's log was found to be
 100% test output, making a genuine DEAF verdict indistinguishable from a fixture in the only
 durable record the probe keeps.
 

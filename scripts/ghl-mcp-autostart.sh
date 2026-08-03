@@ -97,7 +97,7 @@
 #       cron on VPS).
 #
 #   D6. ALL-INTERFACES BIND ON A CRM-CREDENTIALED PORT (P0, added 2026-08-03).
-#       Measured on the canary: `lsof` -> `TCP *:8765 (LISTEN)`, i.e. 0.0.0.0 —
+#       Measured on the operator box: `lsof` -> `TCP *:8765 (LISTEN)`, i.e. 0.0.0.0 —
 #       reachable from every host on the LAN — while `GET /tools` answers HTTP
 #       200 with NO authentication at all. The endpoint IS the credential: any
 #       local process, any LAN host, and (subject to each box's firewall) any

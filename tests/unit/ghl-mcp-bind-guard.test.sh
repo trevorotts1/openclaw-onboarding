@@ -7,7 +7,7 @@
 # WHY THIS TEST IS THE WHOLE POINT
 #   The GHL community MCP holds a client's GoHighLevel Private Integration Token
 #   and serves `GET /tools` to anyone who asks, with no authentication. Measured
-#   on the canary: `lsof` -> `TCP *:8765 (LISTEN)` (every interface) and a fleet
+#   on the operator box: `lsof` -> `TCP *:8765 (LISTEN)` (every interface) and a fleet
 #   survey found 19 Mac client boxes LAN-exposed in exactly that state.
 #
 #   The obvious "fix" — putting HOST=127.0.0.1 in the plist / pm2 env / compose —
