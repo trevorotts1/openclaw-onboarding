@@ -55,6 +55,33 @@ gateway version differs before shipping there.
   contract; ties mapper, job_key, ledger, and flow_client together.
 - `run-selftests.sh` : runs every module's built-in `--self-test` (fail-closed).
 
+## Two-show model
+
+Every podcast client has TWO shows under BlackCEO's single Podbean host
+account: a PERSONAL show (the client's solo episodes; production mode
+`personal_podcast_style`, Skill 58 `modes/personal.md`) and an INTERVIEW show
+(the guest system; production mode `interview_style_podcast`, Skill 58
+`modes/interview.md`). Both shows publish through the operator's n8n publish
+path. The publish roster (`podcast_publish_roster`) therefore holds ONE ROW
+PER SHOW: the same identity pair (`client_email` + `client_last_name`) with a
+DISTINCT `podbean_channel_id` per row.
+
+The payload's `podcast_id` (a canonical, hashed field in this layer) carries
+the AUTHORITATIVE Podbean Channel ID for the episode's mode, selected BY MODE
+on the client box before the payload is sent: the personal-show Channel ID
+from `PODBEAN_PODCAST_ID` for `personal_podcast_style`, and the
+interview-show Channel ID from `PODBEAN_PODCAST_ID_<SHOW_SLUG>` (where
+`<SHOW_SLUG>` is the interview show's uppercase, underscore-separated slug)
+for `interview_style_podcast`. The mapper accepts `podcast_id` only from the
+payload or its aliases and never guesses a Channel ID.
+
+Downstream, the n8n publish gate matches roster rows by identity, then selects
+the row whose `podbean_channel_id` equals the payload's `podcast_id` (channel
+preference), falling back to the first matched row when no channel match
+exists (legacy behavior, preserving single-row clients exactly). The fail-closed
+semantics are unchanged: an unresolved or bad-standing row is refused, never
+guessed.
+
 ## Wiring contract (how the deterministic handler runs given the real plugin)
 
 Because the installed plugin drives TaskFlows and has no pre-processing hook, the
