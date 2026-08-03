@@ -280,7 +280,9 @@ files make up the activation layer, in dependency order:
    is its first deterministic step, so the department agent's own turn simply
    continues the runbook from there; in the degraded trigger-flow path the
    handler creates the managed flow itself, with identical own-turn
-   advancement. The 18-step advance contract stays with the agent's own turn:
+   advancement. Step 14 stores media in GHL and records the URLs; Step 15 publishes from
+those exact URLs; the controller never passes a URL it did not get from Step 14's state.
+The 18-step advance contract stays with the agent's own turn:
    get_flow (flow_client.py) to read the flow, derive the current pipeline step
    from the state podcast_state.py wrote, drive the next step, record EVERY
    stage change through podcast_state.py advance, then resume the flow under
@@ -464,12 +466,18 @@ STEP 14, STORE MEDIA. status `publishing`. Tier 3 REST upload of the MP3, cover,
 into the client's Convert and Flow media library folders (podcast, podcast images, podcast
 episodes; create-once, reuse-forever, case-insensitive matching); HEAD-verify every returned
 public URL. Runtime never depends on folder creation succeeding mid-episode; it only looks up
-folders that setup ensured.
+folders that setup ensured. OUTPUT CONTRACT: every URL `upload_media.py` returns must be
+persisted to the job ledger via `podcast_state.py output --field mp3_media_url` and
+`podcast_state.py output --field cover_image_url`. These fields are the sole handoff into
+Step 15.
 
 STEP 15, PUBLISH TO PODBEAN. status `publishing`. Publishing uses BlackCEO's SINGLE Podbean
 OAuth app (client_id and client_secret). The operator HOSTS every client's show under his ONE
 Podbean account, so those app credentials are NEVER the client's, are NEVER asked from the
-client, and NEVER need to sit on the client box. The fleet DEFAULT transport is publish-proxy:
+client, and NEVER need to sit on the client box. INPUT CONTRACT: Step 15 resolves `--audio-url`
+/ `--image-url` from `mp3_media_url` / `cover_image_url` in the job ledger by default; the CLI
+flags are an explicit override for repairs only. `podbean_publish.sh` verifies them against
+Step 14's recorded state. The fleet DEFAULT transport is publish-proxy:
 `podbean_publish.sh` posts the contract v2 payload (channel id, client last name, client email,
 title, description, audio_url, image_url, publish_date, idempotency_key, options) with the
 shared header token straight to the operator's n8n `/webhook/podbean-publish`, which runs the
@@ -786,6 +794,7 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 | Attempt counter, frozen research, 3-strike | scripts/qc-attempt-gate.py |
 | Credential resolution, pairing, fingerprint | scripts/ghl_credential_gate.py |
 | Mode-to-channel selection (two-show convention), publish passes mode-selected channel as podcast_id | scripts/podcast_channel.py |
+| Step 14 to Step 15 GHL handoff | scripts/podbean_publish.sh proxy-mode URL-match guard |
 | No Anthropic in shipped runtime | scripts/guard-no-anthropic-runtime.py |
 | Exactly one cron, no heartbeat, churn sweep | scripts/guard-cron-inventory.py |
 | Alert dedup and storm cap, gateway-only | scripts/alert-dedup.py |
