@@ -177,6 +177,30 @@ class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         self._serve()
 
+    def do_GET(self):
+        # Serve binary files for media probe tests. The mock holds a dict
+        # self.server.files mapping path -> bytes; if a path matches, serve
+        # the bytes with Content-Type: application/octet-stream.
+        file_bytes = self.server.files.get(self.path)  # type: ignore[attr-defined]
+        if file_bytes is not None:
+            record = {
+                "path": self.path,
+                "token": "",
+                "content_type": "application/octet-stream",
+                "body": None,
+                "raw_body": b"",
+            }
+            self.server.requests.append(record)  # type: ignore[attr-defined]
+            self.send_response(200)
+            self.send_header("Content-Type", "application/octet-stream")
+            self.send_header("Content-Length", str(len(file_bytes)))
+            self.end_headers()
+            self.wfile.write(file_bytes)
+            return
+        self.send_response(404)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
 
 class MockN8n:
     """A loopback-only mock of the two publish-proxy webhooks. `routes` maps a
@@ -188,6 +212,7 @@ class MockN8n:
         self.server = ThreadingHTTPServer(("127.0.0.1", self.port), _Handler)
         self.server.requests = []  # type: ignore[attr-defined]
         self.server.routes = {}  # type: ignore[attr-defined]
+        self.server.files = {}  # type: ignore[attr-defined]
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
 
@@ -233,6 +258,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.tmp,
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",  # crs: transport tests skip probe
         }
         if env_extra:
             env.update(env_extra)
@@ -617,6 +643,175 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         result = json.loads(proc.stdout.strip().splitlines()[-1])
         self.assertEqual(result["status"], "test-skipped")
         self.assertEqual(len(self.mock.requests), 0)
+
+
+# ---- png helpers (stdlib only, no PIL) ----
+def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
+    import struct, zlib
+    c = chunk_type + data
+    crc = struct.pack(">I", zlib.crc32(c) & 0xFFFFFFFF)
+    return struct.pack(">I", len(data)) + c + crc
+
+
+def _make_png(width: int, height: int) -> bytes:
+    """Build a minimal valid RGBA PNG of the given dimensions (solid black)."""
+    import struct, zlib
+    sig = b"\x89PNG\r\n\x1a\n"
+    ihdr = struct.pack(">IIBBBBB", width, height, 8, 6, 0, 0, 0)
+    raw_rows = b""
+    for y in range(height):
+        raw_rows += b"\x00" + b"\x00\x00\x00\x00" * width  # filter byte + RGBA black
+    return sig + _png_chunk(b"IHDR", ihdr) + _png_chunk(b"IDAT", zlib.compress(raw_rows)) + _png_chunk(b"IEND", b"")
+
+
+class ProxyMediaGuardTest(unittest.TestCase):
+    """Probe-only tests: the probe function validates audio duration and image
+    dimensions before the v2 payload is built. These tests serve real media
+    bytes from the loopback server so ffprobe can decode them."""
+
+    def setUp(self):
+        self.mock = MockN8n()
+        self.addCleanup(self.mock.close)
+        self.tmp = tempfile.mkdtemp(prefix="podbean-media-guard-")
+        self.addCleanup(lambda: shutil.rmtree(self.tmp, ignore_errors=True))
+
+        # Build a real 1-second MP3 (too short) with ffmpeg.
+        self.short_mp3 = os.path.join(self.tmp, "short.mp3")
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+             "-ac", "1", "-b:a", "64k", self.short_mp3],
+            capture_output=True, check=False,
+        )
+
+        # Build a real 30-second MP3 (meets minimum).
+        self.ok_mp3 = os.path.join(self.tmp, "ok.mp3")
+        subprocess.run(
+            ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=30",
+             "-ac", "1", "-b:a", "64k", self.ok_mp3],
+            capture_output=True, check=False,
+        )
+
+        # 1x1 PNG (too small).
+        self.tiny_png_data = _make_png(1, 1)
+
+        # 1400x1400 PNG (meets minimum).
+        self.ok_png_data = _make_png(1400, 1400)
+
+    def _register_files(self, files_dict):
+        self.mock.server.files.update(files_dict)  # type: ignore[attr-defined]
+
+    def _proxy_env_media(self, **extra):
+        env = {
+            "PODBEAN_PODCAST_ID": "chan-123",
+            "PODBEAN_PUBLISH_WEBHOOK_URL": self.mock.publish_url,
+            "PODBEAN_PUBLISH_TOKEN": FIXTURE_TOKEN,
+            "PODCAST_CLIENT_LAST_NAME": "Rivera",
+            "PODCAST_CLIENT_EMAIL": "rivera@example.test",
+            # Media probe enabled -- the default for real proxy mode.
+            "PODBEAN_SKIP_MEDIA_PROBE": "0",
+        }
+        env.update(extra)
+        return env
+
+    def _run_media(self, audio_url, image_url, job_id="pd-media-guard", **extra_env):
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self.tmp,
+        }
+        env.update(self._proxy_env_media(**extra_env))
+        return subprocess.run(
+            ["bash", str(_SCRIPT),
+             "--audio-url", audio_url,
+             "--image-url", image_url,
+             "--title", "Media Probe Test",
+             "--job-id", job_id],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+
+    # ----------------------------------------------------------- probe ----
+    def test_probe_rejects_too_short_audio(self):
+        """A 1-second MP3 must be refused by the duration guard."""
+        self._register_files({
+            "/media/short.mp3": open(self.short_mp3, "rb").read(),
+            "/media/ok.png": self.ok_png_data,
+        })
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/short.mp3",
+            image_url=self.mock.base_url + "/media/ok.png",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("duration", proc.stderr.lower())
+        # The publish endpoint must never have been hit.
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_probe_rejects_small_image(self):
+        """A 1x1 PNG must be refused by the dimension guard."""
+        self._register_files({
+            "/media/ok.mp3": open(self.ok_mp3, "rb").read(),
+            "/media/tiny.png": self.tiny_png_data,
+        })
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/ok.mp3",
+            image_url=self.mock.base_url + "/media/tiny.png",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        # The image might be checked first (order is audio then image).
+        combined = (proc.stderr + proc.stdout).lower()
+        self.assertTrue(
+            "below minimum" in combined or "no video" in combined,
+            "image probe must refuse a 1x1 PNG; got: " + proc.stderr[-200:],
+        )
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_probe_passes_valid_media(self):
+        """A 30s MP3 and 1400x1400 PNG must pass the probe and reach publish."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-probe/",
+            "episode_id": "ep-1",
+            "episode_number": 1,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        self._register_files({
+            "/media/ok.mp3": open(self.ok_mp3, "rb").read(),
+            "/media/ok.png": self.ok_png_data,
+        })
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/ok.mp3",
+            image_url=self.mock.base_url + "/media/ok.png",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["status"], "published")
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
+
+    def test_probe_escape_hatch_skips_validation(self):
+        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-skip/",
+            "episode_id": "ep-2",
+            "episode_number": 2,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        self._register_files({
+            "/media/short.mp3": open(self.short_mp3, "rb").read(),
+            "/media/tiny.png": self.tiny_png_data,
+        })
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/short.mp3",
+            image_url=self.mock.base_url + "/media/tiny.png",
+            PODBEAN_SKIP_MEDIA_PROBE="1",
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["status"], "published")
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
 
 
 if __name__ == "__main__":
