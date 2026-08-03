@@ -23,11 +23,27 @@ Returns all pipelines with their stages. Each pipeline has `id`, `name`, `stages
 
 Each stage has: `id`, `name`, `position`
 
-> **Pipelines are read-only in the published spec.** `GET /opportunities/pipelines` is the
-> only pipeline operation in both the v2 and v3 specs. Pipeline CRUD
-> (`POST /opportunities/pipelines`, `GET/PUT/DELETE /opportunities/pipelines/{pipelineId}`)
-> was **announced in the changelog on 2026-06-26 but is not yet in the published spec —
-> probe live before use.**
+### Get One Pipeline by ID — live, but undocumented
+```
+GET /opportunities/pipelines/{pipelineId}
+Scopes: opportunities.readonly
+Query: locationId (required)
+```
+Returns `{"pipeline": {...}, "traceId": "..."}`.
+
+> **PROVEN LIVE 2026-08-03** by read-only GET against an operator-owned sub-account:
+> returns **200** under both `Version: 2021-07-28` and `Version: v3`. This endpoint is
+> **absent from both the v2 and v3 published specs** — the spec lists only
+> `GET /opportunities/pipelines`. It is real anyway. Use it, but be aware HighLevel has not
+> committed to it in writing.
+>
+> **The pipeline WRITE operations** (`POST /opportunities/pipelines`,
+> `PUT`/`DELETE /opportunities/pipelines/{pipelineId}`) were announced in HighLevel's
+> changelog on 2026-06-26 and are likewise absent from both published specs. They were
+> **not** probed — this audit was strictly read-only, and no write call is made against
+> GoHighLevel for verification. **Confirm with a single controlled call before building on
+> them.** A corroborating signal that they are real: the 2026-06-15 changelog added a
+> `pipelines.create` scope enum to the `/users/*` endpoints.
 
 ---
 

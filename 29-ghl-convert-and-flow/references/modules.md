@@ -3,7 +3,7 @@
 Base URL for all endpoints: `https://services.leadconnectorhq.com`
 
 **41 published v2 app specs, 576 operations, 118 spec-declared scopes.** A second
-generation — **43 v3 specs, `Version: v3`** — shipped 2026-06-19; see `references/auth.md`
+generation — **42 v3 specs, `Version: v3`** — shipped 2026-06-19; see `references/auth.md`
 → "The v3 generation". Endpoint counts and scope names below are read out of the specs at
 `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03),
 not estimated.

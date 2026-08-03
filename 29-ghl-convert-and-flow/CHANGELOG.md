@@ -4,6 +4,62 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v6.8.0] - 2026-08-03 — v3 promoted to a first-class generation, verified by live probe
+
+### Added
+- **`references/api-generations.md`** — the artifact that prevents the whole class of defect
+  fixed in v6.7.0. Covers: both generations side by side (41 v2 specs / **42** v3 specs), a
+  **per-surface generation table** giving the correct `Version` for every one of the 41
+  surfaces plus whether a v3 spec exists and when to prefer it, the generation-gated paths,
+  first-class treatment of the two breaking OAuth renames with runnable cURL for both forms,
+  everything v3 adds that v2 cannot do, and a four-step decision rule.
+- **`references/agency-api.md`** — agency/company-scoped operations (OAuth token management,
+  sub-account provisioning, the 22 SaaS operations, agency users, companies, snapshots,
+  marketplace billing) brought **into the repo** for the first time. The
+  `apis/GoHighLevel-Agency-API-Reference.md` file found on boxes is agent-authored TYP
+  content with no repo source and is not published by `update-skills.sh`; this file is the
+  repo-managed source of truth and states so explicitly.
+
+### Fixed — by live read-only probe (GET only, operator-owned accounts, 2026-08-03)
+- **Withdrew the "wrong Version header causes live 400s" claim.** It is false for the
+  affected endpoints. `GET /contacts/`, `/users/` and `/calendars/` return **200 under all
+  four published version strings** (`2021-07-28`, `2021-04-15`, `2023-02-21`, `v3`). What is
+  true, and now documented: omitting the header is a **401** (`"version header was not
+  found."`) and an unpublished value is a **401** (`"version header is invalid"`). The
+  v6.7.0 corrections remain right — they align the docs with what HighLevel declares — but
+  the defect was documentation drift and fleet-wide contradiction, not live 400s.
+- **The v3 rename IS real and IS enforced, for the path that matters.**
+  `GET /oauth/installed-locations` returns **404 `Cannot GET` under `2021-07-28`** and
+  resolves only under `Version: v3`; the v2 form `GET /oauth/installedLocations` resolves
+  under **both**. Same pattern proven for `/brand-boards/.../brand-voices` (200 under `v3`,
+  404 under `2021-07-28`). So: a renamed or brand-new v3 path needs `Version: v3`; an
+  existing v2 path keeps working everywhere.
+- **Spec removals are NOT enforced at the runtime yet.** `GET /contacts/`, `GET /users/` and
+  `GET /emails/builder` all still return 200 under `Version: v3` despite the v3 specs
+  dropping them. Documented as "dropped from the spec, still answering — do not rely on
+  that lasting" rather than as a flat removal.
+- **`GET /opportunities/pipelines/{pipelineId}` is PROVEN live** (200 under both
+  `2021-07-28` and `v3`) despite being absent from both published specs.
+  `references/opportunities.md` now documents it. The pipeline WRITE operations were **not**
+  probed — no write call is made against GoHighLevel for verification — and remain flagged
+  confirm-before-use.
+- **`X-RateLimit-Daily-Reset` is real**, observed on live responses, though absent from
+  HighLevel's published header list. Skills 36 and 44 rely on it; that reliance is sound.
+- **`2023-02-21` still works on SaaS**: `GET /saas-api/public-api/agency-plans/{companyId}`
+  returns 200 under it. Existing SaaS code on the old value is not broken. `2021-04-15` is
+  still the documented value and the one to use for new work.
+
+### Changed
+- v3 spec count corrected **43 → 42** (enumerated from the GitHub contents API; the delta
+  report that drove this work said 43).
+- `SKILL.md` and `references/auth.md` restated to match the probe findings, with pointers to
+  `api-generations.md`.
+
+**Every claim in this release is either a `Version` enum / path read out of the published
+OpenAPI specs, or a live GET result recorded on 2026-08-03. No write calls were made.**
+
+---
+
 ## [v6.7.0] - 2026-08-03 — API currency: the Version-header defect, corrected scopes, and five missing capability surfaces
 
 ### Fixed — CRITICAL, this was causing live 400s on every box

@@ -11,7 +11,7 @@ description: Domain-specific reference files for the GoHighLevel (Convert and Fl
 > NEVER paste the master reference into context or core files.
 > ALWAYS read the appropriate `references/*.md` file at query time.
 
-> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`, 36 tools)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
+> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
 
 ---
 
@@ -59,8 +59,9 @@ Content-Type: application/json
 
 ### Version Header Rule (read this before every call)
 
-The Version header is **per-app, not global**. Sending the wrong value is the single most
-common cause of a 400 on an otherwise-correct request.
+The Version header is **per-app, not global**. Omitting it, or sending a value HighLevel
+does not publish, is a **401**. Sending a *published but non-declared* value is tolerated on
+established paths but hard-404s on newer ones — see the probe findings below.
 
 ```
 Version: 2021-07-28   ← DEFAULT. 33 of the 41 published app specs, including
@@ -72,7 +73,7 @@ Version: 2021-04-15   ← ONLY these seven apps:
                         conversations, calendars, saas-api, voice-ai,
                         agent-studio, conversation-ai, knowledge-base.
 
-Version: v3           ← the 2026-06-19 v3 generation (43 specs). Required for
+Version: v3           ← the 2026-06-19 v3 generation (42 specs). Required for
                         v3-only surfaces: chat-widget, social planner queues +
                         comments, the rebuilt emails/* surface, brand voices.
 
@@ -81,12 +82,25 @@ store   declares no Version parameter at all.
 ```
 
 **Do not apply one value across all calls in either direction.** Earlier versions of this
-skill taught `2021-04-15` as a blanket default — that was wrong and caused live 400s on
-contacts, locations, opportunities, users, payments, campaigns and phone-numbers. If you
-see a doc anywhere in the fleet teaching a blanket Version, treat this table as authority.
+skill taught `2021-04-15` as a blanket default, contradicting skills 05 and 36 inside the
+same fleet. If you see a doc anywhere teaching a blanket Version, treat this table as
+authority.
+
+**What live probing proved (2026-08-03).** The header is mandatory — omit it and you get
+`401 "version header was not found."`; send an unpublished value and you get
+`401 "version header is invalid"`. But for long-established v2 paths the runtime is
+**lenient**: `GET /contacts/`, `/users/` and `/calendars/` all return 200 under
+`2021-07-28`, `2021-04-15`, `2023-02-21` **and** `v3`. So the wrong value was **not**
+causing 400s on those calls. It still must be fixed, because leniency is not a contract and
+**newer paths are genuinely generation-gated** — `/brand-boards/.../brand-voices` and
+`/oauth/installed-locations` return `404 Cannot GET` unless you send `Version: v3`.
+
+**Full generation guidance, the per-surface table, and the probe evidence:
+`references/api-generations.md`.**
 
 Source of truth: the `Version` enum published in each app's OpenAPI spec at
-`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03),
+plus live read-only GET probes against operator-owned sub-accounts on the same date.
 
 ---
 
@@ -156,6 +170,8 @@ When a user asks a GHL question, identify the domain and read the matching refer
 | Knowledge Base - crawler, FAQs, training an agent on client content | `references/knowledge-base.md` |
 | Ads - Facebook/Google/LinkedIn campaigns, adsets, reporting | `references/ad-publishing.md` |
 | Anything else (store, snapshots, proposals, brand voices, chat widget, marketplace billing) | `references/modules.md` |
+| **Which Version header / v2 vs v3 / a 404 on a path you expected** | `references/api-generations.md` |
+| **Agency-level: OAuth tokens, sub-account provisioning, SaaS billing, agency users, snapshots** | `references/agency-api.md` |
 
 ---
 
@@ -197,6 +213,8 @@ Step 4 - Build and execute the API call with real values
   CORE_UPDATES.md       - Exact text to add to TOOLS.md and MEMORY.md only.
   references/
     auth.md             - PIT + OAuth, the Version-header rule, all 130 scopes, the v3 generation
+    api-generations.md  - v2 vs v3, per-surface Version table, generation-gated paths, live-probe evidence
+    agency-api.md       - Agency/company-scoped API: OAuth, provisioning, SaaS billing, users, snapshots
     modules.md          - All 41 modules, verified op counts, v3-only surfaces
     contacts.md         - 32 endpoints for contact management
     conversations.md    - 29 endpoints for conversations and messages (Version 2021-04-15)
@@ -285,7 +303,7 @@ Operation counts are method+path pairs read out of each app's spec — not estim
 
 Total: **576 operations across 41 published v2 app specs**, and **118 distinct permission
 scopes** declared in those specs (130 when unioned with `docs/oauth/Scopes.md`). A second
-generation — **43 v3 specs, `Version: v3`** — was published 2026-06-19; see
+generation — **42 v3 specs, `Version: v3`** — was published 2026-06-19; see
 `references/auth.md` → "The v3 generation".
 
 Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).

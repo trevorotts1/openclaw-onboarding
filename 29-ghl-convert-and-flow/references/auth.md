@@ -84,8 +84,9 @@ API keys are no longer supported for new integrations. If you have old code usin
 
 ## Version Header
 
-Always include this header. Missing it causes 400 errors on many endpoints — and so does
-sending the **wrong** value. The value is **per-app**, taken from the `Version` enum that
+Always include this header. **Omitting it is a 401**, not a 400 (`"version header was not
+found."`), and an unpublished value is also a 401 (`"version header is invalid"`) — both
+PROVEN live 2026-08-03. The value to send is **per-app**, taken from the `Version` enum that
 each app's OpenAPI spec publishes:
 
 ```
@@ -108,7 +109,14 @@ store   declares no Version parameter at all.
 ```
 
 **Do not blanket-apply either value.** Earlier revisions of this skill taught `2021-04-15`
-globally; that was inverted and caused live 400s on the busiest endpoints.
+globally; that was inverted.
+
+**Live-probe finding (2026-08-03) — read before you repeat the old warning.** The header is
+mandatory (omitted → `401 "version header was not found."`; unpublished value → `401
+"version header is invalid"`), but established v2 paths accept **all four** published values
+and return 200. The wrong value was therefore not producing 400s on contacts/users/calendars.
+It still matters, because genuinely new v3 paths are generation-gated and hard-404 under a v2
+Version. Details, per-surface table and evidence: **`references/api-generations.md`**.
 
 ### Known-wrong Version values still circulating in older fleet docs
 
@@ -116,7 +124,7 @@ If you find any of these, they are wrong — this table is the authority:
 
 | Seen in older docs | Correct value | Why |
 |---|---|---|
-| `2023-02-21` for SaaS endpoints | `2021-04-15` | `saas-api.json` publishes exactly one enum for all 22 SaaS ops: `2021-04-15`. `2023-02-21` appears nowhere in that spec. It IS a real docs-site version toggle, so HighLevel may still accept it — but it is not the documented value. |
+| `2023-02-21` for SaaS endpoints | `2021-04-15` | `saas-api.json` publishes exactly one enum for all 22 SaaS ops: `2021-04-15`; `2023-02-21` appears nowhere in that spec. **PROVEN 2026-08-03: `GET /saas-api/public-api/agency-plans/{companyId}` returns 200 under `2023-02-21`**, so the old value does still work — it is simply not the documented one. Prefer `2021-04-15`; do not treat existing `2023-02-21` SaaS code as broken. |
 | `2023-02-21` for `POST /users/` | `2021-07-28` | `users.json` declares `2021-07-28` for all 7 user operations. |
 | `2021-04-15` for payments | `2021-07-28` | `payments.json` declares `2021-07-28`. |
 | `2021-04-15` "on all calls" | per-app, see above | Inverted global rule. |
@@ -125,7 +133,7 @@ If you find any of these, they are wrong — this table is the authority:
 
 ## The v3 generation (published 2026-06-19)
 
-A second API generation exists. **43 v3 app specs** live at
+A second API generation exists. **42 v3 app specs** live at
 `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps/v3`, all declaring the
 literal header value `Version: v3`, on the same host (`services.leadconnectorhq.com`).
 
@@ -146,13 +154,16 @@ Other v3 changes worth knowing before you migrate:
 - **OAuth token body goes camelCase** — `clientId`, `clientSecret`, `grantType`,
   `refreshToken`; the response field becomes `accessToken`. The `Version` header becomes
   **required** on the token call.
-- **`GET /contacts/` is removed** — use `POST /contacts/search`. (Already the preferred
-  call in v2; in v3 it is the only one.)
-- **`GET /users/` is removed** — use `GET /users/search`.
+- **`GET /contacts/` is dropped from the v3 spec** — use `POST /contacts/search`.
+  *(PROVEN 2026-08-03: it still returns 200 under `Version: v3` today. The spec removal has
+  not been enforced at the runtime — do not rely on that lasting.)*
+- **`GET /users/` is dropped from the v3 spec** — use `GET /users/search`.
+  *(PROVEN 2026-08-03: also still returns 200 under `Version: v3`.)*
 - `DELETE /contacts/{id}/campaigns/removeAll` → `.../campaigns/remove-all`.
-- The `/emails/builder*` surface (5 ops) is **replaced wholesale** by
+- The `/emails/builder*` surface (5 ops) is **superseded** by
   `/emails/locations/{locationId}/campaigns/*` and `/emails/locations/{locationId}/templates/*`
-  (18 ops).
+  (18 ops). *(PROVEN 2026-08-03: `/emails/builder` still returns 200 under both
+  `2021-07-28` and `v3`; build new work on the `locations/...` form regardless.)*
 - Per-platform social OAuth paths collapse into generic `{platform}` paths.
 
 **v3-only capability** (does not exist in v2 — requires `Version: v3`): chat-widget,
