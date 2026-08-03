@@ -72,6 +72,11 @@ CLIENT_TZ=""
 DRY_RUN="0"
 FORCE="0"
 TUNNEL_ID_OVERRIDE="${PODCAST_TUNNEL_ID:-}"
+# Two-show channel capture defaults: channel ids are NON-SECRET values captured
+# at onboarding, but provisioning never invents one (absent -> PENDING later).
+PERSONAL_CHANNEL_ID="${PODCAST_PERSONAL_CHANNEL_ID:-}"
+INTERVIEW_CHANNEL_ID="${PODCAST_INTERVIEW_CHANNEL_ID:-}"
+INTERVIEW_SHOW_SLUG="${PODCAST_INTERVIEW_SHOW_SLUG:-}"
 
 usage() {
   sed -n '1,40p' "$0" >&2
@@ -83,6 +88,17 @@ USAGE:
 FLAGS:
   --tunnel-id <id>   Use this tunnel id instead of resolving it from the Command
                      Center CNAME (also settable via PODCAST_TUNNEL_ID).
+  --personal-channel-id <id>
+                     The client's PERSONAL-show Podbean Channel ID (two-show
+                     convention; also settable via PODCAST_PERSONAL_CHANNEL_ID).
+                     Non-secret; never invented here.
+  --interview-channel-id <id>
+                     The client's INTERVIEW-show Podbean Channel ID (two-show
+                     convention; also settable via PODCAST_INTERVIEW_CHANNEL_ID).
+  --interview-show-slug <slug>
+                     The interview show's slug used in the env var name
+                     PODBEAN_PODCAST_ID_<SHOW_SLUG> (also settable via
+                     PODCAST_INTERVIEW_SHOW_SLUG), e.g. SOFT_GIRL_ERA.
   --dry-run          Perform all read-only discovery, but log mutations instead of
                      applying them (operator canary preview). Still requires the token.
   --force            Recreate the Access app even if one already exists for the host.
@@ -103,6 +119,9 @@ POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tunnel-id) TUNNEL_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --personal-channel-id) PERSONAL_CHANNEL_ID="${2:-}"; shift 2 ;;
+    --interview-channel-id) INTERVIEW_CHANNEL_ID="${2:-}"; shift 2 ;;
+    --interview-show-slug) INTERVIEW_SHOW_SLUG="${2:-}"; shift 2 ;;
     --dry-run)   DRY_RUN="1"; shift ;;
     --force)     FORCE="1"; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -484,6 +503,73 @@ ensure_secret() {
 }
 ensure_secret "PODCAST_INTAKE_HOOK_TOKEN"
 ensure_secret "PODCAST_DASHBOARD_TOKEN"
+
+# --------------------------------------------------------------------------- #
+# STEP 5.5: two-show channel capture (SOP-PODCAST-02 Section 2.5; the fleet-wide
+# two-show convention). Every client runs TWO shows under the operator's single
+# Podbean host account, one channel per show: the PERSONAL show (solo episodes,
+# mode personal_podcast_style) and the INTERVIEW show (the guest system, mode
+# interview_style_podcast). This block RECORDS both channel ids in the provision
+# ledger and PRINTS the exact box-side env contract for the operator to apply:
+#   PODBEAN_PODCAST_ID                 the personal-show Channel ID (default channel)
+#   PODBEAN_PODCAST_ID_<SHOW_SLUG>     the interview-show Channel ID, where
+#                                      <SHOW_SLUG> is the interview show's slug in
+#                                      uppercase, underscore form (e.g. SOFT_GIRL_ERA)
+# The publish step selects the channel BY MODE (scripts/podcast_channel.py is the
+# resolver the controller and publish glue use) and passes the mode-selected
+# channel as the payload's podcast_id, so the operator's multi-row roster gate
+# (channel-preferred selection) resolves the right show row per episode.
+# Channel ids are NON-SECRET values captured at onboarding, but provisioning
+# NEVER invents one: absent here, the block records PENDING with the exact env
+# label to set, and SOP-PODCAST-02's standing-check probes remain the go-live
+# gate. Existing correct values are reused (idempotent).
+# --------------------------------------------------------------------------- #
+print_channel_contract() {
+  log "  box-side env contract (apply on the client box, then confirm SET in the"
+  log "  live process env per the box restart doctrine; then run the standing-check"
+  log "  probe for EACH show per SOP-PODCAST-02 Section 2.5):"
+  if [ -n "$PERSONAL_CHANNEL_ID" ]; then
+    log "    PODBEAN_PODCAST_ID=${PERSONAL_CHANNEL_ID}   (personal show)"
+  else
+    log "    PODBEAN_PODCAST_ID=<personal-show Channel ID>   (personal show; not supplied here)"
+  fi
+  if [ -n "$INTERVIEW_CHANNEL_ID" ]; then
+    if [ -n "$INTERVIEW_SHOW_SLUG" ]; then
+      log "    PODBEAN_PODCAST_ID_${INTERVIEW_SHOW_SLUG}=${INTERVIEW_CHANNEL_ID}   (interview show)"
+    else
+      log "    PODBEAN_PODCAST_ID_<SHOW_SLUG>=${INTERVIEW_CHANNEL_ID}   (interview show; show slug not supplied)"
+    fi
+  else
+    log "    PODBEAN_PODCAST_ID_<SHOW_SLUG>=<interview-show Channel ID>   (interview show; not supplied here)"
+  fi
+}
+provision_channels() {
+  if [ "$DRY_RUN" = "1" ]; then
+    ledger_step "channels:two-show" "DRY-RUN" "would record both show Channel IDs (personal + interview) in the ledger and print the box-side env contract"
+    return 0
+  fi
+  ledger_fact "personal_channel_id" "${PERSONAL_CHANNEL_ID:-NOT-SUPPLIED}"
+  ledger_fact "interview_channel_id" "${INTERVIEW_CHANNEL_ID:-NOT-SUPPLIED}"
+  ledger_fact "interview_show_slug" "${INTERVIEW_SHOW_SLUG:-NOT-SUPPLIED}"
+  if [ -z "$PERSONAL_CHANNEL_ID" ]; then
+    ledger_step "channels:personal" "PENDING" "personal-show Channel ID not supplied; capture it at onboarding and set PODBEAN_PODCAST_ID on the box (never invented here)"
+  else
+    ledger_step "channels:personal" "OK" "personal-show Channel ID recorded in the ledger; set PODBEAN_PODCAST_ID on the box"
+  fi
+  if [ -z "$INTERVIEW_CHANNEL_ID" ]; then
+    ledger_step "channels:interview" "PENDING" "interview-show Channel ID not supplied; capture it at onboarding and set PODBEAN_PODCAST_ID_<SHOW_SLUG> on the box (never invented here)"
+  elif [ -z "$INTERVIEW_SHOW_SLUG" ]; then
+    ledger_step "channels:interview" "PENDING" "interview-show Channel ID recorded but the show slug is missing; set PODBEAN_PODCAST_ID_<SHOW_SLUG> on the box using the show's uppercase, underscore slug"
+  else
+    if ! printf '%s' "$INTERVIEW_SHOW_SLUG" | grep -Eq '^[A-Z0-9_]{1,64}$'; then
+      ledger_step "channels:interview" "PENDING" "show slug '$INTERVIEW_SHOW_SLUG' is not uppercase/underscore form; fix the slug, then set PODBEAN_PODCAST_ID_${INTERVIEW_SHOW_SLUG} on the box"
+    else
+      ledger_step "channels:interview" "OK" "interview-show Channel ID recorded in the ledger; set PODBEAN_PODCAST_ID_${INTERVIEW_SHOW_SLUG} on the box"
+    fi
+  fi
+  print_channel_contract
+}
+provision_channels
 
 # --------------------------------------------------------------------------- #
 # STEP 6: delegated box-side wiring (owned by sibling slices). Invoke the helper
