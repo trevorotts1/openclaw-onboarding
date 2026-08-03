@@ -3648,6 +3648,55 @@ if [ -f "$ONBOARDING_DIR/scripts/wire-social-media.sh" ]; then
         warn "Social Media in a Box wiring reported an issue (non-fatal); run scripts/wire-social-media.sh --apply manually"
     fi
 fi
+
+# roll-3 (podcast activation layer install guarantee): the Step 5 loop above
+# copies every numbered skill directory wholesale, so the Podcast Production
+# Engine (skill 58) activation scripts ride inside the 58-podcast-production-engine/
+# copy and need no manifest entry of their own. The historical failure mode is
+# a PARTIAL copy: a box ends up with the skill docs but not the processor
+# activation layer, and nothing notices until a client episode silently never
+# runs (the Leanne-ticket failure class). This block is the belt-and-suspenders
+# guarantee on top of the wholesale copy: each activation file is verified
+# present at its destination and, if missing, copied individually (cp never
+# truncates an existing destination file, so a partial prior copy is repaired,
+# never clobbered). This block only ENSURES delivery; it never ACTIVATES the
+# processor. Activation is per-client and stays with
+# 58-podcast-production-engine/scripts/install-podcast-department.sh (invoked
+# by provision-podcast-client.sh) because activating without a client slug,
+# session binding, and intake hook token would be worse than not activating.
+# A missing activation file on this box is a WARN, never an abort: the guard
+# scripts/audit-podcast-activation.sh (fleet audit) and
+# 58-podcast-production-engine/scripts/guard-activation-health.py (box health
+# check) catch and report the gap after install, so this never silently goes
+# missing again.
+_PODCAST_ACTIVATION_SKILL="58-podcast-production-engine"
+_PODCAST_ACTIVATION_FILES="scripts/register-podcast-hook.sh scripts/install-podcast-department.sh scripts/podcast_controller.py scripts/podcast_scheduler.py"
+for _ACT_FILE in $_PODCAST_ACTIVATION_FILES; do
+    _ACT_SRC="$ONBOARDING_DIR/$_PODCAST_ACTIVATION_SKILL/$_ACT_FILE"
+    _ACT_DEST="$SKILLS_DIR/$_PODCAST_ACTIVATION_SKILL/$_ACT_FILE"
+    if [ ! -f "$_ACT_SRC" ]; then
+        warn "Podcast activation: $_PODCAST_ACTIVATION_SKILL/$_ACT_FILE is not in this onboarding package; client processors cannot be activated on this box until it ships"
+        continue
+    fi
+    if [ ! -f "$_ACT_DEST" ]; then
+        mkdir -p "$(dirname "$_ACT_DEST")" 2>/dev/null || true
+        cp "$_ACT_SRC" "$_ACT_DEST" 2>>"$LOG_FILE" || {
+            warn "Podcast activation: could not copy $_PODCAST_ACTIVATION_SKILL/$_ACT_FILE to the skills dir (see $LOG_FILE)"
+            continue
+        }
+        success "Podcast activation: repaired missing $_PODCAST_ACTIVATION_SKILL/$_ACT_FILE in the skills dir"
+    fi
+    case "$_ACT_FILE" in
+        *.sh) chmod +x "$_ACT_DEST" 2>/dev/null || true ;;
+    esac
+done
+if [ ! -f "$SKILLS_DIR/$_PODCAST_ACTIVATION_SKILL/scripts/podcast_controller.py" ]; then
+    warn "Podcast activation layer NOT complete in the skills dir; run scripts/audit-podcast-activation.sh to see what is missing"
+else
+    success "Podcast activation layer present in the skills dir (register-podcast-hook.sh, install-podcast-department.sh, podcast_controller.py, podcast_scheduler.py)"
+fi
+unset _PODCAST_ACTIVATION_SKILL _PODCAST_ACTIVATION_FILES _ACT_FILE _ACT_SRC _ACT_DEST
+
 send_telegram_progress "✓ Skills + helpers installed. Setting up your AI engines next…"
 
 # ----------------------------------------------------------

@@ -69,6 +69,15 @@ Fetch the latest skill bundle from the unified repo (auto-detects Mac vs VPS):
 
 Place every skill folder under `<skills-dir>/`. Place root files (`Start Here.md`, `INSTALL-CONTRACT.md`, `AGENTS.md`, `cron-prompt.txt`, `check-updates.sh`, `force-update.sh`, etc.) at `<config-root>/`. Place `shared-utils/` under `<skills-dir>/shared-utils/`.
 
+This delivery INCLUDES the Podcast Production Engine (skill 58) activation layer. Verify that all four of these files exist under `<skills-dir>/58-podcast-production-engine/scripts/` after the download:
+
+- `register-podcast-hook.sh`
+- `install-podcast-department.sh`
+- `podcast_controller.py`
+- `podcast_scheduler.py`
+
+If any one is missing, the download is incomplete: re-fetch the skill bundle before continuing. A box without these files can never activate a client podcast processor, and that failure is silent until an episode is missed.
+
 ### 6. Read the rules (N3, N4)
 Before installing ANY skill, read every file in:
 - `<skills-dir>/Start Here.md`
@@ -104,10 +113,47 @@ bash <config-root>/skills/qc-system-integrity.sh
 
 Must exit 0.
 
-### 9. Run AI Workforce Interview (Skill 23)
+### 9. Verify the podcast activation layer (skill 58)
+
+The Podcast Production Engine ships an activation layer: the inbound hook
+registration, the per-client department install, the podcast controller,
+and the podcast scheduler. Every install path (this one and the terminal
+`install.sh`) delivers these four scripts, and Step 5 above checks they exist.
+This step verifies the install actually landed, so a client podcast processor
+can never silently go missing on this box.
+
+1. Confirm all four files exist under `<skills-dir>/58-podcast-production-engine/scripts/`:
+
+   - `register-podcast-hook.sh`
+   - `install-podcast-department.sh`
+   - `podcast_controller.py`
+   - `podcast_scheduler.py`
+
+   If any file is missing, re-download the skill bundle (Step 5) and re-check
+   before continuing.
+
+2. Run the activation health guard:
+
+```
+python3 <skills-dir>/58-podcast-production-engine/scripts/guard-activation-health.py
+```
+
+   The guard inspects the four activation artifacts and reports a pass when
+   the layer is complete. A failing guard means the processor activation
+   layer is absent or damaged; do not proceed to the interview until the
+   health check passes.
+
+3. Note: this step verifies that the activation layer is INSTALLED. It does
+   not activate a client. Activation is per-client and happens inside
+   `provision-podcast-client.sh` (skill 58 scripts), which invokes
+   `install-podcast-department.sh` and `register-podcast-hook.sh` for one
+   client slug at a time. A fresh box with no clients yet is expected to
+   verify clean here with zero activated clients.
+
+### 10. Run AI Workforce Interview (Skill 23)
 Drive Skill 23 in interactive mode (or non-interactive with a saved config) to build the ZHC structure under `<workspace>/zero-human-company/<company-slug>/`.
 
-### 10. Build per-role workspaces
+### 11. Build per-role workspaces
 For each department in the interview output:
 
 ```
@@ -118,7 +164,7 @@ python3 <skills-dir>/23-ai-workforce-blueprint/scripts/create_role_workspaces.py
 
 This creates the 7-file role layout (4 unique + 3 symlinks + how-to.md) AND the SOP/ subfolder AND writes `governing-personas.md` at department level.
 
-### 11. Install Sunday cron
+### 12. Install Sunday cron
 Install the weekly update-check cron at `0 3 * * 0` (3am Sunday):
 
 ```
@@ -128,16 +174,17 @@ openclaw cron create --name weekly-onboarding-update \
   --message-file <config-root>/cron-prompt.txt
 ```
 
-### 12. Triple-fire confirmation
+### 13. Triple-fire confirmation
 Confirm the install kickoff fired on all three channels:
 - **Telegram:** message sent to paired chat
 - **AGENTS.md flag:** marker written at `<config-root>/AGENTS.md` confirming onboarding kickoff
 - **This reply:** the agent's reply to the user with a summary
 
-### 13. Reply with summary
+### 14. Reply with summary
 Reply to the user with:
 - Total skills installed (target: 33)
 - QC pass/fail count per wave
+- Podcast activation layer status (the Step 9 health-guard result: all four activation scripts present and guard-activation-health.py passing)
 - ZHC location
 - Active department list
 - Master Orchestrator agent ID
@@ -162,6 +209,8 @@ Reply to the user with:
 | Web research pre-flight | scripts/web-research-preflight.sh | agent fetches the same URLs |
 | Settings config | install.sh writes openclaw.json | agent writes openclaw.json |
 | Skill download | install.sh git/curl clones | agent git/curl clones |
+| Podcast activation delivery | Step 5 wholesale copy + per-file presence guarantee | Step 5 file check (four activation scripts) |
+| Podcast activation verify | scripts/audit-podcast-activation.sh | Step 9 guard-activation-health.py |
 | Wave install + QC | install.sh + qc-agent.sh | agent invokes same scripts |
 | Triple-fire kickoff | fire_install_kickoff_triplet() | agent sends Telegram + writes AGENTS.md flag + replies in chat |
 
