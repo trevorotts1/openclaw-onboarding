@@ -146,6 +146,27 @@ def scan(node, path):
             print("AF-AE-ANTHROPIC: resolved map carries a banned id at %s: %r" % (path, node), file=sys.stderr)
             sys.exit(2)
 scan(data.get("tiers", {}), "tiers")
+# CONCURRENCY ADVISORY (SPEC 8.4): warn when the HEAVY-WRITER primary provider
+# carries a low concurrency cap (<= 8) in the resolved map. Warning only --
+# never changes the exit code. Mirrors the resolve-mode advisory so --check
+# surfaces the same signal an operator sees at resolve time.
+def _hw_primary(tiers):
+    hw = (tiers or {}).get("HEAVY-WRITER") or {}
+    chain = hw.get("chain") or []
+    for link in chain:
+        p = str(link.get("provider", "")).strip()
+        if p and p.upper() != "HOLD":
+            return p
+    return None
+hw_primary = _hw_primary(data.get("tiers"))
+caps = data.get("provider_caps") or {}
+if hw_primary and hw_primary in caps:
+    cap = caps.get(hw_primary)
+    if isinstance(cap, int) and cap <= 8:
+        print("CONCURRENCY ADVISORY: HEAVY-WRITER primary provider %s has a concurrency cap of %d "
+              "(wave limit); a webhook spike is capped cross-process at %d in-flight calls. "
+              "Consider raising provider_caps.%s if higher concurrency is intended."
+              % (hw_primary, cap, cap, hw_primary), file=sys.stderr)
 print("  preflight --check: resolved model-map.json OK (no residual placeholder, no Anthropic-family id)")
 sys.exit(0)
 PY
@@ -418,6 +439,27 @@ resolved = {
     "tiers": resolved_tiers,
     "no_formatter_tier": True,
 }
+
+# Carry forward provider_caps from the template so the runtime cap is active.
+template_caps = tmpl.get("provider_caps")
+if isinstance(template_caps, dict):
+    resolved["provider_caps"] = template_caps
+
+# SPEC 8.4 CONCURRENCY -- warn when a low-cap provider (like ollama-cloud wave cap 8)
+# is the HEAVY-WRITER primary. A webhook spike can exhaust the cap on a busy box.
+hw_chain2 = resolved_tiers.get("HEAVY-WRITER", {}).get("chain", [])
+if hw_chain2:
+    hw_primary = hw_chain2[0]
+    hw_prov = hw_primary.get("provider", "")
+    caps = resolved.get("provider_caps", {}) or {}
+    hw_cap = caps.get(hw_prov) if isinstance(caps, dict) else None
+    if hw_cap is not None and int(hw_cap) <= 8:
+        print("CONCURRENCY ADVISORY: HEAVY-WRITER primary provider %s has a concurrency "
+              "cap of %d (wave limit). On a busy box a webhook spike may exhaust "
+              "this cap; the engine will queue additional calls via provider slots "
+              "(SPEC 8.4). Increase the cap in model-map.json if the provider allows it, "
+              "or ensure the box has funded fallback tiers in the chain."
+              % (hw_prov, int(hw_cap)), file=sys.stderr)
 
 # Final fail-closed audit: no residual placeholder, no Anthropic id.
 blob = json.dumps(resolved)

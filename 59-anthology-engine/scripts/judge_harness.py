@@ -434,10 +434,21 @@ def run(env: dict, router: Optional[RouterFn] = None) -> JudgeVerdict:
             raise BadInvocation(
                 "model_router.route unavailable and no router injected; cannot reach the JUDGE tier")
 
+        # Resolve state_dir for per-provider concurrency caps (SPEC 8.4 CONCURRENCY).
+        # Env takes precedence, then ANTHOLOGY_STATE_DIR, then OPENCLAW_DATA_DIR, then ~.
+        state_d = env.get("state_dir")
+        if not state_d:
+            try:
+                import anthology_state  # noqa: E402
+                state_d = str(anthology_state.default_state_dir())
+            except Exception:
+                state_d = None
+
         def router(tier, msgs, ctx):  # noqa: E306
             return _route_default(tier, msgs, ctx,
                                   run_dir=env.get("run_dir"),
-                                  model_map_path=env.get("model_map_path"))
+                                  model_map_path=env.get("model_map_path"),
+                                  state_dir=state_d)
 
     context = {
         "deliverable_key": env.get("deliverable_key"),
