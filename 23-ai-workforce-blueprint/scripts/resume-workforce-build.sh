@@ -41,6 +41,11 @@ STATE_FILE="$OC_ROOT/workspace/.workforce-build-state.json"
 LOCK_FILE="$OC_ROOT/workspace/.workforce-build-state.lock"
 LOG_FILE="$OC_ROOT/workspace/.workforce-build-state.log"
 RUN_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-runs.count"
+# v21.x: SEND count is OBSERVABILITY ONLY and gates nothing. Kept strictly separate
+# from RUN_COUNT_FILE (the turn-driven furnace ceiling) so a successful outbound
+# send can never again be mistaken for a triggered agent turn. See the dispatch
+# result handling at the end of this file.
+SEND_COUNT_FILE="$OC_ROOT/workspace/.workforce-build-resume-sends.count"
 MAX_ATTEMPTS_DEFAULT=12
 STALE_BUILDING_MINUTES=15
 
@@ -185,7 +190,7 @@ self_remove_cron() {
     # future (operator-un-parked) build starts fresh. NEVER delete BOX_PARK_MARKER
     # here — a park must persist until an operator runs scripts/unpark-build.sh
     # (auto-resume never happens silently).
-    rm -f "$RUN_COUNT_FILE" "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" \
+    rm -f "$RUN_COUNT_FILE" "$SEND_COUNT_FILE" "$STUCK_COUNT_FILE" "$PROGRESS_FP_FILE" \
           "$PROGRESS_HWM_FILE" "$INFLIGHT_MARKER" 2>/dev/null || true
   else
     log "self_remove_cron($reason): openclaw cron rm $uuid FAILED - see errors above"
@@ -1134,15 +1139,49 @@ _dispatch_out=$(openclaw message send --channel telegram -t "$TARGET_CHAT" -m "$
 _dispatch_rc=$?
 printf '%s\n' "$_dispatch_out" >> "$LOG_FILE"
 if [[ "$_dispatch_rc" -eq 0 ]]; then
-  # A resume turn was actually triggered. Record it: bump the ABSOLUTE ping counter
-  # (furnace ceiling) and stamp the in-flight overlap marker so the next */15 fire
-  # cannot stack a second agentTurn until it TTL-expires or the agent clears it.
-  _total_pings=$(( ${_total_pings:-0} + 1 ))
-  echo "$_total_pings" > "$RUN_COUNT_FILE" 2>/dev/null || true
-  date -u +%Y-%m-%dT%H:%M:%SZ > "$INFLIGHT_MARKER" 2>/dev/null || true
+  # ---- v21.x FALSE-SUCCESS FIX: rc=0 is a SEND, not a TURN ----
+  # `openclaw message send` returning 0 means the OUTBOUND message was accepted by
+  # the channel. It does NOT mean an inbound agent turn was enqueued, and it never
+  # did: the send path returns after handing the message to the channel plugin,
+  # inbound arrives on a SEPARATE ingress queue, Telegram does not hand a bot its
+  # own messages back as updates, and OpenClaw filters own-messages core-side.
+  # OpenClaw's own docs/cli/cron.md also states that command cron jobs do not start
+  # an isolated agent turn.
+  #
+  # Treating rc=0 as "a resume turn was triggered" therefore made this lane
+  # SUPPRESS ITS OWN RETRIES on a success that produced nothing:
+  #   * the in-flight overlap marker blocked the next */15 fire for 20 minutes,
+  #     waiting for a turn that was never going to arrive; and
+  #   * the absolute ping ceiling advanced on every no-op send, so after
+  #     MAX_TOTAL_RESUME_PINGS the build was PARKED and this cron REMOVED ITSELF -
+  #     a hard stop earned entirely by dispatches that never ran anything.
+  # Both mechanisms exist to bound real agent-turn overlap, so both must be driven
+  # by evidence that a turn RAN, not by evidence that a message was SENT.
+  #
+  # We still count sends, but into a clearly-named counter that gates NOTHING, so
+  # the dispatch history stays observable without being mistaken for turn activity.
+  # Boundedness is unaffected: the progress-driven consecutive-stuck cap
+  # (MAX_STUCK_FIRES, resets only on genuine forward progress) still parks a wedged
+  # build, and at */15 it fires long before the old ping ceiling would have.
+  #
+  # WORKFORCE_RESUME_SEND_IMPLIES_TURN=1 restores the historical behavior. It is the
+  # switch the deterministic-exec follow-up should flip (or replace with a real
+  # ingress check) once a dispatch genuinely produces a turn again.
+  _total_sends=0
+  [[ -f "$SEND_COUNT_FILE" ]] && _total_sends=$(cat "$SEND_COUNT_FILE" 2>/dev/null | tr -dc '0-9' | head -c 9)
+  [[ -z "$_total_sends" ]] && _total_sends=0
+  _total_sends=$(( _total_sends + 1 ))
+  echo "$_total_sends" > "$SEND_COUNT_FILE" 2>/dev/null || true
   # A successful dispatch clears any prior rate-limit backoff (fresh start).
   rm -f "$RATE_LIMIT_STATE_FILE" 2>/dev/null || true
-  log "resume dispatch ok (total resume pings this build: $_total_pings/$MAX_TOTAL_RESUME_PINGS; in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m; rate-limit backoff cleared)"
+  if [[ "${WORKFORCE_RESUME_SEND_IMPLIES_TURN:-0}" == "1" ]]; then
+    _total_pings=$(( ${_total_pings:-0} + 1 ))
+    echo "$_total_pings" > "$RUN_COUNT_FILE" 2>/dev/null || true
+    date -u +%Y-%m-%dT%H:%M:%SZ > "$INFLIGHT_MARKER" 2>/dev/null || true
+    log "resume dispatch ok (WORKFORCE_RESUME_SEND_IMPLIES_TURN=1: counted as a turn - total resume pings this build: $_total_pings/$MAX_TOTAL_RESUME_PINGS; in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m; rate-limit backoff cleared)"
+  else
+    log "resume dispatch ok - OUTBOUND SEND accepted (send #$_total_sends for this build). This is NOT proof an agent turn ran: no in-flight marker set and the ping ceiling was NOT advanced, so the next scheduled fire is free to retry. Progress is bounded by the stuck-cap (${_stuck:-0}/$MAX_STUCK_FIRES at last check), not by this send. Rate-limit backoff cleared."
+  fi
 else
   log "resume dispatch FAILED rc=$_dispatch_rc (non-fatal: in-process exec already fired above if closeout_dirty)"
   # RATE-LIMIT/ERROR BACKOFF: widen the next-allowed dispatch time (exponential,

@@ -31,6 +31,46 @@
 #   (8) UNPARK_PATH          -- scripts/unpark-build.sh exists, is bash -n clean,
 #                               clears the park marker, and re-registers the cron.
 #
+# v21.x adds FUNCTIONAL groups. These do not grep the source, they RUN
+# resume-workforce-build.sh against hermetic fixtures and assert on what it
+# actually did (which crons it removed, which messages it dispatched, what it
+# wrote back to the state). Each is paired with a MUTATION PROOF: the same
+# fixture run against a sandboxed copy of the script with ONLY that fix reverted
+# must exhibit the OLD broken behavior — so none of these assertions can pass
+# vacuously.
+#
+#   (9)  BELT_CONTRACT_GUARD -- an agent-written top-level `.status=done` while the
+#                               libraries are failed and buildCompletedAt is empty
+#                               must NOT self-remove the cron (even with the
+#                               department floor satisfied), and the [LIBRARY-RESUME]
+#                               repair lane must still dispatch. This is the defect
+#                               that killed the ONLY autonomous-recovery layer on a
+#                               box minutes after its interview completed.
+#   (10) STATUS_VOCABULARY   -- departments written as status "complete" (the synonym
+#                               agents use) are normalized to the contract word "done"
+#                               so the counters, the library gate and HOP-4 can see
+#                               them at all.
+#   (11) QC_BUILD_ELIGIBLE   -- an interview whose QC verdict is `needs-review` (which
+#                               update-interview-state.sh ALREADY accepts as complete)
+#                               must be build-eligible, not a permanent dead end.
+#   (12) INTERNAL_NOT_TO_OWNER -- internal resume/kick traffic routes to the operator
+#                               chat, never the client's own chat.
+#   (13) KICK_NOT_SUPPRESSED -- a reopened / re-completed interview on a box that
+#                               already carries departments must STILL dispatch a
+#                               build kick. The old guard counted department entries
+#                               and swallowed the kick entirely on such a box.
+#   (14) SEND_IS_NOT_A_TURN  -- `openclaw message send` rc=0 means the message was
+#                               SENT, not that an agent turn RAN. A bare successful
+#                               send must not set the 20-minute in-flight marker nor
+#                               advance the absolute ping ceiling (which parks the
+#                               build and removes this cron), or the lane suppresses
+#                               its own retries on a success that triggered nothing.
+#
+# HERMETIC: every functional group sandboxes HOME *and* runs a COPY of the script
+# from inside the sandbox, so SCRIPT_DIR-resolved siblings (department-floor.py,
+# department-optout-sync.py, run-closeout.sh, ...) resolve into the fixture and NO
+# real Skill-23 script and no real ~/.openclaw is ever touched.
+#
 # Exit 0 = all checks pass. Exit 1 = one or more failed (CI FAIL).
 
 set -euo pipefail
@@ -231,6 +271,497 @@ if [[ -f "$UNPARK" ]]; then
 else
   fail "8: scripts/unpark-build.sh not found"
 fi
+
+# ===========================================================================
+# FUNCTIONAL GROUPS (9)-(12) — run the script, assert on behavior
+# ===========================================================================
+
+FAKE_OC="$REPO_ROOT/tests/fixtures/fake-openclaw-cron.py"
+FUNCTIONAL=1
+if [[ ! -f "$FAKE_OC" ]]; then
+  echo ""
+  echo "!! functional groups SKIPPED: $FAKE_OC not found"
+  FUNCTIONAL=0
+fi
+if [[ -d /data/.openclaw ]]; then
+  # resume-workforce-build.sh resolves OC_ROOT as /data/.openclaw FIRST and offers
+  # no override. On a host that has one we cannot guarantee the fixture is isolated,
+  # so we refuse to run rather than risk writing into a real workspace.
+  echo ""
+  echo "!! functional groups SKIPPED: /data/.openclaw exists on this host — cannot guarantee fixture isolation"
+  FUNCTIONAL=0
+fi
+if ! command -v jq >/dev/null 2>&1; then
+  echo ""
+  echo "!! functional groups SKIPPED: jq not installed"
+  FUNCTIONAL=0
+fi
+
+if (( FUNCTIONAL == 1 )); then
+
+# The functional groups below assert EXPLICITLY on outcomes, and several of them
+# deliberately run commands that are expected to exit non-zero (a refused
+# --complete, a script with a fix reverted). errexit would abort the whole file on
+# the first one, so it is disabled for this section only; every check below is an
+# explicit pass()/fail() and nothing is silently ignored.
+set +e
+
+SANDBOX="$(mktemp -d)"
+cleanup_sandbox() { rm -rf "$SANDBOX" 2>/dev/null || true; }
+trap cleanup_sandbox EXIT
+case "$SANDBOX" in
+  */.openclaw|*/.openclaw/*) echo "REFUSING: sandbox resolved into a real .openclaw ($SANDBOX)"; exit 2 ;;
+esac
+
+RESUME_CRON_UUID="aabbccdd-1122-3344-5566-778899aabbcc"
+
+# Build one hermetic box. Echoes the box HOME.
+#   $1 = box name   $2 = build-state JSON   $3 = space-separated dept ids needing
+#                                                a real how-to.md on disk
+_mkbox() {
+  local name="$1" state_json="$2" depts="${3:-}"
+  local h="$SANDBOX/$name"
+  local skill="$h/.openclaw/skills/23-ai-workforce-blueprint/scripts"
+  mkdir -p "$skill" "$h/.openclaw/workspace" "$h/bin"
+
+  # The script under test runs FROM the sandbox, so every SCRIPT_DIR sibling it
+  # probes resolves inside the fixture. Only the stub floor checker is provided.
+  cp "$RESUME" "$skill/resume-workforce-build.sh"
+  cat > "$skill/department-floor.py" <<'PYEOF'
+import sys
+# Stub: department floor SATISFIED (rc=0). The point of group (9) is that a
+# satisfied floor must STILL not license self-removal on an open contract.
+sys.exit(0)
+PYEOF
+
+  cat > "$h/bin/openclaw" <<SHIM
+#!/usr/bin/env bash
+exec python3 "$FAKE_OC" "\$@"
+SHIM
+  chmod +x "$h/bin/openclaw"
+
+  printf '%s' "$state_json" > "$h/.openclaw/workspace/.workforce-build-state.json"
+  printf '[{"name":"workforce-build-resume","id":"%s","kind":"command"}]' "$RESUME_CRON_UUID" \
+    > "$h/jobs.json"
+  : > "$h/calls.log"
+
+  # The DISK-REALITY stale-state reset demotes any department claiming done that
+  # has no substantial how-to.md on disk. Give the ones we want to stay 'done' a
+  # real file (>= 256 bytes, no [PENDING marker) so the fixture is not silently
+  # rewritten out from under the assertions.
+  local d
+  for d in $depts; do
+    mkdir -p "$h/.openclaw/workspace/departments/$d/lead"
+    { echo "# how-to"; for _ in $(seq 1 12); do
+        echo "Operating procedure line for the $d department role workspace."
+      done; } > "$h/.openclaw/workspace/departments/$d/lead/how-to.md"
+  done
+  printf '%s' "$h"
+}
+
+# Run a box. $1 = box home, $2 = script to execute, rest = extra env assignments.
+_runbox() {
+  local h="$1" script="$2"; shift 2
+  env -i \
+    PATH="$h/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    HOME="$h" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    FAKE_OC_JOBS_FILE="$h/jobs.json" \
+    FAKE_OC_CALLS_FILE="$h/calls.log" \
+    OPERATOR_ESCALATION_CHAT_ID="555000111" \
+    "$@" \
+    bash "$script" >"$h/run.out" 2>&1
+  return 0
+}
+
+# Revert exactly one fix in a sandboxed copy, to prove an assertion discriminates.
+# $1 = copy path, $2 = python heredoc body performing the anchored replacement.
+_mutate() {
+  local target="$1"; shift
+  python3 - "$target" "$@"
+}
+
+STATE_ALL_DONE_SOP_FAILED='{
+  "interviewComplete": true,
+  "interviewQc": {"status": "pass"},
+  "status": "done",
+  "closeoutStatus": "pending",
+  "roleLibraryStatus": "done",
+  "sopLibraryStatus": "failed",
+  "ownerChat": "111222333",
+  "agentName": "TestOrchestrator",
+  "departments": [
+    {"id": "alpha", "status": "done"},
+    {"id": "bravo", "status": "done"},
+    {"id": "charlie", "status": "done"}
+  ]
+}'
+
+# ---------------------------------------------------------------------------
+# (9) BELT_CONTRACT_GUARD
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (9) BELT_CONTRACT_GUARD: agent-written .status=done + failed library must NOT self-remove ---"
+BOX9="$(_mkbox box9 "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+_runbox "$BOX9" "$BOX9/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+CALLS9="$BOX9/calls.log"
+SLOG9="$BOX9/.openclaw/workspace/.workforce-build-state.log"
+
+if grep -q "^cron rm" "$CALLS9" 2>/dev/null; then
+  fail "9a: the cron was SELF-REMOVED on an open contract (closeout=pending, buildCompletedAt unset, sopLibraryStatus=failed)"
+else
+  pass "9a: cron NOT self-removed while the delivery contract is open"
+fi
+
+if grep -q "LIBRARY-RESUME" "$CALLS9" 2>/dev/null; then
+  pass "9b: the [LIBRARY-RESUME] repair lane still dispatched (recovery layer alive)"
+else
+  fail "9b: no [LIBRARY-RESUME] dispatch — the repair lane did not run"
+fi
+
+if grep -q "REFUSING to treat this build as terminal" "$SLOG9" 2>/dev/null; then
+  pass "9c: the belt logged WHY it refused the terminal state"
+else
+  fail "9c: the belt did not log a refusal reason"
+fi
+
+# ---------------------------------------------------------------------------
+# (9-MUT) the same fixture against the pre-fix belt MUST self-remove
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (9-MUT) MUTATION PROOF: pre-fix belt on the SAME fixture self-removes and never repairs ---"
+BOX9M="$(_mkbox box9m "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+MUT9="$BOX9M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+_mutate "$MUT9" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+start = src.index("    done|complete)\n      # Honor the agent-written word ONLY")
+end = src.index("    failed)\n      _terminal=1 ;;", start)
+old = src[start:end]
+new = "    done|complete)\n      _terminal=1 ;;\n"
+open(path, "w").write(src[:start] + new + src[end:])
+PYEOF
+mut9_rc=$?
+if (( mut9_rc != 0 )); then
+  fail "9-MUT: could not revert the belt contract guard — cannot prove 9a/9b discriminate"
+else
+  _runbox "$BOX9M" "$MUT9"
+  CALLS9M="$BOX9M/calls.log"
+  if grep -q "^cron rm $RESUME_CRON_UUID" "$CALLS9M" 2>/dev/null; then
+    pass "9-MUT-a: pre-fix belt DOES self-remove the cron on this fixture — 9a is a real, non-vacuous check"
+  else
+    fail "9-MUT-a: pre-fix belt did not self-remove — the mutation harness or fixture is wrong, 9a proves nothing"
+  fi
+  if grep -q "LIBRARY-RESUME" "$CALLS9M" 2>/dev/null; then
+    fail "9-MUT-b: pre-fix belt still dispatched [LIBRARY-RESUME] — 9b proves nothing"
+  else
+    pass "9-MUT-b: pre-fix belt made NO repair dispatch — 9b is a real, non-vacuous check"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (10) STATUS_VOCABULARY
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (10) STATUS_VOCABULARY: departments written as 'complete' are normalized to 'done' ---"
+STATE_VOCAB='{
+  "interviewComplete": true,
+  "interviewQc": {"status": "pass"},
+  "closeoutStatus": "pending",
+  "roleLibraryStatus": "complete",
+  "sopLibraryStatus": "pending",
+  "ownerChat": "111222333",
+  "agentName": "TestOrchestrator",
+  "departments": [
+    {"id": "alpha", "status": "complete"},
+    {"id": "bravo", "status": "complete"},
+    {"id": "charlie", "status": "complete"}
+  ]
+}'
+BOX10="$(_mkbox box10 "$STATE_VOCAB" "alpha bravo charlie")"
+_runbox "$BOX10" "$BOX10/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+ST10="$BOX10/.openclaw/workspace/.workforce-build-state.json"
+n_done10=$(jq -r '[.departments[] | select(.status == "done")] | length' "$ST10" 2>/dev/null || echo 0)
+rl10=$(jq -r '.roleLibraryStatus // ""' "$ST10" 2>/dev/null || echo "")
+[ "$n_done10" = "3" ] && pass "10a: all 3 departments normalized 'complete' -> 'done'" \
+                      || fail "10a: only $n_done10/3 departments normalized to 'done'"
+[ "$rl10" = "done" ] && pass "10b: roleLibraryStatus normalized 'complete' -> 'done'" \
+                     || fail "10b: roleLibraryStatus is '$rl10' (expected 'done')"
+if grep -q "LIBRARY-RESUME" "$BOX10/calls.log" 2>/dev/null; then
+  pass "10c: with the synonym resolved the library gate armed and dispatched [LIBRARY-RESUME]"
+else
+  fail "10c: no [LIBRARY-RESUME] dispatch — the gate still cannot see the departments"
+fi
+
+echo ""
+echo "--- (10-MUT) MUTATION PROOF: without the normalizer the same box does nothing at all ---"
+BOX10M="$(_mkbox box10m "$STATE_VOCAB" "alpha bravo charlie")"
+MUT10="$BOX10M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+_mutate "$MUT10" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+anchor = "\nnormalize_status_vocabulary\n"
+if anchor not in src:
+    sys.exit(1)
+open(path, "w").write(src.replace(anchor, "\n", 1))
+PYEOF
+mut10_rc=$?
+if (( mut10_rc != 0 )); then
+  fail "10-MUT: could not remove the normalizer call — cannot prove 10a-c discriminate"
+else
+  _runbox "$BOX10M" "$MUT10"
+  ST10M="$BOX10M/.openclaw/workspace/.workforce-build-state.json"
+  n_done10m=$(jq -r '[.departments[] | select(.status == "done")] | length' "$ST10M" 2>/dev/null || echo 0)
+  if [ "$n_done10m" = "0" ] && ! grep -q "LIBRARY-RESUME" "$BOX10M/calls.log" 2>/dev/null; then
+    pass "10-MUT: without the normalizer every counter reads done=0 and NOTHING is dispatched — 10a-c are real checks"
+  else
+    fail "10-MUT: un-normalized box still counted $n_done10m done / dispatched — 10a-c prove nothing"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (11) QC_BUILD_ELIGIBLE — needs-review must not be a dead end
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (11) QC_BUILD_ELIGIBLE: interviewQc=needs-review is build-eligible, not a permanent strand ---"
+STATE_NEEDS_REVIEW='{
+  "interviewComplete": true,
+  "interviewQc": {"status": "needs-review"},
+  "closeoutStatus": "pending",
+  "roleLibraryStatus": "pending",
+  "sopLibraryStatus": "pending",
+  "ownerChat": "111222333",
+  "agentName": "TestOrchestrator",
+  "departments": [{"id": "alpha", "status": "pending"}]
+}'
+BOX11="$(_mkbox box11 "$STATE_NEEDS_REVIEW")"
+_runbox "$BOX11" "$BOX11/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+if grep -q "WORKFORCE-RESUME" "$BOX11/calls.log" 2>/dev/null; then
+  pass "11a: a needs-review interview dispatched a build resume (the build lane proceeds)"
+else
+  fail "11a: no build dispatch for a needs-review interview — still a dead end"
+fi
+if grep -q "QC-RESUME" "$BOX11/calls.log" 2>/dev/null; then
+  fail "11b: the QC gate still blocked a needs-review interview"
+else
+  pass "11b: the QC gate did not block needs-review"
+fi
+
+echo ""
+echo "--- (11-MUT) MUTATION PROOF: the strict pass-only gate strands the same box ---"
+BOX11M="$(_mkbox box11m "$STATE_NEEDS_REVIEW")"
+MUT11="$BOX11M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+_mutate "$MUT11" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = '_qc_build_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }'
+new = '_qc_build_eligible() { case "${1:-}" in pass) return 0 ;; *) return 1 ;; esac; }'
+if old not in src:
+    sys.exit(1)
+open(path, "w").write(src.replace(old, new, 1))
+PYEOF
+mut11_rc=$?
+if (( mut11_rc != 0 )); then
+  fail "11-MUT: could not narrow the eligibility predicate — cannot prove 11a/11b discriminate"
+else
+  _runbox "$BOX11M" "$MUT11"
+  if grep -q "WORKFORCE-RESUME" "$BOX11M/calls.log" 2>/dev/null; then
+    fail "11-MUT: pass-only gate still dispatched a build — 11a proves nothing"
+  else
+    pass "11-MUT: pass-only gate strands the box (no build dispatch) — 11a/11b are real checks"
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (12) INTERNAL_NOT_TO_OWNER
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (12) INTERNAL_NOT_TO_OWNER: internal resume traffic must not go to the client's chat ---"
+# Box 9 had BOTH an operator chat (env) and an ownerChat (state) available.
+if grep -E "^message send .*-t 111222333" "$CALLS9" >/dev/null 2>&1; then
+  fail "12a: an internal resume message was delivered to the OWNER chat while an operator chat was configured"
+else
+  pass "12a: no internal resume message was delivered to the owner chat"
+fi
+if grep -E "^message send .*-t 555000111" "$CALLS9" >/dev/null 2>&1; then
+  pass "12b: internal resume traffic routed to the operator escalation chat"
+else
+  fail "12b: internal resume traffic did not route to the operator chat"
+fi
+
+# update-interview-state.sh must resolve the operator chat BEFORE .ownerChat.
+UPD="$REPO_ROOT/23-ai-workforce-blueprint/scripts/update-interview-state.sh"
+if [[ -f "$UPD" ]]; then
+  first_kick_src="$(grep -n 'KICK_CHAT=' "$UPD" | grep -v '^[[:space:]]*#' | head -1 || true)"
+  case "$first_kick_src" in
+    *OPERATOR_ESCALATION_CHAT_ID*)
+      pass "12c: update-interview-state.sh resolves the OPERATOR chat first for the internal build kick" ;;
+    *ownerChat*)
+      fail "12c: update-interview-state.sh still resolves .ownerChat FIRST — internal build-kick text is delivered to the client" ;;
+    *)
+      fail "12c: could not determine the build-kick chat resolution order in update-interview-state.sh" ;;
+  esac
+  # The kick must NOT be suppressed merely because department ENTRIES exist. Assert
+  # on live code, not comments (the defect is described in a comment above the fix).
+  if grep -vE '^\s*#' "$UPD" | grep -q 'active_depts'; then
+    fail "12d: the build kick is still gated on active_depts — a reopened interview on a box with existing departments gets NO kick"
+  else
+    pass "12d: the build kick is no longer gated on the presence of department entries"
+  fi
+else
+  fail "12: update-interview-state.sh not found at $UPD"
+fi
+
+# ---------------------------------------------------------------------------
+# (13) KICK_NOT_SUPPRESSED_BY_EXISTING_DEPTS — functional
+# A reopened / re-completed interview on a box that already carries departments
+# MUST still dispatch a build kick. This is the case that silently got nothing.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (13) KICK_NOT_SUPPRESSED: departments present + buildCompletedAt empty MUST still kick ---"
+LIBRL="$REPO_ROOT/23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh"
+if [[ ! -f "$UPD" || ! -f "$LIBRL" ]]; then
+  fail "13: update-interview-state.sh or lib-interview-rate-limit.sh missing — cannot run"
+else
+  # Hermetic box for the interview writer: its own scripts dir, its own HOME.
+  # qc-interview-completion.py is STUBBED (the real one is a Skill-23 script and is
+  # never executed here); it writes the verdict the evidence gate reads.
+  _mkupdbox() {
+    local name="$1" state_json="$2" verdict="$3"
+    local h="$SANDBOX/$name"
+    local skill="$h/.openclaw/skills/23-ai-workforce-blueprint/scripts"
+    mkdir -p "$skill" "$h/.openclaw/workspace" "$h/bin"
+    cp "$UPD" "$skill/update-interview-state.sh"
+    cp "$LIBRL" "$skill/lib-interview-rate-limit.sh"
+    cat > "$skill/qc-interview-completion.py" <<PYEOF
+import json, sys
+# Stub QC gate: stamps the verdict this fixture is exercising, then exits 0 (PASS).
+p = sys.argv[sys.argv.index("--state") + 1]
+d = json.load(open(p))
+d.setdefault("interviewQc", {})["status"] = "$verdict"
+json.dump(d, open(p, "w"), indent=2)
+sys.exit(0)
+PYEOF
+    cat > "$h/bin/openclaw" <<SHIM
+#!/usr/bin/env bash
+exec python3 "$FAKE_OC" "\$@"
+SHIM
+    chmod +x "$h/bin/openclaw"
+    printf '%s' "$state_json" > "$h/.openclaw/workspace/.workforce-build-state.json"
+    printf '[]' > "$h/jobs.json"
+    : > "$h/calls.log"
+    printf '%s' "$h"
+  }
+
+  # Departments already present from a prior partial build; build NOT complete.
+  STATE_REOPENED='{
+    "interviewComplete": false,
+    "ownerChat": "111222333",
+    "agentName": "TestOrchestrator",
+    "closeoutStatus": "pending",
+    "departments": [
+      {"id": "alpha", "status": "done"},
+      {"id": "bravo", "status": "building"},
+      {"id": "charlie", "status": "pending"}
+    ]
+  }'
+  BOX13="$(_mkupdbox box13 "$STATE_REOPENED" pass)"
+  env -i PATH="$BOX13/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$BOX13" \
+    TMPDIR="${TMPDIR:-/tmp}" FAKE_OC_JOBS_FILE="$BOX13/jobs.json" \
+    FAKE_OC_CALLS_FILE="$BOX13/calls.log" OPERATOR_ESCALATION_CHAT_ID="555000111" \
+    bash "$BOX13/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh" \
+      --complete --phase 6 --question-number 30 --asked-by tester >"$BOX13/run.out" 2>&1
+  if grep -q "WORKFORCE-RESUME" "$BOX13/calls.log" 2>/dev/null; then
+    pass "13a: the build kick dispatched even though 3 departments already existed"
+  else
+    fail "13a: NO build kick with departments already present — the strand is still open ($(tail -2 "$BOX13/run.out" | tr '\n' ' '))"
+  fi
+  if grep -E "^message send .*-t 111222333" "$BOX13/calls.log" >/dev/null 2>&1; then
+    fail "13b: the internal build kick was delivered to the OWNER chat"
+  else
+    pass "13b: the internal build kick avoided the owner chat"
+  fi
+
+  echo ""
+  echo "--- (13-MUT) MUTATION PROOF: the old active_depts guard swallows this kick ---"
+  BOX13M="$(_mkupdbox box13m "$STATE_REOPENED" pass)"
+  MUT13="$BOX13M/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh"
+  _mutate "$MUT13" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = '  if [ "$qc_kick_eligible" = true ] && [ -z "$kick_blocked_reason" ]; then'
+new = ('  active_depts=$(jq -r \'[.departments[]? | select(.status != "pending")] | length\' "$STATE" 2>/dev/null || echo 0)\n'
+       '  if [ "$qc_kick_eligible" = true ] && [ "${active_depts:-0}" = "0" ]; then')
+if old not in src:
+    sys.exit(1)
+open(path, "w").write(src.replace(old, new, 1))
+PYEOF
+  mut13_rc=$?
+  if (( mut13_rc != 0 )); then
+    fail "13-MUT: could not restore the active_depts guard — cannot prove 13a discriminates"
+  else
+    env -i PATH="$BOX13M/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$BOX13M" \
+      TMPDIR="${TMPDIR:-/tmp}" FAKE_OC_JOBS_FILE="$BOX13M/jobs.json" \
+      FAKE_OC_CALLS_FILE="$BOX13M/calls.log" OPERATOR_ESCALATION_CHAT_ID="555000111" \
+      bash "$MUT13" --complete --phase 6 --question-number 30 --asked-by tester >"$BOX13M/run.out" 2>&1
+    if grep -q "WORKFORCE-RESUME" "$BOX13M/calls.log" 2>/dev/null; then
+      fail "13-MUT: the old guard still dispatched — 13a proves nothing"
+    else
+      pass "13-MUT: the old active_depts guard swallows the kick entirely — 13a is a real, non-vacuous check"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# (14) SEND_IS_NOT_A_TURN — a successful outbound send must not suppress retries
+# `openclaw message send` rc=0 means the message was SENT, not that an agent turn
+# RAN. Counting it as a turn made this lane set a 20-minute in-flight marker and
+# advance the absolute ping ceiling (which parks the build and removes the cron)
+# on dispatches that triggered nothing.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (14) SEND_IS_NOT_A_TURN: a successful send must not set the in-flight marker or the ping ceiling ---"
+BOX14="$(_mkbox box14 "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+_runbox "$BOX14" "$BOX14/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+WS14="$BOX14/.openclaw/workspace"
+if grep -q "LIBRARY-RESUME" "$BOX14/calls.log" 2>/dev/null; then
+  pass "14a: the dispatch did happen (precondition for the rest of group 14)"
+else
+  fail "14a: no dispatch — group 14 cannot conclude anything"
+fi
+if [[ -f "$WS14/.workforce-build-resume.inflight" ]]; then
+  fail "14b: a successful SEND set the in-flight marker — the next fire is suppressed waiting on a turn that never ran"
+else
+  pass "14b: no in-flight marker set by a bare successful send (next fire free to retry)"
+fi
+if [[ -f "$WS14/.workforce-build-resume-runs.count" ]]; then
+  fail "14c: a successful SEND advanced the ping ceiling — no-op sends would eventually PARK the build and remove the cron"
+else
+  pass "14c: the ping ceiling was NOT advanced by a bare successful send"
+fi
+if [[ -f "$WS14/.workforce-build-resume-sends.count" ]]; then
+  pass "14d: the send WAS recorded in the observability-only send counter ($(cat "$WS14/.workforce-build-resume-sends.count"))"
+else
+  fail "14d: the send was not recorded anywhere — dispatch history is now invisible"
+fi
+
+echo ""
+echo "--- (14-MUT) MUTATION PROOF: the historical send-implies-turn behavior does set both ---"
+BOX14M="$(_mkbox box14m "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+_runbox "$BOX14M" "$BOX14M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" \
+  WORKFORCE_RESUME_SEND_IMPLIES_TURN=1
+WS14M="$BOX14M/.openclaw/workspace"
+if [[ -f "$WS14M/.workforce-build-resume.inflight" && -f "$WS14M/.workforce-build-resume-runs.count" ]]; then
+  pass "14-MUT: with SEND_IMPLIES_TURN=1 both the marker and the ceiling advance — 14b/14c are real, non-vacuous checks"
+else
+  fail "14-MUT: the historical path did not set marker+ceiling — 14b/14c prove nothing"
+fi
+
+fi  # FUNCTIONAL
 
 # ---------------------------------------------------------------------------
 echo ""
