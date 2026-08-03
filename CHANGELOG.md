@@ -1,3 +1,54 @@
+## [v21.7.1]  -  2026-08-03  -  GHL API currency: v3 is a first-class generation, the docs match live probes, and qc-static is unbroken
+
+Ships two commits that were finished on `feat/ghl-api-currency-2026-08` and never
+merged.
+
+### Why
+
+The previous API-currency pass trusted the GitHub OpenAPI repo, which is a
+periodic dump that LAGS HighLevel's live docs — last repo commit 2026-06-19, most
+specs synced 2026-05-01, `saas-api.json` synced 2025-08-13 (~12 months stale) —
+while the changelog runs to 2026-07-30. Two verdicts shipped from that lag were
+regressions, and a live `GET` probe agreed with independent validation on both.
+
+### What changed
+
+- **v3 is documented as a first-class API generation**, and the reference docs are
+  corrected against live probe results rather than against the stale dump. The
+  five-version model replaces the previous account.
+- **Two bad "corrections" are reverted.** SaaS `2023-02-21` is restored (HighLevel
+  publishes a complete SaaS documentation set under it; PROVEN live — `GET
+  /saas-api/public-api/agency-plans/{companyId}` returns 200). `POST /users/`
+  `2023-02-21` is restored in skill 44 and a note now sits at the call site so it
+  is not "fixed" a third time.
+- **The "causing live 400s" rationale is withdrawn everywhere.** PROVEN: contacts,
+  users and calendars all return 200 under all four published versions, and no
+  endpoint was found that rejects `2021-04-15`. The `2021-07-28` standardisation
+  stands as a consistency choice, not a bug fix.
+
+### Fixed — CI
+
+`QC static invariants` was RED on `main`. HighLevel's official MCP orchestrator
+lives at `services.leadconnectorhq.com/mcp/anthropic/v2`, and the "no banned model
+tokens" guard matched `anthropic/` in that URL as though it were a model slug — so
+documenting the vendor's own endpoint turned the build red.
+
+The carve-out is a `(?<!/mcp/)` negative lookbehind anchored to that exact token
+position. It is deliberately the narrowest possible fix: it is **not** a blanket
+`anthropic` allow, the URL stays documented, and a genuine provider-prefixed model
+slug anywhere else — including elsewhere on the very same line — is still caught.
+`tests/unit/ghl-mcp-vendor-url-exemption.test.sh` proves both directions and
+re-derives the pattern from `qc-static.yml` itself, so widening the exemption
+later turns that test red.
+
+### Risk
+
+Skill 36's `skill-version.txt` moves to v1.4.1 to reconcile two same-day branches
+that both touched the skill; the v1.3.2 CHANGELOG entry it had been stamped for
+now actually exists. No behaviour change in skill 36 from this merge.
+
+---
+
 ## [v21.7.0]  -  2026-08-03  -  GHL MCP: the pin gets a repository we control, and the vetting verdict gets teeth
 
 v21.6.0 made the pin file reach boxes and made the verdict enforced. It left two
