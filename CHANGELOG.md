@@ -1,3 +1,106 @@
+## [v21.7.4]  -  2026-08-03  -  P0: the installer can no longer destroy a working GHL credential pairing
+
+`write_server_env()` in `scripts/ghl-mcp-autostart.sh` rewrote the GHL community MCP's
+server `.env` on every run, taking `GHL_LOCATION_ID` straight from
+`GOHIGHLEVEL_LOCATION_ID` with **no backup and no validation**. On a box where the
+configured location and the MCP token's scope disagree, that is fatal and unrecoverable.
+
+Measured live on the operator box, same token, same machine:
+
+| location id written | HTTP |
+| --- | --- |
+| the value already in `.env` | **200** |
+| the value the installer wrote over it | **403** — *"The token does not have access to this location."* |
+
+`main.js` calls `await ghlClient.testConnection()` at boot and `process.exit(1)`s on failure
+(`src/main.ts:69` + `222-225`), so a wrong location does not degrade quietly: the server goes
+down and **stays** down. Crash-only supervision then correctly refuses to restart it. Because
+this function kept no copy of what it replaced, the working `.env` had to be recovered from a
+Time Machine snapshot. Any box whose `GOHIGHLEVEL_LOCATION_ID` disagrees with its MCP token's
+scope would have been taken down by the next roll, with nothing to restore from.
+
+### The rule now
+
+A credential pairing that is **proven** to work is never replaced by one that is not.
+
+- A byte-identical rewrite is a **no-op** — no write, no backup, no churn on a converged box.
+- Before any change, `.env` is backed up **timestamped at 600**, the copy is **read back and
+  compared**, and a backup that cannot be made or verified **refuses the rewrite outright**.
+  Backups are pruned to the newest 5. "No backup" is exactly what made the incident
+  unrecoverable, so it is fatal to the write, not a warning we proceed past.
+- When the candidate location differs from the one on disk, **both** are validated with a
+  read-only `GET /locations/<id>` using the token that will actually be written, and the one
+  that works wins. A legitimate location change still rolls out (proven, so the fix is not a
+  blanket refusal).
+- An **empty** candidate never overwrites a non-empty existing value.
+- **"Cannot tell" keeps the existing value.** curl absent, network down, 5xx, `000` — an
+  unproven candidate never wins by default.
+
+The decision is made once per run and republished as the global `GHL_LOC`, so
+`write_vps_ecosystem()`'s pm2 `env:` block cannot re-introduce a rejected location one layer
+above the `.env` — including on the D6 fast-path restart, which reaches `start_service_vps()`
+without ever calling `write_server_env()`.
+
+### Proof, not assertion
+
+`tests/unit/ghl-mcp-env-credential-guard.test.sh` extracts the real function verbatim from the
+shipped script (marker-delimited, the `test-updater-traps-1-and-3.sh` pattern) and drives it
+with a stub `curl` on `PATH` — no network, and no test-only seam in production code. Nine
+assertions across seven cases: the live incident, a legitimate change, an undeterminable
+pairing, an empty candidate, backup-on-change, idempotence, and backup-impossible.
+
+Mutation-proved in both directions: it fails closed on the pre-fix script (markers absent),
+and a mutant that restores "candidate always wins" is caught with 3 failures. Wired into
+`.github/workflows/ghl-mcp-supervised-guard.yml`.
+
+## [Unreleased]  -  2026-08-03  -  CI: the role-workspace-root collapse gate now runs on every pull request
+
+The gate that stops `workspace_root` from collapsing onto `company_root` in the role-workspace
+builder was live, self-testing, and reachable only by accident. It sat as one step inside
+`workforce-build-pipeline-guard.yml`, which is `paths:`-filtered to nine pipeline scripts --
+and `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`, the file the collapse
+actually lives in, was not one of the nine. So it fired when a pull request happened to touch
+an unrelated resume/watchdog/closeout script, and never fired on the route that actually
+reintroduces the defect: merging a branch that forked before the 2026-08-01 fix. At the time
+of this change **328 of the 387 branches on origin still carried the collapsed line in that
+file**, any one of which would have put it straight back.
+
+### Why the collapse matters
+
+`process_company()` takes a company root (where `departments/` and `master-orchestrator/`
+live) and a workspace root (where the shared `AGENTS.md` / `TOOLS.md` / `USER.md` live, one
+level up). Collapsing the second onto the first makes
+`create_role_workspaces.py::_link_shared_files_only()` build every role symlink pointing at
+`<workspace>/zero-human-company/{USER,AGENTS,TOOLS}.md` -- a path that has never existed.
+Role folders come out with dangling links, role agents lose their shared operating context,
+and they fail silently: nothing errors, the build reports success, the box looks healthy. The
+collapse was on main from 2026-05-17 until it was fixed on 2026-08-01.
+
+### What changed
+
+- **New** `.github/workflows/role-workspace-root-collapse-guard.yml` -- the same repo-wide
+  grep, with **no `paths:` filter at all**: every pull request (any base branch), every push
+  to main, plus `workflow_dispatch`. A hand-curated path allowlist is precisely what failed
+  here and would drift again; the check is one grep over a fresh checkout, so it is cheaper
+  to run it always than to maintain a list of when to skip it. Sixteen guards in this repo
+  already trigger unconditionally. On a `pull_request` event `actions/checkout` resolves
+  `refs/pull/N/merge`, so the assertion is made against the tree main *would become*, which
+  is the property that matters for an un-rebased merge.
+- **Removed** the duplicate step from `workforce-build-pipeline-guard.yml`, replaced by a
+  comment explaining why a path-filtered copy must not be re-added there.
+- **Both-direction anti-vacuity.** Self-test A seeds a defect in a throwaway directory and
+  requires a match, so the gate can never silently degrade into an assertion that always
+  passes. Self-test B seeds *correct* code and requires **no** match, so the pattern can
+  never be broadened into a gate that only ever fails -- the exact failure mode this check
+  shipped with originally, when `set -o pipefail` plus an unguarded `grep` (which exits 1 on
+  no matches, this gate's success case) made a clean head red. Every grep whose empty result
+  means success is `|| true`-guarded or wrapped in an `if`. Both self-tests are
+  mutation-proven: blinding the pattern fails A, broadening it to `.*` fails B.
+
+No version bump. This is a CI-only change -- no file inside any skill directory is touched,
+so guard G3 does not apply, and all ten version markers continue to agree at the current
+`/version`. Precedent: `a41b9bd8` added a whole new guard workflow the same way.
+
 ## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
 
 `TERMINOLOGY.md` listed four env-var names as interchangeable aliases of one Agency
@@ -49,55 +152,6 @@ This entry documents credential NAMES and their status only. No credential value
 in this repo, and none was printed during verification.
 
 ---
-
-## [Unreleased]  -  2026-08-03  -  CI: the role-workspace-root collapse gate now runs on every pull request
-
-The gate that stops `workspace_root` from collapsing onto `company_root` in the role-workspace
-builder was live, self-testing, and reachable only by accident. It sat as one step inside
-`workforce-build-pipeline-guard.yml`, which is `paths:`-filtered to nine pipeline scripts --
-and `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`, the file the collapse
-actually lives in, was not one of the nine. So it fired when a pull request happened to touch
-an unrelated resume/watchdog/closeout script, and never fired on the route that actually
-reintroduces the defect: merging a branch that forked before the 2026-08-01 fix. At the time
-of this change **328 of the 387 branches on origin still carried the collapsed line in that
-file**, any one of which would have put it straight back.
-
-### Why the collapse matters
-
-`process_company()` takes a company root (where `departments/` and `master-orchestrator/`
-live) and a workspace root (where the shared `AGENTS.md` / `TOOLS.md` / `USER.md` live, one
-level up). Collapsing the second onto the first makes
-`create_role_workspaces.py::_link_shared_files_only()` build every role symlink pointing at
-`<workspace>/zero-human-company/{USER,AGENTS,TOOLS}.md` -- a path that has never existed.
-Role folders come out with dangling links, role agents lose their shared operating context,
-and they fail silently: nothing errors, the build reports success, the box looks healthy. The
-collapse was on main from 2026-05-17 until it was fixed on 2026-08-01.
-
-### What changed
-
-- **New** `.github/workflows/role-workspace-root-collapse-guard.yml` -- the same repo-wide
-  grep, with **no `paths:` filter at all**: every pull request (any base branch), every push
-  to main, plus `workflow_dispatch`. A hand-curated path allowlist is precisely what failed
-  here and would drift again; the check is one grep over a fresh checkout, so it is cheaper
-  to run it always than to maintain a list of when to skip it. Sixteen guards in this repo
-  already trigger unconditionally. On a `pull_request` event `actions/checkout` resolves
-  `refs/pull/N/merge`, so the assertion is made against the tree main *would become*, which
-  is the property that matters for an un-rebased merge.
-- **Removed** the duplicate step from `workforce-build-pipeline-guard.yml`, replaced by a
-  comment explaining why a path-filtered copy must not be re-added there.
-- **Both-direction anti-vacuity.** Self-test A seeds a defect in a throwaway directory and
-  requires a match, so the gate can never silently degrade into an assertion that always
-  passes. Self-test B seeds *correct* code and requires **no** match, so the pattern can
-  never be broadened into a gate that only ever fails -- the exact failure mode this check
-  shipped with originally, when `set -o pipefail` plus an unguarded `grep` (which exits 1 on
-  no matches, this gate's success case) made a clean head red. Every grep whose empty result
-  means success is `|| true`-guarded or wrapped in an `if`. Both self-tests are
-  mutation-proven: blinding the pattern fails A, broadening it to `.*` fails B.
-
-No version bump. This is a CI-only change -- no file inside any skill directory is touched,
-so guard G3 does not apply, and all ten version markers continue to agree at the current
-`/version`. Precedent: `a41b9bd8` added a whole new guard workflow the same way.
-
 ## [v21.7.2]  -  2026-08-03  -  Canonical department floor reconciled to 30: master-orchestrator registered as the 24th mandatory dept
 
 ### Why

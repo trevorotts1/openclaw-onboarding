@@ -644,10 +644,165 @@ EOF
   return 0
 }
 
-# ── 3. The server .env (idempotent rewrite — chmod 600) ─────────────────────
+# >>> GHL-MCP-ENV-CREDENTIAL-GUARD-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-env-credential-guard.test.sh)
+# ── 3. The server .env — NEVER clobber a WORKING credential pairing ──────────
+#
+# B1 (P0, proven live on the operator box 2026-08-03). This function used to
+# rewrite $MCP_DIR/.env unconditionally, taking GHL_LOCATION_ID straight from
+# GOHIGHLEVEL_LOCATION_ID with NO BACKUP and NO VALIDATION. On a box where the
+# configured location and the MCP token's scope disagree, the result is fatal
+# AND unrecoverable. Measured, same token, same box:
+#
+#   .env value already on disk      -> HTTP 200
+#   value the installer wrote over it -> HTTP 403
+#                                        "The token does not have access to this location."
+#
+# main.js calls `await ghlClient.testConnection()` at boot and process.exit(1)s
+# on failure (src/main.ts:69 + 222-225), so a wrong location does not degrade
+# quietly — the server goes DOWN and STAYS down. Crash-only supervision then
+# does exactly the right thing and keeps it down. And because this function kept
+# no copy of what it replaced, the working .env had to be recovered from a Time
+# Machine snapshot. That is the whole defect: a destructive write, of an
+# unvalidated value, over a proven-good one, with no way back.
+#
+# THE RULE NOW — a credential pairing PROVEN to work is never replaced by one
+# that is not proven to work:
+#   * a byte-identical rewrite is a NO-OP: no write, no backup, no churn
+#   * before ANY change, .env is backed up timestamped at 600, the copy is READ
+#     BACK and compared, and a backup that cannot be made or verified REFUSES
+#     the rewrite outright (backups pruned to the newest 5)
+#   * when the candidate location differs from the one already on disk, BOTH are
+#     validated with a read-only GET against the live API, using the token that
+#     will actually be written, and the one that WORKS wins
+#   * an EMPTY candidate never overwrites a non-empty existing value
+#   * "cannot tell" (curl absent, network down, 5xx, 000) KEEPS the existing
+#     value. An unproven candidate never wins by default.
+#
+# The decision is made ONCE per run and reassigns the global GHL_LOC, so every
+# downstream launch surface (the pm2 ecosystem's env block, the systemd unit's
+# EnvironmentFile) agrees with the .env rather than re-introducing the rejected
+# value one layer up.
+
+# _ghl_location_http_code <token> <location_id> — read-only probe of the
+# location record. Prints ONLY the HTTP status code (000 when the call could not
+# be made at all). NEVER prints the token, the location, or the response body.
+_ghl_location_http_code() {
+  local _tok="${1:-}" _loc="${2:-}"
+  [ -n "$_tok" ] && [ -n "$_loc" ] || { printf '000'; return 0; }
+  command -v curl >/dev/null 2>&1 || { printf '000'; return 0; }
+  curl -s -o /dev/null -w '%{http_code}' -m 10 \
+    "https://services.leadconnectorhq.com/locations/${_loc}" \
+    -H "Authorization: Bearer ${_tok}" \
+    -H "Version: 2021-07-28" 2>/dev/null || printf '000'
+}
+
+# _ghl_location_verdict <http_code> -> ok | rejected | unknown
+# 404 counts as REJECTED: a location this token cannot see is a broken pairing,
+# not an ambiguous one. Everything else (000 offline, 5xx, 429) is UNKNOWN and
+# must never be treated as either a pass or a fail.
+_ghl_location_verdict() {
+  case "${1:-}" in
+    200|201)     printf 'ok' ;;
+    401|403|404) printf 'rejected' ;;
+    *)           printf 'unknown' ;;
+  esac
+}
+
+# Last 4 characters only — enough to tell two ids apart in a log, without
+# printing a full credential-adjacent identifier into a shared log file.
+_ghl_mask() { printf '…%s' "$(printf '%s' "${1:-}" | tail -c 4)"; }
+
+_env_file_value() {  # <file> <KEY>
+  local f="${1:-}" k="${2:-}"
+  [ -f "$f" ] || return 0
+  sed -n "s/^[[:space:]]*${k}=//p" "$f" 2>/dev/null | tail -1 | tr -d '"' | tr -d "'"
+}
+
+# Timestamped, verified, pruned backup. Returns non-zero when a backup could NOT
+# be produced — the caller must then leave the file alone. "No backup" is exactly
+# the condition that made the live incident unrecoverable, so it is fatal to the
+# write, never a warning we proceed past.
+_backup_server_env() {
+  local f="${1:-}" ts bak n=0
+  [ -f "$f" ] || return 0     # nothing to protect yet
+  ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)"
+  bak="${f}.bak-${ts}"
+  if ! ( umask 077; cp -p "$f" "$bak" ) 2>/dev/null; then
+    log "REFUSING to rewrite $f — could not write the backup $bak"
+    return 1
+  fi
+  chmod 600 "$bak" 2>/dev/null || true
+  if ! cmp -s "$f" "$bak" 2>/dev/null; then
+    log "REFUSING to rewrite $f — the backup $bak does not match what is on disk"
+    rm -f "$bak" 2>/dev/null || true
+    return 1
+  fi
+  log "server .env backed up (verified, 600) -> $bak"
+  while IFS= read -r _old; do
+    [ -n "$_old" ] || continue
+    n=$((n+1))
+    [ "$n" -le 5 ] && continue
+    rm -f "$_old" 2>/dev/null || true
+  done <<EOF
+$(ls -1 "${f}".bak-* 2>/dev/null | LC_ALL=C sort -r)
+EOF
+  return 0
+}
+
+# Decide the location id ONCE per run and publish it as the global GHL_LOC.
+_GHL_LOC_RESOLVED=0
+resolve_location_id() {
+  [ "$_GHL_LOC_RESOLVED" = "1" ] && return 0
+  _GHL_LOC_RESOLVED=1
+  local ENVF="$MCP_DIR/.env" _existing="" _cand_code _exist_code _cand_v _exist_v
+  _existing="$(_env_file_value "$ENVF" GHL_LOCATION_ID)"
+
+  if [ -z "${GHL_LOC:-}" ]; then
+    if [ -n "$_existing" ]; then
+      GHL_LOC="$_existing"
+      log "location id: no GOHIGHLEVEL_LOCATION_ID/GHL_LOCATION_ID resolvable here — keeping the value already on disk $(_ghl_mask "$_existing") (an EMPTY candidate never overwrites a working one)"
+    fi
+    return 0
+  fi
+  if [ -z "$_existing" ] || [ "$_existing" = "$GHL_LOC" ]; then
+    return 0    # nothing on disk yet, or no change at all — nothing to prove
+  fi
+
+  # A REAL disagreement — the fatal case. Prove both before choosing either.
+  _cand_code="$(_ghl_location_http_code "$GHL_TOKEN" "$GHL_LOC")"
+  _exist_code="$(_ghl_location_http_code "$GHL_TOKEN" "$_existing")"
+  _cand_v="$(_ghl_location_verdict "$_cand_code")"
+  _exist_v="$(_ghl_location_verdict "$_exist_code")"
+  log "location id DISAGREEMENT: on-disk $(_ghl_mask "$_existing") -> HTTP ${_exist_code} (${_exist_v}); configured $(_ghl_mask "$GHL_LOC") -> HTTP ${_cand_code} (${_cand_v})"
+
+  if [ "$_cand_v" = "ok" ]; then
+    log "location id: configured value VALIDATED against this token (HTTP ${_cand_code}) — adopting it"
+    return 0
+  fi
+  if [ "$_exist_v" = "ok" ]; then
+    log "############################################################"
+    log "## GHL_LOCATION_ID NOT OVERWRITTEN — the configured value would TAKE THIS SERVER DOWN."
+    log "##   configured $(_ghl_mask "$GHL_LOC") -> HTTP ${_cand_code} (rejected by this token)"
+    log "##   on disk    $(_ghl_mask "$_existing") -> HTTP ${_exist_code} (works)"
+    log "## main.js testConnection()s at boot and exit(1)s on failure, so writing the"
+    log "## rejected value is a hard outage, not a degradation. KEEPING the working pairing."
+    log "## ACTION: fix GOHIGHLEVEL_LOCATION_ID in this box's secrets/openclaw.json to"
+    log "## match the MCP token's scope, or rotate the token to one scoped to that location."
+    log "############################################################"
+    GHL_LOC="$_existing"
+    return 0
+  fi
+  GHL_LOC="$_existing"
+  log "location id: NEITHER value could be proven (configured HTTP ${_cand_code}, on-disk HTTP ${_exist_code}) — keeping the on-disk value. An unproven candidate never wins by default."
+  return 0
+}
+
 write_server_env() {
   [ -n "$GHL_TOKEN" ] || return 0
-  ( umask 077; cat > "$MCP_DIR/.env" <<EOF
+  resolve_location_id
+  local ENVF="$MCP_DIR/.env" _new
+  _new="$(cat <<EOF
 GHL_API_KEY=${GHL_TOKEN}
 GHL_BASE_URL=https://services.leadconnectorhq.com
 GHL_LOCATION_ID=${GHL_LOC}
@@ -661,9 +816,19 @@ GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
 GHL_MCP_BIND_HOST=${GHL_MCP_BIND_HOST}
 NODE_ENV=production
 EOF
-  )
-  chmod 600 "$MCP_DIR/.env" 2>/dev/null || true
+)"
+  if [ -f "$ENVF" ] && [ "$(cat "$ENVF" 2>/dev/null)" = "$_new" ]; then
+    log "server .env already byte-identical — no write, no backup (idempotent no-op)"
+    return 0
+  fi
+  _backup_server_env "$ENVF" || return 1
+  ( umask 077; printf '%s\n' "$_new" > "$ENVF" ) || {
+    log "FATAL: could not write $ENVF"; return 1; }
+  chmod 600 "$ENVF" 2>/dev/null || true
+  log "server .env written (GHL_LOCATION_ID=$(_ghl_mask "$GHL_LOC"))"
+  return 0
 }
+# <<< GHL-MCP-ENV-CREDENTIAL-GUARD-END
 
 # ── 3b. D6: the BIND GUARD — force the listener onto loopback ────────────────
 # The pinned upstream binds 0.0.0.0 from a hardcoded literal (src/main.ts:
@@ -988,6 +1153,13 @@ EOF
 # SK1-70: the GHL PIT is NOT inlined here (world-readable) — it is loaded at
 # launch from the 600-perm .ghl-mcp.env sitting next to this config.
 write_vps_ecosystem() {
+  # B1: the pm2 `env:` block below sets GHL_LOCATION_ID and therefore OVERRIDES
+  # whatever .env holds. Resolving here as well means the ecosystem can never
+  # re-introduce a location id that resolve_location_id() just proved this
+  # token rejects — including on the D6 fast-path restart, which reaches
+  # start_service_vps() without ever calling write_server_env(). The resolver is
+  # cached, so this is a no-op when the main flow already ran it.
+  resolve_location_id
   # NEVER clobber a good secret file with an empty one. The main flow reaches
   # here only after the GHL_TOKEN check, but the D6 fast-path restart above can
   # also land here on an already-healthy box, where the token is not re-proven.

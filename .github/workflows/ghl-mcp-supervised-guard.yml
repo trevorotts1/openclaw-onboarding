@@ -260,6 +260,19 @@ jobs:
         run: |
           chmod +x tests/unit/ghl-mcp-bind-guard.test.sh
           bash tests/unit/ghl-mcp-bind-guard.test.sh
+      # v21.7.2 / B1 (P0). The installer used to overwrite the server .env's
+      # GHL_LOCATION_ID with no backup and no validation. Proven live: same
+      # token, on-disk location -> HTTP 200, installer-written location -> HTTP
+      # 403; main.js testConnection()s at boot and exit(1)s, so the server went
+      # down and stayed down, and the working file had to come back from a Time
+      # Machine snapshot. This is a MUTATION PROOF driven through the REAL
+      # function with a stub curl — a grep for the word "backup" would go green
+      # on a fix that still clobbers.
+      - name: Run GHL MCP .env credential-clobber guard test (working pairing must survive)
+        run: |
+          chmod +x tests/unit/ghl-mcp-env-credential-guard.test.sh
+          bash tests/unit/ghl-mcp-env-credential-guard.test.sh
+
       # v21.6.0 / R1 + R9. Runs against a SIMULATED BOX LAYOUT, never the repo
       # layout — the repo layout is where the delivery bug was invisible.
       - name: Run pin-delivery + fail-closed unit test (BOX layout, not repo layout)
