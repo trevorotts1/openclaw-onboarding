@@ -24,6 +24,23 @@
 #   - the Convert and Flow custom-field write and the Command Center card,
 #   - the daily smoke-test cron creation and first fire (furnace-design.md).
 #
+# ACTIVATION (fleet guarantee: provision => processor active):
+#   After the roster/env provisioning above, this script runs the processor
+#   activation sequence from the activation layer (Workflow 1, same merge batch):
+#     1. install-podcast-department.sh                        (department install)
+#     2. register-podcast-hook.sh --client-slug <slug>        (inbound hook mapping)
+#     3. install-podcast-scheduler.sh --client-slug <slug>    (scheduler install)
+#   Every step is GATED three ways: presence (fail closed, naming the missing
+#   piece), run rc (fail closed), and a --check read-back (fail closed unless the
+#   helper reports its piece ACTIVE). Any failure aborts the provision with the
+#   stage-specific exit code (22 department, 23 hook, 24 scheduler); the ledger
+#   records activation=failed. The helpers are idempotent per the activation-layer
+#   contract, so a re-provision verifies an already-active processor instead of
+#   duplicating it. Activation helper contract: each accepts "--check <same args>"
+#   and returns 0 when its piece is active. Operator override: --skip-activation
+#   (documented below; the ledger records activation=skipped, which revoke reads).
+#   revoke-podcast-client.sh tears this sequence down symmetrically.
+#
 # HARD RULES honored here:
 #   - Never trust CLOUDFLARE_ZONE_ID (it points at the wrong zone). Resolve by name and
 #     refuse to run unless the resolved zone name is zerohumanworkforce.com.
@@ -71,6 +88,7 @@ EMAILS_RAW=""
 CLIENT_TZ=""
 DRY_RUN="0"
 FORCE="0"
+SKIP_ACTIVATION="0"
 TUNNEL_ID_OVERRIDE="${PODCAST_TUNNEL_ID:-}"
 # Two-show channel capture defaults: channel ids are NON-SECRET values captured
 # at onboarding, but provisioning never invents one (absent -> PENDING later).
@@ -79,7 +97,7 @@ INTERVIEW_CHANNEL_ID="${PODCAST_INTERVIEW_CHANNEL_ID:-}"
 INTERVIEW_SHOW_SLUG="${PODCAST_INTERVIEW_SHOW_SLUG:-}"
 
 usage() {
-  sed -n '1,40p' "$0" >&2
+  sed -n '1,51p' "$0" >&2
   cat >&2 <<'USAGE'
 
 USAGE:
@@ -102,6 +120,15 @@ FLAGS:
   --dry-run          Perform all read-only discovery, but log mutations instead of
                      applying them (operator canary preview). Still requires the token.
   --force            Recreate the Access app even if one already exists for the host.
+  --skip-activation  OPERATOR OVERRIDE. Do NOT run the processor activation
+                     sequence (install-podcast-department.sh, register-podcast-hook.sh
+                     --client-slug <slug>, install-podcast-scheduler.sh). By default
+                     EVERY provision activates the processor (fleet guarantee:
+                     provision => processor active). The override is logged in the
+                     ledger as activation=skipped so the fleet audit can flag the
+                     client, and revoke-podcast-client.sh still tears down whatever
+                     activation state exists. Use only for an explicit, documented
+                     operator decision (e.g. a canary box you are wiring by hand).
   -h, --help         Show this help.
 
 ENV:
@@ -111,6 +138,9 @@ ENV:
   PODCAST_NODE_USER      Box runtime user for config writes (default: node). Config is
                          never written as root.
   PODCAST_LEDGER_DIR     Ledger directory (default /tmp/podcast-provision).
+  PODCAST_SCHEDULER_INSTALLER  Optional scheduler installer filename in scripts/
+                         (default install-podcast-scheduler.sh, the activation-layer
+                         contract from Workflow 1).
   SECRETS_ENV_FILE       Box secrets file (default $HOME/.openclaw/secrets.env).
 USAGE
 }
@@ -124,6 +154,7 @@ while [ $# -gt 0 ]; do
     --interview-show-slug) INTERVIEW_SHOW_SLUG="${2:-}"; shift 2 ;;
     --dry-run)   DRY_RUN="1"; shift ;;
     --force)     FORCE="1"; shift ;;
+    --skip-activation) SKIP_ACTIVATION="1"; shift ;;
     -h|--help)   usage; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done ;;
     -*) echo "Unknown flag: $1" >&2; usage; exit 2 ;;
@@ -586,7 +617,11 @@ delegate() {
     ledger_step "$label" "PENDING" "$helper not present in this build (owned by a sibling slice); wire on the box"
   fi
 }
-delegate "hook-mapping"     "register-podcast-hook.sh"       "$SLUG" "$INTAKE_MAPPING"
+# NOTE: hook-mapping registration is no longer a soft delegate here. It moved to
+# the STEP 8 activation sequence below (register-podcast-hook.sh --client-slug
+# <slug>), which is GATED and FAIL-CLOSED: the fleet guarantee is provision =>
+# processor active, so a missing or failing hook registration must abort the
+# provision, not record PENDING.
 delegate "dashboard-svc"    "deploy-podcast-dashboard.sh"    "$SLUG" "$DASH_PORT"
 delegate "convertflow-card" "write-podcast-cf-field.sh"      "$SLUG" "https://${DASH_HOST}"
 
@@ -652,6 +687,66 @@ provision_fb_ads() {
   fi
 }
 provision_fb_ads
+
+# --------------------------------------------------------------------------- #
+# STEP 8: processor ACTIVATION (the fleet guarantee: provision => processor active).
+#
+# Sequence (activation layer, Workflow 1, same merge batch):
+#   8a. install-podcast-department.sh                       (department install)
+#   8b. register-podcast-hook.sh --client-slug <slug>       (inbound hook mapping)
+#   8c. install-podcast-scheduler.sh --client-slug <slug>   (scheduler install)
+#
+# Every step is GATED three ways and FAILS CLOSED:
+#   1. presence   - a missing helper aborts with a message naming the missing piece
+#   2. run rc     - a nonzero return aborts (the piece is not installed)
+#   3. --check    - a read-back must report the piece ACTIVE before it counts
+#
+# Activation helper contract (recorded here for Workflow 1 and the tests): each
+# helper accepts "--check" in place of its action (same remaining args) and exits
+# 0 only when its piece is currently active on this box. The helpers are
+# idempotent, so a re-provision verifies an already-active processor instead of
+# duplicating it.
+#
+# Operator override: --skip-activation (documented in the usage block). It is
+# recorded as activation=skipped so the fleet audit flags the client.
+# --------------------------------------------------------------------------- #
+activation_step() {
+  # activation_step <step-name> <missing-code> <missing-piece> <helper-name> [args...]
+  local name="$1" code="$2" piece="$3" helper="$4"
+  shift 4
+  if [ "$DRY_RUN" = "1" ]; then
+    ledger_step "$name" "DRY-RUN" "would run $helper $*"
+    return 0
+  fi
+  if [ ! -x "$SCRIPT_DIR/$helper" ]; then
+    ledger_step "$name" "FAIL" "missing $piece: $SCRIPT_DIR/$helper not present or not executable in this build (owned by the activation layer, Workflow 1); FAIL CLOSED (no silent partial provision)"
+    die "$code" "activation step $name failed: missing $piece ($SCRIPT_DIR/$helper). The fleet guarantee (provision => processor active) is NOT met for client '$SLUG'."
+  fi
+  if ! runas "$SCRIPT_DIR/$helper" "$@"; then
+    ledger_step "$name" "FAIL" "$helper $* returned nonzero"
+    die "$code" "activation step $name failed: $helper returned nonzero; $piece is NOT confirmed active for client '$SLUG'."
+  fi
+  if ! runas "$SCRIPT_DIR/$helper" --check "$@"; then
+    ledger_step "$name" "FAIL" "$helper --check $*: the piece reports NOT active after install"
+    die "$code" "activation step $name failed: $helper installed but its --check read-back says $piece is NOT active for client '$SLUG'."
+  fi
+  ledger_step "$name" "OK" "$helper $* (verified ACTIVE by --check)"
+  ledger_fact "$name" "active"
+}
+
+if [ "$SKIP_ACTIVATION" = "1" ]; then
+  ledger_fact "activation" "skipped"
+  ledger_step "activation" "SKIPPED" "--skip-activation operator override; the processor is NOT confirmed active for $SLUG (the fleet audit will flag this client)"
+else
+  activation_step "activation:department" 22 "the podcast department installer" "install-podcast-department.sh"
+  activation_step "activation:hook"        23 "the inbound hook registrar"       "register-podcast-hook.sh" --client-slug "$SLUG"
+  activation_step "activation:scheduler"   24 "the scheduler installer"          "${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}" --client-slug "$SLUG"
+  if [ "$DRY_RUN" != "1" ]; then
+    ledger_fact "activation" "active"
+    # Audit hook: revoke and the fleet audit resolve the exact installer used.
+    ledger_fact "scheduler_installer" "${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
+  fi
+fi
 
 # --------------------------------------------------------------------------- #
 # PASS GATE
@@ -742,5 +837,9 @@ if [ "$GATE_HARD_FAIL" = "1" ]; then
   exit 20
 fi
 ledger_finish "ok"
-log "Provision OK (edge live). Any PENDING items are box-side steps owned by sibling slices; complete them on the box, then re-run to green the full gate."
+if [ "$SKIP_ACTIVATION" = "1" ]; then
+  log "Provision OK (edge live) but ACTIVATION SKIPPED (--skip-activation). The processor is NOT confirmed active for $SLUG; re-run without --skip-activation to restore the fleet guarantee."
+else
+  log "Provision OK (edge live; processor ACTIVE for $SLUG). Any PENDING items are box-side steps owned by sibling slices; complete them on the box, then re-run to green the full gate."
+fi
 exit 0
