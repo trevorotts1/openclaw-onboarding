@@ -38,7 +38,50 @@ There are TWO types of PIT — keep them SEPARATE:
 | Type | Env-var names | Use |
 |---|---|---|
 | **Location PIT** (the canonical set above) | `GOHIGHLEVEL_API_KEY`, `GHL_API_KEY`, … (11 aliases) | Day-to-day work within a specific location: contacts, media uploads, surveys, funnels, etc. Media uploads **require** the Location PIT. |
-| **Agency PIT** | `GOHIGHLEVEL_AGENCY_PIT`, `GOHIGHLEVEL_AGENCY_API_KEY`, `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT`, `GHL_AGENCY_PIT` | Agency-wide operations across all sub-accounts. **An Agency PIT 401s on media and location-scoped calls — never merge it into the Location set.** |
+| **Agency PIT** | `GOHIGHLEVEL_AGENCY_PIT`, `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT`, `GHL_AGENCY_PIT` — see the warning below, these are **not** aliases | Agency-wide operations across all sub-accounts. **An Agency PIT 401s on media and location-scoped calls — never merge it into the Location set.** |
+
+> ⚠ **The three agency names above are NOT aliases of one another.** Verified by live read-only
+> probes on 2026-08-03: each of `GOHIGHLEVEL_AGENCY_PIT`, `GHL_AGENCY_PIT` and
+> `GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` holds a **different, independently live** agency token.
+> All three authenticate against the same agency, so any one of them works for an agency call, but
+> they are three separate credentials and rotating one does not rotate the others. **Picking a
+> canonical one is an owner decision — do not consolidate, merge, or delete them.**
+>
+> `GOHIGHLEVEL_AGENCY_API_KEY` was previously listed here as a fourth agency alias. That was wrong
+> twice over: it was never a `pit-` token (it held a legacy v1 JWT), and the value was **dead** —
+> it returned `401 Invalid JWT`. It was removed from both credential stores on 2026-08-03 and must
+> not be reintroduced as an agency-PIT name.
+
+### Where the authoritative value lives
+
+`~/.openclaw/secrets/.env` is **authoritative**. The `env.vars` block in `~/.openclaw/openclaw.json`
+holds **copies**, and the copies are what rot — they go stale after a rotation, or get seeded with a
+short placeholder that then silently shadows the live credential. A placeholder fails as
+`401 Invalid Private Integration token`, which reads like a broken token rather than a missing one.
+
+As of 2026-08-03 several location-PIT alias names in `openclaw.json` env.vars (`GHL_API_KEY`,
+`GHL_PIT`, `GHL_TOKEN`, `GHL_PIT_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`,
+`GHL_LOCATION_PIT`, `GOHIGHLEVEL_LOCATION_PIT`) still hold that placeholder rather than a real
+token. A resolver that walks the 11-name chain and takes the first non-empty name can pick one up
+and fail in a way that looks like a scope problem.
+
+**Rule: resolve GHL credentials from `secrets/.env`; validate with an authed read before trusting
+any name.**
+
+Diagnostic distinction, both observed live: a value that is not a real token returns
+`401 Invalid Private Integration token`, whereas a real token that merely lacks reach returns
+`403 Forbidden resource` or `401 The token is not authorized for this scope`. **A 403 means the
+token is genuine** — do not "fix" it by swapping in a different name.
+
+### Company id is an identifier, not a secret
+
+`GHL_COMPANY_ID` and `GOHIGHLEVEL_CONVERTANDFLOW_COMPANY_ID` do hold the same value as each other.
+Both were found holding a wrong short value and were corrected on 2026-08-03.
+
+Verify a company id with `GET /companies/{companyId}` — a wrong id returns 403 and the right id
+returns 200 with the agency name. **Do not verify it with `GET /locations/search?companyId=...`:**
+that endpoint returns 200 even when the companyId is wrong, because the token's own agency is used
+regardless, so it cannot detect a bad id.
 
 **Firebase Refresh Token** — `GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN` — is a THIRD, separate GoHighLevel credential. It is NOT a PIT and is never part of the 11-alias Location PIT set. It is used exclusively for browser-session authentication in Skill 06 and Skill 44 (the builder mints a Firebase `id_token` from this refresh token to reconstruct the SPA session without a UI login). Keep it in its own env-var slot; never merge it into the Location or Agency PIT sets and never confuse it with either.
 
