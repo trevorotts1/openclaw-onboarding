@@ -1,0 +1,134 @@
+name: role-workspace-root-collapse-guard
+
+# THE DEFECT THIS GUARDS AGAINST
+#
+# `process_company()` in 23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py
+# takes TWO roots: the company root (where departments/ and master-orchestrator/ live)
+# and the workspace root (where the shared operating files AGENTS.md / TOOLS.md / USER.md
+# actually live, one level UP). Collapsing the second onto the first --
+#
+#     workspace_root = company_root
+#
+# -- makes create_role_workspaces.py::_link_shared_files_only() point every role symlink at
+# <workspace>/zero-human-company/{USER,AGENTS,TOOLS}.md, a path that has never existed. The
+# role folders come out with dangling links, the agents lose their shared operating context,
+# and they FAIL SILENTLY: nothing errors, the build reports success, and the box looks healthy.
+# The collapse sat on main from 2026-05-17 until it was fixed on 2026-08-01.
+#
+# WHY THIS RUNS ON EVERY PULL REQUEST WITH NO `paths:` FILTER
+#
+# The reintroduction route is NOT "somebody edits the builder". It is "somebody merges a
+# stale branch that forked before the fix". At the time this guard was widened, 328 of the
+# 387 branches on origin still carried the collapsed line in post-build-role-workspaces.py.
+# Merging any one of them un-rebased puts it back, and the next fleet roll lands dangling
+# role symlinks on every box it touches.
+#
+# The first version of this check lived as one step inside workforce-build-pipeline-guard.yml,
+# behind that workflow's 9-path `paths:` filter -- and post-build-role-workspaces.py was not
+# one of the 9. So the gate only fired when a PR happened to touch an unrelated pipeline
+# script, and the actual reintroduction route was uncovered. A hand-curated allowlist is the
+# thing that failed here; it would drift again. The check is a single repo-wide grep over a
+# fresh checkout -- seconds, no toolchain, no fixtures, no network -- so it runs
+# unconditionally instead. Sixteen other guards in this repo already trigger the same way.
+#
+# On a pull_request event actions/checkout resolves refs/pull/N/merge, so this asserts on the
+# tree main WOULD BECOME, not merely on the branch tip -- which is the property that matters
+# for an un-rebased merge.
+#
+# ANTI-VACUITY. A gate that cannot fail is worse than no gate, and a gate that cannot pass is
+# a gate nobody reads. Both failure modes have already happened to this check:
+#   * `grep` exits 1 when it finds NOTHING, which is this gate's SUCCESS case. Under
+#     `set -o pipefail` an unguarded grep therefore turned a clean head RED. Every grep whose
+#     empty result is success is `|| true`-guarded or wrapped in an `if`, both of which are
+#     exempt from `set -e`.
+#   * The reverse -- a pattern that silently stops matching -- is caught by self-test A below.
+# Self-test A proves the pattern still DETECTS a seeded defect; self-test B proves it still
+# IGNORES correct code. The step fails if either direction stops holding.
+#
+# Security note: this workflow consumes only repo file content. No GitHub event fields
+# (PR title/body, branch name, commit message) reach any `run:` block, so there is no
+# workflow-injection surface here.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: role-workspace-root-collapse-guard-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  role-workspace-root-collapse-guard:
+    name: Role-workspace root must never collapse onto the company root
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Self-test the pattern in BOTH directions, then assert this tree is clean
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PATTERN='workspace_root[[:space:]]*=[[:space:]]*company_root'
+
+          # Scanned extensions are deliberately limited to the two languages the role-workspace
+          # builders are written in. Do NOT add --include='*.yml': THIS FILE contains the literal
+          # pattern in its comments and in the self-test seeds below, and would self-match.
+          SCAN=(-rn "$PATTERN" --include='*.py' --include='*.sh' --exclude-dir=.git)
+
+          probe="$(mktemp -d)"
+          trap 'rm -rf "$probe"' EXIT
+          mkdir -p "$probe/seeded" "$probe/clean"
+
+          # ---- Self-test A (sensitivity): a seeded defect MUST be detected. -----------------
+          # Without this, a pattern that quietly stopped matching would leave a gate that
+          # reports PASS forever while the defect walks straight past it.
+          printf 'def process_company(company_root, workspace_root):\n    workspace_root = company_root\n' \
+            > "$probe/seeded/seeded.py"
+          printf '#!/usr/bin/env bash\nworkspace_root=company_root\n' \
+            > "$probe/seeded/seeded.sh"
+          if ! grep -q "${SCAN[@]}" "$probe/seeded" >/dev/null 2>&1; then
+            echo "FAIL (self-test A): the guard pattern no longer matches a seeded defect."
+            echo "This gate is BLIND -- it would report PASS on a tree that carries the collapse."
+            exit 1
+          fi
+          echo "self-test A: pattern DETECTS a seeded defect in .py and .sh (gate is live)"
+
+          # ---- Self-test B (specificity): correct code must NOT be flagged. -----------------
+          # Without this, a pattern broadened until it matched everything would be a gate that
+          # can only ever fail -- which is how the previous version of this check behaved.
+          printf 'def process_company(company_root, workspace_root):\n    return workspace_root\n\n\nprocess_company(company, Path(paths["workspace"]))\n' \
+            > "$probe/clean/clean.py"
+          printf '#!/usr/bin/env bash\nworkspace_root="$WORKSPACE"\ncompany_root="$COMPANY"\n' \
+            > "$probe/clean/clean.sh"
+          if grep -q "${SCAN[@]}" "$probe/clean" >/dev/null 2>&1; then
+            echo "FAIL (self-test B): the guard pattern matches CORRECT code."
+            grep "${SCAN[@]}" "$probe/clean" || true
+            echo "This gate cries wolf -- it would block every PR regardless of content."
+            exit 1
+          fi
+          echo "self-test B: pattern IGNORES correct code (gate can still pass)"
+
+          # ---- The assertion. Repo-wide, not path-scoped. ----------------------------------
+          hits="$(grep "${SCAN[@]}" . || true)"
+          if [ -n "$hits" ]; then
+            echo ""
+            echo "FAIL: the role-workspace root is collapsed onto the company root on this tree:"
+            printf '%s\n' "$hits"
+            echo ""
+            echo "This makes every role symlink point at a path that does not exist, so role"
+            echo "agents lose AGENTS.md / TOOLS.md / USER.md and fail silently on the next roll."
+            echo ""
+            echo "If you are seeing this on a pull request, the branch forked before the fix."
+            echo "Rebase it on origin/main -- do not merge it as-is."
+            exit 1
+          fi
+          echo ""
+          echo "PASS: no collapsed role-workspace root anywhere in this tree"
