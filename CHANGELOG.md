@@ -165,6 +165,31 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.4.59]  -  2026-08-03  -  G3 fixup: roll repo version markers past the U024 persona-governance wiring commit
+
+**Version-marker-only, no functional change.** `0830562a` (U024 — wire
+`governance_banner()` and `structure_warn_check()` into
+`presentation_job/__main__.py` and `presentation_job/phases.py`) changed files
+inside `23-ai-workforce-blueprint/` without bumping
+`23-ai-workforce-blueprint/skill-version.txt` in the same commit — confirmed
+via the GitHub commit check-runs API: `G3 — skill content change requires
+skill-version.txt bump` reported `conclusion: failure` on that commit (the
+only failing check among 35). Unlike most skills, `23-ai-workforce-blueprint`'s
+`skill-version.txt` is one of the 10 repo-wide markers in
+`scripts/version-markers.json` (locked to `/version`, not an independent
+per-skill semver), so the correct fix is a full repo version bump, not a
+skill-local one — the same pattern as `cfd2a644` / `367e81ed` earlier in this
+file's history.
+
+Ran `scripts/bump-version.sh v21.4.59` (its own release-integrity guard
+verified `v21.4.59` is strictly ahead of `origin/main`'s shipped floor and
+that the tag does not already exist, before touching any file). All 10
+markers now agree at `v21.4.59`. The same run also rolled
+`06-ghl-install-pages/skill-version.txt` and its SKILL.md `metadata: version:`
+field in lockstep with the browser-manager markers it gates (the script's own
+step 11/12) — those two files are not part of the 10-marker count but are
+rolled by the same tool for the same G3 reason.
+
 ## [v21.4.58]  -  2026-08-02  -  Skill 54 anthology-writer warfix Round 2 (FIX-14, FIX-20, FIX-27, FIX-32, FIX-35, FIX-36, FIX-37)
 
 Seven reviewed warfixes for `54-anthology-writer` landed on main via the
