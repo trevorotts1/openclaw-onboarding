@@ -1,7 +1,7 @@
 ---
 name: podcast-production-engine
 description: Turn ONE completed podcast intake survey into ONE published podcast episode, end to end, autonomously, on the client's own box, with the client's own credentials, at a bounded cost, with independent quality control, full durability, and a client-facing dashboard. Fuses the fleet's render lane (Skill 57 podcast mode script writer plus Kie.ai cover, Skill 35 Fish render script plus Podbean playbook, Skill 30 Fish Audio reference) with the Skill 23 professional-podcast doctrine (director-of-podcast, podcast-host, audio-post-producer, qc-specialist-podcast, loudness mastering, quality gates). Runs the canonical 18-step pipeline across four output-type presets (Interview, Solo, Season-Strategy, Episode Asset Pack) and two production modes (Personal Podcast, Interview Style). Content work routes to Ollama Cloud Kimi 2.6 then GLM 5.2 then OpenRouter equivalents then Gemini 3.1 Flash Lite, NEVER an Anthropic model at runtime. The Convert and Flow data plane is Skill 44 caf plus Skill 29 REST only, never a Model Context Protocol tier inside the pipeline. Fish Audio synthesis uses model s2.1-pro via header with the client's own reference_id, never the free tier for client content. Two separate quality gates that are never conflated: the 8.5 ten-category build gate that decides whether work merges, and the 16 Tier-1 plus 10-dimension rubric plus 3-strike episode gate that decides whether an episode ships to a listener. Move in silence: the engine enrolls the workflow and STOPS, Convert and Flow owns every customer message. Zero em dashes, no triple backtick fences in any produced output.
-version: 0.1.25
+version: 0.1.26
 ---
 
 # Podcast Production Engine (Skill 58)
@@ -218,6 +218,94 @@ attack resistance. When the secret IS configured, the handler FAILS CLOSED:
 missing or invalid signatures are rejected with no flow created and the
 rejection logged. When the secret is NOT configured, the handler logs a one-line
 warning and proceeds (backward compatibility for existing unsigned senders).
+
+## Activation layer (a queued flow never runs itself)
+
+Intake is not production. The webhook layer records a submission, claims the
+ledger, and creates ONE TaskFlow per accepted submission (the flow key IS the
+job_key), and that flow is created QUEUED. The platform never auto-runs it: a
+queued flow sits until the bound session gets a turn that executes the pipeline.
+Turning queued flows into running episodes is the job of the ACTIVATION LAYER,
+and the failure mode when any piece is absent is the worst one the engine can
+show a client: intake succeeds, the card says Received, and nothing is ever
+produced. Four components, in dependency order:
+
+| Component | What it does | Concrete pointer |
+|---|---|---|
+| `register-podcast-hook.sh` | Installs the per-client intake route and binds it to the podcast session | `scripts/webhook/route-template.json5` (the live-verified route schema) |
+| `install-podcast-department.sh` | Installs and binds the podcast department agent (director-of-podcast) that owns the bound session | wiring.json `department` and `session_binding` blocks |
+| `podcast_controller.py` | The production processor: advances each queued flow through Steps 1 to 18 in the agent's OWN turn | `scripts/webhook/flow_client.py` plus `scripts/podcast_state.py` |
+| The scheduler (heartbeat sweep) | Finds queued or waiting flows and credit-restored holds, hands each to the controller | `scripts/podcast_state.py` `resume` and `sweep-aged-out` |
+
+1. register-podcast-hook.sh, INTAKE ROUTE PLUS SESSION BINDING. Installs the
+   per-client Webhooks plugin route into the gateway config
+   (plugins.entries.webhooks.config.routes, verified schema in
+   scripts/webhook/route-template.json5): route id podcast-intake-<client-slug>,
+   path /plugins/webhooks/podcast-intake-<client-slug>, bound sessionKey
+   podcast:intake:<client-slug>, secret by env SecretRef (ENV LABEL
+   PODCAST_INTAKE_HOOK_SECRET only, never a plaintext value), controllerId
+   webhooks/podcast-intake-<client-slug>. The bound session is the route's only
+   consumer: allowedAgentIds is the podcast agent only and
+   allowedSessionKeyPrefixes is the podcast session namespace only. Config is
+   written as the node user, never root (a root-owned config freezes the
+   gateway). `--remove <slug>` is the symmetric unregistration that churn calls
+   (SOP-PODCAST-03; scripts/revoke-podcast-client.sh invokes it).
+   scripts/provision-podcast-client.sh delegates its hook-mapping step to it.
+2. install-podcast-department.sh, DIRECTOR AGENT. Installs the client's podcast
+   department agent, the agent that owns session podcast:intake:<client-slug>
+   and embodies director-of-podcast. wiring.json forbids a second podcast
+   department (the podcast department already exists on the 28-department
+   universal floor, content-creator pack, universal_primary true; creating a
+   duplicate is a build failure), so the installer ATTACHES the engine to the
+   existing department, never creates a new one. This agent is the controller
+   session: every tool-bearing step (Convert and Flow REST, Podbean publish,
+   custom-field writes, Skill 44 enrollment) executes in its OWN turn, never in
+   a run_task(runtime="subagent") child, because sub-agents get no tools at all.
+3. podcast_controller.py, THE PRODUCTION PROCESSOR. The controller runbook that
+   advances a queued flow through the 18 steps: get_flow (flow_client.py) to
+   read the flow, derive the current pipeline step from the state
+   podcast_state.py wrote, drive the next step in the agent's own turn, record
+   EVERY stage change through podcast_state.py advance, then resume the flow
+   under the 409 read-check-reapply contract (expectedRevision; re-read before
+   re-applying; never a blind retry). The writer and the processor stay
+   separate by design: podcast_state.py is the SOLE state writer; the controller
+   sequences steps and writes nothing directly. On insufficient credits it holds
+   through podcast_state.py hold and parks the flow with set_waiting; on an
+   unrecoverable error it fails both. The kanban card mirrors each stage through
+   cc_board.py (run-begin, patch-phase, close); the board is display-only and
+   never recomputes state. The QC independence rule binds here: the Step 9 judge
+   persona and judge tier are never the drafting persona or the writer tier.
+4. The scheduler, HEARTBEAT SWEEP. The platform heartbeat sweep for this client's
+   box. One pass does three things: finds this route's TaskFlows that are queued
+   or waiting and resumes each through the controller; re-checks held jobs whose
+   credits were restored and resumes them at their resume_stage; runs
+   podcast_state.py sweep-aged-out for the 60-day cap. The sweep never produces
+   an episode itself; it only hands work to the controller. Furnace constraint
+   (guard-cron-inventory.py is binding): the sweep rides the platform's own
+   heartbeat mechanism, registers NO per-client cron, and never adds a second
+   cron, a queue poller, a per-job watcher, or anything sub-daily; the client's
+   ONE recurring job remains the daily smoke test.
+
+Wiring source of truth. Every name above resolves against ONE machine-readable
+file: `23-ai-workforce-blueprint/department-wiring/podcast-engine/wiring.json`.
+It owns the department binding, the session_key_template and route_id_template,
+the flow identity (one TaskFlow per accepted submission; the flow key IS the
+job_key), the persona ownership (director-of-podcast owns Steps 0, 1, 2, 12 to
+16, 17, 18 and the statuses received, researching, publishing, enrolling,
+complete, failed, queued_credit_out), the four-tier access matrix, and the
+kanban contract, with `verify-podcast-engine-wiring.py` as its enforcement
+script. A document or script that disagrees with wiring.json is the side that
+is wrong. The department-and-persona plain-language companion is the README.md
+in the same folder.
+
+Activation order and canary. Register the route, install the department agent,
+arm the scheduler, in exactly that order (each step's verify is in
+SOP-PODCAST-01 Section 8). Verification is ONE observed move: a _test-gated
+canary submission must land on the route, be claimed by the ledger, create the
+job, and ADVANCE past `received` within one sweep interval. A job that stays
+`received` with its flow still queued means one of the three components is
+absent or mis-wired; the canary lifecycle checklist is
+`23-ai-workforce-blueprint/department-wiring/podcast-engine/card-lifecycle-proof-plan.md`.
 
 ## Step ownership (binding)
 
