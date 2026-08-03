@@ -78,14 +78,31 @@ jobs:
         # in the role-workspace builder, which lands dangling role symlinks on every
         # box the next roll touches. Assert the defect is absent on THIS head, so an
         # un-rebased merge cannot carry it back in fleet-wide.
+        #
+        # NOTE: grep exits 1 when it finds nothing, which is this gate's SUCCESS case,
+        # so every grep here is `|| true`-guarded. Without that, `set -o pipefail`
+        # turns a clean head into a failing step (and, worse, a gate that can only
+        # ever fail is a gate nobody can read the result of).
         run: |
           set -euo pipefail
-          hits=$(grep -rn 'workspace_root[[:space:]]*=[[:space:]]*company_root' \
-                   --include='*.py' --include='*.sh' . | wc -l | tr -d ' ')
-          if [ "$hits" != "0" ]; then
-            echo "FAIL: 'workspace_root = company_root' present on this head ($hits occurrence(s)):"
-            grep -rn 'workspace_root[[:space:]]*=[[:space:]]*company_root' \
-              --include='*.py' --include='*.sh' . || true
+          PATTERN='workspace_root[[:space:]]*=[[:space:]]*company_root'
+
+          # Non-vacuity self-test FIRST: prove the pattern can still match at all, so
+          # this gate can never silently degrade into an assertion that always passes.
+          probe="$(mktemp -d)"
+          printf 'workspace_root = company_root\n' > "$probe/probe.py"
+          if ! grep -rqn "$PATTERN" --include='*.py' "$probe"; then
+            echo "FAIL: the guard pattern no longer matches a seeded defect - this gate is BLIND."
+            rm -rf "$probe"
+            exit 1
+          fi
+          rm -rf "$probe"
+          echo "self-test: pattern detects a seeded defect (gate is live)"
+
+          hits="$(grep -rn "$PATTERN" --include='*.py' --include='*.sh' . || true)"
+          if [ -n "$hits" ]; then
+            echo "FAIL: 'workspace_root = company_root' present on this head:"
+            printf '%s\n' "$hits"
             echo ""
             echo "This collapses each role workspace onto the company root and lands"
             echo "dangling role symlinks fleet-wide on the next roll. Rebase this branch"
