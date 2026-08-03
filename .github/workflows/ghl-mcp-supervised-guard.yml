@@ -13,30 +13,156 @@ name: ghl-mcp-supervised-guard
 # missing liveness probe, or a re-registered Tier 2 MCP. The 2026-08-02/03
 # outage was NOT a supervision failure: every box stayed supervised, listening
 # and "healthy" while answering nothing for two days.
+#
+# fix/ghl-mcp-mirror-and-vetting-gate: adds the `ghl-mcp-pin-gate` job, and
+# REMOVES THE `paths:` FILTERS. Both changes are load-bearing.
+#
+# WHY THE PATH FILTERS HAD TO GO. A path-filtered workflow can never be used as
+# a REQUIRED status check: on any pull request that does not touch those paths
+# the check is never reported, and the PR sits at "Expected — Waiting for status
+# to be reported" forever. That is the failure mode that gets a gate switched
+# off, so the filters are gone and both jobs always run. They are cheap: bash
+# syntax checks, static assertions, two shell unit tests and one shallow fetch.
+#
+# The filters were also unsound for this gate specifically. The pin gate has to
+# compare the pin file against the built-in fallback constants in the launch
+# scripts AND against a live mirror. A push that changed neither of the filtered
+# files could still break that relationship — and, worse, the filter list itself
+# is hand-maintained, so a NEW consumer of the pin would silently not be covered.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# TREVOR-DECISION — THIS JOB IS LOUD, NOT BLOCKING. HERE IS WHAT WOULD CHANGE THAT.
+# ─────────────────────────────────────────────────────────────────────────────
+# `main` on this repo has enforce_admins and blocks force-push and deletion, but
+# it has NO required status checks, NO required reviews and NO rulesets. Merges
+# are direct pushes of locally-created merge commits, and CI runs AFTER the push.
+# A red run therefore paints a red X on a commit that is already on `main`.
+# Nothing in this file, or in any of the other guard workflows, can currently
+# stop anything. That is a true statement about every gate in this repository.
+#
+# It is NOT changed here, deliberately: turning it on changes how Trevor merges,
+# and that is his call, not a side effect of a fix. To make it enforcement:
+#
+#   gh api -X POST repos/trevorotts1/openclaw-onboarding/rulesets \
+#     -f name='pin-gate' -f target='branch' -f enforcement='active' \
+#     -F 'conditions[ref_name][include][]=refs/heads/main' \
+#     -F 'rules[][type]=required_status_checks' \
+#     -F 'rules[][parameters][required_status_checks][][context]=ghl-mcp-pin-gate'
+#
+# PROS: a bad pin cannot reach `main` at all; the gate stops being advisory; the
+#   merge-train discipline already in use is largely compatible with it.
+# CONS: it forces a PULL REQUEST for every merge to `main` — a required status
+#   check cannot be satisfied by a direct push. Serialized merge trains become
+#   PR-per-item. Emergency fixes need an admin bypass or a bypass actor.
+#   And the check must ALWAYS run, or PRs hang forever at "Expected — Waiting for
+#   status to be reported" (which is why the `paths:` filters above are gone —
+#   do not put them back if this is ever enabled).
+#
+# UNTIL THEN the enforcement that actually protects a client machine is not here.
+# It is the box-side refusal in the installer, which runs on paths CI never sees
+# (probe --heal, manual remediation, a partial roll) and long after any CI run.
+# CI protects the repo; the installer protects the machine. This job's job is to
+# be impossible to miss.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# DESIGN NOTE (not implemented — deliberate follow-on): CI-built, ATTESTED artifact
+# ─────────────────────────────────────────────────────────────────────────────
+# The digest proves "this is the commit we reviewed". It cannot prove "the bytes
+# that ran are the bytes that commit builds to", because every client box still
+# runs `npm` against a third-party dependency tree and compiles it locally.
+#
+# The complete answer is to stop building on client boxes at all: a workflow IN
+# THE MIRROR builds `dist/` from the pinned commit on a pinned Node version,
+# signs the tarball with `actions/attest-build-provenance` (SLSA v1.0 Build
+# Level 2 by default; Level 3 via a reusable workflow), and publishes it as a
+# release. Boxes fetch and verify with
+#   gh attestation verify <file> --repo trevorotts1/ghl-community-mcp-mirror
+# falling back to a pinned sha256 from the pin file where `gh` is absent.
+#
+# That removes third-party lifecycle-script execution from every client machine
+# and makes a build-time crash structurally impossible, because no box builds.
+# It is NOT done here because it is a day of work, it depends on the mirror
+# (which only just exists), and it is moot if the local server is retired in
+# favour of the vendor's official remote MCP. Sequence it after that ruling.
 
 on:
   push:
-    paths:
-      - config/ghl-mcp-pin.env
-      - scripts/ghl-mcp-autostart.sh
-      - scripts/ghl-mcp-probe.sh
-      - scripts/qc-assert-ghl-mcp-supervised.sh
-      - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
-      - tests/unit/ghl-mcp-supervised.test.sh
-      - tests/unit/ghl-mcp-probe.test.sh
-      - .github/workflows/ghl-mcp-supervised-guard.yml
   pull_request:
-    paths:
-      - config/ghl-mcp-pin.env
-      - scripts/ghl-mcp-autostart.sh
-      - scripts/ghl-mcp-probe.sh
-      - scripts/qc-assert-ghl-mcp-supervised.sh
-      - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
-      - tests/unit/ghl-mcp-supervised.test.sh
-      - tests/unit/ghl-mcp-probe.test.sh
-      - .github/workflows/ghl-mcp-supervised-guard.yml
 
 jobs:
+  ghl-mcp-pin-gate:
+    # NOTE: this job name is the string Trevor would enter if he ever decides to
+    # make it a required status check. Renaming the job silently un-requires it.
+    name: ghl-mcp-pin-gate
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0    # the date-advance check needs the previous pin file
+
+      - name: Syntax-check the pin gate, the digest checker and the vetting tool
+        run: |
+          for f in \
+            scripts/qc-assert-ghl-mcp-pin-gate.sh \
+            scripts/ghl-mcp-check-pin-digest.sh \
+            scripts/ghl-mcp-vet-pin.sh; do
+            bash -n "$f"
+          done
+          python3 -m py_compile scripts/qc-assert-ghl-mcp-pin-resolvers.py
+
+      - name: Determine the base commit to diff the pin against
+        id: base
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -uo pipefail
+          BASE=""
+          if [ "$EVENT_NAME" = "pull_request" ]; then
+            BASE="$PR_BASE_SHA"
+          else
+            # A brand-new branch reports an all-zero "before"; there is nothing
+            # to compare against and that is not a failure.
+            case "$PUSH_BEFORE" in
+              ''|0000000000000000000000000000000000000000) BASE="" ;;
+              *) BASE="$PUSH_BEFORE" ;;
+            esac
+          fi
+          if [ -n "$BASE" ] && ! git cat-file -e "${BASE}^{commit}" 2>/dev/null; then
+            echo "base commit $BASE is not in this checkout — skipping the date-advance check"
+            BASE=""
+          fi
+          echo "ref=$BASE" >> "$GITHUB_OUTPUT"
+
+      # THE GATE. Same script the pre-push hook and a human run, so the three can
+      # never disagree about what "this pin is OK" means. --network is what makes
+      # this more than a spell-check: it proves the pinned commit is actually
+      # fetchable by SHA from the mirror (a fresh box can provision) and that the
+      # dependency lockfile the verdict covers is the one that would be installed.
+      - name: GHL MCP pin gate (digest binding, mirror reachability, lockfile, fallbacks)
+        env:
+          BASE_REF: ${{ steps.base.outputs.ref }}
+        run: |
+          chmod +x scripts/qc-assert-ghl-mcp-pin-gate.sh
+          if [ -n "$BASE_REF" ]; then
+            bash scripts/qc-assert-ghl-mcp-pin-gate.sh --network --base-ref "$BASE_REF"
+          else
+            bash scripts/qc-assert-ghl-mcp-pin-gate.sh --network
+          fi
+
+      # The mutation proofs. A gate whose failure path is untested is a gate
+      # nobody has ever seen fail, which is indistinguishable from one that
+      # cannot fail. GHL_MCP_PIN_TEST_NETWORK=1 also exercises the mirror-backed
+      # review path of the vetting tool.
+      - name: Vetting-digest mutation proofs (hand-edited verdict, swapped SHA, missing digest, …)
+        env:
+          GHL_MCP_PIN_TEST_NETWORK: '1'
+        run: |
+          chmod +x tests/unit/ghl-mcp-pin-digest.test.sh
+          bash tests/unit/ghl-mcp-pin-digest.test.sh
+
   ghl-mcp-supervised-guard:
     name: GHL MCP supervision + install regression guard
     runs-on: ubuntu-latest

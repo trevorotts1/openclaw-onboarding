@@ -127,9 +127,9 @@ else
 fi
 
 # Built-in fallbacks (kept in sync with config/ghl-mcp-pin.env).
-GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3}"
+GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-32628c979dd8f46e7952f85ce2d98f8028a26c32}"
 GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-curated}"
-GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git}"
+GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-https://github.com/trevorotts1/ghl-community-mcp-mirror.git}"
 GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-10}"
 GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
 GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
@@ -216,6 +216,22 @@ ensure_repo_at_pin() {
     # "whatever main is today" install.
     git clone --no-checkout "$GHL_MCP_REPO_URL" "$MCP_DIR" >>"$LOG_DIR/ghl-mcp-build.log" 2>&1 || {
       log "git clone failed — server cannot be built"; return 1; }
+  fi
+
+  # MIRROR MIGRATION. Every box provisioned before the mirror existed has an
+  # `origin` pointing at the third-party upstream. Nothing else would ever move
+  # it, so those clones would keep fetching from a repository that force-pushes
+  # its history and would break the day the pin is garbage-collected there —
+  # the exact failure the mirror exists to prevent. Repoint it here, on the next
+  # run of this script, before anything is fetched.
+  local _origin_url
+  _origin_url="$(git -C "$MCP_DIR" remote get-url origin 2>/dev/null || echo '')"
+  if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
+    if git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>/dev/null; then
+      log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
+    else
+      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL"
+    fi
   fi
 
   # Fetch the exact object; unshallow an old --depth 1 clone if needed.
