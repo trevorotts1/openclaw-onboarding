@@ -22,29 +22,41 @@
 
 **Base URL:** `https://services.leadconnectorhq.com` — same host for both generations.
 
-### Version header — CORRECTED
+### Version header
 
-| Surface | Correct `Version` |
+**HighLevel runs five concurrently-supported versions** — `v3` (June 11, 2026),
+`2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy` — each "Supported until: **TBD**".
+Nothing here is deprecated on a clock. Source:
+`https://marketplace.gohighlevel.com/docs/Versioning/`.
+
+| Surface | Version to send |
 |---|---|
 | locations, oauth, users, companies, snapshots, marketplace | `2021-07-28` |
-| **SaaS (all `/saas/*` and `/saas-api/*`)** | **`2021-04-15`** |
-| any v3 path form | `v3` |
+| **SaaS (all `/saas/*` and `/saas-api/*`)** | **`2023-02-21`** — documented and working |
+| `POST /users/` | `2023-02-21` **or** `2021-07-28` — both documented, both work |
+| pipeline CRUD, calendar services, chat-widget, brand voices, social queues, new emails surface | `v3` |
+| any v3-form path (`/oauth/location-token`, `/oauth/installed-locations`) | `v3` |
 
-> **Correction.** Older agency documentation stated *"Every SaaS endpoint uses: 2023-02-21"*
-> and repeated `Version: 2023-02-21` across all thirteen SaaS examples. **`saas-api.json`
-> publishes exactly one enum for all 22 SaaS operations: `2021-04-15`.** `2023-02-21` appears
-> nowhere in that spec.
+> **`2023-02-21` for SaaS is CORRECT — do not "fix" it to `2021-04-15`.**
+> HighLevel publishes a full SaaS documentation set under `2023-02-21`
+> (`https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/saas/saas/index.html`), and it is
+> a first-class row in the Versioning table. **PROVEN live 2026-08-03:**
+> `GET /saas-api/public-api/agency-plans/{companyId}` returns **200** under `2023-02-21`.
 >
-> **PROVEN 2026-08-03:** `GET /saas-api/public-api/agency-plans/{companyId}` returns **200
-> under `Version: 2023-02-21`** against a live agency token. So existing `2023-02-21` SaaS
-> code is **not broken** and does not need an emergency change — HighLevel accepts all four
-> published version strings on established paths. Use `2021-04-15` for new work because it
-> is the documented value and the only one guaranteed to route for every SaaS path.
+> The GitHub `saas-api.json` declares `2021-04-15`, and an audit on 2026-08-03 briefly used
+> that to call the `2023-02-21` guidance wrong. **That was itself wrong and was reverted the
+> same day** — `saas-api.json` was last synced **2025-08-13**, the stalest file in the spec
+> repo. The only deliberate forward move for SaaS is `2023-02-21` → **`v3`**, with a live
+> re-test.
 
-Omitting the header is a **401** (`"version header was not found."`); an unpublished value
-is a **401** (`"version header is invalid"`). Both PROVEN live.
+Omitting the header is a **401** (`"version header was not found."`); sending a value
+HighLevel does not publish is a **401** (`"version header is invalid"`). Both PROVEN live.
 
-Full generation rules and the per-surface table: **`references/api-generations.md`**.
+> ⚠ **The GitHub spec repo lags the live docs** (last commit 2026-06-19; most specs synced
+> 2026-05-01; `saas-api.json` 2025-08-13) while the changelog runs to 2026-07-30. Check
+> `https://marketplace.gohighlevel.com/docs` before declaring anything wrong.
+
+Full generation rules and the per-operation table: **`references/api-generations.md`**.
 
 ### Agency token vs location token
 - An **agency (company-scoped) PIT or OAuth token** reaches `/locations/*` provisioning,
@@ -138,7 +150,7 @@ Scopes: `locations.readonly`, `locations.write`.
 
 ---
 
-## 4. SaaS configurator and billing — `Version: 2021-04-15`
+## 4. SaaS configurator and billing — `Version: 2023-02-21`
 
 All 22 operations. Requires Agency Pro.
 
@@ -165,8 +177,15 @@ Scopes: `saas/location.read`, `saas/location.write`, `saas/company.write`.
 > untested** — it was not probed, because this audit made no write calls. Verify with one
 > controlled call before relying on it. Do not document it as confirmed.
 
-> **v3 (`saas-v3`, 25 ops)** adds `POST /saas/allow-attach-rebilling/{locationId}` and brings
-> the two wallet-balance endpoints into the spec.
+> **Deprecated/current split.** The live SaaS docs publish **two parallel sets** — eleven
+> endpoints exist in both a `-deprecated` and a current form (e.g. `bulk-enable-saas-deprecated`,
+> `get-saas-locations-deprecated`). Check which form your URL maps to before relying on it.
+> Source: `https://marketplace.gohighlevel.com/docs/ghl/saas/saas`
+>
+> **v3 (`saas-v3`, 25 ops)** adds `allow-attach-rebilling/{locationId}` and brings the two
+> wallet-balance endpoints into the spec. ⚠ HighLevel's changelog (2026-06-26) calls
+> `allow-attach-rebilling` a **GET**; `saas-v3.json` declares it **POST**. Two HighLevel
+> sources conflict — verify with a live call before using it.
 
 ---
 
@@ -182,10 +201,12 @@ Scopes: `saas/location.read`, `saas/location.write`, `saas/company.write`.
 
 Scopes: `users.readonly`, `users.write`.
 
-> **Correction.** Skill 44 previously taught `Version: 2023-02-21` for `POST /users/`.
-> `users.json` declares **`2021-07-28`** for all seven user operations. Corrected in skill 44
-> v1.3.15. (PROVEN 2026-08-03: `GET /users/` returns 200 under all four published versions,
-> so the old value was not failing — it simply was not the documented one.)
+> **Both `2023-02-21` and `2021-07-28` are valid for `POST /users/`.** Skill 44 uses
+> `2023-02-21` (documented verbatim at
+> `https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`);
+> this reference uses `2021-07-28` (the value in `users.json`). **That is not a
+> contradiction** — HighLevel documents this endpoint under multiple supported versions, and
+> PROVEN live 2026-08-03 `GET /users/` returns 200 under all four.
 >
 > **v3 drops `GET /users/`** in favour of `GET /users/search`. PROVEN: `GET /users/` still
 > returns 200 under `Version: v3` today; do not rely on that persisting.

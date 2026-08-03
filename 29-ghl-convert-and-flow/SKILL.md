@@ -37,7 +37,7 @@ This skill pack provides:
 | Base URL | `https://services.leadconnectorhq.com` |
 | Auth method | Bearer token (Private Integration Token) |
 | Auth header | `Authorization: Bearer $GOHIGHLEVEL_API_KEY` |
-| Version header | `Version: 2021-07-28` — the default. Seven apps differ; see "Version Header Rule" below |
+| Version header | Per-operation. `2021-07-28` pre-v3 default; `v3` is latest; five versions supported — see "Version Header Rule" |
 | Content-Type | `application/json` |
 | Total endpoints | 576 across 41 published app specs (v2 generation) |
 | API key | IS the Private Integration Token (`pit-` prefix); no separate "API key" type exists |
@@ -59,48 +59,59 @@ Content-Type: application/json
 
 ### Version Header Rule (read this before every call)
 
-The Version header is **per-app, not global**. Omitting it, or sending a value HighLevel
-does not publish, is a **401**. Sending a *published but non-declared* value is tolerated on
-established paths but hard-404s on newer ones — see the probe findings below.
+**HighLevel runs FIVE concurrently-supported versions**, selected per-request. Every one is
+"Supported until: **TBD**" — no retirement dates, no forced migration
+(`https://marketplace.gohighlevel.com/docs/Versioning/`).
+
+| Version | Released | Supported until |
+|---|---|---|
+| `v3` | June 11, 2026 | TBD |
+| `2023-02-21` | February 21, 2023 | TBD |
+| `2021-07-28` | July 28, 2021 | TBD |
+| `2021-04-15` | April 15, 2021 | TBD |
+| `legacy` | January 1, 2021 | TBD |
+
+**Which one to send** — the value is declared **per-operation**, not per-app:
 
 ```
-Version: 2021-07-28   ← DEFAULT. 33 of the 41 published app specs, including
-                        contacts, locations, opportunities, users, payments,
-                        campaigns, phone-system, medias, invoices, products,
-                        workflows, social-media-posting, blogs, forms, objects.
+Version: v3           ← the latest named version. REQUIRED for: opportunities
+                        pipeline CRUD, calendar services, brand voices, social
+                        planner queues/comments, chat-widget, the new emails
+                        surface, and the hyphenated /oauth/... paths.
 
-Version: 2021-04-15   ← ONLY these seven apps:
-                        conversations, calendars, saas-api, voice-ai,
-                        agent-studio, conversation-ai, knowledge-base.
+Version: 2023-02-21   ← SaaS endpoints, and POST /users/. Both documented and
+                        working. Do NOT "correct" these to something older.
 
-Version: v3           ← the 2026-06-19 v3 generation (42 specs). Required for
-                        v3-only surfaces: chat-widget, social planner queues +
-                        comments, the rebuilt emails/* surface, brand voices.
+Version: 2021-07-28   ← the pre-v3 default: 32 of the 41 published specs declare
+                        it exclusively (33 accept it, counting links).
 
-links   accepts BOTH 2021-04-15 and 2021-07-28.
-store   declares no Version parameter at all.
+Version: 2021-04-15   ← ONLY: agent-studio, calendars, conversation-ai,
+                        conversations, knowledge-base, saas-api, voice-ai.
+
+links accepts 2021-04-15 AND 2021-07-28.  store declares no Version parameter.
+phone-system-v3 names the parameter lowercase `version` (headers are
+case-insensitive, so `Version: v3` still works).
 ```
 
-**Do not apply one value across all calls in either direction.** Earlier versions of this
-skill taught `2021-04-15` as a blanket default, contradicting skills 05 and 36 inside the
-same fleet. If you see a doc anywhere teaching a blanket Version, treat this table as
-authority.
+**An older supported version is NOT a defect.** Only a blanket "use one value for
+everything" rule is — that is what this skill previously taught and what is now fixed.
 
-**What live probing proved (2026-08-03).** The header is mandatory — omit it and you get
-`401 "version header was not found."`; send an unpublished value and you get
-`401 "version header is invalid"`. But for long-established v2 paths the runtime is
-**lenient**: `GET /contacts/`, `/users/` and `/calendars/` all return 200 under
-`2021-07-28`, `2021-04-15`, `2023-02-21` **and** `v3`. So the wrong value was **not**
-causing 400s on those calls. It still must be fixed, because leniency is not a contract and
-**newer paths are genuinely generation-gated** — `/brand-boards/.../brand-voices` and
-`/oauth/installed-locations` return `404 Cannot GET` unless you send `Version: v3`.
+**What live probing proved (2026-08-03).** Omitting the header is a **401** (`"version
+header was not found."`); an unpublished value is a **401** (`"version header is invalid"`).
+But `GET /contacts/`, `/users/` and `/calendars/` return **200 under all four** published
+version strings. **No endpoint was found that rejects `2021-04-15`** — so the earlier claim
+that a wrong Version header was causing live 400s is **false and withdrawn**. If you are
+chasing a real client failure, check scopes, PIT-vs-OAuth, and location-vs-company token
+first. Where the version *does* decide routing is brand-new and renamed paths:
+`/brand-boards/.../brand-voices` and `/oauth/installed-locations` hard-404 unless you send
+`Version: v3`.
 
-**Full generation guidance, the per-surface table, and the probe evidence:
+> ⚠ **The GitHub spec repo lags the live docs** — last commit 2026-06-19, most specs synced
+> 2026-05-01, `saas-api.json` 2025-08-13, while the changelog runs to 2026-07-30. Check
+> `https://marketplace.gohighlevel.com/docs` before calling any doc wrong.
+
+**Full per-operation table, generation-gated paths, v3 capability and the probe evidence:
 `references/api-generations.md`.**
-
-Source of truth: the `Version` enum published in each app's OpenAPI spec at
-`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03),
-plus live read-only GET probes against operator-owned sub-accounts on the same date.
 
 ---
 

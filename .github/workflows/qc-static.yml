@@ -2627,6 +2627,17 @@ jobs:
           [ $fail -eq 0 ] && echo "✓ chmod-600 coverage: all .sh scripts that write secrets/.env also call chmod 600"
           exit $fail
 
+      - name: Vendor-URL exemption holds both directions (mutation proof)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Proves the `(?<!/mcp/)` carve-out in the NEXT step is correct in BOTH
+          # directions: HighLevel's MCP orchestrator URL (.../mcp/anthropic/v2) passes,
+          # while real Anthropic model slugs — including one sharing a line with that
+          # URL — still fail. Re-derives the pattern from this very file, so widening
+          # the exemption to a blanket `anthropic` allow turns this step red.
+          bash tests/unit/ghl-mcp-vendor-url-exemption.test.sh
+
       - name: No banned model tokens in GHL skill markdown prose (M2 / Anthropic / non-Ollama Kimi)
         shell: bash
         run: |
@@ -2715,8 +2726,20 @@ jobs:
           #     same line as ban/forbidden/rejected prose is still caught. Plain-English
           #     "Claude"/"Anthropic" mentions without a hyphen/slash never match the
           #     positive pattern at all, so doctrine prose naming the ban is unaffected.
+          #
+          #     VENDOR URL PATH EXEMPTION (added 2026-08-03): HighLevel's official MCP
+          #     orchestrator lives at `services.leadconnectorhq.com/mcp/anthropic/v2`.
+          #     There, `anthropic` is a PATH SEGMENT naming the MCP client the endpoint
+          #     serves — it is a vendor's URL, not a model slug, and Trevor needs it
+          #     documented in skill 36. The `(?<!/mcp/)` negative lookbehind spares
+          #     `anthropic/...` ONLY when immediately preceded by the literal `/mcp/`.
+          #     This is deliberately the narrowest possible carve-out: it is anchored to
+          #     that exact token position, so a genuine model slug (`anthropic/claude-*`,
+          #     `anthropic/claude-opus-4`) anywhere else — including elsewhere on the very
+          #     same line — is still caught. It is NOT a blanket `anthropic` allow.
+          #     Mutation proof both directions: tests/unit/ghl-mcp-vendor-url-exemption.test.sh
           anthropic_hits=$(grep -rinP \
-              'claude-(?!desktop\b)(?!code\b)[a-z0-9-]+|anthropic/[a-z0-9-]+|us\.anthropic\.[a-z0-9.-]*' \
+              'claude-(?!desktop\b)(?!code\b)[a-z0-9-]+|(?<!/mcp/)anthropic/[a-z0-9-]+|us\.anthropic\.[a-z0-9.-]*' \
               $ALL_DIRS --include="*.md" 2>/dev/null \
               | grep -v "^Binary" || true)
           if [ -n "$anthropic_hits" ]; then

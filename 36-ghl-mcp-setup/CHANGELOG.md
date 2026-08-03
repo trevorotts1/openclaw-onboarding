@@ -4,7 +4,7 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.3.1] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator
+## [v1.3.2] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator (+ the CI guard fix it required)
 
 ### Added
 - **`SKILL.md` gained a "Which official MCP endpoint" section.** HighLevel publishes two
@@ -38,6 +38,18 @@ All notable changes to this skill are documented here.
 ### Unchanged
 - `GHL-LOOKUP-SOP.md`'s workflow guidance is untouched: the public API at `/workflows/` is
   GET-only in both the v2 and v3 specs. That wording was verified correct.
+
+### Fixed — CI
+- **`qc-static.yml` "no banned model tokens" guard turned red on `main`** when this skill
+  started documenting `services.leadconnectorhq.com/mcp/anthropic/v2`. The guard's
+  vendor-slug alternative matched the `.../mcp/anthropic/v2` **URL path segment**, which is
+  not a model slug. Fixed with the narrowest possible carve-out — a `(?<!/mcp/)` negative
+  lookbehind anchored to that exact token — so a genuine provider-prefixed Claude slug
+  anywhere else, **including elsewhere on the same line**, is still caught. Not a blanket
+  `anthropic` allow,
+  and the URL stays documented. New mutation proof both directions:
+  `tests/unit/ghl-mcp-vendor-url-exemption.test.sh`, wired into `qc-static.yml` as its own
+  step so the exemption cannot be silently widened.
 
 **Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
 

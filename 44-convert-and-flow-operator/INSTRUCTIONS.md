@@ -259,7 +259,7 @@ DIFFERENT auth paths** — pick the right one per operation:
 | Operation | Path | Auth | Endpoint | Version header |
 |---|---|---|---|---|
 | **Create sub-account (location)** | Firebase **internal** API | `token-id: <firebase-id-token>` (NOT Bearer) | `POST backend.leadconnectorhq.com/locations/` | `2021-07-28` |
-| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2021-07-28` |
+| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2023-02-21` |
 
 This is the PROVEN split — the real user was just added via the simpler PIT
 public path; the official public API CANNOT create a location, so create-location
@@ -282,7 +282,7 @@ must use the internal Firebase path. Do not cross them.
 ### Add a user — DEFAULT, the proven simple path (agency PIT + public API)
 
 `caf locations add-user` posts to `POST https://services.leadconnectorhq.com/users/`
-with `Authorization: Bearer <agency PIT>` and `Version: 2021-07-28`. No Firebase
+with `Authorization: Bearer <agency PIT>` and `Version: 2023-02-21`. No Firebase
 token and **no Chrome extension** are needed for this operation.
 
 Body (CreateUserDto): `companyId` (agency FIRESTORE id), `locationIds=[--location-id]`,

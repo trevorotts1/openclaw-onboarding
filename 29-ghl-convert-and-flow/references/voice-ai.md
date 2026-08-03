@@ -5,11 +5,16 @@
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
 > Version header: `Version: 2021-04-15` (required on all calls)
 >
-> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
-> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
-> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
-> both; `store` declares no Version parameter. Never apply one value across all calls.
-> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
+> **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
+> (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
+> "Supported until: **TBD**". An older supported version is NOT a defect; only a blanket
+> "one value for everything" rule is.
+> `2021-07-28` is the pre-v3 default (32 of 41 specs exclusively, 33 accept it). The ONLY
+> apps on `2021-04-15` are: agent-studio, calendars, conversation-ai, conversations,
+> knowledge-base, saas-api, voice-ai. `links` accepts both; `store` declares none.
+> Full rule + v3 capability: `references/api-generations.md`.
+> Sources: `https://marketplace.gohighlevel.com/docs/Versioning/` and the per-app specs
+> (verified 2026-08-03). ⚠ The spec repo lags the live docs — check the docs site first.
 > Endpoints below are enumerated from `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/voice-ai.json` (verified 2026-08-03).
 
 ---

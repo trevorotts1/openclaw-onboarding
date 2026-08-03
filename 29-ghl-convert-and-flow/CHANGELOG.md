@@ -4,6 +4,69 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v6.9.0] - 2026-08-03 — five-version model, reversals after independent web validation
+
+### Reverted — two "corrections" from v6.7.0 that were themselves WRONG
+An independent web validation showed the GitHub OpenAPI repo (which v6.7.0 treated as ground
+truth) **lags HighLevel's live docs** — last repo commit 2026-06-19, most specs synced
+2026-05-01, `saas-api.json` synced **2025-08-13**, while the changelog runs to 2026-07-30.
+Two v6.7.0 verdicts were artifacts of that lag. My own live probe agreed with the validator.
+
+- **SaaS `2023-02-21` restored.** HighLevel publishes a complete SaaS documentation set under
+  `2023-02-21` and it is a first-class supported version. **PROVEN live: `GET
+  /saas-api/public-api/agency-plans/{companyId}` returns 200 under it.** Changing it to
+  `2021-04-15` (from the year-stale spec file) was wrong.
+- **`POST /users/` `2023-02-21` restored in skill 44.** Documented verbatim at
+  `marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`. It is
+  **not** a contradiction with the agency reference's `2021-07-28` — HighLevel documents the
+  endpoint under multiple supported versions and both work.
+- **The "causing live 400s" rationale is withdrawn everywhere.** PROVEN: `GET /contacts/`,
+  `/users/` and `/calendars/` return 200 under all four published versions. No endpoint was
+  found that rejects `2021-04-15`. The `2021-07-28` standardisation stands as a **consistency
+  choice**, not a bug fix. Anyone chasing a real client failure should look at scopes,
+  PIT-vs-OAuth and location-vs-company token first.
+
+### Changed — the version model was structurally wrong
+- **There are FIVE concurrently-supported versions, not "v2 and v3"** — `v3` (released
+  **June 11, 2026**, not 06-19), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`,
+  **every one "Supported until: TBD"**. No retirement dates, no forced migration. An older
+  supported version is not a defect.
+- **The Version is declared PER-OPERATION, not per-app.** `ad-publishing-v3` has 95 ops of
+  which **94 still declare `2021-07-28`**. `phone-system-v3` names the parameter lowercase
+  `version`; `store`/`store-v3` declare none. Documented, with the list of operations that
+  declare no Version parameter at all.
+- Counts corrected: **32** specs declare `2021-07-28` exclusively (33 accept it, counting
+  `links`) — not "33 of 41".
+- A **standing staleness warning** now sits in `auth.md`, `api-generations.md` and every
+  reference banner: check `marketplace.gohighlevel.com/docs` before calling any doc wrong.
+
+### Added
+- **Opportunities pipeline CRUD — the "do not ship" gate is LIFTED.** All four operations are
+  documented live under `Version: v3`. Shipped with the semantics that bite: update replaces
+  the whole `stages` array (omit a stage and it is deleted); **delete is an irreversible
+  cascade that removes every opportunity in the pipeline**; `useOpportunityProbability`
+  silently falls back if any stage lacks `stageWinProbability`.
+- **Calendars v3 Services / booking-catalog surface (41 → 59 ops)** — the largest capability
+  the earlier audit missed entirely. `/calendars/services/{catalog,bookings,locations}` and
+  `/calendars/schedules/event-calendar/{calendarId}`.
+- **Scopes rebuilt against the true union: 142.** The three sources are DISJOINT — pre-v3
+  specs 118, v3 specs 127, `Scopes.md` 91. Names which source each came from, lists the 13
+  v3-only scopes and the 4 dropped in v3. **`pipelines.create` removed** — it is a
+  response-body enum on `/users/*`, not a requestable OAuth scope.
+- Webhook facts no skill carried: **retries fire ONLY on HTTP 429** (a receiver returning 500
+  gets no retry), user-lifecycle webhooks (`user.created|updated|deleted`), and the Webhook
+  Logs dashboard.
+- SaaS **deprecated/current endpoint split** documented; the `allow-attach-rebilling`
+  GET-vs-POST conflict between HighLevel's own changelog and spec flagged as verify-live.
+
+### Not asserted (no published basis)
+- v3 is **not** called GA/beta/preview by HighLevel — do not quote a maturity label.
+- HighLevel published **no** deprecation guidance for the OAuth renames, and no version has a
+  retirement date.
+- No MCP rate limits are published.
+
+---
+
 ## [v6.8.0] - 2026-08-03 — v3 promoted to a first-class generation, verified by live probe
 
 ### Added

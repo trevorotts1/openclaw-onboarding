@@ -3,11 +3,16 @@
 Base URL: `https://services.leadconnectorhq.com`
 Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-07-28`
 
-> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
-> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
-> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
-> both; `store` declares no Version parameter. Never apply one value across all calls.
-> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
+> **Version is per-OPERATION, and FIVE versions are supported concurrently** — `v3`
+> (June 11, 2026), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`, every one
+> "Supported until: **TBD**". An older supported version is NOT a defect; only a blanket
+> "one value for everything" rule is.
+> `2021-07-28` is the pre-v3 default (32 of 41 specs exclusively, 33 accept it). The ONLY
+> apps on `2021-04-15` are: agent-studio, calendars, conversation-ai, conversations,
+> knowledge-base, saas-api, voice-ai. `links` accepts both; `store` declares none.
+> Full rule + v3 capability: `references/api-generations.md`.
+> Sources: `https://marketplace.gohighlevel.com/docs/Versioning/` and the per-app specs
+> (verified 2026-08-03). ⚠ The spec repo lags the live docs — check the docs site first.
 
 ---
 
@@ -23,27 +28,42 @@ Returns all pipelines with their stages. Each pipeline has `id`, `name`, `stages
 
 Each stage has: `id`, `name`, `position`
 
-### Get One Pipeline by ID — live, but undocumented
-```
-GET /opportunities/pipelines/{pipelineId}
-Scopes: opportunities.readonly
-Query: locationId (required)
-```
-Returns `{"pipeline": {...}, "traceId": "..."}`.
+### Pipeline CRUD — LIVE under `Version: v3`
 
-> **PROVEN LIVE 2026-08-03** by read-only GET against an operator-owned sub-account:
-> returns **200** under both `Version: 2021-07-28` and `Version: v3`. This endpoint is
-> **absent from both the v2 and v3 published specs** — the spec lists only
-> `GET /opportunities/pipelines`. It is real anyway. Use it, but be aware HighLevel has not
-> committed to it in writing.
->
-> **The pipeline WRITE operations** (`POST /opportunities/pipelines`,
-> `PUT`/`DELETE /opportunities/pipelines/{pipelineId}`) were announced in HighLevel's
-> changelog on 2026-06-26 and are likewise absent from both published specs. They were
-> **not** probed — this audit was strictly read-only, and no write call is made against
-> GoHighLevel for verification. **Confirm with a single controlled call before building on
-> them.** A corroborating signal that they are real: the 2026-06-15 changelog added a
-> `pipelines.create` scope enum to the `/users/*` endpoints.
+All four operations are documented on HighLevel's live docs site. They are absent from the
+OpenAPI spec files only because that repo lags (announced 2026-06-26; specs last synced
+2026-05-01 and 2026-06-19).
+
+```
+POST   /opportunities/pipelines                 Version: v3
+GET    /opportunities/pipelines/{pipelineId}    Version: v3   (also answers under 2021-07-28)
+PUT    /opportunities/pipelines/{pipelineId}    Version: v3
+DELETE /opportunities/pipelines/{pipelineId}    Version: v3
+```
+Scopes: `opportunities.readonly` / `opportunities.write`.
+
+**Create** — `https://marketplace.gohighlevel.com/docs/ghl/opportunities/create-pipeline`
+Requires at least one stage. Pipeline names must be unique per location (case-insensitive);
+stage names unique within the pipeline. For manual win probability set
+`useOpportunityProbability: true` **and** give every stage a `stageWinProbability` (0–100) —
+if any stage is missing one, the system silently falls back to auto-computed probabilities
+based on stage position.
+
+**Update** — `.../docs/ghl/opportunities/update-pipeline/index.html`
+⚠ The `stages` array is a **complete replacement**, not a patch:
+- include a stage's `id` to keep it
+- omit `id` to create a new stage
+- **omit a stage entirely and it is deleted**
+- you cannot remove all stages
+- opportunities in a deleted stage move to the lowest-ranked remaining stage
+
+**Delete** — `.../docs/ghl/opportunities/delete-pipeline/index.html`
+🔴 **Permanently deletes the pipeline AND every opportunity in it, across every stage.
+Irreversible.** Export or migrate first. Treat as a TREVOR-ONLY action.
+
+> **PROVEN live 2026-08-03:** `GET /opportunities/pipelines/{pipelineId}` returns 200 under
+> both `2021-07-28` and `v3`. The three write operations were **not** probed — this audit
+> made no write calls against GoHighLevel. Make one controlled test call before automating.
 
 ---
 

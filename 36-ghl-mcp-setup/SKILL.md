@@ -60,6 +60,11 @@ original endpoint does.
   "36 tools" as a fact — verify live with `tools/list` if a count matters.
 - The dual-`Accept` rule (item 8 below) is documented for the **original** endpoint.
   Do not assume it transfers to the v2 orchestrator unverified.
+- **HighLevel publishes NO rate limits for either MCP endpoint.** The 100/10s + 200,000/day
+  figures are the REST API's. Do not quote them as MCP limits; assume the shared backend
+  bucket applies and probe before bulk work.
+- HighLevel publishes no GA/beta/preview label for `v3` or for the orchestrator. It says
+  "live today" and "recommended" — quote that, not "GA".
 
 **Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
 

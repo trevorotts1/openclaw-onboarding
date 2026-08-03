@@ -2,13 +2,15 @@
 
 Base URL for all endpoints: `https://services.leadconnectorhq.com`
 
-**41 published v2 app specs, 576 operations, 118 spec-declared scopes.** A second
+**41 published pre-v3 app specs, 576 operations.** Scopes: 118 in the pre-v3 specs, 127 in v3, **142 across all sources** (see `references/auth.md`). A second
 generation — **42 v3 specs, `Version: v3`** — shipped 2026-06-19; see `references/auth.md`
 → "The v3 generation". Endpoint counts and scope names below are read out of the specs at
 `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03),
 not estimated.
 
-> **Version header is per-app.** `2021-07-28` is the default. The ONLY apps on
+> **Version is per-OPERATION, and FIVE versions are supported concurrently** (`v3`,
+> `2023-02-21`, `2021-07-28`, `2021-04-15`, `legacy` — all "Supported until: TBD").
+> `2021-07-28` is the pre-v3 default. The ONLY apps on
 > `2021-04-15` are: conversations, calendars, saas-api, voice-ai, agent-studio,
 > conversation-ai, knowledge-base. `links` accepts both; `store` declares none.
 > Full rule: `references/auth.md` → "Version Header".
@@ -59,7 +61,7 @@ Search and manage conversations. Send SMS, email, WhatsApp, and other message ty
 
 ---
 
-### calendars (41 endpoints) — `2021-04-15`
+### calendars (41 pre-v3 endpoints; **59 in v3**) — `2021-04-15` / `v3`
 Manage calendars and appointments. Get free slots. Create/update bookings. Manage blocked times, groups, resources and schedules.
 
 **Top endpoints:**
@@ -75,6 +77,12 @@ Manage calendars and appointments. Get free slots. Create/update bookings. Manag
 
 **Scopes:** `calendars.readonly`, `calendars.write`, `calendars/events.readonly`, `calendars/events.write`, `calendars/groups.readonly`, `calendars/groups.write`, `calendars/resources.readonly`, `calendars/resources.write`
 **Full detail:** `references/calendars.md`
+
+> **v3 adds an entire Services / booking-catalog surface (41 → 59 ops)** — the largest single
+> capability addition in v3. Requires `Version: v3` (calendars-v3 is `v3` on all 59 ops):
+> `GET,POST,PUT,DELETE /calendars/services/catalog[/{serviceId}]`,
+> `.../services/bookings[/{bookingId}]`, `.../services/locations[/{serviceLocationId}]`,
+> `GET,POST,PUT /calendars/schedules/event-calendar/{calendarId}`.
 
 ---
 
@@ -110,7 +118,11 @@ Pipeline and deal management. Create, update, search, and delete opportunities.
 - `GET /opportunities/{id}` - Get opportunity by ID
 - `POST,DELETE /opportunities/{id}/followers` - Manage followers
 
-> **Pipeline CRUD:** `POST /opportunities/pipelines` and `GET/PUT/DELETE /opportunities/pipelines/{pipelineId}` were announced in HighLevel's changelog (2026-06-26) but are **absent from both the v2 and v3 published specs** as of 2026-08-03 — probe live before use.
+> **Pipeline CRUD is LIVE under `Version: v3`** — `POST /opportunities/pipelines`,
+> `GET/PUT/DELETE /opportunities/pipelines/{pipelineId}`. Documented on HighLevel's live docs
+> site; absent from the spec files only because the repo lags. Update replaces the whole
+> `stages` array; delete is an **irreversible cascade** that removes every opportunity in the
+> pipeline. See `references/opportunities.md`.
 
 **Scopes:** `opportunities.readonly`, `opportunities.write`
 **Full detail:** `references/opportunities.md`
@@ -119,12 +131,16 @@ Pipeline and deal management. Create, update, search, and delete opportunities.
 
 ## AI Modules
 
-### ad-manager / ad-publishing (94 endpoints) — `2021-07-28`
+### ad-manager / ad-publishing (94 endpoints; 95 in v3) — `2021-07-28`
 The largest single surface in the API. Facebook, Google and LinkedIn campaigns, adsets, ads, custom audiences, pixels, lead forms, reporting, targeting search, keyword ideas.
 
 **Key endpoints:** `PUT /ad-publishing/facebook/campaigns`, `POST /ad-publishing/facebook/campaigns/{campaignId}/publish|pause|resume|duplicate`, `PUT /ad-publishing/facebook/adsets`, `PUT /ad-publishing/facebook/ads-v2`, `GET /ad-publishing/facebook/reporting`, `GET,POST /ad-publishing/facebook/page/{pageId}/forms`, `PUT /ad-publishing/google/ads`, `POST /ad-publishing/google/keyword-ideas`, `PUT /ad-publishing/linkedin/ads`
 **Scopes:** `adPublishing.readonly`, `adPublishing.write`
 **Full detail:** `references/ad-publishing.md`
+
+> **Version is per-operation here.** `ad-publishing-v3` has 95 ops of which **94 still
+> declare `2021-07-28`** — only `GET /ad-publishing/facebook/campaigns/{campaignId}/publishing-progress`
+> is `v3`. Do not assume the v3 file means `Version: v3`.
 
 ---
 
@@ -203,14 +219,19 @@ Orders, transactions, subscriptions, coupons, integrations and custom payment pr
 
 ---
 
-### saas-api (22 endpoints) — `2021-04-15`
+### saas-api (22 endpoints) — `2023-02-21`
 SaaS reseller operations. Manage sub-accounts at scale, rebilling, pause/unpause.
 
-> **Version is `2021-04-15`, not `2023-02-21`.** `saas-api.json` publishes exactly one enum for all 22 SaaS operations. Older fleet docs teaching `2023-02-21` are wrong — see `references/auth.md` → "Known-wrong Version values".
+> **Use `2023-02-21`.** HighLevel publishes a full SaaS documentation set under it and it is
+> a supported version; PROVEN live 2026-08-03. `saas-api.json` says `2021-04-15`, but that
+> file was last synced **2025-08-13** — the stalest in the spec repo. The deliberate forward
+> move is `v3`.
+> **Deprecated/current split:** the live SaaS docs publish two parallel sets; eleven endpoints
+> exist in both a `-deprecated` and a current form. Check which your URL maps to.
 > **Unpause:** there is no documented resume endpoint, but `POST /saas/pause/{locationId}` takes a `paused` boolean in the body, so sending `"paused": false` is the obvious unpause candidate — **untested; verify before relying on it.**
 > v3 adds `POST /saas/allow-attach-rebilling/{locationId}` and moves the wallet-balance endpoints into the spec (25 ops).
 
-**Scopes:** `saas/location.read`, `saas/location.write`, `saas/company.write`
+**Scopes:** `saas/location.read`, `saas/location.write`, `saas/company.write` (v3 adds `saas/company.read`)
 
 ---
 
@@ -278,7 +299,7 @@ Media library management. Upload and retrieve media files.
 User/team member management within a location.
 
 **Key endpoints:** `GET,POST /users/`, `GET /users/search`, `POST /users/search/filter-by-email`, `DELETE,GET,PUT /users/{userId}`
-> `POST /users/` uses `2021-07-28`. Older fleet docs teaching `2023-02-21` for this call are wrong.
+> `POST /users/` is documented under **both** `2023-02-21` and `2021-07-28`. Both work. Skill 44 uses `2023-02-21`; neither is a defect.
 > In v3, `GET /users/` is removed — use `GET /users/search`.
 
 **Scopes:** `users.readonly`, `users.write`
