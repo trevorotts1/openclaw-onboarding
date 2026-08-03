@@ -761,6 +761,86 @@ else
   fail "14-MUT: the historical path did not set marker+ceiling — 14b/14c prove nothing"
 fi
 
+# ---------------------------------------------------------------------------
+# (16) NEVER_TO_OWNER_EVEN_WITH_NO_OPERATOR_CHAT
+# The operator escalation chat is OPT-IN and is empty by default on a stock box, so
+# "prefer operator, else owner" silently degrades straight back into "send to the
+# client". With NO operator chat configured and an ownerChat present, a belt must
+# send NOTHING rather than fall through to the client.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (16) NEVER_TO_OWNER: with NO operator chat configured, internal traffic must go nowhere ---"
+
+# Same as _runbox but with the operator chat deliberately UNSET.
+_runbox_no_operator() {
+  local h="$1" script="$2"; shift 2
+  env -i \
+    PATH="$h/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+    HOME="$h" \
+    TMPDIR="${TMPDIR:-/tmp}" \
+    FAKE_OC_JOBS_FILE="$h/jobs.json" \
+    FAKE_OC_CALLS_FILE="$h/calls.log" \
+    "$@" \
+    bash "$script" >"$h/run.out" 2>&1
+  return 0
+}
+
+BOX16="$(_mkbox box16 "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+_runbox_no_operator "$BOX16" "$BOX16/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+if grep -E "^message send .*-t 111222333" "$BOX16/calls.log" >/dev/null 2>&1; then
+  fail "16a: with no operator chat the resume lane fell back to the OWNER chat — the client receives internal build text"
+else
+  pass "16a: resume lane sent NOTHING rather than falling back to the client"
+fi
+if grep -q "SKIPPING the internal self-ping rather than sending it to the client" \
+     "$BOX16/.openclaw/workspace/.workforce-build-state.log" 2>/dev/null; then
+  pass "16b: the skip is logged loudly with the remedy (configure the operator chat)"
+else
+  fail "16b: the lane went quiet without explaining why nothing was sent"
+fi
+
+# Same rule for the interview build-kick.
+if [[ -f "$UPD" && -f "$LIBRL" ]]; then
+  BOX16B="$(_mkupdbox box16b "$STATE_REOPENED" pass)"
+  env -i PATH="$BOX16B/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$BOX16B" \
+    TMPDIR="${TMPDIR:-/tmp}" FAKE_OC_JOBS_FILE="$BOX16B/jobs.json" \
+    FAKE_OC_CALLS_FILE="$BOX16B/calls.log" \
+    bash "$BOX16B/.openclaw/skills/23-ai-workforce-blueprint/scripts/update-interview-state.sh" \
+      --complete --phase 6 --question-number 30 --asked-by tester >"$BOX16B/run.out" 2>&1
+  if grep -E "^message send .*-t 111222333" "$BOX16B/calls.log" >/dev/null 2>&1; then
+    fail "16c: with no operator chat the build kick fell back to the OWNER chat"
+  else
+    pass "16c: build kick sent NOTHING rather than falling back to the client"
+  fi
+fi
+
+echo ""
+echo "--- (16-MUT) MUTATION PROOF: an owner-chat fallback would reach the client ---"
+BOX16M="$(_mkbox box16m "$STATE_ALL_DONE_SOP_FAILED" "alpha bravo charlie")"
+MUT16="$BOX16M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+_mutate "$MUT16" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+old = 'TARGET_CHAT="$(resolve_operator_chat_id)"\n'
+new = ('TARGET_CHAT="$(resolve_operator_chat_id)"\n'
+       '[[ -z "$TARGET_CHAT" ]] && TARGET_CHAT="$owner_chat"\n')
+if old not in src:
+    sys.exit(1)
+open(path, "w").write(src.replace(old, new, 1))
+PYEOF
+mut16_rc=$?
+if (( mut16_rc != 0 )); then
+  fail "16-MUT: could not reinstate the owner fallback — cannot prove 16a discriminates"
+else
+  _runbox_no_operator "$BOX16M" "$MUT16"
+  if grep -E "^message send .*-t 111222333" "$BOX16M/calls.log" >/dev/null 2>&1; then
+    pass "16-MUT: the reinstated fallback DOES deliver internal text to the client chat — 16a is a real, non-vacuous check"
+  else
+    fail "16-MUT: the reinstated fallback sent nothing — 16a proves nothing"
+  fi
+fi
+
 fi  # FUNCTIONAL
 
 # ---------------------------------------------------------------------------
