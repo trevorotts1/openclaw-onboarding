@@ -5,41 +5,60 @@ name: ghl-mcp-supervised-guard
 # because a bare `nohup node …` died on teardown and an unpinned PORT bound a
 # random port (main.js reads PORT before MCP_SERVER_PORT).
 # v12.24.0 / fix/ghl-mcp-supervised-autostart
+#
+# v21.5.0 (fix/ghl-mcp-installer-hardening): also fails the build if the
+# INSTALL-TIME invariants regress — an unpinned/floating third-party checkout,
+# a missing GHL_TOOL_PROFILE (the 858-tool default), an unconditional KeepAlive
+# (bad-token relaunch loop), a dist/ deleted before a successful build, a
+# missing liveness probe, or a re-registered Tier 2 MCP. The 2026-08-02/03
+# outage was NOT a supervision failure: every box stayed supervised, listening
+# and "healthy" while answering nothing for two days.
 
 on:
   push:
     paths:
+      - config/ghl-mcp-pin.env
       - scripts/ghl-mcp-autostart.sh
+      - scripts/ghl-mcp-probe.sh
       - scripts/qc-assert-ghl-mcp-supervised.sh
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
       - tests/unit/ghl-mcp-supervised.test.sh
+      - tests/unit/ghl-mcp-probe.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
   pull_request:
     paths:
+      - config/ghl-mcp-pin.env
       - scripts/ghl-mcp-autostart.sh
+      - scripts/ghl-mcp-probe.sh
       - scripts/qc-assert-ghl-mcp-supervised.sh
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
       - tests/unit/ghl-mcp-supervised.test.sh
+      - tests/unit/ghl-mcp-probe.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
 
 jobs:
   ghl-mcp-supervised-guard:
-    name: GHL MCP supervision regression guard
+    name: GHL MCP supervision + install regression guard
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Syntax-check the autostart + gate scripts
+      - name: Syntax-check the autostart + probe + gate scripts
         run: |
           for f in \
             scripts/ghl-mcp-autostart.sh \
+            scripts/ghl-mcp-probe.sh \
             scripts/qc-assert-ghl-mcp-supervised.sh \
             platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh; do
             bash -n "$f"
           done
 
-      - name: Run GHL MCP supervision invariant gate (must pass)
+      - name: Pin must be a full 40-char vetted commit (never a branch or short SHA)
+        run: |
+          grep -qE '^GHL_MCP_VETTED_COMMIT="[0-9a-f]{40}"' config/ghl-mcp-pin.env
+
+      - name: Run GHL MCP supervision + install invariant gate (must pass)
         run: |
           chmod +x scripts/qc-assert-ghl-mcp-supervised.sh
           bash scripts/qc-assert-ghl-mcp-supervised.sh
@@ -48,3 +67,8 @@ jobs:
         run: |
           chmod +x tests/unit/ghl-mcp-supervised.test.sh
           bash tests/unit/ghl-mcp-supervised.test.sh
+
+      - name: Run GHL MCP liveness-probe unit test (detects alive-but-deaf)
+        run: |
+          chmod +x tests/unit/ghl-mcp-probe.test.sh
+          bash tests/unit/ghl-mcp-probe.test.sh

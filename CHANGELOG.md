@@ -297,6 +297,72 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.5.0]  -  2026-08-03  -  GHL MCP installer hardening: pinned, profiled, crash-only, build-verified, liveness-probed
+
+### Why
+The 2026-08-01/02 fleet stall (every agent init blocking 30s) was not a
+supervision failure — every box stayed supervised, listening and "healthy" while
+answering nothing. `scripts/ghl-mcp-autostart.sh` floated on upstream `main`,
+rebuilt only when `dist/` was missing, never set `GHL_TOOL_PROFILE` (858-tool
+default), re-registered the Tier 2 MCP that skill 36 deliberately de-registers,
+and had no check that could ever fail while the process was alive.
+
+### What changed
+- `config/ghl-mcp-pin.env` (NEW) — single source of truth for the vetted
+  third-party commit (full 40-char SHA, with vetting provenance), tool profile,
+  port and probe timeout.
+- `scripts/ghl-mcp-autostart.sh` — pinned checkout (no `git pull`, no shallow
+  clone), `git archive` build in a temp dir with an artifact assertion and an
+  atomic dist swap, `GHL_TOOL_PROFILE` in every launch surface, crash-only
+  restart via a generated credential-preflight launcher, JSON-RPC liveness
+  verification, periodic probe installation, and Tier 2 de-registration.
+- `platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh` — same five
+  fixes for the VPS/pm2 path; `--health` now asserts a JSON-RPC response.
+- `scripts/ghl-mcp-probe.sh` (NEW) + `tests/unit/ghl-mcp-probe.test.sh` (NEW).
+- Log rotation for the MCP logs (copytruncate at start + every probe run, 10 MB /
+  keep 3, with newsyslog / pm2-logrotate / logrotate layered on best-effort).
+  Nothing had ever rotated them: 5.4 MB on the operator box, 2.2 MB on a second
+  fleet box.
+- `ThrottleInterval` 10 → 300 (the canonical crash-only shape already verified on
+  a fleet box).
+- `scripts/qc-assert-ghl-mcp-supervised.sh` — CHECKS 3-9 (pin, profile,
+  crash-only, build hygiene, probe present, Tier 2 unregistered, log rotation).
+  It fails on the pre-patch scripts with 20 violations and passes on the
+  patched ones.
+- `tests/unit/ghl-mcp-supervised.test.sh` — 13 cases (was 4).
+- `.github/workflows/ghl-mcp-supervised-guard.yml` — new paths + the pin-shape
+  check + the probe test.
+- `update-skills.sh` — `wire_ghl_mcp` no longer registers `ghl-community-mcp`
+  (it de-registers a legacy entry) and no longer short-circuits on "already
+  registered", which had been skipping the autostart on every box where Tier 1
+  `ghl-mcp` was registered — i.e. an update pass never repaired a down or deaf
+  Tier 2 server.
+- `install.sh` Step 14a — reports the new honest STATUS states (`DEAF`,
+  `TOKEN_REJECTED`, `PIN_MISMATCH`).
+- Skill 36 → v1.3.0 (`INSTALL.md`, `qc-ghl-mcp-setup.sh`, `CHANGELOG.md`).
+
+### Supply-chain vetting gate: CLOSED, verdict CLEAN
+`GHL_MCP_PIN_VETTED_VERDICT="CLEAN"` is recorded in `config/ghl-mcp-pin.env` for
+the pinned commit `bfc2bbe`, dated 2026-08-03. The review covered the four things
+that could make a third-party MCP dangerous and all four came back negative: the
+credential layer is byte-identical to the previously trusted tree, no new
+outbound hosts are contacted, all 245 generated endpoints build relative paths
+against the configured API base, and the dependency graph is unchanged. The gate
+remains a gate for the NEXT pin — any change to `GHL_MCP_VETTED_COMMIT` must
+reset the three `GHL_MCP_PIN_VETTED_*` fields to `PENDING` until re-vetted.
+
+### Tool profile
+Default stays `curated` and is parameterised per box (precedence: caller
+`GHL_TOOL_PROFILE` env > `config/ghl-mcp-pin.env` > built-in fallback), so a box
+that needs the classic `ghl_*` surface can be moved to `stable` without a repo
+change. Measured on the operator box 2026-08-03: `curated` exposes 43 `crm_*`
+tools and does NOT include `ghl_list_products`; the fleet roll should measure
+actual tool usage per box before any profile change is made permanent.
+
+### Risk
+Bounded. First run after merge rebuilds the community MCP from the pinned commit
+in a temp dir; a failed build leaves the running `dist/` untouched.
+
 ## [v21.4.59]  -  2026-08-03  -  G3 fixup: roll repo version markers past the U024 persona-governance wiring commit
 
 **Version-marker-only, no functional change.** `0830562a` (U024 — wire

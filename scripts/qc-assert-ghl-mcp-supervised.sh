@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
-# qc-assert-ghl-mcp-supervised.sh — v12.24.0
+# qc-assert-ghl-mcp-supervised.sh — v21.5.0
 #
 # STATIC QC INVARIANT: enforces that the GHL Community MCP (Tier 2, skill 36) is
 # configured for PROPER, REBOOT-SURVIVING, PORT-PINNED supervision on a FRESH
 # install — so the fleet incident (12/19 boxes down/unsupervised) can NEVER ship
 # again. This is the single-source-of-truth logic; scripts/qc-system-integrity.sh
 # CHECK X.12 delegates to it.
+#
+# v21.5.0 adds the five INSTALL-TIME invariants that the 2026-08-02/03 outage
+# proved were missing (CHECKS 3-8 below). Supervision alone was never enough:
+# every box was supervised the whole time it was deaf.
 #
 # THE TWO ROOT CAUSES this gate forbids from ever shipping:
 #
@@ -211,10 +215,218 @@ else
   fi
 fi
 
+# ──────────────────────────────────────────────────────────────────────────────
+# v21.5.0 INSTALL-TIME INVARIANTS (CHECKS 3-8)
+#
+# The 2026-08-02/03 outage was NOT a supervision failure: every box stayed
+# supervised, listening and "healthy" for two days while answering nothing.
+# These checks forbid the five installer diseases that produced it.
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Executable lines only (strip full-line and inline comments), so a script that
+# DOCUMENTS a forbidden pattern in prose does not trip its own gate.
+#
+# NOTE: these deliberately capture into a variable and match with a HERESTRING
+# instead of piping `sed | grep -q`. Under this script's `set -o pipefail`, a
+# `grep -q` that matches early closes the pipe, `sed` dies of SIGPIPE (141), and
+# pipefail returns that failure — so a pattern that IS present in a large file
+# reads as ABSENT. That false-negative would silently disable every check below.
+code_lines() { sed 's/#.*$//' "$1" 2>/dev/null; }
+code_has()   { local _out; _out="$(code_lines "$1")"; grep -qE "$2" <<< "$_out"; }
+code_has_f() { local _out; _out="$(code_lines "$1")"; grep -qF "$2" <<< "$_out"; }
+
+PIN_FILE="$(find_first \
+  "$REPO_ROOT/config/ghl-mcp-pin.env" \
+  "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
+  "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" || true)"
+
+SCRIPTS_TO_CHECK=""
+[ -n "${AUTOSTART:-}" ] && SCRIPTS_TO_CHECK="$AUTOSTART"
+[ -n "${VPS_START:-}" ] && SCRIPTS_TO_CHECK="$SCRIPTS_TO_CHECK $VPS_START"
+
+# ── CHECK 3: SUPPLY-CHAIN PIN (D-pin) ─────────────────────────────────────────
+# The executed autostart used to `git pull --ff-only` / clone `--depth 1` and run
+# whatever `main` pointed at. Upstream force-pushes rewritten history, so a
+# floating checkout is not reproducible and is not reviewable.
+if [ -z "$SCRIPTS_TO_CHECK" ]; then
+  _info "no autostart scripts present — skipping pin/profile/build invariants."
+else
+  if [ -z "${PIN_FILE:-}" ]; then
+    _fail "config/ghl-mcp-pin.env is missing — there is no single source of truth for the vetted community-MCP commit."
+    FAILURES=$((FAILURES+1))
+  elif grep -qE '^GHL_MCP_VETTED_COMMIT="[0-9a-f]{40}"' "$PIN_FILE"; then
+    _pass "pin config declares a FULL 40-char vetted commit ($(basename "$PIN_FILE"))"
+  else
+    _fail "config/ghl-mcp-pin.env does not declare GHL_MCP_VETTED_COMMIT as a full 40-char SHA (a short SHA or branch name is not a pin)."
+    FAILURES=$((FAILURES+1))
+  fi
+
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "GHL_MCP_VETTED_COMMIT"; then
+      _pass "$b pins the checkout to GHL_MCP_VETTED_COMMIT"
+    else
+      _fail "$b does not pin the community-MCP checkout to GHL_MCP_VETTED_COMMIT (floating HEAD = supply-chain roulette)."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has "$f" 'git .*pull'; then
+      _fail "$b runs 'git pull' on the third-party MCP — that is a floating checkout; check out the pinned commit instead."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b never 'git pull's the third-party MCP"
+    fi
+    if code_has "$f" 'git clone[^|]*--depth'; then
+      _fail "$b clones with --depth (a shallow clone frequently cannot resolve the pinned SHA)."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b does not shallow-clone (pinned SHA stays resolvable)"
+    fi
+  done
+
+  # ── CHECK 4: TOOL PROFILE PINNED IN EVERY LAUNCH SURFACE (D2) ──────────────
+  # Upstream default GHL_TOOL_PROFILE=full serves the whole 858-tool catalogue.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "GHL_TOOL_PROFILE"; then
+      _pass "$b sets GHL_TOOL_PROFILE explicitly (never the 858-tool default)"
+    else
+      _fail "$b does not set GHL_TOOL_PROFILE — the server will serve the FULL 858-tool surface."
+      FAILURES=$((FAILURES+1))
+    fi
+  done
+  if [ -n "${AUTOSTART:-}" ]; then
+    if code_has_f "$AUTOSTART" "<key>GHL_TOOL_PROFILE</key>" && code_has_f "$AUTOSTART" "GHL_TOOL_PROFILE:"; then
+      _pass "autostart pins the tool profile in BOTH the launchd plist and the pm2 ecosystem"
+    else
+      _fail "ghl-mcp-autostart.sh must set GHL_TOOL_PROFILE in EVERY launch surface (launchd plist AND pm2 ecosystem AND systemd AND the server .env)."
+      FAILURES=$((FAILURES+1))
+    fi
+  fi
+
+  # ── CHECK 5: CRASH-ONLY RESTART SEMANTICS (D3) ─────────────────────────────
+  # main.js exits 1 on a bad PIT at boot. An unconditional restart policy turns a
+  # rotated token into a 10s relaunch loop that burns the box.
+  if [ -n "${AUTOSTART:-}" ]; then
+    if code_has_f "$AUTOSTART" "<key>KeepAlive</key><true/>"; then
+      _fail "ghl-mcp-autostart.sh writes an UNCONDITIONAL launchd KeepAlive=true — use the crash-only dict (SuccessfulExit=false / Crashed=true)."
+      FAILURES=$((FAILURES+1))
+    elif code_has_f "$AUTOSTART" "<key>SuccessfulExit</key><false/>"; then
+      _pass "Mac restart policy is CRASH-ONLY (KeepAlive dict, SuccessfulExit=false)"
+    else
+      _fail "ghl-mcp-autostart.sh launchd plist has no crash-only KeepAlive dict (SuccessfulExit=false)."
+      FAILURES=$((FAILURES+1))
+    fi
+  fi
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "stop_exit_codes"; then
+      _pass "$b pm2 config sets stop_exit_codes (a clean exit is not restarted)"
+    else
+      _fail "$b pm2 config does not set stop_exit_codes: [0] — a bad-token clean exit would relaunch forever."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has_f "$f" "Restart=always"; then
+      _fail "$b systemd unit uses Restart=always — use Restart=on-failure (crash-only)."
+      FAILURES=$((FAILURES+1))
+    fi
+  done
+
+  # ── CHECK 6: BUILD HYGIENE (D1 + D4) ───────────────────────────────────────
+  # Upstream's build rm -rf's dist BEFORE compiling and walks every .ts under
+  # src/ (including orphaned node_modules), so a failed build leaves a broken
+  # partial dist. Build a `git archive` of the pinned commit in a temp dir and
+  # swap dist/ only after verifying the artifact.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "git -C"  && code_has_f "$f" "archive"; then
+      _pass "$b builds from a 'git archive' of the pinned commit (immune to working-tree junk)"
+    else
+      _fail "$b does not build from a 'git archive' of the pinned commit — a dirty working tree can break the build."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has "$f" 'rm -rf [^;]*/dist("|'"'"'|[[:space:]]|$)'; then
+      _fail "$b deletes dist/ outright — never rm -rf dist before a SUCCESSFUL build (that is how a failed build leaves a box with no server at all)."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b never rm -rf's dist/ before a successful build"
+    fi
+    if code_has_f "$f" "connect(transport)"; then
+      _pass "$b asserts the built artifact contains the MCP transport wiring (stale-dist deafness guard)"
+    else
+      _fail "$b does not verify the built dist/main.js contains 'connect(transport)' — a stale compiled dist would ship again."
+      FAILURES=$((FAILURES+1))
+    fi
+  done
+
+  # ── CHECK 7: LIVENESS PROBE EXISTS AND ASSERTS A RESPONSE (D5) ─────────────
+  PROBE="$(find_first \
+    "$SELF_DIR/ghl-mcp-probe.sh" \
+    "$HOME/.openclaw/skills/scripts/ghl-mcp-probe.sh" \
+    "/data/.openclaw/skills/scripts/ghl-mcp-probe.sh" || true)"
+  if [ -z "${PROBE:-}" ]; then
+    _fail "scripts/ghl-mcp-probe.sh is missing — nothing asserts that the MCP ANSWERS (KeepAlive cannot detect alive-but-deaf)."
+    FAILURES=$((FAILURES+1))
+  else
+    if grep -qF '"method":"initialize"' "$PROBE" && grep -qF 'serverInfo' "$PROBE"; then
+      _pass "ghl-mcp-probe.sh POSTs a JSON-RPC initialize and requires a serverInfo response"
+    else
+      _fail "ghl-mcp-probe.sh does not assert a JSON-RPC response (a GET /health is served even by a deaf server)."
+      FAILURES=$((FAILURES+1))
+    fi
+    if [ -n "${AUTOSTART:-}" ]; then
+      if code_has_f "$AUTOSTART" "ghl-mcp-probe.sh"; then
+        _pass "autostart wires the liveness probe (post-install + periodic)"
+      else
+        _fail "ghl-mcp-autostart.sh does not wire ghl-mcp-probe.sh — the deaf-server state would go undetected again."
+        FAILURES=$((FAILURES+1))
+      fi
+    fi
+  fi
+
+  # ── CHECK 9: LOG ROTATION (fleet gap, 2026-08-03) ──────────────────────────
+  # Nothing in the fleet ever rotated this server's logs: 5.4 MB of
+  # ghl-mcp/stderr.log on the operator box and 2.2 MB on a second fleet box,
+  # both growing since May. Rotation MUST be copytruncate-style: the supervisor
+  # holds an open
+  # fd, so renaming the file leaves the server writing to an orphaned inode.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "GHL_MCP_LOG_MAX_BYTES"; then
+      _pass "$b caps + rotates the MCP logs (GHL_MCP_LOG_MAX_BYTES)"
+    else
+      _fail "$b does not rotate the MCP logs — ghl-mcp stderr.log grows without bound (5.4 MB observed fleet-side)."
+      FAILURES=$((FAILURES+1))
+    fi
+  done
+  if [ -n "${AUTOSTART:-}" ]; then
+    if code_has_f "$AUTOSTART" "<key>GHL_MCP_LOG_DIR</key>"; then
+      _pass "autostart passes the log dir into the launchd service definition"
+    else
+      _fail "ghl-mcp-autostart.sh does not pass GHL_MCP_LOG_DIR into the launchd plist — the launcher cannot rotate what it cannot find."
+      FAILURES=$((FAILURES+1))
+    fi
+  fi
+
+  # ── CHECK 8: TIER 2 STAYS ON-DEMAND (D2) ──────────────────────────────────
+  # skill 36 v1.1.0 doctrine + qc-ghl-mcp-setup.sh Section D + 36/wire.sh M2 all
+  # require ghl-community-mcp to be ABSENT from mcp.servers. The autostart used
+  # to re-register it seconds after wire.sh removed it, putting the whole tool
+  # catalogue back into every agent init and making every init pay the full
+  # connectionTimeoutMs whenever the server was down or deaf.
+  if [ -n "${AUTOSTART:-}" ]; then
+    if code_has "$AUTOSTART" 'openclaw mcp set +ghl-community-mcp'; then
+      _fail "ghl-mcp-autostart.sh REGISTERS ghl-community-mcp in mcp.servers — Tier 2 is on-demand curl (skill 36 v1.1.0); registration contradicts wire.sh M2 and qc-ghl-mcp-setup.sh Section D."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "autostart leaves Tier 2 unregistered (on-demand curl, no per-init tool-catalogue tax)"
+    fi
+  fi
+fi
+
 # ── Verdict ───────────────────────────────────────────────────────────────────
 if [ "$FAILURES" -gt 0 ]; then
-  _fail "$FAILURES GHL-MCP supervision invariant(s) violated — a fresh install could ship an unsupervised / random-port GHL MCP."
+  _fail "$FAILURES GHL-MCP install/supervision invariant(s) violated — a fresh install could ship an unsupervised, unpinned, 858-tool, deaf or crash-looping GHL MCP."
   exit 1
 fi
-_pass "GHL MCP supervision standard holds (proper supervisor, reboot-surviving, PORT pinned)."
+_pass "GHL MCP install + supervision standard holds (supervised, reboot-surviving, PORT pinned, commit pinned, profile pinned, crash-only, build-verified, liveness-probed)."
 exit 0

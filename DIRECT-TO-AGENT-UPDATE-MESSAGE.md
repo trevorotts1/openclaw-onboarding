@@ -1,5 +1,5 @@
 # Direct-to-Agent Update Message Template
-# Version 3.0 | 2026-07-31 (v21.4.45)
+# Version 3.0 | 2026-07-31 (v21.5.0)
 #
 # Copy-paste this to any client's agent on Telegram via Skill 15 (BlackCEO Management).
 # Kept in sync with `version` at repo root.
@@ -13,7 +13,7 @@
 
 ---
 
-There is an update available for your OpenClaw / BlackCEO system. The latest version is **v21.4.59**.
+There is an update available for your OpenClaw / BlackCEO system. The latest version is **v21.5.0**.
 
 Run exactly this command. Do not read a playbook, do not improvise, do not summarise:
 

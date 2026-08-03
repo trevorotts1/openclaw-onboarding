@@ -4,6 +4,107 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.3.0] - 2026-08-03 — Installer hardening: pinned + profiled + crash-only + build-verified + liveness-probed (fleet outage 2026-08-01/02)
+
+### Why
+For two days every agent init on the fleet blocked the full 30s
+`connectionTimeoutMs` against a GHL community MCP that was UP. The compiled
+`dist/main.js` on the boxes predated upstream's `await server.connect(transport)`
+— the socket accepted the connection and the MCP handshake was answered by
+nobody. Nothing detected it: launchd/pm2 watch the PROCESS (alive), `lsof`
+watches the SOCKET (open), and `GET /health` is served by express BEFORE the MCP
+transport is wired, so a deaf server cheerfully returns
+`{"status":"healthy","tools":N}`. Five installer defects produced and hid it.
+
+### Fixed
+- **D1 — stale-dist deafness.** `scripts/ghl-mcp-autostart.sh` used to
+  `git pull --ff-only` and then build ONLY when `dist/main.js` was ABSENT, so a
+  pull that advanced the source left the old compiled dist in place forever.
+  Rebuild is now keyed to the pinned commit + a `.ghl-mcp-build.json` stamp + a
+  literal artifact assertion (`dist/main.js` MUST contain `connect(transport)`).
+- **D2 — 858 tools in every init.** The server's default `GHL_TOOL_PROFILE` is
+  `full` (`src/tool-registry.ts:509`). `GHL_TOOL_PROFILE` is now set explicitly
+  in EVERY launch surface (launchd plist, pm2 ecosystem, systemd unit, the
+  server `.env`, the fallback supervisor loop), defaulting to `curated`
+  (43 tools measured live). Additionally the autostart no longer REGISTERS
+  `ghl-community-mcp` in `mcp.servers` — it had been re-registering the server
+  seconds after `wire.sh` migration M2 removed it, contradicting the skill's own
+  on-demand-curl doctrine and `qc-ghl-mcp-setup.sh` Section D, and putting the
+  whole tool catalogue back into every session's init.
+- **D3 — latent 10s crash loop.** `main.js` calls `process.exit(1)` when GHL
+  rejects the PIT at boot, so any unconditional restart policy turns a rotated
+  token into an endless relaunch. A generated `.ghl-mcp-launch.sh` wrapper now
+  does a bounded credential preflight and exits CLEANLY (0) on a 401/403;
+  restart policy is crash-only everywhere (launchd `KeepAlive` dict with
+  `SuccessfulExit=false` + `Crashed=true`, pm2 `stop_exit_codes:[0]`, systemd
+  `Restart=on-failure` + `StartLimitBurst`, and the fallback loop breaks on 0).
+  `ThrottleInterval` raised 10 → **300**, matching the canonical crash-only
+  plist shape already verified on a fleet box.
+- **D4 — build crash from orphaned `node_modules` in `src/`.** Upstream's
+  `scripts/build-server.mjs` `rmSync(dist)` FIRST and then transpiles every `.ts`
+  found by walking `src/` recursively, so a `node_modules` tree that ever landed
+  under `src/` (the operator box had `src/ui/react-app/node_modules`) fails the
+  build AFTER dist was deleted. Builds now run against a `git archive` of the
+  pinned commit in a temp dir and swap into `dist/` only after the artifact
+  verifies; the previous dist is kept as `dist.bak-prev`. Any orphaned
+  `src/**/node_modules` in the working tree is quarantined.
+- **D5 — no liveness proof.** New `scripts/ghl-mcp-probe.sh` POSTs a real
+  JSON-RPC `initialize` to `/mcp` and requires a `serverInfo` response within N
+  seconds (exit 3 = DEAF). It runs post-install and every 15 minutes
+  (`com.clawd.ghl-mcp-probe` on Mac, `*/15` cron on VPS), self-heals once, and
+  reports through the repo's existing signed Command Center helper — operator
+  visibility only, never a client channel.
+
+### Added
+- **Log rotation — the sixth gap.** Nothing in the fleet had ever rotated this
+  server's logs: `~/Library/Logs/ghl-mcp/stderr.log` was 5.4 MB on the operator
+  box and 2.2 MB on a second fleet box, both growing since May. The generated
+  `.ghl-mcp-launch.sh` now copytruncates the MCP logs at every (re)start and
+  `ghl-mcp-probe.sh` repeats it every 15 minutes, so a process that stays up for
+  months is covered too. Rotation is copytruncate (copy, then truncate IN PLACE)
+  because launchd/pm2 hold an open fd — renaming would leave the server writing
+  to an orphaned inode and the visible log frozen. Best-effort platform rotation
+  is layered on top when it needs no interactive sudo: `newsyslog.d` on Mac,
+  `pm2-logrotate` + `/etc/logrotate.d/ghl-mcp` on VPS, plus the documented
+  Docker `json-file` `max-size`/`max-file` cap. Defaults: 10 MB, keep 3.
+- `config/ghl-mcp-pin.env` — ONE source of truth for the vetted commit, the tool
+  profile, the port, the probe timeout and the log-rotation caps. The pin must be a FULL 40-char SHA;
+  the installer refuses to build or start otherwise. It carries the
+  `GHL_MCP_PIN_VETTED_*` provenance fields that gate a fleet roll.
+- `scripts/ghl-mcp-probe.sh`, `tests/unit/ghl-mcp-probe.test.sh` (six cases
+  against stub servers, including the exact deaf-but-healthy signature).
+
+### Changed
+- `INSTALL.md` §5.2/§5.3/§5.5/§5.6, Action 6 and "Done When" now document the
+  pinned archive build, the tool profile, crash-only supervision and the
+  JSON-RPC liveness test. The old "`/tools` returns >= 500" expectation is
+  replaced by a profile-aware band — a correctly configured `curated` box serves
+  ~43 tools, and the old check would have flagged that as broken while a
+  mis-set `full` box passed.
+- `qc-ghl-mcp-setup.sh` — Section 0 gains offline regression locks (pin file
+  shape, no `git pull`, plist profile, crash-only KeepAlive, artifact
+  assertion, probe present); Section D gains the JSON-RPC liveness assert, the
+  profile-band assert and a crash-only plist assert. The SK1-69 lock now tracks
+  `GHL_MCP_VETTED_COMMIT`.
+
+### Supply-chain vetting gate: CLOSED, verdict CLEAN
+The pinned commit `bfc2bbe` was security-vetted on 2026-08-03 and recorded
+`GHL_MCP_PIN_VETTED_VERDICT="CLEAN"` in `config/ghl-mcp-pin.env`: credential
+layer byte-identical to the previously trusted tree, no new outbound hosts, all
+245 generated endpoints verified to build relative paths against the configured
+API base, dependency graph unchanged. The gate stays a gate for the next pin —
+changing `GHL_MCP_VETTED_COMMIT` must reset the `GHL_MCP_PIN_VETTED_*` fields to
+`PENDING` until the new commit is re-vetted.
+
+### Risk
+Low-to-moderate and bounded. The rebuild is triggered on the first run after
+merge for every box whose build stamp does not match the pin; it happens in a
+temp dir, and a failed build leaves the running `dist/` untouched. Boxes with a
+bad PIT will now deliberately NOT run the server (instead of crash-looping) and
+say so in the STATUS line.
+
+---
+
 ## [v1.2.15] - 2026-07-12 — P3-08 QC-fix: RULE 6 Tier-4 no longer routes to a missing file — the gated builder is now IMPLEMENTED
 
 ### Changed
