@@ -62,6 +62,7 @@ def process_company(company_root: Path, workspace_root: Path, dry_run: bool = Fa
         "role_files_written": 0,
         "ceo_created_or_augmented": False,
     }
+    workspace_root = company_root  # symlinks resolve here
 
     # 1. Master Orchestrator (CEO) — lives at company root
     ceo_path = company_root / "master-orchestrator"
