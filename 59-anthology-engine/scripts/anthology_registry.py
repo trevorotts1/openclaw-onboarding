@@ -75,6 +75,7 @@ import argparse
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -156,13 +157,67 @@ def default_state_dir() -> Path:
     return Path(home) / ".anthology-engine" / "state"
 
 
-def _env_first(names):
-    """First present, non-empty env value among `names`. Returns (name, value)
-    or (None, None). NEVER prints the value (doctrine: SET / NOT SET only)."""
+# ---------------------------------------------------------------------------
+# Canonical env-store fallback (live process env first, then the three
+# canonical client .env stores). This is the same store list caf_credential_gate
+# uses so every adapter resolves credentials the SAME way, even when the
+# adapter is invoked directly (not through the provision script). A value is
+# NEVER printed (doctrine: SET / NOT SET only).
+# ---------------------------------------------------------------------------
+_CANONICAL_STORE_PATHS = (
+    "~/.openclaw/secrets/.env",
+    "~/.openclaw/workspace/.env",
+    "~/clawd/secrets/.env",
+)
+
+_ENV_LABEL_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _dotenv_parse(path):
+    out = {}
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        return out
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        if not _ENV_LABEL_RE.match(key):
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        out[key] = val
+    return out
+
+
+def _env_first(names, environ=None):
+    """First present, non-empty env value among `names` across the live
+    process env and (when unset) the three canonical client .env stores.
+    Returns (name, value) or (None, None). NEVER prints the value.
+    The canonical-store fallback applies ONLY when resolving against the
+    live process env (environ is None). An explicit environ dict -- used by
+    self-tests to simulate an empty credential environment -- must never see
+    the stores."""
+    env = environ if environ is not None else os.environ
     for n in names:
-        v = os.environ.get(n, "")
+        v = env.get(n, "")
         if v and v.strip():
             return n, v.strip()
+    if environ is None:
+        for store_spec in _CANONICAL_STORE_PATHS:
+            store_env = _dotenv_parse(Path(store_spec).expanduser())
+            for n in names:
+                v = store_env.get(n, "")
+                if v and v.strip():
+                    return n, v.strip()
     return None, None
 
 
@@ -418,9 +473,10 @@ def _firebase_token_url(api_key: str) -> str:
     return FIREBASE_TOKEN_URL_TEMPLATE % api_key
 
 
-def resolve_firebase_refresh_token():
-    """(label, token) or (None, None), first non-empty wins. NEVER printed."""
-    return _env_first(FIREBASE_REFRESH_LABELS)
+def resolve_firebase_refresh_token(environ=None):
+    """(label, token) or (None, None), first non-empty wins. NEVER printed.
+    An explicit environ (self-tests) blocks the canonical-store fallback."""
+    return _env_first(FIREBASE_REFRESH_LABELS, environ)
 
 
 class InternalRailUnavailable(Exception):
@@ -1533,9 +1589,14 @@ def self_test() -> int:
     assert _auth_denial_kind(b"") == "blocked"
 
     # -- GK-09: Firebase refresh-token alias resolution (SET/NOT-SET only) --
+    # The FIRST assertion passes an explicit empty environ so the canonical-store
+    # fallback is BLOCKED (the store holds ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN on
+    # this box; the assertion must prove true absence, not store leakage). The
+    # subsequent assertions resolve from the LIVE process env, which the test
+    # populates explicitly -- no store involved, live env is authoritative.
     _fb_saved = {n: os.environ.pop(n, None) for n in FIREBASE_REFRESH_LABELS}
     try:
-        assert resolve_firebase_refresh_token() == (None, None)
+        assert resolve_firebase_refresh_token(environ={}) == (None, None)
         os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "rt-legacy"
         assert resolve_firebase_refresh_token() == ("GHL_FIREBASE_REFRESH_TOKEN", "rt-legacy")
         os.environ["ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN"] = "rt-canonical"

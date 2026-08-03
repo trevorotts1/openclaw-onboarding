@@ -58,6 +58,7 @@ import hashlib
 import hmac
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -237,14 +238,68 @@ def release_slug_for(spec, action, door, committed):
 # --------------------------------------------------------------------------- #
 # Small shared utilities (byte-for-byte the sibling conventions).
 # --------------------------------------------------------------------------- #
-def _env_first(names):
-    """First present, non-empty env value among `names`. Returns (name, value) or
-    (None, None). NEVER prints the value (doctrine: SET / NOT SET only). Mirrors
-    anthology_state.py._env_first so credential resolution is uniform."""
+# --------------------------------------------------------------------------- #
+# Canonical env-store fallback (live process env first, then the three
+# canonical client .env stores). This is the same store list caf_credential_gate
+# uses so every adapter resolves credentials the SAME way, even when the
+# adapter is invoked directly (not through the provision script). A value is
+# NEVER printed (doctrine: SET / NOT SET only).
+# --------------------------------------------------------------------------- #
+_CANONICAL_STORE_PATHS = (
+    "~/.openclaw/secrets/.env",
+    "~/.openclaw/workspace/.env",
+    "~/clawd/secrets/.env",
+)
+
+_ENV_LABEL_RE_GATE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+
+def _dotenv_parse(path):
+    out = {}
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except (OSError, IOError):
+        return out
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.lower().startswith("export "):
+            line = line[7:].lstrip()
+        if "=" not in line:
+            continue
+        key, val = line.split("=", 1)
+        key = key.strip()
+        if not _ENV_LABEL_RE_GATE.match(key):
+            continue
+        val = val.strip()
+        if len(val) >= 2 and val[0] == val[-1] and val[0] in ("'", '"'):
+            val = val[1:-1]
+        out[key] = val
+    return out
+
+
+def _env_first(names, environ=None):
+    """First present, non-empty env value among `names` across the live
+    process env and (when unset) the three canonical client .env stores.
+    Returns (name, value) or (None, None). NEVER prints the value (doctrine:
+    SET / NOT SET only). Mirrors anthology_state.py._env_first so credential
+    resolution is uniform. The canonical-store fallback applies ONLY when
+    resolving against the live process env (environ is None); an explicit
+    environ (self-tests simulating an empty credential environment) never
+    sees the stores."""
+    env = environ if environ is not None else os.environ
     for n in names:
-        v = os.environ.get(n, "")
+        v = env.get(n, "")
         if v and v.strip():
             return n, v.strip()
+    if environ is None:
+        for store_spec in _CANONICAL_STORE_PATHS:
+            store_env = _dotenv_parse(Path(store_spec).expanduser())
+            for n in names:
+                v = store_env.get(n, "")
+                if v and v.strip():
+                    return n, v.strip()
     return None, None
 
 
