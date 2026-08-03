@@ -1,0 +1,112 @@
+name: workforce-build-pipeline-guard
+
+# Fails the build if the interview -> build -> closeout pipeline regresses back into
+# a SILENT STRAND. Every check here exists because a client finished their interview
+# and then heard nothing for days:
+#
+#   * an agent-written top-level `.status=done` must not be treated as terminal while
+#     the delivery contract is open, because honoring it self-removed the ONLY
+#     autonomous-recovery layer in the pipeline;
+#   * the closeout watchdog must raise a stuck class for a box whose departments are
+#     all done but whose libraries never closed (it used to report "all clear" every
+#     6h through the entire stall), and must notice when the recovery cron is gone;
+#   * "complete" must be treated as the contract word "done";
+#   * a QC verdict the completion gate already accepted must not be rejected by the
+#     build lanes;
+#   * internal build/resume traffic must not be delivered to the client's own chat;
+#   * a successful outbound send must not be counted as a triggered agent turn.
+#
+# The unit tests wired here are FUNCTIONAL: they run the scripts against hermetic
+# fixtures and assert on behavior, and each assertion is paired with a mutation proof
+# that reverts only that fix and confirms the old behavior returns.
+
+on:
+  push:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
+      - 23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh
+      - scripts/ensure-pipeline-crons.sh
+      - tests/unit/bounded-workforce-build-resume.test.sh
+      - tests/unit/closeout-watchdog-stuck-classes.test.sh
+      - tests/fixtures/fake-openclaw-cron.py
+      - .github/workflows/workforce-build-pipeline-guard.yml
+  pull_request:
+    paths:
+      - 23-ai-workforce-blueprint/scripts/resume-workforce-build.sh
+      - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
+      - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
+      - 23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh
+      - scripts/ensure-pipeline-crons.sh
+      - tests/unit/bounded-workforce-build-resume.test.sh
+      - tests/unit/closeout-watchdog-stuck-classes.test.sh
+      - tests/fixtures/fake-openclaw-cron.py
+      - .github/workflows/workforce-build-pipeline-guard.yml
+
+jobs:
+  workforce-build-pipeline-guard:
+    name: Interview -> build -> closeout pipeline guard (no silent strands)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Syntax-check the pipeline scripts (bash -n)
+        run: |
+          set -euo pipefail
+          for f in \
+            23-ai-workforce-blueprint/scripts/resume-workforce-build.sh \
+            23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh \
+            23-ai-workforce-blueprint/scripts/update-interview-state.sh; do
+            bash -n "$f"
+            echo "bash -n OK: $f"
+          done
+
+      - name: Resume-cron guard (belt contract, vocabulary, QC eligibility, routing, send-is-not-a-turn)
+        run: |
+          chmod +x tests/unit/bounded-workforce-build-resume.test.sh
+          bash tests/unit/bounded-workforce-build-resume.test.sh
+
+      - name: Closeout-watchdog guard (blind-spot classes + recovery-lane detection)
+        run: |
+          chmod +x tests/unit/closeout-watchdog-stuck-classes.test.sh
+          bash tests/unit/closeout-watchdog-stuck-classes.test.sh
+
+      - name: Role-workspace root must never collapse onto the company root
+        # A stale branch merged un-rebased re-introduces `workspace_root = company_root`
+        # in the role-workspace builder, which lands dangling role symlinks on every
+        # box the next roll touches. Assert the defect is absent on THIS head, so an
+        # un-rebased merge cannot carry it back in fleet-wide.
+        #
+        # NOTE: grep exits 1 when it finds nothing, which is this gate's SUCCESS case,
+        # so every grep here is `|| true`-guarded. Without that, `set -o pipefail`
+        # turns a clean head into a failing step (and, worse, a gate that can only
+        # ever fail is a gate nobody can read the result of).
+        run: |
+          set -euo pipefail
+          PATTERN='workspace_root[[:space:]]*=[[:space:]]*company_root'
+
+          # Non-vacuity self-test FIRST: prove the pattern can still match at all, so
+          # this gate can never silently degrade into an assertion that always passes.
+          probe="$(mktemp -d)"
+          printf 'workspace_root = company_root\n' > "$probe/probe.py"
+          if ! grep -rqn "$PATTERN" --include='*.py' "$probe"; then
+            echo "FAIL: the guard pattern no longer matches a seeded defect - this gate is BLIND."
+            rm -rf "$probe"
+            exit 1
+          fi
+          rm -rf "$probe"
+          echo "self-test: pattern detects a seeded defect (gate is live)"
+
+          hits="$(grep -rn "$PATTERN" --include='*.py' --include='*.sh' . || true)"
+          if [ -n "$hits" ]; then
+            echo "FAIL: 'workspace_root = company_root' present on this head:"
+            printf '%s\n' "$hits"
+            echo ""
+            echo "This collapses each role workspace onto the company root and lands"
+            echo "dangling role symlinks fleet-wide on the next roll. Rebase this branch"
+            echo "on origin/main instead of merging it as-is."
+            exit 1
+          fi
+          echo "PASS: no 'workspace_root = company_root' on this head"

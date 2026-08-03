@@ -383,33 +383,95 @@ fi
 # trigger that closes the HOP-1 -> HOP-2 gap.
 #
 # Guards:
-#  - Only when QC PASSED (qc_result=="pass"). A non-pass interview must NOT kick a
-#    build; the QC-resume / watchdog lanes own that case. This mirrors run-closeout.sh's
-#    hard gate so we never start a build on an unverified interview.
-#  - Idempotent: skip if departments already have non-pending entries (build already
-#    underway) so re-running --complete never double-dispatches into an active build.
+#  - Only when QC is BUILD-ELIGIBLE. v21.x GATE-CONSISTENCY FIX: eligibility is
+#    `pass` OR `needs-review`, not `pass` alone. The EVIDENCE GATE above already
+#    treats qc rc=0 (pass) and rc=2 (needs-review) as "evidence supports
+#    completion" - it writes interviewComplete=true, stamps interviewCompletedAt +
+#    buildKickRequestedAt, and the client is told they are finished. But this kick
+#    (and resume-workforce-build.sh, and run-closeout.sh) used to demand a strict
+#    `pass`, and NOTHING anywhere promotes needs-review -> pass. So a needs-review
+#    interview became a permanent silent strand: completion says yes, every build
+#    lane says no, forever, with no client-visible signal. The gates now agree; the
+#    QC notes ride along as advisory in .interviewQc for the operator. `fail` and
+#    `pending` still block - the evidence gate above already refuses those (exit 87).
+#  - Idempotent WITHOUT suppressing real kicks. v21.x KICK-SUPPRESSION FIX: the old
+#    guard was `active_depts == 0`, where active_depts counted departments whose
+#    status != "pending". Its INTENT was "do not double-dispatch into a build that is
+#    already running", but the presence of department ENTRIES is the wrong proxy for
+#    "a build is running". Observed on a real box: the interview was reopened and
+#    re-completed while a prior partial build had already left 34 department entries
+#    in the state, so active_depts=34 and the kick was NEVER dispatched - not delayed,
+#    never sent. Any client whose interview is reopened or re-run on a box that
+#    already carries departments silently gets no kick at all. That is the exact
+#    "finished the interview, then nothing happened" strand, and reopened interviews
+#    are common (the state schema even carries interviewReopenedAt/ReopenReason).
+#    The kick is now suppressed only by ACTUAL build/run state:
+#      (a) the build genuinely finished AND the closeout is terminal, or
+#      (b) a resume/build turn is already IN FLIGHT - detected via the SAME durable
+#          overlap marker resume-workforce-build.sh stamps on every dispatch
+#          (.workforce-build-resume.inflight), which is the real "a turn is running"
+#          signal and TTL-expires so a dead turn still recovers.
 #  - Best-effort, never fatal: if openclaw CLI is absent, the resume cron (every 15m)
 #    is the recovery net and will dispatch the same self-ping on its next fire.
 if [ "$COMPLETE" = true ]; then
   qc_for_kick=$(jq -r '.interviewQc.status // "pending"' "$STATE" 2>/dev/null || echo "pending")
-  active_depts=$(jq -r '[.departments[]? | select(.status != "pending")] | length' "$STATE" 2>/dev/null || echo 0)
-  if [ "$qc_for_kick" = "pass" ] && [ "${active_depts:-0}" = "0" ]; then
+  qc_kick_eligible=false
+  case "$qc_for_kick" in pass|needs-review) qc_kick_eligible=true ;; esac
+
+  kick_blocked_reason=""
+  build_done_for_kick=$(jq -r '.buildCompletedAt // empty' "$STATE" 2>/dev/null || true)
+  closeout_for_kick=$(jq -r '.closeoutStatus // empty' "$STATE" 2>/dev/null || true)
+  if [ -n "$build_done_for_kick" ] && [ "$build_done_for_kick" != "null" ]; then
+    case "$closeout_for_kick" in
+      done|sent)
+        kick_blocked_reason="build already complete (buildCompletedAt=$build_done_for_kick) and closeout is terminal (closeoutStatus=$closeout_for_kick) - nothing to kick"
+        ;;
+    esac
+  fi
+  if [ -z "$kick_blocked_reason" ]; then
+    KICK_INFLIGHT_MARKER="$STATE_DIR/.workforce-build-resume.inflight"
+    if [ -f "$KICK_INFLIGHT_MARKER" ]; then
+      _kick_if_mtime=$(stat -c %Y "$KICK_INFLIGHT_MARKER" 2>/dev/null || stat -f %m "$KICK_INFLIGHT_MARKER" 2>/dev/null || echo 0)
+      _kick_if_ttl_min="${WORKFORCE_RESUME_INFLIGHT_TTL_MINUTES:-20}"
+      case "$_kick_if_ttl_min" in ''|*[!0-9]*) _kick_if_ttl_min=20 ;; esac
+      [ "$_kick_if_ttl_min" -lt 5 ] 2>/dev/null && _kick_if_ttl_min=5
+      _kick_if_age=$(( $(date -u +%s) - _kick_if_mtime ))
+      if [ "$_kick_if_age" -lt $(( _kick_if_ttl_min * 60 )) ]; then
+        kick_blocked_reason="a resume/build turn is already IN FLIGHT (overlap marker ${_kick_if_age}s old, TTL ${_kick_if_ttl_min}m) - not stacking a second turn"
+      fi
+    fi
+  fi
+
+  if [ "$qc_kick_eligible" = true ] && [ -z "$kick_blocked_reason" ]; then
     if command -v openclaw >/dev/null 2>&1; then
-      # Resolve a chat the bot can reply to: owner first, else operator escalation
-      # chat IF configured. CO-MINGLING GUARD (v12.4.0): NO hardcoded personal
-      # chat — if neither owner nor a configured operator chat is available, skip
-      # the build-kick send (the resume cron's in-process exec still drives it).
-      KICK_CHAT=$(jq -r '.ownerChat // empty' "$STATE" 2>/dev/null || true)
+      # Resolve a chat the bot can reply to.
+      #
+      # v21.x CLIENT-LEAK FIX: this used to try .ownerChat FIRST. KICK_MSG below is
+      # INTERNAL — it literally ends with "Do NOT message the owner - this is an
+      # internal build kick" — and `openclaw message send --channel telegram -t
+      # <chat>` DELIVERS to that chat. Owner-first therefore delivered our internal
+      # build-kick instructions straight into the client's own Telegram thread, at
+      # the exact moment they finished their interview.
+      #
+      # Operator escalation chat is now FIRST. .ownerChat remains a last-resort
+      # fallback only, because on a box with no operator chat configured it is the
+      # only route that reaches the agent at all, and dropping the kick there would
+      # trade a visible leak for another silent strand. The fallback logs LOUDLY.
+      # CO-MINGLING GUARD (v12.4.0): NO hardcoded personal chat.
+      KICK_CHAT="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+      case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="" ;; esac
+      if [ -z "$KICK_CHAT" ]; then
+        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
+        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ;; esac
+      fi
       if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
-        KICK_CHAT="$(openclaw config get env.vars.OPERATOR_ESCALATION_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-        case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="" ;; esac
-        if [ -z "$KICK_CHAT" ]; then
-          KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
-          case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ;; esac
+        KICK_CHAT=$(jq -r '.ownerChat // empty' "$STATE" 2>/dev/null || true)
+        if [ -n "$KICK_CHAT" ] && [ "$KICK_CHAT" != "null" ]; then
+          echo "WARN: no operator escalation chat configured - falling back to the OWNER chat for an INTERNAL build kick. The owner will see internal build text. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to stop this." >&2
         fi
       fi
       KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
-      KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate passed. Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
       if [ -z "$KICK_CHAT" ]; then
         echo "INFO: no owner chat and no operator escalation chat configured - build-kick send skipped (resume cron will drive the build in-process within 15m)" >&2
       elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
@@ -420,10 +482,10 @@ if [ "$COMPLETE" = true ]; then
     else
       echo "INFO: openclaw CLI not on PATH - build-kick deferred to resume cron (interviewComplete + gate fields are seeded; cron will dispatch)" >&2
     fi
-  elif [ "$qc_for_kick" != "pass" ]; then
-    echo "INFO: build NOT kicked - interviewQc.status=$qc_for_kick (not pass). QC-resume/watchdog lanes own this; build kicks only on a passing interview." >&2
+  elif [ "$qc_kick_eligible" != true ]; then
+    echo "INFO: build NOT kicked - interviewQc.status=$qc_for_kick is not build-eligible (eligible: pass|needs-review). QC-resume/watchdog lanes own this." >&2
   else
-    echo "INFO: build already underway (active departments present) - skipping build-kick to avoid double-dispatch" >&2
+    echo "INFO: build-kick skipped - $kick_blocked_reason" >&2
   fi
 fi
 
