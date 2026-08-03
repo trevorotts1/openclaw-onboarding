@@ -531,6 +531,44 @@ Binding on this document and on everything the skill ever produces:
   misreporting any check is an absolute failure. Genuine input limitations are noted plainly,
   never faked into a pass.
 
+## The two-show model (binding; fleet-wide)
+
+Every client runs TWO shows under BlackCEO's SINGLE Podbean host account, one channel per
+show. This is the fleet-wide convention, not a per-client exception:
+
+- The PERSONAL show carries the client's solo episodes and runs mode personal
+  (personal_podcast_style, default preset solo). Episodes this mode produces publish to the
+  client's personal-show channel.
+- The INTERVIEW show is the guest system (the SHUA lead-generation lane) and runs mode
+  interview_style_podcast (default preset interview). Episodes this mode produces publish to
+  the client's interview-show channel.
+
+Channel selection by mode, stated once: personal resolves the client's personal-show channel;
+interview resolves the client's interview-show channel. The payload's podcast_id carries the
+channel selected by mode, and every downstream consumer (env resolution on the client box,
+the operator's roster, the n8n publish and standing gates) keys on that value exactly as Step
+15 describes. Modes/personal.md and modes/interview.md each name the show and channel their
+mode targets; SKILL.md is the authority when they drift.
+
+Env convention: PODBEAN_PODCAST_ID holds the DEFAULT channel (the one the publish-proxy
+trigger uses when no explicit channel is resolved), and each additional show gets its own
+PODBEAN_PODCAST_ID_<SHOW_SLUG> variable, where SHOW_SLUG is the show name in upper snake
+case, for example PODBEAN_PODCAST_ID_SOFT_GIRL_ERA for the interview show. The engine
+resolves the variable whose show matches the episode's mode and never publishes a personal
+episode to the interview channel or the reverse; a mode-to-channel mismatch is a provisioning
+defect to fix, never something the engine works around.
+
+Roster convention: the good-standing roster podcast_publish_roster (table id UWjpksxU2b6TjKow)
+holds ONE ROW PER SHOW. Both of a client's rows carry the SAME identity tuple (email plus
+last_name, the exact tuple the publish gate matches on) and good_standing=YES, and they differ
+only by podbean_channel_id. A client with a single row remains fully supported: the gates
+select the row whose podbean_channel_id matches the payload's podcast_id, and fall back to
+the first matched row when no channel match exists (channel-preference with legacy
+fallback). That fallback preserves single-row client behavior EXACTLY and is what the n8n
+gates implement; it never weakens the fail-closed semantics: identity must match, standing
+must be YES, and a non-matching identity still refuses with exactly "you are not in good
+standing".
+
 ## Per-client credentials (labels and locations only, never values)
 
 These are the NAMED CLIENT's OWN accounts (the ONE exception is the Podbean OAuth app, which is
@@ -575,7 +613,11 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
   OAuth app client_id/client_secret is the separate thing named above, vaulted
   only inside the operator's n8n and never placed on any client box. Conflating
   the two is the exact trap: the client's only Podbean value, ever, stays the
-  Channel ID above. Both-or-neither still holds for the pair (a lone URL or a
+  Channel ID above (per the two-show model above, a client box carries one such
+  channel id per show: PODBEAN_PODCAST_ID for the default show plus one
+  PODBEAN_PODCAST_ID_<SHOW_SLUG> variable per additional show, for example
+  PODBEAN_PODCAST_ID_SOFT_GIRL_ERA; channel ids are never secrets). Both-or-neither
+  still holds for the pair (a lone URL or a
   lone token is refused, never half-seeded). A client box that cannot be reached
   to provision this pair is a tunnel or connectivity problem to fix - never a
   reason to hand the token to a human as a workaround.
