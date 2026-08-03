@@ -225,6 +225,51 @@ report_interview_not_complete() {
   log "interview-report: reported '${detail}' to operator (throttled ${REPORT_THROTTLE_HOURS}h)"
 }
 
+# ---- STATUS VOCABULARY NORMALIZER (the ONE normalization point) ----
+# The contract word is "done": resume-prompt.txt says "done", and EVERY counter in
+# this file, in closeout-readiness-watchdog.sh and in run-closeout.sh compares
+# `== "done"`. Agents routinely write "complete" instead. Observed on a box where
+# every one of its 34 departments sat at status:"complete": each checker counted
+# done=0, so the library gate never armed, HOP-4 could never stamp buildCompletedAt,
+# and the build could not cross into the closeout - silently, forever.
+#
+# The alternative fix - teaching a dozen scattered jq filters to also accept
+# "complete" - drifts the instant somebody adds a thirteenth counter. Instead we
+# normalize ONCE, here, BEFORE any consumer reads the state: synonyms are rewritten
+# to the contract word in the state file itself, so every downstream reader (this
+# script, the watchdog, the closeout, the Command Center) sees a single vocabulary.
+#
+# Idempotent and cheap: it writes only when a value actually changed. Runs before
+# the BELT because the BELT is the first state reader. The write is atomic
+# (mktemp + mv), matching the other pre-lock state writes in this file.
+normalize_status_vocabulary() {
+  command -v jq >/dev/null 2>&1 || return 0
+  [[ -f "$STATE_FILE" ]] || return 0
+  local _tmp
+  _tmp=$(mktemp) || return 0
+  if jq '
+        def norm: if . == "complete" or . == "completed" then "done" else . end;
+        (.status? | strings) |= norm
+        | (.roleLibraryStatus? | strings) |= norm
+        | (.sopLibraryStatus? | strings) |= norm
+        | (.commsAutomationStatus? | strings) |= norm
+        | (.closeoutStatus? | strings) |= norm
+        | (.departments? | arrays) |= map(
+            if type == "object" then ((.status? | strings) |= norm) else . end
+          )
+      ' "$STATE_FILE" > "$_tmp" 2>/dev/null && [[ -s "$_tmp" ]]; then
+    if cmp -s "$_tmp" "$STATE_FILE"; then
+      rm -f "$_tmp"
+    else
+      mv "$_tmp" "$STATE_FILE"
+      log "VOCAB-NORMALIZE: rewrote 'complete'/'completed' status value(s) to the contract word 'done' (departments and/or the library/comms/closeout/top-level status fields). Every counter in this pipeline compares == \"done\"; the synonym made them all read zero."
+    fi
+  else
+    rm -f "$_tmp"
+  fi
+}
+normalize_status_vocabulary
+
 # ---- v10.14.36: BELT - explicit self-stop on terminal state ----
 # v10.15.26 / v10.16.25 HARD FLOOR: a terminal state in the build-state JSON
 # (status=done / closeoutStatus=done|sent) is NO LONGER trusted as proof on its
@@ -236,13 +281,44 @@ report_interview_not_complete() {
 # the build to instantiate the missing mandatory/vertical departments. Only a
 # terminal JSON state that ALSO passes the on-disk floor (or genuinely has no
 # workforce / explicit declines) is allowed to self-remove the cron.
+#
+# v21.x CONTRACT GUARD (THE KILLER, fixed): a top-level `.status` of done/complete
+# is NOT, on its own, proof that the delivery contract closed - and it never was.
+# NO script in this repository writes a top-level `.status="done"`; agents improvise
+# it, and they have written it while `sopLibraryStatus`/`roleLibraryStatus` were
+# still `failed` and `buildCompletedAt` was empty. The old code honored that word
+# (guarded ONLY by the on-disk department floor) and self-removed the cron minutes
+# after an interview completed - killing the [LIBRARY-RESUME] repair lane AND HOP-4
+# (the buildCompletedAt writer, below) permanently, on a box whose libraries had
+# failed. The build then sat forever with no autonomous recovery layer, which is
+# exactly the "client finishes the interview and hears nothing for days" strand.
+# It is also stable against a roll: even when ensure-pipeline-crons.sh re-registers
+# the cron, the old belt removed it again on the next fire.
+#
+# The contract closes on ONE signal only: `closeoutStatus` in done|sent - the
+# terminal state a SCRIPT owns (37-zhc-closeout/scripts/run-closeout.sh), not one an
+# agent can improvise. `failed` remains an explicit operator stop and still
+# self-removes. The on-disk department-floor guard below is UNCHANGED and still
+# applies on top of this.
 if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   _build_status=$(jq -r '.status // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _closeout_status=$(jq -r '.closeoutStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
   _build_completed_at=$(jq -r '.buildCompletedAt // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  _role_lib_belt=$(jq -r '.roleLibraryStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  _sop_lib_belt=$(jq -r '.sopLibraryStatus // ""' "$STATE_FILE" 2>/dev/null || echo "")
+  _contract_open_reason=""
   case "$_build_status" in
     done|complete)
-      _terminal=1 ;;
+      # Honor the agent-written word ONLY when the script-owned closeout agrees.
+      case "$_closeout_status" in
+        done|sent)
+          _terminal=1 ;;
+        *)
+          _terminal=0
+          _contract_open_reason="build .status='$_build_status' but closeoutStatus='${_closeout_status:-unset}' (not done|sent), buildCompletedAt='${_build_completed_at:-unset}', roleLibraryStatus='${_role_lib_belt:-unset}', sopLibraryStatus='${_sop_lib_belt:-unset}'"
+          ;;
+      esac
+      ;;
     failed)
       _terminal=1 ;;
     *)
@@ -250,7 +326,7 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
   esac
   if (( _terminal == 0 )) && [[ -n "$_build_completed_at" ]]; then
     case "$_closeout_status" in
-      done|sent) _terminal=1 ;;
+      done|sent) _terminal=1; _contract_open_reason="" ;;
     esac
   fi
   if (( _terminal == 1 )); then
@@ -272,6 +348,8 @@ if [[ -f "$STATE_FILE" ]] && command -v jq >/dev/null 2>&1; then
       self_remove_cron "terminal-state"
       exit 0
     fi
+  elif [[ -n "$_contract_open_reason" ]]; then
+    log "BELT: REFUSING to treat this build as terminal - $_contract_open_reason. No script in this pipeline writes a top-level .status of done/complete (an agent did); the delivery contract closes ONLY on closeoutStatus=done|sent. Keeping the resume cron ALIVE and falling through so the [LIBRARY-RESUME] repair lane and the HOP-4 buildCompletedAt writer keep driving this build to completion."
   fi
 fi
 
@@ -517,11 +595,25 @@ fi
 
 # ---- PRD-2.15 (v12.3.12): QC-aware resume gate ----
 # interviewComplete=true is necessary but not sufficient. The interviewQc gate
-# must also be pass before build/closeout can proceed. If QC is pending (not yet
-# run), try to run it inline. If it is fail|needs-review, fire a [QC-RESUME]
-# self-ping and let the watchdog raise STUCK_QC_FAILED if it persists.
+# must also be BUILD-ELIGIBLE before build/closeout can proceed. If QC is pending
+# (not yet run), try to run it inline. If it is not build-eligible, fire a
+# [QC-RESUME] self-ping and let the watchdog raise STUCK_QC_FAILED if it persists.
+#
+# v21.x GATE-CONSISTENCY FIX (the `needs-review` dead-end): build eligibility is
+# `pass` OR `needs-review`, not `pass` alone. update-interview-state.sh's evidence
+# gate ALREADY rules that qc rc=0 (pass) and rc=2 (needs-review) both mean "the
+# evidence supports completion" - it writes interviewComplete=true, stamps
+# interviewCompletedAt + buildKickRequestedAt, and tells the client they are
+# finished. But this lane (and the build-kick, and run-closeout.sh) demanded a
+# strict `pass`, and NOTHING anywhere ever promotes needs-review -> pass. The two
+# gates disagreed, so a needs-review interview became a permanent, silent terminal
+# strand: completion says yes, every build lane says no, forever, with no
+# client-visible signal. Making the gates agree is the fix; the QC notes ride along
+# as advisory (they are already recorded in .interviewQc for the operator). `fail`
+# and `pending` still block - those are genuine "evidence does not support it".
 qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
-if [[ "$qc_status" != "pass" ]]; then
+_qc_build_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }
+if ! _qc_build_eligible "$qc_status"; then
   QC_SCRIPT="${SCRIPT_DIR}/qc-interview-completion.py"
   if [[ "$qc_status" == "pending" ]] && [[ -f "$QC_SCRIPT" ]]; then
     log "[QC-RESUME] interviewQc.status=pending - running qc-interview-completion.py --write-state --state (best-effort)"
@@ -531,15 +623,15 @@ if [[ "$qc_status" != "pass" ]]; then
     qc_status=$(jq -r '.interviewQc.status // "pending"' "$STATE_FILE" 2>/dev/null || echo "pending")
     log "[QC-RESUME] interviewQc.status after QC run: $qc_status"
   fi
-  if [[ "$qc_status" != "pass" ]]; then
-    log "[QC-RESUME] interviewQc.status=$qc_status - cannot resume build until QC passes. Firing self-ping for agent to review QC."
+  if ! _qc_build_eligible "$qc_status"; then
+    log "[QC-RESUME] interviewQc.status=$qc_status - not build-eligible (eligible: pass|needs-review). Firing self-ping for agent to review QC."
     if command -v openclaw >/dev/null 2>&1; then
       _owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE" 2>/dev/null || true)
       # Self-ping is INTERNAL (to agent, not owner). Use operator escalation path if available.
       _operator_chat=$(resolve_operator_chat_id 2>/dev/null || true)
       if [[ -n "$_operator_chat" ]]; then
         openclaw message send --channel telegram -t "$_operator_chat" \
-          -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) - build resume blocked until QC gate passes. State: $STATE_FILE" \
+          -m "⚠️ [QC-RESUME] interviewQc.status=${qc_status} on $(hostname) - build resume blocked until the QC gate is build-eligible (pass or needs-review). State: $STATE_FILE" \
           >>"$LOG_FILE" 2>&1 || true
       fi
     fi
@@ -953,16 +1045,31 @@ stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
     | .slug] | join(", ")
 ' "$STATE_FILE")
 
-# Find a chat the bot CAN reply to. Priority: owner (already paired) > operator (Remote Rescue).
-TARGET_CHAT=""
-if [[ -n "$owner_chat" && "$owner_chat" != "null" ]]; then
-  TARGET_CHAT="$owner_chat"
-else
-  TARGET_CHAT="$(resolve_operator_chat_id)"
+# Find a chat the bot CAN reply to.
+#
+# v21.x CLIENT-LEAK FIX: the priority used to be owner-FIRST. Every message
+# composed below is INTERNAL - each one literally ends with "Do NOT message the
+# owner about this - the resume is internal" - and `openclaw message send
+# --channel telegram -t <chat>` DELIVERS to that chat. Owner-first therefore meant
+# clients were receiving our internal build-repair instructions in their own
+# Telegram thread, verbatim, every time the recovery lane fired.
+#
+# Operator escalation chat is now FIRST. The owner chat is kept ONLY as a
+# last-resort fallback, because on a box with no operator chat configured it is
+# the sole route that reaches the agent at all - and stranding the build there
+# would just trade a visible leak for another silent strand. When we do fall back
+# we log it LOUDLY so the fix is to configure OPERATOR_ESCALATION_CHAT_ID (see
+# scripts/configure-operator-telegram.sh), not to accept the leak.
+TARGET_CHAT="$(resolve_operator_chat_id)"
+if [[ -z "$TARGET_CHAT" ]]; then
+  if [[ -n "$owner_chat" && "$owner_chat" != "null" ]]; then
+    TARGET_CHAT="$owner_chat"
+    log "WARN: no operator escalation chat configured - falling back to the OWNER chat for an INTERNAL resume dispatch. The owner will see internal build-repair text. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to stop this."
+  fi
 fi
 
 if [[ -z "$TARGET_CHAT" ]]; then
-  log "no usable target chat (ownerChat or operator) - cannot dispatch resume"
+  log "no usable target chat (operator or ownerChat) - cannot dispatch resume"
   exit 0
 fi
 
