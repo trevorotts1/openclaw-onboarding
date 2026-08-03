@@ -1,3 +1,11 @@
+### v0.1.16 -- warfix batch 5 (2026-08-03)
+
+Landed FIX-4 (GHL-PIT): internal-rail fallback wired into probe_write_scope/provision_pipeline;
+PIT_LABELS byte-identical (5 labels) across registry/caf_delivery/gate. Probe now reads the
+client's pipeline via the internal rail when the public GHL v2 surface is edge-blocked (HTTP 403),
+using the client's existing Firebase refresh token + the GHL Firebase web-app key restored to the
+secrets file per the original design.
+
 ### v0.1.15 -- warfix batch 4 (2026-08-02)
 
 Landed 2 more Skill 59 warfix fixes (operator-driven recovery):
