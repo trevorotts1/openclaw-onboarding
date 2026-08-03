@@ -17,7 +17,7 @@ Add this block to `~/clawd/TOOLS.md`:
 - **Base URL:** `https://services.leadconnectorhq.com`
 - **Auth:** LOCATION-scoped Private Integration Token (Bearer) — legacy API keys are DEPRECATED
 - **Credentials (canonical):** `~/.openclaw/secrets/.env` → `GOHIGHLEVEL_API_KEY` + `GOHIGHLEVEL_LOCATION_ID`
-- **Version header:** `2021-04-15` default; media uses `2021-07-28` (confirm per-endpoint)
+- **Version header:** `2021-07-28` default (33 of 41 app specs). `2021-04-15` ONLY for conversations, calendars, saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `v3` for the v3 generation. Confirm per-app — never blanket.
 
 ### Routing rule (Tier-0-first — per skill 36)
 For every GHL operation, escalate in order — do NOT start at the REST layer:
@@ -29,13 +29,14 @@ For every GHL operation, escalate in order — do NOT start at the REST layer:
 Read only the matching `references/<domain>.md` at query time. NEVER load the 430K master
 reference into context or any core file. Do not memorize endpoints — read them fresh.
 
-### Module quick-index
+### Module quick-index (op counts read from the published specs, 2026-08-03)
 - contacts (32): create/read/update/delete, tags, tasks, notes
-- conversations (19): search, send SMS/email, message history
-- calendars (34): calendars, free slots, appointments
-- opportunities (10): pipelines, create/update/search deals
+- conversations (29): search, send SMS/email, message history — `Version: 2021-04-15`
+- calendars (41): calendars, free slots, appointments — `Version: 2021-04-15`
+- opportunities (12): pipelines (read-only), create/update/search deals
 - locations (29): sub-account config, custom fields, tags
 - medias (Tier 3 only): `POST /medias/upload-file` — LOCATION PIT, Version 2021-07-28
+- AI surfaces: agent-studio (11), conversation-ai (12), knowledge-base (14), voice-ai (11) — all `Version: 2021-04-15`
 - Full module list: `~/.openclaw/skills/29-ghl-convert-and-flow/references/modules.md`
 ```
 
@@ -51,7 +52,7 @@ Add this block to `~/clawd/MEMORY.md`:
 - **Skill folder:** `~/.openclaw/skills/29-ghl-convert-and-flow/` (Tier 3 REST library)
 - **Credentials:** `~/.openclaw/secrets/.env` → `GOHIGHLEVEL_API_KEY` (LOCATION PIT) + `GOHIGHLEVEL_LOCATION_ID`
 - **Auth method:** Private Integration Token (Bearer); legacy API keys deprecated
-- **Version header:** `2021-04-15` default; media `2021-07-28`
+- **Version header:** `2021-07-28` default. `2021-04-15` ONLY for conversations, calendars, saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `v3` for v3-only surfaces.
 - **Routing:** Tier 0 CLI (skill 44) → Tier 1/2 MCP → Tier 3 references/*.md. Media is always Tier 3.
 - **Never** load the 430K master reference into context. Read one `references/<domain>.md` per task.
 - After a write, point the client to the verify table in SKILL.md "Caller Contract".

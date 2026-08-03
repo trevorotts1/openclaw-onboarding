@@ -72,7 +72,7 @@ Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP
     (public API/PIT cannot create a location).
   - ADD USER: `caf locations add-user ...` → agency PIT + PUBLIC API
     (`POST services.leadconnectorhq.com/users/`, `Authorization: Bearer <agency PIT>`,
-    `Version: 2023-02-21`). This is the proven, simpler path (how the real user was added) —
+    `Version: 2021-07-28`). This is the proven, simpler path (how the real user was added) —
     NO Firebase token / NO Chrome extension. Omit `--password` so GHL sends the invite email.
   - USER TYPE: add-user DEFAULTS to `--type account` (a SUB-ACCOUNT user scoped to
     `--location-id`; `--role admin` = admin of that sub-account ONLY). `--type agency`
@@ -126,13 +126,13 @@ Health: caf doctor
 | social | caf social accounts/post/schedule |
 | locations | caf locations get/search/tags/custom-fields/custom-values |
 | locations create (agency, write) | caf --experimental locations create [internal Firebase API; token-id; version:2021-07-28; ONLY path that creates a location; approval gate] |
-| locations add-user (agency, write) | caf locations add-user [agency PIT + PUBLIC API services.../users/; Bearer PIT; Version:2023-02-21; omit --password → invite email; defaults to a SUB-ACCOUNT user; approval gate] |
+| locations add-user (agency, write) | caf locations add-user [agency PIT + PUBLIC API services.../users/; Bearer PIT; Version:2021-07-28; omit --password → invite email; defaults to a SUB-ACCOUNT user; approval gate] |
 | workflows (read/review) | caf workflows list/get/export — Tier 0 (caf) owns workflow build/edit/review; MCP workflow tools are escalation-only (note: `review` and `triggers` engine subcommands are MVP-deferred; use `export` as the Tier-0 read for review until shipped) |
 | workflows (write) | caf workflows build/patch-email/patch-trigger/restore [Firebase token required] |
 
 Agency ops detail — TWO different auth paths, do not cross them:
 - CREATE SUB-ACCOUNT (Firebase internal): `caf --experimental locations create --name <NAME> --company-id <AGENCY_FIRESTORE_ID> [--phone --address --timezone]` → POST backend.leadconnectorhq.com/locations/ with header `token-id: <firebase-id-token>` + `version: 2021-07-28` (absent = 401). The id-token comes from the Chrome-extension Token Grabber (reads GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN from the agency-owner browser session) and is SHORT-LIVED — re-grab before writes; on TOKEN_REFRESH_FAILED, re-grab via the Token Grabber. ONLY working create-location path (public API/PIT cannot create a location). Whitelist skipped (no id yet), approval gate applies.
-- ADD USER (agency PIT + PUBLIC API): `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user|admin>` → POST services.leadconnectorhq.com/users/ with `Authorization: Bearer <agency PIT>` + `Version: 2023-02-21`. CreateUserDto: {companyId, locationIds:[<SUBACCOUNT_ID>], firstName, lastName, email, type, role, permissions}. Omit `--password` → GHL sends the invite email (user sets their own). NO Firebase token / NO Chrome extension needed. Whitelist checked against --location-id.
+- ADD USER (agency PIT + PUBLIC API): `caf locations add-user --location-id <SUBACCOUNT_ID> --company-id <AGENCY_FIRESTORE_ID> --first-name <FIRST> --last-name <LAST> --email <EMAIL> --role <user|admin>` → POST services.leadconnectorhq.com/users/ with `Authorization: Bearer <agency PIT>` + `Version: 2021-07-28`. CreateUserDto: {companyId, locationIds:[<SUBACCOUNT_ID>], firstName, lastName, email, type, role, permissions}. Omit `--password` → GHL sends the invite email (user sets their own). NO Firebase token / NO Chrome extension needed. Whitelist checked against --location-id.
 - USER TYPE: add-user DEFAULTS to `--type account` = a SUB-ACCOUNT user scoped to --location-id (`--role admin` = admin of that sub-account ONLY). `--type agency` = an AGENCY-wide user and is REFUSED unless `--i-understand-this-is-an-agency-user` is also passed. Adding a user to a client's sub-account must NEVER make them an agency user.
 - OAuth marketplace app = DEAD END (`error.noAppVersionIdFound`) — NEVER use it for either op. (PIT is a Private Integration Token, NOT OAuth.)
 - companyId is the agency FIRESTORE document id, NEVER the relationNumber.

@@ -4,7 +4,13 @@
 > Covers: invoices, invoice items, schedules, templates, orders, order fulfillments, transactions, subscriptions, coupons, custom provider integrations, payment integrations.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: `Version: 2021-07-28` (required on all calls)
+>
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 ---
 
@@ -22,12 +28,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -47,12 +53,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -73,12 +79,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -99,12 +105,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/list
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/list' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -124,12 +130,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/list'
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/number/generate
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/number/generate' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -149,12 +155,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/numbe
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/estimate/stats/last-visited-at
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PATCH 'https://services.leadconnectorhq.com/invoices/estimate/stats/last-visited-at' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -175,12 +181,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/estimate/sta
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/template' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -200,12 +206,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/template' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -226,12 +232,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/temp
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/preview
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/template/preview' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -251,12 +257,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -277,12 +283,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/templ
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/template/{templateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -302,12 +308,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/te
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/{estimateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -328,12 +334,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/estimate/{esti
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/{estimateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -353,12 +359,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/estimate/{e
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/invoice
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/invoice' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -379,12 +385,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{est
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/send
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{estimateId}/send' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -405,12 +411,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/estimate/{est
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/generate-invoice-number
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/generate-invoice-number' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -430,12 +436,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/generate-invoi
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/schedule
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -455,12 +461,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -481,12 +487,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -506,12 +512,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/schedule/{sche
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -532,12 +538,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/schedule/{sche
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -557,12 +563,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/schedule/{s
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/auto-payment
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/auto-payment' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -583,12 +589,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/cancel
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/cancel' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -609,12 +615,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/schedule
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/schedule' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -635,12 +641,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/updateAndSchedule
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{scheduleId}/updateAndSchedule' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -661,12 +667,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/schedule/{sch
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/stats/last-visited-at
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PATCH 'https://services.leadconnectorhq.com/invoices/stats/last-visited-at' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -687,12 +693,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/stats/last-v
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/template
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/template' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -712,12 +718,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/template' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/template
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/template' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -738,12 +744,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/template' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/template/{templateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -763,12 +769,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/template/{temp
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/invoices/template/{templateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -789,12 +795,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/template/{temp
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/invoices/template/{templateId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -814,12 +820,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/template/{t
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}/late-fees-configuration
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{templateId}/late-fees-configuration' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -840,12 +846,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{te
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/template/{templateId}/payment-methods-configuration
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{templateId}/payment-methods-configuration' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -866,12 +872,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/template/{te
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/text2pay
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/text2pay' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -892,12 +898,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/text2pay' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -917,12 +923,12 @@ curl --request GET 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -943,12 +949,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/invoices/{invoiceId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -968,12 +974,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/invoices/{invoiceId}
 - HTTP structure:
   - Method: PATCH
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/late-fees-configuration
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PATCH 'https://services.leadconnectorhq.com/invoices/{invoiceId}/late-fees-configuration' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -994,12 +1000,12 @@ curl --request PATCH 'https://services.leadconnectorhq.com/invoices/{invoiceId}/
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/record-payment
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/record-payment' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1020,12 +1026,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/r
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/send
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/send' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1046,12 +1052,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/s
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/invoices/{invoiceId}/void
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/void' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1075,12 +1081,12 @@ curl --request POST 'https://services.leadconnectorhq.com/invoices/{invoiceId}/v
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1100,12 +1106,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1126,12 +1132,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1152,12 +1158,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/payments/coupon
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/payments/coupon' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1177,12 +1183,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/payments/coupon' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/coupon/list
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/coupon/list' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1202,12 +1208,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/coupon/list' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/capabilities
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/payments/custom-provider/capabilities' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1228,12 +1234,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/payments/custom-provide
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/connect
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/custom-provider/connect' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1253,12 +1259,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/custom-provide
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/connect
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provider/connect' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1279,12 +1285,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/disconnect
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provider/disconnect' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1305,12 +1311,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/provider
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provider/provider' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1331,12 +1337,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/custom-provid
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/payments/custom-provider/provider
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/payments/custom-provider/provider' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1356,12 +1362,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/payments/custom-prov
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1381,12 +1387,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/integrations/p
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/integrations/provider/whitelabel' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1407,12 +1413,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/integrations/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1432,12 +1438,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/migrate-order-ps
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/orders/migrate-order-ps' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1458,12 +1464,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/migrat
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1483,12 +1489,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1508,12 +1514,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{orderId}/fulfillments' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1534,12 +1540,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{order
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/notes
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderId}/notes' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1559,12 +1565,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/orders/{orderI
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/payments/orders/{orderId}/record-payment
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{orderId}/record-payment' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -1585,12 +1591,12 @@ curl --request POST 'https://services.leadconnectorhq.com/payments/orders/{order
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/subscriptions
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1610,12 +1616,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions'
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/subscriptions/{subscriptionId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions/{subscriptionId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1635,12 +1641,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/subscriptions/
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/transactions
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/transactions' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -1660,12 +1666,12 @@ curl --request GET 'https://services.leadconnectorhq.com/payments/transactions' 
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/payments/transactions/{transactionId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/payments/transactions/{transactionId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

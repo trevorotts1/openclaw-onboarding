@@ -1,7 +1,13 @@
-# opportunities.md - Opportunities Module Reference (10 Endpoints)
+# opportunities.md - Opportunities Module Reference (12 Endpoints)
 
 Base URL: `https://services.leadconnectorhq.com`
-Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-04-15`
+Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-07-28`
+
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 ---
 
@@ -16,6 +22,12 @@ Query: locationId (required)
 Returns all pipelines with their stages. Each pipeline has `id`, `name`, `stages` array.
 
 Each stage has: `id`, `name`, `position`
+
+> **Pipelines are read-only in the published spec.** `GET /opportunities/pipelines` is the
+> only pipeline operation in both the v2 and v3 specs. Pipeline CRUD
+> (`POST /opportunities/pipelines`, `GET/PUT/DELETE /opportunities/pipelines/{pipelineId}`)
+> was **announced in the changelog on 2026-06-26 but is not yet in the published spec —
+> probe live before use.**
 
 ---
 
@@ -143,7 +155,7 @@ source ~/.openclaw/secrets/.env
 curl -s \
   "https://services.leadconnectorhq.com/opportunities/pipelines?locationId=$GOHIGHLEVEL_LOCATION_ID" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" | jq '.pipelines[] | {id, name, stages: [.stages[] | {id, name}]}'
+  -H "Version: 2021-07-28" | jq '.pipelines[] | {id, name, stages: [.stages[] | {id, name}]}'
 
 # 2. Create an opportunity
 PIPELINE_ID="your_pipeline_id"
@@ -154,7 +166,7 @@ curl -s \
   "https://services.leadconnectorhq.com/opportunities/" \
   -X POST \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" \
+  -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{
     "pipelineId": "'"$PIPELINE_ID"'",
@@ -174,7 +186,7 @@ curl -s \
   "https://services.leadconnectorhq.com/opportunities/$OPP_ID" \
   -X PUT \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" \
+  -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{"pipelineStageId": "'"$NEXT_STAGE_ID"'"}' | jq .
 
@@ -183,7 +195,7 @@ curl -s \
   "https://services.leadconnectorhq.com/opportunities/$OPP_ID/status" \
   -X PUT \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" \
+  -H "Version: 2021-07-28" \
   -H "Content-Type: application/json" \
   -d '{"status": "won"}' | jq .
 ```

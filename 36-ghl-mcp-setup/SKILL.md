@@ -1,6 +1,6 @@
 ---
 name: ghl-mcp-setup
-description: Install and configure the 6-tier GoHighLevel access chain — Tier 0 Convert and Flow CLI (skill 44), Official MCP (36 tools), Community MCP (588 tools, on-demand curl), direct REST API, agent-browser/Playwright, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
+description: Install and configure the 6-tier GoHighLevel access chain — Tier 0 Convert and Flow CLI (skill 44), Official MCP (prefer the v2 orchestrator /mcp/anthropic/v2, 6 meta-tools, ~40 domains), Community MCP (588 tools, on-demand curl), direct REST API, agent-browser/Playwright, and Codex Computer Use — so the agent always picks the cheapest path first and falls back gracefully. Registers ghl-mcp under nested mcp.servers via the openclaw mcp set CLI.
 ---
 
 > **GHL PIT aliases:** `GOHIGHLEVEL_API_KEY` is the preferred name; 10 additional aliases resolve the same LOCATION PIT. See **`TERMINOLOGY.md`** (repo root) for the canonical alias set and backend-equivalence notes (Convert & Flow / leadconnectorhq.com = one platform).
@@ -14,11 +14,66 @@ This skill teaches your AI agent how to connect to GoHighLevel (also called "Con
 The chain:
 
 0. **Tier 0 — Convert and Flow CLI** (`caf`/`convertandflow`/`ghl`, skill 44) — for everything the CLI covers: contacts, opportunities, calendars, conversations, documents, payments, forms, social, locations, workflows (PIT for standard ops; Firebase token for workflow writes)
-1. **Tier 1 — Official GHL MCP** (36 tools, hosted by GHL, free, no install) — for blogs and CLI gaps
+1. **Tier 1 — Official GHL MCP** (hosted by GHL, free, no install) — for blogs and CLI gaps.
+   Two endpoints exist; see "Which official MCP endpoint" below. **Prefer the v2
+   orchestrator** `https://services.leadconnectorhq.com/mcp/anthropic/v2`.
 2. **Tier 2 — Community GHL MCP** (588 tools, on-demand via curl — NOT registered in mcp.servers) — for products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone System, Agent Studio
 3. **Tier 3 — Direct REST API** with Private Integration Token (uses skill 29's reference files) — for anything no MCP covers; media uploads (POST /medias/upload-file)
 4. **Tier 4 — Browser: agent-browser (Vercel) FIRST, Playwright fallback** (skill 03) — for UI-only flows; workflow-write backstop when no Firebase token
 5. **Tier 5 — Codex Computer Use** (`codex/gpt-5.5`) — visual automation, approval-gated, last resort
+
+## Which official MCP endpoint (Tier 1)
+
+HighLevel now publishes **two** official MCP endpoints. Both are live; they are not
+equivalent.
+
+| | `/mcp/{client}/v2` — **recommended** | `/mcp/` — the original endpoint |
+|---|---|---|
+| URL | `https://services.leadconnectorhq.com/mcp/anthropic/v2` (Claude, live today) | `https://services.leadconnectorhq.com/mcp/` |
+| Coverage | **Widest** — the full operation catalog, "hundreds of operations across 40 domains" | Limited — a focused set of core tools (contacts, conversations, opportunities, calendars, payments, social planner, blogs, emails) |
+| Shape | **6 unified meta-tools** | one tool per operation |
+| Auth | OAuth (recommended) **or** PIT | OAuth **or** PIT |
+| Clients | per-client; Claude live today, others planned | any HTTP MCP client (Cursor, Windsurf, n8n, custom) |
+| Sub-accounts | one sub-account, **or agency-wide across many from one connection** | one sub-account per connection |
+
+**The 6 meta-tools:** `search` (find records), `fetch` (full details), `search_operations`
+(discover operations by intent), `describe_operation` (inspect inputs before running),
+`execute_operation` (run it, subject to your scopes and safety checks), `list_locations`
+(enumerate sub-accounts on an agency connection).
+
+**Use `/mcp/anthropic/v2` as the default Tier 1 for this fleet** — every box runs Claude,
+it is the endpoint HighLevel recommends, and it reaches far more of the API than the
+original endpoint does.
+
+- Register it in Claude Code with:
+  `claude mcp add --transport http leadconnector https://services.leadconnectorhq.com/mcp/anthropic/v2`
+- OAuth is HighLevel's recommended auth and **exposes a broader scope set than a PIT**,
+  which unlocks more of the operation catalog. A PIT still works — pass it as
+  `Authorization: Bearer pit-...`.
+- Sensitive/irreversible operations carry extra confirmation and safety checks.
+
+**Accuracy notes — do not restate these wrong:**
+- HighLevel does **not** label `/mcp/` "legacy" or "deprecated". Its own wording is
+  "the original endpoint". It is still supported and still the right choice for any
+  non-Claude MCP client.
+- HighLevel publishes **no fixed tool count** for the original endpoint. Do not cite
+  "36 tools" as a fact — verify live with `tools/list` if a count matters.
+- The dual-`Accept` rule (item 8 below) is documented for the **original** endpoint.
+  Do not assume it transfers to the v2 orchestrator unverified.
+
+**Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
+
+### Tier 2 stays — but know what changed
+
+**Tier 2 (self-hosted community MCP) remains in the chain.** Do not remove it; it is a
+deliberate architecture decision, not a default.
+
+What *has* changed is its justification. Tier 2 was documented as the only way to reach
+products, invoices, billing, subscriptions, estimates, store, coupons, Voice AI, Phone
+System and Agent Studio. **All of those are now inside the v2 orchestrator's ~40 domains.**
+So when Tier 1 is registered against `/mcp/anthropic/v2`, expect far fewer genuine
+fall-throughs to Tier 2 than the old chain implied. Tier 2 is now redundancy and
+self-hosted control, not the only door.
 
 ## Why This Skill Exists
 

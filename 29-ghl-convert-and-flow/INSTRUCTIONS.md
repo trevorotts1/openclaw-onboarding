@@ -62,14 +62,14 @@ Take the cURL template from the reference file and substitute real values:
 # Template (from reference file)
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"firstName": "John", "lastName": "Smith", "locationId": "<locationId>"}'
 
 # Substituted (ready to run)
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}"
 ```
@@ -92,7 +92,7 @@ Execute the call and capture the response:
 ```bash
 RESPONSE=$(curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -d "{\"firstName\": \"John\", \"lastName\": \"Smith\", \"locationId\": \"$GOHIGHLEVEL_LOCATION_ID\"}")
@@ -120,7 +120,7 @@ Many GHL tasks require chaining multiple API calls. Always capture IDs from earl
 # Step 1: Find the contact by email
 CONTACT=$(curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&email=jane@example.com")
 
 CONTACT_ID=$(echo "$CONTACT" | python3 -c "import sys,json; data=json.load(sys.stdin); print(data['contacts'][0]['id'])" 2>/dev/null)
@@ -164,7 +164,7 @@ Most GHL list endpoints return paginated results. Pattern:
 # First page (skip=0, limit=20)
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&limit=20&skip=0"
 
 # Next page (skip=20)

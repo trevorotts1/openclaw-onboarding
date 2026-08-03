@@ -37,9 +37,9 @@ This skill pack provides:
 | Base URL | `https://services.leadconnectorhq.com` |
 | Auth method | Bearer token (Private Integration Token) |
 | Auth header | `Authorization: Bearer $GOHIGHLEVEL_API_KEY` |
-| Version header | `Version: 2021-04-15` (required on most calls) |
+| Version header | `Version: 2021-07-28` — the default. Seven apps differ; see "Version Header Rule" below |
 | Content-Type | `application/json` |
-| Total endpoints | 413 across 35 modules |
+| Total endpoints | 576 across 41 published app specs (v2 generation) |
 | API key | IS the Private Integration Token (`pit-` prefix); no separate "API key" type exists |
 
 ### Rate Limits
@@ -53,9 +53,40 @@ GHL enforces per-location rate limits. General guidance from the master referenc
 
 ```
 Authorization: Bearer $GOHIGHLEVEL_API_KEY
-Version: 2021-04-15
+Version: 2021-07-28
 Content-Type: application/json
 ```
+
+### Version Header Rule (read this before every call)
+
+The Version header is **per-app, not global**. Sending the wrong value is the single most
+common cause of a 400 on an otherwise-correct request.
+
+```
+Version: 2021-07-28   ← DEFAULT. 33 of the 41 published app specs, including
+                        contacts, locations, opportunities, users, payments,
+                        campaigns, phone-system, medias, invoices, products,
+                        workflows, social-media-posting, blogs, forms, objects.
+
+Version: 2021-04-15   ← ONLY these seven apps:
+                        conversations, calendars, saas-api, voice-ai,
+                        agent-studio, conversation-ai, knowledge-base.
+
+Version: v3           ← the 2026-06-19 v3 generation (43 specs). Required for
+                        v3-only surfaces: chat-widget, social planner queues +
+                        comments, the rebuilt emails/* surface, brand voices.
+
+links   accepts BOTH 2021-04-15 and 2021-07-28.
+store   declares no Version parameter at all.
+```
+
+**Do not apply one value across all calls in either direction.** Earlier versions of this
+skill taught `2021-04-15` as a blanket default — that was wrong and caused live 400s on
+contacts, locations, opportunities, users, payments, campaigns and phone-numbers. If you
+see a doc anywhere in the fleet teaching a blanket Version, treat this table as authority.
+
+Source of truth: the `Version` enum published in each app's OpenAPI spec at
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).
 
 ---
 
@@ -91,8 +122,9 @@ fi
 ```
 
 Never print the token value — names only. Media uploads require a **location** PIT and use
-`Version: 2021-07-28` (see `references/medias.md`); all other endpoints default to
-`Version: 2021-04-15`. Confirm the Version header per-endpoint; do not blanket-change it.
+`Version: 2021-07-28` (see `references/medias.md`) — which is also the default for every
+other app except the seven listed in "Version Header Rule" above. Confirm the Version
+header per-app; do not blanket-change it.
 
 ---
 
@@ -118,6 +150,12 @@ When a user asks a GHL question, identify the domain and read the matching refer
 | Phone numbers - search, purchase, configure | `references/phone-numbers.md` |
 | Users - add user, update role, permissions | `references/users.md` |
 | Webhooks - event types, payload structure, setup | `references/webhooks.md` |
+| AI Agent Studio - create/version/publish/execute an agent | `references/agent-studio.md` |
+| Voice AI - agents, actions, call logs, transcripts | `references/voice-ai.md` |
+| Conversation AI - agents, actions, follow-up settings | `references/conversation-ai.md` |
+| Knowledge Base - crawler, FAQs, training an agent on client content | `references/knowledge-base.md` |
+| Ads - Facebook/Google/LinkedIn campaigns, adsets, reporting | `references/ad-publishing.md` |
+| Anything else (store, snapshots, proposals, brand voices, chat widget, marketplace billing) | `references/modules.md` |
 
 ---
 
@@ -158,17 +196,24 @@ Step 4 - Build and execute the API call with real values
   EXAMPLES.md           - Real-world GHL examples with full cURL.
   CORE_UPDATES.md       - Exact text to add to TOOLS.md and MEMORY.md only.
   references/
+    auth.md             - PIT + OAuth, the Version-header rule, all 130 scopes, the v3 generation
+    modules.md          - All 41 modules, verified op counts, v3-only surfaces
     contacts.md         - 32 endpoints for contact management
-    conversations.md    - 48 endpoints for conversations and messages
-    opportunities.md    - Opportunities and pipeline endpoints
-    calendars.md        - 34 endpoints for calendars and appointments
-    campaigns.md        - Campaign triggers + workflows
+    conversations.md    - 29 endpoints for conversations and messages (Version 2021-04-15)
+    opportunities.md    - 12 opportunity + pipeline endpoints
+    calendars.md        - 41 endpoints for calendars and appointments (Version 2021-04-15)
+    campaigns.md        - Campaign triggers + workflows (read-only)
     locations.md        - 29 endpoints for location/sub-account management
-    payments.md         - 65 combined endpoints: invoices + payments
+    payments.md         - Combined invoices + payments
     phone-numbers.md    - Phone number search, buy, configure
     users.md            - User CRUD and permissions
     webhooks.md         - Webhook events, payload structure, setup guide
     medias.md           - Media Library upload (Tier-3 only; LOCATION PIT, Version 2021-07-28)
+    agent-studio.md     - 11 endpoints, AI agent lifecycle (Version 2021-04-15)
+    voice-ai.md         - 11 endpoints, Voice AI agents/actions/call logs (Version 2021-04-15)
+    conversation-ai.md  - 12 endpoints, conversational agent config (Version 2021-04-15)
+    knowledge-base.md   - 14 endpoints, crawler + FAQs (Version 2021-04-15)
+    ad-publishing.md    - 94 endpoints, Facebook/Google/LinkedIn ads
 ```
 
 ---
@@ -201,22 +246,46 @@ client can confirm the result behind us:
 
 ---
 
-## Module Stats (from master reference)
+## Module Stats (counted from the published OpenAPI specs, 2026-08-03)
 
-| Module | Endpoint Count |
-|--------|---------------|
-| invoices | 41 |
-| social-media-posting | 40 |
-| calendars | 34 |
-| contacts | 32 |
-| locations | 29 |
-| products | 27 |
-| payments | 24 |
-| saas-api | 22 |
-| opportunities | (see references/opportunities.md) |
-| conversations | (see references/conversations.md) |
-| workflows | (see references/campaigns.md) |
-| users | (see references/users.md) |
-| phone-system | (see references/phone-numbers.md) |
+Operation counts are method+path pairs read out of each app's spec — not estimates.
 
-Total: 413 endpoints, 35 modules, 106 unique permission scopes.
+| Module | Endpoint Count | Version header |
+|--------|---------------|----------------|
+| ad-manager | 94 | `2021-07-28` |
+| invoices | 42 | `2021-07-28` |
+| calendars | 41 | `2021-04-15` |
+| social-media-posting | 40 | `2021-07-28` |
+| contacts | 32 | `2021-07-28` |
+| conversations | 29 | `2021-04-15` |
+| locations | 29 | `2021-07-28` |
+| products | 27 | `2021-07-28` |
+| payments | 23 | `2021-07-28` |
+| saas-api | 22 | `2021-04-15` |
+| store | 18 | *(none declared)* |
+| knowledge-base | 14 | `2021-04-15` |
+| conversation-ai | 12 | `2021-04-15` |
+| opportunities | 12 | `2021-07-28` |
+| agent-studio | 11 | `2021-04-15` |
+| voice-ai | 11 | `2021-04-15` |
+| associations | 10 | `2021-07-28` |
+| marketplace | 9 | `2021-07-28` |
+| objects | 9 | `2021-07-28` |
+| custom-fields | 8 | `2021-07-28` |
+| blogs / funnels / medias | 7 each | `2021-07-28` |
+| users | 7 | `2021-07-28` |
+| links | 6 | both accepted |
+| brand-boards / businesses / custom-menus | 5 each | `2021-07-28` |
+| emails | 5 | `2021-07-28` |
+| affiliate-manager / phone-system / proposals / snapshots | 4 each | `2021-07-28` |
+| forms | 3 | `2021-07-28` |
+| oauth | 3 | `2021-07-28` |
+| surveys | 2 | `2021-07-28` |
+| campaigns / companies / courses / email-isv / workflows | 1 each | `2021-07-28` |
+
+Total: **576 operations across 41 published v2 app specs**, and **118 distinct permission
+scopes** declared in those specs (130 when unioned with `docs/oauth/Scopes.md`). A second
+generation — **43 v3 specs, `Version: v3`** — was published 2026-06-19; see
+`references/auth.md` → "The v3 generation".
+
+Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).

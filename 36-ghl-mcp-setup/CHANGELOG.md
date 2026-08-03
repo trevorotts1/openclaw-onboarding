@@ -4,6 +4,45 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.3.1] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator
+
+### Added
+- **`SKILL.md` gained a "Which official MCP endpoint" section.** HighLevel publishes two
+  official MCP endpoints and they are not equivalent. The per-client orchestrator
+  `https://services.leadconnectorhq.com/mcp/anthropic/v2` is HighLevel's **recommended**
+  path, is live today for Claude, exposes **6 unified meta-tools** (`search`, `fetch`,
+  `search_operations`, `describe_operation`, `execute_operation`, `list_locations`) over
+  "hundreds of operations across 40 domains", supports OAuth **or** PIT, and lets an agency
+  connect once and work across many sub-accounts. Since every box in this fleet runs Claude,
+  it is now the documented default for Tier 1.
+
+### Changed
+- Tier 2 (self-hosted community MCP) **stays in the chain** — it is a deliberate
+  architecture decision. What changed is its *justification*: the capabilities it was
+  documented as uniquely providing (products, invoices, billing, subscriptions, estimates,
+  store, coupons, Voice AI, Phone System, Agent Studio) are now inside the v2 orchestrator's
+  ~40 domains. Documented as redundancy and self-hosted control rather than the only door.
+- **`GHL-LOOKUP-SOP.md` Version-header table corrected.** `payments` was listed under
+  `2021-04-15`; `payments.json` declares `2021-07-28`. The table now states the real rule —
+  `2021-07-28` is the default, seven named apps use `2021-04-15`, and `v3` exists.
+
+### Accuracy notes recorded in the skill so they are not restated wrong
+- HighLevel does **not** label `/mcp/` "legacy" or "deprecated". Its published wording is
+  "the original endpoint"; it remains supported and is still the right choice for any
+  non-Claude MCP client.
+- HighLevel publishes **no fixed tool count** for the original endpoint, so "36 tools" is
+  no longer stated as fact in the new section — verify live with `tools/list`.
+- The dual-`Accept` requirement is documented for the original endpoint only; it is not
+  assumed to transfer to the v2 orchestrator.
+
+### Unchanged
+- `GHL-LOOKUP-SOP.md`'s workflow guidance is untouched: the public API at `/workflows/` is
+  GET-only in both the v2 and v3 specs. That wording was verified correct.
+
+**Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
+
+---
+
 ## [v1.3.0] - 2026-08-03 — Installer hardening: pinned + profiled + crash-only + build-verified + liveness-probed (fleet outage 2026-08-01/02)
 
 ### Why

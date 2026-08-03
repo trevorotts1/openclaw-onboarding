@@ -95,8 +95,9 @@ curl -sS -X POST "https://services.leadconnectorhq.com/mcp/" \
 
 | Module | Version header value |
 |---|---|
-| contacts, locations, blogs, social, opportunities | `2021-07-28` |
-| conversations, calendars, payments | `2021-04-15` |
+| **DEFAULT** — contacts, locations, blogs, social, opportunities, **payments**, users, campaigns, phone-system, medias, invoices, products, workflows | `2021-07-28` |
+| **ONLY these seven** — conversations, calendars, saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base | `2021-04-15` |
+| the v3 generation (43 specs, published 2026-06-19) | `v3` |
 
 When in doubt, check the authoritative reference in
 `29-ghl-convert-and-flow/references/<module>.md`. Do not hardcode a single version for
@@ -308,9 +309,11 @@ correct before proceeding:
 - **Skipping the fail-fast credential preflight** — if credentials are missing, the
   lookup will return an auth error that looks like a connectivity problem. Always check
   first.
-- **Version header mismatch** — conversations/calendars/payments use `Version:
-  2021-04-15`; contacts/locations/blogs use `Version: 2021-07-28`. Wrong version causes
-  intermittent 400/401. Check `29-ghl-convert-and-flow/references/<module>.md`.
+- **Version header mismatch** — `2021-07-28` is the DEFAULT (including **payments**, which
+  was previously documented here as `2021-04-15` — that was wrong). Only conversations,
+  calendars, saas-api, voice-ai, agent-studio, conversation-ai and knowledge-base use
+  `2021-04-15`. Wrong version causes intermittent 400/401. Check
+  `29-ghl-convert-and-flow/references/<module>.md`.
 
 ---
 

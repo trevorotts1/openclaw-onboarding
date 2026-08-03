@@ -1,7 +1,13 @@
 # locations.md - Locations Module Reference (29 Endpoints)
 
 Base URL: `https://services.leadconnectorhq.com`
-Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-04-15`
+Required on all calls: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` and `Version: 2021-07-28`
+
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 > In GHL v2, "Location" = "Sub-Account". These terms are interchangeable.
 
@@ -241,25 +247,25 @@ source ~/.openclaw/secrets/.env
 curl -s \
   "https://services.leadconnectorhq.com/locations/search" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" | jq '.locations[] | {id, name}'
+  -H "Version: 2021-07-28" | jq '.locations[] | {id, name}'
 
 # 2. Get full details of a specific location
 curl -s \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" | jq .
+  -H "Version: 2021-07-28" | jq .
 
 # 3. Get all custom fields for the location
 curl -s \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/customFields" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" | jq '.customFields[] | {id, name, fieldKey, dataType}'
+  -H "Version: 2021-07-28" | jq '.customFields[] | {id, name, fieldKey, dataType}'
 
 # 4. Get all tags
 curl -s \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/tags" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" | jq .
+  -H "Version: 2021-07-28" | jq .
 ```
 
 ---

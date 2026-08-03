@@ -67,7 +67,7 @@ echo "Location ID: $GOHIGHLEVEL_LOCATION_ID"
 > **Expected:** `https://services.leadconnectorhq.com`
 
 **Q2.** What two headers are required on nearly every API call?
-> **Expected:** `Authorization: Bearer <token>` and `Version: 2021-04-15`
+> **Expected:** `Authorization: Bearer <token>` and `Version: 2021-07-28`
 
 **Q3.** What auth method should this skill use?
 > **Expected:** Private Integration Token (PIT), not legacy API keys.
@@ -111,7 +111,7 @@ if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; t
 else
   HTTP_CODE=$(curl -s -o /tmp/ghl_qc_location.json -w "%{http_code}" \
     -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-    -H "Version: 2021-04-15" \
+    -H "Version: 2021-07-28" \
     "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID")
   echo "HTTP: $HTTP_CODE"
   python3 -m json.tool /tmp/ghl_qc_location.json | head -20
@@ -129,7 +129,7 @@ Verify the agent:
 - identifies the domain as contacts
 - reads `references/contacts.md` only
 - uses `contacts.readonly`
-- includes `Version: 2021-04-15`
+- includes `Version: 2021-07-28`
 - uses `$GOHIGHLEVEL_API_KEY` and `$GOHIGHLEVEL_LOCATION_ID`
 - does not open all reference files up front
 
@@ -157,7 +157,7 @@ Fail the skill if any of these occur:
 - agent opens the full master reference for a routine domain query
 - agent reads all reference files up front
 - agent hardcodes a real token in output
-- agent omits the `Version: 2021-04-15` header
+- agent omits the `Version: 2021-07-28` header
 - agent treats GHL PIT like a generic API key in client-facing language
 - agent performs phone-number release/removal autonomously
 - agent performs billing/payment actions autonomously
