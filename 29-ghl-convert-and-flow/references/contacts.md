@@ -3,7 +3,13 @@
 > **Scope of this file:** All endpoints under the `contacts` module.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: `Version: 2021-07-28` (required on all calls)
+>
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 ---
 
@@ -21,12 +27,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -46,12 +52,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -72,12 +78,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/bulk/business
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/business' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -98,12 +104,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/business
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/bulk/tags/update/{type}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/tags/update/{type}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -124,12 +130,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/bulk/tags/upd
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/business/{businessId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/business/{businessId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -149,12 +155,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/business/{busi
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/search
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/search' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -175,12 +181,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/search' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/search/duplicate
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/search/duplicate' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -200,12 +206,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/search/duplica
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/upsert
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -226,12 +232,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/upsert' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -251,12 +257,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -277,12 +283,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -302,12 +308,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/appointments
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/appointments' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -327,12 +333,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ap
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/removeAll
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/removeAll' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -352,12 +358,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/{campaignId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/{campaignId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -378,12 +384,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/c
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/{campaignId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/campaigns/{campaignId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -403,12 +409,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/followers
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/followers' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -429,12 +435,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/f
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/followers
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/followers' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -454,12 +460,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/notes
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/notes' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -479,12 +485,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/no
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/notes
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/notes' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -505,12 +511,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/n
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -530,12 +536,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/no
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -556,12 +562,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/no
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/notes/{id}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -581,12 +587,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tags
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/tags' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -607,12 +613,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/t
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tags
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/tags' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -632,12 +638,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -657,12 +663,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -683,12 +689,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/t
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -708,12 +714,12 @@ curl --request GET 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -734,12 +740,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -759,12 +765,12 @@ curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}/completed
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/tasks/{taskId}/completed' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -785,12 +791,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/contacts/{contactId}/ta
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -811,12 +817,12 @@ curl --request POST 'https://services.leadconnectorhq.com/contacts/{contactId}/w
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/contacts/{contactId}/workflow/{workflowId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

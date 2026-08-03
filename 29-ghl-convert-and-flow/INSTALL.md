@@ -102,7 +102,7 @@ if [ -z "${GOHIGHLEVEL_API_KEY:-}" ] || [ -z "${GOHIGHLEVEL_LOCATION_ID:-}" ]; t
 else
   curl -s \
     -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-    -H "Version: 2021-04-15" \
+    -H "Version: 2021-07-28" \
     "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | python3 -m json.tool
 fi
 ```
@@ -145,7 +145,7 @@ brew install jq
 # Usage example - get just the location name
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H "Version: 2021-04-15" \
+  -H "Version: 2021-07-28" \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID" | jq '.name'
 ```
 

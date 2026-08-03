@@ -4,7 +4,13 @@
 > Covers: user CRUD, roles, permissions, team management.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: `Version: 2021-07-28` (required on all calls)
+>
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 ---
 
@@ -22,12 +28,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/users/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -47,12 +53,12 @@ curl --request GET 'https://services.leadconnectorhq.com/users/' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/users/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/users/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -73,12 +79,12 @@ curl --request POST 'https://services.leadconnectorhq.com/users/' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/search
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/users/search' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -98,12 +104,12 @@ curl --request GET 'https://services.leadconnectorhq.com/users/search' \
 - HTTP structure:
   - Method: POST
   - URL: https://services.leadconnectorhq.com/users/search/filter-by-email
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/users/search/filter-by-email' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -124,12 +130,12 @@ curl --request POST 'https://services.leadconnectorhq.com/users/search/filter-by
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/users/{userId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/users/{userId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -149,12 +155,12 @@ curl --request GET 'https://services.leadconnectorhq.com/users/{userId}' \
 - HTTP structure:
   - Method: PUT
   - URL: https://services.leadconnectorhq.com/users/{userId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request PUT 'https://services.leadconnectorhq.com/users/{userId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```
@@ -175,12 +181,12 @@ curl --request PUT 'https://services.leadconnectorhq.com/users/{userId}' \
 - HTTP structure:
   - Method: DELETE
   - URL: https://services.leadconnectorhq.com/users/{userId}
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request DELETE 'https://services.leadconnectorhq.com/users/{userId}' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

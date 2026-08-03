@@ -13,9 +13,15 @@ raw HTTPS. Never instruct a sub-agent to call an MCP tool.
 Any raw HTTPS fallback to `services.leadconnectorhq.com/mcp/` MUST include:
 ```
 Accept: application/json, text/event-stream
-Version: 2021-07-28   (contacts/locations/blogs/social/opportunities)
-Version: 2021-04-15   (conversations/calendars/payments)
+Version: 2021-07-28   (DEFAULT — contacts, locations, blogs, social, opportunities,
+                       payments, users, campaigns, phone-system, medias, invoices)
+Version: 2021-04-15   (ONLY — conversations, calendars, saas-api, voice-ai,
+                       agent-studio, conversation-ai, knowledge-base)
 ```
+**`payments` is `2021-07-28`, not `2021-04-15`.** It was listed on the wrong line here
+until 2026-08-03. The authority is the `Version` enum in each app's OpenAPI spec at
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps`; the full table lives
+in `29-ghl-convert-and-flow/SKILL.md` → "Version Header Rule".
 Missing `text/event-stream` returns HTTP 406 — not an auth error; a content-negotiation
 error. Also: never use `grep -P` on macOS (BSD grep has no -P); use `python3 -c` or `jq`.
 
@@ -253,11 +259,19 @@ DIFFERENT auth paths** — pick the right one per operation:
 | Operation | Path | Auth | Endpoint | Version header |
 |---|---|---|---|---|
 | **Create sub-account (location)** | Firebase **internal** API | `token-id: <firebase-id-token>` (NOT Bearer) | `POST backend.leadconnectorhq.com/locations/` | `2021-07-28` |
-| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2023-02-21` |
+| **Add a user** | Agency **PIT + PUBLIC** API | `Authorization: Bearer <agency PIT>` | `POST services.leadconnectorhq.com/users/` | `2021-07-28` |
 
 This is the PROVEN split — the real user was just added via the simpler PIT
 public path; the official public API CANNOT create a location, so create-location
 must use the internal Firebase path. Do not cross them.
+
+> **Version corrected 2026-08-03: `2023-02-21` → `2021-07-28`.** `users.json` declares
+> exactly one Version enum for all 7 user operations — `2021-07-28`. `2023-02-21` appears
+> nowhere in that spec. The old value may still have been accepted (HighLevel is lenient
+> on some Version strings, which is why the original call succeeded), but it was never the
+> documented value, and it contradicted the agency-side docs that already said
+> `2021-07-28`. Use the documented value.
+> Source: `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/users.json`
 
 > **OAuth marketplace app = DEAD END.** Do NOT attempt either operation via the
 > OAuth marketplace-app flow. The app has no published version, so it returns
@@ -268,7 +282,7 @@ must use the internal Firebase path. Do not cross them.
 ### Add a user — DEFAULT, the proven simple path (agency PIT + public API)
 
 `caf locations add-user` posts to `POST https://services.leadconnectorhq.com/users/`
-with `Authorization: Bearer <agency PIT>` and `Version: 2023-02-21`. No Firebase
+with `Authorization: Bearer <agency PIT>` and `Version: 2021-07-28`. No Firebase
 token and **no Chrome extension** are needed for this operation.
 
 Body (CreateUserDto): `companyId` (agency FIRESTORE id), `locationIds=[--location-id]`,

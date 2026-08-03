@@ -3,7 +3,12 @@
 > **Scope of this file:** Webhook configuration, inbound event types, and event payload patterns for GoHighLevel.
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> **No Version header on webhooks.** Webhooks are inbound POSTs *from* GoHighLevel to your
+> endpoint — you are the server, so there is no Version header for you to send. This file
+> previously stated `Version: 2021-04-15` "required on all calls"; that was wrong and has
+> been removed. The header only applies to the outbound REST calls you make to
+> `services.leadconnectorhq.com` to *configure* webhooks — and for those the default is
+> `2021-07-28` (see any module reference in this directory for the per-app rule).
 
 ---
 

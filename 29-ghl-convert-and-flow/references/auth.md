@@ -35,11 +35,44 @@ Authorization: Bearer <OAUTH_ACCESS_TOKEN>
 ```
 
 **Flow:** Standard OAuth 2.0 authorization code flow.
-- Authorization URL: `https://marketplace.gohighlevel.com/oauth/chooselocation`
+
+**Authorization URL — note the `/v2/` segment.** HighLevel moved the authorization URLs to
+`/v2/` on 2026-05-27. A URL without `/v2/` is the old form.
+
+```
+# Standard:
+https://marketplace.gohighlevel.com/v2/oauth/chooselocation?
+  response_type=code&
+  redirect_uri=https://myapp.com/oauth/callback/gohighlevel&
+  client_id=CLIENT_ID&
+  scope=conversations/message.readonly conversations/message.write
+
+# White-labelled agency — THIS IS THE ONE Convert and Flow uses:
+https://marketplace.leadconnectorhq.com/v2/oauth/chooselocation?
+  response_type=code&
+  redirect_uri=https://myapp.com/oauth/callback/gohighlevel&
+  client_id=CLIENT_ID&
+  scope=...
+```
+
+Convert and Flow is a white-labelled agency, so the `marketplace.leadconnectorhq.com`
+host is the correct one for our own consent flow — not `marketplace.gohighlevel.com`.
+
 - Token URL: `https://services.leadconnectorhq.com/oauth/token`
 - Scopes must be declared in your app's marketplace listing
+- Append `&loginWindowOpenMode=self` to force the consent login into the SAME tab.
+  Without it, a user who is not already signed in gets a new tab (the default).
 
-**Refresh:** OAuth tokens expire and must be refreshed. Store the refresh token securely.
+**Refresh:** access tokens are valid for **24 hours**; refresh tokens are valid for **1 year**
+and rotate on each use (the replacement is also good for a year). Store the refresh token
+securely and persist the new one every time you refresh.
+
+**Official SDKs.** HighLevel publishes JS/TS, Python and PHP SDKs that handle the OAuth 2.0
+dance (token exchange, refresh, retry) for you. Prefer them over hand-rolled OAuth when
+building an integration.
+
+**Source:** `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Authorization.md`
+(verified 2026-08-03).
 
 ---
 
@@ -51,18 +84,131 @@ API keys are no longer supported for new integrations. If you have old code usin
 
 ## Version Header
 
-Most endpoints require the version header:
+Always include this header. Missing it causes 400 errors on many endpoints — and so does
+sending the **wrong** value. The value is **per-app**, taken from the `Version` enum that
+each app's OpenAPI spec publishes:
+
 ```
-Version: 2021-04-15
+Version: 2021-07-28   ← DEFAULT — 33 of the 41 published v2 app specs.
+                        contacts, locations, opportunities, users, payments, campaigns,
+                        phone-system, medias, invoices, products, workflows, blogs,
+                        forms, funnels, objects, associations, social-media-posting,
+                        marketplace, snapshots, proposals, brand-boards, ad-manager,
+                        businesses, companies, courses, custom-fields, custom-menus,
+                        emails, email-isv, surveys, affiliate-manager, oauth.
+
+Version: 2021-04-15   ← ONLY these seven:
+                        conversations, calendars, saas-api, voice-ai, agent-studio,
+                        conversation-ai, knowledge-base.
+
+Version: v3           ← the v3 generation (see below).
+
+links   accepts BOTH 2021-04-15 and 2021-07-28.
+store   declares no Version parameter at all.
 ```
 
-Always include this header. Missing it causes 400 errors on many endpoints.
+**Do not blanket-apply either value.** Earlier revisions of this skill taught `2021-04-15`
+globally; that was inverted and caused live 400s on the busiest endpoints.
 
-Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confirm the exact Version per-endpoint against the reference file; do not blanket-change it.
+### Known-wrong Version values still circulating in older fleet docs
+
+If you find any of these, they are wrong — this table is the authority:
+
+| Seen in older docs | Correct value | Why |
+|---|---|---|
+| `2023-02-21` for SaaS endpoints | `2021-04-15` | `saas-api.json` publishes exactly one enum for all 22 SaaS ops: `2021-04-15`. `2023-02-21` appears nowhere in that spec. It IS a real docs-site version toggle, so HighLevel may still accept it — but it is not the documented value. |
+| `2023-02-21` for `POST /users/` | `2021-07-28` | `users.json` declares `2021-07-28` for all 7 user operations. |
+| `2021-04-15` for payments | `2021-07-28` | `payments.json` declares `2021-07-28`. |
+| `2021-04-15` "on all calls" | per-app, see above | Inverted global rule. |
 
 ---
 
-## All 106 Scopes
+## The v3 generation (published 2026-06-19)
+
+A second API generation exists. **43 v3 app specs** live at
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps/v3`, all declaring the
+literal header value `Version: v3`, on the same host (`services.leadconnectorhq.com`).
+
+**This is forward-guidance, not a break.** Every v2 path below still works today under
+`Version: 2021-07-28`. Nothing in this skill needs to change to keep working. Plan the
+migration; do not scramble.
+
+**The two renames that will bite** — HighLevel lists both as *removed without deprecation*
+in v3, and they are the core of the agency OAuth workflow:
+
+| Operation | v2 (still live) | v3 |
+|---|---|---|
+| Mint a location token | `POST /oauth/locationToken` | `POST /oauth/location-token` |
+| List installed locations | `GET /oauth/installedLocations` | `GET /oauth/installed-locations` |
+
+Other v3 changes worth knowing before you migrate:
+
+- **OAuth token body goes camelCase** — `clientId`, `clientSecret`, `grantType`,
+  `refreshToken`; the response field becomes `accessToken`. The `Version` header becomes
+  **required** on the token call.
+- **`GET /contacts/` is removed** — use `POST /contacts/search`. (Already the preferred
+  call in v2; in v3 it is the only one.)
+- **`GET /users/` is removed** — use `GET /users/search`.
+- `DELETE /contacts/{id}/campaigns/removeAll` → `.../campaigns/remove-all`.
+- The `/emails/builder*` surface (5 ops) is **replaced wholesale** by
+  `/emails/locations/{locationId}/campaigns/*` and `/emails/locations/{locationId}/templates/*`
+  (18 ops).
+- Per-platform social OAuth paths collapse into generic `{platform}` paths.
+
+**v3-only capability** (does not exist in v2 — requires `Version: v3`): chat-widget,
+social planner scheduling queues + the comments API, brand voices, and the rebuilt
+emails surface.
+
+---
+
+## All Scopes (130)
+
+**Read this before ticking boxes on a PIT.** A wrong scope *name* fails exactly like a
+missing one — 401/403 with an otherwise-valid token — so the names below are taken
+verbatim from the source, not paraphrased.
+
+- **118** distinct scopes are declared in the `security` blocks of the published app specs.
+- **130** is the union of those with `docs/oauth/Scopes.md`.
+- The two sources disagree; where they do, **the spec files are more current**.
+  `docs/oauth/Scopes.md` has no rows at all for voice-ai, agent-studio, conversation-ai,
+  knowledge-base, brand-boards, ad-publishing, phone-system, associations or custom-menus.
+- Seven apps declare **no** scopes in their spec: courses, email-isv, knowledge-base,
+  proposals, saas-api, snapshots, store. Where `Scopes.md` covers them (courses, saas,
+  snapshots) its names are used below; knowledge-base, proposals, store and email-isv have
+  no published scope names in either source.
+
+**Sources (verified 2026-08-03):** per-spec `security` blocks under
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps`, plus
+`https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Scopes.md`
+
+### Names that changed — old value → correct value
+
+These nine families were wrong in earlier revisions of this file. If you have a PIT minted
+against the old names, re-tick it:
+
+| Was documented as | Actual scope name(s) |
+|---|---|
+| `blogs.readonly`, `blogs.write` | `blogs/list.readonly`, `blogs/posts.readonly`, `blogs/post.write`, `blogs/post-update.write`, `blogs/check-slug.readonly`, `blogs/author.readonly`, `blogs/category.readonly` |
+| `social-media-posting.readonly|write` | the `socialplanner/*` family (see below) |
+| `phone/number.readonly`, `phone/number.write` | `phonenumbers.read`, `phonenumbers.write`, `numberpools.read` |
+| `custom-menus.readonly|write` | `custom-menu-link.readonly`, `custom-menu-link.write` |
+| `marketplace.readonly|write` | `charges.readonly`, `charges.write`, `marketplace-installer-details.readonly`, `marketplace-external-auth-migration.write` |
+| `voice-ai/agents.readonly|write` | `voice-ai-agents.readonly`, `voice-ai-agents.write` — hyphens, **not** a slash |
+| `courses/readonly` | `courses.write` |
+| `saas/location.readonly` | `saas/location.read` |
+| `funnels/pageCount.readonly` | `funnels/pagecount.readonly` — lowercase `c` |
+
+⚠ The `stores/*` scopes this file used to list (`stores/collection.*`, `stores/product.*`,
+`stores/shipping.*`, `stores/order.*`, `stores/coupon.*`) are **unverified** — neither
+`store.json` nor `Scopes.md` declares any store scope. They have been removed rather than
+left to look authoritative. Store operations are reached via `products/*` scopes in
+practice; confirm live before relying on a store-specific scope name.
+
+Also removed: `marketing.readonly|write`, `proposals-and-estimates.*`, `blogs/author.write`,
+`blogs/category.write`, `emails/schedule.write`, `funnels.readonly|write`,
+`funnels/page.write`, `locations/tasks.write`, `locations/templates.write`,
+`companies.write`, `saas/company.readonly`, `payments/orders` variants that do not exist —
+none of these appear in either source.
 
 ### Contact Scopes
 - `contacts.readonly` - Read contacts, search, get by ID
@@ -73,30 +219,34 @@ Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confir
 - `conversations.write` - Create/update conversations
 - `conversations/message.readonly` - Read messages
 - `conversations/message.write` - Send messages, add inbound/outbound
+- `conversations/livechat.write` - Live chat message actions
 
 ### Calendar Scopes
 - `calendars.readonly` - Get calendars, free slots
 - `calendars.write` - Create, update, delete calendars
 - `calendars/events.readonly` - Get appointments, events, blocked slots
 - `calendars/events.write` - Create/update appointments, block slots
+- `calendars/groups.readonly` - Read calendar groups
+- `calendars/groups.write` - Create/update/delete calendar groups
+- `calendars/resources.readonly` - Read equipment/room resources
+- `calendars/resources.write` - Manage equipment/room resources
 
 ### Opportunity Scopes
 - `opportunities.readonly` - Search opportunities, get pipelines
 - `opportunities.write` - Create, update, delete opportunities
 
-### Location Scopes
+### Location (Sub-Account) Scopes
 - `locations.readonly` - Get location details, custom fields, tags
 - `locations.write` - Update location settings
+- `locations.internal-access-only` - Internal-access-only operations
 - `locations/customFields.readonly`
 - `locations/customFields.write`
 - `locations/customValues.readonly`
 - `locations/customValues.write`
 - `locations/tags.readonly`
 - `locations/tags.write`
-- `locations/templates.readonly`
-- `locations/templates.write`
 - `locations/tasks.readonly`
-- `locations/tasks.write`
+- `locations/templates.readonly`
 
 ### User Scopes
 - `users.readonly` - Get users, team members
@@ -106,15 +256,29 @@ Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confir
 - `businesses.readonly`
 - `businesses.write`
 
-### Invoice Scopes
+### Company Scopes
+- `companies.readonly`
+
+### Invoice + Estimate Scopes
 - `invoices.readonly`
 - `invoices.write`
+- `invoices/estimate.readonly`
+- `invoices/estimate.write`
+- `invoices/schedule.readonly`
+- `invoices/schedule.write`
+- `invoices/template.readonly`
+- `invoices/template.write`
 
 ### Payment Scopes
 - `payments/orders.readonly`
 - `payments/orders.write`
+- `payments/orders.collectPayment` - Collect payment on an order
 - `payments/transactions.readonly`
 - `payments/subscriptions.readonly`
+- `payments/coupons.readonly`
+- `payments/coupons.write`
+- `payments/integration.readonly`
+- `payments/integration.write`
 - `payments/custom-provider.readonly`
 - `payments/custom-provider.write`
 
@@ -123,44 +287,78 @@ Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confir
 - `products.write`
 - `products/prices.readonly`
 - `products/prices.write`
+- `products/collection.readonly`
+- `products/collection.write`
 
 ### Blog Scopes
-- `blogs.readonly`
-- `blogs.write`
+- `blogs/list.readonly` - List blog sites
+- `blogs/posts.readonly` - Read blog posts
+- `blogs/post.write` - Create a blog post
+- `blogs/post-update.write` - Update a blog post
+- `blogs/check-slug.readonly` - Slug availability check
 - `blogs/author.readonly`
-- `blogs/author.write`
 - `blogs/category.readonly`
-- `blogs/category.write`
 
-### Email/Marketing Scopes
+### Email Scopes
+- `emails/builder.readonly`
+- `emails/builder.write`
 - `emails/schedule.readonly`
-- `emails/schedule.write`
-- `marketing.readonly`
-- `marketing.write`
 
-### Social Media Scopes
-- `social-media-posting.readonly`
-- `social-media-posting.write`
+### Social Planner Scopes
+> The API family is named `socialplanner`, NOT `social-media-posting`.
+- `socialplanner/account.readonly`
+- `socialplanner/account.write`
+- `socialplanner/post.readonly`
+- `socialplanner/post.write`
+- `socialplanner/category.readonly`
+- `socialplanner/tag.readonly`
+- `socialplanner/csv.readonly`
+- `socialplanner/csv.write`
+- `socialplanner/oauth.readonly`
+- `socialplanner/oauth.write`
+
+### Ad Publishing Scopes
+- `adPublishing.readonly` - Read campaigns, adsets, ads, reporting (Facebook/Google/LinkedIn)
+- `adPublishing.write` - Create/update/publish/pause ads and campaigns
+
+### AI Scopes
+- `agent-studio.readonly` - Read AI Agent Studio agents
+- `agent-studio.write` - Create/update/publish/execute/delete agents
+- `conversation-ai.readonly` - Read Conversation AI agents + actions
+- `conversation-ai.write` - Manage Conversation AI agents, actions, follow-up settings
+- `voice-ai-agents.readonly`
+- `voice-ai-agents.write`
+- `voice-ai-agent-goals.readonly`
+- `voice-ai-agent-goals.write`
+- `voice-ai-dashboard.readonly` - Voice AI call logs and transcripts
+
+### Brand Board Scopes
+- `brand-boards/design-kit.readonly`
+- `brand-boards/design-kit.write`
 
 ### Forms Scopes
 - `forms.readonly`
 - `forms.write`
 
 ### Funnel Scopes
-- `funnels.readonly`
-- `funnels.write`
+- `funnels/funnel.readonly`
 - `funnels/page.readonly`
-- `funnels/page.write`
-- `funnels/pageCount.readonly`
+- `funnels/pagecount.readonly`
+- `funnels/redirect.readonly`
+- `funnels/redirect.write`
 
 ### Workflow Scopes
-- `workflows.readonly`
+- `workflows.readonly` - Read only. There is no workflow write scope because there is no
+  workflow write endpoint (see `references/campaigns.md`).
 
 ### Campaign Scopes
 - `campaigns.readonly`
 
 ### Survey Scopes
 - `surveys.readonly`
+
+### Course Scopes
+- `courses.write`
 
 ### Media Scopes
 - `medias.readonly`
@@ -186,51 +384,32 @@ Media Library upload (`references/medias.md`) uses `Version: 2021-07-28`. Confir
 - `associations/relation.write`
 
 ### Custom Menu Scopes
-- `custom-menus.readonly`
-- `custom-menus.write`
+- `custom-menu-link.readonly`
+- `custom-menu-link.write`
 
-### Store Scopes
-- `stores/collection.readonly`
-- `stores/collection.write`
-- `stores/product.readonly`
-- `stores/product.write`
-- `stores/shipping.readonly`
-- `stores/shipping.write`
-- `stores/order.readonly`
-- `stores/order.write`
-- `stores/coupon.readonly`
-- `stores/coupon.write`
-
-### Company Scopes
-- `companies.readonly`
-- `companies.write`
+### Custom Field Scopes
+> Custom fields use the `locations/customFields.*` scopes listed under Location Scopes.
 
 ### Phone System Scopes
-- `phone/number.readonly`
-- `phone/number.write`
+- `phonenumbers.read`
+- `phonenumbers.write`
+- `numberpools.read`
 
 ### SaaS Scopes
-- `saas/company.readonly`
-- `saas/company.write`
-- `saas/location.readonly`
+- `saas/location.read`
 - `saas/location.write`
+- `saas/company.write`
 
-### OAuth/Marketplace Scopes
+### OAuth / Marketplace Scopes
 - `oauth.readonly`
 - `oauth.write`
-- `marketplace.readonly`
-- `marketplace.write`
+- `charges.readonly` - Marketplace billing charges
+- `charges.write`
+- `marketplace-installer-details.readonly`
+- `marketplace-external-auth-migration.write`
 
-### Voice AI Scopes
-- `voice-ai/agents.readonly`
-- `voice-ai/agents.write`
-
-### Course Scopes
-- `courses/readonly`
-
-### Proposal Scopes
-- `proposals-and-estimates.readonly`
-- `proposals-and-estimates.write`
+### Affiliate Manager Scopes
+- `affiliate-manager.readonly`
 
 ---
 

@@ -54,7 +54,7 @@ In practice, this token is usually stored in the environment as `GOHIGHLEVEL_API
 Most v2 endpoints also require a version header. In the reference files, you will usually see:
 
 ```http
-Version: 2021-04-15
+Version: 2021-07-28
 ```
 
 Some older notes in the broader workspace may mention a different version date. For endpoint execution, always trust the skill's domain reference file for the exact header requirement.
@@ -73,7 +73,7 @@ A typical request looks like this:
 
 ```http
 Authorization: Bearer <GOHIGHLEVEL_API_KEY>
-Version: 2021-04-15
+Version: 2021-07-28
 Content-Type: application/json
 ```
 
@@ -841,7 +841,7 @@ These are general patterns, not substitutes for reading the domain file.
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/example-path' \
   -H 'Authorization: Bearer '$GOHIGHLEVEL_API_KEY \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 
@@ -850,7 +850,7 @@ curl --request GET 'https://services.leadconnectorhq.com/example-path' \
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/example-path' \
   -H 'Authorization: Bearer '$GOHIGHLEVEL_API_KEY \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"key":"value"}'
 ```

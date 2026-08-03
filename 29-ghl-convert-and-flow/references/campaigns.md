@@ -3,7 +3,13 @@
 > **Scope of this file:** Campaigns module (campaign triggers) and Workflows module (automation workflows).
 > Base URL: `https://services.leadconnectorhq.com`
 > Auth: `Authorization: Bearer $GOHIGHLEVEL_API_KEY` — the LOCATION PIT from `~/.openclaw/secrets/.env`. In the cURL templates below, substitute `$GOHIGHLEVEL_API_KEY` for `<PRIVATE_INTEGRATION_TOKEN>` and use double quotes so it expands. See SKILL.md "Credentials" for the fail-loud resolver.
-> Version header: `Version: 2021-04-15` (required on all calls)
+> Version header: `Version: 2021-07-28` (required on all calls)
+>
+> **Version header is per-app, not global.** `2021-07-28` is the default (33 of the 41
+> published app specs). The ONLY apps on `2021-04-15` are: conversations, calendars,
+> saas-api, voice-ai, agent-studio, conversation-ai, knowledge-base. `links` accepts
+> both; `store` declares no Version parameter. Never apply one value across all calls.
+> Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (verified 2026-08-03).
 
 ---
 
@@ -21,12 +27,12 @@
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/campaigns/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/campaigns/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:
@@ -48,12 +54,12 @@ curl --request GET 'https://services.leadconnectorhq.com/campaigns/' \
 - HTTP structure:
   - Method: GET
   - URL: https://services.leadconnectorhq.com/workflows/
-  - Headers: Authorization + Version (2021-04-15)
+  - Headers: Authorization + Version (2021-07-28)
 - cURL template:
 ```bash
 curl --request GET 'https://services.leadconnectorhq.com/workflows/' \
   -H 'Authorization: Bearer <PRIVATE_INTEGRATION_TOKEN>' \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json'
 ```
 - Common 400/401 causes:

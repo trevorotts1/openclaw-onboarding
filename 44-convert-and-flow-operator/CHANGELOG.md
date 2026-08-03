@@ -1,5 +1,30 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.15] - 2026-08-03 — Version-header corrections against the published spec
+
+### Fixed
+- **`POST /users/` was taught with `Version: 2023-02-21`** in `INSTRUCTIONS.md` (the
+  auth-path table and the add-user walkthrough) and `CORE_UPDATES.md`. `users.json`
+  declares exactly one Version enum for all 7 user operations: **`2021-07-28`**.
+  `2023-02-21` appears nowhere in that spec. The fleet was shipping two contradictory
+  instructions for the same call — the agency-side docs already said `2021-07-28`.
+  The old value may still be accepted (which is why the original call succeeded), but it
+  was never the documented value.
+- **`payments` was listed under `Version: 2021-04-15`** in the Rule B header block.
+  `payments.json` declares `2021-07-28`. The block now states the full rule: `2021-07-28`
+  is the default, and only conversations, calendars, saas-api, voice-ai, agent-studio,
+  conversation-ai and knowledge-base use `2021-04-15`.
+
+### Unchanged
+- The Firebase-token / internal Build-API architecture for workflow writes stands.
+  Workflows are still read-only in the public API — `GET /workflows/` is the only operation
+  in both the v2 and v3 specs, confirming the architecture remains necessary.
+- The `backend.leadconnectorhq.com` internal create-location call is not a public API and
+  is out of scope of the published spec; left alone.
+
+**Source:** `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/apps/users.json`
+and `.../apps/payments.json` (verified 2026-08-03).
+
 ## [1.3.13] - 2026-07-19 — `contacts send-sms`: canonical SMS-send path, closes the bare-urllib Cloudflare 403 gap
 
 ### Fixed

@@ -22,7 +22,7 @@ export GOHIGHLEVEL_LOCATION_ID="your_location_id"
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/contacts/' \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"firstName\": \"Jane\",
@@ -45,7 +45,7 @@ Verify in CF UI: Contacts → the new record appears with the tags/notes you set
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/contacts/?locationId=$GOHIGHLEVEL_LOCATION_ID&email=jane%40example.com"
 ```
 
@@ -60,7 +60,7 @@ Returns: Array of matching contacts with full contact objects.
 # Replace tags entirely
 curl --request PUT "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d '{"tags": ["hot-lead", "called", "interested"]}'
 ```
@@ -75,7 +75,7 @@ Replace `CONTACT_ID_HERE` with the actual contact ID from a prior lookup.
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE/notes" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"body\": \"Called contact - interested in the Gold package. Follow up Friday.\",
@@ -92,7 +92,7 @@ Required scope: `contacts/notes.write`
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/contacts/CONTACT_ID_HERE/tasks" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"title\": \"Follow up call\",
@@ -162,7 +162,7 @@ Verify in CF UI: the contact's Conversation thread shows the outbound SMS.
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/opportunities/search?location_id=$GOHIGHLEVEL_LOCATION_ID&limit=20"
 ```
 
@@ -175,7 +175,7 @@ Required scope: `opportunities.readonly`
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/opportunities/' \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"pipelineId\": \"PIPELINE_ID_HERE\",
@@ -197,7 +197,7 @@ Required scope: `opportunities.write`
 ```bash
 curl --request PUT "https://services.leadconnectorhq.com/opportunities/OPPORTUNITY_ID_HERE" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"pipelineStageId\": \"NEW_STAGE_ID_HERE\",
@@ -266,7 +266,7 @@ Required scope: `calendars/events.write`
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID"
 ```
 
@@ -279,7 +279,7 @@ Required scope: `locations.readonly`
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID/tags"
 ```
 
@@ -294,7 +294,7 @@ Required scope: `tags.readonly`
 ```bash
 curl --request POST 'https://services.leadconnectorhq.com/invoices/' \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"altId\": \"$GOHIGHLEVEL_LOCATION_ID\",
@@ -326,7 +326,7 @@ Required scope: `invoices.write`
 ```bash
 curl --request POST "https://services.leadconnectorhq.com/invoices/INVOICE_ID_HERE/send" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   -H 'Content-Type: application/json' \
   -d "{
     \"altId\": \"$GOHIGHLEVEL_LOCATION_ID\",
@@ -346,7 +346,7 @@ Required scope: `invoices.write`
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/users/?locationId=$GOHIGHLEVEL_LOCATION_ID"
 ```
 
@@ -359,7 +359,7 @@ Required scope: `users.readonly`
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/users/USER_ID_HERE"
 ```
 
@@ -374,7 +374,7 @@ Required scope: `users.readonly`
 ```bash
 curl -s \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/workflows/?locationId=$GOHIGHLEVEL_LOCATION_ID"
 ```
 
@@ -404,7 +404,7 @@ fi
 # Make the call and capture HTTP status code separately
 HTTP_CODE=$(curl -s -o /tmp/ghl_response.json -w "%{http_code}" \
   -H "Authorization: Bearer $GOHIGHLEVEL_API_KEY" \
-  -H 'Version: 2021-04-15' \
+  -H 'Version: 2021-07-28' \
   "https://services.leadconnectorhq.com/locations/$GOHIGHLEVEL_LOCATION_ID")
 
 if [ "$HTTP_CODE" = "200" ]; then
