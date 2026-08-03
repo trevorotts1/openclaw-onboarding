@@ -28,6 +28,17 @@ Proves, structurally (no scores grepped), that:
      routing_only (master-orchestrator) executes no pipeline steps and cannot write;
      read_only_downstream covers social-media and marketing with no write access; and no
      explicit no-access department is also a granted department.
+  8. The ACTIVATION layer: the production processor that drives queued flows through the
+     18-step pipeline. The layer is complete when all three activation scripts exist
+     under 58-podcast-production-engine/scripts/ (register-podcast-hook.sh,
+     podcast_controller.py, install-podcast-department.sh), the shell scripts are
+     executable, and SKILL.md documents all three in an activation section. While none
+     of the three scripts is on disk yet, the layer is reported as not installed and is
+     not a failure (this pointer co-lands with the wave that builds the scripts, the
+     same co-land tolerance as the skill 58 map-to-disk check). The moment ANY one of
+     the three lands, the whole layer becomes mandatory: a partial or undocumented
+     activation layer is a violation. Without this layer, intake lands a TaskFlow but
+     nothing ever executes its steps.
 
 Exit codes:
   0 = all wiring assertions pass
@@ -55,6 +66,13 @@ DASHBOARD_CANDIDATES = [
 EXPECTED_PODCAST_OWNERS = {"director-of-podcast", "podcast-host", "audio-post-producer", "qc-specialist-podcast"}
 EXPECTED_AUDIO_SUPPORT = {"podcast-editor", "podcast-producer", "audio-mastering-specialist"}
 
+# Activation layer: the production processor set. Intake (webhook + TaskFlow plugin)
+# creates queued flows; these three scripts are what actually run them. Leanne's ticket:
+# without them, intake and publish work but queued flows never execute the 18 steps.
+ACTIVATION_SCRIPTS_DIR = os.path.join(REPO, "58-podcast-production-engine", "scripts")
+ACTIVATION_SCRIPTS = ("register-podcast-hook.sh", "podcast_controller.py", "install-podcast-department.sh")
+SKILL_MD_PATH = os.path.join(REPO, "58-podcast-production-engine", "SKILL.md")
+
 
 def load_json(p):
     with open(p) as f:
@@ -68,6 +86,38 @@ def parse_status_enum(md_text):
     if not m:
         return None
     return set(re.findall(r"'([a-z_]+)'", m.group(1)))
+
+
+def activation_section_lines(skill_text):
+    """Locate the activation section of SKILL.md.
+
+    Returns the line indexes (0-based) of all markdown headings whose text
+    contains 'activation', or an empty list if SKILL.md has no activation
+    section at all. The section body is everything from the first such heading
+    to the next heading at the same or higher level (or end of file).
+    """
+    hits = []
+    for i, line in enumerate(skill_text.splitlines()):
+        if re.match(r"^#{1,6}\s.*activation", line, re.IGNORECASE):
+            hits.append(i)
+    return hits
+
+
+def activation_section_body(skill_text):
+    """Return the text of the first SKILL.md section whose heading mentions activation."""
+    lines = skill_text.splitlines()
+    heads = activation_section_lines(skill_text)
+    if not heads:
+        return None
+    start = heads[0]
+    level = len(re.match(r"^(#+)", lines[start]).group(1))
+    body = [lines[start]]
+    for line in lines[start + 1:]:
+        m = re.match(r"^(#+)\s", line)
+        if m and len(m.group(1)) <= level:
+            break
+        body.append(line)
+    return "\n".join(body)
 
 
 def run():
@@ -232,11 +282,47 @@ def run():
             if ex in granted:
                 errors.append(f"[access] no_access example '{ex}' is also a granted department (contradiction)")
 
-    return errors
+    # --- 8. Activation layer (production processor; queued flows must run the 18 steps) ---
+    # Two-tier gate so this enforcement pointer can land ahead of the activation
+    # scripts it polices (co-land wave): while the layer is entirely absent it is
+    # reported as not-yet-installed and does not fail the build; the moment ANY
+    # activation script lands, the layer must be complete, executable, and
+    # documented, or this script exits non-zero.
+    activation_notes = []
+    act_errors = []
+    present = [n for n in ACTIVATION_SCRIPTS
+               if os.path.isfile(os.path.join(ACTIVATION_SCRIPTS_DIR, n))]
+    if not present:
+        activation_notes.append("not installed (no activation scripts on disk yet)")
+    else:
+        for name in ACTIVATION_SCRIPTS:
+            p = os.path.join(ACTIVATION_SCRIPTS_DIR, name)
+            if not os.path.isfile(p):
+                act_errors.append(f"[activation] missing script 58-podcast-production-engine/scripts/{name}")
+                continue
+            if name.endswith(".sh") and not os.access(p, os.X_OK):
+                act_errors.append(f"[activation] {name} exists but is not executable")
+        if not os.path.isfile(SKILL_MD_PATH):
+            act_errors.append("[activation] SKILL.md not found at 58-podcast-production-engine/SKILL.md")
+        else:
+            with open(SKILL_MD_PATH) as f:
+                skill_text = f.read()
+            if not activation_section_lines(skill_text):
+                act_errors.append("[activation] SKILL.md has no activation section heading")
+            else:
+                body = activation_section_body(skill_text) or ""
+                for name in ACTIVATION_SCRIPTS:
+                    if name not in body:
+                        act_errors.append(f"[activation] SKILL.md activation section does not document {name}")
+        if not act_errors:
+            activation_notes.append("verified (all 3 scripts present, executable, documented in SKILL.md)")
+    errors.extend(act_errors)
+
+    return errors, activation_notes
 
 
 def main():
-    errors = run()
+    errors, activation_notes = run()
     if errors:
         print(f"FAIL - {len(errors)} wiring violation(s):")
         for e in errors:
@@ -250,6 +336,8 @@ def main():
     print("  - intake sessionKey podcast:intake:<client-slug> bound to the podcast department agent")
     print("  - skill-department-map.json skill 58 binds departments ['podcast'] with one primary (director-of-podcast)")
     print("  - PRD Section 13 access matrix present and disjoint (default-deny; only owner+supporting write)")
+    for note in activation_notes:
+        print(f"  - activation layer {note}")
     return 0
 
 
