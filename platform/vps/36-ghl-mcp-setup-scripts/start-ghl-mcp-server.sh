@@ -63,6 +63,16 @@ GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-https://github.com/busybee3333/Go-High-Lev
 GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-10}"
 GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
 GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
+# D6 (P0 SECURITY) — loopback bind. Read the long note in
+# scripts/ghl-mcp-autostart.sh: upstream hardcodes `app.listen(port,'0.0.0.0')`
+# in src/main.ts, so NO environment variable moves it. This value is consumed by
+# the generated .ghl-mcp-bind-guard.cjs that the launcher preloads via
+# NODE_OPTIONS, never by main.js. On a Docker VPS this matters twice over: the
+# container may publish :8765 to the host, putting an unauthenticated,
+# CRM-credentialed endpoint on the public internet.
+GHL_MCP_BIND_HOST="${GHL_MCP_BIND_HOST:-127.0.0.1}"
+# sha256 of package-lock.json at the pinned commit; enforced when declared.
+GHL_MCP_DEPS_LOCK_SHA256="${GHL_MCP_DEPS_LOCK_SHA256:-}"
 
 PORT="${GHL_MCP_PORT:-8765}"
 HEALTH_URL="http://localhost:${PORT}/health"
@@ -94,7 +104,10 @@ is_healthy() {
   # GHL community MCP /health => {"status":"healthy","tools":<n>,...}
   printf '%s' "$body" | grep -qiE '"?status"?\s*:\s*"?healthy' || return 1
   # Reject Cognee's "ready"/version response masquerading on the port.
-  printf '%s' "$body" | grep -qiE 'cognee' && return 1
+  # F14: match the SERVICE and its version literal, the same discriminator
+  # ghl-mcp-probe.sh uses — matching only one of the two lets a Cognee upgrade
+  # (or a differently-branded build) slip past one check while tripping another.
+  printf '%s' "$body" | grep -qiE 'cognee|0\.5\.3-local' && return 1
   return 0
 }
 
@@ -132,9 +145,19 @@ if [ "${1:-}" = "--restart" ]; then
 fi
 
 # ---- idempotency: already healthy AND answering => do NOT double-start ----
-if is_healthy && responds_ok; then
+# D6: …but an already-healthy box with NO bind guard is exactly the box that is
+# still listening on 0.0.0.0 with an unauthenticated CRM endpoint. Taking the
+# early return there would mean the loopback fix never reaches any running box.
+# The guard's ABSENCE is a file test (no function call), so it can be evaluated
+# here, above the function definitions: when it is missing we deliberately fall
+# through to the full path, which writes the guard + launcher and pm2-reloads so
+# the running process picks it up.
+if is_healthy && responds_ok && [ -f "${MCP_DIR}/.ghl-mcp-bind-guard.cjs" ]; then
   log "already healthy + answering on :$PORT — no start needed (idempotent)"
   exit 0
+fi
+if is_healthy && responds_ok; then
+  log "healthy on :$PORT but the loopback bind guard is NOT installed — continuing so it is written and loaded (D6)"
 fi
 
 # ---- a recorded PID is still alive but not yet healthy => give it a beat ----
@@ -169,7 +192,7 @@ quarantine_src_orphans() {
     mkdir -p "$q" 2>/dev/null || true
     mv "$nm" "$q/$(printf '%s' "${nm#"$MCP_DIR/"}" | tr '/' '_')" 2>/dev/null && found=1
   done <<EOF
-$(find "$MCP_DIR/src" -type d -name node_modules -maxdepth 6 2>/dev/null)
+$(find "$MCP_DIR/src" -maxdepth 6 -type d -name node_modules 2>/dev/null)
 EOF
   [ "$found" = "1" ] && log "quarantined orphaned node_modules under src/ -> $q (they crash upstream's build)"
   return 0
@@ -205,24 +228,60 @@ dist_is_sane() {
 stamp_matches() {
   [ -f "$BUILD_STAMP" ] || return 1
   grep -q "\"commit\": *\"$GHL_MCP_VETTED_COMMIT\"" "$BUILD_STAMP" 2>/dev/null || return 1
+  # F15: the stamp records what the script SAID it built; nothing bound dist/ to
+  # that claim, so a hand-swapped dist/ under a matching stamp suppressed the
+  # rebuild permanently. A stamp written by an older version carries no
+  # distSha256 — treat that as "cannot verify", not as a mismatch, so this never
+  # forces a surprise fleet-wide rebuild.
+  local want have
+  want="$(sed -n 's/.*"distSha256": *"\([0-9a-f]*\)".*/\1/p' "$BUILD_STAMP" 2>/dev/null | head -1)"
+  if [ -n "$want" ] && [ "$want" != "unknown" ]; then
+    have="$(shasum -a 256 "$MCP_DIR/dist/main.js" 2>/dev/null | awk '{print $1}')"
+    if [ -n "$have" ] && [ "$have" != "$want" ]; then
+      log "build stamp does NOT match the artifact (dist/main.js sha256=$have, stamp=$want) — rebuilding from the pin"
+      return 1
+    fi
+  fi
   return 0
 }
 build_pinned() {
   command -v npm >/dev/null 2>&1 || { log "npm not on PATH — cannot build"; return 1; }
-  local tmp rc=0 ts
+  local tmp rc=0 ts _lock_sha="" _dist_sha=""
   tmp="$(mktemp -d "${TMPDIR:-/tmp}/ghl-mcp-build.XXXXXX")" || return 1
   log "building pinned tree ${GHL_MCP_VETTED_COMMIT} in $tmp (the working tree is NEVER built)"
   if ! git -C "$MCP_DIR" archive "$GHL_MCP_VETTED_COMMIT" | tar -x -C "$tmp" 2>>"$RUNLOG"; then
     log "git archive failed"; rm -rf "$tmp"; return 1
   fi
+  # R5 — SUPPLY-CHAIN HARDENING (identical policy to scripts/ghl-mcp-autostart.sh):
+  #   * NO `|| npm install` fallback. That fallback fired exactly when the
+  #     lockfile and package.json disagreed and then resolved fresh from the
+  #     registry, silently voiding the vetting verdict's "dependency graph
+  #     unchanged" claim. A missing/out-of-sync lockfile is now a build FAILURE,
+  #     and the swap-on-success discipline leaves the previous dist/ intact.
+  #   * --ignore-scripts on BOTH installs, so no transitive preinstall/install/
+  #     postinstall hook executes as the box user with the GHL PIT in its
+  #     environment. (Necessary, not sufficient: it stops lifecycle hooks, not
+  #     all toolchain execution.)
+  #   * The prod-dependency prune happens HERE, in the temp dir, not as a second
+  #     unpinned `npm install` against the working tree after the swap.
+  if [ ! -f "$tmp/package-lock.json" ]; then
+    log "BUILD REFUSED: no package-lock.json at the pinned commit — 'npm ci' cannot pin the dependency tree and we do NOT fall back to 'npm install'"
+    rm -rf "$tmp"; return 1
+  fi
+  if [ -n "${GHL_MCP_DEPS_LOCK_SHA256:-}" ]; then
+    _lock_sha="$(shasum -a 256 "$tmp/package-lock.json" 2>/dev/null | awk '{print $1}')"
+    if [ -z "$_lock_sha" ] || [ "$_lock_sha" != "$GHL_MCP_DEPS_LOCK_SHA256" ]; then
+      log "BUILD REFUSED: package-lock.json sha256 mismatch (observed=${_lock_sha:-unreadable} expected=$GHL_MCP_DEPS_LOCK_SHA256)"
+      rm -rf "$tmp"; return 1
+    fi
+  else
+    _lock_sha="$(shasum -a 256 "$tmp/package-lock.json" 2>/dev/null | awk '{print $1}')"
+  fi
   (
     cd "$tmp" || exit 1
-    if [ -f package-lock.json ]; then
-      npm ci --no-audit --no-fund >>"$RUNLOG" 2>&1 || npm install --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
-    else
-      npm install --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
-    fi
+    npm ci --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
     npm run build >>"$RUNLOG" 2>&1 || exit 1
+    npm ci --omit=dev --ignore-scripts --no-audit --no-fund >>"$RUNLOG" 2>&1 || exit 1
   ) || rc=1
   if [ "$rc" != "0" ] || [ ! -s "$tmp/dist/main.js" ] || ! grep -q 'connect(transport)' "$tmp/dist/main.js" 2>/dev/null; then
     log "BUILD FAILED or unusable dist — existing dist/ left UNTOUCHED"
@@ -238,14 +297,35 @@ build_pinned() {
       [ -d "$MCP_DIR/dist.bak-prev" ] && mv "$MCP_DIR/dist.bak-prev" "$MCP_DIR/dist" 2>/dev/null || true
       rm -rf "$tmp"; return 1; }
   fi
-  ( cd "$MCP_DIR" && npm install --no-audit --no-fund --omit=dev >>"$RUNLOG" 2>&1 ) || \
-    log "WARN: prod dependency refresh returned non-zero (existing node_modules kept)"
+  # Install the PINNED, script-suppressed production node_modules built above.
+  # Rolls BOTH trees back together on failure; the failed dist is moved aside
+  # (never deleted — the QC gate forbids rm -rf on dist) for diagnosis.
+  if [ -d "$tmp/node_modules" ]; then
+    rm -rf "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
+    [ -d "$MCP_DIR/node_modules" ] && mv "$MCP_DIR/node_modules" "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
+    if ! mv "$tmp/node_modules" "$MCP_DIR/node_modules" 2>/dev/null; then
+      cp -R "$tmp/node_modules" "$MCP_DIR/node_modules" 2>/dev/null || {
+        log "FATAL: could not install pinned production node_modules — rolling back dist/ and node_modules/"
+        rm -rf "$MCP_DIR/node_modules" 2>/dev/null || true
+        [ -d "$MCP_DIR/node_modules.bak-prev" ] && mv "$MCP_DIR/node_modules.bak-prev" "$MCP_DIR/node_modules" 2>/dev/null || true
+        [ -d "$MCP_DIR/dist" ] && mv "$MCP_DIR/dist" "$MCP_DIR/dist.failed-$ts" 2>/dev/null || true
+        [ -d "$MCP_DIR/dist.bak-prev" ] && mv "$MCP_DIR/dist.bak-prev" "$MCP_DIR/dist" 2>/dev/null || true
+        rm -rf "$tmp"; return 1; }
+    fi
+    rm -rf "$MCP_DIR/node_modules.bak-prev" 2>/dev/null || true
+  fi
+  # F15: bind the stamp to the ARTIFACT so a hand-swapped dist/ under a matching
+  # stamp cannot suppress the rebuild forever.
+  _dist_sha="$(shasum -a 256 "$MCP_DIR/dist/main.js" 2>/dev/null | awk '{print $1}')"
   cat > "$BUILD_STAMP" <<EOF
 {
   "commit": "$GHL_MCP_VETTED_COMMIT",
   "profile": "$GHL_MCP_TOOL_PROFILE",
   "builtAt": "$ts",
   "node": "$(node --version 2>/dev/null || echo unknown)",
+  "distSha256": "${_dist_sha:-unknown}",
+  "depsLockSha256": "${_lock_sha:-unknown}",
+  "bindHost": "$GHL_MCP_BIND_HOST",
   "builtBy": "start-ghl-mcp-server.sh"
 }
 EOF
@@ -360,11 +440,70 @@ if command -v curl >/dev/null 2>&1; then
   esac
 fi
 rm -f "$NOTE" 2>/dev/null || true
+# D6 (P0 SECURITY): force the listener onto loopback. Upstream hardcodes
+# `app.listen(port, '0.0.0.0')`, so no env var can move it — we preload a guard
+# that rewrites the listen host. Set AFTER .env is sourced so a stale .env cannot
+# clobber NODE_OPTIONS.
+: "${GHL_MCP_BIND_HOST:=127.0.0.1}"
+export GHL_MCP_BIND_HOST
+BIND_GUARD="${MCP_DIR}/.ghl-mcp-bind-guard.cjs"
+if [ -f "$BIND_GUARD" ]; then
+  NODE_OPTIONS="--require \"${BIND_GUARD}\" ${NODE_OPTIONS:-}"
+  export NODE_OPTIONS
+else
+  printf '%s ghl-mcp launcher: WARNING bind guard missing at %s — the server will bind ALL INTERFACES (0.0.0.0). Re-run start-ghl-mcp-server.sh.\n' \
+    "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$BIND_GUARD" >&2
+fi
 NODE_BIN="${GHL_MCP_NODE_BIN:-$(command -v node 2>/dev/null || echo node)}"
 cd "$MCP_DIR" || exit 1
 exec "$NODE_BIN" "${MCP_DIR}/dist/main.js"
 LAUNCHEOF
   chmod +x "$LAUNCHER" 2>/dev/null || true
+}
+
+# D6: the bind guard itself. Byte-identical in intent to the one
+# scripts/ghl-mcp-autostart.sh writes; see the long note there for why an env
+# var alone cannot fix this. Fail-open on any unexpected argument shape.
+BIND_GUARD="${MCP_DIR}/.ghl-mcp-bind-guard.cjs"
+write_bind_guard() {
+  cat > "$BIND_GUARD" <<'GUARDEOF'
+'use strict';
+// .ghl-mcp-bind-guard.cjs — generated by start-ghl-mcp-server.sh. DO NOT EDIT BY HAND.
+//
+// Forces the GHL community MCP to listen on loopback. Upstream hardcodes
+// `app.listen(port, '0.0.0.0')`, exposing a CRM-credentialed, UNAUTHENTICATED
+// endpoint to every host on the LAN (and, on a port-publishing Docker VPS,
+// potentially the public internet). Loaded with `node --require`.
+//
+// Escape hatch: setting GHL_MCP_ALLOW_PUBLIC_BIND to 1 honours GHL_MCP_BIND_HOST
+// verbatim — a deliberate per-box operator decision, never a shipped default.
+try {
+  const net = require('net');
+  const ALLOW_PUBLIC = process.env.GHL_MCP_ALLOW_PUBLIC_BIND === '1';
+  let HOST = process.env.GHL_MCP_BIND_HOST || '127.0.0.1';
+  const isLoopback = (h) =>
+    typeof h === 'string' &&
+    (h === 'localhost' || h === '::1' || h === '::ffff:127.0.0.1' || /^127\./.test(h));
+  if (!ALLOW_PUBLIC && !isLoopback(HOST)) HOST = '127.0.0.1';
+
+  const origListen = net.Server.prototype.listen;
+  net.Server.prototype.listen = function patchedListen(...args) {
+    try {
+      const a0 = args[0];
+      if (a0 !== null && typeof a0 === 'object' && !Array.isArray(a0)) {
+        if (a0.port !== undefined && a0.path === undefined && a0.fd === undefined) {
+          args[0] = Object.assign({}, a0, { host: HOST });
+        }
+      } else if (typeof a0 === 'number' || (typeof a0 === 'string' && /^[0-9]+$/.test(a0))) {
+        if (typeof args[1] === 'string') args[1] = HOST;
+        else args.splice(1, 0, HOST);
+      }
+    } catch (e) { /* never block a start */ }
+    return origListen.apply(this, args);
+  };
+} catch (e) { /* fail-open: a broken guard must never stop the server */ }
+GUARDEOF
+  chmod 644 "$BIND_GUARD" 2>/dev/null || true
 }
 
 # Write the canonical pm2 ecosystem (PORT + MCP_SERVER_PORT BOTH pinned — main.js
@@ -373,6 +512,7 @@ LAUNCHEOF
 # The GHL PIT is loaded at launch from the 600-perm .ghl-mcp.env (SK1-70), NOT inlined.
 write_ecosystem() {
   write_secret_env
+  write_bind_guard
   write_launcher
   cat > "$MCP_DIR/ecosystem.config.js" <<ECO
 // ghl-community-mcp — pm2 ecosystem (generated by start-ghl-mcp-server.sh)
@@ -410,6 +550,9 @@ module.exports = {
       PORT: "${PORT}",
       MCP_SERVER_PORT: "${PORT}",
       GHL_TOOL_PROFILE: "${GHL_MCP_TOOL_PROFILE}",
+      // D6 (P0): read by .ghl-mcp-bind-guard.cjs (preloaded by the launcher),
+      // never by main.js — upstream hardcodes its 0.0.0.0 bind.
+      GHL_MCP_BIND_HOST: "${GHL_MCP_BIND_HOST}",
       GHL_MCP_NODE_BIN: "${NODE_BIN}",
       GHL_MCP_LOG_DIR: "${LOG_DIR}",
       GHL_MCP_LOG_MAX_BYTES: "${GHL_MCP_LOG_MAX_BYTES}",
@@ -443,16 +586,31 @@ install_log_rotation() {
   fi
 }
 
+# F13: managed cron lines are matched on a SENTINEL COMMENT and REPLACED when
+# they drift. The old `grep -Fq "pm2 resurrect"` skipped adding a corrected line
+# while leaving a stale one pointing at a path that no longer exists — a silently
+# dead reboot hook that nothing ever reported.
+CRON_TAG_RESURRECT="# managed:ghl-mcp-pm2-resurrect"
+upsert_cron_line() {
+  local tag="$1" line="$2" current desired
+  command -v crontab >/dev/null 2>&1 || return 1
+  current="$(crontab -l 2>/dev/null || true)"
+  case "$current" in
+    *"$line"*) return 1 ;;
+  esac
+  desired="$(printf '%s\n' "$current" | grep -vF "$tag" 2>/dev/null || true)"
+  printf '%s\n%s\n' "$desired" "$line" | grep -v '^$' | crontab - >/dev/null 2>&1 || return 1
+  return 0
+}
+
 install_reboot_resurrect() {
   command -v pm2 >/dev/null 2>&1 || return 0
   local PM2_BIN; PM2_BIN="$(command -v pm2)"
   pm2 startup >/dev/null 2>&1 || true
   if command -v crontab >/dev/null 2>&1; then
-    local LINE="@reboot ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1"
-    if ! crontab -l 2>/dev/null | grep -Fq "pm2 resurrect"; then
-      ( crontab -l 2>/dev/null; printf '%s\n' "$LINE" ) | crontab - >/dev/null 2>&1 || true
-      log "installed @reboot 'pm2 resurrect' cron (reboot-surviving)"
-    fi
+    local LINE="@reboot ${PM2_BIN} resurrect >${LOG_DIR}/pm2-resurrect.log 2>&1 ${CRON_TAG_RESURRECT}"
+    upsert_cron_line "$CRON_TAG_RESURRECT" "$LINE" \
+      && log "installed/refreshed @reboot 'pm2 resurrect' cron (reboot-surviving)"
   fi
 }
 
@@ -470,6 +628,7 @@ else
   # terminal so it survives session/exec teardown; the loop re-launches on CRASH
   # and stops on a clean exit 0 (bad/absent PIT).
   log "pm2 not available — installing detached supervised relaunch loop on :$PORT (PORT + profile pinned)"
+  write_bind_guard
   write_launcher
   SUP="$MCP_DIR/.ghl-mcp-supervise.sh"
   cat > "$SUP" <<SUPEOF
@@ -478,6 +637,8 @@ cd "${MCP_DIR}" || exit 1
 while true; do
   PORT="${PORT}" MCP_SERVER_PORT="${PORT}" GHL_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE}" \\
     NODE_ENV=production GHL_MCP_NODE_BIN="${NODE_BIN}" \\
+    GHL_MCP_BIND_HOST="${GHL_MCP_BIND_HOST}" \\
+    GHL_MCP_LOG_DIR="${LOG_DIR}" \\
     /bin/bash "${LAUNCHER}" >>"${RUNLOG}" 2>&1
   rc=\$?
   [ "\$rc" = "0" ] && break

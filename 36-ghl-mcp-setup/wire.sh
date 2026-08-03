@@ -94,26 +94,53 @@ fi
 
 M2_MARKER="convertandflow-migration:tier2-deregister:$MIGRATION_TAG"
 
+# The M2 marker is a PERMANENT, byte-stable idempotency key: once written, this
+# migration never runs again on this box. So it must only ever be written when
+# the end state has been OBSERVED, not merely attempted.
+#
+# Two ways the old code wrote it on an unverified assumption:
+#   1. After `openclaw mcp remove … || true` it wrote the marker unconditionally.
+#      The gateway rewrites openclaw.json from memory and can clobber a config
+#      write, so the removal genuinely may not stick — and the canary was found
+#      with ghl-community-mcp STILL registered, exactly consistent with a removal
+#      that was undone. The marker then guaranteed no later pass would retry.
+#   2. The else-branch fired both when the server was confirmed unregistered AND
+#      when the openclaw CLI was simply absent. In the second case nothing was
+#      ever checked, yet the migration was recorded as permanently done.
+# Both now re-read `openclaw mcp list` and skip the marker on any doubt, so the
+# next wiring pass retries instead of the box being silently stuck forever.
+_m2_still_registered() {
+  openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'
+}
+
 if grep -qF "$M2_MARKER" "$AGENTS_MD" 2>/dev/null; then
   echo "STATUS: M2 tier2-deregister already applied — skipping"
-elif command -v openclaw >/dev/null 2>&1 && openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+elif ! command -v openclaw >/dev/null 2>&1; then
+  # Cannot observe the state -> do NOT record the migration as done.
+  echo "STATUS: M2 tier2-deregister PENDING — openclaw CLI not on PATH, so registration state could not be verified; marker NOT written (will retry next pass)"
+elif _m2_still_registered; then
   # Back up config via BYUP pattern before removal
   BYUP_BACKUP="${HOME}/.openclaw/backups/openclaw-config-before-tier2-deregister-${ISO}.json"
   mkdir -p "$(dirname "$BYUP_BACKUP")"
   openclaw config export > "$BYUP_BACKUP" 2>/dev/null || true
   openclaw mcp remove ghl-community-mcp 2>/dev/null || true
-  echo "STATUS: M2 tier2-deregister applied — ghl-community-mcp removed from mcp.servers"
-  # Verify service still responds
-  URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' || echo "")
-  if [ -n "$URL" ] && curl -sS -m 5 "$URL/tools" >/dev/null 2>&1; then
-    echo "STATUS: M2 service still responding on $URL/tools — OK"
+  # RE-READ: the removal is only real if it is still gone when we look again.
+  if _m2_still_registered; then
+    echo "STATUS: M2 WARNING — 'openclaw mcp remove ghl-community-mcp' did not stick (the gateway can rewrite openclaw.json from memory and clobber config writes). Marker NOT written; the next wiring pass will retry."
   else
-    echo "STATUS: M2 WARNING — service /tools not responding; check launchd/systemd"
+    echo "STATUS: M2 tier2-deregister applied — ghl-community-mcp removed from mcp.servers (verified by re-reading 'openclaw mcp list')"
+    # Verify service still responds
+    URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL 2>/dev/null | tr -d '\n' || echo "")
+    if [ -n "$URL" ] && curl -sS -m 5 "$URL/tools" >/dev/null 2>&1; then
+      echo "STATUS: M2 service still responding on $URL/tools — OK"
+    else
+      echo "STATUS: M2 WARNING — service /tools not responding; check launchd/systemd"
+    fi
+    echo "" >> "$AGENTS_MD"
+    echo "<!-- $M2_MARKER -->" >> "$AGENTS_MD"
   fi
-  echo "" >> "$AGENTS_MD"
-  echo "<!-- $M2_MARKER -->" >> "$AGENTS_MD"
 else
-  echo "STATUS: M2 tier2-deregister — ghl-community-mcp not registered; no-op"
+  echo "STATUS: M2 tier2-deregister — ghl-community-mcp not registered (verified); no-op"
   echo "" >> "$AGENTS_MD"
   echo "<!-- $M2_MARKER -->" >> "$AGENTS_MD"
 fi

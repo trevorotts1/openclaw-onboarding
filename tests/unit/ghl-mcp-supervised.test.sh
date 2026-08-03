@@ -98,7 +98,14 @@ bash "$SELF_DIR/ghl-mcp-probe.sh" --once
 pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
-crontab -l | grep "pm2 resurrect"'
+crontab -l | grep "pm2 resurrect"
+GHL_MCP_BIND_HOST="127.0.0.1"
+cat > "$MCP_DIR/.ghl-mcp-bind-guard.cjs" <<GUARDEOF
+net.Server.prototype.listen = function () {};
+GUARDEOF
+NODE_OPTIONS="--require \"$BIND_GUARD\" $NODE_OPTIONS"
+npm ci --ignore-scripts --no-audit --no-fund
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund'
 GOOD_VPS='#!/usr/bin/env bash
 GHL_MCP_VETTED_COMMIT="bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3"
 git -C "$MCP_DIR" checkout --detach --force "$GHL_MCP_VETTED_COMMIT"
@@ -111,7 +118,14 @@ pm2 start ecosystem.config.js
 pm2 save
 pm2 startup
 echo "PORT=8765 MCP_SERVER_PORT=8765"
-echo "@reboot pm2 resurrect"'
+echo "@reboot pm2 resurrect"
+GHL_MCP_BIND_HOST="127.0.0.1"
+cat > "$MCP_DIR/.ghl-mcp-bind-guard.cjs" <<GUARDEOF
+net.Server.prototype.listen = function () {};
+GUARDEOF
+NODE_OPTIONS="--require \"$BIND_GUARD\" $NODE_OPTIONS"
+npm ci --ignore-scripts --no-audit --no-fund
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund'
 
 # Sanity: the synthetic GOOD pair must itself pass, otherwise every negative
 # case below would "pass" for the wrong reason.
@@ -226,6 +240,72 @@ if [ "$rc" = "1" ]; then
   pass "(L) an autostart with no log rotation FAILS (stderr.log grew to 5.4 MB fleet-side)"
 else
   fail "(L) missing log rotation was accepted (exit $rc)"
+fi
+
+# ── (M) D6: no loopback bind guard -> FAILS ──────────────────────────────────
+# The P0 of this release. Upstream hardcodes app.listen(port,'0.0.0.0') in BOTH
+# entry points, so an env var alone is not a fix — the gate must require the
+# GUARD MECHANISM, not a reassuring-looking string.
+NOGUARD="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v 'bind-guard\|net.Server.prototype.listen')"
+rc="$(_run_sandbox "$NOGUARD" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(M) an autostart with no loopback bind guard FAILS (19 Mac boxes were LAN-exposed in exactly this state)"
+else
+  fail "(M) a missing bind guard was accepted (exit $rc) — an unauthenticated CRM endpoint would ship on 0.0.0.0"
+fi
+
+# ── (M2) Guard generated but never preloaded -> FAILS ────────────────────────
+# Writing the file and forgetting NODE_OPTIONS=--require is the realistic
+# half-fix: everything LOOKS present and nothing is enforced at runtime.
+NOPRELOAD="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v 'NODE_OPTIONS')"
+rc="$(_run_sandbox "$NOPRELOAD" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(M2) generating the bind guard but never preloading it FAILS (a guard that is not loaded is theatre)"
+else
+  fail "(M2) an unloaded bind guard was accepted (exit $rc)"
+fi
+
+# ── (M3) A routable bind host -> FAILS ───────────────────────────────────────
+ROUTABLE="${GOOD_AUTOSTART}
+GHL_MCP_BIND_HOST=0.0.0.0"
+rc="$(_run_sandbox "$ROUTABLE" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(M3) declaring a ROUTABLE GHL_MCP_BIND_HOST FAILS"
+else
+  fail "(M3) a routable bind host was accepted (exit $rc)"
+fi
+
+# ── (N) R5: the 'npm ci || npm install' lockfile-defeating fallback -> FAILS ──
+# This is the shape that shipped: it fires exactly when package.json and the
+# lockfile disagree, then resolves fresh from the registry — voiding the vetting
+# verdict's "dependency graph unchanged" claim at the worst possible moment.
+NPMFALLBACK="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v '^npm ci')
+npm ci --no-audit --no-fund || npm install --no-audit --no-fund"
+rc="$(_run_sandbox "$NPMFALLBACK" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(N) an 'npm ci || npm install' fallback FAILS (it silently discards the lockfile)"
+else
+  fail "(N) the lockfile-defeating npm fallback was accepted (exit $rc)"
+fi
+
+# ── (O) R5: npm without --ignore-scripts -> FAILS ────────────────────────────
+NOIGNORE="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v -- '--ignore-scripts')
+npm ci --no-audit --no-fund"
+rc="$(_run_sandbox "$NOIGNORE" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(O) running npm without --ignore-scripts FAILS (transitive postinstall hooks run with the GHL PIT in the env)"
+else
+  fail "(O) npm without --ignore-scripts was accepted (exit $rc)"
+fi
+
+# ── (P) R5: the unpinned working-tree prod refresh -> FAILS ──────────────────
+UNPINNED_REFRESH="${GOOD_AUTOSTART}
+( cd \"\$MCP_DIR\" && npm install --no-audit --no-fund --omit=dev )"
+rc="$(_run_sandbox "$UNPINNED_REFRESH" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(P) an unpinned 'npm install --omit=dev' against the working tree FAILS"
+else
+  fail "(P) the unpinned production refresh was accepted (exit $rc)"
 fi
 
 echo ""
