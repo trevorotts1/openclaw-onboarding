@@ -657,6 +657,49 @@ gates implement; it never weakens the fail-closed semantics: identity must match
 must be YES, and a non-matching identity still refuses with exactly "you are not in good
 standing".
 
+## Publish contract: the mode-selected channel is the payload's podcast_id
+
+Every client runs TWO shows under the operator's single Podbean host account
+(the two-show convention above), and the publish step (Step 15) never uses
+one fixed channel for both modes: it passes the channel selected BY MODE as
+the payload's podcast_id, and every downstream consumer keys on exactly that
+value.
+
+- Personal mode (personal_podcast_style) publishes to the client's
+  personal-show channel: scripts/podcast_channel.py resolves
+  PODBEAN_PODCAST_ID (the default channel).
+- Interview mode (interview_style_podcast) publishes to the client's
+  interview-show channel: scripts/podcast_channel.py resolves
+  PODBEAN_PODCAST_ID_<SHOW_SLUG>, where SHOW_SLUG is the interview show's
+  slug in uppercase, underscore form (for example
+  PODBEAN_PODCAST_ID_SOFT_GIRL_ERA).
+
+The resolver never guesses a channel id and never borrows the other show's
+channel: when the mode's channel env var is absent it refuses, naming the
+exact missing variable (a provisioning defect to fix, never something the
+engine works around). A podcast_id already carried on the payload wins
+as-is, which is how the controller hands its own resolution through.
+Provisioning (provision-podcast-client.sh, STEP 5.5 two-show channel
+capture) records both channel ids in the provision ledger and prints the
+box-side env contract for the operator to apply; it never invents a channel
+id, and SOP-PODCAST-02 Section 2.5 remains the onboarding gate (capture
+both ids, one roster row per show, both env vars SET, one standing-check
+probe per show).
+
+Why this resolves correctly against the roster gate: the good-standing
+roster on the operator's n8n (podcast_publish_roster) holds ONE ROW PER
+SHOW for a two-show client, both rows carrying the SAME identity tuple
+(email plus last_name) and good_standing=YES, differing only by
+podbean_channel_id. The n8n publish and standing gates match identity
+first, then select the row whose podbean_channel_id equals the payload's
+podcast_id (channel-preferred selection), falling back to the first matched
+row only when no channel match exists (that fallback preserves the legacy
+single-row client behavior exactly). Passing the mode-selected channel as
+podcast_id is therefore exactly what makes a multi-row client resolve the
+correct show row: a personal episode resolves the personal row, an
+interview episode resolves the interview row, and a single-row client is
+unaffected.
+
 ## Per-client credentials (labels and locations only, never values)
 
 These are the NAMED CLIENT's OWN accounts (the ONE exception is the Podbean OAuth app, which is
@@ -725,6 +768,7 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 | 16 Tier 1 deterministic checks | scripts/qc-tier1-mechanical.py |
 | Attempt counter, frozen research, 3-strike | scripts/qc-attempt-gate.py |
 | Credential resolution, pairing, fingerprint | scripts/ghl_credential_gate.py |
+| Mode-to-channel selection (two-show convention), publish passes mode-selected channel as podcast_id | scripts/podcast_channel.py |
 | No Anthropic in shipped runtime | scripts/guard-no-anthropic-runtime.py |
 | Exactly one cron, no heartbeat, churn sweep | scripts/guard-cron-inventory.py |
 | Alert dedup and storm cap, gateway-only | scripts/alert-dedup.py |
