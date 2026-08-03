@@ -178,7 +178,12 @@ printf '[]' > "$J_C3"; : > "$C_C3"
 cat > "$H_C3/.openclaw/workspace/.workforce-build-state.json" <<'EOF'
 {"interviewComplete": true, "interviewQc": {"status":"pass"}, "ownerChat": "999999999", "agentName": "TestAgent", "departments": [{"id":"sales","status":"pending"}], "roleLibraryStatus":"pending", "sopLibraryStatus":"pending"}
 EOF
+# NOTE: OPERATOR_ESCALATION_CHAT_ID is required for a dispatch to happen at all.
+# Internal resume traffic is operator-only (it is never routed to .ownerChat, and
+# there is no owner fallback), so without an operator chat the lane correctly sends
+# NOTHING -- and this group needs a real send in order to exercise the 429 path.
 HOME="$H_C3" PATH="$bin_c3:$PATH" FAKE_OC_JOBS_FILE="$J_C3" FAKE_OC_CALLS_FILE="$C_C3" \
+  OPERATOR_ESCALATION_CHAT_ID="555000111" \
   FAKE_OC_MESSAGE_FAIL="error: 429 rate limit exceeded" \
   bash "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" > "$SANDBOX/c3-run1.log" 2>&1
 
@@ -199,6 +204,7 @@ rm -f "$H_C3/.openclaw/workspace/.workforce-build-state.lock" \
       "$H_C3/.openclaw/workspace/.workforce-build-resume.inflight" 2>/dev/null || true
 
 HOME="$H_C3" PATH="$bin_c3:$PATH" FAKE_OC_JOBS_FILE="$J_C3" FAKE_OC_CALLS_FILE="$C_C3" \
+  OPERATOR_ESCALATION_CHAT_ID="555000111" \
   FAKE_OC_MESSAGE_FAIL="error: 429 rate limit exceeded" \
   bash "$REPO_ROOT/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh" > "$SANDBOX/c3-run2.log" 2>&1
 sends_after_run2=$(grep -c "^message send" "$C_C3" 2>/dev/null)
