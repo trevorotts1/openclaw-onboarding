@@ -1,3 +1,131 @@
+## [v21.7.1]  -  2026-08-03  -  GHL API currency: v3 is a first-class generation, the docs match live probes, and qc-static is unbroken
+
+Ships two commits that were finished on `feat/ghl-api-currency-2026-08` and never
+merged.
+
+### Why
+
+The previous API-currency pass trusted the GitHub OpenAPI repo, which is a
+periodic dump that LAGS HighLevel's live docs — last repo commit 2026-06-19, most
+specs synced 2026-05-01, `saas-api.json` synced 2025-08-13 (~12 months stale) —
+while the changelog runs to 2026-07-30. Two verdicts shipped from that lag were
+regressions, and a live `GET` probe agreed with independent validation on both.
+
+### What changed
+
+- **v3 is documented as a first-class API generation**, and the reference docs are
+  corrected against live probe results rather than against the stale dump. The
+  five-version model replaces the previous account.
+- **Two bad "corrections" are reverted.** SaaS `2023-02-21` is restored (HighLevel
+  publishes a complete SaaS documentation set under it; PROVEN live — `GET
+  /saas-api/public-api/agency-plans/{companyId}` returns 200). `POST /users/`
+  `2023-02-21` is restored in skill 44 and a note now sits at the call site so it
+  is not "fixed" a third time.
+- **The "causing live 400s" rationale is withdrawn everywhere.** PROVEN: contacts,
+  users and calendars all return 200 under all four published versions, and no
+  endpoint was found that rejects `2021-04-15`. The `2021-07-28` standardisation
+  stands as a consistency choice, not a bug fix.
+
+### Fixed — CI
+
+`QC static invariants` was RED on `main`. HighLevel's official MCP orchestrator
+lives at `services.leadconnectorhq.com/mcp/anthropic/v2`, and the "no banned model
+tokens" guard matched `anthropic/` in that URL as though it were a model slug — so
+documenting the vendor's own endpoint turned the build red.
+
+The carve-out is a `(?<!/mcp/)` negative lookbehind anchored to that exact token
+position. It is deliberately the narrowest possible fix: it is **not** a blanket
+`anthropic` allow, the URL stays documented, and a genuine provider-prefixed model
+slug anywhere else — including elsewhere on the very same line — is still caught.
+`tests/unit/ghl-mcp-vendor-url-exemption.test.sh` proves both directions and
+re-derives the pattern from `qc-static.yml` itself, so widening the exemption
+later turns that test red.
+
+### Risk
+
+Skill 36's `skill-version.txt` moves to v1.4.1 to reconcile two same-day branches
+that both touched the skill; the v1.3.2 CHANGELOG entry it had been stamped for
+now actually exists. No behaviour change in skill 36 from this merge.
+
+---
+
+## [v21.7.0]  -  2026-08-03  -  GHL MCP: the pin gets a repository we control, and the vetting verdict gets teeth
+
+v21.6.0 made the pin file reach boxes and made the verdict enforced. It left two
+things unfixed, and neither was visible from the repo.
+
+### Why
+
+**The pin was coincidental, not durable.** Upstream force-pushes rewritten history
+(it carries an automated `codex/daily-ghl-api-refresh` branch) and publishes zero
+tags and zero releases. The pin resolved only because it happened to be upstream
+`main`'s tip. The moment `main` moves past it the object is garbage-collected:
+boxes with an existing clone survive on their local copy, but `git fetch origin
+<sha>` from a FRESH clone fails and every new client provisioning breaks
+permanently with `PIN_MISMATCH`. Pinning makes a dependency reproducible;
+MIRRORING is what makes the pin durable.
+
+**The verdict was bound to a commit but not to a source.** A SHA names an OBJECT,
+never the host that serves it. With the repository URL unbound, the source could
+be repointed at an attacker's clone while the commit, the verdict and the digest
+all still checked out — and every byte a box executes would have changed.
+
+### What changed
+
+**R6 — an org-controlled mirror, which is also a security fix.**
+`trevorotts1/ghl-community-mcp-mirror` carries the full upstream history. `main`
+is byte-identical to upstream and never patched, so commit SHAs still
+cross-reference against upstream (that is how a tampered third-party tree is
+detected). A ruleset blocks force-push and deletion.
+
+The mirror also carries a security patch on `openclaw-patched`, and the pin binds
+to a MIRROR-LOCAL commit on that branch. Upstream hardcodes
+`app.listen(port, '0.0.0.0')` in BOTH HTTP entry points with no environment
+variable to change it, serves `GET /tools` unauthenticated, and answers a
+disallowed `Origin` with 500 instead of the 403 the MCP specification requires —
+on a process holding a CRM private-integration token, where the endpoint IS the
+credential. Because the installer rebuilds `dist/` from the pinned source on every
+run, a `dist/`-level fix is destroyed by the next build, so the fix lives in
+source: `GHL_MCP_BIND_HOST` (default `127.0.0.1`), `Origin` validation returning
+403, and an opt-in bearer gate, applied to `src/main.ts` AND `src/http-server.ts`,
+with `PATCHES.md` indexing every divergence. Upstream PR #9 is open so the
+divergence can retire. Existing clones repoint `origin` automatically on their
+next run.
+
+**R7 — a vetting record that fails closed.** `GHL_MCP_PIN_VETTED_DIGEST` is a
+sha256 over a labelled, domain-separated join of
+`{commit, verdict, date, reviewer, deps-lockfile-sha256, repository URL}`
+(algorithm id `ghl-mcp-pin-v2`). Change any bound value by hand and the digest
+stops recomputing, and CI, the pre-push hook and the box-side installer all
+refuse. Forgetting to re-vet produces refusal. `scripts/ghl-mcp-vet-pin.sh` is the
+only thing that writes the record; a legitimate pin bump is two commands (review,
+then seal) against the previous three-file hand-edit plus a remembered rule. It is
+not a signature and does not pretend to be — it closes the accident, not the
+attack.
+
+**R8 — the gate runs where it can be seen.** CI job `ghl-mcp-pin-gate`, a pre-push
+hook and a human all run the SAME script, so they cannot disagree about what
+"this pin is OK" means. The workflow's `paths:` filters are gone: a path-filtered
+workflow can never be a required status check, because on any PR that misses those
+paths the check is never reported and the PR hangs forever at "Expected".
+
+### Risk
+
+Branch protection and required status checks are NOT changed — that is Trevor's
+decision. The exact ruleset command and its trade-offs (it forces a pull request
+for every merge to `main`) are documented in the workflow header. Until then this
+job is loud, not blocking, and the layer that actually protects a client machine
+is the box-side refusal in the installer, which runs on paths CI never sees.
+
+Mutation-proved in both directions (26 proofs in
+`tests/unit/ghl-mcp-pin-digest.test.sh`, 22 in
+`tests/unit/ghl-mcp-pin-delivery.test.sh`): a hand-edited verdict word, a pin SHA
+changed without re-vetting, a lockfile changed without re-vetting, a mirror-URL
+swap, a deleted digest and an emptied digest are each REFUSED, and a correctly
+vetted record PASSES.
+
+---
+
 ## [v21.6.0]  -  2026-08-03  -  GHL MCP: the pin file now actually reaches boxes, the QC gate now reads the RUNNING service, and the vetting verdict is enforced
 
 v21.5.0 shipped three claims that were not true in the deployed topology. This
@@ -471,7 +599,7 @@ log, and four small correctness defects.
 ### Why
 
 **D6 - an unauthenticated, CRM-credentialed endpoint on every interface.** Measured on the
-canary: `lsof` reports `TCP *:8765 (LISTEN)`, `GET /tools` answers HTTP 200 with no
+operator box: `lsof` reports `TCP *:8765 (LISTEN)`, `GET /tools` answers HTTP 200 with no
 credential, and a hostile `Origin` yields 500 rather than the 403 the MCP specification
 requires. A fleet survey found **19 Mac client boxes** in exactly that state. The endpoint
 IS the credential: any local process, any host on the LAN, and any site the client visits
@@ -513,7 +641,7 @@ failure.
 **The probe was poisoning its own evidence.** `ghl-mcp-probe.sh` computed `LOG_DIR` itself and
 ignored `GHL_MCP_LOG_DIR` -- the very variable the autostart passes into every launch surface
 -- so the unit test had no way to redirect it and wrote real-looking OK/DEAF/NO_LISTENER/
-PROFILE_DRIFT verdicts into the box's production `probe.log`. The canary's log was found to be
+PROFILE_DRIFT verdicts into the box's production `probe.log`. The operator box's log was found to be
 100% test output, making a genuine DEAF verdict indistinguishable from a fixture in the only
 durable record the probe keeps.
 

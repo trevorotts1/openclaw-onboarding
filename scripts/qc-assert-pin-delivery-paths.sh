@@ -115,6 +115,7 @@ scripts/ghl-mcp-autostart.sh
 scripts/ghl-mcp-probe.sh
 scripts/ghl-mcp-assert-runtime.sh
 scripts/qc-assert-ghl-mcp-supervised.sh
+scripts/ghl-mcp-check-pin-digest.sh
 platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
 "
 

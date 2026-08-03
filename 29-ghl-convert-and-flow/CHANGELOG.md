@@ -4,6 +4,125 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v6.9.0] - 2026-08-03 — five-version model, reversals after independent web validation
+
+### Reverted — two "corrections" from v6.7.0 that were themselves WRONG
+An independent web validation showed the GitHub OpenAPI repo (which v6.7.0 treated as ground
+truth) **lags HighLevel's live docs** — last repo commit 2026-06-19, most specs synced
+2026-05-01, `saas-api.json` synced **2025-08-13**, while the changelog runs to 2026-07-30.
+Two v6.7.0 verdicts were artifacts of that lag. My own live probe agreed with the validator.
+
+- **SaaS `2023-02-21` restored.** HighLevel publishes a complete SaaS documentation set under
+  `2023-02-21` and it is a first-class supported version. **PROVEN live: `GET
+  /saas-api/public-api/agency-plans/{companyId}` returns 200 under it.** Changing it to
+  `2021-04-15` (from the year-stale spec file) was wrong.
+- **`POST /users/` `2023-02-21` restored in skill 44.** Documented verbatim at
+  `marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`. It is
+  **not** a contradiction with the agency reference's `2021-07-28` — HighLevel documents the
+  endpoint under multiple supported versions and both work.
+- **The "causing live 400s" rationale is withdrawn everywhere.** PROVEN: `GET /contacts/`,
+  `/users/` and `/calendars/` return 200 under all four published versions. No endpoint was
+  found that rejects `2021-04-15`. The `2021-07-28` standardisation stands as a **consistency
+  choice**, not a bug fix. Anyone chasing a real client failure should look at scopes,
+  PIT-vs-OAuth and location-vs-company token first.
+
+### Changed — the version model was structurally wrong
+- **There are FIVE concurrently-supported versions, not "v2 and v3"** — `v3` (released
+  **June 11, 2026**, not 06-19), `2023-02-21`, `2021-07-28`, `2021-04-15` and `legacy`,
+  **every one "Supported until: TBD"**. No retirement dates, no forced migration. An older
+  supported version is not a defect.
+- **The Version is declared PER-OPERATION, not per-app.** `ad-publishing-v3` has 95 ops of
+  which **94 still declare `2021-07-28`**. `phone-system-v3` names the parameter lowercase
+  `version`; `store`/`store-v3` declare none. Documented, with the list of operations that
+  declare no Version parameter at all.
+- Counts corrected: **32** specs declare `2021-07-28` exclusively (33 accept it, counting
+  `links`) — not "33 of 41".
+- A **standing staleness warning** now sits in `auth.md`, `api-generations.md` and every
+  reference banner: check `marketplace.gohighlevel.com/docs` before calling any doc wrong.
+
+### Added
+- **Opportunities pipeline CRUD — the "do not ship" gate is LIFTED.** All four operations are
+  documented live under `Version: v3`. Shipped with the semantics that bite: update replaces
+  the whole `stages` array (omit a stage and it is deleted); **delete is an irreversible
+  cascade that removes every opportunity in the pipeline**; `useOpportunityProbability`
+  silently falls back if any stage lacks `stageWinProbability`.
+- **Calendars v3 Services / booking-catalog surface (41 → 59 ops)** — the largest capability
+  the earlier audit missed entirely. `/calendars/services/{catalog,bookings,locations}` and
+  `/calendars/schedules/event-calendar/{calendarId}`.
+- **Scopes rebuilt against the true union: 142.** The three sources are DISJOINT — pre-v3
+  specs 118, v3 specs 127, `Scopes.md` 91. Names which source each came from, lists the 13
+  v3-only scopes and the 4 dropped in v3. **`pipelines.create` removed** — it is a
+  response-body enum on `/users/*`, not a requestable OAuth scope.
+- Webhook facts no skill carried: **retries fire ONLY on HTTP 429** (a receiver returning 500
+  gets no retry), user-lifecycle webhooks (`user.created|updated|deleted`), and the Webhook
+  Logs dashboard.
+- SaaS **deprecated/current endpoint split** documented; the `allow-attach-rebilling`
+  GET-vs-POST conflict between HighLevel's own changelog and spec flagged as verify-live.
+
+### Not asserted (no published basis)
+- v3 is **not** called GA/beta/preview by HighLevel — do not quote a maturity label.
+- HighLevel published **no** deprecation guidance for the OAuth renames, and no version has a
+  retirement date.
+- No MCP rate limits are published.
+
+---
+
+## [v6.8.0] - 2026-08-03 — v3 promoted to a first-class generation, verified by live probe
+
+### Added
+- **`references/api-generations.md`** — the artifact that prevents the whole class of defect
+  fixed in v6.7.0. Covers: both generations side by side (41 v2 specs / **42** v3 specs), a
+  **per-surface generation table** giving the correct `Version` for every one of the 41
+  surfaces plus whether a v3 spec exists and when to prefer it, the generation-gated paths,
+  first-class treatment of the two breaking OAuth renames with runnable cURL for both forms,
+  everything v3 adds that v2 cannot do, and a four-step decision rule.
+- **`references/agency-api.md`** — agency/company-scoped operations (OAuth token management,
+  sub-account provisioning, the 22 SaaS operations, agency users, companies, snapshots,
+  marketplace billing) brought **into the repo** for the first time. The
+  `apis/GoHighLevel-Agency-API-Reference.md` file found on boxes is agent-authored TYP
+  content with no repo source and is not published by `update-skills.sh`; this file is the
+  repo-managed source of truth and states so explicitly.
+
+### Fixed — by live read-only probe (GET only, operator-owned accounts, 2026-08-03)
+- **Withdrew the "wrong Version header causes live 400s" claim.** It is false for the
+  affected endpoints. `GET /contacts/`, `/users/` and `/calendars/` return **200 under all
+  four published version strings** (`2021-07-28`, `2021-04-15`, `2023-02-21`, `v3`). What is
+  true, and now documented: omitting the header is a **401** (`"version header was not
+  found."`) and an unpublished value is a **401** (`"version header is invalid"`). The
+  v6.7.0 corrections remain right — they align the docs with what HighLevel declares — but
+  the defect was documentation drift and fleet-wide contradiction, not live 400s.
+- **The v3 rename IS real and IS enforced, for the path that matters.**
+  `GET /oauth/installed-locations` returns **404 `Cannot GET` under `2021-07-28`** and
+  resolves only under `Version: v3`; the v2 form `GET /oauth/installedLocations` resolves
+  under **both**. Same pattern proven for `/brand-boards/.../brand-voices` (200 under `v3`,
+  404 under `2021-07-28`). So: a renamed or brand-new v3 path needs `Version: v3`; an
+  existing v2 path keeps working everywhere.
+- **Spec removals are NOT enforced at the runtime yet.** `GET /contacts/`, `GET /users/` and
+  `GET /emails/builder` all still return 200 under `Version: v3` despite the v3 specs
+  dropping them. Documented as "dropped from the spec, still answering — do not rely on
+  that lasting" rather than as a flat removal.
+- **`GET /opportunities/pipelines/{pipelineId}` is PROVEN live** (200 under both
+  `2021-07-28` and `v3`) despite being absent from both published specs.
+  `references/opportunities.md` now documents it. The pipeline WRITE operations were **not**
+  probed — no write call is made against GoHighLevel for verification — and remain flagged
+  confirm-before-use.
+- **`X-RateLimit-Daily-Reset` is real**, observed on live responses, though absent from
+  HighLevel's published header list. Skills 36 and 44 rely on it; that reliance is sound.
+- **`2023-02-21` still works on SaaS**: `GET /saas-api/public-api/agency-plans/{companyId}`
+  returns 200 under it. Existing SaaS code on the old value is not broken. `2021-04-15` is
+  still the documented value and the one to use for new work.
+
+### Changed
+- v3 spec count corrected **43 → 42** (enumerated from the GitHub contents API; the delta
+  report that drove this work said 43).
+- `SKILL.md` and `references/auth.md` restated to match the probe findings, with pointers to
+  `api-generations.md`.
+
+**Every claim in this release is either a `Version` enum / path read out of the published
+OpenAPI specs, or a live GET result recorded on 2026-08-03. No write calls were made.**
+
+---
+
 ## [v6.7.0] - 2026-08-03 — API currency: the Version-header defect, corrected scopes, and five missing capability surfaces
 
 ### Fixed — CRITICAL, this was causing live 400s on every box

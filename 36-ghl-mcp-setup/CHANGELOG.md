@@ -4,7 +4,147 @@ All notable changes to this skill are documented here.
 
 ---
 
-## [v1.3.1] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator
+## [v1.4.1] - 2026-08-03 — Reconciled with the GHL API currency work
+
+No behaviour change in this skill. Two parallel branches both touched skill 36 on
+the same day and this entry records the merge, so the version history reads
+straight instead of appearing to skip a release.
+
+- The **v1.3.2** entry below now exists. `skill-version.txt` had been stamped
+  `v1.3.2` for the `wire.sh` M2 verification change without a matching CHANGELOG
+  entry; the API-currency branch supplied that heading and folded in the CI guard
+  fix its own documentation required.
+- The `qc-static.yml` vendor-URL carve-out described there is what keeps this
+  skill able to document HighLevel's `/mcp/anthropic/v2` orchestrator URL without
+  turning the "no banned model tokens" guard red. Verified against the live guard
+  pattern after the merge: `36-ghl-mcp-setup/SKILL.md` and this CHANGELOG are both
+  clean, and a real provider-prefixed model slug is still caught.
+
+---
+
+## [v1.4.0] - 2026-08-03 — The pin gets a repository we control, and the verdict gets teeth
+
+### Why
+
+Two things were true at once and neither was visible from the repo.
+
+**The pin was coincidental, not durable.** Upstream force-pushes rewritten
+history (it carries an automated `codex/daily-ghl-api-refresh` branch) and
+publishes zero tags and zero releases. Verified: upstream `main`'s HEAD *was*
+the pinned SHA. It resolved because it happened to be the branch tip. The moment
+`main` moves past it the object is garbage-collected — existing boxes survive on
+their local clone, but `git fetch origin <sha>` from a **fresh** clone fails and
+**every new client provisioning breaks permanently** with `PIN_MISMATCH`.
+
+**The vetting verdict was inert.** `GHL_MCP_PIN_VETTED_VERDICT` was sourced into
+the environment by three scripts and read by none of them, nor by the QC gate,
+nor by CI — whose only check was that the SHA is 40 hex characters. The rule that
+was supposed to protect it ("any change to `GHL_MCP_VETTED_COMMIT` MUST reset the
+fields to PENDING") was a comment addressed to a human. And the obvious repair is
+worse than nothing: a CI check that reads `VERDICT == CLEAN` is defeated by
+editing one word, and it *trains* whoever bumps the pin to type CLEAN, because
+that is what makes the build go green.
+
+### Added — an org-controlled mirror, which turned out to be a security fix too
+
+`trevorotts1/ghl-community-mcp-mirror` carries the full upstream history.
+`main` is **byte-identical** to upstream and is never patched — identical commit
+SHAs are what let the tree be cross-referenced against upstream to detect
+tampering, and a single local commit on `main` would destroy that. A repository
+ruleset blocks force-push and deletion; both were attempted and refused rather
+than assumed.
+
+It is load-bearing for **security**, not only for pinning. Upstream hardcodes
+`app.listen(port, '0.0.0.0')` in **both** HTTP entry points with no environment
+variable to change it, serves `GET /tools` unauthenticated, and answers a
+disallowed `Origin` with **500** instead of the **403** the MCP specification
+requires — on a process holding a CRM private-integration token, where the
+endpoint *is* the credential. Because the installer rebuilds `dist/` from the
+pinned source, a `dist/`-level fix is destroyed by the next build. The patch has
+to live in source, on a branch that survives rebuilds: `openclaw-patched` carries
+`GHL_MCP_BIND_HOST` (default `127.0.0.1`), `Origin` validation returning 403, and
+an opt-in bearer gate, with 19 assertions proving it and `PATCHES.md` indexing
+every divergence. Upstream PR #9 is open so the divergence can retire.
+
+Existing clones are migrated: `ensure_repo_at_pin` / `pin_mcp_checkout` repoint
+`origin` before fetching, so a box provisioned against upstream moves to the
+mirror on its next run instead of silently staying on a force-pushing source.
+
+### Added — a vetting record that fails closed
+
+`GHL_MCP_PIN_VETTED_DIGEST` is a sha256 over a labelled, domain-separated join of
+`{commit, verdict, date, reviewer, deps-lockfile-sha256, repo URL}`. Change any
+bound value by hand and the digest stops recomputing, and CI, the pre-push hook
+and the box-side installer all refuse. **Forgetting to re-vet produces refusal.**
+
+The repository URL is bound because a SHA names an *object*, never the host that
+serves it: unbound, a mirror swap would leave the verdict, the SHA and the digest
+all checking out while every executed byte changed. Operational knobs (profile,
+port, log rotation) are deliberately **not** bound — forcing a re-vet to widen a
+log file is how a gate gets switched off.
+
+It is **not a signature and does not pretend to be**: unkeyed, public canonical
+form, recomputable by anyone with write access — but only *deliberately*, by
+running the tool. It closes the accident, not the attack.
+
+- `scripts/ghl-mcp-vet-pin.sh` — the only thing that writes the record. Resolves
+  the candidate against the mirror, prints the four review dimensions
+  mechanically, requires an explicit `--verdict` with no default, and on seal
+  rewrites the record **and both built-in fallback constants** so a split-brain
+  pin cannot open.
+- `scripts/ghl-mcp-check-pin-digest.sh` — the one implementation of the canonical
+  form, shared by every consumer. It *parses* the pin file rather than sourcing
+  it: a gate that executes the file it judges can be made to lie about its own
+  result.
+- `scripts/qc-assert-ghl-mcp-pin-gate.sh`, `scripts/qc-assert-ghl-mcp-pin-resolvers.py`,
+  and CI job `ghl-mcp-pin-gate` (the workflow's `paths:` filters are gone — a
+  path-filtered workflow can never be a required status check).
+- `tests/unit/ghl-mcp-pin-digest.test.sh` — 26 mutation proofs.
+
+**A legitimate pin bump is now two commands** — review, then seal — against the
+previous three-file hand-edit plus a remembered rule. The enforcement mechanism
+is also the ergonomics; one that costs more than what it replaces gets disabled.
+
+### Fixed
+
+- `ghl-mcp-setup-full.md` carried a **third** pin (`3dd9006a`) inside
+  copy-pasteable `git clone` commands pointed at **upstream** — the same
+  three-places-disagree failure `config/ghl-mcp-pin.env` was created to end,
+  except this copy walked straight past the vetting gate while looking approved.
+  A documented bypass is a larger hole than an undocumented one. Replaced with
+  the executed entry point and a command that reads the live record rather than
+  trusting the prose on the page.
+
+- **`GHL_MCP_PIN_OVERRIDE` was still on the v1 tuple — a split canonical form on
+  the primary fleet-roll path.** The pin *file* moved to `ghl-mcp-pin-v2`, which
+  binds the repository URL. The *override* path did not: both launch scripts
+  hand-reimplemented the six-field v1 tuple inline, so an override — by the
+  installer's own comment, "the primary path a fleet roll would use to change a
+  pin" — validated a commit without binding where it is fetched from. A mirror
+  swap would have ridden in through the most-used path while every digest still
+  checked out, which is the exact hole v2 was introduced to close.
+
+  Both paths now bind `GHL_MCP_REPO_URL` and, more importantly, **stop
+  reimplementing the algorithm at all**: the override is materialised as a
+  pin-shaped record and handed to `scripts/ghl-mcp-pin-digest.sh`, the one
+  canonical implementation. The second inline copy is *why* the drift happened
+  and was survivable — deleting the copy is the durable fix, not re-syncing it.
+  An override can change which commit is built, never where it is fetched from,
+  and an override supplied on a box without the digest tool is now refused
+  rather than trusted. Proven by `(J3)` (a digest bound to a different repo URL
+  is refused) and `(J4)` (a stale v1 six-field digest is refused).
+
+### Still open — needs a ruling, not a fix
+
+`main` on the onboarding repo has no required status checks and no rulesets, so
+this CI job is **loud, not blocking**. Making it blocking forces a pull request
+for every merge; the exact command and the trade-offs are in the workflow header.
+Until then the layer that actually protects a client machine is the box-side
+refusal in the installer, which runs on paths CI never sees.
+
+---
+
+## [v1.3.2] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator (+ the CI guard fix it required)
 
 ### Added
 - **`SKILL.md` gained a "Which official MCP endpoint" section.** HighLevel publishes two
@@ -40,6 +180,18 @@ All notable changes to this skill are documented here.
   GET-only in both the v2 and v3 specs. That wording was verified correct.
 
 **Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
+
+### Fixed — CI
+- **`qc-static.yml` "no banned model tokens" guard turned red on `main`** when this skill
+  started documenting `services.leadconnectorhq.com/mcp/anthropic/v2`. The guard's
+  vendor-slug alternative matched the `.../mcp/anthropic/v2` **URL path segment**, which is
+  not a model slug. Fixed with the narrowest possible carve-out — a `(?<!/mcp/)` negative
+  lookbehind anchored to that exact token — so a genuine provider-prefixed Claude slug
+  anywhere else, **including elsewhere on the same line**, is still caught. Not a blanket
+  `anthropic` allow,
+  and the URL stays documented. New mutation proof both directions:
+  `tests/unit/ghl-mcp-vendor-url-exemption.test.sh`, wired into `qc-static.yml` as its own
+  step so the exemption cannot be silently widened.
 
 ---
 

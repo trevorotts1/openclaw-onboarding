@@ -101,7 +101,7 @@ M2_MARKER="convertandflow-migration:tier2-deregister:$MIGRATION_TAG"
 # Two ways the old code wrote it on an unverified assumption:
 #   1. After `openclaw mcp remove … || true` it wrote the marker unconditionally.
 #      The gateway rewrites openclaw.json from memory and can clobber a config
-#      write, so the removal genuinely may not stick — and the canary was found
+#      write, so the removal genuinely may not stick — and the operator box was found
 #      with ghl-community-mcp STILL registered, exactly consistent with a removal
 #      that was undone. The marker then guaranteed no later pass would retry.
 #   2. The else-branch fired both when the server was confirmed unregistered AND

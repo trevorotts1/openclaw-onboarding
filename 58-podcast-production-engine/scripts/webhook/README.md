@@ -96,8 +96,9 @@ Context Protocol):
    `{"action":"create_flow","goal":"Podcast intake","status":"queued",
    "notifyPolicy":"silent","stateJson":{"engine":"podcast","raw_submission":{...survey...}}}`.
 2. The route's `controllerId` points at the podcast engine controller runbook
-   (SKILL.md, a sibling slice). Its first step writes `stateJson.raw_submission`
-   to a file and runs
+   (SKILL.md, a sibling slice); the runbook continues through Step 14 storing
+   media in GHL and Step 15 publishing from those GHL URLs. Its first step
+   writes `stateJson.raw_submission` to a file and runs
    `python3 scripts/webhook/intake_handler.py handle --payload <file> --mode in-flow --flow-id <flowId>`.
 3. `intake_handler` maps, tenant-checks, computes the job key, claims the ledger
    (dedup), persists, and returns a fast ACK. On a fresh accept it advances the

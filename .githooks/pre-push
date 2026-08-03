@@ -1,5 +1,16 @@
 #!/bin/bash
-# Pre-push hook: refuse a push that would carry a real client name into a
+# Pre-push hook. TWO INDEPENDENT STAGES, each with its own blocking rule:
+#
+#   STAGE 1 — client-name guard  (unchanged; its rule is stated in full below)
+#   STAGE 2 — GHL MCP supply-chain pin gate
+#
+# The stages do not share a blocking rule and must not be read as if they did.
+# Stage 1's rule was written deliberately narrow and is reproduced verbatim; it
+# governs stage 1 and nothing else. Stage 2 states its own, equally narrow rule
+# at the point where it runs.
+#
+# ── STAGE 1 ──────────────────────────────────────────────────────────────────
+# Refuse a push that would carry a real client name into a
 # public repo. This repo is a PUBLIC fleet-wide template — a client name,
 # business name, or owner-identifying token pushed to origin is a privacy
 # violation that CI cannot catch (a bare GitHub runner has no roster by
@@ -16,12 +27,12 @@
 #      report-only. This hook runs on the operator's own box, never on a bare
 #      CI runner, so exit 2 is the correct, hard block.
 #
-# Blocking rule — ONLY ever block on the gate's own verdict:
+# Blocking rule (STAGE 1) — ONLY ever block on the gate's own verdict:
 #   * gate exit 1 (roster/always-on-token hit)  -> REFUSE the push.
 #   * gate exit 2 (structural, fail-closed)     -> REFUSE the push.
 #   * gate exit 0 (clean)                        -> allow; never block a clean tree.
-# No other condition can refuse a push. A transient environment problem must
-# not hold up another session's legitimate push of clean content.
+# No other condition can refuse a push in this stage. A transient environment
+# problem must not hold up another session's legitimate push of clean content.
 #
 # Failure output shows paths and counts only, never matched name content:
 # strip everything after `path:line` with the same filter CI uses.
@@ -45,9 +56,8 @@ GATE_RC=$?
 
 case "$GATE_RC" in
   0)
-    # Clean — allow the push. Nothing may refuse a push on a clean tree.
-    echo "PRE-PUSH: client-name gate PASSED (exit 0) — push allowed."
-    exit 0
+    # Clean — stage 1 raises no objection. Fall through to stage 2.
+    echo "PRE-PUSH: client-name gate PASSED (exit 0)."
     ;;
   1)
     echo ""
@@ -80,3 +90,64 @@ case "$GATE_RC" in
     exit 1
     ;;
 esac
+
+# ── STAGE 2 — GHL MCP supply-chain pin gate ─────────────────────────────────
+# The GHL Community MCP is third-party code built and run on client machines.
+# Its vetting record binds a security VERDICT to the commit it judges, the
+# dependency lockfile hash and the mirror it is fetched from, via a digest. Edit
+# any bound value by hand and the digest stops recomputing.
+#
+# Why here as well as in CI: CI runs AFTER the push, so a red workflow is a red
+# X on a commit that is already on main. This stage catches the realistic
+# mistake — an agent or a hurried human pasting a new SHA — at the last moment
+# it is still cheap to fix.
+#
+# THIS IS NOT A SECURITY CONTROL. `git push --no-verify` walks straight past it,
+# and it is meant to. It is the fast local layer of a three-layer gate: this
+# hook, the CI job, and the box-side installer's own refusal. The layer that
+# actually protects the client machine is the last one.
+#
+# Blocking rule (STAGE 2) — deliberately narrower than stage 1's:
+#   * gate exit 1 (a definite, reproducible pin failure) -> REFUSE the push.
+#   * gate exit 2 (the gate could not run at all)        -> WARN, allow.
+#   * gate exit 0                                        -> allow.
+# Exit 2 does not block because it means "this environment could not check",
+# not "this tree is wrong" — and the CI job, which always can check, is the
+# backstop for exactly that case. Stage 1 fails closed on its exit 2 because a
+# roster source genuinely exists on an operator box; this gate has no such
+# environmental prerequisite, so the same reasoning does not carry over.
+#
+# Offline by design: no --network. A push must not depend on GitHub being
+# reachable from wherever it is run. Mirror reachability and the lockfile
+# comparison are CI's job.
+PIN_GATE="scripts/qc-assert-ghl-mcp-pin-gate.sh"
+if [ -f "$PIN_GATE" ]; then
+  PIN_OUT="$(bash "$PIN_GATE" 2>&1)"
+  PIN_RC=$?
+  case "$PIN_RC" in
+    0)
+      echo "PRE-PUSH: GHL MCP pin gate PASSED (exit 0) — push allowed."
+      ;;
+    2)
+      echo ""
+      echo "PRE-PUSH WARNING: the GHL MCP pin gate could not run (exit 2)."
+      echo "Nothing was verified locally. CI will check it — watch the"
+      echo "ghl-mcp-pin-gate job on this push."
+      echo "$PIN_OUT"
+      ;;
+    *)
+      echo ""
+      echo "PRE-PUSH BLOCKED: the GHL MCP supply-chain pin gate FAILED."
+      echo ""
+      echo "$PIN_OUT"
+      echo ""
+      echo "The vetting record no longer matches what it claims to have vetted."
+      echo "Do not hand-repair it. Re-run the review and seal the result:"
+      echo "    bash scripts/ghl-mcp-vet-pin.sh <commit-sha>                  # review"
+      echo "    bash scripts/ghl-mcp-vet-pin.sh <commit-sha> --verdict clean  # seal"
+      exit 1
+      ;;
+  esac
+fi
+
+exit 0

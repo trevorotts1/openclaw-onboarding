@@ -232,15 +232,16 @@ if [ "$GHL_MCP_PIN_VETTED_VERDICT" != "CLEAN" ]; then
     "(GHL_MCP_PIN_VETTED_VERDICT='${GHL_MCP_PIN_VETTED_VERDICT:-<unset>}' in $_PIN_FILE — only CLEAN may be built.)"
   exit 1
 fi
+_PIN_DIGEST_TOOL=""
+for _c in "$SELF_DIR/ghl-mcp-pin-digest.sh" \
+          "$HOME/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
+          "$HOME/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh" \
+          "/data/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
+          "/data/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh"; do
+  [ -f "$_c" ] && { _PIN_DIGEST_TOOL="$_c"; break; }
+done
+
 if [ -n "$GHL_MCP_PIN_VETTED_DIGEST" ]; then
-  _PIN_DIGEST_TOOL=""
-  for _c in "$SELF_DIR/ghl-mcp-pin-digest.sh" \
-            "$HOME/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
-            "$HOME/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh" \
-            "/data/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
-            "/data/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh"; do
-    [ -f "$_c" ] && { _PIN_DIGEST_TOOL="$_c"; break; }
-  done
   if [ -z "$_PIN_DIGEST_TOOL" ] || ! bash "$_PIN_DIGEST_TOOL" verify "$_PIN_FILE" >/dev/null 2>&1; then
     printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
       "(the vetting digest in $_PIN_FILE could not be verified — the pin was edited without re-running scripts/ghl-mcp-vet-pin.sh, or scripts/ghl-mcp-pin-digest.sh is not on this box. Refusing rather than trusting it unchecked.)"
@@ -249,20 +250,52 @@ if [ -n "$GHL_MCP_PIN_VETTED_DIGEST" ]; then
 fi
 
 # An override is an escape hatch for a VETTED commit, never a way to skip
-# vetting. Same canonical tuple as scripts/ghl-mcp-autostart.sh:
-#   ghl-mcp-pin-v1 | commit | verdict | on | by | deps_lock_sha256
+# vetting. SAME canonical tuple as scripts/ghl-mcp-autostart.sh and the pin
+# file — ghl-mcp-pin-v2, which BINDS THE REPOSITORY URL:
+#   ghl-mcp-pin-v2 | commit | verdict | on | by | deps_lock_sha256 | repo_url
+# The algorithm is NOT reimplemented here: the override is materialised as a
+# pin-shaped record and handed to scripts/ghl-mcp-pin-digest.sh, the one
+# canonical implementation. An inline second copy is how this path stayed on v1
+# (repository URL unbound) after the pin file moved to v2.
 if [ -n "${GHL_MCP_PIN_OVERRIDE:-}" ]; then
-  _OV_COMPUTED="$(printf '%s\n' 'ghl-mcp-pin-v1' \
-      "$GHL_MCP_PIN_OVERRIDE" "${GHL_MCP_PIN_OVERRIDE_VERDICT:-}" \
-      "${GHL_MCP_PIN_OVERRIDE_VETTED_ON:-}" "${GHL_MCP_PIN_OVERRIDE_VETTED_BY:-}" \
-      "${GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256:-}" \
-    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1)"
-  if [ "${GHL_MCP_PIN_OVERRIDE_VERDICT:-}" != "CLEAN" ] \
-     || [ -z "${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}" ] \
-     || [ -z "$_OV_COMPUTED" ] \
-     || [ "$_OV_COMPUTED" != "${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}" ]; then
+  _OV_VERDICT="${GHL_MCP_PIN_OVERRIDE_VERDICT:-}"
+  _OV_DIGEST="${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}"
+  _OV_REPO="$GHL_MCP_REPO_URL"
+  if [ "$_OV_VERDICT" != "CLEAN" ] || [ -z "$_OV_DIGEST" ]; then
     printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
       "(GHL_MCP_PIN_OVERRIDE requires GHL_MCP_PIN_OVERRIDE_VERDICT=CLEAN and a matching GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST.)"
+    exit 1
+  fi
+  if [ -z "$_PIN_DIGEST_TOOL" ]; then
+    printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
+      "(GHL_MCP_PIN_OVERRIDE was supplied but scripts/ghl-mcp-pin-digest.sh is not on this box, so the override digest CANNOT be verified — refusing rather than trusting it unchecked.)"
+    exit 1
+  fi
+  case "${GHL_MCP_PIN_OVERRIDE}${_OV_VERDICT}${GHL_MCP_PIN_OVERRIDE_VETTED_ON:-}${GHL_MCP_PIN_OVERRIDE_VETTED_BY:-}${GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256:-}${_OV_REPO}" in
+    *'"'*)
+      printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
+        "(a GHL_MCP_PIN_OVERRIDE_* field contains a double quote — refusing rather than hashing an ambiguous record.)"
+      exit 1 ;;
+  esac
+  _OV_TMP="$(mktemp "${TMPDIR:-/tmp}/ghl-mcp-override.XXXXXX" 2>/dev/null)"
+  if [ -z "$_OV_TMP" ]; then
+    printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
+      "(could not create a temp file to verify the override digest — refusing.)"
+    exit 1
+  fi
+  {
+    printf 'GHL_MCP_VETTED_COMMIT="%s"\n'      "$GHL_MCP_PIN_OVERRIDE"
+    printf 'GHL_MCP_PIN_VETTED_VERDICT="%s"\n' "$_OV_VERDICT"
+    printf 'GHL_MCP_PIN_VETTED_ON="%s"\n'      "${GHL_MCP_PIN_OVERRIDE_VETTED_ON:-}"
+    printf 'GHL_MCP_PIN_VETTED_BY="%s"\n'      "${GHL_MCP_PIN_OVERRIDE_VETTED_BY:-}"
+    printf 'GHL_MCP_DEPS_LOCK_SHA256="%s"\n'   "${GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256:-}"
+    printf 'GHL_MCP_REPO_URL="%s"\n'           "$_OV_REPO"
+  } > "$_OV_TMP"
+  _OV_COMPUTED="$(bash "$_PIN_DIGEST_TOOL" compute "$_OV_TMP" 2>/dev/null)"
+  rm -f "$_OV_TMP"
+  if [ -z "$_OV_COMPUTED" ] || [ "$_OV_COMPUTED" != "$_OV_DIGEST" ]; then
+    printf 'STATUS: start-ghl-mcp=%s %s\n' "PIN_UNVETTED" \
+      "(GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST does not match the override tuple — refusing. Recompute it over ghl-mcp-pin-v2|commit|verdict|on|by|deps_lock_sha256|repo_url, where repo_url is this box's GHL_MCP_REPO_URL.)"
     exit 1
   fi
   GHL_MCP_VETTED_COMMIT="$GHL_MCP_PIN_OVERRIDE"
@@ -290,6 +323,21 @@ EOF
 
 pin_mcp_checkout() {
   command -v git >/dev/null 2>&1 || { log "git unavailable — cannot pin community MCP"; return 1; }
+  # MIRROR MIGRATION. Every box provisioned before the mirror existed has an
+  # `origin` pointing at the third-party upstream. Nothing else would ever move
+  # it, so those clones would keep fetching from a repository that force-pushes
+  # its history and would break the day the pin is garbage-collected there —
+  # the exact failure the mirror exists to prevent. Repoint it here, on the next
+  # run of this script, before anything is fetched.
+  local _origin_url
+  _origin_url="$(git -C "$MCP_DIR" remote get-url origin 2>/dev/null || echo '')"
+  if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
+    if git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>/dev/null; then
+      log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
+    else
+      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL"
+    fi
+  fi
   git -C "$MCP_DIR" fetch --quiet origin "$GHL_MCP_VETTED_COMMIT" 2>/dev/null \
     || git -C "$MCP_DIR" fetch --quiet --tags origin 2>/dev/null || true
   if ! git -C "$MCP_DIR" cat-file -e "${GHL_MCP_VETTED_COMMIT}^{commit}" 2>/dev/null; then
