@@ -687,6 +687,19 @@ if [ "$TEST_RUN" = "1" ]; then
   log "test run: validating inputs and short-circuiting before any Podbean call"
 fi
 
+# Load secrets env so PROXY/BROKER/LOCAL vars are available
+if ! command -v resolve_platform_paths >/dev/null 2>&1; then
+  resolve_platform_paths() {
+    if [ -d "/data/.openclaw" ]; then
+      export SECRETS_ENV="/data/.openclaw/secrets/.env" SKILLS_DIR_DEFAULT="/data/.openclaw/skills"
+    else
+      export SECRETS_ENV="$HOME/.openclaw/secrets/.env" SKILLS_DIR_DEFAULT="$HOME/.openclaw/skills"
+    fi
+  }
+fi
+resolve_platform_paths
+if [ -f "$SECRETS_ENV" ]; then set +u; set -a; . "$SECRETS_ENV" 2>/dev/null || true; set +a; set -u; fi
+
 # Transport precedence (per box): PROXY, then BROKER, then LOCAL (S58-U14).
 # PROXY wins when both PODBEAN_PUBLISH_WEBHOOK_URL and PODBEAN_PUBLISH_TOKEN
 # resolve: n8n performs the entire publish and this box holds no Podbean

@@ -226,9 +226,13 @@ class PodbeanPublishProxyTest(unittest.TestCase):
 
     # ---------------------------------------------------------- helpers ----
     def _run(self, args, env_extra=None, timeout=20):
+        # Isolate HOME so the script's secrets-env sourcing (act-11 fix)
+        # can never reach the real ~/.openclaw/secrets/.env of the test
+        # machine. Every test that needs proxy/broker/local env vars
+        # passes them via env_extra.
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-            "HOME": os.environ.get("HOME", self.tmp),
+            "HOME": self.tmp,
         }
         if env_extra:
             env.update(env_extra)
