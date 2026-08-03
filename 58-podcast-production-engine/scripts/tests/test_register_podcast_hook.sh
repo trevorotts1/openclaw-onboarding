@@ -291,6 +291,139 @@ else
 fi
 
 # --------------------------------------------------------------------------- #
+# 12. Service-env injection: mock a plist + service-env file, register the
+#     route, and assert PODCAST_INTAKE_ROUTE_ID and PODCAST_INTAKE_HOOK_SECRET
+#     are injected into the gateway service-env file.
+# --------------------------------------------------------------------------- #
+write_cfg '{"hooks":{"enabled":true,"allowedSessionKeyPrefixes":["hook:ghl:"],"allowedAgentIds":["main"]},"plugins":{"entries":{"webhooks":{"enabled":true,"config":{"routes":{}}}}}}'
+PLIST_DIR="$WORK/home/Library/LaunchAgents"
+mkdir -p "$PLIST_DIR"
+export SVC_ENV="$WORK/service-env/ai.openclaw.gateway.env"
+mkdir -p "$(dirname "$SVC_ENV")"
+printf '%s\n' "SOME_EXISTING_VAR=keep-me" > "$SVC_ENV"
+# Write a binary plist with ProgramArguments: [env-wrapper.sh, <env-file>, gateway]
+python3 -c "
+import plistlib
+pl = {'ProgramArguments': ['env-wrapper.sh', '${SVC_ENV}', '/usr/local/bin/openclaw-gateway']}
+with open('${PLIST_DIR}/ai.openclaw.gateway.plist', 'wb') as f:
+    plistlib.dump(pl, f, fmt=plistlib.FMT_BINARY)
+"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     PODCAST_CLIENT_LOCATION_ID=LOC0000000000000000abcd \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  ok=0
+  grep -q "PODCAST_INTAKE_ROUTE_ID=podcast-intake-acme-media" "$SVC_ENV" || ok=1
+  grep -q "PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret" "$SVC_ENV" || ok=1
+  grep -q "SOME_EXISTING_VAR=keep-me" "$SVC_ENV" || ok=1
+  # The secret VALUE is inside the env file (that file IS secrets), but must
+  # never appear in stdout.
+  if printf '%s' "$OUT" | grep -q "synthetic-fixture-secret"; then ok=1; fi
+  check "service-env: injects SecretRef env vars + PODCAST_INTAKE_ROUTE_ID into gateway service-env file" "$ok"
+else
+  fail "service-env injection run (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 13. Service-env: is idempotent (second run does not change the file)
+# --------------------------------------------------------------------------- #
+SVC_SUM_BEFORE="$(shasum "$SVC_ENV" | awk '{print $1}')"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  SVC_SUM_AFTER="$(shasum "$SVC_ENV" | awk '{print $1}')"
+  check "service-env: idempotent (no duplicate injection)" "$([ "$SVC_SUM_BEFORE" = "$SVC_SUM_AFTER" ]; echo $?)"
+else
+  fail "service-env idempotent run (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 14. Service-env: updates stale values (drift heal)
+# --------------------------------------------------------------------------- #
+sed -i '' -e 's/PODCAST_INTAKE_ROUTE_ID=podcast-intake-acme-media/PODCAST_INTAKE_ROUTE_ID=wrong-value/' "$SVC_ENV"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  check "service-env: heals a stale PODCAST_INTAKE_ROUTE_ID" \
+    "$(grep -c "PODCAST_INTAKE_ROUTE_ID=podcast-intake-acme-media" "$SVC_ENV" || true)"
+else
+  fail "service-env drift heal (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 15. Service-env: the injection step is skipped when the secret is absent but
+#     the registration succeeds (dry-run; the real-registration fail-closed-on-
+#     missing-secret guard is tested in test 5 -- this verifies dry-run does not
+#     try to write the service-env file).
+# --------------------------------------------------------------------------- #
+write_cfg '{"hooks":{"enabled":true,"allowedSessionKeyPrefixes":["hook:ghl:"],"allowedAgentIds":["main"]},"plugins":{"entries":{"webhooks":{"enabled":true,"config":{"routes":{}}}}}}'
+rm -rf "$(dirname "$SVC_ENV")"
+mkdir -p "$(dirname "$SVC_ENV")"
+printf '%s\n' "SOME_EXISTING_VAR=keep-me" > "$SVC_ENV"
+SUM_BEFORE="$(shasum "$SVC_ENV" | awk '{print $1}')"
+if run_script 0 env -u PODCAST_INTAKE_HOOK_SECRET \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media --dry-run; then
+  SUM_AFTER="$(shasum "$SVC_ENV" | awk '{print $1}')"
+  if [ "$SUM_BEFORE" = "$SUM_AFTER" ]; then
+    pass "service-env: dry-run does not modify the service-env file"
+  else
+    fail "service-env: dry-run modified the service-env file"
+  fi
+else
+  fail "service-env dry-run guard (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 16. Service-env: without a plist, warns and does not fail
+# --------------------------------------------------------------------------- #
+write_cfg '{}'
+rm -f "$PLIST_DIR/ai.openclaw.gateway.plist"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media \
+   && printf '%s' "$OUT" | grep -qi "plist not found"; then
+  pass "service-env: missing plist warns (non-fatal; registration succeeds)"
+else
+  fail "service-env missing plist (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 17. Service-env: does NOT run during --remove or --dry-run
+# --------------------------------------------------------------------------- #
+# Verify --remove mode does not invoke service-env injection
+write_cfg '{
+  "hooks": {"enabled": true, "allowedSessionKeyPrefixes": ["podcast:"], "allowedAgentIds": ["main","dept-podcast"]},
+  "plugins": {"entries": {"webhooks": {"enabled": true, "config": {"routes": {
+    "podcast-intake-acme-media": {"enabled": true, "path": "/plugins/webhooks/podcast-intake-acme-media", "sessionKey": "podcast:intake:acme-media", "secret": {"source": "env", "provider": "default", "id": "PODCAST_INTAKE_HOOK_SECRET"}, "controllerId": "webhooks/podcast-intake-acme-media"}
+  }}}}}
+}'
+rm -rf "$(dirname "$SVC_ENV")"
+mkdir -p "$(dirname "$SVC_ENV")"
+printf '%s\n' "BEFORE_REMOVE=should-survive" > "$SVC_ENV"
+# Recreate plist so inject_service_env can find the env file
+rm -f "$PLIST_DIR/ai.openclaw.gateway.plist"
+python3 -c "
+import plistlib
+pl = {'ProgramArguments': ['env-wrapper.sh', '${SVC_ENV}', '/usr/local/bin/openclaw-gateway']}
+with open('${PLIST_DIR}/ai.openclaw.gateway.plist', 'wb') as f:
+    plistlib.dump(pl, f, fmt=plistlib.FMT_BINARY)
+"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --remove acme-media podcast-intake-acme-media; then
+  if grep -q "BEFORE_REMOVE=should-survive" "$SVC_ENV" \
+     && ! grep -q "PODCAST_INTAKE_ROUTE_ID" "$SVC_ENV" \
+     && ! printf '%s' "$OUT" | grep -q "service-env"; then
+    pass "service-env: not invoked during --remove"
+  else
+    fail "service-env: invoked during --remove or modified the service-env file"
+  fi
+else
+  fail "service-env remove guard (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
 # Summary
 # --------------------------------------------------------------------------- #
 echo
