@@ -540,6 +540,75 @@ else:
 ' "$1"
 }
 
+# proxy_media_probe URL KIND TMPDIR: download up to MAX_BYTES of media to a
+# temp file and validate it with ffprobe before the publish payload is built.
+# KIND is "audio" (expects decodable MP3 with duration >= min_duration) or
+# "image" (expects JPEG/PNG with width and height both >= min_side).
+# PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe entirely (escape hatch).
+# If ffprobe is absent, degrades to a HEAD-reachability check + warning.
+proxy_media_probe() {
+  local url="$1" kind="$2" tmpdir="$3" probe_file max_bytes min_duration min_side
+
+  max_bytes="${PODCAST_MEDIA_MAX_BYTES:-524288000}"      # 500 MiB default
+  min_duration="${PODCAST_MEDIA_MIN_DURATION:-30}"       # seconds
+  min_side="${PODCAST_MEDIA_MIN_SIDE:-1400}"             # pixels
+
+  probe_file="$tmpdir/probe"
+  log "media-probe: fetching ${kind} url head bytes (max ${max_bytes})"
+  http_code="$(curl -sS -o "$probe_file" -w '%{http_code}' \
+    --max-filesize "$max_bytes" -L --max-time 60 --connect-timeout 15 "$url")" || true
+
+  if [ "$http_code" != "200" ]; then
+    die "media-probe ${kind}: download failed (HTTP ${http_code:-000}) for ${url}"
+  fi
+
+  if command -v ffprobe >/dev/null 2>&1; then
+    local probe_csv
+    probe_csv="$(ffprobe -v quiet -show_entries stream=codec_type,width,height,duration \
+      -of csv=p=0 "$probe_file" 2>/dev/null || true)"
+    log "media-probe: ffprobe csv for ${kind} => [${probe_csv}]"
+
+    case "$kind" in
+      audio)
+        if ! printf '%s' "$probe_csv" | grep -q 'audio'; then
+          die "media-probe audio: no audio stream detected in ${url}"
+        fi
+        local dur
+        dur="$(ffprobe -v quiet -show_entries stream=duration \
+          -of csv=p=0 "$probe_file" 2>/dev/null || true)"
+        dur="${dur%.*}"   # truncate decimal; pure-integer comparison
+        dur="${dur:-0}"
+        log "media-probe audio: duration=${dur}s (min=${min_duration}s)"
+        if [ "$dur" -lt "$min_duration" ]; then
+          die "media-probe audio: duration ${dur}s < minimum ${min_duration}s for ${url}"
+        fi
+        ;;
+      image)
+        if ! printf '%s' "$probe_csv" | grep -q 'video'; then
+          die "media-probe image: no video/image stream detected in ${url}"
+        fi
+        local w h
+        w="$(printf '%s' "$probe_csv" | grep 'video' | cut -d, -f2 2>/dev/null || true)"
+        h="$(printf '%s' "$probe_csv" | grep 'video' | cut -d, -f3 2>/dev/null || true)"
+        w="${w:-0}"; h="${h:-0}"
+        log "media-probe image: ${w}x${h} (min ${min_side}x${min_side})"
+        if [ "$w" -lt "$min_side" ] || [ "$h" -lt "$min_side" ]; then
+          die "media-probe image: ${w}x${h} is below minimum ${min_side}x${min_side} for ${url}"
+        fi
+        ;;
+    esac
+  else
+    local head_ok
+    head_ok="$(curl -sS -o /dev/null -w '%{http_code}' --head -L --max-time 30 --connect-timeout 15 "$url" || true)"
+    if [ "$head_ok" = "200" ] || [ "$head_ok" = "302" ] || [ "$head_ok" = "301" ]; then
+      log "WARNING media-probe ${kind}: ffprobe not available; HEAD reachable (HTTP ${head_ok}) but no content validation performed"
+    else
+      die "media-probe ${kind}: ffprobe absent and HEAD check failed (HTTP ${head_ok:-000}) for ${url}"
+    fi
+  fi
+  rm -f "$probe_file"
+}
+
 # Build the webhook payload contract v2 JSON body (S58 spec Section 3). Never
 # sends a Podbean credential, a GHL token, an operator secret, or an episode
 # number ("Never sent" list, Section 3) - n8n computes the episode number
@@ -898,6 +967,18 @@ print(json.dumps(d))
   [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it and recorded mp3_media_url in the ledger)"
   [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it and recorded cover_image_url in the ledger)"
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
+
+  # Media content probe: validate audio + image before building the v2 payload.
+  # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch (e.g. air-gapped boxes
+  # without ffprobe, or known-good pre-validated URLs).
+  if [ "${PODBEAN_SKIP_MEDIA_PROBE:-0}" != "1" ]; then
+    MEDIA_TMP="$(mktemp -d "${TMPDIR:-/tmp}/podbean-media-probe-XXXXXX")" || die "media-probe: cannot create temp dir"
+    proxy_media_probe "$AUDIO_URL" audio "$MEDIA_TMP"
+    proxy_media_probe "$IMAGE_URL" image "$MEDIA_TMP"
+    rm -rf "$MEDIA_TMP"
+  else
+    log "media-probe: PODBEAN_SKIP_MEDIA_PROBE=1 - skipping content validation"
+  fi
 
   if [ -n "$RELEASE_DATE" ]; then
     rel_epoch="$(to_epoch "$RELEASE_DATE" || true)"
