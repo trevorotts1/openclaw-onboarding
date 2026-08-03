@@ -1,5 +1,18 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.1.1] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
+
+`scripts/qc-no-personal-data.sh` exited 1 whenever the client roster was absent. The roster
+is gitignored by design (so no real client name ever enters the repo), so it is ALWAYS absent
+in CI -- meaning the path-filtered `records pipeline fail-closed guards` workflow turned red
+on ANY change under this skill, regardless of content. Adopted the sanctioned TWO-MODE
+contract already shipped in `38-conversational-ai-system/scripts/qc-no-personal-data.sh`:
+roster present (operator box / pre-commit) -> full roster scan; roster absent (CI) -> WARN and
+skip the roster-specific alternation while the always-on operator + placeholder token scan
+still runs and still fails the build on a hit. Proved both directions: clean tree passes with
+no roster, a planted operator path still fails it with no roster, and a planted roster name
+still fails it with a roster present.
+
 ## [1.1.0] - 2026-08-03 - fix: MEMORY.md gets a pointer, and the writer is byte-stable across rolls
 
 - **MEMORY.md block is now a compact TYP pointer**, not the 7-rule corpus. The full rule

@@ -1,5 +1,18 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
+## [1.3.1] - 2026-08-03 - fix: qc-no-personal-data was un-runnable in CI (hard-failed on "roster not found")
+
+`scripts/qc-no-personal-data.sh` exited 1 whenever the client roster was absent. The roster
+is gitignored by design (so no real client name ever enters the repo), so it is ALWAYS absent
+in CI -- meaning the path-filtered `records pipeline fail-closed guards` workflow turned red
+on ANY change under this skill, regardless of content. Adopted the sanctioned TWO-MODE
+contract already shipped in `38-conversational-ai-system/scripts/qc-no-personal-data.sh`:
+roster present (operator box / pre-commit) -> full roster scan; roster absent (CI) -> WARN and
+skip the roster-specific alternation while the always-on operator + placeholder token scan
+still runs and still fails the build on a hit. Proved both directions: clean tree passes with
+no roster, a planted operator path still fails it with no roster, and a planted roster name
+still fails it with a roster present.
+
 ## [1.3.0] - 2026-08-03 - fix: version-stamped markers duplicated the rules on every bump; MEMORY.md now gets a pointer
 
 - **Root cause.** Every block used a VERSION-STAMPED marker (`<!-- BEGIN skill-40 memory-rules v1.0.0 -->`)
