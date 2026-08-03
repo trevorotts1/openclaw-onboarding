@@ -4,6 +4,24 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.4.1] - 2026-08-03 — Reconciled with the GHL API currency work
+
+No behaviour change in this skill. Two parallel branches both touched skill 36 on
+the same day and this entry records the merge, so the version history reads
+straight instead of appearing to skip a release.
+
+- The **v1.3.2** entry below now exists. `skill-version.txt` had been stamped
+  `v1.3.2` for the `wire.sh` M2 verification change without a matching CHANGELOG
+  entry; the API-currency branch supplied that heading and folded in the CI guard
+  fix its own documentation required.
+- The `qc-static.yml` vendor-URL carve-out described there is what keeps this
+  skill able to document HighLevel's `/mcp/anthropic/v2` orchestrator URL without
+  turning the "no banned model tokens" guard red. Verified against the live guard
+  pattern after the merge: `36-ghl-mcp-setup/SKILL.md` and this CHANGELOG are both
+  clean, and a real provider-prefixed model slug is still caught.
+
+---
+
 ## [v1.4.0] - 2026-08-03 — The pin gets a repository we control, and the verdict gets teeth
 
 ### Why
@@ -126,7 +144,7 @@ refusal in the installer, which runs on paths CI never sees.
 
 ---
 
-## [v1.3.1] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator
+## [v1.3.2] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator (+ the CI guard fix it required)
 
 ### Added
 - **`SKILL.md` gained a "Which official MCP endpoint" section.** HighLevel publishes two
@@ -162,6 +180,18 @@ refusal in the installer, which runs on paths CI never sees.
   GET-only in both the v2 and v3 specs. That wording was verified correct.
 
 **Source:** `https://marketplace.gohighlevel.com/docs/other/mcp` (verified 2026-08-03).
+
+### Fixed — CI
+- **`qc-static.yml` "no banned model tokens" guard turned red on `main`** when this skill
+  started documenting `services.leadconnectorhq.com/mcp/anthropic/v2`. The guard's
+  vendor-slug alternative matched the `.../mcp/anthropic/v2` **URL path segment**, which is
+  not a model slug. Fixed with the narrowest possible carve-out — a `(?<!/mcp/)` negative
+  lookbehind anchored to that exact token — so a genuine provider-prefixed Claude slug
+  anywhere else, **including elsewhere on the same line**, is still caught. Not a blanket
+  `anthropic` allow,
+  and the URL stays documented. New mutation proof both directions:
+  `tests/unit/ghl-mcp-vendor-url-exemption.test.sh`, wired into `qc-static.yml` as its own
+  step so the exemption cannot be silently widened.
 
 ---
 

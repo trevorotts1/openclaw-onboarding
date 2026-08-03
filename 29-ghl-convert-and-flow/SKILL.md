@@ -11,7 +11,7 @@ description: Domain-specific reference files for the GoHighLevel (Convert and Fl
 > NEVER paste the master reference into context or core files.
 > ALWAYS read the appropriate `references/*.md` file at query time.
 
-> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`, 36 tools)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
+> **Tier in the access chain (introduced by skill 36):** This skill is **Tier 3** — direct REST API. The agent must try **Tier 0 (Convert and Flow CLI, skill 44)** FIRST for every operation the CLI covers, then **Tier 1 (Official MCP, `ghl-mcp`)** for blogs/CLI gaps, then **Tier 2 (Community MCP, `ghl-community-mcp`, 588 tools, on-demand via curl)** before falling here. Use this skill's `references/[module].md` files only when no higher tier covers the call (and for media uploads — see `references/medias.md`). See skill 36 (`36-ghl-mcp-setup`) for the full 6-tier escalation rules.
 
 ---
 
@@ -37,7 +37,7 @@ This skill pack provides:
 | Base URL | `https://services.leadconnectorhq.com` |
 | Auth method | Bearer token (Private Integration Token) |
 | Auth header | `Authorization: Bearer $GOHIGHLEVEL_API_KEY` |
-| Version header | `Version: 2021-07-28` — the default. Seven apps differ; see "Version Header Rule" below |
+| Version header | Per-operation. `2021-07-28` pre-v3 default; `v3` is latest; five versions supported — see "Version Header Rule" |
 | Content-Type | `application/json` |
 | Total endpoints | 576 across 41 published app specs (v2 generation) |
 | API key | IS the Private Integration Token (`pit-` prefix); no separate "API key" type exists |
@@ -59,34 +59,59 @@ Content-Type: application/json
 
 ### Version Header Rule (read this before every call)
 
-The Version header is **per-app, not global**. Sending the wrong value is the single most
-common cause of a 400 on an otherwise-correct request.
+**HighLevel runs FIVE concurrently-supported versions**, selected per-request. Every one is
+"Supported until: **TBD**" — no retirement dates, no forced migration
+(`https://marketplace.gohighlevel.com/docs/Versioning/`).
+
+| Version | Released | Supported until |
+|---|---|---|
+| `v3` | June 11, 2026 | TBD |
+| `2023-02-21` | February 21, 2023 | TBD |
+| `2021-07-28` | July 28, 2021 | TBD |
+| `2021-04-15` | April 15, 2021 | TBD |
+| `legacy` | January 1, 2021 | TBD |
+
+**Which one to send** — the value is declared **per-operation**, not per-app:
 
 ```
-Version: 2021-07-28   ← DEFAULT. 33 of the 41 published app specs, including
-                        contacts, locations, opportunities, users, payments,
-                        campaigns, phone-system, medias, invoices, products,
-                        workflows, social-media-posting, blogs, forms, objects.
+Version: v3           ← the latest named version. REQUIRED for: opportunities
+                        pipeline CRUD, calendar services, brand voices, social
+                        planner queues/comments, chat-widget, the new emails
+                        surface, and the hyphenated /oauth/... paths.
 
-Version: 2021-04-15   ← ONLY these seven apps:
-                        conversations, calendars, saas-api, voice-ai,
-                        agent-studio, conversation-ai, knowledge-base.
+Version: 2023-02-21   ← SaaS endpoints, and POST /users/. Both documented and
+                        working. Do NOT "correct" these to something older.
 
-Version: v3           ← the 2026-06-19 v3 generation (43 specs). Required for
-                        v3-only surfaces: chat-widget, social planner queues +
-                        comments, the rebuilt emails/* surface, brand voices.
+Version: 2021-07-28   ← the pre-v3 default: 32 of the 41 published specs declare
+                        it exclusively (33 accept it, counting links).
 
-links   accepts BOTH 2021-04-15 and 2021-07-28.
-store   declares no Version parameter at all.
+Version: 2021-04-15   ← ONLY: agent-studio, calendars, conversation-ai,
+                        conversations, knowledge-base, saas-api, voice-ai.
+
+links accepts 2021-04-15 AND 2021-07-28.  store declares no Version parameter.
+phone-system-v3 names the parameter lowercase `version` (headers are
+case-insensitive, so `Version: v3` still works).
 ```
 
-**Do not apply one value across all calls in either direction.** Earlier versions of this
-skill taught `2021-04-15` as a blanket default — that was wrong and caused live 400s on
-contacts, locations, opportunities, users, payments, campaigns and phone-numbers. If you
-see a doc anywhere in the fleet teaching a blanket Version, treat this table as authority.
+**An older supported version is NOT a defect.** Only a blanket "use one value for
+everything" rule is — that is what this skill previously taught and what is now fixed.
 
-Source of truth: the `Version` enum published in each app's OpenAPI spec at
-`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).
+**What live probing proved (2026-08-03).** Omitting the header is a **401** (`"version
+header was not found."`); an unpublished value is a **401** (`"version header is invalid"`).
+But `GET /contacts/`, `/users/` and `/calendars/` return **200 under all four** published
+version strings. **No endpoint was found that rejects `2021-04-15`** — so the earlier claim
+that a wrong Version header was causing live 400s is **false and withdrawn**. If you are
+chasing a real client failure, check scopes, PIT-vs-OAuth, and location-vs-company token
+first. Where the version *does* decide routing is brand-new and renamed paths:
+`/brand-boards/.../brand-voices` and `/oauth/installed-locations` hard-404 unless you send
+`Version: v3`.
+
+> ⚠ **The GitHub spec repo lags the live docs** — last commit 2026-06-19, most specs synced
+> 2026-05-01, `saas-api.json` 2025-08-13, while the changelog runs to 2026-07-30. Check
+> `https://marketplace.gohighlevel.com/docs` before calling any doc wrong.
+
+**Full per-operation table, generation-gated paths, v3 capability and the probe evidence:
+`references/api-generations.md`.**
 
 ---
 
@@ -156,6 +181,8 @@ When a user asks a GHL question, identify the domain and read the matching refer
 | Knowledge Base - crawler, FAQs, training an agent on client content | `references/knowledge-base.md` |
 | Ads - Facebook/Google/LinkedIn campaigns, adsets, reporting | `references/ad-publishing.md` |
 | Anything else (store, snapshots, proposals, brand voices, chat widget, marketplace billing) | `references/modules.md` |
+| **Which Version header / v2 vs v3 / a 404 on a path you expected** | `references/api-generations.md` |
+| **Agency-level: OAuth tokens, sub-account provisioning, SaaS billing, agency users, snapshots** | `references/agency-api.md` |
 
 ---
 
@@ -197,6 +224,8 @@ Step 4 - Build and execute the API call with real values
   CORE_UPDATES.md       - Exact text to add to TOOLS.md and MEMORY.md only.
   references/
     auth.md             - PIT + OAuth, the Version-header rule, all 130 scopes, the v3 generation
+    api-generations.md  - v2 vs v3, per-surface Version table, generation-gated paths, live-probe evidence
+    agency-api.md       - Agency/company-scoped API: OAuth, provisioning, SaaS billing, users, snapshots
     modules.md          - All 41 modules, verified op counts, v3-only surfaces
     contacts.md         - 32 endpoints for contact management
     conversations.md    - 29 endpoints for conversations and messages (Version 2021-04-15)
@@ -285,7 +314,7 @@ Operation counts are method+path pairs read out of each app's spec — not estim
 
 Total: **576 operations across 41 published v2 app specs**, and **118 distinct permission
 scopes** declared in those specs (130 when unioned with `docs/oauth/Scopes.md`). A second
-generation — **43 v3 specs, `Version: v3`** — was published 2026-06-19; see
+generation — **42 v3 specs, `Version: v3`** — was published 2026-06-19; see
 `references/auth.md` → "The v3 generation".
 
 Source: `https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` (enumerated 2026-08-03).

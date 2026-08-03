@@ -72,7 +72,7 @@ Skill 44 is the FIRST STOP in the 6-tier GHL access chain. Try it before any MCP
     (public API/PIT cannot create a location).
   - ADD USER: `caf locations add-user ...` → agency PIT + PUBLIC API
     (`POST services.leadconnectorhq.com/users/`, `Authorization: Bearer <agency PIT>`,
-    `Version: 2021-07-28`). This is the proven, simpler path (how the real user was added) —
+    `Version: 2023-02-21`). This is the proven, simpler path (how the real user was added) —
     NO Firebase token / NO Chrome extension. Omit `--password` so GHL sends the invite email.
   - USER TYPE: add-user DEFAULTS to `--type account` (a SUB-ACCOUNT user scoped to
     `--location-id`; `--role admin` = admin of that sub-account ONLY). `--type agency`
@@ -126,7 +126,7 @@ Health: caf doctor
 | social | caf social accounts/post/schedule |
 | locations | caf locations get/search/tags/custom-fields/custom-values |
 | locations create (agency, write) | caf --experimental locations create [internal Firebase API; token-id; version:2021-07-28; ONLY path that creates a location; approval gate] |
-| locations add-user (agency, write) | caf locations add-user [agency PIT + PUBLIC API services.../users/; Bearer PIT; Version:2021-07-28; omit --password → invite email; defaults to a SUB-ACCOUNT user; approval gate] |
+| locations add-user (agency, write) | caf locations add-user [agency PIT + PUBLIC API services.../users/; Bearer PIT; Version:2023-02-21; omit --password → invite email; defaults to a SUB-ACCOUNT user; approval gate] |
 | workflows (read/review) | caf workflows list/get/export — Tier 0 (caf) owns workflow build/edit/review; MCP workflow tools are escalation-only (note: `review` and `triggers` engine subcommands are MVP-deferred; use `export` as the Tier-0 read for review until shipped) |
 | workflows (write) | caf workflows build/patch-email/patch-trigger/restore [Firebase token required] |
 

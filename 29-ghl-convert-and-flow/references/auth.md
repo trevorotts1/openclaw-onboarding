@@ -84,12 +84,13 @@ API keys are no longer supported for new integrations. If you have old code usin
 
 ## Version Header
 
-Always include this header. Missing it causes 400 errors on many endpoints — and so does
-sending the **wrong** value. The value is **per-app**, taken from the `Version` enum that
+Always include this header. **Omitting it is a 401**, not a 400 (`"version header was not
+found."`), and an unpublished value is also a 401 (`"version header is invalid"`) — both
+PROVEN live 2026-08-03. The value to send is **per-app**, taken from the `Version` enum that
 each app's OpenAPI spec publishes:
 
 ```
-Version: 2021-07-28   ← DEFAULT — 33 of the 41 published v2 app specs.
+Version: 2021-07-28   ← pre-v3 DEFAULT — 32 of the 41 specs exclusively (33 accept it).
                         contacts, locations, opportunities, users, payments, campaigns,
                         phone-system, medias, invoices, products, workflows, blogs,
                         forms, funnels, objects, associations, social-media-posting,
@@ -101,40 +102,77 @@ Version: 2021-04-15   ← ONLY these seven:
                         conversations, calendars, saas-api, voice-ai, agent-studio,
                         conversation-ai, knowledge-base.
 
-Version: v3           ← the v3 generation (see below).
+Version: v3           ← the latest named version (released June 11, 2026).
+Version: 2023-02-21   ← supported; documented for SaaS and POST /users/.
+Version: legacy       ← supported (2021-01-01).
 
 links   accepts BOTH 2021-04-15 and 2021-07-28.
 store   declares no Version parameter at all.
 ```
 
 **Do not blanket-apply either value.** Earlier revisions of this skill taught `2021-04-15`
-globally; that was inverted and caused live 400s on the busiest endpoints.
+globally; that was inverted.
 
-### Known-wrong Version values still circulating in older fleet docs
+**Live-probe finding (2026-08-03) — read before you repeat the old warning.** The header is
+mandatory (omitted → `401 "version header was not found."`; unpublished value → `401
+"version header is invalid"`), but established v2 paths accept **all four** published values
+and return 200. The wrong value was therefore not producing 400s on contacts/users/calendars.
+It still matters, because genuinely new v3 paths are generation-gated and hard-404 under a v2
+Version. Details, per-surface table and evidence: **`references/api-generations.md`**.
 
-If you find any of these, they are wrong — this table is the authority:
+### Version values you may see in fleet docs — and why most of them are FINE
 
-| Seen in older docs | Correct value | Why |
+**HighLevel runs FIVE concurrently-supported versions**, every one of them "Supported
+until: **TBD**" with no retirement date published
+(`https://marketplace.gohighlevel.com/docs/Versioning/`):
+
+| Version | Released | Supported until |
 |---|---|---|
-| `2023-02-21` for SaaS endpoints | `2021-04-15` | `saas-api.json` publishes exactly one enum for all 22 SaaS ops: `2021-04-15`. `2023-02-21` appears nowhere in that spec. It IS a real docs-site version toggle, so HighLevel may still accept it — but it is not the documented value. |
-| `2023-02-21` for `POST /users/` | `2021-07-28` | `users.json` declares `2021-07-28` for all 7 user operations. |
-| `2021-04-15` for payments | `2021-07-28` | `payments.json` declares `2021-07-28`. |
-| `2021-04-15` "on all calls" | per-app, see above | Inverted global rule. |
+| `v3` | **June 11, 2026** | TBD |
+| `2023-02-21` | February 21, 2023 | TBD |
+| `2021-07-28` | July 28, 2021 | TBD |
+| `2021-04-15` | April 15, 2021 | TBD |
+| `legacy` | January 1, 2021 | TBD |
+
+So a doc using an older published version is **not automatically wrong**. Most endpoints are
+documented under several versions, and all five are accepted.
+
+| Value seen | Verdict |
+|---|---|
+| `2023-02-21` for SaaS | **CORRECT — do not change it.** HighLevel publishes a complete SaaS documentation set under `2023-02-21` (`https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/saas/saas/index.html`). **PROVEN live 2026-08-03:** `GET /saas-api/public-api/agency-plans/{companyId}` returns 200 under it. The GitHub `saas-api.json` says `2021-04-15`, but that file was last synced **2025-08-13** — the stalest in the repo. |
+| `2023-02-21` for `POST /users/` | **CORRECT — do not change it.** Documented verbatim at `https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`. PROVEN live: `GET /users/` returns 200 under it. `2021-07-28` is *also* valid for the same endpoint. Both are fine. |
+| `2021-04-15` for contacts/locations/users/payments/campaigns/phone-numbers | **Not an error, but standardise anyway.** `2021-04-15` is supported and HighLevel publishes a full Contacts surface under it. Those references now use `2021-07-28` because that is the current pre-v3 value in each app's spec — a consistency choice, **not** a bug fix. PROVEN live: all four versions return 200 on these endpoints. |
+| `2021-04-15` stated as a blanket rule "on all calls" | **Genuinely wrong** — the value is per-operation. That is the defect this file fixes. |
+
+> ⚠ **Standing warning: the GitHub spec repo lags the live docs.**
+> `GoHighLevel/highlevel-api-docs` is a periodic dump — last repo commit **2026-06-19**, most
+> `apps/*.json` synced **2026-05-01**, `saas-api.json` synced **2025-08-13** — while
+> HighLevel's changelog runs to 2026-07-30. **Before declaring any fleet doc "wrong", check
+> `https://marketplace.gohighlevel.com/docs` for that endpoint under that version.** Several
+> earlier "corrections" against these skills turned out to be artifacts of that lag.
 
 ---
 
-## The v3 generation (published 2026-06-19)
+## The v3 version (released 2026-06-11)
 
-A second API generation exists. **43 v3 app specs** live at
-`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps/v3`, all declaring the
-literal header value `Version: v3`, on the same host (`services.leadconnectorhq.com`).
+**42 v3 app specs** live at
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps/v3`, on the same host
+(`services.leadconnectorhq.com`). HighLevel's Versioning page gives the **release date as
+June 11, 2026** (2026-06-19 is merely when the spec files were committed to GitHub).
 
-**This is forward-guidance, not a break.** Every v2 path below still works today under
-`Version: 2021-07-28`. Nothing in this skill needs to change to keep working. Plan the
-migration; do not scramble.
+> ⚠ **Not every v3 spec means `Version: v3`.** `ad-publishing-v3` has 95 operations of which
+> **94 still declare `2021-07-28`**. The version is per-OPERATION. `phone-system-v3` names the
+> parameter lowercase `version`; `store-v3` declares none.
+>
+> HighLevel publishes **no GA/beta/preview label** for v3 — do not write "v3 is GA" as a quote.
 
-**The two renames that will bite** — HighLevel lists both as *removed without deprecation*
-in v3, and they are the core of the agency OAuth workflow:
+**This is forward-guidance, not a break.** Every pre-v3 path still works today, and **no
+version has a published retirement date** — every one is "Supported until: TBD". There is no
+deadline and no forced migration. Adopt v3 where it gives you capability you need.
+
+**The two renames that will bite** — the core of the agency OAuth workflow. (HighLevel
+published **no** migration guide for these; "removed without deprecation" is a changelog-diff
+label, not a HighLevel policy statement.)
 
 | Operation | v2 (still live) | v3 |
 |---|---|---|
@@ -146,13 +184,16 @@ Other v3 changes worth knowing before you migrate:
 - **OAuth token body goes camelCase** — `clientId`, `clientSecret`, `grantType`,
   `refreshToken`; the response field becomes `accessToken`. The `Version` header becomes
   **required** on the token call.
-- **`GET /contacts/` is removed** — use `POST /contacts/search`. (Already the preferred
-  call in v2; in v3 it is the only one.)
-- **`GET /users/` is removed** — use `GET /users/search`.
+- **`GET /contacts/` is dropped from the v3 spec** — use `POST /contacts/search`.
+  *(PROVEN 2026-08-03: it still returns 200 under `Version: v3` today. The spec removal has
+  not been enforced at the runtime — do not rely on that lasting.)*
+- **`GET /users/` is dropped from the v3 spec** — use `GET /users/search`.
+  *(PROVEN 2026-08-03: also still returns 200 under `Version: v3`.)*
 - `DELETE /contacts/{id}/campaigns/removeAll` → `.../campaigns/remove-all`.
-- The `/emails/builder*` surface (5 ops) is **replaced wholesale** by
+- The `/emails/builder*` surface (5 ops) is **superseded** by
   `/emails/locations/{locationId}/campaigns/*` and `/emails/locations/{locationId}/templates/*`
-  (18 ops).
+  (18 ops). *(PROVEN 2026-08-03: `/emails/builder` still returns 200 under both
+  `2021-07-28` and `v3`; build new work on the `locations/...` form regardless.)*
 - Per-platform social OAuth paths collapse into generic `{platform}` paths.
 
 **v3-only capability** (does not exist in v2 — requires `Version: v3`): chat-widget,
@@ -161,24 +202,42 @@ emails surface.
 
 ---
 
-## All Scopes (130)
+## All Scopes (142)
 
 **Read this before ticking boxes on a PIT.** A wrong scope *name* fails exactly like a
-missing one — 401/403 with an otherwise-valid token — so the names below are taken
-verbatim from the source, not paraphrased.
+missing one — 401/403 with an otherwise-valid token.
 
-- **118** distinct scopes are declared in the `security` blocks of the published app specs.
-- **130** is the union of those with `docs/oauth/Scopes.md`.
-- The two sources disagree; where they do, **the spec files are more current**.
-  `docs/oauth/Scopes.md` has no rows at all for voice-ai, agent-studio, conversation-ai,
-  knowledge-base, brand-boards, ad-publishing, phone-system, associations or custom-menus.
-- Seven apps declare **no** scopes in their spec: courses, email-isv, knowledge-base,
-  proposals, saas-api, snapshots, store. Where `Scopes.md` covers them (courses, saas,
-  snapshots) its names are used below; knowledge-base, proposals, store and email-isv have
-  no published scope names in either source.
+**There are three sources and they are DISJOINT. None is complete.**
+
+| Source | Distinct scopes |
+|---|---|
+| Pre-v3 specs (`apps/*.json` `security` blocks) | **118** |
+| v3 specs (`apps/v3/*.json`) | **127** |
+| `docs/oauth/Scopes.md` | **91** |
+| **True union — what a PIT can actually be granted** | **142** |
+
+- **11 scopes exist ONLY in `Scopes.md`, in no spec at all:** `courses.write`,
+  `funnels/funnel.readonly`, `funnels/page.readonly`, `funnels/pagecount.readonly`,
+  `saas/location.read`, `saas/location.write`, `snapshots.readonly`,
+  `socialplanner/account.write`, `socialplanner/csv.readonly`, `socialplanner/oauth.write`,
+  `socialplanner/tag.readonly`
+- **13 scopes are NEW in v3:** `chat-widget.readonly|write`, `emails/campaigns.readonly|write`,
+  `emails/stats.readonly`, `emails/templates.readonly|write`, `lc-email.readonly`,
+  `locations/write`, `saas/company.read|write`, `socialplanner/category.write`,
+  `socialplanner/statistics.readonly`
+- **4 scopes are DROPPED in v3:** `emails/builder.readonly|write`, `emails/schedule.readonly`,
+  `socialplanner/oauth.readonly`
+- `Scopes.md` has no rows at all for voice-ai, agent-studio, conversation-ai, knowledge-base,
+  brand-boards, ad-publishing, phone-system, associations or custom-menus.
+- Seven apps declare no scopes in their spec: courses, email-isv, knowledge-base, proposals,
+  saas-api, snapshots, store.
+
+> **`pipelines.create` is NOT an OAuth scope.** The 2026-06-15 changelog added it as an enum
+> value in the `scopes` **response property** of the `/users/*` endpoints — a user-permission
+> value in a response body. It appears in no `security` block anywhere. Do not put it on a PIT.
 
 **Sources (verified 2026-08-03):** per-spec `security` blocks under
-`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps`, plus
+`https://github.com/GoHighLevel/highlevel-api-docs/tree/main/apps` and `.../apps/v3`, plus
 `https://raw.githubusercontent.com/GoHighLevel/highlevel-api-docs/main/docs/oauth/Scopes.md`
 
 ### Names that changed — old value → correct value
@@ -410,6 +469,21 @@ none of these appear in either source.
 
 ### Affiliate Manager Scopes
 - `affiliate-manager.readonly`
+
+### v3-only Scopes (require `Version: v3` surfaces)
+- `chat-widget.readonly`
+- `chat-widget.write`
+- `emails/campaigns.readonly`
+- `emails/campaigns.write`
+- `emails/stats.readonly`
+- `emails/templates.readonly`
+- `emails/templates.write`
+- `lc-email.readonly`
+- `locations/write`
+- `saas/company.read`
+- `saas/company.write`
+- `socialplanner/category.write`
+- `socialplanner/statistics.readonly`
 
 ---
 

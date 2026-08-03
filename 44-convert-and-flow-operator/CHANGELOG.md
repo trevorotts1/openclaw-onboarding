@@ -1,5 +1,25 @@
 # Changelog — convert-and-flow-operator (Skill 44)
 
+## [1.3.16] - 2026-08-03 — REVERT: `2023-02-21` on `POST /users/` was correct all along
+
+### Reverted
+- **v1.3.15 changed `POST /users/` from `Version: 2023-02-21` to `2021-07-28`. That was
+  wrong and is reverted.** `2023-02-21` is a first-class supported HighLevel version and
+  `POST /users/` is documented verbatim under it at
+  `https://marketplace.gohighlevel.com/docs/2023-02-21/ghl/users/create-user/index.html`.
+  **PROVEN live 2026-08-03:** `GET /users/` returns 200 under `2023-02-21`.
+  The agency reference's `2021-07-28` is *also* valid — HighLevel documents this endpoint
+  under multiple supported versions. It was never a contradiction and never a defect.
+  The v1.3.15 verdict came from `users.json` in the GitHub spec repo, which lags the live
+  docs. A note now sits at the call site so nobody "fixes" it a third time.
+
+### Kept from v1.3.15
+- The Rule B header block still states the full per-operation rule (payments is `2021-07-28`,
+  not `2021-04-15`), now framed as five concurrently-supported versions rather than a
+  right/wrong binary.
+
+---
+
 ## [1.3.15] - 2026-08-03 — Version-header corrections against the published spec
 
 ### Fixed
