@@ -74,9 +74,9 @@
       ]
     },
     "58-podcast/guard-cron-inventory.py": {
-      "line_count": 686,
+      "line_count": 755,
       "present": true,
-      "sha256": "9e8b3a7c0a364ac2c09b45dacc6bdccd75f67d22b561460a829d008873d71b88",
+      "sha256": "541110d51125ccb581465eb0021f7990289742c00361fabe5e0ea1768397b2ea",
       "top_level_names": [
         "_emit",
         "_field_count",
@@ -90,6 +90,7 @@
         "audit_static",
         "entry_announces",
         "entry_client",
+        "entry_is_box_scheduler",
         "entry_is_heartbeat",
         "entry_is_poller",
         "entry_name",

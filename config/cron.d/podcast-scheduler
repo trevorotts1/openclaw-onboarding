@@ -1,0 +1,13 @@
+# Podcast production processor tick -- every 5 minutes
+# The controller IS the processor; the scheduler IS its heartbeat. Each tick
+# runs scripts/podcast_scheduler_runner.sh, which sources the podcast env and
+# runs podcast_controller.py --once over queued TaskFlows. ONE entry PER BOX
+# (not per client): the per-client once-daily law (guard-cron-inventory.py)
+# governs openclaw client crons only; this box-level tick is recognized by
+# name 'podcast-scheduler' and excluded from the per-client census.
+# Env vars: PODCAST_ENV_FILE, PODCAST_CONTROLLER_PATH, PODCAST_SCHEDULER_LOG,
+#           PODCAST_SCHEDULER_DRY_RUN
+# User field: the OpenClaw runtime user (node by default; PODCAST_NODE_USER
+# elsewhere). The controller writes node-owned state; config writes never run
+# as root. On macOS the launchd agent (config/launchd/) is the idiom instead.
+*/5 * * * * node /usr/local/bin/podcast-scheduler-runner.sh
