@@ -140,12 +140,44 @@ The Podcast department producer-side board caller (`scripts/cc_board.py`)
 cards episode runs onto the Command Center Kanban board. It is a FAIL-SOFT
 caller -- a board outage never fails an episode run.
 
+Show label convention (two-show fleet model)
+---------------------------------------------
+
+Every podcast client in the fleet publishes TWO shows under the single
+Podbean host account:
+
+  1. the PERSONAL show (solo episodes), and
+  2. the INTERVIEW show (guest episodes).
+
+The publish roster (podcast_publish_roster) carries one row per SHOW, so a
+single client legitimately owns two roster rows (same email + last name,
+different podbean_channel_id), and Skill 58 modes mirror the split
+(modes/personal.md vs modes/interview.md). Because one client maps to two
+shows, the episode card on the CC Podcast lane MUST say which show the
+episode belongs to, otherwise personal vs interview episodes for the same
+client are indistinguishable on the lane.
+
+Convention: the caller of run-begin carries the show name. Pass
+--show-name <name> with the client's show name (resolved upstream from the
+matched roster row) and the card title becomes:
+
+  Episode: <title> - <show> (<client>)
+
+The separator is a plain hyphen (never an em dash). When --show-name is
+absent (legacy single-row callers, or callers that have not been updated),
+the title stays exactly the old format "Episode: <title> (<client>)" --
+fully backward compatible. This is a labeling convenience only: the board
+is never a gate, and a missing show name never fails or blocks an episode
+run.
+
 CLI subcommands:
 
   run-begin   --job-id <id> --client-label <label> --episode-title <title>
-              [--department podcast]
+              [--show-name <name>] [--department podcast]
               Creates one card on the CC board in the Podcast workspace.
-              Card title: "Episode: <title> (<client>)".
+              Card title: "Episode: <title> (<client>)", or, when
+              --show-name is given, "Episode: <title> - <show> (<client>)"
+              (see the show label convention below).
               Idempotent: re-calling with the same job-id returns the cached
               task_id without creating a duplicate.
               Prints the task_id to stdout on success.

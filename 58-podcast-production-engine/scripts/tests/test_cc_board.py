@@ -8,6 +8,8 @@ offline.
 Covers:
   * FAIL-SOFT: no CC_BASE_URL => clean no-op, never raises.
   * run-begin creates a card via POST /api/tasks/ingest and maps job-id.
+  * Card title: show name present => title includes the show; absent =>
+    the legacy title format is preserved byte-for-byte (two-show model, T8).
   * Duplicate run-begin is idempotent (returns same task_id, no second POST).
   * patch-phase sends correct PATCH payload with phase_id + status.
   * CC unreachable => exit 0 + stderr line (fail-soft proof).
@@ -177,6 +179,69 @@ class AuthAndContractTest(unittest.TestCase):
         tid = cc_board.create_board_card("j-retry", "c", "E", env=ENV)
         self.assertEqual(tid, "task-retry-ok")
         self.assertEqual(len([r for r in self.rec.requests if r["method"] == "POST"]), 2)
+
+
+class ShowNameTitleTest(unittest.TestCase):
+    """Two-show fleet model (T8): cards carry the show name so personal vs
+    interview episodes stay distinguishable on the Podcast lane. With a show
+    name the title is "Episode: <title> - <show> (<client>)"; without one the
+    legacy title "Episode: <title> (<client>)" is preserved byte-for-byte."""
+
+    def setUp(self):
+        self.rec = _Recorder()
+        self._orig = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = self.rec
+        self._tmp_state = tempfile.TemporaryDirectory()
+        self._orig_state = cc_board._STATE_FILE
+        cc_board._STATE_DIR = Path(self._tmp_state.name)
+        cc_board._STATE_FILE = cc_board._STATE_DIR / "board-map.json"
+
+    def tearDown(self):
+        cc_board.urllib.request.urlopen = self._orig
+        cc_board._STATE_DIR = Path.home() / ".openclaw" / "podcast-engine"
+        cc_board._STATE_FILE = self._orig_state
+        self._tmp_state.cleanup()
+
+    def _create_and_get_title(self, **kwargs):
+        self.rec.queue(201, {"ok": True, "task_id": "task-show",
+                             "workspace_id": "ws", "status": "backlog"})
+        tid = cc_board.create_board_card(env=ENV, **kwargs)
+        self.assertEqual(tid, "task-show")
+        body = json.loads(self.rec.requests[-1]["body"])
+        return body["title"]
+
+    def test_title_with_show_name_includes_show(self):
+        """Show name present => title includes the show between the episode
+        title and the client label (plain hyphen, never an em dash)."""
+        title = self._create_and_get_title(
+            job_id="job-show-1", client_label="Test Client",
+            episode_title="Ep Title", show_name="Soft Girl Era")
+        self.assertEqual(title, "Episode: Ep Title - Soft Girl Era (Test Client)")
+        self.assertIn("Soft Girl Era", title)
+        # No em dash in the title (plain hyphen only); U+2014 is the em dash.
+        self.assertNotIn("\u2014", title)
+
+    def test_title_without_show_name_keeps_legacy_format(self):
+        """Show name absent => old title format, unchanged (backward
+        compatible)."""
+        title = self._create_and_get_title(
+            job_id="job-show-2", client_label="Test Client",
+            episode_title="Ep Title")
+        self.assertEqual(title, "Episode: Ep Title (Test Client)")
+
+    def test_title_with_show_name_and_no_client_label(self):
+        """Show name with an empty client label omits the trailing label."""
+        title = self._create_and_get_title(
+            job_id="job-show-3", client_label="",
+            episode_title="Ep Title", show_name="Live With The Client")
+        self.assertEqual(title, "Episode: Ep Title - Live With The Client")
+
+    def test_empty_show_name_string_keeps_legacy_format(self):
+        """An explicitly empty --show-name is treated as absent."""
+        title = self._create_and_get_title(
+            job_id="job-show-4", client_label="C",
+            episode_title="E", show_name="")
+        self.assertEqual(title, "Episode: E (C)")
 
 
 class IdempotencyTest(unittest.TestCase):
@@ -664,6 +729,16 @@ class CliExitCodeTest(unittest.TestCase):
         self.assertEqual(r.returncode, 0, f"Expected exit 0, got {r.returncode}. stderr={r.stderr}")
         self.assertIn("warning", r.stderr.lower(),
                       f"Expected permalink warning in stderr, got: {r.stderr}")
+
+    def test_run_begin_accepts_show_name_flag(self):
+        """run-begin accepts the optional --show-name flag (T8). With an
+        unreachable CC the call still fail-softs to exit 0; the point is that
+        argparse recognizes the flag (exit 2 would mean it does not)."""
+        env = {**self._env, "CC_BASE_URL": "https://cc-down.example.test"}
+        r = self._run("run-begin", "--job-id", "j1", "--episode-title", "Ep",
+                       "--show-name", "The Interview Show",
+                       env=env, timeout=12)
+        self.assertEqual(r.returncode, 0, f"Expected exit 0, got {r.returncode}. stderr={r.stderr}")
 
 
 class LegalPhasesTest(unittest.TestCase):

@@ -62,9 +62,14 @@ STATE MACHINE (rem-2)
   contract is unchanged: a refused transition is logged, not fatal.
 
 CLI SUBCOMMANDS
-  run-begin   --job-id --client-label --episode-title [--department podcast]
+  run-begin   --job-id --client-label --episode-title [--show-name <name>]
+              [--department podcast]
               Create the episode card on the CC board. Card title convention:
-              "Episode: <title> (<client>)".
+              "Episode: <title> (<client>)", or, when --show-name is given,
+              "Episode: <title> - <show> (<client>)" (two-show fleet model:
+              every client has a personal show plus an interview show, and
+              the card carries the show so the Podcast lane stays
+              distinguishable).
   patch-phase --job-id --phase <slug> --status <in_progress|review|done|blocked>
               [--permalink <url>]
               Update the card's phase annotation and CC-native status.
@@ -287,10 +292,15 @@ def create_board_card(
     episode_title: str,
     *,
     department: str = "podcast",
+    show_name: str = "",
     env: Optional[dict] = None,
 ) -> Optional[str]:
     """Create (or idempotently re-fetch) the episode card on the CC board.
-    Returns the echoed task_id on success, else None (FAIL-SOFT)."""
+    Returns the echoed task_id on success, else None (FAIL-SOFT).
+
+    Card title: "Episode: <title> (<client>)"; when show_name is given it
+    becomes "Episode: <title> - <show> (<client>)" (two-show fleet model,
+    WIRING.md). Absent show_name keeps the legacy title exactly."""
     cfg = board_config(env)
     if cfg is None:
         _log("CC_BASE_URL unset -- board disabled (no-op); run continues.")
@@ -305,7 +315,16 @@ def create_board_card(
         _log(f"board card already exists for job_id={job_id} (task_id={existing}); re-using.")
         return existing
 
-    title = f"Episode: {episode_title} ({client_label})" if client_label else f"Episode: {episode_title}"
+    # Title convention (two-show fleet model; see WIRING.md): without a show
+    # name the legacy title is preserved byte-for-byte; with a show name the
+    # card reads "Episode: <title> - <show> (<client>)" so personal vs
+    # interview episodes stay distinguishable on the Podcast lane. Plain
+    # hyphen, never an em dash.
+    title = f"Episode: {episode_title}"
+    if show_name:
+        title += f" - {show_name}"
+    if client_label:
+        title += f" ({client_label})"
     payload: dict = {
         "title": title,
         "department_slug": department,
@@ -499,6 +518,7 @@ def cmd_run_begin(args: argparse.Namespace) -> None:
         client_label=args.client_label or "",
         episode_title=args.episode_title,
         department=args.department or "podcast",
+        show_name=args.show_name or "",
     )
     if task_id:
         print(task_id)
@@ -603,6 +623,8 @@ def main() -> None:
     p_begin.add_argument("--job-id", required=True, help="Podcast job identifier")
     p_begin.add_argument("--client-label", default="", help="Client name label")
     p_begin.add_argument("--episode-title", required=True, help="Episode title")
+    p_begin.add_argument("--show-name", default="",
+                         help="Optional show name (two-show fleet model); when set the card title becomes 'Episode: <title> - <show> (<client>)'")
     p_begin.add_argument("--department", default="podcast", help="CC workspace slug (default: podcast)")
     p_begin.set_defaults(func=cmd_run_begin)
 
