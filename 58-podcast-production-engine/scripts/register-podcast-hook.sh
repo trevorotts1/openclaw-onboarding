@@ -272,7 +272,11 @@ fi
 # route secret is a SecretRef by label; no secret value can land in the file.
 # Prints UNCHANGED (idempotent no-op) or WRITTEN <backup-path>.
 # --------------------------------------------------------------------------- #
-MERGE_OUT="$(REG_CONFIG="$CONFIG_FILE" REG_ROUTE_ID="$ROUTE_ID" REG_SESSION_KEY="$SESSION_KEY" \
+# Note: the substitution below is deliberately UNQUOTED (VAR=$(...) never
+# undergoes word splitting or glob expansion in an assignment) so the quoted
+# python heredoc does not nest inside double quotes. That nesting form
+# ("$(... <<'PY' ... PY ...)") fails to parse on stock macOS bash 3.2.
+MERGE_OUT=$(REG_CONFIG="$CONFIG_FILE" REG_ROUTE_ID="$ROUTE_ID" REG_SESSION_KEY="$SESSION_KEY" \
   REG_AGENT_ID="$AGENT_ID" REG_CONTROLLER_ID="$CONTROLLER_ID" REG_DESCRIPTION="$DESCRIPTION" \
   REG_MODE="$MODE" REG_ROUTE_JSON="$ROUTE_JSON" python3 - <<'PY'
 import datetime, json, os, shutil, sys, tempfile
@@ -400,7 +404,7 @@ except Exception:
     raise
 print("WRITTEN %s" % backup)
 PY
-)" || die "$EX_GATEWAY" "config merge failed for $CONFIG_FILE (see message above)"
+) || die "$EX_GATEWAY" "config merge failed for $CONFIG_FILE (see message above)"
 
 if [ "$MERGE_OUT" = "UNCHANGED" ]; then
   if [ "$MODE" = "add" ]; then
