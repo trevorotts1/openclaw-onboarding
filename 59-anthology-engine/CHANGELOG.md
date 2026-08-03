@@ -1,3 +1,8 @@
+### v0.1.15 -- warfix batch 4 (2026-08-02)
+
+Landed 2 more Skill 59 warfix fixes (operator-driven recovery):
+FIX-17 (ENV-ONLY, store-aware adapters; store fallback blocked for explicit-environ self-tests), FIX-21 (A5-CAP, cross-process fcntl.flock per-provider concurrency cap + preflight CONCURRENCY ADVISORY).
+
 ### v0.1.14 -- warfix batch 3 (2026-08-02)
 
 Landed 4 more Skill 59 warfix fixes:
