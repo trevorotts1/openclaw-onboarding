@@ -80,7 +80,7 @@ TMP="$(cd "$TMP" && pwd -P)"
 MANDATORY="marketing sales billing-finance customer-support web-development funnels
 app-development graphics video audio research communications crm openclaw-maintenance
 legal social-media paid-advertisement personal-assistant general-task
-project-architecture-office bugs healer quality-control"
+project-architecture-office bugs healer quality-control master-orchestrator"
 UNIVERSAL="presentations scheduling-dispatch logistics-fulfillment engineering
 account-management podcast"
 
@@ -160,7 +160,7 @@ echo "  resolved: ${DD3:-<none>}"
 MM3="$(missing_mandatory "$H3" "$DD3")"
 # TIGHTENED: assert the tree actually resolved AND that funnels is the ONLY
 # missing department. Against pristine origin/main this scenario "passed"
-# vacuously — the resolver found nothing, so all 23 mandatory departments read
+# vacuously — the resolver found nothing, so all 24 mandatory departments read
 # as missing and funnels happened to be among them. A test that a broken
 # resolver satisfies proves nothing, so require the exact verdict.
 if [ -z "$DD3" ]; then

@@ -46,6 +46,86 @@ No version bump. This is a CI-only change -- no file inside any skill directory 
 so guard G3 does not apply, and all ten version markers continue to agree at the current
 `/version`. Precedent: `a41b9bd8` added a whole new guard workflow the same way.
 
+## [v21.7.2]  -  2026-08-03  -  Canonical department floor reconciled to 30: master-orchestrator registered as the 24th mandatory dept
+
+### Why
+
+`build-workforce.py`'s `generate_departments_json()` has always unconditionally
+PREPENDED the `dept-ceo` / `departments/master-orchestrator` Command Center board
+column ahead of every client's selected departments — no industry gate, no
+decline path, not derived from `selected_departments` — and
+`templates/role-library/master-orchestrator/how-to-use-this-department.md` has
+always documented it as a real client department folder. Only
+`department-naming-map.json` omitted it, so `department-floor.py`'s on-disk
+floor check never expected, counted, or gated it. Operator ruling: register it.
+
+### What changed
+
+- **`department-naming-map.json`** bumped 2.7.0 -> 2.8.0, registers
+  `mandatory.master-orchestrator` as the 24th mandatory id. The on-disk floor
+  `department-floor.py` enforces moves 28/29 -> **30** (24 mandatory + 6
+  universal-primary); `HARDCODED_MANDATORY` / `HARDCODED_UNIVERSAL_PRIMARY`
+  updated so a corrupt map still fails closed to the same 30.
+- **master-orchestrator is FLOOR-VERIFICATION-ONLY.** It is deliberately
+  excluded from the BUILD-TIME / interview-declinable canonical set:
+  `build-workforce.load_canonical_floor()` and `qc-assert-repo-consistency.
+  floor_dept_ids()` both filter it back out immediately after reading the
+  naming map, because it is never offered as an interview yes/no/later
+  decision and is provisioned outside `selected_departments` — every other
+  call site that touches it already special-cased `dept_id in ("ceo",
+  "master-orchestrator", "dept-ceo")` on that assumption. The buildable/
+  declinable floor `reconcile_canonical_floor()` / `apply_vertical_packs()`
+  actually union in stays **29** (23 mandatory + 6 universal-primary),
+  unchanged by this ruling.
+- **Fixed an inverted CI guard.** `qc-assert-repo-consistency.py`'s Issue #10
+  forbidden-stale-floor-literal scan hardcoded `"currently 29"` / `"primary =
+  29"` as FORBIDDEN — blocking the number that had been correct since v2.6.2
+  (funnels), while the genuinely stale `28` framing went uncaught. Replaced
+  the hand-typed list with `_HISTORICAL_FLOOR_STATES` + a generator that
+  derives forbidden phrasings from every retired state EXCEPT whichever
+  matches the LIVE naming-map count, so the number correct today can never be
+  forbidden today.
+- **Closed the drift hole structurally.** `check-floor-count-consistency.py`'s
+  `DOC_FLOOR_REGISTRY` extended from 4 files / 5 assertions to 17 files / 50
+  assertions (every doc/comment site that quotes a floor count); its
+  `derive_floor()` now derives BOTH the on-disk (30) and buildable (29) tiers
+  so each registered assertion checks whichever tier it actually describes.
+  `check-floor-count-drift.py` Check 3 fixed two structural blind spots
+  (proven via mutation test): it only matched the literal `NN-department`
+  pattern (this file's actual prose is `NN mandatory` / `NN
+  universal-primary` / `A + B = NN` arithmetic) and only scanned
+  `ast.Constant` string literals via `ast.walk()` (Python's `ast` module does
+  not represent `#` comments at all, so this heavily-commented file's
+  comments were structurally invisible regardless of pattern — now scanned
+  via `tokenize`). `anthology-engine/verify-anthology-engine-wiring.py`'s
+  hardcoded `!= 29` assertion replaced with a live derivation.
+- **Client-facing fix:** `INSTRUCTIONS.md`'s OPT-OUT WARNING, read verbatim to
+  owners during their interview, said "any of the 28: the 22 mandatory + the
+  6 universal-primary verticals" — corrected to the 29 actually-declinable
+  floor departments, with a note that master-orchestrator carries no decision
+  path.
+- **`scripts/qc-validate-department-docs.py` (U052)** gained the same
+  master-orchestrator exclusion `DEPARTMENTS.md`'s exact-set-equality check
+  needs (that doc documents the declinable floor) — without it, every run
+  would fail with `MISSING: master-orchestrator` (verified: it did, before
+  this fix).
+- Every stale 28/29/16 doc, comment, and hermetic-test-fixture site this
+  reconciliation found is corrected in
+  `23-ai-workforce-blueprint/CHANGELOG.md`'s matching entry (full file list);
+  `build-state-schema.json`'s `34`/`45` built/full-catalog tier numbers (also
+  already stale before this change) corrected to `36`/`46`, both
+  independently verified rather than taken on faith.
+
+### Ripple
+
+`scripts/bump-version.sh v21.7.2` rolled all 10 tracked repo version markers
+v21.7.1 -> v21.7.2 in lockstep (also rolls `06-ghl-install-pages`'s markers +
+`agent-browser-reaper.sh` / `guard-agent-browser-managed.sh`'s own version
+markers, per the script's own unconditional lockstep — unrelated to this
+skill-content change, kept in sync regardless). No client names, no secret
+values, no Anthropic model added/removed/substituted; client skills/engines
+still run only on the client's own providers.
+
 ## [v21.7.1]  -  2026-08-03  -  GHL API currency: v3 is a first-class generation, the docs match live probes, and qc-static is unbroken
 
 Ships two commits that were finished on `feat/ghl-api-currency-2026-08` and never
