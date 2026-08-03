@@ -22,13 +22,13 @@
     "role_home": "23-ai-workforce-blueprint/templates/role-library/podcast/",
     "naming_map_source": "23-ai-workforce-blueprint/department-naming-map.json",
     "no_duplicate_department": true,
-    "no_duplicate_reason": "The podcast department already exists on the 28-department universal floor (content-creator pack, universal_primary=true). Per PRD Section 3.5 creating a second podcast department is a build failure. This wiring attaches the engine to the existing department only.",
+    "no_duplicate_reason": "The podcast department already exists on the 30-department universal floor (content-creator pack, universal_primary=true). Per PRD Section 3.5 creating a second podcast department is a build failure. This wiring attaches the engine to the existing department only.",
     "floor_invariant": {
-      "expected_floor_count": 28,
-      "composition": "22 mandatory + 6 universal-primary-vertical",
+      "expected_floor_count": 30,
+      "composition": "24 mandatory + 6 universal-primary-vertical",
       "podcast_is_universal_primary": true,
       "floor_count_change": 0,
-      "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; podcast appears in universal_primary_vertical and expected_floor_count stays 28. department-naming-map.json is not modified by this slice."
+      "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; podcast appears in universal_primary_vertical and expected_floor_count stays 30. department-naming-map.json is not modified by this slice."
     }
   },
 

@@ -135,7 +135,8 @@ fi
 # against the REAL department directories ON DISK, NOT the build-state JSON's
 # .departments[] array. This kills the seeded-build-state bypass: a hand-written
 # build-state claiming "done" with 3 fake dept entries used to pass step 2;
-# now a 3-dept-on-disk workforce FAILS because the 16 mandatory + the
+# now a 3-dept-on-disk workforce FAILS because the 24 mandatory (department-
+# naming-map.json v2.8.0) + the
 # industry-matched vertical-pack departments are not present as real folders.
 # The ONLY way to be below the mandatory floor is an EXPLICIT recorded decline
 # (canonicalReconciliation.decisions[cid]=="no" or declinedDepartments[]).

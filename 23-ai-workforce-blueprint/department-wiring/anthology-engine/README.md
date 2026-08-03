@@ -11,7 +11,7 @@ Writing rules honored here: zero em dashes, no triple-backtick code fences.
 
 Anthology is NOT the Podcast Production Engine's pattern. Podcast (skill 58)
 attaches to an EXISTING universal-primary department that already sits on the
-fleet's 28-department floor. Anthology (skill 59) is different on purpose: PRD
+fleet's 30-department floor. Anthology (skill 59) is different on purpose: PRD
 Section 13 splits it into two layers that are never conflated.
 
 - The FLEET side: the skill registers under the books/publishing floor grouping
@@ -25,7 +25,7 @@ Section 13 splits it into two layers that are never conflated.
   client-optional department that Skill 32's add-department.sh creates directly
   inside a client's own Command Center at provisioning time (already wired on this
   branch at W2.6 STEP 3.5 and exercised by the board client at W3.1). It is never
-  one of the 22 mandatory or 6 universal-primary departments, and it is never
+  one of the 24 mandatory or 6 universal-primary departments, and it is never
   declared in `department-naming-map.json`.
 
 This two-layer split is the corrective PRD Section 13 names directly: Skill 53's
@@ -36,7 +36,7 @@ floor check to confirm nothing on the fleet side moved:
 
     python3 23-ai-workforce-blueprint/scripts/department-floor.py --json
 
-`expected_floor_count` stays 29 (23 mandatory plus 6 universal-primary-vertical),
+`expected_floor_count` stays 30 (24 mandatory plus 6 universal-primary-vertical),
 computed live, never a hardcoded integer. `department-naming-map.json`'s
 `mandatory` and `vertical_packs` blocks are not touched by this slice; a raw-text
 scan for the string "anthology" over that file returns zero hits, in either
@@ -151,7 +151,7 @@ proof plan, and WAVE-PLAN W4.3 for the mc_board.py-to-stage_cursor mapping unit.
 ## 7. Proof
 
 - Build-gate proof for this slice: `department-floor.py` returns rc 0 with
-  `expected_floor_count` unchanged at 29 and zero composition change;
+  `expected_floor_count` unchanged at 30 and zero composition change;
   `check-skill-department-map.py` returns 0 violations (the skill 59 coverage
   gap it reported before this slice is now closed); `verify-anthology-engine-wiring.py`
   returns rc 0.

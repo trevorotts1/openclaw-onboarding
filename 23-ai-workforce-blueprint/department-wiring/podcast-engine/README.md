@@ -11,15 +11,15 @@ Writing rules honored here: zero em dashes, no triple-backtick code fences.
 
 ## 1. Wire in, never duplicate
 
-The Podcast department already exists on the 28-department universal floor. It is
+The Podcast department already exists on the 30-department universal floor. It is
 the `podcast` department, in the content-creator vertical pack, flagged
 `universal_primary: true` in `23-ai-workforce-blueprint/department-naming-map.json`.
 `department-floor.py` counts it among the six universal-primary verticals that ride
-on top of the 22 mandatory departments (22 + 6 = 28).
+on top of the 24 mandatory departments (24 + 6 = 30).
 
 This slice attaches the engine (skill 58) to that existing department. Per PRD
 Section 3.5, creating a second podcast department is a build failure. This slice
-does not edit the naming map, so the floor count is provably unchanged at 28 and
+does not edit the naming map, so the floor count is provably unchanged at 30 and
 `department-floor.py` still returns rc 0 with podcast recognized as a universal
 primary. Run it to confirm:
 

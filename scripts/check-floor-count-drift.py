@@ -136,10 +136,69 @@ if verdict.get("floor_met"):
             f"reason={reason!r}"
         )
 
-# ── Check 3: AST scan — no hardcoded floor integers in output string literals ─
-# Pattern: a string literal containing a two-or-more digit integer followed by
-# "-department" — that would be a hardcoded "28-department standard" style string.
+# ── Check 3: scan for hardcoded floor integers — string literals AND comments ─
+# TWO FIXES over the original Check 3 (both proven blind by the OQ-7-style drift
+# this file itself carried until v2.8.0: stale "22 + 6 = 28" / "23 + 6 = 29"
+# comments sat right next to a module docstring that had already moved past
+# them, and Check 3 never caught it):
+#
+#   1. PATTERN was ONLY `(\d{2,})-department` (a literal hyphen joining the
+#      number to the word "department"). None of this file's actual floor
+#      prose is phrased that way — it is phrased as "NN mandatory", "NN
+#      universal-primary", and "A + B = NN" arithmetic. HARDCODED_FLOOR_PATTERNS
+#      below adds all three so an equation like "22 + 6 = 28" or a bare
+#      "23 mandatory canonical" is no longer invisible to this guard.
+#   2. SOURCE was ONLY ast.Constant string literals (docstrings, print() /
+#      f-string arguments) via ast.walk(). Python's ast module does not
+#      represent `#` comments at all — they are discarded by the tokenizer
+#      before parsing ever sees them — so every one of this file's extensive
+#      `#`-prefixed explanatory comments (which is where MOST of its floor
+#      prose actually lives) was structurally invisible to Check 3, no matter
+#      what pattern it used. COMMENT_TEXTS below extracts real COMMENT tokens
+#      via the `tokenize` module (the correct way to see comments — never
+#      regex-split on a bare "#", which false-fires inside string literals)
+#      and scans them with the same pattern set.
 source = FLOOR_PY.read_text(encoding="utf-8")
+
+# Each pattern is paired with the QUANTITY it captures — "NN mandatory" and
+# "NN universal-primary" are legitimate SUB-counts (must equal mandatory_count
+# / universal_count respectively, NOT the total floor), while "NN-department"
+# and "A + B = NN" arithmetic assert the TOTAL. Comparing every capture against
+# expected_floor_count (the original design's implicit assumption) would make
+# a CORRECT "24 mandatory" line false-fire, since 24 != 30.
+HARDCODED_FLOOR_PATTERNS = [
+    # "28-department" / "30-department" (original pattern, kept) — TOTAL.
+    (re.compile(r"(\d{2,})-department"), "expected_floor_count"),
+    # "22 mandatory" / "23 mandatory canonical" (word boundary so "223" or an
+    # ordinal like "23rd mandatory" does not false-match) — MANDATORY sub-count.
+    (re.compile(r"\b(\d{2,})\s+mandatory\b"), "mandatory_count"),
+    # "7 universal-primary" / "6 universal primary" — UNIVERSAL-PRIMARY sub-count.
+    (re.compile(r"\b(\d+)\s+universal[\s-]primary\b"), "universal_count"),
+    # "22 + 6 = 28" style arithmetic — capture the right-hand TOTAL.
+    (re.compile(r"\d+\s*\+\s*\d+\s*=\s*(\d{2,})\b"), "expected_floor_count"),
+]
+_EXPECTED_VALUES = {
+    "expected_floor_count": expected_floor_count,
+    "mandatory_count": mandatory_count,
+    "universal_count": universal_count,
+}
+
+
+def _find_floor_mismatches(text, line_no, label):
+    out = []
+    for pattern, quantity in HARDCODED_FLOOR_PATTERNS:
+        expected = _EXPECTED_VALUES[quantity]
+        for m in pattern.finditer(text):
+            n = int(m.group(1))
+            if n != expected:
+                out.append(
+                    f"Check 3 FAIL: {label} line {line_no}: contains "
+                    f"'{m.group(0)}' ({quantity}={n}) but computed {quantity}={expected}. "
+                    f"Text: {text[max(0, m.start() - 40):m.end() + 20]!r}"
+                )
+    return out
+
+
 try:
     tree = ast.parse(source)
 except SyntaxError as exc:
@@ -147,24 +206,26 @@ except SyntaxError as exc:
     tree = None
 
 if tree is not None:
-    HARDCODED_FLOOR_PATTERN = re.compile(r"(\d{2,})-department")
+    # 3a. String literals (docstrings, print()/f-string arguments).
     for node in ast.walk(tree):
         if not isinstance(node, ast.Constant):
             continue
         if not isinstance(node.value, str):
             continue
-        s = node.value
-        matches = HARDCODED_FLOOR_PATTERN.findall(s)
-        if not matches:
-            continue
-        for m in matches:
-            n = int(m)
-            if n != expected_floor_count:
-                failures.append(
-                    f"Check 3 FAIL: line {node.lineno}: string literal contains "
-                    f"'{n}-department' but computed floor is {expected_floor_count}. "
-                    f"String: {s[:120]!r}"
-                )
+        failures.extend(_find_floor_mismatches(node.value, node.lineno, "string literal"))
+
+    # 3b. `#` comments — invisible to ast.walk(); tokenize is the only correct
+    # way to see them (a bare `"#" in line` regex would false-fire on a "#"
+    # that appears inside a string literal, e.g. a URL fragment or MCP-server
+    # id, of which this file's later utility code has a few).
+    try:
+        import io
+        import tokenize as _tokenize
+        for tok in _tokenize.generate_tokens(io.StringIO(source).readline):
+            if tok.type == _tokenize.COMMENT:
+                failures.extend(_find_floor_mismatches(tok.string, tok.start[0], "comment"))
+    except _tokenize.TokenizeError as exc:  # pragma: no cover - defensive
+        failures.append(f"Check 3 FAIL: could not tokenize {FLOOR_PY} for comments: {exc}")
 
 # ── Check 4: expected_floor_count in verdict matches our independently computed value ──
 if verdict.get("expected_floor_count") != expected_floor_count:
