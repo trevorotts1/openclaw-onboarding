@@ -5017,25 +5017,15 @@ PYEOF
       return 0
     fi
 
-    # Check if ghl-mcp is already registered under nested mcp.servers
+    # v21.5.0: the old "already registered -> return 0" short-circuit keyed on
+    # ghl-mcp OR ghl-community-mcp being present in mcp.servers. Tier 1 (ghl-mcp)
+    # is registered on virtually every box, so this function returned BEFORE
+    # running the autostart -- meaning an update pass never started, rebuilt or
+    # repaired a down/deaf Tier 2 server. The registration state is now irrelevant
+    # to whether the server gets wired, so the short-circuit is gone.
     local OCJSON="$HOME/.openclaw/openclaw.json"
-    if [ -f "$OCJSON" ] && python3 -c "
-import json, sys
-try:
-    cfg = json.load(open('$OCJSON'))
-    servers = cfg.get('mcp', {}).get('servers', {})
-    if 'ghl-mcp' in servers or 'ghl-community-mcp' in servers:
-        sys.exit(0)
-    sys.exit(1)
-except:
-    sys.exit(1)
-" 2>/dev/null; then
-      echo "    GHL MCP: already registered under mcp.servers"
-      return 0
-    fi
 
     # Read GHL MCP URL from skill's INSTALL.md or default to the community server
-    # The canonical CLI path per audit finding (d): openclaw mcp set
     local GHL_MCP_PORT=8765
     local GHL_MCP_INSTALL_MD="$SKILLS_DIR/36-ghl-mcp-setup/INSTALL.md"
     if [ -f "$GHL_MCP_INSTALL_MD" ]; then
@@ -5044,20 +5034,21 @@ except:
       [ -n "$DETECTED_PORT" ] && GHL_MCP_PORT="$DETECTED_PORT"
     fi
 
-    echo "    Registering GHL community MCP under mcp.servers (port $GHL_MCP_PORT)..."
-    # BUG FIX (Q2.7 root-cause fleet audit): this registration was missing
-    # connectionTimeoutMs, unlike the sibling stamper in ghl-mcp-autostart.sh
-    # (which sets connectionTimeoutMs:30000 for the identical server entry).
-    # Without a bounded timeout, `openclaw doctor` (and any other command that
-    # enumerates/health-checks mcp.servers) hangs indefinitely whenever the
-    # local ghl-community-mcp process is down, crashed, or port-conflicted --
-    # this is the exact "doctor hangs in a timeout loop" defect. Matching the
-    # autostart script's value closes the gap without changing behavior when
-    # the server IS healthy.
-    if openclaw mcp set ghl-community-mcp "{\"type\":\"streamable-http\",\"url\":\"http://localhost:${GHL_MCP_PORT}/mcp\",\"connectionTimeoutMs\":30000}" >> "$LOG_FILE" 2>&1; then
-      echo "    GHL MCP: registered under mcp.servers (ghl-community-mcp → localhost:${GHL_MCP_PORT})"
+    # v21.5.0: DO NOT register ghl-community-mcp under mcp.servers.
+    # Skill 36 v1.1.0 made Tier 2 ON-DEMAND CURL: its tool schemas would otherwise
+    # ride in EVERY session's init whether or not GHL is touched, and a down/deaf
+    # server makes every agent init pay the full connectionTimeoutMs (that is the
+    # 30s-per-init stall seen fleet-wide on 2026-08-01/02). The skill's own QC
+    # (qc-ghl-mcp-setup.sh Section D) ASSERTS it is NOT registered and 36/wire.sh
+    # migration M2 REMOVES it -- while this function put it straight back. The
+    # flip-flop is over: we only publish the canonical URL that the on-demand curl
+    # path reads, and remove a legacy registration if one is present.
+    openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >> "$LOG_FILE" 2>&1 || true
+    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+      echo "    GHL MCP: removing legacy ghl-community-mcp registration (Tier 2 is on-demand curl)"
+      openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1 || true
     else
-      echo "    GHL MCP: registration attempt completed (see $LOG_FILE for details)"
+      echo "    GHL MCP: Tier 2 correctly unregistered (on-demand curl at localhost:${GHL_MCP_PORT})"
     fi
 
     # FIX 3 (v10.15.48): registration alone NEVER starts the local server, so

@@ -6748,7 +6748,15 @@ install_skill_37_zhc_closeout
 # (downloaded, never executed). This step runs the EXECUTED autostart: build if
 # needed, install the canonical launchd KeepAlive plist (com.clawd.ghl-mcp) on
 # :8765, health-check, and register. Idempotent; honest SKIP if GHL creds absent.
-step "Step 14a: Starting GHL MCP server (launchd KeepAlive :8765 + healthcheck)"
+#
+# v21.5.0: the autostart now also (a) pins the third-party checkout to the vetted
+# commit in config/ghl-mcp-pin.env, (b) pins GHL_TOOL_PROFILE so the server never
+# serves the full 858-tool surface, (c) uses crash-only restart semantics so a bad
+# PIT cannot become a 10s relaunch loop, (d) builds a `git archive` of the pinned
+# commit in a temp dir and swaps dist/ only on success, and (e) verifies LIVENESS
+# with a JSON-RPC round trip and installs the periodic ghl-mcp-probe. Tier 2 is
+# NOT registered in mcp.servers (on-demand curl).
+step "Step 14a: Starting GHL MCP server (pinned build, crash-only launchd :8765 + JSON-RPC liveness probe)"
 
 start_ghl_mcp_autostart() {
     local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
@@ -6765,10 +6773,14 @@ start_ghl_mcp_autostart() {
     local STATUS_LINE
     STATUS_LINE="$(printf '%s\n' "$OUT" | grep -E '^STATUS:' | tail -1 || true)"
     case "$STATUS_LINE" in
-        *HEALTHY_ALREADY*|*"=HEALTHY"*) success "GHL MCP server running + registered (${STATUS_LINE:-healthy})" ;;
+        *HEALTHY_ALREADY*|*"=HEALTHY "*) success "GHL MCP server running + ANSWERING JSON-RPC (${STATUS_LINE:-healthy})" ;;
         *SKIPPED_NO_CREDS*)             note "GHL MCP server not started — GHL token absent (honest gap). ${STATUS_LINE}" ;;
-        *STARTED_UNHEALTHY*)            warn "GHL MCP service installed but /health not green yet — KeepAlive will retry. ${STATUS_LINE}" ;;
-        *BUILD_FAILED*)                 warn "GHL MCP server build failed — GHL tools will not resolve until fixed. ${STATUS_LINE}" ;;
+        # v21.5.0 states — each one is a REAL failure mode that used to be invisible.
+        *"=DEAF"*)                      warn "GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) — every agent init will burn the full connectionTimeoutMs until fixed. ${STATUS_LINE}" ;;
+        *TOKEN_REJECTED*)               warn "GHL rejected the PIT — the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${STATUS_LINE}" ;;
+        *PIN_MISMATCH*|*PIN_INVALID*)   warn "GHL MCP refused to start: the vetted commit pin could not be honoured — an UNPINNED third-party MCP is never started. Re-vet upstream and update config/ghl-mcp-pin.env. ${STATUS_LINE}" ;;
+        *STARTED_UNHEALTHY*)            warn "GHL MCP service installed but /health not green yet — crash-only restart will retry. ${STATUS_LINE}" ;;
+        *BUILD_FAILED*)                 warn "GHL MCP server build failed — the PREVIOUS dist was left intact; GHL tools may still resolve. ${STATUS_LINE}" ;;
         *)                              note "GHL MCP autostart ran. ${STATUS_LINE:-(no STATUS line captured — see $LOG_FILE)}" ;;
     esac
     return 0

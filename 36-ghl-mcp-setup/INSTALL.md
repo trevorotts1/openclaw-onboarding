@@ -379,24 +379,49 @@ fi
 mkdir -p "$(dirname "$MCP_DIR")"
 
 # PINNED COMMIT — reproducibility + supply-chain/drift protection.
-# 3dd9006a (2026-05-15) is the commit this skill was built and verified against:
-#   - package.json main = dist/main.js (the launchd/pm2 entrypoint)
-#   - src/main.ts:55 reads `process.env.PORT || process.env.MCP_SERVER_PORT` (the
-#     PORT-precedence behaviour the 5.5/5.6 supervision fix depends on)
-#   - HTTP server exposes GET /health ({"status":"healthy",...}), GET /tools, POST /execute
-#     (the exact surface QC Section D and INSTRUCTIONS.md probe).
-# Tracking `main` HEAD instead pulls the 2026-06-11+ "mcp-apps / easy-setup / curated
-# tool-profile" changes, which alter the default /tools surface — so we PIN.
-# To bump: change the SHA, then re-run qc-ghl-mcp-setup.sh (it range-checks /health
-# tool count + /execute) and confirm /health, /tools, /execute still behave as documented.
-GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
+# The pin, the tool profile and the port now live in ONE place that every launch
+# surface reads: the repo's `config/ghl-mcp-pin.env`. Do not hardcode a second copy.
+#
+#   GHL_MCP_VETTED_COMMIT   full 40-char upstream SHA (never a branch, never a
+#                           short SHA — upstream force-pushes rewritten history,
+#                           so a floating checkout is supply-chain roulette)
+#   GHL_MCP_TOOL_PROFILE    curated | official | stable | raw | full
+#   GHL_MCP_PORT            8765 canonical
+#
+# ⚠️ Do not bump the pin without a CLEAN commit-vetting verdict recorded in that
+# file (GHL_MCP_PIN_VETTED_*). The installer refuses to run an unpinned tree, but
+# it cannot tell you whether the pinned tree is trustworthy.
+. "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env"
 
-if [ -d "$MCP_DIR/.git" ]; then
-  cd "$MCP_DIR" && git fetch -q origin && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
-else
-  git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git "$MCP_DIR"
-  cd "$MCP_DIR" && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
+# BUILD HYGIENE (2026-08 outage): upstream's build script (scripts/build-server.mjs)
+# `rmSync(dist)` FIRST and then transpiles every .ts it finds by walking src/
+# recursively — including any node_modules that ever landed inside src/. One
+# diagnostic anywhere in that walk exits 1 AFTER dist was already deleted, leaving
+# a broken partial dist and a server that cannot start at all.
+# So: never build the working tree, and never delete dist/ before a good build.
+# Build a `git archive` of the PINNED commit in a temp dir, verify the artifact,
+# then swap it into dist/.
+if [ ! -d "$MCP_DIR/.git" ]; then
+  # NOT --depth 1: a shallow clone frequently cannot resolve an arbitrary pinned SHA.
+  git clone --no-checkout "$GHL_MCP_REPO_URL" "$MCP_DIR"
 fi
+git -C "$MCP_DIR" fetch -q origin "$GHL_MCP_VETTED_COMMIT" || git -C "$MCP_DIR" fetch -q origin
+git -C "$MCP_DIR" checkout -q --detach --force "$GHL_MCP_VETTED_COMMIT"
+[ "$(git -C "$MCP_DIR" rev-parse HEAD)" = "$GHL_MCP_VETTED_COMMIT" ] || { echo "PIN MISMATCH — refusing to build"; return 1 2>/dev/null || exit 1; }
+
+BUILD_TMP="$(mktemp -d)"
+git -C "$MCP_DIR" archive "$GHL_MCP_VETTED_COMMIT" | tar -x -C "$BUILD_TMP"
+( cd "$BUILD_TMP" && npm ci --no-audit --no-fund && npm run build )
+# ARTIFACT ASSERTION: a compiled dist that lacks the transport wiring is the
+# stale-dist deafness that hung every agent init for 30s, on every box, for 2 days.
+grep -q 'connect(transport)' "$BUILD_TMP/dist/main.js" || { echo "BUILT ARTIFACT INVALID — keeping the existing dist"; exit 1; }
+[ -d "$MCP_DIR/dist" ] && mv "$MCP_DIR/dist" "$MCP_DIR/dist.bak-prev"
+mv "$BUILD_TMP/dist" "$MCP_DIR/dist"
+( cd "$MCP_DIR" && npm install --no-audit --no-fund --omit=dev )
+rm -rf "$BUILD_TMP"
+
+# In practice you do NOT run the above by hand — `scripts/ghl-mcp-autostart.sh`
+# is the EXECUTED form of all of §5 and does exactly this, idempotently.
 ```
 
 #### 5.3 Write the .env
@@ -406,7 +431,12 @@ cat > "$MCP_DIR/.env" <<EOF
 GHL_API_KEY=${GOHIGHLEVEL_API_KEY}
 GHL_BASE_URL=https://services.leadconnectorhq.com
 GHL_LOCATION_ID=${GOHIGHLEVEL_LOCATION_ID}
+# main.js reads PORT BEFORE MCP_SERVER_PORT (src/main.ts:55) — pin BOTH.
+PORT=${GHL_MCP_PORT}
 MCP_SERVER_PORT=${GHL_MCP_PORT}
+# TOOL PROFILE — the upstream default is \`full\`, i.e. the entire 858-tool
+# catalogue (src/tool-registry.ts:509). Pin it explicitly on every surface.
+GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
 NODE_ENV=production
 EOF
 chmod 600 "$MCP_DIR/.env"
@@ -477,13 +507,36 @@ if [ "$PLATFORM" = "desktop" ]; then
              to ${GHL_MCP_PORT} so a stray inherited PORT can never bind random. -->
         <key>PORT</key><string>${GHL_MCP_PORT}</string>
         <key>MCP_SERVER_PORT</key><string>${GHL_MCP_PORT}</string>
+        <!-- Upstream default is the FULL 858-tool surface. Pin the profile. -->
+        <key>GHL_TOOL_PROFILE</key><string>${GHL_MCP_TOOL_PROFILE}</string>
+        <!-- LOG ROTATION. Nothing in the fleet ever rotated this server's logs:
+             ghl-mcp/stderr.log reached 5.4 MB on the operator box and 2.2 MB on
+             a second fleet box, both growing since May. The generated
+             .ghl-mcp-launch.sh copytruncates these at every (re)start and the
+             periodic probe repeats
+             it every 15 min, so a long-lived process is covered too. Rotation is
+             copytruncate (copy then truncate IN PLACE) because launchd holds an
+             open fd — renaming would leave the server writing to an orphaned
+             inode and the visible log frozen at 0 bytes. -->
+        <key>GHL_MCP_LOG_DIR</key><string>${HOME}/Library/Logs/ghl-mcp</string>
+        <key>GHL_MCP_LOG_MAX_BYTES</key><string>${GHL_MCP_LOG_MAX_BYTES}</string>
+        <key>GHL_MCP_LOG_KEEP</key><string>${GHL_MCP_LOG_KEEP}</string>
     </dict>
     <key>RunAtLoad</key><true/>
+    <!-- CRASH-ONLY. Never the unconditional boolean form of KeepAlive: main.js
+         calls process.exit(1) when GHL rejects the PIT at boot, so an
+         unconditional restart policy turns a rotated token into a relaunch loop
+         every ThrottleInterval seconds, forever. The autostart script additionally
+         launches through .ghl-mcp-launch.sh, which exits CLEANLY (0) on an auth
+         rejection so this policy actually stops it. -->
     <key>KeepAlive</key><dict>
         <key>SuccessfulExit</key><false/>
         <key>Crashed</key><true/>
     </dict>
-    <key>ThrottleInterval</key><integer>10</integer>
+    <!-- 300s — the CANONICAL fleet shape (matches the reference plist verified
+         on a fleet box). Long enough that even a mis-classified crash can
+         never become a hot relaunch loop. -->
+    <key>ThrottleInterval</key><integer>300</integer>
     <key>StandardOutPath</key><string>${HOME}/Library/Logs/ghl-mcp/stdout.log</string>
     <key>StandardErrorPath</key><string>${HOME}/Library/Logs/ghl-mcp/stderr.log</string>
     <key>ProcessType</key><string>Background</string>
@@ -540,12 +593,20 @@ module.exports = {
     script: "dist/main.js",
     interpreter: "node",
     autorestart: true,
-    max_restarts: 50,
+    // Crash-only: a clean exit 0 is the launcher saying "the PIT is bad/absent,
+    // do not restart me". Without stop_exit_codes that becomes a restart loop.
+    stop_exit_codes: [0],
+    max_restarts: 10,
     restart_delay: 5000,
+    exp_backoff_restart_delay: 5000,
     env: Object.assign({
       NODE_ENV: "production",
       PORT: "${GHL_MCP_PORT}",
       MCP_SERVER_PORT: "${GHL_MCP_PORT}",
+      GHL_TOOL_PROFILE: "${GHL_MCP_TOOL_PROFILE}",
+      GHL_MCP_LOG_DIR: "/data/logs",
+      GHL_MCP_LOG_MAX_BYTES: "${GHL_MCP_LOG_MAX_BYTES}",
+      GHL_MCP_LOG_KEEP: "${GHL_MCP_LOG_KEEP}",
       GHL_BASE_URL: "https://services.leadconnectorhq.com",
       GHL_LOCATION_ID: "${GOHIGHLEVEL_LOCATION_ID}"
     }, _secret),
@@ -566,6 +627,28 @@ fi
 For a Hostinger Docker box, also add a delayed `pm2 resurrect` to the project's
 `command:` override (same pattern the Command Center uses, so the MCP returns
 after `docker compose restart` — see skill 32 INSTALL.md Phase 6c).
+
+**Log rotation on VPS (three layers, all fail-soft):**
+
+1. Always: the generated `.ghl-mcp-launch.sh` copytruncates `/data/logs/ghl-mcp*.log`
+   at every (re)start, and `scripts/ghl-mcp-probe.sh` repeats it every 15 minutes.
+   No root, no daemon, works inside a bare container.
+2. `pm2-logrotate` — the autostart installs/configures it best-effort
+   (`max_size 10M`, `retain 3`, `compress true`).
+3. `logrotate` — `/etc/logrotate.d/ghl-mcp` is written when `logrotate` exists AND
+   a passwordless sudo is available. It uses `copytruncate` for the same
+   open-fd reason.
+
+On a Docker box, ALSO cap the container driver in compose (this is the layer that
+catches anything written to stdout by the container itself):
+
+```yaml
+logging:
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
+```
 
 > **systemd fallback (non-container VPS only):** if pm2 is genuinely unavailable
 > and the box has systemd, install a unit with `Environment=PORT=${GHL_MCP_PORT}`
@@ -600,16 +683,38 @@ live boxes).
 sleep 5   # allow server to boot
 URL=$(openclaw config get env.vars.GHL_COMMUNITY_MCP_URL | tr -d '\n')
 
-# Health
+# Health — NOTE: /health is served by express BEFORE the MCP transport is wired,
+# so a stale/deaf server returns "healthy" while answering nothing. It is a
+# reachability check, NOT a liveness check.
 curl -sS "$URL/health"
-# Expected: {"status":"healthy","tools":588,...}
+# Expected: {"status":"healthy","tools":<N>,...} where N matches the configured
+# GHL_TOOL_PROFILE (curated ≈ 43, full ≈ 858). A curated box reporting ~858
+# means the profile did not take effect — re-run scripts/ghl-mcp-autostart.sh.
 
-# Real-data call
+# LIVENESS — the alive-not-just-listening test. This is the assertion the
+# 2026-08 outage would have failed: a JSON-RPC response must actually arrive.
+bash ~/.openclaw/onboarding/scripts/ghl-mcp-probe.sh --once
+# Expected: STATUS: ghl-mcp-probe=OK (... answers JSON-RPC; tools=N, profile=...)
+# exit 0 = OK | 2 = no listener | 3 = DEAF (listening, answering nothing)
+# | 4 = tool-profile drift | 5 = unhealthy
+
+# Real-data call — the tool MUST exist inside the configured GHL_TOOL_PROFILE.
+# MEASURED 2026-08-03: under `curated` the server exposes 43 crm_* tools and NO
+# ghl_* tools, so the historic `ghl_list_products` smoke test fails there. Use
+# the profile-appropriate name from config/ghl-mcp-pin.env (GHL_MCP_SMOKE_TOOL):
+#   curated          -> crm_list_workspaces
+#   stable/raw/full  -> ghl_list_products
 curl -sS -X POST "$URL/execute" \
   -H "Content-Type: application/json" \
-  -d '{"name":"ghl_list_products","arguments":{"limit":3}}' \
+  -d "{\"name\":\"${GHL_MCP_SMOKE_TOOL}\",\"arguments\":{}}" \
   | python3 -m json.tool | head -20
-# Expected: success:true with real product data
+# Expected: success:true with real data
+
+# ⚠️ CAPABILITY NOTE: Tier 2 exists in this skill for products, invoices,
+# billing, subscriptions, estimates, store, coupons, Voice AI, Phone System and
+# Agent Studio. Those are ghl_* tools and they are NOT in the `curated` profile.
+# If the box needs them, set GHL_MCP_TOOL_PROFILE=stable (not `full`) in
+# config/ghl-mcp-pin.env and widen GHL_MCP_EXPECT_MAX_TOOLS.
 ```
 
 If `/health` returns Cognee's response (`status:ready, version:0.5.3-local`), you hit the wrong port. Move to a different port from the 5.1 list.
@@ -662,9 +767,19 @@ If the response uses Tier 3 or has no disclosure header, the agent isn't loading
 ## Done When
 
 - [ ] Tier 1 (`ghl-mcp`) registered, `/tools` returns >= 36
-- [ ] Tier 2 service running + `/tools` curl returns >= 500; NOT registered in mcp.servers
+- [ ] Tier 2 service running and ANSWERING: `scripts/ghl-mcp-probe.sh --once` exits 0
+      (a JSON-RPC response arrives — an open socket and a green `/health` prove nothing)
+- [ ] Tier 2 tool count matches the configured `GHL_TOOL_PROFILE` (curated ≈ 43,
+      full ≈ 858) — a curated box serving the full surface means the profile is not applied
+- [ ] Tier 2 NOT registered in mcp.servers (on-demand curl)
+- [ ] Working tree checked out at `GHL_MCP_VETTED_COMMIT`; `.ghl-mcp-build.json`
+      records the same commit as the built dist
 - [ ] `GHL_COMMUNITY_MCP_URL` env var set
-- [ ] launchd plist (Mac) or systemd unit (VPS) running
+- [ ] launchd plist (Mac) or pm2/systemd (VPS) running, CRASH-ONLY (no unconditional KeepAlive)
+- [ ] Periodic liveness probe installed (`com.clawd.ghl-mcp-probe` on Mac, `*/15` cron on VPS)
+- [ ] Log rotation active: `ghl-mcp/stderr.log` (Mac) / `/data/logs/ghl-mcp*.log` (VPS)
+      is under 10 MB, and the launcher/probe rotation env is present in the service
+      definition. Historic state on an unpatched box: 5.4 MB and growing since May.
 - [ ] AGENTS.md / TOOLS.md / MEMORY.md updated per CORE_UPDATES.md (SOUL.md unchanged)
 - [ ] Full reference copied to `$MASTER_FILES_DIR/36-ghl-mcp-setup/`
 - [ ] `qc-ghl-mcp-setup.sh` exits 0

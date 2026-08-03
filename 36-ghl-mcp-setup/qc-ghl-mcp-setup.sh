@@ -119,10 +119,53 @@ for c in "$SKILL_DIR/../platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-serv
 done
 if [ -n "$_S36_START" ]; then
   assert "community-MCP start script pins a git SHA before start (SK1-69)" \
-    "grep -qE 'git -C .* checkout .*GHL_MCP_PINNED_SHA' \"$_S36_START\""
+    "grep -qE 'git -C .* checkout .*GHL_MCP_VETTED_COMMIT' \"$_S36_START\""
 else
   warn_only "community-MCP start script co-located for SHA-pin check (SK1-69)" "false"
 fi
+
+# v21.5.0 regression locks — the five installer diseases behind the 2026-08-02/03
+# outage (2 days of 30s agent-init stalls against a server that was UP the whole
+# time). Each lock is offline/static: it checks the SHIPPED wiring, not the box.
+_S36_PIN=""
+for c in "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
+         "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" \
+         "$SKILL_DIR/../config/ghl-mcp-pin.env"; do
+  [ -f "$c" ] && _S36_PIN="$c" && break
+done
+_S36_AUTOSTART=""
+for c in "$HOME/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh" \
+         "/data/.openclaw/onboarding/scripts/ghl-mcp-autostart.sh" \
+         "$SKILL_DIR/../scripts/ghl-mcp-autostart.sh"; do
+  [ -f "$c" ] && _S36_AUTOSTART="$c" && break
+done
+_S36_PROBE=""
+for c in "$HOME/.openclaw/onboarding/scripts/ghl-mcp-probe.sh" \
+         "/data/.openclaw/onboarding/scripts/ghl-mcp-probe.sh" \
+         "$SKILL_DIR/../scripts/ghl-mcp-probe.sh"; do
+  [ -f "$c" ] && _S36_PROBE="$c" && break
+done
+if [ -n "$_S36_PIN" ]; then
+  assert "pin config declares a FULL 40-char vetted commit (never a branch/short SHA)" \
+    "grep -qE '^GHL_MCP_VETTED_COMMIT=\"[0-9a-f]{40}\"' \"$_S36_PIN\""
+  assert "pin config declares an explicit GHL_TOOL_PROFILE (never the 858-tool default)" \
+    "grep -qE '^GHL_MCP_TOOL_PROFILE=' \"$_S36_PIN\""
+else
+  warn_only "config/ghl-mcp-pin.env co-located for the pin/profile check" "false"
+fi
+if [ -n "$_S36_AUTOSTART" ]; then
+  assert "autostart never 'git pull's the third-party MCP (floating checkout)" \
+    "! sed 's/#.*$//' \"$_S36_AUTOSTART\" | grep -qE 'git .*pull'"
+  assert "autostart sets GHL_TOOL_PROFILE in the launchd plist it writes" \
+    "grep -qF '<key>GHL_TOOL_PROFILE</key>' \"$_S36_AUTOSTART\""
+  assert "autostart writes a CRASH-ONLY KeepAlive (no unconditional KeepAlive=true)" \
+    "! grep -qF '<key>KeepAlive</key><true/>' \"$_S36_AUTOSTART\" && grep -qF '<key>SuccessfulExit</key><false/>' \"$_S36_AUTOSTART\""
+  assert "autostart verifies the built dist contains the MCP transport wiring" \
+    "grep -qF 'connect(transport)' \"$_S36_AUTOSTART\""
+else
+  warn_only "scripts/ghl-mcp-autostart.sh co-located for the install-hygiene checks" "false"
+fi
+assert "liveness probe ships (scripts/ghl-mcp-probe.sh)" "[ -n \"$_S36_PROBE\" ]"
 echo ""
 
 # ----------------------------------------------------------
@@ -219,15 +262,55 @@ assert "Tier 2 /tools curl returns the tool surface on-demand" "[ -n \"$URL\" ] 
 # fall back to systemd for non-container Linux.
 if [ "${OPENCLAW_PLATFORM:-}" = "mac" ]; then
   assert "launchd service is running" "launchctl print gui/$(id -u)/com.clawd.ghl-mcp 2>/dev/null | grep -q 'state = running'"
+  # CRASH-ONLY: main.js exits 1 when GHL rejects the PIT at boot, so an
+  # unconditional KeepAlive turns a rotated token into a relaunch loop every
+  # ThrottleInterval seconds. The installed plist must use the KeepAlive dict.
+  assert "launchd plist is CRASH-ONLY (KeepAlive dict, not an unconditional true)" \
+    "! grep -A1 '<key>KeepAlive</key>' \"$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist\" 2>/dev/null | grep -q '<true/>'"
+  warn_only "periodic liveness probe installed (com.clawd.ghl-mcp-probe)" \
+    "launchctl print gui/$(id -u)/com.clawd.ghl-mcp-probe >/dev/null 2>&1"
 else
   assert "Tier 2 server supervised (pm2 ghl-community-mcp, or systemd ghl-mcp fallback)" "{ command -v pm2 >/dev/null 2>&1 && pm2 jlist 2>/dev/null | grep -q 'ghl-community-mcp'; } || systemctl is-active ghl-mcp 2>/dev/null | grep -q '^active$'"
 fi
 T2_HEALTH=$(curl -sS -m 5 "$URL/health" 2>/dev/null)
 assert "Tier 2 /health responds healthy" "echo \"$T2_HEALTH\" | grep -q '\"status\":\"healthy\"'"
-warn_only "Tier 2 reports >= 500 tools" "echo \"$T2_HEALTH\" | python3 -c 'import json,sys; d=json.load(sys.stdin); import sys as _; print(d.get(\"tools\",0)>=500)' 2>/dev/null | grep -q True"
+
+# ── LIVENESS (v21.5.0) — /health is served by express BEFORE the MCP transport
+# is wired, so a stale/deaf dist returns {"status":"healthy"} while every agent
+# init burns the full 30s connectionTimeoutMs. That is exactly what happened on
+# 2026-08-01/02. The only real liveness test is a JSON-RPC round trip.
+assert "Tier 2 ANSWERS JSON-RPC (alive, not merely listening)" \
+  "curl -sS -m 10 -X POST \"$URL/mcp\" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' -d '{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"initialize\",\"params\":{\"protocolVersion\":\"2025-06-18\",\"capabilities\":{},\"clientInfo\":{\"name\":\"qc\",\"version\":\"1\"}}}' 2>/dev/null | grep -q serverInfo"
+
+# ── TOOL PROFILE (v21.5.0) — the upstream default is `full` (858 tools). The
+# expected count is whatever the configured profile implies, NOT a fixed >=500:
+# a correctly-configured `curated` box serves ~43 and the old >=500 check would
+# have called that a problem while a mis-set `full` box passed.
+T2_TOOLS=$(printf '%s' "$T2_HEALTH" | sed -n 's/.*"tools":[[:space:]]*\([0-9][0-9]*\).*/\1/p' | head -1)
+S36_PROFILE="curated"; S36_MIN=1; S36_MAX=200
+if [ -n "${_S36_PIN:-}" ]; then
+  S36_PROFILE=$(sed -n 's/^GHL_MCP_TOOL_PROFILE="\([a-z]*\)".*/\1/p' "$_S36_PIN" | head -1)
+  S36_MIN=$(sed -n 's/^GHL_MCP_EXPECT_MIN_TOOLS="\([0-9]*\)".*/\1/p' "$_S36_PIN" | head -1)
+  S36_MAX=$(sed -n 's/^GHL_MCP_EXPECT_MAX_TOOLS="\([0-9]*\)".*/\1/p' "$_S36_PIN" | head -1)
+  : "${S36_PROFILE:=curated}"; : "${S36_MIN:=1}"; : "${S36_MAX:=200}"
+fi
+echo "  Tier 2 tool surface: ${T2_TOOLS:-?} tools (profile=${S36_PROFILE}, expected ${S36_MIN}..${S36_MAX})"
+assert "Tier 2 tool count matches the configured GHL_TOOL_PROFILE (${S36_PROFILE})" \
+  "[ -n \"$T2_TOOLS\" ] && [ \"$T2_TOOLS\" -ge \"$S36_MIN\" ] && [ \"$T2_TOOLS\" -le \"$S36_MAX\" ]"
+# v21.5.0: the smoke tool must EXIST inside the configured profile. Measured on
+# 2026-08-03: under GHL_TOOL_PROFILE=curated the server exposes 43 crm_* tools
+# and NO ghl_* tools at all — so the historic hardcoded `ghl_list_products` call
+# fails on a correctly-configured curated box. The tool name is a parameter now.
+S36_SMOKE_TOOL="crm_list_workspaces"
+if [ -n "${_S36_PIN:-}" ]; then
+  S36_SMOKE_TOOL=$(sed -n 's/^GHL_MCP_SMOKE_TOOL="\([A-Za-z0-9_]*\)".*/\1/p' "$_S36_PIN" | head -1)
+  : "${S36_SMOKE_TOOL:=crm_list_workspaces}"
+fi
+assert "Tier 2 smoke tool ${S36_SMOKE_TOOL} is present in the ${S36_PROFILE} profile" \
+  "curl -sS -m 8 \"$URL/tools\" 2>/dev/null | grep -q \"$S36_SMOKE_TOOL\""
 T2_CALL=$(curl -sS -m 10 -X POST "$URL/execute" -H "Content-Type: application/json" \
-  -d '{"name":"ghl_list_products","arguments":{"limit":1}}' 2>/dev/null)
-assert "Tier 2 ghl_list_products returns real data" "echo \"$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"|products'"
+  -d "{\"name\":\"${S36_SMOKE_TOOL}\",\"arguments\":{}}" 2>/dev/null)
+assert "Tier 2 ${S36_SMOKE_TOOL} returns real data" "echo \"$T2_CALL\" | grep -qE '\"success\":\\s*true|\"result\"|\"content\"'"
 
 echo ""
 echo "── Section E: Core .md files wired ──"
