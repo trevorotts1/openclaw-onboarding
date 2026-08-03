@@ -1,3 +1,9 @@
+### v0.1.17 -- warfix batch 6 (2026-08-03)
+
+Re-stamped ENGINE-PIN.sha256 (verify.sh stamp-pin). Batches 4 and 5 bumped the pinned
+ENGINE-MANIFEST.json without re-stamping, so GATE 3 (AF-AE-HASH-PIN) failed on main.
+Pin now matches the enforcement set; entry --plan GATE 3 passes.
+
 ### v0.1.16 -- warfix batch 5 (2026-08-03)
 
 Landed FIX-4 (GHL-PIT): internal-rail fallback wired into probe_write_scope/provision_pipeline;
