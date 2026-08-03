@@ -198,20 +198,26 @@ def _dotenv_parse(path):
     return out
 
 
-def _env_first(names):
+def _env_first(names, environ=None):
     """First present, non-empty env value among `names` across the live
     process env and (when unset) the three canonical client .env stores.
-    Returns (name, value) or (None, None). NEVER prints the value."""
+    Returns (name, value) or (None, None). NEVER prints the value.
+    The canonical-store fallback applies ONLY when resolving against the
+    live process env (environ is None). An explicit environ dict -- used by
+    self-tests to simulate an empty credential environment -- must never see
+    the stores."""
+    env = environ if environ is not None else os.environ
     for n in names:
-        v = os.environ.get(n, "")
+        v = env.get(n, "")
         if v and v.strip():
             return n, v.strip()
-    for store_spec in _CANONICAL_STORE_PATHS:
-        store_env = _dotenv_parse(Path(store_spec).expanduser())
-        for n in names:
-            v = store_env.get(n, "")
-            if v and v.strip():
-                return n, v.strip()
+    if environ is None:
+        for store_spec in _CANONICAL_STORE_PATHS:
+            store_env = _dotenv_parse(Path(store_spec).expanduser())
+            for n in names:
+                v = store_env.get(n, "")
+                if v and v.strip():
+                    return n, v.strip()
     return None, None
 
 
@@ -467,9 +473,10 @@ def _firebase_token_url(api_key: str) -> str:
     return FIREBASE_TOKEN_URL_TEMPLATE % api_key
 
 
-def resolve_firebase_refresh_token():
-    """(label, token) or (None, None), first non-empty wins. NEVER printed."""
-    return _env_first(FIREBASE_REFRESH_LABELS)
+def resolve_firebase_refresh_token(environ=None):
+    """(label, token) or (None, None), first non-empty wins. NEVER printed.
+    An explicit environ (self-tests) blocks the canonical-store fallback."""
+    return _env_first(FIREBASE_REFRESH_LABELS, environ)
 
 
 class InternalRailUnavailable(Exception):
@@ -1582,9 +1589,14 @@ def self_test() -> int:
     assert _auth_denial_kind(b"") == "blocked"
 
     # -- GK-09: Firebase refresh-token alias resolution (SET/NOT-SET only) --
+    # The FIRST assertion passes an explicit empty environ so the canonical-store
+    # fallback is BLOCKED (the store holds ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN on
+    # this box; the assertion must prove true absence, not store leakage). The
+    # subsequent assertions resolve from the LIVE process env, which the test
+    # populates explicitly -- no store involved, live env is authoritative.
     _fb_saved = {n: os.environ.pop(n, None) for n in FIREBASE_REFRESH_LABELS}
     try:
-        assert resolve_firebase_refresh_token() == (None, None)
+        assert resolve_firebase_refresh_token(environ={}) == (None, None)
         os.environ["GHL_FIREBASE_REFRESH_TOKEN"] = "rt-legacy"
         assert resolve_firebase_refresh_token() == ("GHL_FIREBASE_REFRESH_TOKEN", "rt-legacy")
         os.environ["ANTHOLOGY_GHL_FIREBASE_REFRESH_TOKEN"] = "rt-canonical"

@@ -283,18 +283,23 @@ def _dotenv_parse(path):
 def _env_first(names, environ=None):
     """First present, non-empty env value among `names` across the live
     process env and (when unset) the three canonical client .env stores.
-    Returns (name, value) or (None, None). NEVER prints the value."""
+    Returns (name, value) or (None, None). NEVER prints the value.
+    The canonical-store fallback applies ONLY when resolving against the
+    live process env (environ is None). An explicit environ dict -- used by
+    self-tests to simulate an empty credential environment -- must never see
+    the stores, or the tests' credential-ABSENCE assertions would be violated."""
     env = environ if environ is not None else os.environ
     for n in names:
         v = env.get(n, "")
         if v and v.strip():
             return n, v.strip()
-    for store_spec in _CANONICAL_STORE_PATHS:
-        store_env = _dotenv_parse(Path(store_spec).expanduser())
-        for n in names:
-            v = store_env.get(n, "")
-            if v and v.strip():
-                return n, v.strip()
+    if environ is None:
+        for store_spec in _CANONICAL_STORE_PATHS:
+            store_env = _dotenv_parse(Path(store_spec).expanduser())
+            for n in names:
+                v = store_env.get(n, "")
+                if v and v.strip():
+                    return n, v.strip()
     return None, None
 
 

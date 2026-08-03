@@ -279,22 +279,27 @@ def _dotenv_parse(path):
     return out
 
 
-def _env_first(names):
+def _env_first(names, environ=None):
     """First present, non-empty env value among `names` across the live
     process env and (when unset) the three canonical client .env stores.
     Returns (name, value) or (None, None). NEVER prints the value (doctrine:
     SET / NOT SET only). Mirrors anthology_state.py._env_first so credential
-    resolution is uniform."""
+    resolution is uniform. The canonical-store fallback applies ONLY when
+    resolving against the live process env (environ is None); an explicit
+    environ (self-tests simulating an empty credential environment) never
+    sees the stores."""
+    env = environ if environ is not None else os.environ
     for n in names:
-        v = os.environ.get(n, "")
+        v = env.get(n, "")
         if v and v.strip():
             return n, v.strip()
-    for store_spec in _CANONICAL_STORE_PATHS:
-        store_env = _dotenv_parse(Path(store_spec).expanduser())
-        for n in names:
-            v = store_env.get(n, "")
-            if v and v.strip():
-                return n, v.strip()
+    if environ is None:
+        for store_spec in _CANONICAL_STORE_PATHS:
+            store_env = _dotenv_parse(Path(store_spec).expanduser())
+            for n in names:
+                v = store_env.get(n, "")
+                if v and v.strip():
+                    return n, v.strip()
     return None, None
 
 
