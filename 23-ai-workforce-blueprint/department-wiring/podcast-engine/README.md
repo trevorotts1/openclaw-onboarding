@@ -186,5 +186,15 @@ dashboard-design.md Section 5.2 and enforced by podcast_state.py.
   present and the floor count unchanged at 28; `verify-podcast-engine-wiring.py`
   returns rc 0; `check-skill-department-map.py` returns only the expected skill 58
   coverage line until the skill directory co-lands.
+- Activation-layer proof (Leanne's ticket): the enforcement pointer also asserts the
+  ACTIVATION layer, the production processor that runs queued flows through the
+  18-step pipeline. All three scripts must exist under the scripts directory of the
+  58-podcast-production-engine skill: `register-podcast-hook.sh`,
+  `podcast_controller.py`, and `install-podcast-department.sh`. The shell scripts
+  must be executable, and SKILL.md must document all three in an activation section.
+  While none of the scripts is on disk yet, the layer is reported as not installed
+  and the pointer exits 0, the same co-land tolerance as the skill 58 coverage line
+  above; the moment any one of the three lands, the complete documented layer is
+  mandatory and a partial layer fails with exit 7.
 - Card-lifecycle proof: see `card-lifecycle-proof-plan.md`. The end-to-end observed
   card move is exercised on the operator box in WAVE-PLAN W5.4.
