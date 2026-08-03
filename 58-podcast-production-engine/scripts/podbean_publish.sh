@@ -860,8 +860,43 @@ print(json.dumps(d))
     die "publish-proxy dry-run: standing-check endpoint unreachable (HTTP ${RESP_CODE:-000}): $(redact "$RESP_BODY")"
   fi
 
-  [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it)"
-  [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it)"
+  # ----- Step 14 ledger handoff (GHL storage enforcement) -----
+  # The publish step MUST resolve its media URLs from the job ledger
+  # (mp3_media_url / cover_image_url) that Step 14's upload_media.py
+  # recorded via podcast_state.py. If the ledger supplies a URL and
+  # the CLI flag was not passed, use the ledger URL transparently.
+  # If both are present and differ (CLI flag vs ledger), die -- the
+  # publish must use the GHL URL that Step 14 stored.
+  if [ -n "$LEDGER" ] && [ -n "$JOB_ID" ]; then
+    ledger_audio="$(ledger_field "$LEDGER" mp3_media_url)"
+    ledger_image="$(ledger_field "$LEDGER" cover_image_url)"
+
+    # Resolve AUDIO_URL from ledger when CLI flag was NOT passed.
+    if [ -z "$AUDIO_URL" ] && [ -n "$ledger_audio" ]; then
+      AUDIO_URL="$ledger_audio"
+      log "AUDIO_URL resolved from Step 14 ledger (mp3_media_url)"
+    fi
+
+    # Resolve IMAGE_URL from ledger when CLI flag was NOT passed.
+    if [ -z "$IMAGE_URL" ] && [ -n "$ledger_image" ]; then
+      IMAGE_URL="$ledger_image"
+      log "IMAGE_URL resolved from Step 14 ledger (cover_image_url)"
+    fi
+
+    # If BOTH the CLI flag and the ledger supply a value and they DIFFER,
+    # refuse to proceed -- the publish must use the GHL URL that Step 14
+    # recorded. The operator must re-run without the conflicting flag, or
+    # fix the ledger.
+    if [ -n "$AUDIO_URL" ] && [ -n "$ledger_audio" ] && [ "$AUDIO_URL" != "$ledger_audio" ]; then
+      die "AUDIO_URL conflict: CLI flag (--audio-url=$AUDIO_URL) differs from Step 14 ledger mp3_media_url ($ledger_audio). Remove --audio-url to use the ledger value, or fix the ledger if it is stale."
+    fi
+    if [ -n "$IMAGE_URL" ] && [ -n "$ledger_image" ] && [ "$IMAGE_URL" != "$ledger_image" ]; then
+      die "IMAGE_URL conflict: CLI flag (--image-url=$IMAGE_URL) differs from Step 14 ledger cover_image_url ($ledger_image). Remove --image-url to use the ledger value, or fix the ledger if it is stale."
+    fi
+  fi
+
+  [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it and recorded mp3_media_url in the ledger)"
+  [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it and recorded cover_image_url in the ledger)"
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
 
   if [ -n "$RELEASE_DATE" ]; then

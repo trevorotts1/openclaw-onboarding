@@ -475,7 +475,10 @@ title, description, audio_url, image_url, publish_date, idempotency_key, options
 shared header token straight to the operator's n8n `/webhook/podbean-publish`, which runs the
 good-standing plus identity gate, mints the channel-scoped Podbean token server-side, and
 returns the permalink synchronously in the same response; no client-box Podbean call and no
-client-box OAuth mint. Precedence is proxy first; the n8n Podbean credential broker
+client-box OAuth mint. The publish step resolves its audio and image URLs from the job ledger
+(mp3_media_url / cover_image_url columns) recorded by Step 14's upload_media.py via
+podcast_state.py; the --audio-url / --image-url CLI flags are the step's own provenance assertion
+and must match the ledger when both are present. Precedence is proxy first; the n8n Podbean credential broker
 (config/n8n/podbean-broker.workflow.json, which mints a short-lived access token SCOPED to the
 client's channel, Podbean multiplePodcastsToken) is the fallback; a local client_credentials
 mint on the operator's own box only is last. The ONE Podbean value the client supplies is their
