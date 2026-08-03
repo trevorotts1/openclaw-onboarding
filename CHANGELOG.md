@@ -312,6 +312,67 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.5.2]  -  2026-08-03  -  Wiring + ZHE gates: five defects that made them unpassable, and a persona-index floor that measured the wrong unit
+
+### Why
+Built workforces could not be delivered: `buildCompletedAt` was never written,
+closeout never fired, Command Centers stayed locked. Per
+`23-ai-workforce-blueprint/INSTRUCTIONS.md`, only a PASSING wiring gate may mark a
+build done — and the wiring gate could not pass on any box.
+
+### What changed
+- `23-ai-workforce-blueprint/scripts/verify-wiring.sh` — five defects:
+  1. Runtime directories (`memory/`, `devils-advocate/`, `scripts/`,
+     `conversational-logs/`) were counted as ROLES. `create_department_workspace()`
+     creates `memory/` and `devils-advocate/` inside every department for every
+     client and neither carries a `how-to.md`, so MATERIALIZED could not pass for
+     any department anywhere. This was the universal blocker. Filtering is an exact
+     case-insensitive basename match, so real roster roles such as
+     `16-devils-advocate-marketing/` and `19-sop-writer/` are still gated.
+  2. REACHABLE demanded a Director role that two canonical rosters do not define.
+     The override now names each roster's DECLARED entry point, and the folder must
+     exist on disk — a rename, never a bypass.
+  3. `grep -q "[PENDING"` is an unbalanced bracket expression, so the stub check
+     NEVER FIRED. This one was fail-OPEN: any stub over ~3KB passed. Fixing it
+     makes the gate stricter, not looser.
+  4. The departments tree was a single unvalidated guess, which produced verdicts
+     about the wrong directory. Resolution now SCORES each candidate by how many
+     state-named departments actually resolve inside it, prints every candidate and
+     its score, and aborts with rc=9 rather than emitting a verdict about the wrong
+     tree. It can only turn a wrong measurement into a loud "cannot measure" — never
+     a failing department into a passing one.
+  5. A `<slug>` vs `<slug>-dept` mismatch measured zero roles.
+- `23-ai-workforce-blueprint/scripts/prove-zhe.py` — the persona-index floor was
+  `int(4413 * 0.90) = 3971` RAW ROWS, unreachable by a correctly built box. The
+  indexer changed the UNIT it stores, not just the corpus: the legacy
+  `gemini-indexer.py` wrote one row per character chunk, while the current
+  `gemini-section-indexer.py` writes one row per `##` section and DELETES the chunk
+  rows. 4413 was a snapshot of one box mid-migration. Measured against the shipped
+  99-persona corpus with this indexer's own `SECTION_PATTERN` and
+  `MIN_SECTION_WORDS=30`: 1426 section rows — roughly a third of the floor. The
+  more completely a box migrated, the further below the floor it fell, and the
+  tempting remedy (rebuilding the index) is DESTRUCTIVE and reproduces the same
+  count. Replaced with corpus-derived COVERAGE (distinct indexed personas >= 90% of
+  personas on disk, plus a conservative per-persona row minimum), which is
+  unit-agnostic so chunk-era and section-era indexes both pass. Negative tests
+  confirm it still fails a half-written, thin, untagged or missing index.
+
+### Tests (NEW)
+- `23-ai-workforce-blueprint/scripts/test-wiring-gate-role-dir-walk.sh` — 33 assertions.
+- `23-ai-workforce-blueprint/scripts/test-zhe-persona-index-sufficiency.py` — 18 assertions.
+
+Both hermetic: mktemp fixtures, `HOME` redirected into the fixture, resolved paths
+asserted inside it before the gate runs, refusal to run if `/data/.openclaw` exists,
+and a final assertion that the real `$HOME/.openclaw` listing is unchanged.
+`WIRING_GATE_UNDER_TEST=<path>` reproduces the failing-before result: 12 of 23
+original assertions fail against the previous gate.
+
+### Known gap (escalated, not patched)
+Bespoke roles inside canonical departments can obtain SOPs by no sanctioned path.
+The boundary gate is enforced at DEPARTMENT granularity (`is_canonical_dept`) while
+both its stated intent and the binding standard are ROLE granularity. This needs a
+product ruling rather than a silent patch.
+
 ## [v21.5.1]  -  2026-08-03  -  Workforce pipeline: stop the interview-to-build strand (belt, watchdog blind spot, vocabulary, QC gates, owner-chat leak)
 
 ### Why
