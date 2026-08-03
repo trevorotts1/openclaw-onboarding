@@ -27,9 +27,11 @@ on:
       - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
       - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
       - 23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
       - scripts/ensure-pipeline-crons.sh
       - tests/unit/bounded-workforce-build-resume.test.sh
       - tests/unit/closeout-watchdog-stuck-classes.test.sh
+      - tests/unit/closeout-resume-cron-routing.test.sh
       - tests/fixtures/fake-openclaw-cron.py
       - .github/workflows/workforce-build-pipeline-guard.yml
   pull_request:
@@ -38,9 +40,11 @@ on:
       - 23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh
       - 23-ai-workforce-blueprint/scripts/update-interview-state.sh
       - 23-ai-workforce-blueprint/scripts/lib-interview-rate-limit.sh
+      - 37-zhc-closeout/scripts/resume-closeout-cron.sh
       - scripts/ensure-pipeline-crons.sh
       - tests/unit/bounded-workforce-build-resume.test.sh
       - tests/unit/closeout-watchdog-stuck-classes.test.sh
+      - tests/unit/closeout-resume-cron-routing.test.sh
       - tests/fixtures/fake-openclaw-cron.py
       - .github/workflows/workforce-build-pipeline-guard.yml
 
@@ -58,7 +62,8 @@ jobs:
           for f in \
             23-ai-workforce-blueprint/scripts/resume-workforce-build.sh \
             23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh \
-            23-ai-workforce-blueprint/scripts/update-interview-state.sh; do
+            23-ai-workforce-blueprint/scripts/update-interview-state.sh \
+            37-zhc-closeout/scripts/resume-closeout-cron.sh; do
             bash -n "$f"
             echo "bash -n OK: $f"
           done
@@ -72,6 +77,11 @@ jobs:
         run: |
           chmod +x tests/unit/closeout-watchdog-stuck-classes.test.sh
           bash tests/unit/closeout-watchdog-stuck-classes.test.sh
+
+      - name: Closeout-belt guard (never route internal traffic to the client; pause control is real)
+        run: |
+          chmod +x tests/unit/closeout-resume-cron-routing.test.sh
+          bash tests/unit/closeout-resume-cron-routing.test.sh
 
       - name: Role-workspace root must never collapse onto the company root
         # A stale branch merged un-rebased re-introduces `workspace_root = company_root`

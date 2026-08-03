@@ -1040,6 +1040,8 @@ jq ".resumeAttempts = $((attempts + 1))" "$STATE_FILE" > "$tmp_state" && mv "$tm
 
 # ---- compose the resume message + dispatch ----
 agent_name=$(jq -r '.agentName // "the master orchestrator"' "$STATE_FILE")
+# Read for diagnostics ONLY. NEVER a dispatch target: everything composed below is
+# internal traffic and must not reach the client. See the routing block below.
 owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE")
 pending_list=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed") | .slug] | join(", ")' "$STATE_FILE")
 stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
@@ -1066,17 +1068,20 @@ stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
 # we log it LOUDLY so the fix is to configure OPERATOR_ESCALATION_CHAT_ID (see
 # scripts/configure-operator-telegram.sh), not to accept the leak.
 TARGET_CHAT="$(resolve_operator_chat_id)"
-if [[ -z "$TARGET_CHAT" ]]; then
-  if [[ -n "$owner_chat" && "$owner_chat" != "null" ]]; then
-    TARGET_CHAT="$owner_chat"
-    log "WARN: no operator escalation chat configured - falling back to the OWNER chat for an INTERNAL resume dispatch. The owner will see internal build-repair text. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to stop this."
-  fi
-fi
 
-if [[ -z "$TARGET_CHAT" ]]; then
-  log "no usable target chat (operator or ownerChat) - cannot dispatch resume"
-  exit 0
-fi
+# NOTE: no owner-chat fallback, and NO early exit here. Both were wrong:
+#
+#   * Falling back to .ownerChat delivered internal build-repair text to the client
+#     and bought nothing. This dispatch is a Telegram SEND, and a send does not
+#     become an inbound agent turn (see the dispatch-result handling at the end of
+#     this file), so the fallback could never actually advance a build -- it was
+#     pure client-facing noise for zero functional gain.
+#   * Exiting here when no chat is configured also skipped the message-composition
+#     block below, and that block is where the closeout branch performs the
+#     DETERMINISTIC in-process exec of run-closeout.sh -- the one part of this lane
+#     that genuinely works without Telegram. A box with no operator chat therefore
+#     never ran its closeout. The send is now gated at the send itself, so the
+#     in-process exec always gets its chance.
 
 if (( library_dirty == 1 )) && (( closeout_dirty == 0 )); then
   # ROOT-CAUSE FIX (2026-06-18): a resume that (re)materializes role folders must
@@ -1132,6 +1137,11 @@ elif (( closeout_dirty == 1 )) && (( pending_count == 0 )) && (( stale_building_
   msg="[CLOSEOUT-RESUME] ${agent_name}: workforce build is done (buildCompletedAt set) but closeout is incomplete (closeoutStatus=${closeout_status:-unset}). run-closeout.sh was launched in-process; this is a secondary nudge. If the closeout does not advance within 15 min, invoke scripts/run-closeout.sh manually. The script is idempotent - it picks up from the first un-completed step. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the owner only hears from you when Skill 37 Step 6 fires."
 else
   msg="[WORKFORCE-RESUME] ${agent_name}: continue the workforce build per the Post-Interview Handoff Protocol in Skill 23. Read .workforce-build-state.json. Pending: ${pending_list:-none}. Stale: ${stale_list:-none}. Closeout status: ${closeout_status:-unset}. Resume attempt $((attempts + 1)) of $max_attempts. Do NOT message the owner about this - the resume is internal. When all departments are done, set closeoutStatus=pending and either invoke ~/.openclaw/skills/37-zhc-closeout/scripts/run-closeout.sh inline OR exit and let the next cron fire pick up the closeout."
+fi
+
+if [[ -z "$TARGET_CHAT" ]]; then
+  log "no operator escalation chat configured - SKIPPING the internal self-ping rather than sending it to the client. Any in-process work above (e.g. the run-closeout.sh exec) already fired. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to receive these."
+  exit 0
 fi
 
 log "dispatching resume to chat $TARGET_CHAT (attempt $((attempts + 1))/$max_attempts; pending='$pending_list'; stale='$stale_list'; library_dirty=$library_dirty roleLib='$role_library_status' sopLib='$sop_library_status'; comms_automation_dirty=$comms_automation_dirty comms_automation_status='$comms_automation_status'; closeout_dirty=$closeout_dirty closeout_status='$closeout_status')"

@@ -359,9 +359,19 @@ else
   # fingerprint, and clear any active pause so heavy dispatch resumes (a future
   # stall then re-escalates exactly once).
   _stall_passes=0
-  state_set ".closeoutResumeStallFingerprint = \"${_stall_fp}\" | .closeoutResumeStallPasses = 0 | .closeoutResumePaused = false | .closeoutResumePausedNotifiedAt = null" 2>/dev/null || true
   if [[ -n "$_prev_fp" && "$_prev_fp" != "null" ]]; then
-    log "progress detected (state fingerprint changed) -- stall counter reset; normal closeout dispatch continues"
+    # GENUINE progress: a previously-recorded fingerprint actually moved. Clear the
+    # pause so a box that was held on a stale blocker resumes on its own.
+    state_set ".closeoutResumeStallFingerprint = \"${_stall_fp}\" | .closeoutResumeStallPasses = 0 | .closeoutResumePaused = false | .closeoutResumePausedNotifiedAt = null" 2>/dev/null || true
+    log "progress detected (state fingerprint changed) -- stall counter reset; pause cleared; normal closeout dispatch continues"
+  else
+    # FIRST observation on this box: record the fingerprint, but do NOT touch the
+    # pause. Having no prior fingerprint is not progress, and the old code cleared
+    # the pause here unconditionally -- so the very first fire after an operator set
+    # .closeoutResumePaused=true silently discarded their hold and the belt carried
+    # straight on into the client-facing closeout. That is the whole reason the
+    # control appeared to "do nothing".
+    state_set ".closeoutResumeStallFingerprint = \"${_stall_fp}\" | .closeoutResumeStallPasses = 0" 2>/dev/null || true
   fi
 fi
 
@@ -386,9 +396,29 @@ if (( _stall_passes >= MAX_STALL_PASSES )) && _is_human_or_stuck_blocker; then
   exit 0
 fi
 
+# ---- OPERATOR PAUSE GATE (v21.5.1) ----
+# .closeoutResumePaused was a SAFETY CONTROL THAT DID NOTHING. Production code only
+# ever WROTE it (the no-progress pause above, and the auto-clear on progress); no belt
+# anywhere ever READ it as a gate, so an operator setting it -- as the runbooks tell
+# them to -- changed nothing at all. The closeout kept firing, including the full
+# client-facing celebration. A control people rely on must either work or not exist.
+#
+# It is read HERE, deliberately: after the progress/stall block above, which is what
+# auto-clears the pause when the blocker finally moves. Gating any earlier would make
+# a pause permanent, because the clearing code would never be reached.
+#
+# The gate stops the HEAVY, client-visible work only (the in-process run-closeout.sh
+# exec and the self-ping). The cheap state checks keep running every fire, so the box
+# still auto-resumes the moment the pause is lifted or progress is detected.
+_paused_now=$(state_get '.closeoutResumePaused')
+if [[ "$_paused_now" == "true" ]]; then
+  log "PAUSED: .closeoutResumePaused=true (reason: $(state_get '.closeoutResumePausedReason')). NOT launching run-closeout.sh and NOT dispatching a self-ping -- the client-facing closeout stays stopped until this clears. It clears automatically when the build-state blocker changes, or an operator can set closeoutResumePaused=false. Cheap state checks continue every fire."
+  log "resume cron fire complete (PAUSED by operator/no-progress control, run $run_count/$MAX_RUNS) -- no heavy dispatch"
+  exit 0
+fi
+
 # ---- work to do: dispatch CLOSEOUT-RESUME self-ping ----
-# Resolve the agent's owner chat and the operator's chat
-owner_chat=$(state_get '.ownerChat')
+# INTERNAL traffic only -- see the routing block below for why .ownerChat is never a target.
 agent_name=$(state_get '.agentName // "CEO"')
 operator_chat=$(resolve_operator_chat_id)
 incomplete_legs=""
@@ -438,20 +468,29 @@ else
   log "WARN: run-closeout.sh not found at any expected path -- falling back to self-ping only"
 fi
 
-msg="[CLOSEOUT-RESUME] ${agent_name}: workforce closeout is incomplete after ${run_count} cron fire(s). closeoutStatus=${closeout_status:-unset}. Missing deliverable legs: ${incomplete_legs}. run-closeout.sh was launched in-process as the primary path; this self-ping is a secondary nudge. Invoke scripts/run-closeout.sh manually if the closeout does not advance within 15 min. Do NOT message the owner -- they only hear from you when Step 6 Telegram delivery fires. Resume attempt ${attempts}."
+msg="[CLOSEOUT-RESUME] ${agent_name}: workforce closeout is incomplete after ${run_count} cron fire(s). closeoutStatus=${closeout_status:-unset}. Missing deliverable legs: ${incomplete_legs}. run-closeout.sh was launched in-process as the primary path; this self-ping is a secondary nudge. Invoke scripts/run-closeout.sh manually if the closeout does not advance within 15 min. This is INTERNAL operator/agent traffic -- the owner is never a recipient and only ever hears from you when Step 6 Telegram delivery fires. Resume attempt ${attempts}."
 
-if [[ -z "$owner_chat" || "$owner_chat" == "null" ]]; then
-  log "ownerChat not set -- falling back to operator escalation chat (if configured)"
-  target_chat="$operator_chat"
-else
-  target_chat="$owner_chat"
-fi
+# ---- CLIENT-LEAK FIX (v21.5.1): internal traffic is NEVER addressed to the client ----
+# This used to prefer .ownerChat and fall back to the operator chat. $msg is INTERNAL
+# build jargon -- its own text says the owner is not a recipient -- and
+# `openclaw message send --target <chat>` DELIVERS to that chat, so the client's own
+# Telegram thread received it verbatim. Worse, this belt gates only on
+# buildCompletedAt, so the moment any fix lets a legitimate build write that field,
+# every affected box would fire this into the client's DM alongside the full
+# celebration sequence.
+#
+# Operator chat ONLY, and we FAIL SAFE rather than fall through to the client: the
+# operator escalation chat is opt-in and is empty by default, so a "prefer operator,
+# else owner" rule silently degrades right back into "send to the client". There is no
+# functional cost to skipping -- run-closeout.sh already fired in-process above as the
+# PRIMARY path, and this self-ping is only a secondary nudge.
+target_chat="$operator_chat"
 
-# run-closeout.sh already fired in-process above (PRIMARY path). The self-ping is
-# only a secondary nudge -- if neither owner nor operator chat is available, skip
-# the send rather than dispatching to an empty target.
+# run-closeout.sh already fired in-process above (PRIMARY path). The self-ping is only
+# a secondary nudge, so with no operator chat configured we skip it entirely rather
+# than routing internal text to the client. The closeout still proceeds.
 if [[ -z "$target_chat" ]]; then
-  log "[CLOSEOUT-RESUME] no usable target chat (ownerChat unset, operator escalation not configured) -- in-process exec already fired; skipping self-ping"
+  log "[CLOSEOUT-RESUME] no operator escalation chat configured -- SKIPPING the internal self-ping rather than sending it to the client. The in-process run-closeout.sh exec already fired, so the closeout is unaffected. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to receive these."
   exit 0
 fi
 
