@@ -57,6 +57,28 @@
 # echoed, printed, or written into openclaw.json; this script only checks that
 # the label is SET in the live process environment. Never print a secret.
 #
+# GATEWAY SERVICE-ENV SYNC (the Mac provisioning gap this script closes): the
+# launchd gateway (~/Library/LaunchAgents/ai.openclaw.gateway.plist) does NOT
+# inherit the GUI session environment; its ProgramArguments exec an
+# env-wrapper script whose first job is to source a service-env file (fleet
+# default ~/.openclaw/service-env/ai.openclaw.gateway.env), and that file is
+# the ONLY env the gateway process sees. A SecretRef whose env id is absent
+# there can never resolve, and every POST to the route returns unauthorized.
+# So after a successful ADD, and on a re-run of an already-registered route
+# (so boxes registered before this fix heal on re-run), this script resolves
+# the service-env file by inspecting the plist and appends
+# `export LABEL=value` for every env label this route references:
+# PODCAST_INTAKE_HOOK_SECRET always, and PODCAST_CLIENT_LOCATION_ID when SET
+# (the intake handler's hard tenant check). The value comes from the live
+# process env (the box's existing secrets store, exported by onboarding); a
+# label already present in the file is never overwritten; values are never
+# printed. A missing plist or an unresolvable service-env file only WARNS
+# (the gateway may run under a different supervisor) with the manual add
+# instruction, and NEVER fails the registration: the SecretRef hardening is a
+# security improvement, and the route also works with a plaintext secret.
+# Appended labels activate on the next gateway restart, which this script
+# never performs (see GATEWAY RELOAD).
+#
 # GATEWAY RELOAD: this script writes and verifies config; it does NOT restart
 # the gateway (the restart doctrine is box-type-specific and operator-owned:
 # Mac kickstart-then-stop, Virtual Private Server compose recreate). Apply the
@@ -92,13 +114,19 @@
 # ENV (values never printed; SET / NOT SET only):
 #   PODCAST_INTAKE_HOOK_SECRET    REQUIRED for a real registration (the route
 #                                 secret; SecretRef id). The script verifies the
-#                                 label is SET and never touches the value.
+#                                 label is SET and never touches the value. On
+#                                 a successful ADD (and on a no-op re-run) the
+#                                 value is appended to the gateway service-env
+#                                 file when the label is absent there, so the
+#                                 SecretRef resolves in the launchd gateway.
 #   PODCAST_CLIENT_LOCATION_ID    The client's Convert and Flow Location ID for
 #                                 the intake handler's hard tenant check. Read
 #                                 for presence only (SET / NOT SET); a missing
 #                                 label is a warning, not a stop, because the
 #                                 route can be registered before onboarding
-#                                 records the location.
+#                                 records the location. When SET, the value is
+#                                 appended to the same service-env file (the
+#                                 tenant check runs inside the gateway).
 #   PODCAST_CLIENT_SLUG           Fallback client slug when --client-slug and a
 #                                 positional slug are both absent.
 #   PODCAST_AGENT_ID              Podcast department agent id bound to
@@ -122,7 +150,8 @@ log() { printf '%s\n' "$*" >&2; }
 die() { local code="$1"; shift; log "HARD STOP ($code): $*"; exit "$code"; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$EX_REFUSED" "missing dependency: $1"; }
 
-usage() { sed -n '2,109p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+usage() { sed -n '2,137p' "$0" | sed 's/^# \{0,1\}//' >&2; }
+
 
 # --------------------------------------------------------------------------- #
 # Arguments
@@ -200,6 +229,154 @@ fi
 # Every credential is reported SET / NOT SET by label only; never a value.
 label_state() { if [ -n "${!1:-}" ]; then printf 'SET'; else printf 'NOT SET'; fi; }
 
+# --------------------------------------------------------------------------- #
+# Service-env injection helpers (best-effort, warn-not-fail).
+# The gateway process (launchd via ai.openclaw.gateway.plist) sources its
+# runtime env from a service-env file, NOT from ~/.openclaw/secrets/.env.
+# SecretRef env labels (PODCAST_INTAKE_HOOK_SECRET) and runtime vars
+# (PODCAST_INTAKE_ROUTE_ID) must live in that file or the gateway can never
+# resolve them -- every webhook POST returns "unauthorized".
+# --------------------------------------------------------------------------- #
+
+# Read a value from a legacy binary or XML plist via python3 plistlib.
+# $1 plist path  $2 key path (e.g. "ProgramArguments:1")
+_plist_read() {
+  local plist_path="$1" key_path="$2"
+  python3 -c "
+import plistlib, sys
+try:
+    with open('${plist_path}', 'rb') as f:
+        pl = plistlib.load(f)
+    keys = '${key_path}'.split(':')
+    cur = pl
+    for k in keys:
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        elif isinstance(cur, list):
+            idx = int(k)
+            if idx < len(cur):
+                cur = cur[idx]
+            else:
+                raise IndexError
+        else:
+            raise KeyError
+    if cur is not None:
+        print(cur)
+except Exception:
+    pass
+" 2>/dev/null || true
+}
+
+# Upsert KEY=VALUE pairs into a shell env file (preserves comments and blank
+# lines). Reads stdin, writes stdout. Sets _upsert_changed=1 when modified.
+# Args: alternating keys and values.
+_upsert_env_vars() {
+  local -A want
+  local key val
+  while [ $# -gt 0 ]; do
+    key="$1"; val="$2"; shift 2
+    want["$key"]="$val"
+  done
+  local -A seen
+  _upsert_changed=0
+  while IFS= read -r line || [ -n "$line" ]; do
+    local stripped="${line#"${line%%[![:space:]]*}"}"
+    local eq_idx="${stripped%%=*}"
+    if [ -n "${want["$eq_idx"]+x}" ] && [ "$eq_idx" = "${stripped%%=*}" ]; then
+      local expected="${eq_idx}=${want[$eq_idx]}"
+      if [ "$line" = "$expected" ]; then
+        printf '%s\n' "$line"
+      else
+        printf '%s=%s\n' "$eq_idx" "${want[$eq_idx]}"
+        _upsert_changed=1
+      fi
+      seen["$eq_idx"]=1
+    else
+      printf '%s\n' "$line"
+    fi
+  done
+  for k in "${!want[@]}"; do
+    if [ -z "${seen[$k]:-}" ]; then
+      printf '%s=%s\n' "$k" "${want[$k]}"
+      _upsert_changed=1
+    fi
+  done
+}
+
+# Inject the SecretRef env vars plus PODCAST_INTAKE_ROUTE_ID into the gateway
+# service-env file. Best-effort: a missing plist or unknown secret value never
+# blocks the registration. Returns 0 always.
+inject_service_env() {
+  local plist="$HOME/Library/LaunchAgents/ai.openclaw.gateway.plist"
+  local env_file=""
+
+  if [ ! -f "$plist" ]; then
+    log ""
+    log "WARNING: launchd plist not found at $plist"
+    log "  The gateway service-env file cannot be located automatically."
+    log "  Manual step: add these env vars to the gateway runtime env file:"
+    log "    PODCAST_INTAKE_HOOK_SECRET  (the route secret value)"
+    log "    PODCAST_INTAKE_ROUTE_ID     (${ROUTE_ID})"
+    log "  Without them, SecretRef resolution will fail and the webhook"
+    log "  will return 'unauthorized' on every POST."
+    return 0
+  fi
+
+  # Parse the env-wrapper script path from the plist ProgramArguments.
+  # Format: [env-wrapper.sh, <env-file>, <gateway-binary>].
+  # We need the second argument (index 1).
+  env_file="$(_plist_read "$plist" "ProgramArguments:1")"
+
+  if [ -z "$env_file" ] || [ ! -f "$env_file" ]; then
+    log ""
+    log "WARNING: could not resolve the gateway service-env file from $plist"
+    if [ -n "$env_file" ]; then
+      log "  Parsed path: $env_file (file not found)"
+    fi
+    log "  Manual step: add these env vars to the gateway runtime env file:"
+    log "    PODCAST_INTAKE_HOOK_SECRET  (the route secret value)"
+    log "    PODCAST_INTAKE_ROUTE_ID     (${ROUTE_ID})"
+    log "  Without them, SecretRef resolution will fail and the webhook"
+    log "  will return 'unauthorized' on every POST."
+    return 0
+  fi
+
+  log ""
+  log "service-env injection: target $env_file"
+
+  local var_args=()
+  var_args+=("PODCAST_INTAKE_ROUTE_ID" "$ROUTE_ID")
+  local secret_set=0
+  if [ "$(label_state "$SECRET_LABEL")" = "SET" ]; then
+    var_args+=("$SECRET_LABEL" "${!SECRET_LABEL}")
+    secret_set=1
+  fi
+
+  local tmp
+  tmp="$(mktemp "${TMPDIR:-/tmp}/podcast-svc-env.XXXXXX")"
+  _upsert_env_vars "${var_args[@]}" < "$env_file" > "$tmp"
+
+  if [ "$_upsert_changed" = "1" ]; then
+    mv "$tmp" "$env_file"
+    log "  injected: PODCAST_INTAKE_ROUTE_ID (value: ${ROUTE_ID})"
+    if [ "$secret_set" = "1" ]; then
+      log "  injected: ${SECRET_LABEL} (label only; value never printed)"
+    fi
+    if [ "$secret_set" = "0" ]; then
+      log "  skipped: ${SECRET_LABEL} (value not known; inject manually)"
+    fi
+    log ""
+    log "Gateway env file updated. Consider restarting the gateway for changes to take effect."
+    log "  (Restart is operator-controlled; this script does not restart the gateway.)"
+  else
+    rm -f "$tmp"
+    log "  all env vars already present with correct values; nothing changed"
+    if [ "$secret_set" = "0" ]; then
+      log "  skipped: ${SECRET_LABEL} (value not known; inject manually)"
+    fi
+  fi
+}
+
 log "preflight (labels only; values never printed):"
 log "  ${SECRET_LABEL} = $(label_state "$SECRET_LABEL") (route secret; SecretRef env id)"
 log "  PODCAST_CLIENT_LOCATION_ID = $(label_state PODCAST_CLIENT_LOCATION_ID) (intake tenant check)"
@@ -244,6 +421,9 @@ log "  hooks.allowedAgentIds    + $AGENT_ID (podcast dept agent only)"
 log "  hooks.allowedSessionKeyPrefixes + ${SESSION_PREFIX} (podcast namespace only; pre-existing entries and defaultSessionKey preserved)"
 if [ "$MODE" = "remove" ]; then
   log "  action                   : delete route $ROUTE_ID; drop $AGENT_ID and ${SESSION_PREFIX} once no podcast:* route remains; preserve everything else"
+fi
+if [ "$MODE" = "add" ]; then
+  log "  gateway service-env sync : inject_service_env will upsert ${SECRET_LABEL} and PODCAST_INTAKE_ROUTE_ID into the launchd gateway service-env file (best-effort; never fails registration)"
 fi
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -492,5 +672,14 @@ if [ "$MODE" = "remove" ]; then
 else
   log "RESULT: registered route $ROUTE_ID in $CONFIG_FILE."
 fi
+
+# --------------------------------------------------------------------------- #
+# Inject SecretRef env vars into the gateway service-env file (best-effort;
+# a missing plist or unknown value never fails the registration).
+# --------------------------------------------------------------------------- #
+if [ "$MODE" = "add" ]; then
+  inject_service_env || true
+fi
+
 log "NEXT: apply the box's gateway restart doctrine (Mac kickstart-then-stop; Virtual Private Server compose recreate), confirm the gateway is healthy, then prove a signed test POST returns 200 and an unsigned one returns 401."
 exit "$EX_OK"
