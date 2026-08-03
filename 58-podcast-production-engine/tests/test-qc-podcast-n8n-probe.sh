@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-qc-podcast-n8n-probe.sh — U038 verification.
+# test-qc-podcast-n8n-probe.sh -- U038 verification.
 #
 # Tests the n8n host connectivity probe in 58-podcast-production-engine/
 # qc-podcast.sh: the install QC gate now probes the configured n8n host for
@@ -14,7 +14,7 @@
 #   2. AC#2: probe_n8n_host does an HTTP HEAD; a reachable host -> rc 0.
 #   3. AC#3: an unreachable host -> probe rc 1, and the full gate FAILs in
 #      QC_N8N_PROBE_MODE=fail / WARNs in the default warn mode.
-#   4. AC#4: the probe is bounded — a non-routable host returns within the
+#   4. AC#4: the probe is bounded -- a non-routable host returns within the
 #      timeout (never hangs).
 #   5. resolve_n8n_host: N8N_HOST wins; webhook URL -> host portion; default.
 #
@@ -104,10 +104,20 @@ pass "resolve_n8n_host: default is the fleet host"
 # ─── AC#3 (full gate): unreachable host + fail mode -> gate FAILs (exit 1) ───
 # Set up a fake installed skill + creds so the n8n probe is the deciding factor.
 mkdir -p "$TMP_HOME/.openclaw/skills/58-podcast-production-engine"
+# act-6 note: run a SANDBOX COPY of the gate with the three activation-layer
+# files present (they ship on sibling branches, not this tree) so the act-6
+# activation section stays non-fatal here and the n8n probe alone decides the
+# exit code, exactly as U038 intended.
+SANDBOX_GATE="$TMP_HOME/gate/qc-podcast.sh"
+mkdir -p "$TMP_HOME/gate/scripts"
+cp "$SCRIPT" "$SANDBOX_GATE"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP_HOME/gate/scripts/register-podcast-hook.sh"
+printf 'import sys\nif "--help" in sys.argv:\n    sys.exit(0)\nsys.exit(0)\n' > "$TMP_HOME/gate/scripts/podcast_controller.py"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP_HOME/gate/scripts/install-podcast-department.sh"
 rc=0
 out="$(HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
   N8N_HOST="http://127.0.0.1:1" QC_N8N_PROBE_MODE=fail QC_N8N_PROBE_TIMEOUT=3 \
-  bash "$SCRIPT" 2>&1)" || rc=$?
+  bash "$SANDBOX_GATE" 2>&1)" || rc=$?
 [ "$rc" -eq 1 ] || fail "AC#3: unreachable host + fail mode must exit 1, got rc=$rc: $out"
 echo "$out" | grep -qi "UNREACHABLE" || fail "AC#3: fail-mode output must say UNREACHABLE, got: $out"
 pass "AC#3 (full gate): unreachable host + fail mode -> gate FAILs (exit 1)"
@@ -116,7 +126,7 @@ pass "AC#3 (full gate): unreachable host + fail mode -> gate FAILs (exit 1)"
 rc=0
 out="$(HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
   N8N_HOST="http://127.0.0.1:1" QC_N8N_PROBE_MODE=warn QC_N8N_PROBE_TIMEOUT=3 \
-  bash "$SCRIPT" 2>&1)" || rc=$?
+  bash "$SANDBOX_GATE" 2>&1)" || rc=$?
 [ "$rc" -eq 0 ] || fail "AC#3: unreachable host + warn mode must exit 0 (warn only), got rc=$rc: $out"
 echo "$out" | grep -qi "WARN" || fail "AC#3: warn-mode output must say WARN, got: $out"
 echo "$out" | grep -qi "UNREACHABLE" || fail "AC#3: warn-mode output must say UNREACHABLE, got: $out"

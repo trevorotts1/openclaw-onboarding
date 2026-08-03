@@ -245,6 +245,54 @@ else
   fi
 fi
 
+# -- act-6: activation-layer health gate --------------------------------------
+# The fleet-safety net for the Leanne incident: intake and publish worked but
+# the PRODUCTION PROCESSOR never activated because the activation layer
+# (register-podcast-hook.sh, podcast_controller.py, install-podcast-department.sh)
+# was absent from the build and from the box, and nothing ever said so.
+# guard-activation-health.py fails that class of gap LOUDLY.
+#
+# Severity (the guard decides; qc-podcast.sh maps rc to counters):
+#   rc 0  activation layer present and healthy where checkable.
+#   rc 2  FATAL: the build is missing an activation file, OR the box is
+#         provisioned/strict and its activation layer is broken.
+#   rc 3  environment/usage error -- never a build failure (WARN).
+# A repo-only miss always exits 2, so the build gate always catches it. When
+# the live environment is absent (unprovisioned dev box, no slugs, no strict)
+# the guard keeps on-box findings non-fatal, so this gate degrades to WARN,
+# never a false FAIL. Pass --strict here or set PODCAST_ACTIVATION_PROVISIONED=1
+# on a provisioned box to make on-box findings fatal too.
+ACT_GUARD="$SKILL_DIR/scripts/guard-activation-health.py"
+if ! command -v python3 >/dev/null 2>&1; then
+  yellow "  .WARN -- python3 not found; skipping activation-layer health gate"; WARN=$((WARN+1))
+elif [ -f "$ACT_GUARD" ]; then
+  echo ""
+  echo "--- activation-layer health gate (act-6) ---"
+  # --strict (flag) or QC_ACTIVATION_STRICT=1 (env) promotes on-box findings
+  # to fatal; a provisioned box ($PODCAST_ACTIVATION_PROVISIONED=1 or any
+  # client slug in $PODCAST_CLIENT_SLUGS) is treated as strict by the guard
+  # itself. Empty-string expansion keeps this bash-3.2 safe (no empty-array
+  # expansion under set -u).
+  ACT_STRICT=""
+  if [ "${1:-}" = "--strict" ] || [ "${QC_ACTIVATION_STRICT:-0}" = "1" ]; then
+    ACT_STRICT="--strict"
+  fi
+  set +u
+  ACT_RC=0
+  ACT_OUT=$(python3 "$ACT_GUARD" $ACT_STRICT --repo-root "$(cd "$SKILL_DIR/.." && pwd)" 2>&1) || ACT_RC=$?
+  set -u
+  printf '%s\n' "$ACT_OUT" | sed 's/^/  /'
+  if [ "$ACT_RC" -eq 0 ]; then
+    green "  . PASS -- activation-layer health: activation layer present"; PASS=$((PASS+1))
+  elif [ "$ACT_RC" -eq 2 ]; then
+    red "  . FAIL -- activation-layer health: activation layer MISSING or BROKEN (queued flows can never run)"; FAIL=$((FAIL+1))
+  else
+    yellow "  .WARN -- activation-layer health gate errored (environment, rc $ACT_RC)"; WARN=$((WARN+1))
+  fi
+else
+  yellow "  .WARN -- guard-activation-health.py not found at $ACT_GUARD"; WARN=$((WARN+1))
+fi
+
 echo ""
 echo "=== Result: $PASS passed | $FAIL failed | $WARN warnings ==="
 [ $FAIL -gt 0 ] && { red "Skill 58 QC FAILED"; exit 1; } || { green "Skill 58 QC PASS"; exit 0; }
