@@ -1,5 +1,23 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.5 (WIRING GATE: materialized + registered[+runtime-dir] + reachable + connected)
+# verify-wiring.sh — v1.0.6 (WIRING GATE: materialized + registered[+runtime-dir] + reachable + connected)
+# v1.0.6  2026-08-03  fix(two unpassable assertions): (1) MATERIALIZED counted every
+#                     department subdirectory as a role, including the runtime dirs our
+#                     OWN builder creates for EVERY department — memory/ and
+#                     devils-advocate/ (build-workforce.create_department_workspace),
+#                     plus scripts/ and conversational-logs/. None has a how-to.md, so
+#                     every department failed rc=2 and, since only a passing wiring gate
+#                     may mark a department or the build done, no build could complete.
+#                     New is_non_role_dir() filters them BEFORE the walk (exact
+#                     case-insensitive basename match, so 16-devils-advocate-marketing/
+#                     and 19-sop-writer/ are still checked as real roles), and ROLE_COUNT
+#                     now reflects real roles only. (2) REACHABLE demanded a
+#                     Director/Head/Lead/Architect/Chief role folder from two canonical
+#                     departments whose OWN canonical roster defines none —
+#                     master-orchestrator ("Single Occupant — No Sub-Roles") and bugs
+#                     (3 flat specialists). dept_entry_point_override() names the
+#                     roster's declared entry point for exactly those two; the folder
+#                     must exist on disk, so it is a rename and never a bypass. Every
+#                     other department without a director-class role still FAILS.
 # v1.0.5  2026-06-26  fix(Gap E): REGISTERED check now also asserts the per-dept RUNTIME
 #                     agent dir $OC_ROOT/agents/dept-<slug>/ exists — the directory the
 #                     gateway dispatcher keys task routing on. Verified on a live box
@@ -154,15 +172,6 @@ fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# ---- Resolve workspace root --------------------------------------------------
-# departments live under workspace/departments/<slug>/
-WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
-if [[ -z "$WORKSPACE_ROOT" || "$WORKSPACE_ROOT" == "null" ]]; then
-  # Fallback: derive from state file location (state is in workspace/)
-  WORKSPACE_ROOT="$(dirname "$STATE_FILE")"
-fi
-DEPTS_DIR="$WORKSPACE_ROOT/departments"
-
 # ---- Collect dept list from state --------------------------------------------
 # Portable replacement for `mapfile -t ALL_DEPTS < <(...)` (mapfile is bash 4+ only;
 # Mac ships bash 3.2 and callers may be zsh-parented). while-read works in bash 3.2+.
@@ -203,14 +212,220 @@ else
   DEPTS_TO_CHECK=("${ALL_DEPTS[@]}")
 fi
 
+# ---- Resolve the departments tree (v1.0.6) -----------------------------------
+# BUG (pre-v1.0.6): this was a single unvalidated guess —
+#     WORKSPACE_ROOT = state.workspaceRoot, else dirname(STATE_FILE)
+#     DEPTS_DIR      = $WORKSPACE_ROOT/departments
+# `workspaceRoot` is NOT written into build-state on every path, so the fallback
+# fired routinely and pinned the tree to $OC_ROOT/workspace/departments. On a box
+# whose workforce lives in a company-shaped tree (clawd/zero-human-company/<slug>/
+# departments) the gate then measured a tree the client's agents never use and
+# reported every department "dept dir does not exist" — a confident verdict about
+# the wrong directory. Because wiringStatus feeds refresh-build-state-from-index.py
+# (references/DONE-IS-GATED.md), a wrong-tree measurement propagates into the
+# per-department status write.
+#
+# Now the tree is DETECTED from evidence and the choice is PROVEN before use: each
+# candidate is scored by how many of the departments named in build-state actually
+# resolve to a directory inside it, and the best-scoring candidate wins. If NO
+# candidate contains a single named department we abort with the precondition exit
+# (9) instead of emitting a confident wrong answer. That is the important property:
+# this can turn a wrong measurement into a loud "cannot measure", never a failing
+# department into a passing one.
+#
+# UPSTREAM COMPANION FIX (outside this file, flagged deliberately): `workspaceRoot`
+# should be written into .workforce-build-state.json at interview time. While it is
+# absent, detection is the only honest option available to this gate.
+#
+# Candidate order is preference, not authority — the score decides:
+#   1. state.workspaceRoot/departments          (explicit, when present)
+#   2. $OC_ROOT/workspace/departments           (the tree the floor-fill repair
+#                                                pipeline maintains — see
+#                                                _qc_paths.live_departments_dir)
+#   3. <root>/clawd/zero-human-company/<slug>/departments  for the company slug
+#                                                recorded in build-state
+#   4. any clawd/zero-human-company/*/departments found on disk
+DEPT_TREE_CANDIDATES=()
+_add_candidate() {
+  local c="$1" existing
+  [[ -z "$c" || "$c" == "null" ]] && return 0
+  [[ -d "$c" ]] || return 0
+  for existing in ${DEPT_TREE_CANDIDATES[@]+"${DEPT_TREE_CANDIDATES[@]}"}; do
+    [[ "$existing" == "$c" ]] && return 0
+  done
+  DEPT_TREE_CANDIDATES+=("$c")
+}
+
+_STATE_WS_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
+_add_candidate "$_STATE_WS_ROOT/departments"
+_add_candidate "$OC_ROOT/workspace/departments"
+
+_COMPANY_SLUG=$(jq -r '.companySlug // .company.slug // .company // empty' \
+  "$STATE_FILE" 2>/dev/null || true)
+for _zhc_root in "$HOME/clawd/zero-human-company" "/data/clawd/zero-human-company"; do
+  [[ -d "$_zhc_root" ]] || continue
+  [[ -n "$_COMPANY_SLUG" && "$_COMPANY_SLUG" != "null" ]] \
+    && _add_candidate "$_zhc_root/$_COMPANY_SLUG/departments"
+  for _c in "$_zhc_root"/*/departments; do
+    _add_candidate "$_c"
+  done
+done
+# Last resort, and only as a candidate to be SCORED like any other.
+_add_candidate "$(dirname "$STATE_FILE")/departments"
+
+# resolve_one_dept <depts_dir> <slug> — echo the department's actual directory, or
+# nothing. Mirrors create_role_workspaces.resolve_dept_dir() precedence so this
+# gate and the builders agree about which directory a slug means:
+#   1. the bare id            <root>/<slug>
+#   2. the "-dept" suffixed   <root>/<slug>-dept     (a real layout on live boxes)
+#   3. a normalized scan      case + separator drift (matters on case-SENSITIVE
+#                             Linux boxes, where an exact probe misses `Sales/`)
+# Without step 2 a slug like `trading-operations` silently measured ZERO roles on
+# a box that stores it as `trading-operations-dept/`.
+_norm_dept_key() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/^dept[-_]//' -e 's/[-_]dept$//' -e 's/_/-/g' \
+          -e 's/--*/-/g' -e 's/^-//' -e 's/-$//'
+}
+resolve_one_dept() {
+  local root="$1" slug="$2" target d
+  [[ -d "$root" ]] || return 0
+  [[ -d "$root/$slug" ]]      && { printf '%s' "$root/$slug"; return 0; }
+  [[ -d "$root/$slug-dept" ]] && { printf '%s' "$root/$slug-dept"; return 0; }
+  target="$(_norm_dept_key "$slug")"
+  [[ -z "$target" ]] && return 0
+  for d in "$root"/*/; do
+    [[ -d "$d" ]] || continue
+    if [[ "$(_norm_dept_key "$(basename "$d")")" == "$target" ]]; then
+      printf '%s' "${d%/}"
+      return 0
+    fi
+  done
+  return 0
+}
+
+DEPTS_DIR=""
+_BEST_SCORE=-1
+for _cand in ${DEPT_TREE_CANDIDATES[@]+"${DEPT_TREE_CANDIDATES[@]}"}; do
+  _score=0
+  for _d in "${DEPTS_TO_CHECK[@]}"; do
+    [[ -n "$(resolve_one_dept "$_cand" "$_d")" ]] && _score=$((_score + 1))
+  done
+  echo "[verify-wiring] candidate tree: $_cand — resolves $_score/${#DEPTS_TO_CHECK[@]} dept(s)"
+  if (( _score > _BEST_SCORE )); then
+    _BEST_SCORE=$_score
+    DEPTS_DIR="$_cand"
+  fi
+done
+
+if [[ -z "$DEPTS_DIR" || $_BEST_SCORE -le 0 ]]; then
+  echo "[verify-wiring] FATAL: could not resolve a departments tree containing ANY of the" >&2
+  echo "                departments named in $STATE_FILE." >&2
+  echo "                Departments in state: ${DEPTS_TO_CHECK[*]}" >&2
+  if [[ ${#DEPT_TREE_CANDIDATES[@]} -eq 0 ]]; then
+    echo "                Candidates probed: (none existed on disk)" >&2
+  else
+    echo "                Candidates probed:" >&2
+    for _cand in "${DEPT_TREE_CANDIDATES[@]}"; do echo "                  - $_cand" >&2; done
+  fi
+  echo "                Refusing to report a verdict about a tree that does not hold this" >&2
+  echo "                workforce — a confident wrong answer here propagates into the" >&2
+  echo "                per-department status write (references/DONE-IS-GATED.md)." >&2
+  echo "                FIX: set .workspaceRoot in the build-state to the workspace whose" >&2
+  echo "                departments/ holds this workforce, then re-run." >&2
+  exit 9
+fi
+
+WORKSPACE_ROOT="$(dirname "$DEPTS_DIR")"
 echo "[verify-wiring] Checking ${#DEPTS_TO_CHECK[@]} dept(s): ${DEPTS_TO_CHECK[*]}"
 echo "[verify-wiring] Workspace: $WORKSPACE_ROOT"
+echo "[verify-wiring] Departments tree: $DEPTS_DIR (resolved $_BEST_SCORE/${#DEPTS_TO_CHECK[@]} named dept(s))"
 echo ""
 
 # ---- Constants ---------------------------------------------------------------
 HOW_TO_MIN_BYTES=3072        # 3 KB minimum for a non-stub how-to.md
 PENDING_MARKER="[PENDING"    # substring that signals an unfilled stub
 DIRECTOR_SLUGS=("director" "head" "lead" "architect" "chief")
+
+# ---- NON-ROLE department subdirectories (v1.0.6) ------------------------------
+# A department directory contains RUNTIME and ARTIFACT subdirectories alongside
+# its role folders. None of them is a role, none of them has (or should have) a
+# role how-to.md, and every one of them is created by our own code:
+#
+#   memory/            build-workforce.create_department_workspace() creates it for
+#                      EVERY department (it is the dreaming substrate — the
+#                      repo-consistency gate asserts its creation, see
+#                      qc-assert-repo-consistency.py DREAMING check).
+#   devils-advocate/   build-workforce.create_department_workspace() creates it for
+#                      EVERY department, holding SOUL.md + SOP.md and no how-to.md.
+#   scripts/           dept-level build scripts (the Presentations department ships
+#                      one; this gate itself resolves $DEPT_DIR/scripts elsewhere).
+#   sops/ / _sops/     NAMED-SET SOP-library containers (also matched structurally
+#                      by is_sops_library_dir below, which stays as the tighter test).
+#   roles/             flat custom-shape role container (<dept>/roles/*.md), measured
+#                      in its own shape by qc-completeness.sh.
+#   conversational-logs/  per-contact conversation memory (Skill 38).
+#   artifacts/ templates/ assets/ logs/  dept-level output/input containers.
+#
+# WHY THIS IS A FIX AND NOT A LOOSENING: before this, the walker below treated
+# EVERY subdirectory as a role and failed any without a >=3KB how-to.md. Because
+# memory/ and devils-advocate/ are created for every department on every client,
+# the MATERIALIZED assertion could never pass for ANY department — and only a
+# passing wiring gate may mark a department (or the build) done. Counting a
+# runtime directory as an unmaterialized role is a false FAILURE, and a gate that
+# cannot pass protects nothing. Real role folders are unaffected: a genuine role
+# whose how-to.md is missing, thin, or [PENDING] still FAILS exactly as before.
+#
+# The list is an EXACT (case-insensitive) basename match, so real roster roles
+# whose folder name merely CONTAINS one of these words are untouched — e.g.
+# 16-devils-advocate-marketing/ and 19-sop-writer/ are still checked as roles.
+# Aligned with create_role_workspaces.augment_all_existing_role_folders SKIP_NAMES
+# and qc-completeness.sh NONROLE_DIR_NAMES so the three walkers cannot drift.
+NON_ROLE_DIR_NAMES=(
+  "memory" "devils-advocate" "scripts" "sops" "_sops" "roles"
+  "conversational-logs" "artifacts" "templates" "assets" "logs"
+)
+
+# is_non_role_dir <path> — 0 (true) when the directory is NOT a role folder.
+# Matches: dot-prefixed, underscore-prefixed, and the exact names above.
+is_non_role_dir() {
+  local _base _base_lc _n
+  _base="$(basename "$1")"
+  case "$_base" in
+    .*|_*) return 0 ;;
+  esac
+  _base_lc="$(printf '%s' "$_base" | tr '[:upper:]' '[:lower:]')"
+  for _n in "${NON_ROLE_DIR_NAMES[@]}"; do
+    [[ "$_base_lc" == "$_n" ]] && return 0
+  done
+  return 1
+}
+
+# ---- Department entry-point overrides (v1.0.6) --------------------------------
+# The REACHABLE assertion looks for a Director/Head/Lead/Architect/Chief role
+# folder. Two canonical departments DELIBERATELY define no such role in their
+# own canonical roster (suggested-roles/), so they could never satisfy a check
+# that demands a role their roster omits:
+#
+#   master-orchestrator — roster: "### Master Orchestrator (Single Occupant —
+#                         No Sub-Roles)". The Master Orchestrator IS the top-level
+#                         entry point; there is no Director above the CEO.
+#   bugs                — roster: 3 flat specialists (bug-intake-clerk,
+#                         triage-dedup-analyst, bug-librarian). The Bug Intake
+#                         Clerk (Registrar) is the department's single intake point.
+#
+# This names the roster's DECLARED entry-point role for those departments. It is
+# a RENAME, never a bypass: the named role folder must actually EXIST on disk or
+# REACHABLE still FAILS. Any OTHER department without a director-class role still
+# fails loudly — which is correct, because somebody has to decide its entry point.
+dept_entry_point_override() {
+  case "$1" in
+    master-orchestrator) echo "master-orchestrator" ;;
+    bugs)                echo "bug-intake-clerk" ;;
+    *)                   echo "" ;;
+  esac
+}
 
 # ---- Named-set SOP-library detection -----------------------------------------
 # v1.0.3 (2026-06-20): NAMED-SET SOP-library departments (graphics, presentations,
@@ -267,7 +482,14 @@ DEPT_RESULTS_JSON="{}"
 # ==============================================================================
 for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
 
-  DEPT_DIR="$DEPTS_DIR/$DEPT_SLUG"
+  # v1.0.6: suffix/case/separator-tolerant, mirroring
+  # create_role_workspaces.resolve_dept_dir(). A slug stored on disk as
+  # `<slug>-dept/` used to resolve to a non-existent bare path and measure ZERO
+  # roles, which then tripped the materialization gate for a department that was
+  # fully built. Falls back to the bare path so the "dept dir does not exist"
+  # diagnostic below still names the path an operator would expect.
+  DEPT_DIR="$(resolve_one_dept "$DEPTS_DIR" "$DEPT_SLUG")"
+  [[ -z "$DEPT_DIR" ]] && DEPT_DIR="$DEPTS_DIR/$DEPT_SLUG"
   DEPT_FAIL=0
   DEPT_WIRING_FAIL_REASONS=()
 
@@ -287,28 +509,37 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
     MAT_GAPS+=("dept dir missing")
     FAIL_MATERIALIZED+=("$DEPT_SLUG:dept-dir-missing")
   else
-    # Count role folders (numeric-prefix dirs like 01-director-of-x or 14-brainstorming-buddy)
+    # Collect the department's ROLE folders. v1.0.6: RUNTIME/ARTIFACT subdirectories
+    # (memory/, devils-advocate/, scripts/, conversational-logs/, ...) are filtered
+    # out HERE rather than mid-loop, so ROLE_COUNT is the real role count and the
+    # "zero role dirs" assertion below cannot be satisfied by runtime dirs alone.
     ROLE_DIRS=()
+    SKIPPED_NON_ROLE=()
     while IFS= read -r -d '' rd; do
+      if is_non_role_dir "$rd"; then
+        SKIPPED_NON_ROLE+=("$(basename "$rd")")
+        continue
+      fi
+      # v1.0.3: a NAMED-SET `sops/` SOP-library container is NOT a role. Skip it so
+      # its (legitimately small / [PENDING]) stub how-to.md never trips the role
+      # materialization gate. The SOP content lives in the SOP--*.md / SOP-DIU-*.md
+      # files inside it, which prove-floor verifies separately.
+      if is_sops_library_dir "$rd"; then
+        _sop_lib_count=$(find "$rd" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
+        SKIPPED_NON_ROLE+=("$(basename "$rd")(${_sop_lib_count} SOP docs)")
+        continue
+      fi
       ROLE_DIRS+=("$rd")
     done < <(find "$DEPT_DIR" -maxdepth 1 -mindepth 1 -type d -print0 2>/dev/null | sort -z)
 
     ROLE_COUNT=${#ROLE_DIRS[@]}
     echo "  [MATERIALIZED] dept dir exists. Role dirs found: $ROLE_COUNT"
+    if [[ ${#SKIPPED_NON_ROLE[@]} -gt 0 ]]; then
+      echo "  [MATERIALIZED] SKIP (not roles, no how-to.md expected): ${SKIPPED_NON_ROLE[*]}"
+    fi
 
     for ROLE_DIR in "${ROLE_DIRS[@]}"; do
       ROLE_SLUG="$(basename "$ROLE_DIR")"
-      # skip hidden/meta dirs
-      [[ "$ROLE_SLUG" == .* ]] && continue
-      # v1.0.3: a NAMED-SET `sops/` SOP-library container is NOT a role. Skip it so
-      # its (legitimately small / [PENDING]) stub how-to.md never trips the role
-      # materialization gate. The SOP content lives in the SOP--*.md / SOP-DIU-*.md
-      # files inside it, which prove-floor verifies separately.
-      if is_sops_library_dir "$ROLE_DIR"; then
-        _sop_lib_count=$(find "$ROLE_DIR" -maxdepth 1 -name '*.md' -type f 2>/dev/null | wc -l | tr -d ' ')
-        echo "  [MATERIALIZED] SKIP: $ROLE_SLUG — named-set SOP-library container (${_sop_lib_count} SOP docs), not a role"
-        continue
-      fi
       HOW_TO="$ROLE_DIR/how-to.md"
       if [[ ! -f "$HOW_TO" ]]; then
         echo "  [MATERIALIZED] FAIL: $ROLE_SLUG — how-to.md missing" >&2
@@ -325,7 +556,12 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
         FAIL_MATERIALIZED+=("$DEPT_SLUG/$ROLE_SLUG:stub-${FILE_SIZE}B")
         continue
       fi
-      if grep -q "$PENDING_MARKER" "$HOW_TO" 2>/dev/null; then
+      # v1.0.6 fix: PENDING_MARKER is the LITERAL string "[PENDING". As a basic
+      # regex "[PENDING" is an UNBALANCED bracket expression, so `grep -q` errored
+      # (rc=2) instead of matching, the `if` read that as false, and this assertion
+      # NEVER fired — a fail-OPEN hole that let any >=3KB [PENDING - FILL FROM
+      # LIBRARY] stub pass materialization. -F makes it a literal-string match.
+      if grep -qF -- "$PENDING_MARKER" "$HOW_TO" 2>/dev/null; then
         echo "  [MATERIALIZED] FAIL: $ROLE_SLUG — how-to.md contains $PENDING_MARKER placeholder" >&2
         MAT_PASS=0
         MAT_GAPS+=("$ROLE_SLUG:pending-placeholder")
@@ -449,7 +685,8 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
     for rd in "$DEPT_DIR"/*/; do
       [[ -d "$rd" ]] || continue
       rslug="$(basename "$rd")"
-      [[ "$rslug" == .* ]] && continue
+      # v1.0.6: runtime/artifact dirs are not roles and can never be an entry point.
+      is_non_role_dir "$rd" && continue
       for entry_kw in "${DIRECTOR_SLUGS[@]}"; do
         if [[ "$rslug" == *"$entry_kw"* ]]; then
           REACH_PASS=1
@@ -458,6 +695,32 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
         fi
       done
     done
+
+    # v1.0.6: no director-class role — fall back to the department's DECLARED
+    # entry-point role for the two canonical departments whose own roster defines
+    # none (see dept_entry_point_override). The named folder must EXIST on disk,
+    # so this can never turn a genuinely unreachable department into a pass.
+    if [[ $REACH_PASS -eq 0 ]]; then
+      REACH_OVERRIDE="$(dept_entry_point_override "$DEPT_SLUG")"
+      if [[ -n "$REACH_OVERRIDE" ]]; then
+        for rd in "$DEPT_DIR"/*/; do
+          [[ -d "$rd" ]] || continue
+          rslug="$(basename "$rd")"
+          is_non_role_dir "$rd" && continue
+          # Compare on the slug with any canonical NN- role-number prefix stripped.
+          rslug_bare="${rslug#[0-9][0-9]-}"
+          if [[ "$rslug_bare" == "$REACH_OVERRIDE" || "$rslug" == "$REACH_OVERRIDE" ]]; then
+            REACH_PASS=1
+            REACH_ENTRY="$rslug (declared entry point for '$DEPT_SLUG'; roster defines no Director-class role)"
+            break
+          fi
+        done
+        if [[ $REACH_PASS -eq 0 ]]; then
+          echo "  [REACHABLE]    note: '$DEPT_SLUG' declares '$REACH_OVERRIDE' as its entry point but that role folder is not on disk" >&2
+        fi
+      fi
+    fi
+
     if [[ $REACH_PASS -eq 1 ]]; then
       echo "  [REACHABLE]    OK:   entry point role = $REACH_ENTRY"
     else
