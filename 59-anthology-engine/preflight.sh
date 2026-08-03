@@ -146,6 +146,27 @@ def scan(node, path):
             print("AF-AE-ANTHROPIC: resolved map carries a banned id at %s: %r" % (path, node), file=sys.stderr)
             sys.exit(2)
 scan(data.get("tiers", {}), "tiers")
+# CONCURRENCY ADVISORY (SPEC 8.4): warn when the HEAVY-WRITER primary provider
+# carries a low concurrency cap (<= 8) in the resolved map. Warning only --
+# never changes the exit code. Mirrors the resolve-mode advisory so --check
+# surfaces the same signal an operator sees at resolve time.
+def _hw_primary(tiers):
+    hw = (tiers or {}).get("HEAVY-WRITER") or {}
+    chain = hw.get("chain") or []
+    for link in chain:
+        p = str(link.get("provider", "")).strip()
+        if p and p.upper() != "HOLD":
+            return p
+    return None
+hw_primary = _hw_primary(data.get("tiers"))
+caps = data.get("provider_caps") or {}
+if hw_primary and hw_primary in caps:
+    cap = caps.get(hw_primary)
+    if isinstance(cap, int) and cap <= 8:
+        print("CONCURRENCY ADVISORY: HEAVY-WRITER primary provider %s has a concurrency cap of %d "
+              "(wave limit); a webhook spike is capped cross-process at %d in-flight calls. "
+              "Consider raising provider_caps.%s if higher concurrency is intended."
+              % (hw_primary, cap, cap, hw_primary), file=sys.stderr)
 print("  preflight --check: resolved model-map.json OK (no residual placeholder, no Anthropic-family id)")
 sys.exit(0)
 PY
