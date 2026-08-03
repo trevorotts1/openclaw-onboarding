@@ -3,6 +3,14 @@
 Update ONLY the files listed below. Use the EXACT text provided.
 Do not update files marked NO UPDATE NEEDED.
 
+**These updates are PERFORMED by `wire.sh`, not pasted.** `wire.sh` writes each block
+behind its `<!-- BEGIN/END skill:63-agnes-image:<target> -->` marker REPLACE-IN-PLACE,
+with `[MASTER_FILES_FOLDER]` resolved to this box's absolute master-files path, and
+stamps `<!-- skill:63-agnes-image:core-update-applied -->`. Earlier versions had no
+installer, so the generic merger copied this section VERBATIM and every box ended up
+with the literal word `Add:`, a markdown code fence, and an unresolved relative
+pointer in its AGENTS.md. Never paste the instruction — run `bash wire.sh`.
+
 ---
 
 ## AGENTS.md - UPDATE REQUIRED
@@ -16,7 +24,7 @@ Add:
 - Required: model, prompt, size (1K/2K/3K/4K). ratio optional (16:9, 9:16, 1:1, 3:4, 4:3, 2:3, 3:2, 21:9).
 - response_format lives in extra_body (NOT top level); image-to-image needs no tags.
 - The IMAGE endpoint is synchronous — the response holds the image (data[0].url or data[0].b64_json). No polling.
-- Full reference: 63-agnes-image/agnes-image-full.md
+- Full reference: [MASTER_FILES_FOLDER]/63-agnes-image/agnes-image-full.md
 ```
 
 ---
@@ -34,7 +42,7 @@ Add:
 - Output: data[0].url (URL) or data[0].b64_json (Base64); response_format in extra_body
 - Image-to-image: extra_body.image[] (URL or Data-URI Base64), no tags
 - Rate limits by account tier; treat 429 as the live ceiling. Currently $0/image.
-- Full reference: 63-agnes-image/agnes-image-full.md
+- Full reference: [MASTER_FILES_FOLDER]/63-agnes-image/agnes-image-full.md
 ```
 
 ---
@@ -48,7 +56,7 @@ Add:
 - Existing AGNES_AI_API_KEY (same key as the agnes / agnes-2.5-flash model)
 - Synchronous image endpoint: POST /v1/images/generations — no task polling
 - response_format in extra_body; image-to-image via extra_body.image, no tags
-- Full reference: 63-agnes-image/agnes-image-full.md
+- Full reference: [MASTER_FILES_FOLDER]/63-agnes-image/agnes-image-full.md
 ```
 
 ---

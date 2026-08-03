@@ -10,21 +10,51 @@ in INSTRUCTIONS.md).
 
 ---
 
-## [ADD TO AGENTS.md] — appended by `scripts/05-update-agents-md.sh`
+## AGENTS.md — NO UPDATE NEEDED here (written by `scripts/05-update-agents-md.sh`)
 
-The script appends a fenced block between `<!-- BEGIN skill-38 conversational-ai v5.14 -->`
-and `<!-- END skill-38 conversational-ai v5.14 -->` containing Steps 1.7, 1.8, 1.9, 2.8 and
-the upgraded Step 1.75. See the script for the exact content; the v5.14 source playbook
-(Steps 7 and 9.21-9.30) is the canonical wording.
+⛔ **This section is documentation, not a payload.** The header says NO UPDATE NEEDED so
+update-skills.sh's generic CORE_UPDATES merger SKIPS it — otherwise the prose below was
+copied verbatim into every box's AGENTS.md as `<!-- BEGIN skill:38-conversational-ai-system:agents -->`.
 
-Key behaviors added:
+**AGENTS.md receives ONE compact WHAT / WHEN / POINTER stanza per runtime surface —
+never the rule corpus.** Each stanza sits behind its VERSION-FREE
+`<!-- BEGIN SKILL38: <NAME> -->` / `<!-- END SKILL38: <NAME> -->` marker, and ONE extra
+`SKILL38_RUNTIME_INVARIANTS` stanza states the rules that used to be restated in almost
+every block (OPERATOR-ONLY allow-list, injection vectors IGNORED, default-OFF is a
+no-op, hard gates always apply, PII-free logs). Prohibitions, the GHL build-path note
+and the 11 Playbook-Builder trigger phrases stay INLINE, verbatim, because they bind at
+read time. The full text of all 23 blocks ships as `references/agents-runtime-rules.md`
+(each section under its historical marker name) plus `protocols/*.md`, and the script
+copies both into the client's master-files folder so no pointer can dangle.
+
+**Idempotency + self-heal.** The writer is REPLACE-IN-PLACE across the whole `SKILL38:`
+namespace: every matched block is removed before the current stanzas are written —
+including RETIRED marker names and skill 38's own legacy generic-installer stub — so a
+second run is byte-identical, a marker rename can never duplicate, and a fleet roll
+CLEANS a bloated box instead of leaving it bloated. Earlier versions appended 52,444
+characters across 23 fat blocks (40.65% of the operator box's AGENTS.md) and guarded
+with `grep -q "<that exact marker>"`, so a renamed marker appended a second copy and an
+EDITED block never reached an already-wired box. A backup is now taken ONLY when the
+content actually changes. On a box running an anti-tamper core-file watcher the heal is
+STAGED so each pass stays at or above the watcher's restore floor.
+
+**The shared stamp bank is never touched.** ~44 other installers key idempotency on
+`<!-- skill:<NN-slug>:core-update-applied -->` lines and `<!-- BEGIN skill:<NN-slug>:… -->`
+blocks in the same file; the writer only ever matches the `SKILL38:` namespace plus skill
+38's own `skill:38-conversational-ai-system:agents` block, and removes no stamp.
+
+Key behaviors covered:
 - **Step 1.7** — Query the appropriate typed Knowledge Base for context.
 - **Step 1.75** (upgraded) — Run Intelligent Playbook Routing — re-evaluate workflow match after EVERY customer message; max 3 switches per conversation; cosine similarity 0.3 advantage to switch.
 - **Step 1.8** — Sales Brain check: BANT/MEDDIC/SPICED + 6 objection patterns + buyer-signal scoring + pricing reveal rules + honesty floor.
 - **Step 1.9** — Customer Service & Support (dual-mode): detect service-mode vs support-mode signals; honesty floor enforced.
 - **Step 2.8** — Humanizer pass via skill 19 (ALWAYS-ON; skill 38 does NOT ship its own humanizer).
 
-## [ADD TO MEMORY.md] — written by `scripts/06-append-memory-rules.sh`
+## MEMORY.md — NO UPDATE NEEDED here (written by `scripts/06-append-memory-rules.sh`)
+
+⛔ **This section is documentation, not a payload** — same reason as the AGENTS.md
+section above: without the NO UPDATE NEEDED directive the generic merger pasted this
+whole rule index into every box's MEMORY.md.
 
 **MEMORY.md receives exactly ONE compact pointer block — never the rule corpus.**
 The block is fenced by the VERSION-FREE marker

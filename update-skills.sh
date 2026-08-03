@@ -184,6 +184,51 @@ except Exception:
     hostname -s 2>/dev/null || printf ''
 }
 
+# Remove the "## Update held -- account not current" notice this gate appends on a
+# `blocked` verdict, once the account is current again. Fenced by
+# <!-- OPENCLAW_UPDATE_HELD_BILLING:<ts> --> … <!-- OPENCLAW_UPDATE_HELD_BILLING_END -->
+# so ONLY that block is removed; every other line of AGENTS.md is preserved
+# byte-for-byte, and a file with no notice is left completely untouched (no
+# rewrite, no backup). Never fails the run.
+fleet_standing_clear_held_notice() {
+    local agents_md="${OC_CONFIG:-$HOME/.openclaw}/AGENTS.md"
+    [ -f "$agents_md" ] || return 0
+    grep -qF "OPENCLAW_UPDATE_HELD_BILLING" "$agents_md" 2>/dev/null || return 0
+    command -v python3 >/dev/null 2>&1 || return 0
+    AGENTS_MD="$agents_md" python3 - <<'PYEOF' 2>/dev/null || true
+import os, re, time
+
+p = os.environ["AGENTS_MD"]
+try:
+    with open(p, encoding="utf-8", errors="surrogateescape") as fh:
+        original = fh.read()
+except Exception:
+    raise SystemExit(0)
+
+pattern = re.compile(
+    r'\n*<!--\s*OPENCLAW_UPDATE_HELD_BILLING:[^\n]*-->\n'
+    r'(?:(?!<!--\s*OPENCLAW_UPDATE_HELD_BILLING_END\s*-->).*\n?)*'
+    r'<!--\s*OPENCLAW_UPDATE_HELD_BILLING_END\s*-->\n?'
+)
+new = pattern.sub("\n", original)
+if new == original:
+    raise SystemExit(0)
+# Only the fenced block may disappear. Anything larger is a bug -- refuse.
+if len(original) - len(new) > 2000:
+    raise SystemExit(0)
+backup = os.path.realpath(p) + ".bak-standing-" + time.strftime("%Y%m%d-%H%M%S")
+try:
+    with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write(original)
+    with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write(new)
+except Exception:
+    raise SystemExit(0)
+print("  [standing-gate] removed the stale 'update held -- account not current' notice from " + p)
+PYEOF
+    return 0
+}
+
 fleet_standing_gate() {
     if [ "${FLEET_STANDING_GATE_BYPASS:-0}" = "1" ]; then
         echo "  [standing-gate] bypassed (FLEET_STANDING_GATE_BYPASS=1)"
@@ -243,6 +288,13 @@ fleet_standing_gate() {
         blocked) : ;;                                   # the only stop condition
         allowed)
             echo "  [standing-gate] account current -- proceeding"
+            # A previously-blocked box carries an "## Update held -- account not
+            # current" notice appended below. NOTHING ever removed it, so once the
+            # account was brought current the box kept telling its agent (on every
+            # single turn, AGENTS.md is re-billed) that its updates were frozen.
+            # A writer owns removing what it wrote: clear it now that the gate says
+            # allowed. Marker-fenced, so only this block is touched.
+            fleet_standing_clear_held_notice
             return 0 ;;
         unmatched|held)
             echo "  [standing-gate] verdict '${verdict}' (box not on roster or lookup failed) -- proceeding (fail open)"
@@ -705,6 +757,212 @@ oc_file_size_bytes() {
 }
 
 # ----------------------------------------------------------
+# _strip_update_pending_sections <AGENTS_FILE>
+#
+# Removes EVERY "## … UPDATE PENDING …" / "## … ONBOARDING PENDING …" section
+# (header through the next top-level "## " heading, or EOF) from AGENTS.md, in
+# place, behind five guards. Shared by BOTH callers so the sweep and the rewrite
+# can never drift apart:
+#   * write_update_pending_flag() — strip the old flag, then append a fresh one
+#   * clear_update_pending_flag() — strip and append NOTHING (the gate passed)
+#
+# Returns 0 when the file now carries no PENDING section (written, or already
+# clean). Returns non-zero when the rewrite was REFUSED — in which case the file
+# is byte-for-byte untouched and the caller must NOT append anything, because the
+# previous flag could not be removed and appending would stack a duplicate.
+# ----------------------------------------------------------
+_strip_update_pending_sections() {
+  local AGENTS_FILE="$1"
+  local rc=0
+  # NOTE the command form: no `2>/dev/null`, no `|| true`. The real error has to
+  # reach the operator, and a refusal has to be detectable by the caller.
+  AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' || rc=$?
+import os, re, sys, time
+
+p = os.environ["AGENTS_FILE"]
+
+
+def die(msg):
+    """Refuse to write. The file is left exactly as it was."""
+    sys.stderr.write("  REFUSING to rewrite " + p + "\n")
+    for line in msg.splitlines():
+        sys.stderr.write("    " + line + "\n")
+    raise SystemExit(1)
+
+
+# --- guard 4: symlink transparency. Writing through the link is intended;
+# --- say so out loud, and name the file that actually receives the bytes.
+was_link = os.path.islink(p)
+real = os.path.realpath(p)
+if was_link:
+    print("  [agents-flag] " + p)
+    print("  [agents-flag]   is a SYMLINK -> " + real)
+    print("  [agents-flag]   writing THROUGH the link, in place, onto that shared file.")
+    print("  [agents-flag]   (intended: many agents share one AGENTS.md. The link is preserved.)")
+else:
+    print("  [agents-flag] target is a regular file: " + real)
+
+# A file that does not exist yet is a known, safe state -- there is nothing to
+# preserve, so we create it. A file that EXISTS but cannot be read is an ERROR
+# and must never be treated as empty. That distinction is the whole fix.
+exists = os.path.exists(p)
+disk_before = os.path.getsize(p) if exists else 0
+
+if not exists:
+    if was_link:
+        print("  [agents-flag] link target does not exist yet -- creating it through the link.")
+    else:
+        print("  [agents-flag] no existing AGENTS.md -- creating a fresh one (nothing to preserve).")
+    original = ""
+else:
+    # --- guard 1: a read failure ABORTS, loudly, with the real error.
+    # surrogateescape (not "replace") round-trips bytes that are not valid
+    # UTF-8 exactly as they were, so a rewrite can never mangle them.
+    try:
+        with open(p, encoding="utf-8", errors="surrogateescape") as fh:
+            original = fh.read()
+    except Exception as exc:
+        die("could not READ the existing file: " + repr(exc) + "\n"
+            "This file is " + str(disk_before) + " bytes on disk and its contents are\n"
+            "therefore UNKNOWN to this script. Rewriting it now would destroy it.\n"
+            "Nothing was written. Fix the read error and re-run the updater.")
+
+# Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
+# section: from its "## " header up to (but not including) the next top-level
+# "## " heading, or EOF. Non-greedy, multiline. This sweeps EVERY such section,
+# including stale ones left by earlier waves, not just the newest.
+pattern = re.compile(
+    r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
+    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
+)
+# Measured in BYTES, because it is compared against byte sizes below. Counting
+# CHARACTERS here under-counted every non-ASCII character in a removed section
+# (the flag text contains a few), so on a file carrying several stacked old
+# flags the guard saw a bigger shrink than it could explain and REFUSED a
+# perfectly good rewrite -- and, because the stale sections then stayed put, it
+# refused again on every later run too.
+removed_len = sum(len(m.group(0).encode("utf-8", "surrogateescape"))
+                  for m in pattern.finditer(original))
+
+if exists and removed_len == 0:
+    # Already clean. Do NOT rewrite, do NOT take a backup -- a no-op run must be
+    # byte-identical and must not leave another .bak- file behind on every roll.
+    print("  [agents-flag] no UPDATE PENDING / ONBOARDING PENDING section present -- nothing to strip")
+    raise SystemExit(0)
+
+# --- guard 2: back up first, then READ THE BACKUP BACK and compare.
+# A backup nobody has read is not a backup.
+backup = ""
+if original != "":
+    backup = real + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
+    try:
+        with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
+            fh.write(original)
+    except Exception as exc:
+        die("could not WRITE the backup " + backup + ": " + repr(exc) + "\n"
+            "Refusing to rewrite the file with no backup in hand. Nothing was written.")
+    try:
+        with open(backup, encoding="utf-8", errors="surrogateescape") as fh:
+            readback = fh.read()
+    except Exception as exc:
+        die("could not READ BACK the backup " + backup + ": " + repr(exc) + "\n"
+            "An unverified backup is not a backup. Nothing was written.")
+    if readback != original:
+        die("the backup " + backup + " does not match what was read from the file.\n"
+            "Nothing was written.")
+    print("  [agents-flag] backup verified: " + backup)
+    print("  [agents-flag]   " + str(len(original.encode("utf-8", "surrogateescape")))
+          + " bytes written, read back, and compared byte for byte.")
+
+stripped = pattern.sub("", original)
+new = stripped
+# Collapse >2 blank lines left behind.
+new = re.sub(r'\n{3,}', '\n\n', new)
+
+# The collapse above is allowed to touch blank lines and nothing else.
+if "".join(new.split()) != "".join(stripped.split()):
+    die("internal check failed: collapsing blank lines changed real content.\n"
+        "Nothing was written.")
+
+# --- guard 3: SIZE SANITY. Stripping the previous flag section is the ONLY
+# legitimate way this can shrink. Compare against the size ON DISK rather than
+# against the text we read, so this still fires even if guard 1 were somehow
+# defeated and `original` came back empty on a file full of content.
+new_bytes = len(new.encode("utf-8", "surrogateescape"))
+allowed_shrink = removed_len + 64   # +64 covers collapsed blank lines
+if new_bytes < disk_before - allowed_shrink:
+    die("the result would SHRINK this file by far more than removing the old\n"
+        "flag can explain, so something has gone wrong:\n"
+        "  on disk now      : " + str(disk_before) + " bytes\n"
+        "  would be written : " + str(new_bytes) + " bytes\n"
+        "  old flag sections: " + str(removed_len) + " bytes (the only allowed shrink)\n"
+        "Nothing was written." + (("\nThe verified backup is at " + backup) if backup else ""))
+
+# In place, through the link. NOT a temp file and a rename -- see the long
+# comment in write_update_pending_flag. This truncates the target and keeps the
+# link itself.
+try:
+    with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
+        fh.write(new)
+except Exception as exc:
+    die("the write itself FAILED: " + repr(exc)
+        + (("\nThe verified backup is at " + backup) if backup else ""))
+
+# --- guard 5: the link must have survived the write.
+if was_link and not os.path.islink(p):
+    die("after writing, " + p + " is NO LONGER A SYMLINK.\n"
+        "The shared-file design has been broken -- restore from " + backup)
+
+print("  [agents-flag] rewrote " + real + ": " + str(disk_before) + " -> "
+      + str(new_bytes) + " bytes (removed " + str(removed_len)
+      + " bytes of previous flag)")
+PYEOF
+  return "$rc"
+}
+
+# ----------------------------------------------------------
+# clear_update_pending_flag
+#
+# THE ZOMBIE THIS KILLS. write_update_pending_flag() appended a section that
+# literally instructed the reader: "Remove this entire UPDATE PENDING section from
+# AGENTS.md when the gate passes." NOTHING executed that instruction. The updater
+# wrote the flag on EVERY run — including runs where the verification gate had
+# already passed and there was nothing pending — and never removed it afterwards,
+# so a stale "UPDATE PENDING -- Skill Update to vX" block sat in a box's AGENTS.md
+# indefinitely (measured: two weeks), re-billed to the model on every turn and
+# telling the agent to activate skills that were already qc-passed.
+#
+# A script that writes a block owns removing it. This is the remover, and it also
+# SWEEPS any stale section left by an earlier wave (the shared strip above matches
+# every UPDATE PENDING / ONBOARDING PENDING section, not just the newest).
+# ----------------------------------------------------------
+clear_update_pending_flag() {
+  if ! oc_resolve_workspace_announced "UPDATE PENDING flag removal target"; then
+    echo "  ⚠ Could not resolve the workspace to clear the UPDATE PENDING flag (see above) — leaving AGENTS.md untouched." >&2
+    return 0
+  fi
+  local AGENTS_FILE="$OC_WS_RESOLVED/AGENTS.md"
+  if [ ! -f "$AGENTS_FILE" ]; then
+    echo "  ℹ No AGENTS.md at $AGENTS_FILE — nothing to clear."
+    return 0
+  fi
+  local SIZE_BEFORE SIZE_AFTER rc=0
+  SIZE_BEFORE="$(oc_file_size_bytes "$AGENTS_FILE")"
+  _strip_update_pending_sections "$AGENTS_FILE" || rc=$?
+  if [ "$rc" -ne 0 ]; then
+    echo "  ⚠ UPDATE PENDING removal was REFUSED (see the error above) — AGENTS.md is UNCHANGED. Re-run the updater after fixing it." >&2
+    return 0
+  fi
+  SIZE_AFTER="$(oc_file_size_bytes "$AGENTS_FILE")"
+  if [ "$SIZE_AFTER" -lt "$SIZE_BEFORE" ]; then
+    echo "  ✓ UPDATE PENDING section REMOVED from $AGENTS_FILE (${SIZE_BEFORE} -> ${SIZE_AFTER} bytes) — the gate passed and nothing is pending."
+  else
+    echo "  ✓ No UPDATE PENDING section to remove — $AGENTS_FILE is already clean."
+  fi
+  return 0
+}
+
+# ----------------------------------------------------------
 # Write UPDATE PENDING flag to AGENTS.md
 # ----------------------------------------------------------
 write_update_pending_flag() {
@@ -775,146 +1033,14 @@ write_update_pending_flag() {
   local AGENTS_SIZE_BEFORE
   AGENTS_SIZE_BEFORE="$(oc_file_size_bytes "$AGENTS_FILE")"
 
-  # FIX 1: FULLY strip ALL prior UPDATE PENDING / ONBOARDING PENDING SECTIONS
-  # (header → next "## " heading or EOF). The old `grep -v "UPDATE PENDING"`
-  # only removed the single header LINE, leaving the multi-line body behind and
-  # STACKING a fresh full flag on every run -- duplicates accreted forever.
-  #
-  # NOTE the command form: no `2>/dev/null`, no `|| true`. The real error has
-  # to reach the operator, and a refusal has to be detectable below.
+  # FULLY strip ALL prior UPDATE PENDING / ONBOARDING PENDING SECTIONS
+  # (header -> next "## " heading or EOF) before appending a fresh one. The old
+  # `grep -v "UPDATE PENDING"` only removed the single header LINE, leaving the
+  # multi-line body behind and STACKING a fresh full flag on every run.
+  # The strip itself now lives in _strip_update_pending_sections() so the REMOVER
+  # (clear_update_pending_flag) runs byte-identical logic behind the same guards.
   local FLAG_STRIP_RC=0
-  AGENTS_FILE="$AGENTS_FILE" python3 - <<'PYEOF' || FLAG_STRIP_RC=$?
-import os, re, sys, time
-
-p = os.environ["AGENTS_FILE"]
-
-
-def die(msg):
-    """Refuse to write. The file is left exactly as it was."""
-    sys.stderr.write("  REFUSING to rewrite " + p + "\n")
-    for line in msg.splitlines():
-        sys.stderr.write("    " + line + "\n")
-    raise SystemExit(1)
-
-
-# --- guard 4: symlink transparency. Writing through the link is intended;
-# --- say so out loud, and name the file that actually receives the bytes.
-was_link = os.path.islink(p)
-real = os.path.realpath(p)
-if was_link:
-    print("  [agents-flag] " + p)
-    print("  [agents-flag]   is a SYMLINK -> " + real)
-    print("  [agents-flag]   writing THROUGH the link, in place, onto that shared file.")
-    print("  [agents-flag]   (intended: many agents share one AGENTS.md. The link is preserved.)")
-else:
-    print("  [agents-flag] target is a regular file: " + real)
-
-# A file that does not exist yet is a known, safe state -- there is nothing to
-# preserve, so we create it. A file that EXISTS but cannot be read is an ERROR
-# and must never be treated as empty. That distinction is the whole fix.
-exists = os.path.exists(p)
-disk_before = os.path.getsize(p) if exists else 0
-
-if not exists:
-    if was_link:
-        print("  [agents-flag] link target does not exist yet -- creating it through the link.")
-    else:
-        print("  [agents-flag] no existing AGENTS.md -- creating a fresh one (nothing to preserve).")
-    original = ""
-else:
-    # --- guard 1: a read failure ABORTS, loudly, with the real error.
-    # surrogateescape (not "replace") round-trips bytes that are not valid
-    # UTF-8 exactly as they were, so a rewrite can never mangle them.
-    try:
-        with open(p, encoding="utf-8", errors="surrogateescape") as fh:
-            original = fh.read()
-    except Exception as exc:
-        die("could not READ the existing file: " + repr(exc) + "\n"
-            "This file is " + str(disk_before) + " bytes on disk and its contents are\n"
-            "therefore UNKNOWN to this script. Rewriting it now would destroy it.\n"
-            "Nothing was written. Fix the read error and re-run the updater.")
-
-# --- guard 2: back up first, then READ THE BACKUP BACK and compare.
-# A backup nobody has read is not a backup.
-backup = ""
-if original != "":
-    backup = real + ".bak-" + time.strftime("%Y%m%d-%H%M%S")
-    try:
-        with open(backup, "w", encoding="utf-8", errors="surrogateescape") as fh:
-            fh.write(original)
-    except Exception as exc:
-        die("could not WRITE the backup " + backup + ": " + repr(exc) + "\n"
-            "Refusing to rewrite the file with no backup in hand. Nothing was written.")
-    try:
-        with open(backup, encoding="utf-8", errors="surrogateescape") as fh:
-            readback = fh.read()
-    except Exception as exc:
-        die("could not READ BACK the backup " + backup + ": " + repr(exc) + "\n"
-            "An unverified backup is not a backup. Nothing was written.")
-    if readback != original:
-        die("the backup " + backup + " does not match what was read from the file.\n"
-            "Nothing was written.")
-    print("  [agents-flag] backup verified: " + backup)
-    print("  [agents-flag]   " + str(len(original.encode("utf-8", "surrogateescape")))
-          + " bytes written, read back, and compared byte for byte.")
-
-# Remove any "## ... UPDATE PENDING ..." or "## ... ONBOARDING PENDING ..."
-# section: from its "## " header up to (but not including) the next top-level
-# "## " heading, or EOF. Non-greedy, multiline.
-pattern = re.compile(
-    r'(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*\n'   # the header
-    r'(?:(?!^##\s).*\n?)*',                                         # body until next "## "
-)
-# Measured in BYTES, because it is compared against byte sizes below. Counting
-# CHARACTERS here under-counted every non-ASCII character in a removed section
-# (the flag text contains a few), so on a file carrying several stacked old
-# flags the guard saw a bigger shrink than it could explain and REFUSED a
-# perfectly good rewrite -- and, because the stale sections then stayed put, it
-# refused again on every later run too.
-removed_len = sum(len(m.group(0).encode("utf-8", "surrogateescape"))
-                  for m in pattern.finditer(original))
-stripped = pattern.sub("", original)
-new = stripped
-# Collapse >2 blank lines left behind.
-new = re.sub(r'\n{3,}', '\n\n', new)
-
-# The collapse above is allowed to touch blank lines and nothing else.
-if "".join(new.split()) != "".join(stripped.split()):
-    die("internal check failed: collapsing blank lines changed real content.\n"
-        "Nothing was written.")
-
-# --- guard 3: SIZE SANITY. Stripping the previous flag section is the ONLY
-# legitimate way this can shrink. Compare against the size ON DISK rather than
-# against the text we read, so this still fires even if guard 1 were somehow
-# defeated and `original` came back empty on a file full of content.
-new_bytes = len(new.encode("utf-8", "surrogateescape"))
-allowed_shrink = removed_len + 64   # +64 covers collapsed blank lines
-if new_bytes < disk_before - allowed_shrink:
-    die("the result would SHRINK this file by far more than removing the old\n"
-        "flag can explain, so something has gone wrong:\n"
-        "  on disk now      : " + str(disk_before) + " bytes\n"
-        "  would be written : " + str(new_bytes) + " bytes\n"
-        "  old flag sections: " + str(removed_len) + " bytes (the only allowed shrink)\n"
-        "Nothing was written." + (("\nThe verified backup is at " + backup) if backup else ""))
-
-# In place, through the link. NOT a temp file and a rename -- see the long
-# comment above. This truncates the target and keeps the link itself.
-try:
-    with open(p, "w", encoding="utf-8", errors="surrogateescape") as fh:
-        fh.write(new)
-except Exception as exc:
-    die("the write itself FAILED: " + repr(exc)
-        + (("\nThe verified backup is at " + backup) if backup else ""))
-
-# --- guard 5: the link must have survived the write.
-if was_link and not os.path.islink(p):
-    die("after writing, " + p + " is NO LONGER A SYMLINK.\n"
-        "The shared-file design has been broken -- restore from " + backup)
-
-print("  [agents-flag] rewrote " + real + ": " + str(disk_before) + " -> "
-      + str(new_bytes) + " bytes (removed " + str(removed_len)
-      + " bytes of previous flag)")
-PYEOF
+  _strip_update_pending_sections "$AGENTS_FILE" || FLAG_STRIP_RC=$?
 
   if [ "$FLAG_STRIP_RC" -ne 0 ]; then
     # The rewrite was REFUSED. The file is untouched. Do not append the flag
@@ -954,8 +1080,13 @@ PYEOF
 
 ## UPDATE PENDING -- Skill Update to ${version}
 
-A skill update was applied via update-skills.sh on ${DATE_STAMP}. Activate each new skill below,
-run the verification gate, then remove this section from AGENTS.md when the gate passes.
+A skill update was applied via update-skills.sh on ${DATE_STAMP}. Activate each new skill below
+and run the verification gate.
+
+**You do NOT need to delete this section.** update-skills.sh owns it: the next run REMOVES it
+automatically once the verification gate passes and no new skills are outstanding, and it sweeps
+any stale copy left by an earlier wave. (Earlier versions told the reader to remove it by hand
+and nothing ever did, so a stale flag sat in AGENTS.md for weeks.)
 
 ### 🔴 THE GATE IS THE TRUTH -- NOT THIS PROSE, NOT YOUR OWN "done"
 This update is **NOT complete** until the VERIFICATION GATE passes. Files on disk = DOWNLOADED, not installed. Source the gate and check state:
@@ -983,9 +1114,9 @@ For each such skill folder under \`~/.openclaw/skills/\`:
 - Disclosure headers (e.g. \`[GHL tier used: N -- tool_name]\`) required per any skill's SOUL-level rules
 - No destructive shortcuts: no \`--force\`, no \`--no-verify\`, no \`--break-system-packages\` unless explicitly instructed
 
-### When the GATE passes (and ONLY then)
-- Remove this entire UPDATE PENDING section from AGENTS.md
-- Add to MEMORY.md under "## System Updates":
+### When the GATE passes
+- This section is removed AUTOMATICALLY by the next update-skills.sh run. Leave it alone.
+- Optional: add one line to MEMORY.md under "## System Updates":
   "${version} update applied on ${DATE_STAMP}. Verification gate PASSED. Skills activated: ${new_skills:-none}."
 
 FLAGCONTENT
@@ -4440,15 +4571,30 @@ sys.exit(0 if (isinstance(logo.get("logoUrl"),str) and logo["logoUrl"].strip()) 
     #   FORMAT 12:  ## X.md Addition/Update    (mixed suffix h2)
     #   FORMAT 13:  ## X.md                    (bare filename h2, where:+fenced)
     # python3 is a hard dependency on Mac (already noted in the existing comment).
+    # Resolve THIS box's master-files root so `[MASTER_FILES_FOLDER]`-style
+    # template variables in a CORE_UPDATES.md payload are FILLED before the block
+    # is written. An unfilled variable shipped to a live box as the literal text
+    # `[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md` — a pointer to a
+    # path that exists nowhere. Same platform rule the skill installers use.
+    local CU_MASTER_FILES_DIR="${OPENCLAW_MASTER_FILES_DIR:-}"
+    if [ -z "$CU_MASTER_FILES_DIR" ]; then
+      if [ -f /data/.openclaw/openclaw.json ]; then
+        CU_MASTER_FILES_DIR="/data/.openclaw/master-files"
+      else
+        CU_MASTER_FILES_DIR="$HOME/Downloads/openclaw-master-files"
+      fi
+    fi
+
     python3 - \
         "$CU_FILE" "$AGENTS_FILE" "$TOOLS_FILE" "$MEMORY_FILE" \
         "$SOUL_FILE" "$IDENTITY_FILE" "$USER_FILE" \
         "$SENTINEL" "$SKILL_FOLDER" \
-        "${CORE_UPDATES_STRICT:-0}" <<'PYEOF'
+        "${CORE_UPDATES_STRICT:-0}" "$CU_MASTER_FILES_DIR" <<'PYEOF'
 import sys, re, os
 
 (cu_path, agents_f, tools_f, memory_f, soul_f,
- identity_f, user_f, sentinel, skill_folder, strict_mode) = sys.argv[1:]
+ identity_f, user_f, sentinel, skill_folder, strict_mode,
+ master_files_dir) = sys.argv[1:]
 strict = (strict_mode == "1")
 
 target_map = {
@@ -4642,6 +4788,84 @@ def next_section_start(pos):
 
 merged_count = 0
 
+# ---------------------------------------------------------------------------
+# EXECUTE THE INSTRUCTION — never paste it. (no-paste rule)
+#
+# THE DEFECT THIS CLOSES. The merger copied the section body verbatim, and almost
+# every CORE_UPDATES.md writes its payload as an INSTRUCTION wrapping the payload:
+#
+#     ## AGENTS.md - UPDATE REQUIRED
+#     Add:
+#     ```
+#     ## Agnes Image 2.1 Flash
+#     - ...
+#     ```
+#     ---
+#
+# So what landed in every box's AGENTS.md was the word "Add:", a markdown code
+# fence, the payload, the closing fence and a horizontal rule — the recipe pasted
+# instead of executed. Proven live: skills 63 and 64 both shipped that shape to the
+# fleet, and skill 64's pointer additionally arrived as the UNFILLED template
+# variable `[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md`.
+#
+# clean_block() removes exactly three things and NOTHING else:
+#   1. a leading imperative directive line ("Add:", "Append:", "Add this:", …)
+#   2. a code fence that WRAPS THE WHOLE remaining block — opening fence on the
+#      first line, closing fence on the last, and an EVEN number of fence lines
+#      between them (so any fenced example inside the payload is itself balanced
+#      and survives intact). An ODD inner count means the first line is not a
+#      wrapper at all, and the block is then left exactly as written.
+#   3. a trailing horizontal rule left over from the doc's section separator
+# then fills the master-files template variables with this box's resolved path.
+# Every other byte of the payload is preserved exactly.
+# ---------------------------------------------------------------------------
+DIRECTIVE_LINE_RE = re.compile(
+    r'^\s*(?:add|append|add this|add the following|append the following|'
+    r'paste|paste this|insert|insert this)\b[^\n:]{0,40}:\s*$',
+    re.IGNORECASE,
+)
+FENCE_LINE_RE = re.compile(r'^\s*```')
+MASTER_FILES_TOKENS = (
+    '[MASTER_FILES_FOLDER]', '[MASTER-FILES-FOLDER]', '{{MASTER_FILES_FOLDER}}',
+    '<MASTER_FILES_FOLDER>', '[MASTER_FILES_DIR]', '{{MASTER_FILES_DIR}}',
+)
+
+
+def clean_block(raw):
+    lines = raw.split('\n')
+
+    # 1. leading directive line(s) + the blank lines that follow them
+    while lines and (not lines[0].strip() or DIRECTIVE_LINE_RE.match(lines[0])):
+        if lines[0].strip() and not DIRECTIVE_LINE_RE.match(lines[0]):
+            break
+        lines.pop(0)
+    while lines and not lines[-1].strip():
+        lines.pop()
+
+    # 3. trailing horizontal rule (done before the fence check so a rule sitting
+    #    AFTER the closing fence cannot hide it)
+    while lines and lines[-1].strip() in ('---', '***', '___'):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+
+    # 2. a fence that wraps the WHOLE block
+    if len(lines) >= 2 and FENCE_LINE_RE.match(lines[0]) and FENCE_LINE_RE.match(lines[-1]):
+        inner = lines[1:-1]
+        if sum(1 for ln in inner if FENCE_LINE_RE.match(ln)) % 2 == 0:
+            lines = inner
+            while lines and not lines[0].strip():
+                lines.pop(0)
+            while lines and not lines[-1].strip():
+                lines.pop()
+
+    out = '\n'.join(lines).strip()
+    if master_files_dir:
+        for tok in MASTER_FILES_TOKENS:
+            out = out.replace(tok, master_files_dir)
+    return out
+
+
 for (m, target, directive) in real_sections:
     if directive == 'skip':
         continue
@@ -4650,7 +4874,7 @@ for (m, target, directive) in real_sections:
     # Extract block: from end of matched header line to next heading
     content_start = m.end()
     content_end = next_section_start(m.start() + 1)
-    block = text[content_start:content_end].strip()
+    block = clean_block(text[content_start:content_end].strip())
 
     if not block:
         continue
@@ -7100,11 +7324,37 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
-  # Post-update: write UPDATE PENDING flag + Telegram + backup block
+  # Post-update: UPDATE PENDING flag LIFECYCLE + Telegram + backup block
+  #
+  # The flag is written ONLY when this run genuinely left activation work behind,
+  # and REMOVED when it did not. The old code called write_update_pending_flag
+  # unconditionally, so every clean run re-stamped a fresh "UPDATE PENDING" block
+  # into AGENTS.md that told the agent to activate skills it had already
+  # qc-passed, and nothing ever took it back out.
+  #
+  # The verdict is the SAME _RESUME_NEEDED signal the onboarding-resume cron
+  # block below already used to decide there was nothing to self-heal — it was
+  # simply never consulted before writing the flag. Computing it ONCE, here,
+  # makes the flag and the cron agree by construction:
+  #   gate == "no"            -> the gate PROVED unverified skills remain
+  #   NEW_SKILLS_CSV non-empty -> new numbered skills need activation
+  #   gate == "unknown"        -> the gate could not run; we do NOT know the box
+  #                               is clean, so keep the flag (fail toward telling
+  #                               the agent there is work, never toward silence)
   # ----------------------------------------------------------
+  _RESUME_NEEDED="no"
+  [ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"       # gate proved unverified skills remain
+  [ "${ONBOARDING_GATE_OK:-unknown}" = "unknown" ] && _RESUME_NEEDED="yes"  # gate did not run -- do not claim clean
+  [ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"                      # new numbered skills need activation
+
   echo ""
-  echo "  Writing UPDATE PENDING flag for agent activation..."
-  write_update_pending_flag "$ONBOARDING_VERSION" "$NEW_SKILLS_CSV"
+  if [ "$_RESUME_NEEDED" = "yes" ]; then
+    echo "  Writing UPDATE PENDING flag for agent activation..."
+    write_update_pending_flag "$ONBOARDING_VERSION" "$NEW_SKILLS_CSV"
+  else
+    echo "  Verification gate GREEN and no new skills — removing the UPDATE PENDING flag (and sweeping any stale one)..."
+    clear_update_pending_flag
+  fi
 
   # ----------------------------------------------------------
   # v17.0.21: make roll-time activation SELF-HEALING. When this roll left work
@@ -7116,9 +7366,6 @@ PYEOF
   # NOTHING. IDEMPOTENT: install_onboarding_resume_cron() leaves any existing
   # cron in place. SILENT: the cron carries no --channel/--to/--announce (it is a
   # main-session self-ping); it can never push to a client chat.
-  _RESUME_NEEDED="no"
-  [ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"   # gate proved unverified skills remain
-  [ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"                  # new numbered skills need activation
   if [ "$_RESUME_NEEDED" = "yes" ]; then
     echo "  Pending activation detected — ensuring the SILENT onboarding-resume cron (idempotent)..."
     if command -v install_onboarding_resume_cron >/dev/null 2>&1; then

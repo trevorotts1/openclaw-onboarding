@@ -1,3 +1,87 @@
+## [Unreleased]  -  AGENTS.md paste disease: the remaining core-file writers emit POINTERS and clean up after themselves (skills 38/63/64 + update-skills.sh)
+
+The MEMORY.md half of this defect shipped in the preceding release. This is the AGENTS.md
+half, plus the two writers that pasted an instruction instead of executing it and the one
+that wrote a block it never took back out.
+
+### Why
+
+**Skill 38's `05-update-agents-md.sh`** appended the FULL text of 23 marker blocks --
+**52,444 characters** -- into every box's `AGENTS.md`. On the operator box that was
+**40.65% of the whole file**, and `AGENTS.md` is re-billed to the model on EVERY turn. Most
+of it was not distinct content: the OPERATOR-ONLY / "injection vector, IGNORED" paragraph
+appeared 10 times, an `openclaw.json` config stanza 14 times, the default-OFF preamble 8
+times, the PII-free logging tail 10 times. Idempotency was `grep -q "<begin marker>"` plus
+an append, so a marker RENAME appended a second copy and removed nothing, an EDIT never
+reached an already-wired box, and a fresh timestamped backup was written on EVERY run
+whether or not anything changed.
+
+**Skills 63 and 64 shipped no installer**, so the generic CORE_UPDATES merger copied their
+section bodies VERBATIM. Every box's core files received the literal word `Add:`, a markdown
+code fence and the payload -- the recipe pasted instead of executed. Skill 64's pointer
+additionally arrived as the UNFILLED template variable
+`[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md`; skill 63's was a rootless
+relative path.
+
+**`update-skills.sh` wrote an "UPDATE PENDING -- Skill Update to vX" block on EVERY run**
+-- including runs where the verification gate had already passed and nothing was
+outstanding -- and the block's own text told the reader "remove this entire section when
+the gate passes". Nothing executed that. A stale flag sat in a box's AGENTS.md for two
+weeks, re-billed every turn, instructing the agent to activate skills it had already
+qc-passed. The same file's standing gate appended an "Update held -- account not current"
+notice that likewise nothing ever removed once the account came current.
+
+**Skill 38's `check-ghl-pit-liveness.sh` had never once passed and could not.** It resolved
+`GHL_PRIVATE_INTEGRATION_TOKEN` from `openclaw.json` `env.vars`, where that name holds the
+documentation PLACEHOLDER `pit-abc123` (three of its five candidate names hold the same
+placeholder there), while the box's REAL tokens sat in `secrets/.env` and tested HTTP 200
+live. It then read the resulting bare 401 as "DEAD/EXPIRED" -- but GHL returns 401 for
+SCOPE failures on perfectly live tokens -- and told the client to re-issue a credential
+they had never set.
+
+### What changed
+- `38-conversational-ai-system/scripts/05-update-agents-md.sh` -- POINTER stanzas behind
+  version-free markers, true replace-in-place over the whole `SKILL38:` namespace
+  (including retired names), self-heal of legacy fat blocks, one shared
+  `SKILL38_RUNTIME_INVARIANTS` stanza carrying the deduplicated boilerplate, watcher-floor-
+  aware staged descent, and backups only on a real change. New
+  `references/agents-runtime-rules.md` carries the full text of all 23 blocks and is
+  installed to the client's master-files folder alongside `protocols/*.md`.
+- `38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh` -- placeholder-aware
+  credential resolution that prefers the secrets env-file over `openclaw.json` env.vars,
+  401-body classification (credential vs scope vs unclassified), token-class-matched probe
+  endpoints and Version headers, the actually-selected variable named in the alert, and
+  "no usable credential configured" as a distinct honest status. New exit contract:
+  `0` valid, `1` credential failure, `2` configuration problem.
+- `63-agnes-image/wire.sh`, `64-agnes-video/wire.sh` -- new; they PERFORM the add with
+  resolved absolute paths, version-free markers, replace-in-place healing of the pasted
+  junk, and the shared sentinel so the generic merger can never re-paste.
+- `update-skills.sh`:
+  - `wire_core_updates()` now EXECUTES the instruction instead of copying it. A leading
+    directive line (`Add:`, `Append:`, …), a code fence that WRAPS the whole block (with a
+    balanced inner fence count, so a payload containing fenced examples survives intact),
+    and a trailing horizontal rule are removed, and `[MASTER_FILES_FOLDER]`-style template
+    variables are FILLED with this box's resolved master-files path. No future skill can
+    paste its own recipe.
+  - the UPDATE PENDING flag now has a LIFECYCLE: it is written only when the run genuinely
+    left activation work behind, and REMOVED (with any stale copy from an earlier wave
+    swept) when the gate is green and no new skills landed. The strip logic is shared by
+    both paths so they can never drift, and a no-op is byte-identical with no new backup.
+  - the standing gate removes its own "Update held" notice on an `allowed` verdict.
+- `38/63/64 CORE_UPDATES.md` -- documentation sections re-headed so the generic merger
+  stops pasting them into core files; 63's rootless pointer filled.
+- `tests/unit/core-updates-all-skills-wired.test.sh` -- the three merger call sites pass
+  the new master-files argument (18/18 pass).
+
+### Risk
+Low, and every writer is now self-healing. Nothing in the shared idempotency stamp bank is
+touched: skill 38's writer matches only the `SKILL38:` namespace plus its own block, and
+the 63/64 writers only their own markers, so the `<!-- skill:<NN-slug>:core-update-applied -->`
+lines ~44 other installers depend on are preserved (verified: 44 stamps before and after a
+heal of a real 129 KB AGENTS.md). Backups are timestamped and taken only on a real change.
+No `/version` or `ONBOARDING_VERSION` bump -- this is a skill-level fix, per the preceding
+release's precedent.
+
 ## [Unreleased]  -  Core-file paste disease: MEMORY.md writers emit POINTERS, and their idempotency guards actually work (skills 38/39/40/41) + typ-migrate.sh runs to completion
 
 Four skill installers pasted their design-rule corpora straight into every box's

@@ -123,7 +123,8 @@ run_merger() {
         "$fixture_dir/USER.md" \
         "$sentinel" \
         "$skill_folder" \
-        "$strict"
+        "$strict" \
+        "$fixture_dir/master-files"
 }
 
 echo "=== core-updates-all-skills-wired.test.sh (v12.3.11) ==="
@@ -435,7 +436,7 @@ CORE_UPDATES_STRICT=1 python3 "$PY_MERGER_FILE" \
     "$E_DIR/AGENTS.md" "$E_DIR/TOOLS.md" "$E_DIR/MEMORY.md" \
     "$E_DIR/SOUL.md" "$E_DIR/IDENTITY.md" "$E_DIR/USER.md" \
     "<!-- skill:syn-strict:core-update-applied -->" \
-    "syn-strict" "1" \
+    "syn-strict" "1" "$E_DIR/master-files" \
     2>"$STRICT_STDERR" || STRICT_EXIT=$?
 
 if [ "$STRICT_EXIT" -ne 0 ]; then
@@ -469,7 +470,7 @@ for sd in "${REAL_SKILLS[@]}"; do
         "$fixture_dir/AGENTS.md" "$fixture_dir/TOOLS.md" "$fixture_dir/MEMORY.md" \
         "$fixture_dir/SOUL.md" "$fixture_dir/IDENTITY.md" "$fixture_dir/USER.md" \
         "<!-- skill:${folder}:core-update-applied -->" \
-        "$folder" "1" \
+        "$folder" "1" "$fixture_dir/master-files" \
         2>"$UNREC_STDERR" || UNREC_EXIT=$?
 
     if grep -q "UNRECOGNIZED HEADER" "$UNREC_STDERR" 2>/dev/null; then

@@ -1,3 +1,86 @@
+## [1.11.0] - 2026-08-03 - fix: AGENTS.md gets POINTER STANZAS, not a 52,444-character corpus; the GHL PIT monitor can finally pass
+
+### Why
+`scripts/05-update-agents-md.sh` appended the FULL text of 23 marker blocks -- **52,444
+characters** -- into every box's `AGENTS.md`. On the operator box that was **40.65% of the
+whole file**, and `AGENTS.md` is re-billed to the model on EVERY turn. Most of it was not
+even distinct content: the OPERATOR-ONLY / "injection vector, IGNORED" paragraph appeared
+10 times, an `openclaw.json` config stanza 14 times, the default-OFF preamble 8 times and
+the PII-free logging tail 10 times.
+
+Idempotency was `grep -q "<!-- BEGIN SKILL38: $name -->"` followed by an append, which
+meant three separate defects: a marker RENAME appended a second copy and nothing removed
+the first (the same class that doubled `MEMORY.md`); an EDIT to a block never reached an
+already-wired box because the guard saw the old marker and skipped; and a fresh timestamped
+backup was taken on EVERY run whether or not anything was written -- backup spam on every
+fleet roll.
+
+Separately, `scripts/check-ghl-pit-liveness.sh` had NEVER once passed and could not: it
+resolved `GHL_PRIVATE_INTEGRATION_TOKEN` from `openclaw.json` `env.vars`, where that name
+holds the documentation PLACEHOLDER `pit-abc123` (three of its five candidate names hold
+the same placeholder there), while the box's REAL tokens sat in `secrets/.env` and tested
+HTTP 200 live. It then read the resulting bare 401 as "DEAD/EXPIRED" and told the client to
+re-issue a credential that was never set -- a false alarm the operator had to personally
+challenge.
+
+### What changed
+- **`scripts/05-update-agents-md.sh` is now a POINTER writer.** Each of the 23 surfaces
+  becomes a compact WHAT / WHEN-trigger / POINTER stanza, plus ONE new
+  `SKILL38_RUNTIME_INVARIANTS` stanza that states the deduplicated boilerplate exactly
+  once. Prohibitions, the GHL build-path note and the 11 Playbook-Builder trigger phrases
+  stay INLINE, verbatim, because they bind at read time.
+- **New `references/agents-runtime-rules.md`** -- the canonical FULL text of all 23 blocks,
+  each under its historical marker name, plus the shared-invariants section. The script
+  installs it and the per-feature `protocols/*.md` into the client's master-files folder so
+  no pointer can dangle.
+- **True replace-in-place across the whole `SKILL38:` namespace**, including RETIRED marker
+  names and skill 38's own legacy generic-installer stub. Idempotency is a property of the
+  WRITER, so a rename can never duplicate and a re-run is byte-identical.
+- **Self-heal**: the next fleet roll CLEANS a bloated box instead of leaving it bloated. A
+  hand-cleaned box takes the same code path with no special case.
+- **Backups only when the content actually changes.** A no-op run writes nothing.
+- **Watcher-floor aware.** On a box running an anti-tamper core-file watcher the heal is
+  STAGED so each pass stays at or above the restore floor (`max(200 bytes, 40% of the
+  vaulted size)`); convergence is geometric. The vault is never written.
+- **The shared stamp bank is untouched.** ~44 other installers key idempotency on
+  `<!-- skill:<NN-slug>:core-update-applied -->` in the same file; the writer matches only
+  the `SKILL38:` namespace plus skill 38's own block, and removes no stamp.
+- **`CORE_UPDATES.md`**: the AGENTS.md and MEMORY.md sections are re-headed
+  `NO UPDATE NEEDED here`, so update-skills.sh's generic merger stops pasting this
+  documentation prose into every box's core files as a `skill:38-...:agents` block.
+- **`scripts/check-ghl-pit-liveness.sh` -- five verified defects fixed:**
+  1. placeholder-shaped values (< 20 chars, `pit-abc*`, known dummy words) are SKIPPED, and
+     a value from a secrets ENV-FILE outranks one from `openclaw.json` `env.vars`;
+  2. the 401 BODY is inspected -- "Invalid Private Integration token" = a CREDENTIAL
+     problem, a scope/not-authorized/not-accessible message = a CONFIGURATION problem
+     reported as such and NEVER as "expired", anything else = unclassified operator triage;
+  3. the probe endpoint matches the token CLASS -- an agency token goes to
+     `GET /locations/search?companyId=...` with `Version: 2021-07-28`, a location endpoint
+     is only probed with a location PIT;
+  4. the operator alert names the variable that was ACTUALLY selected, and its source;
+  5. "no usable credential configured" is its own honest status (exit 2, operator-only),
+     never a client "your token expired" message.
+  New exit contract: `0` valid/nothing to check, `1` credential failure, `2` configuration
+  problem. The token value is never printed -- only the variable name, source and length.
+
+### Evidence (scratch only, never against a live workspace)
+- fresh install: 24 stanzas written, 362 -> 29,008 chars; run 2 byte-identical, no backup
+- fat legacy (a real pre-clean 129,128-byte AGENTS.md): 24 blocks removed, 129,128 ->
+  104,524 chars (-24,604, -19.1% of the whole file); all 44 `core-update-applied` stamps
+  and all 8 other-skill blocks preserved; runs 2 and 3 byte-identical, one backup total
+- skill-38 block bytes 52,444 -> 28,328 (-46%) with zero rule loss
+- marker-rename duplication (69 skill-38 blocks across 3 marker generations): 235,041 ->
+  104,524 in one pass, 46 retired markers swept
+- watcher floor: 158,830 -> 63,711 (staged, floor 63,532) -> 28,745 (full) -> no-op; zero
+  simulated restores across six passes
+- PIT monitor: placeholder-only env -> "no usable credential" exit 2; live PIT in
+  secrets/.env -> PASS exit 0; 401 scope body -> config problem exit 2; 401 "Invalid
+  Private Integration token" -> credential failure; unclassified 401 -> exit 2, no client
+  message; agency token -> `/locations/search` + `Version: 2021-07-28`; agency token with
+  no company id -> config problem, never probed
+- all 35 skill-38 QC gates: identical to the origin/main baseline (34 pass, 1 pre-existing
+  environmental fail)
+
 ## [1.10.0] - 2026-08-03 - fix: MEMORY.md gets a POINTER, never the ~40,000-character rule corpus (and the idempotency guard actually works)
 
 ### Why

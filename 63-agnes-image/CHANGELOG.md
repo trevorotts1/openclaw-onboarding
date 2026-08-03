@@ -4,6 +4,35 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.1.0] - 2026-08-03 - fix: the core-file updates are now EXECUTED by `wire.sh`, not pasted as a recipe
+
+### Why
+Skill 63 shipped no installer, so its `CORE_UPDATES.md` was consumed by the generic
+merger in `update-skills.sh`, which copies a section body VERBATIM. What landed in every
+box's `AGENTS.md` / `TOOLS.md` / `MEMORY.md` was the literal INSTRUCTION -- the word
+`Add:`, a markdown code fence, the payload, the closing fence -- the recipe pasted instead
+of executed. The pointer inside it was ALSO wrong: `63-agnes-image/agnes-image-full.md` is a ROOTLESS
+relative path that resolves against whatever directory the agent happens to be in, so the
+reference could never be opened reliably.
+
+### What changed
+- **New `wire.sh`** -- performs the add. It writes one compact pointer block per core file
+  behind its version-free `<!-- BEGIN/END skill:63-agnes-image:<target> -->` marker,
+  REPLACE-IN-PLACE, so a re-run is byte-identical and an already-pasted box is HEALED
+  rather than appended to. The master-files path is RESOLVED to an absolute path on the box.
+- It stamps `<!-- skill:63-agnes-image:core-update-applied -->`, which makes the generic merger
+  short-circuit for this skill so the recipe can never be pasted again.
+- It touches only its OWN `skill:63-agnes-image:*` markers -- the shared idempotency
+  stamp bank ~44 other installers key on is never read, moved or removed.
+- Backups are timestamped and taken ONLY when a file actually changes.
+- `CORE_UPDATES.md` now documents that `wire.sh` performs these updates.
+
+### Evidence (scratch only)
+Seeded a fixture with the EXACT pasted junk carried on a live box: after `wire.sh` the
+literal `Add:`, the code fences and the unfilled `[MASTER_FILES_FOLDER]` variable are all
+gone, exactly one BEGIN/END pair per target remains, the pointer is an absolute path, and a
+second run is byte-identical across AGENTS.md / TOOLS.md / MEMORY.md with no new backup.
+
 ## [v1.0.1] - August 1, 2026
 
 ### Changed

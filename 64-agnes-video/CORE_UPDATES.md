@@ -1,8 +1,16 @@
 # Agnes Video V2.0 - Core File Updates
 
-Update ONLY the files listed below. Use the EXACT text provided (adjust the
-master-files path to your box). Do not update files marked NO UPDATE NEEDED.
+Update ONLY the files listed below. Do not update files marked NO UPDATE NEEDED.
 Keep core files LEAN — a summary plus a pointer, never the full reference.
+
+**These updates are PERFORMED by `wire.sh`, not pasted.** `wire.sh` writes each block
+behind its `<!-- BEGIN/END skill:64-agnes-video:<target> -->` marker REPLACE-IN-PLACE,
+with `[MASTER_FILES_FOLDER]` RESOLVED to this box's absolute master-files path, and
+stamps `<!-- skill:64-agnes-video:core-update-applied -->`. Earlier versions had no
+installer, so the generic merger copied this section VERBATIM: every box ended up with
+the literal word `Add:`, a markdown code fence, and the UNFILLED template variable
+`[MASTER_FILES_FOLDER]/64-agnes-video/agnes-video-full.md` — a pointer to a path that
+exists nowhere. Never paste the instruction — run `bash wire.sh`.
 
 ---
 
