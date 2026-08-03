@@ -88,7 +88,23 @@ GHL_MCP_EXPECT_MAX_TOOLS="${GHL_MCP_EXPECT_MAX_TOOLS:-200}"
 [ -z "$URL" ] && URL="http://localhost:${GHL_MCP_PORT}"
 URL="${URL%/}"
 
-if [ -d /data/logs ]; then LOG_DIR="/data/logs"; else LOG_DIR="$HOME/Library/Logs/ghl-mcp"; fi
+# R12 — HONOUR GHL_MCP_LOG_DIR. This used to be computed here and the caller's
+# GHL_MCP_LOG_DIR was ignored outright — the very variable the autostart passes
+# into the launchd plist, the pm2 ecosystem, the systemd unit and the supervisor
+# loop. Two consequences, both real:
+#   1. The probe's log location was coincidental rather than configured.
+#   2. tests/unit/ghl-mcp-probe.test.sh had no way to redirect it, so running the
+#      unit test appended real-looking OK/DEAF/NO_LISTENER/PROFILE_DRIFT verdicts
+#      to the BOX's production probe.log. The operator box's probe.log was found
+#      to be 100% test output, which makes a genuine DEAF verdict indistinguish-
+#      able from a fixture in the probe's only durable record.
+if [ -n "${GHL_MCP_LOG_DIR:-}" ]; then
+  LOG_DIR="$GHL_MCP_LOG_DIR"
+elif [ -d /data/logs ]; then
+  LOG_DIR="/data/logs"
+else
+  LOG_DIR="$HOME/Library/Logs/ghl-mcp"
+fi
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
 # ── LOG ROTATION (fleet gap: these logs never rotated — 5.4 MB on the operator
@@ -143,6 +159,99 @@ alert_operator() {
   done
   [ -n "$route" ] || return 0
   bash "$route" general-task "$title" "$body" >/dev/null 2>&1 || true
+}
+
+# ── R13: ALERT ROUTING — card by default, Rangers only on a sustained outage ──
+# The probe already self-heals ONCE, so a single transient must never page a
+# human. The escalation threshold is therefore 3 CONSECUTIVE identical non-OK
+# verdicts — 45 minutes at the 15-minute cadence — which is a genuinely stuck
+# server, not a blip. State lives in one small file so it survives between runs.
+#
+#   $LOG_DIR/.probe-streak  ->  "<state> <consecutive_count> <escalated:0|1>"
+#
+# Reset on OK/RECOVERED. Escalation fires EXACTLY ONCE per unbroken streak (the
+# `escalated` flag): Rescue Rangers enforces a hard 25-exchange-per-day cap, so a
+# probe that re-paged every 15 minutes would burn a client's whole daily budget
+# on one incident and lock out real escalations.
+STREAK_FILE="$LOG_DIR/.probe-streak"
+
+read_streak() {   # echoes "state count escalated"
+  if [ -f "$STREAK_FILE" ]; then
+    tr -d '\r' < "$STREAK_FILE" 2>/dev/null | head -1
+  else
+    printf 'NONE 0 0'
+  fi
+}
+write_streak() { printf '%s %s %s\n' "$1" "$2" "$3" > "$STREAK_FILE" 2>/dev/null || true; }
+clear_streak() { rm -f "$STREAK_FILE" 2>/dev/null || true; }
+
+# Rescue Rangers escalation — the n8n webhook documented in
+# scripts/rescue-escalation-section.md.tpl. Fail-soft in every direction and it
+# NEVER changes the probe's exit code.
+#
+# IDENTITY IS FAIL-CLOSED ON PURPOSE. An escalation whose boxName is not this
+# box's canonical fleet slug cannot be attributed, is not counted against the
+# right account, and pollutes the shared Rangers queue. If either the webhook URL
+# or FLEET_STANDING_BOX_SLUG is absent we do NOT invent one and do NOT send a
+# malformed payload — we say so on the operator card instead, which is always
+# sent alongside. No client identity is hardcoded here; every field comes from
+# the box's own environment at runtime.
+escalate_rescue_rangers() {
+  local state="$1" detail="$2"
+  local url="${RESCUE_RANGERS_WEBHOOK_URL:-}"
+  local slug="${FLEET_STANDING_BOX_SLUG:-}"
+  if [ -z "$url" ] || [ -z "$slug" ]; then
+    local missing=""
+    [ -z "$url" ]  && missing="RESCUE_RANGERS_WEBHOOK_URL"
+    [ -z "$slug" ] && missing="${missing:+$missing and }FLEET_STANDING_BOX_SLUG"
+    say "  [ghl-mcp-probe] Rangers escalation SKIPPED (missing $missing) — the operator card carries the signal instead"
+    return 0
+  fi
+  command -v curl >/dev/null 2>&1 || return 0
+  local payload ver
+  ver="$(openclaw --version 2>/dev/null | head -1 | tr -d '"' || echo unknown)"
+  payload="$(GHLP_SLUG="$slug" GHLP_STATE="$state" GHLP_DETAIL="$detail" GHLP_VER="${ver:-unknown}" \
+    GHLP_PERSON="${RESCUE_RANGERS_PERSON:-operator}" \
+    GHLP_CLIENT="${RESCUE_RANGERS_CLIENT_NAME:-$slug}" \
+    GHLP_AGENT="${RESCUE_RANGERS_AGENT_NAME:-ghl-mcp-probe}" \
+    GHLP_BOXTYPE="${RESCUE_RANGERS_BOX_TYPE:-unknown}" \
+    GHLP_RETURN="${RESCUE_RANGERS_RETURN_TO:-}" \
+    python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+p = {
+    "action": "escalate",
+    "person": os.environ.get("GHLP_PERSON", "operator"),
+    "clientName": os.environ.get("GHLP_CLIENT", ""),
+    "agentName": os.environ.get("GHLP_AGENT", "ghl-mcp-probe"),
+    "boxName": os.environ.get("GHLP_SLUG", ""),
+    "boxType": os.environ.get("GHLP_BOXTYPE", "unknown"),
+    "openclawVersion": os.environ.get("GHLP_VER", "unknown"),
+    "problem": ("GHL Tier 2 community MCP has been " + os.environ.get("GHLP_STATE", "")
+                + " for 3 consecutive 15-minute probes (~45 minutes). " + os.environ.get("GHLP_DETAIL", "")),
+    "alreadyTried": ("1. ghl-mcp-probe --heal performed one bounded supervisor restart and re-probed. "
+                     "2. The restart did not restore a JSON-RPC response. "
+                     "3. Next step is scripts/ghl-mcp-autostart.sh, which re-pins, rebuilds from the vetted "
+                     "commit into a temp dir and swaps dist/ only on success."),
+    "returnTo": os.environ.get("GHLP_RETURN", ""),
+}
+print(json.dumps(p))
+PYEOF
+)"
+  [ -n "$payload" ] || return 0
+  # NO ARRAYS HERE, deliberately. macOS ships bash 3.2 and BOTH periodic callers
+  # invoke this script as `/bin/bash …` (the launchd probe plist and the VPS cron
+  # line), so expanding an EMPTY array as "${hdr[@]}" under `set -u` aborts with
+  # `hdr[@]: unbound variable` — which is the common case, since most boxes have
+  # no RESCUE_RANGERS_WEBHOOK_SECRET. Two explicit branches are bash-3.2 safe.
+  if [ -n "${RESCUE_RANGERS_WEBHOOK_SECRET:-}" ]; then
+    curl -sS -m 10 -X POST "$url" -H 'Content-Type: application/json' \
+      -H "X-Rescue-Secret: ${RESCUE_RANGERS_WEBHOOK_SECRET}" \
+      --data-binary "$payload" >/dev/null 2>&1 || true
+  else
+    curl -sS -m 10 -X POST "$url" -H 'Content-Type: application/json' \
+      --data-binary "$payload" >/dev/null 2>&1 || true
+  fi
+  say "  [ghl-mcp-probe] escalated to Rescue Rangers (3 consecutive ${state} verdicts)"
 }
 
 # ── 1. Is anything (and the RIGHT thing) listening? ──────────────────────────
@@ -230,12 +339,68 @@ RC=$?
 if [ "$RC" != "0" ] && [ "$HEAL" = "1" ]; then
   if heal_once; then
     report "RECOVERED" "(a bounded restart restored a JSON-RPC response on ${URL}; prior state rc=${RC})"
-    alert_operator "GHL MCP recovered after probe restart" \
-      "ghl-mcp-probe restarted the Tier 2 community MCP on ${URL} after it stopped answering JSON-RPC (prior rc=${RC}). It is answering now. Check ${LOG_DIR} if this repeats."
+    # R13: RATE-LIMIT the RECOVERED notice to at most one per hour. A flapping
+    # server (heal → drop → heal) would otherwise card the operator every 15
+    # minutes and train them to ignore the channel. The verdict is still written
+    # to probe.log every time; only the ALERT is throttled.
+    _RECOV_STAMP="$LOG_DIR/.probe-recovered-last"
+    _now="$(date -u +%s 2>/dev/null || echo 0)"
+    _last=0
+    [ -f "$_RECOV_STAMP" ] && _last="$(tr -dc '0-9' < "$_RECOV_STAMP" 2>/dev/null | head -1)"
+    [ -n "$_last" ] || _last=0
+    if [ "$((_now - _last))" -ge 3600 ] 2>/dev/null; then
+      alert_operator "GHL MCP recovered after probe restart" \
+        "ghl-mcp-probe restarted the Tier 2 community MCP on ${URL} after it stopped answering JSON-RPC (prior rc=${RC}). It is answering now. Check ${LOG_DIR} if this repeats."
+      printf '%s\n' "$_now" > "$_RECOV_STAMP" 2>/dev/null || true
+    else
+      say "  [ghl-mcp-probe] RECOVERED alert suppressed (one per hour per box; last $((_now - _last))s ago)"
+    fi
+    clear_streak
     exit 0
   fi
   run_probe; RC=$?
 fi
+
+# ── R13: streak accounting, computed BEFORE the verdict dispatch below ────────
+_STATE_NAME="OK"
+case "$RC" in
+  0) _STATE_NAME="OK" ;;
+  2) _STATE_NAME="NO_LISTENER" ;;
+  3) _STATE_NAME="DEAF" ;;
+  4) _STATE_NAME="PROFILE_DRIFT" ;;
+  *) _STATE_NAME="UNHEALTHY" ;;
+esac
+_PREV="$(read_streak)"
+_PREV_STATE="$(printf '%s' "$_PREV" | awk '{print $1}')"
+_PREV_COUNT="$(printf '%s' "$_PREV" | awk '{print $2}')"
+_PREV_ESC="$(printf '%s' "$_PREV" | awk '{print $3}')"
+[ -n "$_PREV_STATE" ] || _PREV_STATE="NONE"
+case "$_PREV_COUNT" in ''|*[!0-9]*) _PREV_COUNT=0 ;; esac
+case "$_PREV_ESC"   in ''|*[!0-9]*) _PREV_ESC=0 ;; esac
+
+_STREAK=1
+_ESCALATED=0
+if [ "$RC" = "0" ]; then
+  clear_streak
+else
+  if [ "$_PREV_STATE" = "$_STATE_NAME" ]; then
+    _STREAK=$((_PREV_COUNT + 1))
+    _ESCALATED="$_PREV_ESC"
+  fi
+  write_streak "$_STATE_NAME" "$_STREAK" "$_ESCALATED"
+fi
+
+# Escalate to Rescue Rangers on the 3rd CONSECUTIVE identical non-OK verdict
+# (~45 minutes), exactly once per unbroken streak. The operator card below is
+# still sent every cycle — escalation is additive, never a replacement.
+maybe_escalate() {
+  local detail="$1"
+  [ "$RC" = "0" ] && return 0
+  [ "$_STREAK" -ge 3 ] 2>/dev/null || return 0
+  [ "$_ESCALATED" = "0" ] || return 0
+  escalate_rescue_rangers "$_STATE_NAME" "$detail"
+  write_streak "$_STATE_NAME" "$_STREAK" 1
+}
 
 case "$RC" in
   0)
@@ -244,17 +409,20 @@ case "$RC" in
   2)
     report "NO_LISTENER" "(nothing healthy on ${URL} — the Tier 2 MCP is DOWN or another service owns the port)"
     alert_operator "GHL MCP DOWN (no listener)" \
-      "ghl-mcp-probe found no healthy GHL MCP on ${URL}. Tier 2 GHL tools will not resolve. Re-run scripts/ghl-mcp-autostart.sh on this box."
+      "ghl-mcp-probe found no healthy GHL MCP on ${URL}. Tier 2 GHL tools will not resolve. Re-run scripts/ghl-mcp-autostart.sh on this box. (consecutive NO_LISTENER probes: ${_STREAK})"
+    maybe_escalate "Nothing healthy is listening on ${URL}; Tier 2 GHL tools do not resolve."
     exit 2 ;;
   3)
     report "DEAF" "(/health is green but NO JSON-RPC response within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-dist deafness signature: every agent init will burn the full connectionTimeoutMs)"
     alert_operator "GHL MCP DEAF (alive but not answering)" \
-      "ghl-mcp-probe: ${URL}/health is green but /mcp returned no JSON-RPC response in ${GHL_MCP_PROBE_TIMEOUT}s. This is the stale-compiled-dist signature. Re-run scripts/ghl-mcp-autostart.sh (it rebuilds from the pinned commit and verifies the artifact)."
+      "ghl-mcp-probe: ${URL}/health is green but /mcp returned no JSON-RPC response in ${GHL_MCP_PROBE_TIMEOUT}s. This is the stale-compiled-dist signature. Re-run scripts/ghl-mcp-autostart.sh (it rebuilds from the pinned commit and verifies the artifact). (consecutive DEAF probes: ${_STREAK})"
+    maybe_escalate "/health is green but /mcp answers no JSON-RPC within ${GHL_MCP_PROBE_TIMEOUT}s — the stale-compiled-dist deafness signature. Every agent init on this box burns the full connectionTimeoutMs."
     exit 3 ;;
   4)
     report "PROFILE_DRIFT" "(answering, but tools=${TOOL_COUNT} is outside the ${GHL_MCP_EXPECT_MIN_TOOLS}..${GHL_MCP_EXPECT_MAX_TOOLS} band for profile=${GHL_MCP_TOOL_PROFILE} — GHL_TOOL_PROFILE is not taking effect)"
     alert_operator "GHL MCP tool-profile drift" \
-      "ghl-mcp-probe: ${URL} reports ${TOOL_COUNT} tools, outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}. The service definition may have lost the profile env. Re-run scripts/ghl-mcp-autostart.sh."
+      "ghl-mcp-probe: ${URL} reports ${TOOL_COUNT} tools, outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}. The service definition may have lost the profile env. Re-run scripts/ghl-mcp-autostart.sh. (consecutive PROFILE_DRIFT probes: ${_STREAK})"
+    maybe_escalate "The live tool count (${TOOL_COUNT}) is outside the band for GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}; the service definition appears to have lost the profile env."
     exit 4 ;;
   *)
     report "UNHEALTHY" "(${URL}/health responded but not as a healthy GHL MCP)"

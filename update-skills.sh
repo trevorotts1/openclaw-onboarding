@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.5.3"
+ONBOARDING_VERSION="v21.5.4"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.5.3 - safe_json_edit
+# v21.5.4 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5095,6 +5095,26 @@ PYEOF
       fi
     fi
 
+    # GHL MCP (skill 36) -- NOT sentinel-gated, for the same reason the model-map
+    # re-resolve above is not (R14).
+    #
+    # This used to be Step 4 INSIDE the sentinel-gated section below, so it ran
+    # exactly once per ONBOARDING_VERSION bump -- which made the release note's
+    # "weekly updates actually maintain the server" untrue between bumps. The
+    # server is a live third-party process on :8765: it drifts, dies, goes deaf,
+    # and (until this release) came back bound to 0.0.0.0 after any rebuild.
+    # Repairing it is exactly the kind of convergence that must happen on EVERY
+    # pass, not once per version.
+    #
+    # Concretely, sentinel-gating it would mean the D6 loopback-bind fix reached
+    # a box only when the version number happened to change -- the same
+    # "shipped but never delivered" failure this release exists to end.
+    #
+    # Safe to run every pass: wire_ghl_mcp is idempotent (it de-registers a legacy
+    # mcp.servers entry and backgrounds ghl-mcp-autostart.sh, which fast-paths to
+    # a no-op when the server is already healthy, pinned and answering JSON-RPC).
+    wire_ghl_mcp "$SKILL_NAME"
+
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
     if [ -f "$WIRED_SENTINEL" ]; then
@@ -5136,8 +5156,7 @@ PYEOF
     # Step 3: Install OS prereqs (ffmpeg/imagemagick for video skills)
     wire_prereqs "$SKILL_NAME"
 
-    # Step 4: Wire GHL MCP (skill 36 only)
-    wire_ghl_mcp "$SKILL_NAME"
+    # Step 4: (GHL MCP wiring moved ABOVE the sentinel -- see the note there.)
 
     # Step 5 (v12.0.0): Per-skill prerequisite check -- NOT sentinel-gated.
     # Runs on every wiring pass so a prereq satisfied between runs clears on
@@ -7286,6 +7305,39 @@ PYEOF
   converge_presentation_deps
 
   # ----------------------------------------------------------
+  # R14: REAP THE GHL MCP STATUS LINE.
+  #
+  # wire_ghl_mcp backgrounds ghl-mcp-autostart.sh to /tmp/ghl-mcp-autostart.log
+  # and nothing ever read it. The backgrounding is deliberate and stays (v10.15.49:
+  # a blocking autostart stalled the whole wiring loop, and macOS has no `timeout`)
+  # -- but it meant the ENTIRE STATUS contract was invisible on the path the fleet
+  # actually uses. PIN_INVALID, PIN_MISMATCH, BUILD_FAILED, TOKEN_REJECTED, DEAF,
+  # STARTED_UNHEALTHY: install.sh Step 14a parses every one of them, and a fleet
+  # roll saw none, so a roll could report success having refused to start an
+  # unpinned server on every box.
+  #
+  # Reading it here -- late, after the wiring loop has had time to finish -- costs
+  # nothing and closes the blind spot. The severity mapping mirrors install.sh
+  # Step 14a exactly, so the two paths describe the same state the same way.
+  # ----------------------------------------------------------
+  GHL_MCP_STATUS_LINE=""
+  if [ -f /tmp/ghl-mcp-autostart.log ]; then
+    GHL_MCP_STATUS_LINE="$(grep -E '^STATUS:' /tmp/ghl-mcp-autostart.log 2>/dev/null | tail -1 || true)"
+  fi
+  echo ""
+  case "$GHL_MCP_STATUS_LINE" in
+    "")                             echo "  GHL MCP: no STATUS line captured (autostart may still be running in the background, or skill 36 is not installed) -- see /tmp/ghl-mcp-autostart.log" ;;
+    *HEALTHY_ALREADY*|*"=HEALTHY "*) echo "  ✓ GHL MCP running + ANSWERING JSON-RPC. ${GHL_MCP_STATUS_LINE}" ;;
+    *SKIPPED_NO_CREDS*)             echo "  ℹ GHL MCP not started -- GHL token absent (honest gap, not a failure). ${GHL_MCP_STATUS_LINE}" ;;
+    *"=DEAF"*)                      echo "  ⚠ GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) -- every agent init will burn the full connectionTimeoutMs until fixed. ${GHL_MCP_STATUS_LINE}" ;;
+    *TOKEN_REJECTED*)               echo "  ⚠ GHL rejected the PIT -- the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${GHL_MCP_STATUS_LINE}" ;;
+    *PIN_MISMATCH*|*PIN_INVALID*)   echo "  ⚠ GHL MCP refused to start: the vetted commit pin could not be honoured -- an UNPINNED third-party MCP is never started. ${GHL_MCP_STATUS_LINE}" ;;
+    *STARTED_UNHEALTHY*)            echo "  ⚠ GHL MCP service installed but /health not green yet -- crash-only restart will retry. ${GHL_MCP_STATUS_LINE}" ;;
+    *BUILD_FAILED*)                 echo "  ⚠ GHL MCP build failed -- the PREVIOUS dist was left intact. ${GHL_MCP_STATUS_LINE}" ;;
+    *)                              echo "  GHL MCP autostart ran. ${GHL_MCP_STATUS_LINE}" ;;
+  esac
+
+  # ----------------------------------------------------------
   # v10.15.4: Post-pull qc-completeness check. Read-only. Runs against the live
   # workforce after every successful skill pull.
   #
@@ -7396,6 +7448,8 @@ The onboarding-resume cron will keep re-firing wiring + QC until every skill pas
 New skills (need activation): ${NEW_SKILLS_CSV:-none -- updates only}.
 
 Workforce QC: ${QC_STATUS_LINE:-not run} (exit ${QC_COMPLETENESS_RC:-?})
+
+GHL MCP (Tier 2): ${GHL_MCP_STATUS_LINE:-no STATUS line captured}
 
 Persona-index provisioning: ${_PIDX_SKIP_WARNINGS:+⚠️ SKIPPED — }${_PIDX_SKIP_WARNINGS:-OK (no skip warnings)}
 

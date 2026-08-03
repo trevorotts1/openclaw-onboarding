@@ -24,6 +24,7 @@ on:
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
       - tests/unit/ghl-mcp-supervised.test.sh
       - tests/unit/ghl-mcp-probe.test.sh
+      - tests/unit/ghl-mcp-bind-guard.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
   pull_request:
     paths:
@@ -34,6 +35,7 @@ on:
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
       - tests/unit/ghl-mcp-supervised.test.sh
       - tests/unit/ghl-mcp-probe.test.sh
+      - tests/unit/ghl-mcp-bind-guard.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
 
 jobs:
@@ -72,3 +74,13 @@ jobs:
         run: |
           chmod +x tests/unit/ghl-mcp-probe.test.sh
           bash tests/unit/ghl-mcp-probe.test.sh
+
+      # D6 (P0 security). This one is a MUTATION PROOF, not a lint: it boots a real
+      # node server that calls listen(port,'0.0.0.0') with and without the generated
+      # guard and asserts the OBSERVED bind address changes. Upstream hardcodes the
+      # 0.0.0.0 bind in both entry points, so a check that merely greps for
+      # "127.0.0.1" would go green on a fix that does nothing.
+      - name: Run GHL MCP loopback bind-guard unit test (proves the bind actually moves)
+        run: |
+          chmod +x tests/unit/ghl-mcp-bind-guard.test.sh
+          bash tests/unit/ghl-mcp-bind-guard.test.sh

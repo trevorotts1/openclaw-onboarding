@@ -407,6 +407,83 @@ else
     fi
   fi
 
+  # ── CHECK 10: LOOPBACK BIND (D6 — P0 SECURITY) ─────────────────────────────
+  # The community MCP holds a client's GHL Private Integration Token and serves
+  # GET /tools to anyone, unauthenticated. Upstream binds 0.0.0.0 from a
+  # hardcoded literal in BOTH entry points (src/main.ts:209,
+  # src/http-server.ts:176) — there is no HOST/MCP_SERVER_HOST variable, so a
+  # launch-surface env var ALONE is not a fix. A fleet survey found 19 Mac client
+  # boxes LAN-exposed in exactly this state.
+  #
+  # The enforceable invariant is therefore about the MECHANISM, not a string:
+  # each script must generate the bind guard AND the launcher must preload it,
+  # AND no launch surface may declare a routable bind host.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" ".ghl-mcp-bind-guard.cjs" && code_has_f "$f" "net.Server.prototype.listen"; then
+      _pass "$b generates the loopback bind guard (upstream hardcodes 0.0.0.0 in both entry points)"
+    else
+      _fail "$b does not generate the .ghl-mcp-bind-guard.cjs loopback guard — the server would bind ALL INTERFACES, exposing an unauthenticated CRM endpoint to the LAN."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has_f "$f" "GHL_MCP_BIND_HOST"; then
+      _pass "$b declares GHL_MCP_BIND_HOST in its launch surfaces"
+    else
+      _fail "$b never sets GHL_MCP_BIND_HOST — the bind guard has no configured loopback address."
+      FAILURES=$((FAILURES+1))
+    fi
+    # The launcher must actually LOAD the guard, or generating it is theatre.
+    if code_has_f "$f" 'NODE_OPTIONS="--require'; then
+      _pass "$b preloads the bind guard into node via NODE_OPTIONS --require"
+    else
+      _fail "$b generates a bind guard but never preloads it (NODE_OPTIONS=--require) — it would have no effect."
+      FAILURES=$((FAILURES+1))
+    fi
+    # A routable bind host anywhere in an executable line is the regression.
+    if code_has "$f" 'GHL_MCP_BIND_HOST=(\"|'"'"')?(0\.0\.0\.0|::)' ; then
+      _fail "$b sets GHL_MCP_BIND_HOST to a ROUTABLE address — the whole point is a loopback bind."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b never declares a routable GHL_MCP_BIND_HOST"
+    fi
+    if code_has_f "$f" "GHL_MCP_ALLOW_PUBLIC_BIND=1"; then
+      _fail "$b sets GHL_MCP_ALLOW_PUBLIC_BIND=1 — that escape hatch is for a deliberate per-box operator decision, never for a shipped launch surface."
+      FAILURES=$((FAILURES+1))
+    fi
+  done
+
+  # ── CHECK 11: NPM SUPPLY-CHAIN HARDENING (R5) ──────────────────────────────
+  # `npm ci … || npm install …` silently discards lockfile pinning at exactly the
+  # moment it matters (package.json and the lockfile disagreeing), which voids the
+  # vetting verdict's "dependency graph unchanged" claim. And without
+  # --ignore-scripts every transitive preinstall/install/postinstall hook runs as
+  # the box user with the GHL PIT in its environment, on every client machine —
+  # the delivery mechanism for essentially every major npm supply-chain incident.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has "$f" 'npm ci[^|]*\|\|[[:space:]]*npm install'; then
+      _fail "$b falls back to 'npm install' when 'npm ci' fails — that silently discards the lockfile and re-resolves from the registry. A lockfile mismatch must be a BUILD FAILURE."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b has no 'npm ci || npm install' lockfile-defeating fallback"
+    fi
+    if code_has "$f" 'npm (ci|install)' && ! code_has "$f" 'npm (ci|install)[^|&;]*--ignore-scripts'; then
+      _fail "$b runs npm without --ignore-scripts — third-party lifecycle hooks would execute as the box user with the GHL PIT in the environment."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b runs npm with --ignore-scripts (no third-party lifecycle hooks)"
+    fi
+    # The post-build production refresh must be lockfile-pinned too. The old shape
+    # ran `npm install --omit=dev` against the WORKING TREE, outside the temp-dir
+    # build discipline, with no lockfile guarantee — and only WARNed on failure.
+    if code_has "$f" 'npm install[^|&;]*--omit=dev'; then
+      _fail "$b still runs an unpinned 'npm install --omit=dev' — use 'npm ci --omit=dev --ignore-scripts' inside the temp-dir build discipline."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b has no unpinned 'npm install --omit=dev' production refresh"
+    fi
+  done
+
   # ── CHECK 8: TIER 2 STAYS ON-DEMAND (D2) ──────────────────────────────────
   # skill 36 v1.1.0 doctrine + qc-ghl-mcp-setup.sh Section D + 36/wire.sh M2 all
   # require ghl-community-mcp to be ABSENT from mcp.servers. The autostart used
