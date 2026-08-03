@@ -80,7 +80,7 @@ else
         "$REPO_ROOT/$SKILL22/CORE_UPDATES.md" \
         "$FIX/AGENTS.md" "$FIX/TOOLS.md" "$FIX/MEMORY.md" \
         "$FIX/SOUL.md" "$FIX/IDENTITY.md" "$FIX/USER.md" \
-        "$SENT" "$SKILL22" "0" > /dev/null 2>&1 || true
+        "$SENT" "$SKILL22" "0" "$FIX/master-files" > /dev/null 2>&1 || true
 
     if grep -qF "$SENT" "$FIX/AGENTS.md"; then
         pass "(A) core-update sentinel present in AGENTS.md"
