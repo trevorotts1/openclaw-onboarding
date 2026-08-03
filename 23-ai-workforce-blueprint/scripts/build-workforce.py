@@ -376,18 +376,31 @@ def load_non_interactive_config(config_file):
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (standard: 23 mandatory + 6 universal-primary-vertical = 29)
+# CANONICAL DEPARTMENT FLOOR (standard: 24 mandatory + 6 universal-primary-vertical = 30)
 # ============================================================
 # Every Zero Human Company is built with the mandatory canonical departments
-# (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
+# (24 in department-naming-map.json v2.8.0) PLUS the 6 universal primary
 # vertical-pack departments (one primary per pack, always added regardless of
-# industry) = 28 departments minimum. The floor is computed at runtime from the
+# industry) = 30 departments minimum. The floor is computed at runtime from the
 # live naming map (len(mandatory) + count of universal-primary pack depts); the
 # numbers in these comments describe the live data and are never a hardcoded
 # gate. The canonical floor is further expanded by keyword-matched industry
 # extras (flavor/additive, never reducing). Explicit client declines (a
 # mandatory dept, a universal-primary vertical, or a custom dept) are the ONLY
 # way to go below the floor.
+#
+# EXCEPTION — master-orchestrator: v2.8.0 registered "master-orchestrator" as
+# the naming map's 24th mandatory id so department-floor.py counts it on disk
+# (build-workforce.generate_departments_json() has always unconditionally
+# prepended its board column, with no decline path and no dependence on
+# selected_departments). load_canonical_floor() below deliberately FILTERS IT
+# BACK OUT of the set this file treats as "canonical" — it is never offered as
+# an interview decision, never auto-included by reconcile_canonical_floor(),
+# and never required by the decision-coverage gate. So everywhere else in THIS
+# file, "the 24 mandatory" and "the floor" mean the 23 ids load_canonical_floor()
+# actually returns, plus the 6 universal-primary verticals = 29 buildable/
+# declinable departments; the 30th (master-orchestrator) is floor-verification-
+# only. See department-naming-map.json's mandatory.master-orchestrator entry.
 # Canonical IDs live in department-naming-map.json (the source of truth). Legacy
 # RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
 # "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
@@ -695,7 +708,8 @@ def apply_semantic_merges(selected_departments, core_answers):
 def load_canonical_floor():
     """
     Read the mandatory canonical departments from department-naming-map.json
-    (23 in v2.6.2; the count is read live from the map, never hardcoded).
+    (24 in v2.8.0 — 23 of which are returned here; the count is read live from
+    the map, never hardcoded).
 
     Returns an ordered dict mapping canonical-id -> dept-info dict in the
     RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
@@ -704,6 +718,25 @@ def load_canonical_floor():
 
     Falls back to a hardcoded list if the map file cannot be read so the floor
     is still enforced on a broken install.
+
+    MASTER-ORCHESTRATOR EXCLUSION (v2.8.0): department-naming-map.json's
+    `mandatory` block carries 24 ids so department-floor.py's on-disk floor
+    check counts master-orchestrator (build-workforce.generate_departments_json()
+    has always unconditionally prepended its board column, independent of
+    selected_departments, with no decline path). But THIS function feeds
+    reconcile_canonical_floor()'s standard-unless-declined union,
+    _enforce_decision_coverage_or_refuse()'s fail-closed decision gate, and the
+    provisioning-receipt EXPECTED==BUILT equality check — all of which assume
+    every id returned here is a real interview yes/no/later decision that can
+    land in selected_departments. master-orchestrator is never such a decision
+    (it is provisioned once, outside the interview, and every other call site
+    in this file that touches it — create_department_workspace, add_agent_to_
+    config, _resolve_prior_chosen_entries, generate_departments_json — already
+    special-cases dept_id in ("ceo", "master-orchestrator", "dept-ceo") on the
+    assumption it never reaches selected_departments through this function).
+    So it is filtered back out immediately below, keeping this function's
+    live-derived + hardcoded-fallback paths both at 23 mandatory ids — the
+    ones the interview flow can actually decline.
     """
     map_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -718,16 +751,21 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
-    # (23 mandatory ids, v2.6.2) so a broken install that lost the naming map
-    # still enforces the full MANDATORY floor. The 6 universal-primary verticals
-    # are NOT in this list - they carry their OWN broken-install fallback in
-    # _universal_primary_ids() (_HARDCODED_UNIVERSAL_PRIMARY), so the combined floor
-    # still degrades to the full 23 + 6 = 29, never to 23 (and never to the older
+    # MINUS master-orchestrator (23 mandatory ids, v2.8.0) so a broken install
+    # that lost the naming map still enforces the full BUILDABLE MANDATORY
+    # floor. The 6 universal-primary verticals are NOT in this list - they
+    # carry their OWN broken-install fallback in _universal_primary_ids()
+    # (_HARDCODED_UNIVERSAL_PRIMARY), so the combined buildable floor still
+    # degrades to the full 23 + 6 = 29, never to 23 (and never to the older
     # stale 16). The full shipped role catalog is tracked separately in
-    # templates/role-library/_index.json - do not confuse it with the 29 floor.
-    # v2.6.2 (2026-07-16, operator ruling) added "funnels" as the 23rd mandatory
-    # id — see department-floor.py's HARDCODED_MANDATORY header for why it must
-    # be mandatory rather than vertical-gated.
+    # templates/role-library/_index.json - do not confuse it with either the
+    # 29 buildable floor or department-floor.py's 30 on-disk floor (which
+    # additionally counts master-orchestrator). v2.6.2 (2026-07-16, operator
+    # ruling) added "funnels" as the 23rd mandatory id — see department-floor.
+    # py's HARDCODED_MANDATORY header for why it must be mandatory rather than
+    # vertical-gated. v2.8.0 (2026-08-03, operator ruling) added
+    # "master-orchestrator" to the naming map as a FLOOR-ONLY 24th mandatory
+    # id; see the master-orchestrator exclusion filter immediately below.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
@@ -735,6 +773,12 @@ def load_canonical_floor():
         "social-media", "paid-advertisement", "personal-assistant",
         "general-task", "project-architecture-office", "bugs", "healer",
         "quality-control", "funnels",
+    ]
+    # MASTER-ORCHESTRATOR EXCLUSION (v2.8.0) — see docstring above. Applies to
+    # BOTH the live-derived list and the hardcoded fallback so a corrupt map
+    # can never accidentally admit it either.
+    canonical_ids = [
+        c for c in canonical_ids if c not in ("ceo", "master-orchestrator", "dept-ceo")
     ]
 
     floor = {}
@@ -1035,9 +1079,9 @@ def _refuse_interview_pending(reason, option):
 # department ids (one per pack flagged universal_primary=true in
 # department-naming-map.json v2.6.1). SAFETY NET ONLY: consulted solely when the
 # live map yields NO universal primaries (map missing / unreadable / corrupt) so a
-# broken install still expects the FULL 22 + 6 = 28 floor instead of silently
-# degrading to 22 and dropping every universal-primary vertical. MUST stay in
-# lockstep with department-naming-map.json and
+# broken install still expects the FULL 23 + 6 = 29 buildable floor instead of
+# silently degrading to 23 and dropping every universal-primary vertical. MUST
+# stay in lockstep with department-naming-map.json and
 # department-floor.HARDCODED_UNIVERSAL_PRIMARY. On a healthy install the live
 # derivation in _universal_primary_ids() returns the 6 real ids and this is never used.
 _HARDCODED_UNIVERSAL_PRIMARY = [
@@ -1056,8 +1100,8 @@ def _universal_primary_ids():
 
     BROKEN-INSTALL SAFETY NET: if the live map is unreadable and this derivation
     comes back EMPTY, the result falls back to _HARDCODED_UNIVERSAL_PRIMARY (the 6
-    ids) so the expected floor stays 22 + 6 = 28, never silently 22. This mirrors
-    load_canonical_floor()'s hardcoded-mandatory fallback and department-floor's
+    ids) so the expected buildable floor stays 23 + 6 = 29, never silently 23.
+    This mirrors load_canonical_floor()'s hardcoded-mandatory fallback and department-floor's
     HARDCODED_UNIVERSAL_PRIMARY. Distinct from the removed depts[0] auto-promotion:
     it triggers ONLY on a broken/missing map, never on a healthy install.
     """
@@ -2285,7 +2329,9 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 
     Logic (standard-unless-declined):
       final = (all canonical MINUS explicit "no" in build-state) UNION client customs
-      (canonical = the 22 mandatory in department-naming-map.json v2.6.0)
+      (canonical = the 23 buildable/declinable mandatory ids load_canonical_floor()
+      returns from department-naming-map.json v2.8.0's 24 mandatory ids —
+      master-orchestrator is excluded there; it is never an interview decision)
 
     - If a canonicalReconciliation.decisions block exists in build-state, honor
       each explicit "no" (drop that canonical dept) and keep everything else.
@@ -2536,7 +2582,8 @@ def apply_vertical_packs(selected_departments, core_answers):
     """
     WS-4 (CANONICAL FLOOR STANDARD): auto-add vertical-pack departments.
 
-    Standard set (the mandatory canonical floor, 22) is already applied
+    Standard set (the buildable mandatory canonical floor, 23 — see
+    load_canonical_floor()'s master-orchestrator exclusion) is already applied
     by reconcile_canonical_floor(). This sibling step adds the universal primary
     vertical departments (one per pack that flags one) PLUS keyword-matched extras:
 
@@ -2546,17 +2593,19 @@ def apply_vertical_packs(selected_departments, core_answers):
         department-naming-map.json. There is NO depts[0] fallback (v2.6.1) - a pack
         with no flagged dept (e.g. real-estate, whose listings flag was removed)
         contributes NOTHING here. The 6 flagged primaries are added to EVERY client
-        regardless of industry - giving 22+6=28 as the minimum floor (v2.6.1).
+        regardless of industry - giving 23+6=29 as the minimum buildable floor
+        (v2.8.0; department-floor.py's separate on-disk floor is 30 — it also
+        counts master-orchestrator, which this build-time step never touches).
         Industry matching does NOT gate these. A universal primary the owner
         explicitly declined in Phase 5.5 (canonicalReconciliation.decisions[id]
         == "no" or declinedDepartments[]) is SKIPPED here so the opt-out is honored
         symmetrically with the mandatory floor.
 
-      PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 28 floor):
+      PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 29 floor):
         Detect which packs match the client's industry/business context via
         auto_add_keywords. For each matching pack, add remaining (non-universal-
         primary) departments to selected_departments. These extras are ADDITIVE
-        and do NOT reduce the floor - they push the final count to 28+.
+        and do NOT reduce the floor - they push the final count to 29+.
 
       DE-DUP: all adds are de-duped against (a) the canonical floor under any
         canonical id/alias/variant, (b) a prior universal-primary already added,

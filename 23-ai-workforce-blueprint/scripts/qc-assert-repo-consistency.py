@@ -8,9 +8,13 @@ WHY THIS EXISTS (the bug it kills)
 The repo carries SIX independent sources of truth that, until now, NOTHING
 cross-checked:
 
-  1. FLOOR              department-naming-map.json `.mandatory` (23) +
-                        the 6 universal-primary vertical-pack depts = 29.
-                        Enforced on-disk by department-floor.py.
+  1. FLOOR              department-naming-map.json `.mandatory` (24, one of
+                        which — master-orchestrator — is never interview-
+                        declinable and is excluded from THIS gate's own
+                        floor_dept_ids(), leaving 23) + the 6 universal-primary
+                        vertical-pack depts = 29 gated here. department-floor.
+                        py's separate ON-DISK floor is 30 (it also counts
+                        master-orchestrator).
   2. ROSTERS            suggested-roles/<dept>-suggested-roles.md, parsed by
                         create_role_workspaces.parse_roster() — the proposed
                         specialist menu per department.
@@ -157,15 +161,29 @@ class Repo:
 
     # ── FLOOR ────────────────────────────────────────────────────────────────
     def floor_dept_ids(self):
-        """The floor dept ids: 22 mandatory + the universal-primary verticals
-        (currently 6 per naming-map v2.6.1 = 28; read live, never a frozen count).
+        """The floor dept ids: 23 mandatory + the universal-primary verticals
+        (currently 6 per naming-map v2.6.1 = 29; read live, never a frozen count).
 
         These are EXACTLY the dept_id keys that reach selected_departments in
         build-workforce.py (canonical ids, not legacy aliases), so they are the
         keys the persona maps must be checked against.
+
+        MASTER-ORCHESTRATOR EXCLUSION (v2.8.0): department-naming-map.json's
+        `mandatory` block carries 24 ids (department-floor.py's separate
+        on-disk floor check counts all 24). master-orchestrator is filtered
+        out here to keep the "EXACTLY reaches selected_departments" invariant
+        above TRUE — build-workforce.load_canonical_floor() filters it the
+        same way, since it is never an interview yes/no/later decision and is
+        provisioned outside selected_departments (see that function's
+        docstring). Without this filter, this gate would demand a roster/
+        persona/library entry keyed to "reaches selected_departments" for a
+        dept that structurally never does.
         """
         nm = self.naming_map
-        mandatory = list((nm.get("mandatory") or {}).keys())
+        mandatory = [
+            d for d in (nm.get("mandatory") or {}).keys()
+            if d not in ("ceo", "master-orchestrator", "dept-ceo")
+        ]
         ups = self.floor_mod.universal_primary_vertical_departments(nm)
         return mandatory, ups
 
@@ -798,19 +816,30 @@ def _extract_marker_value(repo_root, marker):
 
 
 def _synthesize_full_floor_departments(repo):
-    """Build a `selected_departments` dict covering ALL floor depts, shaped exactly
-    like the dict the real build feeds the generators ({name, emoji, head,
-    description} per dept id). Mandatory depts come from load_canonical_floor()
-    (same source the build uses); the 7 universal-primary verticals are assembled
-    from their naming-map auto_add_departments entry the SAME way apply_vertical_packs
-    does ({name, emoji, head: "Director of <name>", description: one_liner}).
+    """Build a `selected_departments` dict covering ALL BUILDABLE floor depts,
+    shaped exactly like the dict the real build feeds the generators ({name,
+    emoji, head, description} per dept id). Mandatory depts come from
+    load_canonical_floor() (same source the build uses, and the SAME function
+    real build-workforce.py calls — so its v2.8.0 master-orchestrator exclusion
+    applies here too, deliberately: master-orchestrator never reaches a real
+    selected_departments dict, so it must not appear in this synthesized one
+    either, or the generators below get called with a dept id that structurally
+    cannot exist in their real input and raise); the 6 universal-primary
+    verticals are assembled from their naming-map auto_add_departments entry
+    the SAME way apply_vertical_packs does ({name, emoji,
+    head: "Director of <name>", description: one_liner}).
 
     Returns (selected_departments, floor_ids) or raises on failure.
     """
     bw = _load_module("bw_artifact", repo.scripts / "build-workforce.py")
     # Mandatory floor depts, already in the {name,emoji,head,description} shape.
     floor = dict(bw.load_canonical_floor())  # {cid: {name,emoji,head,description}}
-    # Universal-primary vertical depts (the 7 not in load_canonical_floor()).
+    # Capture the mandatory ids BEFORE the universal-primary merge below extends
+    # `floor` — this is load_canonical_floor()'s own filtered set (23, never
+    # master-orchestrator), NOT a re-read of the raw naming map (which would
+    # reintroduce the excluded id).
+    mandatory = list(floor.keys())
+    # Universal-primary vertical depts (the 6 not in load_canonical_floor()).
     ups = repo.floor_mod.universal_primary_vertical_departments(repo.naming_map)
     vpacks = (repo.naming_map.get("vertical_packs") or {})
     vmeta = {}
@@ -831,7 +860,6 @@ def _synthesize_full_floor_departments(repo):
             "head": f"Director of {name}",
             "description": meta.get("one_liner", ""),
         }
-    mandatory = list((repo.naming_map.get("mandatory") or {}).keys())
     floor_ids = mandatory + list(ups)
     return bw, floor, floor_ids
 
@@ -1461,19 +1489,61 @@ _FORBIDDEN_DEFERRAL_LITERALS = [
 # Issue #10: STALE CANONICAL-FLOOR SIZE. The interviewer executes INSTRUCTIONS.md
 # verbatim, so a frozen floor number there makes the LLM pitch the WRONG department
 # set to a live client. The floor is computed at runtime by
-# scripts/list-canonical-departments.py (22 mandatory + the universal-primary
-# verticals; naming-map v2.6.1 = 22 + 6 = 28 after Listings Management was demoted
-# to an industry-gated real-estate vertical). The doc must DEFER to that script and
-# never hardcode the "7 universal-primary" / "= 29" framing. This guard fails if the
-# retired count reappears. Literals are matched case-insensitively as substrings, so
-# they must be phrasings that only ever occur in the stale framing.
-_FORBIDDEN_STALE_FLOOR_LITERALS = [
-    "7 universal-primary",
-    "7 universal primary",
-    "22 mandatory + 7",
-    "currently 29",
-    "primary = 29",
+# scripts/list-canonical-departments.py (currently 24 mandatory + the 6
+# universal-primary verticals; naming-map v2.8.0 = 24 + 6 = 30, after Master
+# Orchestrator was registered as the 24th mandatory dept). The doc must DEFER to
+# that script and never hardcode a frozen "N mandatory + M" / "= total" framing.
+#
+# INVERSION THIS FIXES: this guard used to hand-maintain a fixed literal list
+# that hardcoded which past floor numbers were "stale." When the floor moved
+# from 28 to 29 (v2.6.2, funnels), nobody updated the list, so it kept
+# forbidding "currently 29" / "primary = 29" — the framing that had just
+# BECOME correct — while the genuinely stale "28" framing (this docstring's
+# OWN prior wording included) went uncaught. Whichever number is correct RIGHT
+# NOW must never be able to end up in the forbidden set, no matter how many
+# times the floor moves after this fix ships.
+#
+# FIX: the forbidden set is DERIVED, not hand-typed. _HISTORICAL_FLOOR_STATES
+# below is a dated ledger of every (mandatory, universal) pair this repo has
+# shipped. _forbidden_stale_floor_literals() generates phrasings from every
+# entry EXCEPT whichever one matches the LIVE (mandatory, universal) count read
+# from department-naming-map.json at call time — so the number that is correct
+# today can never be forbidden today, and the next floor move only requires
+# appending the state being retired (the live count handles excluding it
+# automatically the moment the map changes). Literals are matched
+# case-insensitively as substrings, so they must be phrasings that only ever
+# occur in a stale framing.
+_HISTORICAL_FLOOR_STATES = [
+    (22, 7),   # pre-v2.6.1: 7 universal-primary packs, before listings was demoted
+    (22, 6),   # v2.6.1 -> v2.6.1: listings demoted to industry-gated = 28
+    (23, 6),   # v2.6.2 -> v2.7.0: funnels added as 23rd mandatory dept = 29
+    (24, 6),   # v2.8.0: master-orchestrator added as 24th mandatory dept = 30
 ]
+
+
+def _forbidden_stale_floor_literals(current_mandatory, current_universal):
+    """Generate stale-floor phrasings from _HISTORICAL_FLOOR_STATES, skipping
+    whichever entry (or component) matches the CURRENT live count — see the
+    Issue #10 comment above for why. A component-level skip (not just a
+    whole-pair skip) matters: universal has been 6 since v2.6.1, so a bare "6
+    universal-primary" must stay legal in every doc that mentions it today,
+    even while an older MANDATORY count paired with that same "6" is still
+    correctly forbidden (e.g. "23 mandatory + 6" is stale once mandatory is 24,
+    even though the universal half never changed)."""
+    current_floor = current_mandatory + current_universal
+    literals = set()
+    for mandatory, universal in _HISTORICAL_FLOOR_STATES:
+        floor = mandatory + universal
+        if mandatory != current_mandatory or universal != current_universal:
+            literals.add(f"{mandatory} mandatory + {universal}")
+        if universal != current_universal:
+            literals.add(f"{universal} universal-primary")
+            literals.add(f"{universal} universal primary")
+        if floor != current_floor:
+            literals.add(f"currently {floor}")
+            literals.add(f"primary = {floor}")
+            literals.add(f"= {floor}")
+    return sorted(literals)
 
 # Issue #10 (contextual): "Listings Management" is a LEGITIMATE industry-gated
 # real-estate-pack vertical, so it must NOT be forbidden outright — it appears
@@ -1491,11 +1561,32 @@ _FORBIDDEN_STALE_FLOOR_CONTEXTUAL = [
 def evaluate_forbidden_literals(skill_dir):
     """Scan the interviewer-executed markdown for forbidden phrasing:
       - LATER-deferral promises (Issue #7): LATER = build-now, no 90-day defer.
-      - stale canonical-floor size (Issue #10): the retired "7 universal-primary" /
-        "= 29" framing, and Listings-Management-pitched-as-universal-primary.
+      - stale canonical-floor size (Issue #10): every RETIRED floor phrasing in
+        _HISTORICAL_FLOOR_STATES except whichever one is correct RIGHT NOW
+        (read live from department-naming-map.json + department-floor.py, never
+        hand-typed here), and Listings-Management-pitched-as-universal-primary.
     Returns {"rc": 0|7, "violations": [(file, line_no, literal, text)]}."""
     root = Path(skill_dir)
     violations = []
+
+    # Live current (mandatory, universal) count — see _forbidden_stale_floor_
+    # literals()'s docstring for why this must never be hand-typed. Best-effort:
+    # if the naming map or department-floor.py can't be read, fall back to the
+    # NEWEST entry in _HISTORICAL_FLOOR_STATES (fails toward forbidding more
+    # phrasings, never toward silently exempting a stale one).
+    try:
+        naming_map_path = root / "department-naming-map.json"
+        nm = json.loads(naming_map_path.read_text(encoding="utf-8"))
+        floor_mod = _load_module(
+            "department_floor_forbidden_literals",
+            root / "scripts" / "department-floor.py",
+        )
+        current_mandatory = len(nm.get("mandatory") or {})
+        current_universal = len(floor_mod.universal_primary_vertical_departments(nm))
+    except Exception:
+        current_mandatory, current_universal = _HISTORICAL_FLOOR_STATES[-1]
+    forbidden_stale_floor_literals = _forbidden_stale_floor_literals(
+        current_mandatory, current_universal)
 
     def _rel(path):
         return str(path.relative_to(root.parent)
@@ -1519,7 +1610,7 @@ def evaluate_forbidden_literals(skill_dir):
             for lit in _FORBIDDEN_DEFERRAL_LITERALS:
                 if lit in low:
                     violations.append((_rel(path), i, lit, line.strip()[:120]))
-            for lit in _FORBIDDEN_STALE_FLOOR_LITERALS:
+            for lit in forbidden_stale_floor_literals:
                 if lit.lower() in low:
                     violations.append((_rel(path), i, lit, line.strip()[:120]))
             for lit, co in _FORBIDDEN_STALE_FLOOR_CONTEXTUAL:
