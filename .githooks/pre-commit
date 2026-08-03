@@ -24,7 +24,11 @@ cd "$REPO_ROOT" || exit 1
 
 # ── 1. Client-name guard (CRITICAL) ─────────────────────────────────────────
 if [ -f "scripts/qc-assert-no-client-names.sh" ]; then
-  if ! bash scripts/qc-assert-no-client-names.sh; then
+  # QC_GATE_CONTEXT: the gate's own durable audit log (outside the repo)
+  # records this run against HEAD — the parent commit this new commit will
+  # be based on, since the new commit's own SHA does not exist yet.
+  if ! QC_GATE_CONTEXT="pre-commit:$(git rev-parse HEAD 2>/dev/null || echo 'no-parent-commit')" \
+      bash scripts/qc-assert-no-client-names.sh; then
     echo ""
     echo "PRE-COMMIT BLOCKED: real client names detected in tracked files."
     echo "Replace each with a generic placeholder (see output above)."

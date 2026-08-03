@@ -37,7 +37,10 @@ if [ ! -f "$GATE" ]; then
   exit 1
 fi
 
-OUT="$(bash "$GATE" 2>&1)"
+# QC_GATE_CONTEXT="pre-push" (literal): a push covers a range of commits, not
+# one SHA, so the gate's own durable audit log records this run tagged
+# "pre-push" rather than any single commit.
+OUT="$(QC_GATE_CONTEXT="pre-push" bash "$GATE" 2>&1)"
 GATE_RC=$?
 
 case "$GATE_RC" in

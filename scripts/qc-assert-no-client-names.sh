@@ -1,5 +1,17 @@
 #!/usr/bin/env bash
-# qc-assert-no-client-names.sh — v2.3.0
+# qc-assert-no-client-names.sh — v2.4.0
+#
+# v2.4.0 FIX (bypass was unprovable): --no-verify leaves no trace, and until
+# now this gate wrote nothing durable of its own, so "the gate was never
+# bypassed" was a claim that could never be proven either way. FIX: every
+# real exit path now appends ONE line (timestamp, calling context — a commit
+# SHA / GITHUB_SHA when known, or the literal "pre-push" — and the verdict)
+# to an append-only log OUTSIDE the repo ($OPENCLAW_GATE_LOG_DIR or
+# ~/.openclaw/logs/qc-assert-no-client-names.log). A --no-verify commit/push
+# never calls this script at all, so its ABSENCE from the log on a given SHA
+# is itself the evidence of a bypass. The log never records a matched name,
+# path, or line — only the hit COUNT — so it can never itself become a
+# second leak surface.
 #
 # v2.3.0 FIX (CI green without weakening fail-closed): v2.2.0 made structural
 # mode exit 2 in CI. But CI can NEVER have a roster — a bare GitHub runner has
@@ -196,6 +208,36 @@ _load_derived_roster() {
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
+# ─── Durable audit log (OUTSIDE the repo) ──────────────────────────────────
+# Fix for "--no-verify leaves no trace, so 'the gate was never bypassed' is
+# unprovable": this gate now writes ONE append-only line per invocation to a
+# path outside the repo tree, so the evidence survives even a skipped hook,
+# a fresh clone, or a wiped working tree (a --no-verify commit/push simply
+# never calls this script, so its ABSENCE from the log is itself the record).
+# Format: timestamp | context=<commit SHA, GITHUB_SHA, or the literal
+# "pre-push"> | result=<verdict> | exit=<code> | hits=<count> | mode=<mode>.
+# NEVER writes a matched name, path, or line — only counts — so the log
+# itself can never become a second place a client name leaks.
+GATE_LOG_DIR="${OPENCLAW_GATE_LOG_DIR:-${HOME:-/root}/.openclaw/logs}"
+GATE_LOG_FILE="$GATE_LOG_DIR/qc-assert-no-client-names.log"
+_log_gate_run() {
+  local result="$1" exit_code="$2"
+  local ts context
+  ts="$(date -u +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || echo 'unknown-time')"
+  if [ -n "${QC_GATE_CONTEXT:-}" ]; then
+    context="$QC_GATE_CONTEXT"
+  elif [ -n "${GITHUB_SHA:-}" ]; then
+    context="$GITHUB_SHA"
+  else
+    context="$(git -C "$REPO_ROOT" rev-parse HEAD 2>/dev/null || echo 'no-git-head')"
+  fi
+  mkdir -p "$GATE_LOG_DIR" 2>/dev/null
+  printf '%s | context=%s | result=%s | exit=%s | hits=%s | mode=%s\n' \
+    "$ts" "$context" "$result" "$exit_code" "${HITS:-0}" "${MODE:-unset}" \
+    >> "$GATE_LOG_FILE" 2>/dev/null
+  return 0
+}
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo-root) REPO_ROOT="$2"; shift 2 ;;
@@ -203,7 +245,7 @@ while [ $# -gt 0 ]; do
       sed -n '1,56p' "$0"
       exit 0
       ;;
-    *) echo "Unknown arg: $1" >&2; exit 2 ;;
+    *) echo "Unknown arg: $1" >&2; _log_gate_run "USAGE_ERROR" 2; exit 2 ;;
   esac
 done
 
@@ -378,6 +420,7 @@ if [ "$HITS" -eq 0 ]; then
     else
       echo "[qc-assert-no-client-names] PASS (full, curated roster) — no roster client names, operator paths, or placeholder leaks in tracked files."
     fi
+    _log_gate_run "PASS" 0
     exit 0
   else
     # Structural mode (no roster from EITHER source — curated file or
@@ -398,12 +441,14 @@ if [ "$HITS" -eq 0 ]; then
       # where this same state still exits 2 (fail closed) below.
       echo "::warning title=qc-assert-no-client-names::CANNOT VERIFY (structural, CI) — no roster source exists on a bare CI runner by design, so the roster-specific per-name check DID NOT RUN here. Always-on tokens were checked and are clean. The blocking per-name gate runs locally, and in .githooks/pre-commit only on a clone where scripts/install-git-hooks.sh has been run."
       echo "[qc-assert-no-client-names] CANNOT VERIFY (structural, CI — report-only) — neither a curated roster nor an accounts.md-derived roster is available in this CI environment (CI never has either — no operator-local files exist on a bare runner, and client PII is intentionally never provisioned into CI secrets), so the roster-specific per-name check DID NOT RUN. Always-on tokens (operator path + .example placeholder leaks) were checked and are clean, but that alone does NOT mean 'no client names' — this is NOT a pass of the per-name check. See the ADVISORY heuristic output above for a second, non-authoritative signal. The blocking per-name gate runs locally, and in .githooks/pre-commit only on a clone where scripts/install-git-hooks.sh has been run, where the accounts.md-derived roster exists and this same state fails closed (exit 2)." >&2
+      _log_gate_run "CANNOT_VERIFY_CI_REPORT_ONLY" 0
       exit 0
     else
       # LOCAL / pre-commit: a roster genuinely exists on this class of machine
       # (accounts.md derivation), so "no roster anywhere" is a genuinely
       # exceptional state — FAIL CLOSED.
       echo "[qc-assert-no-client-names] CANNOT VERIFY (structural) — neither \$OPENCLAW_CLIENT_ROSTER / ~/.openclaw/client-roster.txt NOR an accounts.md-derived roster could be loaded (see the WARNINGs above for which one failed and why), so the roster-specific per-name check DID NOT RUN. Always-on tokens (operator path + .example placeholder leaks) were checked and are clean, but that alone does NOT mean 'no client names'. Fix: provide a curated roster, or point \$OPENCLAW_ACCOUNTS_MD at a readable accounts.md-shaped file (default ~/clawd/accounts/accounts.md)." >&2
+      _log_gate_run "CANNOT_VERIFY_FAIL_CLOSED" 2
       exit 2
     fi
   fi
@@ -418,5 +463,6 @@ else
   echo "  JSON examples: '{{ownerName}}', 'Sample Company', '{{agentName}}'"
   echo "  See AGENTS.md rule N0 (no co-mingling) + repo memory entry"
   echo "  [repo-is-fleet-wide-no-client-names]."
+  _log_gate_run "FAIL_HITS_FOUND" 1
   exit 1
 fi
