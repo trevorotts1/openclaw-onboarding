@@ -35,10 +35,12 @@ skill_full() {
   cat > "$T/58-podcast-production-engine/SKILL.md" <<'SK'
 # Podcast Production Engine (Skill 58)
 
-## Activation layer (the production processor)
+## Activation layer (no-daemon design)
 
-register-podcast-hook.sh installs the intake hook, podcast_controller.py
-drives queued flows, install-podcast-department.sh installs the agent.
+register-podcast-hook.sh installs the intake hook, webhook/intake_handler.py
+is the deterministic first step of the controllerId runbook, and
+install-podcast-department.sh installs the agent. There is no controller
+daemon and no poller scheduler.
 
 ## Next section
 SK
@@ -54,10 +56,11 @@ SK
 }
 
 mk_scripts() {
+  mkdir -p "$SCRIPTS/webhook"
   printf '#!/bin/bash\n' > "$SCRIPTS/register-podcast-hook.sh"
   printf '#!/bin/bash\n' > "$SCRIPTS/install-podcast-department.sh"
-  printf '#!/usr/bin/env python3\n' > "$SCRIPTS/podcast_controller.py"
-  chmod 755 "$SCRIPTS"/*
+  printf '#!/usr/bin/env python3\n' > "$SCRIPTS/webhook/intake_handler.py"
+  chmod 755 "$SCRIPTS/register-podcast-hook.sh" "$SCRIPTS/install-podcast-department.sh" "$SCRIPTS/webhook/intake_handler.py"
 }
 
 pass=0
@@ -87,7 +90,7 @@ mk_scripts; skill_full
 check_rc "A complete layer exits 0" 0
 check_note "A reports verified" "activation layer verified"
 
-# B: partial layer (only the controller present) exits 7 with missing-script errors
+# B: partial layer (only the intake handler present) exits 7 with missing-script errors
 rm -f "$SCRIPTS/register-podcast-hook.sh" "$SCRIPTS/install-podcast-department.sh"
 check_rc "B partial layer exits 7" 7
 check_note "B names missing hook script" "missing script 58-podcast-production-engine/scripts/register-podcast-hook.sh"
@@ -110,10 +113,11 @@ cat > "$T/58-podcast-production-engine/SKILL.md" <<'SK'
 register-podcast-hook.sh and install-podcast-department.sh only.
 SK
 check_rc "E undocumented script exits 7" 7
-check_note "E names the undocumented script" "activation section does not document podcast_controller.py"
+check_note "E names the undocumented script" "activation section does not document webhook/intake_handler.py"
 
 # F: zero activation scripts on disk exits 0 and reports not installed (co-land tolerance)
-rm -f "$SCRIPTS"/*
+rm -rf "$SCRIPTS"
+mkdir -p "$SCRIPTS"
 skill_full
 check_rc "F zero scripts exits 0" 0
 check_note "F reports not installed" "activation layer not installed"

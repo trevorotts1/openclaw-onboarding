@@ -228,14 +228,24 @@ queued flow sits until the bound session gets a turn that executes the pipeline.
 Turning queued flows into running episodes is the job of the ACTIVATION LAYER,
 and the failure mode when any piece is absent is the worst one the engine can
 show a client: intake succeeds, the card says Received, and nothing is ever
-produced. Four components, in dependency order:
+produced.
+
+NO-DAEMON DESIGN (binding, per webhook-design.md Section 7). There is NO
+controller daemon, NO scheduler daemon, and NO queue poller. The podcast
+department agent that owns session podcast:intake:<client-slug> advances each
+flow in its OWN turn: the intake route's controllerId runbook opens with ONE
+deterministic first step, scripts/webhook/intake_handler.py --mode in-flow,
+and continues the 18-step pipeline in the same session. The act-2 controller
+daemon was EXCLUDED from this campaign as a design violation; no file named
+podcast_controller.py or podcast_scheduler.py is part of this engine, and a
+guard or verifier that requires one is a gate-contract error. Three build
+files make up the activation layer, in dependency order:
 
 | Component | What it does | Concrete pointer |
 |---|---|---|
 | `register-podcast-hook.sh` | Installs the per-client intake route and binds it to the podcast session | `scripts/webhook/route-template.json5` (the live-verified route schema) |
 | `install-podcast-department.sh` | Installs and binds the podcast department agent (director-of-podcast) that owns the bound session | wiring.json `department` and `session_binding` blocks |
-| `podcast_controller.py` | The production processor: advances each queued flow through Steps 1 to 18 in the agent's OWN turn | `scripts/webhook/flow_client.py` plus `scripts/podcast_state.py` |
-| The scheduler (heartbeat sweep) | Finds queued or waiting flows and credit-restored holds, hands each to the controller | `scripts/podcast_state.py` `resume` and `sweep-aged-out` |
+| `webhook/intake_handler.py` | The deterministic first step of the controllerId runbook: maps, tenant-checks, dedup-claims, persists the payload, then advances the flow into Step 1 (or closes it for duplicate / needs_input / test) | `scripts/webhook/route-template.json5` controllerId runbook plus `scripts/webhook/flow_client.py` |
 
 1. register-podcast-hook.sh, INTAKE ROUTE PLUS SESSION BINDING. Installs the
    per-client Webhooks plugin route into the gateway config
@@ -261,30 +271,36 @@ produced. Four components, in dependency order:
    session: every tool-bearing step (Convert and Flow REST, Podbean publish,
    custom-field writes, Skill 44 enrollment) executes in its OWN turn, never in
    a run_task(runtime="subagent") child, because sub-agents get no tools at all.
-3. podcast_controller.py, THE PRODUCTION PROCESSOR. The controller runbook that
-   advances a queued flow through the 18 steps: get_flow (flow_client.py) to
-   read the flow, derive the current pipeline step from the state
-   podcast_state.py wrote, drive the next step in the agent's own turn, record
-   EVERY stage change through podcast_state.py advance, then resume the flow
-   under the 409 read-check-reapply contract (expectedRevision; re-read before
-   re-applying; never a blind retry). The writer and the processor stay
-   separate by design: podcast_state.py is the SOLE state writer; the controller
-   sequences steps and writes nothing directly. On insufficient credits it holds
-   through podcast_state.py hold and parks the flow with set_waiting; on an
-   unrecoverable error it fails both. The kanban card mirrors each stage through
-   cc_board.py (run-begin, patch-phase, close); the board is display-only and
-   never recomputes state. The QC independence rule binds here: the Step 9 judge
-   persona and judge tier are never the drafting persona or the writer tier.
-4. The scheduler, HEARTBEAT SWEEP. The platform heartbeat sweep for this client's
-   box. One pass does three things: finds this route's TaskFlows that are queued
-   or waiting and resumes each through the controller; re-checks held jobs whose
-   credits were restored and resumes them at their resume_stage; runs
-   podcast_state.py sweep-aged-out for the 60-day cap. The sweep never produces
-   an episode itself; it only hands work to the controller. Furnace constraint
-   (guard-cron-inventory.py is binding): the sweep rides the platform's own
-   heartbeat mechanism, registers NO per-client cron, and never adds a second
-   cron, a queue poller, a per-job watcher, or anything sub-daily; the client's
-   ONE recurring job remains the daily smoke test.
+3. webhook/intake_handler.py, THE DETERMINISTIC FIRST STEP. The controllerId
+   runbook's first step: ONE Bash call, no language model, no Model Context
+   Protocol. It maps the payload, tenant-checks it, dedup-claims it through the
+   intake ledger, persists it, and then either advances the flow into Step 1 or
+   closes it (duplicate / needs_input / test / wrong-tenant delivery). In the
+   primary in-flow path the plugin has already created the flow and the handler
+   is its first deterministic step, so the department agent's own turn simply
+   continues the runbook from there; in the degraded trigger-flow path the
+   handler creates the managed flow itself, with identical own-turn
+   advancement. The 18-step advance contract stays with the agent's own turn:
+   get_flow (flow_client.py) to read the flow, derive the current pipeline step
+   from the state podcast_state.py wrote, drive the next step, record EVERY
+   stage change through podcast_state.py advance, then resume the flow under
+   the 409 read-check-reapply contract (expectedRevision; re-read before
+   re-applying; never a blind retry). podcast_state.py is the SOLE state
+   writer; the runbook sequences steps and writes nothing directly. On
+   insufficient credits it holds through podcast_state.py hold and parks the
+   flow with set_waiting; on an unrecoverable error it fails both. The kanban
+   card mirrors each stage through cc_board.py (run-begin, patch-phase, close);
+   the board is display-only and never recomputes state. The QC independence
+   rule binds here: the Step 9 judge persona and judge tier are never the
+   drafting persona or the writer tier.
+
+No scheduler daemon, no heartbeat poller. Advancement is EVENT-DRIVEN: an
+accepted intake fires the route's controllerId runbook in the bound session,
+and the platform's own flow machinery resumes set_waiting flows. Furnace
+constraint (guard-cron-inventory.py is binding): this engine registers NO
+per-client cron, never adds a second cron, a queue poller, a per-job watcher,
+or anything sub-daily; the client's ONE recurring job remains the daily smoke
+test (podcast-smoke-test.py via openclaw cron, per provision-podcast-client.sh).
 
 Wiring source of truth. Every name above resolves against ONE machine-readable
 file: `23-ai-workforce-blueprint/department-wiring/podcast-engine/wiring.json`.
@@ -299,12 +315,13 @@ is wrong. The department-and-persona plain-language companion is the README.md
 in the same folder.
 
 Activation order and canary. Register the route, install the department agent,
-arm the scheduler, in exactly that order (each step's verify is in
-SOP-PODCAST-01 Section 8). Verification is ONE observed move: a _test-gated
-canary submission must land on the route, be claimed by the ledger, create the
-job, and ADVANCE past `received` within one sweep interval. A job that stays
-`received` with its flow still queued means one of the three components is
-absent or mis-wired; the canary lifecycle checklist is
+in exactly that order (each step's verify is in SOP-PODCAST-01 Section 8).
+There is no scheduler to arm: advancement fires on the intake event itself.
+Verification is ONE observed move: a _test-gated canary submission must land on
+the route, be claimed by the ledger, create the job, and ADVANCE past
+`received` on the intake turn. A job that stays `received` with its flow still
+queued means one of the three components is absent or mis-wired; the canary
+lifecycle checklist is
 `23-ai-workforce-blueprint/department-wiring/podcast-engine/card-lifecycle-proof-plan.md`.
 
 ## Step ownership (binding)
@@ -774,7 +791,7 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 | Alert dedup and storm cap, gateway-only | scripts/alert-dedup.py |
 | Daily funded-reachability smoke test | scripts/podcast-smoke-test.py |
 | Facebook-ads activation checklist item never drifts out of the client-onboarding runbook (SOP-PODCAST-02 Section 2.9) | scripts/guard-runbook-fb-activation-checklist.py |
-| Activation layer (hook registration, production processor, department installer) present in the build and healthy on a provisioned box; missing or broken activation fails loud | scripts/guard-activation-health.py (wired into qc-podcast.sh, act-6) |
+| Activation layer (hook registration, the deterministic webhook/intake_handler.py first step, department installer) present in the build and healthy on a provisioned box; no-daemon contract upheld (route binding shape, agent materialization, intake env secrets, no poller cron); missing or broken activation fails loud | scripts/guard-activation-health.py (wired into qc-podcast.sh, act-6) |
 
 If the repo is not updated, it is not done. A sub-agent's claim of done is a hypothesis until
 independently verified.

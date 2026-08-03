@@ -247,10 +247,15 @@ fi
 
 # -- act-6: activation-layer health gate --------------------------------------
 # The fleet-safety net for the Leanne incident: intake and publish worked but
-# the PRODUCTION PROCESSOR never activated because the activation layer
-# (register-podcast-hook.sh, podcast_controller.py, install-podcast-department.sh)
-# was absent from the build and from the box, and nothing ever said so.
-# guard-activation-health.py fails that class of gap LOUDLY.
+# queued flows never ran because the activation layer
+# (register-podcast-hook.sh, webhook/intake_handler.py,
+# install-podcast-department.sh) was absent from the build and from the box,
+# and nothing ever said so. guard-activation-health.py fails that class of
+# gap LOUDLY. The layer is NO-DAEMON by design: the bound podcast department
+# agent advances each flow in its own turn, and the route's controllerId
+# runbook opens with the deterministic intake handler; there is no controller
+# daemon, no scheduler daemon, and no poller cron (the only recurring podcast
+# cron is the daily smoke test).
 #
 # Severity (the guard decides; qc-podcast.sh maps rc to counters):
 #   rc 0  activation layer present and healthy where checkable.

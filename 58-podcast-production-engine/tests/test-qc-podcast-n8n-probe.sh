@@ -107,15 +107,20 @@ mkdir -p "$TMP_HOME/.openclaw/skills/58-podcast-production-engine"
 # act-6 note: run a SANDBOX COPY of the gate with the three activation-layer
 # files present (they ship on sibling branches, not this tree) so the act-6
 # activation section stays non-fatal here and the n8n probe alone decides the
-# exit code, exactly as U038 intended.
+# exit code, exactly as U038 intended. Contract (act-8 gate alignment): the
+# layer is no-daemon, so the three files are the hook registration, the
+# deterministic intake handler, and the department installer; no controller
+# daemon, no scheduler.
 SANDBOX_GATE="$TMP_HOME/gate/qc-podcast.sh"
-mkdir -p "$TMP_HOME/gate/scripts"
+mkdir -p "$TMP_HOME/gate/scripts/webhook"
 cp "$SCRIPT" "$SANDBOX_GATE"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP_HOME/gate/scripts/register-podcast-hook.sh"
-printf 'import sys\nif "--help" in sys.argv:\n    sys.exit(0)\nsys.exit(0)\n' > "$TMP_HOME/gate/scripts/podcast_controller.py"
+printf '#!/usr/bin/env python3\n# deterministic first step of the controllerId runbook\n' > "$TMP_HOME/gate/scripts/webhook/intake_handler.py"
 printf '#!/usr/bin/env bash\nexit 0\n' > "$TMP_HOME/gate/scripts/install-podcast-department.sh"
 rc=0
-out="$(HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
+out="$(env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
+       -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
+  HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
   N8N_HOST="http://127.0.0.1:1" QC_N8N_PROBE_MODE=fail QC_N8N_PROBE_TIMEOUT=3 \
   bash "$SANDBOX_GATE" 2>&1)" || rc=$?
 [ "$rc" -eq 1 ] || fail "AC#3: unreachable host + fail mode must exit 1, got rc=$rc: $out"
@@ -124,7 +129,9 @@ pass "AC#3 (full gate): unreachable host + fail mode -> gate FAILs (exit 1)"
 
 # ─── AC#3 (full gate): unreachable host + warn mode -> WARN, gate passes ─────
 rc=0
-out="$(HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
+out="$(env -u PODCAST_ACTIVATION_PROVISIONED -u PODCAST_CLIENT_SLUGS \
+       -u PODCAST_INTAKE_HOOK_SECRET -u PODCAST_INTAKE_INBOUND_SECRET \
+  HOME="$TMP_HOME" PODBEAN_PODCAST_ID=12345 PODBEAN_PUBLISH_TOKEN=dummy \
   N8N_HOST="http://127.0.0.1:1" QC_N8N_PROBE_MODE=warn QC_N8N_PROBE_TIMEOUT=3 \
   bash "$SANDBOX_GATE" 2>&1)" || rc=$?
 [ "$rc" -eq 0 ] || fail "AC#3: unreachable host + warn mode must exit 0 (warn only), got rc=$rc: $out"

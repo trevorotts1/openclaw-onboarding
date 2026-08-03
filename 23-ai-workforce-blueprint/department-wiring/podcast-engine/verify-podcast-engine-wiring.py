@@ -28,17 +28,21 @@ Proves, structurally (no scores grepped), that:
      routing_only (master-orchestrator) executes no pipeline steps and cannot write;
      read_only_downstream covers social-media and marketing with no write access; and no
      explicit no-access department is also a granted department.
-  8. The ACTIVATION layer: the production processor that drives queued flows through the
-     18-step pipeline. The layer is complete when all three activation scripts exist
+  8. The ACTIVATION layer: the three scripts that turn an accepted intake into a
+     running flow under the NO-DAEMON design (webhook-design.md Section 7; there is
+     no controller daemon and no poller scheduler: the bound podcast department
+     agent advances each flow in its own turn, and the route's controllerId runbook
+     opens with the deterministic first step scripts/webhook/intake_handler.py
+     --mode in-flow). The layer is complete when all three activation scripts exist
      under 58-podcast-production-engine/scripts/ (register-podcast-hook.sh,
-     podcast_controller.py, install-podcast-department.sh), the shell scripts are
-     executable, and SKILL.md documents all three in an activation section. While none
-     of the three scripts is on disk yet, the layer is reported as not installed and is
-     not a failure (this pointer co-lands with the wave that builds the scripts, the
-     same co-land tolerance as the skill 58 map-to-disk check). The moment ANY one of
-     the three lands, the whole layer becomes mandatory: a partial or undocumented
-     activation layer is a violation. Without this layer, intake lands a TaskFlow but
-     nothing ever executes its steps.
+     webhook/intake_handler.py, install-podcast-department.sh), the shell scripts
+     are executable, and SKILL.md documents all three in an activation section.
+     While none of the three scripts is on disk yet, the layer is reported as not
+     installed and is not a failure (this pointer co-lands with the wave that
+     builds the scripts, the same co-land tolerance as the skill 58 map-to-disk
+     check). The moment ANY one of the three lands, the whole layer becomes
+     mandatory: a partial or undocumented activation layer is a violation. Without
+     this layer, intake lands a TaskFlow but nothing ever executes its steps.
 
 Exit codes:
   0 = all wiring assertions pass
@@ -66,11 +70,17 @@ DASHBOARD_CANDIDATES = [
 EXPECTED_PODCAST_OWNERS = {"director-of-podcast", "podcast-host", "audio-post-producer", "qc-specialist-podcast"}
 EXPECTED_AUDIO_SUPPORT = {"podcast-editor", "podcast-producer", "audio-mastering-specialist"}
 
-# Activation layer: the production processor set. Intake (webhook + TaskFlow plugin)
-# creates queued flows; these three scripts are what actually run them. Leanne's ticket:
-# without them, intake and publish work but queued flows never execute the 18 steps.
+# Activation layer under the NO-DAEMON design (webhook-design.md Section 7): the
+# bound podcast department agent advances each flow in its own turn; the route's
+# controllerId runbook opens with the deterministic first step
+# scripts/webhook/intake_handler.py --mode in-flow. There is NO controller daemon
+# and NO poller scheduler (the act-2 controller daemon was excluded as a design
+# violation), so podcast_controller.py and podcast_scheduler.py are not part of
+# the contract and must never be required here. These three scripts are what turn
+# an accepted intake into a running flow. Leanne's ticket: without them, intake
+# and publish work but queued flows never execute the 18 steps.
 ACTIVATION_SCRIPTS_DIR = os.path.join(REPO, "58-podcast-production-engine", "scripts")
-ACTIVATION_SCRIPTS = ("register-podcast-hook.sh", "podcast_controller.py", "install-podcast-department.sh")
+ACTIVATION_SCRIPTS = ("register-podcast-hook.sh", "webhook/intake_handler.py", "install-podcast-department.sh")
 SKILL_MD_PATH = os.path.join(REPO, "58-podcast-production-engine", "SKILL.md")
 
 

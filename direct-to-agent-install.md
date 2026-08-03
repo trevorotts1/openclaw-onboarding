@@ -69,14 +69,13 @@ Fetch the latest skill bundle from the unified repo (auto-detects Mac vs VPS):
 
 Place every skill folder under `<skills-dir>/`. Place root files (`Start Here.md`, `INSTALL-CONTRACT.md`, `AGENTS.md`, `cron-prompt.txt`, `check-updates.sh`, `force-update.sh`, etc.) at `<config-root>/`. Place `shared-utils/` under `<skills-dir>/shared-utils/`.
 
-This delivery INCLUDES the Podcast Production Engine (skill 58) activation layer. Verify that all four of these files exist under `<skills-dir>/58-podcast-production-engine/scripts/` after the download:
+This delivery INCLUDES the Podcast Production Engine (skill 58) activation layer. Verify that all three of these files exist under `<skills-dir>/58-podcast-production-engine/scripts/` after the download:
 
 - `register-podcast-hook.sh`
 - `install-podcast-department.sh`
-- `podcast_controller.py`
-- `podcast_scheduler.py`
+- `webhook/intake_handler.py` (the deterministic first step of the route's controllerId runbook)
 
-If any one is missing, the download is incomplete: re-fetch the skill bundle before continuing. A box without these files can never activate a client podcast processor, and that failure is silent until an episode is missed.
+If any one is missing, the download is incomplete: re-fetch the skill bundle before continuing. A box without these files can never activate a client podcast intake, and that failure is silent until an episode is missed. There is NO controller daemon and NO scheduler daemon in this design (the podcast department agent advances each flow in its own turn); the only recurring podcast cron is the daily smoke test (podcast-smoke-test.py via openclaw cron), so no controller or scheduler file should exist here.
 
 ### 6. Read the rules (N3, N4)
 Before installing ANY skill, read every file in:
@@ -116,18 +115,21 @@ Must exit 0.
 ### 9. Verify the podcast activation layer (skill 58)
 
 The Podcast Production Engine ships an activation layer: the inbound hook
-registration, the per-client department install, the podcast controller,
-and the podcast scheduler. Every install path (this one and the terminal
-`install.sh`) delivers these four scripts, and Step 5 above checks they exist.
-This step verifies the install actually landed, so a client podcast processor
-can never silently go missing on this box.
+registration, the deterministic intake handler (the first step of the route's
+controllerId runbook), and the per-client department install. The design is
+NO-DAEMON: the podcast department agent advances each flow in its own turn,
+there is no controller daemon and no scheduler daemon, and the only recurring
+podcast cron is the daily smoke test (podcast-smoke-test.py via openclaw
+cron). Every install path (this one and the terminal `install.sh`) delivers
+these three scripts, and Step 5 above checks they exist. This step verifies
+the install actually landed, so a client podcast intake can never silently go
+missing on this box.
 
-1. Confirm all four files exist under `<skills-dir>/58-podcast-production-engine/scripts/`:
+1. Confirm all three files exist under `<skills-dir>/58-podcast-production-engine/scripts/`:
 
    - `register-podcast-hook.sh`
    - `install-podcast-department.sh`
-   - `podcast_controller.py`
-   - `podcast_scheduler.py`
+   - `webhook/intake_handler.py`
 
    If any file is missing, re-download the skill bundle (Step 5) and re-check
    before continuing.
@@ -138,10 +140,11 @@ can never silently go missing on this box.
 python3 <skills-dir>/58-podcast-production-engine/scripts/guard-activation-health.py
 ```
 
-   The guard inspects the four activation artifacts and reports a pass when
-   the layer is complete. A failing guard means the processor activation
-   layer is absent or damaged; do not proceed to the interview until the
-   health check passes.
+   The guard inspects the three activation artifacts plus the no-daemon box
+   checks (route binding shape, department agent materialization, intake env
+   secrets presence, no poller cron) and reports a pass when the layer is
+   complete. A failing guard means the activation layer is absent or damaged;
+   do not proceed to the interview until the health check passes.
 
 3. Note: this step verifies that the activation layer is INSTALLED. It does
    not activate a client. Activation is per-client and happens inside
@@ -184,7 +187,7 @@ Confirm the install kickoff fired on all three channels:
 Reply to the user with:
 - Total skills installed (target: 33)
 - QC pass/fail count per wave
-- Podcast activation layer status (the Step 9 health-guard result: all four activation scripts present and guard-activation-health.py passing)
+- Podcast activation layer status (the Step 9 health-guard result: all three activation scripts present and guard-activation-health.py passing)
 - ZHC location
 - Active department list
 - Master Orchestrator agent ID
@@ -209,7 +212,7 @@ Reply to the user with:
 | Web research pre-flight | scripts/web-research-preflight.sh | agent fetches the same URLs |
 | Settings config | install.sh writes openclaw.json | agent writes openclaw.json |
 | Skill download | install.sh git/curl clones | agent git/curl clones |
-| Podcast activation delivery | Step 5 wholesale copy + per-file presence guarantee | Step 5 file check (four activation scripts) |
+| Podcast activation delivery | Step 5 wholesale copy + per-file presence guarantee | Step 5 file check (three activation scripts) |
 | Podcast activation verify | scripts/audit-podcast-activation.sh | Step 9 guard-activation-health.py |
 | Wave install + QC | install.sh + qc-agent.sh | agent invokes same scripts |
 | Triple-fire kickoff | fire_install_kickoff_triplet() | agent sends Telegram + writes AGENTS.md flag + replies in chat |

@@ -3,21 +3,32 @@
 # 58-PODCAST-PRODUCTION-ENGINE :: GUARD-ACTIVATION-HEALTH (act-6 fleet-safety net)
 # -----------------------------------------------------------------------------
 # DETERMINISTIC, NO-AI, FAIL-CLOSED. This guard exists because of one real
-# incident: intake and publish both worked, but the PRODUCTION PROCESSOR never
-# activated -- queued TaskFlows sat forever because the activation layer (hook
-# registration script, controller processor, department installer) was missing
-# from the build and from the box, and nothing ever said so. This gate makes
-# that whole class of gap FAIL LOUDLY.
+# incident: intake and publish both worked, but queued TaskFlows never ran --
+# the activation layer (hook registration script, department installer, the
+# deterministic intake handler) was missing from the build and from the box,
+# and nothing ever said so. This gate makes that whole class of gap FAIL
+# LOUDLY.
+#
+# THE NO-DAEMON DESIGN (the contract this guard enforces). There is NO
+# controller daemon and NO poller scheduler (webhook-design.md Section 7;
+# act-2, which would have built a controller daemon, was EXCLUDED as a design
+# violation). The bound department agent advances each flow in its OWN turn:
+# the intake route's controllerId runbook opens with ONE deterministic step,
+# scripts/webhook/intake_handler.py --mode in-flow, and continues the 18-step
+# pipeline in the same session. The ONLY recurring podcast cron in the design
+# is the daily smoke test (podcast-smoke-test.py via openclaw cron); no second
+# cron, no queue poller, ever.
 #
 # WHAT IT CHECKS
 #
 #   REPO PRESENCE (always runs; the --repo-only surface for CI/merge gates):
 #     R1. scripts/register-podcast-hook.sh      intake hook registration
-#     R2. scripts/podcast_controller.py         the production processor that
-#                                               drains queued TaskFlows through
-#                                               the 18 pipeline steps
-#     R3. scripts/install-podcast-department.sh department agent + scheduler
-#                                               installer for the box
+#     R2. scripts/webhook/intake_handler.py     the deterministic first step of
+#                                               the controllerId runbook; it
+#                                               maps, claims, persists, and
+#                                               advances each accepted intake
+#     R3. scripts/install-podcast-department.sh department agent installer for
+#                                               the box
 #     A missing file means the pipeline can never activate on ANY box. Any miss
 #     FAILS (exit 2). Paths are overridable for relocation tests but never
 #     exemptable.
@@ -36,17 +47,26 @@
 #         action API per flow_client.py). Any HTTP answer counts as reachable;
 #         only a connection failure or timeout FAILS. No credential ever leaves
 #         this probe.
-#     B4. an intake webhook route podcast-intake-<slug> is registered for every
-#         client slug in --client-slug / $PODCAST_CLIENT_SLUGS, read from the
-#         box openclaw.json at plugins.entries.webhooks.config.routes (the map
-#         keyed by routeId per scripts/webhook/route-template.json5; the scan
-#         tolerates JSON5 comments, never touches or prints a secret). With no
-#         configured slugs this is a SKIP, not a failure.
-#     B5. the controller is RUNNABLE (--help exits 0, bounded) and SCHEDULED.
-#         The engine is NO-DAEMON by design: the controller is a per-fire
-#         processor, so the proof of life is the scheduled heartbeat (a crontab
-#         entry or a launchd plist naming the controller or the installer), not
-#         a running process.
+#     B4. the intake route BINDING SHAPE: for every client slug in
+#         --client-slug / $PODCAST_CLIENT_SLUGS, the box openclaw.json carries
+#         plugins.entries.webhooks.config.routes["podcast-intake-<slug>"] with
+#         sessionKey "podcast:intake:<slug>" and a controllerId of the form
+#         "webhooks/podcast-intake-<slug>" (the controllerId runbook whose
+#         first step is the deterministic intake handler; the shape per
+#         scripts/webhook/route-template.json5). The scan tolerates JSON5
+#         comments and only ever extracts route ids and two key values; a
+#         secret value is never parsed, stored, or printed. With no configured
+#         slugs this is a SKIP, not a failure.
+#     B5. the intake env secrets are PRESENT in this process environment, and
+#         NOTHING is polling. PODCAST_INTAKE_HOOK_SECRET is the route secret
+#         (referenced by env SecretRef in openclaw.json; the gateway resolves
+#         process.env[id] on every request) and PODCAST_INTAKE_INBOUND_SECRET
+#         is the handler HMAC secret. The handler FAILS CLOSED when the HMAC
+#         secret is set, so a provisioned box without it cannot verify inbound
+#         signatures; only NOT-SET is ever printed, never a value. The
+#         no-poller half of B5: no crontab entry names a controller or
+#         scheduler daemon; a cron line naming such a daemon FAILS (the design
+#         has none).
 #
 # SEVERITY MODEL. Repo misses are ALWAYS fatal -- the build is broken
 # regardless of any box. On-box findings are FATAL when --strict is passed or
@@ -67,8 +87,8 @@
 #   python3 guard-activation-health.py --self-test
 # Test seams: $PODCAST_CRONTAB_BIN overrides the crontab binary (default
 # "crontab"); $PODCAST_LAUNCHD_DIR overrides the launchd plist directory
-# (default $HOME/Library/LaunchAgents); $OPENCLAW_CONFIG overrides the box
-# config file path.
+# (default $HOME/Library/LaunchAgents; kept for B5's no-poller scan);
+# $OPENCLAW_CONFIG overrides the box config file path.
 # =============================================================================
 """Fail-loud activation-layer health gate for the Podcast Production Engine."""
 
@@ -95,15 +115,33 @@ _REPO_ROOT = _SKILL_ROOT.parent
 
 DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789"
 
-# Skill-root-relative canonical paths for the activation layer.
+# Skill-root-relative canonical paths for the activation layer (no-daemon
+# design: no controller daemon, no poller scheduler; the bound department
+# agent advances each flow in its own turn).
 DEFAULT_HOOK_SCRIPT = "scripts/register-podcast-hook.sh"
-DEFAULT_CONTROLLER_SCRIPT = "scripts/podcast_controller.py"
+DEFAULT_HANDLER_SCRIPT = "scripts/webhook/intake_handler.py"
 DEFAULT_INSTALLER_SCRIPT = "scripts/install-podcast-department.sh"
 
 DEPT_AGENT_DIRNAME = "dept-podcast"
 ROUTE_ID_PREFIX = "podcast-intake-"
+CONTROLLER_ID_PREFIX = "webhooks/podcast-intake-"
+SESSION_KEY_PREFIX = "podcast:intake:"
 PROVISIONED_ENV = "PODCAST_ACTIVATION_PROVISIONED"
 SLUGS_ENV = "PODCAST_CLIENT_SLUGS"
+
+# Intake env secrets checked for PRESENCE only (never printed; SET/NOT-SET).
+INTAKE_SECRETS = (
+    ("PODCAST_INTAKE_HOOK_SECRET",
+     "route secret (env SecretRef in openclaw.json; the gateway resolves it "
+     "per request)"),
+    ("PODCAST_INTAKE_INBOUND_SECRET",
+     "HMAC secret verified by webhook/intake_handler.py"),
+)
+
+# A cron line naming any of these names a controller/scheduler daemon, which
+# the no-daemon design forbids (no poller, no per-job watcher, nothing
+# sub-daily; the sole recurring podcast cron is the daily smoke test).
+DAEMON_NAME_NEEDLES = ("podcast_controller", "podcast_scheduler")
 
 # Statuses a check line can carry.
 PASS = "PASS"
@@ -119,13 +157,14 @@ def _result(check_id, title, status, detail):
 # --------------------------------------------------------------------------- #
 # Repo presence checks (always run)
 # --------------------------------------------------------------------------- #
-def repo_checks(skill_root, hook_rel, controller_rel, installer_rel):
+def repo_checks(skill_root, hook_rel, handler_rel, installer_rel):
     """R1-R3: the activation layer files must exist in the build."""
     out = []
     for check_id, rel, what in (
         ("R1", hook_rel, "intake hook registration script"),
-        ("R2", controller_rel, "production processor (controller)"),
-        ("R3", installer_rel, "department + scheduler installer"),
+        ("R2", handler_rel, "deterministic intake handler "
+                            "(first step of the controllerId runbook)"),
+        ("R3", installer_rel, "department agent installer"),
     ):
         path = skill_root / rel
         if path.is_file():
@@ -141,13 +180,13 @@ def repo_checks(skill_root, hook_rel, controller_rel, installer_rel):
 # On-box checks
 # --------------------------------------------------------------------------- #
 def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
-               hook_rel, controller_rel, installer_rel):
+               hook_rel, handler_rel, installer_rel):
     """B1-B5: the activation layer must be live on this box."""
     out = []
 
     # B1: installed activation scripts ----------------------------------------
     missing = []
-    for rel in (hook_rel, controller_rel, installer_rel):
+    for rel in (hook_rel, handler_rel, installer_rel):
         if not (skill_root / rel).is_file():
             missing.append(rel)
     if missing:
@@ -179,7 +218,7 @@ def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
         out.append(_result("B3", "TaskFlow gateway reachable", FAIL,
                            "%s not reachable within %ss (%s)" % (gateway_url, timeout, why)))
 
-    # B4: intake route registered for every configured client ------------------
+    # B4: intake route BINDING SHAPE for every configured client ---------------
     if not slugs:
         out.append(_result("B4", "intake webhook routes registered", SKIP,
                            "no client slugs configured (--client-slug or $%s); "
@@ -197,38 +236,71 @@ def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
                 out.append(_result("B4", "intake webhook routes registered", FAIL,
                                    "cannot read %s: %s" % (config_path, type(exc).__name__)))
             else:
-                route_ids = scan_route_ids(text)
-                missing_routes = [s for s in slugs
-                                  if (ROUTE_ID_PREFIX + s) not in route_ids]
-                if missing_routes:
+                shapes = scan_route_shapes(text)
+                problems = []
+                for slug in slugs:
+                    route_id = ROUTE_ID_PREFIX + slug
+                    shape = shapes.get(route_id)
+                    if shape is None:
+                        problems.append(
+                            "no route %s" % route_id)
+                        continue
+                    if shape["sessionKey"] != SESSION_KEY_PREFIX + slug:
+                        problems.append(
+                            "%s sessionKey is %s, want %s"
+                            % (route_id, shape["sessionKey"] or "missing",
+                               SESSION_KEY_PREFIX + slug))
+                    if shape["controllerId"] != CONTROLLER_ID_PREFIX + slug:
+                        problems.append(
+                            "%s controllerId is %s, want %s (the controllerId "
+                            "runbook whose first step is the deterministic "
+                            "intake handler)"
+                            % (route_id, shape["controllerId"] or "missing",
+                               CONTROLLER_ID_PREFIX + slug))
+                if problems:
                     out.append(_result(
                         "B4", "intake webhook routes registered", FAIL,
-                        "no route podcast-intake-<slug> for: %s (config %s; "
-                        "registered podcast routes: %s)"
-                        % (", ".join(sorted(missing_routes)), config_path,
-                           ", ".join(sorted(route_ids)) or "none")))
+                        "route binding shape wrong (config %s; registered "
+                        "podcast routes: %s): %s"
+                        % (config_path,
+                           ", ".join(sorted(shapes)) or "none",
+                           "; ".join(problems))))
                 else:
                     out.append(_result(
                         "B4", "intake webhook routes registered", PASS,
-                        "route podcast-intake-<slug> registered for every "
-                        "configured slug: %s (config %s)"
+                        "route podcast-intake-<slug> registered with "
+                        "sessionKey podcast:intake:<slug> and controllerId "
+                        "webhooks/podcast-intake-<slug> for every configured "
+                        "slug: %s (config %s)"
                         % (", ".join(sorted(slugs)), config_path)))
 
-    # B5: controller runnable and scheduled (no-daemon proof of life) ----------
-    controller_path = skill_root / controller_rel
-    runnable, run_detail = _controller_runnable(controller_path, timeout)
-    scheduled, sched_detail = _controller_scheduled(controller_rel, installer_rel)
-    if runnable and scheduled:
-        out.append(_result("B5", "controller runnable and scheduled", PASS,
-                           "%s; %s" % (run_detail, sched_detail)))
+    # B5: intake env secrets present AND no poller daemon (no-daemon design) ---
+    parts = []
+    for name, why in INTAKE_SECRETS:
+        if os.environ.get(name):
+            parts.append("%s SET (%s)" % (name, why))
+        else:
+            parts.append("%s NOT-SET (%s)" % (name, why))
+    set_count = sum(1 for name, _why in INTAKE_SECRETS
+                    if os.environ.get(name))
+    secrets_ok = set_count == len(INTAKE_SECRETS)
+    daemon_line = _cron_daemon_line()
+    if daemon_line is not None:
+        parts.append("POLLER FOUND: a crontab entry names a controller or "
+                     "scheduler daemon (%s); the design is no-daemon, the "
+                     "sole recurring podcast cron is the daily smoke test"
+                     % daemon_line)
+        no_poller = False
     else:
-        parts = []
-        if not runnable:
-            parts.append(run_detail)
-        if not scheduled:
-            parts.append(sched_detail)
-        out.append(_result("B5", "controller runnable and scheduled", FAIL,
-                           "; ".join(parts)))
+        parts.append("no-poller OK: no crontab entry names a controller or "
+                     "scheduler daemon")
+        no_poller = True
+    if secrets_ok and no_poller:
+        out.append(_result("B5", "intake env secrets present and no poller",
+                           PASS, "; ".join(parts)))
+    else:
+        out.append(_result("B5", "intake env secrets present and no poller",
+                           FAIL, "; ".join(parts)))
 
     return out
 
@@ -292,15 +364,19 @@ def _resolve_box_config():
     return None
 
 
-# Route ids live in a MAP keyed by routeId (route-template.json5). The box
+# Route objects live in a MAP keyed by routeId (route-template.json5). The box
 # config may carry JSON5 comments, so a strict json.loads is tried first and a
-# tolerant quoted-key scan is the fallback. Only route IDs are extracted; the
-# route objects (which embed secret references) are never parsed or printed.
-_ROUTE_KEY_RE = re.compile(r'"(podcast-intake-[A-Za-z0-9][A-Za-z0-9._-]*)"\s*:')
+# tolerant scan is the fallback. Only route ids, sessionKey, and controllerId
+# are ever extracted; secret values are never parsed, stored, or printed.
+_ROUTE_KEY_RE = re.compile(
+    r'"(podcast-intake-[A-Za-z0-9][A-Za-z0-9._-]*)"\s*:\s*\{')
+# JSON5 allows bare keys; strict JSON quotes them. Values are always quoted.
+_FIELD_RE = r'["\']?%s["\']?\s*:\s*"([^"]*)"'
 
 
-def scan_route_ids(text):
-    """Return the set of podcast-intake-<slug> route ids declared in text."""
+def scan_route_shapes(text):
+    """Return {route_id: {"sessionKey": str_or_None, "controllerId":
+    str_or_None}} for every podcast-intake-<slug> route declared in text."""
     try:
         data = json.loads(text)
     except (ValueError, TypeError):
@@ -309,68 +385,59 @@ def scan_route_ids(text):
         routes = (data.get("plugins", {}).get("entries", {})
                       .get("webhooks", {}).get("config", {}).get("routes"))
         if isinstance(routes, dict):
-            return {k for k in routes if isinstance(k, str)
-                    and k.startswith(ROUTE_ID_PREFIX)}
-    return set(m.group(1) for m in _ROUTE_KEY_RE.finditer(text))
+            shapes = {}
+            for rid, obj in routes.items():
+                if not (isinstance(rid, str)
+                        and rid.startswith(ROUTE_ID_PREFIX)):
+                    continue
+                if not isinstance(obj, dict):
+                    obj = {}
+                shapes[rid] = {
+                    "sessionKey": obj.get("sessionKey"),
+                    "controllerId": obj.get("controllerId"),
+                }
+            return shapes
+    # JSON5 fallback: for each route id, scan the window from the route's
+    # opening brace to the next podcast route key (or end of text). Nested
+    # objects (the secret SecretRef) ride inside the window; only the two
+    # field names above are ever matched.
+    shapes = {}
+    matches = list(_ROUTE_KEY_RE.finditer(text))
+    for i, m in enumerate(matches):
+        rid = m.group(1)
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        window = text[m.end():end]
+        shape = {}
+        for field in ("sessionKey", "controllerId"):
+            fm = re.search(_FIELD_RE % field, window)
+            shape[field] = fm.group(1) if fm else None
+        shapes[rid] = shape
+    return shapes
 
 
-def _controller_runnable(controller_path, timeout):
-    if not controller_path.is_file():
-        return False, "controller script missing: %s" % controller_path
-    try:
-        proc = subprocess.run(
-            [sys.executable, str(controller_path), "--help"],
-            capture_output=True, text=True, timeout=max(5, int(timeout * 3)))
-    except (OSError, subprocess.SubprocessError) as exc:
-        return False, "controller --help errored: %s" % type(exc).__name__
-    if proc.returncode == 0:
-        return True, "controller --help exits 0"
-    return False, "controller --help exits %s" % proc.returncode
-
-
-def _controller_scheduled(controller_rel, installer_rel):
-    """No-daemon proof of life: a crontab entry or launchd plist names the
-    controller or the installer."""
-    needles = (Path(controller_rel).name, Path(installer_rel).name)
-    # crontab listing (bounded; absent crontab is an empty listing, not an error)
+def _crontab_lines():
+    """crontab listing, bounded. An absent crontab yields an empty listing,
+    never an error (the $PODCAST_CRONTAB_BIN seam points tests at a stub)."""
     crontab_bin = os.environ.get("PODCAST_CRONTAB_BIN", "crontab")
     try:
         proc = subprocess.run([crontab_bin, "-l"], capture_output=True,
                               text=True, timeout=15)
-        lines = proc.stdout.splitlines() if proc.returncode == 0 else []
+        return proc.stdout.splitlines() if proc.returncode == 0 else []
     except (OSError, subprocess.SubprocessError):
-        lines = []
-    for line in lines:
+        return []
+
+
+def _cron_daemon_line():
+    """No-daemon doctrine: the design has NO controller daemon and NO poller
+    scheduler, so no crontab entry may name one. Returns the offending line
+    (comments excluded) or None when clean."""
+    for line in _crontab_lines():
         stripped = line.strip()
         if stripped.startswith("#"):
             continue
-        if any(n in stripped for n in needles):
-            return True, "scheduled: crontab entry references %s" % _first_hit(stripped, needles)
-    # launchd plists (Mac fleet)
-    launchd_dir = Path(os.environ.get("PODCAST_LAUNCHD_DIR",
-                                      str(Path.home() / "Library" / "LaunchAgents")))
-    if launchd_dir.is_dir():
-        try:
-            plists = sorted(launchd_dir.glob("*.plist"))
-        except OSError:
-            plists = []
-        for plist in plists:
-            try:
-                body = plist.read_text(encoding="utf-8", errors="replace")
-            except OSError:
-                continue
-            if any(n in body for n in needles):
-                return True, "scheduled: launchd plist %s references the activation layer" % plist.name
-    return False, ("not scheduled: no crontab entry or launchd plist names "
-                   "%s or %s (the heartbeat that wakes the processor is missing)"
-                   % needles)
-
-
-def _first_hit(line, needles):
-    for n in needles:
-        if n in line:
-            return n
-    return "activation layer"
+        if any(n in stripped for n in DAEMON_NAME_NEEDLES):
+            return stripped
+    return None
 
 
 # --------------------------------------------------------------------------- #
@@ -450,7 +517,7 @@ def main(argv=None):
     ap.add_argument("--timeout", type=float, default=5.0,
                     help="bounded probe timeout in seconds")
     ap.add_argument("--hook-script", default=DEFAULT_HOOK_SCRIPT)
-    ap.add_argument("--controller-script", default=DEFAULT_CONTROLLER_SCRIPT)
+    ap.add_argument("--handler-script", default=DEFAULT_HANDLER_SCRIPT)
     ap.add_argument("--installer-script", default=DEFAULT_INSTALLER_SCRIPT)
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
@@ -475,7 +542,7 @@ def main(argv=None):
     slugs = sorted(set(slugs))
 
     repo_results = repo_checks(skill_root, args.hook_script,
-                               args.controller_script, args.installer_script)
+                               args.handler_script, args.installer_script)
     if args.repo_only:
         fatal, warn, skip = classify(repo_results, [], False, False)
         return emit(repo_results, fatal, warn, skip, "repo-only",
@@ -483,7 +550,7 @@ def main(argv=None):
 
     box_results = box_checks(skill_root, args.agents_root, args.gateway_url,
                              slugs, args.timeout, args.hook_script,
-                             args.controller_script, args.installer_script)
+                             args.handler_script, args.installer_script)
     provisioned = is_provisioned(slugs)
     fatal, warn, skip = classify(repo_results, box_results,
                                  args.strict, provisioned)
@@ -508,11 +575,12 @@ def self_test():
 
     def make_skill(root, with_files=True):
         scripts = root / "58-podcast-production-engine" / "scripts"
-        scripts.mkdir(parents=True, exist_ok=True)
+        (scripts / "webhook").mkdir(parents=True, exist_ok=True)
         if with_files:
             (scripts / "register-podcast-hook.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
-            (scripts / "podcast_controller.py").write_text(
-                "import sys\nif '--help' in sys.argv:\n    sys.exit(0)\n")
+            (scripts / "webhook" / "intake_handler.py").write_text(
+                "#!/usr/bin/env python3\n# deterministic first step of the "
+                "controllerId runbook\n")
             (scripts / "install-podcast-department.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
         return root / "58-podcast-production-engine"
 
@@ -520,18 +588,18 @@ def self_test():
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         skill = make_skill(root, with_files=True)
-        res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_CONTROLLER_SCRIPT,
+        res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
                           DEFAULT_INSTALLER_SCRIPT)
         check("all-present-passes", all(r["status"] == PASS for r in res))
-        (skill / DEFAULT_CONTROLLER_SCRIPT).unlink()
-        res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_CONTROLLER_SCRIPT,
+        (skill / DEFAULT_HANDLER_SCRIPT).unlink()
+        res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
                           DEFAULT_INSTALLER_SCRIPT)
-        check("missing-controller-fails",
+        check("missing-handler-fails",
               any(r["status"] == FAIL for r in res))
         check("fail-detail-names-the-file",
-              any(DEFAULT_CONTROLLER_SCRIPT in r["detail"] for r in res if r["status"] == FAIL))
+              any("intake_handler.py" in r["detail"] for r in res if r["status"] == FAIL))
 
-    print("== self-test: route-id scan (JSON5 tolerant, ids only) ==")
+    print("== self-test: route-shape scan (JSON5 tolerant, no secrets) ==")
     json5 = """
     {
       // a comment
@@ -540,7 +608,12 @@ def self_test():
           webhooks: {
             config: {
               routes: {
-                "podcast-intake-acme-media": { enabled: true, sessionKey: "podcast:intake:acme-media" },
+                "podcast-intake-acme-media": {
+                  enabled: true,
+                  sessionKey: "podcast:intake:acme-media",
+                  controllerId: "webhooks/podcast-intake-acme-media",
+                  secret: { source: "env", id: "PODCAST_INTAKE_HOOK_SECRET" }
+                },
                 "other-skill-route": { enabled: true }
               }
             }
@@ -549,13 +622,48 @@ def self_test():
       }
     }
     """
-    ids = scan_route_ids(json5)
-    check("json5-route-id-found", "podcast-intake-acme-media" in ids)
-    check("foreign-route-ignored", "other-skill-route" not in ids)
+    shapes = scan_route_shapes(json5)
+    check("json5-route-found", "podcast-intake-acme-media" in shapes)
+    check("json5-session-key", shapes.get("podcast-intake-acme-media", {})
+          .get("sessionKey") == "podcast:intake:acme-media")
+    check("json5-controller-id", shapes.get("podcast-intake-acme-media", {})
+          .get("controllerId") == "webhooks/podcast-intake-acme-media")
+    check("foreign-route-ignored", "other-skill-route" not in shapes)
     strict_json = json.dumps({"plugins": {"entries": {"webhooks": {"config": {
-        "routes": {"podcast-intake-zeta": {}}}}}}})
-    check("strict-json-route-id-found", "podcast-intake-zeta" in scan_route_ids(strict_json))
-    check("garbage-scans-empty", scan_route_ids("nothing here") == set())
+        "routes": {"podcast-intake-zeta": {
+            "sessionKey": "podcast:intake:zeta",
+            "controllerId": "webhooks/podcast-intake-zeta"}}}}}}})
+    zshapes = scan_route_shapes(strict_json)
+    check("strict-json-route-found",
+          zshapes.get("podcast-intake-zeta", {}).get("controllerId")
+          == "webhooks/podcast-intake-zeta")
+    check("garbage-scans-empty", scan_route_shapes("nothing here") == {})
+
+    print("== self-test: no-poller crontab scan ==")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        cronbin = root / "fake-crontab.sh"
+        cronbin.write_text("#!/usr/bin/env bash\n"
+                           "echo '*/5 * * * * python3 .../podcast_controller.py run-once'\n")
+        os.chmod(cronbin, 0o755)
+        os.environ["PODCAST_CRONTAB_BIN"] = str(cronbin)
+        try:
+            check("daemon-cron-line-flagged",
+                  _cron_daemon_line() is not None)
+        finally:
+            os.environ.pop("PODCAST_CRONTAB_BIN", None)
+        with tempfile.TemporaryDirectory() as td2:
+            root2 = Path(td2)
+            cronbin2 = root2 / "fake-crontab.sh"
+            cronbin2.write_text("#!/usr/bin/env bash\n"
+                                "echo '# podcast_controller.py is dead by design'\n"
+                                "echo '0 6 * * * openclaw cron ... podcast-smoke-test.py'\n")
+            os.chmod(cronbin2, 0o755)
+            os.environ["PODCAST_CRONTAB_BIN"] = str(cronbin2)
+            try:
+                check("clean-crontab-passes", _cron_daemon_line() is None)
+            finally:
+                os.environ.pop("PODCAST_CRONTAB_BIN", None)
 
     print("== self-test: on-box checks on a fake tree ==")
     with tempfile.TemporaryDirectory() as td:
@@ -564,10 +672,10 @@ def self_test():
         agents = root / "agents" / DEPT_AGENT_DIRNAME
         agents.mkdir(parents=True)
         (agents / "agent.md").write_text("podcast department agent\n")
-        # fake crontab seam: one heartbeat line naming the controller
+        # fake crontab seam: a clean listing (smoke cron only, no poller)
         cronbin = root / "fake-crontab.sh"
         cronbin.write_text("#!/usr/bin/env bash\n"
-                           "echo '*/5 * * * * python3 .../podcast_controller.py run-once'\n")
+                           "echo '0 6 * * * openclaw cron fire podcast-smoke-test.py'\n")
         os.chmod(cronbin, 0o755)
         os.environ["PODCAST_CRONTAB_BIN"] = str(cronbin)
         os.environ["PODCAST_LAUNCHD_DIR"] = str(root / "no-such-dir")
@@ -576,24 +684,82 @@ def self_test():
         try:
             res = box_checks(skill, str(root / "agents"), "http://127.0.0.1:1",
                              ["acme-media"], 1, DEFAULT_HOOK_SCRIPT,
-                             DEFAULT_CONTROLLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                             DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
             by_id = {r["id"]: r for r in res}
             check("B1-installed-passes", by_id["B1"]["status"] == PASS)
             check("B2-agent-dir-passes", by_id["B2"]["status"] == PASS)
             check("B3-unreachable-gateway-fails", by_id["B3"]["status"] == FAIL)
             check("B4-missing-config-fails-with-slugs", by_id["B4"]["status"] == FAIL)
-            check("B5-runnable-and-scheduled-passes", by_id["B5"]["status"] == PASS)
+            check("B5-missing-secrets-fails", by_id["B5"]["status"] == FAIL)
+            check("B5-detail-names-the-secret",
+                  "PODCAST_INTAKE_HOOK_SECRET NOT-SET" in by_id["B5"]["detail"])
+            check("B5-no-poller-ok-in-detail",
+                  "no-poller OK" in by_id["B5"]["detail"])
+            # secrets both set: B5 flips to PASS
+            os.environ["PODCAST_INTAKE_HOOK_SECRET"] = "sandbox-not-a-real-secret"
+            os.environ["PODCAST_INTAKE_INBOUND_SECRET"] = "sandbox-not-a-real-secret"
+            try:
+                res2 = box_checks(skill, str(root / "agents"),
+                                  "http://127.0.0.1:1", ["acme-media"], 1,
+                                  DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                                  DEFAULT_INSTALLER_SCRIPT)
+                by_id2 = {r["id"]: r for r in res2}
+                check("B5-secrets-present-passes", by_id2["B5"]["status"] == PASS)
+            finally:
+                os.environ.pop("PODCAST_INTAKE_HOOK_SECRET", None)
+                os.environ.pop("PODCAST_INTAKE_INBOUND_SECRET", None)
         finally:
             os.environ.pop("PODCAST_CRONTAB_BIN", None)
             os.environ.pop("PODCAST_LAUNCHD_DIR", None)
             os.environ.pop("OPENCLAW_CONFIG", None)
+
+    print("== self-test: B4 route binding shape ==")
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        skill = make_skill(root, with_files=True)
+        config = root / "openclaw.json"
+        config.write_text(json.dumps({
+            "plugins": {"entries": {"webhooks": {"config": {"routes": {
+                "podcast-intake-acme-media": {
+                    "sessionKey": "podcast:intake:acme-media",
+                    "controllerId": "webhooks/podcast-intake-acme-media"},
+                "podcast-intake-zeta-corp": {
+                    "sessionKey": "podcast:intake:WRONG",
+                    "controllerId": "webhooks/podcast-intake-zeta-corp"}}}}}}}))
+        cronbin = root / "fake-crontab.sh"
+        cronbin.write_text("#!/usr/bin/env bash\nexit 0\n")
+        os.chmod(cronbin, 0o755)
+        os.environ["PODCAST_CRONTAB_BIN"] = str(cronbin)
+        os.environ["OPENCLAW_CONFIG"] = str(config)
+        os.environ["PODCAST_INTAKE_HOOK_SECRET"] = "sandbox-not-a-real-secret"
+        os.environ["PODCAST_INTAKE_INBOUND_SECRET"] = "sandbox-not-a-real-secret"
+        try:
+            res = box_checks(skill, str(root / "agents"),
+                             "http://127.0.0.1:1", ["acme-media"], 1,
+                             DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                             DEFAULT_INSTALLER_SCRIPT)
+            by_id = {r["id"]: r for r in res}
+            check("B4-correct-shape-passes", by_id["B4"]["status"] == PASS)
+            res = box_checks(skill, str(root / "agents"),
+                             "http://127.0.0.1:1", ["zeta-corp"], 1,
+                             DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                             DEFAULT_INSTALLER_SCRIPT)
+            by_id = {r["id"]: r for r in res}
+            check("B4-wrong-session-key-fails", by_id["B4"]["status"] == FAIL)
+            check("B4-detail-names-the-route",
+                  "podcast-intake-zeta-corp" in by_id["B4"]["detail"])
+        finally:
+            os.environ.pop("PODCAST_CRONTAB_BIN", None)
+            os.environ.pop("OPENCLAW_CONFIG", None)
+            os.environ.pop("PODCAST_INTAKE_HOOK_SECRET", None)
+            os.environ.pop("PODCAST_INTAKE_INBOUND_SECRET", None)
 
     print("== self-test: severity model ==")
     with tempfile.TemporaryDirectory() as td:
         root = Path(td)
         skill = make_skill(root, with_files=True)
         repo_res = repo_checks(skill, DEFAULT_HOOK_SCRIPT,
-                               DEFAULT_CONTROLLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
         box_fail = [_result("B3", "gateway", FAIL, "unreachable")]
         fatal, warn, _skip = classify(repo_res, box_fail, strict=False, provisioned=False)
         check("unprovisioned-box-finding-is-warn", fatal == [] and len(warn) == 1)
@@ -603,7 +769,7 @@ def self_test():
         check("provisioned-makes-box-finding-fatal", len(fatal) == 1)
         (skill / DEFAULT_HOOK_SCRIPT).unlink()
         repo_res = repo_checks(skill, DEFAULT_HOOK_SCRIPT,
-                               DEFAULT_CONTROLLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
         fatal, warn, _skip = classify(repo_res, [], strict=False, provisioned=False)
         check("repo-missing-always-fatal", len(fatal) == 1)
 

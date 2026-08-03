@@ -3,8 +3,16 @@
 #
 # roll-3-install-path: install.sh must GUARANTEE that the Podcast Production
 # Engine (skill 58) activation layer lands in the skills dir on every fresh
-# install, so a client box can never silently end up without the processor
-# activation scripts (the Leanne-ticket failure class).
+# install, so a client box can never silently end up without the activation
+# scripts (the Leanne-ticket failure class).
+#
+# Contract (act-8 gate alignment): the activation layer is NO-DAEMON. Exactly
+# three build files are guaranteed: register-podcast-hook.sh,
+# webhook/intake_handler.py (the deterministic first step of the route's
+# controllerId runbook), and install-podcast-department.sh. There is NO
+# podcast_controller.py and NO podcast_scheduler.py: the design has no
+# controller daemon and no poller scheduler, and the only recurring podcast
+# cron is the daily smoke test (podcast-smoke-test.py via openclaw cron).
 #
 # The terminal installer has NO per-skill file manifest: Step 5 copies every
 # numbered skill directory wholesale, and the roll-3 block (inserted after
@@ -16,12 +24,12 @@
 # mac-mini-onboarding install paths.
 #
 # Proves, against the REAL extracted code:
-#   A. Fresh full source tree: all four activation files present at the
+#   A. Fresh full source tree: all three activation files present at the
 #      skills-dir destination afterwards, .sh files executable, zero warns.
 #   B. Pre-existing complete copy (Step 5 wholesale copy already landed):
 #      files left byte-identical, success reported, zero warns.
-#   C. Partial copy (dest skill dir exists, controller missing): the
-#      controller is repaired (copied in), existing files left intact, the
+#   C. Partial copy (dest skill dir exists, intake handler missing): the
+#      handler is repaired (copied in), existing files left intact, the
 #      repair is announced, zero warns.
 #   D. Source file missing from the onboarding package: warn emitted, exit
 #      status stays 0 (a wiring hiccup never aborts the install), the
@@ -31,7 +39,7 @@
 #   5. install.sh carries no per-skill FILE_LIST manifest that could exclude
 #      the activation scripts (the installer is directory-enumeration based;
 #      MAC_ENV_FILE_LIST is env-file discovery, not a skill manifest).
-#   6. direct-to-agent-install.md names the four activation files, documents
+#   6. direct-to-agent-install.md names the three activation files, documents
 #      the guard-activation-health.py verification, and keeps the delivery vs
 #      per-client activation boundary.
 #   7. mac-mini-onboarding/ has no podcast step (verified, not skipped; this
@@ -77,16 +85,20 @@ if [ ! -s "$WORK/block.sh" ]; then
     exit 1
 fi
 case "$(cat "$WORK/block.sh")" in
-    *register-podcast-hook.sh*install-podcast-department.sh*podcast_controller.py*podcast_scheduler.py*) : ;;
-    *) echo "FAIL: extracted roll-3 block does not name all four activation files; extraction or the block itself is broken"; exit 1 ;;
+    *register-podcast-hook.sh*webhook/intake_handler.py*install-podcast-department.sh*) : ;;
+    *) echo "FAIL: extracted roll-3 block does not name all three activation files; extraction or the block itself is broken"; exit 1 ;;
 esac
+if grep -q "podcast_controller.py\|podcast_scheduler.py" "$WORK/block.sh"; then
+    echo "FAIL: the roll-3 block still references the excluded daemon files (podcast_controller.py / podcast_scheduler.py); the no-daemon contract is broken"
+    exit 1
+fi
 bash -n "$WORK/block.sh" || { echo "FAIL: extracted roll-3 block is not valid bash"; exit 1; }
 pass "roll-3 block extracted from install.sh by marker and parses as bash"
 
 # --- fixture helpers ---------------------------------------------------------
-ACT_FILES="scripts/register-podcast-hook.sh scripts/install-podcast-department.sh scripts/podcast_controller.py scripts/podcast_scheduler.py"
+ACT_FILES="scripts/register-podcast-hook.sh scripts/webhook/intake_handler.py scripts/install-podcast-department.sh"
 
-make_src_tree() { # $1 = tree root; creates the four activation files under it
+make_src_tree() { # $1 = tree root; creates the three activation files under it
     local root="$1" f
     for f in $ACT_FILES; do
         mkdir -p "$root/58-podcast-production-engine/$(dirname "$f")"
@@ -131,7 +143,7 @@ MISSING_A=0
 for f in $ACT_FILES; do
     [ -f "$SKD_A/58-podcast-production-engine/$f" ] || { MISSING_A=1; fail "scenario A: $f not present at the skills-dir destination"; }
 done
-[ "$MISSING_A" = "0" ] && pass "scenario A: all four activation files delivered to the skills dir"
+[ "$MISSING_A" = "0" ] && pass "scenario A: all three activation files delivered to the skills dir"
 if [ -x "$SKD_A/58-podcast-production-engine/scripts/register-podcast-hook.sh" ] \
    && [ -x "$SKD_A/58-podcast-production-engine/scripts/install-podcast-department.sh" ]; then
     pass "scenario A: the two .sh activation scripts are executable at the destination"
@@ -164,17 +176,17 @@ ONB_C="$WORK/src-c"; SKD_C="$WORK/skills-c"
 mkdir -p "$ONB_C"
 make_src_tree "$ONB_C"
 mkdir -p "$SKD_C/58-podcast-production-engine/scripts"
-for f in scripts/register-podcast-hook.sh scripts/install-podcast-department.sh scripts/podcast_scheduler.py; do
+for f in scripts/register-podcast-hook.sh scripts/install-podcast-department.sh; do
     printf '#!/usr/bin/env bash\n# fixture %s\n' "$f" > "$SKD_C/58-podcast-production-engine/$f"
 done
-# podcast_controller.py deliberately absent from the dest (partial copy)
+# webhook/intake_handler.py deliberately absent from the dest (partial copy)
 SUM_C_HOOK_BEFORE="$(shasum -a 256 "$SKD_C/58-podcast-production-engine/scripts/register-podcast-hook.sh" | awk '{print $1}')"
 run_block "$ONB_C" "$SKD_C" c
 [ "$(cat "$WORK/rc-c")" = "0" ] && pass "scenario C: block exits 0 while repairing a partial dest copy" \
                                 || fail "scenario C: block exited $(cat "$WORK/rc-c") (want 0)"
-[ -f "$SKD_C/58-podcast-production-engine/scripts/podcast_controller.py" ] \
-    && pass "scenario C: the missing podcast_controller.py is repaired (copied in)" \
-    || fail "scenario C: the missing podcast_controller.py was NOT repaired"
+[ -f "$SKD_C/58-podcast-production-engine/scripts/webhook/intake_handler.py" ] \
+    && pass "scenario C: the missing webhook/intake_handler.py is repaired (copied in)" \
+    || fail "scenario C: the missing webhook/intake_handler.py was NOT repaired"
 SUM_C_HOOK_AFTER="$(shasum -a 256 "$SKD_C/58-podcast-production-engine/scripts/register-podcast-hook.sh" | awk '{print $1}')"
 [ "$SUM_C_HOOK_BEFORE" = "$SUM_C_HOOK_AFTER" ] \
     && pass "scenario C: existing dest files stay byte-identical during the repair" \
@@ -190,7 +202,7 @@ grep -q "^WARN_COUNT=0$" "$WORK/out-c.txt" \
 ONB_D="$WORK/src-d"; SKD_D="$WORK/skills-d"
 mkdir -p "$ONB_D"
 make_src_tree "$ONB_D"
-rm "$ONB_D/58-podcast-production-engine/scripts/podcast_controller.py"
+rm "$ONB_D/58-podcast-production-engine/scripts/webhook/intake_handler.py"
 run_block "$ONB_D" "$SKD_D" d
 [ "$(cat "$WORK/rc-d")" = "0" ] \
     && pass "scenario D: block exits 0 even when a source activation file is missing (install never aborts)" \
@@ -201,9 +213,9 @@ grep -q "not in this onboarding package" "$WORK/out-d.txt" \
 grep -q "NOT complete" "$WORK/out-d.txt" \
     && pass "scenario D: the not-complete summary warn fires when the layer is missing" \
     || fail "scenario D: the not-complete summary warn did not fire"
-[ ! -f "$SKD_D/58-podcast-production-engine/scripts/podcast_controller.py" ] \
-    && pass "scenario D: no phantom controller file is fabricated at the destination" \
-    || fail "scenario D: a controller file appeared at the destination despite a missing source"
+[ ! -f "$SKD_D/58-podcast-production-engine/scripts/webhook/intake_handler.py" ] \
+    && pass "scenario D: no phantom handler file is fabricated at the destination" \
+    || fail "scenario D: a handler file appeared at the destination despite a missing source"
 
 # --- scenario E: the block NEVER activates ------------------------------------
 # A fresh install ships the scripts but must not run them: activation is
@@ -231,13 +243,13 @@ fi
 
 # --- static assertion 6: direct-to-agent-install.md --------------------------
 DTA_OK=1
-for f in register-podcast-hook.sh install-podcast-department.sh podcast_controller.py podcast_scheduler.py; do
+for f in register-podcast-hook.sh install-podcast-department.sh webhook/intake_handler.py; do
     if ! grep -q "$f" "$DTA_MD"; then
         DTA_OK=0
         fail "static: direct-to-agent-install.md does not name $f"
     fi
 done
-[ "$DTA_OK" = "1" ] && pass "static: direct-to-agent-install.md names all four activation files"
+[ "$DTA_OK" = "1" ] && pass "static: direct-to-agent-install.md names all three activation files"
 grep -q "guard-activation-health.py" "$DTA_MD" \
     && pass "static: direct-to-agent-install.md documents the guard-activation-health.py verification" \
     || fail "static: direct-to-agent-install.md does not document guard-activation-health.py"
