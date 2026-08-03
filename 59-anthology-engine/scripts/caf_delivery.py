@@ -1465,7 +1465,11 @@ def self_test():
         check("tenant mismatch raises", False)
     except DeliveryError as e:
         check("tenant mismatch exit 2", e.code == EX_TENANT)
-    assert_tenant("locA", "locA")  # no raise
+    # explicit empty environ BLOCKS the canonical-store fallback, so the real
+    # ~/.openclaw/secrets/.env allowlist (which does not include 'locA') cannot
+    # leak into this absence-simulation assertion (same pattern as the GK-09
+    # firebase assertion in anthology_registry.py).
+    assert_tenant("locA", "locA", environ={})  # no raise
     check("tenant match passes", True)
     try:
         assert_tenant("locA", "locA", environ={"CAF_ALLOWED_LOCATION_IDS": "locB,locC"})
