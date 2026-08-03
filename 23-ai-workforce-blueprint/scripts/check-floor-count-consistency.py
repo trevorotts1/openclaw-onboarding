@@ -488,6 +488,26 @@ DOC_FLOOR_REGISTRY = [
         ],
     },
     {
+        "file": "scripts/verify-role-library.sh",
+        "why": (
+            "Check 1's derived-minimum-role-count comment states the mandatory/"
+            "universal-primary composition as prose (the actual threshold is "
+            "derived from _index.json at runtime, never hardcoded -- this "
+            "registry entry only guards the EXPLANATORY prose above it)."
+        ),
+        "assertions": [
+            {
+                "label": "Check 1 comment composition",
+                "regex": re.compile(
+                    r"as of department-naming-map\.json v[\d.]+\) (?P<mandatory>\d+)\s*\n#\s*"
+                    r"mandatory \+ (?P<universal_primary>\d+) universal-primary",
+                    re.DOTALL,
+                ),
+                "groups": {"mandatory": "mandatory", "universal_primary": "universal_primary"},
+            },
+        ],
+    },
+    {
         "file": "CHANGELOG.md",
         "why": (
             "The CHANGELOG is append-only release history. Its existing floor "

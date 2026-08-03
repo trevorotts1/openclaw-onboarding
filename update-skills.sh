@@ -5553,7 +5553,7 @@ else:
   # fail. A genuine non-zero exit always flips _D5_ACTIVATION_PASS. For an
   # interview-complete run, agents.list[] is compared against THIS box's real
   # expected department count (department-floor.py's expected_floor_count --
-  # the 22-mandatory + 6-universal-primary 28-department floor from
+  # the 24-mandatory + 6-universal-primary 30-department floor from
   # department-naming-map.json, net of any owner-declined department) rather
   # than a fixed "under 2" magic number -- a box whose activation genuinely
   # failed for most departments but still kept >=2 agents no longer sails
@@ -5582,8 +5582,8 @@ else:
       fi
       # D5[F2]: gate on THIS box's real expected department count instead of a
       # fixed "-lt 2" magic number. A genuine interview-complete box carries the
-      # 28-department universal floor (department-naming-map.json: 22 mandatory
-      # + 6 universal-primary, net of any owner-declined dept) -- "-lt 2" let a
+      # 30-department universal floor (department-naming-map.json v2.8.0: 24
+      # mandatory + 6 universal-primary, net of any owner-declined dept) -- "-lt 2" let a
       # box whose activation genuinely failed for MOST departments but still
       # kept >=2 agents.list[] entries false-PASS. department-floor.py is the
       # single source of truth qc-completeness.sh's own floor gate already

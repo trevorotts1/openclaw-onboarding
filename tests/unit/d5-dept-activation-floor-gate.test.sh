@@ -4,7 +4,7 @@
 # CI guard for the D5 dept-agent activation floor check (F2 fix). Before this
 # fix, update-skills.sh evaluated dept-agent activation against a fixed
 # `agents.list[] -lt 2` magic number. A real interview-complete box carries
-# the 28-department universal floor (department-naming-map.json: 22
+# the 30-department universal floor (department-naming-map.json v2.8.0: 24
 # mandatory + 6 universal-primary), so a box whose dept-agent activation
 # genuinely failed for MOST departments but still kept >=2 agents.list[]
 # entries evaluated as a false "fully activated" -- the exact "copied !=
@@ -26,7 +26,7 @@
 #   (B) REAL FLOOR       -- department-floor.py, run hermetically against
 #                           THIS repo's real department-naming-map.json with
 #                           an empty (no-decline) build-state, reports
-#                           expected_floor_count == 28 (22 mandatory + 6
+#                           expected_floor_count == 30 (24 mandatory + 6
 #                           universal-primary) -- the actual data source the
 #                           gate now reads, not another magic number.
 #   (C) PARTIAL-ACTIVATION DETECTED -- replaying the exact bash comparison the
@@ -35,11 +35,11 @@
 #                           partially-materialized box (agent count 3 --
 #                           ABOVE the OLD "-lt 2" threshold, so the OLD check
 #                           would have false-PASSED it, but far below the
-#                           28-department floor) asserts the NEW check DETECTS
+#                           30-department floor) asserts the NEW check DETECTS
 #                           the incomplete activation (v20.0.10: this feeds the
 #                           workforce advisory, not the content stamp).
 #   (D) FULLY-ACTIVATED CLEARS -- the same comparison with agent count ==
-#                           the computed floor (28) asserts the check does
+#                           the computed floor (30) asserts the check does
 #                           NOT flag a fully-activated box.
 #
 # Fully hermetic: department-floor.py accepts an explicit --departments-dir
@@ -96,7 +96,7 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# (B) REAL FLOOR -- department-floor.py reports the true 28-department floor
+# (B) REAL FLOOR -- department-floor.py reports the true 30-department floor
 # hermetically (sandboxed HOME, empty build-state, explicit --departments-dir).
 # ---------------------------------------------------------------------------
 echo ""
@@ -121,10 +121,10 @@ else
   fail "B1: department-floor.py or python3 not available -- cannot verify real floor"
 fi
 
-if [ "$EXPECTED_COUNT" = "28" ]; then
-  pass "B1: department-floor.py reports expected_floor_count=28 (22 mandatory + 6 universal-primary, no declines)"
+if [ "$EXPECTED_COUNT" = "30" ]; then
+  pass "B1: department-floor.py reports expected_floor_count=30 (24 mandatory + 6 universal-primary, no declines)"
 else
-  fail "B1: department-floor.py reported expected_floor_count='$EXPECTED_COUNT' (expected 28)"
+  fail "B1: department-floor.py reported expected_floor_count='$EXPECTED_COUNT' (expected 30)"
 fi
 
 # ---------------------------------------------------------------------------
