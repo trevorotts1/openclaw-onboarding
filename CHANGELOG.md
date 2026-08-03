@@ -312,6 +312,85 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.5.1]  -  2026-08-03  -  Workforce pipeline: stop the interview-to-build strand (belt, watchdog blind spot, vocabulary, QC gates, owner-chat leak)
+
+### Why
+A client completed the AI Workforce Interview and their build stranded — no Kanban,
+no Command Center, silence for days — while every monitor reported "all clear". Six
+independent defects, each sufficient on its own to strand a box.
+
+This release removes those six defects and makes a strand VISIBLE to operators
+instead of silent. It does NOT restore the build trigger: `openclaw message send`
+is a terminal outbound send that never becomes an inbound agent turn, so the
+recovery lane still escalates into a no-op until a deterministic in-process exec
+replaces the self-ping. Three of the six defects (owner-chat leak, kick
+suppression, `needs-review` dead end) are client-visible immediately.
+
+### What changed
+- `23-ai-workforce-blueprint/scripts/resume-workforce-build.sh`
+  - The belt treated an agent-improvised top-level `.status=done` as TERMINAL and
+    self-removed the only autonomous-recovery cron — killing both the
+    `[LIBRARY-RESUME]` repair lane and HOP-4, the `buildCompletedAt` writer. No
+    script in this repo writes that field; agents improvise it while libraries are
+    still `failed`. The delivery contract now closes on `closeoutStatus`
+    (`done|sent`), the terminal state a SCRIPT owns. `failed` remains an explicit
+    operator stop. The department-floor guard is unchanged and still applies.
+  - Vocabulary drift: agents write `"complete"`, every counter compares `== "done"`.
+    On one box all departments sat at `complete`, so `done=0`, the library gate
+    never armed and HOP-4 could never fire. One normalization point now rewrites
+    synonyms to the contract word before any consumer reads state.
+  - Build eligibility is `pass|needs-review`, matching the completion gate.
+  - Kick suppression keyed on department ENTRIES existing, so any reopened or
+    partial build got no kick at all. Suppression is now real state (build finished
+    and closeout terminal, or a turn genuinely in flight via the durable inflight
+    marker).
+  - A successful outbound send is no longer counted as a triggered agent turn.
+- `23-ai-workforce-blueprint/scripts/closeout-readiness-watchdog.sh`
+  - A box with every department done, a failed library and `resumeAttempts=0`
+    matched no stuck class, so the watchdog logged "all clear" every 6h through the
+    entire stall. Adds `STUCK_BUILD_GATES_INCOMPLETE`, extends `STUCK_PRE_CLOSEOUT`
+    to part-way stalls, and adds `STUCK_RECOVERY_LANE_MISSING`, which self-heals by
+    re-running the park- and tombstone-aware `ensure-pipeline-crons.sh` when the
+    cron is merely absent, and escalates either way. A PARKED box is escalated but
+    never auto-un-parked. The clock is time since real forward motion, not
+    state-file mtime.
+  - `needs-review` is no longer classed as `STUCK_QC_FAILED` (classes are
+    mutually exclusive, so that pinned such a box forever and masked the real
+    blocker).
+- `23-ai-workforce-blueprint/scripts/update-interview-state.sh`
+  - Internal build/resume messages — each ending "Do NOT message the owner" —
+    resolved `.ownerChat` FIRST, so clients received internal repair instructions
+    verbatim in their own thread. Operator escalation chat is now resolved first in
+    both scripts; `.ownerChat` remains a last-resort fallback (on a box with no
+    operator chat it is the only route that reaches the agent) and now logs a loud
+    WARN pointing at `scripts/configure-operator-telegram.sh`.
+- `23-ai-workforce-blueprint/INSTRUCTIONS.md` — corrected the claim that HOP-4
+  checks the wiring gate. `wiring_dirty` is never computed and its branch is
+  unreachable, so the resume cron never runs `verify-wiring.sh` at all. Recorded as
+  an explicit KNOWN GAP rather than silently deleted, with a lockstep check that
+  asserts doc and code agree in either direction.
+- `.github/workflows/workforce-build-pipeline-guard.yml` (NEW) — functional
+  hermetic guards for both scripts, each assertion paired with a mutation proof,
+  plus a workspace-root gate that blocks the `workspace_root = company_root`
+  dangling-symlink defect from returning via an un-rebased branch. That gate runs a
+  non-vacuity self-test first, so it can never degrade into an assertion that
+  always passes.
+- `tests/unit/bounded-workforce-build-resume.test.sh` and
+  `tests/unit/closeout-watchdog-stuck-classes.test.sh` (NEW).
+
+### Known gaps (deferred, not done)
+- The build trigger remains an open loop; the recovery lane exists but escalates
+  into a no-op until the self-ping is replaced with a deterministic in-process exec.
+- `37-zhc-closeout/run-closeout.sh` still requires a strict `pass`, so a
+  `needs-review` box now builds fully and then blocks at the closeout with
+  `blocked-qc-pending` — visible (`STUCK_CLOSEOUT_BLOCKED` after 12h) instead of
+  silent, but not delivered.
+- HOP-4 does not enforce the wiring gate; switching it on is a behavioral change
+  that needs its own blast-radius analysis.
+- `.workspaceRoot` is still not written at interview time, deliberately: at
+  `--complete` the company root does not exist yet, and a wrong value would make
+  the stale-check demote every department on the box.
+
 ## [v21.5.0]  -  2026-08-03  -  GHL MCP installer hardening: pinned, profiled, crash-only, build-verified, liveness-probed
 
 ### Why
