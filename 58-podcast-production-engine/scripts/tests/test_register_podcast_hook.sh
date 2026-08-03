@@ -24,6 +24,22 @@
 #  10. --remove deletes the route and the podcast allow-list entries, preserves
 #      siblings, and is idempotent
 #  11. an unparseable config and a disabled webhooks plugin fail closed
+#  12. service-env: injects the SecretRef env vars + PODCAST_INTAKE_ROUTE_ID
+#      into the mocked gateway service-env file (plist ProgramArguments seam)
+#  13. service-env: idempotent (a second run leaves the file bytes unchanged)
+#  14. service-env: drift heal of a stale PODCAST_INTAKE_ROUTE_ID
+#  15. service-env: --dry-run never modifies the service-env file
+#  16. service-env: missing plist warns and never fails the registration
+#  17. service-env: never invoked during --remove
+#  18. service-env: PODCAST_CLIENT_LOCATION_ID (the intake tenant check) is
+#      appended when SET, and the value never appears in the output
+#  19. service-env: PODCAST_CLIENT_LOCATION_ID absent means a skip, not a fail
+#  20. service-env: resolves the env file from the REAL fleet plist shape
+#      (/bin/sh, env-wrapper.sh, env-file, node, index.js, gateway, --port)
+#      and never touches the wrapper script
+#  21. service-env: heal on rerun. A no-op config merge (route already
+#      registered) still appends the missing labels to the service-env file
+#      and creates no config backup
 # =============================================================================
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -421,6 +437,113 @@ if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
   fi
 else
   fail "service-env remove guard (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 18. Service-env: PODCAST_CLIENT_LOCATION_ID (the intake handler's hard
+#     tenant check) is appended when SET, and its value never leaks to output.
+# --------------------------------------------------------------------------- #
+write_cfg '{"hooks":{"enabled":true,"allowedSessionKeyPrefixes":["hook:ghl:"],"allowedAgentIds":["main"]},"plugins":{"entries":{"webhooks":{"enabled":true,"config":{"routes":{}}}}}}'
+rm -rf "$(dirname "$SVC_ENV")"
+mkdir -p "$(dirname "$SVC_ENV")"
+printf '%s\n' "MARKER=keep" > "$SVC_ENV"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     PODCAST_CLIENT_LOCATION_ID=LOC0000000000000000abcd \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  ok=0
+  grep -q "^export PODCAST_CLIENT_LOCATION_ID=LOC0000000000000000abcd$" "$SVC_ENV" || ok=1
+  grep -q "MARKER=keep" "$SVC_ENV" || ok=1
+  # the location id is a tenant credential: never in the script's output
+  if printf '%s' "$OUT" | grep -q "LOC0000000000000000abcd"; then ok=1; fi
+  check "service-env: appends PODCAST_CLIENT_LOCATION_ID when SET (value not printed)" "$ok"
+else
+  fail "service-env tenant check injection run (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 19. Service-env: PODCAST_CLIENT_LOCATION_ID absent is a skip, not a failure.
+# --------------------------------------------------------------------------- #
+rm -rf "$(dirname "$SVC_ENV")"
+mkdir -p "$(dirname "$SVC_ENV")"
+printf '%s\n' "MARKER=keep" > "$SVC_ENV"
+write_cfg '{}'
+if run_script 0 env -u PODCAST_CLIENT_LOCATION_ID \
+     PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  ok=0
+  if grep -q "PODCAST_CLIENT_LOCATION_ID=" "$SVC_ENV"; then ok=1; fi
+  grep -q "MARKER=keep" "$SVC_ENV" || ok=1
+  check "service-env: absent PODCAST_CLIENT_LOCATION_ID skipped, registration succeeds" "$ok"
+else
+  fail "service-env absent tenant check run (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 20. Service-env: the REAL fleet plist shape resolves. On the fleet the
+#     ProgramArguments are [/bin/sh, env-wrapper.sh, <env-file>, node,
+#     index.js, gateway, --port, ...]; the env file is found by its *.env
+#     suffix and the wrapper script is never touched.
+# --------------------------------------------------------------------------- #
+write_cfg '{}'
+FLEET_ENV="$WORK/service-env/fleet-gateway.env"
+FLEET_WRAPPER="$WORK/service-env/ai.openclaw.gateway-env-wrapper.sh"
+rm -rf "$(dirname "$FLEET_ENV")"
+mkdir -p "$(dirname "$FLEET_ENV")"
+printf '%s\n' "#!/bin/sh" ". \"\$1\"" "exec \"\$@\"" > "$FLEET_WRAPPER"
+chmod +x "$FLEET_WRAPPER"
+printf '%s\n' "FLEET_MARKER=pre-existing" > "$FLEET_ENV"
+WRAP_SUM_BEFORE="$(shasum "$FLEET_WRAPPER" | awk '{print $1}')"
+rm -f "$PLIST_DIR/ai.openclaw.gateway.plist"
+python3 -c "
+import plistlib
+pl = {'ProgramArguments': ['/bin/sh', '${FLEET_WRAPPER}', '${FLEET_ENV}',
+                           '/usr/local/bin/node',
+                           '/usr/local/lib/node_modules/openclaw/dist/index.js',
+                           'gateway', '--port', '18789']}
+with open('${PLIST_DIR}/ai.openclaw.gateway.plist', 'wb') as f:
+    plistlib.dump(pl, f, fmt=plistlib.FMT_BINARY)
+"
+if run_script 0 env PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     PODCAST_CLIENT_LOCATION_ID=LOC0000000000000000abcd \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media; then
+  ok=0
+  grep -q "FLEET_MARKER=pre-existing" "$FLEET_ENV" || ok=1
+  grep -q "^export PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret$" "$FLEET_ENV" || ok=1
+  grep -q "^export PODCAST_INTAKE_ROUTE_ID=podcast-intake-acme-media$" "$FLEET_ENV" || ok=1
+  WRAP_SUM_AFTER="$(shasum "$FLEET_WRAPPER" | awk '{print $1}')"
+  [ "$WRAP_SUM_BEFORE" = "$WRAP_SUM_AFTER" ] || ok=1
+  check "service-env: real fleet plist shape resolves; wrapper untouched" "$ok"
+else
+  fail "service-env fleet plist shape (rc=$LAST_RC): $OUT"
+fi
+
+# --------------------------------------------------------------------------- #
+# 21. Service-env: heal on rerun. The route is already registered exactly
+#     (config merge no-op), but the service-env file is missing the labels;
+#     re-running the registrar appends them without rewriting the config or
+#     adding a backup (the Leanne's-box state).
+# --------------------------------------------------------------------------- #
+rm -rf "$(dirname "$FLEET_ENV")"
+mkdir -p "$(dirname "$FLEET_ENV")"
+printf '%s\n' "HEAL_MARKER=reset" > "$FLEET_ENV"
+BACKUPS_BEFORE="$(ls "$WORK" | grep -c 'bak-podcast-hook' || true)"
+if run_script 0 env -u PODCAST_CLIENT_LOCATION_ID \
+     PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret \
+     HOME="$WORK/home" \
+     "$SCRIPT_UNDER_TEST" --client-slug acme-media \
+   && printf '%s' "$OUT" | grep -qi "no-op"; then
+  ok=0
+  grep -q "HEAL_MARKER=reset" "$FLEET_ENV" || ok=1
+  grep -q "^export PODCAST_INTAKE_HOOK_SECRET=synthetic-fixture-secret$" "$FLEET_ENV" || ok=1
+  grep -q "^export PODCAST_INTAKE_ROUTE_ID=podcast-intake-acme-media$" "$FLEET_ENV" || ok=1
+  BACKUPS_AFTER="$(ls "$WORK" | grep -c 'bak-podcast-hook' || true)"
+  [ "$BACKUPS_BEFORE" = "$BACKUPS_AFTER" ] || ok=1
+  check "service-env: no-op rerun heals the missing service-env labels" "$ok"
+else
+  fail "service-env heal on rerun (rc=$LAST_RC): $OUT"
 fi
 
 # --------------------------------------------------------------------------- #
