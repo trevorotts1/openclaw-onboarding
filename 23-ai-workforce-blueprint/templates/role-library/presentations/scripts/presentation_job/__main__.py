@@ -18,6 +18,7 @@ from .watchdog import watchdog as _run_watchdog
 from .board import BoardMirror
 from .sweep import reconcile_sweep
 from . import diagnose
+from . import persona
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -256,6 +257,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         manifest.verify_pin(state.get("manifest_sha256", ""))
 
         engine = Engine(run_dir, manifest, store, state, dry_run=args.dry_run)
+
+        # U024 — blended-persona governance banner, printed once at engine start
+        # so every run states on the record which persona governs its output.
+        # Wrapped: the banner is informational, and a persona-config problem must
+        # never stop a client's job from starting.
+        try:
+            print(persona.governance_banner(), flush=True)
+        except Exception as exc:
+            print(f"[persona] governance banner unavailable: {exc}", file=sys.stderr, flush=True)
+
         if args.close:
             return engine.close()
         if args.resume:

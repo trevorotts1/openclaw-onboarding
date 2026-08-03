@@ -357,6 +357,25 @@ class Engine:
 
     # -- the loop ---------------------------------------------------------
     def run(self, only: Optional[str] = None, until: Optional[str] = None) -> int:
+        # U024 — sacred-structure warn check, once at engine start-up.
+        # DELIBERATELY NON-BLOCKING: a structure drift is a signal to a human,
+        # not grounds to refuse a client's job. A missing pin file is likewise
+        # reported and stepped over, never treated as a failure.
+        # NOTE: persona.resolve_for_phase() is already wired in _run_phase();
+        # this adds ONLY the start-up check, so there is exactly one resolution
+        # call per phase.
+        try:
+            warn = persona.structure_warn_check()
+        except Exception as exc:  # never let a warn-only check break a run
+            self.report.event("warn", f"sacred-structure check failed to run: {exc}")
+        else:
+            if warn.get("mismatched"):
+                self.report.event(
+                    "warn", f"sacred-structure mismatch: {warn['mismatched']}")
+            elif not warn.get("pin_file_found"):
+                self.report.event(
+                    "warn", "sacred-structure pin file not found — skipping structure check")
+
         phases = self.manifest.phases
         if only:
             phases = [self.manifest.phase(only)]
