@@ -13,6 +13,15 @@
 # which fully cut public access from the Cloudflare side alone even when the box is dark.
 # Steps 5 to 8 (box hygiene) are recorded PENDING.
 #
+# ACTIVATION TEARDOWN (symmetric to provision STEP 8; fleet guarantee reversed:
+# revoke => processor gone). Step 5 unregisters the inbound hook and the new step
+# 5b stops and unregisters the client's podcast scheduler, both through the
+# activation-layer helpers (register-podcast-hook.sh --remove --client-slug <slug>,
+# install-podcast-scheduler.sh --remove --client-slug <slug>). The department
+# install is intentionally NOT removed: it is box-level shared infrastructure
+# for every client on the box, and removing it would down other clients'
+# processors (a FAILED revocation per the hard rules below).
+#
 # HARD RULES: never trust CLOUDFLARE_ZONE_ID (resolve the zone by name, refuse the wrong
 # zone); never print a secret value (confirm SET-ness only); box config writes run as the
 # node user, never root; a revocation that downs a box still running other services is a
@@ -43,7 +52,7 @@ DRY_RUN="0"
 TUNNEL_ID_OVERRIDE="${PODCAST_TUNNEL_ID:-}"
 
 usage() {
-  sed -n '1,32p' "$0" >&2
+  sed -n '1,34p' "$0" >&2
   cat >&2 <<'USAGE'
 
 USAGE:
@@ -305,15 +314,21 @@ rotate_secret() {
 }
 
 if [ "$EDGE_ONLY" = "1" ]; then
-  ledger_step "5-webhook-disable"  "PENDING" "edge-only: remove the podcast hook mapping and rotate PODCAST_INTAKE_HOOK_TOKEN on the box (as the node user), apply config per gateway restart doctrine, then verify the gateway is UP"
+  ledger_step "5-webhook-disable"  "PENDING" "edge-only: unregister the podcast hook (--client-slug) and rotate PODCAST_INTAKE_HOOK_TOKEN on the box (as the node user), apply config per gateway restart doctrine, then verify the gateway is UP"
+  ledger_step "5b-scheduler-stop"  "PENDING" "edge-only: stop + unregister the podcast scheduler for ${SLUG} on the box (install-podcast-scheduler.sh --remove --client-slug ${SLUG}), then verify with a fresh cron inventory"
   ledger_step "6-dashboard-stop"   "PENDING" "edge-only: rotate PODCAST_DASHBOARD_TOKEN and stop/deregister the loopback dashboard service on the box"
   ledger_step "7-smoke-cron-stop"  "PENDING" "edge-only: openclaw cron rm the podcast-smoke-${SLUG} job on the box (verify with cron list)"
   ledger_step "8-drain-queue"      "PENDING" "edge-only: close the client's credit-out queue jobs as offboarded and notify the operator with the dropped job ids"
 else
-  # STEP 5: disable + rotate the inbound webhook
+  # STEP 5: disable + rotate the inbound webhook (activation teardown, part 1).
+  # Provision registers through the --client-slug contract (activation layer,
+  # Workflow 1); revoke unregisters symmetrically. The legacy positional form is
+  # tried as a fallback in case this box runs a pre-activation helper.
   if command -v openclaw >/dev/null 2>&1 && [ -x "$SCRIPT_DIR/register-podcast-hook.sh" ]; then
-    if runas "$SCRIPT_DIR/register-podcast-hook.sh" --remove "$SLUG" "$INTAKE_MAPPING" >/dev/null 2>&1; then
-      ledger_step "5-webhook-disable" "OK" "removed hook mapping $INTAKE_MAPPING (gateway restart doctrine applied by helper)"
+    if runas "$SCRIPT_DIR/register-podcast-hook.sh" --remove --client-slug "$SLUG" >/dev/null 2>&1; then
+      ledger_step "5-webhook-disable" "OK" "unregistered hook for --client-slug $SLUG (gateway restart doctrine applied by helper)"
+    elif runas "$SCRIPT_DIR/register-podcast-hook.sh" --remove "$SLUG" "$INTAKE_MAPPING" >/dev/null 2>&1; then
+      ledger_step "5-webhook-disable" "OK" "removed hook mapping $INTAKE_MAPPING (legacy form; gateway restart doctrine applied by helper)"
     else
       ledger_step "5-webhook-disable" "PENDING" "hook removal helper returned nonzero; remove the mapping on the box as the node user, then restart the gateway per doctrine"
     fi
@@ -321,6 +336,46 @@ else
     ledger_step "5-webhook-disable" "PENDING" "hook-removal helper/openclaw not present here; remove the podcast mapping on the box (node user), apply config per gateway restart doctrine, and confirm the gateway is UP"
   fi
   rotate_secret "PODCAST_INTAKE_HOOK_TOKEN"
+
+  # STEP 5b: stop + unregister the client's podcast scheduler (activation
+  # teardown, part 2; symmetric to provision STEP 8c). Resolve the exact
+  # installer used at provision time: the ledger audit fact records what was
+  # actually installed, so it wins; env override next; then the contract
+  # default.
+  SCHED_INSTALLER=""
+  if [ -f "$PLEDGER" ]; then
+    SCHED_INSTALLER="$(jq -r '.facts.scheduler_installer // empty' "$PLEDGER" 2>/dev/null)"
+  fi
+  [ -n "$SCHED_INSTALLER" ] || SCHED_INSTALLER="${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
+  if [ ! -x "$SCRIPT_DIR/$SCHED_INSTALLER" ]; then
+    # Installer absent in this build (activation layer not landed here). Fallback:
+    # the scheduler may live as an openclaw cron entry named
+    # podcast-scheduler-<slug>; stop it through the cron CLI idempotently.
+    if command -v openclaw >/dev/null 2>&1; then
+      SCID="$(runas openclaw cron list 2>/dev/null | grep -i "podcast-scheduler-${SLUG}" | grep -oE '[0-9a-f-]{8,}' | head -n1)"
+      if [ -n "$SCID" ]; then
+        if runas openclaw cron rm "$SCID" >/dev/null 2>&1; then
+          ledger_step "5b-scheduler-stop" "OK" "stopped + unregistered scheduler cron $SCID"
+        else
+          ledger_step "5b-scheduler-stop" "PENDING" "cron rm failed for podcast-scheduler-${SLUG}; stop it on the box"
+        fi
+      else
+        ledger_step "5b-scheduler-stop" "OK" "no scheduler registered for $SLUG (already gone)"
+      fi
+    else
+      ledger_step "5b-scheduler-stop" "PENDING" "$SCHED_INSTALLER and the openclaw CLI are not present here; stop + unregister the podcast scheduler for $SLUG on the box, then verify it with a fresh cron inventory"
+    fi
+  else
+    if runas "$SCRIPT_DIR/$SCHED_INSTALLER" --remove --client-slug "$SLUG" >/dev/null 2>&1; then
+      if runas "$SCRIPT_DIR/$SCHED_INSTALLER" --check --client-slug "$SLUG" >/dev/null 2>&1; then
+        ledger_step "5b-scheduler-stop" "WARN" "scheduler installer --remove ran but --check still reports the scheduler active for $SLUG"
+      else
+        ledger_step "5b-scheduler-stop" "OK" "stopped + unregistered scheduler for $SLUG (verified stopped by --check)"
+      fi
+    else
+      ledger_step "5b-scheduler-stop" "PENDING" "scheduler installer returned nonzero; stop + unregister the podcast scheduler for $SLUG on the box, then verify with a fresh cron inventory"
+    fi
+  fi
 
   # STEP 6: invalidate the dashboard token and stop the dashboard service
   rotate_secret "PODCAST_DASHBOARD_TOKEN"
@@ -419,9 +474,22 @@ else
   else
     BOX_MSG="no secrets file; "
   fi
+  # Scheduler residue (activation teardown proof; a running scheduler is a live processor).
+  SCHED_INSTALLER="${PODCAST_SCHEDULER_INSTALLER:-install-podcast-scheduler.sh}"
+  if [ -x "$SCRIPT_DIR/$SCHED_INSTALLER" ] && runas "$SCRIPT_DIR/$SCHED_INSTALLER" --check --client-slug "$SLUG" >/dev/null 2>&1; then
+    BOX_MSG="${BOX_MSG}scheduler STILL ACTIVE; "
+  elif command -v openclaw >/dev/null 2>&1 && runas openclaw cron list 2>/dev/null | grep -qi "podcast-scheduler-${SLUG}"; then
+    BOX_MSG="${BOX_MSG}scheduler STILL ACTIVE; "
+  else
+    BOX_MSG="${BOX_MSG}scheduler not detected; "
+  fi
   GW_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 5 "http://127.0.0.1:${GATEWAY_PORT}/" 2>/dev/null; echo " rc=$?")"
   if printf '%s' "$GW_CODE" | grep -qE 'rc=0$|rc=22$'; then
-    ledger_step "9d-box-clean" "PASS" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy (a revocation that downs a live box is a FAILED revocation)"
+    if printf '%s' "$BOX_MSG" | grep -q 'STILL ACTIVE'; then
+      ledger_step "9d-box-clean" "WARN" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy, but the podcast processor scheduler is STILL LIVE for $SLUG; stop it and re-run"
+    else
+      ledger_step "9d-box-clean" "PASS" "${BOX_MSG}gateway on :${GATEWAY_PORT} healthy (a revocation that downs a live box is a FAILED revocation)"
+    fi
   else
     ledger_step "9d-box-clean" "WARN" "${BOX_MSG}gateway health inconclusive (${GW_CODE}); confirm the gateway is UP on the box"
   fi
