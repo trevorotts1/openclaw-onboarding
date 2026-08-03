@@ -118,9 +118,49 @@ ZHE_SEQUENCE_V1 = (
 # number that rots. PERSONA_LIBRARY_FLOOR is only a hard sanity minimum: a roster
 # below this is definitely truncated/broken, independent of how large it grows.
 PERSONA_LIBRARY_FLOOR = 40           # hard sanity minimum; real expected count is derived
-EXPECTED_INDEX_ROWS = 4413           # section-tagged coaching-personas index size
-INDEX_ROW_FLOOR_RATIO = 0.90         # tolerate minor re-embed variance, never zero
-INDEX_ROW_FLOOR = int(EXPECTED_INDEX_ROWS * INDEX_ROW_FLOOR_RATIO)
+
+# LEGACY REFERENCE ONLY — NOT a floor. 4413 was the row count of ONE box's
+# embeddings table at ONE moment (operator box, 2026-06-28), and that table was
+# MID-MIGRATION: 3172 of those rows were section-tagged and the remaining 1241
+# were leftover CHUNK-era rows. Kept only so a receipt reader can see where the
+# old number came from. Retiring it as the floor is the fix below.
+LEGACY_CHUNK_ERA_INDEX_ROWS = 4413
+
+# ── INDEX SUFFICIENCY — DERIVED, never pinned (fix 2026-08-03) ────────────────
+# The old floor was int(4413 * 0.90) = 3971 raw rows. That number is UNREACHABLE
+# by any correctly-built box today, because the indexer changed the UNIT it
+# stores, not just the corpus:
+#
+#   gemini-indexer.py          (legacy)  -> one row per CHARACTER CHUNK  (many/persona)
+#   gemini-section-indexer.py  (current) -> one row per `##` SECTION     (few/persona)
+#
+# gemini-section-indexer.py:296-303 DELETES every `unit_type='chunk' OR NULL` row
+# for a persona and replaces it with one row per section. So a box that has fully
+# migrated to section-level indexing necessarily has FAR FEWER rows than the
+# mixed, mid-migration snapshot the constant was taken from — and the more
+# correctly it is built, the further below the floor it falls.
+#
+# Measured against the shipped corpus (22-book-to-persona.../personas/*/
+# persona-blueprint.md, 99 personas, applying this indexer's own SECTION_PATTERN
+# and its MIN_SECTION_WORDS=30 cutoff): 1426 section rows total, 7 min / 14 median
+# / 27 max sections per persona. A fully-migrated box therefore lands near ~1.4k
+# rows, roughly a THIRD of the old 3971 floor. Boxes were failing this gate for
+# being correctly built, and "rebuild the index" — a DESTRUCTIVE operation — was
+# the tempting and WRONG remedy, because a rebuild reproduces the same row count.
+#
+# What ZHE step 5 actually requires is COVERAGE: every persona on disk is present
+# in the index, and the index is genuinely section-tagged. That is what we assert
+# now, derived from the corpus in front of us, so it can never rot again:
+#   - every on-disk persona has at least one indexed row (distinct persona_id
+#     coverage), which is unit-agnostic — it holds for a chunk index and a
+#     section index alike; and
+#   - a conservative per-persona row minimum, below the observed section-level
+#     minimum of 7, to catch a truncated or half-written index.
+MIN_INDEX_ROWS_PER_PERSONA = 5       # conservative: observed section-level min is 7
+# Coverage tolerance: a persona directory can legitimately carry no indexable
+# blueprint yet (freshly added, still being authored), so require MOST personas
+# indexed rather than every last one. Never zero, never a bare row count.
+INDEX_PERSONA_COVERAGE_RATIO = 0.90
 
 # Department folders the prover ignores when discovering floor depts (mirror
 # 32-command-center-setup/scripts/materialize-dept-agents.sh:163 SKIP_SLUGS).
@@ -511,9 +551,19 @@ def check_personas_canonical(fs, ws):
     idx_tagged = int(idx.get("tagged", 0) or 0)
     idx_has_mode = bool(idx.get("has_mode"))
     idx_has_section = bool(idx.get("has_section"))
+    idx_personas = int(idx.get("distinct_personas", 0) or 0)
+
+    # DERIVED sufficiency (see the constants block): coverage of the corpus in
+    # front of us, plus a conservative per-persona row minimum. Both scale with
+    # the library and neither depends on the indexer's storage unit, so a
+    # correctly-migrated section-level index passes and a truncated one does not.
+    idx_persona_floor = int(persona_count * INDEX_PERSONA_COVERAGE_RATIO)
+    idx_row_floor = persona_count * MIN_INDEX_ROWS_PER_PERSONA
     index_ok = (
-        bool(idx.get("exists")) and idx_rows >= INDEX_ROW_FLOOR
+        bool(idx.get("exists"))
         and idx_has_mode and idx_has_section and idx_tagged > 0
+        and idx_personas >= idx_persona_floor
+        and idx_rows >= idx_row_floor
     )
 
     personas_ok = persona_count >= expected_persona_count
@@ -532,8 +582,15 @@ def check_personas_canonical(fs, ws):
         "categories_ok": categories_ok,
         "index_db_exists": bool(idx.get("exists")),
         "index_rows": idx_rows,
-        "index_rows_floor": INDEX_ROW_FLOOR,
-        "index_rows_expected": EXPECTED_INDEX_ROWS,
+        "index_rows_floor": idx_row_floor,
+        "index_rows_floor_source": (
+            f"{persona_count} personas on disk x {MIN_INDEX_ROWS_PER_PERSONA} "
+            f"min rows/persona (DERIVED; unit-agnostic)"
+        ),
+        "index_personas_covered": idx_personas,
+        "index_personas_floor": idx_persona_floor,
+        "index_persona_column": idx.get("persona_column"),
+        "index_legacy_chunk_era_rows": LEGACY_CHUNK_ERA_INDEX_ROWS,
         "index_section_tagged_rows": idx_tagged,
         "index_has_mode_col": idx_has_mode,
         "index_has_section_col": idx_has_section,
@@ -541,7 +598,8 @@ def check_personas_canonical(fs, ws):
         "detail": (
             f"personas {persona_count}/{expected_persona_count} "
             f"categories={'ok' if categories_ok else 'MISSING/NON-CANONICAL'} "
-            f"index_rows={idx_rows}(floor {INDEX_ROW_FLOOR}) tagged={idx_tagged}"
+            f"index_personas={idx_personas}(floor {idx_persona_floor}) "
+            f"index_rows={idx_rows}(floor {idx_row_floor}) tagged={idx_tagged}"
         ),
     }
 
@@ -572,6 +630,24 @@ if r["exists"]:
             "SELECT count(*) FROM embeddings WHERE section_number IS NOT NULL"
         ).fetchone()[0]) if r["has_section"] else 0
         r["tagged"] = max(r["mode_tagged"], r["section_tagged"])
+        # COVERAGE (2026-08-03): how many DISTINCT personas the index actually
+        # carries. This is the unit-agnostic sufficiency signal — it means the
+        # same thing whether the rows are character chunks or `##` sections,
+        # unlike a raw row count, which changed by ~3x when the indexer switched
+        # units. 'persona_id' is the v2.1 column gemini-section-indexer.py writes;
+        # a pre-v2.1 table may only carry 'persona'. Accept either, prefer the
+        # canonical one, and report which was used so a receipt is self-explaining.
+        _pcol = "persona_id" if "persona_id" in cols else (
+            "persona" if "persona" in cols else "")
+        r["persona_column"] = _pcol
+        # NB: built by concatenation, not str.format — this whole probe is itself
+        # a .format() template (see _SQL_INDEX_PROBE.format(db=...)), so any
+        # braces here would be eaten by the outer substitution. _pcol is chosen
+        # from the table's own PRAGMA column list, never from external input.
+        r["distinct_personas"] = (cur.execute(
+            "SELECT count(DISTINCT " + _pcol + ") FROM embeddings WHERE "
+            + _pcol + " IS NOT NULL AND " + _pcol + " != ''"
+        ).fetchone()[0]) if _pcol else 0
         c.close()
     except Exception as e:
         r["error"] = str(e)
