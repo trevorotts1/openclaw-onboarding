@@ -764,6 +764,55 @@ fi
 fi  # FUNCTIONAL
 
 # ---------------------------------------------------------------------------
+# (15) HOP4_DOC_CODE_LOCKSTEP
+# INSTRUCTIONS.md claimed "HOP-4 requires `wiring_dirty == 0` before writing
+# buildCompletedAt -- so no stub department can ever silently close out." The code
+# does not check wiring_dirty at all (the variable is never computed; its only
+# assignment is the `${wiring_dirty:-0}` default, so it is permanently 0 and the
+# [WIRING-RESUME] branch is unreachable). A doc that overstates an enforcement gate
+# sends the next person debugging a stuck buildCompletedAt down the wrong path.
+# This asserts the two stay in lockstep in EITHER direction.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (15) HOP4_DOC_CODE_LOCKSTEP: the wiring-gate claim must match the code ---"
+INSTR="$REPO_ROOT/23-ai-workforce-blueprint/INSTRUCTIONS.md"
+if [[ ! -f "$RESUME" || ! -f "$INSTR" ]]; then
+  fail "15: resume-workforce-build.sh or INSTRUCTIONS.md not found"
+else
+  # The HOP-4 condition is the `if` that guards the AUTO-COMPLETE (HOP-4) log line.
+  hop4_cond="$(grep -B8 'AUTO-COMPLETE (HOP-4): all' "$RESUME" | grep -A8 '^if ((' || true)"
+  # Is wiring_dirty genuinely computed anywhere (an assignment that is not the
+  # `${wiring_dirty:-0}` default and not a comment)?
+  wiring_computed=0
+  # -F on the last grep: the default value contains {..}, which BRE reads as a
+  # repetition interval ("invalid repetition count(s)") rather than literal braces.
+  if grep -vE '^\s*#' "$RESUME" | grep -E 'wiring_dirty=' | grep -qvF 'wiring_dirty=${wiring_dirty:-0}'; then
+    wiring_computed=1
+  fi
+  doc_claims_enforced=0
+  grep -q 'HOP-4 requires `wiring_dirty == 0`' "$INSTR" && doc_claims_enforced=1
+
+  if [[ "$hop4_cond" == *wiring_dirty* ]] && (( wiring_computed == 1 )); then
+    # Gate is genuinely enforced -> the doc is allowed (and expected) to say so.
+    (( doc_claims_enforced == 1 )) \
+      && pass "15a: wiring IS enforced by HOP-4 and INSTRUCTIONS.md says so (lockstep)" \
+      || fail "15a: HOP-4 now enforces wiring but INSTRUCTIONS.md no longer documents it"
+  else
+    # Gate is NOT enforced -> the doc must not claim it is.
+    if (( doc_claims_enforced == 1 )); then
+      fail "15a: INSTRUCTIONS.md claims HOP-4 requires wiring_dirty == 0, but HOP-4 does not check it (wiring_dirty computed=$wiring_computed) — doc overstates an enforcement gate"
+    else
+      pass "15a: HOP-4 does not enforce wiring and INSTRUCTIONS.md does not claim it does (lockstep)"
+    fi
+    if grep -q 'KNOWN GAP' "$INSTR"; then
+      pass "15b: the unenforced wiring gate is documented as a known gap, not left silent"
+    else
+      fail "15b: the wiring gate is unenforced and INSTRUCTIONS.md does not flag it as a gap"
+    fi
+  fi
+fi
+
+# ---------------------------------------------------------------------------
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
 if (( FAIL > 0 )); then
