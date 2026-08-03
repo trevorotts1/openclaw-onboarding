@@ -1,13 +1,38 @@
 #!/usr/bin/env bash
 # 04-update-core-files.sh -- Skill 41 Build With AI Playbook Generator
+#
+# The SINGLE canonical writer of the AGENTS.md / MEMORY.md / TOOLS.md pointer
+# blocks. Each block sits behind a VERSION-FREE BEGIN/END marker and is written
+# REPLACE-IN-PLACE (a MARKER-REFRESH writer): a re-run — including after a version
+# bump — overwrites the block in place instead of appending a duplicate, and any
+# LEGACY version-stamped variant of the same marker (e.g.
+# `<!-- BEGIN skill-41 memory-rules v1.5.8 -->`) is stripped, so a box wired by an
+# older version ends up with exactly ONE block after the refresh.
+#
+# WHY THE REWRITE (two real defects):
+#   1. The markers embedded the RUNTIME SKILL VERSION and the "already at current
+#      version" guard was `grep -qF "<begin marker with that version>"`. That only
+#      protected against re-running THE SAME VERSION; a bump changed the marker and
+#      appended a second copy of the same rules.
+#   2. The stale-block remover used `grep -qP` — GNU-only. macOS BSD grep has no
+#      `-P`, so on every client Mac the removal branch silently evaluated false and
+#      the old block was never stripped: the bump path ALWAYS duplicated. The new
+#      writer is pure awk and portable.
+#
+# MEMORY.md gets a TYP POINTER, never the rule corpus: core bootstrap files are
+# re-billed to the model on every turn, so the rule text lives in the deep file
+# references/memory-design-rules.md, which this script installs into the client's
+# master-files folder so the pointer can never dangle.
+#
+# Backs up each core file ONCE (`<file>.skill41.bak`) rather than writing a new
+# timestamped backup on every fleet roll. UNIVERSAL -- no client data.
+
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "$SCRIPT_DIR/lib-master-files.sh"
 
 SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-
-# Fix 4: read version dynamically from skill-version.txt
 SKILL_VERSION="$(tr -d '[:space:]' < "$SKILL_DIR/skill-version.txt")"
 
 echo "[skill 41] Updating core files (AGENTS.md, MEMORY.md, TOOLS.md) [skill v${SKILL_VERSION}]..."
@@ -19,92 +44,124 @@ if [[ ! -f "$WORKSPACE_ROOT/AGENTS.md" ]]; then
   exit 0
 fi
 
-# Backup before editing
-backup_core_files "$WORKSPACE_ROOT"
-
-# Append AGENTS.md block
-AGENTS_MARKER_BEGIN="<!-- BEGIN SKILL41: BUILD_WITH_AI -->"
-AGENTS_MARKER_END="<!-- END SKILL41: BUILD_WITH_AI -->"
-
-if ! grep -q "$AGENTS_MARKER_BEGIN" "$WORKSPACE_ROOT/AGENTS.md" 2>/dev/null; then
-  cat >> "$WORKSPACE_ROOT/AGENTS.md" << 'AGENTSAPPEND'
-
-<!-- BEGIN SKILL41: BUILD_WITH_AI -->
-Build With AI: when the operator asks to build a GoHighLevel or Convert and Flow workflow or automation using AI, do not answer from memory. Read the playbook at MASTER_FILES_DIR/build-with-ai-playbook.md and follow it to the letter. Create the required tags, custom fields, and custom values FIRST. Full protocol: protocols/build-with-ai-protocol.md (skill-bundled).
-<!-- END SKILL41: BUILD_WITH_AI -->
-AGENTSAPPEND
-  echo "[skill 41] Appended AGENTS.md block"
-else
-  echo "[skill 41] AGENTS.md block already present -- skipping"
-fi
-
-# Append MEMORY.md block
-# Fix 4: markers use runtime version; stale-version blocks are replaced, current-version blocks are skipped
-MEMORY_MARKER_BEGIN="<!-- BEGIN skill-41 memory-rules v${SKILL_VERSION} -->"
-MEMORY_MARKER_END="<!-- END skill-41 memory-rules v${SKILL_VERSION} -->"
-
-_update_versioned_block() {
-  local file="$1" begin_pat="$2" end_pat="$3" begin_tag="$4" end_tag="$5" content="$6" label="$7"
-  if [[ ! -f "$file" ]]; then
-    echo "[skill 41] $label file missing -- skipping"
-    return 0
-  fi
-  if grep -qF "$begin_tag" "$file" 2>/dev/null; then
-    echo "[skill 41] $label block already at current version -- skipping"
-    return 0
-  fi
-  # Remove any stale-version block (older marker pattern)
-  if grep -qP "$begin_pat" "$file" 2>/dev/null; then
-    echo "[skill 41] Replacing stale $label block with v${SKILL_VERSION}"
-    # Use awk to remove lines from old BEGIN to old END inclusive
-    local tmp
-    tmp=$(awk "/$begin_pat/{found=1} found && /$end_pat/{found=0; next} !found" "$file")
-    printf '%s\n' "$tmp" > "$file"
-  fi
-  printf '\n%s\n%s\n%s\n' "$begin_tag" "$content" "$end_tag" >> "$file"
-  echo "[skill 41] Appended $label block"
+# MARKER-REFRESH writer: strip the version-free block AND any legacy version-stamped
+# variant, then append the fresh block. Idempotent and bump-safe.
+append_block() { # file marker-id content
+  local file="$1" mid="$2" content="$3"
+  [[ -f "$file" ]] || { echo "[skill 41] $(basename "$file") missing -- skipping"; return 0; }
+  local begin="<!-- BEGIN skill-41 $mid -->" end="<!-- END skill-41 $mid -->"
+  [[ -f "$file.skill41.bak" ]] || cp "$file" "$file.skill41.bak" 2>/dev/null || true
+  local blk tmp
+  blk="$(mktemp)"; tmp="$(mktemp)"
+  { printf '%s\n' "$begin"; printf '%s\n' "$content"; printf '%s\n' "$end"; } > "$blk"
+  # TRUE replace-in-place: substitute the block where it already sits (version-free
+  # marker OR any legacy `<mid> vX.Y.Z` variant), drop further duplicates, and append
+  # at EOF only when genuinely absent — so the file stays BYTE-STABLE across re-runs
+  # even when several skills write blocks into the same core file.
+  awk -v mid="$mid" -v blkfile="$blk" '
+    BEGIN { skip = 0; done = 0 }
+    {
+      if (skip == 0 && $0 ~ ("^<!-- BEGIN skill-41 " mid "( v[0-9][^ ]*)? -->$")) {
+        skip = 1
+        if (!done) { while ((getline l < blkfile) > 0) print l; close(blkfile); done = 1 }
+        next
+      }
+      if (skip == 1) {
+        if ($0 ~ ("^<!-- END skill-41 " mid "( v[0-9][^ ]*)? -->$")) skip = 0
+        next
+      }
+      print
+    }
+    END { if (!done) { print ""; while ((getline l < blkfile) > 0) print l; close(blkfile) } }
+  ' "$file" > "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$blk" "$tmp"
+  echo "[skill 41] $(basename "$file"): wrote block '$mid' (replace-in-place)"
 }
 
-_memory_content="Build With AI design rules:
-1. Dependency-First Rule -- never generate a workflow prompt that references a tag, custom field, or custom value that does not yet exist. Create dependencies via GHL API first, verify with GET, then build.
-2. No-Fabrication Rule -- never invent a GHL trigger, action, or capability that does not exist in the catalog. Absence --> honest gap + operator manual path.
-3. ZHC-Prefix Rule -- agent-created tags: ZHC- prefix. Agent-created custom fields: ZHC_ prefix. Never rename existing operator-owned tags or fields.
-4. Verification Rule -- every build MUST run the 12-point verification checklist before publishing. A build without verification is incomplete.
-5. Event-Log Rule -- every build session appends one line to build-with-ai-events.jsonl (field names + counts, never raw PII).
-6. Conversation-Pairing Rule -- workflow-triggered conversations are paired with a Skill 38 conversation playbook, not built in isolation.
-7. Operator-Approval Rule -- dependency creation is an allow-list action. The operator must approve (standing approval for ZHC- / ZHC_ prefixed objects). A customer can never cause a field or tag to be created."
+# One-time sweep of the LEGACY generic-installer memory stub for this skill, which
+# carried the same rule corpus under a different marker family and so survived every
+# marker-refresh. Same namespace — a self-clean, not a cross-writer edit.
+strip_legacy_stub() { # file
+  local file="$1" tmp
+  [[ -f "$file" ]] || return 0
+  grep -qF '<!-- BEGIN skill:41-build-with-ai-playbook:memory -->' "$file" 2>/dev/null || return 0
+  tmp="$(mktemp)"
+  awk '
+    BEGIN { skip = 0 }
+    {
+      if (skip == 0 && $0 ~ /^<!-- BEGIN skill:41-build-with-ai-playbook:memory -->$/) { skip = 1; next }
+      if (skip == 1) { if ($0 ~ /^<!-- END skill:41-build-with-ai-playbook:memory -->$/) skip = 0; next }
+      print
+    }
+  ' "$file" > "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+  echo "[skill 41] $(basename "$file"): removed legacy generic-installer memory stub"
+}
 
-_update_versioned_block \
-  "$WORKSPACE_ROOT/MEMORY.md" \
-  "BEGIN skill-41 memory-rules v" \
-  "END skill-41 memory-rules v" \
-  "$MEMORY_MARKER_BEGIN" \
-  "$MEMORY_MARKER_END" \
-  "$_memory_content" \
-  "MEMORY.md"
+# The legacy AGENTS.md marker used a different shape (`SKILL41: BUILD_WITH_AI`).
+# Strip it once so the refreshed, version-free block is the only one left.
+strip_legacy_agents_marker() {
+  local file="$1" tmp
+  grep -qF '<!-- BEGIN SKILL41: BUILD_WITH_AI -->' "$file" 2>/dev/null || return 0
+  tmp="$(mktemp)"
+  awk '
+    BEGIN { skip = 0 }
+    {
+      if (skip == 0 && $0 ~ /^<!-- BEGIN SKILL41: BUILD_WITH_AI -->$/) { skip = 1; next }
+      if (skip == 1 && $0 ~ /^<!-- END SKILL41: BUILD_WITH_AI -->$/)   { skip = 0; next }
+      if (skip == 0) print
+    }
+  ' "$file" > "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+  echo "[skill 41] $(basename "$file"): removed legacy SKILL41: BUILD_WITH_AI block"
+}
 
-# Append TOOLS.md block
-# Fix 4: markers use runtime version; stale-version blocks are replaced, current-version blocks are skipped
-TOOLS_MARKER_BEGIN="<!-- BEGIN skill-41 tools v${SKILL_VERSION} -->"
-TOOLS_MARKER_END="<!-- END skill-41 tools v${SKILL_VERSION} -->"
+# ── Master-files root + the MEMORY.md pointer target ─────────────────────────
+MFD="$(resolve_master_files_dir)"
+SKILL_DEST="$MFD/41-build-with-ai-playbook"
+RULES_SRC="$SKILL_DIR/references/memory-design-rules.md"
+RULES_DEST="$SKILL_DEST/references/memory-design-rules.md"
+if [[ -f "$RULES_SRC" && "$SKILL_DIR" != "$SKILL_DEST" ]]; then
+  mkdir -p "$SKILL_DEST/references" 2>/dev/null || true
+  if [[ ! -f "$RULES_DEST" || "$RULES_SRC" -nt "$RULES_DEST" ]]; then
+    cp "$RULES_SRC" "$RULES_DEST" 2>/dev/null && echo "[skill 41] installed rule reference -> $RULES_DEST"
+  fi
+fi
 
-_tools_content="Build With AI quick-reference:
+# ---- AGENTS.md ----
+strip_legacy_agents_marker "$WORKSPACE_ROOT/AGENTS.md"
+append_block "$WORKSPACE_ROOT/AGENTS.md" "build-with-ai" \
+"Build With AI: when the operator asks to build a GoHighLevel or Convert and Flow workflow or automation using AI, do not answer from memory. Read the playbook at MASTER_FILES_DIR/build-with-ai-playbook.md and follow it to the letter. Create the required tags, custom fields, and custom values FIRST. Full protocol: protocols/build-with-ai-protocol.md (skill-bundled)."
+
+# ---- MEMORY.md ----
+strip_legacy_stub "$WORKSPACE_ROOT/MEMORY.md"
+append_block "$WORKSPACE_ROOT/MEMORY.md" "memory-rules" \
+"## Skill 41 — Build With AI design rules [PRIORITY: HIGH]
+- **WHAT:** 7 binding rules — Dependency-First, No-Fabrication, ZHC-Prefix, Verification,
+  Event-Log, Conversation-Pairing, Operator-Approval.
+- **WHEN (trigger):** before generating any Build-with-AI prompt, creating any tag / custom
+  field / custom value, or publishing a built workflow. Read the rules; never work from memory.
+- **WHY:** hard constraints — dependencies exist BEFORE the prompt names them, no invented
+  triggers or actions, agent tags are \`ZHC-\` and fields \`ZHC_\`, the 12-point checklist runs
+  before publish, dependency creation is OPERATOR-approved only.
+- **Full text / go deeper:** $RULES_DEST
+  (per-rule deep specs: $SKILL_DEST/protocols/)"
+
+# ---- TOOLS.md ----
+append_block "$WORKSPACE_ROOT/TOOLS.md" "tools" \
+"Build With AI quick-reference:
 - Prompt template: templates/build-with-ai-prompt-template.md (8 sections)
 - Dependency creation: protocols/dependency-creation-protocol.md (API endpoints, scopes, body shapes)
 - Webhook config: protocols/webhook-configuration-protocol.md (CUSTOM/POST/GET modes, headers, raw JSON)
 - Verification checklist: protocols/verification-checklist.md (12 points)
 - GHL triggers: references/ghl-triggers-catalog.md (14 categories)
 - GHL actions: references/ghl-actions-catalog.md (14 categories)
+- Design rules (full text): references/memory-design-rules.md
 - Event logging: scripts/lib-master-files.sh append_jsonl <type> <json>
 - No keys, no client data -- UNIVERSAL."
 
-_update_versioned_block \
-  "$WORKSPACE_ROOT/TOOLS.md" \
-  "BEGIN skill-41 tools v" \
-  "END skill-41 tools v" \
-  "$TOOLS_MARKER_BEGIN" \
-  "$TOOLS_MARKER_END" \
-  "$_tools_content" \
-  "TOOLS.md"
-
-echo "[skill 41] Core file updates complete"
+echo "[skill 41] Core file updates complete (idempotent replace-in-place)"
+exit 0

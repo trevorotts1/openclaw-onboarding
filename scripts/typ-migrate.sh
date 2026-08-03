@@ -342,7 +342,16 @@ check_subagent_rule
 # ─────────────────────────────────────────────────────────────────────────────
 # SUMMARY / DRY-RUN REPORT
 # ─────────────────────────────────────────────────────────────────────────────
-TOTAL_ISSUES=$((BLOAT_ISSUES + MISPLACED_ISSUES + (SUBAGENT_RULE_MISSING && true || false)))
+# NOTE: `$(( … ))` is ARITHMETIC context — bare words in it are read as VARIABLE
+# NAMES, not as commands. The previous form
+#   $(( … + (SUBAGENT_RULE_MISSING && true || false) ))
+# therefore expanded $SUBAGENT_RULE_MISSING to the string "false", dereferenced
+# THAT as a variable, and then hit the unset names `true`/`false`, which under
+# `set -u` aborted the whole script with `line 345: true: unbound variable` —
+# right after the STEP 3 check and before the summary, so the script always
+# exited 1 and never reached STEP 4-7. Convert the boolean to a plain integer.
+if $SUBAGENT_RULE_MISSING; then SUBAGENT_RULE_MISSING_COUNT=1; else SUBAGENT_RULE_MISSING_COUNT=0; fi
+TOTAL_ISSUES=$((BLOAT_ISSUES + MISPLACED_ISSUES + SUBAGENT_RULE_MISSING_COUNT))
 
 log ""
 log "=== DETECTION SUMMARY ==="
@@ -450,17 +459,19 @@ if [ "${#BLOAT_DETAILS[@]}" -gt 0 ]; then
   log "--- STEP 5: Extracting bloated sections from bootstrap files ---"
   [ -n "$MASTER_FILES_ROOT" ] || { warn "MASTER_FILES_ROOT not set; cannot extract."; exit 1; }
 
-  # Group by file so we only write one backup per file
-  declare -A BACKED_UP=()
+  # Group by file so we only write one backup per file.
+  # NOTE: a plain newline-delimited list, NOT `declare -A` — associative arrays are
+  # bash 4+, and stock macOS /bin/bash is 3.2, where `declare -A` is a hard error.
+  BACKED_UP_LIST=$'\n'
 
   for detail in "${BLOAT_DETAILS[@]}"; do
     IFS=':' read -r dtype dfile rest <<< "$detail"
 
     # Backup file once
-    if [ -z "${BACKED_UP[$dfile]+x}" ]; then
-      backup_file "$dfile"
-      BACKED_UP[$dfile]=1
-    fi
+    case "$BACKED_UP_LIST" in
+      *$'\n'"$dfile"$'\n'*) : ;;
+      *) backup_file "$dfile"; BACKED_UP_LIST="$BACKED_UP_LIST$dfile"$'\n' ;;
+    esac
 
     fname="$(basename "$dfile" .md)"
 
@@ -662,11 +673,10 @@ if [ -f "$AGENTS_FILE" ]; then
   fi
 fi
 
-# Check each relocated/extracted file exists
-for dest in "${MISPLACED_FILES[@]}"; do
-  # We overwrote originals with forwarding stubs; check master-files instead
-  true  # destination verification is logged during relocation above
-done
+# Relocated/extracted destinations are verified and logged inline during STEP 4/5
+# above. (A no-op `for dest in "${MISPLACED_FILES[@]}"` loop used to sit here; on
+# bash < 4.4 expanding an EMPTY array under `set -u` is itself an unbound-variable
+# error, so a dead loop could abort the run on stock macOS bash. Removed.)
 
 # Report backup files created
 log ""

@@ -1,3 +1,26 @@
+## [1.6.0] - 2026-08-03 — fix: the stale-block remover never ran on macOS, so every bump duplicated the rules
+
+### Why
+Two defects compounded. (1) The markers embedded the RUNTIME skill version and the
+"already current" guard was `grep -qF "<begin marker with that version>"`, which only
+protected against re-running the same version. (2) The stale-block remover was gated on
+`grep -qP` — GNU-only. macOS BSD grep has no `-P`, so on every client Mac that branch
+silently evaluated false and the old block was never stripped: the bump path ALWAYS left
+two copies of the same rules in MEMORY.md.
+
+### Changed
+- **All three blocks use VERSION-FREE markers and a portable, pure-awk TRUE replace-in-place
+  writer** that substitutes the block where it already sits (version-free marker OR legacy
+  `<mid> vX.Y.Z` variant), drops duplicates, and appends at EOF only when genuinely absent.
+  Re-runs are byte-identical. No `grep -P` anywhere.
+- **MEMORY.md block is now a compact TYP pointer**, not the 7-rule corpus; the full text ships
+  as `references/memory-design-rules.md` and is installed into the client's master-files folder.
+- **Legacy markers swept:** the AGENTS.md `<!-- BEGIN SKILL41: BUILD_WITH_AI -->` block and the
+  generic-installer stub `<!-- BEGIN skill:41-build-with-ai-playbook:memory -->` are removed on
+  the next run (own namespace — a self-clean).
+- **Backup discipline:** one `<file>.skill41.bak` per core file instead of a NEW timestamped
+  backup of all three core files on every fleet roll.
+
 ## [1.5.7] - 2026-07-12 — P3-04 (c)1: Agent Browser preflight routed through the managed gateway
 
 ### Why

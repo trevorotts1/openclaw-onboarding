@@ -120,8 +120,8 @@ def load_pipeline_stage_map(path):
 # --- (A) Static wiring checks. -----------------------------------------------
 if not (SKILL_ROOT / "protocols" / "opportunity-sync-protocol.md").is_file():
     failures.append("missing protocols/opportunity-sync-protocol.md")
-if not contains("scripts/06-append-memory-rules.sh", "v1.8.0-rules-opportunity-sync"):
-    failures.append("missing MEMORY Rule 41 (opportunity sync) in scripts/06-append-memory-rules.sh")
+if not contains("references/memory-design-rules.md", "v1.8.0-rules-opportunity-sync"):
+    failures.append("missing MEMORY Rule 41 (opportunity sync) in references/memory-design-rules.md")
 if not contains("scripts/25-seed-round3-feature-files.sh", "opportunity-sync-events.jsonl"):
     failures.append("missing opportunity-sync-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")
 

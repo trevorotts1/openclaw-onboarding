@@ -68,7 +68,7 @@ echo ""
 
 PROTO="$SKILL_DIR/protocols/ab-testing-protocol.md"
 AG_SCRIPT="$SKILL_DIR/scripts/05-update-agents-md.sh"
-MEM_SCRIPT="$SKILL_DIR/scripts/06-append-memory-rules.sh"
+MEM_SCRIPT="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 INSTR="$SKILL_DIR/INSTRUCTIONS.md"
 INSTALLER="$SKILL_DIR/scripts/25-seed-round3-feature-files.sh"
 JSONL="ab-test-events.jsonl"

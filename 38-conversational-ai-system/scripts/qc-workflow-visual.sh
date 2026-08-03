@@ -88,8 +88,8 @@ if not (SKILL_ROOT / "protocols" / "workflow-visual-protocol.md").is_file():
     failures.append("missing protocols/workflow-visual-protocol.md")
 if not (SKILL_ROOT / "scripts" / "31-generate-workflow-visual.sh").is_file():
     failures.append("missing scripts/31-generate-workflow-visual.sh (the generator)")
-if not contains("scripts/06-append-memory-rules.sh", "v1.8.0-rules-workflow-visual"):
-    failures.append("missing MEMORY Rule 39 (workflow visual) in scripts/06-append-memory-rules.sh")
+if not contains("references/memory-design-rules.md", "v1.8.0-rules-workflow-visual"):
+    failures.append("missing MEMORY Rule 39 (workflow visual) in references/memory-design-rules.md")
 if not contains("scripts/25-seed-round3-feature-files.sh", "kie-image-events.jsonl"):
     failures.append("missing kie-image-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")
 

@@ -1,3 +1,51 @@
+## [Unreleased]  -  Core-file paste disease: MEMORY.md writers emit POINTERS, and their idempotency guards actually work (skills 38/39/40/41) + typ-migrate.sh runs to completion
+
+Four skill installers pasted their design-rule corpora straight into every box's
+`MEMORY.md` on every install/update/fleet roll. `MEMORY.md` is re-billed to the model on
+every single turn, so that is a permanent per-turn tax -- and it was worse than one paste,
+because every guard keyed idempotency on a VERSION-STAMPED marker string
+(`<!-- BEGIN skill-38 memory-rules v1.5.0 -->` + `grep -qF "<that exact string>"`). Such a
+guard only ever protects against re-running THE SAME VERSION: each marker rename or version
+bump re-appended the whole corpus under the new name and nothing ever removed the
+predecessor. Skill 38 alone shipped ~40,000 characters across 24 fenced blocks and a live
+box was carrying rules 15-25 twice under two marker families; skill 41's stale-block
+remover was additionally gated on `grep -qP`, which does not exist in macOS BSD grep, so on
+every client Mac the removal branch silently evaluated false and the bump path ALWAYS
+duplicated.
+
+All four writers are now POINTER writers behind VERSION-FREE markers, with replace-in-place
+semantics -- idempotency is a property of the writer, not of a string literal, so a rename
+can no longer create a duplicate, a re-run is byte-identical, and the next fleet roll CLEANS
+a bloated box instead of re-bloating it. The rule text is not lost: each skill now ships
+`references/memory-design-rules.md` (canonical full text) and each writer copies it, plus
+the per-rule `protocols/`, into the client's master-files folder so the pointer cannot
+dangle. Skill 38 additionally performs a STAGED heal on boxes that run an anti-tamper
+core-file watcher (which restores any bootstrap file that shrinks below max(200 bytes, 40%
+of its vaulted size)), removing only as many legacy blocks per pass as keep the file above
+that floor so the watcher accepts and re-vaults each pass rather than reverting the fix.
+
+Also in this change: `scripts/typ-migrate.sh` died with `line 345: true: unbound variable`
+(exit 1) on every run -- `$(( ... ))` is arithmetic context, so
+`(SUBAGENT_RULE_MISSING && true || false)` dereferenced the *string* "false" as a variable
+name and then hit the unset names `true`/`false` under `set -u`, aborting right after the
+STEP 3 check and before the summary, so STEP 4-7 never ran. Converted to a plain integer
+flag; also replaced a bash-4-only `declare -A` with a portable list and deleted a dead
+empty-array loop that could abort on stock macOS bash 3.2. Verified: dry-run reaches the
+summary and exits 2 (issues found) or 0 (clean), normal mode reaches STEP 7 and exits 0,
+and a re-run still completes.
+
+Files: `38-conversational-ai-system/scripts/06-append-memory-rules.sh` (rewritten),
+`38-conversational-ai-system/references/memory-design-rules.md` (new, corpus lifted verbatim
+out of the heredocs), 13 skill-38 QC gates repointed at that reference file (all PASS),
+`39-real-estate-playbook/scripts/08-update-core-files.sh`,
+`40-zhc-public-records-scraper/scripts/07-update-core-files.sh`,
+`41-build-with-ai-playbook/scripts/04-update-core-files.sh` (+ a
+`references/memory-design-rules.md` for each), `scripts/typ-migrate.sh`, the four
+`CORE_UPDATES.md` contracts, `38-*/INSTALL.md` + `SKILL.md` (reference count 25 -> 26), and
+per-skill version + CHANGELOG bumps (38: 1.9.6 -> 1.10.0, 39: 1.0.10 -> 1.1.0,
+40: 1.2.0 -> 1.3.0, 41: 1.5.8 -> 1.6.0). Full skill-38/39/40/41 QC gate sweep on this branch
+is identical to `origin/main`: 96 pass / 3 fail, the 3 failures pre-existing and unrelated.
+
 ## [Unreleased]  -  Skill 58 WIRING.md: satisfy guard-taskapi-auth-docs (401 write-back auth doctrine)
 
 Three write-back API examples in `58-podcast-production-engine/command-center/WIRING.md`

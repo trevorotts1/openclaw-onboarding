@@ -79,8 +79,8 @@ if not (SKILL_ROOT / "protocols" / "tool-gating-protocol.md").is_file():
     failures.append("missing protocols/tool-gating-protocol.md")
 if not contains("scripts/05-update-agents-md.sh", "STEP_1_88_TOOL_GATING"):
     failures.append("missing AGENTS marker STEP_1_88_TOOL_GATING in scripts/05-update-agents-md.sh")
-if not contains("scripts/06-append-memory-rules.sh", "v1.8.0-rules-tool-gating"):
-    failures.append("missing MEMORY Rule 32 (tool gating) in scripts/06-append-memory-rules.sh")
+if not contains("references/memory-design-rules.md", "v1.8.0-rules-tool-gating"):
+    failures.append("missing MEMORY Rule 32 (tool gating) in references/memory-design-rules.md")
 if not contains("scripts/25-seed-round3-feature-files.sh", "tool-gate-events.jsonl"):
     failures.append("missing tool-gate-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")
 

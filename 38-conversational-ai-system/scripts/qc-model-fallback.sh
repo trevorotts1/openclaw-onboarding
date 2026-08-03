@@ -96,8 +96,8 @@ else:
 if not (SKILL_ROOT / "scripts" / "32-verify-model-failover-support.sh").is_file():
     failures.append("missing scripts/32-verify-model-failover-support.sh (the Mode A/B preflight)")
 
-if not contains("scripts/06-append-memory-rules.sh", "v1.8.0-rules-model-fallback"):
-    failures.append("missing MEMORY Rule 38 (model fallback) in scripts/06-append-memory-rules.sh")
+if not contains("references/memory-design-rules.md", "v1.8.0-rules-model-fallback"):
+    failures.append("missing MEMORY Rule 38 (model fallback) in references/memory-design-rules.md")
 
 if not contains("scripts/25-seed-round3-feature-files.sh", "model-failover-events.jsonl"):
     failures.append("missing model-failover-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")

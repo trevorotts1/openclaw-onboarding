@@ -25,6 +25,38 @@ find_core() { # base-name -> first existing path
   return 1
 }
 
+# ── Master-files root + the MEMORY.md pointer target ─────────────────────────
+# MEMORY.md gets a POINTER, never the rule corpus: core bootstrap files are
+# re-billed to the model on every turn, so the rule text lives in a deep file
+# (references/memory-design-rules.md) that this script installs next to the
+# skill in the client's master-files folder. Resolution order mirrors
+# scripts/01-locate-master-files-folder.sh, then the platform default used by
+# repo scripts/typ-migrate.sh + scripts/apply-fleet-standards.sh.
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
+SKILL_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+resolve_master_files_dir() {
+  local s
+  [ -n "${MASTER_FILES_DIR:-}" ] && { printf '%s\n' "$MASTER_FILES_DIR"; return 0; }
+  for s in "$HOME/.openclaw/.skill-39-master-files-dir" "$HOME/.openclaw/.skill-38-master-files-dir"; do
+    [ -s "$s" ] && { head -n1 "$s"; return 0; }
+  done
+  if [ -f /data/.openclaw/openclaw.json ]; then
+    printf '%s\n' "/data/.openclaw/master-files"
+  else
+    printf '%s\n' "$HOME/Downloads/openclaw-master-files"
+  fi
+}
+MFD="$(resolve_master_files_dir)"
+SKILL_DEST="$MFD/39-real-estate-playbook"
+RULES_SRC="$SKILL_ROOT/references/memory-design-rules.md"
+RULES_DEST="$SKILL_DEST/references/memory-design-rules.md"
+if [ -f "$RULES_SRC" ] && [ "$SKILL_ROOT" != "$SKILL_DEST" ]; then
+  mkdir -p "$SKILL_DEST/references" 2>/dev/null || true
+  if [ ! -f "$RULES_DEST" ] || [ "$RULES_SRC" -nt "$RULES_DEST" ]; then
+    cp "$RULES_SRC" "$RULES_DEST" 2>/dev/null && echo "$P installed rule reference -> $RULES_DEST"
+  fi
+fi
+
 # MARKER-REFRESH writer: remove any existing block for this VERSION-FREE marker id
 # (and any legacy `<mid> vX.Y.Z` variant), then append the fresh block. Idempotent
 # and bump-safe: never leaves a duplicate behind. (Fulfils the CORE_UPDATES promise
@@ -33,22 +65,55 @@ append_block() { # file marker-id content
   local file="$1" mid="$2" content="$3"
   local begin="<!-- BEGIN skill-39 $mid -->" end="<!-- END skill-39 $mid -->"
   [ -f "$file.skill39.bak" ] || cp "$file" "$file.skill39.bak" 2>/dev/null || true
-  local tmp tmp2
-  tmp="$(mktemp)"; tmp2="$(mktemp)"
-  # Drop the current version-free block AND any legacy version-stamped variant.
-  awk -v mid="$mid" '
+  local blk tmp
+  blk="$(mktemp)"; tmp="$(mktemp)"
+  { printf '%s\n' "$begin"; printf '%s\n' "$content"; printf '%s\n' "$end"; } > "$blk"
+  # TRUE replace-in-place: substitute the block where it already sits (matching the
+  # version-free marker OR any legacy `<mid> vX.Y.Z` variant), dropping any further
+  # duplicates; append at EOF only when the block is genuinely absent. Substituting
+  # in position — rather than strip-then-append — keeps the file BYTE-STABLE across
+  # re-runs even when several skills write blocks into the same core file.
+  awk -v mid="$mid" -v blkfile="$blk" '
+    BEGIN { skip = 0; done = 0 }
+    {
+      if (skip == 0 && $0 ~ ("^<!-- BEGIN skill-39 " mid "( v[0-9][^ ]*)? -->$")) {
+        skip = 1
+        if (!done) { while ((getline l < blkfile) > 0) print l; close(blkfile); done = 1 }
+        next
+      }
+      if (skip == 1) {
+        if ($0 ~ ("^<!-- END skill-39 " mid "( v[0-9][^ ]*)? -->$")) skip = 0
+        next
+      }
+      print
+    }
+    END { if (!done) { print ""; while ((getline l < blkfile) > 0) print l; close(blkfile) } }
+  ' "$file" > "$tmp"
+  cat "$tmp" > "$file"
+  rm -f "$blk" "$tmp"
+  echo "$P $(basename "$file"): wrote block '$mid' (replace-in-place)"
+}
+
+# One-time sweep of the LEGACY generic-installer memory stub for this skill
+# (`<!-- BEGIN skill:39-real-estate-playbook:memory -->`), which carried the same
+# rule corpus under a different marker family and therefore survived every
+# marker-refresh. Same namespace, so this is a self-clean, not a cross-writer edit.
+strip_legacy_stub() { # file
+  local file="$1" tmp
+  [ -f "$file" ] || return 0
+  grep -qF '<!-- BEGIN skill:39-real-estate-playbook:memory -->' "$file" 2>/dev/null || return 0
+  tmp="$(mktemp)"
+  awk '
     BEGIN { skip = 0 }
     {
-      if (skip == 0 && $0 ~ ("^<!-- BEGIN skill-39 " mid "( v[0-9][^ ]*)? -->$")) { skip = 1; next }
-      if (skip == 1 && $0 ~ ("^<!-- END skill-39 " mid "( v[0-9][^ ]*)? -->$"))   { skip = 0; next }
-      if (skip == 0) print
+      if (skip == 0 && $0 ~ /^<!-- BEGIN skill:39-real-estate-playbook:memory -->$/) { skip = 1; next }
+      if (skip == 1) { if ($0 ~ /^<!-- END skill:39-real-estate-playbook:memory -->$/) skip = 0; next }
+      print
     }
   ' "$file" > "$tmp"
-  # Collapse any trailing blank lines left behind, then append the fresh block.
-  awk 'BEGIN{blanks=0}{if($0==""){blanks++}else{while(blanks>0){print"";blanks--}print}}' "$tmp" > "$tmp2"
-  { cat "$tmp2"; printf '\n%s\n' "$begin"; printf '%s\n' "$content"; printf '%s\n' "$end"; } > "$file"
-  rm -f "$tmp" "$tmp2"
-  echo "$P $(basename "$file"): wrote block '$mid' (replace-in-place)"
+  cat "$tmp" > "$file"
+  rm -f "$tmp"
+  echo "$P $(basename "$file"): removed legacy generic-installer memory stub"
 }
 
 # ---- AGENTS.md ----
@@ -68,15 +133,17 @@ fi
 
 # ---- MEMORY.md ----
 if MEM="$(find_core MEMORY.md)"; then
+  strip_legacy_stub "$MEM"
   append_block "$MEM" "memory-rules" \
-"Real-estate design rules:
-1. No-Fabrication Rule - never invent an address/price/sqft/comp/owner/photo. No provider/no match -> honest gap + operator-supplied-key path. Mark operator-provided figures source:operator.
-2. Fair-Housing Rule - never ask about or steer by protected class in qualification or routing.
-3. Disclosure-Pointer Rule - disclosure compliance is a POINTER matrix, not legal advice; the decision escalates to the licensed agent/broker.
-4. CMA-Anchor Rule - never reveal a price before the CMA walk-through; anchor on verified comps, not the seller's hoped list price.
-5. Pre-Foreclosure Care Rule - distressed-owner outreach is empathetic, options-focused, never predatory; honor do-not-contact + state cooling-off rules.
-6. Event-Log Rule - every RE action appends one line to real-estate-events.jsonl (field names + counts, never raw PII).
-7. Skill-38-Additive Rule - the RE Sales-Brain layer is an additive drop-in; never overwrite Skill 38's own protocol."
+"## Skill 39 — Real-estate design rules [PRIORITY: HIGH]
+- **WHAT:** 7 binding rules — No-Fabrication, Fair-Housing, Disclosure-Pointer, CMA-Anchor,
+  Pre-Foreclosure Care, Event-Log, Skill-38-Additive.
+- **WHEN (trigger):** before any property lookup, comps/CMA, qualification, showing, lead
+  route or pre-foreclosure outreach. Read the rules; never work from memory.
+- **WHY:** hard constraints — never invent property facts, never steer by protected class,
+  never give disclosure legal advice, never price before the CMA, log PII-free.
+- **Full text / go deeper:** $RULES_DEST
+  (per-rule deep specs: $SKILL_DEST/protocols/)"
 else
   echo "$P WARN: MEMORY.md not found in known locations — add the block manually (see CORE_UPDATES.md)."
 fi

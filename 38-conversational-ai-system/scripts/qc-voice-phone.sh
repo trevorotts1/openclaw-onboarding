@@ -64,7 +64,7 @@ echo "skill_dir : $SKILL_DIR"
 echo ""
 
 PROTO="$SKILL_DIR/protocols/voice-phone-protocol.md"
-MEM_SCRIPT="$SKILL_DIR/scripts/06-append-memory-rules.sh"
+MEM_SCRIPT="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 INSTR="$SKILL_DIR/INSTRUCTIONS.md"
 INSTALLER="$SKILL_DIR/scripts/25-seed-round3-feature-files.sh"
 WIZARD="$SKILL_DIR/scripts/30-voice-phone-setup-wizard.sh"

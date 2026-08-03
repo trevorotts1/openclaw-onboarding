@@ -52,7 +52,7 @@ fail() { echo "  [FAIL] $1"; FAIL=1; }
 
 PROTO="$SKILL_DIR/protocols/client-test-mode-protocol.md"
 AG="$SKILL_DIR/scripts/05-update-agents-md.sh"
-MEM="$SKILL_DIR/scripts/06-append-memory-rules.sh"
+MEM="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 
 echo "=== qc-client-test-mode: U-6 Client Test Mode surface gate ==="
 echo "skill_dir : $SKILL_DIR"

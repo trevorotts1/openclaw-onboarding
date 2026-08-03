@@ -35,7 +35,13 @@ Behind `<!-- BEGIN skill-39 sales-brain-re-extension -->` / `<!-- END skill-39 s
 
 ## [ADD TO MEMORY.md] — appended by `scripts/08-update-core-files.sh`
 
-Behind `<!-- BEGIN skill-39 memory-rules -->` / `<!-- END skill-39 memory-rules -->`:
+Behind the VERSION-FREE marker `<!-- BEGIN skill-39 memory-rules -->` / `<!-- END skill-39 memory-rules -->`,
+MEMORY.md receives ONE compact TYP **pointer** block — never the rule corpus. The full rule text
+ships as `references/memory-design-rules.md` (installed into the client's master-files folder by the
+same script) with the per-rule specs in `protocols/`. The writer substitutes the block IN PLACE
+(matching the version-free marker, any legacy `memory-rules vX.Y.Z` variant, and the legacy generic
+installer stub `<!-- BEGIN skill:39-real-estate-playbook:memory -->`), so a re-run is byte-identical
+and a version bump can never leave a duplicate. Rule list (doc-side index):
 
 Real-estate design rules:
 1. **No-Fabrication Rule** — never invent an address, price, sqft, comp, owner, or photo. No provider/no match → honest gap + operator-supplied-key path. Mark operator-provided figures `source: operator`.

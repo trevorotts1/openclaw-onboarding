@@ -21,7 +21,13 @@ Key behaviors added:
 
 ## [ADD TO MEMORY.md] — appended by `scripts/07-update-core-files.sh`
 
-Behind `<!-- BEGIN skill-40 memory-rules v1.0.0 -->` / `<!-- END skill-40 memory-rules v1.0.0 -->`:
+Behind the VERSION-FREE marker `<!-- BEGIN skill-40 memory-rules -->` / `<!-- END skill-40 memory-rules -->`,
+MEMORY.md receives ONE compact TYP **pointer** block — never the rule corpus. The full rule text
+ships as `references/memory-design-rules.md` (installed into the client's master-files folder by the
+same script) with the per-rule specs in `protocols/`. The writer substitutes the block IN PLACE
+(matching the version-free marker, any legacy `memory-rules vX.Y.Z` variant, and the legacy generic
+installer stub `<!-- BEGIN skill:40-zhc-public-records-scraper:memory -->`), so a re-run is
+byte-identical and a version bump can never leave a duplicate. Rule list (doc-side index):
 
 Public-records design rules:
 1. **No-Fabrication Rule** — never invent a record; no source → Tier 4 honest gap. A record without `source` + `retrieved_at` is not a record.

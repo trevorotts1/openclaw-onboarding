@@ -46,7 +46,7 @@ echo "skill_dir : $SKILL_DIR"
 echo ""
 
 # 1. MEMORY Rule 20 in the appender.
-MEM_SCRIPT="$SKILL_DIR/scripts/06-append-memory-rules.sh"
+MEM_SCRIPT="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 if [ -f "$MEM_SCRIPT" ] && grep -qE '^20\. *ZHC Tag-Prefix Rule' "$MEM_SCRIPT" && grep -q 'ZHC-' "$MEM_SCRIPT"; then
   pass "06-append-memory-rules.sh appends MEMORY Rule 20 (ZHC Tag-Prefix Rule)"
 else

@@ -1,5 +1,21 @@
 # Changelog - Skill 39: Real Estate Playbook & Property Intelligence
 
+## [1.1.0] - 2026-08-03 - fix: MEMORY.md gets a pointer, and the writer is byte-stable across rolls
+
+- **MEMORY.md block is now a compact TYP pointer**, not the 7-rule corpus. The full rule
+  text ships as `references/memory-design-rules.md` and the writer installs it into the
+  client's master-files folder, so the pointer cannot dangle.
+- **TRUE replace-in-place.** `append_block` previously stripped the block and re-appended it
+  at EOF. With several skills writing into one core file that rotated block order on every
+  roll, so the file was never byte-stable. The block is now substituted WHERE IT SITS
+  (matching the version-free marker or any legacy `<mid> vX.Y.Z` variant), further duplicates
+  are dropped, and EOF-append happens only when the block is genuinely absent.
+- **Legacy generic-installer stub swept.** `<!-- BEGIN skill:39-real-estate-playbook:memory -->`
+  carried the same rules under a different marker family and survived every marker refresh;
+  it is now removed on the next run (own namespace, so this is a self-clean).
+- Proved in test: three consecutive runs of skills 39+40+41 leave AGENTS.md / MEMORY.md /
+  TOOLS.md byte-identical, one block per skill, operator content untouched.
+
 ## [1.0.9] - 2026-07-21 - SK1-30: fair housing gates the ROUTING DECISION, and the audit/install records stop lying
 
 - **T0-52 — a routing entry point (`scripts/route-lead.sh`).** Fair housing was

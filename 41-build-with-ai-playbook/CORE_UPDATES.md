@@ -36,7 +36,13 @@ at write time.
 
 ## [ADD TO MEMORY.md] -- appended by scripts/04-update-core-files.sh
 
-Behind `<!-- BEGIN skill-41 memory-rules v1.3.0 -->` / `<!-- END skill-41 memory-rules v1.3.0 -->`:
+Behind the VERSION-FREE marker `<!-- BEGIN skill-41 memory-rules -->` / `<!-- END skill-41 memory-rules -->`,
+MEMORY.md receives ONE compact TYP **pointer** block -- never the rule corpus. The full rule text
+ships as `references/memory-design-rules.md` (installed into the client's master-files folder by the
+same script) with the per-rule specs in `protocols/`. The writer substitutes the block IN PLACE
+(matching the version-free marker, any legacy `memory-rules vX.Y.Z` variant, and the legacy generic
+installer stub `<!-- BEGIN skill:41-build-with-ai-playbook:memory -->`), so a re-run is byte-identical
+and a version bump can never leave a duplicate. Rule list (doc-side index):
 
 Build With AI design rules:
 1. Dependency-First Rule -- never generate a workflow prompt that references a tag, custom field, or

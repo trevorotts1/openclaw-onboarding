@@ -78,8 +78,8 @@ if not (SKILL_ROOT / "protocols" / "workflow-exit-rules-protocol.md").is_file():
     failures.append("missing protocols/workflow-exit-rules-protocol.md")
 if not contains("scripts/05-update-agents-md.sh", "STEP_1_30_EXIT_RULES"):
     failures.append("missing AGENTS marker STEP_1_30_EXIT_RULES in scripts/05-update-agents-md.sh")
-if not contains("scripts/06-append-memory-rules.sh", "v1.8.0-rules-workflow-exits"):
-    failures.append("missing MEMORY Rule 33 (workflow exits) in scripts/06-append-memory-rules.sh")
+if not contains("references/memory-design-rules.md", "v1.8.0-rules-workflow-exits"):
+    failures.append("missing MEMORY Rule 33 (workflow exits) in references/memory-design-rules.md")
 if not contains("scripts/25-seed-round3-feature-files.sh", "workflow-exit-events.jsonl"):
     failures.append("missing workflow-exit-events.jsonl seed in scripts/25-seed-round3-feature-files.sh")
 

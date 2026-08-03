@@ -1,5 +1,20 @@
 # Changelog - Skill 40: ZHC Public Records Scraper
 
+## [1.3.0] - 2026-08-03 - fix: version-stamped markers duplicated the rules on every bump; MEMORY.md now gets a pointer
+
+- **Root cause.** Every block used a VERSION-STAMPED marker (`<!-- BEGIN skill-40 memory-rules v1.0.0 -->`)
+  with a `grep -qF "<that exact begin marker>"` guard. The guard only protected against
+  re-running the SAME version — the next bump changed the marker, the guard passed, and a
+  second copy of the same rules was appended with nothing removing the first.
+- **All three blocks (AGENTS.md / MEMORY.md / TOOLS.md) now use VERSION-FREE markers and a
+  TRUE replace-in-place writer** that substitutes the block where it already sits, matching
+  the version-free marker OR any legacy `<mid> vX.Y.Z` variant, and dropping duplicates.
+  Re-runs are byte-identical.
+- **MEMORY.md block is now a compact TYP pointer**, not the 7-rule corpus; the full text ships
+  as `references/memory-design-rules.md` and is installed into the client's master-files folder.
+- **Legacy generic-installer stub** `<!-- BEGIN skill:40-zhc-public-records-scraper:memory -->`
+  is swept on the next run (own namespace, so this is a self-clean).
+
 ## [1.2.0] - 2026-07-21 - SK1-30: the audit log, the cache key, the rate limiter and the target validator stop reporting what did not happen
 
 - **T0-49 — the audit append is no longer fire-and-forget.** `_emit` was
