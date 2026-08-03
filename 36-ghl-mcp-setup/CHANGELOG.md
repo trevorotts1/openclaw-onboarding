@@ -4,6 +4,109 @@ All notable changes to this skill are documented here.
 
 ---
 
+## [v1.4.0] - 2026-08-03 — The pin gets a repository we control, and the verdict gets teeth
+
+### Why
+
+Two things were true at once and neither was visible from the repo.
+
+**The pin was coincidental, not durable.** Upstream force-pushes rewritten
+history (it carries an automated `codex/daily-ghl-api-refresh` branch) and
+publishes zero tags and zero releases. Verified: upstream `main`'s HEAD *was*
+the pinned SHA. It resolved because it happened to be the branch tip. The moment
+`main` moves past it the object is garbage-collected — existing boxes survive on
+their local clone, but `git fetch origin <sha>` from a **fresh** clone fails and
+**every new client provisioning breaks permanently** with `PIN_MISMATCH`.
+
+**The vetting verdict was inert.** `GHL_MCP_PIN_VETTED_VERDICT` was sourced into
+the environment by three scripts and read by none of them, nor by the QC gate,
+nor by CI — whose only check was that the SHA is 40 hex characters. The rule that
+was supposed to protect it ("any change to `GHL_MCP_VETTED_COMMIT` MUST reset the
+fields to PENDING") was a comment addressed to a human. And the obvious repair is
+worse than nothing: a CI check that reads `VERDICT == CLEAN` is defeated by
+editing one word, and it *trains* whoever bumps the pin to type CLEAN, because
+that is what makes the build go green.
+
+### Added — an org-controlled mirror, which turned out to be a security fix too
+
+`trevorotts1/ghl-community-mcp-mirror` carries the full upstream history.
+`main` is **byte-identical** to upstream and is never patched — identical commit
+SHAs are what let the tree be cross-referenced against upstream to detect
+tampering, and a single local commit on `main` would destroy that. A repository
+ruleset blocks force-push and deletion; both were attempted and refused rather
+than assumed.
+
+It is load-bearing for **security**, not only for pinning. Upstream hardcodes
+`app.listen(port, '0.0.0.0')` in **both** HTTP entry points with no environment
+variable to change it, serves `GET /tools` unauthenticated, and answers a
+disallowed `Origin` with **500** instead of the **403** the MCP specification
+requires — on a process holding a CRM private-integration token, where the
+endpoint *is* the credential. Because the installer rebuilds `dist/` from the
+pinned source, a `dist/`-level fix is destroyed by the next build. The patch has
+to live in source, on a branch that survives rebuilds: `openclaw-patched` carries
+`GHL_MCP_BIND_HOST` (default `127.0.0.1`), `Origin` validation returning 403, and
+an opt-in bearer gate, with 19 assertions proving it and `PATCHES.md` indexing
+every divergence. Upstream PR #9 is open so the divergence can retire.
+
+Existing clones are migrated: `ensure_repo_at_pin` / `pin_mcp_checkout` repoint
+`origin` before fetching, so a box provisioned against upstream moves to the
+mirror on its next run instead of silently staying on a force-pushing source.
+
+### Added — a vetting record that fails closed
+
+`GHL_MCP_PIN_VETTED_DIGEST` is a sha256 over a labelled, domain-separated join of
+`{commit, verdict, date, reviewer, deps-lockfile-sha256, repo URL}`. Change any
+bound value by hand and the digest stops recomputing, and CI, the pre-push hook
+and the box-side installer all refuse. **Forgetting to re-vet produces refusal.**
+
+The repository URL is bound because a SHA names an *object*, never the host that
+serves it: unbound, a mirror swap would leave the verdict, the SHA and the digest
+all checking out while every executed byte changed. Operational knobs (profile,
+port, log rotation) are deliberately **not** bound — forcing a re-vet to widen a
+log file is how a gate gets switched off.
+
+It is **not a signature and does not pretend to be**: unkeyed, public canonical
+form, recomputable by anyone with write access — but only *deliberately*, by
+running the tool. It closes the accident, not the attack.
+
+- `scripts/ghl-mcp-vet-pin.sh` — the only thing that writes the record. Resolves
+  the candidate against the mirror, prints the four review dimensions
+  mechanically, requires an explicit `--verdict` with no default, and on seal
+  rewrites the record **and both built-in fallback constants** so a split-brain
+  pin cannot open.
+- `scripts/ghl-mcp-check-pin-digest.sh` — the one implementation of the canonical
+  form, shared by every consumer. It *parses* the pin file rather than sourcing
+  it: a gate that executes the file it judges can be made to lie about its own
+  result.
+- `scripts/qc-assert-ghl-mcp-pin-gate.sh`, `scripts/qc-assert-ghl-mcp-pin-resolvers.py`,
+  and CI job `ghl-mcp-pin-gate` (the workflow's `paths:` filters are gone — a
+  path-filtered workflow can never be a required status check).
+- `tests/unit/ghl-mcp-pin-digest.test.sh` — 22 mutation proofs.
+
+**A legitimate pin bump is now two commands** — review, then seal — against the
+previous three-file hand-edit plus a remembered rule. The enforcement mechanism
+is also the ergonomics; one that costs more than what it replaces gets disabled.
+
+### Fixed
+
+- `ghl-mcp-setup-full.md` carried a **third** pin (`3dd9006a`) inside
+  copy-pasteable `git clone` commands pointed at **upstream** — the same
+  three-places-disagree failure `config/ghl-mcp-pin.env` was created to end,
+  except this copy walked straight past the vetting gate while looking approved.
+  A documented bypass is a larger hole than an undocumented one. Replaced with
+  the executed entry point and a command that reads the live record rather than
+  trusting the prose on the page.
+
+### Still open — needs a ruling, not a fix
+
+`main` on the onboarding repo has no required status checks and no rulesets, so
+this CI job is **loud, not blocking**. Making it blocking forces a pull request
+for every merge; the exact command and the trade-offs are in the workflow header.
+Until then the layer that actually protects a client machine is the box-side
+refusal in the installer, which runs on paths CI never sees.
+
+---
+
 ## [v1.3.1] - 2026-08-03 — Tier 1 now points at the v2 MCP orchestrator
 
 ### Added

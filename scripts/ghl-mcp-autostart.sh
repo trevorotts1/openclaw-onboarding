@@ -404,6 +404,22 @@ ensure_repo_at_pin() {
       log "git clone failed — server cannot be built"; return 1; }
   fi
 
+  # MIRROR MIGRATION. Every box provisioned before the mirror existed has an
+  # `origin` pointing at the third-party upstream. Nothing else would ever move
+  # it, so those clones would keep fetching from a repository that force-pushes
+  # its history and would break the day the pin is garbage-collected there —
+  # the exact failure the mirror exists to prevent. Repoint it here, on the next
+  # run of this script, before anything is fetched.
+  local _origin_url
+  _origin_url="$(git -C "$MCP_DIR" remote get-url origin 2>/dev/null || echo '')"
+  if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
+    if git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>/dev/null; then
+      log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
+    else
+      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL"
+    fi
+  fi
+
   # Fetch the exact object; unshallow an old --depth 1 clone if needed.
   git -C "$MCP_DIR" fetch --quiet origin "$GHL_MCP_VETTED_COMMIT" 2>/dev/null \
     || git -C "$MCP_DIR" fetch --quiet --tags origin 2>/dev/null \
