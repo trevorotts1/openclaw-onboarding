@@ -685,12 +685,14 @@ def _run_writer(subcmd_args, state_dir, db=None, timeout=30):
 # Default router port (lazy import so the module stays importable / self-tests
 # without a resolved model map or network)
 # --------------------------------------------------------------------------- #
-def _default_router(tier, messages, context, run_dir=None, model_map_path=None):
+def _default_router(tier, messages, context, run_dir=None, model_map_path=None,
+                     state_dir=None):
     if str(SCRIPTS) not in sys.path:
         sys.path.insert(0, str(SCRIPTS))
     import model_router  # noqa: E402
     result = model_router.route(tier, messages, context, run_dir=run_dir,
-                                model_map_path=model_map_path)
+                                model_map_path=model_map_path,
+                                state_dir=state_dir)
     return {"text": result.text, "model_used": result.model_used,
             "tier": result.tier, "provider": result.provider,
             "usage": result.usage}
@@ -813,7 +815,8 @@ class S9Assembly:
 
     def _route(self, tier, messages, context):
         return self._router(tier, messages, context, run_dir=self.run_dir,
-                            model_map_path=self.model_map_path)
+                            model_map_path=self.model_map_path,
+                            state_dir=self.state_dir)
 
     def _load_pin(self, role):
         path = PROMPTS / PINS[role]
@@ -1599,7 +1602,8 @@ def self_test():
          "chapter_title": "T2", "one_line_summary": "s2"},
     ]
 
-    def fake_router(tier, messages, context, run_dir=None, model_map_path=None):
+    def fake_router(tier, messages, context, run_dir=None, model_map_path=None,
+                     state_dir=None):
         assert tier == TIER_HEAVY
         return {"text": '{"order": ["cB::x", "cA::x"], "position_rationale": '
                         '[{"position":1,"participant_key":"cB::x","reason":"r"},'
@@ -1624,7 +1628,8 @@ def self_test():
     check("curate_persisted", bool(set_order_calls))
 
     # curate REJECTS a non-permutation reply (invented / dropped key)
-    def bad_router(tier, messages, context, run_dir=None, model_map_path=None):
+    def bad_router(tier, messages, context, run_dir=None, model_map_path=None,
+                    state_dir=None):
         return {"text": '{"order": ["cB::x", "cZ::x"]}', "model_used": "m",
                 "tier": tier, "provider": "p", "usage": {}}
     eng3 = S9Assembly("anthA", db=":memory:", router=bad_router,
@@ -1710,7 +1715,8 @@ def self_test():
         return (0, {}, "")
 
     # -- write_transitions: N-1 bridges, each naming the NEXT locked title -----
-    def trans_router(tier, messages, context, run_dir=None, model_map_path=None):
+    def trans_router(tier, messages, context, run_dir=None, model_map_path=None,
+                      state_dir=None):
         assert tier == TIER_HEAVY
         seam = int(context["step"].rsplit("_", 1)[1])   # s9_transition_<seam>
         to_title = u9_titles[u9_order[seam]]            # seam k names order[k]
@@ -1747,7 +1753,8 @@ def self_test():
         lines.append("3. Return to these pages when the road turns.")
         return "\n".join(lines)
 
-    def finale_router(tier, messages, context, run_dir=None, model_map_path=None):
+    def finale_router(tier, messages, context, run_dir=None, model_map_path=None,
+                       state_dir=None):
         assert tier == TIER_HEAVY and context["step"] == "s9_grand_finale"
         return {"text": json.dumps({"finale_title": "The Bridge We Built Together",
                                     "finale_markdown": _mk_finale_body()}),
@@ -1837,7 +1844,8 @@ def self_test():
         check("u9_transitions_failclosed_no_title", True)
 
     # -- write_finale FAIL-CLOSED when the reply drops a chapter reference ------
-    def bad_finale_router(tier, messages, context, run_dir=None, model_map_path=None):
+    def bad_finale_router(tier, messages, context, run_dir=None, model_map_path=None,
+                           state_dir=None):
         return {"text": json.dumps({"finale_title": "T",
                                     "finale_markdown": "Only Rise is named here.\n\n"
                                     "## Where Do You Go From Here\n\n1. Go."}),
@@ -1923,7 +1931,8 @@ def self_test():
     return EX_OK
 
 
-def _never_call_router(tier, messages, context, run_dir=None, model_map_path=None):
+def _never_call_router(tier, messages, context, run_dir=None, model_map_path=None,
+                        state_dir=None):
     raise AssertionError("router must not be called on this path")
 
 

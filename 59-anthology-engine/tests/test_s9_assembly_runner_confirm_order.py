@@ -180,7 +180,8 @@ def _finale_body(order):
 def _make_router(order, seen):
     """A fake router for ae-01..ae-06. `order` is the running order this pass will
     ask transitions/finale about (seam k names order[k]); `seen` collects the steps."""
-    def _router(tier, messages, context, run_dir=None, model_map_path=None):
+    def _router(tier, messages, context, run_dir=None, model_map_path=None,
+                 state_dir=None):
         step = context["step"]
         seen.append(step)
         if step == "s9_order_curation":
@@ -394,7 +395,8 @@ def _make_final_router(order, seen):
     scenarios supply no producer_inputs)."""
     base = _make_router(order, seen)
 
-    def _router(tier, messages, context, run_dir=None, model_map_path=None):
+    def _router(tier, messages, context, run_dir=None, model_map_path=None,
+                 state_dir=None):
         step = context["step"]
         if step == "s9_editor_intro":
             seen.append(step)
@@ -404,7 +406,8 @@ def _make_final_router(order, seen):
             seen.append(step)
             return {"text": FRONT_MATTER + "\n" + BACK_MATTER, "model_used": "glm-x",
                     "tier": tier, "provider": "p", "usage": {}}
-        return base(tier, messages, context, run_dir=run_dir, model_map_path=model_map_path)
+        return base(tier, messages, context, run_dir=run_dir, model_map_path=model_map_path,
+                    state_dir=state_dir)
     return _router
 
 
