@@ -65,9 +65,20 @@ CLI SUBCOMMANDS
   run-begin   --job-id --client-label --episode-title [--department podcast]
               Create the episode card on the CC board. Card title convention:
               "Episode: <title> (<client>)".
+              [--show-name] NOTE (T8): the two-show model change (branch
+              fix/podcast-audit-t8-board-show-label, "T8 board caller carries
+              the show name") adds an optional --show-name flag here; the card
+              title becomes "Episode: <title> - <show> (<client>)". As of this
+              writing T8 is NOT on origin/main, so the flag does not exist yet;
+              pass nothing and the legacy title stands. See the show-label
+              convention note in command-center/WIRING.md.
   patch-phase --job-id --phase <slug> --status <in_progress|review|done|blocked>
               [--permalink <url>]
-              Update the card's phase annotation and CC-native status.
+              Update the card's phase annotation and CC-native status. The
+              accepted phase slugs ARE podcast_state.py FORWARD_ORDER
+              (received ... complete, nine slugs, in lockstep by test), and
+              each phase maps to a suggested CC status per the phase-to-lane
+              table in command-center/WIRING.md.
               When --status done, use --permalink to register a deliverable
               (Podbean episode URL) before the done patch so the CC
               completion-evidence gate (T0-01) passes.
@@ -113,6 +124,19 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 from typing import Optional
+
+# The board's phase vocabulary is podcast_state.py FORWARD_ORDER (roll-4).
+# podcast_state.py is THE single writer of the engine state and the canonical
+# home of the stage taxonomy; the board must card exactly the stages the
+# state machine advances through, so the parity is enforced by test
+# (PhaseParityTest in tests/test_cc_board.py), not by a hand-maintained copy.
+# FAIL-SOFT: the import is best-effort. A deployment whose sibling state
+# module is missing falls back to the local frozen copy (same nine slugs);
+# the parity test fails loudly the moment either copy drifts.
+try:
+    from podcast_state import FORWARD_ORDER as _STATE_FORWARD_ORDER  # noqa: E402
+except ImportError:  # pragma: no cover - exercised only on stripped deploys
+    _STATE_FORWARD_ORDER = None
 
 _DEFAULT_TIMEOUT = 5
 _STATE_DIR = Path.home() / ".openclaw" / "podcast-engine"
@@ -487,6 +511,19 @@ def _fail_soft_and_exit(msg: str) -> None:
     sys.exit(0)
 
 
+def valid_phases() -> set:
+    """The phase slugs accepted by patch-phase. podcast_state.py FORWARD_ORDER
+    when importable (the canonical home of the stage taxonomy), else the local
+    frozen copy. The parity test (PhaseParityTest) keeps both copies in
+    lockstep so the fallback can never silently drift."""
+    if _STATE_FORWARD_ORDER is not None:
+        return set(_STATE_FORWARD_ORDER)
+    return {
+        "received", "researching", "writing", "in_qc",
+        "generating_art", "producing_audio", "publishing", "enrolling", "complete",
+    }
+
+
 def cmd_run_begin(args: argparse.Namespace) -> None:
     """Create the episode card on the CC board."""
     if not args.job_id:
@@ -515,12 +552,9 @@ def cmd_patch_phase(args: argparse.Namespace) -> None:
     if not args.status:
         _fail_usage("patch-phase requires --status")
 
-    valid_phases = {
-        "received", "researching", "writing", "in_qc",
-        "generating_art", "producing_audio", "publishing", "enrolling", "complete",
-    }
-    if args.phase not in valid_phases:
-        _fail_usage(f"patch-phase: invalid phase {args.phase!r}; must be one of {sorted(valid_phases)}")
+    phases = valid_phases()
+    if args.phase not in phases:
+        _fail_usage(f"patch-phase: invalid phase {args.phase!r}; must be one of {sorted(phases)}")
 
     valid_statuses = {"in_progress", "review", "done", "blocked"}
     if args.status not in valid_statuses:
