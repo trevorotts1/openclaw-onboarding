@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.5.4"
+ONBOARDING_VERSION="v21.6.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -3616,6 +3616,36 @@ if [ -d "$ONBOARDING_DIR/scripts" ]; then
     cp -r "$ONBOARDING_DIR/scripts" "$SKILLS_DIR/../"
 fi
 
+# >>> CANONICAL-CONFIG-DELIVERY-BEGIN
+# ----------------------------------------------------------
+# v21.6.0 / R1: deliver config/ EXPLICITLY, next to scripts/.
+#
+# config/ already reached $ONBOARDING_DIR by accident — the whole-repo
+# `cp -r .../* "$ONBOARDING_DIR/"` above sweeps it in. That is a coincidence of
+# a glob, not a delivery contract: nothing asserted it, nothing named it, and
+# the moment the extraction shape changes it disappears silently. It also never
+# populated $OC_CONFIG/config/, which is the FIRST candidate every consumer's
+# resolver tries (they resolve "$SELF_DIR/../config" from $OC_CONFIG/scripts).
+#
+# So: deliver it by name, to the sibling of scripts/, and ASSERT it landed.
+# Since v21.6.0 the launch surfaces are FAIL-CLOSED — no pin file means
+# STATUS: PIN_UNVERIFIED and no build and no start — so a silent miss here is
+# a Tier 2 outage, not a cosmetic gap.
+# ----------------------------------------------------------
+OC_CANONICAL_CONFIG_DEST="$SKILLS_DIR/../config"
+if [ -d "$ONBOARDING_DIR/config" ]; then
+    mkdir -p "$OC_CANONICAL_CONFIG_DEST" 2>/dev/null || true
+    cp -Rp "$ONBOARDING_DIR/config/." "$OC_CANONICAL_CONFIG_DEST/" 2>/dev/null || true
+fi
+if [ -r "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
+    success "config/ delivered — ghl-mcp-pin.env readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env"
+else
+    warn "config/ghl-mcp-pin.env is NOT readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env after delivery."
+    warn "  CONSEQUENCE: Step 14a will report STATUS: ghl-mcp-autostart=PIN_UNVERIFIED and the Tier 2 GHL MCP will NOT be built or started on this box."
+    warn "  ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run scripts/ghl-mcp-autostart.sh."
+fi
+# <<< CANONICAL-CONFIG-DELIVERY-END
+
 # v10.5.1: Install shared-utils to skills root for v2.1 helper imports
 if [ -d "$ONBOARDING_DIR/shared-utils" ]; then
     mkdir -p "$SKILLS_DIR/shared-utils"
@@ -6844,6 +6874,11 @@ start_ghl_mcp_autostart() {
         *"=DEAF"*)                      warn "GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) — every agent init will burn the full connectionTimeoutMs until fixed. ${STATUS_LINE}" ;;
         *TOKEN_REJECTED*)               warn "GHL rejected the PIT — the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${STATUS_LINE}" ;;
         *PIN_MISMATCH*|*PIN_INVALID*)   warn "GHL MCP refused to start: the vetted commit pin could not be honoured — an UNPINNED third-party MCP is never started. Re-vet upstream and update config/ghl-mcp-pin.env. ${STATUS_LINE}" ;;
+        # v21.6.0 / R9 fail-closed states. These are REFUSALS, not errors: the
+        # box deliberately did not build or start third-party code it could not
+        # verify. Both are actionable in one step, so say which step.
+        *PIN_UNVERIFIED*)               warn "GHL MCP refused to start: config/ghl-mcp-pin.env did not reach this box, so there is no verified pin to build. FIX: re-run this installer (it delivers config/ next to scripts/) — see the config/ delivery warning earlier in this log. ${STATUS_LINE}" ;;
+        *PIN_UNVETTED*)                 warn "GHL MCP refused to start: the pin is present but NOT VETTED (verdict is not CLEAN, or the vetting digest does not recompute — i.e. the SHA was hand-edited without re-running the vetting tool). FIX: re-vet the commit and rewrite config/ghl-mcp-pin.env via scripts/ghl-mcp-vet-pin.sh; never hand-edit the digest. ${STATUS_LINE}" ;;
         *STARTED_UNHEALTHY*)            warn "GHL MCP service installed but /health not green yet — crash-only restart will retry. ${STATUS_LINE}" ;;
         *BUILD_FAILED*)                 warn "GHL MCP server build failed — the PREVIOUS dist was left intact; GHL tools may still resolve. ${STATUS_LINE}" ;;
         *)                              note "GHL MCP autostart ran. ${STATUS_LINE:-(no STATUS line captured — see $LOG_FILE)}" ;;

@@ -1,5 +1,26 @@
 #!/usr/bin/env bash
-# ghl-mcp-autostart.sh — v21.5.0
+# ghl-mcp-autostart.sh — v21.6.0
+#
+# v21.6.0 (R1 + R9): the v21.5.0 release above declared config/ghl-mcp-pin.env
+# the "single source of truth" — and never delivered it to a single box.
+# update-skills.sh copied scripts/ and nothing else, then deleted its temp
+# clone; the FIRST resolver candidate ($SELF_DIR/../config) pointed at
+# $OC_CONFIG/config/, a directory neither installer created. Every weekly-
+# updated box therefore ran on the hardcoded fallback constants baked into
+# THIS FILE, a pin bump propagated nowhere, and the box-side QC gate hard-failed
+# (proven: box layout rc=1, repo layout rc=0). Two changes, and they MUST ship
+# together:
+#   R1  both installers now deliver config/ to $OC_CONFIG/config/ and ASSERT it
+#       landed; the resolver lists here, in the probe, in the VPS overlay and in
+#       the static gate all carry that path, and CI cross-references the lists
+#       against the delivery destinations so they cannot drift apart again.
+#   R9  fail-closed. No pin file -> PIN_UNVERIFIED, no build, no start. Verdict
+#       not CLEAN, or a vetting digest that does not recompute -> PIN_UNVETTED.
+#       GHL_MCP_PIN_OVERRIDE now requires a matching vetting digest. The silent
+#       built-in fallback commit is GONE — a fallback that quietly substitutes
+#       for a missing source of truth is how the split-brain opened.
+# R9 is only safe because R1 lands in the same commit: fail-closed BEFORE
+# delivery works would brick the install path on every box.
 #
 # FIX 3 (systemic): Skill 36 registers the GHL community MCP in mcp.servers but
 # nothing ever STARTS the local server on :8765, so the GHL tools never resolve
@@ -146,31 +167,63 @@ OC_JSON="$OC_ROOT/openclaw.json"
 SECRETS_ENV="$OC_ROOT/secrets/.env"
 mkdir -p "$LOG_DIR" 2>/dev/null || true
 
+# ── STATUS reporter (callers grep this line; honest, never "done" on a gap) ──
+# Declared BEFORE the pin resolution below because R9's fail-closed refusals
+# report through it.
+STATUS="UNKNOWN"
+report() {
+  STATUS="$1"; shift
+  printf 'STATUS: ghl-mcp-autostart=%s %s\n' "$STATUS" "$*"
+}
+
 # ── Pin + profile: ONE source of truth (config/ghl-mcp-pin.env) ──────────────
-# Precedence: caller env  >  pin file  >  built-in fallback.
+# R1 (v21.6.0): the pin file used to exist ONLY in the repo. update-skills.sh
+# delivered scripts/ and nothing else and then deleted its temp clone, so on
+# every weekly-updated box all five candidates below missed and the script ran
+# on hardcoded fallback constants — a pin bump propagated to no box at all.
+# Both installers now deliver config/ to $OC_CONFIG/config/, and that path is
+# the FIRST candidate here ($SELF_DIR/../config resolves to it when this script
+# runs from its delivered home, $OC_CONFIG/scripts/).
+#
+# ⚠️ ANY CHANGE TO THIS LIST must be mirrored in ghl-mcp-probe.sh, the VPS
+# overlay, qc-assert-ghl-mcp-supervised.sh, AND the delivery step in BOTH
+# installers. scripts/qc-assert-pin-delivery-paths.sh fails CI if they drift.
 _PIN_FILE=""
 for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
+          "$HOME/.openclaw/config/ghl-mcp-pin.env" \
           "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
-          "$HOME/.openclaw/skills/config/ghl-mcp-pin.env" \
-          "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" \
-          "/data/.openclaw/skills/config/ghl-mcp-pin.env"; do
+          "/data/.openclaw/config/ghl-mcp-pin.env" \
+          "/data/.openclaw/onboarding/config/ghl-mcp-pin.env"; do
   [ -f "$_c" ] && { _PIN_FILE="$_c"; break; }
 done
-if [ -n "$_PIN_FILE" ]; then
-  # shellcheck disable=SC1090
-  . "$_PIN_FILE"
-  log "pin config: $_PIN_FILE"
-else
-  log "pin config not found — using built-in fallback pin"
-fi
 
-# Built-in fallbacks (kept in sync with config/ghl-mcp-pin.env).
-GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3}"
-GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-curated}"
-GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git}"
+# ── R9: FAIL-CLOSED. No pin file = no build, no start. ───────────────────────
+# There is NO built-in fallback commit any more. A silent fallback is exactly
+# what let v21.5.0 believe it had one source of truth while every box ran on a
+# constant baked into this file — and it is what made a pin bump a no-op
+# fleet-wide. If the delivery did not happen, that is a broken install and it
+# must be LOUD, not papered over with a hardcoded SHA.
+if [ -z "$_PIN_FILE" ]; then
+  log "REFUSING: config/ghl-mcp-pin.env not found in any delivered location"
+  report "PIN_UNVERIFIED" \
+    "(config/ghl-mcp-pin.env was not delivered to this box — refusing to build/start an unverified third-party MCP. Re-run update-skills.sh or install.sh; both deliver config/ to \$OC_CONFIG/config/. Looked in: $SELF_DIR/../config, \$HOME/.openclaw/{config,onboarding/config}, /data/.openclaw/{config,onboarding/config})"
+  exit 0
+fi
+# shellcheck disable=SC1090
+. "$_PIN_FILE"
+log "pin config: $_PIN_FILE"
+
+# Operational defaults only. NOTHING security-relevant (commit, profile, repo
+# URL) may default here — those must come from the delivered pin file.
 GHL_MCP_PROBE_TIMEOUT="${GHL_MCP_PROBE_TIMEOUT:-10}"
 GHL_MCP_LOG_MAX_BYTES="${GHL_MCP_LOG_MAX_BYTES:-10485760}"
 GHL_MCP_LOG_KEEP="${GHL_MCP_LOG_KEEP:-3}"
+GHL_MCP_VETTED_COMMIT="${GHL_MCP_VETTED_COMMIT:-}"
+GHL_MCP_TOOL_PROFILE="${GHL_MCP_TOOL_PROFILE:-}"
+GHL_MCP_REPO_URL="${GHL_MCP_REPO_URL:-}"
+GHL_MCP_PIN_VETTED_VERDICT="${GHL_MCP_PIN_VETTED_VERDICT:-}"
+GHL_MCP_PIN_VETTED_DIGEST="${GHL_MCP_PIN_VETTED_DIGEST:-}"
+
 # D6 (P0 SECURITY): the loopback bind host enforced by the generated bind guard.
 # READ write_bind_guard() below before changing this — the upstream server does
 # NOT read any host variable; this value is consumed by OUR guard, not by main.js.
@@ -179,9 +232,95 @@ GHL_MCP_BIND_HOST="${GHL_MCP_BIND_HOST:-127.0.0.1}"
 # (pin file or caller env) the build REFUSES on a mismatch; when empty the build
 # still records the observed value in the build stamp so the binding can be armed.
 GHL_MCP_DEPS_LOCK_SHA256="${GHL_MCP_DEPS_LOCK_SHA256:-}"
-# Caller override wins over the pin file (fleet roll can pass an env).
-[ -n "${GHL_MCP_PIN_OVERRIDE:-}" ] && GHL_MCP_VETTED_COMMIT="$GHL_MCP_PIN_OVERRIDE"
-[ -n "${GHL_TOOL_PROFILE:-}" ]     && GHL_MCP_TOOL_PROFILE="$GHL_TOOL_PROFILE"
+
+if [ -z "$GHL_MCP_TOOL_PROFILE" ] || [ -z "$GHL_MCP_REPO_URL" ]; then
+  report "PIN_UNVERIFIED" \
+    "($_PIN_FILE is present but does not declare GHL_MCP_TOOL_PROFILE and/or GHL_MCP_REPO_URL — a truncated/corrupt pin file is not a source of truth. Refusing to build/start.)"
+  exit 0
+fi
+
+# ── R9: the vetting verdict is ENFORCED, not decorative ──────────────────────
+# Two modes, and the switch between them is automatic:
+#   DIGEST MODE  (GHL_MCP_PIN_VETTED_DIGEST is non-empty) — the digest must
+#     recompute over commit|verdict|on|by|deps_lock_sha256. A hand-edited SHA
+#     leaves a stale digest and we refuse. Forgetting produces refusal.
+#   FALLBACK MODE (no digest field yet — the transitional state while
+#     scripts/ghl-mcp-vet-pin.sh is still being built) — require the explicit
+#     CLEAN verdict. Weaker (one word defeats it) but strictly better than
+#     v21.5.0, where the verdict was sourced by three scripts and read by none.
+_PIN_DIGEST_TOOL=""
+for _c in "$SELF_DIR/ghl-mcp-pin-digest.sh" \
+          "$HOME/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
+          "$HOME/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh" \
+          "/data/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
+          "/data/.openclaw/skills/scripts/ghl-mcp-pin-digest.sh"; do
+  [ -f "$_c" ] && { _PIN_DIGEST_TOOL="$_c"; break; }
+done
+
+if [ "$GHL_MCP_PIN_VETTED_VERDICT" != "CLEAN" ]; then
+  report "PIN_UNVETTED" \
+    "(GHL_MCP_PIN_VETTED_VERDICT='${GHL_MCP_PIN_VETTED_VERDICT:-<unset>}' in $_PIN_FILE — only CLEAN may be built. Re-vet the pinned commit and record the verdict before any box builds it.)"
+  exit 0
+fi
+
+if [ -n "$GHL_MCP_PIN_VETTED_DIGEST" ]; then
+  if [ -z "$_PIN_DIGEST_TOOL" ]; then
+    report "PIN_UNVETTED" \
+      "(the pin declares GHL_MCP_PIN_VETTED_DIGEST but scripts/ghl-mcp-pin-digest.sh was not delivered to this box, so the digest CANNOT be verified — refusing rather than trusting it unchecked. Re-run update-skills.sh.)"
+    exit 0
+  fi
+  if ! bash "$_PIN_DIGEST_TOOL" verify "$_PIN_FILE" >/dev/null 2>&1; then
+    report "PIN_UNVETTED" \
+      "(the vetting digest in $_PIN_FILE does not recompute — the pin was edited without re-running scripts/ghl-mcp-vet-pin.sh. Refusing to build/start. Run: bash $_PIN_DIGEST_TOOL verify $_PIN_FILE)"
+    exit 0
+  fi
+  log "vetting digest verified (verdict=CLEAN, digest recomputes)"
+else
+  log "vetting digest ABSENT — enforcing the explicit CLEAN verdict (transitional until scripts/ghl-mcp-vet-pin.sh ships the digest)"
+fi
+
+# ── R9: an override is an escape hatch, not a bypass ─────────────────────────
+# GHL_MCP_PIN_OVERRIDE used to accept ANY 40-hex string with zero vetting —
+# and it is the primary path a fleet roll would use to change a pin, which made
+# the primary path the ungated one. It now requires a matching vetting digest
+# computed over the OVERRIDE's own tuple, using the same canonical algorithm:
+#
+#   printf '%s\n' ghl-mcp-pin-v1 \
+#     "$GHL_MCP_PIN_OVERRIDE" \
+#     "$GHL_MCP_PIN_OVERRIDE_VERDICT" \
+#     "$GHL_MCP_PIN_OVERRIDE_VETTED_ON" \
+#     "$GHL_MCP_PIN_OVERRIDE_VETTED_BY" \
+#     "$GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256" | shasum -a 256 | cut -d' ' -f1
+#
+# …and that value must be passed as GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST.
+if [ -n "${GHL_MCP_PIN_OVERRIDE:-}" ]; then
+  _OV_VERDICT="${GHL_MCP_PIN_OVERRIDE_VERDICT:-}"
+  _OV_DIGEST="${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}"
+  if [ -z "$_OV_DIGEST" ]; then
+    report "PIN_UNVETTED" \
+      "(GHL_MCP_PIN_OVERRIDE was supplied without GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST — an override is an escape hatch for a VETTED commit, never a way to skip vetting. Vet the candidate, then pass the digest.)"
+    exit 0
+  fi
+  if [ "$_OV_VERDICT" != "CLEAN" ]; then
+    report "PIN_UNVETTED" \
+      "(GHL_MCP_PIN_OVERRIDE_VERDICT='${_OV_VERDICT:-<unset>}' — only CLEAN may be built.)"
+    exit 0
+  fi
+  _OV_COMPUTED="$(printf '%s\n' 'ghl-mcp-pin-v1' \
+      "$GHL_MCP_PIN_OVERRIDE" "$_OV_VERDICT" \
+      "${GHL_MCP_PIN_OVERRIDE_VETTED_ON:-}" "${GHL_MCP_PIN_OVERRIDE_VETTED_BY:-}" \
+      "${GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256:-}" \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1)"
+  if [ -z "$_OV_COMPUTED" ] || [ "$_OV_COMPUTED" != "$_OV_DIGEST" ]; then
+    report "PIN_UNVETTED" \
+      "(GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST does not match the override tuple — refusing. Recompute it over ghl-mcp-pin-v1|commit|verdict|on|by|deps_lock_sha256.)"
+    exit 0
+  fi
+  log "pin override accepted (digest verified) — building ${GHL_MCP_PIN_OVERRIDE:0:12} instead of the pin file's commit"
+  GHL_MCP_VETTED_COMMIT="$GHL_MCP_PIN_OVERRIDE"
+fi
+
+[ -n "${GHL_TOOL_PROFILE:-}" ] && GHL_MCP_TOOL_PROFILE="$GHL_TOOL_PROFILE"
 
 # A pin MUST be a full 40-char SHA. A short SHA or a branch name is not a pin —
 # `git checkout main` succeeds forever while the tree underneath changes.
@@ -196,12 +335,8 @@ esac
 # ── Resolve a free/canonical port (8765 canonical) ──────────────────────────
 GHL_MCP_PORT="${GHL_MCP_PORT:-8765}"
 
-# ── STATUS reporter (callers grep this line; honest, never "done" on a gap) ──
-STATUS="UNKNOWN"
-report() {
-  STATUS="$1"; shift
-  printf 'STATUS: ghl-mcp-autostart=%s %s\n' "$STATUS" "$*"
-}
+# (the STATUS reporter is declared above the pin resolution — R9's refusals
+#  report through it before anything else runs.)
 
 # ── Credential preflight — honest skip, never a fake success ─────────────────
 _get_env_var() {

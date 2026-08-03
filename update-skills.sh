@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.5.4"
+ONBOARDING_VERSION="v21.6.0"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.5.4 - safe_json_edit
+# v21.6.0 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2281,13 +2281,17 @@ heal_weekly_cron_updater() {
 # authoritative for their own content and modes, while box-local paths absent
 # from the repo are deliberately retained. This matches install.sh's existing
 # merge/add behavior and avoids deleting legitimate local operator tooling.
+# $3 (optional) is a display label only — the delivery logic is identical for
+# scripts/ and for config/ (v21.6.0 reuses it verbatim for config/ so the pin
+# file gets the SAME completeness receipt: byte-compare + exec-bit + symlink
+# verification, not a bare `cp` exit code).
 deliver_canonical_scripts_tree() {
-  local src_root="$1" dest_root="$2"
+  local src_root="$1" dest_root="$2" label="${3:-scripts/}"
   local src_path rel dest_path failures=0 files=0
 
   if [ ! -d "$src_root" ]; then
     # A MISSING SOURCE is a real content failure (nothing to deliver): fatal.
-    echo "FATAL: canonical scripts tree is missing: $src_root" >&2
+    echo "FATAL: canonical $label tree is missing: $src_root" >&2
     return 1
   fi
 
@@ -2303,10 +2307,10 @@ deliver_canonical_scripts_tree() {
   local _owner_hint
   _owner_hint="$(id -un 2>/dev/null || printf '%s' "${USER:-node}")"
   _scripts_perms_degrade() {
-    echo "WARN: canonical scripts/ could not be written to: $dest_root" >&2
+    echo "WARN: canonical $label could not be written to: $dest_root" >&2
     echo "WARN: this is an OWNERSHIP quirk (destination not writable by $_owner_hint — likely owned root:root), NOT a content failure." >&2
-    echo "WARN: the updater will PROCEED so an ownership quirk cannot block skills content + the version stamp; scripts/ delivery is DEFERRED." >&2
-    echo "WARN: ACTION REQUIRED on this box:  sudo chown -R $_owner_hint \"$dest_root\"   then re-run the updater to complete scripts/ delivery." >&2
+    echo "WARN: the updater will PROCEED so an ownership quirk cannot block skills content + the version stamp; $label delivery is DEFERRED." >&2
+    echo "WARN: ACTION REQUIRED on this box:  sudo chown -R $_owner_hint \"$dest_root\"   then re-run the updater to complete $label delivery." >&2
   }
 
   if ! mkdir -p "$dest_root" 2>/dev/null; then
@@ -2325,7 +2329,7 @@ deliver_canonical_scripts_tree() {
         _scripts_perms_degrade
         return 2
       fi
-      echo "FATAL: recursive canonical scripts delivery failed: $src_root -> $dest_root" >&2
+      echo "FATAL: recursive canonical $label delivery failed: $src_root -> $dest_root" >&2
       return 1
     fi
   fi
@@ -2338,35 +2342,35 @@ deliver_canonical_scripts_tree() {
     dest_path="$dest_root/$rel"
     if [ -L "$src_path" ]; then
       if [ ! -L "$dest_path" ] || [ "$(readlink "$src_path" 2>/dev/null || true)" != "$(readlink "$dest_path" 2>/dev/null || true)" ]; then
-        echo "FATAL: scripts delivery symlink mismatch: $rel" >&2
+        echo "FATAL: $label delivery symlink mismatch: $rel" >&2
         failures=$((failures + 1))
       fi
     elif [ -d "$src_path" ]; then
       if [ ! -d "$dest_path" ]; then
-        echo "FATAL: scripts delivery directory missing: $rel" >&2
+        echo "FATAL: $label delivery directory missing: $rel" >&2
         failures=$((failures + 1))
       fi
     elif [ -f "$src_path" ]; then
       files=$((files + 1))
       if [ ! -f "$dest_path" ] || ! cmp -s "$src_path" "$dest_path"; then
-        echo "FATAL: scripts delivery file missing or changed: $rel" >&2
+        echo "FATAL: $label delivery file missing or changed: $rel" >&2
         failures=$((failures + 1))
       elif { [ -x "$src_path" ] && [ ! -x "$dest_path" ]; } \
         || { [ ! -x "$src_path" ] && [ -x "$dest_path" ]; }; then
-        echo "FATAL: scripts delivery executable-bit mismatch: $rel" >&2
+        echo "FATAL: $label delivery executable-bit mismatch: $rel" >&2
         failures=$((failures + 1))
       fi
     else
-      echo "FATAL: unsupported canonical scripts entry type: $rel" >&2
+      echo "FATAL: unsupported canonical $label entry type: $rel" >&2
       failures=$((failures + 1))
     fi
   done < <(find "$src_root" -mindepth 1 -print0)
 
   if [ "$failures" -ne 0 ]; then
-    echo "FATAL: canonical scripts delivery incomplete ($failures mismatch(es)); success stamp withheld" >&2
+    echo "FATAL: canonical $label delivery incomplete ($failures mismatch(es)); success stamp withheld" >&2
     return 1
   fi
-  echo "  ✓ Full canonical scripts/ tree delivered and verified ($files files; additive, local-only files retained)"
+  echo "  ✓ Full canonical $label tree delivered and verified ($files files; additive, local-only files retained)"
 }
 # <<< CANONICAL-SCRIPTS-DELIVERY-END
 # ----------------------------------------------------------
@@ -2802,6 +2806,51 @@ main() {
     echo "  ⚠ scripts/ delivery DEFERRED (destination not writable — see the chown ACTION above). Continuing so an ownership quirk does not block skills content or the version stamp." >&2
   fi
   export OC_PERSISTENT_SCRIPTS_DIR="$_OC_SCRIPTS_DEST"
+
+  # >>> CANONICAL-CONFIG-DELIVERY-BEGIN  (v21.6.0 / R1)
+  # config/ is a SIBLING of scripts/ and, until now, was delivered by NOTHING on
+  # this path. update-skills.sh cloned the repo to a temp dir, copied scripts/
+  # out of it, and DELETED the clone — so config/ghl-mcp-pin.env, the file
+  # v21.5.0 called "the single source of truth for every launch surface", never
+  # reached a single box. Every weekly-updated box fell through to the hardcoded
+  # fallback constants inside ghl-mcp-autostart.sh, a pin bump propagated
+  # nowhere, and the box-side QC gate hard-failed (proven: box layout rc=1, repo
+  # layout rc=0 — CI was green only because CI runs in the one layout where the
+  # file exists).
+  #
+  # The destination is the SIBLING of scripts/, so the consumers' first resolver
+  # candidate ("$SELF_DIR/../config/…") hits it directly.
+  OC_CANONICAL_CONFIG_DEST="$(dirname "$_OC_SCRIPTS_DEST")/config"
+  _CONFIG_RC=0
+  deliver_canonical_scripts_tree "$ONBOARDING_DIR/config" "$OC_CANONICAL_CONFIG_DEST" "config/" || _CONFIG_RC=$?
+  # DEGRADE, never abort. scripts/ is fatal on rc=1 because every skill depends
+  # on it; config/ currently carries the GHL Tier 2 pin and cron.d, so aborting
+  # a whole fleet update over it would be disproportionate — and unnecessary,
+  # because the consequence is already fail-closed and self-announcing: every
+  # launch surface reports PIN_UNVERIFIED and refuses to build or start rather
+  # than falling back to a stale constant. Loud, not fatal.
+  if [ "$_CONFIG_RC" -ne 0 ]; then
+    export OC_CONFIG_DELIVERY_DEFERRED=1
+    echo "  ⚠ config/ delivery DEGRADED (rc=$_CONFIG_RC) — continuing so a config/ problem cannot block skills content or the version stamp." >&2
+  fi
+
+  # ASSERT-ON-LAND. A cp that exited 0 is not a receipt. This is the exact
+  # invariant whose absence made v21.5.0 a repo-only release, so it is checked
+  # explicitly and LOUDLY rather than inferred from the delivery function's rc.
+  # It is deliberately NOT fatal: a box that fails here still gets its skills
+  # and its version stamp, and every launch surface now refuses fail-closed
+  # (STATUS: PIN_UNVERIFIED) rather than silently building an unvetted tree —
+  # so the failure is impossible to miss and impossible to act on unsafely.
+  if [ -r "$OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env" ]; then
+    echo "  ✓ config/ghl-mcp-pin.env delivered and readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env"
+  else
+    echo "  ✗ config/ghl-mcp-pin.env is NOT readable at $OC_CANONICAL_CONFIG_DEST/ghl-mcp-pin.env after delivery." >&2
+    echo "    CONSEQUENCE: scripts/ghl-mcp-autostart.sh will report STATUS: ghl-mcp-autostart=PIN_UNVERIFIED and will NOT build or start the Tier 2 GHL MCP on this box." >&2
+    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
+    export OC_PIN_DELIVERY_FAILED=1
+  fi
+  export OC_PERSISTENT_CONFIG_DIR="$OC_CANONICAL_CONFIG_DEST"
+  # <<< CANONICAL-CONFIG-DELIVERY-END
 
   # A2: Compute SOURCE manifest from the pulled tree BEFORE the copy loop.
   # This is what the destination must match after install (A3 gate).
@@ -5064,6 +5113,28 @@ PYEOF
       ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 & )
     else
       echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART -- server NOT started; GHL tools will not resolve until it is run)"
+    fi
+
+    # v21.6.0 / R4: RUNTIME conformance verdict on the update path.
+    # qc-assert-ghl-mcp-supervised.sh is STATIC — it reads the shipped script
+    # and proves what a FRESH install WOULD do. It cannot see a hand-edited
+    # plist, a live 859-tool /health, or a still-registered Tier 2, and on
+    # 2026-08-03 all three were true on a box that gate would have called PASS.
+    # This asserts what the box IS running. Non-fatal by design (the update must
+    # not abort on a pre-existing runtime defect) but LOUD, and it names the one
+    # command that fixes it.
+    local RUNTIME_ASSERT="$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"
+    if [ -f "$RUNTIME_ASSERT" ]; then
+      local _RT_OUT _RT_RC=0
+      _RT_OUT="$(bash "$RUNTIME_ASSERT" 2>&1)" || _RT_RC=$?
+      printf '%s\n' "$_RT_OUT" >> "$LOG_FILE" 2>/dev/null || true
+      case "$_RT_RC" in
+        0) echo "    GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
+        2) echo "    GHL MCP runtime conformance: not installed on this box -- nothing to assert" ;;
+        *) echo "    ⚠ GHL MCP runtime conformance FAILED -- the INSTALLED service does not match the shipped standard:" >&2
+           printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/      /' >&2 || true
+           echo "      FIX: bash $AUTOSTART   (it regenerates the service definition from the pin)" >&2 ;;
+      esac
     fi
   }
 

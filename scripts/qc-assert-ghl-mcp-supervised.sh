@@ -235,9 +235,23 @@ code_lines() { sed 's/#.*$//' "$1" 2>/dev/null; }
 code_has()   { local _out; _out="$(code_lines "$1")"; grep -qE "$2" <<< "$_out"; }
 code_has_f() { local _out; _out="$(code_lines "$1")"; grep -qF "$2" <<< "$_out"; }
 
+# v21.6.0/R1: on a box, SELF_DIR is $OC_CONFIG/scripts so $REPO_ROOT is
+# $OC_CONFIG — the first candidate therefore resolves to $OC_CONFIG/config/,
+# which is exactly where both installers now deliver config/. Before that fix,
+# NONE of the three candidates existed box-side and this gate emitted
+# "config/ghl-mcp-pin.env is missing" as a FATAL, which qc-system-integrity.sh
+# CHECK X.13 turns into a hard fail. Proven: box layout rc=1, repo layout rc=0.
+# The explicit $HOME/… and /data/… entries below make that independent of how
+# the script was invoked.
+#
+# ⚠️ KEEP IN SYNC with the resolver lists in ghl-mcp-autostart.sh,
+# ghl-mcp-probe.sh, ghl-mcp-assert-runtime.sh and the VPS overlay.
+# scripts/qc-assert-pin-delivery-paths.sh fails CI if they drift.
 PIN_FILE="$(find_first \
   "$REPO_ROOT/config/ghl-mcp-pin.env" \
+  "$HOME/.openclaw/config/ghl-mcp-pin.env" \
   "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
+  "/data/.openclaw/config/ghl-mcp-pin.env" \
   "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" || true)"
 
 SCRIPTS_TO_CHECK=""
@@ -483,6 +497,96 @@ else
       _pass "$b has no unpinned 'npm install --omit=dev' production refresh"
     fi
   done
+
+  # ── CHECK 12: THE VETTING GATE MUST STAY LIVE (v21.6.0 / R9) ───────────────
+  # In v21.5.0 GHL_MCP_PIN_VETTED_VERDICT was SOURCED by three scripts and READ
+  # by none of them, by the QC gate, or by CI. The verdict was not merely
+  # advisory — it was INERT. This check asserts that each launch surface
+  # actually EVALUATES the verdict and the digest in EXECUTABLE lines (comments
+  # are stripped first), so the gate cannot quietly become decorative again.
+  for f in $SCRIPTS_TO_CHECK; do
+    b="$(basename "$f")"
+    if code_has_f "$f" "GHL_MCP_PIN_VETTED_VERDICT"; then
+      _pass "$b evaluates GHL_MCP_PIN_VETTED_VERDICT (the verdict is enforced, not decorative)"
+    else
+      _fail "$b never READS GHL_MCP_PIN_VETTED_VERDICT in an executable line — sourcing a verdict nobody evaluates is what made the v21.5.0 vetting gate inert."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has_f "$f" "GHL_MCP_PIN_VETTED_DIGEST"; then
+      _pass "$b evaluates GHL_MCP_PIN_VETTED_DIGEST (self-invalidating vetting)"
+    else
+      _fail "$b never READS GHL_MCP_PIN_VETTED_DIGEST — without it a hand-edited pin SHA is accepted silently."
+      FAILURES=$((FAILURES+1))
+    fi
+    if code_has_f "$f" "PIN_UNVERIFIED" && code_has_f "$f" "PIN_UNVETTED"; then
+      _pass "$b reports the fail-closed states PIN_UNVERIFIED / PIN_UNVETTED"
+    else
+      _fail "$b does not report both PIN_UNVERIFIED and PIN_UNVETTED — a refusal nobody can see is not fail-closed, it is a silent skip."
+      FAILURES=$((FAILURES+1))
+    fi
+    # The silent hardcoded fallback commit is what let every box run a pin the
+    # pin file did not choose. It must be gone from BOTH launch surfaces.
+    if code_has "$f" 'GHL_MCP_VETTED_COMMIT="\$\{GHL_MCP_VETTED_COMMIT:-[0-9a-f]'; then
+      _fail "$b still carries a hardcoded fallback commit for GHL_MCP_VETTED_COMMIT — a silent fallback for a missing source of truth is exactly the split-brain R1/R9 removed. Refuse (PIN_UNVERIFIED) instead."
+      FAILURES=$((FAILURES+1))
+    else
+      _pass "$b has NO hardcoded fallback commit (no pin file = refusal, not a silent default)"
+    fi
+    # The override must not be a free pass.
+    if code_has_f "$f" "GHL_MCP_PIN_OVERRIDE"; then
+      if code_has_f "$f" "GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST"; then
+        _pass "$b requires a vetting digest for GHL_MCP_PIN_OVERRIDE (the escape hatch is not a bypass)"
+      else
+        _fail "$b accepts GHL_MCP_PIN_OVERRIDE without requiring GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST — the override is the path a fleet roll uses to change a pin, so an ungated override makes the PRIMARY path the unvetted one."
+        FAILURES=$((FAILURES+1))
+      fi
+    fi
+  done
+
+  # ── CHECK 13: THE PIN MUST ACTUALLY REACH BOXES (v21.6.0 / R1) ─────────────
+  # v21.5.0 called this file "the single source of truth for every launch
+  # surface" and delivered it to zero boxes. The cross-reference gate is the
+  # thing that stops that recurring; assert it is present and passing.
+  DELIVERY_GATE="$(find_first \
+    "$SELF_DIR/qc-assert-pin-delivery-paths.sh" \
+    "$HOME/.openclaw/scripts/qc-assert-pin-delivery-paths.sh" \
+    "/data/.openclaw/scripts/qc-assert-pin-delivery-paths.sh" || true)"
+  if [ -z "${DELIVERY_GATE:-}" ]; then
+    _info "qc-assert-pin-delivery-paths.sh not co-located — the resolver/delivery cross-reference was not run here (it runs in CI from the repo checkout)."
+  elif [ -d "$REPO_ROOT/config" ] && [ -f "$REPO_ROOT/update-skills.sh" ] \
+       && [ -f "$REPO_ROOT/install.sh" ] \
+       && [ -f "$REPO_ROOT/platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh" ]; then
+    # Only meaningful in a genuine REPO layout: this cross-references the
+    # INSTALLER SOURCES, which a box does not carry at $OC_CONFIG. All four
+    # markers are required so a box that happens to have one of them can never
+    # run this gate against a tree it was not written for and fail spuriously.
+    if bash "$DELIVERY_GATE" --quiet >/dev/null 2>&1; then
+      _pass "every pin-file resolver path is a path an installer actually delivers (qc-assert-pin-delivery-paths.sh)"
+    else
+      _fail "qc-assert-pin-delivery-paths.sh FAILED — a resolver searches for config/ghl-mcp-pin.env somewhere no installer populates. Run: bash scripts/qc-assert-pin-delivery-paths.sh"
+      FAILURES=$((FAILURES+1))
+    fi
+  else
+    _info "not a repo layout — skipping the resolver/delivery cross-reference (it needs the installer sources)."
+  fi
+
+  # ── CHECK 14: A RUNTIME GATE MUST EXIST (v21.6.0 / R4) ─────────────────────
+  # THIS gate is static by design: it proves what a fresh install WOULD do. It
+  # cannot see a hand-edited plist, a live 859-tool /health, or a still-
+  # registered Tier 2 — and on 2026-08-03 all three were true on a box this
+  # gate would have called PASS. The runtime gate is the other half.
+  RUNTIME_GATE="$(find_first \
+    "$SELF_DIR/ghl-mcp-assert-runtime.sh" \
+    "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+    "$HOME/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh" \
+    "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+    "/data/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh" || true)"
+  if [ -n "${RUNTIME_GATE:-}" ]; then
+    _pass "the RUNTIME conformance gate ships alongside this static one ($(basename "$RUNTIME_GATE"))"
+  else
+    _fail "scripts/ghl-mcp-assert-runtime.sh is missing — this gate reads only the SHIPPED SCRIPTS and would report PASS on a box whose INSTALLED service is misconfigured (measured: KeepAlive=<true/>, profile=full, 859 tools, Tier 2 registered)."
+    FAILURES=$((FAILURES+1))
+  fi
 
   # ── CHECK 8: TIER 2 STAYS ON-DEMAND (D2) ──────────────────────────────────
   # skill 36 v1.1.0 doctrine + qc-ghl-mcp-setup.sh Section D + 36/wire.sh M2 all

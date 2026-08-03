@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# tests/unit/ghl-mcp-supervised.test.sh — v21.5.0
+# tests/unit/ghl-mcp-supervised.test.sh — v21.6.0
 #
 # Verifies the GHL MCP supervision + install invariant gate
 # (qc-assert-ghl-mcp-supervised.sh). The gate is a STATIC check of the SHIPPED
@@ -25,6 +25,14 @@
 #   (I) `rm -rf dist` before a successful build FAILS.
 #   (J) A missing liveness probe FAILS.
 #   (K) Re-registering ghl-community-mcp in mcp.servers FAILS.
+#
+# v21.6.0 cases (R1/R4/R9 — the pin file reached no box, and the gate was blind
+# to the RUNNING service):
+#   (M) A verdict that is sourced but never EVALUATED FAILS (the gate was inert).
+#   (N) A silent hardcoded fallback commit FAILS (that is the split-brain).
+#   (O) GHL_MCP_PIN_OVERRIDE with no matching vetting digest FAILS.
+#   (P) A bundle shipping the STATIC gate without the RUNTIME gate FAILS.
+#
 #   (L) No log rotation FAILS (the fleet's ghl-mcp stderr.log had grown to
 #       5.4 MB on the operator box / 2.2 MB on a second fleet box, unrotated
 #       since May).
@@ -37,13 +45,14 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 GATE="$REPO_ROOT/scripts/qc-assert-ghl-mcp-supervised.sh"
 PROBE_SRC="$REPO_ROOT/scripts/ghl-mcp-probe.sh"
 PIN_SRC="$REPO_ROOT/config/ghl-mcp-pin.env"
+RUNTIME_SRC="$REPO_ROOT/scripts/ghl-mcp-assert-runtime.sh"
 PASS=0
 FAIL=0
 
 pass() { echo "  PASS: $1"; PASS=$((PASS+1)); }
 fail() { echo "  FAIL: $1"; FAIL=$((FAIL+1)); }
 
-echo "=== ghl-mcp-supervised.test.sh (v21.5.0) ==="
+echo "=== ghl-mcp-supervised.test.sh (v21.6.0) ==="
 echo ""
 
 if [ ! -f "$GATE" ]; then
@@ -66,6 +75,12 @@ _run_sandbox() {
   local tmp; tmp="$(mktemp -d)"
   mkdir -p "$tmp/scripts" "$tmp/config" "$tmp/platform/vps/36-ghl-mcp-setup-scripts"
   cp "$GATE" "$tmp/scripts/qc-assert-ghl-mcp-supervised.sh"
+  # v21.6.0: the static gate now asserts that the RUNTIME gate ships with it
+  # (CHECK 12) — a static-only release is exactly what let a misconfigured
+  # INSTALLED service pass on 2026-08-03. "$3 = no-runtime-gate" omits it so
+  # that assertion itself is proven to fire.
+  [ "$mode" != "no-runtime-gate" ] && [ -f "$RUNTIME_SRC" ] \
+    && cp "$RUNTIME_SRC" "$tmp/scripts/ghl-mcp-assert-runtime.sh"
   [ -f "$PIN_SRC" ] && cp "$PIN_SRC" "$tmp/config/ghl-mcp-pin.env"
   if [ "$mode" != "no-probe" ] && [ -f "$PROBE_SRC" ]; then
     cp "$PROBE_SRC" "$tmp/scripts/ghl-mcp-probe.sh"
@@ -105,7 +120,12 @@ net.Server.prototype.listen = function () {};
 GUARDEOF
 NODE_OPTIONS="--require \"$BIND_GUARD\" $NODE_OPTIONS"
 npm ci --ignore-scripts --no-audit --no-fund
-npm ci --omit=dev --ignore-scripts --no-audit --no-fund'
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+GHL_MCP_PIN_VETTED_VERDICT="${GHL_MCP_PIN_VETTED_VERDICT:-}"
+GHL_MCP_PIN_VETTED_DIGEST="${GHL_MCP_PIN_VETTED_DIGEST:-}"
+[ "$GHL_MCP_PIN_VETTED_VERDICT" = "CLEAN" ] || { echo "STATUS: PIN_UNVETTED"; exit 0; }
+[ -z "$_PIN_FILE" ] && { echo "STATUS: PIN_UNVERIFIED"; exit 0; }
+[ -n "${GHL_MCP_PIN_OVERRIDE:-}" ] && [ -z "${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}" ] && exit 0'
 GOOD_VPS='#!/usr/bin/env bash
 GHL_MCP_VETTED_COMMIT="bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3"
 git -C "$MCP_DIR" checkout --detach --force "$GHL_MCP_VETTED_COMMIT"
@@ -125,7 +145,12 @@ net.Server.prototype.listen = function () {};
 GUARDEOF
 NODE_OPTIONS="--require \"$BIND_GUARD\" $NODE_OPTIONS"
 npm ci --ignore-scripts --no-audit --no-fund
-npm ci --omit=dev --ignore-scripts --no-audit --no-fund'
+npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+GHL_MCP_PIN_VETTED_VERDICT="${GHL_MCP_PIN_VETTED_VERDICT:-}"
+GHL_MCP_PIN_VETTED_DIGEST="${GHL_MCP_PIN_VETTED_DIGEST:-}"
+[ "$GHL_MCP_PIN_VETTED_VERDICT" = "CLEAN" ] || { echo "STATUS: PIN_UNVETTED"; exit 0; }
+[ -z "$_PIN_FILE" ] && { echo "STATUS: PIN_UNVERIFIED"; exit 0; }
+[ -n "${GHL_MCP_PIN_OVERRIDE:-}" ] && [ -z "${GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST:-}" ] && exit 0'
 
 # Sanity: the synthetic GOOD pair must itself pass, otherwise every negative
 # case below would "pass" for the wrong reason.
@@ -306,6 +331,52 @@ if [ "$rc" = "1" ]; then
   pass "(P) an unpinned 'npm install --omit=dev' against the working tree FAILS"
 else
   fail "(P) the unpinned production refresh was accepted (exit $rc)"
+fi
+
+# ── (Q) The vetting verdict is SOURCED but never READ -> FAILS (R9) ──────────
+# This is the exact v21.5.0 defect: GHL_MCP_PIN_VETTED_VERDICT was sourced by
+# three scripts and evaluated by none of them, by the QC gate, or by CI. The
+# verdict was not advisory — it was INERT.
+INERT_VERDICT="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v 'GHL_MCP_PIN_VETTED_VERDICT')"
+rc="$(_run_sandbox "$INERT_VERDICT" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(Q) an autostart that never EVALUATES GHL_MCP_PIN_VETTED_VERDICT FAILS (the gate cannot go inert again)"
+else
+  fail "(Q) an inert vetting verdict was accepted (exit $rc) — an unvetted pin would build on every box"
+fi
+
+# ── (R) A silent hardcoded fallback commit -> FAILS (R1/R9) ──────────────────
+# The fallback is what let every box run a pin the pin file did not choose: the
+# resolver missed on every box, the constant took over, and a pin bump
+# propagated nowhere while the release claimed one source of truth.
+FALLBACK_PIN="${GOOD_AUTOSTART}
+GHL_MCP_VETTED_COMMIT=\"\${GHL_MCP_VETTED_COMMIT:-bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3}\""
+rc="$(_run_sandbox "$FALLBACK_PIN" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(R) a hardcoded fallback commit FAILS (no pin file must mean refusal, not a silent default)"
+else
+  fail "(R) the silent fallback pin was accepted (exit $rc) — the v21.5.0 split-brain could reopen"
+fi
+
+# ── (S) An override with no vetting digest -> FAILS (R9) ─────────────────────
+NAKED_OVERRIDE="$(printf '%s\n' "$GOOD_AUTOSTART" | grep -v 'GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST')
+[ -n \"\${GHL_MCP_PIN_OVERRIDE:-}\" ] && GHL_MCP_VETTED_COMMIT=\"\$GHL_MCP_PIN_OVERRIDE\""
+rc="$(_run_sandbox "$NAKED_OVERRIDE" "$GOOD_VPS")"
+if [ "$rc" = "1" ]; then
+  pass "(S) GHL_MCP_PIN_OVERRIDE without a matching vetting digest FAILS (the escape hatch is not a bypass)"
+else
+  fail "(S) an ungated pin override was accepted (exit $rc) — the PRIMARY path a fleet roll uses would be the unvetted one"
+fi
+
+# ── (T) Shipping the static gate WITHOUT the runtime gate -> FAILS (R4) ──────
+# A static-only release reports PASS on a box whose INSTALLED service is
+# misconfigured — measured 2026-08-03: KeepAlive=<true/>, profile=full, 859
+# tools, Tier 2 registered, and the static gate would have said PASS.
+rc="$(_run_sandbox "$GOOD_AUTOSTART" "$GOOD_VPS" "no-runtime-gate")"
+if [ "$rc" = "1" ]; then
+  pass "(T) a bundle with no scripts/ghl-mcp-assert-runtime.sh FAILS (static-only cannot see the installed service)"
+else
+  fail "(T) a static-only bundle was accepted (exit $rc) — a hand-edited plist would pass QC forever"
 fi
 
 echo ""

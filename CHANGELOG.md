@@ -1,3 +1,152 @@
+## [v21.6.0]  -  2026-08-03  -  GHL MCP: the pin file now actually reaches boxes, the QC gate now reads the RUNNING service, and the vetting verdict is enforced
+
+v21.5.0 shipped three claims that were not true in the deployed topology. This
+release makes all three true, and each one is proven in a BOX layout — never the
+repo layout, which is the one layout where every v21.5.0 check passed.
+
+### Why
+
+**R1 — "one file, read by every launch surface" was a repo-only document.**
+`config/ghl-mcp-pin.env` was never delivered to a single box. `update-skills.sh`
+cloned the repo to a temp dir, called `deliver_canonical_scripts_tree` on
+`scripts/` and nothing else, then deleted the clone. `install.sh` swept `config/`
+into `$OC_CONFIG/onboarding/` only as a side effect of a whole-repo `cp -r ... *`
+glob — never asserted, never named, and never into `$OC_CONFIG/config/`, which is
+the FIRST candidate every consumer's resolver tries (`$SELF_DIR/../config`, from
+`$OC_CONFIG/scripts`). Consequences, all measured:
+
+- every weekly-updated box ran on the hardcoded fallback constants inside
+  `ghl-mcp-autostart.sh`, so a pin bump propagated **nowhere**;
+- `qc-assert-ghl-mcp-supervised.sh` returned **rc=1** in a box layout
+  ("config/ghl-mcp-pin.env is missing"), which `qc-system-integrity.sh` CHECK
+  X.13 turns into a hard fail — against **rc=0** in the repo layout. CI was green
+  precisely because CI runs in the repo layout;
+- the probe could not see `GHL_MCP_EXPECT_MIN_TOOLS` / `_MAX_TOOLS` / a
+  non-default profile, so a box deliberately moved to `stable` would report
+  `PROFILE_DRIFT` forever and page the operator every 15 minutes.
+
+**R4 — the QC gate was structurally blind to the running service.**
+`qc-assert-ghl-mcp-supervised.sh` is, by its own header, "a STATIC check of the
+SHIPPED SCRIPTS". It proves what a FRESH install WOULD write. It never opened the
+installed plist, the live pm2 definition, the systemd unit, `/health`, or
+`mcp.servers`. A plist is only regenerated when the autostart runs, so a
+hand-edited one persists indefinitely — and a box whose live service had
+`KeepAlive=<true/>` (the exact form the static gate calls FATAL),
+`GHL_TOOL_PROFILE=full`, 859 tools, `ThrottleInterval=10`, no build stamp, a
+5.4 MB unrotated `stderr.log` and `ghl-community-mcp` still registered in
+`mcp.servers` would have been reported **PASS**.
+
+**R9 — the vetting verdict was not advisory, it was inert.**
+`GHL_MCP_PIN_VETTED_VERDICT` was sourced into the environment by three scripts
+and read by **none** of them, nor by the QC gate, nor by CI. The file's own
+instruction — "Any change to `GHL_MCP_VETTED_COMMIT` MUST reset the three
+`GHL_MCP_PIN_VETTED_*` fields to PENDING" — was a comment addressed to a human.
+A rule that requires someone to remember an extra step is documentation, not
+enforcement, and its failure mode was silent acceptance.
+
+### What changed
+
+**Delivery (R1)**
+- `update-skills.sh` delivers `config/` to `$OC_CONFIG/config/` through the same
+  `deliver_canonical_scripts_tree` receipt the scripts tree gets (byte-compare,
+  exec-bit and symlink verification — not a bare `cp` exit code), then ASSERTS
+  `ghl-mcp-pin.env` is readable at the destination and says exactly which STATUS
+  the box will report if it is not.
+- `install.sh` delivers `config/` by name next to `scripts/`, with the same
+  assert-on-land, inside `CANONICAL-CONFIG-DELIVERY-BEGIN/END` markers.
+- All five resolver lists now carry `$OC_CONFIG/config/`. The two
+  `.../skills/config/` candidates are REMOVED: nothing delivers there, and a
+  resolver candidate no installer populates is a lie about where the file can be.
+- New `scripts/qc-assert-pin-delivery-paths.sh` cross-references every resolver
+  path in every consumer against the destinations the installers actually
+  populate, and fails if either side drifts. This is the check whose absence let
+  17 resolver candidates and zero delivery steps ship together.
+
+**Runtime conformance (R4)**
+- New `scripts/ghl-mcp-assert-runtime.sh` asserts the INSTALLED service:
+  launcher-vs-direct-node, crash-only supervision (launchd `KeepAlive` dict /
+  pm2 `stop_exit_codes` / systemd `Restart=on-failure`), `ThrottleInterval`,
+  profile and both ports against the pin, `GHL_MCP_LOG_DIR`, build stamp commit,
+  live `/health` tool count inside the profile's band, `ghl-community-mcp` ABSENT
+  from `mcp.servers`, the periodic probe installed AND its path existing, log
+  size ceiling, and the bind address. Platform-aware (launchd / pm2 / systemd).
+  Every check reports the OBSERVED value — a FAIL without the number it saw is
+  not a diagnosis. `rc=2` = Tier 2 not installed, so CI and non-Tier-2 boxes are
+  never failed by it.
+- Wired into `qc-system-integrity.sh` as CHECK X.13b (and the delivery
+  cross-reference as X.13c), and into `update-skills.sh` after the autostart runs.
+- The bind-address check is deliberately a **WARN**, not a FAIL: the pinned
+  upstream build binds `0.0.0.0` and nothing in this repo can change that yet. A
+  gate that fails on all 38 boxes for a condition this release does not fix is
+  noise that gets the whole gate disabled. `GHL_MCP_REQUIRE_LOOPBACK=1` promotes
+  it to FATAL the day the server-side fix lands.
+
+**Fail-closed vetting (R9) — ships in the SAME commit as R1, deliberately**
+- No pin file -> `STATUS: ghl-mcp-autostart=PIN_UNVERIFIED`, and nothing is
+  cloned, built or started. The hardcoded fallback commit is DELETED from both
+  launch surfaces: a silent fallback for a missing source of truth is how the
+  split-brain opened.
+- Verdict not `CLEAN`, or a vetting digest that does not recompute ->
+  `PIN_UNVETTED`.
+- `GHL_MCP_PIN_OVERRIDE` now requires a matching
+  `GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST`. It was the primary path a fleet roll
+  would use to change a pin, which made the primary path the ungated one.
+- `install.sh` Step 14a reports both new states with a named one-step fix.
+- The static gate now asserts each launch surface actually EVALUATES the verdict
+  and the digest in executable lines, so it cannot go inert again.
+
+**The self-invalidating vetting digest**
+- New `scripts/ghl-mcp-pin-digest.sh` (`compute` / `verify` / `fields`) is the
+  ONE canonical implementation of the digest over
+  `ghl-mcp-pin-v1 | commit | verdict | on | by | deps_lock_sha256`. It reads the
+  pin WITHOUT sourcing it — a tool must never execute what it is auditing.
+- `config/ghl-mcp-pin.env` gains `GHL_MCP_PIN_VETTED_DIGEST`, **deliberately
+  empty**: the tool that populates it (`scripts/ghl-mcp-vet-pin.sh`) is not
+  built yet. The tuple's fifth field, `GHL_MCP_DEPS_LOCK_SHA256`, arrived in
+  v21.5.4 with a real value and is NOT redeclared here — this file is sourced
+  top-to-bottom, so a second assignment would shadow the first and the digest
+  would be computed over a shadowed value that nothing would notice. Until the
+  vetting tool lands,
+  `verify` returns 3 = ABSENT and every consumer FALLS BACK to requiring the
+  explicit `CLEAN` verdict. The moment a non-empty digest appears, the fallback
+  stops and a mismatch becomes a hard refusal — with no change to any consumer
+  or to CI. The digest is NOT a signature and does not pretend to be; it makes
+  FORGETTING impossible, not attackers.
+
+### Risk
+
+**The fail-closed refusal is the risk, and it is bounded by shipping with R1.**
+A box that does not receive `config/` will refuse to start Tier 2 rather than
+build an unverified third-party tree. That is the intended behaviour, it is
+reported loudly at three separate points (the installer's assert-on-land, the
+autostart STATUS line, and `install.sh` Step 14a), and both delivery paths are
+proven to land the file in a box layout. R9 alone, without R1, would have
+bricked Tier 2 fleet-wide — which is exactly why they are one commit.
+
+Everything else is additive. The runtime gate returns `rc=2` (skip) wherever
+Tier 2 is not installed, including the repo checkout, so no CI run and no
+non-Tier-2 box is affected by it.
+
+### Proof
+
+- `tests/unit/ghl-mcp-pin-delivery.test.sh` (new, 20 cases) — reproduces the
+  box-layout `rc=1`, proves the same layout now returns `rc=0`, runs the SHIPPED
+  delivery function from `update-skills.sh` and the SHIPPED config block from
+  `install.sh` (not re-implementations), proves idempotent re-delivery, and
+  exercises every R9 refusal and its matching acceptance.
+- `tests/unit/ghl-mcp-assert-runtime.test.sh` (new, 15 cases) — mutation proof in
+  BOTH directions: a correct installed service PASSES, and thirteen single
+  mutations each FAIL with the right diagnosis. A gate that only ever passes is
+  what shipped in v21.5.0.
+- `tests/unit/ghl-mcp-supervised.test.sh` — four new negative cases (M/N/O/P)
+  for the inert verdict, the silent fallback pin, the ungated override, and a
+  bundle shipping the static gate without the runtime gate.
+- `scripts/qc-assert-no-full-env-dump.py` violations: 1 -> 0. The new runtime
+  gate's single `pm2 jlist` read is piped STRAIGHT into a six-field filter (no
+  temp file, no unfiltered variable, nothing to leak under `set -x`), and the
+  pre-existing `update-skills.sh` allowlist line number — stale since 2026-07-30
+  — is re-derived.
+
 ## [Unreleased]  -  2026-08-03  -  Skill 58 v0.1.28: podcast activation layer landed, two-show fleet model, act-9 bash-3.2 compat
 
 The podcast activation campaign merged: the activation layer (register-podcast-hook.sh,

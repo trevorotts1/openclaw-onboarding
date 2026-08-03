@@ -70,11 +70,21 @@ done
 SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 # ── Shared pin/profile config (single source of truth) ───────────────────────
+# v21.6.0/R1: $OC_CONFIG/config/ (the FIRST two candidates) is where both
+# installers now deliver config/. Before that fix this list missed on every
+# box, so the probe could not see GHL_MCP_EXPECT_MIN_TOOLS /
+# GHL_MCP_EXPECT_MAX_TOOLS / a non-default profile — meaning a box deliberately
+# moved to `stable` would report PROFILE_DRIFT forever and page the operator
+# every 15 minutes.
+#
+# ⚠️ KEEP IN SYNC with ghl-mcp-autostart.sh, the VPS overlay,
+# qc-assert-ghl-mcp-supervised.sh and the delivery step in BOTH installers.
+# scripts/qc-assert-pin-delivery-paths.sh fails CI if they drift.
 for _c in "$SELF_DIR/../config/ghl-mcp-pin.env" \
+          "$HOME/.openclaw/config/ghl-mcp-pin.env" \
           "$HOME/.openclaw/onboarding/config/ghl-mcp-pin.env" \
-          "$HOME/.openclaw/skills/config/ghl-mcp-pin.env" \
-          "/data/.openclaw/onboarding/config/ghl-mcp-pin.env" \
-          "/data/.openclaw/skills/config/ghl-mcp-pin.env"; do
+          "/data/.openclaw/config/ghl-mcp-pin.env" \
+          "/data/.openclaw/onboarding/config/ghl-mcp-pin.env"; do
   # shellcheck disable=SC1090
   [ -f "$_c" ] && { . "$_c"; break; }
 done
