@@ -72,6 +72,7 @@ CLIENT_TZ=""
 DRY_RUN="0"
 FORCE="0"
 TUNNEL_ID_OVERRIDE="${PODCAST_TUNNEL_ID:-}"
+SHOWS=()
 
 usage() {
   sed -n '1,40p' "$0" >&2
@@ -83,6 +84,18 @@ USAGE:
 FLAGS:
   --tunnel-id <id>   Use this tunnel id instead of resolving it from the Command
                      Center CNAME (also settable via PODCAST_TUNNEL_ID).
+  --show <SLUG>:<CHANNEL_ID>  TWO-SHOW MODEL: repeatable. Every podcast client runs
+                     up to two shows under BlackCEO's single Podbean host account: a
+                     PERSONAL show (solo episodes) and an INTERVIEW show (guest
+                     system). Each --show creates ONE podcast_publish_roster row
+                     (same client email/last_name, the show's Podbean channel id,
+                     good_standing=YES) via the n8n Data Tables API, and prints the
+                     box env line PODBEAN_PODCAST_ID_<SHOW_SLUG>=<CHANNEL_ID> to
+                     stdout for the operator to add to the box. Omit --show entirely
+                     for the default single-channel flow (no roster write, no env
+                     line; PODBEAN_PODCAST_ID is set by the operator as before).
+                     Idempotent: re-running reuses an existing row for the same
+                     (email, channel) instead of inserting a duplicate.
   --dry-run          Perform all read-only discovery, but log mutations instead of
                      applying them (operator canary preview). Still requires the token.
   --force            Recreate the Access app even if one already exists for the host.
@@ -91,6 +104,12 @@ FLAGS:
 ENV:
   CLOUDFLARE_API_TOKEN   REQUIRED (BlackCEO operator token). Confirmed SET, never printed.
   CLOUDFLARE_ACCOUNT_ID  Optional override of the account id.
+  N8N_API_URL            n8n API base. REQUIRED only with --show (roster row writes).
+  N8N_API_KEY            n8n API key. REQUIRED only with --show. Confirmed SET, never printed.
+  PODCAST_ROSTER_TABLE_ID  podcast_publish_roster data table id (default UWjpksxU2b6TjKow).
+  PODCAST_CLIENT_LAST_NAME  Client last name stored in each roster row. Default:
+                         the first segment of the first client email (the pre-@ part
+                         before any + alias tag). Override with the real surname.
   PODCAST_INTAKE_MAPPING Optional hook mapping name (default podcast-intake-<slug>).
   PODCAST_NODE_USER      Box runtime user for config writes (default: node). Config is
                          never written as root.
@@ -103,6 +122,7 @@ POSITIONAL=()
 while [ $# -gt 0 ]; do
   case "$1" in
     --tunnel-id) TUNNEL_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --show)      SHOWS+=("${2:-}"); shift 2 ;;
     --dry-run)   DRY_RUN="1"; shift ;;
     --force)     FORCE="1"; shift ;;
     -h|--help)   usage; exit 0 ;;
@@ -136,6 +156,21 @@ cf_write() {
 
 ok_of() { printf '%s' "$1" | jq -r '.success // false' 2>/dev/null; }
 err_of() { printf '%s' "$1" | jq -c '.errors // []' 2>/dev/null; }
+
+# n8n Data Tables API (roster rows live in the podcast_publish_roster data table on
+# the same n8n instance that runs the publish gates). Same secret hygiene as
+# Cloudflare: the API key is confirmed SET by name only, never printed.
+ROSTER_TABLE_ID="${PODCAST_ROSTER_TABLE_ID:-UWjpksxU2b6TjKow}"
+
+n8n_base() { printf '%s' "${N8N_API_URL%/}"; }
+
+# n8n_filter_json <col> <value>: exact-match row filter, n8n data-table filter syntax.
+n8n_filter_json() {
+  jq -cn --arg c "$1" --arg v "$2" '{type:"and",filters:[{columnName:$c,condition:"eq",value:$v}]}'
+}
+
+# n8n_urlencode <s>: URL-encode for query strings (curl -G would leave {} raw).
+n8n_urlencode() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
 
 # Ledger (operator-verbose; also the tenancy record revoke reads back)
 LEDGER_DIR="${PODCAST_LEDGER_DIR:-/tmp/podcast-provision}"
@@ -189,6 +224,34 @@ need curl; need jq; need openssl
 [ -n "$EMAILS_RAW" ] || { echo "missing client email(s)" >&2; usage; exit 2; }
 [ -n "$CLIENT_TZ" ] || { echo "missing timezone" >&2; usage; exit 2; }
 printf '%s' "$SLUG" | grep -Eq '^[a-z0-9][a-z0-9-]{1,40}$' || { echo "slug must be lowercase [a-z0-9-], 2 to 41 chars" >&2; exit 2; }
+
+# --show validation (two-show model). Each value is <SHOW_SLUG>:<PODBEAN_CHANNEL_ID>;
+# the slug becomes an env-var name suffix (PODBEAN_PODCAST_ID_<SHOW_SLUG>), so it must
+# be uppercase [A-Z0-9_]. Two shows may never share a slug or a channel id
+# (never co-mingle shows under one Podbean host account).
+SHOW_SLUGS=()
+SHOW_CHANNELS=()
+# The ${A[@]+"${A[@]}"} guards keep these loops safe under set -u on bash 3.2,
+# where an empty array expansion is an error.
+for show in ${SHOWS[@]+"${SHOWS[@]}"}; do
+  show_slug="${show%%:*}"
+  show_rest="${show#*:}"
+  show_channel="${show_rest#*:}"
+  if [ "$show_slug" = "$show" ] || [ -z "$show_slug" ] || [ "$show_rest" != "$show_channel" ] || [ -z "$show_channel" ]; then
+    echo "invalid --show '$show': expected exactly <SHOW_SLUG>:<PODBEAN_CHANNEL_ID> (one colon)" >&2
+    exit 2
+  fi
+  printf '%s' "$show_slug" | grep -Eq '^[A-Z][A-Z0-9_]{0,30}$' || { echo "invalid --show slug '$show_slug': must be uppercase [A-Z0-9_], 1 to 31 chars, starting with a letter (it becomes the env-var suffix PODBEAN_PODCAST_ID_$show_slug)" >&2; exit 2; }
+  printf '%s' "$show_channel" | grep -Eq '^[A-Za-z0-9_-]{6,64}$' || { echo "invalid --show channel id for show '$show_slug': expected 6 to 64 chars of [A-Za-z0-9_-]" >&2; exit 2; }
+  for prev_slug in ${SHOW_SLUGS[@]+"${SHOW_SLUGS[@]}"}; do
+    [ "$prev_slug" != "$show_slug" ] || { echo "duplicate --show slug: $show_slug (each show needs its own slug)" >&2; exit 2; }
+  done
+  for prev_channel in ${SHOW_CHANNELS[@]+"${SHOW_CHANNELS[@]}"}; do
+    [ "$prev_channel" != "$show_channel" ] || { echo "duplicate --show channel id on show $show_slug (two shows must never share a Podbean channel)" >&2; exit 2; }
+  done
+  SHOW_SLUGS+=("$show_slug")
+  SHOW_CHANNELS+=("$show_channel")
+done
 
 if [ -z "${CLOUDFLARE_API_TOKEN:-}" ]; then
   cat >&2 <<'ERR'
@@ -484,6 +547,110 @@ ensure_secret() {
 }
 ensure_secret "PODCAST_INTAKE_HOOK_TOKEN"
 ensure_secret "PODCAST_DASHBOARD_TOKEN"
+
+# --------------------------------------------------------------------------- #
+# STEP 5b: podcast_publish_roster rows, one per show (TWO-SHOW MODEL).
+# Every podcast client has up to TWO shows under BlackCEO's single Podbean host
+# account (a PERSONAL show and an INTERVIEW show). The roster table holds ONE
+# ROW PER SHOW: same client email + last_name, a different podbean_channel_id
+# each. For every --show <SLUG>:<CHANNEL_ID>: create the row (idempotent: an
+# existing row for the same email+channel is reused, never duplicated) with
+# good_standing=YES, and emit PODBEAN_PODCAST_ID_<SHOW_SLUG>=<CHANNEL_ID> on
+# stdout for the operator to add to the box secrets file. Fail-closed on any
+# API error; never weaken the gates downstream (a missing or bad row means the
+# publish Standing Gate refuses, which is the safe direction).
+# With NO --show flags this step is skipped entirely: the legacy single-channel
+# flow (PODBEAN_PODCAST_ID supplied by the operator) is unchanged.
+# --------------------------------------------------------------------------- #
+# T6-MARKER-BEGIN provision_roster_rows
+provision_roster_rows() {
+  [ "${#SHOW_SLUGS[@]}" -gt 0 ] || return 0
+
+  # Client identity for the roster rows. Email: the roster gates compare the
+  # payload email lowercased against the row email, so use the first client
+  # email, lowercased. Last name: stored as given (trim only; the gates compare
+  # it case-insensitively). Default last name: the pre-@ part of that email
+  # before any + alias tag, e.g. "leanne" for leanne+show@domain.com.
+  local roster_email roster_last i
+  roster_email="$(printf '%s' "${ALL_EMAILS[0]-}" | tr '[:upper:]' '[:lower:]')"
+  roster_last="${PODCAST_CLIENT_LAST_NAME:-}"
+  if [ -z "$roster_last" ]; then
+    roster_last="${roster_email%%@*}"
+    roster_last="${roster_last%%+*}"
+  fi
+  roster_last="$(printf '%s' "$roster_last" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//')"
+  [ -n "$roster_email" ] || die 16 "cannot derive a roster email for --show rows"
+  [ -n "$roster_last" ]  || die 16 "cannot derive a roster last_name for --show rows (set PODCAST_CLIENT_LAST_NAME)"
+
+  # Persist the roster identity so revoke-podcast-client.sh can find the client's
+  # rows without --client-email (revoke reads .facts.roster_email from this ledger).
+  ledger_fact "roster_email" "$roster_email"
+  ledger_fact "roster_last_name" "$roster_last"
+
+  # n8n credentials gate: required ONLY for --show (the default flow never touches
+  # n8n). Never print the key; confirm SET-ness by name only.
+  if [ "$DRY_RUN" != "1" ]; then
+    if [ -z "${N8N_API_URL:-}" ] || [ -z "${N8N_API_KEY:-}" ]; then
+      die 13 "--show needs the n8n Data Tables API: N8N_API_URL and N8N_API_KEY must both be set (key is never printed)"
+    fi
+  fi
+
+  local body row_id created=0 reused=0
+  for i in "${!SHOW_SLUGS[@]}"; do
+    local slug="${SHOW_SLUGS[$i]}" channel="${SHOW_CHANNELS[$i]}"
+    ledger_fact "show:${slug}" "$channel"
+
+    if [ "$DRY_RUN" = "1" ]; then
+      ledger_step "roster:${slug}" "DRY-RUN" "would create roster row (email=$roster_email last_name=$roster_last channel=$channel good_standing=YES)"
+      printf 'PODBEAN_PODCAST_ID_%s=%s\n' "$slug" "$channel"
+      continue
+    fi
+
+    # Read: does this show already have a roster row (same email AND channel)?
+    local filt http rows
+    filt="$(n8n_filter_json email "$roster_email")"
+    http="$(curl -sS --max-time 30 -w '%{http_code}' -o "$LEDGER_DIR/.t6-read.json" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+      "$(n8n_base)/api/v1/data-tables/${ROSTER_TABLE_ID}/rows?filter=$(n8n_urlencode "$filt")" 2>/dev/null)"
+    rows="$(jq -c '.data // []' "$LEDGER_DIR/.t6-read.json" 2>/dev/null)"
+    if [ "$http" != "200" ] || [ -z "$rows" ]; then
+      rm -f "$LEDGER_DIR/.t6-read.json"
+      die 17 "roster read failed for show $slug (HTTP ${http:-0}); refusing to guess whether the row exists"
+    fi
+    row_id="$(printf '%s' "$rows" | jq -r --arg c "$channel" '[.[] | select((.podbean_channel_id // "") == $c)] | .[0].id // empty')"
+    if [ -n "$row_id" ]; then
+      reused=$((reused+1))
+      ledger_step "roster:${slug}" "REUSE" "roster row id=$row_id already exists for channel $channel (no duplicate inserted)"
+    else
+      # Create one row for this show. Fail closed: any non-200 or missing
+      # insertedRows marker means the row is NOT confirmed.
+      body="$(jq -cn --arg e "$roster_email" --arg ln "$roster_last" --arg c "$channel" --arg tag "$T6_SHOW_TAG" \
+        '{data:[{email:$e, last_name:$ln, podbean_channel_id:$c, good_standing:"YES", notes:("provisioned by provision-podcast-client.sh --show " + $tag)}]}')"
+      local cres chttp
+      cres="$(curl -sS --max-time 30 -w '\n%{http_code}' \
+        -X POST -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
+        "$(n8n_base)/api/v1/data-tables/${ROSTER_TABLE_ID}/rows" --data "$body" 2>/dev/null)"
+      chttp="${cres##*$'\n'}"
+      cres="${cres%$'\n'*}"
+      if [ "$chttp" != "200" ] || [ "$(printf '%s' "$cres" | jq -r '.insertedRows // 0' 2>/dev/null)" != "1" ]; then
+        die 18 "roster row create failed for show $slug (HTTP ${chttp:-0}); the show would be refused at the publish gate"
+      fi
+      created=$((created+1))
+      ledger_step "roster:${slug}" "OK" "created roster row (email=$roster_email last_name=$roster_last channel=$channel good_standing=YES)"
+    fi
+
+    # Emit the box env line for this show. Channel ids are non-secret, but keep
+    # stdout clean: exactly one KEY=VALUE line per show, nothing else.
+    printf 'PODBEAN_PODCAST_ID_%s=%s\n' "$slug" "$channel"
+  done
+  rm -f "$LEDGER_DIR/.t6-read.json"
+  ledger_fact "roster_rows_created" "$created"
+  ledger_fact "roster_rows_reused" "$reused"
+}
+# T6-MARKER-END provision_roster_rows
+
+T6_SHOW_TAG="$SLUG"
+provision_roster_rows
 
 # --------------------------------------------------------------------------- #
 # STEP 6: delegated box-side wiring (owned by sibling slices). Invoke the helper

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# revoke-podcast-client.sh <slug> [--edge-only] [--tunnel-id <id>] [--dry-run]
+# revoke-podcast-client.sh <slug> [--edge-only] [--tunnel-id <id>] [--client-email <email>] [--dry-run]
 #
 # Podcast Production Engine (skill 58) - per-client access revocation.
 # Implements the 9-step runbook in design/cloudflare-design.md Section 3, with the
@@ -41,6 +41,7 @@ SLUG=""
 EDGE_ONLY="0"
 DRY_RUN="0"
 TUNNEL_ID_OVERRIDE="${PODCAST_TUNNEL_ID:-}"
+CLIENT_EMAIL=""
 
 usage() {
   sed -n '1,32p' "$0" >&2
@@ -54,12 +55,23 @@ FLAGS:
                      box hygiene (5 to 8) recorded PENDING. Use when the box is unreachable.
   --tunnel-id <id>   Override the tunnel id (else read from the provision ledger, then the
                      Command Center CNAME). Also settable via PODCAST_TUNNEL_ID.
+  --client-email <email>  TWO-SHOW MODEL: the client's roster email. When given (or
+                     derivable), step 10 revokes ALL podcast_publish_roster rows for
+                     that email (one row per show: a client may have a PERSONAL and an
+                     INTERVIEW show under BlackCEO's single Podbean host account),
+                     so no show can publish after revocation. Rows are flipped to
+                     good_standing=NO (kept for audit), never deleted.
   --dry-run          Log mutations instead of applying them (canary preview).
   -h, --help         Show this help.
 
 ENV:
   CLOUDFLARE_API_TOKEN   REQUIRED (BlackCEO operator token). Confirmed SET, never printed.
   CLOUDFLARE_ACCOUNT_ID  Optional account id override.
+  N8N_API_URL            n8n API base. Needed for step 10 whenever a roster email is
+                     given (--client-email) or derivable; if unset, step 10 records
+                     PENDING with manual instructions (fail-closed, never guessed).
+  N8N_API_KEY            n8n API key for step 10. Confirmed SET, never printed.
+  PODCAST_ROSTER_TABLE_ID  podcast_publish_roster data table id (default UWjpksxU2b6TjKow).
   PODCAST_NODE_USER      Box runtime user for config writes (default node; never root).
   PODCAST_PROVISION_LEDGER_DIR  Provision ledger dir (default /tmp/podcast-provision).
   PODCAST_LEDGER_DIR     Revoke ledger dir (default /tmp/podcast-revoke).
@@ -72,6 +84,7 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --edge-only) EDGE_ONLY="1"; shift ;;
     --tunnel-id) TUNNEL_ID_OVERRIDE="${2:-}"; shift 2 ;;
+    --client-email) CLIENT_EMAIL="${2:-}"; shift 2 ;;
     --dry-run)   DRY_RUN="1"; shift ;;
     -h|--help)   usage; exit 0 ;;
     --) shift; while [ $# -gt 0 ]; do POSITIONAL+=("$1"); shift; done ;;
@@ -93,6 +106,13 @@ cf_write() {
 ok_of()  { printf '%s' "$1" | jq -r '.success // false' 2>/dev/null; }
 err_of() { printf '%s' "$1" | jq -c '.errors // []' 2>/dev/null; }
 
+# n8n Data Tables API (roster rows live in podcast_publish_roster on the same n8n
+# instance as the publish gates). Same secret hygiene: key confirmed SET, never printed.
+ROSTER_TABLE_ID="${PODCAST_ROSTER_TABLE_ID:-UWjpksxU2b6TjKow}"
+n8n_base() { printf '%s' "${N8N_API_URL%/}"; }
+n8n_filter_json() { jq -cn --arg c "$1" --arg v "$2" '{type:"and",filters:[{columnName:$c,condition:"eq",value:$v}]}' ; }
+n8n_urlencode() { python3 -c 'import sys,urllib.parse; print(urllib.parse.quote(sys.argv[1], safe=""))' "$1"; }
+
 LEDGER_DIR="${PODCAST_LEDGER_DIR:-/tmp/podcast-revoke}"
 PROVISION_LEDGER_DIR="${PODCAST_PROVISION_LEDGER_DIR:-/tmp/podcast-provision}"
 LEDGER=""
@@ -108,6 +128,10 @@ ledger_step() {
   jq --arg n "$name" --arg s "$status" --arg d "$detail" --arg ts "$(date -u +%FT%TZ)" \
     '.steps += [{step:$n, status:$s, detail:$d, at:$ts}]' "$LEDGER" > "$tmp" && mv "$tmp" "$LEDGER"
   log "[$status] $name${detail:+ - $detail}"
+}
+ledger_fact() {
+  local tmp; tmp="$(mktemp)"
+  jq --arg k "$1" --arg v "$2" '.facts[$k]=$v' "$LEDGER" > "$tmp" && mv "$tmp" "$LEDGER"
 }
 ledger_finish() {
   [ -n "$LEDGER" ] || return 0
@@ -362,10 +386,106 @@ else
   fi
 fi
 
+VERIFY_FAIL="0"
+
+# --------------------------------------------------------------------------- #
+# STEP 10: revoke ALL podcast_publish_roster rows for the client (TWO-SHOW MODEL).
+# The roster holds ONE ROW PER SHOW (same email + last_name, a different Podbean
+# channel per show), so revoking only one row would leave the client's other show
+# able to publish. Rows are flipped to good_standing=NO and KEPT for audit; they
+# are never deleted (revocation must stay auditable and re-runnable). Runs in
+# edge-only mode too: the roster lives in n8n, not on the client box, so a dark
+# box is no reason to leave any show publishable. A row that cannot be revoked is
+# a FAILED revocation.
+# --------------------------------------------------------------------------- #
+# T6-MARKER-BEGIN revoke_roster_rows
+revoke_roster_rows() {
+  local roster_email="${CLIENT_EMAIL:-}"
+  if [ -z "$roster_email" ] && [ -f "$PLEDGER" ]; then
+    roster_email="$(jq -r '.facts.roster_email // empty' "$PLEDGER" 2>/dev/null)"
+  fi
+  if [ -z "$roster_email" ]; then
+    ledger_step "10-roster-revoke" "PENDING" "no client email given (pass --client-email <email>) or derivable; revoke the client's roster rows (all shows) manually in n8n before considering this client offboarded"
+    return 0
+  fi
+  printf '%s' "$roster_email" | grep -Eiq '^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$' || { ledger_step "10-roster-revoke" "FAIL" "invalid client email for roster lookup"; VERIFY_FAIL="1"; return 0; }
+  roster_email="$(printf '%s' "$roster_email" | tr '[:upper:]' '[:lower:]')"
+  ledger_fact "roster_email" "$roster_email"
+
+  if [ "$DRY_RUN" = "1" ]; then
+    ledger_step "10-roster-revoke" "DRY-RUN" "would flip good_standing=NO on ALL roster rows for $roster_email (one row per show)"
+    return 0
+  fi
+  if [ -z "${N8N_API_URL:-}" ] || [ -z "${N8N_API_KEY:-}" ]; then
+    ledger_step "10-roster-revoke" "PENDING" "N8N_API_URL / N8N_API_KEY not set (key never printed); flip good_standing=NO on ALL roster rows for $roster_email in n8n before considering this client offboarded"
+    return 0
+  fi
+
+  # Read every row for this email (paged; the roster is small but never guess).
+  local filt cursor="" page http
+  local rows_file="$LEDGER_DIR/.t10-rows.jsonl"
+  : > "$rows_file"
+  filt="$(n8n_filter_json email "$roster_email")"
+  while :; do
+    http="$(curl -sS --max-time 30 -w '%{http_code}' -o "$LEDGER_DIR/.t10-read.json" \
+      -H "X-N8N-API-KEY: ${N8N_API_KEY}" \
+      "$(n8n_base)/api/v1/data-tables/${ROSTER_TABLE_ID}/rows?filter=$(n8n_urlencode "$filt")${cursor:+&cursor=$cursor}" 2>/dev/null)"
+    page="$(jq -c '.data // empty' "$LEDGER_DIR/.t10-read.json" 2>/dev/null)"
+    if [ "$http" != "200" ] || [ -z "$page" ] || [ "$page" = "null" ]; then
+      rm -f "$LEDGER_DIR/.t10-read.json" "$rows_file"
+      ledger_step "10-roster-revoke" "FAIL" "roster read failed (HTTP ${http:-0}); cannot enumerate the client's show rows, refusing to guess"
+      VERIFY_FAIL="1"
+      return 0
+    fi
+    printf '%s' "$page" | jq -c '.[]' >> "$rows_file"
+    cursor="$(jq -r '.nextCursor // empty' "$LEDGER_DIR/.t10-read.json" 2>/dev/null)"
+    [ -n "$cursor" ] || break
+  done
+  rm -f "$LEDGER_DIR/.t10-read.json"
+
+  local row_count revoked=0 kept=0
+  row_count="$(wc -l < "$rows_file" | tr -d ' ')"
+  if [ "${row_count:-0}" -eq 0 ]; then
+    rm -f "$rows_file"
+    ledger_step "10-roster-revoke" "OK" "no roster rows for $roster_email (nothing to revoke)"
+    return 0
+  fi
+
+  # rows_file is JSONL: one row object per line, so the jq filters address a
+  # single object each (never array syntax).
+  local row_id row_channel row_standing pres phttp
+  while IFS= read -r row_id; do
+    [ -n "$row_id" ] || continue
+    row_channel="$(jq -r --arg id "$row_id" 'select(.id == ($id | tonumber)) | .podbean_channel_id // ""' "$rows_file" 2>/dev/null | head -n1)"
+    row_standing="$(jq -r --arg id "$row_id" 'select(.id == ($id | tonumber)) | .good_standing // ""' "$rows_file" 2>/dev/null | head -n1)"
+    if [ "$row_standing" = "NO" ]; then
+      kept=$((kept+1))
+      ledger_step "10-roster-revoke:row${row_id}" "OK" "already good_standing=NO (channel $row_channel)"
+      continue
+    fi
+    pres="$(curl -sS --max-time 30 -w '\n%{http_code}' \
+      -X PATCH -H "X-N8N-API-KEY: ${N8N_API_KEY}" -H "Content-Type: application/json" \
+      "$(n8n_base)/api/v1/data-tables/${ROSTER_TABLE_ID}/rows/update" \
+      --data "$(jq -cn --argjson id "$row_id" '{filter:{type:"and",filters:[{columnName:"id",condition:"eq",value:$id}]}, data:{good_standing:"NO"}}')" 2>/dev/null)"
+    phttp="${pres##*$'\n'}"
+    if [ "$phttp" = "200" ]; then
+      revoked=$((revoked+1))
+      ledger_step "10-roster-revoke:row${row_id}" "OK" "flipped good_standing=NO (channel $row_channel); row kept for audit"
+    else
+      ledger_step "10-roster-revoke:row${row_id}" "FAIL" "could not flip good_standing=NO (HTTP ${phttp:-0}, channel $row_channel); this show can still publish"
+      VERIFY_FAIL="1"
+    fi
+  done < <(jq -r '.id' "$rows_file" 2>/dev/null)
+
+  rm -f "$rows_file"
+  ledger_step "10-roster-revoke" "OK" "$row_count row(s) for $roster_email: $revoked revoked, $kept already NO (all shows cut)"
+}
+# T6-MARKER-END revoke_roster_rows
+revoke_roster_rows
+
 # --------------------------------------------------------------------------- #
 # STEP 9: independent end-to-end verification (no false done)
 # --------------------------------------------------------------------------- #
-VERIFY_FAIL="0"
 
 # 9a: dashboard must NOT return 302 to the Access team host.
 if [ "$DRY_RUN" = "1" ]; then
