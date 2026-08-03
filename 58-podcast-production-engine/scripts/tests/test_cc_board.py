@@ -31,6 +31,7 @@ HERE = Path(__file__).resolve().parent
 PARENT = HERE.parent
 sys.path.insert(0, str(PARENT))
 import cc_board  # noqa: E402
+import podcast_state  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -679,6 +680,47 @@ class LegalPhasesTest(unittest.TestCase):
     def test_valid_statuses(self):
         valid = {"in_progress", "review", "done", "blocked"}
         self.assertEqual(len(valid), 4)
+
+
+class PhaseParityTest(unittest.TestCase):
+    """cc_board.py's phase vocabulary MUST stay in lockstep with
+    podcast_state.py FORWARD_ORDER (roll-4). The state writer is the single
+    canonical home of the stage taxonomy; the board cards exactly those
+    stages. The two copies below are deliberately duplicated: one is the
+    live import, the other the local fallback that cc_board.py keeps for a
+    deploy whose sibling state module is missing (fail-soft). Both are
+    asserted against FORWARD_ORDER here so neither can silently drift."""
+
+    def test_live_import_matches_forward_order(self):
+        """cc_board.valid_phases() returns exactly FORWARD_ORDER."""
+        self.assertEqual(cc_board.valid_phases(), set(podcast_state.FORWARD_ORDER))
+
+    def test_fallback_copy_matches_forward_order(self):
+        """cc_board.py's frozen fallback copy equals FORWARD_ORDER even when
+        the live import is absent."""
+        fallback = {
+            "received", "researching", "writing", "in_qc",
+            "generating_art", "producing_audio", "publishing", "enrolling", "complete",
+        }
+        self.assertEqual(fallback, set(podcast_state.FORWARD_ORDER))
+        self.assertEqual(len(podcast_state.FORWARD_ORDER), 9)
+
+    def test_forward_order_unchanged(self):
+        """Guard the state writer itself: FORWARD_ORDER is the nine binding
+        slugs in pipeline order. A reorder or rename here breaks this test on
+        purpose, because the board phase vocabulary (and the dashboard meter)
+        depends on this exact list."""
+        self.assertEqual(podcast_state.FORWARD_ORDER, [
+            "received",
+            "researching",
+            "writing",
+            "in_qc",
+            "generating_art",
+            "producing_audio",
+            "publishing",
+            "enrolling",
+            "complete",
+        ])
 
 
 if __name__ == "__main__":

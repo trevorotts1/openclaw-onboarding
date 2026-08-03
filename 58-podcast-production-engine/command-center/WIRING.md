@@ -229,6 +229,12 @@ State persistence:
 
 Phase-to-lane mapping (the 9 podcast production phases):
 
+  The phase slugs below ARE podcast_state.py FORWARD_ORDER. cc_board.py
+  resolves the accepted phase set from that single writer at import time,
+  with a frozen local fallback, and the parity is locked by test
+  (PhaseParityTest in scripts/tests/test_cc_board.py): the board can never
+  card a stage the state machine cannot reach.
+
   Phase             Suggested CC status for in-flight work
   ------------      --------------------------------------
   received          in_progress
@@ -257,5 +263,55 @@ FAIL-SOFT posture:
     with code 2.
   - Bounded 5s timeout per request, one retry on network error only.
   - A board outage never fails an episode run.
+
+Producer binding (roll-4, closes deferred H8)
+---------------------------------------------
+
+The producer side is bound, not merely offered. scripts/podcast_controller.py
+(the episode-run orchestrator built by the activation layer alongside
+register-podcast-hook.sh and install-podcast-department.sh) IS the caller of
+this board caller. Every fleet box whose podcast processor is activated
+(install-podcast-department.sh during provisioning, removed by
+revoke-podcast-client.sh on revocation) runs the same controller, so episode
+runs are kanban-visible fleet-wide, not only on the box where the board
+happens to be configured. The controller drives the three subcommands in this
+order:
+
+  1. run-begin at intake. The accepted submission (one job, one card; the
+     job-id is the state writer's job id) lands a card in the Podcast
+     workspace before the first pipeline step executes.
+  2. patch-phase per pipeline step. Each podcast_state.py advance maps to
+     one patch-phase call: the phase slug is the new status (received ...
+     complete, see the phase-to-lane mapping above for the suggested CC
+     status of each), so the card rides the lane in lockstep with the nine
+     forward segments of the dashboard meter.
+  3. close at the terminal edge. A finished run calls close --status done
+     with the Podbean episode permalink so the completion-evidence gate
+     (T0-01) passes; a stopped run calls close --status blocked with the
+     full blocked triad (reason, blocked-on-human, ask) so the blocked
+     column gate accepts the card.
+
+This sequencing is TRANSITION-AWARE, consistent with rem-2: the caller
+reads the card's current status before a done close and PATCHes status
+'review' first when needed, so the done PATCH always lands on a legal
+state-machine edge (done is reachable only from review or testing). The
+deliverable registration stays before the done PATCH. The controller never
+bypasses podcast_state.py; it reads the job status from the state writer
+and mirrors it onto the board, so the board can never lead or lag the real
+state machine.
+
+Show name on the card (T8 status note)
+--------------------------------------
+
+T8 (fix/podcast-audit-t8-board-show-label, "T8 board caller carries the show
+name") adds an optional --show-name flag to run-begin so the card title
+becomes "Episode: <title> - <show> (<client>)" and personal vs interview
+episodes for the same client stay distinguishable on the Podcast lane under
+the two-show fleet model. As of this writing T8 is NOT on origin/main, so
+the flag does not exist in the merged tree yet; the controller resolves the
+show name from the matched roster row and passes --show-name only when the
+flag is present (backward compatible: absent flag, legacy title). When T8
+lands, the controller picks the flag up with no further change. The plain
+hyphen in the title is intentional; never an em dash.
 
 END OF WIRING NOTE
