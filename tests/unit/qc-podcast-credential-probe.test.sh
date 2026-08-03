@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # tests/unit/qc-podcast-credential-probe.test.sh
 #
-# U031 — the Skill-58 install QC gate's bounded Podbean credential probe.
+# U031 -- the Skill-58 install QC gate's bounded Podbean credential probe.
 #
 # F31: the pre-U031 gate checked only that PODBEAN_CLIENT_ID / _SECRET were
 # non-empty, so a wrong or expired pair passed the gate and failed at first
@@ -15,7 +15,7 @@
 #   2. a rejecting endpoint   → the gate exits 1 with the probe FAIL line
 #   3. credential values are NEVER printed by the gate (SET/NOT-SET only)
 #   4. the probe actually calls {PODBEAN_API_BASE}/oauth/token with HTTP
-#      Basic auth (-u) — i.e. it validates the PAIR, not just presence
+#      Basic auth (-u) -- i.e. it validates the PAIR, not just presence
 #   5. the probe is bounded (curl -m timeout flag) so a dead endpoint
 #      cannot hang the gate
 #
@@ -38,19 +38,35 @@ echo "=== qc-podcast-credential-probe.test.sh ==="
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
+# --- act-6 note: sandboxed gate copy ------------------------------------------
+# qc-podcast.sh now ends with the act-6 activation-layer health gate, which is
+# FATAL while the activation-layer branches (hook registration, controller,
+# department installer) have not merged into this tree. This test is about the
+# Podbean credential probe, not activation, so it runs a sandboxed COPY of the
+# gate with the three activation files present: the activation section then
+# reports a non-fatal WARN (the guard script itself is absent from the copy)
+# and the credential probe alone decides the exit code, exactly as before.
+SANDBOX_GATE="$WORK/gate/qc-podcast.sh"
+mkdir -p "$WORK/gate/scripts"
+cp "$GATE" "$SANDBOX_GATE"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/register-podcast-hook.sh"
+printf 'import sys\nif "--help" in sys.argv:\n    sys.exit(0)\nsys.exit(0)\n' > "$WORK/gate/scripts/podcast_controller.py"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$WORK/gate/scripts/install-podcast-department.sh"
+
 # --- hermetic environment ----------------------------------------------------
 # HOME points at a temp tree so resolve_platform_paths resolves SECRETS_ENV
 # into the sandbox (absent → skipped) and SKILLS_DIR_DEFAULT into a folder we
 # create, so the skill-folder presence assert passes deterministically.
 mkdir -p "$WORK/home/.openclaw/skills/58-podcast-production-engine" "$WORK/bin"
 
-# Mock curl: logs its argv (one arg per line) and answers the token endpoint
-# per the mode file — accept → a valid token JSON; anything else → the
+# Mock curl: logs its argv (one arg per line, APPENDED so the oauth call and
+# the later n8n-host probe are both recorded) and answers the token endpoint
+# per the mode file -- accept → a valid token JSON; anything else → the
 # invalid_client error body Podbean returns for a bad pair (HTTP-level 401,
-# which curl without -f still exits 0 on — the gate decides on the BODY).
+# which curl without -f still exits 0 on -- the gate decides on the BODY).
 cat > "$WORK/bin/curl" <<'MOCK'
 #!/usr/bin/env bash
-printf '%s\n' "$@" > "${MOCK_LOG:-/dev/null}"
+printf '%s\n' "$@" >> "${MOCK_LOG:-/dev/null}"
 url="${@: -1}"
 case "$url" in
   */oauth/token)
@@ -67,13 +83,15 @@ chmod +x "$WORK/bin/curl"
 
 run_gate() {  # $1 = mock mode (accept | reject); echoes the gate's exit code
   echo "$1" > "$WORK/mode"
+  : > "$WORK/curl-args.log"
   HOME="$WORK/home" \
   PATH="$WORK/bin:$PATH" \
+  PODBEAN_PODCAST_ID="test-channel-id" \
   PODBEAN_CLIENT_ID="test-client-id" \
   PODBEAN_CLIENT_SECRET="test-secret-value" \
   PODBEAN_API_BASE="http://mock.invalid/v1" \
   MOCK_MODE_FILE="$WORK/mode" MOCK_LOG="$WORK/curl-args.log" \
-  bash "$GATE" > "$WORK/out.log" 2>&1
+  bash "$SANDBOX_GATE" > "$WORK/out.log" 2>&1
   echo $?
 }
 
@@ -81,7 +99,7 @@ run_gate() {  # $1 = mock mode (accept | reject); echoes the gate's exit code
 rc=$(run_gate accept)
 if [ "$rc" = "0" ]; then pass "accepting token endpoint → gate exits 0"
 else fail "accepting token endpoint → gate exits 0 (got rc=$rc: $(tail -3 "$WORK/out.log" | tr '\n' ' '))"; fi
-if grep -q "PASS — Podbean credential pair mints" "$WORK/out.log"; then
+if grep -q "PASS -- Podbean credential pair mints" "$WORK/out.log"; then
   pass "accept → probe PASS line present"
 else fail "accept → probe PASS line present"; fi
 
@@ -90,7 +108,7 @@ else fail "accept → probe PASS line present"; fi
 rc=$(run_gate reject)
 if [ "$rc" = "1" ]; then pass "rejecting token endpoint → gate exits 1"
 else fail "rejecting token endpoint → gate exits 1 (got rc=$rc)"; fi
-if grep -q "FAIL — Podbean credential pair mints" "$WORK/out.log"; then
+if grep -q "FAIL -- Podbean credential pair mints" "$WORK/out.log"; then
   pass "reject → probe FAIL line present"
 else fail "reject → probe FAIL line present"; fi
 
