@@ -1,3 +1,116 @@
+## [v21.7.5]  -  2026-08-03  -  The GHL MCP roll path actually converges a box (and can no longer report a hollow update as a success)
+
+A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker/pm2) ran `update-skills.sh` cleanly
+everywhere — exit 0, 17-20 skills updated, version stamp advanced — and converged **no box** to
+the hardened Tier 2 state. All three failed `ghl-mcp-assert-runtime.sh` with 7-10 FATALs. This
+release closes every mechanism that made that possible. Four of them were independent, and each
+one alone was sufficient to produce the observed result.
+
+### B2 — `openclaw mcp remove` is not a command, so Tier 2 was NEVER de-registered
+
+On OpenClaw 2026.7.1-2, `openclaw mcp remove <name>` exits 1 with `Too many arguments for this
+command`. The verb is **`unset`**. The repo carried **8 occurrences of `remove` and 0 of
+`unset`**, and every executable one was swallowed by `|| true`:
+
+- `update-skills.sh` (the fleet-roll de-registration)
+- `scripts/ghl-mcp-autostart.sh` `deregister_tier2()`
+- `36-ghl-mcp-setup/wire.sh` migration M2
+- `scripts/ghl-mcp-assert-runtime.sh` (its own remediation text)
+- `36-ghl-mcp-setup/INSTALL.md`, `ghl-mcp-setup-full.md`, + 2 explanatory comments
+
+So runtime check 10 (*"ghl-community-mcp ABSENT from mcp.servers"*) could never pass on any box —
+the last remaining FATAL on the pilot box. `wire.sh` compounded it by attributing the failure to
+*"the gateway can rewrite openclaw.json from memory"*; that diagnosis was wrong and is corrected,
+because it sent every investigation after a phantom.
+
+All 8 sites now try `unset` first and keep `remove` only as an explicit fallback for an older CLI,
+**return** the outcome instead of swallowing it, re-read `openclaw mcp list` to prove the entry is
+actually gone, and report which verb the installed CLI documents. New CI gate
+`scripts/qc-assert-mcp-unset-verb.sh` fails the build on any remove-only site, with an
+anti-vacuity check so it cannot go green by the de-registration path simply disappearing.
+
+### B3 — the 15-minute liveness probe was dead on arrival, fleet-wide
+
+`update-skills.sh` delivers the canonical `scripts/` tree to `$OC_ROOT/scripts`. The autostart
+resolved `ghl-mcp-probe.sh` from `$SELF_DIR/`, `$HOME/.openclaw/skills/scripts/` and
+`/data/.openclaw/skills/scripts/` — **an extra `skills/` segment that nothing populates**. On the
+fleet path `$SELF_DIR` is the temp extract dir, which the updater `rm -rf`s, so `PROBE` resolved
+**empty on every rolled box** and `install_periodic_probe()` took its *"not co-located — periodic
+liveness probe NOT installed"* branch. It passed in operator-box testing only because that run used a
+persistent checkout. Identical shape on VPS.
+
+The delivered path is now present on both platforms; the legacy `skills/scripts` pair is retained
+as a last-resort fallback (some long-lived boxes still have it) but is no longer the only option.
+`scripts/qc-assert-pin-delivery-paths.sh` is generalised beyond the pin file: for every sibling
+helper a consumer resolves, the **delivered** location must appear in that resolver list. Same bug
+class as the v21.5.0 pin-delivery defect, now covered by one generic assertion.
+
+### DEFECT 2 — the roll ran the wrong copy of the autostart, then measured it before it finished
+
+Two independent faults in `wire_ghl_mcp`:
+
+- **Wrong copy.** It ran `$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh` — the **temp clone**. The
+  autostart's first pin-resolver candidate is `$SELF_DIR/../config/ghl-mcp-pin.env`, which from
+  the temp clone resolves inside a directory the updater deletes. It now prefers the **delivered**
+  copy at `$OC_ROOT/scripts/`, whose `../config` sibling is the pin the roll just delivered.
+- **Backgrounded, then asserted immediately.** `( … & )` returned in milliseconds and the runtime
+  assert on the next line measured the **pre-autostart** state — it could only ever observe the
+  defect it existed to verify was fixed. The autostart is now waited for, bounded
+  (`OPENCLAW_GHL_MCP_AUTOSTART_TIMEOUT`, default 900s, poll-on-PID because macOS has no
+  `timeout(1)` — which is why it was backgrounded in the first place). A run that exceeds the
+  ceiling says so and marks the verdict as measured mid-install.
+
+**And the verdict now counts.** It used to be a bare warning nothing read, so a roll printed the
+FATALs and exited 0. It now latches and makes the run **exit 2** — this script's existing,
+documented *"skills content current, infrastructure needs attention"* code. Deliberately **not**
+exit 1: that means *stamp withheld*, and `wire_ghl_mcp` runs before the stamp, so failing to 1
+would withhold the content stamp on every box carrying a pre-existing Tier 2 defect and brick
+fleet rolls over something unrelated to skills content. It is emphatically not 0.
+
+### DEFECT 3 — a security check that could not answer reported INFO
+
+In the VPS container there is no `lsof`. Check 13 was `if command -v lsof` with **no else branch**,
+so the verdict stayed `unknown` and printed an INFO line reading *"no listener observed (or lsof
+unavailable)"*. That one sentence conflated **"the port is free"** (a real answer) with **"we have
+no way to tell"** (a check that did not run), and reported the second as INFO — indistinguishable
+from a pass. It masked a genuine `0.0.0.0:8765` exposure independently confirmed via
+`/proc/net/tcp` (LISTEN state `0A`).
+
+- Determination now falls back `lsof` → `ss` → `/proc/net/tcp` + `/proc/net/tcp6` parsed directly,
+  so the container case is answerable with no tools at all.
+- **Undeterminable is FATAL**, never INFO. A proven-free port stays INFO, because that is a real
+  answer.
+- All-interfaces is **FATAL by default**. The old WARN existed because *"fixing it needs a
+  server-side change (R2)"* — R2 has landed (the generated bind guard, proven differentially on a
+  live box `*:8791` → `127.0.0.1:8791`), so the exemption is gone.
+- A missing `python3` on the `/proc` path no longer returns "answered, zero listeners" — the same
+  silent downgrade in a new costume.
+
+`tests/unit/ghl-mcp-bind-determination.test.sh` binds **real sockets** for the wildcard and
+loopback cases (tool-independent), and reaches the undeterminable branch with a sanitised PATH plus
+overridable `/proc` paths — the same documented test-hook convention as `GHL_MCP_DIR` /
+`GHL_MCP_PLIST` in that file. Without a hook that fail-path is unreachable on Linux, and an
+untested fail-path is precisely what let the silent downgrade survive.
+
+### DEFECT 4 — the stamp path, written down where it cannot drift again
+
+Verified against the code: the stamp is `<skills dir>/.onboarding-version` — full word, inside the
+**skills** directory (`~/.openclaw/skills/…` on Mac, `/data/.openclaw/skills/…` on VPS), written
+by `update-skills.sh` as the last artifact of a successful run and read by `get_current_version()`.
+**No repo file named a wrong path** — the drift is in briefs and verification commands, not the
+code. `VERSION-ARCHITECTURE.md` now states the exact path per platform, names the three wrong forms
+that keep being used (`~/.openclaw/.onboarding-ver` chief among them — truncated word *and* missing
+the `skills/` segment, so it reports every box as unstamped on every roll), and distinguishes the
+two sibling files that are not the stamp.
+
+### Proof
+
+| gate / test | proves |
+| --- | --- |
+| `scripts/qc-assert-mcp-unset-verb.sh` | remove-only sites fail; 8 FATALs on the pre-fix tree |
+| `scripts/qc-assert-pin-delivery-paths.sh` (extended) | resolver ⊇ delivered path; 2 FATALs on the reverted probe resolver |
+| `tests/unit/ghl-mcp-bind-determination.test.sh` | 4 verdicts on real sockets; 3 failures on the pre-fix gate, including the exact INFO downgrade |
+
 ## [v21.7.4]  -  2026-08-03  -  P0: the installer can no longer destroy a working GHL credential pairing
 
 `write_server_env()` in `scripts/ghl-mcp-autostart.sh` rewrote the GHL community MCP's

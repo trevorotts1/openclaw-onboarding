@@ -248,6 +248,11 @@ fi
 #     scripts/ghl-mcp-vet-pin.sh is still being built) — require the explicit
 #     CLEAN verdict. Weaker (one word defeats it) but strictly better than
 #     v21.5.0, where the verdict was sourced by three scripts and read by none.
+# B3 reference shape: this list was ALREADY correct — it carries the delivered
+# $OC_ROOT/scripts path on both platforms, with the legacy skills/scripts pair
+# after it. That is why the digest tool resolved on the fleet while the probe
+# (which listed ONLY the legacy pair) did not. Kept as-is, and the CI gate now
+# holds every sibling-resolver list to this same shape.
 _PIN_DIGEST_TOOL=""
 for _c in "$SELF_DIR/ghl-mcp-pin-digest.sh" \
           "$HOME/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
@@ -1056,8 +1061,30 @@ listener_is_loopback() {
 # The REAL test: does a JSON-RPC request get an ANSWER? /health is served by
 # express before the MCP transport is wired, so a stale/deaf dist still returns
 # {"status":"healthy"} while every agent init hangs the full 30s (D1/D5).
+# B3 (DEAD ON ARRIVAL FLEET-WIDE): this resolver listed
+# $HOME/.openclaw/skills/scripts/ and /data/.openclaw/skills/scripts/ — an extra
+# `skills/` segment that NOTHING delivers to. update-skills.sh delivers the
+# canonical scripts/ tree to $OC_ROOT/scripts (deliver_canonical_scripts_tree ->
+# _OC_SCRIPTS_DEST), so neither candidate could ever match on a real box. The
+# only candidate that ever hit was $SELF_DIR — and on the FLEET path $SELF_DIR is
+# the temp extract dir, which the updater `rm -rf`s. Net effect: PROBE resolved
+# empty on every rolled box, so install_periodic_probe() took its
+# "not co-located — periodic liveness probe NOT installed" branch and the
+# 15-minute liveness probe was never installed anywhere. It passed in operator-box testing
+# only because that run used a persistent checkout.
+#
+# The DELIVERED path is now present, on both platforms, ahead of the legacy one.
+# $SELF_DIR stays first (it is how a developer checkout and CI resolve). The
+# `skills/scripts` pair is KEPT, last, as a legacy fallback: some long-lived
+# boxes were provisioned when install.sh copied the whole repo under skills/, and
+# dropping it could strand one of them. It is no longer the ONLY option, which is
+# what made this dead on arrival.
+# scripts/qc-assert-pin-delivery-paths.sh now fails CI if any resolver here omits
+# the delivered path.
 PROBE="$(
   for c in "$SELF_DIR/ghl-mcp-probe.sh" \
+           "$HOME/.openclaw/scripts/ghl-mcp-probe.sh" \
+           "/data/.openclaw/scripts/ghl-mcp-probe.sh" \
            "$HOME/.openclaw/skills/scripts/ghl-mcp-probe.sh" \
            "/data/.openclaw/skills/scripts/ghl-mcp-probe.sh"; do
     [ -f "$c" ] && { printf '%s' "$c"; break; }
@@ -1442,14 +1469,62 @@ EOF
 # This script used to re-register it right after wire.sh removed it. It no
 # longer does; it removes a legacy registration instead and only publishes the
 # canonical URL env var that the on-demand curl path reads.
+# >>> OC-MCP-UNSET-VERB-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-unset-verb.test.sh)
+# B2 (proven live on OpenClaw 2026.7.1-2): `openclaw mcp remove <name>` IS NOT A
+# COMMAND. It exits 1 with "Too many arguments for this command." The verb is
+# `unset`. Every de-registration call site in this repo used `remove`, and every
+# one of them was swallowed by `|| true` — so Tier 2 was NEVER de-registered on
+# ANY box, and check 10 of ghl-mcp-assert-runtime.sh ("ghl-community-mcp ABSENT
+# from mcp.servers") could never pass anywhere. That was the last remaining FATAL
+# on the pilot box.
+#
+# oc_mcp_unset tries `unset` first and falls back to `remove` for any older CLI
+# that genuinely used it, then RETURNS THE OUTCOME. Callers must not `|| true`
+# it: a swallowed failure is precisely how this stayed invisible for so long.
+#   0 = the CLI accepted one of the verbs
+#   1 = neither verb was accepted (or openclaw is absent)
+oc_mcp_unset() {
+  local _name="${1:-}"
+  [ -n "$_name" ] || return 1
+  command -v openclaw >/dev/null 2>&1 || return 1
+  openclaw mcp unset "$_name" >/dev/null 2>&1 && return 0
+  openclaw mcp remove "$_name" >/dev/null 2>&1 && return 0
+  return 1
+}
+
+# Which verb does the INSTALLED CLI actually document? Reported (never guessed)
+# so an operator reading the log can see whether the repo and the runtime agree.
+oc_mcp_unset_verb_supported() {
+  command -v openclaw >/dev/null 2>&1 || { printf 'no-cli'; return 0; }
+  local _h
+  _h="$(openclaw mcp --help 2>&1 || true)"
+  case "$_h" in
+    *' unset'*|*'unset '*) printf 'unset' ;;
+    *' remove'*|*'remove '*) printf 'remove' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 deregister_tier2() {
   command -v openclaw >/dev/null 2>&1 || return 0
   openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >/dev/null 2>&1 || true
   if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-    log "removing legacy ghl-community-mcp registration (Tier 2 is on-demand curl)"
-    openclaw mcp remove ghl-community-mcp >/dev/null 2>&1 || true
+    log "de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl); installed CLI documents the verb: $(oc_mcp_unset_verb_supported)"
+    if ! oc_mcp_unset ghl-community-mcp; then
+      log "WARN: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted — ghl-community-mcp is STILL registered. Every agent init will keep paying its tool-catalogue/connection cost. Check 'openclaw mcp --help'."
+      return 0
+    fi
+    # RE-READ. The gateway can rewrite openclaw.json from memory, so a command
+    # that exited 0 is not proof the entry is gone.
+    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+      log "WARN: de-registration command succeeded but ghl-community-mcp is STILL listed — the gateway may have rewritten the config. It will be retried on the next run."
+    else
+      log "ghl-community-mcp de-registered and verified absent from mcp.servers"
+    fi
   fi
 }
+# <<< OC-MCP-UNSET-VERB-END
 
 # ── Main flow ────────────────────────────────────────────────────────────────
 
