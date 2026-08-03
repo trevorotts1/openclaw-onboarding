@@ -172,15 +172,6 @@ fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
-# ---- Resolve workspace root --------------------------------------------------
-# departments live under workspace/departments/<slug>/
-WORKSPACE_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
-if [[ -z "$WORKSPACE_ROOT" || "$WORKSPACE_ROOT" == "null" ]]; then
-  # Fallback: derive from state file location (state is in workspace/)
-  WORKSPACE_ROOT="$(dirname "$STATE_FILE")"
-fi
-DEPTS_DIR="$WORKSPACE_ROOT/departments"
-
 # ---- Collect dept list from state --------------------------------------------
 # Portable replacement for `mapfile -t ALL_DEPTS < <(...)` (mapfile is bash 4+ only;
 # Mac ships bash 3.2 and callers may be zsh-parented). while-read works in bash 3.2+.
@@ -221,8 +212,135 @@ else
   DEPTS_TO_CHECK=("${ALL_DEPTS[@]}")
 fi
 
+# ---- Resolve the departments tree (v1.0.6) -----------------------------------
+# BUG (pre-v1.0.6): this was a single unvalidated guess —
+#     WORKSPACE_ROOT = state.workspaceRoot, else dirname(STATE_FILE)
+#     DEPTS_DIR      = $WORKSPACE_ROOT/departments
+# `workspaceRoot` is NOT written into build-state on every path, so the fallback
+# fired routinely and pinned the tree to $OC_ROOT/workspace/departments. On a box
+# whose workforce lives in a company-shaped tree (clawd/zero-human-company/<slug>/
+# departments) the gate then measured a tree the client's agents never use and
+# reported every department "dept dir does not exist" — a confident verdict about
+# the wrong directory. Because wiringStatus feeds refresh-build-state-from-index.py
+# (references/DONE-IS-GATED.md), a wrong-tree measurement propagates into the
+# per-department status write.
+#
+# Now the tree is DETECTED from evidence and the choice is PROVEN before use: each
+# candidate is scored by how many of the departments named in build-state actually
+# resolve to a directory inside it, and the best-scoring candidate wins. If NO
+# candidate contains a single named department we abort with the precondition exit
+# (9) instead of emitting a confident wrong answer. That is the important property:
+# this can turn a wrong measurement into a loud "cannot measure", never a failing
+# department into a passing one.
+#
+# UPSTREAM COMPANION FIX (outside this file, flagged deliberately): `workspaceRoot`
+# should be written into .workforce-build-state.json at interview time. While it is
+# absent, detection is the only honest option available to this gate.
+#
+# Candidate order is preference, not authority — the score decides:
+#   1. state.workspaceRoot/departments          (explicit, when present)
+#   2. $OC_ROOT/workspace/departments           (the tree the floor-fill repair
+#                                                pipeline maintains — see
+#                                                _qc_paths.live_departments_dir)
+#   3. <root>/clawd/zero-human-company/<slug>/departments  for the company slug
+#                                                recorded in build-state
+#   4. any clawd/zero-human-company/*/departments found on disk
+DEPT_TREE_CANDIDATES=()
+_add_candidate() {
+  local c="$1" existing
+  [[ -z "$c" || "$c" == "null" ]] && return 0
+  [[ -d "$c" ]] || return 0
+  for existing in ${DEPT_TREE_CANDIDATES[@]+"${DEPT_TREE_CANDIDATES[@]}"}; do
+    [[ "$existing" == "$c" ]] && return 0
+  done
+  DEPT_TREE_CANDIDATES+=("$c")
+}
+
+_STATE_WS_ROOT=$(jq -r '.workspaceRoot // empty' "$STATE_FILE" 2>/dev/null || true)
+_add_candidate "$_STATE_WS_ROOT/departments"
+_add_candidate "$OC_ROOT/workspace/departments"
+
+_COMPANY_SLUG=$(jq -r '.companySlug // .company.slug // .company // empty' \
+  "$STATE_FILE" 2>/dev/null || true)
+for _zhc_root in "$HOME/clawd/zero-human-company" "/data/clawd/zero-human-company"; do
+  [[ -d "$_zhc_root" ]] || continue
+  [[ -n "$_COMPANY_SLUG" && "$_COMPANY_SLUG" != "null" ]] \
+    && _add_candidate "$_zhc_root/$_COMPANY_SLUG/departments"
+  for _c in "$_zhc_root"/*/departments; do
+    _add_candidate "$_c"
+  done
+done
+# Last resort, and only as a candidate to be SCORED like any other.
+_add_candidate "$(dirname "$STATE_FILE")/departments"
+
+# resolve_one_dept <depts_dir> <slug> — echo the department's actual directory, or
+# nothing. Mirrors create_role_workspaces.resolve_dept_dir() precedence so this
+# gate and the builders agree about which directory a slug means:
+#   1. the bare id            <root>/<slug>
+#   2. the "-dept" suffixed   <root>/<slug>-dept     (a real layout on live boxes)
+#   3. a normalized scan      case + separator drift (matters on case-SENSITIVE
+#                             Linux boxes, where an exact probe misses `Sales/`)
+# Without step 2 a slug like `trading-operations` silently measured ZERO roles on
+# a box that stores it as `trading-operations-dept/`.
+_norm_dept_key() {
+  printf '%s' "$1" \
+    | tr '[:upper:]' '[:lower:]' \
+    | sed -e 's/^dept[-_]//' -e 's/[-_]dept$//' -e 's/_/-/g' \
+          -e 's/--*/-/g' -e 's/^-//' -e 's/-$//'
+}
+resolve_one_dept() {
+  local root="$1" slug="$2" target d
+  [[ -d "$root" ]] || return 0
+  [[ -d "$root/$slug" ]]      && { printf '%s' "$root/$slug"; return 0; }
+  [[ -d "$root/$slug-dept" ]] && { printf '%s' "$root/$slug-dept"; return 0; }
+  target="$(_norm_dept_key "$slug")"
+  [[ -z "$target" ]] && return 0
+  for d in "$root"/*/; do
+    [[ -d "$d" ]] || continue
+    if [[ "$(_norm_dept_key "$(basename "$d")")" == "$target" ]]; then
+      printf '%s' "${d%/}"
+      return 0
+    fi
+  done
+  return 0
+}
+
+DEPTS_DIR=""
+_BEST_SCORE=-1
+for _cand in ${DEPT_TREE_CANDIDATES[@]+"${DEPT_TREE_CANDIDATES[@]}"}; do
+  _score=0
+  for _d in "${DEPTS_TO_CHECK[@]}"; do
+    [[ -n "$(resolve_one_dept "$_cand" "$_d")" ]] && _score=$((_score + 1))
+  done
+  echo "[verify-wiring] candidate tree: $_cand — resolves $_score/${#DEPTS_TO_CHECK[@]} dept(s)"
+  if (( _score > _BEST_SCORE )); then
+    _BEST_SCORE=$_score
+    DEPTS_DIR="$_cand"
+  fi
+done
+
+if [[ -z "$DEPTS_DIR" || $_BEST_SCORE -le 0 ]]; then
+  echo "[verify-wiring] FATAL: could not resolve a departments tree containing ANY of the" >&2
+  echo "                departments named in $STATE_FILE." >&2
+  echo "                Departments in state: ${DEPTS_TO_CHECK[*]}" >&2
+  if [[ ${#DEPT_TREE_CANDIDATES[@]} -eq 0 ]]; then
+    echo "                Candidates probed: (none existed on disk)" >&2
+  else
+    echo "                Candidates probed:" >&2
+    for _cand in "${DEPT_TREE_CANDIDATES[@]}"; do echo "                  - $_cand" >&2; done
+  fi
+  echo "                Refusing to report a verdict about a tree that does not hold this" >&2
+  echo "                workforce — a confident wrong answer here propagates into the" >&2
+  echo "                per-department status write (references/DONE-IS-GATED.md)." >&2
+  echo "                FIX: set .workspaceRoot in the build-state to the workspace whose" >&2
+  echo "                departments/ holds this workforce, then re-run." >&2
+  exit 9
+fi
+
+WORKSPACE_ROOT="$(dirname "$DEPTS_DIR")"
 echo "[verify-wiring] Checking ${#DEPTS_TO_CHECK[@]} dept(s): ${DEPTS_TO_CHECK[*]}"
 echo "[verify-wiring] Workspace: $WORKSPACE_ROOT"
+echo "[verify-wiring] Departments tree: $DEPTS_DIR (resolved $_BEST_SCORE/${#DEPTS_TO_CHECK[@]} named dept(s))"
 echo ""
 
 # ---- Constants ---------------------------------------------------------------
@@ -364,7 +482,14 @@ DEPT_RESULTS_JSON="{}"
 # ==============================================================================
 for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
 
-  DEPT_DIR="$DEPTS_DIR/$DEPT_SLUG"
+  # v1.0.6: suffix/case/separator-tolerant, mirroring
+  # create_role_workspaces.resolve_dept_dir(). A slug stored on disk as
+  # `<slug>-dept/` used to resolve to a non-existent bare path and measure ZERO
+  # roles, which then tripped the materialization gate for a department that was
+  # fully built. Falls back to the bare path so the "dept dir does not exist"
+  # diagnostic below still names the path an operator would expect.
+  DEPT_DIR="$(resolve_one_dept "$DEPTS_DIR" "$DEPT_SLUG")"
+  [[ -z "$DEPT_DIR" ]] && DEPT_DIR="$DEPTS_DIR/$DEPT_SLUG"
   DEPT_FAIL=0
   DEPT_WIRING_FAIL_REASONS=()
 

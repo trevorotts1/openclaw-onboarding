@@ -110,6 +110,18 @@ add_dept() {
     "$OC/openclaw.json" > "$tmp" && mv "$tmp" "$OC/openclaw.json"
 }
 
+# set_agent_workspace <slug> <path> — point the registered agent at <path>.
+# The REGISTERED assertion checks that openclaw.json's workspace path resolves on
+# disk; that is orthogonal to the tree-resolution and suffix cases below, so the
+# fixture keeps it truthful rather than letting it mask what is under test.
+set_agent_workspace() {
+  local tmp
+  tmp="$(mktemp)"
+  jq --arg id "dept-$1" --arg wsp "$2" \
+    '.agents.list |= map(if .id == $id then .workspace = $wsp else . end)' \
+    "$OC/openclaw.json" > "$tmp" && mv "$tmp" "$OC/openclaw.json"
+}
+
 # add_role <slug> <folder> — a materialized role with a substantive how-to.md.
 add_role() {
   mkdir -p "$DEPTS/$1/$2"
@@ -328,6 +340,80 @@ add_runtime_dirs crm
 run_gate crm
 expect_rc "crm with a director role passes" 0
 gate_says "entry point role = 00-director-of-crm" "director keyword path still used when a director role exists"
+
+# --- C: departments-tree resolution -------------------------------------------
+# Pre-fix, DEPTS_DIR was a single unvalidated guess: state.workspaceRoot, else
+# dirname(STATE_FILE). When workspaceRoot is absent (it is not written on every
+# path) the gate pinned itself to $OC_ROOT/workspace/departments and delivered a
+# confident verdict about a tree that may not hold the workforce at all.
+echo ""
+echo "[C] the departments tree is DETECTED and proven, not guessed"
+reset_fixture
+# The workforce lives in a company-shaped tree. workspace/departments EXISTS but
+# holds only an unrelated leftover — the exact shape in which the pre-fix gate
+# pinned itself to workspace/departments and reported every real department
+# missing. No workspaceRoot key is written, so detection is the only way through.
+_ORIG_DEPTS="$DEPTS"
+COMPANY_TREE="$FIX_HOME/clawd/zero-human-company/acme-co/departments"
+mkdir -p "$COMPANY_TREE" "$DEPTS/unrelated-leftover"
+printf '%s\n' "{\"companySlug\":\"acme-co\",\"departments\":[]}" > "$WS/.workforce-build-state.json"
+DEPTS="$COMPANY_TREE"          # add_dept/add_role write through $DEPTS
+add_dept crm
+add_role crm "00-director-of-crm"
+add_role crm "01-pipeline-hygiene-specialist"
+add_runtime_dirs crm
+set_agent_workspace crm "$COMPANY_TREE/crm"
+run_gate crm
+expect_rc "a company-shaped tree is found even with no workspaceRoot in state" 0
+gate_says "$COMPANY_TREE" "the resolved tree is reported in the output"
+gate_says "candidate tree:" "each candidate tree and its score are printed"
+DEPTS="$_ORIG_DEPTS"
+
+echo ""
+echo "[C-neg] when NO candidate tree holds the workforce, abort loudly (rc=9)"
+reset_fixture
+add_dept crm            # named in state + registered, but no directory anywhere
+rm -rf "$DEPTS/crm"
+run_gate crm
+expect_rc "no resolvable tree is a precondition failure, not a verdict" 9
+gate_says "could not resolve a departments tree" "the abort explains itself"
+gate_says "Refusing to report a verdict" "the gate refuses rather than guessing"
+
+# --- D: slug <-> directory suffix tolerance -----------------------------------
+echo ""
+echo "[D] a '<slug>-dept' directory resolves for a bare slug"
+reset_fixture
+add_dept trading-operations
+# The state names 'trading-operations'; disk stores 'trading-operations-dept'.
+# Pre-fix this probed a non-existent bare path and measured ZERO roles, tripping
+# materialization for a department that was fully built.
+rm -rf "$DEPTS/trading-operations"
+mkdir -p "$DEPTS/trading-operations-dept"
+add_role trading-operations-dept "00-director-of-trading-operations"
+add_role trading-operations-dept "01-settlement-specialist"
+add_runtime_dirs trading-operations-dept
+set_agent_workspace trading-operations "$DEPTS/trading-operations-dept"
+run_gate trading-operations
+expect_rc "the -dept suffixed directory is found and measured" 0
+gate_says "Role dirs found: 2" "both roles in the -dept directory are counted"
+gate_says "trading-operations-dept" "the resolved directory carries the -dept suffix"
+
+echo ""
+echo "[D-neg] a genuinely absent department still fails materialization"
+reset_fixture
+add_dept trading-operations
+rm -rf "$DEPTS/trading-operations"
+mkdir -p "$DEPTS/some-other-dept/00-director-of-other"
+substantive_how_to "$DEPTS/some-other-dept/00-director-of-other/how-to.md"
+run_gate trading-operations
+# The tree resolves (some-other-dept exists) but this department does not, so the
+# verdict is a real materialization failure — never a silent pass.
+if [[ "$GATE_RC" == "2" || "$GATE_RC" == "6" || "$GATE_RC" == "9" ]]; then
+  ok "an absent department is reported as a failure (rc=$GATE_RC), never a pass"
+else
+  bad "an absent department did not fail — got rc=$GATE_RC"
+  printf '%s\n' "$GATE_OUT" | sed 's/^/        | /' >&2
+fi
 
 # --- final hermetic assertion -------------------------------------------------
 echo ""
