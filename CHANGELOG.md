@@ -1,3 +1,55 @@
+## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
+
+`TERMINOLOGY.md` listed four env-var names as interchangeable aliases of one Agency
+Private Integration Token. Live read-only probes on 2026-08-03 disproved that, and the
+error was actively misleading: an agent that believed the alias claim would treat a
+rotation of one name as covering all four, and would treat a dead credential as a
+working fallback.
+
+### Why
+
+Three of those names — `GOHIGHLEVEL_AGENCY_PIT`, `GHL_AGENCY_PIT` and
+`GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` — each hold a **different, independently live**
+agency token. They authenticate against the same agency, which is exactly why the
+mistake survived: any one of them works, so nothing visibly broke, and the four names
+looked interchangeable. They are not. Rotating one leaves the other two untouched.
+
+The fourth, `GOHIGHLEVEL_AGENCY_API_KEY`, was not an agency PIT at all. It held a legacy
+v1 JWT, and that value was **dead** — it returned `401 Invalid JWT` from both credential
+stores. Documenting a dead credential as a valid alias of a live one is the kind of drift
+that turns a five-minute failure into an hour of chasing a scope problem that does not exist.
+
+### What changed
+
+- **The alias claim is removed and replaced with the verified reality.** Three distinct
+  live agency names, listed as distinct. `GOHIGHLEVEL_AGENCY_API_KEY` is documented as a
+  dead legacy JWT that must not be reintroduced as an agency-PIT name.
+- **Choosing a canonical agency token is called out as an owner decision.** The doc
+  explicitly tells agents not to consolidate, merge, or delete the three live names on
+  their own initiative.
+- **The authoritative store is now stated.** `~/.openclaw/secrets/.env` is authoritative;
+  the `env.vars` block in `~/.openclaw/openclaw.json` holds copies, and the copies are what
+  rot — going stale after a rotation, or carrying a placeholder that silently shadows the
+  live credential.
+- **New rule, stated once and plainly:** resolve GHL credentials from `secrets/.env`;
+  validate with an authed read before trusting any name.
+- **A diagnostic distinction is recorded**, because it is the thing that makes this class
+  of defect readable: a value that is not a real token returns `401 Invalid Private
+  Integration token`, while a real token that merely lacks reach returns `403 Forbidden
+  resource` or `401 The token is not authorized for this scope`. A 403 means the token is
+  genuine and must not be "fixed" by swapping in another name.
+- **A company-id verification trap is documented.**
+  `GET /locations/search?companyId=...` returns 200 even when the companyId is wrong — the
+  token's own agency is used regardless — so it cannot detect a bad id. `GET
+  /companies/{companyId}` can: wrong id 403, right id 200 with the agency name.
+
+### Scope note
+
+This entry documents credential NAMES and their status only. No credential value appears
+in this repo, and none was printed during verification.
+
+---
+
 ## [Unreleased]  -  2026-08-03  -  CI: the role-workspace-root collapse gate now runs on every pull request
 
 The gate that stops `workspace_root` from collapsing onto `company_root` in the role-workspace
