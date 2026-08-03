@@ -343,7 +343,14 @@ Documentation drifts. Always re-verify against current sources before you wire M
 - **OpenClaw MCP CLI docs:** https://docs.openclaw.ai/cli/mcp
 - **Official GHL MCP docs:** https://marketplace.gohighlevel.com/docs/other/mcp/
 - **HighLevel support article:** https://help.gohighlevel.com/support/solutions/articles/155000005741-how-to-use-the-highlevel-mcp-server
-- **Community MCP repo (active fork):** https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete
+- **Community MCP — THE SOURCE THE FLEET CLONES:** https://github.com/trevorotts1/ghl-community-mcp-mirror
+  (org-controlled mirror. `main` is a byte-identical copy of upstream history;
+  `openclaw-patched` is what deployments pin — the vetted commit plus the
+  minimal security patches indexed in that branch's `PATCHES.md`. Never clone
+  upstream directly: upstream force-pushes rewritten history and publishes no
+  tags or releases, so a commit reachable there today can be garbage-collected
+  tomorrow, and its `dist/`-level exposure fixes are destroyed by every rebuild.)
+- **Community MCP upstream (READ-ONLY reference, do not clone):** https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete
 - **Community MCP original:** https://github.com/mastanley13/GoHighLevel-MCP
 - **MCPorter (optional config manager):** https://github.com/openclaw/mcporter
 
@@ -352,13 +359,21 @@ Confirm:
 - Required header versions (currently `Version: 2021-07-28`; some legacy endpoints use `2021-04-15`)
 - Whether the BusyBee3333 fork's tool count has changed since 2026-05-13 (was 588)
 
-**Tier 2 fork is PINNED, not floating.** This skill clones the community MCP at a fixed
-commit (`GHL_MCP_PIN_SHA=3dd9006ac5242762612e6d22b9a51a0a17aeca79`, 2026-05-15) — see
-Section 6.2 — because the fork's `main` moved on (2026-06-11+ added `mcp-apps`, an "easy
-setup" flow, and a curated tool-profile that changes the default `/tools` surface). Research
-is for awareness; do NOT silently bump the clone to `main`. To adopt a newer commit, change
-`GHL_MCP_PIN_SHA`, rebuild, and re-run `qc-ghl-mcp-setup.sh` so the `/health` tool count and
-the `/execute` real-data probe still pass.
+**Tier 2 is PINNED, MIRRORED and VETTED — and this page is not where the pin lives.**
+The one source of truth is `config/ghl-mcp-pin.env`. Every launch surface reads it,
+and a machine-checked digest binds the security verdict to the commit, the
+dependency lockfile hash and the mirror URL — so a pin that was changed without
+being re-reviewed is refused by CI, by the pre-push hook and by the installer on
+the box. There is deliberately no SHA written on this page: a second copy of a pin
+is a second copy that can disagree, and that is exactly how the fleet ended up
+with three disagreeing pins.
+
+Research here is for AWARENESS. Do not bump anything from this page, and never
+point a clone at upstream `main` — upstream force-pushes rewritten history.
+To adopt a newer commit: fast-forward the mirror, rebase the security patches
+onto it, then run the review-and-seal command documented in
+`config/ghl-mcp-pin.env`, prove it on ONE box first, and re-run `qc-ghl-mcp-setup.sh` so the
+`/health` tool count and the `/execute` real-data probe still pass.
 
 ---
 
@@ -437,34 +452,37 @@ Recommend `8765` as default — memorable, low collision risk, used in reference
 
 ### 6.2 Clone, install, build
 
-```bash
-# PINNED COMMIT (reproducibility / drift protection) — 3dd9006a (2026-05-15) is the
-# commit this skill was verified against: main=dist/main.js, src/main.ts:55 PORT
-# precedence, and GET /health + GET /tools + POST /execute. `main` HEAD (2026-06-11+)
-# adds mcp-apps / curated tool-profile changes that shift the default /tools surface.
-GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
-mkdir -p ~/mcp-servers
-cd ~/mcp-servers
-git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git ghl-community-mcp
-cd ghl-community-mcp
-git checkout -q "$GHL_MCP_PIN_SHA"
-npm install --no-audit --no-fund
-npm run build   # builds dist/main.js and dist/app-ui/
-```
-
-**Idempotency note:** Section 6 is safe to re-run. The locator at the top of the script (`git clone`) will fail if the repo already exists, but you can detect that and `git pull` instead:
+**DO NOT clone and build this by hand.** Run the executed installer:
 
 ```bash
-# Idempotent + PINNED: stay on the verified commit; a re-run re-pins (does NOT drift to main HEAD).
-GHL_MCP_PIN_SHA="3dd9006ac5242762612e6d22b9a51a0a17aeca79"
-if [ -d ~/mcp-servers/ghl-community-mcp/.git ]; then
-  cd ~/mcp-servers/ghl-community-mcp && git fetch -q origin && git checkout -q "$GHL_MCP_PIN_SHA" && npm install && npm run build
-else
-  mkdir -p ~/mcp-servers && cd ~/mcp-servers
-  git clone https://github.com/busybee3333/Go-High-Level-MCP-2026-Complete.git ghl-community-mcp
-  cd ghl-community-mcp && git checkout -q "$GHL_MCP_PIN_SHA" && npm install --no-audit --no-fund && npm run build
-fi
+bash scripts/ghl-mcp-autostart.sh
 ```
+
+That script is the single entry point. It reads the pin, the tool profile and the
+source repository from `config/ghl-mcp-pin.env`, clones the **mirror**, checks
+out the vetted commit, builds it in a temp directory, verifies the artifact
+before swapping `dist/`, installs the supervisor and the liveness probe, and
+prints a `STATUS:` line. It is idempotent — re-running it is the upgrade path and
+the remediation path.
+
+**Why the hand recipe was removed.** It carried its own copy of the pin
+(`3dd9006a`), which had already drifted out of agreement with every other copy —
+the exact three-places-disagree failure `config/ghl-mcp-pin.env` was created to
+end. Worse, it cloned **upstream** and checked out a commit that no vetting
+record covers, so following the documented procedure walked straight past the
+gate. A documented bypass is not a smaller hole than an undocumented one; it is a
+larger one, because it looks approved.
+
+To see what is pinned right now, read the record rather than trusting any prose,
+including this page:
+
+```bash
+sed -n '/GHL-MCP-VETTING-RECORD-BEGIN/,/GHL-MCP-VETTING-RECORD-END/p' config/ghl-mcp-pin.env
+bash scripts/ghl-mcp-check-pin-digest.sh    # exits non-zero if the record was hand-edited
+```
+
+Changing the pin is a review, not an edit — see
+"HOW TO BUMP THE PIN" in `config/ghl-mcp-pin.env`.
 
 The `.env` write (Section 6.3) overwrites — if you re-run, your existing values are clobbered. Check and skip if it already exists:
 

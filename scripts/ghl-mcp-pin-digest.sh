@@ -23,23 +23,41 @@
 # minisign — the consumer check shape below does not change.)
 #
 # ─────────────────────────────────────────────────────────────────────────────
-# THE CANONICAL ALGORITHM  (algorithm id: ghl-mcp-pin-v1)
+# THE CANONICAL ALGORITHM  (algorithm id: ghl-mcp-pin-v2)
 #
 #   payload = each of the following, in this exact order, each followed by a
 #             single LF (0x0A), UTF-8, no other separators, no trailing pad:
 #
-#       1.  the literal string   ghl-mcp-pin-v1
+#       1.  the literal string   ghl-mcp-pin-v2
 #       2.  GHL_MCP_VETTED_COMMIT
 #       3.  GHL_MCP_PIN_VETTED_VERDICT
 #       4.  GHL_MCP_PIN_VETTED_ON
 #       5.  GHL_MCP_PIN_VETTED_BY
 #       6.  GHL_MCP_DEPS_LOCK_SHA256
+#       7.  GHL_MCP_REPO_URL
 #
 #   digest  = lowercase hex SHA-256 of that byte string.
 #
 #   Reference one-liner (portable):
-#       printf '%s\n' ghl-mcp-pin-v1 "$commit" "$verdict" "$on" "$by" "$deps" \
+#       printf '%s\n' ghl-mcp-pin-v2 "$commit" "$verdict" "$on" "$by" "$deps" "$repo" \
 #         | shasum -a 256 | cut -d' ' -f1
+#
+#   ── WHY v2 ADDS GHL_MCP_REPO_URL (and why bumping the id is the right move)
+#   v1 bound the verdict to the commit but not to the REPOSITORY the commit is
+#   fetched from. That was defensible while GHL_MCP_REPO_URL pointed at upstream
+#   and there was no second source in existence. It stopped being defensible the
+#   moment an org-controlled mirror existed: a SHA names an OBJECT, never the
+#   host that serves it, so with the URL unbound a mirror could be swapped for an
+#   attacker-controlled clone while the commit, the verdict and the digest all
+#   still checked out — and every byte the box executes would have changed. The
+#   mirror also now carries a security patch, so the URL is what distinguishes a
+#   patched tree from an unpatched one.
+#
+#   The id is versioned rather than silently extended so that a v1 digest can
+#   never be mistaken for a v2 one: recomputation under v2 simply does not match
+#   a v1 record, which reads as MISMATCH and forces a re-vet. That is the correct
+#   outcome — the tuple genuinely changed meaning — and it is exactly the
+#   upgrade path the versioned id was put here for.
 #
 #   Field values are read WITHOUT sourcing the file (the pin file is `.env`-
 #   shaped but is `.`-sourced by the installers; a digest tool must never
@@ -134,26 +152,29 @@ PIN_VERDICT="$(_field GHL_MCP_PIN_VETTED_VERDICT)"
 PIN_ON="$(_field GHL_MCP_PIN_VETTED_ON)"
 PIN_BY="$(_field GHL_MCP_PIN_VETTED_BY)"
 PIN_DEPS="$(_field GHL_MCP_DEPS_LOCK_SHA256)"
+PIN_REPO="$(_field GHL_MCP_REPO_URL)"
 PIN_RECORDED="$(_field GHL_MCP_PIN_VETTED_DIGEST)"
 
 _compute() {
   printf '%s\n' \
-    'ghl-mcp-pin-v1' \
+    'ghl-mcp-pin-v2' \
     "$PIN_COMMIT" \
     "$PIN_VERDICT" \
     "$PIN_ON" \
     "$PIN_BY" \
-    "$PIN_DEPS" | _sha256
+    "$PIN_DEPS" \
+    "$PIN_REPO" | _sha256
 }
 
 case "$MODE" in
   fields)
-    printf 'algorithm=%s\n' 'ghl-mcp-pin-v1'
+    printf 'algorithm=%s\n' 'ghl-mcp-pin-v2'
     printf 'commit=%s\n'    "$PIN_COMMIT"
     printf 'verdict=%s\n'   "$PIN_VERDICT"
     printf 'vetted_on=%s\n' "$PIN_ON"
     printf 'vetted_by=%s\n' "$PIN_BY"
     printf 'deps_lock_sha256=%s\n' "$PIN_DEPS"
+    printf 'repo_url=%s\n'         "$PIN_REPO"
     printf 'recorded_digest=%s\n'  "$PIN_RECORDED"
     printf 'computed_digest=%s\n'  "$(_compute)"
     exit 0
