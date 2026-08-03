@@ -73,7 +73,7 @@ def _finale_body():
     return "\n".join(lines)
 
 
-def _fake_router(tier, messages, context, run_dir=None, model_map_path=None):
+def _fake_router(tier, messages, context, run_dir=None, model_map_path=None, state_dir=None):
     """One fake for both ae-05 (per seam) and ae-06 (the finale)."""
     assert tier == logic.TIER_HEAVY
     step = context["step"]
@@ -240,7 +240,7 @@ def test_write_transitions_fail_closed_when_next_title_unlocked():
 
 
 def test_write_finale_fail_closed_when_reply_drops_a_chapter():
-    def bad(tier, messages, context, run_dir=None, model_map_path=None):
+    def bad(tier, messages, context, run_dir=None, model_map_path=None, state_dir=None):
         return {"text": json.dumps({"finale_title": "T",
                                     "finale_markdown": "Only Rise named.\n\n"
                                     "## Where Do You Go From Here\n\n1. Go."}),
