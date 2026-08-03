@@ -81,7 +81,7 @@ running the tool. It closes the accident, not the attack.
 - `scripts/qc-assert-ghl-mcp-pin-gate.sh`, `scripts/qc-assert-ghl-mcp-pin-resolvers.py`,
   and CI job `ghl-mcp-pin-gate` (the workflow's `paths:` filters are gone — a
   path-filtered workflow can never be a required status check).
-- `tests/unit/ghl-mcp-pin-digest.test.sh` — 22 mutation proofs.
+- `tests/unit/ghl-mcp-pin-digest.test.sh` — 26 mutation proofs.
 
 **A legitimate pin bump is now two commands** — review, then seal — against the
 previous three-file hand-edit plus a remembered rule. The enforcement mechanism
@@ -96,6 +96,25 @@ is also the ergonomics; one that costs more than what it replaces gets disabled.
   A documented bypass is a larger hole than an undocumented one. Replaced with
   the executed entry point and a command that reads the live record rather than
   trusting the prose on the page.
+
+- **`GHL_MCP_PIN_OVERRIDE` was still on the v1 tuple — a split canonical form on
+  the primary fleet-roll path.** The pin *file* moved to `ghl-mcp-pin-v2`, which
+  binds the repository URL. The *override* path did not: both launch scripts
+  hand-reimplemented the six-field v1 tuple inline, so an override — by the
+  installer's own comment, "the primary path a fleet roll would use to change a
+  pin" — validated a commit without binding where it is fetched from. A mirror
+  swap would have ridden in through the most-used path while every digest still
+  checked out, which is the exact hole v2 was introduced to close.
+
+  Both paths now bind `GHL_MCP_REPO_URL` and, more importantly, **stop
+  reimplementing the algorithm at all**: the override is materialised as a
+  pin-shaped record and handed to `scripts/ghl-mcp-pin-digest.sh`, the one
+  canonical implementation. The second inline copy is *why* the drift happened
+  and was survivable — deleting the copy is the durable fix, not re-syncing it.
+  An override can change which commit is built, never where it is fetched from,
+  and an override supplied on a box without the digest tool is now refused
+  rather than trusted. Proven by `(J3)` (a digest bound to a different repo URL
+  is refused) and `(J4)` (a stale v1 six-field digest is refused).
 
 ### Still open — needs a ruling, not a fix
 

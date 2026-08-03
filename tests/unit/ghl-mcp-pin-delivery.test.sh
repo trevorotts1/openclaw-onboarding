@@ -199,8 +199,16 @@ case "$_S" in
   *)              fail "(J) a naked pin override produced '$_S' (expected PIN_UNVETTED) — any 40-hex string would build unvetted" ;;
 esac
 
-OVR_DIGEST="$(printf '%s\n' 'ghl-mcp-pin-v1' "$OVR_COMMIT" 'CLEAN' '2026-08-03' 'test' '' \
-  | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1)"
+# The override tuple is the SAME canonical form as the pin file: ghl-mcp-pin-v2,
+# whose seventh field is the repo URL the box would actually clone from. The
+# override path used to hand-reimplement v1 (repo URL UNBOUND) while the pin
+# file had moved to v2 — a split canonical form on the primary fleet-roll path.
+OVR_REPO="$(sed -n 's/^GHL_MCP_REPO_URL="\(.*\)"$/\1/p' "$REPO_ROOT/config/ghl-mcp-pin.env" | tail -1)"
+_ovr_digest() {  # $1 = repo url to bind
+  printf '%s\n' 'ghl-mcp-pin-v2' "$OVR_COMMIT" 'CLEAN' '2026-08-03' 'test' '' "$1" \
+    | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1
+}
+OVR_DIGEST="$(_ovr_digest "$OVR_REPO")"
 _S="$(_autostart_status "$BOX" \
         GHL_MCP_PIN_OVERRIDE="$OVR_COMMIT" \
         GHL_MCP_PIN_OVERRIDE_VERDICT=CLEAN \
@@ -209,8 +217,40 @@ _S="$(_autostart_status "$BOX" \
         GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256= \
         GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST="$OVR_DIGEST")"
 case "$_S" in
-  *SKIPPED_NO_CREDS*) pass "(J2) an override WITH a matching vetting digest is accepted (the hatch still opens)" ;;
+  *SKIPPED_NO_CREDS*) pass "(J2) an override WITH a matching v2 vetting digest is accepted (the hatch still opens)" ;;
   *)                  fail "(J2) a properly-vetted override was refused: '$_S' — the override contract is unusable" ;;
+esac
+
+# (J3) MUTATION PROOF — the override digest must bind the REPOSITORY URL.
+# A digest computed against a different source must be refused, otherwise the
+# primary fleet-roll path accepts a mirror swap while the digest checks out.
+OVR_EVIL="$(_ovr_digest 'https://github.com/attacker/ghl-community-mcp.git')"
+_S="$(_autostart_status "$BOX" \
+        GHL_MCP_PIN_OVERRIDE="$OVR_COMMIT" \
+        GHL_MCP_PIN_OVERRIDE_VERDICT=CLEAN \
+        GHL_MCP_PIN_OVERRIDE_VETTED_ON=2026-08-03 \
+        GHL_MCP_PIN_OVERRIDE_VETTED_BY=test \
+        GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256= \
+        GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST="$OVR_EVIL")"
+case "$_S" in
+  *PIN_UNVETTED*) pass "(J3) an override digest bound to a DIFFERENT repo URL is refused (the mirror is bound, not assumed)" ;;
+  *)              fail "(J3) an override digest computed against another source produced '$_S' (expected PIN_UNVETTED) — the override tuple does not bind the repo URL" ;;
+esac
+
+# (J4) MUTATION PROOF — a v1-shaped digest (the stale six-field tuple) must be
+# refused now that the canonical form is v2. A split canonical form is the bug.
+OVR_V1="$(printf '%s\n' 'ghl-mcp-pin-v1' "$OVR_COMMIT" 'CLEAN' '2026-08-03' 'test' '' \
+  | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1)"
+_S="$(_autostart_status "$BOX" \
+        GHL_MCP_PIN_OVERRIDE="$OVR_COMMIT" \
+        GHL_MCP_PIN_OVERRIDE_VERDICT=CLEAN \
+        GHL_MCP_PIN_OVERRIDE_VETTED_ON=2026-08-03 \
+        GHL_MCP_PIN_OVERRIDE_VETTED_BY=test \
+        GHL_MCP_PIN_OVERRIDE_DEPS_LOCK_SHA256= \
+        GHL_MCP_PIN_OVERRIDE_VETTED_DIGEST="$OVR_V1")"
+case "$_S" in
+  *PIN_UNVETTED*) pass "(J4) a stale v1 six-field override digest is refused (one canonical form, not two)" ;;
+  *)              fail "(J4) a v1 override digest produced '$_S' (expected PIN_UNVETTED) — the override path is still on the old tuple" ;;
 esac
 rm -rf "$BOX"
 
@@ -223,11 +263,15 @@ GHL_MCP_PIN_VETTED_VERDICT="CLEAN"   # CLEAN | DIRTY | PENDING
 GHL_MCP_PIN_VETTED_ON="2026-08-03"
 GHL_MCP_PIN_VETTED_BY="reviewer"
 GHL_MCP_DEPS_LOCK_SHA256=""
+GHL_MCP_REPO_URL="https://github.com/trevorotts1/ghl-community-mcp-mirror.git"
 EOF
 TOOL="$REPO_ROOT/scripts/ghl-mcp-pin-digest.sh"
 D1="$(bash "$TOOL" compute "$TMPPIN")"
 D2="$(bash "$TOOL" compute "$TMPPIN")"
-REF="$(printf '%s\n' 'ghl-mcp-pin-v1' 'bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3' 'CLEAN' '2026-08-03' 'reviewer' '' \
+# v2 canonical form: the seventh field is GHL_MCP_REPO_URL. A SHA names an
+# object, never the host that serves it, so the source is bound too.
+REF="$(printf '%s\n' 'ghl-mcp-pin-v2' 'bfc2bbe15a4090b82351593b6ca52eed7a8dbbe3' 'CLEAN' '2026-08-03' 'reviewer' '' \
+  'https://github.com/trevorotts1/ghl-community-mcp-mirror.git' \
   | { shasum -a 256 2>/dev/null || sha256sum 2>/dev/null; } | cut -d' ' -f1)"
 if [ "$D1" = "$D2" ] && [ "$D1" = "$REF" ]; then
   pass "(K) the digest is deterministic AND matches the documented reference one-liner (inline comments stripped)"
