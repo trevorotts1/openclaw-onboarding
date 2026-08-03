@@ -73,15 +73,27 @@ if [[ -n "$existing_pin" ]]; then
 fi
 
 # ---- notion search helper (with light retry) ----
+# SECURITY (process-table credential exposure fix): the token used to be
+# interpolated directly into a `-H "Authorization: Bearer ..."` argv, putting it
+# in plaintext in this host's process table for the life of every curl call (any
+# `ps`/`ps -eww` on the box could read it). It now goes through a curl --config
+# file (mode 600, per-attempt, unlinked immediately after use) instead.
 notion_search_any_page() {
-  local attempt=0 out
+  local attempt=0 out cfg rc
   while (( attempt < 3 )); do
     attempt=$((attempt + 1))
-    out=$(curl -sS -X POST "https://api.notion.com/v1/search" \
-      -H "Authorization: Bearer ${NOTION_API_TOKEN}" \
-      -H "Notion-Version: $NOTION_VERSION" \
-      -H "Content-Type: application/json" \
-      -d '{"filter":{"value":"page","property":"object"},"page_size":5}' 2>/dev/null) && { echo "$out"; return 0; }
+    cfg="$(mktemp "${TMPDIR:-/tmp}/notion-search-hdr.XXXXXX")" || { sleep $((attempt)); continue; }
+    chmod 600 "$cfg"
+    {
+      printf 'header = "Authorization: Bearer %s"\n' "${NOTION_API_TOKEN}"
+      printf 'header = "Notion-Version: %s"\n' "$NOTION_VERSION"
+      printf 'header = "Content-Type: application/json"\n'
+    } > "$cfg"
+    out=$(curl -sS -K "$cfg" -X POST "https://api.notion.com/v1/search" \
+      -d '{"filter":{"value":"page","property":"object"},"page_size":5}' 2>/dev/null)
+    rc=$?
+    rm -f "$cfg"
+    if [[ $rc -eq 0 ]]; then echo "$out"; return 0; fi
     sleep $((attempt))
   done
   echo "{}"

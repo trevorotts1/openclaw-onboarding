@@ -102,11 +102,28 @@ chunk_paragraphs() {
 notion_curl() {
   local method="$1"; shift
   local url="$1"; shift
-  curl -sS --fail-with-body -X "$method" "$url" \
-    -H "Authorization: Bearer ${NOTION_API_TOKEN:-}" \
-    -H "Notion-Version: $NOTION_VERSION" \
-    -H "Content-Type: application/json" \
-    "$@"
+  # SECURITY (process-table credential exposure fix): the Notion token (and, on
+  # Tier 2, the agency token -- see select_tier2_or_skip) used to be interpolated
+  # directly into a `-H "Authorization: Bearer ..."` argv, which put the secret in
+  # plaintext in this host's process table for the life of every curl call (any
+  # `ps`/`ps -eww` on the box could read it). Headers now go through a curl
+  # --config file (mode 600, per-call, unlinked immediately after use) so the
+  # token never appears as a command-line argument.
+  local cfg
+  cfg="$(mktemp "${TMPDIR:-/tmp}/notion-curl-hdr.XXXXXX")" || {
+    log "ERROR" "notion_curl: mktemp failed for header config"
+    return 1
+  }
+  chmod 600 "$cfg"
+  {
+    printf 'header = "Authorization: Bearer %s"\n' "${NOTION_API_TOKEN:-}"
+    printf 'header = "Notion-Version: %s"\n' "$NOTION_VERSION"
+    printf 'header = "Content-Type: application/json"\n'
+  } > "$cfg"
+  curl -sS --fail-with-body -K "$cfg" -X "$method" "$url" "$@"
+  local rc=$?
+  rm -f "$cfg"
+  return "$rc"
 }
 
 # ---- jq-safe extraction guards (idempotency-resume fix) ----
