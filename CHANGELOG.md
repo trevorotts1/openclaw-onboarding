@@ -1,3 +1,18 @@
+## [Unreleased]  -  2026-08-03  -  Skill 58 v0.1.28: podcast activation layer landed, two-show fleet model, act-9 bash-3.2 compat
+
+The podcast activation campaign merged: the activation layer (register-podcast-hook.sh,
+install-podcast-department.sh, guard-activation-health.py, SOP-PODCAST-07 activation-rescue
+runbook), the two-show fleet model (personal show plus interview show per client;
+PODBEAN_PODCAST_ID_<SHOW_SLUG> env convention; one roster row per show; channel-preferred n8n
+gate selection), and act-9 bash-3.2 compat for register-podcast-hook.sh (stock Mac bash 3.2
+fix, commit da3193a1). Provisioning auto-activation is fail-closed and the no-daemon design
+is enforced -- no controller daemon, no poller cron; activation is deterministic on box
+provisioning. Podbean credentials live only in n8n (publishing delegation doctrine,
+documented repo-wide).
+
+`58-podcast-production-engine/skill-version.txt` and `SKILL.md` frontmatter `version:` bumped
+0.1.27 -> 0.1.28. No `/version` or `ONBOARDING_VERSION` bump -- skill-content-only.
+
 ## [Unreleased]  -  AGENTS.md paste disease: the remaining core-file writers emit POINTERS and clean up after themselves (skills 38/63/64 + update-skills.sh)
 
 The MEMORY.md half of this defect shipped in the preceding release. This is the AGENTS.md
