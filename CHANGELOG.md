@@ -312,6 +312,62 @@ each carries genuine independent-reviewer provenance (guarded against hand-rolle
 aggregation phase exists, every real job either supplies a genuine report out of band or is
 blocked at the gate, cleanly and audibly. Exactly fail-closed.
 
+## [v21.5.3]  -  2026-08-03  -  URGENT: close the closeout-belt client-DM leak, and make the operator pause control real
+
+### Why — this was a live, armed defect
+`37-zhc-closeout/scripts/resume-closeout-cron.sh` resolved `.ownerChat` FIRST and
+fell back to the operator chat only when it was unset. The message it sends is
+internal build jargon whose own text says the owner is not a recipient — and
+`openclaw message send --target <chat>` delivers to that chat, so the client's own
+Telegram thread received it verbatim. The same belt also launches the full
+client-facing celebration via `nohup bash run-closeout.sh &`.
+
+That belt gates ONLY on `buildCompletedAt`. v21.5.1 shipped everything that helps a
+build converge and finally WRITE that field, so the pipeline fixes made the leak
+MORE likely to fire, not less. This release closes it.
+
+### What changed
+- `37-zhc-closeout/scripts/resume-closeout-cron.sh`
+  - Internal resume traffic is now **operator chat ONLY**, with **no owner
+    fallback**. The routing FAILS SAFE: the operator escalation chat is opt-in and
+    empty by default, so a "prefer operator, else owner" rule would silently degrade
+    straight back into "send to the client". With no operator chat configured the
+    self-ping is SKIPPED entirely and the log names
+    `scripts/configure-operator-telegram.sh` as the fix. There is no functional
+    cost — `run-closeout.sh` already fired in-process as the PRIMARY path, and the
+    self-ping is only a secondary nudge, so the closeout still proceeds.
+  - `.closeoutResumePaused` was **a safety control that did nothing**. Production
+    code only ever WROTE it; no belt anywhere READ it as a gate, so an operator
+    setting it — as the runbooks instruct — changed nothing and the closeout kept
+    firing, including the client-facing celebration. It is now read as a real gate,
+    placed deliberately AFTER the progress/stall block so the auto-clear path is
+    still reachable and a pause can never become permanent. The gate stops only the
+    heavy, client-visible work (the in-process exec and the self-ping); cheap state
+    checks keep running every fire, so a box auto-resumes the moment the pause lifts
+    or progress is detected.
+  - Fixed a related bug where the FIRST fire on a box cleared the pause
+    unconditionally: having no prior fingerprint is not progress, so an operator hold
+    set before the first fire was silently discarded. Only a fingerprint that
+    genuinely MOVED now clears the pause.
+
+### Tests
+- `tests/unit/closeout-resume-cron-routing.test.sh` (NEW) — asserts no message is
+  ever addressed to the client's chat, that skipping the self-ping does not skip
+  `run-closeout.sh`, and that a PAUSED box does not fire the closeout. Carries a
+  MUTATION PROOF: with the pause gate removed the paused box DOES fire, so the
+  assertion is demonstrably non-vacuous.
+- `tests/unit/workforce-resume-cheap-command-mode.test.sh` — C3's fixture now
+  supplies an operator escalation chat. Removing owner routing meant the lane
+  correctly sent NOTHING, so no 429 was returned and no backoff marker was written;
+  C3b had begun passing VACUOUSLY by comparing zero sends to zero sends. No
+  assertion was changed or weakened — C3 still requires a real dispatch, a real 429
+  and a real durable backoff marker.
+- The belt launches `run-closeout.sh` asynchronously (`nohup ... &`), so the stub's
+  marker write raced the assertion — passing on macOS and failing on the Linux
+  runner. Positive assertions now use a bounded FOREGROUND poll; the negative
+  assertion (a paused box must NOT launch) was given an explicit settle window so it
+  cannot pass merely by checking too early.
+
 ## [v21.5.2]  -  2026-08-03  -  Wiring + ZHE gates: five defects that made them unpassable, and a persona-index floor that measured the wrong unit
 
 ### Why
