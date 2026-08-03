@@ -730,6 +730,7 @@ always SET or NOT SET plus a behavior probe; a value is never printed, echoed, g
 | Alert dedup and storm cap, gateway-only | scripts/alert-dedup.py |
 | Daily funded-reachability smoke test | scripts/podcast-smoke-test.py |
 | Facebook-ads activation checklist item never drifts out of the client-onboarding runbook (SOP-PODCAST-02 Section 2.9) | scripts/guard-runbook-fb-activation-checklist.py |
+| Activation layer (hook registration, production processor, department installer) present in the build and healthy on a provisioned box; missing or broken activation fails loud | scripts/guard-activation-health.py (wired into qc-podcast.sh, act-6) |
 
 If the repo is not updated, it is not done. A sub-agent's claim of done is a hypothesis until
 independently verified.
