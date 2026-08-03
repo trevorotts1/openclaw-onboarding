@@ -38,11 +38,25 @@ Run `provision-podcast-client.sh <slug> <client-email(s)> <timezone>`. It discov
 
 Via Skill 44 `caf` workflow listing, resolve both workflow names to IDs and record each workflow's ACTUAL trigger mechanism (direct add, tag-triggered plus which tag, or field-triggered plus which field) into the per-client state file: `06-Podcast_Episode_Is_Ready` and `04-Podcast is Completed` (documented as field-change triggered by the Podcast Survey Episode URL; verify per account). If either workflow is missing by name, STOP setup for this client and surface it to the founder; building a workflow is a Skill 44 build operation requiring the separate Firebase refresh token and an operator decision, never an autonomous runtime act.
 
-### 2.5 Podbean podcast_id capture
+### 2.5 Podbean channel capture (TWO shows per client, both provisioned)
 
-Capture the client's Podbean Channel ID (`podcast_id`) at onboarding into the per-client state and env store. This is the ONLY Podbean value the client supplies - it selects their show under BlackCEO's single host account and is NOT a secret. The canonical payload REQUIRES it and the mapper refuses to guess it; Step 15 cannot select the channel without it.
+Every podcast client has TWO shows under BlackCEO's single Podbean host account: the PERSONAL show (solo episodes, Skill 58 modes/personal.md) and the INTERVIEW show (guest system, modes/interview.md). Capture BOTH Channel IDs at onboarding into the per-client state and env store. These Channel IDs are the ONLY Podbean values the client supplies - each selects one of their shows under the single host account and is NOT a secret. The canonical payload REQUIRES the active `podcast_id` and the mapper refuses to guess it; Step 15 cannot select the channel without it.
 
-Publishing is delegated to the operator's n8n account (https://main.blackceoautomations.com). The Podbean OAuth app client_id/client_secret live ONLY in n8n's credential vault -- never in this repo, this skill, or a client box. Client boxes hold only the publish-proxy webhook token and the client's non-secret Channel ID.
+(1) Collect both Channel IDs from the host account's channel list (never from memory or another client's record): the personal-show Channel ID, which becomes the default `podcast_id`, and the interview-show Channel ID. Record which is which in the per-client state; if the client only has one show live at onboarding, record the single known Channel ID and schedule the second capture before the first episode of the other show type.
+
+(2) Create ONE `podcast_publish_roster` row PER SHOW in the n8n data table (id `UWjpksxU2b6TjKow`), via the n8n API: `POST /api/v1/data-tables/UWjpksxU2b6TjKow/rows` with header `X-N8N-API-KEY: <key>` and body `{"data":[row]}`. Both rows carry the SAME identity (`email`, `last_name`) and `good_standing: "YES"`, with DISTINCT `podbean_channel_id` values:
+
+    POST https://main.blackceoautomations.com/api/v1/data-tables/UWjpksxU2b6TjKow/rows
+    Header: X-N8N-API-KEY: <key>
+    Body: {"data":[{"last_name":"<last name>","email":"<client email>","good_standing":"YES","podbean_channel_id":"<personal show channel id>"}]}
+
+Repeat with a second `{"data":[...]}` call carrying the interview-show `podbean_channel_id`. One row per show; never merge both Channel IDs into one row and never reuse another client's row.
+
+(3) Set the channel env vars on the client box: `PODBEAN_PODCAST_ID` defaults to the PERSONAL show Channel ID, and `PODBEAN_PODCAST_ID_<SHOW_SLUG>` carries the interview-show Channel ID, where `<SHOW_SLUG>` is the uppercase, underscore-separated slug of the interview show. Confirm both SET in the LIVE process environment per the box's restart doctrine.
+
+(4) Verify with ONE standing-check probe PER SHOW: POST to the operator's `/webhook/podcast-standing-check` with the client's identity plus the show's own `podcast_id`, and observe `good_standing:true` for BOTH probes before go-live. The n8n gates are multi-row aware as of 2026-08-03 (channel-preferred selection with legacy fallback), so a two-row client resolves the correct show row per probe and the legacy single-row behavior is preserved exactly.
+
+Publishing is delegated to the operator's n8n account (https://main.blackceoautomations.com). The Podbean OAuth app client_id/client_secret live ONLY in n8n's credential vault -- never in this repo, this skill, or a client box. Client boxes hold only the publish-proxy webhook token and the client's non-secret Channel IDs.
 
 ### 2.6 Running spreadsheet creation (Personal mode)
 
@@ -111,4 +125,4 @@ Zero client-facing messages from any onboarding step. Never print a secret value
 
 ## 5. DEFINITION OF DONE FOR ONBOARDING
 
-Onboarding is done only when: the credential gate passed full mode (exit 0) with the field smoke test and pairing proof; the webhook route and secret are in place and a signed test returns 200 while unsigned returns 401; the provision gate passed (302 to Access, signed hook POST accepted, smoke-test cron fired once with no-deliver confirmed on the created job); both workflows are discovered by name with their real triggers recorded (or setup was stopped and surfaced); the Podbean `podcast_id` is captured; the running spreadsheet exists for Personal mode; the `book_teaser` reminder is resolved or noted; and T1 through T9 were executed and observed, including T9 through the real public URL. The setup record carries every LOCATION and every observed result. Anything less is not onboarded.
+Onboarding is done only when: the credential gate passed full mode (exit 0) with the field smoke test and pairing proof; the webhook route and secret are in place and a signed test returns 200 while unsigned returns 401; the provision gate passed (302 to Access, signed hook POST accepted, smoke-test cron fired once with no-deliver confirmed on the created job); both workflows are discovered by name with their real triggers recorded (or setup was stopped and surfaced); BOTH Podbean Channel IDs are captured, BOTH roster rows exist (one per show, same identity, distinct `podbean_channel_id`, `good_standing: "YES"`), and BOTH standing-check probes returned `good_standing:true`; the running spreadsheet exists for Personal mode; the `book_teaser` reminder is resolved or noted; and T1 through T9 were executed and observed, including T9 through the real public URL. The setup record carries every LOCATION and every observed result. Anything less is not onboarded.
