@@ -4,8 +4,12 @@
 # the opt-out is recorded.
 #
 # WHAT IT PROVES (fails 3-ways against the pre-P2-05 tree):
-#   1. Every one of the 29 FLOOR departments (23 mandatory + 6 universal-primary)
-#      carries a non-empty loss_warning in department-naming-map.json.
+#   1. Every one of the 29 DECLINABLE FLOOR departments (23 mandatory + 6
+#      universal-primary) carries a non-empty loss_warning in
+#      department-naming-map.json. master-orchestrator (the naming map's 24th
+#      mandatory id as of v2.8.0) is EXCLUDED from this count: it has no
+#      decline path at all, so it is not part of the opt-out flow this test
+#      exercises (mirrors build-workforce.load_canonical_floor()'s exclusion).
 #      (FAILS pre-fix: loss_warning did not exist.)
 #   2. department-loss-warning.py returns the text (rc0) for a floor dept and
 #      NOTHING (rc3) for a non-floor dept (industry-gated 'listings', a custom).
@@ -37,7 +41,12 @@ python3 - "$NAMING_MAP" <<'PYEOF'
 import json, sys
 nm = json.load(open(sys.argv[1]))
 missing = []
-mand = nm.get("mandatory", {})
+# EXCLUDE master-orchestrator: v2.8.0 registered it as the naming map's 24th
+# mandatory id for department-floor.py's ON-DISK floor check, but it has no
+# decline path and never reaches the opt-out flow this test exercises --
+# mirrors build-workforce.load_canonical_floor()'s exclusion.
+mand = {k: v for k, v in nm.get("mandatory", {}).items()
+        if k not in ("ceo", "master-orchestrator", "dept-ceo")}
 for did, d in mand.items():
     if not (isinstance(d, dict) and d.get("loss_warning", "").strip()):
         missing.append(("mandatory", did))
