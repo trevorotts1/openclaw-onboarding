@@ -464,16 +464,16 @@ if [ "$COMPLETE" = true ]; then
         KICK_CHAT="$(openclaw config get env.vars.OPERATOR_TELEGRAM_CHAT_ID 2>/dev/null | tail -1 | tr -d '[:space:]')"
         case "$KICK_CHAT" in ""|*"not found"*|*"Error"*) KICK_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" ;; esac
       fi
-      if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
-        KICK_CHAT=$(jq -r '.ownerChat // empty' "$STATE" 2>/dev/null || true)
-        if [ -n "$KICK_CHAT" ] && [ "$KICK_CHAT" != "null" ]; then
-          echo "WARN: no operator escalation chat configured - falling back to the OWNER chat for an INTERNAL build kick. The owner will see internal build text. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh) to stop this." >&2
-        fi
-      fi
+      # NO .ownerChat fallback. It delivered internal build-kick text into the
+      # client's own thread at the exact moment they finished their interview, and
+      # it bought nothing: this is a Telegram SEND, and a send does not become an
+      # inbound agent turn, so it could never actually start a build. We fail SAFE
+      # -- skip the kick and let the resume cron drive -- rather than fall through
+      # to the client.
       KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
       KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
-      if [ -z "$KICK_CHAT" ]; then
-        echo "INFO: no owner chat and no operator escalation chat configured - build-kick send skipped (resume cron will drive the build in-process within 15m)" >&2
+      if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
+        echo "INFO: no operator escalation chat configured - build-kick send SKIPPED rather than routed to the client (resume cron drives the build within 15m). Configure env.vars.OPERATOR_ESCALATION_CHAT_ID via scripts/configure-operator-telegram.sh to receive these." >&2
       elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then
         echo "auto-closeout: dispatched [WORKFORCE-RESUME] build-kick to chat $KICK_CHAT"
       else
