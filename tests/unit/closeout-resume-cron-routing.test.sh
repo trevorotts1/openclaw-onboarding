@@ -94,6 +94,21 @@ SHIM
   printf '%s' "$h"
 }
 
+# The belt launches run-closeout.sh with `nohup ... &`, so its marker write is ASYNC
+# and races the assertion below. Poll for it in the foreground with a bounded timeout
+# rather than assuming it has landed (this was a real CI-only flake: it passed on macOS
+# and failed on the Linux runner).
+#   $1 = marker file, $2 = timeout in seconds. Returns 0 if it appeared.
+_wait_for_marker() {
+  local f="$1" limit="${2:-15}" waited=0
+  while (( waited < limit )); do
+    [[ -s "$f" ]] && return 0
+    sleep 1
+    waited=$(( waited + 1 ))
+  done
+  [[ -s "$f" ]]
+}
+
 # $1 = box home; remaining args = extra env (e.g. the operator chat)
 _run() {
   local h="$1"; shift
@@ -134,7 +149,7 @@ if grep -E "(--target|[[:space:]]-t)[[:space:]]*$OWNER_CHAT" "$B1/calls.log" >/d
 else
   pass "1a: no message was addressed to the client's chat"
 fi
-if grep -q "STUB-RUN-CLOSEOUT-FIRED" "$B1/closeout-fired.log" 2>/dev/null; then
+if _wait_for_marker "$B1/closeout-fired.log" 15; then
   pass "2a: run-closeout.sh still fired in-process (the primary path is unaffected)"
 else
   fail "2a: skipping the self-ping also skipped run-closeout.sh — the closeout was lost"
@@ -217,7 +232,8 @@ echo "--- (4) PAUSE_IS_REAL: .closeoutResumePaused must actually stop the heavy 
 STATE_PAUSED="${STATE_OPEN/\"closeoutStatus\": \"pending\"/\"closeoutStatus\": \"pending\", \"closeoutResumePaused\": true, \"closeoutResumePausedReason\": \"operator hold\"}"
 B4="$(_mkbox box4 "$STATE_PAUSED")"
 _run "$B4" OPERATOR_ESCALATION_CHAT_ID="$OPERATOR_CHAT"
-if grep -q "STUB-RUN-CLOSEOUT-FIRED" "$B4/closeout-fired.log" 2>/dev/null; then
+sleep 3   # settle window: if a launch were going to happen, it would land by now
+if [[ -s "$B4/closeout-fired.log" ]]; then
   fail "4a: run-closeout.sh fired on a PAUSED box — the client-facing closeout ran anyway"
 else
   pass "4a: run-closeout.sh did NOT fire while paused"
@@ -250,7 +266,7 @@ if (( mut4_rc != 0 )); then
   fail "4-MUT: could not remove the pause gate — cannot prove 4a discriminates"
 else
   _run "$B4M" OPERATOR_ESCALATION_CHAT_ID="$OPERATOR_CHAT"
-  if grep -q "STUB-RUN-CLOSEOUT-FIRED" "$B4M/closeout-fired.log" 2>/dev/null; then
+  if _wait_for_marker "$B4M/closeout-fired.log" 15; then
     pass "4-MUT: without the gate a PAUSED box DOES fire run-closeout.sh — 4a is a real, non-vacuous check (the field really did gate nothing)"
   else
     fail "4-MUT: the ungated box did not fire either — 4a proves nothing"
