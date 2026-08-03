@@ -1070,6 +1070,84 @@ else
   WARNINGS+=("X.13|qc-assert-ghl-mcp-supervised.sh missing|Update openclaw-onboarding to v12.22.0+")
 fi
 
+# ─── CHECK X.13b: GHL MCP RUNTIME conformance (v21.6.0 / R4) ─────────────────
+# X.13 above is STATIC: it reads the SHIPPED autostart script and proves what a
+# FRESH install WOULD write. It cannot see what this box is ACTUALLY running —
+# and on 2026-08-03 a box whose live service had KeepAlive=<true/>,
+# GHL_TOOL_PROFILE=full, 859 tools, no build stamp, unrotated 5.4 MB logs and
+# ghl-community-mcp STILL registered in mcp.servers would have been reported
+# PASS by X.13, because a plist is only regenerated when the autostart runs and
+# a hand-edited one persists forever. X.13b closes that hole.
+#   rc=0 -> the INSTALLED service matches the pin -> PASS
+#   rc=1 -> INVARIANT VIOLATED -> HARD FAIL
+#   rc=2 -> Tier 2 is not installed on this box (and in the repo/CI checkout)
+#           -> INFO/skip, never a failure
+echo
+blue "── CHECK X.13b: GHL MCP runtime conformance (the INSTALLED service, not the shipped script) ──"
+GHL_RT_SCRIPT=""
+for _grt_cand in \
+  "$(dirname "${BASH_SOURCE[0]}")/ghl-mcp-assert-runtime.sh" \
+  "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+  "$HOME/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh" \
+  "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+  "/data/.openclaw/skills/scripts/ghl-mcp-assert-runtime.sh"; do
+  [[ -f "$_grt_cand" ]] && GHL_RT_SCRIPT="$_grt_cand" && break
+done
+if [[ -n "$GHL_RT_SCRIPT" ]]; then
+  _grt_tmp=$(mktemp)
+  bash "$GHL_RT_SCRIPT" > "$_grt_tmp" 2>&1
+  GHL_RT_RC=$?
+  GHL_RT_OUT=$(cat "$_grt_tmp"); rm -f "$_grt_tmp"
+  case "$GHL_RT_RC" in
+    0)
+      green "  ✓ X.13b GHL MCP runtime conformance: the INSTALLED service matches the pin (launcher, crash-only, profile, ports, log dir, build stamp, tool count, Tier 2 unregistered)"; PASS=$((PASS+1)) ;;
+    2)
+      yellow "  ⚠ X.13b Tier 2 GHL MCP is not installed on this box — nothing to assert (expected in the repo/CI checkout and on every box without Tier 2)"; WARN=$((WARN+1))
+      WARNINGS+=("X.13b|Tier 2 GHL MCP not installed on this box|Informational only — no action needed unless this box is supposed to run Tier 2") ;;
+    *)
+      red "  ✗ X.13b GHL MCP RUNTIME conformance violated — the service this box is RUNNING does not match the shipped standard"
+      FAIL=$((FAIL+1))
+      FAILURES+=("X.13b|GHL MCP installed service does not match the pin|Run: bash scripts/ghl-mcp-assert-runtime.sh — then bash scripts/ghl-mcp-autostart.sh to regenerate the service definition from config/ghl-mcp-pin.env")
+      while IFS= read -r _grtline; do
+        case "$_grtline" in *"[ghl-mcp-runtime] FAIL"*) red "    $_grtline" ;; esac
+      done <<< "$GHL_RT_OUT" ;;
+  esac
+else
+  yellow "  ⚠ X.13b ghl-mcp-assert-runtime.sh not found — skipping GHL MCP runtime conformance check"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.13b|ghl-mcp-assert-runtime.sh missing|Update openclaw-onboarding to v21.6.0+")
+fi
+
+# ─── CHECK X.13c: pin-file delivery cross-reference (v21.6.0 / R1) ───────────
+# Every path a script SEARCHES for config/ghl-mcp-pin.env must be a path an
+# installer POPULATES. v21.5.0 had 17 resolver candidates across four consumers
+# and zero delivery steps — the file existed in the repo and on no box, so CI
+# was green while every box ran on hardcoded fallbacks. Repo-layout only: it
+# cross-references the installer sources, which a box does not carry.
+echo
+blue "── CHECK X.13c: pin-file resolver/delivery cross-reference ──"
+GHL_PD_SCRIPT="$(dirname "${BASH_SOURCE[0]}")/qc-assert-pin-delivery-paths.sh"
+if [[ -f "$GHL_PD_SCRIPT" ]] && [[ -f "$(dirname "${BASH_SOURCE[0]}")/../update-skills.sh" ]]; then
+  _gpd_tmp=$(mktemp)
+  bash "$GHL_PD_SCRIPT" > "$_gpd_tmp" 2>&1
+  GHL_PD_RC=$?
+  GHL_PD_OUT=$(cat "$_gpd_tmp"); rm -f "$_gpd_tmp"
+  if [[ "$GHL_PD_RC" = "0" ]]; then
+    green "  ✓ X.13c every pin-file resolver path is a path an installer actually delivers"; PASS=$((PASS+1))
+  else
+    red "  ✗ X.13c pin-file resolver/delivery drift — a consumer searches where nothing populates, or a delivery step was removed"
+    FAIL=$((FAIL+1))
+    FAILURES+=("X.13c|Pin-file resolver/delivery cross-reference drift|Run: bash scripts/qc-assert-pin-delivery-paths.sh — either deliver config/ to the searched path or stop searching it")
+    while IFS= read -r _gpdline; do
+      case "$_gpdline" in *"INVARIANT VIOLATED"*) red "    $_gpdline" ;; esac
+    done <<< "$GHL_PD_OUT"
+  fi
+else
+  yellow "  ⚠ X.13c not a repo layout (or qc-assert-pin-delivery-paths.sh missing) — skipping the resolver/delivery cross-reference"
+  WARN=$((WARN+1))
+  WARNINGS+=("X.13c|Pin-delivery cross-reference not run|Runs in CI from the repo checkout; requires update-skills.sh + install.sh sources")
+fi
+
 # ─── CHECK X.14: Platform-facts stamp in AGENTS.md (W7.4) ───────────────────
 # Hard-fail: the active AGENTS.md must carry the <!-- PLATFORM_FACTS_V1 -->
 # marker written by apply-fleet-standards.sh so every agent always knows:

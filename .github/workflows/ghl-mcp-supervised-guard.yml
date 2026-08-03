@@ -13,6 +13,18 @@ name: ghl-mcp-supervised-guard
 # missing liveness probe, or a re-registered Tier 2 MCP. The 2026-08-02/03
 # outage was NOT a supervision failure: every box stayed supervised, listening
 # and "healthy" while answering nothing for two days.
+#
+# v21.6.0 (fix/ghl-mcp-pin-delivery-and-runtime-assert): three additions, each
+# closing a hole v21.5.0's own CI could not see, because every v21.5.0 check ran
+# in the REPO layout — the one layout where the bug was invisible.
+#   R1  the pin file must actually REACH a box. A new cross-reference gate
+#       asserts every resolver path is a path an installer populates, and a new
+#       unit test proves the box layout (not the repo layout) resolves it.
+#   R4  a RUNTIME conformance gate that reads the INSTALLED service, with a
+#       mutation test proving it fails a misconfigured service and passes a
+#       correct one.
+#   R9  fail-closed refusal on an unverified/unvetted pin, proven in both
+#       directions so the refusal cannot brick a correctly-vetted box.
 
 on:
   push:
@@ -20,22 +32,36 @@ on:
       - config/ghl-mcp-pin.env
       - scripts/ghl-mcp-autostart.sh
       - scripts/ghl-mcp-probe.sh
+      - scripts/ghl-mcp-pin-digest.sh
+      - scripts/ghl-mcp-assert-runtime.sh
       - scripts/qc-assert-ghl-mcp-supervised.sh
+      - scripts/qc-assert-pin-delivery-paths.sh
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+      - install.sh
+      - update-skills.sh
       - tests/unit/ghl-mcp-supervised.test.sh
       - tests/unit/ghl-mcp-probe.test.sh
       - tests/unit/ghl-mcp-bind-guard.test.sh
+      - tests/unit/ghl-mcp-assert-runtime.test.sh
+      - tests/unit/ghl-mcp-pin-delivery.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
   pull_request:
     paths:
       - config/ghl-mcp-pin.env
       - scripts/ghl-mcp-autostart.sh
       - scripts/ghl-mcp-probe.sh
+      - scripts/ghl-mcp-pin-digest.sh
+      - scripts/ghl-mcp-assert-runtime.sh
       - scripts/qc-assert-ghl-mcp-supervised.sh
+      - scripts/qc-assert-pin-delivery-paths.sh
       - platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+      - install.sh
+      - update-skills.sh
       - tests/unit/ghl-mcp-supervised.test.sh
       - tests/unit/ghl-mcp-probe.test.sh
       - tests/unit/ghl-mcp-bind-guard.test.sh
+      - tests/unit/ghl-mcp-assert-runtime.test.sh
+      - tests/unit/ghl-mcp-pin-delivery.test.sh
       - .github/workflows/ghl-mcp-supervised-guard.yml
 
 jobs:
@@ -51,14 +77,47 @@ jobs:
           for f in \
             scripts/ghl-mcp-autostart.sh \
             scripts/ghl-mcp-probe.sh \
+            scripts/ghl-mcp-pin-digest.sh \
+            scripts/ghl-mcp-assert-runtime.sh \
             scripts/qc-assert-ghl-mcp-supervised.sh \
-            platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh; do
+            scripts/qc-assert-pin-delivery-paths.sh \
+            platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh \
+            install.sh \
+            update-skills.sh; do
             bash -n "$f"
           done
 
       - name: Pin must be a full 40-char vetted commit (never a branch or short SHA)
         run: |
           grep -qE '^GHL_MCP_VETTED_COMMIT="[0-9a-f]{40}"' config/ghl-mcp-pin.env
+
+      # v21.6.0 / R9. The verdict used to be sourced by three scripts and read
+      # by none of them, by the QC gate, or by CI — it was INERT, not advisory.
+      # This is the transitional CI half: it enforces the CLEAN verdict and,
+      # once scripts/ghl-mcp-vet-pin.sh populates GHL_MCP_PIN_VETTED_DIGEST,
+      # automatically upgrades to enforcing that the digest recomputes. No CI
+      # edit is needed when the digest lands.
+      - name: Vetting verdict must be CLEAN, and the digest (once present) must recompute
+        run: |
+          chmod +x scripts/ghl-mcp-pin-digest.sh
+          grep -qE '^GHL_MCP_PIN_VETTED_VERDICT="CLEAN"' config/ghl-mcp-pin.env \
+            || { echo "::error::config/ghl-mcp-pin.env verdict is not CLEAN — an unvetted pin must never ship."; exit 1; }
+          set +e
+          bash scripts/ghl-mcp-pin-digest.sh verify config/ghl-mcp-pin.env
+          rc=$?
+          set -e
+          case "$rc" in
+            0) echo "vetting digest MATCHES (self-invalidating vetting is fully armed)" ;;
+            3) echo "::notice::no GHL_MCP_PIN_VETTED_DIGEST yet — transitional CLEAN-verdict mode. FOLLOW-UP: scripts/ghl-mcp-vet-pin.sh must populate GHL_MCP_DEPS_LOCK_SHA256 + GHL_MCP_PIN_VETTED_DIGEST." ;;
+            *) echo "::error::the vetting digest does not recompute — the pin was edited without re-running scripts/ghl-mcp-vet-pin.sh."; exit 1 ;;
+          esac
+
+      # v21.6.0 / R1. THE check whose absence made v21.5.0 a repo-only release:
+      # 17 resolver candidates across four consumers, zero delivery steps.
+      - name: Every pin-file resolver path must be a path an installer delivers
+        run: |
+          chmod +x scripts/qc-assert-pin-delivery-paths.sh
+          bash scripts/qc-assert-pin-delivery-paths.sh
 
       - name: Run GHL MCP supervision + install invariant gate (must pass)
         run: |
@@ -84,3 +143,29 @@ jobs:
         run: |
           chmod +x tests/unit/ghl-mcp-bind-guard.test.sh
           bash tests/unit/ghl-mcp-bind-guard.test.sh
+      # v21.6.0 / R1 + R9. Runs against a SIMULATED BOX LAYOUT, never the repo
+      # layout — the repo layout is where the delivery bug was invisible.
+      - name: Run pin-delivery + fail-closed unit test (BOX layout, not repo layout)
+        run: |
+          chmod +x tests/unit/ghl-mcp-pin-delivery.test.sh
+          bash tests/unit/ghl-mcp-pin-delivery.test.sh
+
+      # v21.6.0 / R4. Mutation proof in BOTH directions: a correct installed
+      # service must PASS and each single misconfiguration must FAIL. A gate
+      # that only ever passes is what shipped in v21.5.0.
+      - name: Run runtime-conformance mutation test (correct service passes, each defect fails)
+        run: |
+          chmod +x tests/unit/ghl-mcp-assert-runtime.test.sh
+          bash tests/unit/ghl-mcp-assert-runtime.test.sh
+
+      # The runtime gate must report SKIP (rc=2), never FAIL, in a checkout that
+      # has no installed service — otherwise wiring it into qc-system-integrity
+      # would turn every CI run and every non-Tier-2 box red.
+      - name: Runtime gate must SKIP cleanly where Tier 2 is not installed
+        run: |
+          chmod +x scripts/ghl-mcp-assert-runtime.sh
+          set +e
+          bash scripts/ghl-mcp-assert-runtime.sh --quiet
+          rc=$?
+          set -e
+          [ "$rc" = "2" ] || { echo "::error::runtime gate returned $rc in a bare checkout; expected 2 (nothing to assert)."; exit 1; }
