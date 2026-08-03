@@ -60,6 +60,28 @@ STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ---- operator escalation destination — via the shared resolver (once) -------
+# CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat. Resolved ONCE here so
+# every escalation site below (QC gates, quality holds, org-chart failures, the
+# provider smoke-test preflight, the operator success summary) answers "where
+# does an operator alert go" the SAME way instead of each reimplementing its own
+# fallback chain — several previously used a pure env-var read with no config-
+# file lookup and no OPERATOR_HELP_CHAT_ID fallback, the exact defect that let a
+# configured destination resolve empty. See shared-utils/operator-chat-id.sh.
+# Two candidate paths (repo checkout, then a deployed box's skills/ layout) —
+# same dual-candidate pattern used elsewhere in this file (the provider-smoke
+# script lookup below) and in 22-notify-client-doc.sh.
+for _oc_op_cand in \
+  "$SKILL_DIR/../shared-utils/operator-chat-id.sh" \
+  "$OC_ROOT/skills/shared-utils/operator-chat-id.sh"; do
+  if [[ -f "$_oc_op_cand" ]]; then
+    # shellcheck disable=SC1090
+    source "$_oc_op_cand" 2>/dev/null || true
+    break
+  fi
+done
+# OPERATOR_CHAT_ID is now set (possibly empty) — every site below reads it.
+
 log() {
   printf '%s [%-5s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$LOG_FILE"
   printf '%s [%-5s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
@@ -230,7 +252,8 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" ]] && ! _qc_clos
       )' \
       "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
     # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
-    _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+    # Resolved once, near the top of this file, via the shared resolver.
+    _OP_CHAT="${OPERATOR_CHAT_ID:-}"
     if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
       openclaw message send --channel telegram -t "$_OP_CHAT" \
         -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} - closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
@@ -331,7 +354,8 @@ if ! _qc_closeout_eligible "$_qc_status"; then
   " || true
   # Escalate operator via Telegram (non-fatal). CO-MINGLING GUARD (v12.4.0):
   # operator escalation is OPT-IN. NO hardcoded chat — empty => skip the send.
-  _OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+  # Resolved once, near the top of this file, via the shared resolver.
+  _OPERATOR_CHAT="${OPERATOR_CHAT_ID:-}"
   if [[ -n "$_OPERATOR_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OPERATOR_CHAT" \
       -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} - closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
@@ -450,7 +474,7 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
   done
   if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
     SMOKE_STATE_FILE="$STATE_FILE" \
-    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" \
+    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_CHAT_ID:-}" \
     bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
     PROVIDER_SMOKE_RC=$?
     if [[ "$PROVIDER_SMOKE_RC" != "0" ]]; then
@@ -760,14 +784,11 @@ generate_rate_gate() {
   log "ERROR" "gate[$key]: could not reach $ZHC_QUALITY_MIN after $ZHC_QUALITY_MAX_ATTEMPTS attempts -- HOLDING (not delivering) + flagging for human review"
   eval "GATE_${name}_RESULT=held"
   state_set ".qualityHeld = ((.qualityHeld // []) + [\"$key\"] | unique) | .closeoutHoldReason = \"quality-gate: $key below $ZHC_QUALITY_MIN after $ZHC_QUALITY_MAX_ATTEMPTS attempts\"" || true
-  # escalate to operator -- a held artifact needs a human, do not ship subpar
-  if [[ -f "$OC_ROOT/skills/shared-utils/operator-chat-id.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$OC_ROOT/skills/shared-utils/operator-chat-id.sh" 2>/dev/null || true
-    if [[ -n "${OPERATOR_CHAT_ID:-}" ]]; then
-      openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" \
-        --message "Quality gate HOLD: closeout artifact '$key' could not reach $ZHC_QUALITY_MIN/10 after $ZHC_QUALITY_MAX_ATTEMPTS attempts. NOT delivered. State: $STATE_FILE" >/dev/null 2>&1 || true
-    fi
+  # escalate to operator -- a held artifact needs a human, do not ship subpar.
+  # Resolved once, near the top of this file, via the shared resolver.
+  if [[ -n "${OPERATOR_CHAT_ID:-}" ]]; then
+    openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" \
+      --message "Quality gate HOLD: closeout artifact '$key' could not reach $ZHC_QUALITY_MIN/10 after $ZHC_QUALITY_MAX_ATTEMPTS attempts. NOT delivered. State: $STATE_FILE" >/dev/null 2>&1 || true
   fi
   return 0
 }
@@ -872,7 +893,8 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
         )
       " || true
       # Operator escalation. CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat.
-      _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+      # Resolved once, near the top of this file, via the shared resolver.
+      _OP_CHAT="${OPERATOR_CHAT_ID:-}"
       if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
         openclaw message send --channel telegram -t "$_OP_CHAT" \
           -m "🚨 ZHC HOLD [org-chart-not-rendered] $(state_get '.companyName'): org-chart Playwright returned rc=3 (no artifact). Install Chromium or use ZHC_ORGCHART_FALLBACK=1. State: $STATE_FILE" \
