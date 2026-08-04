@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.21"
+ONBOARDING_VERSION="v21.7.22"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.21 - safe_json_edit
+# v21.7.22 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -4136,6 +4136,22 @@ print(state + " " + str(len(headers)))
   GHL_MCP_RUNTIME_FATAL="no"
   GHL_MCP_RUNTIME_DETAIL=""
   GHL_MCP_AUTOSTART_RAN="not-run"
+  # Command Center runtime-config (U6d) FINAL-VERDICT latch (U6D-CC-RUNTIME
+  # fix, 2026-08-04 -- NOT the "DEFECT 2" GHL-MCP-runtime latch just above;
+  # a separate fix, same pattern). Declared here alongside GHL_MCP_RUNTIME_FATAL, which it
+  # mirrors exactly: a genuine reconcile_command_center_runtime.py failure
+  # (invalid/corrupt existing CC runtime data the reconciler correctly
+  # refuses to clobber, or an I/O error) is CC-side runtime configuration,
+  # not skills content -- it must never withhold the version stamp, but a
+  # roll that leaves it unreconciled is not a clean success either, so it
+  # makes this run's FINAL exit code 2 instead of 0 (see the U6D-CC-RUNTIME
+  # final verdict block near the end of main()). The genuinely-unprovisioned case
+  # (this box's workforce interview hasn't completed yet) is a SEPARATE,
+  # fully benign outcome -- see the interview-completion-aware WARNING
+  # appended to _WORKFORCE_INCOMPLETE_NOTES at the U6d call site itself; it
+  # never touches this latch.
+  _U6D_CC_RUNTIME_FATAL="no"
+  _U6D_CC_RUNTIME_DETAIL=""
 
   # ----------------------------------------------------------
   # U008: PRE-FLIGHT SPEND CHECK. Runs BEFORE the first paid-API step (U6b
@@ -4658,9 +4674,35 @@ except Exception:
   #   - replace ONLY the exact shipped companyName "Your Company", populate
   #     ONLY an empty departments array / empty logo URL, and preserve every
   #     already-correct value byte-for-byte;
-  #   - independently re-assert all three files after the helper returns; any
-  #     unresolved identity/source or failed assertion withholds the version
-  #     stamp through _U6D_CC_CONFIG_FAIL below.
+  #   - independently re-assert all three files after the helper returns; a
+  #     failed post-reconcile assertion, a missing python3, or a missing
+  #     reconciler script withholds the version stamp through
+  #     _U6D_CC_CONFIG_FAIL below (unchanged from before this fix).
+  #
+  # U6D-CC-RUNTIME FIX (2026-08-04 -- NOT the "DEFECT 2" GHL-MCP-runtime fix
+  # elsewhere in this file; a separate fix, same pattern): the reconciler's
+  # own non-zero exit used to be ONE undifferentiated "_U6D_CC_CONFIG_FAIL=1"
+  # outcome regardless of WHY it failed, withholding the skills-content stamp
+  # for a CC-side runtime-config
+  # gap that has nothing to do with skills content — SKILL38 and the GHL MCP
+  # converged perfectly on the boxes this blocked; only the stamp was
+  # withheld, with no path back to green. reconcile_command_center_runtime.py
+  # now distinguishes (see its own module docstring / main() contract):
+  #   rc=2  UNPROVISIONED — this box's workforce interview has not completed,
+  #         so no ZHC department/identity artifact exists yet. A KNOWN, VALID
+  #         state: degrades to a plain advisory (_WORKFORCE_INCOMPLETE_NOTES,
+  #         same bucket _D2_MIGRATE_STATUS already uses) — never touches
+  #         _U6D_CC_CONFIG_FAIL, never withholds the stamp.
+  #   rc=1  a genuine reconciliation failure (invalid/corrupt existing CC
+  #         runtime data it correctly refuses to clobber — its own FATAL
+  #         message states the exact remediation command — or an I/O error).
+  #         Real, but CC-side, not skills-content: latches
+  #         _U6D_CC_RUNTIME_FATAL (mirrors GHL_MCP_RUNTIME_FATAL) instead of
+  #         _U6D_CC_CONFIG_FAIL, so the roll CONTINUES, the stamp still WRITES,
+  #         and this run's FINAL exit code is 2 (not 0) — latch, continue,
+  #         report, exit non-zero, the same pattern this file already ships
+  #         for the GHL MCP runtime-conformance verdict and the dirty-Command-
+  #         Center-checkout skip.
   # ----------------------------------------------------------
   _U6D_CC_CONFIG_FAIL=0
   _U6D_CC_CONFIG_NOTE=""
@@ -4725,11 +4767,34 @@ except Exception:
       _U6D_RC=$?
       printf '%s\n' "$_U6D_OUT" >> "$LOG_FILE"
     fi
-    if [ "$_U6D_RC" -ne 0 ]; then
-      _U6D_CC_CONFIG_FAIL=1
+    if [ "$_U6D_RC" -eq 2 ]; then
+      # UNPROVISIONED (case a): a KNOWN, VALID state -- this box's workforce
+      # interview has not completed, so there is no legitimate ZHC artifact
+      # to source departments/identity from yet. Route to the SAME advisory
+      # bucket _D2_MIGRATE_STATUS already uses below, worded the same
+      # interview-completion-aware way (never implying an interview is
+      # unfinished when the box's own state records it complete). Does NOT
+      # touch _U6D_CC_CONFIG_FAIL and does NOT withhold the stamp.
       _U6D_TAIL="$(printf '%s' "$_U6D_OUT" | tail -n 3 | tr '\n' ' ')"
-      _U6D_CC_CONFIG_NOTE="runtime reconciler FAILED (rc=$_U6D_RC): ${_U6D_TAIL}"
+      _U6D_IV_STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
+      _U6D_IV_DONE="$(jq -r '.interviewComplete // false' "$_U6D_IV_STATE_FILE" 2>/dev/null || echo false)"
+      if [ "$_U6D_IV_DONE" = "true" ]; then
+        _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - Command Center runtime config (U6d, reconcile_command_center_runtime.py): interview COMPLETE (respected) — no ZHC department/identity artifact resolved yet for this client; advisory only, does NOT withhold the stamp — ${_U6D_TAIL}\n"
+      else
+        _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - Command Center runtime config (U6d, reconcile_command_center_runtime.py): workforce interview not yet complete for this box — dashboard departments/branding stay unpopulated until it is; advisory only, does NOT withhold the stamp — ${_U6D_TAIL}\n"
+      fi
+      echo "  ⚠ Command Center runtime config: box not yet provisioned (workforce interview incomplete) — ADVISORY, NOT blocking the version stamp."
+    elif [ "$_U6D_RC" -ne 0 ]; then
+      # Genuine reconciliation failure (case b): CC-side runtime-config data
+      # problem, not skills content. Latch the FINAL-verdict flag (mirrors
+      # GHL_MCP_RUNTIME_FATAL) instead of the stamp-gating _U6D_CC_CONFIG_FAIL
+      # -- the roll continues and the stamp still writes; this run's exit
+      # code becomes 2 at the very end (see the U6D-CC-RUNTIME final verdict block).
+      _U6D_CC_RUNTIME_FATAL="yes"
+      _U6D_TAIL="$(printf '%s' "$_U6D_OUT" | tail -n 6 | tr '\n' ' ')"
+      _U6D_CC_RUNTIME_DETAIL="reconcile_command_center_runtime.py FAILED (rc=$_U6D_RC): ${_U6D_TAIL}"
       echo "  ✗ Command Center departments/branding reconciliation FAILED (rc=$_U6D_RC) — see $LOG_FILE"
+      echo "    (skills content stays current and the version stamp still writes; this run will exit 2 — see the final summary for the exact remediation)"
     elif ! python3 -c 'import json,sys
 cc=sys.argv[1]
 deps=json.load(open(cc+"/config/departments.json"))
@@ -6120,8 +6185,13 @@ if isinstance(n, int) and n > 0:
   #     canonical population. A box whose SOP database is a demo fixture must
   #     never be stamped as current: that is the 24-of-2578 defect this closes.
   #   - _U6D_CC_CONFIG_FAIL: Command Center runtime departments + branding (U6d)
-  #     could not be sourced from this box's legitimate Skill-23 identity, failed
-  #     to write, or independently re-asserted as empty/placeholder afterward.
+  #     tooling was unavailable (python3 missing / reconciler script missing), or
+  #     the reconciler returned success but independent re-assertion still found
+  #     empty departments or the exact placeholder companyName. (U6D-CC-RUNTIME
+  #     fix, 2026-08-04: a genuine reconciler FAILURE (rc!=0, invalid/corrupt existing
+  #     CC data, or an unprovisioned box) is CC-side runtime config, not skills
+  #     content -- it no longer lands here; see _U6D_CC_RUNTIME_FATAL and
+  #     _WORKFORCE_INCOMPLETE_NOTES at the U6d call site instead.)
   #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
   #   - _SHAREDUTILS_STATUS: shared-utils/ refresh landed incomplete (a source
   #     top-level entry — e.g. sop-embed-once/ — is missing from the box). This tree
@@ -8019,6 +8089,49 @@ BACKUP_BLOCK
   # pre-existing Tier-2 defect would brick rolls on boxes whose skills are
   # perfectly current.
   # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # U6D-CC-RUNTIME — FINAL VERDICT ON THE COMMAND CENTER RUNTIME-CONFIG
+  # RECONCILER (2026-08-04 fix; NOT the "DEFECT 2" GHL-MCP block above — a
+  # separate defect, same latch/continue/report/exit-non-zero pattern).
+  #
+  # Before this fix, ANY non-zero exit from reconcile_command_center_runtime.py
+  # — including an UNPROVISIONED box (no ZHC identity yet, a KNOWN valid state)
+  # and a genuine "refusing to clobber invalid existing data" case with no
+  # remediation path — set _U6D_CC_CONFIG_FAIL, which withheld the
+  # skills-content stamp entirely (exit 1) on boxes where SKILL38 and the GHL
+  # MCP had both converged perfectly. The unprovisioned case is now a plain
+  # advisory (see _WORKFORCE_INCOMPLETE_NOTES above) and never reaches here.
+  # A genuine reconciliation failure (rc=1: invalid/corrupt existing CC
+  # runtime data, or an I/O error) now latches _U6D_CC_RUNTIME_FATAL instead:
+  # the stamp still writes, and this run's exit code becomes 2 — the SAME
+  # "content current, infrastructure needs attention" code the GHL MCP block
+  # above already uses, so fleet drivers do not need a new code to recognize
+  # it.
+  # ----------------------------------------------------------
+  if [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
+    {
+      echo ""
+      echo "  ============================================================"
+      echo "  UPDATE COMPLETED, BUT THE COMMAND CENTER RUNTIME CONFIG (U6d)"
+      echo "  COULD NOT BE RECONCILED."
+      echo "  Skills content IS current and the version stamp WAS written."
+      printf '%s\n' "${_U6D_CC_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
+      echo ""
+      echo "  The reconciler's own FATAL message above states the exact"
+      echo "  remediation command for this box's specific data problem."
+      echo "  Fix it, then re-run:"
+      echo "    python3 \"\$OC_ROOT\"/skills/23-ai-workforce-blueprint/../shared-utils/reconcile_command_center_runtime.py \\"
+      echo "      --workspace \$OC_WORKSPACE --command-center-dir <your Command Center checkout>"
+      echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
+      echo ""
+      echo "  Exiting 2 = content current, infrastructure needs attention."
+      echo "  This is deliberately NOT 0: a roll that leaves the Command"
+      echo "  Center departments/branding unreconciled has not fully succeeded."
+      echo "  ============================================================"
+      echo ""
+    } >&2
+  fi
+
   if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
     {
       echo ""
@@ -8040,6 +8153,9 @@ BACKUP_BLOCK
       echo "  ============================================================"
       echo ""
     } >&2
+  fi
+
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ] || [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
     return 2
   fi
   return 0
