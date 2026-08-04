@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.13"
+ONBOARDING_VERSION="v21.7.14"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.13 - safe_json_edit
+# v21.7.14 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -7345,28 +7345,56 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
   fi
   if cc_is_valid_checkout "$_CC_DIR" && [ -f "$_CC_RUN_INSTALL" ]; then
     echo ""
-    echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
-    # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
-    # layouts silently refreshed $HOME/projects/command-center instead (or did
-    # nothing). The installer also proves it is on the origin default branch,
-    # contains latest origin/main, and ends on a freshly-built GREEN deployment.
-    if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
-        "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
-      _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-      _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
-      [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
-      if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
-         || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
-        echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
-        echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
+    # DIRTY-CHECKOUT GUARD (defect fix): `run-full-install.sh --update-only` does
+    # a `git pull`, which is unsafe (and unpredictable) against a checkout that
+    # carries uncommitted local changes. On 2 of 3 pilot boxes THIS is what made
+    # the CC refresh fail below, which used to `exit 2` and abort the ENTIRE
+    # updater before the PENDING-flag lifecycle (further down this script) ever
+    # ran -- a dirty client checkout must never take down the whole update. Fix:
+    # detect dirty BEFORE attempting the pull, skip ONLY the CC refresh, report
+    # it as a WARNING with the exact remediation, and fall through so every
+    # unrelated step below (including the PENDING-flag lifecycle) still runs.
+    # Nothing is stashed, reset, or discarded here -- uncommitted work on a
+    # client box is load-bearing (same rule _cc_currency_probe's own dirty-state
+    # marker already follows). This is intentionally NOT the same code path as
+    # the genuine installer-failure / not-on-origin-main cases below (U005
+    # exit-2 advisory, unchanged) -- those remain fatal-to-this-section by
+    # design; a dirty tree is a different, recoverable, expected condition.
+    _CC_DIRTY_STATUS="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null || true)"
+    if [ -n "$_CC_DIRTY_STATUS" ]; then
+      echo "  ⚠ Command Center checkout at $_CC_DIR has UNCOMMITTED local changes — refresh SKIPPED." >&2
+      echo "    A git pull against a dirty tree is unsafe, so nothing was pulled, reset, or discarded." >&2
+      printf '%s\n' "$_CC_DIRTY_STATUS" | head -n 10 | sed 's/^/      /' >&2
+      echo "    REMEDIATION: on this box, run:" >&2
+      echo "      cd \"$_CC_DIR\" && git status --short" >&2
+      echo "      git stash                    # to park the changes, OR" >&2
+      echo "      git add -A && git commit      # to keep them" >&2
+      echo "    then re-run the updater to pick up the Command Center refresh." >&2
+      echo "    Skills content is current; the rest of this update continues normally." >&2
+    else
+      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
+      # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
+      # layouts silently refreshed $HOME/projects/command-center instead (or did
+      # nothing). The installer also proves it is on the origin default branch,
+      # contains latest origin/main, and ends on a freshly-built GREEN deployment.
+      if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
+          "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
+        _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+        [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
+        if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
+           || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
+          echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
+          echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
+          exit 2
+        fi
+        echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
+      else
+        echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
+        echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
+        echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
         exit 2
       fi
-      echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
-    else
-      echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
-      echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
-      echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
-      exit 2
     fi
   elif [ -f "$_CC_RUN_INSTALL" ]; then
     # F10 — CC bootstrap on update. The refresh branch above is the path for a
