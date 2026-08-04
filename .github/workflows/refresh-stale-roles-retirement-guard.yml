@@ -47,6 +47,20 @@ jobs:
   refresh-stale-roles-guard:
     name: STALE-role/sop/dept drain — retirement vs genuinely-missing discrimination
     runs-on: ubuntu-latest
+    env:
+      # try_library_fill() (create_role_workspaces.py, via refresh_one())
+      # resolves platform-appropriate paths through detect_platform, which
+      # aborts with "Cannot detect OpenClaw platform" when neither
+      # /data/.openclaw nor ~/.openclaw exists -- true of every GitHub
+      # Actions runner. This is the documented override ("Set
+      # OPENCLAW_PLATFORM=mac|vps to override (e.g. CI static checks)") this
+      # repo's other Skill-23 CI guards (qc-departments-tree-guard.yml,
+      # skill23-provisioning-tests.yml, floor-wipe-fix-guard.yml, ...)
+      # already set the same way. Every scenario in this suite builds its own
+      # sandboxed temp workspace and always passes --workspace explicitly, so
+      # this only satisfies the platform probe -- it never points a fixture
+      # at a real box.
+      OPENCLAW_PLATFORM: mac
     steps:
       - uses: actions/checkout@v4
 
