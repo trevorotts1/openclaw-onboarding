@@ -1,0 +1,65 @@
+name: Single update-skills.sh entrypoint guard
+
+# Fails the build if the fleet-wide fatal this repo shipped once already
+# regresses: TWO scripts named "update-skills.sh" (repo root vs scripts/)
+# that could BOTH be invoked successfully. Two pilot boxes ran the wrong one
+# (scripts/update-skills.sh) via a stale cron/doc reference, got a
+# byte-identical AGENTS.md every week, and watched the version stamp climb
+# anyway — a hollow update reported as a success.
+#
+# scripts/update-skills.sh is now a retired, loud-failing shim: no flag, no
+# env var, and no code path in it returns 0, and it mutates nothing.
+# scripts/test-single-update-skills-entrypoint.sh proves that mechanically,
+# proves the root update-skills.sh remains the real implementation, and
+# proves no doc/script/cron template in the repo references the legacy path
+# as something to actually run (an explicit, reasoned allowlist covers every
+# legitimate mention — self-heal detection code, negative-assertion tests,
+# and historical/warning text).
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/update-skills.sh"
+      - "scripts/setup-weekly-update.sh"
+      - "scripts/test-single-update-skills-entrypoint.sh"
+      - "install.sh"
+      - "CONTRIBUTING.md"
+      - "UPDATE-PLAYBOOK.md"
+      - "Start Here.md"
+      - "22-book-to-persona-coaching-leadership-system/INSTALL.md"
+      - "32-command-center-setup/CORE_UPDATES.md"
+      - ".github/workflows/single-update-skills-entrypoint-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/update-skills.sh"
+      - "scripts/setup-weekly-update.sh"
+      - "scripts/test-single-update-skills-entrypoint.sh"
+      - "install.sh"
+      - "CONTRIBUTING.md"
+      - "UPDATE-PLAYBOOK.md"
+      - "Start Here.md"
+      - "22-book-to-persona-coaching-leadership-system/INSTALL.md"
+      - "32-command-center-setup/CORE_UPDATES.md"
+      - ".github/workflows/single-update-skills-entrypoint-guard.yml"
+
+jobs:
+  single-update-skills-entrypoint-guard:
+    name: scripts/update-skills.sh can never succeed; no live doc points at it
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Run single-entrypoint guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash scripts/test-single-update-skills-entrypoint.sh
+          echo "single-update-skills-entrypoint-guard: PASS"

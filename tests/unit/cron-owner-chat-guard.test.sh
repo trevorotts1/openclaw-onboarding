@@ -705,7 +705,15 @@ if [ -f "$REPO_ROOT/scripts/update-skills.sh" ]; then
         pass "8c: scripts/update-skills.sh has no direct api.telegram.org call"
     fi
     legacy_notify=$(awk '/Update notification|Telegram notification/,/^fi$/' "$REPO_ROOT/scripts/update-skills.sh" 2>/dev/null | grep -vE '^\s*#' || true)
-    if echo "$legacy_notify" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|--account operator'; then
+    if [ -z "$legacy_notify" ]; then
+        # v21.7.x: scripts/update-skills.sh was retired to a loud-failing shim
+        # (the two-updaters-same-name fleet-wide defect) -- it carries NO
+        # update or notification logic at all, so there is nothing that could
+        # leak a client-facing Telegram DM. Absence of any notification code
+        # is a strictly stronger guarantee than "the notification code that
+        # exists happens to be operator-routed".
+        pass "8c-2: scripts/update-skills.sh carries no update/notification logic at all (retired shim — nothing to leak)"
+    elif echo "$legacy_notify" | grep -qE 'OPERATOR_ESCALATION_CHAT_ID|--account operator'; then
         pass "8c-2: scripts/update-skills.sh update notification is operator-routed"
     else
         fail "8c-2: scripts/update-skills.sh update notification is not operator-routed"
