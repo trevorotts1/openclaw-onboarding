@@ -1,3 +1,56 @@
+## [v21.7.10]  -  2026-08-03  -  Fix the circular alerting dependency: operator escalation now survives a dead gateway
+
+Proven live: a client box was down ~20h, its watchdog wrote 79 escalation attempts,
+and every one blanked. The cause was structural, not a missing config value: the
+shared operator-chat resolver's only lookup path was `openclaw config get`, which
+requires a live gateway websocket connection — during the outage the CLI failed with
+"1006 abnormal closure" on every call, so the destination resolved empty. The
+alerting depended on the exact thing it existed to report as broken.
+
+### Why
+
+Three defects in the same area, all proven live:
+
+1. `shared-utils/operator-chat-id.sh` never checked `OPERATOR_HELP_CHAT_ID` — the
+   back-compat key `scripts/configure-operator-telegram.sh` writes on every run.
+   Proven: a box with ONLY that key set in config resolved empty.
+2. The resolver's ONLY lookup path was the `openclaw` CLI. A dead/unreachable
+   gateway blanked every key, even ones actually persisted to disk.
+3. `closeout-readiness-watchdog.sh` and four sites in `run-closeout.sh` each
+   reimplemented their own pure-process-environment fallback chain instead of
+   calling the shared resolver — bypassing both the config-file lookup and the
+   `OPERATOR_HELP_CHAT_ID` fallback. Dispatched by `openclaw cron` as a child of
+   the running gateway, the watchdog's copy only ever saw the environment the
+   gateway had at its OWN start, so a `config set` was not live for it until the
+   gateway restarted.
+
+### What changed
+
+- `shared-utils/operator-chat-id.sh`: added `OPERATOR_HELP_CHAT_ID` to the lookup
+  chain (config and env tiers); added a direct on-disk read of `openclaw.json` as
+  a fallback whenever the CLI path comes back empty, so resolution now survives a
+  dead gateway entirely; a genuine double-failure (CLI shows a gateway-failure
+  signature AND the on-disk config can't be read either) now logs unmistakably
+  (stderr + `<OC_ROOT>/workspace/.operator-alert-resolution.log`) instead of
+  returning a silent empty string indistinguishable from a deliberate opt-out.
+  A clean, confirmed "nothing configured" answer stays silent, unchanged — this
+  never falls back to a client's own chat.
+- `closeout-readiness-watchdog.sh` and `run-closeout.sh` (five sites across the
+  two files): now source the shared resolver instead of reimplementing a
+  pure-env-var chain. One answer to "where does an operator alert go."
+- `tests/unit/operator-chat-id-resolver.test.sh` (new, hermetic, no real gateway
+  or Telegram send anywhere): 23 assertions, mutation-proved against a frozen
+  snapshot of the pre-fix resolver — the two headline assertions (dead-gateway
+  still resolves; `OPERATOR_HELP_CHAT_ID`-only config resolves) are confirmed to
+  fail against both the frozen fixture and the real pre-fix `origin/main` file,
+  and pass against the fix.
+- Version markers rolled to v21.7.10 via `scripts/bump-version.sh v21.7.10` (all
+  10 drift-checked markers agree; no tag cut here — that is the merge step's
+  job). `37-zhc-closeout/skill-version.txt` also bumped independently (not one
+  of the 10 lockstep markers): v12.14.21 -> v12.14.22, on top of #828's own bump
+  of the same file for its `_qc_closeout_eligible` predicate change — both
+  changes to `run-closeout.sh` coexist (confirmed by content, no lost edits).
+
 ## [v21.7.9]  -  2026-08-03  -  The role library could not pass its own gate: 16 templates authored, and the wiring gate stops failing prose
 
 Two independent defects were blocking client builds at `sopLibraryStatus=failed`. Neither was
