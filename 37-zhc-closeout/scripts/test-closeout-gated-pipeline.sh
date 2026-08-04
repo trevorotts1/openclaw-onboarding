@@ -761,6 +761,180 @@ else
 fi
 
 # ============================================================
+# T19: env bootstrap resolves the client's OWN credential stores
+#
+# Defect-C fix: run-closeout.sh never sourced any env file. Launched detached
+# (nohup) from a cron shell, KIE_API_KEY / NOTION_API_TOKEN read as EMPTY even
+# when genuinely present and correct in the box's own secrets/.env -- a
+# documented false negative. T1-T3 above are static greps; this one actually
+# RUNS run-closeout.sh in a hermetic sandbox HOME (no network, no real
+# credential, no path into a real ~/.openclaw) and asserts on real behavior:
+#   T19a/b: a key present ONLY in the box's OWN secrets/.env (never in the
+#           live process env) must resolve -- no false-negative failure.
+#   T19c:   the fixture reaches a clean, deterministic stop (buildCompletedAt
+#           unset) rather than proceeding into any real generation/network step.
+#   T19d:   a genuinely-absent key still fails LOUD -- nothing invented, no
+#           silent substitution of a value the client does not own.
+#   T19e:   the candidate store list stays OC_ROOT-scoped (never reaches for
+#           an operator-side path such as ~/clawd/secrets/.env).
+#   T19-MUT: the SAME fixture against a copy of the script with the bootstrap
+#           block removed reproduces the false negative -- proves T19a/b are
+#           not vacuous.
+# ============================================================
+printf '\n--- T19: env bootstrap sources the client'"'"'s own credential stores (functional, not a grep) ---\n'
+
+if [[ ! -f "$run_script" ]]; then
+  fail "T19: run-closeout.sh not found at $run_script"
+elif ! command -v jq >/dev/null 2>&1 || ! command -v curl >/dev/null 2>&1; then
+  fail "T19: jq/curl not available -- cannot run the functional fixture"
+elif [[ -d /data/.openclaw ]]; then
+  fail "T19: /data/.openclaw exists on this host -- refusing to run (cannot guarantee sandbox isolation)"
+else
+  T19_SANDBOX="$(mktemp -d)"
+  case "$T19_SANDBOX" in
+    */.openclaw|*/.openclaw/*)
+      fail "T19: sandbox resolved into a real .openclaw path"
+      T19_SANDBOX="" ;;
+  esac
+
+  _t19_mkbox() {  # $1=box name  $2=.env content (may be empty -> no file written)
+    local name="$1" envcontent="$2"
+    local h="$T19_SANDBOX/$name"
+    mkdir -p "$h/.openclaw/workspace" "$h/.openclaw/secrets" "$h/bin"
+    cat > "$h/bin/openclaw" <<'SHIM'
+#!/usr/bin/env bash
+exit 0
+SHIM
+    chmod +x "$h/bin/openclaw"
+    printf '{}' > "$h/.openclaw/workspace/.workforce-build-state.json"
+    if [[ -n "$envcontent" ]]; then
+      printf '%s\n' "$envcontent" > "$h/.openclaw/secrets/.env"
+    fi
+    printf '%s' "$h"
+  }
+
+  _t19_run() {  # $1=box home  ->  exit code of run-closeout.sh
+    local h="$1" rc=0
+    env -i \
+      PATH="$h/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+      HOME="$h" \
+      TMPDIR="${TMPDIR:-/tmp}" \
+      ZHC_SKIP_TG_PREFLIGHT=1 \
+      bash "$run_script" >"$h/run.out" 2>&1 || rc=$?
+    return "$rc"
+  }
+
+  _t19_run_kie_live() {  # $1=box home  ->  exit code, KIE_API_KEY forced via LIVE env
+    local h="$1" rc=0
+    env -i \
+      PATH="$h/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" \
+      HOME="$h" \
+      TMPDIR="${TMPDIR:-/tmp}" \
+      ZHC_SKIP_TG_PREFLIGHT=1 \
+      KIE_API_KEY=fixture-test-kie-live-env-value \
+      bash "$run_script" >"$h/run.out" 2>&1 || rc=$?
+    return "$rc"
+  }
+
+  if [[ -n "$T19_SANDBOX" ]]; then
+    # T19a: a key present ONLY in the box's own secrets/.env must resolve.
+    BOX19A="$(_t19_mkbox t19a $'KIE_API_KEY=fixture-test-kie-only-value\nNOTION_API_TOKEN=fixture-test-notion-only-value')"
+    _t19_run "$BOX19A"; rc19a=$?
+    if grep -q 'KIE_API_KEY env var not set' "$BOX19A/run.out" 2>/dev/null; then
+      fail "T19a: KIE_API_KEY read as unset even though present in the box's own secrets/.env (false negative NOT fixed)"
+    else
+      pass "T19a: KIE_API_KEY resolved from the box's own secrets/.env (no false-negative preflight failure)"
+    fi
+
+    # T19b: isolated from T19a -- KIE_API_KEY forced present via the LIVE
+    # process env (so it can never mask the assertion below) while
+    # NOTION_API_TOKEN is present ONLY in the box's own secrets/.env. This is
+    # the ONLY way to independently prove the Notion half of the bootstrap,
+    # since the KIE check runs first and would otherwise short-circuit the
+    # script before the Notion check is ever reached.
+    BOX19B_ISO="$(_t19_mkbox t19b-iso 'NOTION_API_TOKEN=fixture-test-notion-only-value')"
+    _t19_run_kie_live "$BOX19B_ISO"; rc19biso=$?
+    if grep -q 'NOTION_API_TOKEN env var not set' "$BOX19B_ISO/run.out" 2>/dev/null; then
+      fail "T19b: NOTION_API_TOKEN read as unset even though present in the box's own secrets/.env (false negative NOT fixed)"
+    else
+      pass "T19b: NOTION_API_TOKEN resolved from the box's own secrets/.env (no false-negative preflight failure, isolated from KIE)"
+    fi
+
+    if grep -q 'buildCompletedAt not set yet' "$BOX19A/run.out" 2>/dev/null && [[ "$rc19a" -eq 0 ]]; then
+      pass "T19c: fixture reached the expected downstream stop cleanly (rc=0, no generation/network step attempted)"
+    else
+      info "T19c: unexpected outcome for T19a fixture (rc=$rc19a) -- $(tail -3 "$BOX19A/run.out" | tr '\n' ' ')"
+      fail "T19c: fixture did not reach the expected deterministic stopping point"
+    fi
+
+    # T19d: no key anywhere -- must still fail LOUD (never invents/substitutes).
+    BOX19B="$(_t19_mkbox t19b '')"
+    _t19_run "$BOX19B"; rc19b=$?
+    if grep -q 'KIE_API_KEY env var not set' "$BOX19B/run.out" 2>/dev/null && [[ "$rc19b" -eq 1 ]]; then
+      pass "T19d: with NO key anywhere, preflight still fails LOUD (rc=1) -- nothing invented, nothing substituted"
+    else
+      fail "T19d: genuinely-absent key did not fail preflight as expected (rc=$rc19b)"
+    fi
+
+    # T19e: the candidate list stays OC_ROOT-scoped -- never an operator path.
+    if grep -q '_zhc_source_env_file "\$_zhc_env_candidate"' "$run_script" \
+       && ! grep -qE '\$\{?HOME\}?/clawd|~/clawd' "$run_script"; then
+      pass "T19e: env bootstrap candidate list is OC_ROOT-scoped only (no operator-side ~/clawd path)"
+    else
+      fail "T19e: env bootstrap candidate list references a non-OC_ROOT path"
+    fi
+
+    rm -rf "$T19_SANDBOX"
+
+    # T19-MUT: strip the bootstrap block from a sandboxed COPY and prove the
+    # SAME fixture reproduces the false negative -- T19a/b are non-vacuous.
+    T19M_SANDBOX="$(mktemp -d)"
+    case "$T19M_SANDBOX" in
+      */.openclaw|*/.openclaw/*)
+        fail "T19-MUT: sandbox resolved into a real .openclaw path"
+        T19M_SANDBOX="" ;;
+    esac
+    if [[ -n "$T19M_SANDBOX" ]]; then
+      MUT19="$T19M_SANDBOX/run-closeout.sh"
+      python3 - "$run_script" "$MUT19" <<'PYEOF'
+import sys
+src_path, dst_path = sys.argv[1], sys.argv[2]
+src = open(src_path).read()
+start_marker = "# ---- env bootstrap: source THIS box's own credential stores"
+end_marker = "unset -f _zhc_source_env_file\n"
+start = src.index(start_marker)
+end = src.index(end_marker, start) + len(end_marker)
+open(dst_path, "w").write(src[:start] + src[end:])
+PYEOF
+      mut19_rc=$?
+      if (( mut19_rc != 0 )); then
+        fail "T19-MUT: could not strip the env bootstrap block -- cannot prove T19a/b discriminate"
+      else
+        BOX19M="$T19M_SANDBOX/box"
+        mkdir -p "$BOX19M/.openclaw/workspace" "$BOX19M/.openclaw/secrets" "$BOX19M/bin"
+        cat > "$BOX19M/bin/openclaw" <<'SHIM'
+#!/usr/bin/env bash
+exit 0
+SHIM
+        chmod +x "$BOX19M/bin/openclaw"
+        printf '{}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
+        printf 'KIE_API_KEY=fixture-test-kie-only-value\nNOTION_API_TOKEN=fixture-test-notion-only-value\n' \
+          > "$BOX19M/.openclaw/secrets/.env"
+        env -i PATH="$BOX19M/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$BOX19M" \
+          TMPDIR="${TMPDIR:-/tmp}" ZHC_SKIP_TG_PREFLIGHT=1 \
+          bash "$MUT19" >"$BOX19M/run.out" 2>&1
+        if grep -q 'KIE_API_KEY env var not set' "$BOX19M/run.out" 2>/dev/null; then
+          pass "T19-MUT: without the bootstrap the SAME fixture reproduces the false negative -- T19a/b are real, non-vacuous checks"
+        else
+          fail "T19-MUT: without the bootstrap the false negative did NOT reproduce -- T19a/b prove nothing"
+        fi
+      fi
+      rm -rf "$T19M_SANDBOX"
+    fi
+  fi
+fi
+
+# ============================================================
 # Summary
 # ============================================================
 printf '\n============================================================\n'

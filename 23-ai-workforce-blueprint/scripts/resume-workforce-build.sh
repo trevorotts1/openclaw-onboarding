@@ -770,7 +770,34 @@ STALE_PY
   fi
 fi
 
-pending_count=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed")] | length' "$STATE_FILE")
+# NO-LASTATTEMPTAT VISIBILITY GAP FIX: a department can end up at
+# status=="building" with NO lastAttemptAt at all (e.g. the DEFECT #5 honesty
+# floor in refresh-build-state-from-index.py demotes a false "done" back to
+# "building" but only ever touches rolesPlanned/rolesDone/status/updatedAt --
+# it never stamps lastAttemptAt, because as far as that script knows no real
+# attempt has started). Such an entry used to be invisible to BOTH checks
+# below: not "pending"/"failed" (so absent from pending_count/pending_list),
+# and excluded from stale_building_count by its own `lastAttemptAt != null`
+# filter (nothing to compare "older than N minutes" against). With every
+# OTHER department done, pending_count==0 AND stale_building_count==0 made
+# total_attention==0 further down, so the cron logged "nothing to do" and
+# exited clean every 15 minutes forever -- the exact silent-strand failure
+# mode this file exists to prevent (see the Rule-8 NEVER-STOP comments
+# throughout). Fail toward VISIBILITY: a "building" dept with a missing
+# timestamp was never actually attempted (there is nothing to time out), so
+# it belongs in the PENDING lane, not the stale-timeout lane -- it is picked
+# up, named in the [WORKFORCE-RESUME] ping, and (re)started exactly like any
+# other pending department, per resume-prompt.txt/INSTRUCTIONS.md's own build
+# step ("flip status to building and set lastAttemptAt to now" before work
+# begins). This never double-counts: stale_building_count still requires
+# lastAttemptAt to exist, so a genuinely timed-out attempt is never claimed by
+# both lanes at once.
+pending_count=$(jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+  ] | length
+' "$STATE_FILE")
 stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   [.departments[]
     | select(.status == "building")
@@ -1043,7 +1070,16 @@ agent_name=$(jq -r '.agentName // "the master orchestrator"' "$STATE_FILE")
 # Read for diagnostics ONLY. NEVER a dispatch target: everything composed below is
 # internal traffic and must not reach the client. See the routing block below.
 owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE")
-pending_list=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed") | .slug] | join(", ")' "$STATE_FILE")
+# Mirrors the pending_count selection above (see the NO-LASTATTEMPTAT
+# VISIBILITY GAP FIX comment there): a "building" dept with no lastAttemptAt
+# is named here too, so the [WORKFORCE-RESUME] ping actually tells the agent
+# which department to (re)start instead of silently omitting it.
+pending_list=$(jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+    | .slug] | join(", ")
+' "$STATE_FILE")
 stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
   [.departments[]
     | select(.status == "building")
