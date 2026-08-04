@@ -1,3 +1,120 @@
+## [v21.7.12]  -  2026-08-04  -  Upstream three box-local fixes: infra files miscounted as roles, a HOP-4 visibility gap, and run-closeout.sh's missing env bootstrap
+
+Three defects were found and fixed box-locally on one client's box to unblock her.
+A box-local fix is wiped by the next roll (`update-skills.sh` does a wholesale
+`rm -rf` + `cp -r` from `origin/main`), so it regresses on her next roll and the
+same defects reach every other box. This upstreams the fix permanently. A fourth
+reported defect (the refresher inventing departments) was checked against current
+main and confirmed already fixed by PR #828 (`6e8d02eb`) — not re-fixed here.
+
+### A — infrastructure files miscounted as roles (23-ai-workforce-blueprint)
+
+`register-library-additions.py`'s `_INFRA_STEMS` denylist did not exclude
+`CHANGELOG-RESCUE-DEPT` (a build log) and `RELAY-BRAIN-PATCH` (an operator
+runbook) sitting flat under the `rescue-rangers` department folder. Both were
+auto-registered as `roles[]` entries with `sop_count=0`/`sop_min=1` — neither is a
+role, so both failed the role-substance floor (`verify-library-gate.sh`)
+permanently. Confirmed present on current `origin/main`'s committed
+`_index.json` before this fix (both entries existed under `rescue-rangers`,
+inflating its role count from 5 to 7 and `total_roles` from 438 to 440).
+
+- Added both stems to `_INFRA_STEMS`. A scan of every dept-level `.md` file in
+  the library for an uppercase-bearing stem (the shape a real role slug never
+  takes) turned up only these two, so no broader heuristic was warranted.
+- Added a new `check()` assertion (`INFRA-STEM ROLE`) that fires the moment any
+  `roles[]` entry's filename stem is a reserved infra name — a backstop against
+  a future hand-edited/legacy entry sitting silently in the index forever, the
+  exact way these two got in.
+- Removed the two stale entries from `_index.json` (surgical edit: only
+  `rescue-rangers`'s `roles[]`/`count`/`content_sha` and the top-level
+  `total_roles`/`total_departments` changed — did not run the full restamp
+  chain, which would have touched every entry's `content_hashed_at` for zero
+  functional reason).
+- `23-ai-workforce-blueprint/scripts/test-library-register.sh`: 2 new hermetic
+  fixtures (13, 14), 4 new assertions, all shown failing against a pristine
+  pre-fix snapshot (`git archive` of the prior head) and passing post-fix.
+
+### B — HOP-4 could never fire for a `building` department with no `lastAttemptAt`
+
+`resume-workforce-build.sh`'s pending lane (`status == pending|failed`) and its
+stale-timeout lane (`status == building` AND `lastAttemptAt` older than N
+minutes) both require a signal that a department at `status=building` with NO
+`lastAttemptAt` at all does not have — the `DEFECT #5` honesty-floor demotion in
+`refresh-build-state-from-index.py` can produce exactly this shape (it flips a
+false "done" back to "building" but never stamps `lastAttemptAt`). With every
+other department done, `total_attention` landed on 0 and the cron logged "no
+pending/stale departments... nothing to do" and exited clean every 15 minutes
+forever — a silent strand nothing ever looks at.
+
+- Fixed toward visibility: a `building` department with a missing timestamp was
+  never actually attempted (nothing to time out against), so it now routes
+  through the **pending lane**, not the stale-timeout lane — picked up, named in
+  the `[WORKFORCE-RESUME]` ping, and (re)started like any other pending
+  department. Never double-counts: the stale lane still requires
+  `lastAttemptAt` to exist.
+- `tests/unit/bounded-workforce-build-resume.test.sh`: new functional group
+  (17) NO_LASTATTEMPTAT_VISIBILITY, 3 direct assertions + a mutation proof (the
+  same fixture against the pre-fix selection dispatches nothing).
+
+### C — run-closeout.sh never sourced any env file (37-zhc-closeout)
+
+Launched detached via `nohup` from the cron shell (`resume-workforce-build.sh`,
+`resume-closeout-cron.sh`), `run-closeout.sh` read `KIE_API_KEY` /
+`NOTION_API_TOKEN` as empty and failed preflight — a documented false negative:
+the key was never missing, this process just never sourced the file holding it.
+
+- Added an env bootstrap that sources ONLY this box's own credential stores,
+  scoped strictly under its already-resolved `$OC_ROOT`
+  (`secrets/.env`, `workspace/.env`, `.env`,
+  `service-env/ai.openclaw.gateway.env`) — never any operator-side path, never a
+  substitute value. Existing exported vars always win (never overwritten).
+  Checks presence only; never reads, echoes, or logs a credential value. Fits
+  the credential-passing mechanism #826 just landed (`-K` mktemp header files,
+  not argv).
+- `37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh`: new functional
+  group T19 (7 assertions, not a grep) actually runs `run-closeout.sh` in a
+  hermetic sandbox HOME (no network, no real credential) and proves: a key
+  present only in the box's own store resolves (T19a, and T19b isolated from
+  T19a via a live-env-forced KIE key so the Notion check can never be
+  short-circuited); the fixture reaches a clean deterministic stop rather than
+  any real generation step (T19c); a genuinely-absent key still fails LOUD —
+  nothing invented, nothing substituted (T19d); the candidate list stays
+  OC_ROOT-scoped (T19e); and a mutation proof (bootstrap stripped from a
+  sandboxed copy) reproduces the false negative, proving T19a/b are not
+  vacuous. All shown failing against a pristine pre-fix snapshot and passing
+  post-fix.
+
+### D — verified already fixed, not re-fixed
+
+The refresher-inventing-departments report (`refresh-build-state-from-index.py`
+upserting every canonical index entry into a client's state regardless of
+whether the client ever had that department) was checked against current
+`origin/main` before starting. PR #828 (`6e8d02eb`, merged) already rewrote this
+file to loop the client's own roster (`existing_depts_dict.keys()`) with the
+add-branch removed. Confirmed via `git show 6e8d02eb` — the dead "add new dept"
+branch is gone. No residual path found; not touched here.
+
+### Follow-up flagged, not fixed here (different file than A-D touch)
+
+`37-zhc-closeout/scripts/resume-closeout-cron.sh`'s `run_count` (line ~106-111)
+is a lifetime-total counter that increments on every fire, including fires that
+do nothing but the cheap no-progress-pause check — it is never reset when the
+underlying build/closeout genuinely advances (unlike the sibling
+`closeoutResumeStallPasses` counter a few lines below, which already resets on
+a real fingerprint change). A box blocked for longer than `MAX_RUNS` (default
+48, 12h) accumulates a counter that outlives the block: the exact case observed
+live was `MAX RUNS EXCEEDED (438 > 48)`, where the cron self-removed
+immediately after the build had already recovered, because the counter itself
+never learned the build was moving again. Recommended fix: reset `run_count`
+(and rewrite `.closeout-resume-runs.count`) in the same branch that already
+resets `closeoutResumeStallPasses` on progress (line ~362-366). Left as a
+follow-up rather than fixed here — it is a different file than the one this fix
+touches for defect C, and the mission scoped in-file fixes only to files
+already being changed for A-D.
+
+37-zhc-closeout/skill-version.txt bumped independently (not one of the 10
+repo-wide lockstep markers): v12.14.23 -> v12.14.24.
+
 ## [v21.7.11]  -  2026-08-03  -  Security: stop leaking the Notion token via curl argv (37-zhc-closeout)
 
 `notion_curl()` (`create-notion-closeout.sh`) and `notion_search_any_page()`

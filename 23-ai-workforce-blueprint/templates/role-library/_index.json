@@ -1,7 +1,7 @@
 {
   "generated_at": "2026-06-28T00:00:00Z",
-  "version": "21.7.11",
-  "total_roles": 440,
+  "version": "21.7.12",
+  "total_roles": 438,
   "total_departments": 36,
   "departments": {
     "account-management": {
@@ -683,18 +683,16 @@
       "content_hashed_at": "2026-08-04T02:22:13.392172+00:00"
     },
     "rescue-rangers": {
-      "count": 7,
+      "count": 5,
       "roles": [
-        "CHANGELOG-RESCUE-DEPT",
-        "RELAY-BRAIN-PATCH",
         "diagnostician--rescue-rangers",
         "director-of-rescue-rangers",
         "qc-postmortem-specialist--rescue-rangers",
         "structured-fix-operator--rescue-rangers",
         "ticket-clerk--rescue-rangers"
       ],
-      "content_sha": "sha256:aa691bd586869a4995447427916d2c5374709e38da1a91ac6102c14792a8c2aa",
-      "content_hashed_at": "2026-08-04T02:22:13.392172+00:00"
+      "content_sha": "sha256:ae3c5f454ae42c0c327e9ac308803735621a6c565a0bfce4751c9b630d202006",
+      "content_hashed_at": "2026-08-04T03:55:55.998884+00:00"
     }
   },
   "roles": [
@@ -7512,38 +7510,6 @@
       "content_sha": "sha256:173f183dbcb4f21426dc754d2c230d1f8f4f816d2c9d6b1e32258ffb56aaed41",
       "render_sha": "sha256:173f183dbcb4f21426dc754d2c230d1f8f4f816d2c9d6b1e32258ffb56aaed41",
       "content_version": "1.0.3",
-      "content_hashed_at": "2026-08-04T02:22:13.392172+00:00"
-    },
-    {
-      "slug": "CHANGELOG-RESCUE-DEPT",
-      "dept": "rescue-rangers",
-      "title": "Rescue Rangers Department \u2014 Build Log",
-      "role_type": "specialist",
-      "word_count": 365,
-      "sop_count": 0,
-      "sop_min": 1,
-      "path": "templates/role-library/rescue-rangers/CHANGELOG-RESCUE-DEPT.md",
-      "capability_class": "WRITING",
-      "vision_flag": false,
-      "content_sha": "sha256:1f41e23ce4e8d9b92fff62ade5a54152d512ceafe8fd5d686464eb751f35dbb4",
-      "render_sha": "sha256:1f41e23ce4e8d9b92fff62ade5a54152d512ceafe8fd5d686464eb751f35dbb4",
-      "content_version": "1.0.0",
-      "content_hashed_at": "2026-08-04T02:22:13.392172+00:00"
-    },
-    {
-      "slug": "RELAY-BRAIN-PATCH",
-      "dept": "rescue-rangers",
-      "title": "Relay Brain Patch \u2014 nine-field validation + `status` return leg (DEFERRED live step)",
-      "role_type": "specialist",
-      "word_count": 569,
-      "sop_count": 0,
-      "sop_min": 1,
-      "path": "templates/role-library/rescue-rangers/RELAY-BRAIN-PATCH.md",
-      "capability_class": "WRITING",
-      "vision_flag": false,
-      "content_sha": "sha256:7b4e8fc34fbcc44d7d0a3cec370ed2581d2b6e360d49a4e0711de031c139e117",
-      "render_sha": "sha256:7b4e8fc34fbcc44d7d0a3cec370ed2581d2b6e360d49a4e0711de031c139e117",
-      "content_version": "1.0.0",
       "content_hashed_at": "2026-08-04T02:22:13.392172+00:00"
     },
     {

@@ -60,6 +60,52 @@ STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ---- env bootstrap: source THIS box's own credential stores (false-negative) --
+# run-closeout.sh is launched detached (nohup, resume-workforce-build.sh:1129/
+# resume-closeout-cron.sh) from a cron shell, which does not inherit whatever an
+# interactive/login shell had exported. KIE_API_KEY / NOTION_API_TOKEN then read
+# as EMPTY in the preflight below even when they are genuinely present and
+# correct -- a documented false negative: the key was never missing, this
+# process just never sourced the file holding it.
+#
+# Sources ONLY files rooted under THIS box's own already-resolved $OC_ROOT --
+# never any other path, never an operator-side store, never a substitute value.
+# Existing exported vars always win (never overwritten), so an operator-injected
+# env (tests, an already-exported shell) is never clobbered. Presence is the
+# only thing this changes; it never invents a value that was not already
+# sitting in one of the client's own files. Mirrors the store list every other
+# credential reader in this repo already agrees on (shared-utils/check-skill-
+# prereqs.sh's oc_root-relative candidates; shared-utils/check-credential.sh's
+# ENV-STORE tier) -- restricted here to the OC_ROOT-scoped subset, since this
+# is a live-resolve site (the value is about to authenticate a paid API call),
+# not a read-only presence report.
+_zhc_source_env_file() {
+  local f="$1" line key val
+  [[ -f "$f" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+    [[ "$line" == export\ * ]] && line="${line#export }"
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    # never clobber a value already exported into this process
+    [[ -n "${!key:-}" ]] && continue
+    val="${line#*=}"
+    if [[ ${#val} -ge 2 && "${val:0:1}" == "${val: -1}" && ( "${val:0:1}" == '"' || "${val:0:1}" == "'" ) ]]; then
+      val="${val:1:-1}"
+    fi
+    export "$key=$val"
+  done < "$f"
+}
+for _zhc_env_candidate in \
+  "$OC_ROOT/secrets/.env" \
+  "$OC_ROOT/workspace/.env" \
+  "$OC_ROOT/.env" \
+  "$OC_ROOT/service-env/ai.openclaw.gateway.env"; do
+  _zhc_source_env_file "$_zhc_env_candidate"
+done
+unset -f _zhc_source_env_file
+
 # ---- operator escalation destination — via the shared resolver (once) -------
 # CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat. Resolved ONCE here so
 # every escalation site below (QC gates, quality holds, org-chart failures, the

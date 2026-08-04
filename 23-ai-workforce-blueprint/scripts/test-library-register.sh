@@ -23,6 +23,12 @@
 #       WITHOUT the hash-content-manifest chain (--no-hash)
 #   12. C9: EMBEDDED_SOP_FLOOR is identical in hash-content-manifest.py and
 #       qc-completeness.sh (the two canonical-count owners must never drift)
+#   13. infra-shaped file (build-log/runbook stem) is NEVER auto-registered as
+#       a role, even though it satisfies every other discovery condition (a
+#       flat <dept>/<slug>.md file, not triple-hyphen, not a folder-form dup)
+#   14. an infra-stem entry that IS present in roles[] (a hand-edited/legacy
+#       entry, or one registered before its stem was added to _INFRA_STEMS)
+#       FAILS --check with a dedicated INFRA-STEM ROLE problem, not silence
 #
 # BASH harness; the gate itself is Python (no claude-/anthropic strings).
 
@@ -286,6 +292,70 @@ if [ -n "$HCM_FLOOR" ] && [ -n "$QC_FLOOR" ] && [ "$HCM_FLOOR" = "$QC_FLOOR" ]; 
 else
   die "EMBEDDED_SOP_FLOOR drifted: hash-content-manifest.py=$HCM_FLOOR vs qc-completeness.sh=$QC_FLOOR"
 fi
+
+# ── 13. infra-shaped file (build-log/runbook stem) is NEVER auto-registered ──
+# CHANGELOG-RESCUE-DEPT/RELAY-BRAIN-PATCH regression: a build log / operator
+# runbook sitting flat under a dept dir satisfies every OTHER role-discovery
+# condition (flat <dept>/<slug>.md, not triple-hyphen, no folder-form dup) —
+# only the _INFRA_STEMS denylist keeps it from being treated as a role. The
+# fixture below even echoes the real build log's "Roles (N):" line, which is
+# what a content-shape reader could mistake for role-bearing text; the gate
+# must never look at content shape here, only the filename stem.
+sb="$(make_sandbox)"
+printf '# Some Department — Build Log\n\n## v1.0\n\n**Roles (3):** `alpha`, `beta`, `gamma`. All done.\n' \
+  > "$sb/skill/$LIB/$DEPT/CHANGELOG-RESCUE-DEPT.md"
+rc="$(run_check "$sb")"
+[ "$rc" -eq 0 ] && pass "infra-shaped build-log file (CHANGELOG-RESCUE-DEPT stem) is NOT auto-registered as a role (rc 0, clean)" \
+                || die "infra-shaped file should NOT trip --check (expected rc 0), got $rc"
+( cd "$sb" && python3 "skill/scripts/$GATE" \
+    --index "skill/templates/role-library/_index.json" --apply --no-hash ) >/dev/null 2>&1
+REGISTERED="$(python3 - "$sb" "$DEPT" <<'PY'
+import json, sys
+sb, dept = sys.argv[1], sys.argv[2]
+d = json.load(open(f"{sb}/skill/templates/role-library/_index.json"))
+hit = any(r["dept"] == dept and r["slug"] == "CHANGELOG-RESCUE-DEPT" for r in d["roles"])
+print("YES" if hit else "NO")
+PY
+)"
+[ "$REGISTERED" = "NO" ] && pass "--apply does not add a roles[] entry for the infra-shaped file" \
+                          || die "--apply incorrectly registered the infra-shaped file as a role"
+rm -rf "$sb"
+
+# ── 14. infra-stem entry hand-planted in roles[] (legacy/pre-fix residue) ────
+# Proves the check() BACKSTOP, not just discovery: an infra-stem entry that is
+# ALREADY sitting in roles[] (exactly how CHANGELOG-RESCUE-DEPT/RELAY-BRAIN-PATCH
+# got in upstream — registered before their stems were added to _INFRA_STEMS)
+# must fail --check loudly, never sit there silently forever.
+sb="$(make_sandbox)"
+printf '# runbook\n' > "$sb/skill/$LIB/$DEPT/RELAY-BRAIN-PATCH.md"
+python3 - "$sb" "$DEPT" <<'PY'
+import json, sys
+sb, dept = sys.argv[1], sys.argv[2]
+p = f"{sb}/skill/templates/role-library/_index.json"
+d = json.load(open(p))
+d["roles"].append({
+    "slug": "RELAY-BRAIN-PATCH", "dept": dept, "title": "Relay Brain Patch",
+    "role_type": "specialist", "word_count": 10, "sop_count": 0, "sop_min": 1,
+    "path": f"templates/role-library/{dept}/RELAY-BRAIN-PATCH.md",
+    "capability_class": "WRITING", "vision_flag": False,
+})
+d["departments"][dept]["roles"] = sorted(set(d["departments"][dept]["roles"] + ["RELAY-BRAIN-PATCH"]))
+d["departments"][dept]["count"] = len(d["departments"][dept]["roles"])
+d["total_roles"] = d["total_roles"] + 1
+json.dump(d, open(p, "w"), indent=2)
+PY
+rc="$(run_check "$sb")"
+[ "$rc" -eq 7 ] && pass "infra-stem entry hand-planted in roles[] FAILS (rc 7, INFRA-STEM ROLE)" \
+                || die "infra-stem roles[] entry should FAIL --check (rc 7), got $rc"
+MSG="$( ( cd "$sb" && python3 "skill/scripts/$GATE" \
+    --index "skill/templates/role-library/_index.json" --check ) 2>&1 || true )"
+case "$MSG" in
+  *"INFRA-STEM ROLE"*"RELAY-BRAIN-PATCH"*)
+    pass "failure message names INFRA-STEM ROLE + the offending entry" ;;
+  *)
+    die "expected an INFRA-STEM ROLE message naming RELAY-BRAIN-PATCH, got: $MSG" ;;
+esac
+rm -rf "$sb"
 
 echo
 if [ "$fail" -eq 0 ]; then

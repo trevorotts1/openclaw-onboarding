@@ -841,6 +841,106 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------------------
+# (17) NO_LASTATTEMPTAT_VISIBILITY
+# A department can end up at status="building" with NO lastAttemptAt key at
+# all (e.g. the DEFECT #5 honesty floor in refresh-build-state-from-index.py
+# demotes a false "done" back to "building" without ever stamping
+# lastAttemptAt). Such an entry is invisible to BOTH the pending lane
+# (status != pending/failed) and the stale-timeout lane (requires
+# lastAttemptAt to compare "older than N minutes" against) — with every OTHER
+# department done, total_attention lands on 0 and the cron logs "nothing to
+# do" and exits clean forever. The fix routes a building-with-no-timestamp
+# department through the pending lane instead.
+# ---------------------------------------------------------------------------
+echo ""
+echo "--- (17) NO_LASTATTEMPTAT_VISIBILITY: a stuck building-dept with no lastAttemptAt must still get a resume dispatch ---"
+STATE_STUCK_NO_TIMESTAMP='{
+  "interviewComplete": true,
+  "interviewQc": {"status": "pass"},
+  "closeoutStatus": "pending",
+  "roleLibraryStatus": "pending",
+  "sopLibraryStatus": "pending",
+  "ownerChat": "111222333",
+  "agentName": "TestOrchestrator",
+  "departments": [
+    {"id": "alpha", "slug": "alpha", "status": "done"},
+    {"id": "bravo", "slug": "bravo", "status": "done"},
+    {"id": "charlie", "slug": "charlie", "status": "building"}
+  ]
+}'
+BOX17="$(_mkbox box17 "$STATE_STUCK_NO_TIMESTAMP" "alpha bravo")"
+_runbox "$BOX17" "$BOX17/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+CALLS17="$BOX17/calls.log"
+
+if grep -q "WORKFORCE-RESUME" "$CALLS17" 2>/dev/null; then
+  pass "17a: a [WORKFORCE-RESUME] dispatch fired for the stuck no-timestamp department"
+else
+  fail "17a: NO dispatch at all — the stuck department is still invisible (silent strand)"
+fi
+if grep -q "charlie" "$CALLS17" 2>/dev/null; then
+  pass "17b: the dispatched message names the stuck department (charlie) so the agent knows what to build"
+else
+  fail "17b: the dispatch did not name the stuck department"
+fi
+if grep -q "no pending/stale departments" "$BOX17/.openclaw/workspace/.workforce-build-state.log" 2>/dev/null; then
+  fail "17c: the log still claims 'no pending/stale departments' while one is stuck at building/no-timestamp"
+else
+  pass "17c: the log does not falsely claim there is nothing to do"
+fi
+
+echo ""
+echo "--- (17-MUT) MUTATION PROOF: pre-fix selection on the SAME fixture dispatches nothing ---"
+BOX17M="$(_mkbox box17m "$STATE_STUCK_NO_TIMESTAMP" "alpha bravo")"
+MUT17="$BOX17M/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
+_mutate "$MUT17" <<'PYEOF'
+import sys
+path = sys.argv[1]
+src = open(path).read()
+
+old_count = '''jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+  ] | length
+' "$STATE_FILE")'''
+new_count = '''jq -r '[.departments[] | select(.status == "pending" or .status == "failed")] | length' "$STATE_FILE")'''
+
+old_list = '''jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+    | .slug] | join(", ")
+' "$STATE_FILE")'''
+new_list = '''jq -r '[.departments[] | select(.status == "pending" or .status == "failed") | .slug] | join(", ")' "$STATE_FILE")'''
+
+if old_count not in src or old_list not in src:
+    sys.exit(1)
+src = src.replace(old_count, new_count, 1)
+src = src.replace(old_list, new_list, 1)
+open(path, "w").write(src)
+PYEOF
+mut17_rc=$?
+if (( mut17_rc != 0 )); then
+  fail "17-MUT: could not revert the pending-lane selection — cannot prove 17a-c discriminate"
+else
+  _runbox "$BOX17M" "$MUT17"
+  CALLS17M="$BOX17M/calls.log"
+  # doctor/config-get calls are unconditional preflight noise unrelated to the
+  # pending-lane selection under test; the discriminating signal is whether an
+  # actual resume message got dispatched.
+  if grep -q "^message send" "$CALLS17M" 2>/dev/null; then
+    fail "17-MUT: pre-fix selection still dispatched a message — 17a proves nothing ($(cat "$CALLS17M"))"
+  else
+    pass "17-MUT: pre-fix selection dispatches NO message on this fixture (silent strand reproduced) — 17a is a real, non-vacuous check"
+  fi
+  if grep -q "no pending/stale departments" "$BOX17M/.openclaw/workspace/.workforce-build-state.log" 2>/dev/null; then
+    pass "17-MUT: pre-fix log falsely claims 'no pending/stale departments' — 17c is a real, non-vacuous check"
+  else
+    fail "17-MUT: pre-fix log did not reproduce the false 'nothing to do' claim — 17c proves nothing"
+  fi
+fi
+
 fi  # FUNCTIONAL
 
 # ---------------------------------------------------------------------------
