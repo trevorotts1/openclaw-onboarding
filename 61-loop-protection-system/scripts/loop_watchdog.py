@@ -861,20 +861,42 @@ def _read_new_session_rows(led=None, max_files=40, max_bytes=1_000_000):
     return rows
 
 
-# Candidate paths to the provenance object on one session-transcript row, and to
-# the message payload / target-session identity fields. `message.provenance` is
-# the CONFIRMED nesting per the 2026-08-04 incident proof (message.provenance =
-# {kind, sourceTool, sourceSessionKey}); the other provenance paths are
-# defensive candidates for a differently-enveloped row, same posture as every
-# other plausible-schema constant in this file (_CRON_LAST_RUN_FIELDS,
-# _USAGE_TOTAL_FIELDS). The payload field name is NOT confirmed - read
-# defensively, multi-candidate, fail-soft; CONFIRM the exact shape on the
-# operator canary during burn-in.
+# Candidate paths to the fields D7 reads off one session-transcript row.
+# CONFIRMED live-box row shape (OpenClaw 2026.7.1-2, verified 2026-08-04 -
+# real captured sample, not a guess):
+#   row keys:     {type, id, parentId, timestamp, message}
+#   message keys: {role, content, timestamp, provenance}
+#   message.provenance = {kind:"inter_session", sourceSessionKey:"...",
+#                          sourceTool:"sessions_send", [sourceChannel:"..."]}
+#   message.role == "user" on a qualifying inbound row
+# The CONFIRMED path is listed FIRST in every tuple below; the remaining
+# candidates are defensive fallbacks for a differently-enveloped row, same
+# posture as every other plausible-schema constant in this file
+# (_CRON_LAST_RUN_FIELDS, _USAGE_TOTAL_FIELDS) - never a requirement.
+#
+# `sourceChannel` is OPTIONAL on the confirmed shape (present on one live
+# sample, absent on another) and is DELIBERATELY never read or required below
+# - its absence must never cause a miss.
+#
+# There is no confirmed per-run identifier field on this row shape (no
+# `runId`); the row's own `id` (confirmed present on every row) is used
+# instead - each inbound provenance-stamped delivery is exactly one row, so
+# its own id already uniquely identifies that one resend instance, which is
+# exactly what D7's "distinct run ids in the window" count needs.
+# `runId`/`run_id` are tried first only in case a future or differently-
+# enveloped row attaches one directly.
+#
+# The confirmed top-level row shape carries no `sessionKey`/`sessionId`
+# either; TARGET falls through to the transcript's own file path (below),
+# which already uniquely identifies the RECEIVING agent+session.
 _PROVENANCE_PATHS = ("message.provenance", "provenance", "data.provenance")
 _PAYLOAD_PATHS = ("message.content", "message.body", "message.text",
                   "content", "body", "text",
                   "data.content", "data.body", "data.text")
 _SESSION_TARGET_FIELDS = ("sessionKey", "sessionId")
+_TIMESTAMP_PATHS = ("timestamp", "ts", "message.timestamp")
+_RUN_ID_PATHS = ("runId", "run_id", "id")
+_ROLE_PATHS = ("message.role", "role")
 
 
 def _first_present(row, dotted_paths):
@@ -894,12 +916,14 @@ def collect_cross_run_sends(led=None):
     transcript - {source, target, hash, run_id, ts}. Only rows whose provenance
     carries sourceTool == 'sessions_send' count (kind, when present, must be
     'inter_session' - any other kind is a different delivery path and is
-    skipped, never guessed at). The payload is hashed via
-    C.cross_run_payload_hash and the raw text is NEVER assigned anywhere but
-    the argument to that one call - it is not placed in the returned dict, not
-    logged, and never reaches the ledger or a finding detail (a session
-    transcript can carry a live client credential pasted mid-conversation -
-    SKILL.md doctrine 3)."""
+    skipped, never guessed at); a role that is present and NOT 'user' is also
+    skipped (the confirmed shape's qualifying rows are role='user' - an
+    additional, non-fatal tightening: a MISSING role never excludes a row).
+    The payload is hashed via C.cross_run_payload_hash and the raw text is
+    NEVER assigned anywhere but the argument to that one call - it is not
+    placed in the returned dict, not logged, and never reaches the ledger or
+    a finding detail (a session transcript can carry a live client credential
+    pasted mid-conversation - SKILL.md doctrine 3)."""
     rows = _read_new_session_rows(led)
     out = []
     for row in rows:
@@ -911,6 +935,9 @@ def collect_cross_run_sends(led=None):
         kind = prov.get("kind")
         if kind is not None and str(kind) != "inter_session":
             continue
+        role = _first_present(row, _ROLE_PATHS)
+        if role is not None and str(role) != "user":
+            continue
         source = prov.get("sourceSessionKey") or prov.get("sourceSession") \
             or prov.get("source")
         if not source:
@@ -921,8 +948,8 @@ def collect_cross_run_sends(led=None):
             continue
         out.append({"source": str(source), "target": str(target),
                     "hash": C.cross_run_payload_hash(source, target, payload),
-                    "run_id": str(row.get("runId") or row.get("run_id") or ""),
-                    "ts": str(row.get("ts") or "")})
+                    "run_id": str(_first_present(row, _RUN_ID_PATHS) or ""),
+                    "ts": str(_first_present(row, _TIMESTAMP_PATHS) or "")})
     return out
 
 
@@ -1117,27 +1144,58 @@ def self_test():
 
         # D7 collect case: a provenance-stamped AGENT SESSION transcript (a
         # SEPARATE file in the SAME sessions dir - never the *.trajectory.jsonl
-        # stream above) carrying 3 resends of the SAME inter-session message
-        # (message.provenance.sourceTool == 'sessions_send') across DISTINCT run
-        # ids, ~34s apart (the incident's own cadence fingerprint), must yield
-        # real D7 evidence and a P1 LP-A8 finding - and the raw payload text
-        # must NEVER survive into the evidence dict, the ledger, or a finding
-        # detail (only its hash may).
+        # stream above), shaped EXACTLY like the CONFIRMED live-box row (OpenClaw
+        # 2026.7.1-2, verified 2026-08-04): top-level {type, id, parentId,
+        # timestamp, message}; message {role, content, timestamp, provenance} -
+        # carrying 3 resends of the SAME inter-session message
+        # (message.provenance.sourceTool == 'sessions_send', role='user') ~34s
+        # apart (the incident's own cadence fingerprint; timestamps use the
+        # CONFIRMED `timestamp` field, never the old guessed `ts`; run identity
+        # comes from the row's own `id` - there is no `runId` on the real
+        # shape). ONE resend row carries `sourceChannel` (optional, per the
+        # live sample), the other two omit it entirely - both must match
+        # (absence must never cause a miss). An assistant REPLY row (no
+        # provenance at all) and a role='assistant' row that carries
+        # provenance anyway (a malformed-shape probe) must both be excluded.
+        # The raw payload text must NEVER survive into the evidence dict, the
+        # ledger, or a finding detail (only its hash may).
         base = t0 + timedelta(hours=1)
         raw_payload = "please pick up ticket 4471 and reply when the queue clears"
+
+        def _resend_row(row_id, parent_id, dt, with_channel):
+            stamp = (base + timedelta(seconds=dt)).isoformat()
+            prov = {"kind": "inter_session", "sourceSessionKey": "agent:orch:main",
+                    "sourceTool": "sessions_send"}
+            if with_channel:
+                prov["sourceChannel"] = "telegram"
+            return {"type": "message", "id": row_id, "parentId": parent_id,
+                    "timestamp": stamp,
+                    "message": {"role": "user", "content": raw_payload,
+                               "timestamp": stamp, "provenance": prov}}
+
         resend_rows = [
-            {"type": "message", "ts": (base + timedelta(seconds=dt)).isoformat(),
-             "sessionKey": "agent:dept:main", "runId": "resend-r%d" % i,
-             "message": {"content": raw_payload,
+            _resend_row("msg-r0", None, 0, with_channel=True),
+            _resend_row("msg-r1", "msg-r0", 34, with_channel=False),
+            _resend_row("msg-r2", "msg-r1", 68, with_channel=False),
+            {"type": "message", "id": "msg-r2-reply", "parentId": "msg-r2",
+             "timestamp": (base + timedelta(seconds=69)).isoformat(),
+             "message": {"role": "assistant", "content": "on it",
+                        "timestamp": (base + timedelta(seconds=69)).isoformat()}},
+            {"type": "message", "id": "msg-bad-role", "parentId": None,
+             "timestamp": (base + timedelta(seconds=200)).isoformat(),
+             "message": {"role": "assistant", "content": raw_payload,
+                        "timestamp": (base + timedelta(seconds=200)).isoformat(),
                         "provenance": {"kind": "inter_session",
-                                       "sourceTool": "sessions_send",
-                                       "sourceSessionKey": "agent:orch:main"}}}
-            for i, dt in enumerate((0, 34, 68))
+                                      "sourceSessionKey": "agent:orch:main",
+                                      "sourceTool": "sessions_send"}}},
         ]
         (sess_dir / "dept-target.jsonl").write_text(
             "\n".join(json.dumps(r) for r in resend_rows) + "\n", encoding="utf-8")
         sends = collect_cross_run_sends(led)
-        assert len(sends) == 3 and all(s["source"] == "agent:orch:main" for s in sends)
+        assert len(sends) == 3, "expected exactly 3 - the reply and bad-role rows must be excluded"
+        assert all(s["source"] == "agent:orch:main" for s in sends)
+        assert {s["run_id"] for s in sends} == {"msg-r0", "msg-r1", "msg-r2"}, \
+            "run identity must come from the row's own id (no runId on the confirmed shape)"
         assert not any(raw_payload in json.dumps(s) for s in sends), \
             "the raw message body must NEVER survive into D7 evidence"
         f7 = run_detectors({"sends": sends}, C.load_skill_config("thresholds.json"),
@@ -1146,8 +1204,9 @@ def self_test():
         assert not any(raw_payload in json.dumps(x) for x in f7)
         sends2 = collect_cross_run_sends(led)
         assert sends2 == []  # the slice was offset-consumed
-        print("  D7 collect case: PASS (3 provenance-stamped resends -> real "
-              "evidence -> P1 LP-A8; raw payload never in evidence or a "
+        print("  D7 collect case: PASS (3 confirmed-shape resends -> real evidence "
+              "-> P1 LP-A8; sourceChannel present-or-absent both match; reply + "
+              "bad-role rows excluded; raw payload never in evidence or a "
               "finding; slice offset-consumed)")
 
         led.close()

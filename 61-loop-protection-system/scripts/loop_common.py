@@ -71,16 +71,35 @@ def sha256_of_value(value) -> str:
 def parse_iso8601(s):
     """ISO-8601 -> aware UTC datetime, or None on any miss (never a crash - a bad
     or missing timestamp just drops the row, exactly like every other defensive
-    reader in this skill). A naive stamp (no offset) is treated as UTC."""
-    if not s:
+    reader in this skill). A naive stamp (no offset) is treated as UTC.
+
+    Also accepts a NUMERIC epoch timestamp - seconds or milliseconds,
+    disambiguated by magnitude - as a defensive fallback, including a
+    numeric-looking STRING (the evidence-dict convention throughout this
+    skill stringifies every field, so a numeric `timestamp` value arrives
+    here as a string, not a raw int/float). Added 2026-08-04 alongside D7's
+    switch to the CONFIRMED `timestamp` field name (live-box row shape): the
+    field NAME is confirmed, but its VALUE shape is not, so this stays
+    fail-soft in both directions rather than assuming ISO-only."""
+    if s is None or s == "" or isinstance(s, bool):
         return None
     try:
         dt = datetime.fromisoformat(str(s).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
     except (ValueError, TypeError):
+        pass
+    try:
+        v = float(s)
+    except (TypeError, ValueError):
         return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+    if v > 10_000_000_000:  # 13-digit ms-epoch vs 10-digit s-epoch
+        v = v / 1000.0
+    try:
+        return datetime.fromtimestamp(v, timezone.utc)
+    except (OverflowError, OSError, ValueError):
+        return None
 
 
 # --------------------------------------------------------------------------- #
@@ -338,7 +357,13 @@ def self_test():
     assert parse_iso8601("2026-08-04T00:00:00Z") is not None
     assert parse_iso8601("2026-08-04T00:00:00Z") == parse_iso8601("2026-08-04T00:00:00+00:00")
     assert parse_iso8601("not-a-date") is None and parse_iso8601(None) is None
-    print("  parse-iso8601 case: PASS (valid parses to UTC, bad/missing -> None, never a crash)")
+    assert parse_iso8601(1700000000) == parse_iso8601(1700000000000), \
+        "s-epoch and ms-epoch of the SAME instant must parse identically"
+    assert parse_iso8601("1700000000") == parse_iso8601(1700000000), \
+        "a numeric-looking STRING epoch (the evidence-dict convention) must parse too"
+    assert parse_iso8601(True) is None, "a bool is never a timestamp"
+    print("  parse-iso8601 case: PASS (valid ISO parses to UTC; numeric epoch - int, "
+          "float, or numeric string, s or ms - also parses; bad/missing/bool -> None)")
 
     a1 = cross_run_payload_hash("agent:orch:main", "agent:dept:main", "please pick up  ticket 42")
     a2 = cross_run_payload_hash("agent:orch:main", "agent:dept:main", "please  pick up ticket 42   ")

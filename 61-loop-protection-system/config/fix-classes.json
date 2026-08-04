@@ -53,7 +53,7 @@
     {
       "id": "LF-9", "loop_class": "LP-A8", "tier": 1,
       "title": "abort the resending session via the native sessions.abort RPC (no-op-safe when nothing is active) + park the source unit",
-      "reversible_in": "unpark the source unit; sessions.abort has nothing to undo - a no-active-run call is already a documented safe no-op ({ok:true,abortedRunId:null})",
+      "reversible_in": "unpark the source unit; sessions.abort has nothing to undo - a no-active-run call is already a documented safe no-op (ok=true, abortedRunId=null, status='no-active-run')",
       "proof": "the 2026-08-04 incident: sessions_send's hardcoded 30000ms fallback timeout (no timeoutSeconds passed) was misread as delivery failure and resent byte-identical as a brand-new top-level run 6-8x ~34s apart, past 154,000 input tokens with zero brake; config-free (touches no client config, only the one named session), so it applies for real in-tick like LF-6 - never pkill node, never a gateway restart"
     }
   ],
