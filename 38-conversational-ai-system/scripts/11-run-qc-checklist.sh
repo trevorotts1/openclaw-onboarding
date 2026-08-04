@@ -188,6 +188,15 @@ fi
 section "AGENTS.md marker blocks"
 AGENTS_MD="${AGENTS_MD:-${HOME}/.openclaw/AGENTS.md}"
 [ -f "$AGENTS_MD" ] || AGENTS_MD="${MASTER_FILES_DIR:-}/AGENTS.md"
+# DEFECT FIX: several of the qc-*.sh gates this checklist invokes below (F17
+# segmentation, F21 multi-tenant, U-1 tool-gating, U-2 workflow-exits, U-6
+# client-test-mode, ...) are content-version-aware -- they assert a marker is
+# present in the box's LIVE AGENTS.md, not just in the shipped source script.
+# Each resolves its OWN AGENTS_MD default when unset (05-update-agents-md.sh's
+# own platform default), which can disagree with the path this section just
+# resolved. Export it so every sub-gate this checklist runs checks the SAME
+# file this section itself just checked -- one checklist run, one live file.
+export AGENTS_MD
 if [ -f "$AGENTS_MD" ]; then
   for marker in "INBOUND_WEBHOOK_CLASSIFICATION" "SKILL38_RUNTIME_ROUTING" "workflow-builder" "SKILL38_ZHC_TAG_PREFIX" "STEP_1_35_AGGRESSION_PRE_ROUTING" "STEP_1_42_INTERRUPTS_AND_FAQ" "STEP_2_0_GEO_QUALIFICATION" "STEP_2_5_CRM_FIELD_WRITE"; do
     if grep -q "$marker" "$AGENTS_MD"; then
