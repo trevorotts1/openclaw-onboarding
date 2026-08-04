@@ -25,7 +25,13 @@
 #       questions should refuse, not warn"
 #   R5  a missing qc-interview-completion.py ALSO refuses (fail-closed), never
 #       silently permits completion when the evidence check cannot run
-#   R6  mutation proof: reverting update-interview-state.sh's evidence gate
+#   R6  STANDARD-FIRST EDIT-MODE (PHASE 7): a genuine 8-question edit-mode
+#       interview on a buildType=standard-first box with standardPrebuild done
+#       STILL marks complete (edit-mode exemption lifts the 25-35 count floor;
+#       anti-fabrication substance floor + all other checks still apply) —
+#       completion must not trade a false-complete for a false-incomplete on
+#       the standard-first lane
+#   R7  mutation proof: reverting update-interview-state.sh's evidence gate
 #       makes R2 go RED (the incident fixture marks complete again)
 #
 # Self-contained: builds its own HOME/workspace, never touches a real box,
@@ -240,6 +246,85 @@ run_complete() {
   else
     fail "R5: expected exit=87 + interviewComplete=false when the QC script itself is missing" \
       "got rc=$RC interviewComplete=$COMPLETE_AFTER; output tail: $(echo "$OUT" | tail -5)"
+  fi
+)
+
+# ── R6: standard-first EDIT-MODE interview completes (PHASE 7) ───────────────
+# A genuine 8-question edit-mode interview (the owner reviewed the PREBUILT
+# department set instead of answering a 25-35 question from-scratch intake) on
+# a buildType=standard-first box with standardPrebuild.status=done must mark
+# complete: the edit-mode exemption lifts the 25-35 count floor while the
+# anti-fabrication substance floor and every other check stay in force. The
+# transcript deliberately does NOT carry askedBy=interview-web, so the
+# structured-coverage standard cannot fire — this exercises the conversational
+# edit-mode path end-to-end through update-interview-state.sh --complete.
+# HERMETIC: the openclaw CLI is shimmed (like T8-T10 in
+# test-interview-experience.sh) so the build-kick dispatch can NEVER reach a
+# real gateway/chat from a test run.
+(
+  SANDBOX="$(mktemp -d -t evidence-gate-r6.XXXXXX)"
+  trap 'rm -rf "$SANDBOX"' EXIT
+  make_sandbox "$SANDBOX" >/dev/null
+
+  SHIM_DIR="$SANDBOX/.shim-bin"
+  mkdir -p "$SHIM_DIR"
+  cat > "$SHIM_DIR/openclaw" << 'SHIM'
+#!/usr/bin/env bash
+# Test shim: record the call, never touch a real gateway.
+echo "openclaw $*" >> "${SHIM_LOG:-/dev/null}"
+exit 0
+SHIM
+  chmod +x "$SHIM_DIR/openclaw"
+
+  {
+    echo "# Workforce Interview Answers"
+    echo ""
+    for i in $(seq 1 8); do
+      echo "---"
+      echo "**Q** Review question $i: walk through department $i with me - keep, tune, or remove?"
+      echo "**A:** A real owner answer for question $i: keep this department and focus it on our core service line and main offer."
+      echo ""
+    done
+  } > "$SANDBOX/.openclaw/workspace/company-discovery/workforce-interview-answers.md"
+  jq -n '{
+    "version": 1,
+    "interviewComplete": false,
+    "buildType": "standard-first",
+    "standardPrebuild": {
+      "status": "done",
+      "standardReadyAt": "2026-08-04T09:00:00Z",
+      "agentRegistration": "deferred"
+    },
+    "ownerChat": 9999999999,
+    "ownerName": "Test Owner",
+    "companyName": "TestCo LLC",
+    "industry": "personal-pro-dev",
+    "agentName": "TestCEO",
+    "brand_evokes": "confident",
+    "customer_feeling": "empowered",
+    "brand_descriptors": "bold, direct, warm",
+    "ideal_customer": "Black women entrepreneurs over 40",
+    "unique_differentiator": "We build what big agencies ignore",
+    "departments": [{"slug": "marketing", "status": "prebuilt"}],
+    "interviewProgress": {
+      "lastQuestionNumber": 8,
+      "lastQuestionPhase": "phase5.5",
+      "lastQuestionAskedBy": "TestCEO",
+      "lastQuestionAt": "2026-08-04T10:00:00Z"
+    }
+  }' > "$SANDBOX/.openclaw/workspace/.workforce-build-state.json"
+
+  OUT=$( ( HOME="$SANDBOX" SHIM_LOG="$SANDBOX/.shim.log" PATH="$SHIM_DIR:$PATH" bash "$UPD" --complete ) 2>&1 )
+  RC=$?
+  COMPLETE_AFTER=$(jq -r '.interviewComplete' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  QC_STATUS_AFTER=$(jq -r '.interviewQc.status // "absent"' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+  EDIT_GRANTED=$(jq -r '.interviewQc.editModeExemption.granted // false' "$SANDBOX/.openclaw/workspace/.workforce-build-state.json" 2>/dev/null || echo "unreadable")
+
+  if [ "$RC" -eq 0 ] && [ "$COMPLETE_AFTER" = "true" ] && [ "$QC_STATUS_AFTER" = "pass" ] && [ "$EDIT_GRANTED" = "true" ]; then
+    pass "R6: standard-first edit-mode 8-Q/all-fields interview → exit 0, interviewComplete=true, interviewQc.status=pass, edit-mode exemption granted (count floor lifted, substance + all other checks applied)"
+  else
+    fail "R6: expected exit=0 + interviewComplete=true + qcStatus=pass + editModeExemption.granted=true" \
+      "got rc=$RC interviewComplete=$COMPLETE_AFTER qcStatus=$QC_STATUS_AFTER editGranted=$EDIT_GRANTED; output tail: $(echo "$OUT" | tail -8)"
   fi
 )
 
