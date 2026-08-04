@@ -243,5 +243,48 @@ class TestSafetyGateRefusesUnapproved(unittest.TestCase):
         mock_req.assert_not_called()
 
 
+# ---------------------------------------------------------------------------
+# _get_token() placeholder-shadow fix (2026-08-03) — see TERMINOLOGY.md and
+# check-ghl-pit-liveness.sh's _is_placeholder() (the reference implementation
+# this resolver's shape rules mirror). A config-seeded placeholder inherited
+# into the live process env at gateway launch must never be accepted as a real
+# credential; the real credential in a lower-priority alias (or the secrets
+# store, via a different resolver layer) must still be found.
+# ---------------------------------------------------------------------------
+PLACEHOLDER_SHORT = "pit-abc123"
+REAL_LOOKING_PIT = "pit-real1234567890REALTOKEN"
+
+
+class TestGetTokenPlaceholderShadow(unittest.TestCase):
+    def setUp(self):
+        from cli_anything.gohighlevel.utils import ghl_client
+        self.ghl_client = ghl_client
+        for name in ghl_client._LOCATION_PIT_ENV_NAMES:
+            os.environ.pop(name, None)
+
+    def tearDown(self):
+        for name in self.ghl_client._LOCATION_PIT_ENV_NAMES:
+            os.environ.pop(name, None)
+
+    def test_is_placeholder_shape(self):
+        self.assertTrue(self.ghl_client._is_placeholder(PLACEHOLDER_SHORT))
+        self.assertTrue(self.ghl_client._is_placeholder(""))
+        self.assertFalse(self.ghl_client._is_placeholder(REAL_LOOKING_PIT))
+
+    def test_placeholder_alone_exits_nonzero_and_never_echoes_value(self):
+        os.environ["GOHIGHLEVEL_API_KEY"] = PLACEHOLDER_SHORT
+        with self.assertRaises(SystemExit):
+            self.ghl_client._get_token()
+
+    def test_placeholder_in_preferred_alias_falls_through_to_real_legacy_alias(self):
+        os.environ["GOHIGHLEVEL_API_KEY"] = PLACEHOLDER_SHORT  # placeholder, preferred
+        os.environ["GHL_API_KEY"] = REAL_LOOKING_PIT           # real, legacy alias
+        self.assertEqual(self.ghl_client._get_token(), REAL_LOOKING_PIT)
+
+    def test_real_value_in_preferred_alias_resolves_immediately(self):
+        os.environ["GOHIGHLEVEL_API_KEY"] = REAL_LOOKING_PIT
+        self.assertEqual(self.ghl_client._get_token(), REAL_LOOKING_PIT)
+
+
 if __name__ == "__main__":
     unittest.main()

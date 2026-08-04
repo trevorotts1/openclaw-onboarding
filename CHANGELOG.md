@@ -1,3 +1,57 @@
+## [v21.7.7]  -  2026-08-03  -  GHL credential resolvers now SKIP placeholder-shaped values instead of trusting first-non-empty
+
+### Why
+
+`~/.openclaw/openclaw.json` `env.vars` holds COPIES of GoHighLevel credentials that the gateway
+process inherits into its live environment at launch. Those copies rot / get seeded with the
+10-character documentation placeholder `pit-abc123`. `TERMINOLOGY.md` and
+`38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh` already document/enforce
+"skip placeholder-shaped values, prefer `secrets/.env`" for that one runtime monitor — but the
+Python GHL credential resolvers used by Skills 06, 44, and 48 still did plain first-non-empty-wins,
+so the SAME class of bug (a non-empty placeholder silently outranking a live credential, producing a
+false "PIT is DEAD/EXPIRED" alarm) remained live in every other GHL-calling code path.
+
+A box-side audit on 2026-08-03 (full recursive scan of `openclaw.json`, not just the top-level
+`env.vars` block) found the CURRENT instance of that placeholder set had already been cleaned up by
+an earlier pass — zero placeholder-shaped GHL config copies remain. This release closes the
+underlying code defect so the next placeholder seeded there can no longer shadow a live credential
+in any of this repo's own resolvers, rather than relying on a one-time manual cleanup.
+
+### What changed
+
+- **`_is_placeholder()` added to the four Python GHL credential resolvers** that walk the 11-alias
+  Location-PIT chain: `06-ghl-install-pages/tools/ghl_media.py`,
+  `48-facebook-ad-generator/tools/ghl_media.py`,
+  `06-ghl-install-pages/tools/ghl_bulk_workflow_enroll.py`, and
+  `44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py`. Each
+  ports the SAME three placeholder shapes as `check-ghl-pit-liveness.sh`'s proven reference
+  implementation (shorter than 20 characters; `pit-abc`/`changeme`/`xxx`/`your-`/`your_` prefixes;
+  a `_here`/`-here` suffix; an angle-bracket token) rather than inventing new rules.
+- **Placeholder-shaped candidates are skipped, not returned** — resolution keeps scanning remaining
+  aliases in the live environment, then falls through to a direct `secrets/.env` (and other
+  canonical env-store) read, before declaring the credential missing. `06-ghl-install-pages/tools/
+  ghl_media.py`'s `_scan_env_stores()` applies the same skip to store-file hits.
+  `resolve_location_id()` is unchanged (location ids are identifiers, not the credential class this
+  defect targets).
+- **`TERMINOLOGY.md`** gets an additive "Resolver algorithm" section defining the placeholder shapes
+  and naming the four files that now implement them (the doctrine paragraphs about the authoritative
+  store and the three distinct Agency PITs were already correct on `main` as of v21.7.4/v21.7.5 — no
+  change needed there beyond correcting one now-stale "still hold that placeholder" sentence to
+  reflect the current, already-remediated config state).
+- **34 new tests** across `test_ghl_media_cred_resolution.py` (14), `test_ghl_bulk_workflow_enroll.py`
+  (6), and `test_ecosystem_cli.py` (4), plus the existing 06-ghl-install-pages media suite, prove
+  BOTH directions: a placeholder can no longer shadow a live value (including the exact defect shape
+  — placeholder in the live env, real value in `secrets/.env`), and a real value already present
+  resolves exactly as before (no regression). All pre-existing tests in the four touched modules
+  (87 total across the affected suites) still pass unchanged.
+
+### Not touched
+
+No live credential value was read, printed, or modified — this release is resolver-code and
+documentation only. No config deletion was needed on this pass (the placeholder config copies this
+defect class produces were already absent by the time of the audit); the fix targets the resolver
+behavior so a FUTURE placeholder seed cannot repeat the false alarm.
+
 ## [v21.7.6]  -  2026-08-03  -  Status-writer resolution defects (A/B/D) + closeout QC predicate aligned to needs-review
 
 `refresh-build-state-from-index.py` is the single writer of department
