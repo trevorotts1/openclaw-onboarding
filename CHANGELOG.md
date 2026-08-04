@@ -1,3 +1,29 @@
+## [v21.7.13]  -  2026-08-04  -  fix(skill-32): qc-command-center-setup.sh's unbounded `find $HOME` no longer hangs a routine roll for 20+ minutes
+
+`qc-command-center-setup.sh` ran two unconditional `find $HOME /data -maxdepth 4 ...`
+scans on every QC pass (one for the Command Center checkout directory, one for its
+`package.json`). `maxdepth 4` does not bound the COST of a real, in-use Mac's `$HOME`:
+`~/Library`, iCloud/Dropbox sync mirrors, and node_modules-heavy dev trees explode
+into thousands of entries within four levels. Measured 20+ minutes PER find on a
+real box (40+ minutes for the pair) — a routine roll read as a hang with no useful
+signal.
+
+**Fix:** check the same known/candidate Command Center locations
+`update-skills.sh`'s `cc_resolve_existing_dir()` already uses FIRST (the common case
+never touches `find` at all — proven near-instant against a fixture with the
+canonical checkout present), then fall back to a depth- and time-bounded (`timeout`/
+`gtimeout` when available), heavy-dir-pruned (`Library`, `node_modules`, `.git`,
+`.Trash`, `.cache`, `.npm`) `find` only when nothing is found at a known location.
+The check's purpose (WARN-only signal that Command Center is/isn't cloned locally)
+is unchanged.
+
+**Drive-by fix (found while testing the above):** the script's own port-reachability
+check trips `set -u` — `CC_PORT: unbound variable` — on every box that sources the
+real `lib-shared.sh` (its `resolve_platform_paths()` never exports `CC_PORT`; only
+this script's own fallback stub does). Defaulted it to `4000` to match the fallback.
+
+32-command-center-setup/skill-version.txt bumped independently: v12.9.51 -> v12.9.52.
+
 ## [v21.7.12]  -  2026-08-04  -  Upstream three box-local fixes: infra files miscounted as roles, a HOP-4 visibility gap, and run-closeout.sh's missing env bootstrap
 
 Three defects were found and fixed box-locally on one client's box to unblock her.
