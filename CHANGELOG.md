@@ -1,3 +1,74 @@
+## [v21.7.18]  -  2026-08-04  -  fix(ghl-mcp): root-vs-owner git failures were silently swallowed, defeating the mirror-migration self-heal and masquerading as an innocent pin failure
+
+Wave-2 fleet guardrail #1 of 3 (the worst of the three), found live tonight
+while unblocking a VPS box the roll could not converge — and the SAME disease
+as the root-cron bug fixed earlier the same night.
+
+**The defect.** `scripts/ghl-mcp-autostart.sh`'s `ensure_repo_at_pin()` has a
+correct self-healing MIRROR MIGRATION block that repoints a box's MCP
+`origin` from the retired third-party upstream to the org-controlled mirror.
+Every git command in that function carried a blanket `2>/dev/null`. When the
+script is invoked as ROOT against a checkout owned by a DIFFERENT uid — the
+fleet-standard VPS shape, where `$MCP_DIR` is owned by uid 1000/node — every
+one of those git commands hits git's "detected dubious ownership in
+repository at ..." fatal, and the `2>/dev/null` swallowed it: no WARN, no
+FATAL, no trace anywhere. The repoint block read the resulting empty
+`$_origin_url` as "nothing to repoint" and silently no-op'd; the pin-verify
+fetch/`cat-file` calls immediately below it failed for the identical
+swallowed reason and returned the generic `PIN_MISMATCH — cannot check out
+vetted commit`. The operator then reasonably blamed the pin gate, which was
+entirely innocent — the pin was fine, the box was simply never allowed to
+touch its own checkout.
+
+**The fix, three parts, as scoped:**
+  1. **Stop swallowing.** The MIRROR MIGRATION block's `git remote get-url
+     origin` / `git remote set-url origin` calls now CAPTURE stderr instead of
+     discarding it, and surface any failure they did not already anticipate
+     as a WARN — so a future "git just failed here for some other reason" can
+     never vanish again.
+  2. **Detect the ownership/root mismatch explicitly, and fail loud.** A new
+     `assert_ownership_matches_runtime_user()` guard runs BEFORE any git
+     command touches an existing checkout: if this process is uid 0 AND
+     `$MCP_DIR` is owned by a different uid, it refuses immediately, logs the
+     exact condition, and reports a new `ROOT_OWNERSHIP_MISMATCH` STATUS
+     naming the remedy verbatim — `docker exec -u node <ctr> bash ...` on
+     VPS/Docker, never `sudo` on Mac. It does NOT trip when root already owns
+     the checkout (root itself is not the defect; the DISAGREEMENT is), when
+     there is no checkout yet (a fresh clone as root is not this failure
+     mode), or when ownership cannot be determined (never block on a guess).
+  3. **Make the repo's own roll/update path consistent.** The sanctioned
+     convention already existed at `scripts/activate-loop-protection.sh:118`
+     (`docker exec -u node <ctr> ...` on a root-refusal). `install.sh` Step
+     14a and `update-skills.sh`'s post-wiring STATUS reaper now both route
+     `ROOT_OWNERSHIP_MISMATCH` to a DEDICATED warning naming that remedy,
+     instead of letting it fall through to the generic
+     "re-vet upstream and update config/ghl-mcp-pin.env" message — the exact
+     misdiagnosis that hid this defect in the first place.
+
+**FLEET CONTEXT for the next operator (Trevor, 2026-08-04):** every VPS
+provisioned BEFORE the org mirror existed has `origin` pointing at the
+retired upstream — confirmed identical on two other VPS boxes the same
+night, in addition to the box this was diagnosed on. Before this fix, a root
+invocation on any of those boxes could not repoint `origin`, could not verify
+the pin, and reported a misleading `PIN_MISMATCH`. Wave 2 must run
+`ghl-mcp-autostart.sh` as the box user (VPS/Docker: `docker exec -u node
+<ctr>`), never as root — the guard now makes a root invocation fail loud with
+the remedy instead of silently no-op'ing, but running it correctly the first
+time is still what actually converges a box.
+
+**Mutation-proven, both directions:** `tests/unit/ghl-mcp-root-ownership-
+guard.test.sh` proves the guard against 6 cases (no checkout yet, same-uid
+checkout, the `GHL_MCP_ALLOW_ROOT=1` escape hatch, the exact defect signature
+— uid 0 vs owner uid 1000 — fails loud with the remedy, a root-owned checkout
+run as root does NOT trip it, and an undeterminable owner does not block on a
+guess) and confirms `ensure_repo_at_pin()`'s caller special-cases the new
+rc=3 signal before the generic PIN_MISMATCH/BUILD_FAILED branches.
+`tests/unit/ghl-mcp-root-ownership-status-routing.test.sh` proves both
+`install.sh` and `update-skills.sh` route the new STATUS to its dedicated
+remedy (never the generic pin message), with an anti-vacuity control
+confirming an unrelated status (`HEALTHY_ALREADY`) still routes normally.
+Falsified against the pre-fix tree: fails closed (markers/behavior absent).
+
 ## [v21.7.17]  -  2026-08-04  -  fix(ghl-mcp): the runtime pm2 gate reported a false FATAL on every correctly-configured pm2 box (stop_exit_codes scalar 0)
 
 Wave-2 fleet guardrail #3 of 3, found live tonight while unblocking a VPS box the

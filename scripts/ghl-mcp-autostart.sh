@@ -431,9 +431,67 @@ EOF
   return 0
 }
 
+# >>> GHL-MCP-ROOT-OWNERSHIP-GUARD-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-root-ownership-guard.test.sh)
+# ── 0. Root/ownership mismatch guard (P0, proven live 2026-08-04) ────────────
+# DEFECT (worst of the three found tonight): every git command below used to
+# carry a blanket `2>/dev/null`. When this script runs as ROOT against an
+# EXISTING $MCP_DIR checkout owned by a different uid — the fleet-standard VPS
+# shape, where the box user is uid 1000/node — every single git command in
+# this function hits git's "detected dubious ownership in repository at ..."
+# fatal, and that `2>/dev/null` swallowed it with NO WARN, NO FATAL, NO trace.
+# The MIRROR MIGRATION repoint below then silently no-op'd (an empty
+# $_origin_url reads as "no origin to repoint"), the pin-verify fetch/cat-file
+# calls below it failed for the identical swallowed reason, and the operator
+# saw only the downstream "PIN_MISMATCH — cannot check out vetted commit" and
+# reasonably blamed the pin gate, which was innocent. This is the SAME disease
+# as the root-cron bug fixed earlier the same night: a privilege mismatch that
+# a swallowed stderr turns into an unrelated-looking symptom two layers away.
+#
+# FIX: detect the mismatch EXPLICITLY, before any git command touches an
+# existing checkout, rather than trying to pattern-match git's (locale-
+# dependent) stderr text. FAIL LOUD through the same report()/STATUS contract
+# every other refusal in this script uses, naming the exact remedy — the
+# convention already documented at scripts/activate-loop-protection.sh:118:
+# run this script as the box user, never as root (`docker exec -u node <ctr>
+# bash ...` on VPS/Docker).
+_ghl_owner_uid() {  # <path> -> numeric uid, or empty if it cannot be read
+  local p="$1" u=""
+  command -v stat >/dev/null 2>&1 || { printf ''; return 0; }
+  # GNU stat: -c %u   BSD/macOS stat: -f %u — try both; first one that answers wins.
+  u="$(stat -c %u "$p" 2>/dev/null || true)"
+  [ -n "$u" ] || u="$(stat -f %u "$p" 2>/dev/null || true)"
+  printf '%s' "$u"
+}
+
+assert_ownership_matches_runtime_user() {
+  [ -d "$MCP_DIR/.git" ] || return 0              # nothing checked out yet — a fresh clone as root is not this failure mode
+  [ "$(id -u 2>/dev/null || echo '')" = "0" ] || return 0   # not root — this disease cannot occur
+  [ "${GHL_MCP_ALLOW_ROOT:-}" = "1" ] && return 0  # explicit escape hatch (tests / a deliberate root-owned box)
+  local _owner_uid; _owner_uid="$(_ghl_owner_uid "$MCP_DIR")"
+  [ -n "$_owner_uid" ] || return 0                 # cannot determine — do not block on a guess
+  [ "$_owner_uid" = "0" ] && return 0               # already root-owned — no ownership mismatch, git will not refuse
+
+  log "############################################################"
+  log "## FATAL: running as root (uid 0) against $MCP_DIR, which is owned by uid $_owner_uid."
+  log "## Every git command below would hit git's dubious-ownership refusal, and"
+  log "## this script used to swallow that with 2>/dev/null -- surfacing only as an"
+  log "## unrelated downstream PIN_MISMATCH. Refusing to proceed rather than repeat that."
+  log "## REMEDY (VPS/Docker): run this script as the box user, not root:"
+  log "##   docker exec -u node <ctr> bash $SELF_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
+  log "## (the sanctioned convention documented at scripts/activate-loop-protection.sh:118)."
+  log "## Mac: this script should never be invoked with sudo."
+  log "############################################################"
+  report "ROOT_OWNERSHIP_MISMATCH" \
+    "(running as root (uid 0) against $MCP_DIR, owned by uid $_owner_uid -- every git command would be silently refused by git's dubious-ownership guard. Re-run as the box user: docker exec -u node <ctr> bash <this script> on VPS/Docker (see scripts/activate-loop-protection.sh:118); never with sudo on Mac.)"
+  return 1
+}
+# <<< GHL-MCP-ROOT-OWNERSHIP-GUARD-END
+
 # ── 1. Clone + PIN the community MCP working tree (idempotent) ───────────────
 ensure_repo_at_pin() {
   command -v git >/dev/null 2>&1 || { log "git not on PATH — cannot pin/build GHL MCP"; return 1; }
+  assert_ownership_matches_runtime_user || return 3
   mkdir -p "$(dirname "$MCP_DIR")" 2>/dev/null || true
 
   if [ ! -d "$MCP_DIR/.git" ]; then
@@ -451,13 +509,26 @@ ensure_repo_at_pin() {
   # its history and would break the day the pin is garbage-collected there —
   # the exact failure the mirror exists to prevent. Repoint it here, on the next
   # run of this script, before anything is fetched.
-  local _origin_url
-  _origin_url="$(git -C "$MCP_DIR" remote get-url origin 2>/dev/null || echo '')"
+  #
+  # FIX (a): the git errors below used to be swallowed unconditionally
+  # (`2>/dev/null`). They are now CAPTURED and, on a failure this function did
+  # not already anticipate (the ownership guard above handles the specific
+  # root-vs-owner case), surfaced as a WARN rather than silently discarded —
+  # so any future "git just failed here for some other reason" is never
+  # invisible again.
+  local _origin_url _origin_out _origin_rc=0 _seturl_out
+  _origin_out="$(git -C "$MCP_DIR" remote get-url origin 2>&1)" || _origin_rc=$?
+  if [ "$_origin_rc" = "0" ]; then
+    _origin_url="$_origin_out"
+  else
+    _origin_url=""
+    [ -n "$_origin_out" ] && log "WARN: 'git remote get-url origin' in $MCP_DIR failed (rc=$_origin_rc): $_origin_out"
+  fi
   if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
-    if git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>/dev/null; then
+    if _seturl_out="$(git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>&1)"; then
       log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
     else
-      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL"
+      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL: ${_seturl_out:-<no output>}"
     fi
   fi
 
@@ -1569,7 +1640,13 @@ fi
 
 ensure_repo_at_pin
 _PIN_RC=$?
-if [ "$_PIN_RC" = "2" ]; then
+if [ "$_PIN_RC" = "3" ]; then
+  # ROOT_OWNERSHIP_MISMATCH was already reported (loud, with the exact remedy)
+  # inside assert_ownership_matches_runtime_user() — never re-report it as the
+  # generic PIN_MISMATCH/BUILD_FAILED below, which is exactly the innocent-
+  # looking symptom that hid this root cause in the first place.
+  exit 0
+elif [ "$_PIN_RC" = "2" ]; then
   report "PIN_MISMATCH" "(cannot check out vetted commit ${GHL_MCP_VETTED_COMMIT:0:12} at $MCP_DIR — refusing to build/start an unpinned third-party MCP. Re-vet upstream and update config/ghl-mcp-pin.env.)"
   exit 0
 elif [ "$_PIN_RC" != "0" ]; then

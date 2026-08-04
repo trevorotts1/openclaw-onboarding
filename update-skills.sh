@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.17"
+ONBOARDING_VERSION="v21.7.18"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.17 - safe_json_edit
+# v21.7.18 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -7697,6 +7697,13 @@ PYEOF
     *"=DEAF"*)                      echo "  ⚠ GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) -- every agent init will burn the full connectionTimeoutMs until fixed. ${GHL_MCP_STATUS_LINE}" ;;
     *TOKEN_REJECTED*)               echo "  ⚠ GHL rejected the PIT -- the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${GHL_MCP_STATUS_LINE}" ;;
     *PIN_MISMATCH*|*PIN_INVALID*)   echo "  ⚠ GHL MCP refused to start: the vetted commit pin could not be honoured -- an UNPINNED third-party MCP is never started. ${GHL_MCP_STATUS_LINE}" ;;
+    # DEFECT 1 (proven live 2026-08-04): before this STATUS existed, running
+    # ghl-mcp-autostart.sh as root against a checkout owned by a different uid
+    # silently swallowed every git error and surfaced ONLY as the generic
+    # PIN_MISMATCH above -- which sent the operator to re-vet an innocent pin.
+    # This dedicated line names the real remedy so a fleet roll never repeats
+    # that misdiagnosis.
+    *ROOT_OWNERSHIP_MISMATCH*)      echo "  ⚠ GHL MCP refused to start: this roll invoked ghl-mcp-autostart.sh as ROOT against a checkout owned by a different uid -- every git command was refused by git's dubious-ownership guard. FIX: never invoke it as root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${GHL_MCP_STATUS_LINE}" ;;
     *STARTED_UNHEALTHY*)            echo "  ⚠ GHL MCP service installed but /health not green yet -- crash-only restart will retry. ${GHL_MCP_STATUS_LINE}" ;;
     *BUILD_FAILED*)                 echo "  ⚠ GHL MCP build failed -- the PREVIOUS dist was left intact. ${GHL_MCP_STATUS_LINE}" ;;
     *)                              echo "  GHL MCP autostart ran. ${GHL_MCP_STATUS_LINE}" ;;
