@@ -40,6 +40,22 @@ class ReconcileError(RuntimeError):
     """An unsafe or incomplete reconciliation state."""
 
 
+class UnprovisionedError(ReconcileError):
+    """A box that has not finished workforce provisioning yet.
+
+    Raised ONLY where the reconciler needs a source it cannot get because no
+    legitimate ZHC department/identity artifact exists for this client (no
+    company_dir resolves, or it resolves but carries no usable identity) —
+    i.e. this box's workforce interview has not completed. That is a KNOWN,
+    VALID state (2026-08-04 fix): a box mid-provisioning is expected to have
+    empty dashboard departments and a placeholder company name for a while.
+    It is NOT a data-integrity problem, and callers MUST NOT treat it the same
+    as a genuine ReconcileError (invalid/corrupt existing data, or refusing to
+    clobber operator/client data) — see main()'s distinct exit code and the
+    caller contract documented there.
+    """
+
+
 def _load_json(path: Path, *, missing: Any = None, empty: Any = None) -> Any:
     if not path.exists():
         return missing
@@ -273,7 +289,14 @@ def reconcile(
     departments = _load_json(departments_path, missing=[], empty=[])
     if departments and not _valid_departments(departments):
         raise ReconcileError(
-            "existing departments.json is non-empty but invalid; refusing to clobber operator/client data"
+            f"existing departments.json is non-empty but invalid; refusing to clobber "
+            f"operator/client data at {departments_path}. REMEDIATION: inspect the file; "
+            f"if it is not real operator/client data (corrupt, truncated, or a malformed "
+            f"edit), move it aside and let the next update repopulate it from this "
+            f"client's ZHC artifact: "
+            f"mv {departments_path} {departments_path}.invalid.bak && re-run the updater. "
+            f"If it IS real data, repair its schema by hand (each entry needs a non-empty "
+            f"slug/id and name, with no duplicate normalized slugs) and re-run."
         )
     needs_departments = not departments
 
@@ -329,8 +352,15 @@ def reconcile(
         zhc_config = zhc_payload
 
     if needs_departments and source_departments is None:
-        raise ReconcileError(
-            "DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client ZHC artifact exists"
+        # No company_dir resolved (or it resolved but has no departments.json)
+        # is the EXPECTED state for a box whose workforce interview has not
+        # completed yet: this client has no ZHC artifact to source from
+        # because there is nothing to source — not because anything broke.
+        raise UnprovisionedError(
+            "DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client "
+            "ZHC artifact exists — this box's workforce provisioning has not produced a "
+            "departments.json for this client yet (interview not complete, or not yet run "
+            "past department selection)"
         )
 
     identity = _resolve_identity(state_payload, zhc_config)
@@ -343,8 +373,16 @@ def reconcile(
     # as the qmd fix. So only `needs_name` requires a resolved identity here;
     # `needs_logo` degrades to advisory below.
     if needs_name and not identity["name"]:
-        raise ReconcileError(
-            "IDENTITY UNRESOLVED: exact placeholder company name remains and no legitimate provisioning identity exists"
+        # Same root cause as the DEPARTMENTS UNRESOLVED case above: no real
+        # company name exists yet in EITHER .workforce-build-state.json or the
+        # matching ZHC company-config.json because this box's provisioning
+        # identity has not been established (interview not complete). Expected,
+        # not broken.
+        raise UnprovisionedError(
+            "IDENTITY UNRESOLVED: exact placeholder company name remains and no legitimate "
+            "provisioning identity exists — this box has not recorded a real company name "
+            "in .workforce-build-state.json or a matching ZHC company-config.json yet "
+            "(workforce provisioning not complete)"
         )
 
     next_company = dict(company)
@@ -426,6 +464,25 @@ def reconcile(
 
 
 def main() -> int:
+    """CALLER CONTRACT (2026-08-04 fix — see update-skills.sh Step U6d):
+
+    0   reconciled, or already healthy (no-op).
+    2   UNPROVISIONED: this box has not completed workforce provisioning yet,
+        so no legitimate ZHC department/identity artifact exists to source
+        from. This is a KNOWN, VALID state, not a data-integrity failure — the
+        caller MUST degrade this to a plain advisory WARNING (does not
+        withhold the skills-content stamp, does not latch a non-zero final
+        verdict).
+    1   a genuine reconciliation failure: invalid/corrupt existing runtime
+        data this script correctly refuses to overwrite (see the FATAL
+        message for the exact remediation command), or an I/O error. The
+        condition is real and needs an operator action, but per the caller's
+        contract it must NOT withhold the skills-content stamp either — the
+        caller latches a non-fatal-to-the-stamp, non-zero FINAL exit code
+        (mirroring the existing GHL-MCP-runtime-conformance pattern) so the
+        roll still completes and stamps, and reports precisely what it could
+        not reconcile.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--workspace", type=Path, required=True)
     parser.add_argument("--master-files", type=Path)
@@ -438,6 +495,13 @@ def main() -> int:
             args.master_files.expanduser() if args.master_files else None,
             args.command_center_dir.expanduser(),
         )
+    except UnprovisionedError as exc:
+        print(
+            f"[cc-runtime] WARN: {exc} — this is a KNOWN, VALID un-provisioned state, "
+            f"not a content-integrity failure; the roll should continue and stamp.",
+            file=sys.stderr,
+        )
+        return 2
     except (OSError, ReconcileError) as exc:
         print(f"[cc-runtime] FATAL: {exc}", file=sys.stderr)
         return 1
