@@ -1243,6 +1243,33 @@ fi
 #   browsable. lock_assert (below) FAILS CLOSED in full-install mode when that lock
 #   signal is absent, rather than start a shell the middleware cannot lock. Only the
 #   REAL-workforce materialization in BLOCK B stays gated on interviewComplete.
+#
+# STANDARD-FIRST ONBOARDING (buildType == "standard-first"): this BLOCK A is
+# what makes the DAY-ONE interview link possible. Standard-first sequence
+# (operator runbook; see also the send-interview-link.sh header in
+# 23-ai-workforce-blueprint/scripts/):
+#   1. onboard the box
+#   2. run-full-install.sh deploys the LOCKED CC shell + tunnel (this BLOCK A;
+#      the installer ordering already supports shell-first — no code change
+#      needed here for standard-first, only this documented ordering)
+#   3. prebuild-standard-workforce.sh (EXPLICIT OPERATOR CONSENT) materializes
+#      the standard canonical-floor department foundation from
+#      templates/role-library/ (NEVER from another client's tree —
+#      no-co-mingling is binding) and records build-state
+#      standardPrebuild.status = "done". The floor count is read live from the
+#      canonical naming map — never hardcoded here.
+#   4. prove-zhe STANDARD_READY pass
+#   5. OPENCLAW_DASHBOARD_URL confirmed in the box env
+#   6. bash send-interview-link.sh -> the owner receives the interview link on
+#      DAY ONE, before answering a single question
+#   Under standard-first the lock invariant above is UNCHANGED: the shell still
+#   302s every non-/interview, non-/onboarding request to /interview until
+#   interviewComplete (the Command Center middleware additionally exempts a
+#   read-only /preview surface under the ratified Option L1 amendment; the lock
+#   itself is never loosened). The standard-first prebuild is an
+#   operator-triggered, library-sourced materialization — it is NOT the BLOCK B
+#   real-workforce seeding, which stays gated on interviewComplete below. Do
+#   not reorder, loosen, or "unlock" anything in this block for standard-first.
 
 # ----------------------------------------------------------------------
 # PHASE 1 — Prerequisites (pm2 + openclaw doctor --fix)
@@ -1504,6 +1531,12 @@ fi
 # and provisioning must NOT invent one. A future reader: the interview-only CC view
 # in front of an empty board pre-closeout is the intended experience, NOT a bug —
 # do not remove this gate or "unlock" the shell to make the board show early.
+# STANDARD-FIRST NOTE (buildType == "standard-first"): the day-one interview
+# link is delivered THROUGH this lock, never around it — the locked shell is
+# exactly what the link opens, and the read-only company preview is an
+# additive Command Center middleware exemption (Option L1), not a loosening of
+# this gate. Everything this gate protects below (REAL-workforce seeding) is
+# still gated on interviewComplete in both lanes.
 #
 # --update-only is EXEMPT: it only refreshes an ALREADY-built CC (git pull / npm /
 # db:push) and must keep working for provisioned boxes whose flag predates this gate.
@@ -1578,6 +1611,15 @@ fi
 # real content. Building any of it pre-interview would produce the DEFAULT floor
 # under company 'default' - a false deliverable - which is exactly why it stays
 # behind the gate while the shell (BLOCK A) does not.
+# STANDARD-FIRST NOTE (buildType == "standard-first"): this block's gating is
+# UNCHANGED. The standard-first prebuild is a SEPARATE operator-triggered
+# pipeline (23-ai-workforce-blueprint/scripts/prebuild-standard-workforce.sh,
+# explicit operator consent, sourced EXCLUSIVELY from templates/role-library/);
+# it is NOT this installer's BLOCK B seeding and it never runs from here. At
+# interviewComplete the standard-first lane applies the owner's diff (deprovision
+# confirmed declines, materialize custom additions, personalize the kept
+# departments) — again NOT via this block. Do not route any pre-interview
+# materialization through this installer.
 
 # ----------------------------------------------------------------------
 # PHASE 3 — Workspace department folders
