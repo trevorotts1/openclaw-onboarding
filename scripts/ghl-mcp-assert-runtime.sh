@@ -116,6 +116,10 @@ else
   MCP_DIR="$HOME/mcp-servers/ghl-community-mcp"
   LOG_DIR="$HOME/Library/Logs/ghl-mcp"
 fi
+# Test/override hook, same convention as GHL_MCP_DIR / GHL_MCP_PLIST below: lets
+# the VPS+pm2 branch (section B) be exercised in CI without a real /data mount.
+# Real boxes never set this — PLATFORM is always detected from the filesystem.
+PLATFORM="${GHL_MCP_PLATFORM_OVERRIDE:-$PLATFORM}"
 # Test/override hooks so this gate can be exercised against a simulated box.
 MCP_DIR="${GHL_MCP_DIR:-$MCP_DIR}"
 LOG_DIR="${GHL_MCP_LOG_DIR_OVERRIDE:-$LOG_DIR}"
@@ -215,7 +219,30 @@ for a in apps:
         continue
     env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
     print("__script__=%s" % (env.get("pm_exec_path") or a.get("pm_exec_path") or ""))
-    print("__stop_exit_codes__=%s" % ",".join(str(x) for x in (env.get("stop_exit_codes") or [])))
+    # DEFECT 3 (proven live 2026-08-04): pm2 v7.0.1 stores a single-element
+    # stop_exit_codes as the BARE SCALAR 0, not the list [0]. The old
+    # (env.get("stop_exit_codes") or []) treated the falsy int 0 as ABSENT and
+    # silently dropped it, so a CORRECTLY configured box (stop_exit_codes=0)
+    # produced an empty __stop_exit_codes__ field and a false FATAL downstream
+    # (the runtime gate reported stop_exit_codes as unset). Verified live: an
+    # isolated disposable pm2 app (exits 0, autorestart:true) was NOT
+    # restarted -- restart_time stayed 0 for 14+ seconds -- so crash-only
+    # semantics genuinely worked; only this parser was wrong. None (the dict
+    # key truly absent) is the only shape that means "nothing declared"; a
+    # real value -- scalar 0, "0", or a list -- must survive even when it is
+    # falsy. NOTE: this Python body is wrapped in a bash SINGLE-quoted string
+    # below, so these comments must never contain a literal apostrophe or
+    # single-quote mark -- one did once, and it silently closed the bash
+    # string early, splicing the rest of the Python source out onto the
+    # command line as literal bash commands.
+    _sec = env.get("stop_exit_codes")
+    if _sec is None or _sec == "":
+        _sec_list = []
+    elif isinstance(_sec, (list, tuple)):
+        _sec_list = list(_sec)
+    else:
+        _sec_list = [_sec]
+    print("__stop_exit_codes__=%s" % ",".join(str(x) for x in _sec_list))
     for k in ALLOWED:
         print("%s=%s" % (k, env.get(k) or ""))
     break

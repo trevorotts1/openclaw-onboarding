@@ -1,3 +1,40 @@
+## [v21.7.17]  -  2026-08-04  -  fix(ghl-mcp): the runtime pm2 gate reported a false FATAL on every correctly-configured pm2 box (stop_exit_codes scalar 0)
+
+Wave-2 fleet guardrail #3 of 3, found live tonight while unblocking a VPS box the
+roll could not converge. This one would have fired on EVERY pm2 box in wave 2.
+
+**The defect.** `scripts/ghl-mcp-assert-runtime.sh`'s pm2 record filter read
+`env.get("stop_exit_codes") or []`. pm2 v7.0.1 stores a single-element
+`stop_exit_codes` as the BARE SCALAR `0`, not the list `[0]`. Python's `or []`
+treats the falsy int `0` as absent, so the filter emitted an empty
+`__stop_exit_codes__` field for a CORRECTLY configured box, and the runtime
+gate reported `pm2 stop_exit_codes='<unset>'` FATAL — on a box where crash-only
+restart semantics were genuinely working. Verified live: an isolated,
+disposable pm2 test app (exits 0, `autorestart:true`) was NOT restarted —
+`restart_time` stayed 0 for 14+ seconds. Only the checker was wrong.
+
+**The fix.** The filter now distinguishes "genuinely absent" (`None`, the only
+shape that means nothing was declared) from a real, possibly-falsy value: a
+bare scalar (`0`, `"0"`), or a list (`[0]`, `[0,1]`), all normalize correctly
+and a value that is present but does NOT include `0` is still reported as the
+real (bad) value it is — never silently swallowed in either direction.
+
+**Also added:** a `GHL_MCP_PLATFORM_OVERRIDE` test hook (same convention as
+the file's existing `GHL_MCP_DIR`/`GHL_MCP_PLIST` overrides), so the VPS+pm2
+branch of this gate can finally be exercised end to end in CI — before this
+fix, PLATFORM was hardcoded off a real `/data/.openclaw/openclaw.json` check,
+so the pm2 branch had never run in any test at all, on this machine or in CI.
+
+**Mutation-proven, both directions, two layers:** `tests/unit/ghl-mcp-runtime-
+stop-exit-codes.test.sh` — (A) the embedded filter in isolation against every
+shape (bare scalar `0`, string `"0"`, list `[0]`, list `[0,1]`, absent, JSON
+`null`, and a genuinely bad `[1,2]`); (B) the real gate end to end against a
+simulated VPS+pm2 box (fake `pm2` on PATH, no real daemon touched) — a
+correctly-configured box now PASSES, a genuinely misconfigured one still
+FAILS (anti-vacuity control), and the pre-existing working shape (`[0]`)
+still passes (no regression). Falsified against the pre-fix tree: fails
+closed (markers absent) by design.
+
 ## [v21.7.16]  -  2026-08-04  -  fix(skill-38): the AGENTS.md pointer-stanza rewriter is now WIRED IN, and 9 qc gates finally check the LIVE box instead of the shipped source
 
 Two-part defect, both halves required (either alone leaves it broken):
