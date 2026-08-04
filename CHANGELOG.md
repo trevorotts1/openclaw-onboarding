@@ -1,3 +1,122 @@
+## [v21.7.9]  -  2026-08-03  -  The role library could not pass its own gate: 16 templates authored, and the wiring gate stops failing prose
+
+Two independent defects were blocking client builds at `sopLibraryStatus=failed`. Neither was
+box degradation -- the affected clients' files were byte-identical to the canonical templates.
+The templates themselves could not pass, and the wiring gate was failing files for containing
+authored prose.
+
+### 1. Sixteen role templates scored zero against the library gate
+
+`verify-library-gate.sh` delegates its SOP verdict to `qc-completeness.sh::embedded_sop_count()`,
+which requires each Section-9 SOP block to carry **>= 5 of 7** structured fields (`When-to-run` /
+`Frequency` / `Inputs` / `Steps` / `Outputs` / `Hand-to` / `Failure-mode`) inside a file of at
+least 7168 B. A cohort of templates -- the add-on roles from the 48/49/51/56/42 engines plus all
+of `rescue-rangers` -- was authored in a compact, summarised style: real content, but one or two
+fields per block. Their siblings in the same departments were authored properly, which is why
+this was invisible until a client's build sat on it.
+
+Measured against the gate's own parser (post-token-substitution, exactly as the gate sees a built
+box), **16 canonical non-exempt role templates scored `passing=0`**, and they account for **every**
+gated failure in the entire library -- there were none outside these six departments:
+
+| department | template | before | after |
+|---|---|---|---|
+| marketing | `sales-page-assets-specialist` | 13377 B, 4 blk, fields [1,1,1,2] | 35324 B, 6 blk, 7/7, **p6** |
+| marketing | `signature-funnel-specialist` | 11300 B, 4 blk, [1,1,1,2] | 33331 B, 6 blk, 7/7, **p6** |
+| paid-advertisement | `direct-response-ad-copywriter` | 4565 B, **no Section 9**, under floor | 22786 B, 5 blk, 7/7, **p5** |
+| paid-advertisement | `facebook-instagram-ad-run-producer` | 5744 B, **no Section 9**, under floor | 22812 B, 5 blk, 7/7, **p5** |
+| personal-assistant | `personal-coach` | 14741 B, 6 blk, [2,2,2,2,2,3] | 42749 B, 8 blk, 7/7, **p8** |
+| personal-assistant | `task-priority-manager` | 14678 B, 5 blk, [4,4,4,4,4] | 30936 B, 5 blk, 7/7, **p5** |
+| personal-assistant | `travel-logistics-specialist` | 12524 B, 5 blk, [3,3,3,3,3] | 31138 B, 5 blk, 7/7, **p5** |
+| presentations | `qc-specialist-signature-presentations` | 10307 B, 4 blk, [0,1,0,1] | 35572 B, 4 blk, 7/7, **p4** |
+| presentations | `signature-presentation-architect` | 16207 B, 5 blk, [1,1,2,1,3] | 44875 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `diagnostician` | 7374 B, **no Section 9** | 22306 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `director-of-rescue-rangers` | 9338 B, **no Section 9** | 25860 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `qc-postmortem-specialist` | 8613 B, **no Section 9** | 23971 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `structured-fix-operator` | 7737 B, **no Section 9** | 21927 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `ticket-clerk` | 9257 B, **no Section 9** | 24718 B, 5 blk, 7/7, **p5** |
+| web-development | `sales-page-assets-specialist` | 16068 B, 5 blk, [1,1,0,1,2] | 38668 B, 5 blk, 7/7, **p5** |
+| web-development | `signature-funnel-specialist` | 14248 B, 5 blk, [1,1,0,1,2] | 36028 B, 5 blk, 7/7, **p5** |
+
+Every block reaches **7/7** where the gate needs 5, and `passing == block count` on every file.
+No template that passed before fails now. By the index's own count, roles below the embedded-SOP
+floor drop from **9 to 2**. Independently re-measured against the current gate parser after this
+branch was rebased four times (onto v21.7.5, then v21.7.6 after PR #828 landed, then v21.7.7 after
+PR #836 landed, then v21.7.8 after PR #838 landed -- each concurrent merge taking the version
+number this branch had just claimed): same 16 files, same before/after numbers, zero regressions
+across the other 436 role templates in the library.
+
+**These files are the working instructions real client agents follow, so the bar was substance,
+not the counter.** Each SOP was grounded in this repo's own source of truth for that role rather
+than invented: `universal-sops/funnel-craft`, `sales-page-craft` and `fb-ad-craft`; the
+`MASTER-*-QC-AUTOFAIL` rulesets; the 49/51/56 engine MASTERDOCs and their `prove_*.py` provers;
+and the binding `rescue-rangers` department SOPs (the nine-field contract, the 25/day cap,
+FIX-RESCUE-05 tiers and budgets, `rescue_ledger.py`, the ledger/board/aging/digest machinery).
+Named scripts, auto-fail codes, thresholds and phase ids are verified against those files. Every
+pre-existing domain specific was preserved and expanded, never replaced. The five Rescue Rangers
+roles interlock: each role's `Outputs`/`Hand to` is exactly the next role's `Inputs`.
+
+Grounding the content in the sources also surfaced three real corrections: a fourth
+signature-presentation prover (`prove_sp_routing.py`, `AF-SP-TYPE-UNDECLARED`) that both
+presentation templates omitted while claiming "three fail-closed provers"; a stale contradiction
+about `AF-INTAKE-BATCH` that disagreed with its own file and with `SOP-SIGPRES-01`; and the
+granular Phase-3 auto-fail codes that the compact summary had collapsed into one umbrella row.
+
+Token sets are byte-identical to baseline in all 16 files -- no new `{{TOKEN}}` name was
+introduced, so no unsubstitutable token can zero a file at build time.
+
+Why this could not be fixed on a box: PRD 2.12's boundary gate refuses SOP authoring for
+canonical departments (`populate-sops-from-manifest.py` logs `[SOP-BOUNDARY-GATE] REFUSE`) --
+canonical departments are copy-from-template only, so any box-local edit is both a doctrine
+violation and overwritten by the next roll. Upstream content was the only fix.
+
+### 2. The wiring gate failed authored prose, and leaked a real stub
+
+`verify-wiring.sh`'s MATERIALIZED check tested the substring `[PENDING`. That is not a stub
+signature -- it is a substring of authored prose. Nine canonical templates ship `[PENDING` as
+subject matter, most visibly the `qc-specialist` auto-fail battery line *"`[PENDING]` markers in
+live content"*, so fully-instantiated 12-71 KB `how-to.md` files were failed as unfilled stubs.
+
+The same check also **missed a real stub**: a `how-to.md` carrying only the `how-to.md (stub)`
+title contains no `[PENDING` at all and passed materialization -- a fail-open hole shipping
+alongside the false positive.
+
+The gate now tests `STUB_MARKERS`, the two signatures the stub writers actually emit:
+`FILL FROM LIBRARY` -- the dash-free tail shared by all three PENDING headers, so the hyphen
+(`build-workforce.py:5637`), em-dash (`create_role_workspaces.py:259`, `add-role.sh:377`) and
+**OWNER-REQUESTED** (`build-workforce.py:2801`) forms are all caught without enumerating dash
+variants -- and `how-to.md (stub)`. This is the same predicate `build-workforce.py:6541` already
+uses to build `PENDING-SOPS.md`, so the wiring gate and the pending manifest finally agree on
+what a stub is.
+
+Proven in **both** directions in `test-wiring-gate-role-dir-walk.sh` section E, with each case
+first run against the pre-fix gate to confirm it genuinely bites:
+
+- **E1** -- all four real stub forms fail `rc=2`, with the failure attribution asserted so a case
+  cannot pass for the wrong reason. Pre-fix, the stub-title form **leaked**.
+- **E2** -- all four shipped prose forms pass `rc=0`. Pre-fix, all four **failed**.
+- **E3** -- the shipped library carries 9 prose hits and **zero** real stub signatures, so the
+  assertion is grounded in the real library and will fire if a template ever ships a true stub.
+
+The suite is hermetic: `HOME` is redirected into a fixture, it refuses to run if `/data/.openclaw`
+exists, and it asserts the real `~/.openclaw` listing is unchanged afterwards. 47 assertions pass
+(re-run clean after each rebase).
+
+No collision with PR #828: that PR's merged content never touched `verify-wiring.sh` (confirmed
+directly against main as merged, not assumed from the PR diff).
+
+### Known-remaining (not fixed here)
+
+`_index.json` registers **7** roles for `rescue-rangers`, but two of them --
+`CHANGELOG-RESCUE-DEPT` and `RELAY-BRAIN-PATCH` -- are department documents, not roles; the
+department's own changelog says *"Roles (5)"*. They are the only two entries still below the
+embedded-SOP floor. Root cause: `register-library-additions.py`'s `_INFRA_STEMS` set (which
+already excludes `how-to-use-this-department`, `00-START-HERE`, `TOOLS`, `SOUL`, ...) does not
+cover these two stems, so they are discovered and registered as roles. The fix is to add both
+stems to `_INFRA_STEMS` and re-run `--apply`, which would take the department's `expected_roles`
+from 7 to 5. Left out of this change deliberately: it is a roster-classification defect rather
+than a template-content one, and it lands in files another open PR is holding.
+
 ## [v21.7.8]  -  2026-08-03  -  A stale UPDATE PENDING flag can no longer swallow the AGENTS.md self-heal (companion fix to v21.7.5)
 
 A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker) proved `update-skills.sh` runs cleanly

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# test-wiring-gate-role-dir-walk.sh — regression suite for verify-wiring.sh v1.0.6
+# test-wiring-gate-role-dir-walk.sh — regression suite for verify-wiring.sh v1.0.6/v1.0.7
 #
 # Covers the two assertions that made the wiring gate unpassable, and the
 # anti-regression cases that prove the fix did NOT loosen the gate.
@@ -16,6 +16,13 @@
 #      departments are in that position: master-orchestrator ("Single Occupant —
 #      No Sub-Roles") and bugs (3 flat specialists, the intake clerk is the
 #      entry point).
+#
+#   E. STUB DETECTION must key on the signatures the stub WRITERS emit, not on the
+#      bare substring "[PENDING" — which is also a substring of AUTHORED PROSE that
+#      canonical templates ship ("`[PENDING]` markers in live content"). Section E
+#      proves the predicate in BOTH directions: E1 every stub form the repo can write
+#      is still caught, E2 every prose form the repo ships is ignored, E3 the shipped
+#      library itself carries prose hits and zero real stub signatures.
 #
 #   ANTI-REGRESSION (must still FAIL):
 #      - a real role folder with a thin how-to.md            -> rc 2
@@ -287,6 +294,116 @@ run_gate research
 # verdict — the point of the case is that runtime dirs alone are worth zero roles.
 expect_rc "runtime dirs alone do not satisfy the zero-role-dirs assertion" 6
 gate_says "no-role-dirs" "the failure is 'no-role-dirs', proving runtime dirs are not counted"
+
+# --- E: stub-marker detection, proven in BOTH directions ----------------------
+# v1.0.7. The gate used to test the bare substring "[PENDING", which is not a stub
+# signature — it is a substring of AUTHORED PROSE. Canonical role-library templates
+# legitimately discuss PENDING markers as subject matter, so fully-instantiated
+# 12-71 KB how-to.md files were failed as stubs and the wiring gate blocked completed
+# builds. The gate now tests the two signatures the stub WRITERS actually emit
+# ("FILL FROM LIBRARY" and "how-to.md (stub)" — see STUB_MARKERS in verify-wiring.sh).
+#
+# A one-directional test is not proof. Both directions are asserted below:
+#   E1  every stub form this repo can WRITE is still caught      (must fail rc=2)
+#   E2  every prose form this repo SHIPS is ignored              (must pass rc=0)
+# Each E1 fixture is >= HOW_TO_MIN_BYTES so size can never be what fails it, and the
+# attribution is asserted, so a case cannot pass for the wrong reason.
+
+# marked_how_to <path> <first-line> — a >=3072B how-to.md whose first line is <first-line>.
+marked_how_to() {
+  local path="$1" first="$2"
+  { printf '%s\n' "$first"
+    for _i in $(seq 1 120); do
+      printf 'padding line %s written only to clear the three-kilobyte size floor.\n' "$_i"
+    done
+  } > "$path"
+  local sz
+  sz=$(wc -c < "$path" | tr -d ' ')
+  if [[ "$sz" -lt 3072 ]]; then
+    bad "fixture $path is only ${sz}B — it would fail on size, not on the marker"
+  fi
+}
+
+echo ""
+echo "[E1] every stub form the repo can WRITE is still caught (rc=2)"
+# The four signatures, each traced to the code that emits it.
+_stub_case() {
+  local label="$1" first_line="$2"
+  reset_fixture
+  healthy_dept research
+  add_runtime_dirs research
+  mkdir -p "$DEPTS/research/02-survey-specialist"
+  marked_how_to "$DEPTS/research/02-survey-specialist/how-to.md" "$first_line"
+  run_gate research
+  expect_rc "$label" 2
+  gate_says "pending-placeholder" "  ^ attributed to the stub marker, not to size"
+}
+_stub_case "hyphen form (build-workforce.py:5637)" \
+  '# Survey Specialist - how-to.md  [PENDING - FILL FROM LIBRARY]'
+_stub_case "em-dash form (create_role_workspaces.py:259, add-role.sh:377)" \
+  '# Survey Specialist — how-to.md  [PENDING — FILL FROM LIBRARY]'
+_stub_case "OWNER-REQUESTED form (build-workforce.py:2801)" \
+  '# Survey Specialist - how-to.md  [PENDING - OWNER-REQUESTED CUSTOM ROLE - FILL FROM LIBRARY]'
+_stub_case "stub-title form (shared-utils/create-role-workspaces.py:145)" \
+  '# Survey Specialist — how-to.md (stub)'
+
+echo ""
+echo "[E2] every prose form the repo SHIPS is ignored (rc=0)"
+# These strings are verbatim from canonical role-library templates that ship today.
+# Pre-fix, each of these ALONE failed a complete role as an unfilled stub.
+_prose_case() {
+  local label="$1"
+  shift
+  reset_fixture
+  healthy_dept research
+  add_runtime_dirs research
+  mkdir -p "$DEPTS/research/02-survey-specialist"
+  { printf '%s\n' '# Survey Specialist'
+    printf '%s\n' "$@"
+    for _i in $(seq 1 120); do
+      printf 'authored operating procedure line %s with real substance.\n' "$_i"
+    done
+  } > "$DEPTS/research/02-survey-specialist/how-to.md"
+  run_gate research
+  expect_rc "$label" 0
+}
+_prose_case "qc-specialist auto-fail battery prose is not a stub" \
+  '1. **Auto-fail battery (hard layer, runs FIRST):** A critical defect forces FAIL' \
+  'regardless of averages. Examples: missing required fields, broken integrations,' \
+  '`[PENDING]` markers in live content, unresolved errors in outputs.'
+_prose_case "presentations slide-copy prose is not a stub" \
+  '**Failure mode:** If slides_copy.md is not complete (has [PENDING] placeholders in' \
+  'more than 10% of slides), the DA review cannot be meaningfully completed.'
+_prose_case "graphics pricing-gap prose is not a stub" \
+  '- **Action:** Document the gap in PRICING.md as a `[PENDING]` entry so it is visible.'
+_prose_case "all three prose forms together are still not a stub" \
+  '`[PENDING]` markers in live content, unresolved errors in outputs.' \
+  'has [PENDING] placeholders in more than 10% of slides' \
+  'Document the gap in PRICING.md as a `[PENDING]` entry so it is visible.'
+
+echo ""
+echo "[E3] the shipped templates that triggered the false failure are prose, not stubs"
+# Ground the fix in the real library rather than in hand-written fixtures: the
+# templates carrying "[PENDING" must carry NO real stub signature. If a future
+# template ever ships a genuine stub marker, this assertion fires.
+_LIB="$(cd "$SCRIPT_DIR/.." && pwd)/templates/role-library"
+if [[ -d "$_LIB" ]]; then
+  _prose_files=$(grep -rlF -- '[PENDING' "$_LIB" 2>/dev/null | wc -l | tr -d ' ')
+  _stub_files=$(grep -rlF -e 'FILL FROM LIBRARY' -e 'how-to.md (stub)' "$_LIB" 2>/dev/null | wc -l | tr -d ' ')
+  if [[ "$_prose_files" -gt 0 ]]; then
+    ok "$_prose_files shipped template(s) contain '[PENDING' prose (the false-failure source)"
+  else
+    bad "expected shipped templates carrying '[PENDING' prose — found none"
+  fi
+  if [[ "$_stub_files" -eq 0 ]]; then
+    ok "ZERO shipped templates carry a real stub signature — every '[PENDING' hit was prose"
+  else
+    bad "$_stub_files shipped template(s) carry a real stub signature — investigate before shipping"
+    grep -rlF -e 'FILL FROM LIBRARY' -e 'how-to.md (stub)' "$_LIB" 2>/dev/null | sed 's/^/        | /' >&2
+  fi
+else
+  echo "  SKIP: role-library not found at $_LIB"
+fi
 
 # --- B: reachability for departments whose roster defines no Director ---------
 echo ""
