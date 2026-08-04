@@ -809,6 +809,7 @@ SHIM
     printf '{}' > "$h/.openclaw/workspace/.workforce-build-state.json"
     if [[ -n "$envcontent" ]]; then
       printf '%s\n' "$envcontent" > "$h/.openclaw/secrets/.env"
+      chmod 600 "$h/.openclaw/secrets/.env"
     fi
     printf '%s' "$h"
   }
@@ -920,6 +921,7 @@ SHIM
         printf '{}' > "$BOX19M/.openclaw/workspace/.workforce-build-state.json"
         printf 'KIE_API_KEY=fixture-test-kie-only-value\nNOTION_API_TOKEN=fixture-test-notion-only-value\n' \
           > "$BOX19M/.openclaw/secrets/.env"
+        chmod 600 "$BOX19M/.openclaw/secrets/.env"
         env -i PATH="$BOX19M/bin:/usr/bin:/bin:/usr/sbin:/sbin:/opt/homebrew/bin" HOME="$BOX19M" \
           TMPDIR="${TMPDIR:-/tmp}" ZHC_SKIP_TG_PREFLIGHT=1 \
           bash "$MUT19" >"$BOX19M/run.out" 2>&1
