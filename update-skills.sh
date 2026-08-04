@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.7"
+ONBOARDING_VERSION="v21.7.8"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.7 - safe_json_edit
+# v21.7.8 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3544,6 +3544,110 @@ print(f"{dup_markers} {orphan_pairs}")
     echo "  ✓ [AGENTS.MD HYGIENE] state=clean file=$_amh_file"
     return 0
   }
+
+  # ── UPDATE PENDING FLAG CURRENCY PROBE ──────────────────────────────────
+  # WHY THIS EXISTS. write_update_pending_flag() / clear_update_pending_flag()
+  # (defined far above, the shared PENDING-lifecycle pair) are dispatched from
+  # the Post-update "UPDATE PENDING flag LIFECYCLE" step near the end of this
+  # function, gated on _RESUME_NEEDED -- which was computed SOLELY from
+  # ONBOARDING_GATE_OK (the per-skill qc gate) and NEW_SKILLS_CSV (brand-new
+  # skill FOLDERS). Neither signal knows whether a "## UPDATE PENDING --
+  # Skill Update to vX" section from a PRIOR run is still sitting in
+  # AGENTS.md: an EXISTING skill can receive a genuine CONTENT update (a
+  # script rewrite inside its own folder, not a new folder) while its qc
+  # sentinel stays stamped from the PREVIOUS pass, so the gate reads "yes",
+  # NEW_SKILLS_CSV stays empty, and clear_update_pending_flag() runs instead
+  # of write_update_pending_flag() -- sweeping the stale block (if it even
+  # matches) without ever re-announcing the work or arming the resume cron
+  # that would drive an agent to re-process it. A live 3-box pilot reproduced
+  # this on 3 of 3 boxes: exit 0, stamp advanced, skills genuinely updated on
+  # disk, and AGENTS.md/MEMORY.md came out byte-identical -- the pointer/
+  # self-heal pass the fresh flag exists to trigger never ran.
+  #
+  # THE FIX: a PENDING block's mere PRESENCE proves nothing about whether it
+  # was handled -- only its VERSION does. This reads every "## ... UPDATE
+  # PENDING ..." / "## ... ONBOARDING PENDING ..." header line currently in
+  # AGENTS.md and extracts the version each one names ("Skill Update to
+  # ${version}"). If ANY of them names a version other than the CURRENT
+  # ONBOARDING_VERSION -- or a version this cannot parse at all (covers the
+  # older "ONBOARDING PENDING" / "UPDATE PENDING - EXECUTE IMMEDIATELY"
+  # wordings predating this lifecycle, per Start Here.md) -- the block is
+  # STALE: outstanding work exists that the standard qc gate cannot see,
+  # because that gate tracks per-skill activation state, not "did THIS
+  # specific flag's work happen". Multiple stacked stale copies (measured on
+  # a real box: three) all count as ONE outstanding finding here;
+  # _strip_update_pending_sections (the shared remover both
+  # write_update_pending_flag and clear_update_pending_flag already call, and
+  # the ONLY mechanism that ever mutates the file) sweeps every one of them in
+  # a single pass regardless of how many this probe reports.
+  #
+  # CONTRACT, identical to every sibling probe above: returns 1 ONLY when a
+  # full pass would ACTUALLY repair something (a stale/unparsable block is
+  # present). Absent workspace, absent AGENTS.md, absent python3, or a block
+  # whose EVERY header already names the current version -> 0 (advisory,
+  # never forces a pass on a box that genuinely has nothing to do). READ-ONLY:
+  # opens AGENTS.md for reading only; never writes and never calls
+  # write_update_pending_flag/clear_update_pending_flag itself -- it only
+  # REPORTS, the existing lifecycle functions still own every write.
+  _pending_flag_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+    if ! oc_resolve_workspace_announced "UPDATE PENDING flag currency probe" >/dev/null 2>&1; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — workspace not resolvable — not forcing a pass."
+      return 0
+    fi
+    local _pfc_file="$OC_WS_RESOLVED/AGENTS.md"
+    if [ ! -f "$_pfc_file" ]; then
+      echo "  — [UPDATE PENDING FLAG] state=absent — no AGENTS.md at $_pfc_file — not forcing a pass."
+      return 0
+    fi
+
+    local _pfc_report="" _pfc_rc=0
+    if _pfc_report="$(python3 -c '
+import re, sys
+path, current = sys.argv[1], sys.argv[2]
+try:
+    text = open(path, encoding="utf-8", errors="replace").read()
+except Exception:
+    print("error")
+    sys.exit(0)
+header_re = re.compile(r"(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*$")
+version_re = re.compile(r"Skill Update to\s+(\S+)")
+headers = header_re.findall(text)
+if not headers:
+    print("clean 0")
+    sys.exit(0)
+stale = 0
+for h in headers:
+    m = version_re.search(h)
+    if not m or not current or m.group(1).rstrip(".,:;)") != current:
+        stale += 1
+state = "stale" if stale else "current"
+print(state + " " + str(len(headers)))
+' "$_pfc_file" "${ONBOARDING_VERSION:-}" 2>/dev/null)"; then
+      :
+    else
+      _pfc_rc=$?
+    fi
+
+    if [ "$_pfc_rc" -ne 0 ] || [ -z "$_pfc_report" ] || [ "$_pfc_report" = "error" ]; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — could not parse $_pfc_file — not forcing a pass."
+      return 0
+    fi
+
+    local _pfc_state _pfc_count
+    _pfc_state="$(printf '%s' "$_pfc_report" | awk '{print $1}')"
+    _pfc_count="$(printf '%s' "$_pfc_report" | awk '{print $2}')"
+
+    if [ "$_pfc_state" = "stale" ]; then
+      echo "  ✗ [UPDATE PENDING FLAG] state=stale sections=${_pfc_count} current-version=${ONBOARDING_VERSION:-<unset>} file=$_pfc_file — a PRIOR-VERSION (or unparsable) UPDATE PENDING section is still sitting in AGENTS.md; its presence is not proof the work was done."
+      return 1
+    fi
+    echo "  ✓ [UPDATE PENDING FLAG] state=${_pfc_state} sections=${_pfc_count} file=$_pfc_file"
+    return 0
+  }
   # <<< CONTENT-RECHECK-CONVERGENCE-PROBES-END
 
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
@@ -3599,6 +3703,7 @@ print(f"{dup_markers} {orphan_pairs}")
       _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
       _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
       _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+      _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
 
       if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
@@ -7577,11 +7682,27 @@ PYEOF
   #   gate == "unknown"        -> the gate could not run; we do NOT know the box
   #                               is clean, so keep the flag (fail toward telling
   #                               the agent there is work, never toward silence)
+  #   _pending_flag_currency_probe fails -> AGENTS.md still carries a PENDING
+  #                               section from a DIFFERENT (or unparsable)
+  #                               version. Neither ONBOARDING_GATE_OK nor
+  #                               NEW_SKILLS_CSV can see this: a box whose
+  #                               EXISTING skills all read qc-passed and grew
+  #                               no new folders can still be sitting on a
+  #                               stale, never-processed flag from a run weeks
+  #                               ago. Its presence is not proof the work
+  #                               happened -- see the probe's own header
+  #                               comment (CONTENT-RECHECK-CONVERGENCE-PROBES,
+  #                               above) for the 3-box pilot that reproduced
+  #                               this: exit 0, stamp advanced, AGENTS.md and
+  #                               MEMORY.md byte-identical, self-heal never ran.
   # ----------------------------------------------------------
+  # >>> UPDATE-PENDING-FLAG-LIFECYCLE-BEGIN (extracted verbatim by
+  #     tests/unit/update-skills-pending-flag-staleness.test.sh)
   _RESUME_NEEDED="no"
   [ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"       # gate proved unverified skills remain
   [ "${ONBOARDING_GATE_OK:-unknown}" = "unknown" ] && _RESUME_NEEDED="yes"  # gate did not run -- do not claim clean
   [ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"                      # new numbered skills need activation
+  _pending_flag_currency_probe || _RESUME_NEEDED="yes"                     # a stale/unparsable PENDING section is outstanding
 
   echo ""
   if [ "$_RESUME_NEEDED" = "yes" ]; then
@@ -7591,6 +7712,7 @@ PYEOF
     echo "  Verification gate GREEN and no new skills — removing the UPDATE PENDING flag (and sweeping any stale one)..."
     clear_update_pending_flag
   fi
+  # <<< UPDATE-PENDING-FLAG-LIFECYCLE-END
 
   # ----------------------------------------------------------
   # v17.0.21: make roll-time activation SELF-HEALING. When this roll left work

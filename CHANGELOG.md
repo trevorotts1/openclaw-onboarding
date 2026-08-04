@@ -1,3 +1,83 @@
+## [v21.7.8]  -  2026-08-03  -  A stale UPDATE PENDING flag can no longer swallow the AGENTS.md self-heal (companion fix to v21.7.5)
+
+A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker) proved `update-skills.sh` runs cleanly
+everywhere — exit 0, 17-20 skills updated, version stamp advanced — but **AGENTS.md and MEMORY.md
+came out BYTE-IDENTICAL on 3 of 3 boxes**. The pointer/self-heal pass the fresh UPDATE PENDING flag
+exists to trigger never ran, so the ~24,000-character bootstrap-budget win measured for the AGENTS.md
+pointer-writer (this morning's `fb0f5f4e`) never landed on a single pilot box. This was the ONE fix
+missing from v21.7.5/PR #834's own "roll path actually converges" release.
+
+### Root cause: _RESUME_NEEDED could not see a stale flag's own presence
+
+The Post-update "UPDATE PENDING flag LIFECYCLE" step decides whether to call
+`write_update_pending_flag()` (writes a fresh flag + arms the self-heal resume cron) or
+`clear_update_pending_flag()` (sweeps and writes nothing), based on `_RESUME_NEEDED`:
+
+```
+_RESUME_NEEDED="no"
+[ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"
+[ "${ONBOARDING_GATE_OK:-unknown}" = "unknown" ] && _RESUME_NEEDED="yes"
+[ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"
+```
+
+Both inputs are blind to AGENTS.md's own content: `ONBOARDING_GATE_OK` reads the per-skill
+`.onboarding-state.json` qc gate, and `NEW_SKILLS_CSV` only tracks brand-new skill **folders**
+(`[ ! -d "$SKILLS_DIR/$SKILL_NAME" ]`). An **existing** skill that ships a real content update —
+exactly what skill 38's `05-update-agents-md.sh` rewrite was — keeps its OLD qc sentinel and adds
+no new folder, so on a box where every other skill already reads qc-passed, `_RESUME_NEEDED` came
+out `"no"` even while a `## UPDATE PENDING -- Skill Update to vX` section from a run 2-7 weeks
+earlier (three stacked copies, un-swept, on the VPS) was still sitting in AGENTS.md.
+`clear_update_pending_flag()` ran instead of `write_update_pending_flag()`: a stale block's mere
+**presence** was silently treated as proof its work was already queued or done, so it either sat
+untouched or was swept with nothing fresh written to replace it — either way, no fresh flag, no
+self-heal, no pointer rewrite, no shrink.
+
+### The fix: a new currency probe closes the blind spot, using the mechanism that already exists
+
+`_pending_flag_currency_probe()` (`update-skills.sh`, alongside the other
+`CONTENT-RECHECK-CONVERGENCE-PROBES`) reads every `## ... UPDATE PENDING ...` / `## ...
+ONBOARDING PENDING ...` header currently in AGENTS.md and extracts the version each one names
+(`Skill Update to ${version}`). It reports **stale** the instant any of them names a version other
+than this run's own `ONBOARDING_VERSION`, or is unparsable (covers the pre-lifecycle legacy
+`ONBOARDING PENDING - EXECUTE NOW` wording too). The probe is wired into `_RESUME_NEEDED` in TWO
+places that both fall through to the same, unmodified lifecycle functions:
+
+- The Post-update lifecycle: `_pending_flag_currency_probe || _RESUME_NEEDED="yes"`.
+- The SAME-VERSION fast-recheck's convergence-trigger list, so a box that is already at the
+  current content version but still carries a stale flag from an earlier wave no longer takes the
+  early `exit 0` without sweeping it.
+
+This is deliberately NOT a new write path: the probe only **reports**. Every mutation still goes
+through `_strip_update_pending_sections()` (shared by both `write_update_pending_flag()` and
+`clear_update_pending_flag()`, unchanged), which sweeps every stale/stacked section in one pass and
+lets `write_update_pending_flag()` append exactly one fresh, current-version flag.
+
+### Mutation-proof table (both directions; `tests/unit/update-skills-pending-flag-staleness.test.sh`, 26 checks)
+
+| Scenario | Before this fix | After this fix |
+|---|---|---|
+| Stale PENDING present (older version) | swallowed by clear/no-op | swept, fresh flag written, `_RESUME_NEEDED=yes` |
+| Current-version PENDING present | correct (unchanged) | still correct: not duplicated, not swept spuriously |
+| No PENDING present | correct (unchanged) | still correct: clean write, zero backups |
+| 3 stacked stale blocks (VPS case) | swallowed | all 3 swept, exactly 1 fresh section survives |
+| Re-run immediately after | N/A | byte-identical no-op |
+
+`tests/unit/content-recheck-convergence-probes.test.sh` extends its existing 5-probe aggregation-gate
+proof to 6 probes (60 checks total, was 45), proving the new probe never mutates anything, never
+forces a pass on an absent/unknown/current-version box, and is correctly wired into the fast-exit
+gate. Both suites extract the real code VERBATIM from `update-skills.sh` between markers — they do
+not reimplement the decision logic (the drift trap that already bit
+`tests/unit/update-skills-resume-cron.test.sh`'s hand-copied `decide()`, which separately predates
+and is unaffected by this fix).
+
+Full `tests/unit/*.test.sh` suite (137 files including the new one) run against this change and the
+identical 136-file suite run against an unmodified `origin/main` baseline worktree: same 14
+pre-existing, environment-dependent failures in both (unrelated to this change, needing network/creds
+not present in this sandbox). Two additional failures seen ONLY on a first PARALLEL run
+(`dual-sunday-mutex.test.sh`, `fleet-standing-gate.test.sh` — both exercise file-locking behavior)
+were proven to be contention between the two concurrent worktree runs, not a regression: both pass
+24/24 and 14/14 when re-run in isolation, sequentially, on both worktrees. Zero real regressions.
+
 ## [v21.7.7]  -  2026-08-03  -  GHL credential resolvers now SKIP placeholder-shaped values instead of trusting first-non-empty
 
 ### Why
