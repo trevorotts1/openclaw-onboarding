@@ -1,3 +1,58 @@
+## [v21.7.15]  -  2026-08-04  -  fix: retire `scripts/update-skills.sh` — the fleet-wide "two updaters, same name" fatal
+
+Two files shared the name `update-skills.sh`: the repo-root script (798+ commits,
+carries every v21.7.x fix — content-aware A3 gate, exit-2 FATAL semantics,
+stale-PENDING sweep, CORE_UPDATES wiring, MCP registration, Command Center
+refresh) and `scripts/update-skills.sh` (39 commits, last touched Jul 23, a
+much smaller independently-maintained "surgical update" script that received
+NONE of the v21.7.x work — `exit 2`: 0 hits; stale-PENDING logic: 0 hits). Two
+pilots ran the `scripts/` copy — via a stale crontab, an old doc, or plain
+muscle memory — and got a byte-identical AGENTS.md every week while the
+version stamp climbed anyway: a hollow update reported as a success. A
+disabled client-box crontab line (`bash ~/.openclaw/skills/scripts/update-
+skills.sh`) confirmed this reaches real boxes.
+
+**Decision (evidence-based, both files read in full before deciding):**
+retire `scripts/update-skills.sh` to a loud-failing shim rather than make it a
+thin forwarder. A forwarder would make the wrong invocation keep silently
+"working" forever, removing any signal that a crontab/doc reference needs
+fixing — exactly the failure mode this defect already demonstrated. The shim
+identifies itself, names the correct script (with the exact on-disk path when
+available), and `exit 1`s unconditionally — no flag, env var, or code path in
+it returns 0, and it mutates nothing (verified: writes zero files to HOME
+under every invocation shape tested).
+
+**Repointed every live reference:** `CONTRIBUTING.md`, `Start Here.md`,
+`install.sh` (2 remediation strings), `22-book-to-persona-coaching-leadership-
+system/INSTALL.md` (Step 6 was itself broken three ways — it called the
+legacy path with a `--setup-cron` flag NEITHER updater ever implemented,
+instead of the real cron installer `scripts/setup-weekly-update.sh`; the
+verification grep and the documented crontab line didn't match what
+`setup-weekly-update.sh` actually installs either — all three now corrected).
+`scripts/setup-weekly-update.sh` and the self-heal in `update-skills.sh`
+(repo root) already pointed at the canonical root URL; their comments are
+updated to describe the shim, not a "safer legacy script."
+
+**CI gate (new):** `scripts/test-single-update-skills-entrypoint.sh` +
+`.github/workflows/single-update-skills-entrypoint-guard.yml` prove (A) the
+shim cannot succeed under any flag/arg combination and writes nothing to
+HOME, (B) the root updater remains the real, substantial implementation
+(>1000 lines, still carries the weekly-cron self-heal), and (C) no
+doc/script/cron template in the repo references the legacy path outside an
+explicit, reasoned allowlist (self-heal detection code, negative-assertion
+tests, and historical/warning text) — so a NEW instruction telling a human or
+agent to run the legacy path can never again land silently. Mutation-proven
+both directions (a reverted shim, and a newly-added bad doc reference, both
+fail the gate).
+
+`tests/unit/cron-owner-chat-guard.test.sh` section 8c updated: absence of any
+notification code in the retired shim is now a stronger PASS condition than
+"the notification code that exists happens to be operator-routed" (there is
+no notification code at all to leak).
+
+22-book-to-persona-coaching-leadership-system/skill-version.txt bumped
+independently (INSTALL.md changed): v6.19.3 -> v6.19.4.
+
 ## [v21.7.14]  -  2026-08-04  -  fix: a DIRTY Command Center git checkout no longer aborts the entire fleet update
 
 On 2 of 3 pilot boxes the root `update-skills.sh` hit an `exit 2` FATAL during the

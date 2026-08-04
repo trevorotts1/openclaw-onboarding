@@ -602,13 +602,10 @@ fi
 
 ## Step 6 - Set Up Weekly Auto-Update (Agent Handles This)
 
-Run this command now - the agent executes it autonomously:
+Run this command now - the agent executes it autonomously (`scripts/setup-weekly-update.sh`
+is the cron INSTALLER; there is no `--setup-cron` flag on any updater — do not invoke
+`scripts/update-skills.sh`, which is a retired, loud-failing shim, not the updater):
 
-```bash
-bash ~/.openclaw/skills/scripts/update-skills.sh --setup-cron
-```
-
-If the setup script does not exist yet, check the onboarding package:
 ```bash
 mkdir -p ~/.openclaw/skills/scripts
 SETUP_SCRIPT=""
@@ -629,13 +626,17 @@ else
 fi
 ```
 
-**What this does:** Installs a cron job that runs every Sunday at 2:00 AM. Checks GitHub for new skill versions, downloads updates, applies them to installed skills only, sends a Telegram notification with what changed.
+**What this does:** Installs a cron job that runs every Sunday at 3:00 AM. It curls the
+LATEST repo-root `update-skills.sh` from GitHub (never a stale local copy, never
+`scripts/update-skills.sh`), which verifies installed content (not just the version
+stamp), applies drift, and writes a silent UPDATE PENDING flag to AGENTS.md for the
+agent's next session — no gateway restart, no client-facing auto-notify.
 
 **Verify it was installed:**
 ```bash
-crontab -l | grep update-skills
+crontab -l | grep update-restart-if-needed
 ```
-Should show: `0 2 * * 0 $HOME/.openclaw/skills/scripts/update-skills.sh`
+Should show: `0 3 * * 0 $HOME/.openclaw/skills/.update-restart-if-needed`
 
 **Prebuilt index and fleet-refresh:** When a new prebuilt index release is published, the shared manifest at `shared-utils/prebuilt-index/INDEX-MANIFEST.json` in this repo will be updated with a new `asset_url` and `sha256`. After `update-skills.sh` runs and pulls a new version of this skill, re-run Steps 5-A through 5-E to refresh the local index. You do NOT need to re-embed — just download the new `.gz` from the updated `asset_url` in the manifest. The manifest's `release_tag` field always points to the canonical latest prebuilt release.
 

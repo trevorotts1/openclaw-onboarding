@@ -4,6 +4,23 @@ All notable changes to this skill wrapper are documented here.
 
 ---
 
+## v6.19.4 - 2026-08-04 - fix: INSTALL.md Step 6 pointed at a retired script with a flag no updater ever implemented
+
+Step 6 ("Set Up Weekly Auto-Update") told the agent to run
+`bash ~/.openclaw/skills/scripts/update-skills.sh --setup-cron` as the primary
+command. Three bugs: (1) it invoked `scripts/update-skills.sh` — the legacy
+updater, now retired to a loud-failing shim (see the repo-wide fix in
+CHANGELOG.md v21.7.15) — not the real cron installer; (2) neither the legacy
+nor the root updater ever implemented a `--setup-cron` flag, so even before
+the retirement this command silently did nothing useful; (3) the verification
+step (`crontab -l | grep update-skills`) and documented crontab line
+(`0 2 * * 0 .../scripts/update-skills.sh`) didn't match what
+`scripts/setup-weekly-update.sh` actually installs
+(`0 3 * * 0 $HOME/.openclaw/skills/.update-restart-if-needed`). Step 6 now
+calls `scripts/setup-weekly-update.sh` directly (the block that already
+existed as a "fallback" was in fact the only path that ever worked), and the
+verification step/expected crontab line match reality.
+
 ## v6.19.0 - 2026-07-14 - feat(A-U3/schema-1.4): emotional_register / audience_resonance / conversion_style enrichment across all 99 personas + D6 pipeline stamping widened
 
 Closes the master-spec-v2 A.4 gap: machine fields `emotional_register` / `audience_resonance` / `conversion_style` were 0/99 (NOT-FOUND) — the persona-selection directive named a VOICE but carried no feeling-space, no stated audience payoff, and no closing-style signal, so the Section-B Quality-Control judge had nothing to score "did the copy hit the register" against.

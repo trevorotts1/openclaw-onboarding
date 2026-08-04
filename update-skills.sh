@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.14"
+ONBOARDING_VERSION="v21.7.15"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.14 - safe_json_edit
+# v21.7.15 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2148,16 +2148,27 @@ preclear_2026_7_1() {
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
-# Two updaters live in this repo. THIS one (repo root update-skills.sh) is the
-# canonical one: it carries the wiring, state-machine, A3 content-gate and
-# manifest/stamp pipeline. scripts/update-skills.sh is a much smaller legacy
-# script that only copies skills.
+# Two updaters used to live in this repo under the same filename. THIS one
+# (repo root update-skills.sh) is the canonical one: it carries the wiring,
+# state-machine, A3 content-gate and manifest/stamp pipeline.
+# scripts/update-skills.sh was a much smaller, independently-maintained
+# script that only copied skills and never received any of the fixes below
+# it -- a real 3-box pilot ran it (via a stale cron/doc reference) and
+# produced a byte-identical AGENTS.md every week while its own version stamp
+# climbed: a hollow update reported as a success. It is now RETIRED to a
+# loud-failing shim (see scripts/update-skills.sh's own header) that exits
+# non-zero unconditionally, so a wrong invocation can never again silently
+# "succeed". This self-heal still exists to repoint any box whose weekly
+# cron script still names that path -- pointing at the shim is loudly wrong
+# in its own right now, but repointing it to the real URL is strictly better
+# than leaving a box's cron broken.
 #
 # Every box runs $HOME/.openclaw/skills/.update-restart-if-needed from a Sunday
 # 03:00 cron. scripts/setup-weekly-update.sh was corrected on 2026-06-27
 # (6a881c8a) to install the ROOT url, but NOTHING rewrote the copy already on
-# disk -- so every box provisioned BEFORE that date runs the LEGACY updater
-# every week, forever. This function repoints those boxes.
+# disk -- so every box provisioned BEFORE that date runs the LEGACY path
+# every week, forever (and now gets a loud failure instead of a hollow
+# success). This function repoints those boxes.
 #
 # HISTORY -- READ THIS BEFORE DELETING THE SELF-HEAL (updated at the PR #670 /
 # PR #671 merge, so the comment does not outlive the facts it describes)
@@ -2170,18 +2181,22 @@ preclear_2026_7_1() {
 # anything -- a fleet roll read a matching stamp and silently no-oped while
 # reporting success.
 #
-# BOTH halves of that are now fixed, in the same merge as this comment:
-#   * scripts/update-skills.sh now decides per skill on CONTENT, delivers
-#     shared-utils/ and universal-sops/, and WITHHOLDS the stamp (exit 1) when
-#     a source file is still absent after the copy.
+# BOTH halves of that were fixed in the same merge as this comment originally
+# landed:
+#   * scripts/update-skills.sh (at the time) started deciding per skill on
+#     CONTENT, delivering shared-utils/ and universal-sops/, and WITHHOLDING
+#     the stamp (exit 1) when a source file was still absent after the copy.
 #   * this script's same-version non-interactive branch no longer blind-exits;
 #     it runs a CONTENT RECHECK before deciding (see _SAME_VERSION_RECHECK).
 # So a poisoned stamp is no longer produced, and an existing one no longer
-# blinds this script. The self-heal is still correct and still wanted -- the
-# fleet should converge on ONE updater, the one with the gates -- but it is now
-# a convergence measure, not a rescue from an active time bomb. Boxes still on
-# the legacy URL re-fetch that file from main on every run, so they pick up the
-# content-based behaviour immediately regardless of whether this heal fires.
+# blinds this script. scripts/update-skills.sh has since been retired
+# entirely (see above) -- the fleet-wide fix is no longer "make the legacy
+# script safer", it is "there is only one updater, and the other name fails
+# loudly". The self-heal below is still correct and still wanted -- it
+# repoints a box's weekly cron to the URL that is actually canonical. Boxes
+# still on the legacy URL re-fetch that file from main on every run, so they
+# hit the loud shim failure immediately regardless of whether this heal fires
+# -- the heal just gets them back to a WORKING weekly update sooner.
 #
 # PLACEMENT IS LOAD-BEARING
 # The call site sits BEFORE the UPDATE-PENDING prompt and BEFORE the version
