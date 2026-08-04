@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.4"
+ONBOARDING_VERSION="v21.7.5"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.4 - safe_json_edit
+# v21.7.5 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3994,6 +3994,14 @@ print(f"{dup_markers} {orphan_pairs}")
   _D5_DEPT_STATE="skipped"
   _STEP_GATE_FAILS=""
   _WORKFORCE_INCOMPLETE_NOTES=""  # workforce-provisioning advisories -- surfaced, NEVER stamp-gating
+  # GHL MCP Tier-2 RUNTIME conformance latch (DEFECT 2). Declared here, with the
+  # other latches, so it is `set -u` safe on every path — including the ones that
+  # never reach the wiring loop. It is INFRASTRUCTURE, not skills content: it
+  # never withholds the version stamp, but it DOES make this run exit 2 instead
+  # of 0, because a roll that leaves the MCP misconfigured is not a success.
+  GHL_MCP_RUNTIME_FATAL="no"
+  GHL_MCP_RUNTIME_DETAIL=""
+  GHL_MCP_AUTOSTART_RAN="not-run"
 
   # ----------------------------------------------------------
   # U008: PRE-FLIGHT SPEND CHECK. Runs BEFORE the first paid-API step (U6b
@@ -5094,8 +5102,23 @@ PYEOF
     # path reads, and remove a legacy registration if one is present.
     openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >> "$LOG_FILE" 2>&1 || true
     if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-      echo "    GHL MCP: removing legacy ghl-community-mcp registration (Tier 2 is on-demand curl)"
-      openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1 || true
+      # B2: `openclaw mcp remove` IS NOT A COMMAND on OpenClaw 2026.7.1-2 — it
+      # exits 1 with "Too many arguments for this command." The verb is `unset`.
+      # This line used `remove`, swallowed by `|| true`, so a roll NEVER
+      # de-registered Tier 2 on any box and ghl-mcp-assert-runtime.sh check 10
+      # could never pass. Try the real verb, keep `remove` for an older CLI, and
+      # re-read rather than assuming the write stuck.
+      echo "    GHL MCP: de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl)"
+      if openclaw mcp unset ghl-community-mcp >> "$LOG_FILE" 2>&1 \
+         || openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1; then
+        if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+          echo "    ⚠ GHL MCP: de-registration ran but ghl-community-mcp is STILL listed — the gateway may have rewritten openclaw.json from memory. Will retry next roll."
+        else
+          echo "    ✓ GHL MCP: Tier 2 de-registered and verified absent from mcp.servers"
+        fi
+      else
+        echo "    ⚠ GHL MCP: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted by this CLI — Tier 2 is STILL registered and every agent init keeps paying its connection cost. Check 'openclaw mcp --help'." >&2
+      fi
     else
       echo "    GHL MCP: Tier 2 correctly unregistered (on-demand curl at localhost:${GHL_MCP_PORT})"
     fi
@@ -5107,12 +5130,71 @@ PYEOF
     # BUG FIX (v10.15.49): run NON-BLOCKING so the wiring loop + .onboarding-version
     # stamp always complete. macOS has no `timeout`, so backgrounding is the safe
     # cross-platform fix. The MCP still starts; the updater no longer waits on it.
-    local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
-    if [ -x "$AUTOSTART" ]; then
-      echo "    Starting GHL MCP server in background (launchd :${GHL_MCP_PORT}) -- log: /tmp/ghl-mcp-autostart.log"
-      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 & )
+    # ── WHICH COPY OF THE AUTOSTART RUNS, AND FROM WHERE ────────────────────
+    # DEFECT 2 (3-box pilot): a roll ran cleanly everywhere and converged NO box
+    # to the hardened state. Two reasons, both here.
+    #
+    # (a) WRONG COPY. $ONBOARDING_DIR is the TEMP CLONE (/tmp/openclaw-onboarding-
+    #     update). ghl-mcp-autostart.sh's FIRST pin-resolver candidate is
+    #     "$SELF_DIR/../config/ghl-mcp-pin.env" — from the temp clone that
+    #     resolves inside the clone, which the updater `rm -rf`s at its Cleanup
+    #     step. The DELIVERED copy at $OC_ROOT/scripts/ is the one whose
+    #     ../config sibling is the delivered $OC_ROOT/config/. Prefer it, so the
+    #     pin the roll just delivered is the pin the autostart reads.
+    # (b) BACKGROUNDED, THEN ASSERTED IMMEDIATELY. `( … & )` returned in
+    #     milliseconds and the runtime assert below ran against the PRE-autostart
+    #     state — it could only ever measure the defect it was meant to verify was
+    #     fixed. Worse, the temp clone was deleted out from under the still-running
+    #     child.
+    #
+    # FIX: run the DELIVERED copy, and WAIT for it, bounded. macOS has no
+    # `timeout(1)`, which is why this was backgrounded in the first place
+    # (v10.15.49) — so we background it and poll its PID with a hard ceiling,
+    # which keeps the "a hung autostart can never stall a roll" property AND
+    # makes the assert below measure the post-autostart state. The ceiling is
+    # generous because a cold box does a real `npm ci` + build.
+    local AUTOSTART=""
+    local _AS_SRC=""
+    for _as_cand in \
+        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
+        "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
+        "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
+        "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
+      case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
+      if [ -f "$_as_cand" ]; then
+        AUTOSTART="$_as_cand"
+        case "$_as_cand" in
+          "$ONBOARDING_DIR"/*) _AS_SRC="TEMP CLONE (delivered copy not found — its ../config sibling will not resolve; expect PIN_UNVERIFIED)" ;;
+          *)                   _AS_SRC="delivered copy (its ../config sibling is the delivered pin)" ;;
+        esac
+        break
+      fi
+    done
+    unset _as_cand
+
+    GHL_MCP_AUTOSTART_RAN="no"
+    if [ -n "$AUTOSTART" ]; then
+      local _AS_MAX="${OPENCLAW_GHL_MCP_AUTOSTART_TIMEOUT:-900}"
+      echo "    Running GHL MCP autostart and WAITING for it (max ${_AS_MAX}s) -- $_AS_SRC"
+      echo "      $AUTOSTART  -- log: /tmp/ghl-mcp-autostart.log"
+      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 ) &
+      local _AS_PID=$! _AS_WAITED=0
+      while kill -0 "$_AS_PID" 2>/dev/null; do
+        [ "$_AS_WAITED" -ge "$_AS_MAX" ] && break
+        sleep 2
+        _AS_WAITED=$(( _AS_WAITED + 2 ))
+      done
+      if kill -0 "$_AS_PID" 2>/dev/null; then
+        echo "    ⚠ GHL MCP autostart still running after ${_AS_MAX}s -- leaving it to finish in the background and NOT waiting further (a slow build must never stall a fleet roll)." >&2
+        echo "    ⚠ The runtime conformance verdict below is therefore measured MID-INSTALL and may report FATALs that resolve once the build completes. Re-run scripts/ghl-mcp-assert-runtime.sh afterwards." >&2
+        GHL_MCP_AUTOSTART_RAN="timeout"
+      else
+        wait "$_AS_PID" 2>/dev/null || true
+        echo "    ✓ GHL MCP autostart completed in ~${_AS_WAITED}s"
+        GHL_MCP_AUTOSTART_RAN="yes"
+      fi
     else
-      echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART -- server NOT started; GHL tools will not resolve until it is run)"
+      echo "    ⚠ ghl-mcp-autostart.sh not found in the delivered scripts dir OR the pulled bundle -- server NOT started; GHL tools will not resolve until it is run." >&2
     fi
 
     # v21.6.0 / R4: RUNTIME conformance verdict on the update path.
@@ -5123,18 +5205,58 @@ PYEOF
     # This asserts what the box IS running. Non-fatal by design (the update must
     # not abort on a pre-existing runtime defect) but LOUD, and it names the one
     # command that fixes it.
-    local RUNTIME_ASSERT="$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"
-    if [ -f "$RUNTIME_ASSERT" ]; then
+    local RUNTIME_ASSERT=""
+    for _rt_cand in \
+        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
+        "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+        "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+        "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
+      case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
+      [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
+    done
+    unset _rt_cand
+    if [ -n "$RUNTIME_ASSERT" ]; then
       local _RT_OUT _RT_RC=0
       _RT_OUT="$(bash "$RUNTIME_ASSERT" 2>&1)" || _RT_RC=$?
       printf '%s\n' "$_RT_OUT" >> "$LOG_FILE" 2>/dev/null || true
       case "$_RT_RC" in
-        0) echo "    GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
+        0) echo "    ✓ GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
         2) echo "    GHL MCP runtime conformance: not installed on this box -- nothing to assert" ;;
-        *) echo "    ⚠ GHL MCP runtime conformance FAILED -- the INSTALLED service does not match the shipped standard:" >&2
-           printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/      /' >&2 || true
-           echo "      FIX: bash $AUTOSTART   (it regenerates the service definition from the pin)" >&2 ;;
+        *)
+           # DEFECT 2, second half: this verdict used to be a bare warning that
+           # nothing read, so a roll printed the FATALs and then exited 0 — a
+           # HOLLOW UPDATE reported as a success. The verdict now LATCHES and is
+           # surfaced in the end-of-run summary and in this run's EXIT CODE.
+           #
+           # WHY exit 2 AND NOT exit 1. The stamp gates in this script are
+           # deliberately split (see the CONTENT-COMPLETENESS GATE): exit 1 means
+           # "skills CONTENT is not verifiably current, stamp WITHHELD", and
+           # wire_ghl_mcp runs BEFORE the stamp. Failing this to 1 would withhold
+           # the content stamp on every box carrying a PRE-EXISTING Tier 2 defect
+           # — bricking fleet rolls over an infrastructure fault that has nothing
+           # to do with skills content. exit 2 is this script's existing,
+           # documented "content current, infrastructure needs attention" code,
+           # which fleet drivers already distinguish. That is exactly this state,
+           # and it is emphatically NOT exit 0.
+           GHL_MCP_RUNTIME_FATAL="yes"
+           GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' || true)"
+           {
+             echo ""
+             echo "  ############################################################"
+             echo "  ## GHL MCP RUNTIME CONFORMANCE FAILED (rc=$_RT_RC)"
+             echo "  ## The INSTALLED service on this box does NOT match the shipped standard."
+             echo "  ## This run will exit 2 (content current, infrastructure needs attention)"
+             echo "  ## rather than 0 — a roll that leaves the MCP misconfigured is not a success."
+             printf '%s\n' "$GHL_MCP_RUNTIME_DETAIL" | sed 's/^/  ##   /'
+             echo "  ## FIX: bash ${AUTOSTART:-<autostart not found on this box>}"
+             echo "  ##      (it regenerates the service definition from the delivered pin)"
+             echo "  ############################################################"
+             echo ""
+           } >&2
+           ;;
       esac
+    else
+      echo "    ⚠ ghl-mcp-assert-runtime.sh not found on this box -- the RUNTIME conformance verdict did NOT run. The static gate cannot see a hand-edited plist, a 859-tool /health, or a still-registered Tier 2." >&2
     fi
   }
 
@@ -7563,6 +7685,47 @@ Paste this to your agent:
 ╚════════════════════════════════════════════════════════════════════╝
 
 BACKUP_BLOCK
+
+  # ----------------------------------------------------------
+  # DEFECT 2 — FINAL VERDICT ON THE GHL MCP TIER-2 RUNTIME.
+  #
+  # Before this, wire_ghl_mcp printed the runtime FATALs and the run exited 0.
+  # A 3-box pilot therefore reported "exit 0, 17-20 skills updated, stamp
+  # advanced" on three boxes that were each carrying 7-10 runtime FATALs. That
+  # is a HOLLOW UPDATE reported as a success, and it is the reason the hardening
+  # "shipped" for a full release without landing anywhere.
+  #
+  # The exit code is 2, not 1, on purpose — see the long note at the latch in
+  # wire_ghl_mcp. 2 is this script's documented "skills content is current, the
+  # box's infrastructure needs attention" code, which fleet drivers already
+  # distinguish from "stamp withheld" (1). Withholding the content stamp over a
+  # pre-existing Tier-2 defect would brick rolls on boxes whose skills are
+  # perfectly current.
+  # ----------------------------------------------------------
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
+    {
+      echo ""
+      echo "  ============================================================"
+      echo "  UPDATE COMPLETED, BUT THE GHL MCP (Tier 2) IS MISCONFIGURED."
+      echo "  Skills content IS current and the version stamp WAS written."
+      echo "  The INSTALLED MCP service does not match the shipped standard:"
+      printf '%s\n' "${GHL_MCP_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
+      echo ""
+      echo "  autostart on this run: ${GHL_MCP_AUTOSTART_RAN:-unknown}"
+      echo "  Re-run the autostart, then re-assert:"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-assert-runtime.sh"
+      echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
+      echo ""
+      echo "  Exiting 2 = content current, infrastructure needs attention."
+      echo "  This is deliberately NOT 0: a roll that leaves the MCP"
+      echo "  misconfigured has not succeeded."
+      echo "  ============================================================"
+      echo ""
+    } >&2
+    return 2
+  fi
+  return 0
 }
 
 main "$@"
