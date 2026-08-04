@@ -1,3 +1,58 @@
+## [v21.7.6]  -  2026-08-03  -  Status-writer resolution defects (A/B/D) + closeout QC predicate aligned to needs-review
+
+`refresh-build-state-from-index.py` is the single writer of department
+`status:"done"` (`23-ai-workforce-blueprint/references/DONE-IS-GATED.md`). Four
+resolution defects, verified on a real client box, made it measure or mutate the
+wrong thing on a custom-company client. `verify-wiring.sh` already had three of
+the four (B/C/D) fixed by a prior merge; this release brings the independent
+implementation in `refresh-build-state-from-index.py` in line and closes one
+closeout-predicate gap in the same family.
+
+### What changed
+
+- **Defect A (wrong collection).** The upsert loop iterated the canonical
+  `_index.json` instead of the client's own department set, so a
+  custom-company client's real departments were never visited while every
+  generic canonical department got silently ADDED to their roster. The loop
+  now drives from the client's own build-state entries; `_index.json` is
+  consulted only to source `rolesPlanned` for a canonical department, and a
+  custom department's `rolesPlanned` is preserved untouched. No department a
+  client does not already have can be added by this script anymore.
+- **Defect B (wrong tree) + Defect C (workspaceRoot unreliable).**
+  `find_departments_dir()` had no `zero-human-company/<companySlug>/departments`
+  candidate, so a stray single-entry legacy directory won by being
+  first-checked and everything measured 0 roles. Replaced with
+  `resolve_departments_tree()`: every candidate is SCORED by how many of the
+  client's own department slugs actually resolve inside it; config-derived
+  resolution (`openclaw.json` `agents.list` `dept-<slug>.workspace` — what the
+  agents actually run from) is preferred outright over every fixed-candidate
+  guess. Resolution never requires `.workspaceRoot` to be present or correct.
+  If two or more distinct trees tie on score, resolution is now AMBIGUOUS and
+  the script exits FATAL with no state write, rather than silently guessing.
+  The resolved tree + method are recorded in
+  `state["departmentsTreeResolution"]`.
+- **Defect D (suffix mismatch).** Department directories on disk sometimes
+  carry a `-dept` suffix the slug does not (`trading-operations-dept` vs
+  `trading-operations`), which a bare path join silently measured as 0 roles.
+  `resolve_dept_dir_in_tree()` adds suffix/case/separator-tolerant matching,
+  mirroring `verify-wiring.sh`'s `resolve_one_dept()`.
+- The DEFECT #5 honesty floor (never `status:"done"` with 0 roles on disk) is
+  unchanged — correct measurement makes it fire less, never because it was
+  relaxed.
+- **Closeout QC predicate.** `resume-workforce-build.sh`,
+  `update-interview-state.sh`, and `build-workforce.py` already treat
+  `interviewQc.status` of `pass` OR `needs-review` as build-eligible.
+  `run-closeout.sh` alone still demanded a strict `pass`, so a `needs-review`
+  box built completely and then blocked forever at
+  `closeoutStatus=blocked-qc-pending` — visible, but never delivered. Added
+  `_qc_closeout_eligible()` (`pass|needs-review`) and wired it into both
+  `interviewQc` gates so all three lanes agree.
+
+Tests: `tests/unit/status-writer-resolution-defects.test.sh` — hermetic, 13
+assertions across 4 scenarios, each shown failing against the pre-fix script
+and passing post-fix (a custom-company fixture, a `-dept` suffix fixture, an
+ambiguous-resolution fixture, and a standard-case non-regression check).
+
 ## [v21.7.5]  -  2026-08-03  -  The GHL MCP roll path actually converges a box (and can no longer report a hollow update as a success)
 
 A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker/pm2) ran `update-skills.sh` cleanly

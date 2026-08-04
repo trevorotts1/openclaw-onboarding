@@ -91,6 +91,23 @@ fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 
+# GATE-CONSISTENCY FIX: interviewQc build-eligibility is `pass` OR
+# `needs-review`, not `pass` alone. update-interview-state.sh's evidence gate
+# already treats qc rc=0 (pass) and rc=2 (needs-review) as "the evidence
+# supports completion" -- it writes interviewComplete=true and tells the
+# client they are finished. resume-workforce-build.sh's own QC-resume gate
+# (_qc_build_eligible(), same two-value case) and build-workforce.py
+# (state["interviewQc"]["status"] not in ("pass", "needs-review")) already
+# agree: a needs-review interview is build-eligible and the box builds fully
+# through to buildCompletedAt. Before this fix, run-closeout.sh alone still
+# demanded a strict `pass`, and nothing anywhere ever promotes
+# needs-review -> pass. So a needs-review box built completely, then blocked
+# FOREVER at closeoutStatus=blocked-qc-pending -- visible (not a silent
+# stall) but still never delivered. Aligning this predicate with the other
+# two build/QC gates closes that dead end; the QC notes still ride along as
+# advisory (recorded in .interviewQc for the operator either way).
+_qc_closeout_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }
+
 # FIX-S36-06: fail-soft Command Center card for the closeout ITSELF, keyed per
 # client slug, so a stuck closeout is board-VISIBLE. The helper never fails the
 # caller and never messages a client (no MC_API_TOKEN -> silent no-op). Callable
@@ -161,7 +178,7 @@ trap 'rm -f "$RUN_CLOSEOUT_LOCK_FILE"' EXIT
 # for a closeout we're about to refuse. This is a cheap token-free read.
 _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
 _early_build_done=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE" 2>/dev/null || true)
-if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" != "pass" ]]; then
+if [[ -n "$_early_build_done" && "$_early_build_done" != "null" ]] && ! _qc_closeout_eligible "$_early_qc"; then
   # QC script search (best-effort, non-fatal if absent)
   _EARLY_QC_SCRIPT=""
   for _cand in \
@@ -177,7 +194,7 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     python3 "$_EARLY_QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
   fi
-  if [[ "$_early_qc" != "pass" ]]; then
+  if ! _qc_closeout_eligible "$_early_qc"; then
     # FIX (false-negative #2): distinguish a QC GAP from an actually-incomplete
     # interview. When the owner HAS completed the interview (interviewComplete
     # =true) but interviewQc has not yet passed, this is a QC-PENDING state, NOT
@@ -189,10 +206,10 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     _early_interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
     if [[ "$_early_interview_complete" == "true" ]]; then
       _early_block_status="blocked-qc-pending"
-      _early_block_reason="interviewQc.status=${_early_qc} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py to reach status=pass. NOT an incomplete interview."
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass/needs-review) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py to reach status=pass or needs-review. NOT an incomplete interview."
     else
       _early_block_status="blocked-interview-incomplete"
-      _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass/needs-review) - refusing to close out an unverified interview."
     fi
     log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
     # SK1-12: pass client-derived strings via jq --arg, never string-interpolate
@@ -269,7 +286,7 @@ fi
 # Gate is placed BEFORE the expensive generation preflight (KIE/Notion/TG checks)
 # so a stalled interview is surfaced immediately without requiring API keys.
 _qc_status=$(state_get '.interviewQc.status')
-if [[ "$_qc_status" != "pass" ]]; then
+if ! _qc_closeout_eligible "$_qc_status"; then
   # Try to (re)compute it autonomously before deciding
   _QC_SCRIPT=""
   for _cand in \
@@ -288,7 +305,7 @@ if [[ "$_qc_status" != "pass" ]]; then
     log "INFO" "interviewQc.status after inline QC run: ${_qc_status}"
   fi
 fi
-if [[ "$_qc_status" != "pass" ]]; then
+if ! _qc_closeout_eligible "$_qc_status"; then
   # FIX (false-negative #2): as in the early gate, a QC gap with a COMPLETE
   # interview (interviewComplete=true) is a QC-PENDING state, not an incomplete
   # interview. buildCompletedAt is already set (checked above), so the interview
@@ -296,10 +313,10 @@ if [[ "$_qc_status" != "pass" ]]; then
   _interview_complete=$(state_get '.interviewComplete')
   if [[ "$_interview_complete" == "true" ]]; then
     _block_status="blocked-qc-pending"
-    _block_reason="interviewQc.status=${_qc_status} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py and ensure status=pass. NOT an incomplete interview."
+    _block_reason="interviewQc.status=${_qc_status} (not pass/needs-review) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py and ensure status=pass or needs-review. NOT an incomplete interview."
   else
     _block_status="blocked-interview-incomplete"
-    _block_reason="interviewQc.status=${_qc_status} (not pass) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+    _block_reason="interviewQc.status=${_qc_status} (not pass/needs-review) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass or needs-review."
   fi
   log "ERROR" "BLOCKED: $_block_reason"
   state_set ".closeoutStatus = \"$_block_status\" | .closeoutBlockReason = \"$_block_reason\""
@@ -322,7 +339,7 @@ if [[ "$_qc_status" != "pass" ]]; then
   fi
   exit 0  # never fail-hard; watchdog + resume cron drive it
 fi
-log "INFO" "interviewQc.status=pass - gate cleared"
+log "INFO" "interviewQc.status=${_qc_status} - gate cleared (build-eligible: pass|needs-review)"
 
 # ---- v10.x: ZHC-STANDARD PREFLIGHT (libraries must be REAL on disk) -------
 # buildCompletedAt alone is not proof: an agent could have written it while the
