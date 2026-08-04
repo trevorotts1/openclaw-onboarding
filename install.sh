@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.7.17"
+ONBOARDING_VERSION="v21.7.18"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -6874,6 +6874,14 @@ start_ghl_mcp_autostart() {
         *"=DEAF"*)                      warn "GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) — every agent init will burn the full connectionTimeoutMs until fixed. ${STATUS_LINE}" ;;
         *TOKEN_REJECTED*)               warn "GHL rejected the PIT — the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${STATUS_LINE}" ;;
         *PIN_MISMATCH*|*PIN_INVALID*)   warn "GHL MCP refused to start: the vetted commit pin could not be honoured — an UNPINNED third-party MCP is never started. Re-vet upstream and update config/ghl-mcp-pin.env. ${STATUS_LINE}" ;;
+        # DEFECT 1 (proven live 2026-08-04): this refusal used to be
+        # INDISTINGUISHABLE from PIN_MISMATCH above — the ownership guard did
+        # not exist, so every git command silently failed and the ONLY signal
+        # that ever reached this installer was the innocent-looking
+        # PIN_MISMATCH. The dedicated STATUS below fires BEFORE that generic
+        # one and names the real remedy directly, instead of sending the
+        # operator to re-vet a pin that was never the problem.
+        *ROOT_OWNERSHIP_MISMATCH*)      warn "GHL MCP refused to start: this installer is running as ROOT against a checkout owned by a different uid — every git command inside ghl-mcp-autostart.sh would be silently refused by git's dubious-ownership guard. FIX: re-run as the box user, never root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${STATUS_LINE}" ;;
         # v21.6.0 / R9 fail-closed states. These are REFUSALS, not errors: the
         # box deliberately did not build or start third-party code it could not
         # verify. Both are actionable in one step, so say which step.
