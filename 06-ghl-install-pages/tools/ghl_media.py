@@ -215,6 +215,33 @@ _GHL_ENV_STORES = (
 )
 
 
+def _is_placeholder(value: str) -> bool:
+    """True when ``value`` is a documentation placeholder, not a real credential.
+
+    Mirrors ``38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh``'s
+    ``_is_placeholder()`` (the proven, already-fixed reference implementation —
+    root-caused a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: the 10-char
+    doc placeholder ``pit-abc123`` is non-empty, so a naive first-non-empty-wins
+    resolver picks it up over the real credential). Same three shapes, ported to
+    Python: shorter than 20 characters (a real PIT/refresh token is far longer),
+    a known dummy literal (``pit-abc...``, ``changeme...``, ``xxx...``,
+    ``your-...`` / ``your_...``, a ``*_here``/``*-here`` suffix), or an
+    angle-bracket placeholder token (``<...>``). The value is only ever
+    inspected for shape here — never logged or returned.
+    """
+    if not value:
+        return True
+    if len(value) < 20:
+        return True
+    low = value.lower()
+    if low.startswith("pit-abc") or low.startswith("changeme") or low.startswith("xxx") \
+       or low.startswith("your-") or low.startswith("your_") \
+       or low.endswith("_here") or low.endswith("-here") \
+       or (value.startswith("<") and value.endswith(">")):
+        return True
+    return False
+
+
 def _scan_env_stores(names: tuple[str, ...]) -> tuple[str, str] | None:
     """Search the canonical env STORES for the first non-empty value of any of
     ``names``, in (name-preference × store-order) priority.
@@ -249,7 +276,10 @@ def _scan_env_stores(names: tuple[str, ...]) -> tuple[str, str] | None:
                         # An allowlist value may be a comma list — take the first id.
                         if "," in v:
                             v = v.split(",", 1)[0].strip()
-                        if v:
+                        # Placeholder-shaped store values are SKIPPED, not returned —
+                        # a store line is not automatically real just because it is a
+                        # file rather than the live env (see _is_placeholder docstring).
+                        if v and not _is_placeholder(v):
                             return v, f"{name} in {store_path}"
             except OSError:
                 continue
@@ -287,21 +317,30 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
       1. The live process environment, across EVERY LOCATION-class alias in
          ``_PIT_ENV_NAMES`` (``GOHIGHLEVEL_API_KEY`` preferred, then ``GHL_API_KEY``,
          then the explicit ``*_LOCATION_PIT`` names) — preferred alias wins.
-      2. If the live env is empty, the canonical env STORES in ``_GHL_ENV_STORES``
-         (``~/.openclaw/secrets/.env`` → ``~/clawd/secrets/.env`` →
-          ``~/.openclaw/workspace/.env``) are parsed directly — the SAME file the
-         rest of this skill names. This is what makes a clean agent shell (where the
-         gateway never exported secrets/.env) resolve the real token instead of
-         false-failing on an empty env var.
+         A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED here, not
+         returned: on a real box the live process env is seeded from openclaw.json
+         ``env.vars`` at gateway launch, and those config copies are placeholders BY
+         DESIGN (they rot / get seeded with the doc example ``pit-abc123``). Accepting
+         the first non-empty value — placeholder or not — is exactly the bug that
+         produced a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: a 10-char
+         placeholder is non-empty, so it silently outranked the real credential.
+      2. If no LIVE (non-placeholder) value resolved, the canonical env STORES in
+         ``_GHL_ENV_STORES`` (``~/.openclaw/secrets/.env`` → ``~/clawd/secrets/.env``
+         → ``~/.openclaw/workspace/.env``) are parsed directly — the SAME file the
+         rest of this skill names, and the AUTHORITATIVE store per TERMINOLOGY.md.
+         This is what makes a clean agent shell (where the gateway never exported
+         secrets/.env) resolve the real token instead of false-failing on an empty
+         env var, AND what lets a real secrets/.env value win over a placeholder
+         that leaked into the live env from openclaw.json.
 
     The LOCATION PIT is what media upload REQUIRES (``medias.write`` scope); an
     AGENCY PIT 401s for media, so this NEVER falls back to an agency-class name.
 
-    Only after every alias × every store is exhausted does it raise — and the error
-    NAMES exactly which env vars and which store paths were checked, and tells the
-    caller to ``source`` the store. If the search found an AGENCY PIT but no LOCATION
-    PIT, the message says so explicitly (that is a scope problem, not a missing-token
-    problem).
+    Only after every alias × every store is exhausted (or every hit was a
+    placeholder) does it raise — and the error NAMES exactly which env vars and
+    which store paths were checked, and tells the caller to ``source`` the store.
+    If the search found an AGENCY PIT but no LOCATION PIT, the message says so
+    explicitly (that is a scope problem, not a missing-token problem).
 
     Args:
         env: env mapping to read (default ``os.environ``).
@@ -315,12 +354,22 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
     env = env if env is not None else os.environ
 
     # 1) Live process environment — every LOCATION-class alias, preferred first.
+    #    Placeholder-shaped values are skipped (not returned) so a config-seeded
+    #    placeholder inherited into the process env can never shadow a real
+    #    credential sitting in the secrets store (step 2).
+    saw_placeholder = False
     for name in _PIT_ENV_NAMES:
         val = str(env.get(name, "")).strip().strip("'\"")
-        if val:
-            return val
+        if not val:
+            continue
+        if _is_placeholder(val):
+            saw_placeholder = True
+            continue
+        return val
 
     # 2) Canonical env stores (the value physically lives here in a real install).
+    #    This is the AUTHORITATIVE source (TERMINOLOGY.md) and is preferred over any
+    #    placeholder found in step 1.
     if search_stores:
         hit = _scan_env_stores(_PIT_ENV_NAMES)
         if hit:
@@ -335,6 +384,12 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
         "401s on media uploads) — set the LOCATION PIT instead."
         if agency_seen else ""
     )
+    placeholder_note = (
+        " Note: at least one candidate in the live env was a documentation "
+        "PLACEHOLDER (short / dummy-shaped) and was SKIPPED rather than used — "
+        "put the real value in ~/.openclaw/secrets/.env, not just openclaw.json."
+        if saw_placeholder else ""
+    )
     raise RuntimeError(
         "GHL LOCATION PIT not found IN THE ENVIRONMENT or in any canonical env "
         "store. Checked env vars (LOCATION-class, in order): "
@@ -344,7 +399,7 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
         "~/.openclaw/secrets/.env under GOHIGHLEVEL_API_KEY — load it first "
         "(e.g. `set -a; source ~/.openclaw/secrets/.env; set +a`) and retry. "
         "Media uploads REQUIRE the LOCATION PIT (medias.write scope); the AGENCY "
-        f"PIT 401s for media.{agency_note}"
+        f"PIT 401s for media.{agency_note}{placeholder_note}"
     )
 
 

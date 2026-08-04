@@ -59,11 +59,16 @@ holds **copies**, and the copies are what rot — they go stale after a rotation
 short placeholder that then silently shadows the live credential. A placeholder fails as
 `401 Invalid Private Integration token`, which reads like a broken token rather than a missing one.
 
-As of 2026-08-03 several location-PIT alias names in `openclaw.json` env.vars (`GHL_API_KEY`,
-`GHL_PIT`, `GHL_TOKEN`, `GHL_PIT_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`, `GHL_PRIVATE_TOKEN`,
-`GHL_LOCATION_PIT`, `GOHIGHLEVEL_LOCATION_PIT`) still hold that placeholder rather than a real
-token. A resolver that walks the 11-name chain and takes the first non-empty name can pick one up
-and fail in a way that looks like a scope problem.
+A location-PIT config-copy sweep on 2026-08-03 found several alias names in `openclaw.json`
+env.vars (`GHL_API_KEY`, `GHL_PIT`, `GHL_TOKEN`, `GHL_PIT_TOKEN`, `GHL_PRIVATE_INTEGRATION_TOKEN`,
+`GHL_PRIVATE_TOKEN`, `GHL_LOCATION_PIT`, `GOHIGHLEVEL_LOCATION_PIT`) holding that placeholder
+rather than a real token, and removed them. **A later full recursive re-scan of the entire
+`openclaw.json` tree (not just the top-level `env.vars` block — every `mcp.servers.*.env`, every
+nested config path) on 2026-08-03 confirmed zero placeholder-shaped GHL credential copies remain
+anywhere in config.** That sweep fixed today's instance; it did not fix the underlying resolver
+behavior — a resolver that walks the 11-name chain and takes the first non-empty name will pick up
+the NEXT placeholder that gets seeded there just as readily. See "Resolver algorithm" below for the
+code-level fix that closes the class of bug, not just today's occurrence.
 
 **Rule: resolve GHL credentials from `secrets/.env`; validate with an authed read before trusting
 any name.**
@@ -72,6 +77,31 @@ Diagnostic distinction, both observed live: a value that is not a real token ret
 `401 Invalid Private Integration token`, whereas a real token that merely lacks reach returns
 `403 Forbidden resource` or `401 The token is not authorized for this scope`. **A 403 means the
 token is genuine** — do not "fix" it by swapping in a different name.
+
+### Resolver algorithm — placeholder shapes to SKIP, not just document
+
+A doctrine paragraph does not stop a resolver from picking up a placeholder the next time one gets
+seeded into `openclaw.json` env.vars (which the gateway process inherits into its live environment
+at launch, indistinguishable there from a legitimately-set env var). The fix has to live in the
+resolver code, not only in this file. A GHL credential resolver MUST:
+
+1. **Treat a candidate value as a placeholder — and SKIP it, never return it — when it is:**
+   shorter than 20 characters (a real PIT/refresh token is far longer); OR begins `pit-abc` /
+   `PIT-ABC` (the literal documentation example); OR begins `changeme` / `xxx` / `your-` / `your_`
+   (any case); OR ends `_here` / `-here` (any case); OR is wrapped in angle brackets (`<...>`).
+2. **Keep scanning remaining aliases in the live environment** when a candidate is placeholder-shaped
+   — do not stop at the first non-empty hit if it is a placeholder.
+3. **Fall through to a direct read of `secrets/.env`** (and the other canonical env stores) once every
+   live-env alias is exhausted (empty or placeholder-shaped), before declaring the credential missing.
+
+The reference implementation is `38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh`'s
+`_is_placeholder()` (bash) — proven in production against this exact false-alarm. The same three
+shapes are ported (not reinvented) into every Python GHL credential resolver in this repo:
+`06-ghl-install-pages/tools/ghl_media.py`, `48-facebook-ad-generator/tools/ghl_media.py`,
+`06-ghl-install-pages/tools/ghl_bulk_workflow_enroll.py`, and
+`44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py` each carry
+a `_is_placeholder()` matching it. Any NEW GHL credential resolver added to this repo must do the
+same — copy the shape rules from one of the four files above, do not invent new ones.
 
 ### Company id is an identifier, not a secret
 

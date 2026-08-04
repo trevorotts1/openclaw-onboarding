@@ -59,22 +59,63 @@ _LOCATION_PIT_ENV_NAMES = (
 )
 
 
+def _is_placeholder(value: str) -> bool:
+    """True when ``value`` is a documentation placeholder, not a real credential.
+
+    Mirrors ``38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh``'s
+    ``_is_placeholder()`` — a naive first-non-empty-wins resolver over these same
+    alias names produced a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03 because
+    the 10-char doc placeholder ``pit-abc123`` is non-empty and outranked the real
+    credential. Same three shapes: shorter than 20 characters, a known dummy
+    literal (``pit-abc...``, ``changeme...``, ``xxx...``, ``your-...``/``your_...``,
+    a ``*_here``/``*-here`` suffix), or an angle-bracket placeholder (``<...>``).
+    """
+    if not value:
+        return True
+    if len(value) < 20:
+        return True
+    low = value.lower()
+    if low.startswith("pit-abc") or low.startswith("changeme") or low.startswith("xxx") \
+       or low.startswith("your-") or low.startswith("your_") \
+       or low.endswith("_here") or low.endswith("-here") \
+       or (value.startswith("<") and value.endswith(">")):
+        return True
+    return False
+
+
 def _get_token() -> str:
-    """Scan the full canonical LOCATION-PIT alias set and return the first non-empty hit.
+    """Scan the full canonical LOCATION-PIT alias set and return the first non-empty,
+    non-placeholder hit.
 
     The engine previously read ONLY GHL_API_KEY, which caused a 401 crash-loop when the
     client's token was stored under GOHIGHLEVEL_API_KEY or another canonical alias.
     This resolver closes that gap (root cause: a client-box GHL-MCP crash-loop, 2026-06).
+    A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED rather than accepted
+    — the process env is seeded from openclaw.json ``env.vars`` at gateway launch, and
+    those config copies are placeholders by design (see TERMINOLOGY.md); accepting the
+    first non-empty value regardless of shape produced a false "PIT expired" alarm on
+    2026-08-03.
     """
+    saw_placeholder = False
     for name in _LOCATION_PIT_ENV_NAMES:
         token = os.environ.get(name, "").strip()
-        if token:
-            return token
+        if not token:
+            continue
+        if _is_placeholder(token):
+            saw_placeholder = True
+            continue
+        return token
+    placeholder_note = (
+        "\nNote: at least one candidate was a documentation PLACEHOLDER (short / "
+        "dummy-shaped) and was SKIPPED rather than used — put the real value in "
+        "~/.openclaw/secrets/.env, not just openclaw.json."
+        if saw_placeholder else ""
+    )
     print(
         "Error: GHL location PIT not found in any canonical env-var name.\n"
         "Set one of these in ~/.openclaw/secrets/.env (or as an env var):\n"
         "  " + ", ".join(_LOCATION_PIT_ENV_NAMES) + "\n"
-        "Example: GOHIGHLEVEL_API_KEY=pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx",
+        "Example: GOHIGHLEVEL_API_KEY=pit-xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" + placeholder_note,
         file=sys.stderr,
     )
     sys.exit(1)
