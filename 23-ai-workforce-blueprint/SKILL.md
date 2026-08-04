@@ -252,8 +252,10 @@ materialize remediation scripts are GATED on `interviewComplete: true` in
 `.workforce-build-state.json`. Until then they REPORT "interview not completed yet" and refuse to
 scaffold — they never auto-create the default department floor under company `default`. This skill's
 `build-workforce.py` already fail-closes the same way via `_enforce_consent_or_refuse` (exit code 87,
-`status: INTERVIEW_PENDING`), corroborated by `_genuine_interview_complete_signal` (a bare flag is
-never trusted). One rule, enforced at every layer.
+`status: INTERVIEW_PENDING`), corroborated by `_genuine_interview_answers_file()` and
+`verify_interview_complete()` inside `build-workforce.py` (a bare `interviewComplete` flag is
+never trusted — it must be backed by a genuine conversational transcript or a valid
+owner-consent record). One rule, enforced at every layer.
 
 ### "I Don't Know" Research Protocol
 
