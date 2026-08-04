@@ -34,6 +34,14 @@
 #   D4  collect_crons()    `openclaw cron list --json` + observed-fire counting;
 #       collect_wedge()    demand-without-progress ticks + orphan :port listener
 #                          vs the declared supervisor in the restart-handoff file
+#   D7  collect_cross_run_sends()  offset-tracked NEW-bytes slice of every recent
+#                          AGENT SESSION transcript (agents/*/sessions/*.jsonl -
+#                          NOT the *.trajectory.jsonl stream D1-D4 read); every
+#                          inbound cross-agent delivery the gateway makes is
+#                          stamped there as message.provenance (2026-08-04 proof).
+#                          The raw message body is hashed and discarded inside
+#                          this one collector - it never reaches a detector, a
+#                          finding, or the ledger.
 # The env seam LOOP_NO_PROBES=1 disables every subprocess probe (hermetic tests).
 # =============================================================================
 """loop_watchdog.py - the per-box Loop Protection watchdog tick."""
@@ -61,13 +69,15 @@ from loop_ledger import Ledger, openclaw_root  # noqa: E402
 
 
 def run_detectors(evidence, thresholds, signatures):
-    """Run D1-D4 over injected/collected evidence. Returns a flat findings list."""
+    """Run D1-D4 and D7 over injected/collected evidence. Returns a flat findings
+    list."""
     findings = []
     findings += D.d1_restart_velocity(evidence.get("units", []), thresholds,
                                       warn_streaks=evidence.get("warn_streaks", {}))
     findings += D.d2_token_burn_rate(evidence.get("windows", []), thresholds, signatures)
     findings += D.d3_identical_signature(evidence.get("runs", []), thresholds)
     findings += D.d4_timer_refire(evidence.get("crons", []), evidence.get("wedge", {}), thresholds)
+    findings += D.d7_cross_run_resend(evidence.get("sends", []), thresholds)
     return findings
 
 
@@ -123,6 +133,14 @@ def tick(evidence, led, armed=None, escalate_transport=None, box="box"):
             _park_unit = f["unit"]
             in_tick_executors["LF-6"] = (
                 lambda dry_run, _u=_park_unit: KC.lf6_park_process(_u, led, dry_run=dry_run))
+        # LF-9 is the D7 sibling of LF-6: config-free (touches no client config,
+        # only calls the native sessions.abort RPC on the one named source
+        # session, then parks it), so it too applies for real in-tick on an
+        # armed box rather than waiting for an explicit operator `fix`.
+        if f.get("severity") == "P1" and kc.get("fix_class") == "LF-9" and f.get("unit"):
+            _abort_unit = f["unit"]
+            in_tick_executors["LF-9"] = (
+                lambda dry_run, _u=_abort_unit: KC.lf9_abort_cross_run_resend(_u, led, dry_run=dry_run))
         result = KC.apply(kc, led, armed=armed, executors=in_tick_executors,
                           verify_failed_last=False)
         if result["status"] == "applied":
@@ -756,24 +774,180 @@ def collect_wedge(led=None, slice_stats=None, gateway_up=None,
     return wedge
 
 
+# --------------------------------------------------------------------------- #
+# D7 - cross-run resend (provenance-stamped): the 2026-08-04 incident feed.
+# Reads AGENT SESSION transcripts (agents/*/sessions/*.jsonl), a DIFFERENT
+# stream from the *.trajectory.jsonl event log D1-D4 read - every inbound
+# cross-agent delivery the gateway makes is stamped THERE as
+# message.provenance, regardless of what the sending side logged (a resend is a
+# brand-new top-level run at the sender, so nothing the sender wrote survives
+# the resend boundary; only the RECEIVING side's transcript does).
+# --------------------------------------------------------------------------- #
+def _session_jsonl_files(max_files=40, max_age_hours=2.0):
+    """Newest AGENT session transcripts under <openclaw_root>/agents/*/sessions/
+    *.jsonl - explicitly EXCLUDING *.trajectory.jsonl (a `*.jsonl` glob also
+    matches that suffix), bounded by recent mtime so D7 stays cheap enough for a
+    60s cadence even though it currently rides the same 15-minute tick as D1-D4
+    (no separate cron/pulse-lane is added by this change - see CHANGELOG.md).
+    [] when the stream does not exist (a probe miss is data, never a crash)."""
+    try:
+        files = glob.glob(str(openclaw_root() / "agents" / "*" / "sessions" / "*.jsonl"))
+    except OSError:
+        return []
+    files = [f for f in files if not f.endswith(".trajectory.jsonl")]
+    import time
+    now = time.time()
+    scored = []
+    for f in files:
+        try:
+            mt = os.path.getmtime(f)
+        except OSError:
+            continue
+        if now - mt <= max_age_hours * 3600.0:
+            scored.append((mt, f))
+    scored.sort(reverse=True)
+    return [f for _, f in scored[:max_files]]
+
+
+def _read_new_session_rows(led=None, max_files=40, max_bytes=1_000_000):
+    """The NEW-bytes-since-last-tick slice of every recent session transcript -
+    D7's evidence source. A SEPARATE offset namespace ('loop-sess:<path>') from
+    D3's ('loop-traj:<path>'), so the two streams never share or clobber a
+    cursor even when a future schema places both under the same directory. Same
+    line-boundary-safe, rotation-safe, bounded-tail-on-first-sight shape as
+    _read_new_trajectory_rows. With led=None (the read-only audit path) this
+    PEEKS the bounded tail and advances nothing."""
+    rows = []
+    for f in _session_jsonl_files(max_files=max_files):
+        key = "loop-sess:%s" % f
+        try:
+            size = os.path.getsize(f)
+        except OSError:
+            continue
+        fresh_cut = False
+        off = led.get_offset(key) if led is not None else 0
+        if off > size:
+            off = 0  # rotated/truncated: start over
+        if off == 0 and size > max_bytes:
+            off = size - max_bytes  # not a line boundary: drop the first line below
+            fresh_cut = True
+        try:
+            with open(f, "rb") as fh:
+                fh.seek(off)
+                chunk = fh.read(max_bytes)
+        except OSError:
+            continue
+        end = chunk.rfind(b"\n")
+        if end < 0:
+            continue  # no complete line yet; do not advance, wait for more bytes
+        lines = chunk[:end].split(b"\n")
+        if fresh_cut and lines:
+            lines = lines[1:]  # partial first line from a mid-file cut
+        new_off = off + end + 1
+        for raw in lines:
+            raw = raw.strip()
+            if not raw:
+                continue
+            try:
+                row = json.loads(raw.decode("utf-8", "replace"))
+            except ValueError:
+                continue
+            if not isinstance(row, dict):
+                continue
+            row["_file"] = f
+            rows.append(row)
+        if led is not None:
+            led.set_offset(key, new_off)
+    return rows
+
+
+# Candidate paths to the provenance object on one session-transcript row, and to
+# the message payload / target-session identity fields. `message.provenance` is
+# the CONFIRMED nesting per the 2026-08-04 incident proof (message.provenance =
+# {kind, sourceTool, sourceSessionKey}); the other provenance paths are
+# defensive candidates for a differently-enveloped row, same posture as every
+# other plausible-schema constant in this file (_CRON_LAST_RUN_FIELDS,
+# _USAGE_TOTAL_FIELDS). The payload field name is NOT confirmed - read
+# defensively, multi-candidate, fail-soft; CONFIRM the exact shape on the
+# operator canary during burn-in.
+_PROVENANCE_PATHS = ("message.provenance", "provenance", "data.provenance")
+_PAYLOAD_PATHS = ("message.content", "message.body", "message.text",
+                  "content", "body", "text",
+                  "data.content", "data.body", "data.text")
+_SESSION_TARGET_FIELDS = ("sessionKey", "sessionId")
+
+
+def _first_present(row, dotted_paths):
+    """The first non-missing, non-None value among `dotted_paths` on `row` (dot-
+    path lookup via loop_common.dotpath_get). None when every candidate misses -
+    never a crash, never a guess."""
+    for path in dotted_paths:
+        v = C.dotpath_get(row, path)
+        if v is not C.MISSING and v is not None:
+            return v
+    return None
+
+
+def collect_cross_run_sends(led=None):
+    """D7 evidence: one entry per inbound provenance-stamped cross-agent message
+    seen in the new-bytes-since-last-tick slice of every recent session
+    transcript - {source, target, hash, run_id, ts}. Only rows whose provenance
+    carries sourceTool == 'sessions_send' count (kind, when present, must be
+    'inter_session' - any other kind is a different delivery path and is
+    skipped, never guessed at). The payload is hashed via
+    C.cross_run_payload_hash and the raw text is NEVER assigned anywhere but
+    the argument to that one call - it is not placed in the returned dict, not
+    logged, and never reaches the ledger or a finding detail (a session
+    transcript can carry a live client credential pasted mid-conversation -
+    SKILL.md doctrine 3)."""
+    rows = _read_new_session_rows(led)
+    out = []
+    for row in rows:
+        prov = _first_present(row, _PROVENANCE_PATHS)
+        if not isinstance(prov, dict):
+            continue
+        if str(prov.get("sourceTool") or "") != "sessions_send":
+            continue
+        kind = prov.get("kind")
+        if kind is not None and str(kind) != "inter_session":
+            continue
+        source = prov.get("sourceSessionKey") or prov.get("sourceSession") \
+            or prov.get("source")
+        if not source:
+            continue
+        target = _first_present(row, _SESSION_TARGET_FIELDS) or row.get("_file")
+        payload = _first_present(row, _PAYLOAD_PATHS)
+        if payload is None:
+            continue
+        out.append({"source": str(source), "target": str(target),
+                    "hash": C.cross_run_payload_hash(source, target, payload),
+                    "run_id": str(row.get("runId") or row.get("run_id") or ""),
+                    "ts": str(row.get("ts") or "")})
+    return out
+
+
 def collect_evidence(led=None):
     """Assemble the evidence dict from the box, best-effort. Detectors run over
     whatever is available; a missing source contributes no findings, never an
-    error. With a Ledger (the tick path): the D3 slice is offset-tracked and the
-    D4 counters persist. With led=None (the read-only audit path): bounded tail
-    PEEK, nothing persisted, no offset advanced.
+    error. With a Ledger (the tick path): the D3/D7 slices are offset-tracked
+    (separate namespaces) and the D4 counters persist. With led=None (the
+    read-only audit path): bounded tail PEEK, nothing persisted, no offset
+    advanced.
 
     D5/D6 attach HERE when they land (fix design 2026-07-13 SS4): a
     collect_sessions() over the gateway log's model-fetch starts feeds
     d5_completion_rate (windows already carry per-hour `completions` for it),
     and a collect_sends() over the sendguard ledger feeds
-    d6_outbound_send_rate; both then ride the 60s pulse lane."""
+    d6_outbound_send_rate; both then ride the 60s pulse lane. D7
+    (collect_cross_run_sends, above) is a DIFFERENT, already-landed detector -
+    it does not consume either reservation."""
     rows, slice_stats = _read_new_trajectory_rows(led)
     return {"units": collect_units(),
             "windows": collect_windows(),
             "runs": collect_runs(rows),
             "crons": collect_crons(led),
-            "wedge": collect_wedge(led, slice_stats)}
+            "wedge": collect_wedge(led, slice_stats),
+            "sends": collect_cross_run_sends(led)}
 
 
 def self_test():
@@ -940,6 +1114,41 @@ def self_test():
         assert "orphan_listener_pid" not in wf  # mid-restart is not an orphan
         print("  collect-wedge case: PASS (demand-gated counter; reset on progress; "
               "stale-handoff orphan only)")
+
+        # D7 collect case: a provenance-stamped AGENT SESSION transcript (a
+        # SEPARATE file in the SAME sessions dir - never the *.trajectory.jsonl
+        # stream above) carrying 3 resends of the SAME inter-session message
+        # (message.provenance.sourceTool == 'sessions_send') across DISTINCT run
+        # ids, ~34s apart (the incident's own cadence fingerprint), must yield
+        # real D7 evidence and a P1 LP-A8 finding - and the raw payload text
+        # must NEVER survive into the evidence dict, the ledger, or a finding
+        # detail (only its hash may).
+        base = t0 + timedelta(hours=1)
+        raw_payload = "please pick up ticket 4471 and reply when the queue clears"
+        resend_rows = [
+            {"type": "message", "ts": (base + timedelta(seconds=dt)).isoformat(),
+             "sessionKey": "agent:dept:main", "runId": "resend-r%d" % i,
+             "message": {"content": raw_payload,
+                        "provenance": {"kind": "inter_session",
+                                       "sourceTool": "sessions_send",
+                                       "sourceSessionKey": "agent:orch:main"}}}
+            for i, dt in enumerate((0, 34, 68))
+        ]
+        (sess_dir / "dept-target.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in resend_rows) + "\n", encoding="utf-8")
+        sends = collect_cross_run_sends(led)
+        assert len(sends) == 3 and all(s["source"] == "agent:orch:main" for s in sends)
+        assert not any(raw_payload in json.dumps(s) for s in sends), \
+            "the raw message body must NEVER survive into D7 evidence"
+        f7 = run_detectors({"sends": sends}, C.load_skill_config("thresholds.json"),
+                           C.load_signatures())
+        assert any(x["severity"] == "P1" and x["loop_class"] == "LP-A8" for x in f7)
+        assert not any(raw_payload in json.dumps(x) for x in f7)
+        sends2 = collect_cross_run_sends(led)
+        assert sends2 == []  # the slice was offset-consumed
+        print("  D7 collect case: PASS (3 provenance-stamped resends -> real "
+              "evidence -> P1 LP-A8; raw payload never in evidence or a "
+              "finding; slice offset-consumed)")
 
         led.close()
         for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", _PROBES_OFF_ENV):

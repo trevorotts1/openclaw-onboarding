@@ -61,6 +61,17 @@ def cron_breaker_trips(actual_per_day, declared_per_day, breakers):
     return actual_per_day > declared_per_day * b["overfire_multiple_of_declared"]
 
 
+def resend_breaker_trips(distinct_run_count, breakers):
+    """True when the resend breaker should trip: >= N DISTINCT run ids carrying
+    the SAME normalized cross-run payload for the SAME (source,target) pair
+    inside the rolling window (LP-A8, the 2026-08-04 cross-run resend
+    incident). Mirrors D7's own p1_repeat threshold from thresholds.json as an
+    INDEPENDENT ceiling copy in breakers.json - the same S4 cap-raise-without-
+    stamp pattern every other breaker predicate here follows."""
+    b = breakers["resend"]
+    return distinct_run_count >= b["max_events_per_window"]
+
+
 def healer_breaker_trips(unit, ledger, breakers, verify_failed=False):
     """The healer's self-breaker: > N fixes on the SAME target / 24h OR any fix-verify
     failure = STOP fixing that target (spec 5.1). Returns (tripped, reason)."""
@@ -125,6 +136,9 @@ def self_test():
     assert cron_breaker_trips(96, 1, br) is True   # 96/day vs @daily bound 1, > 2x
     assert cron_breaker_trips(2, 96, br) is False  # firing at declared rate
     print("  retry+cron case: PASS")
+
+    assert resend_breaker_trips(3, br) is True and resend_breaker_trips(2, br) is False
+    print("  resend case: PASS (trips at >=3 identical cross-run resends in the window)")
 
     with tempfile.TemporaryDirectory() as td:
         led = Ledger(Path(td) / "loop-protection")

@@ -27,6 +27,7 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -176,6 +177,86 @@ def lf6_park_process(unit, ledger, dry_run=True):
             "dry_run": False, "revert": "loop-companion.sh unpark %s" % unit}
 
 
+def _sessions_abort_via_cli(session_key, timeout=10):
+    """Best-effort `openclaw sessions abort --session <key> --json` -> the native
+    sessions.abort RPC result. A plausible CLI shape mirroring loop_watchdog.py's
+    `openclaw cron list --json`; CONFIRM the exact subcommand on the operator
+    canary during burn-in. `LOOP_NO_PROBES=1` (the hermetic-test env seam every
+    other subprocess probe in this skill honors) short-circuits to a no-op
+    BEFORE any subprocess runs, so a self-test that forgets to inject `abort_fn`
+    still never touches a real gateway. On ANY OTHER miss (no binary, non-zero
+    exit, bad JSON) returns {ok: False} - never a crash. The caller still parks
+    the source unit regardless of this result: the park is what actually breaks
+    the loop, and the RPC call is a best-effort courtesy - the incident proof
+    documents calling it with NO active run as a safe no-op,
+    {ok:true, abortedRunId:null}."""
+    if os.environ.get("LOOP_NO_PROBES", "") == "1":
+        return {"ok": False}
+    binpath = os.environ.get("OPENCLAW_BIN") or shutil.which("openclaw")
+    if not binpath:
+        return {"ok": False}
+    try:
+        proc = subprocess.run(
+            [binpath, "sessions", "abort", "--session", str(session_key), "--json"],
+            capture_output=True, text=True, timeout=timeout, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return {"ok": False}
+    if proc.returncode != 0 or not (proc.stdout or "").strip():
+        return {"ok": False}
+    try:
+        return json.loads(proc.stdout)
+    except ValueError:
+        return {"ok": False}
+
+
+def lf9_abort_cross_run_resend(source_session_key, ledger, dry_run=True, abort_fn=None):
+    """LF-9: abort the resending SOURCE session's in-flight run via the native
+    sessions.abort RPC, breaking a confirmed cross-run resend loop (LP-A8) at its
+    driver - the orchestrator that keeps firing a brand-new top-level run every
+    time sessions_send's local 30s fallback timeout is misread as delivery
+    failure. Calling sessions.abort with NO active run is a documented safe
+    no-op ({ok:true, abortedRunId:null}), so this never errors on a source that
+    has already moved on by the time the breaker trips; the PARK below is what
+    actually stops the recurrence, regardless of the RPC outcome. NEVER pkill
+    node, NEVER restart the gateway - this touches ONLY the one session named.
+
+    A 600s action cooldown (config/thresholds.json d7_cross_run_resend
+    .action_cooldown_seconds) bounds how often this may re-fire on the SAME
+    source: a second call inside the window is REFUSED (never re-applied),
+    recorded via the ledger's existing digest/dedup primitive (the same one
+    tick()'s alert dedup uses) rather than a new mechanism. `abort_fn` is
+    injectable (defaults to the best-effort CLI probe below) so tests never
+    touch a real gateway. Returns {applied, reason}."""
+    cooldown_key = "resend-cooldown|%s" % source_session_key
+    cooldown_seconds = C.load_skill_config("thresholds.json")["d7_cross_run_resend"]["action_cooldown_seconds"]
+    if dry_run:
+        return {"applied": False,
+                "reason": "DRY_RUN: would call sessions.abort on '%s' + park "
+                          "(no-op-safe if nothing active)" % source_session_key,
+                "dry_run": True}
+    if ledger.recent_digest(cooldown_key, cooldown_seconds / 3600.0):
+        return {"applied": False,
+                "reason": "action cooldown active on '%s' (< %ds since the last "
+                          "abort+park; never re-fire the breaker faster than the "
+                          "proven-safe cadence)" % (source_session_key, cooldown_seconds),
+                "dry_run": False}
+    fn = abort_fn or _sessions_abort_via_cli
+    try:
+        result = fn(source_session_key)
+    except Exception as exc:  # noqa: BLE001 - an RPC miss is data, never a crash
+        result = {"ok": False, "error": str(exc)}
+    BR.trip(source_session_key, "resend", ledger, park=True)
+    ledger.record_digest("resend-cooldown", cooldown_key, payload="applied")
+    aborted = bool(result.get("ok"))
+    return {"applied": True,
+            "reason": "sessions.abort('%s') -> %s; source parked (visible-red; "
+                      "no auto-respawn)"
+                      % (source_session_key,
+                         "ok" if aborted else "no-op/unreachable (safe either way)"),
+            "dry_run": False,
+            "revert": "loop-companion.sh unpark %s" % source_session_key}
+
+
 # --------------------------------------------------------------------------- #
 # apply dispatch (honors DRY_RUN + the healer self-breaker)
 # --------------------------------------------------------------------------- #
@@ -254,6 +335,22 @@ def run_fix(ledger, finding_id, box="box", approve=False):
         return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
                 "applied": applied, "detail": r.get("reason"),
                 "revert_cmd": kc.get("revert_cmd")}, 0
+    # config-FREE, deterministic act: abort the resending session + park it
+    # (LF-9, LP-A8's sessions.abort + park sibling of LF-6's process park).
+    if fc == "LF-9":
+        unit = f.get("unit")
+        if not unit:
+            return {"ok": False,
+                    "reason": "finding %s carries no unit (source session) to abort" % finding_id}, 2
+        r = lf9_abort_cross_run_resend(unit, ledger, dry_run=False)
+        applied = bool(r.get("applied"))
+        ledger.record_fix(finding_id, fc, unit=unit, what=kc.get("what"),
+                          verify_outcome="applied" if applied else "refused",
+                          revert_cmd=kc.get("revert_cmd"), dry_run=False)
+        ledger.set_finding_state(finding_id, "fixed" if applied else "escalated")
+        return {"ok": applied, "action": "fix", "fix_class": fc, "unit": unit,
+                "applied": applied, "detail": r.get("reason"),
+                "revert_cmd": kc.get("revert_cmd")}, 0
     # no Tier-1 kill card at all -> propose-and-hold (Rescue Rangers).
     if fc is None:
         return {"ok": False, "action": "hold", "fix_class": None, "tier": tier,
@@ -279,7 +376,9 @@ def self_test():
     assert p["fix_class"] == "LF-6" and p["tier"] == 1 and "unpark --finding 7" in p["revert_cmd"]
     p3 = plan({"loop_class": "LP-D1", "finding_id": 9})   # empty-prompt cron = propose-and-hold
     assert p3["fix_class"] is None and p3["tier"] == 3
-    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-D1->propose-and-hold tier3)")
+    p4 = plan({"loop_class": "LP-A8", "finding_id": 11})  # cross-run resend = LF-9 tier1
+    assert p4["fix_class"] == "LF-9" and p4["tier"] == 1 and "unpark --finding 11" in p4["revert_cmd"]
+    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-D1->propose-and-hold tier3; LP-A8->LF-9 tier1)")
 
     with tempfile.TemporaryDirectory() as td:
         # LF-1: a DEAD-pid JSON lock is archived; a LIVE-pid lock is refused; a
@@ -318,6 +417,32 @@ def self_test():
         r2 = lf2_rewind_offset(off, dry_run=False)
         assert r2["applied"] and json.loads(off.read_text())["stored_offset"] == 100399
         print("  LF-2 case: PASS (DRY_RUN byte-identical; armed rewinds to oldest-1)")
+
+        # LF-9: abort-and-park the resending source session (LP-A8, the
+        # 2026-08-04 cross-run resend incident). The RPC is INJECTED (abort_fn)
+        # so this drill touches no real gateway; a no-op-safe
+        # {ok:true, abortedRunId:None} result still parks the source - the
+        # park, not the RPC, is what actually breaks the loop. DRY_RUN mutates
+        # nothing. A second call inside the 600s action cooldown is REFUSED,
+        # never re-applied (never re-fire faster than the proven-safe cadence).
+        led9 = Ledger(Path(td) / "loop-protection-lf9")
+
+        def _fake_abort_noop(key):
+            return {"ok": True, "abortedRunId": None}
+
+        planned9 = lf9_abort_cross_run_resend("agent:orch:main", led9, dry_run=True,
+                                              abort_fn=_fake_abort_noop)
+        assert not planned9["applied"] and "DRY_RUN" in planned9["reason"]
+        r9 = lf9_abort_cross_run_resend("agent:orch:main", led9, dry_run=False,
+                                        abort_fn=_fake_abort_noop)
+        assert r9["applied"] and "sessions.abort" in r9["reason"]
+        assert any(row["unit"] == "agent:orch:main" for row in led9.parked_units())
+        r9b = lf9_abort_cross_run_resend("agent:orch:main", led9, dry_run=False,
+                                         abort_fn=_fake_abort_noop)
+        assert not r9b["applied"] and "cooldown" in r9b["reason"]
+        led9.close()
+        print("  LF-9 case: PASS (DRY_RUN plans; armed aborts+parks once, no-op-safe "
+              "RPC result handled; a second call inside the 600s cooldown REFUSED)")
 
         led = Ledger(Path(td) / "loop-protection")
         # DRY_RUN apply mutates nothing and reports planned

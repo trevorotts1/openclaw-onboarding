@@ -38,6 +38,13 @@
     "gateway_port": 18789,
     "_source": "Cron fires > 2x declared cadence = P1; healthy-probe-but-no-progress 3 ticks = P1 wedge; any orphan listener on :18789 = P1 (Box E deferral deadlock)."
   },
+  "d7_cross_run_resend": {
+    "window_seconds": 300,
+    "warn_repeat": 2,
+    "p1_repeat": 3,
+    "action_cooldown_seconds": 600,
+    "_source": "The 2026-08-04 incident: sessions_send falls back to a HARDCODED 30000ms local timeout when the caller omits timeoutSeconds. A busy target that did not reply inside that window was misread as a DELIVERY FAILURE and the byte-identical message was resent as a brand-new TOP-LEVEL run 6-8x, ~34s apart (30s timeout + ~4s overhead is the resend cadence fingerprint), past 154,000 input tokens with zero brake. Every resend is a FRESH run id, so OpenClaw's own tools.loopDetection (counts tool calls WITHIN one run) and session.agentToAgent.maxPingPongTurns (bounds the INNER exchange of a single sessions_send call) both reset to a clean counter on every resend - tuning either threshold is a structural no-op for this class; zero firings across a 57MB gateway log while the loop was raging. The gateway's own provenance stamp on the RECEIVING side (message.provenance.sourceTool=='sessions_send') survives the resend boundary regardless of what the sender logged, so D7 reads THAT: hash the NORMALIZED payload (preamble-stripped, whitespace-collapsed - never the raw body) and count identical hashes from the SAME source->target pair across DISTINCT run ids inside the rolling window. Proven-safe on the live incident: >=3 identical cross-run sends within 300s = loop confirmed; a legitimate 2-send retry stays below P1 (WARN only); a genuine multi-message handoff (distinct payload hashes) never accumulates a group at all. action_cooldown_seconds is the minimum spacing between two LF-9 abort+park actions on the SAME source (never re-fire the breaker faster than the proven-safe cadence)."
+  },
   "backoff": {
     "base_seconds": 7200,
     "multiplier": 2,

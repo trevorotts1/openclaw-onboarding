@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
-description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries four loop-specific detectors D1-D4 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.3.2
+description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries five loop-specific detectors D1-D4 + D7 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, cross-run resend) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
+version: 0.4.0
 ---
 
 # Loop Protection System (Skill 61)
@@ -72,10 +72,13 @@ escalated), and never client-facing.
 | Skill 59/60 four-scanner merge-gate family | `guard-no-anthropic-runtime.py`, `scan-no-secrets.sh`, `scan-no-client-identifiers.sh`, `scan-no-json-exports.sh`, same 0/1/2/3/4 exit contract and value-free doctrine. |
 | `scripts/skill-content-hash.sh` (repo root) | Auto-picks up `61-*` as a hashed skill dir; the update stamp gate covers Skill 61 with no extra wiring. |
 
-## The four loop-specific detectors (D1-D4; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
+## The loop-specific detectors (D1-D4, D7; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
 
 These are absent from Skill 60's S1-S10 catalog; they are proposed for registration
-as Skill 60 signals S11-S14 (Open Decision T2) so the fleet keeps ONE vocabulary.
+as Skill 60 signals S11-S14+ (Open Decision T2) so the fleet keeps ONE vocabulary.
+D5 (completion-rate) and D6 (outbound-send-rate) are RESERVED names for a future
+fix design (SS4) - deliberately not built here; D7 is a separate, already-landed
+detector and does not consume either reservation.
 
 | # | Detector | Source (all local, deterministic, zero model calls) | Feeds |
 |---|---|---|---|
@@ -83,15 +86,19 @@ as Skill 60 signals S11-S14 (Open Decision T2) so the fleet keeps ONE vocabulary
 | D2 | **Token-burn rate** | trajectory usage per window, paid vs local, correlated with initiated-session presence | LP-A2/A5/A6/A7 |
 | D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
 | D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
+| D7 | **Cross-run resend (provenance-stamped)** | the RECEIVING agent's session transcript `message.provenance` (kind=`inter_session`, sourceTool=`sessions_send`, sourceSessionKey) - hashed payload, counted across DISTINCT run ids inside a rolling 300s window, offset-tracked, cheap enough for a 60s cadence | LP-A8, the resend breaker |
 
-## The five circuit breakers (spec 5.1; config/breakers.json)
+## The six circuit breakers (spec 5.1; config/breakers.json)
 
 process (D1 restart velocity -> stop+park), turn (D2 paid burn -> heartbeat
 allowlist enforce + park cron, never touches the model), retry (D3 identical
 signature -> park resumable + escalate), cron (D4 re-fire -> disable, never delete),
 healer (the watchdog's OWN fixes -> stop fixing a target fixed >3x/24h or whose last
-fix failed verify). Every ceiling is a SAFETY CAP under Skill 60 Signal S4: a raise
-without an operator stamp is a P1.
+fix failed verify), resend (D7 cross-run identical-payload resend -> abort the
+source session's in-flight run via the native `sessions.abort` RPC, no-op-safe when
+nothing is active, + park the source; NEVER pkill node, NEVER a gateway restart).
+Every ceiling is a SAFETY CAP under Skill 60 Signal S4: a raise without an operator
+stamp is a P1.
 
 ## Three fix tiers (spec 6.2)
 
@@ -117,7 +124,7 @@ without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (fourteen drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (fifteen drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line

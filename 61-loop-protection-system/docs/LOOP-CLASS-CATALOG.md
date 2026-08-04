@@ -17,6 +17,7 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 | LP-A5 | F9-adj | rapid retries against a 429/dead provider; paid-fallback drain | D3 | full stop -> honor retry window -> exactly one scheduled resume |
 | LP-A6 | F3 | resume cron without light-context: huge input, zero tool calls | D2 | LF-5 set `lightContext:true` |
 | LP-A7 | F2 | dreaming / re-embed under the sanctioned interval; per-agent shared-corpus re-embed | D2 | pin interval >= floor; point at the single shared index |
+| LP-A8 | F15 | orchestrator resends a byte-identical `sessions_send` payload as a NEW top-level run after the tool's own hardcoded 30s fallback timeout (caller omitted `timeoutSeconds`); each resend is a FRESH run id so OpenClaw's own `tools.loopDetection` (within-run) and `session.agentToAgent.maxPingPongTurns` (inner ping-pong of one `sessions_send` call) both reset and never fire | D7 | LF-9 `sessions.abort` (native RPC, no-op-safe when nothing is active) on the source's in-flight run + park source, never pkill/gateway-restart |
 
 ## Family B - PROCESS / SUPERVISOR LOOPS (restart storms: churn + outage, no model call)
 

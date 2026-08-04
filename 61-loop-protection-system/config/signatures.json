@@ -24,7 +24,8 @@
     {"id": "LP-C2", "family": "C", "f_taxonomy": "F10", "name": "announce-mode cron spam", "detector": "D4", "tier_default": 2},
     {"id": "LP-D1", "family": "D", "f_taxonomy": "F10", "name": "empty-prompt no-op cron", "detector": "D4", "tier_default": 3},
     {"id": "LP-D2", "family": "D", "f_taxonomy": "F3", "name": "stale-gate false-fail loop", "detector": "D3", "tier_default": 2},
-    {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1}
+    {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1},
+    {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "agent-to-agent cross-run resend loop", "detector": "D7", "tier_default": 1}
   ],
   "secret_shapes": {
     "detector": "scan-no-secrets.sh",

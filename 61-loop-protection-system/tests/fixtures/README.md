@@ -12,5 +12,6 @@ value. They reproduce the incident SHAPES the taxonomy (Section 2) is built from
 | `orphan-port.json` | D-ORPHAN | LP-B3 | an orphan :18789 listener + stale handoff = P1; kill-list is ONLY the orphan pid |
 | `subtractive-misconfig.json` | D-BURN-adjacent | LP-A1 | subtractive compaction math yields an effective ceiling <= 0 |
 | `idle-burn.trajectory.jsonl` | D-BURN | LP-A2 | idle-window paid burn = D2 P1; a working window is silent |
+| `cross-run-resend.sends.json` | D-RESEND | LP-A8 | 3 identical cross-run sends (distinct run ids, same source->target, same payload) = D7 P1 loop-confirmed; 2 = WARN-only; a distinct-payload fan-out never fires; raw payload never in a finding |
 
 No fixture is ever run against a live box, a live config, or a real credential.

@@ -3,6 +3,110 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.4.0] - 2026-08-04
+
+New loop class **LP-A8: agent-to-agent cross-run resend loop**, closing a real
+incident verified live on a client box the same day. Repo-only change (this
+skill's rollout gate stays HELD, `config/rollout.json` unchanged); no box is
+armed, activated, or touched by this release.
+
+**The incident.** An orchestrator agent routed work to a department agent via
+`sessions_send`, then waited. `sessions_send` falls back to a HARDCODED 30000ms
+timeout when the caller omits `timeoutSeconds`. The target department was busy
+and did not reply within 30s. The orchestrator misread the LOCAL TIMEOUT as a
+DELIVERY FAILURE and re-sent the byte-identical message as a BRAND-NEW
+top-level run - 6-8 times, ~34s apart (30s timeout + ~4s overhead is the resend
+cadence fingerprint). The victim department churned past 154,000 input tokens
+with no brake. Nothing caught it: OpenClaw's own `tools.loopDetection` counts
+repeated tool calls WITHIN one run, and `session.agentToAgent.maxPingPongTurns`
+bounds the INNER exchange of a single `sessions_send` call - every resend here
+was a separate top-level run id, so both counters reset to a clean slate each
+time. Zero firings across a 57MB gateway log while the loop was raging; tuning
+either existing threshold is a structural no-op for this class.
+
+**The detection signal (proven on the live box).** Every inbound cross-agent
+message the gateway delivers is stamped in the RECEIVING agent's session
+transcript as `message.provenance = {kind:"inter_session",
+sourceTool:"sessions_send", sourceSessionKey:...}` - structural, and present
+regardless of what the sending side logged (a resend is a fresh run at the
+sender, so nothing the sender wrote survives the resend boundary; only the
+receiver's transcript does).
+
+Added:
+- **D7 - cross-run resend (provenance-stamped)** (`loop_detectors.py
+  :: d7_cross_run_resend`). Reads AGENT SESSION transcripts
+  (`agents/*/sessions/*.jsonl` - a DIFFERENT stream from the
+  `*.trajectory.jsonl` event log D1-D4 read; a bare `*.jsonl` glob is
+  explicitly filtered to exclude the trajectory suffix), offset-tracked
+  (`loop_watchdog.py :: collect_cross_run_sends` / `_read_new_session_rows`,
+  its own `loop-sess:<path>` cursor namespace, never colliding with D3's
+  `loop-traj:<path>`), bounded to recently-modified files - cheap enough for a
+  60s cadence even though it currently rides the existing 15-minute tick (no
+  new cron/pulse-lane is added by this release; see Known gaps below). Groups
+  by (source, target, normalized-payload-hash) and slides a 300s window over
+  each group's DISTINCT run ids; `>= 3` inside the window is loop-confirmed P1,
+  `== 2` is WARN-only, and a genuine multi-message handoff (distinct payload
+  hashes per send) never accumulates a group at all - conservative by default.
+  D5 (completion-rate) and D6 (outbound-send-rate) remain the RESERVED,
+  unbuilt names documented in `collect_evidence()`'s docstring (fix design
+  SS4); D7 is unrelated and does not consume either reservation.
+- **Never-log-raw-body boundary** (`loop_common.py ::
+  normalize_inter_session_payload` / `cross_run_payload_hash`). The raw
+  message body - which can carry a live client credential pasted
+  mid-conversation - is normalized (leading bracketed preamble stripped,
+  whitespace collapsed) and SHA-256 hashed (16-hex, matching
+  `signature_hash`'s truncation) INSIDE the collector, one call, one stack
+  frame; unlike D3 (whose structural fields carry no client content), the
+  hash boundary sits at the collector here so the raw text never crosses into
+  a detector, a finding, the ledger, or any log line anywhere in this skill.
+- **LF-9 - abort + park** (`loop_killcards.py :: lf9_abort_cross_run_resend`,
+  Tier 1, config-free like LF-6, so it applies for real in-tick on an armed
+  box). Calls the native `sessions.abort` RPC on the resending SOURCE
+  session's in-flight run (best-effort `openclaw sessions abort --session
+  <key> --json`, `_sessions_abort_via_cli`; a documented safe no-op when
+  nothing is active, `{ok:true, abortedRunId:null}`) then parks the source
+  unit visible-red. NEVER pkill node, NEVER restarts the gateway. A 600s
+  action cooldown (the incident's own proven-safe spacing) is enforced via the
+  ledger's EXISTING digest/dedup primitive (the same one the alert path uses)
+  - a second call inside the window is REFUSED, never re-applied.
+  `run_fix()`'s `fix <finding-id>` operator path gained a matching `fc ==
+  "LF-9"` branch (mirrors the LF-6 branch exactly).
+- **`resend` breaker** (`config/breakers.json`, `loop_breaker.py ::
+  resend_breaker_trips`) - the independent ceiling-copy predicate every other
+  breaker carries (the S4 cap-raise-without-stamp pattern).
+- **`config/thresholds.json :: d7_cross_run_resend`** - `window_seconds: 300`,
+  `warn_repeat: 2`, `p1_repeat: 3`, `action_cooldown_seconds: 600` - the
+  proven-safe values from the live incident.
+- **`config/signatures.json` / `docs/LOOP-CLASS-CATALOG.md`**: `LP-A8`
+  registered (family A, `F15` - the taxonomy's next LP-introduced extension
+  after `F14`=LP-A1, per SKILL.md's "F14+" rule), detector `D7`, tier default 1.
+- **Tests**: `tests/fixtures/cross-run-resend.sends.json` (3 groups: a 3-send
+  true positive, a 2-send below-threshold pair, and a 3-message legitimate
+  fan-out with distinct payloads) + `tests/drills/D-RESEND.md`, wired into
+  `verify.sh` step 3 (now fifteen drills) and into `loop_detectors.py` /
+  `loop_watchdog.py` / `loop_killcards.py` / `loop_breaker.py`'s own
+  `--self-test`s.
+
+Known gaps (stated plainly, not silently dropped):
+- D7 rides the EXISTING 15-minute tick, not a dedicated 60s pulse-lane cron.
+  It is built cheap enough to run at 60s (offset cursors, recent-mtime file
+  filtering, no gateway-log tail) but no new cron/pulse-lane infrastructure
+  ships in this repo-only PR - that is a separate, larger change or belongs to
+  whatever eventually enables the D5/D6 pulse lane already reserved above.
+- The exact envelope nesting of `message.provenance` and the message-body
+  field name are read defensively (multi-candidate, fail-soft) per this
+  skill's standing burn-in discipline; `message.provenance` itself (the
+  `{kind, sourceTool, sourceSessionKey}` shape) IS the confirmed incident
+  proof and is tried first. CONFIRM the exact envelope on the operator
+  canary during burn-in, same as every other plausible-schema constant this
+  skill ships with (`_CRON_LAST_RUN_FIELDS`, `_USAGE_TOTAL_FIELDS`).
+- The `openclaw sessions abort --session <key> --json` CLI shape is a
+  plausible candidate (mirrors the already-shipped `openclaw cron list
+  --json` pattern), not yet confirmed against a live gateway - the mechanical
+  action is written so an unreachable/wrong CLI shape degrades to
+  `{ok: False}` and STILL parks the source (the park is what actually breaks
+  the loop; the RPC is a best-effort courtesy).
+
 ## [0.3.2] - 2026-07-16
 
 X/U-X3 (U93), D20 Option B: `scripts/loop-protection-canary.sh` renamed to

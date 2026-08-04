@@ -1,15 +1,21 @@
 #!/usr/bin/env python3
 # =============================================================================
 # SKILL 61 - LOOP PROTECTION SYSTEM :: loop_detectors.py
-# The FOUR loop-specific detectors D1-D4 (spec Section 3). These are the
+# The loop-specific detectors D1-D4 and D7 (spec Section 3). These are the
 # detectors absent from Skill 60's S1-S10 catalog; they are proposed for
-# registration as Skill 60 signals S11-S14 (Open Decision T2) so the fleet keeps
-# ONE signal vocabulary.
+# registration as Skill 60 signals S11-S14+ (Open Decision T2) so the fleet
+# keeps ONE signal vocabulary. D5 (completion-rate) and D6 (outbound-send-rate)
+# are RESERVED names documented in loop_watchdog.py's collect_evidence()
+# docstring (fix design SS4) - deliberately not built here; D7 is a NEW,
+# unrelated detector (the 2026-08-04 cross-run resend incident) and does not
+# consume either reservation.
 #
 #   D1  restart velocity          pm2 restarts / launchctl runs / docker RestartCount
 #   D2  token-burn rate           trajectory usage lines, paid vs local, idle-correlated
 #   D3  repeated-identical-signature  rolling hash over (err class + tool seq + target)
 #   D4  timer re-fire storm / wedge   cron over-fire, hung-but-alive, orphan :18789
+#   D7  cross-run resend (provenance-stamped)  gateway-stamped inter-session
+#       delivery hash, counted across DISTINCT run ids inside a rolling window
 #
 # EACH detector is a PURE function over PARSED evidence (dicts/lists), so it is
 # fully testable against fixtures with NO box access, NO subprocess, NO network,
@@ -201,6 +207,76 @@ def d4_timer_refire(crons, wedge, thresholds):
 
 
 # --------------------------------------------------------------------------- #
+# D7 - cross-run resend (provenance-stamped)
+# --------------------------------------------------------------------------- #
+def d7_cross_run_resend(sends, thresholds):
+    """`sends` = list of {source, target, hash, run_id, ts} - one entry per inbound
+    provenance-stamped cross-agent message (message.provenance.sourceTool ==
+    'sessions_send') seen in the new-bytes-since-last-tick slice of the
+    RECEIVING agent's session transcript (offset-tracked). `hash` is a SHA-256
+    (16-hex, C.cross_run_payload_hash) over the NORMALIZED payload - preamble-
+    stripped, whitespace-collapsed - computed and discarded by the COLLECTOR;
+    the raw body NEVER reaches this function (unlike D3, whose structural fields
+    carry no client content, a session transcript can carry a live credential
+    pasted mid-conversation, so the hash boundary sits one layer earlier here).
+
+    Groups by (source, target, hash) and slides a `window_seconds` window over
+    each group's DISTINCT run ids (a row that repeats an already-counted run id
+    - e.g. a slice re-read - counts once). >= p1_repeat DISTINCT run ids inside
+    the window for the SAME source->target pair with the SAME normalized
+    payload is a confirmed cross-run resend loop (LP-A8, the 2026-08-04
+    incident): a sessions_send call whose caller omitted timeoutSeconds falls
+    back to a hardcoded 30000ms local wait; a busy target that does not reply
+    inside that window is misread by the CALLER as a delivery failure and the
+    byte-identical message is resent as a brand-new TOP-LEVEL run - a fresh run
+    id every time, so OpenClaw's own tools.loopDetection (counts tool calls
+    WITHIN one run) and session.agentToAgent.maxPingPongTurns (bounds the INNER
+    exchange of a single sessions_send call) both reset to a clean counter on
+    every resend and never fire; only the gateway's own provenance stamp on the
+    RECEIVING side survives across the resend boundary, which is what this
+    detector reads. A legitimate multi-message handoff (distinct payload
+    hashes) or a single retry (only 2 distinct run ids in the window) never
+    reaches P1 - conservative by default, so a legitimate repeated-work cadence
+    never trips the breaker."""
+    t = thresholds["d7_cross_run_resend"]
+    window = t["window_seconds"]
+    warn_at = t["warn_repeat"]
+    p1_at = t["p1_repeat"]
+    groups = {}
+    for s in sends:
+        key = (s.get("source") or "<source>", s.get("target") or "<target>",
+              s.get("hash") or "<hash>")
+        groups.setdefault(key, []).append(s)
+    out = []
+    for (source, target, h), rows in groups.items():
+        rows_sorted = sorted(rows, key=lambda r: r.get("ts") or "")
+        seen_runs = {}
+        window_ts = []
+        emitted = False
+        for r in rows_sorted:
+            rid = r.get("run_id") or "<run>"
+            ts = C.parse_iso8601(r.get("ts"))
+            if ts is None or rid in seen_runs:
+                continue
+            seen_runs[rid] = ts
+            window_ts = [x for x in window_ts if (ts - x).total_seconds() <= window] + [ts]
+            count = len(window_ts)
+            dedup_key = "LP-A8|%s|%s|%s" % (source, target, h)
+            if count >= p1_at and not emitted:
+                out.append(_finding("LP-A8", P1, source,
+                           "identical cross-run resend x%d (%s->%s, sig %s) within %ds -> loop confirmed"
+                           % (count, source, target, h, window), "D7", tier=1,
+                           dedup_key=dedup_key))
+                emitted = True
+            elif count == warn_at and not emitted:
+                out.append(_finding("LP-A8", WARN, source,
+                           "identical cross-run resend x%d (%s->%s, sig %s) within %ds"
+                           % (count, source, target, h, window), "D7", tier=1,
+                           dedup_key=dedup_key))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # self-test (deterministic, no box access, no network, no model)
 # --------------------------------------------------------------------------- #
 def self_test():
@@ -269,6 +345,34 @@ def self_test():
     assert "LP-A4" in classes and "LP-B5" in classes and "LP-B3" in classes
     assert not any(x["unit"] == "healthy" for x in f4)  # firing at its declared rate
     print("  D4 case: PASS (over-fire + wedge + orphan each P1; healthy cron silent)")
+
+    # D7: 3 identical cross-run sends (DISTINCT run ids, same source->target->hash)
+    # inside the window = P1 loop confirmed; 2 stays below P1 (WARN only); a
+    # different hash never accumulates a group at all.
+    sends = [
+        {"source": "agent:orch:main", "target": "agent:dept:main", "hash": "sig1",
+         "run_id": "r1", "ts": "2026-08-04T00:00:00Z"},
+        {"source": "agent:orch:main", "target": "agent:dept:main", "hash": "sig1",
+         "run_id": "r2", "ts": "2026-08-04T00:00:34Z"},
+        {"source": "agent:orch:main", "target": "agent:dept:main", "hash": "sig1",
+         "run_id": "r3", "ts": "2026-08-04T00:01:08Z"},
+    ]
+    f7 = d7_cross_run_resend(sends, th)
+    assert any(x["severity"] == P1 and x["loop_class"] == "LP-A8"
+               and x["unit"] == "agent:orch:main" for x in f7)
+    two = sends[:2]
+    f7b = d7_cross_run_resend(two, th)
+    assert not any(x["severity"] == P1 for x in f7b)  # 2 < p1_repeat(3)
+    diff_hash = [dict(sends[0], hash="sigA", run_id="rA"),
+                dict(sends[1], hash="sigB", run_id="rB"),
+                dict(sends[2], hash="sigC", run_id="rC")]
+    f7c = d7_cross_run_resend(diff_hash, th)
+    assert not f7c  # distinct payloads per send: never a group, never a finding
+    same_run_twice = sends[:2] + [dict(sends[1])]  # a re-seen run id counts once
+    f7d = d7_cross_run_resend(same_run_twice, th)
+    assert not any(x["severity"] == P1 for x in f7d)
+    print("  D7 case: PASS (3 identical cross-run sends=P1; 2=WARN-only; distinct "
+          "payloads never group; a repeated run id counts once)")
 
     print("[loop_detectors] self-test: PASS")
     return 0
