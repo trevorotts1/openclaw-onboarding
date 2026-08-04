@@ -1319,6 +1319,79 @@ module.exports = {
 EOF
 }
 
+# >>> GHL-MCP-PM2-REGISTRATION-MISMATCH-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-pm2-registration-mismatch.test.sh)
+#
+# DEFECT 2 (proven live 2026-08-04): `pm2 startOrReload` MERGES a regenerated
+# ecosystem.config.js onto an app's EXISTING pm2 registration. When the new
+# file changes `script:`/`interpreter:` — e.g. a box registered under the old
+# `node dist/main.js` shape (no interpreter override) and this run writes the
+# crash-only launcher (`script: ".ghl-mcp-launch.sh"`, `interpreter: "bash"`)
+# — pm2 keeps the STALE `script: dist/main.js` and pairs it with the NEW
+# `interpreter: bash`. bash then tries to execute compiled JavaScript as a
+# shell script and crash-loops. `pm2 delete` + `pm2 start` always registers
+# clean, at the cost of resetting the app's uptime/restart-count history, so
+# it is used ONLY when a live registration actually disagrees with what this
+# run is about to write — never unconditionally (an unconditional delete
+# would lose that history on every ordinary, matching restart, for no
+# reason). Detect, don't assume.
+
+# _pm2_live_registration <app_name> — prints "script|interpreter" for the
+# LIVE pm2 registration of <app_name>, or nothing if it does not exist or
+# cannot be determined (missing pm2/python3). Non-secret fields only (a
+# script path and an interpreter name are not credentials) — this does NOT
+# need the pm2_env secret-filtering discipline scripts/ghl-mcp-assert-
+# runtime.sh uses for the fuller record, but stays scoped to exactly the two
+# fields this comparison needs regardless.
+_pm2_live_registration() {
+  local _name="$1"
+  command -v pm2 >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  # `python3 -c "$snippet"` (an ARGUMENT), never `python3 - <<EOF` — a heredoc
+  # attached to `python3 -` is consumed as the SCRIPT SOURCE, which leaves
+  # nothing on stdin for json.load(sys.stdin) to read from the piped `pm2
+  # jlist` output (an immediate EOF, silently caught by the except below, so
+  # this would print nothing for every box, every time). Same discipline as
+  # _GHL_FILTER_PM2_RECORD in scripts/ghl-mcp-assert-runtime.sh.
+  local _snippet='
+import json, os, sys
+name = os.environ.get("NAME", "")
+try:
+    apps = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+for a in apps:
+    if a.get("name") != name:
+        continue
+    env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
+    script = env.get("pm_exec_path") or a.get("pm_exec_path") or ""
+    interp = env.get("exec_interpreter") or ""
+    print("%s|%s" % (script, interp))
+    break
+'
+  pm2 jlist 2>/dev/null | NAME="$_name" python3 -c "$_snippet" 2>/dev/null
+}
+
+# _pm2_registration_mismatch <app_name> <want_script_basename> <want_interpreter>
+# Returns 0 (MISMATCH -> caller must force `pm2 delete` + `pm2 start`) or
+# 1 (no live app, or it already matches -> `pm2 startOrReload` is safe).
+# No live app at all is NOT a mismatch: a fresh install has nothing stale to
+# collide with, and `startOrReload` already falls through to `pm2 start` on a
+# name pm2 has never seen.
+_pm2_registration_mismatch() {
+  local _name="$1" _want_script="$2" _want_interp="$3"
+  local _live_reg _live_script _live_interp
+  _live_reg="$(_pm2_live_registration "$_name" || true)"
+  [ -n "$_live_reg" ] || return 1
+  _live_script="${_live_reg%%|*}"
+  _live_interp="${_live_reg#*|}"
+  if [ "${_live_script##*/}" != "$_want_script" ] || [ "$_live_interp" != "$_want_interp" ]; then
+    return 0
+  fi
+  return 1
+}
+# <<< GHL-MCP-PM2-REGISTRATION-MISMATCH-END
+
 start_service_vps() {
   local NODE_PATH; NODE_PATH="$(command -v node)"
   mkdir -p /data/logs 2>/dev/null || true
@@ -1328,8 +1401,17 @@ start_service_vps() {
   #    `pm2 save` + a reboot-resurrect hook). NEVER a bare nohup. ──────────────
   if command -v pm2 >/dev/null 2>&1; then
     log "starting GHL MCP under pm2 (ecosystem.config.js, PORT=${GHL_MCP_PORT}, profile=${GHL_MCP_TOOL_PROFILE})"
-    ( cd "$MCP_DIR" && pm2 startOrReload ecosystem.config.js >/dev/null 2>&1 \
-        || pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+
+    # D2 (see the GHL-MCP-PM2-REGISTRATION-MISMATCH block above for the full
+    # defect writeup): detect before assuming startOrReload is safe.
+    if _pm2_registration_mismatch ghl-community-mcp ".ghl-mcp-launch.sh" "bash"; then
+      log "pm2 registration MISMATCH detected for ghl-community-mcp — startOrReload would pair a NEW interpreter with a STALE script and crash-loop (D2). Forcing 'pm2 delete' + 'pm2 start' (this app's uptime/restart history resets; there is no way to change script/interpreter on a live pm2 process without one)."
+      ( cd "$MCP_DIR" && pm2 delete ghl-community-mcp >/dev/null 2>&1
+        pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+    else
+      ( cd "$MCP_DIR" && pm2 startOrReload ecosystem.config.js >/dev/null 2>&1 \
+          || pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+    fi
     pm2 save >/dev/null 2>&1 || true
     install_vps_reboot_resurrect
     return 0
