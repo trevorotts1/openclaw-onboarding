@@ -79,6 +79,91 @@ fi
 echo "[sop-library] client=$CLIENT  tag=$TAG"
 
 # ----------------------------------------------------------------------------
+# SQLITE ACCESS (DEFECT FIX, live 2026-08 Hostinger VPS finding). The shared
+# base image ghcr.io/hostinger/hvps-openclaw:latest ships libsqlite3-0 (the
+# LIBRARY) but NOT the `sqlite3` CLI BINARY. Every row-count / table-existence
+# read in this script used to shell out to that CLI; when it is missing on
+# PATH, bash's "sqlite3: command not found" goes to stderr (swallowed by the
+# `2>/dev/null` these reads all carried) and the accompanying `|| echo 0`
+# silently substituted a FALSE ZERO for "the query could not even run". The
+# post-ingest gate below then read that false zero as "the ingest produced 0
+# rows" and FATALed (exit 7) a run that had actually landed all 2,640 rows —
+# independently confirmed the same night via python3's stdlib sqlite3 module
+# against this exact database.
+#
+# python3 (with its always-present stdlib sqlite3 module) needs no CLI at all
+# and is already a hard dependency of this script's manifest reader (_mf()
+# above) and its U079 membership check below, so it is now the PRIMARY path
+# for every row-count read. The `sqlite3` CLI is kept only as a fallback for
+# the (extremely unlikely, given the above) python3-less box. True "neither
+# tool is available" is NEVER folded into a numeric 0 — it prints the literal,
+# distinguishable sentinel SQLITE_UNAVAILABLE, and every call site below
+# checks for it explicitly and FAILS LOUD rather than guessing.
+# ----------------------------------------------------------------------------
+_HAVE_PY3_SQLITE=0
+if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlite3' >/dev/null 2>&1; then
+  _HAVE_PY3_SQLITE=1
+fi
+_HAVE_SQLITE3_CLI=0
+command -v sqlite3 >/dev/null 2>&1 && _HAVE_SQLITE3_CLI=1
+
+# _sqlite_count <db> <sql> — runs a single-row/single-column SELECT and prints
+# the integer result on stdout. Prints the literal string "SQLITE_UNAVAILABLE"
+# (never a number) when NEITHER python3's stdlib sqlite3 module NOR a sqlite3
+# CLI binary is present on this box. Callers MUST check for that sentinel
+# explicitly — never pipe this through a bare `|| echo 0`.
+_sqlite_count() {
+  local _db="$1" _sql="$2"
+  if [ "$_HAVE_PY3_SQLITE" = "1" ]; then
+    SQLITE_COUNT_DB="$_db" SQLITE_COUNT_SQL="$_sql" python3 -c '
+import os, sqlite3
+db = os.environ["SQLITE_COUNT_DB"]
+sql = os.environ["SQLITE_COUNT_SQL"]
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    row = conn.execute(sql).fetchone()
+    conn.close()
+    print(int(row[0]) if row and row[0] is not None else 0)
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0
+  elif [ "$_HAVE_SQLITE3_CLI" = "1" ]; then
+    sqlite3 "file:${_db}?mode=ro" "$_sql" 2>/dev/null || echo 0
+  else
+    echo "SQLITE_UNAVAILABLE"
+  fi
+}
+
+# _sqlite_wal_checkpoint <db> — best-effort WAL checkpoint via whichever tool
+# is available. A no-op (not a failure) when neither tool exists; the retry
+# loop that calls this tolerates a skipped checkpoint the same way it already
+# tolerates lock contention.
+_sqlite_wal_checkpoint() {
+  local _db="$1"
+  if [ "$_HAVE_PY3_SQLITE" = "1" ]; then
+    SQLITE_WAL_DB="$_db" python3 -c '
+import os, sqlite3
+try:
+    conn = sqlite3.connect(os.environ["SQLITE_WAL_DB"], timeout=10)
+    conn.execute("PRAGMA wal_checkpoint(TRUNCATE);")
+    conn.commit()
+    conn.close()
+except Exception:
+    pass
+' >/dev/null 2>&1 || true
+  elif [ "$_HAVE_SQLITE3_CLI" = "1" ]; then
+    sqlite3 "$_db" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
+  fi
+}
+
+if [ "$_HAVE_PY3_SQLITE" != "1" ] && [ "$_HAVE_SQLITE3_CLI" != "1" ]; then
+  echo "[sop-library] FATAL: neither python3's stdlib sqlite3 module nor a sqlite3 CLI binary is available on this box." >&2
+  echo "[sop-library] Cannot verify SOP library population. Refusing to report a row count that was never actually read." >&2
+  echo "[sop-library] This is NOT the same as '0 rows' -- it is 'cannot check'. Install python3 (preferred) or the sqlite3 CLI." >&2
+  exit 8
+fi
+
+# ----------------------------------------------------------------------------
 # ALREADY-POPULATED SKIP GATE (v20.1.0 + U079). A box already at/above the
 # manifest's canonical population is left COMPLETELY untouched: no download, no
 # backup, no write, no network I/O at all. This is what makes the step safe to
@@ -96,10 +181,9 @@ echo "[sop-library] client=$CLIENT  tag=$TAG"
 #
 # SOP_LIB_FORCE=1 overrides (operator escape hatch for a genuine re-ingest).
 # ----------------------------------------------------------------------------
-CURRENT_COUNT="$(sqlite3 "file:${DB}?mode=ro" \
-  "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sops';" 2>/dev/null || echo 0)"
+CURRENT_COUNT="$(_sqlite_count "$DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sops';")"
 if [ "${CURRENT_COUNT:-0}" = "1" ]; then
-  CURRENT_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+  CURRENT_COUNT="$(_sqlite_count "$DB" "SELECT COUNT(*) FROM sops;")"
 else
   CURRENT_COUNT=0
 fi
@@ -218,8 +302,8 @@ python3 "$SCRIPT_DIR/ingest-sop-library.py" "$CLIENT" "$JSONL" "$DB"
 # refused, only the false negative is fixed.
 FINAL_COUNT=0
 for _sop_try in 1 2 3 4 5 6; do
-  sqlite3 "$DB" "PRAGMA wal_checkpoint(TRUNCATE);" >/dev/null 2>&1 || true
-  FINAL_COUNT="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+  _sqlite_wal_checkpoint "$DB"
+  FINAL_COUNT="$(_sqlite_count "$DB" "SELECT COUNT(*) FROM sops;")"
   if [ "${FINAL_COUNT:-0}" -ge "${CANONICAL_SOP_COUNT:-2555}" ] 2>/dev/null; then
     break
   fi
@@ -272,7 +356,7 @@ fi
 # key and must stay an explicit operator decision, never an invisible side
 # effect of an update.
 # ----------------------------------------------------------------------------
-EMB_ROWS="$(sqlite3 "file:${DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+EMB_ROWS="$(_sqlite_count "$DB" "SELECT COUNT(*) FROM sop_embeddings;")"
 if [ "${EMB_ROWS:-0}" -lt "${FINAL_COUNT:-0}" ] 2>/dev/null; then
   echo "[sop-library] NOTE (operator): $FINAL_COUNT sops row(s) present, $EMB_ROWS embedded."
   echo "[sop-library]   The newly-ingested rows are NOT embedded. This script made ZERO embedding"
