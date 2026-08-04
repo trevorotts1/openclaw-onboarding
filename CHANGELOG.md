@@ -1,3 +1,29 @@
+## [v21.7.14]  -  2026-08-04  -  fix: a DIRTY Command Center git checkout no longer aborts the entire fleet update
+
+On 2 of 3 pilot boxes the root `update-skills.sh` hit an `exit 2` FATAL during the
+Command Center refresh (`run-full-install.sh --update-only` does a `git pull`,
+which is unsafe/unpredictable against an uncommitted local checkout) — and that
+`exit 2` terminated the ENTIRE updater before the PENDING-flag lifecycle further
+down the same script ever ran. A dirty client checkout is a routine, recoverable
+condition; it must never take down the rest of an otherwise-healthy update.
+
+**Fix:** detect a dirty CC checkout (`git status --porcelain`) BEFORE attempting
+the pull. When dirty, skip ONLY the Command Center refresh, print a WARNING with
+the exact remediation (`git stash` or `git add -A && git commit`, then re-run),
+and fall through so every other step — including the PENDING-flag lifecycle —
+still completes. Nothing is stashed, reset, or discarded automatically:
+uncommitted work on a client box is load-bearing. The three PRE-EXISTING U005
+exit-2 advisory paths (installer genuinely fails, checkout ends up off
+origin/main, installer script missing) are unchanged — those remain the
+documented "content current, CC infrastructure needs attention" contract; only
+the NEW dirty-checkout condition degrades to a warning instead of an abort.
+
+Mutation-proven: `scripts/test-updater-traps-1-and-3.sh` gained CASE 10 (a dirty
+checkout does NOT invoke the installer, exits 0, prints the warning + remediation,
+and explicitly states the rest of the update continues) and CASE 11 (a CONTROL
+proving a clean checkout still refreshes normally — the new guard does not
+over-block). Full suite: 48/48 PASS (was 40/40 before the two new cases).
+
 ## [v21.7.13]  -  2026-08-04  -  fix(skill-32): qc-command-center-setup.sh's unbounded `find $HOME` no longer hangs a routine roll for 20+ minutes
 
 `qc-command-center-setup.sh` ran two unconditional `find $HOME /data -maxdepth 4 ...`
