@@ -1,3 +1,25 @@
+## [v21.7.11]  -  2026-08-03  -  Security: stop leaking the Notion token via curl argv (37-zhc-closeout)
+
+`notion_curl()` (`create-notion-closeout.sh`) and `notion_search_any_page()`
+(`ensure-notion-parent-page.sh`) interpolated `NOTION_API_TOKEN` directly into a
+`curl -H "Authorization: Bearer ..."` argument, putting the live token in
+plaintext in this host's process table for the life of every call — readable by
+any `ps` / `ps -eww` on the box for the duration of the request. 11 of 25
+reachable boxes carry a live token behind this code path.
+
+Both call sites now write their headers to a per-call `mktemp` file (mode 600,
+unlinked immediately after the curl call returns, exit code preserved) and pass
+it to curl via `-K` instead of `-H` on the command line, so the token never
+appears as a process argument. Only the header-transport mechanism changed —
+no header content, retry logic, or error handling was altered.
+
+37-zhc-closeout/skill-version.txt bumped independently (not one of the 10
+repo-wide lockstep markers): v12.14.22 -> v12.14.23. The repo-wide version is
+also bumped here (beyond what shipping the skill-level marker alone requires)
+so this fix ships under its own tag rather than riding along inside the
+existing v21.7.10 tag, which predates it — the exact "tag does not contain
+HEAD" gap scripts/bump-version.sh's own release-integrity guard flags.
+
 ## [v21.7.10]  -  2026-08-03  -  Fix the circular alerting dependency: operator escalation now survives a dead gateway
 
 Proven live: a client box was down ~20h, its watchdog wrote 79 escalation attempts,
