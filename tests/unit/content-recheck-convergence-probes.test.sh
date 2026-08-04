@@ -2,9 +2,9 @@
 # tests/unit/content-recheck-convergence-probes.test.sh
 # ---------------------------------------------------------------------------
 # Fleet-roll coverage audit gap #8: proves the SOP-library/embeddings,
-# persona-index, weekly-cron, and AGENTS.md-hygiene probes added right
-# before update-skills.sh's CONTENT RECHECK `exit 0` behave exactly like
-# _cc_currency_probe's already-shipped contract:
+# persona-index, weekly-cron, AGENTS.md-hygiene, and UPDATE-PENDING-flag-
+# currency probes added right before update-skills.sh's CONTENT RECHECK
+# `exit 0` behave exactly like _cc_currency_probe's already-shipped contract:
 #
 #   * return 1 (non-zero) ONLY when a full pass would ACTUALLY repair
 #     something on this box.
@@ -103,14 +103,15 @@ bash -n "$WORK/gate-wrapped.sh" || { echo "FATAL: extracted GATE block does not 
 cp "$WORK/resolve_ws.inc" "$WORK/resolve_ws.sh"
 bash -n "$WORK/resolve_ws.sh" || { echo "FATAL: extracted oc_resolve_workspace_announced() does not parse"; exit 2; }
 
-echo "== static: all four probes are present and wired ahead of the exit =="
+echo "== static: all five probes are present and wired ahead of the exit =="
 for fn in _sop_library_currency_probe _persona_index_currency_probe \
-          _weekly_cron_currency_probe _agents_md_hygiene_probe; do
+          _weekly_cron_currency_probe _agents_md_hygiene_probe \
+          _pending_flag_currency_probe; do
   grep -q "^  ${fn}() {\$" "$WORK/probes.inc" \
     && ok "PROBES block defines ${fn}()" || bad "PROBES block missing ${fn}()"
 done
 for fn in _cc_currency_probe _sop_library_currency_probe _persona_index_currency_probe \
-          _weekly_cron_currency_probe _agents_md_hygiene_probe; do
+          _weekly_cron_currency_probe _agents_md_hygiene_probe _pending_flag_currency_probe; do
   grep -q "${fn}" "$WORK/gate.inc" \
     && ok "GATE block calls ${fn}" || bad "GATE block does not call ${fn}"
 done
@@ -428,11 +429,127 @@ RC=$?
 rm -f /tmp/amh1.out /tmp/amh2.out /tmp/amh3.out /tmp/amh4.out
 
 # ===========================================================================
+# UPDATE PENDING FLAG CURRENCY PROBE
+# ===========================================================================
+run_pending_probe() {  # run_pending_probe <agents_md_fixture_file> <onboarding_version>
+  local fixture="$1" version="$2"
+  local CASE_DIR; CASE_DIR="$(mktemp -d "$WORK/pending-case-XXXXXX")"
+  (
+    set -euo pipefail
+    # shellcheck source=/dev/null
+    source "$WORK/resolve_ws.sh"
+    # shellcheck source=/dev/null
+    source "$WORK/probes-wrapped.sh"
+    probes_block
+    HOME="$CASE_DIR/home"
+    WS="$CASE_DIR/ws"
+    mkdir -p "$HOME/.openclaw" "$WS"
+    python3 -c "
+import json
+json.dump({'agents': {'list': [{'id': 'main', 'workspace': '$WS'}]}}, open('$HOME/.openclaw/openclaw.json', 'w'))
+"
+    if [ -n "$fixture" ]; then
+      cp "$fixture" "$WS/AGENTS.md"
+    fi
+    ONBOARDING_VERSION="$version"
+    _pending_flag_currency_probe
+  )
+}
+
+echo ""
+echo "== UPDATE PENDING flag currency probe =="
+D_PFC="$WORK/pfc"; mkdir -p "$D_PFC"
+
+# no PENDING block at all -> clean, not forced (mirrors "no PENDING present ->
+# clean write" from the mutation-proof table).
+cat > "$D_PFC/no-flag.md" <<'EOF'
+# AGENTS.md
+
+Some ordinary content. Nothing pending here.
+EOF
+run_pending_probe "$D_PFC/no-flag.md" "v21.7.5" >/tmp/pfc1.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(pending) no PENDING section returns 0 (clean)" \
+  || bad "(pending) no-flag case returned $RC (expected 0): $(cat /tmp/pfc1.out)"
+
+# CURRENT-version PENDING block -> not stale, returns 0 ("CURRENT PENDING
+# present -> not duplicated, not swept spuriously").
+cat > "$D_PFC/current-flag.md" <<'EOF'
+# AGENTS.md
+
+## UPDATE PENDING -- Skill Update to v21.7.5
+
+A skill update was applied via update-skills.sh. Activate each new skill below.
+EOF
+run_pending_probe "$D_PFC/current-flag.md" "v21.7.5" >/tmp/pfc2.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(pending) PENDING section naming the CURRENT version returns 0 (not stale)" \
+  || bad "(pending) current-version case returned $RC (expected 0): $(cat /tmp/pfc2.out)"
+
+# STALE (prior-version) PENDING block -> returns 1, outstanding
+# ("stale PENDING present (older version stamp)").
+cat > "$D_PFC/stale-flag.md" <<'EOF'
+# AGENTS.md
+
+## UPDATE PENDING -- Skill Update to v21.7.2
+
+A skill update was applied via update-skills.sh on 2026-06-15. Activate each new skill below.
+EOF
+run_pending_probe "$D_PFC/stale-flag.md" "v21.7.5" >/tmp/pfc3.out 2>&1
+RC=$?
+[ "$RC" -eq 1 ] && ok "(pending) PENDING section naming an OLDER version returns 1 (stale, outstanding)" \
+  || bad "(pending) stale-version case returned $RC (expected 1): $(cat /tmp/pfc3.out)"
+grep -q "state=stale sections=1" /tmp/pfc3.out && ok "(pending) reports state=stale sections=1" || bad "(pending) missing state=stale sections=1 message"
+
+# THREE stacked stale blocks (the measured VPS case) -> still returns 1, and
+# is reported as a SINGLE outstanding finding covering all three sections.
+cat > "$D_PFC/triple-stale.md" <<'EOF'
+# AGENTS.md
+
+## UPDATE PENDING -- Skill Update to v21.6.9
+
+wave 1, never processed.
+
+## UPDATE PENDING -- Skill Update to v21.7.0
+
+wave 2, never processed.
+
+## UPDATE PENDING -- Skill Update to v21.7.3
+
+wave 3, never processed.
+EOF
+run_pending_probe "$D_PFC/triple-stale.md" "v21.7.5" >/tmp/pfc4.out 2>&1
+RC=$?
+[ "$RC" -eq 1 ] && ok "(pending) three stacked stale sections still returns 1 (outstanding)" \
+  || bad "(pending) triple-stale case returned $RC (expected 1): $(cat /tmp/pfc4.out)"
+grep -q "state=stale sections=3" /tmp/pfc4.out && ok "(pending) reports all three stacked sections (sections=3)" || bad "(pending) missing sections=3 count: $(cat /tmp/pfc4.out)"
+
+# Legacy "ONBOARDING PENDING" wording (predates the version-stamped flag,
+# per Start Here.md) never matches "Skill Update to X" -> unparsable -> stale.
+cat > "$D_PFC/legacy-onboarding-pending.md" <<'EOF'
+# AGENTS.md
+
+## ONBOARDING PENDING - EXECUTE NOW
+
+Legacy install-time flag, no version token at all.
+EOF
+run_pending_probe "$D_PFC/legacy-onboarding-pending.md" "v21.7.5" >/tmp/pfc5.out 2>&1
+RC=$?
+[ "$RC" -eq 1 ] && ok "(pending) legacy unparsable ONBOARDING PENDING section returns 1 (fail toward outstanding)" \
+  || bad "(pending) legacy-wording case returned $RC (expected 1): $(cat /tmp/pfc5.out)"
+
+run_pending_probe "" "v21.7.5" >/tmp/pfc6.out 2>&1
+RC=$?
+[ "$RC" -eq 0 ] && ok "(pending) no AGENTS.md on this box returns 0 (absent, not forced)" \
+  || bad "(pending) absent-file case returned $RC (expected 0): $(cat /tmp/pfc6.out)"
+rm -f /tmp/pfc1.out /tmp/pfc2.out /tmp/pfc3.out /tmp/pfc4.out /tmp/pfc5.out /tmp/pfc6.out
+
+# ===========================================================================
 # AGGREGATION GATE: fast-exit fires ONLY when every probe converges;
 # falls through the instant any ONE probe reports outstanding work.
 # ===========================================================================
-run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc>
-  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5"
+run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc> <pending_rc>
+  local cc="$1" sop="$2" persona="$3" cron="$4" agents="$5" pending="$6"
   (
     set -euo pipefail
     # Stubs: the gate only needs each probe's RETURN CODE to decide whether
@@ -446,6 +563,7 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc>
     eval "_persona_index_currency_probe() { echo stub-persona; return $persona; }"
     eval "_weekly_cron_currency_probe() { echo stub-cron; return $cron; }"
     eval "_agents_md_hygiene_probe() { echo stub-agents; return $agents; }"
+    eval "_pending_flag_currency_probe() { echo stub-pending; return $pending; }"
     # shellcheck source=/dev/null
     source "$WORK/gate-wrapped.sh"
     # shellcheck disable=SC2034  # read by gate_block (dynamically sourced above) for its cleanup rm -rf, not this scope
@@ -459,8 +577,8 @@ run_gate() {  # run_gate <cc_rc> <sop_rc> <persona_rc> <cron_rc> <agents_rc>
 
 echo ""
 echo "== Aggregation gate: fast-exit vs fall-through =="
-OUT="$(run_gate 0 0 0 0 0 2>&1)"; RC=$?
-[ "$RC" -eq 0 ] && ok "(gate) all five probes converged (rc=0 each) -- subshell exits 0" \
+OUT="$(run_gate 0 0 0 0 0 0 2>&1)"; RC=$?
+[ "$RC" -eq 0 ] && ok "(gate) all six probes converged (rc=0 each) -- subshell exits 0" \
   || bad "(gate) all-converged case exited $RC (expected 0): $OUT"
 echo "$OUT" | grep -q "nothing to do" && ok "(gate) prints the fast-exit 'nothing to do' message" || bad "(gate) missing fast-exit message: $OUT"
 if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
@@ -469,13 +587,14 @@ else
   ok "(gate) exit 0 actually fired (never reached the fall-through echo)"
 fi
 
-for combo in "1:0:0:0:0:Command Center currency" \
-             "0:1:0:0:0:SOP library" \
-             "0:0:1:0:0:persona-index sentinel" \
-             "0:0:0:1:0:weekly-onboarding-update cron" \
-             "0:0:0:0:1:AGENTS.md dedup"; do
-  IFS=':' read -r cc sop persona cron agents label <<< "$combo"
-  OUT="$(run_gate "$cc" "$sop" "$persona" "$cron" "$agents" 2>&1)"; RC=$?
+for combo in "1:0:0:0:0:0:Command Center currency" \
+             "0:1:0:0:0:0:SOP library" \
+             "0:0:1:0:0:0:persona-index sentinel" \
+             "0:0:0:1:0:0:weekly-onboarding-update cron" \
+             "0:0:0:0:1:0:AGENTS.md dedup" \
+             "0:0:0:0:0:1:UPDATE PENDING flag currency"; do
+  IFS=':' read -r cc sop persona cron agents pending label <<< "$combo"
+  OUT="$(run_gate "$cc" "$sop" "$persona" "$cron" "$agents" "$pending" 2>&1)"; RC=$?
   if echo "$OUT" | grep -q "GATE_FELL_THROUGH"; then
     ok "(gate) '${label}' outstanding -> falls through (does not exit 0)"
   else
@@ -488,7 +607,7 @@ done
 
 echo ""
 echo "== Idempotency proof: a genuinely converged box still gets the fast exit =="
-OUT="$(run_gate 0 0 0 0 0 2>&1)"; RC=$?
+OUT="$(run_gate 0 0 0 0 0 0 2>&1)"; RC=$?
 [ "$RC" -eq 0 ] && ! echo "$OUT" | grep -q "GATE_FELL_THROUGH" \
   && ok "(idempotency) re-running the gate on an all-converged box exits 0 again (stable, not a one-shot fluke)" \
   || bad "(idempotency) second run diverged: rc=$RC out=$OUT"
