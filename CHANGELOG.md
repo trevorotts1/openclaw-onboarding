@@ -1,3 +1,47 @@
+## [v21.7.19]  -  2026-08-04  -  fix(ghl-mcp): `pm2 startOrReload` pairs a NEW interpreter with a STALE script and crash-loops after any interpreter change
+
+Wave-2 fleet guardrail #2 of 3, proven live tonight on a VPS box.
+
+**The defect.** `pm2 startOrReload ecosystem.config.js` MERGES the
+regenerated ecosystem file onto the app's EXISTING pm2 registration rather
+than replacing it. Every VPS provisioned before this repo's launcher existed
+registered `ghl-community-mcp` running `node dist/main.js` directly, with no
+`interpreter:` override. The first time `ghl-mcp-autostart.sh` runs on such a
+box under this release, it generates the crash-only launcher
+(`.ghl-mcp-launch.sh`) and writes a NEW `ecosystem.config.js` declaring
+`script: ".ghl-mcp-launch.sh"` + `interpreter: "bash"`. `pm2 startOrReload`
+merges that onto the live registration: pm2 keeps the STALE
+`script: dist/main.js` and pairs it with the NEW `interpreter: bash`. bash
+then tries to execute compiled JavaScript as a shell script — instant
+failure, `autorestart` relaunches it, crash-loop.
+
+**The fix.** `_pm2_registration_mismatch()` reads the LIVE pm2 registration
+(via `pm2 jlist`, parsed with the same `python3 -c "$snippet"` argument-
+passing discipline `ghl-mcp-assert-runtime.sh`'s pm2 filter already uses —
+NOT `python3 - <<EOF`, which consumes the heredoc as the script body and
+leaves nothing on stdin for the piped JSON, a second real bug this fix also
+catches and closes in the same commit) and compares its script/interpreter
+against what this run is about to write. On a MISMATCH, `start_service_vps()`
+now forces `pm2 delete ghl-community-mcp` + `pm2 start ecosystem.config.js` —
+the only way to change a live pm2 process's script/interpreter — accepting
+the one-time loss of that app's uptime/restart-count history. When nothing
+disagrees (a fresh install, or a box already on the correct registration),
+it still uses `pm2 startOrReload`, so ordinary restarts keep their history.
+Detect, don't assume: an unconditional delete was rejected as the fix,
+because it would reset history on every routine restart for no reason.
+
+**Mutation-proven, both directions:** `tests/unit/ghl-mcp-pm2-registration-
+mismatch.test.sh` proves 5 cases against a fake `pm2` on PATH (no real daemon
+touched) — the exact pre-fix on-disk shape (`dist/main.js`, no interpreter)
+reports MISMATCH; the half-migrated shape (`dist/main.js` + `bash`, the
+precise failure Trevor described) reports MISMATCH; an already-correct
+registration reports MATCH; a script-right/interpreter-wrong disagreement
+reports MISMATCH; and — the anti-vacuity control — no live app at all (a
+fresh install) reports MATCH, so this fix never forces an unnecessary delete
+on day one. Also confirms `start_service_vps()` actually branches on the
+decision function rather than defining it unused. Falsified against the
+pre-fix tree: fails closed (markers absent).
+
 ## [v21.7.18]  -  2026-08-04  -  fix(ghl-mcp): root-vs-owner git failures were silently swallowed, defeating the mirror-migration self-heal and masquerading as an innocent pin failure
 
 Wave-2 fleet guardrail #1 of 3 (the worst of the three), found live tonight
