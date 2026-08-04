@@ -866,6 +866,53 @@ def _load_build_state():
 
 
 # ============================================================
+# STANDARD-FIRST MODE READER (AI Workforce standard-first redesign, 2026-08-04)
+# ============================================================
+# PHASE 1 of the standard-first master plan. The build lane is carried by the
+# build-state `buildType` field (schema: build-state-schema.json):
+#   ABSENT or "legacy"      -> the build-from-scratch lane (today's behavior,
+#                              byte-identical; every box onboarded before the
+#                              cutover simply carries no buildType field — no
+#                              backfill write is ever performed).
+#   "standard-first"        -> the standard-prebuild lane (canonical library
+#                              prebuild at onboarding, interview edits the
+#                              prebuilt set, build at interviewComplete is an
+#                              apply-diff event).
+# This reader is the SINGLE branch point every standard-first gate keys on.
+# Rollback property 1 (master plan section 5.3): the rollout only ADDS code
+# paths gated on this function returning True; it never edits the legacy paths.
+# Stop setting buildType=standard-first on new boxes and every new box reverts
+# to today's flow with zero per-box undo.
+#
+# FAIL-SAFE POSTURE: anything ambiguous — absent field, unreadable state,
+# malformed value, non-dict state — resolves to False (the legacy lane). A
+# misread must never route a box onto the new lane, because blocking/misrouting
+# a standard-first build is always preferable to silently re-reading a legacy
+# box as standard-first. Mirrors the decline reader's fail-safe-to-the-larger-
+# floor posture (see _canonical_decline_set above).
+def _standard_first_mode(build_state=None):
+    """
+    Return True only when the build-state declares buildType == "standard-first".
+
+    `build_state` may be passed when the caller has ALREADY loaded the state
+    (avoids a redundant disk read); when omitted it is loaded via
+    _load_build_state(). ABSENT buildType is treated as "legacy" (the frozen
+    in-flight client rule: buildType absent = legacy, no backfill). Never
+    raises; never writes.
+    """
+    try:
+        state = build_state if isinstance(build_state, dict) else _load_build_state()
+        if not isinstance(state, dict):
+            return False
+        raw = state.get("buildType")
+        if not isinstance(raw, str):
+            return False
+        return raw.strip().lower() == "standard-first"
+    except Exception:  # noqa: BLE001 — fail-safe to the legacy lane, never raise
+        return False
+
+
+# ============================================================
 # OWNER-CONSENT GATE (G1-FAB-ENFORCE) — anti-fabrication enforcement
 # ============================================================
 # The non-interactive build path (load_non_interactive_config -> build_from_config)

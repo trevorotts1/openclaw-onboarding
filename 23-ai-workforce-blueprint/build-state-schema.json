@@ -109,8 +109,10 @@
               "pending",
               "building",
               "done",
-              "failed"
-            ]
+              "failed",
+              "prebuilt"
+            ],
+            "description": "'prebuilt' (AI Workforce standard-first redesign, 2026-08-04) marks a department whose tree was materialized at onboarding by the standard prebuild driver from the canonical library, BEFORE the interview — its files are complete but it is NOT yet personalized and its agent row is NOT registered (lazy registration). Deliberately distinct from 'pending' so the resume cron never counts a prebuilt department as pending-build work (master plan Phase 5)."
           },
           "lastAttemptAt": {
             "type": [
@@ -1030,6 +1032,80 @@
       "type": "object",
       "description": "Auditable vertical-pack application record written by build-workforce.py apply_vertical_packs(): {detectedPacks, addedDepartments, skippedDuplicates, declinedVerticals, researchManifest, appliedAt, source}. declinedVerticals (R2.6) lists universal-primary verticals the owner opted out of, skipped at build.",
       "additionalProperties": true
+    },
+    "buildType": {
+      "type": "string",
+      "enum": [
+        "legacy",
+        "standard-first"
+      ],
+      "description": "AI Workforce standard-first redesign (2026-08-04): which build lane this box runs on. ABSENT = 'legacy' — every box onboarded before the standard-first cutover simply carries no buildType field (frozen in-flight clients are never backfilled; the reader treats absent and 'legacy' identically). 'legacy' = the build-from-scratch lane (interview gathers the department set first, then the build creates everything at interviewComplete). 'standard-first' = the standard-prebuild lane: the canonical library prebuild materializes the full canonical floor at onboarding (operator-triggered, BEFORE the interview), the interview EDITS the prebuilt set, and the build at interviewComplete becomes an apply-diff event. Every standard-first code path branches on buildType == 'standard-first' via build-workforce.py's _standard_first_mode(); the legacy lane is byte-identical with or without this field (rollback property 1: stop setting buildType on new boxes and every new box reverts to today's flow). Written ONLY by the standard prebuild driver (scripts/prebuild-standard-workforce.sh) after the operator consent gate passes. Never hand-write it."
+    },
+    "standardPrebuild": {
+      "type": "object",
+      "description": "AI Workforce standard-first redesign (2026-08-04): the namespaced state block for the standard prebuild. Written EXCLUSIVELY by the prebuild driver (scripts/prebuild-standard-workforce.sh) — never by the interview, the apply-diff build, or an agent hand-write. The prebuild writes NO interviewProgress / interviewQc fields (anti-fabrication: the prebuild is operator-initiated, library-sourced, and records no owner answers); its entire record lives in this block so the two surfaces can never be confused. The no-fabrication rule (master plan section 2.5) binds this block: nothing inside it may ever be read back as interview content.",
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": [
+            "pending",
+            "done",
+            "failed"
+          ],
+          "description": "Prebuild lifecycle. 'pending' = materialization started; 'done' = canonical library materialization + Command Center board seeding + chosen-artifact write + STANDARD_READY prover pass all completed (this is the STANDARD_READY signal downstream gates branch on); 'failed' = the driver exited non-zero before completing (see standardPrebuildFailureReason)."
+        },
+        "standardReadyAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "ISO timestamp when status reached 'done'. Written once by the prebuild driver; never rewritten on a re-run that finds status already 'done'."
+        },
+        "floorVersion": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Provenance pin of the canonical floor the prebuild materialized: the department-naming-map.json version plus the onboarding repo git sha, formatted '<naming-map-version>@<git-sha>' (e.g. '2.8.0@abc1234'). Lets a later diff-apply build and the fleet prover detect floor-map drift between prebuild and interviewComplete. Never restate a bare department count here — the floor count is derived live from department-naming-map.json."
+        },
+        "prebuiltDepartments": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Canonical department slugs (naming-map ids, normalized the same way create_role_workspaces.normalize_dept normalizes them) materialized by the prebuild. Audit list only — the authoritative on-disk truth remains the department trees themselves (department_floor.evaluate_floor never trusts this JSON)."
+        },
+        "agentRegistration": {
+          "type": "string",
+          "enum": [
+            "deferred"
+          ],
+          "description": "Lazy agent registration doctrine: the prebuild creates department FILES but registers NO agents.list rows (a single-value enum pinned at 'deferred' so the field can never drift into a false 'registered' claim). The agents.list rows are materialized at interviewComplete for CONFIRMED-KEPT departments only (the deferred Moment 3.5 run inside the apply-diff build). A prebuilt-but-unregistered department is inert by design; the Command Center shows it as 'pending review'."
+        },
+        "source": {
+          "type": "string",
+          "description": "The driver script that wrote this block, for the audit trail (e.g. 'prebuild-standard-workforce.sh')."
+        },
+        "operatorConsentRef": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Pointer to the provenanced OPERATOR consent record that authorized this prebuild (mirrors the ownerConsent shape — decision/source/decidedAt/decidedBy/sessionId — with source='operator-prebuild'). The prebuild runs BEFORE the owner has said anything, so the only honest consenting party is the operator; this reference is the audit guarantee. Refuses-to-run without it (fail-closed, the same posture as _enforce_consent_or_refuse)."
+        },
+        "standardPrebuildFailureReason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Human-readable reason when status == 'failed' (e.g. 'materialize-missing-departments.py rc=5: billing-finance alias trap — normalize_dept not applied')."
+        }
+      },
+      "required": [
+        "status"
+      ],
+      "additionalProperties": false
     }
   }
 }
