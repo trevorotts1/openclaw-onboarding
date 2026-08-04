@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.19"
+ONBOARDING_VERSION="v21.7.20"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.19 - safe_json_edit
+# v21.7.20 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -3054,10 +3054,24 @@ u004_assert_doctrine_provenance() {
     echo "  [U004] assert-dept-doctrine-provenance.py not found at $_assert - skipping (older onboarding bundle?)" >&2
     return 0
   fi
+  # SIBLING-AUDIT FIX (found while investigating the U6c set -e abort above):
+  # this block is documented "warn-mode" -- meant to log and never abort -- but
+  # the bare `python3 "$_assert" ... 2>&1` below is a plain mid-sequence
+  # statement, not the tested condition of an if/&&/||. Under `set -euo
+  # pipefail` (active at L128; this function is called UNGUARDED at L5753 --
+  # `u004_assert_doctrine_provenance` with no `if`/`||` around it) a non-zero
+  # exit from assert-dept-doctrine-provenance.py (it can and does `sys.exit(3)`
+  # on a real provenance problem) would abort the ENTIRE updater right here,
+  # never reaching the "assertion completed" line, "warn-mode" or not -- the
+  # exact set -e disease class as the U6c bug just above, just without a
+  # command-substitution assignment. `|| true` on the tested command keeps this
+  # step genuinely non-fatal, matching what "warn-mode" already claimed.
+  local _u004_assert_rc=0
   {
     echo "  [U004] doctrine-provenance assertion (warn-mode) - dept at $_dept_dir"
-    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1
-    echo "  [U004] assertion completed (exit $?)"
+    _u004_assert_rc=0
+    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1 || _u004_assert_rc=$?
+    echo "  [U004] assertion completed (exit $_u004_assert_rc)"
   } >> "${LOG_FILE:-/dev/null}" 2>&1
   echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
 }
@@ -4308,6 +4322,7 @@ except Exception:
   fi
 
   # ----------------------------------------------------------
+  # >>> U6C-SOP-LIBRARY-BEGIN  (extracted verbatim by tests/unit/update-skills-u6c-set-e-continuation.test.sh)
   # Step U6c: SOP V2 LIBRARY INGESTION (v20.1.0).
   #
   # THE DEFECT THIS CLOSES. The updater synced FILES but never populated the
@@ -4364,6 +4379,53 @@ except Exception:
   _U6C_MANIFEST="$SKILLS_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
   [ -f "$_U6C_MANIFEST" ] || _U6C_MANIFEST="$EXTRACTED_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
 
+  # ----------------------------------------------------------------------
+  # SQLITE ACCESS (DEFECT FIX, sibling of ingest-sop-library.sh's own fix,
+  # same live 2026-08 Hostinger VPS finding). U6c and U6c2 below re-read
+  # `sops` / `sop_embeddings` row counts via a raw `sqlite3` CLI call with a
+  # `2>/dev/null || echo 0` fallback -- on the shared Hostinger base image
+  # (which ships libsqlite3-0 but NOT the sqlite3 CLI binary) that silently
+  # turns "the CLI does not exist" into a FALSE ZERO. That false zero then
+  # trips `_U6C_AFTER < _U6C_CANON` at the post-ingest re-check below EVEN
+  # WHEN ingest-sop-library.sh (fixed the same night, now python3-stdlib
+  # primary) just correctly reported success with the TRUE row count -- i.e.
+  # fixing ingest-sop-library.sh alone is not sufficient; this updater's own
+  # redundant re-verification carried the identical false-0 trap one layer
+  # up. python3's stdlib sqlite3 (already a hard dependency of this exact
+  # block's own DB resolution just below) is the primary path; the CLI is
+  # kept only as a fallback. True "neither tool available" prints the
+  # distinguishable, non-numeric sentinel SQLITE_UNAVAILABLE -- NEVER a
+  # number -- so a caller that forgets to check it fails a `-lt`/`-ge`
+  # integer test loudly instead of silently comparing against 0.
+  # ----------------------------------------------------------------------
+  _U6C_HAVE_PY3_SQLITE=0
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlite3' >/dev/null 2>&1; then
+    _U6C_HAVE_PY3_SQLITE=1
+  fi
+  _U6C_HAVE_SQLITE3_CLI=0
+  command -v sqlite3 >/dev/null 2>&1 && _U6C_HAVE_SQLITE3_CLI=1
+  _sqlite_count() {  # _sqlite_count <db> <sql>
+    local _scdb="$1" _scsql="$2"
+    if [ "$_U6C_HAVE_PY3_SQLITE" = "1" ]; then
+      SQLITE_COUNT_DB="$_scdb" SQLITE_COUNT_SQL="$_scsql" python3 -c '
+import os, sqlite3
+db = os.environ["SQLITE_COUNT_DB"]
+sql = os.environ["SQLITE_COUNT_SQL"]
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    row = conn.execute(sql).fetchone()
+    conn.close()
+    print(int(row[0]) if row and row[0] is not None else 0)
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0
+    elif [ "$_U6C_HAVE_SQLITE3_CLI" = "1" ]; then
+      sqlite3 "file:${_scdb}?mode=ro" "$_scsql" 2>/dev/null || echo 0
+    else
+      echo "SQLITE_UNAVAILABLE"
+    fi
+  }
+
   # Canonical population from the manifest (single source of truth shared with
   # the ingester and embedding_health.py's coverage leg).
   _U6C_CANON=2555
@@ -4401,8 +4463,16 @@ except Exception:
   elif [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
     # No Command Center on this box: legitimately nothing to populate.
     echo "  — SOP library: no mission-control.db resolved on this box (Command Center not installed) — SKIP (informational, not a failure)."
+  elif [ "$_U6C_HAVE_PY3_SQLITE" != "1" ] && [ "$_U6C_HAVE_SQLITE3_CLI" != "1" ]; then
+    # Neither reader is available -- an honest, distinguishable FAIL, never a
+    # false "0 rows". Latches like any other genuine U6c failure (see the
+    # FAILS LOUD contract above) rather than guessing at a population number
+    # that was never actually read.
+    _U6C_SOPLIB_FAIL=1
+    _U6C_SOPLIB_NOTE="cannot verify SOP library population -- neither python3's stdlib sqlite3 module nor a sqlite3 CLI binary is available on this box"
+    echo "  ✗ SOP library: cannot verify population (neither python3's stdlib sqlite3 module nor a sqlite3 CLI binary is available) — refusing to guess."
   else
-    _U6C_BEFORE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+    _U6C_BEFORE="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops;")"
     echo "  → SOP library: db=$_U6C_DB  rows=$_U6C_BEFORE  canonical=$_U6C_CANON"
     if [ "${_U6C_BEFORE:-0}" -ge "${_U6C_CANON:-2555}" ] 2>/dev/null; then
       # Healthy box (e.g. an already-rolled client at 2578). Touch NOTHING.
@@ -4417,7 +4487,25 @@ except Exception:
       fi
       [ -n "$_U6C_SLUG" ] || _U6C_SLUG="default"
       echo "  → Ingesting SOP V2 library (box is under-populated: $_U6C_BEFORE < $_U6C_CANON)..."
-      _U6C_OUT="$(MISSION_CONTROL_DB="$_U6C_DB" bash "$_U6C_INGEST_SH" "$_U6C_SLUG" 2>&1)"; _U6C_RC=$?
+      # DEFECT FIX (live 2026-08 Hostinger VPS finding): the previous form,
+      # `_U6C_OUT="$(...)"; _U6C_RC=$?`, is a command-substitution ASSIGNMENT
+      # followed by a SEPARATE statement (`;`). Under `set -euo pipefail`
+      # (active at L128) a failing assignment aborts the script the instant
+      # the substitution returns non-zero -- `_U6C_RC=$?` is never even
+      # reached, so a genuine ingest-sop-library.sh failure killed the WHOLE
+      # updater before Step U6c's own "FAILS LOUD... latches _U6C_SOPLIB_FAIL,
+      # continues to the end" design (see the comment block above) ever got a
+      # chance to run, and every phase after U6c (skill-38, MCP, pm2, the
+      # stamp write) never executed. The `if VAR="$(...)"; then RC=0; else
+      # RC=$?; fi` idiom below is set -e SAFE (the assignment is the tested
+      # condition of an `if`, which `set -e` never aborts on) and is the exact
+      # pattern this file already ships for the sibling U6c2 capture just
+      # below and the R4 runtime-conformance verdict (~L5340).
+      if _U6C_OUT="$(MISSION_CONTROL_DB="$_U6C_DB" bash "$_U6C_INGEST_SH" "$_U6C_SLUG" 2>&1)"; then
+        _U6C_RC=0
+      else
+        _U6C_RC=$?
+      fi
       printf '%s\n' "$_U6C_OUT" >> "$LOG_FILE"
       _U6C_TAIL="$(printf '%s' "$_U6C_OUT" | tail -n 3 | tr '\n' ' ')"
       if [ "$_U6C_RC" -ne 0 ]; then
@@ -4425,7 +4513,7 @@ except Exception:
         _U6C_SOPLIB_NOTE="ingest-sop-library.sh FAILED (rc=$_U6C_RC) — SOP library NOT populated (was $_U6C_BEFORE rows, canonical $_U6C_CANON). Last output: ${_U6C_TAIL}"
         echo "  ✗ SOP library ingest FAILED (rc=$_U6C_RC) — see $LOG_FILE"
       else
-        _U6C_AFTER="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+        _U6C_AFTER="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops;")"
         # Independent re-assert with the fail-CLOSED row-count gate (the same
         # one run-full-install.sh phase 6i uses). rc 0 from the ingester is not
         # accepted as proof on its own.
@@ -4444,6 +4532,7 @@ except Exception:
       fi
     fi
   fi
+  # <<< U6C-SOP-LIBRARY-END
 
   # ----------------------------------------------------------
   # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
@@ -4467,7 +4556,39 @@ except Exception:
   # never latches _U6C_SOPLIB_FAIL or any other stamp-gating flag. No client
   # key is ever billed -- this is a sha256-verified download + sqlite
   # ATTACH/INSERT, never an embedding API call.
+  #
+  # SELF-CONTAINED sqlite reader (DEFECT FIX, same live 2026-08 Hostinger VPS
+  # finding as U6c above): this block is INDEPENDENT of U6c by design (see
+  # test (4) below) and tests/unit/sop-embeddings-independent-gate.test.sh
+  # extracts and sources it IN ISOLATION -- it must never depend on a helper
+  # function U6c happens to define. python3's stdlib sqlite3 is the primary
+  # path (a sqlite3 CLI is not guaranteed on every box, see U6c's comment);
+  # the CLI is a fallback. Deliberately does NOT introduce a hard-fail branch
+  # here (unlike U6c's gate) -- this step is advisory-only by contract, so
+  # "cannot verify" degrades to the existing "under-populated" provisioning
+  # attempt rather than a new failure mode.
   # ----------------------------------------------------------
+  _u6c2_sqlite_count() {  # _u6c2_sqlite_count <db> <sql>
+    local _u6c2scdb="$1" _u6c2scsql="$2"
+    if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlite3' >/dev/null 2>&1; then
+      SQLITE_COUNT_DB="$_u6c2scdb" SQLITE_COUNT_SQL="$_u6c2scsql" python3 -c '
+import os, sqlite3
+db = os.environ["SQLITE_COUNT_DB"]
+sql = os.environ["SQLITE_COUNT_SQL"]
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    row = conn.execute(sql).fetchone()
+    conn.close()
+    print(int(row[0]) if row and row[0] is not None else 0)
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0
+    elif command -v sqlite3 >/dev/null 2>&1; then
+      sqlite3 "file:${_u6c2scdb}?mode=ro" "$_u6c2scsql" 2>/dev/null || echo 0
+    else
+      echo 0
+    fi
+  }
   _U6C2_EMBED_DIR="$SKILLS_DIR/shared-utils/sop-embed-once"
   [ -d "$_U6C2_EMBED_DIR" ] || _U6C2_EMBED_DIR="$EXTRACTED_DIR/shared-utils/sop-embed-once"
   _U6C2_MANIFEST="$_U6C2_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json"
@@ -4490,10 +4611,10 @@ except Exception:
     print(0)' "$_U6C2_MANIFEST" 2>/dev/null)"; then
       _U6C2_SOP_COUNT="$_U6C2_SOP_COUNT_RAW"
     fi
-    _U6C2_EMB_TABLE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+    _U6C2_EMB_TABLE="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';")"
     _U6C2_EMB_ROWS=0
     if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
-      _U6C2_EMB_ROWS="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sop_embeddings;")"
     fi
     echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
     if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
