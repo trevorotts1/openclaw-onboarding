@@ -108,14 +108,6 @@ campaign", "10 facebook ads from my bio", "run the ad generator".
 | Responders need wiring into the CRM | Skill 44 (downstream) |
 | A results / winner feedback loop | Director of Paid Advertisement (future; named handoff only) |
 
-<!-- SKILLS_YOU_OPERATE_V1 -->
-**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
-
-| Skill | Reach for it when the client says… | On-box path | Execution playbook |
-|---|---|---|---|
-| **48** facebook-ad-generator | "make me Facebook ads" · "make me Instagram ads" · "10 ad variations" | `~/.openclaw/skills/48-facebook-ad-generator/` | `universal-sops/fb-ad-craft/` |
-<!-- END SKILLS_YOU_OPERATE_V1 -->
-
 ---
 
 ## 9. Standard Operating Procedures
@@ -197,3 +189,11 @@ campaign", "10 facebook ads from my bio", "run the ad generator".
 **Outputs:** `working/checkpoints/approval-receipt.json`; a PLAI-ready package in the hands of the human builder; a close-out report (cost, redos, gate history, flagged items) on the campaign card.
 **Hand to:** The human PLAI builder (the approved package — PLAI is the only ad path); Skill 44 downstream (wiring responders into the CRM); Director of Paid Advertisement (the close-out report and the results / winner feedback loop); QC Role — Paid Advertisement (the card's move to Done).
 **Failure mode:** Presenting the package to the owner as a summary — "10 ads ready, links attached" — instead of the three things they must actually look at: the images, the copy, and the targeting. The owner is the final backstop on baked-in text legibility, because this pipeline deliberately has no separate text-reading step, and on any claim the copy makes. An owner who approves without seeing the pictures has not approved anything, and the run's last real safety net is gone.
+
+<!-- SKILLS_YOU_OPERATE_V1 -->
+**Skills You Operate** — native department capabilities. Reach for these from the client's plain-language intent; the client never has to name the skill or type its slash command. Dept-scoped: only your department's skills are offered. Operate the owning skill per its execution playbook **before** authoring by hand. Rule-Zero paid-call approval (USD announce + budget cap) still applies. Doctrine: `universal-sops/native-skill-invocation.md`.
+
+| Skill | Reach for it when the client says… | On-box path | Execution playbook |
+|---|---|---|---|
+| **48** facebook-ad-generator | "make me Facebook ads" · "make me Instagram ads" · "10 ad variations" | `~/.openclaw/skills/48-facebook-ad-generator/` | `universal-sops/fb-ad-craft/` |
+<!-- END SKILLS_YOU_OPERATE_V1 -->
