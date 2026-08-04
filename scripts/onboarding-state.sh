@@ -273,7 +273,16 @@ obs_verify_skill() {
     done
   fi
   if [ -n "$qc_script" ]; then
-    if ! bash "$qc_script" >/dev/null 2>&1; then
+    # DEFECT FIX: some qc-*.sh gates (e.g. skill 38's F17/F21/U-1/U-2/U-6
+    # feature gates) are content-version-aware — they assert a marker is
+    # present in the box's LIVE AGENTS.md, not just in the shipped source
+    # script. They resolve AGENTS_MD themselves when unset, but their default
+    # (the pointer-writer's own hardcoded platform path) can disagree with
+    # THIS box's actual configured workspace. Hand them the SAME resolved
+    # workspace this verification gate itself uses (obs_resolve_workspace,
+    # cached in $OBS_WORKSPACE) unless the caller already set AGENTS_MD, so
+    # the gate checks the file the wiring loop actually wrote.
+    if ! AGENTS_MD="${AGENTS_MD:-$OBS_WORKSPACE/AGENTS.md}" bash "$qc_script" >/dev/null 2>&1; then
       reasons="${reasons}qc-script:nonzero-exit; "
     fi
   fi

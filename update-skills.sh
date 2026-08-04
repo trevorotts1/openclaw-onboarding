@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.15"
+ONBOARDING_VERSION="v21.7.16"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.15 - safe_json_edit
+# v21.7.16 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5427,6 +5427,30 @@ PYEOF
     # mcp.servers entry and backgrounds ghl-mcp-autostart.sh, which fast-paths to
     # a no-op when the server is already healthy, pinned and answering JSON-RPC).
     wire_ghl_mcp "$SKILL_NAME"
+
+    # DEFECT FIX: the Skill 38 AGENTS.md pointer-stanza rewriter
+    # (05-update-agents-md.sh -- the source of the ~24k-char AGENTS.md size
+    # win) was invoked NOWHERE in the automated pipeline: not by wiring, not
+    # by wire_core_updates(), not by obs_verify_skill. It was documented only
+    # as a MANUAL INSTALL.md step-5. Evidence it had not run in months: one
+    # box's newest AGENTS.md.bak-skill38-* was ~7 version bumps stale while
+    # every sibling skill wrote fresh backups on every roll. Wired here, NOT
+    # sentinel-gated -- same reasoning as wire_ghl_mcp just above: the script
+    # is idempotent/self-healing by design (a true no-op when the live file
+    # already carries the current stanzas, per its own header) and its
+    # "staged descent" design for a box running a core-file watcher NEEDS
+    # MULTIPLE passes to converge past the watcher's shrink-floor -- gating
+    # this to once-per-version-bump would break that convergence on any
+    # watched box, the same "shipped but never delivered" failure class this
+    # release exists to end.
+    if [ "$SKILL_NAME" = "38-conversational-ai-system" ] \
+       && [ -x "$SKILL_DIR/scripts/05-update-agents-md.sh" ]; then
+      if AGENTS_MD="$WIRE_WORKSPACE_DIR/AGENTS.md" bash "$SKILL_DIR/scripts/05-update-agents-md.sh" >>"$LOG_FILE" 2>&1; then
+        echo "    ✓ AGENTS.md pointer stanzas verified/refreshed (05-update-agents-md.sh)"
+      else
+        echo "    ⚠ 05-update-agents-md.sh reported an error for $SKILL_NAME (see $LOG_FILE) -- continuing"
+      fi
+    fi
 
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"

@@ -1,3 +1,59 @@
+## [v21.7.16]  -  2026-08-04  -  fix(skill-38): the AGENTS.md pointer-stanza rewriter is now WIRED IN, and 9 qc gates finally check the LIVE box instead of the shipped source
+
+Two-part defect, both halves required (either alone leaves it broken):
+
+**(i) The rewriter was never called.**
+`38-conversational-ai-system/scripts/05-update-agents-md.sh` (the pointer-
+stanza rewriter — the source of the ~24k-char win over the old 52KB
+full-corpus paste) was invoked NOWHERE in the automated update pipeline: not
+by the wiring phase, not by `wire_core_updates()`, not by `obs_verify_skill`.
+It was documented only as a MANUAL INSTALL.md step-5. Evidence it had not run
+in months on a real box: the newest `AGENTS.md.bak-skill38-*` was ~7 version
+bumps stale while sibling skills wrote fresh backups on every roll. Wired
+into `update-skills.sh`'s per-skill loop, scoped to `38-conversational-ai-
+system` only, NOT gated behind the per-version sentinel (same reasoning as
+the adjacent `wire_ghl_mcp` call: the script is idempotent/self-healing by
+design, and its own "staged descent" convergence for a box running a
+core-file watcher needs MULTIPLE passes — sentinel-gating it would break
+that).
+
+**(ii) The qc gate couldn't tell if the rewriter had ever run.**
+9 of skill 38's qc-*.sh gates (F17 segmentation, F21 multi-tenant, U-1
+tool-gating, U-2 workflow-exits, U-6 client-test-mode, ZHC tag-prefix, F16
+A/B testing, F49 ZHC pixel, F18 webhook-chaining) asserted their AGENTS
+marker was present by grepping the SHIPPED SOURCE script
+(`05-update-agents-md.sh`) for its own marker text — proof the writer CAN
+produce the marker, never that it EVER RAN on this box. So skill 38 read
+qc-passed whether or not the live file was ever rewritten, and the
+"reprocess skills not yet qc-passed" loop could never re-trigger fix (i).
+Each gate now ALSO asserts against the box's LIVE AGENTS.md (`AGENTS_MD` env
+override, else the writer's own platform default) — missing entirely (a bare
+CI checkout, no box) is a SKIP, not a false FAIL. `obs_verify_skill()`
+(`scripts/onboarding-state.sh`) and its canonical sibling `oc_gate_skill()`
+(`lib-onboarding-state.sh`) now hand the qc script the SAME resolved
+workspace they use elsewhere, so the gate checks the file the wiring loop
+actually wrote; `11-run-qc-checklist.sh` exports its own already-resolved
+`AGENTS_MD` to every sub-gate it runs for the same reason.
+
+**Mutation-proven, both halves:**
+`tests/unit/skill38-agents-md-wiring.test.sh` proves the wiring call exists,
+sits before the per-version sentinel, and — invoked EXACTLY the way
+`update-skills.sh` now does — actually transitions a stale fixture AGENTS.md
+(no SKILL38 stanzas) to current (all 24 stanzas present, pre-existing
+operator content untouched), and that a second pass is a true no-op.
+`tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh` proves, for
+every gate/marker pair: a live AGENTS.md that was never rewritten FAILS
+(citing the live file, not the source script); a live AGENTS.md produced by
+actually running the real writer PASSES; no live file at all SKIPs. 31/31 +
+14/14 new assertions, plus all 8 pre-existing per-gate negative-fixture
+suites unchanged (0 regressions — one drive-by fix along the way: the two
+python-embedded gates, qc-workflow-exits.sh and qc-tool-gating.sh, had their
+new live-file diagnostics leaking onto stdout and corrupting `--json` mode;
+routed to stderr).
+
+38-conversational-ai-system/skill-version.txt bumped independently: 1.11.0 ->
+1.11.1.
+
 ## [v21.7.15]  -  2026-08-04  -  fix: retire `scripts/update-skills.sh` — the fleet-wide "two updaters, same name" fatal
 
 Two files shared the name `update-skills.sh`: the repo-root script (798+ commits,

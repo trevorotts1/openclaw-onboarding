@@ -539,7 +539,16 @@ oc_gate_skill() {
   fi
   if [ -n "$qc" ] && [ -f "$qc" ]; then
     local qc_rc=0
-    bash "$qc" >/dev/null 2>&1 || qc_rc=$?
+    # DEFECT FIX: some qc-*.sh gates (e.g. skill 38's content-version-aware
+    # feature gates) assert a marker is present in the box's LIVE AGENTS.md,
+    # not just in the shipped source script -- they resolve AGENTS_MD
+    # themselves when unset, but their own default (the pointer-writer's
+    # hardcoded platform path) can disagree with THIS box's actual configured
+    # workspace. Hand them the SAME resolution this lib uses elsewhere
+    # (oc_core_sentinel_present, above) unless the caller already set
+    # AGENTS_MD, so the gate checks the file the wiring loop actually wrote.
+    local _qc_ws="${OC_WORKSPACE_DEFAULT:-$OC_CONFIG/workspace}"
+    AGENTS_MD="${AGENTS_MD:-$_qc_ws/AGENTS.md}" bash "$qc" >/dev/null 2>&1 || qc_rc=$?
     oc_state_mark_field "$folder" qcExit "$qc_rc" || _sw_ok=0
     if [ "$qc_rc" -ne 0 ]; then
       ok=0; reason="${reason:+$reason,}qc-exit-$qc_rc"

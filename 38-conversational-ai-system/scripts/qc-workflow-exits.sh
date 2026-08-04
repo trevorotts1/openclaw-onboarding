@@ -51,7 +51,12 @@ if [ -z "$WF_DIR" ]; then
   fi
 fi
 
-export SKILL_ROOT ENGINE WF_DIR JSON_MODE
+# ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
+
+export SKILL_ROOT ENGINE WF_DIR JSON_MODE AGENTS_MD
 
 python3 - <<'PYEOF'
 import json
@@ -63,6 +68,7 @@ SKILL_ROOT = Path(os.environ["SKILL_ROOT"])
 ENGINE = Path(os.environ["ENGINE"])
 WF_DIR = os.environ.get("WF_DIR", "")
 JSON_MODE = os.environ.get("JSON_MODE", "0") == "1"
+AGENTS_MD = os.environ.get("AGENTS_MD", "")
 
 sys.path.insert(0, str(ENGINE.parent))
 import playbook_engine as engine  # canonical parser (U-16)
@@ -73,11 +79,29 @@ def contains(path, needle):
     p = SKILL_ROOT / path
     return p.is_file() and needle in p.read_text(encoding="utf-8", errors="ignore")
 
+def contains_live_agents(needle):
+    # None = no live AGENTS.md to check (SKIP, not a failure -- e.g. a bare CI
+    # checkout with no box). True/False = the marker is/isn't present in the
+    # box's ACTUAL AGENTS.md, not just the shipped source script.
+    if not AGENTS_MD or not os.path.isfile(AGENTS_MD):
+        return None
+    try:
+        return needle in Path(AGENTS_MD).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return None
+
 # --- (A) Static wiring checks. -------------------------------------------
 if not (SKILL_ROOT / "protocols" / "workflow-exit-rules-protocol.md").is_file():
     failures.append("missing protocols/workflow-exit-rules-protocol.md")
 if not contains("scripts/05-update-agents-md.sh", "STEP_1_30_EXIT_RULES"):
-    failures.append("missing AGENTS marker STEP_1_30_EXIT_RULES in scripts/05-update-agents-md.sh")
+    failures.append("SOURCE scripts/05-update-agents-md.sh is missing the STEP_1_30_EXIT_RULES marker text")
+_live = contains_live_agents("STEP_1_30_EXIT_RULES")
+if _live is None:
+    print("  [SKIP] no live AGENTS.md found at %r — cannot verify the box actually received the STEP_1_30_EXIT_RULES marker (set AGENTS_MD to override)" % AGENTS_MD, file=sys.stderr)
+elif not _live:
+    failures.append("LIVE AGENTS.md (%s) is MISSING the STEP_1_30_EXIT_RULES marker — the pointer-stanza writer (05-update-agents-md.sh) has not run on this box; a shipped-source check alone cannot prove this" % AGENTS_MD)
+else:
+    print("  [PASS] LIVE AGENTS.md (%s) carries the STEP_1_30_EXIT_RULES marker — 05-update-agents-md.sh has actually run on this box" % AGENTS_MD, file=sys.stderr)
 if not contains("references/memory-design-rules.md", "v1.8.0-rules-workflow-exits"):
     failures.append("missing MEMORY Rule 33 (workflow exits) in references/memory-design-rules.md")
 if not contains("scripts/25-seed-round3-feature-files.sh", "workflow-exit-events.jsonl"):

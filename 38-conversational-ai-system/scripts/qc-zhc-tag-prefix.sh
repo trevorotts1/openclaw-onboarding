@@ -58,12 +58,28 @@ else
   fail "MEMORY Rule 20 must state the rule is NOT retroactive"
 fi
 
-# 2. AGENTS.md marker block in the updater.
+# 2. AGENTS.md marker block in the updater — SHIPPED SOURCE sanity.
 AG_SCRIPT="$SKILL_DIR/scripts/05-update-agents-md.sh"
 if [ -f "$AG_SCRIPT" ] && grep -q 'SKILL38_ZHC_TAG_PREFIX' "$AG_SCRIPT"; then
-  pass "05-update-agents-md.sh inserts the SKILL38_ZHC_TAG_PREFIX behavioral block"
+  pass "05-update-agents-md.sh SOURCE carries the SKILL38_ZHC_TAG_PREFIX marker text"
 else
-  fail "05-update-agents-md.sh is missing the SKILL38_ZHC_TAG_PREFIX block"
+  fail "05-update-agents-md.sh SOURCE is missing the SKILL38_ZHC_TAG_PREFIX marker text"
+fi
+
+# 2b. AGENTS.md marker block — LIVE FILE assertion (content-version-aware). A
+#     shipped script that CAN write the marker is not proof it EVER ran on
+#     this box's actual AGENTS.md.
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
+if [ -f "$AGENTS_MD" ]; then
+  if grep -q 'SKILL38_ZHC_TAG_PREFIX' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the SKILL38_ZHC_TAG_PREFIX marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the SKILL38_ZHC_TAG_PREFIX marker — the pointer-stanza writer has not run on this box; a shipped-source check alone cannot prove this"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the marker (set AGENTS_MD to override)"
 fi
 
 # 3. Dedicated protocol exists + key clauses.
