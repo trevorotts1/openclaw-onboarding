@@ -1,0 +1,12 @@
+[
+  {"source": "agent:orchestrator-1:main", "target": "agent:dept-busy:main", "run_id": "run-r1", "ts": "2026-08-04T00:00:00Z", "payload": "please pick up the ticket 4471 follow-up and reply when ready"},
+  {"source": "agent:orchestrator-1:main", "target": "agent:dept-busy:main", "run_id": "run-r2", "ts": "2026-08-04T00:00:34Z", "payload": "please pick up the ticket 4471 follow-up and reply when ready"},
+  {"source": "agent:orchestrator-1:main", "target": "agent:dept-busy:main", "run_id": "run-r3", "ts": "2026-08-04T00:01:08Z", "payload": "please pick up the ticket 4471 follow-up and reply when ready"},
+
+  {"source": "agent:orchestrator-2:main", "target": "agent:dept-quiet:main", "run_id": "run-rA", "ts": "2026-08-04T00:00:00Z", "payload": "second opinion needed on the draft, reply when free"},
+  {"source": "agent:orchestrator-2:main", "target": "agent:dept-quiet:main", "run_id": "run-rB", "ts": "2026-08-04T00:00:34Z", "payload": "second opinion needed on the draft, reply when free"},
+
+  {"source": "agent:orchestrator-3:main", "target": "agent:dept-fanout:main", "run_id": "run-rX", "ts": "2026-08-04T00:00:00Z", "payload": "step 1 of 3: confirm the intake fields are correct"},
+  {"source": "agent:orchestrator-3:main", "target": "agent:dept-fanout:main", "run_id": "run-rY", "ts": "2026-08-04T00:00:05Z", "payload": "step 2 of 3: confirm the routing tag is correct"},
+  {"source": "agent:orchestrator-3:main", "target": "agent:dept-fanout:main", "run_id": "run-rZ", "ts": "2026-08-04T00:00:10Z", "payload": "step 3 of 3: confirm the delivery channel is correct"}
+]
