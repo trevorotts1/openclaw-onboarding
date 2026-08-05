@@ -1762,7 +1762,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// PURPOSE: U2.3 POST-PUBLISH READBACK VERDICT (2026-08-04, master plan unit 2.3).\n// The single fix that guarantees an empty publish can NEVER report success, regardless\n// of how degenerate the input is. After Podbean returns an episode id, we GET the\n// episode back and assert the three things that define a real published episode:\n//   1. media_key present and non-empty  (audio actually attached)\n//   2. logo_key present and non-empty   (cover actually attached)\n//   3. content/description length >= the floor (a real show note, not a stub)\n// On failure this returns readback_failed:true (no throw) so the workflow can route to the\n// rollback path (delete/unpublish the just-created episode, failure gmail, mark failed).\n// The publish response is spread through so downstream success nodes keep their data.\n\nconst published = $('Podbean  --  Publish Episode').first().json;\nconst readbackItem = $('Podbean  --  Readback Created Episode').first();\nconst rb = readbackItem ? readbackItem.json : null;\n\nconst errors = [];\nlet raw = null;\n\nif (!rb) {\n  errors.push('readback GET returned no response for episode ' + (published.episode?.id || published.id || '?'));\n} else if (typeof rb.statusCode === 'number' && (rb.statusCode < 200 || rb.statusCode >= 300)) {\n  errors.push('readback GET returned HTTP ' + rb.statusCode + ' for episode ' + (published.episode?.id || published.id || '?'));\n} else {\n  raw = (rb.body && typeof rb.body === 'object') ? rb.body : (rb.episode || rb);\n\n  const mediaKey = (raw.media_key || raw.mediaKey || '').toString().trim();\n  const logoKey = (raw.logo_key || raw.logoKey || '').toString().trim();\n  const content = (raw.content || raw.description || '').toString().trim();\n\n  if (!mediaKey) errors.push('readback: media_key is empty -- audio is NOT attached to the episode');\n  if (!logoKey) errors.push('readback: logo_key is empty -- cover image is NOT attached to the episode');\n  if (content.length < 150) {\n    errors.push('readback: description is only ' + content.length + ' chars (< 150 floor) -- the episode did not receive a real show note');\n  }\n}\n\nconst readback_failed = errors.length > 0;\n\nreturn [{\n  json: Object.assign({}, published, {\n    readback_failed,\n    readback_errors: errors,\n    readback_media_key: raw ? (raw.media_key || raw.mediaKey || '').toString().trim() : '',\n    readback_logo_key: raw ? (raw.logo_key || raw.logoKey || '').toString().trim() : '',\n    readback_description_length: raw ? (raw.content || raw.description || '').toString().trim().length : 0\n  })\n}];"
+        "jsCode": "// PURPOSE: U2.3 POST-PUBLISH READBACK VERDICT (2026-08-04, master plan unit 2.3; F-01 fix 2026-08-05).\n// The single fix that guarantees an empty publish can NEVER report success, regardless\n// of how degenerate the input is. After Podbean returns an episode id, we GET the\n// episode back and assert the three things that define a real published episode:\n//   1. media_url present and non-empty  (audio actually attached -- Podbean's GET returns media_url, not media_key)\n//   2. logo present and non-empty       (cover actually attached -- Podbean's GET returns logo, not logo_key)\n//   3. content/description length >= the floor (a real show note, not a stub)\n// On failure this returns readback_failed:true (no throw) so the workflow can route to the\n// rollback path (flip the just-created episode to draft, failure gmail, mark failed).\n// The publish response is spread through so downstream success nodes keep their data.\n//\n// FIELD SHAPE (verified against live execution data, Phase-4 canary 129675 + incident 129803):\n//   GET /v1/episodes/{id} -> { episode: { media_url: \"<mcdn.podbean.com/...mp3>\", logo: \"<mcdn.podbean.com/...jpg>\", content: \"...\" } }\n//   media_url and logo are plain URL strings. logo is also tolerated as an object with a .url\n//   member (future-response drift); both are normalized to a trimmed string by extractUrl().\n\nconst published = $('Podbean  --  Publish Episode').first().json;\nconst readbackItem = $('Podbean  --  Readback Created Episode').first();\nconst rb = readbackItem ? readbackItem.json : null;\n\n// Normalize a Podbean media/logo value that may be a plain URL string or an object\n// carrying the URL under .url/.value/.href/.src. Returns a trimmed string ('' when absent).\nfunction extractUrl(value) {\n  if (value == null) return '';\n  if (typeof value === 'string') return value.trim();\n  if (typeof value === 'object') {\n    const u = value.url || value.value || value.href || value.src;\n    return u ? String(u).trim() : '';\n  }\n  return String(value).trim();\n}\n\nconst errors = [];\nlet raw = null;\n\nif (!rb) {\n  errors.push('readback GET returned no response for episode ' + (published.episode?.id || published.id || '?'));\n} else if (typeof rb.statusCode === 'number' && (rb.statusCode < 200 || rb.statusCode >= 300)) {\n  errors.push('readback GET returned HTTP ' + rb.statusCode + ' for episode ' + (published.episode?.id || published.id || '?'));\n} else {\n  raw = (rb.body && typeof rb.body === 'object') ? rb.body : rb;\n  raw = (raw.episode && typeof raw.episode === 'object') ? raw.episode : raw;\n\n  const mediaUrl = extractUrl(raw.media_url);\n  const logoUrl = extractUrl(raw.logo);\n  const content = (raw.content || raw.description || '').toString().trim();\n\n  if (!mediaUrl) errors.push('readback: media_url is empty -- audio is NOT attached to the episode');\n  if (!logoUrl) errors.push('readback: logo is empty -- cover image is NOT attached to the episode');\n  if (content.length < 150) {\n    errors.push('readback: description is only ' + content.length + ' chars (< 150 floor) -- the episode did not receive a real show note');\n  }\n}\n\nconst readback_failed = errors.length > 0;\n\nreturn [{\n  json: Object.assign({}, published, {\n    readback_failed,\n    readback_errors: errors,\n    readback_media_url: raw ? extractUrl(raw.media_url) : '',\n    readback_logo_url: raw ? extractUrl(raw.logo) : '',\n    readback_description_length: raw ? (raw.content || raw.description || '').toString().trim().length : 0\n  })\n}];"
       },
       "id": "b8c4d0e2-3f5a-6b7c-9d0e-1f2a3b4c5d6e",
       "name": "Readback Verdict  --  Assert Media + Description",
@@ -1772,7 +1772,7 @@
         224,
         1552
       ],
-      "notes": "U2.3 (2026-08-04): asserts media_key + logo_key non-empty and description length >= 150 on the fetched-back episode. Returns readback_failed:true on any failure so the workflow routes to rollback. Preserves the publish response for downstream success nodes."
+      "notes": "U2.3 (2026-08-04; F-01 fix 2026-08-05): asserts media_url + logo non-empty and description length >= 150 on the fetched-back episode, using Podbean's real GET response field names (media_url for audio, logo for cover -- NOT media_key/logo_key). logo may be a string URL or an object with a .url member; both are handled. Returns readback_failed:true on any failure so the workflow routes to rollback. Preserves the publish response for downstream success nodes."
     },
     {
       "parameters": {
@@ -1811,10 +1811,38 @@
     },
     {
       "parameters": {
-        "method": "DELETE",
-        "url": "={{ 'https://api.podbean.com/v1/episodes/' + $('Podbean  --  Publish Episode').first().json.episode?.id + '?access_token=' + encodeURIComponent($('Set Config  --  Consolidate Workflow Variables').item.json.access_token) }}",
-        "sendBody": false,
+        "method": "POST",
+        "url": "={{ 'https://api.podbean.com/v1/episodes/' + $('Podbean  --  Publish Episode').first().json.episode?.id }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/x-www-form-urlencoded"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "form-urlencoded",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "access_token",
+              "value": "={{ $('Set Config  --  Consolidate Workflow Variables').item.json.access_token }}"
+            },
+            {
+              "name": "status",
+              "value": "draft"
+            }
+          ]
+        },
         "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          },
           "timeout": 15000
         }
       },
@@ -1826,7 +1854,7 @@
         304,
         1888
       ],
-      "notes": "U2.3 (2026-08-04): deletes/unpublishes the just-created episode after a readback failure so an empty or degenerate episode is never left live. Runs on the failure path only.",
+      "notes": "U2.3 (2026-08-04; F-02 fix 2026-08-05): flips the just-created episode to status=draft via POST /v1/episodes/{id} after a readback failure so an empty or degenerate episode is pulled OFF the live feed. DELETE 403s with the operator token (no episode_delete scope), so a status-flip is used instead -- proven to work (Phase-4 incident mitigation). neverError:true so a 4xx cannot throw; onError continueRegularOutput + alwaysOutputData keep the sibling Respond-500 + Mark-Failed branches firing regardless.",
       "onError": "continueRegularOutput",
       "alwaysOutputData": true
     },
