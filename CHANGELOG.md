@@ -1,3 +1,30 @@
+## [v21.7.33]  -  2026-08-05  -  fix(skill58): proxy test-harness stub state-writer + deploy the capability-manifest gate (CC pinnedTag v6.0.82 -> v6.0.88)
+
+Two final-QC fixes for the podcast publish fix train, merged to main and verified green:
+
+### What changed
+
+- **Proxy test-harness fix (unit 1.1 / 1.5-1.8 follow-up).** `tests/test_podbean_publish_proxy.py`
+  now provisions a stub state-writer that answers `get --job-id` with a clean (non-waived)
+  job, and both transport helpers (`_run` / `_run_no_desc`) pass `--state-writer` to it. This
+  resolves the U2.4 waiver fail-closed gate (`assert_not_waived`) failing on un-provisioned
+  `--job-ids` — 13 proxy-suite failures on merged main. Test file only; product code
+  (`podbean_publish.sh`, the waiver gate, the ledger-resolution logic) untouched.
+  Suite result after: proxy 29/29, required-outputs 21, upload_media 43, gate selftest 21.
+- **CC pinnedTag bump (unit 3.4-3.6 deployment gap).** `cc-compat.json` `commandCenter.pinnedTag`
+  v6.0.82 -> v6.0.88, so fleet-refresh deploys the Command Center containing the capability-manifest
+  gate, GUARD 8, and the manual-dispatch mirror (the phantom-agent protection units 3.4-3.6 build).
+  Contract holds: v6.0.88 >= minVersion v4.73.0, maxVersion null. (`onboardingVersion` marker also
+  rolled by bump-version.sh.)
+
+### Merge notes
+
+Cherry-picked 48da3be9 (harness fix, +27/-3 test file only) and 12584719 (pinnedTag bump,
++2/-2) onto origin/main. All 10 version markers rolled v21.7.32 -> v21.7.33 via bump-version.sh
+(the readback train PR #863 landed v21.7.32 between this train's start and merge). Skill 58
+version 0.1.37 -> 0.1.38 (SKILL.md frontmatter + skill-version.txt) for the proxy test-harness
+change under `58-podcast-production-engine/`. CHANGELOG entry added. Tag v21.7.33 annotated.
+
 ## [v21.7.32]  -  2026-08-05  -  fix(skill58): podbean readback field names + rollback status-flip + filesystem-v2 binary gate (F-01/F-02)
 
 Final QC of units 2.1-2.4 (n8n publish rail fail-closed) found the live rail
