@@ -319,6 +319,45 @@ ledger_field() {
   json_field "$key" < "$file"
 }
 
+# U2.4 (2026-08-04, master plan unit 2.4): a job that was advanced with
+# --force-waiver must NEVER trigger a publish webhook. The waiver is recorded as
+# a podcast_job_events row with a note of the form
+#   "required-outputs WAIVED via --force-waiver [reason: ...]"
+# which podcast_state.py `get --job-id` returns (JSON, force_json=true). Returns 0
+# (true) when ANY event carries a --force-waiver marker, 1 (false) otherwise.
+# Fails LOUD on an unreadable state writer or an unresolvable job: an unverifiable
+# waiver state must fail closed, never silently proceed.
+job_was_waived() {
+  local job_id="$1" sw="$2" out
+  [ -n "$job_id" ] || return 1
+  if [ ! -f "$sw" ]; then
+    log "job_was_waived: state writer not found: $sw; FAILING CLOSED (waiver state unverifiable)"
+    return 0
+  fi
+  out="$(python3 "$sw" get --job-id "$job_id" 2>/dev/null || true)"
+  if [ -z "$out" ]; then
+    log "job_was_waived: no job data for ${job_id}; FAILING CLOSED (waiver state unverifiable)"
+    return 0
+  fi
+  # The `get` output is JSON with an events array. Look for a --force-waiver marker
+  # in any event's note.
+  printf '%s' "$out" | grep -q -- '--force-waiver' && return 0
+  printf '%s' "$out" | grep -qi 'waived via' && return 0
+  return 1
+}
+
+# U2.4 hard gate: refuse to assemble or send a publish payload when the job's
+# ledger/state shows a --force-waiver was used. Waived jobs must never publish.
+# Accepts --job-id, the state writer path, and a caller label for the error message.
+assert_not_waived() {
+  local job_id="$1" sw="$2" label="$3" waived
+  [ -n "$job_id" ] || return 0   # no job id => nothing to check (test/dry-run callers)
+  if job_was_waived "$job_id" "$sw"; then
+    die "refusing to publish: job ${job_id} was advanced with --force-waiver (${label}). A waived job must never trigger a publish webhook. Re-run the pipeline without the waiver, or fix the required outputs before publishing."
+  fi
+  return 0
+}
+
 # U035: verify the integrity checksum embedded in a roster/ledger JSON record.
 # Returns 0 (true) when the record passes verification or has no _checksum yet
 # (backward-compatible with pre-U035 records that have never been written with
@@ -968,6 +1007,11 @@ print(json.dumps(d))
   [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it and recorded cover_image_url in the ledger)"
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
 
+  # U2.4 (2026-08-04): a job advanced with --force-waiver must never reach the
+  # publish webhook. Refuse to assemble or send the payload when the job's ledger/
+  # state carries a waiver event. Runs BEFORE the media probe and payload build.
+  assert_not_waived "$JOB_ID" "${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}" "publish-proxy"
+
   # Media content probe: validate audio + image before building the v2 payload.
   # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch (e.g. air-gapped boxes
   # without ffprobe, or known-good pre-validated URLs).
@@ -1269,6 +1313,11 @@ fi
 # a future token path fail closed instead of publishing account-wide.
 [ "${CHANNEL_SCOPE_PROVEN:-0}" = "1" ] \
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
+
+# U2.4 (2026-08-04): a job advanced with --force-waiver must never publish.
+# Refuse to assemble the create payload when the job's state carries a waiver event.
+assert_not_waived "$JOB_ID" "${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}" "broker/local publish"
+
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
   --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"
