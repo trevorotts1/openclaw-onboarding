@@ -37,7 +37,7 @@ SKILL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 REPO_ROOT="$(cd "$SKILL_DIR/.." && pwd)"
 BW="$SCRIPT_DIR/build-workforce.py"
 PREBUILD="$REPO_ROOT/scripts/prebuild-standard-workforce.sh"
-RETIRE="$REPO_ROOT/scripts/retire-confirmed-decline.sh"
+RETIRE="$SCRIPT_DIR/retire-confirmed-decline.sh"
 
 PASS=0
 FAIL=0
