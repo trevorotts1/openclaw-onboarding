@@ -1,11 +1,11 @@
-## [v21.7.29]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
+## [v21.7.30]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
 
 The AI Workforce standard-first redesign (master plan 2026-08-04), merged from
 feat/aiwf-standard-first-2026-08-04 (fe21227a). Adds the standard prebuild lane
 (operator-triggered, pre-interviewComplete), the apply-diff build path, a
 provenanced decline-archival (never-delete) guarantee, and the STANDARD_READY
-prover verdict. Merged on top of the v21.7.28 podcast train; all version markers
-rolled to v21.7.29.
+prover verdict. Merged on top of the v21.7.29 podcast train (unit 1.2 step
+driver); all version markers rolled to v21.7.30.
 
 ### What changed
 
@@ -36,10 +36,10 @@ rolled to v21.7.29.
 
 ### Merge notes
 
-9 version-marker files conflicted against main's v21.7.28 podcast train and were
-resolved at v21.7.29 (branch-intended superset). Both gates PASS on the merged
-state: test-artifact-coverage.sh 10/10, test-build-standard-first-roundtrip.sh
-13/13.
+The AIWF train initially collided with main's v21.7.29 podcast step-driver
+release (PR #859); merged onto it and rolled all version markers to v21.7.30.
+Both gates PASS on the merged state: test-artifact-coverage.sh 10/10,
+test-build-standard-first-roundtrip.sh 13/13.
 
 ## [v21.7.29]  -  2026-08-05  -  fix(podcast): deterministic step driver — preset-gated step emission, produces_media gating (unit 1.2)
 
