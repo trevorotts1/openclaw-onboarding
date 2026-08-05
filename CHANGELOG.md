@@ -1,3 +1,20 @@
+## [v21.7.27]  -  2026-08-04  -  fix(podcast): n8n publish rail fails closed — byte-level media gates, entry-guard semantic reasons (unit 2.1-2.4)
+
+Unit 2.1-2.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC fix-first, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.1 Audio substance gate.** New Validate Audio Substance -- Byte-Level MP3 Gate node wired as the ONLY edge into Prepare Audio Upload: asserts byteSize >= 50KB from the base64-decoded binary, checks magic bytes (ID3 or MPEG frame sync), rejects text/html and text/plain mimeTypes. Fail-closed on error (no Podbean call).
+- **2.1 Image substance gate.** Prepare Image Upload extended: size cap > 2MB throws, real dimension parsing (PNG IHDR / JPEG SOF walk), enforces min 1500 / max 3000 / square 1:1 before any S3 upload.
+- **2.2 Entry guard.** Fail-closed entry guard wired; refusal returns 422.
+- **2.3 Readback verdict.** Assert Media + Description post-publish; FALSE -> Rollback + Mark Failed + 500.
+- **2.4 Waiver gate.** assert_not_waived called before payload build in BOTH proxy and broker/local modes.
+- **Entry-guard semantic reasons (QC fix 9261fc19).** The Respond -- Entry Guard Refused node now returns distinct reasons: description_too_short / title_equals_description / title_placeholder / description_placeholder, falling back to invalid_payload only for structural failures. Negative test 4.2.3 reproduced.
+
+### Verification
+
+Opus re-review: all six refusal scenarios reproduced, entry-guard returns distinct reason for 4.2.3, validator VALID (70 nodes/42 connections), node --check clean, no bypass routes into upload. Fable QC findings 2-4 remain open as Phase 4 verification items. Cherry-picked 5c52b5ef + 9261fc19.
+
 ## [v21.7.26]  -  2026-08-04  -  fix(podcast): deterministic show-notes producer, description gate, kill the title fallback (unit 1.1)
 
 Unit 1.1 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
