@@ -119,7 +119,7 @@ supplies `CEO_GATE_ALLOW_TOOLS` (a GRANT list) and `CEO_GATE_MCP_PROVIDERS`, and
 `grant-ceo-consent.sh` sources it.
 
 **No fleet roll is performed by this release.** `fleet_rollout_enabled` stays `false`; the
-operator rolls, and not before one canary box is hand-verified.
+operator rolls, and not before a single pilot box has been hand-verified.
 
 ## [v21.7.34]  -  2026-08-05  -  fix(skill58): draft-cleanup workflow Delete node verb DELETE -> POST /v1/episodes/{id}/delete
 
