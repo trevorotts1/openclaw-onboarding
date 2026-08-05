@@ -411,6 +411,12 @@ fi
 #          overlap marker resume-workforce-build.sh stamps on every dispatch
 #          (.workforce-build-resume.inflight), which is the real "a turn is running"
 #          signal and TTL-expires so a dead turn still recovers.
+#  - Message content branches on buildType (PHASE 7, standard-first): a
+#    standard-first box was PREBUILT before the interview, so it receives the
+#    APPLY-THE-DIFF message (deprovision confirmed declines, materialize
+#    customs, add declared verticals, personalize kept depts, register agents
+#    for confirmed-kept depts). Every other box (legacy lane: buildType absent)
+#    receives the ORIGINAL build-from-scratch message byte-identical.
 #  - Best-effort, never fatal: if openclaw CLI is absent, the resume cron (every 15m)
 #    is the recovery net and will dispatch the same self-ping on its next fire.
 if [ "$COMPLETE" = true ]; then
@@ -471,7 +477,17 @@ if [ "$COMPLETE" = true ]; then
       # -- skip the kick and let the resume cron drive -- rather than fall through
       # to the client.
       KICK_AGENT=$(jq -r '.agentName // "the master orchestrator"' "$STATE" 2>/dev/null || echo "the master orchestrator")
-      KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      # STANDARD-FIRST BRANCH (PHASE 7): a box with buildType=standard-first was
+      # PREBUILT before the interview (prebuild-standard-workforce.sh), so the
+      # interview EDITED the built set and the build-kick must APPLY THE DIFF -
+      # never rebuild from scratch. Legacy boxes (absent buildType or any other
+      # value) keep the ORIGINAL message byte-identical (rollback property 1).
+      KICK_BUILD_TYPE=$(jq -r '.buildType // empty' "$STATE" 2>/dev/null || echo "")
+      if [ "$KICK_BUILD_TYPE" = "standard-first" ]; then
+        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). This is a STANDARD-FIRST box: the canonical department floor was PREBUILT before the interview began (standardPrebuild), so do NOT build from scratch - APPLY THE DIFF the interview recorded, per the Skill 23 Post-Interview Handoff Protocol. Run the apply-standard-edits build (build-workforce.py --apply-standard-edits): (1) deprovision the CONFIRMED declines (scripts/retire-confirmed-decline.sh - archive to .retired/, NEVER delete, provenanced declines only), (2) materialize the custom departments the owner ADDED, (3) add the declared industry verticals, and (4) personalize the KEPT departments (no-clobber on owner-edited content) - then register the agents.list rows for every confirmed-kept department (the deferred Moment 3.5). Silence = KEEP: a department with no recorded decision stays exactly as prebuilt. If parts of the diff are ALREADY applied from a prior or partial run, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      else
+        KICK_MSG="[WORKFORCE-RESUME] ${KICK_AGENT}: the interview is COMPLETE and the QC gate is build-eligible (interviewQc.status=${qc_for_kick}). Start the workforce build NOW per the Skill 23 Post-Interview Handoff Protocol - reconcile the canonical department floor with the owner's custom departments, write every planned department into .workforce-build-state.json as status=pending, then build them (build-workforce.py). If departments are ALREADY present from a prior or partial build, do NOT start over - resume them: leave every finished department alone and drive the unfinished ones to done. roleLibraryStatus + sopLibraryStatus are already seeded pending; a SCRIPT will write buildCompletedAt + closeoutStatus when all departments + both libraries are done, and the closeout fires automatically. Do NOT message the owner - this is an internal build kick; the owner only hears from you when Skill 37 Step 6 delivers the celebration."
+      fi
       if [ -z "$KICK_CHAT" ] || [ "$KICK_CHAT" = "null" ]; then
         echo "INFO: no operator escalation chat configured - build-kick send SKIPPED rather than routed to the client (resume cron drives the build within 15m). Configure env.vars.OPERATOR_ESCALATION_CHAT_ID via scripts/configure-operator-telegram.sh to receive these." >&2
       elif openclaw message send --channel telegram -t "$KICK_CHAT" -m "$KICK_MSG" 2>&1; then

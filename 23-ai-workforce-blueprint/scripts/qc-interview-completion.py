@@ -31,6 +31,20 @@ the build pipeline is allowed to proceed. Five checks:
      raw count. The conversational path's 25-35 standard (and its legacy/tailored
      exemptions above) is completely UNCHANGED — this is an ADDITIONAL path,
      selected by a real, already-existing signal, never a replacement.
+     EDIT-MODE EXEMPTION (standard-first redesign, PHASE 7): under
+     buildType == "standard-first" the canonical department floor is ALREADY
+     prebuilt before the interview begins (prebuild-standard-workforce.sh), so
+     the interview EDITS the built set (walk the prebuilt departments: KEEP /
+     TUNE / REMOVE) instead of pitching a missing set. A substantive edit-mode
+     review can legitimately complete well under 25 questions, so check #1
+     gains an edit-mode exemption: it applies when the build-state records a
+     standard-first edit-mode interview (see is_edit_mode_interview()) AND the
+     transcript passes the anti-fabrication substance floor (see
+     edit_mode_substance_ok()). The exemption lifts ONLY the 25-35 count
+     floor — the >36 ceiling, jargon, mandatory-field, and no-fabrication
+     checks still apply in full, and the flag can never launder an empty or
+     faked transcript (same shape as the legacy exemption). It never applies
+     to a legacy box (absent buildType): those keep the 25-35 bar.
   2. Zero forbidden-jargon hits in AI-authored text (loads from forbidden-jargon.json).
   3. Every mandatory data field populated (branding required:true + structural fields).
      (2026-07-30 fix, client Mac mini box / its rescue agent incident): a
@@ -102,6 +116,19 @@ LEGACY/PRE-STANDARD INTERVIEW EXEMPTION (v12.4.0)
     An empty or near-empty transcript that merely carries the legacy flag is treated
     as a HARD FAIL (reason 'legacy-flag-without-substance') — the flag cannot launder
     a fabricated/empty interview past the gate.
+
+EDIT-MODE INTERVIEW EXEMPTION (standard-first redesign, PHASE 7)
+  Why: under buildType == "standard-first" the 29-department canonical floor is
+  ALREADY prebuilt before the interview begins, so the interview becomes an
+  EDIT pass over the built set (per department: KEEP / TUNE / REMOVE) instead
+  of a from-scratch intake. A substantive review of the prebuilt set can
+  legitimately complete well under 25 questions. The exemption (see
+  is_edit_mode_interview() + edit_mode_substance_ok()) mirrors the legacy one:
+  it lifts ONLY the 25-35 count floor, never the >36 ceiling, and never the
+  jargon / mandatory-field / no-fabrication checks. An edit-mode CLAIM without
+  real owner substance is a HARD FAIL ('edit-mode-flag-without-substance') —
+  the flag cannot launder a fabricated interview. It never applies to a legacy
+  box (buildType absent).
 
 TRANSCRIPT FORMAT ASSUMPTIONS:
   The transcript (workforce-interview-answers.md) is written per SKILL.md protocol
@@ -523,6 +550,165 @@ def legacy_substance_ok(transcript: str, count_result: dict) -> dict:
                 f"legacy-flag-without-substance: only {answered} answered question(s) "
                 f"with real owner text (need >= {LEGACY_MIN_ANSWERED_QUESTIONS}). "
                 f"A legacy flag cannot exempt a transcript with no real answers."
+            )
+
+    return {"ok": ok, "questions": questions, "answered": answered, "reason": reason}
+
+
+# ── Edit-mode exemption (standard-first redesign, PHASE 7) ────────────────────
+#
+# Under buildType == "standard-first" the canonical department floor is ALREADY
+# prebuilt before the interview begins (prebuild-standard-workforce.sh), so the
+# interview EDITS the built set — for each prebuilt department the owner
+# decides KEEP (implicit), TUNE (content), or REMOVE (confirmed decline with
+# loss warning) — instead of sitting through a from-scratch intake. A
+# substantive edit-mode review can legitimately complete well under 25
+# questions, so the 25-35 count floor needs an edit-mode exemption.
+#
+# The exemption mirrors the legacy one above in every protective detail:
+#   - it lifts ONLY the 25-35 count floor (the >36 ceiling, jargon,
+#     mandatory-field, decline-provenance, and no-fabrication checks still
+#     apply in full);
+#   - it is gated by an anti-fabrication substance floor
+#     (edit_mode_substance_ok) — an edit-mode CLAIM with no real owner
+#     answers is a HARD FAIL ('edit-mode-flag-without-substance');
+#   - it never applies to a legacy box (absent buildType): those keep the
+#     25-35 bar exactly as before.
+
+# Anti-fabrication substance floor for edit-mode interviews. An edit-mode
+# interview that merely reviews the prebuilt set still needs REAL owner input —
+# a handful of genuine questions/answers plus a recorded department-review
+# pass — so the floors below the legacy ones would be too permissive, but the
+# legacy floors (8/8) would demand re-asking departments the owner already
+# decided on in the review board. The substance bar here: at least 5 real
+# Q-blocks, at least 5 with genuine owner-authored answers.
+EDIT_MODE_MIN_QUESTIONS = 5
+EDIT_MODE_MIN_ANSWERED_QUESTIONS = 5
+
+
+def is_edit_mode_interview(state: dict | None) -> dict:
+    """
+    Determine whether this interview is a standard-first EDIT-MODE interview:
+    the canonical floor was prebuilt before the interview began, so the
+    interview reviews/edits the built set instead of gathering intake from
+    scratch.
+
+    Detection (fail-safe — absent/garbage state returns not-edit-mode):
+      buildType == "standard-first"                       (REQUIRED)
+      AND at least ONE of:
+        - standardPrebuild.status == "done"               (prebuild ran), or
+        - interviewMode == "edit"                          (recorded mode), or
+        - interviewProgress.interviewMode == "edit".
+
+    Returns {"editMode": bool, "basis": str, "prebuildStatus": str|None}.
+    Reads only. A bare buildType without any prebuild/mode corroboration is
+    NOT edit-mode — the exemption requires the prebuilt-set claim to be
+    corroborated by the prebuild record or an explicit recorded mode.
+    """
+    st = state or {}
+    build_type = str(st.get("buildType") or "").strip().lower()
+    if build_type != "standard-first":
+        return {"editMode": False, "basis": "", "prebuildStatus": None}
+
+    prebuild = st.get("standardPrebuild")
+    prebuild_status = None
+    if isinstance(prebuild, dict):
+        prebuild_status = prebuild.get("status")
+
+    if prebuild_status == "done":
+        return {
+            "editMode": True,
+            "basis": "buildType=standard-first + standardPrebuild.status=done",
+            "prebuildStatus": prebuild_status,
+        }
+    if str(st.get("interviewMode") or "").strip().lower() == "edit":
+        return {
+            "editMode": True,
+            "basis": "buildType=standard-first + interviewMode=edit",
+            "prebuildStatus": prebuild_status,
+        }
+    prog_mode = (st.get("interviewProgress") or {}).get("interviewMode")
+    if str(prog_mode or "").strip().lower() == "edit":
+        return {
+            "editMode": True,
+            "basis": "buildType=standard-first + interviewProgress.interviewMode=edit",
+            "prebuildStatus": prebuild_status,
+        }
+    return {"editMode": False, "basis": "", "prebuildStatus": prebuild_status}
+
+
+def edit_mode_substance_ok(transcript: str, count_result: dict) -> dict:
+    """
+    Anti-fabrication substance floor for the edit-mode exemption.
+
+    An edit-mode interview is only EXEMPT from the 25-35 count floor if it is
+    a REAL, owner-participated review — never an empty or faked one. We
+    require:
+      - at least EDIT_MODE_MIN_QUESTIONS real questions (Q-blocks), AND
+      - at least EDIT_MODE_MIN_ANSWERED_QUESTIONS questions that carry a
+        non-trivial owner-authored answer line (same line-shape test as
+        legacy_substance_ok()).
+
+    Returns {"ok": bool, "questions": int, "answered": int, "reason": str|None}.
+    Reads only.
+    """
+    questions = count_result.get("transcriptCount", 0)
+
+    lines = transcript.splitlines()
+    answered = 0
+    in_block = False
+    block_has_answer = False
+
+    def _is_q_line(s: str) -> bool:
+        s = s.strip()
+        return bool(
+            re.match(r"^\*\*Q", s, re.IGNORECASE)
+            or re.match(r"^Q-\w+", s)
+            or re.match(r"^#+\s*Question\s+\d+", s, re.IGNORECASE)
+            or re.match(r"^\d+\.\s+\*\*Q", s, re.IGNORECASE)
+        )
+
+    def _is_structural(s: str) -> bool:
+        s = s.strip()
+        return (not s) or bool(re.match(r"^---+$", s)) or bool(re.match(r"^#+\s", s))
+
+    def _close_block():
+        nonlocal answered, block_has_answer
+        if in_block and block_has_answer:
+            answered += 1
+
+    for raw in lines:
+        if _is_q_line(raw):
+            _close_block()
+            in_block = True
+            block_has_answer = False
+            continue
+        if not in_block:
+            continue
+        if _is_structural(raw):
+            continue
+        text = raw.strip()
+        text = re.sub(r"^>+\s*", "", text)
+        text = re.sub(r"^\*\*A[:\*]\s*", "", text, flags=re.IGNORECASE)
+        text = re.sub(r"^A:\s*", "", text, flags=re.IGNORECASE)
+        if len(text.strip()) >= LEGACY_MIN_ANSWER_CHARS:
+            block_has_answer = True
+    _close_block()
+
+    ok = (questions >= EDIT_MODE_MIN_QUESTIONS) and (answered >= EDIT_MODE_MIN_ANSWERED_QUESTIONS)
+    reason = None
+    if not ok:
+        if questions < EDIT_MODE_MIN_QUESTIONS:
+            reason = (
+                f"edit-mode-flag-without-substance: only {questions} question(s) "
+                f"(need >= {EDIT_MODE_MIN_QUESTIONS}). An edit-mode flag cannot exempt an "
+                f"empty/near-empty interview from the count floor."
+            )
+        else:
+            reason = (
+                f"edit-mode-flag-without-substance: only {answered} answered question(s) "
+                f"with real owner text (need >= {EDIT_MODE_MIN_ANSWERED_QUESTIONS}). "
+                f"An edit-mode flag cannot exempt a transcript with no real answers."
             )
 
     return {"ok": ok, "questions": questions, "answered": answered, "reason": reason}
@@ -977,7 +1163,13 @@ def check_mandatory_fields(state: dict, branding_questions_path: Path,
     # At least one locked department
     departments = state.get("departments", [])
     if isinstance(departments, list):
-        locked = [d for d in departments if d.get("status") in ("done", "building", "pending")]
+        # "prebuilt" (standard-first, PHASE 7): a department materialized by the
+        # operator-triggered prebuild-standard-workforce.sh BEFORE the interview
+        # began. It is MORE locked than "pending" (already on disk + chosen
+        # artifact + board lane), so it satisfies this field exactly like a
+        # planned department. Legacy boxes never carry this status, so the
+        # legacy lane is byte-identical.
+        locked = [d for d in departments if d.get("status") in ("done", "building", "pending", "prebuilt")]
         if not locked:
             missing.append("departments[at-least-one]")
 
@@ -1328,6 +1520,7 @@ def build_verdict(
     state: dict | None = None,
     web_store_result: dict | None = None,
     structured_coverage: dict | None = None,
+    edit_mode_result: dict | None = None,
 ) -> tuple:
     """
     Returns (verdict_str, exit_code, details_dict).
@@ -1360,9 +1553,21 @@ def build_verdict(
           hard fail, so a genuinely-complete short interview is never misread as
           "not done".
 
+      (C) EDIT-MODE / standard-first (PHASE 7): under buildType == "standard-first"
+          the canonical floor was prebuilt before the interview began, so the
+          interview reviews/edits the built set instead of gathering intake from
+          scratch (see is_edit_mode_interview()). Detected via build-state
+          (buildType + standardPrebuild.status=="done" or a recorded edit mode) and
+          gated by the anti-fabrication substance floor (edit_mode_substance_ok).
+          When granted, the interview is treated as a PASS on the count dimension
+          (warning only), exactly like a granted legacy exemption. A claimed
+          edit-mode interview WITHOUT real substance HARD-FAILS
+          ('edit-mode-flag-without-substance').
+
     Strictness is preserved for everyone else: an ORDINARY client with a short
-    interview and NO recorded legacy/tailored signal STILL hard-fails (exit 3), and an
-    over-long interview (count > 36) STILL hard-fails regardless of any exemption.
+    interview and NO recorded legacy/tailored/edit-mode signal STILL hard-fails
+    (exit 3), and an over-long interview (count > 36) STILL hard-fails regardless
+    of any exemption.
     """
     hard_failures = []
     soft_failures = []
@@ -1401,6 +1606,36 @@ def build_verdict(
                 f"[legacy-flag-without-substance] Legacy/pre-standard exemption CLAIMED "
                 f"(evidence: {', '.join(legacy_result.get('sources', []))}) but the "
                 f"interview does not show real owner-authored substance. {sub_reason}"
+            )
+
+    # (A2) Edit-mode exemption (standard-first, PHASE 7): under
+    # buildType == "standard-first" the floor was prebuilt before the interview
+    # began, so the interview EDITS the built set. Detected via build-state
+    # (is_edit_mode_interview) and gated by the anti-fabrication substance floor
+    # (edit_mode_substance_ok). The claim NEVER launders an empty/faked interview.
+    edit_mode = bool(edit_mode_result and edit_mode_result.get("editMode"))
+    edit_mode_granted = False
+    if edit_mode:
+        edit_substance = edit_mode_result.get("substance") or {}
+        if edit_substance.get("ok"):
+            edit_mode_granted = True
+            warnings.append(
+                f"[edit-mode-exemption GRANTED] Standard-first edit-mode interview "
+                f"({count} questions, {edit_substance.get('answered')} answered) is "
+                f"EXEMPT from the 25-35 count floor — the canonical floor was "
+                f"prebuilt before this interview began, so the interview reviewed/"
+                f"edited the built set. Basis: {edit_mode_result.get('basis')}. "
+                f"Jargon, mandatory-field, decline-provenance, and no-fabrication "
+                f"checks STILL applied."
+            )
+        else:
+            sub_reason = edit_substance.get(
+                "reason", "edit-mode-flag-without-substance: insufficient real content."
+            )
+            hard_failures.append(
+                f"[edit-mode-flag-without-substance] Edit-mode exemption CLAIMED "
+                f"(basis: {edit_mode_result.get('basis')}) but the interview does "
+                f"not show real owner substance. {sub_reason}"
             )
 
     # (B) Tailored / founder-self-build / gap-only (v13.2.0): a build-state that
@@ -1456,6 +1691,15 @@ def build_verdict(
             # Should be unreachable (substance floor would have failed) — defensive.
             soft_failures.append(
                 f"Legacy interview question count {count} is unexpectedly low; review."
+            )
+    elif edit_mode_granted:
+        # Count floor lifted for this verified standard-first edit-mode interview.
+        # We still record the count, and still surface an unusually tiny interview
+        # as a soft note.
+        if count < EDIT_MODE_MIN_QUESTIONS:
+            # Should be unreachable (substance floor would have failed) — defensive.
+            soft_failures.append(
+                f"Edit-mode interview question count {count} is unexpectedly low; review."
             )
     elif count < 24:
         if tailored:
@@ -1594,10 +1838,17 @@ def build_verdict(
             "meta": (legacy_result or {}).get("meta", {}),
             "substance": legacy_substance or {},
         },
+        "editModeExemption": {
+            "claimed": edit_mode,
+            "granted": edit_mode_granted,
+            "basis": (edit_mode_result or {}).get("basis", ""),
+            "prebuildStatus": (edit_mode_result or {}).get("prebuildStatus"),
+            "substance": (edit_mode_result or {}).get("substance") or {},
+        },
         "tailoredExemption": {
             "recorded": tailored,
             "basis": tailored_basis,
-            "applied": bool(tailored and not is_structured and count < 24 and count <= 36 and not legacy_granted),
+            "applied": bool(tailored and not is_structured and count < 24 and count <= 36 and not legacy_granted and not edit_mode_granted),
         },
         "structuredCoverage": {
             "isStructuredWebInterview": is_structured,
@@ -1638,6 +1889,7 @@ def build_verdict(
             (
                 f"PASS: {count} questions"
                 + (" [legacy/pre-standard exemption GRANTED]" if legacy_granted else "")
+                + (" [edit-mode exemption GRANTED]" if edit_mode_granted else "")
                 + (" [structured-web coverage standard applied]" if is_structured else "")
                 + ", 0 jargon hits, all fields present"
                 + (
@@ -1670,6 +1922,7 @@ def write_state_qc(state_path: Path, details: dict) -> None:
     }
 
     _legacy = details.get("legacyExemption", {})
+    _em = details.get("editModeExemption", {})
     _sc = details.get("structuredCoverage", {})
     _sc_result = _sc.get("result", {}) or {}
     state["interviewQc"] = {
@@ -1679,6 +1932,11 @@ def write_state_qc(state_path: Path, details: dict) -> None:
             "claimed": bool(_legacy.get("claimed")),
             "granted": bool(_legacy.get("granted")),
             "sources": _legacy.get("sources", []),
+        },
+        "editModeExemption": {
+            "claimed": bool(_em.get("claimed")),
+            "granted": bool(_em.get("granted")),
+            "basis": _em.get("basis", ""),
         },
         "structuredCoverage": {
             "applied": bool(_sc.get("applied")),
@@ -1889,6 +2147,14 @@ def main():
         else None
     )
 
+    # Edit-mode exemption (standard-first, PHASE 7): detect via build-state, then
+    # verify substance. Never applies to a legacy box (buildType absent).
+    edit_mode_detect = is_edit_mode_interview(state)
+    edit_mode_result = None
+    if edit_mode_detect.get("editMode"):
+        edit_mode_result = dict(edit_mode_detect)
+        edit_mode_result["substance"] = edit_mode_substance_ok(transcript, count_result)
+
     # Check #7 (WG-10c): no-web-only-store. Only runs when a mirror store is supplied;
     # otherwise it skips (a box with no dashboard mirror yet has nothing to verify).
     web_store_result = None
@@ -1908,6 +2174,7 @@ def main():
         legacy_result, legacy_substance, state=state,
         web_store_result=web_store_result,
         structured_coverage=structured_coverage_result,
+        edit_mode_result=edit_mode_result,
     )
 
     # Output
@@ -1926,6 +2193,11 @@ def main():
         print(f"  Question count : {details['questionCount']}"
               + (f" (state: {details['questionCountStateValue']})" if details['questionCountStateValue'] else "")
               + _legacy_tag)
+        _em = details.get("editModeExemption", {})
+        if _em.get("granted"):
+            print(f"  Edit-mode      : GRANTED (standard-first edit-mode interview; count floor exempt — {_em.get('basis')})")
+        elif _em.get("claimed"):
+            print("  Edit-mode      : CLAIMED — substance check FAILED (HARD FAIL)")
         _sc = details.get("structuredCoverage", {})
         if _sc.get("isStructuredWebInterview"):
             _scr = _sc.get("result", {}) or {}

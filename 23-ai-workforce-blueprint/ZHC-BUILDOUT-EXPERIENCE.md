@@ -33,6 +33,22 @@ What you must come out of Stage 1 with: company name, industry, mission, the
 owner's values + communication style, the connected systems, and per-department
 activities / KPIs / tools / challenges for each department the client confirms.
 
+**Standard-first variant (standard-first redesign).** On a box with
+`buildType == "standard-first"` in `.workforce-build-state.json`, the company's
+standard department foundation is ALREADY built before this stage begins — the
+operator-triggered prebuild (`scripts/prebuild-standard-workforce.sh`, sourced
+exclusively from `templates/role-library/`) materialized the canonical floor at
+onboarding, under an explicit provenanced operator-consent record and deferred
+agent registration (the No-Work-During-Interview Gate's exemption 2,
+INSTRUCTIONS.md). Stage 1 then becomes an EDIT pass over the built set — the
+interview walks the prebuilt departments (KEEP / TUNE / REMOVE, INSTRUCTIONS.md
+Phase 5.5 standard-first lane) and collects the same business knowledge, which
+the apply-diff build at `interviewComplete` uses to personalize kept
+departments, materialize adds, and archive confirmed declines. The ONE-question
+discipline, the flush protocol, and the Stage-1 exit criteria are unchanged.
+Legacy boxes (absent `buildType`) run the original build-from-scratch flow
+byte-identical.
+
 ---
 
 ## Stage 2 — Build (the floor is mandatory, the library does the writing)

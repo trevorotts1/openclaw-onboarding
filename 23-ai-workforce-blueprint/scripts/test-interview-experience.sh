@@ -10,8 +10,9 @@
 #   T6:  Count too long (40 questions) → HARD FAIL
 #   T7:  Missing mandatory field → HARD FAIL
 #   T8:  Abandoned interview (25h idle) gets the 24h nudge (gateway shim)
-#   T9:  Nudge does NOT fire under 24h idle
-#   T10: Nudge silenced when interview is complete
+#   T9:  Nudge does NOT fire under 24h idle (OC_ROOT-sandboxed fixture)
+#   T10: Nudge silenced when interview is complete — NO owner 'message send';
+#        the v12.3.10 self-removal 'cron rm' IS expected (OC_ROOT-sandboxed fixture)
 #   T11: No direct api.telegram.org path in nudge files
 #   T12: Single-source-of-truth invariants (schema, jargon list, contract fence)
 #   T13: interviewComplete=true + recorded UUID → shim receives 'cron rm' (self-remove on next fire)
@@ -367,6 +368,11 @@ SHIM
 )
 
 # ── T9: Under 24h → shim NOT invoked ─────────────────────────────────────────
+# OC_ROOT sandbox (T13 pattern): the cron resolves its state via
+# OC_ROOT/workspace/.workforce-build-state.json, so the fixture must be copied
+# into a sandboxed OC_ROOT and the cron run with OC_ROOT pointed at it —
+# otherwise the cron reads the REAL box's state and the test exercises the
+# wrong interview.
 (
   STATE="$TMPDIR_TEST/t9-state.json"
   SHIM_LOG="$TMPDIR_TEST/t9-shim.log"
@@ -381,8 +387,12 @@ SHIM
 
   # State: incomplete, only 2h idle
   make_clean_state "$STATE" "false" "2"
+  T9_OC_ROOT="$TMPDIR_TEST/t9-oc"
+  mkdir -p "$T9_OC_ROOT/workspace"
+  cp "$STATE" "$T9_OC_ROOT/workspace/.workforce-build-state.json"
 
   SHIM_LOG="$SHIM_LOG" PATH="$SHIM_DIR:$PATH" \
+    OC_ROOT="$T9_OC_ROOT" \
     bash "$NUDGE_CRON" 2>/dev/null || true
 
   if [ ! -f "$SHIM_LOG" ] || [ ! -s "$SHIM_LOG" ]; then
@@ -392,7 +402,13 @@ SHIM
   fi
 )
 
-# ── T10: Complete → shim NOT invoked ─────────────────────────────────────────
+# ── T10: Complete → NO owner nudge; self-removal fires ──────────────────────
+# The kill condition (interviewComplete=true) must NEVER send an owner-facing
+# nudge (no `message send`), and per the v12.3.10 self-removal doctrine the
+# cron removes itself from the registry (a recorded interviewNudgeUuid yields
+# `openclaw cron rm <uuid>`). The old expectation of ZERO shim calls predates
+# self-removal — a `cron rm` on completion is the correct, expected call.
+# OC_ROOT sandbox as in T9/T13: never read or write the real box's state.
 (
   STATE="$TMPDIR_TEST/t10-state.json"
   SHIM_LOG="$TMPDIR_TEST/t10-shim.log"
@@ -405,16 +421,25 @@ exit 0
 SHIM
   chmod +x "$SHIM_DIR/openclaw"
 
-  # State: interviewComplete=true, 100h idle (should still not fire)
+  # State: interviewComplete=true, 100h idle, recorded nudge UUID
+  T10_UUID="deadbeef-0000-0000-0000-000000000002"
   make_clean_state "$STATE" "true" "100"
+  jq --arg uuid "$T10_UUID" '. + {interviewNudgeUuid: $uuid, interviewNudgeRegisteredAt: "2026-06-01T00:00:00Z"}' \
+    "$STATE" > "$STATE.tmp" && mv "$STATE.tmp" "$STATE"
+  T10_OC_ROOT="$TMPDIR_TEST/t10-oc"
+  mkdir -p "$T10_OC_ROOT/workspace"
+  cp "$STATE" "$T10_OC_ROOT/workspace/.workforce-build-state.json"
 
   SHIM_LOG="$SHIM_LOG" PATH="$SHIM_DIR:$PATH" \
+    OC_ROOT="$T10_OC_ROOT" \
     bash "$NUDGE_CRON" 2>/dev/null || true
 
-  if [ ! -f "$SHIM_LOG" ] || [ ! -s "$SHIM_LOG" ]; then
-    pass "T10: interviewComplete=true → shim NOT invoked (nudge silenced when complete)"
+  if grep -q "message send" "$SHIM_LOG" 2>/dev/null; then
+    fail "T10: interviewComplete=true must NEVER send an owner nudge, got: $(cat "$SHIM_LOG")"
+  elif grep -q "cron rm $T10_UUID" "$SHIM_LOG" 2>/dev/null; then
+    pass "T10: interviewComplete=true → NO owner nudge sent; self-removal fired (cron rm $T10_UUID)"
   else
-    fail "T10: expected shim NOT invoked when interviewComplete=true, got: $(cat "$SHIM_LOG")"
+    fail "T10: expected NO 'message send' AND self-removal 'cron rm $T10_UUID', got: $(cat "$SHIM_LOG" 2>/dev/null || echo '(empty)')"
   fi
 )
 

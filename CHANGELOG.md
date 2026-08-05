@@ -1,3 +1,46 @@
+## [v21.7.30]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
+
+The AI Workforce standard-first redesign (master plan 2026-08-04), merged from
+feat/aiwf-standard-first-2026-08-04 (fe21227a). Adds the standard prebuild lane
+(operator-triggered, pre-interviewComplete), the apply-diff build path, a
+provenanced decline-archival (never-delete) guarantee, and the STANDARD_READY
+prover verdict. Merged on top of the v21.7.29 podcast train (unit 1.2 step
+driver); all version markers rolled to v21.7.30.
+
+### What changed
+
+- **Standard prebuild lane (PHASE 2).** `scripts/prebuild-standard-workforce.sh`
+  + `.py` build the canonical floor EXCLUSIVELY from `templates/role-library/`
+  under an explicit provenanced OPERATOR consent record, before
+  `interviewComplete` — the ONE creation allowed under the No-Work-During-
+  Interview Gate's exemption 2. Writes no owner-facing deliverable and no
+  interview answer; defers ALL `agents.list` registration to interviewComplete.
+- **Apply-diff build (PHASE 3).** `build-workforce.py --apply-standard-edits`
+  takes the interview config and applies the standard-first diff: provenanced
+  declines are ARCHIVED to `.retired/` (never deleted), net-new custom
+  departments are built from the canonical library, kept prebuilt departments
+  stay built, and `agents.list` rows land for confirmed keeps.
+- **Anti-fabrication gates (PHASE 7).** exit 87 when `interviewComplete` is
+  absent and no genuine transcript/consent corroborates; exit 88 when a RECORDED
+  decline lacks provenance. The bare `interviewComplete` flag is never trusted —
+  `verify_interview_complete()` requires a genuine conversational transcript or a
+  valid owner-consent record.
+- **STANDARD_READY prover verdict (PHASE 4).** prove-zhe.py / verify-library-gate
+  recognize the standard-first build state and emit STANDARD_READY.
+- **Cron + link wiring (PHASES 5/8).** resume-workforce-build.sh and
+  interview-nudge-cron.sh are prebuilt-aware; send-interview-link.sh sends the
+  interview link at the beginning of the run; run-full-install ordering updated.
+- **Documentation.** SKILL.md, ZERO-HUMAN-EXPERIENCE.md, INSTRUCTIONS.md rewrite
+  the No-Work gate carve-out, the Phase 5.5 review-the-built-set inversion, and
+  the QC edit-mode exemption.
+
+### Merge notes
+
+The AIWF train initially collided with main's v21.7.29 podcast step-driver
+release (PR #859); merged onto it and rolled all version markers to v21.7.30.
+Both gates PASS on the merged state: test-artifact-coverage.sh 10/10,
+test-build-standard-first-roundtrip.sh 13/13.
+
 ## [v21.7.29]  -  2026-08-05  -  fix(podcast): deterministic step driver — preset-gated step emission, produces_media gating (unit 1.2)
 
 Unit 1.2 of the podcast publish fix train, QC-passed (Opus RE-REVIEW-2, 2026-08-05) and merged to main. This is the final unit of the 9-unit podcast fix train.
