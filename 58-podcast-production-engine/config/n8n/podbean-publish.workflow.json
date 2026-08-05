@@ -906,7 +906,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: false, reason: 'invalid_payload', missing: $json.guard_missing_fields, bad_urls: $json.guard_bad_url_fields, message: $json.guard_error } }}",
+        "responseBody": "={{ { ok: false, reason: $json.guard_description_too_short ? 'description_too_short' : ($json.guard_title_equals_description ? 'title_equals_description' : ($json.guard_title_placeholder ? 'title_placeholder' : ($json.guard_desc_placeholder ? 'description_placeholder' : 'invalid_payload'))), semantic_errors: $json.guard_semantic_errors, missing: $json.guard_missing_fields, bad_urls: $json.guard_bad_url_fields, message: $json.guard_error } }}",
         "options": {
           "responseCode": 422
         }
