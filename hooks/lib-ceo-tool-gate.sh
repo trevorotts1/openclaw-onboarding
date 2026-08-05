@@ -38,12 +38,23 @@
 
 # ─── Canonical tool lists (KEEP IN SYNC WITH build-workforce.py) ───────────────
 
-# Production tools denied on the CEO in the GATED posture. Real built-in tool
-# names from docs.openclaw.ai/gateway/security, plus GHL-MCP name-globs as a
-# belt-and-suspenders fallback for any gateway version that does not honor
-# tools.byProvider (denies always win and are restrict-only, so the extra glob
-# is harmless where byProvider IS honored).
-# CEO gate removed 2026-08-05 per Trevor — was creating loops; see openclaw-telegram-master-plan.md
+# CEO production-tool deny — RETIRED 2026-08-05 per Trevor.
+#
+# This list used to deny write/edit/apply_patch/browser/canvas/image/process on
+# the CEO/orchestrator agent. It was removed because denying `write` while
+# memoryFlush demanded a memory write created a self-blocking loop that ate
+# Telegram messages for two weeks. See openclaw-telegram-master-plan.md.
+#
+# It is now INTENTIONALLY EMPTY, and empty is the correct, asserted state:
+# scripts/test-ceo-tool-gate.sh pins EXPECT_DENY="" so re-adding a token here
+# fails CI rather than silently re-creating the outage.
+#
+# ⛔ An empty bash array is a TRAP on macOS /bin/bash 3.2 under `set -u` — see
+# the BASH 3.2 SAFETY note on ceo_gate_tools() below before touching any
+# "${CEO_GATE_*[@]}" / "${CEO_GATE_*[*]}" expansion.
+#
+# GHL MCP is still denied, but via CEO_GATE_MCP_PROVIDERS (byProvider) and the
+# name-glob fallback in the apply-* stampers — NOT from this list.
 CEO_GATE_DENY_TOOLS=()
 
 # Tools the CEO keeps in BOTH postures so it can route + converse.
@@ -59,10 +70,13 @@ CEO_GATE_DENY_TOOLS=()
 # `exec` is RETAINED (not removed) ONLY as the execution channel for the two
 # ANCHORED, intent-gate-carved sanctioned shell helpers — route-presentation.sh
 # (REFLEX V2 STEP 1) and mc-route.sh — NOT as a general routing path. OpenClaw's
-# config-layer exec policy is {security,ask} and CANNOT command-allowlist, so the
-# command-level "only the sanctioned helpers" restriction is enforced by the
-# PreToolUse intent-gate (hooks/ceo-intent-gate.sh), which default-DENIES every
-# other exec. Dropping exec HERE would deny the CEO the route-presentation.sh
+# config-layer exec policy is {security,ask} and CANNOT command-allowlist. NOTE
+# (2026-08-05): that command-level restriction USED to be enforced by the
+# PreToolUse intent-gate (hooks/ceo-intent-gate.sh), which default-DENIED every
+# other exec. That hook has been DELETED from the repo and unwired fleet-wide
+# (same loop-removal directive), so there is currently NO command-level exec
+# restriction — only the {security,ask} config policy. Dropping exec HERE would
+# still deny the CEO the route-presentation.sh
 # helper the reflex mandates (a documented flow), because a config-layer deny is
 # restrict-only and cannot be un-denied by the hook. exec is retired outright ONLY
 # once the reflex migrates route-presentation.sh onto mc-route__route_task
@@ -188,9 +202,18 @@ PYEOF
 }
 
 # Convenience wrapper that exports the arrays into the env the python above reads.
+#
+# BASH 3.2 SAFETY (load-bearing — do not "simplify" these expansions):
+# macOS ships /bin/bash 3.2.57, and on 3.2 an EMPTY array expanded as
+# "${arr[*]}" under `set -u` is an UNBOUND VARIABLE and aborts the shell.
+# CEO_GATE_DENY_TOOLS is now legitimately EMPTY (the CEO production-tool deny
+# was retired 2026-08-05), and scripts/grant-ceo-consent.sh calls ceo_gate_tools
+# under `set -euo pipefail` — so the bare form killed that script outright on
+# every macOS box. The `:-` fallback makes an empty array expand to "".
+# bash 4+/5.x do not exhibit this, which is why it hid from PATH-bash testing.
 ceo_gate_tools() {
-  CEO_GATE_DENY="${CEO_GATE_DENY_TOOLS[*]}" \
-  CEO_GATE_ALLOW="${CEO_GATE_ALLOW_TOOLS[*]}" \
-  CEO_GATE_MCP="${CEO_GATE_MCP_PROVIDERS[*]}" \
+  CEO_GATE_DENY="${CEO_GATE_DENY_TOOLS[*]:-}" \
+  CEO_GATE_ALLOW="${CEO_GATE_ALLOW_TOOLS[*]:-}" \
+  CEO_GATE_MCP="${CEO_GATE_MCP_PROVIDERS[*]:-}" \
   ceo_gate_tools_json
 }
