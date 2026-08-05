@@ -155,7 +155,7 @@ SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (eighteen drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (twenty-two drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
@@ -165,6 +165,16 @@ LARGER, busier, clean transcript stays silent even past the re-arm floor),
 **D-POISON-ROLL** (an armed tick archives it, moved not deleted) and **D-POISON-LIVE**
 (a transcript still being written is refused) - and all four are mutation-proven
 failable (see `tests/drills/D-POISON.md`).
+
+Four more hold the line on a REPRODUCED crash: the roll was not idempotent, so LF-10
+re-archived its own archive every tick until the filename passed 255 bytes and an
+uncaught `OSError` killed the whole tick. **D-POISON-REROLL** asserts ten armed ticks
+over one poisoned transcript yield exactly one finding and one roll; **-BOUND** that the
+constructed name is byte-bounded and deterministic; **-REFUSAL** that a filesystem
+error is a refusal, not a crash; **-TICK** that an exception escaping a kill card is
+contained and the finding behind it is still processed. **One bad unit never kills the
+tick** - a watchdog that dies quietly leaves a box that only looks watched (see
+`tests/drills/D-POISON-REROLL.md`).
 
 **What the operator commands actually do.** `park <unit>` / `unpark <unit>` and the
 emitted revert `unpark --finding <id>` (finding→unit resolved from the ledger) are
