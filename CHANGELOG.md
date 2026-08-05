@@ -1,3 +1,37 @@
+## [v21.7.31]  -  2026-08-05  -  fix(skill58): capability manifest + dept-podcast runtime dir materialization (units 3.4-3.5)
+
+Unit 3.4-3.5 of the podcast publish fix train (onboarding half of the capability
+manifest), QC-passed (Fable QC-Fable.md VERDICT: PASS + Opus RE-REVIEW-Opus.md
+VERDICT: PASS, 2026-08-05) and merged to main. Adds the Skill 58 capability
+manifest and the dept-podcast runtime-dir materialization installer, matching
+the already-merged Command Center reader (`src/lib/capability-manifest.ts`) field
+contract exactly.
+
+### What changed
+
+- **Capability manifest (unit 3.4).** New
+  `58-podcast-production-engine/config/capability-manifest.json` (153 lines)
+  declaring `skill`, `activation`, `entrypoints`, `required_env`, `activation_layer_components`
+  and `dispatch_contract` — every field the merged CC reader consumes, with no
+  field-name mismatch (verified by automated field-walk). Declares
+  `audio-podcast-editor` in `forbidden_agent_ids`; no secret values (all env
+  labels are SET/SET_OR_NONE semantics with secrecy tags).
+- **Runtime dir materialization (unit 3.5).** `install-podcast-department.sh`
+  now materializes AGENTS.md/IDENTITY.md/SOUL.md/MEMORY.md/HEARTBEAT into
+  `~/.openclaw/agents/dept-podcast/` (workspace-scaffolded copy, symlink-resolve,
+  else lightweight stub) so the runtime dir is never empty. `--verify` asserts the
+  five per-agent files plus agents.list entry, storage tree, sqlite, and session
+  namespace, exiting EX_REFUSED (2) on any MISS. Never overwrites curated content
+  (guard fires before every write branch).
+
+### Merge notes
+
+Cherry-picked 28cc4f3a onto origin/main (f57556fe) — clean, zero conflict surface
+(the branch base was an ancestor). All 10 version markers rolled v21.7.30 ->
+v21.7.31 (bump-version.sh). Skill 58 version 0.1.35 -> 0.1.36 (SKILL.md frontmatter
++ skill-version.txt). CHANGELOG entry added. This is the 10th and final unit of the
+podcast fix train (9 campaign + manifest).
+
 ## [v21.7.30]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
 
 The AI Workforce standard-first redesign (master plan 2026-08-04), merged from
