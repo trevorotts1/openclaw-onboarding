@@ -65,10 +65,29 @@ Idempotent, strictly NON-FATAL, and a true no-op on a box already cleaned by han
   once it exists (run 2 produced `ceo-routing-doctrine/ceo-routing-doctrine/`). Now
   `cp -R SRC/. DST/`, verified stable across 3+ runs; the `2>/dev/null || true` that hid real
   copy failures is dropped.
-- **A later roll silently disabled it.** `apply-fleet-standards.sh` rewrites `plugins.allow` to
-  the currently-BUNDLED plugin ids, and this extension reports `origin:"config"`, NOT
-  `"bundled"` — confirmed against a live `openclaw plugins list --json`. It also runs EARLIER
-  in a roll than the plugin install, so the drop would not self-repair. Fixed on both sides.
+- **FLEET-ROLL BLOCKER — a roll silently disabled the doctrine on every box.**
+  `apply-fleet-standards.sh` filtered `openclaw plugins list --json` to `origin == "bundled"`
+  and then ASSIGNED that list over `plugins.allow`, a WHOLESALE REPLACEMENT. Measured on a live
+  box: **82 plugins — bundled=67, global=12, config=3**, and `ceo-routing-doctrine` is
+  `origin:"config"`, NOT `"bundled"`. So each roll dropped 15 currently-installed, currently-
+  loadable plugins from the allowlist, including the prompt-injection layer that REPLACED the
+  retired CEO gate. Because this stamper runs EARLIER in a roll (~6440) than the plugin
+  installer (~7281), the drop did not even self-repair within the same roll. Net effect per box:
+  allowlist stripped -> plugin installed -> plugin not allowed -> **never loads** -> the router
+  gets NEITHER the CEO gate NOR the routing doctrine, which is strictly worse than before the
+  gate was removed. This would have fired on the very next fleet roll.
+  Fixed as a **CLASS, not by name** — special-casing one id would leave the identical trap for
+  every future path-loaded or globally-installed plugin. `plugins.allow` is now the enumerated
+  bundled ids **UNION** the ids of all currently-present non-bundled plugins, so a roll still
+  ADDS newly-bundled plugins and still PRUNES genuinely-vanished ones, but never removes a
+  plugin that is installed and loadable right now. The fail-open posture is UNCHANGED (an empty
+  or untrustworthy enumeration still writes nothing and warns), and the misleading
+  "non-bundled/third-party plugins will no longer auto-load" log line now states the truth.
+  Proven against the real 82-plugin enumeration as a fixture: pre-fix the doctrine is ABSENT
+  from the computed allowlist, post-fix it is PRESENT along with all 12 `global` and all 3
+  `config` ids; a genuinely-bundled id still survives; a vanished id is still pruned (the fix is
+  not "allow everything"); the empty-enumeration path still leaves the config untouched; and
+  mutation-reverting the union drops the allowlist 82 -> 67 and the doctrine back out.
 - **A crash mid-write truncated `openclaw.json`.** Now an atomic write with a backup.
 
 ### Fixed — bash 3.2 abort on the now-empty deny array

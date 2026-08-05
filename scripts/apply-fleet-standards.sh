@@ -300,34 +300,48 @@ deep_merge(cfg, CANONICAL)
 _plugins_enum_ok = os.environ.get("FLEET_PLUGINS_ENUM_OK", "0") == "1"
 _plugins_json_file = os.environ.get("FLEET_PLUGINS_JSON_FILE", "")
 if _plugins_enum_ok and _plugins_json_file:
+    # UNION, NEVER WHOLESALE REPLACEMENT — fleet-roll blocker fixed 2026-08-05.
+    #
+    # This block used to keep ONLY origin=="bundled" ids and then ASSIGN that list
+    # over cfg["plugins"]["allow"], deleting every non-bundled plugin from the
+    # allowlist. Measured on a live box via `openclaw plugins list --json`:
+    #   82 plugins total — origin bundled=67, global=12, config=3
+    # so the old filter silently dropped 15 currently-installed, currently-loadable
+    # plugins on every roll. One of them is ceo-routing-doctrine (origin=="config",
+    # NOT "bundled"), the prompt-injection layer that REPLACED the retired CEO gate.
+    # Because this stamper runs EARLIER in a roll (~6440) than the plugin installer
+    # (~7281), the drop was not even repaired later in the same roll. Net effect per
+    # box: allowlist stripped -> plugin installed -> plugin not allowed -> never
+    # loads -> the router gets NEITHER the CEO gate NOR the routing doctrine, which
+    # is strictly worse than before the gate was removed.
+    #
+    # Fixed as a CLASS, not by name: special-casing "ceo-routing-doctrine" would
+    # leave the identical trap for every future path-loaded or globally-installed
+    # plugin. The allowlist is now the enumerated BUNDLED ids UNION the ids of all
+    # currently-present non-bundled plugins. A roll therefore still ADDS newly
+    # bundled plugins and still PRUNES genuinely-vanished ones (anything absent from
+    # the live enumeration is absent from the union), but never removes a plugin
+    # that is installed and loadable right now.
     try:
         _plugins_data = json.loads(Path(_plugins_json_file).read_text())
-        _bundled_ids = sorted({
-            p["id"] for p in _plugins_data.get("plugins", [])
-            if isinstance(p, dict)
-            and p.get("origin") == "bundled"
-            and isinstance(p.get("id"), str)
-            and p["id"]
-        })
+        _all_entries = [
+            p for p in _plugins_data.get("plugins", [])
+            if isinstance(p, dict) and isinstance(p.get("id"), str) and p["id"]
+        ]
+        _bundled_only = {p["id"] for p in _all_entries if p.get("origin") == "bundled"}
+        _non_bundled = {p["id"] for p in _all_entries if p.get("origin") != "bundled"}
+        _bundled_ids = sorted(_bundled_only | _non_bundled)
     except Exception as _e:
         print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
         _bundled_ids = []
-    # ONBOARDING-MANAGED, PATH-LOADED plugins must survive this rewrite. The
-    # enumeration above keeps only origin=="bundled", but ceo-routing-doctrine is
-    # installed by update-skills.sh/install.sh into ~/.openclaw/extensions and
-    # reports origin=="config" (verified against a live `openclaw plugins list
-    # --json`), so a bundled-only allowlist SILENTLY DISABLES it. This stamper
-    # also runs EARLIER in a roll than the plugin installer, so the drop would
-    # not even be repaired later in the same roll — the box would end up with
-    # neither the retired CEO gate nor its replacement doctrine.
-    if _bundled_ids:
-        for _keep in ("ceo-routing-doctrine",):
-            if _keep not in _bundled_ids:
-                _bundled_ids.append(_keep)
-        _bundled_ids = sorted(_bundled_ids)
-    if _bundled_ids:
+        _bundled_only = set()
+        _non_bundled = set()
+    # FAIL-OPEN posture UNCHANGED: an empty enumeration still writes nothing. The
+    # guard is keyed on the BUNDLED count specifically — a run that somehow saw only
+    # non-bundled plugins is not a trustworthy enumeration either.
+    if _bundled_ids and _bundled_only:
         cfg.setdefault("plugins", {})["allow"] = _bundled_ids
-        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-bundled plugin id(s) — non-bundled/third-party plugins will no longer auto-load")
+        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
     else:
         print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
 else:
