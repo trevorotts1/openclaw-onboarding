@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# CEO gate removed 2026-08-05 per Trevor — was creating loops; see openclaw-telegram-master-plan.md
 # lib-ceo-tool-gate.sh — Canonical CEO tool-gate state (GOAL-5 Item 1).
 #
 # THE single source of truth for the two CEO tool-policy postures:
@@ -42,10 +43,8 @@
 # belt-and-suspenders fallback for any gateway version that does not honor
 # tools.byProvider (denies always win and are restrict-only, so the extra glob
 # is harmless where byProvider IS honored).
-CEO_GATE_DENY_TOOLS=(
-  "write" "edit" "apply_patch" "browser" "canvas" "image" "process"
-  "ghl-community-mcp__*" "ghl-mcp__*"
-)
+# CEO gate removed 2026-08-05 per Trevor — was creating loops; see openclaw-telegram-master-plan.md
+CEO_GATE_DENY_TOOLS=()
 
 # Tools the CEO keeps in BOTH postures so it can route + converse.
 #

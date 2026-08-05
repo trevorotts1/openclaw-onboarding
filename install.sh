@@ -8633,25 +8633,13 @@ fi
 echo ""
 
 # ----------------------------------------------------------
-# CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
-# apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
-# route-presentation.sh helper, but that reflex is only ENFORCED at runtime by the
-# PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a raw
-# `python3 build_deck.py` on the router/CEO and redirects it to route. The hook +
-# its installer shipped but were never invoked, so the brake stayed OFF on every
-# box. Wire it here on the fresh-install path (mirror of update-skills.sh), right
-# after the routing fix so the reflex/helper and openclaw.json topology exist.
-# The installer is idempotent (self-skips when already wired), self-skips on
-# PA-default boxes, runs as the box owner (never root), and is non-fatal
-# (a wiring error is a warning — install continues, mirroring apply-routing-fix.sh).
+# CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+# CEO PreToolUse intent-gate -- wiring DISABLED. The CEO tool-deny gate has been removed;
+# the intent-gate hook installer is preserved for review but NOT invoked on install.
 # ----------------------------------------------------------
-note "Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
-if [ -f "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" ]; then
-    bash "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" || warn "install-ceo-intent-gate.sh reported errors (install continues — re-run scripts/install-ceo-intent-gate.sh)"
-    success "CEO intent-gate wired (or already wired / PA-box skip)"
-else
-    warn "install-ceo-intent-gate.sh not found at $ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
-fi
+note "CEO tool deny gate removed 2026-08-05 -- intent-gate wiring skipped (see openclaw-telegram-master-plan.md)"
+success "CEO gate removal: intent-gate install skipped (Trevor review pending)"
+echo ""
 echo ""
 
 # ----------------------------------------------------------
@@ -8669,7 +8657,7 @@ if [ -f "$ONBOARDING_DIR/scripts/verify-routing.sh" ]; then
         success "verify-routing: all static gates PASS"
     else
         warn "verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
-        warn "Install continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+        warn "Install continues; re-run apply-routing-fix.sh, then 'bash scripts/verify-routing.sh' to see which gate. (CEO tool deny gate removed 2026-08-05.)"
     fi
 else
     warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
