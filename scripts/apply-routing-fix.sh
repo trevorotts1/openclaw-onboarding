@@ -1282,8 +1282,8 @@ fi
 # INTERIM exec note: exec stays in ALLOW so the CEO can curl /api/tasks/ingest
 # until the route-task MCP tool ships. verify-routing.sh G7 FAIL-WARNs on that
 # interim state so a box is never falsely marked clean.
-# Idempotent: skips if tools.deny already contains "write".
-_log "--- LAYER 5: CEO tool-gate (deny production tools on the default agent) ---"
+# Idempotent: the deep-merge converges, so a re-run rewrites byte-identically.
+_log "--- LAYER 5: router tool posture (routing allow-list + GHL MCP deny; CEO production-tool deny RETIRED 2026-08-05) ---"
 
 if [ "$DRY_RUN" = "1" ]; then
   _dry "L5: would deny production tools (write/edit/apply_patch/browser/canvas/image/process) + GHL MCP on the box's default agent ONLY IF it is a ROUTER (is_master / role=router / known router id); a personal-assistant/non-router default agent is SKIPPED (v13.2.2 PA-freeze guard). (allow: read/web_fetch/web_search/messaging/sessions_*/exec-interim)"
@@ -1295,7 +1295,6 @@ from pathlib import Path
 # KEEP IN SYNC with build-workforce.py (CEO_TOOL_*), apply-fleet-standards.sh,
 # and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
 CEO_TOOL_DENY = [
-    "write", "edit", "apply_patch", "browser", "canvas", "image", "process",
     "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 CEO_TOOL_ALLOW = [
@@ -1334,9 +1333,10 @@ cfg = json.loads(cfg_path.read_text())
 # down). REMOVE the schema-invalid keys from EVERY per-agent tools block,
 # MIGRATING the configured value up to ROOT `tools` when root does not already
 # carry it, then WRITE the repaired config immediately. Done FIRST so a
-# previously-corrupted box is repaired even on the ALREADY_GATED / consent /
-# PA-default early-exit paths below (which return before the L5 write at the
-# tail). Prints to STDERR so the captured L5_RESULT (stdout) is unaffected.
+# previously-corrupted box is repaired even on the consent / PA-default early-exit
+# paths below (which return before the L5 write at the tail). The third such path,
+# ALREADY_GATED, was deleted with the gate machinery on 2026-08-05.
+# Prints to STDERR so the captured L5_RESULT (stdout) is unaffected.
 # Idempotent: no per-agent occurrence → no-op; running twice never re-corrupts.
 def _heal_peragent_routing_keys(_cfg):
     _rt = _cfg.setdefault("tools", {})
@@ -1368,7 +1368,9 @@ if _healed_keys:
 
 # Owner-consent carve-out guard: if a grant is ACTIVE the gate is intentionally
 # lifted; re-gating here would silently revoke the owner's grant. Same single
-# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh.
+# shared sidecar src/lib/consent.ts reads and scripts/grant-ceo-consent.sh writes.
+# (hooks/lib-ceo-consent.sh was the third reader; deleted 2026-08-05 with the
+# intent-gate removal — grant-ceo-consent.sh now inlines the path resolver.)
 import os as _os
 def _ceo_consent_active():
     cands = []
@@ -1433,40 +1435,26 @@ if not _is_router(main_agent):
     print("PA_DEFAULT_SKIP:" + str(main_agent.get("id", "<unknown>")))
     sys.exit(0)
 
-tools = main_agent.get("tools")
-if isinstance(tools, dict) and isinstance(tools.get("deny"), list) and "write" in tools["deny"]:
-    # FABLE-5 HEAL — the box is already production-gated (deny ⊇ write), so the
-    # DENY gate needs no work. But an explicit per-agent tools.allow is a HARD
-    # allowlist: boxes gated before the Fable-5 fix carry ONLY the old routing
-    # tools and are MISSING the plugin/operational tools now in CEO_TOOL_ALLOW
-    # (memory_search/memory_get for active-memory, cron/gateway/nodes) — so the
-    # plugin's tool calls resolve to nothing ("No callable tools remain after
-    # resolving explicit tool allowlist"). Refresh the allow list up to the
-    # canonical set here: ADD any missing CEO_TOOL_ALLOW entry, preserve any
-    # box-specific extras, and re-apply deny-wins. Idempotent in effect (a box
-    # already at the canonical set is rewritten byte-identically). This is what
-    # heals EXISTING already-gated boxes on the next apply-routing-fix.sh run —
-    # without it the early-exit would leave every pre-Fable-5 box lockdown-broken.
-    _deny_set = set(tools.get("deny") or [])
-    _allow = tools.get("allow")
-    if not isinstance(_allow, list):
-        _allow = []
-        tools["allow"] = _allow
-    _before = list(_allow)
-    for t in CEO_TOOL_ALLOW:
-        if t not in _allow:
-            _allow.append(t)
-    tools["allow"] = [t for t in _allow if t not in _deny_set]  # deny wins
-    if tools["allow"] != _before:
-        cfg_path.write_text(json.dumps(cfg, indent=2) + "\n")
-        sys.stderr.write(
-            "[apply-routing-fix] Fable-5 heal: refreshed already-gated default agent "
-            "(id=%s) tools.allow to the canonical set (added: %s)\n"
-            % (main_agent.get("id", "<unknown>"),
-               ", ".join(t for t in tools["allow"] if t not in _before) or "none")
-        )
-    print("ALREADY_GATED")
-    sys.exit(0)
+# ── GATE MACHINERY REMOVED 2026-08-05 (Trevor's directive) ────────────────────
+# An "ALREADY_GATED" early-exit used to live here. It detected a box that already
+# carried the CEO production-tool deny and then REFRESHED that gate's hard
+# allowlist in place before returning. Trevor has retired the CEO gate outright —
+# it is replaced by the `ceo-routing-doctrine` prompt-injection plugin, which
+# carries NO tool-deny and therefore cannot loop — so there is no gate to detect
+# and no gate allowlist to refresh. The whole branch is deleted rather than
+# repaired, mirroring how G8 was cleanly retired in verify-routing.sh.
+#
+# Two consequences, both intended:
+#   * There is no longer a special "already gated" path. Every run falls through
+#     to the deep-merge below, which is idempotent, so an existing box still
+#     converges on the canonical allow list — via the normal path, not gate code.
+#   * L5_RESULT no longer takes the value ALREADY_GATED; its case arm is removed.
+#
+# NOTE: as committed upstream this branch was also a COMPILE-TIME FATAL. The
+# commit that emptied the deny set deleted the string "write" from the predicate
+# and left `and  in tools["deny"]:` — a SyntaxError. Python compiles the whole
+# heredoc before executing any of it, so Layer 5 executed NOTHING on any box,
+# while `bash -n` still passed clean. Deleting the branch resolves that too.
 
 # Deep-merge (preserve any existing allow/deny entries; never clobber).
 tools = main_agent.setdefault("tools", {})
@@ -1526,13 +1514,14 @@ print("APPLIED:" + str(main_agent.get("id", "<unknown>")))
 PYEOF
 ) || L5_RESULT="ERROR"
 
+  # ALREADY_GATED arm removed 2026-08-05 with the gate-refresh branch that was the
+  # only thing that emitted it. Every run now takes the idempotent APPLIED path.
   case "$L5_RESULT" in
-    ALREADY_GATED)       _log "L5: CEO tool-gate already present on default agent — no-op" ;;
-    CONSENT_ACTIVE_SKIP) _log "L5: owner-consent carve-out ACTIVE — skipping CEO tool-gate (would revoke the owner's grant)" ;;
-    PA_DEFAULT_SKIP:*)   _log "L5: default agent (id=${L5_RESULT#PA_DEFAULT_SKIP:}) is a PERSONAL-ASSISTANT/non-router — SKIPPING CEO tool-gate (a PA is not a router; the production lock would freeze it). v13.2.2 PA-freeze guard." ;;
-    NO_MAIN_AGENT)       _warn "L5: no default agent (default:true) and no id=main found — skipping CEO tool-gate" ;;
-    APPLIED:*)           _log "L5: CEO tool-gate applied to default agent (id=${L5_RESULT#APPLIED:}) — production tools denied; routing tools allowed" ;;
-    *)                   _warn "L5: could not apply CEO tool-gate (result=$L5_RESULT) — skipping" ;;
+    CONSENT_ACTIVE_SKIP) _log "L5: owner-consent carve-out ACTIVE — skipping routing-tool re-assert (would revoke the owner's grant)" ;;
+    PA_DEFAULT_SKIP:*)   _log "L5: default agent (id=${L5_RESULT#PA_DEFAULT_SKIP:}) is a PERSONAL-ASSISTANT/non-router — SKIPPING (a PA is not a router). v13.2.2 PA-freeze guard." ;;
+    NO_MAIN_AGENT)       _warn "L5: no default agent (default:true) and no id=main found — skipping" ;;
+    APPLIED:*)           _log "L5: routing posture applied to default agent (id=${L5_RESULT#APPLIED:}) — routing tools allowed + GHL MCP denied by provider. CEO production-tool deny is RETIRED (replaced by the ceo-routing-doctrine prompt injection)." ;;
+    *)                   _warn "L5: could not apply routing posture (result=$L5_RESULT) — skipping" ;;
   esac
 fi
 

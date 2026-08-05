@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.34"
+ONBOARDING_VERSION="v21.7.35"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.34 - safe_json_edit
+# v21.7.35 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -5648,6 +5648,11 @@ PYEOF
     # Step 1: Run the skill's own executable installer if present
     # Priority: wire.sh > install.sh > setup-*.sh (first match)
     SKILL_INSTALLER=""
+    # Reset per skill -- gates the sentinel write below. A failed installer
+    # must NOT be sentinel-gated (that was the defect that made a failed
+    # cron registration permanent -- see the note at the sentinel write for
+    # the full story).
+    _INSTALLER_FAILED=0
     for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh"; do
       if [ -x "$_candidate" ]; then
         SKILL_INSTALLER="$_candidate"
@@ -5666,10 +5671,13 @@ PYEOF
 
     if [ -n "$SKILL_INSTALLER" ]; then
       echo "    Running installer: $(basename "$SKILL_INSTALLER") for $SKILL_NAME..."
-      if bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1; then
+      _installer_rc=0
+      bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+      if [ "$_installer_rc" = "0" ]; then
         echo "    Installer OK: $SKILL_NAME"
       else
-        echo "    Installer reported warnings for $SKILL_NAME (see $LOG_FILE) -- continuing"
+        _INSTALLER_FAILED=1
+        echo "    Installer FAILED for $SKILL_NAME (rc=$_installer_rc; see $LOG_FILE) -- .wired sentinel withheld, will retry next roll"
       fi
     fi
 
@@ -5696,12 +5704,24 @@ PYEOF
       fi
     fi
 
-    # Mark skill as wired for this version
-    touch "$WIRED_SENTINEL" 2>/dev/null || true
-    # FIX 1: state transition -- installer + CORE_UPDATES merge ran = WIRED
-    # (still NOT "installed" until the verification gate passes below).
-    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
-    WIRED_COUNT=$((WIRED_COUNT + 1))
+    # Mark skill as wired for this version -- UNLESS its own installer
+    # failed. This is the fix for tonight's false alarm: the sentinel used to
+    # be written unconditionally, so a failed `wire.sh` (e.g. the Rescue
+    # Rangers cron registration silently swallowing a gateway error) still
+    # got sentinel-gated and every later roll skipped the skill entirely --
+    # permanently reporting a wired/successful roll while nothing was ever
+    # scheduled. A failed installer must remain retryable on the next roll,
+    # so withhold the sentinel (and the "wired" status/count) when it failed.
+    if [ "$_INSTALLER_FAILED" = "1" ]; then
+      echo "    NOT marking $SKILL_NAME wired for $ONBOARDING_VERSION -- installer failed this pass, next roll will retry it"
+      command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "pending"
+    else
+      touch "$WIRED_SENTINEL" 2>/dev/null || true
+      # FIX 1: state transition -- installer + CORE_UPDATES merge ran = WIRED
+      # (still NOT "installed" until the verification gate passes below).
+      command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
+      WIRED_COUNT=$((WIRED_COUNT + 1))
+    fi
   done
 
   echo "  Wiring complete: $WIRED_COUNT skill(s) wired, $SKIPPED_WIRED_COUNT already wired (idempotent skip)"
@@ -6427,10 +6447,14 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   fi
 
   # v14.24.0: Persist hooks/ library before temp-clone is removed.
-  # grant-ceo-consent.sh + lib-ceo-tool-gate.sh look for lib-ceo-consent.sh at
-  # ~/.openclaw/hooks/ (or /data/.openclaw/hooks/ on VPS) as a fallback after
-  # the temp clone is gone.  Without this, update-only boxes keep the pre-#398/#403
-  # gate library until the next full install.
+  # lib-ceo-tool-gate.sh is resolved from ~/.openclaw/hooks/ (or
+  # /data/.openclaw/hooks/ on VPS) after the temp clone is gone. Without this,
+  # update-only boxes keep the pre-#398/#403 gate library until the next full
+  # install.
+  # NOTE 2026-08-05: lib-ceo-consent.sh used to be the other consumer named here.
+  # It and ceo-intent-gate.sh were DELETED with the intent-gate removal, and the
+  # copy below never prunes — see the UN-WIRE block right after it, which deletes
+  # those two stale files from already-wired boxes.
   _OC_HOOKS_DEST="$HOME/.openclaw/hooks"
   [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
   mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
@@ -6447,6 +6471,184 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     else
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
     fi
+  fi
+
+  # ----------------------------------------------------------
+  # UN-WIRE the removed CEO intent-gate (2026-08-05, Trevor).
+  #
+  # The hook staging above is COPY-ONLY: `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`
+  # never prunes. So deleting hooks/ceo-intent-gate.sh and hooks/lib-ceo-consent.sh
+  # from the REPO uninstalls NOTHING from a box that is already wired — the stale
+  # files keep sitting in ~/.openclaw/hooks/ and, worse, the PreToolUse entry in
+  # ~/.claude/settings.json keeps INVOKING them. That is precisely the write-deny
+  # loop that ate two weeks of Telegram messages. Removing the installer is not
+  # the same as uninstalling; a box has to be actively un-wired.
+  #
+  # Idempotent (a clean box changes nothing and prints nothing actionable) and
+  # strictly NON-FATAL — an un-wire failure must never fail a roll.
+  # ----------------------------------------------------------
+  for _stale in ceo-intent-gate.sh lib-ceo-consent.sh; do
+    for _stale_path in "$_OC_HOOKS_DEST/$_stale" "$_OC_HOOKS_DEST/$_stale".bak-*; do
+      if [ -e "$_stale_path" ]; then
+        if rm -f "$_stale_path"; then
+          echo "  ✓ un-wired: removed stale $(basename "$_stale_path") from $_OC_HOOKS_DEST"
+        else
+          echo "  ⚠ could not remove $_stale_path — advisory, does not fail the roll"
+        fi
+      fi
+    done
+  done
+  # NOTE on hooks/lib-ceo-tool-gate.sh — deliberately KEPT, not deleted.
+  # It is NOT the loop: the loop was the PreToolUse hook (ceo-intent-gate.sh)
+  # plus a non-empty production deny. The lib is now an EMPTY-DENY SHIM
+  # (CEO_GATE_DENY_TOOLS=()) that still supplies two things nobody asked to
+  # remove: CEO_GATE_ALLOW_TOOLS (a GRANT list, the opposite of a gate) and
+  # CEO_GATE_MCP_PROVIDERS (the GHL MCP deny-by-provider, a separate brake that
+  # keeps the router out of client CRM). scripts/grant-ceo-consent.sh sources it,
+  # so deleting it would break that script for the second time in one change.
+  # Its empty array is `set -u`-safe via the "${arr[*]:-}" guards in
+  # ceo_gate_tools() — proven under /bin/bash 3.2.57, which is what the fleet runs.
+  #
+  # Residual production deny on the router: a box rolled BEFORE the retirement can
+  # still carry write/edit/apply_patch in agents.list[].tools.deny. Nothing else
+  # in this roll removes it (the stampers only ADD), so it is cleared here.
+  # Claude settings: BOTH settings.json and settings.local.json are checked.
+  for _cs in "${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}" \
+             "$HOME/.claude/settings.local.json"; do
+    [ -f "$_cs" ] || continue
+    CEO_UNWIRE_SETTINGS="$_cs" python3 <<'PY' || echo "  ⚠ ceo-intent-gate un-wire from $(basename "$_cs") FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_SETTINGS"]
+TARGET = "ceo-intent-gate.sh"
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ settings.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+hooks = cfg.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+pre = hooks.get("PreToolUse")
+if not isinstance(pre, list):
+    sys.exit(0)
+
+removed = 0
+new_pre = []
+for group in pre:
+    if not isinstance(group, dict):
+        new_pre.append(group)
+        continue
+    # Flat form: the entry itself is the command hook.
+    if TARGET in str(group.get("command", "")):
+        removed += 1
+        continue
+    # Nested/matcher form: {"matcher": ..., "hooks": [{"command": ...}, ...]}
+    inner = group.get("hooks")
+    if isinstance(inner, list):
+        kept = [h for h in inner
+                if TARGET not in str(h.get("command", "") if isinstance(h, dict) else h)]
+        dropped = len(inner) - len(kept)
+        if dropped:
+            removed += dropped
+            if not kept:
+                # the matcher group existed only to run the removed hook
+                continue
+            group = dict(group)
+            group["hooks"] = kept
+    new_pre.append(group)
+
+if not removed:
+    sys.exit(0)
+
+if new_pre:
+    hooks["PreToolUse"] = new_pre
+else:
+    hooks.pop("PreToolUse", None)
+if not hooks:
+    cfg.pop("hooks", None)
+
+# Atomic write + timestamped backup: this is the user's live Claude settings.
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: removed %d ceo-intent-gate PreToolUse entr%s from %s (backup: %s)"
+      % (removed, "y" if removed == 1 else "ies", path, os.path.basename(_bak)))
+PY
+  done
+
+  # Clear any RESIDUAL production deny left on the router by a pre-retirement roll.
+  if [ -f "$OC_JSON" ]; then
+    CEO_UNWIRE_OC_JSON="$OC_JSON" python3 <<'PY' || echo "  ⚠ residual CEO production-deny sweep FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_OC_JSON"]
+# The retired gate's production tools. GHL MCP globs are NOT in this set — that
+# deny is a separate, still-wanted brake and must survive untouched.
+RETIRED = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+ROUTER_IDS = {"main", "dept-ceo", "ceo", "master-orchestrator",
+              "dept-master-orchestrator", "dept-executive-office"}
+
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ openclaw.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag["role"].strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
+cleared = []
+agents = (cfg.get("agents") or {}).get("list") or []
+targets = [a for a in agents if _is_router(a)]
+# agents.defaults can carry the same poison.
+_defaults = (cfg.get("agents") or {}).get("defaults")
+if isinstance(_defaults, dict):
+    targets.append(_defaults)
+
+for ag in targets:
+    t = ag.get("tools")
+    if not isinstance(t, dict) or not isinstance(t.get("deny"), list):
+        continue
+    keep = [x for x in t["deny"] if x not in RETIRED]
+    if len(keep) != len(t["deny"]):
+        gone = sorted(set(t["deny"]) - set(keep))
+        if keep:
+            t["deny"] = keep
+        else:
+            t.pop("deny", None)
+        cleared.append("%s:[%s]" % (ag.get("id", "agents.defaults"), ",".join(gone)))
+
+if not cleared:
+    sys.exit(0)
+
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: cleared the retired CEO production deny from %s (backup: %s)"
+      % ("; ".join(cleared), os.path.basename(_bak)))
+PY
   fi
 
   # Cleanup
@@ -6862,28 +7064,12 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
-  # U134 -- Fleet tool allowlist config-patch step.
-  # Ships the CEO tool-gate allow/deny lists as part of the
-  # skills update so tool policy changes propagate fleet-wide.
-  # Sources hooks/lib-ceo-tool-gate.sh as single source of truth.
-  # Idempotent; non-fatal (skips consent-active/PA boxes).
+  # CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+  # U134 -- Fleet tool allowlist config-patch step (DISABLED).
   # ----------------------------------------------------------
   echo ""
-  echo "  Applying fleet tool allowlist (U134 config-patch)..."
-  _TOOL_AL="${OC_PERSISTENT_SCRIPTS_DIR:-$HOME/.openclaw/scripts}/u134-tool-allowlist-patch.sh"
-  [ -f "$_TOOL_AL" ] || _TOOL_AL="$ONBOARDING_DIR/scripts/u134-tool-allowlist-patch.sh"
-  if [ -f "$_TOOL_AL" ]; then
-    _TOOL_AL_OUT="$(bash "$_TOOL_AL" 2>&1)" || _TOOL_AL_RC=$?
-    case "$_TOOL_AL_OUT" in
-      *"APPLIED"*) echo "  (check) Tool allowlist applied - tool policy shipped fleet-wide" ;;
-      *"CANONICAL"*|*"already applied"*) echo "  (check) Tool allowlist already applied - idempotent no-op" ;;
-      *"consent"*|*"CONSENT"*) echo "  (info) Tool allowlist skipped - owner consent active" ;;
-      *"PA"*) echo "  (info) Tool allowlist skipped - PA-only box" ;;
-      *) echo "  (info) Tool allowlist: ""${_TOOL_AL_OUT:-no output}" ;;
-    esac
-  else
-    echo "  (info) u134-tool-allowlist-patch.sh not in bundle - step skipped"
-  fi
+  echo "  CEO tool deny gate removed 2026-08-05 -- U134 step skipped"
+  # The u134 script itself is a no-op (keep-safe SKIP) if ever called.
 
   # Fleet standards: ensure sub-agents fully permitted + Telegram media 50MB
   # (idempotent -- applied on every update, no-op if already canonical)
@@ -7238,40 +7424,17 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
-  # CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
-  # apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
-  # route-presentation.sh helper, but that reflex is only ENFORCED at runtime by
-  # the PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a
-  # raw `python3 build_deck.py` on the router/CEO and redirects it to route. The
-  # hook + its installer shipped but were NEVER invoked, so the brake stayed OFF
-  # on every box. Wire it here, mirroring the apply-routing-fix.sh pattern: prefer
-  # the persistent copy (survives the temp-clone cleanup); the installer reads its
-  # hook+lib source from the persisted ~/.openclaw/hooks/ library staged above.
-  # Idempotent (self-skips when already wired), self-skips on PA-default boxes,
-  # box-user (never root), non-fatal (a wiring error is a loud warning, NOT an
-  # update abort — same convention as the other verify/stamp steps here).
+  # ----------------------------------------------------------
+  # CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+  # CEO PreToolUse intent-gate -- wiring DISABLED. The CEO tool-deny gate has been removed;
+  # the intent-gate hook installer is preserved for review but NOT invoked on update.
   # ----------------------------------------------------------
   echo ""
-  echo "  Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
-  INTENT_GATE_INSTALLER="$_PERSIST_SCRIPTS/install-ceo-intent-gate.sh"
-  [ -f "$INTENT_GATE_INSTALLER" ] || INTENT_GATE_INSTALLER="$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
-  if [ -f "$INTENT_GATE_INSTALLER" ]; then
-    if bash "$INTENT_GATE_INSTALLER" 2>&1; then
-      echo "  ✓ CEO intent-gate wired (or already wired / PA-box skip)"
-    else
-      echo "  ⚠ install-ceo-intent-gate.sh reported errors (update continues — re-run install-ceo-intent-gate.sh)"
-    fi
-  else
-    echo "  ⚠ install-ceo-intent-gate.sh not found (skipping intent-gate wire)"
-  fi
+  echo "  CEO tool deny gate removed 2026-08-05 -- intent-gate wiring skipped (see openclaw-telegram-master-plan.md)"
 
   # ----------------------------------------------------------
-  # Post-stamp verification: verify-routing.sh static gates G1–G8 (v16.2.19).
-  # The updater applied the 4-layer routing fix + wired the intent-gate above but
-  # never VERIFIED them, so a box that silently failed a layer went unflagged. Run
-  # the gate now and surface per-gate PASS/FAIL. LOUD WARNING on failure — NOT a
-  # hard update abort (matches the non-fatal convention of the other steps here;
-  # the gate is read-only/static G1–G8, no --probe).
+  # Post-stamp verification: verify-routing.sh static gates G1–G8.
+  # (CEO tool deny gate removed 2026-08-05 — intent-gate wiring not applied on update.)
   # ----------------------------------------------------------
   VERIFY_ROUTING="$_PERSIST_SCRIPTS/verify-routing.sh"
   [ -f "$VERIFY_ROUTING" ] || VERIFY_ROUTING="$ONBOARDING_DIR/scripts/verify-routing.sh"
@@ -7282,10 +7445,85 @@ PYEOF
       echo "  ✓ verify-routing: all static gates PASS"
     else
       echo "  ⚠ verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
-      echo "  ⚠ Update continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+      echo "  ⚠ Update continues; re-run apply-routing-fix.sh, then 'bash scripts/verify-routing.sh' to see which gate. (CEO tool deny gate removed 2026-08-05.)"
     fi
   else
     echo "  ⚠ verify-routing.sh not found (skipping post-stamp routing verification)"
+  fi
+
+  # ----------------------------------------------------------
+  # CEO Routing Doctrine pre-injection plugin (2026-08-05, Trevor).
+  # Replaces the removed CEO gate with a before_prompt_build prompt-injection
+  # layer: injects "route, don't self-execute" + the human-override carve-out
+  # every turn, with NO tool-deny (so no write-denial loop). Installs the
+  # extension to ~/.openclaw/extensions/ and enables it in openclaw.json with
+  # allowPromptInjection:true. Idempotent.
+  # ----------------------------------------------------------
+  echo "  Installing CEO Routing Doctrine pre-injection plugin..."
+  _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
+  _RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
+  if [ -d "$_RD_SRC" ]; then
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+      echo "  ⚠ FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+      python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    cfg.setdefault("plugins", {}).setdefault("entries", {})
+    cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
+        "enabled": True,
+        "hooks": {"allowPromptInjection": True}
+    }
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+      echo "  ✓ CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
+  else
+    echo "  ⚠ ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
   fi
 
   # ----------------------------------------------------------

@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.7.34"
+ONBOARDING_VERSION="v21.7.35"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -8641,25 +8641,13 @@ fi
 echo ""
 
 # ----------------------------------------------------------
-# CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
-# apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
-# route-presentation.sh helper, but that reflex is only ENFORCED at runtime by the
-# PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a raw
-# `python3 build_deck.py` on the router/CEO and redirects it to route. The hook +
-# its installer shipped but were never invoked, so the brake stayed OFF on every
-# box. Wire it here on the fresh-install path (mirror of update-skills.sh), right
-# after the routing fix so the reflex/helper and openclaw.json topology exist.
-# The installer is idempotent (self-skips when already wired), self-skips on
-# PA-default boxes, runs as the box owner (never root), and is non-fatal
-# (a wiring error is a warning — install continues, mirroring apply-routing-fix.sh).
+# CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+# CEO PreToolUse intent-gate -- wiring DISABLED. The CEO tool-deny gate has been removed;
+# the intent-gate hook installer is preserved for review but NOT invoked on install.
 # ----------------------------------------------------------
-note "Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
-if [ -f "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" ]; then
-    bash "$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh" || warn "install-ceo-intent-gate.sh reported errors (install continues — re-run scripts/install-ceo-intent-gate.sh)"
-    success "CEO intent-gate wired (or already wired / PA-box skip)"
-else
-    warn "install-ceo-intent-gate.sh not found at $ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
-fi
+note "CEO tool deny gate removed 2026-08-05 -- intent-gate wiring skipped (see openclaw-telegram-master-plan.md)"
+success "CEO gate removal: intent-gate install skipped (Trevor review pending)"
+echo ""
 echo ""
 
 # ----------------------------------------------------------
@@ -8677,10 +8665,86 @@ if [ -f "$ONBOARDING_DIR/scripts/verify-routing.sh" ]; then
         success "verify-routing: all static gates PASS"
     else
         warn "verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
-        warn "Install continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+        warn "Install continues; re-run apply-routing-fix.sh, then 'bash scripts/verify-routing.sh' to see which gate. (CEO tool deny gate removed 2026-08-05.)"
     fi
 else
     warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
+fi
+
+# ----------------------------------------------------------
+# CEO Routing Doctrine pre-injection plugin (2026-08-05, Trevor).
+# Replaces the removed CEO gate with a before_prompt_build prompt-injection
+# layer: injects "route, don't self-execute" + the human-override carve-out
+# every turn, with NO tool-deny (so no write-denial loop). Installs the
+# extension to ~/.openclaw/extensions/ and enables it in openclaw.json with
+# allowPromptInjection:true. Idempotent.
+# ----------------------------------------------------------
+note "Installing CEO Routing Doctrine pre-injection plugin..."
+_RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
+_RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
+if [ -d "$_RD_SRC" ]; then
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    # KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO update-skills.sh.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+        warn "FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+        python3 - <<'PY'
+import json, os, shutil, time
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
+    cfg.setdefault("plugins", {}).setdefault("entries", {})
+    cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
+        "enabled": True,
+        "hooks": {"allowPromptInjection": True}
+    }
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
+PY
+        success "CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
+else
+    warn "ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
 fi
 echo ""
 

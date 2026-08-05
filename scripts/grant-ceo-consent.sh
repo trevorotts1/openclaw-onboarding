@@ -41,6 +41,15 @@ _SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 _ONBOARDING_DIR="$(cd "$_SCRIPT_DIR/.." && pwd)"
 
 # Pull in the SAME path resolver the reader uses, so writer and reader agree.
+#
+# 2026-08-05: hooks/lib-ceo-consent.sh was DELETED with the intent-gate removal.
+# This lookup used to hard-ERROR and `exit 1` when the lib was missing, which
+# made this script unrunnable on every box after the roll. The only symbol it
+# ever consumed from that lib is ceo_consent_file(), so the resolver is now
+# inlined as a fallback with byte-identical semantics (explicit CEO_CONSENT_FILE
+# override wins, else the platform state dir whose parent exists). The lib is
+# still sourced when a box happens to still have a copy, so a stale box and a
+# clean box agree on the path.
 _CONSENT_LIB=""
 for _cand in \
   "$_ONBOARDING_DIR/hooks/lib-ceo-consent.sh" \
@@ -48,12 +57,24 @@ for _cand in \
   "$HOME/.openclaw/hooks/lib-ceo-consent.sh"; do
   [ -f "$_cand" ] && _CONSENT_LIB="$_cand" && break
 done
-if [ -z "$_CONSENT_LIB" ]; then
-  echo "[grant-ceo-consent] ERROR: lib-ceo-consent.sh not found — install the hooks first" >&2
-  exit 1
+if [ -n "$_CONSENT_LIB" ]; then
+  # shellcheck source=/dev/null
+  . "$_CONSENT_LIB"
 fi
-# shellcheck source=/dev/null
-. "$_CONSENT_LIB"
+if ! command -v ceo_consent_file >/dev/null 2>&1; then
+  # Inlined fallback — same resolution order as the removed lib.
+  ceo_consent_file() {
+    if [ -n "${CEO_CONSENT_FILE:-}" ]; then
+      printf '%s\n' "$CEO_CONSENT_FILE"
+      return 0
+    fi
+    if [ -d /data/.openclaw ]; then
+      printf '%s\n' "/data/.openclaw/state/ceo-consent.json"
+      return 0
+    fi
+    printf '%s\n' "$HOME/.openclaw/state/ceo-consent.json"
+  }
+fi
 
 # Pull in the canonical CEO tool-gate state (the GATED `tools` block to RESTORE
 # on revoke). Same source of truth verify-routing.sh G7 asserts against.
