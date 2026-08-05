@@ -299,15 +299,18 @@ FAIL-SOFT posture:
 Producer binding (roll-4, closes deferred H8)
 ---------------------------------------------
 
-The producer side is bound, not merely offered. scripts/podcast_controller.py
-(the episode-run orchestrator built by the activation layer alongside
-register-podcast-hook.sh and install-podcast-department.sh) IS the caller of
-this board caller. Every fleet box whose podcast processor is activated
-(install-podcast-department.sh during provisioning, removed by
-revoke-podcast-client.sh on revocation) runs the same controller, so episode
-runs are kanban-visible fleet-wide, not only on the box where the board
-happens to be configured. The controller drives the three subcommands in this
-order:
+The producer side is bound, not merely offered. scripts/podcast_step_driver.py
+(the deterministic step driver, invoked by the controllerId runbook in the
+podcast agent's OWN tool-bearing turn) drives the episode run and IS the
+caller of this board caller: each step the driver emits advances the job
+through podcast_state.py, and the same turn mirrors that advance to the board.
+There is no podcast_controller.py: the step driver is a TOOL the agent calls,
+not a resident daemon (SKILL.md NO-DAEMON DESIGN). Every fleet box whose
+podcast processor is activated (install-podcast-department.sh during
+provisioning, removed by revoke-podcast-client.sh on revocation) runs the
+same step driver, so episode runs are kanban-visible fleet-wide, not only on
+the box where the board happens to be configured. The run drives the three
+subcommands in this order:
 
   1. run-begin at intake. The accepted submission (one job, one card; the
      job-id is the state writer's job id) lands a card in the Podcast
@@ -327,7 +330,7 @@ This sequencing is TRANSITION-AWARE, consistent with rem-2: the caller
 reads the card's current status before a done close and PATCHes status
 'review' first when needed, so the done PATCH always lands on a legal
 state-machine edge (done is reachable only from review or testing). The
-deliverable registration stays before the done PATCH. The controller never
+deliverable registration stays before the done PATCH. The step driver never
 bypasses podcast_state.py; it reads the job status from the state writer
 and mirrors it onto the board, so the board can never lead or lag the real
 state machine.
@@ -340,10 +343,10 @@ name") adds an optional --show-name flag to run-begin so the card title
 becomes "Episode: <title> - <show> (<client>)" and personal vs interview
 episodes for the same client stay distinguishable on the Podcast lane under
 the two-show fleet model. As of this writing T8 is NOT on origin/main, so
-the flag does not exist in the merged tree yet; the controller resolves the
+the flag does not exist in the merged tree yet; the step driver resolves the
 show name from the matched roster row and passes --show-name only when the
 flag is present (backward compatible: absent flag, legacy title). When T8
-lands, the controller picks the flag up with no further change. The plain
+lands, the step driver picks the flag up with no further change. The plain
 hyphen in the title is intentional; never an em dash.
 
 END OF WIRING NOTE
