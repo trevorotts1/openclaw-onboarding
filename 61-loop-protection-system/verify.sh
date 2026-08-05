@@ -10,11 +10,14 @@
 # end to end: every script self-test, the four merge-gate scanners clean over the
 # tree, and one drill per class (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN,
 # D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT,
-# D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK).
+# D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON*, D-POISON-REROLL*).
 # D-ARMED-PARK proves an ARMED tick actually PARKS the unit + trips the process
 # breaker (the RESPOND flagship, exercised through the whole tick); D-REVERT executes
 # the EMITTED one-line revert and proves it unparks (spec 4.2: a fix that cannot be
-# reverted in one line does not ship).
+# reverted in one line does not ship); the D-POISON-REROLL family holds the line on a
+# REPRODUCED crash - a non-idempotent roll that re-archived its own archive every
+# tick until the filename passed 255 bytes and the uncaught OSError killed the
+# scheduled job.
 #
 # EXIT: 0 verified, 4 drift/failure.
 # =============================================================================
@@ -48,7 +51,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE, D-POISON-REROLL, D-POISON-REROLL-BOUND, D-POISON-REROLL-REFUSAL, D-POISON-REROLL-TICK)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -338,6 +341,240 @@ with tempfile.TemporaryDirectory() as td:
     check("D-COLLECT-FALLBACK total_tokens-only row charges non-zero; D2 P1 fires "
           "(multi-candidate raw-alias fallback)",
           paidF == 500000 and any(x["severity"] == "P1" for x in d2F))
+
+# D-POISON / D-POISON-CLEAN: the STOCK detector, proven in BOTH directions in one
+# drill pair. D1-D4 measure flow and go quiet when a loop pauses; D5 measures how
+# much of a transcript is ALREADY loop wreckage, which is what persists and keeps
+# degrading every later turn. A detector is only worth shipping if it discriminates,
+# so the control here is deliberately the HARDER file: the clean fixture is BIGGER
+# (more bytes, 7x the records, more compaction checkpoints) than the poisoned one.
+# If size or age could trip D5, D-POISON-CLEAN fails.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    import shutil as _sh
+    for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+        _sh.copy2(os.path.join(fx, _n), os.path.join(sess, _n))
+    measured = W.collect_sessions()
+    bymap = {os.path.basename(m["path"]): m for m in measured}
+    poisoned = bymap["loop-blocked-session.jsonl"]
+    control = bymap["healthy-session.jsonl"]
+    f5 = D.d5_transcript_poison(measured, th)
+    p1s = [x for x in f5 if x["severity"] == "P1" and x["loop_class"] == "LP-A8"]
+    check("D-POISON blocked-burst transcript = P1 LP-A8 (ignition + the checkpoint "
+          "carrier that survives a roll)",
+          poisoned["blocked_records"] == 60 and poisoned["max_burst"] == 60
+          and poisoned["poisoned_checkpoints"] == 1
+          and len(p1s) == 1
+          and "IGNITION" in p1s[0]["detail"] and "SECOND CARRIER" in p1s[0]["detail"])
+    # The control is asserted TWICE: once as measured, and once with its byte count
+    # forced past the memoryFlush re-arm floor (the real-world control archive was
+    # 17,160,766 bytes - 8x that floor - with zero blocks). Size is a severity
+    # MODIFIER in D5, never a trigger; this is the assertion that pins that down,
+    # because the committed fixture is deliberately small and would not reach the
+    # floor on its own.
+    _huge_clean = dict(control, bytes=17160766)
+    check("D-POISON-CLEAN control transcript is BIGGER and busier yet D5 is SILENT, "
+          "and stays silent even 8x past the flush re-arm floor (size NEVER fires "
+          "alone; a detector that fires on everything is not a detector)",
+          control["bytes"] > poisoned["bytes"]
+          and control["tail_records"] > poisoned["tail_records"]
+          and control["checkpoint_rows"] >= poisoned["checkpoint_rows"]
+          and control["blocked_records"] == 0
+          and D.d5_transcript_poison([control], th) == []
+          and D.d5_transcript_poison([_huge_clean], th) == []
+          and len(f5) == 1)
+    # ARMED: the poisoned transcript is MOVED to an archive (never deleted) and the
+    # control is untouched; a transcript still being written is REFUSED.
+    _past = __import__("time").time() - 3600
+    for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+        os.utime(os.path.join(sess, _n), (_past, _past))
+    _led = Ledger()
+    _sum = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                   "sessions": W.collect_sessions()}, _led, armed=True,
+                  escalate_transport=lambda u, b: True, box="box-example")
+    _arch = [n for n in os.listdir(sess) if n.startswith("loop-blocked-session.loop-archive-")]
+    _orig_gone = not os.path.exists(os.path.join(sess, "loop-blocked-session.jsonl"))
+    _ctl_ok = os.path.isfile(os.path.join(sess, "healthy-session.jsonl"))
+    _archived_bytes = os.path.getsize(os.path.join(sess, _arch[0])) if _arch else 0
+    _led.close()
+    check("D-POISON-ROLL armed tick ARCHIVES the poisoned transcript (moved, never "
+          "deleted) and leaves the clean one untouched",
+          _sum["applied"] == 1 and len(_arch) == 1 and _orig_gone and _ctl_ok
+          and _archived_bytes == poisoned["bytes"])
+    # copy2 preserves the SOURCE mtime, so without the utime below this fixture
+    # would read as STALE once the repo checkout aged past roll_min_idle_minutes -
+    # the drill would pass on a fresh clone and fail days later. Stamp it to NOW so
+    # "still being written" means live at RUN time.
+    _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"),
+              os.path.join(sess, "live-session.jsonl"))
+    os.utime(os.path.join(sess, "live-session.jsonl"), None)
+    _led = Ledger()
+    _live_ev = [m for m in W.collect_sessions() if m["path"].endswith("live-session.jsonl")]
+    _s = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                 "sessions": _live_ev}, _led, armed=True,
+                escalate_transport=lambda u, b: True, box="box-example")
+    _live_still = os.path.isfile(os.path.join(sess, "live-session.jsonl"))
+    _led.close()
+    check("D-POISON-LIVE a transcript still being written is REFUSED even when armed "
+          "(never roll the conversation someone is in); the P1 still lands",
+          _s["findings"] == 1 and _s["applied"] == 0 and _live_still)
+    for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
+
+# D-POISON-REROLL: the roll must be IDEMPOTENT, its constructed name BOUNDED, and a
+# filesystem failure must never kill the tick. Regression drill for a REPRODUCED
+# crash: an LF-10 archive is a *.jsonl in the same sessions directory, keeps the
+# original mtime (shutil.move preserves it) and keeps the poisoned bytes - so D5
+# re-measured it as poisoned AND idle on the next tick and LF-10 archived the
+# archive, appending another marker to the name every tick until the component
+# passed 255 bytes and shutil.move raised ENAMETOOLONG - UNCAUGHT, killing the
+# scheduled job (measured: 7 rolls, crash on the 8th). The healer self-breaker was
+# blind to it because D5's unit comes from the FILENAME, which changed every roll.
+# See tests/drills/D-POISON-REROLL.md for the tick-by-tick measurement.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    import shutil as _sh
+    import time as _time
+    _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"),
+              os.path.join(sess, "loop-blocked-session.jsonl"))
+
+    def _age_all():
+        _p = _time.time() - 3600  # past roll_min_idle_minutes, every tick
+        for _e in os.listdir(sess):
+            os.utime(os.path.join(sess, _e), (_p, _p))
+
+    def _armed_tick(_led, sessions=None):
+        return W.tick({"units": [], "windows": [], "runs": [], "crons": [],
+                       "wedge": {},
+                       "sessions": W.collect_sessions() if sessions is None else sessions},
+                      _led, armed=True, escalate_transport=lambda u, b: True,
+                      box="box-example")
+
+    # 255 is written as a LITERAL here, never read from the module under test: a drill
+    # that takes its ceiling from the code it is testing cannot catch a weakened bound.
+    _FS_NAME_MAX = 255
+    _led = Ledger()
+    _rolls = 0
+    _found = 0
+    for _i in range(10):
+        _age_all()
+        _t_sum = _armed_tick(_led)
+        _rolls += _t_sum["applied"]
+        _found += _t_sum["findings"]
+    _led.close()
+    _names = sorted(os.listdir(sess))
+    _archives = [n for n in _names if KC.ARCHIVE_MARKER in n]
+    _longest = max(len(n.encode("utf-8")) for n in _names)
+    # findings is asserted as well as applied, and that is the assertion that catches a
+    # collector regression on its own: with the archive back in D5's scope the kill
+    # card's own already-rolled guard still refuses the second roll, so `applied`
+    # stays 1 and the defect hides. The FINDING count does not hide - a re-measured
+    # archive raises a fresh P1 every tick, forever.
+    check("D-POISON-REROLL 10 armed ticks over ONE poisoned transcript yield EXACTLY "
+          "one finding and one roll, then silence; no archive is re-archived; no name "
+          "growth",
+          _rolls == 1 and _found == 1 and len(_names) == 1 and len(_archives) == 1
+          and _archives[0].count(KC.ARCHIVE_MARKER) == 1
+          and _longest <= _FS_NAME_MAX)
+
+    # D-POISON-REROLL-BOUND: the name bound, on the helper AND end to end. A 240-byte
+    # stem is legal on every filesystem this skill ships to; the natural archive name
+    # built from it is NOT (240 + marker + stamp + suffix > 255), and that is an
+    # OSError out of shutil.move - a crash in an unattended job, not a refusal.
+    _stem = "s" * 240
+    _stamp = "20260101T000000Z"
+    _natural = "%s%s%s%s" % (_stem, KC.ARCHIVE_MARKER, _stamp, ".jsonl")
+    _bounded = KC.bounded_archive_name(_stem, _stamp, ".jsonl")
+    _bounded_again = KC.bounded_archive_name(_stem, _stamp, ".jsonl")
+    _short_in = "session-abc"
+    _short = KC.bounded_archive_name(_short_in, _stamp, ".jsonl")
+    _long_src = os.path.join(sess, _stem + ".jsonl")
+    _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"), _long_src)
+    _r_long = KC.lf10_archive_and_roll_session(_long_src, dry_run=False,
+                                              idle_minutes=999.0)
+    _long_arch = os.path.basename(_r_long.get("archived_to") or "")
+    check("D-POISON-REROLL-BOUND over-long stem is truncated + sha256-tagged to <=255 "
+          "bytes DETERMINISTICALLY, a fitting stem is left byte-identical, and a real "
+          "240-byte-stem roll SUCCEEDS end to end",
+          len(_natural.encode("utf-8")) > _FS_NAME_MAX
+          and len(_bounded.encode("utf-8")) <= _FS_NAME_MAX
+          and _bounded == _bounded_again
+          and _bounded.endswith("%s%s%s" % (KC.ARCHIVE_MARKER, _stamp, ".jsonl"))
+          and _short == "%s%s%s%s" % (_short_in, KC.ARCHIVE_MARKER, _stamp, ".jsonl")
+          and _r_long.get("applied") is True
+          and len(_long_arch.encode("utf-8")) <= _FS_NAME_MAX
+          and os.path.isfile(os.path.join(sess, _long_arch))
+          and not os.path.exists(_long_src))
+
+    # D-POISON-REROLL-REFUSAL: an OSError from the move (read-only mount, permissions,
+    # a parent that vanished mid-tick) must come back as {applied: False} with the
+    # transcript left EXACTLY as found. Injected at shutil.move so the drill is
+    # deterministic and does not depend on the euid running it.
+    _refuse_src = os.path.join(sess, "refusal-session.jsonl")
+    _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"), _refuse_src)
+    _before_bytes = open(_refuse_src, "rb").read()
+    _real_move = KC.shutil.move
+
+    def _dead_move(*_a, **_k):
+        raise OSError(63, "File name too long (injected: no real FS fault needed)")
+    KC.shutil.move = _dead_move
+    try:
+        _r_ref = KC.lf10_archive_and_roll_session(_refuse_src, dry_run=False,
+                                                 idle_minutes=999.0)
+    finally:
+        KC.shutil.move = _real_move
+    check("D-POISON-REROLL-REFUSAL an OSError from the archive move is a REFUSAL, not a "
+          "crash; the transcript is left byte-identical and nothing is deleted",
+          _r_ref.get("applied") is False and "refused" in _r_ref.get("reason", "")
+          and os.path.isfile(_refuse_src)
+          and open(_refuse_src, "rb").read() == _before_bytes)
+    os.remove(_refuse_src)
+
+    # D-POISON-REROLL-TICK: the OUTER boundary. Two poisoned transcripts, the FIRST
+    # rigged to raise straight out of the kill card. The tick must return, count the
+    # error, and STILL roll the second one - a single bad unit never kills a scheduled
+    # tick, because a watchdog that dies quietly leaves a box that only looks watched.
+    for _e in os.listdir(sess):
+        os.remove(os.path.join(sess, _e))
+    for _n in ("boom-session.jsonl", "good-session.jsonl"):
+        _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"), os.path.join(sess, _n))
+    _age_all()
+    _real_lf10 = KC.lf10_archive_and_roll_session
+
+    def _selective_lf10(session_path, *_a, **_k):
+        if "boom-session" in str(session_path):
+            raise OSError(63, "File name too long (injected at the kill-card seam)")
+        return _real_lf10(session_path, *_a, **_k)
+    KC.lf10_archive_and_roll_session = _selective_lf10
+    try:
+        _led = Ledger()
+        # boom FIRST, so a tick that aborts on it can never reach the good one
+        _ordered = sorted(W.collect_sessions(),
+                          key=lambda m: 0 if "boom-session" in m["path"] else 1)
+        _s_tick = _armed_tick(_led, sessions=_ordered)
+        _led.close()
+    finally:
+        KC.lf10_archive_and_roll_session = _real_lf10
+    _after = sorted(os.listdir(sess))
+    check("D-POISON-REROLL-TICK an exception escaping a kill card is CONTAINED: the "
+          "tick returns, counts errors=1, and still processes the finding behind it",
+          _ordered and "boom-session" in _ordered[0]["path"]
+          and _s_tick["findings"] == 2 and _s_tick["errors"] == 1
+          and _s_tick["applied"] == 1
+          and "boom-session.jsonl" in _after
+          and "good-session.jsonl" not in _after
+          and len([n for n in _after if n.startswith("good-session")
+                   and KC.ARCHIVE_MARKER in n]) == 1)
+    for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
 
 os.environ.pop("LOOP_ALLOW_ROOT", None)
 if fails:
