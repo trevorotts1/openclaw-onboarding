@@ -5648,6 +5648,11 @@ PYEOF
     # Step 1: Run the skill's own executable installer if present
     # Priority: wire.sh > install.sh > setup-*.sh (first match)
     SKILL_INSTALLER=""
+    # Reset per skill -- gates the sentinel write below. A failed installer
+    # must NOT be sentinel-gated (that was the defect that made a failed
+    # cron registration permanent -- see the note at the sentinel write for
+    # the full story).
+    _INSTALLER_FAILED=0
     for _candidate in "$SKILL_DIR/wire.sh" "$SKILL_DIR/install.sh" "$SKILL_DIR/scripts/install.sh"; do
       if [ -x "$_candidate" ]; then
         SKILL_INSTALLER="$_candidate"
@@ -5666,10 +5671,13 @@ PYEOF
 
     if [ -n "$SKILL_INSTALLER" ]; then
       echo "    Running installer: $(basename "$SKILL_INSTALLER") for $SKILL_NAME..."
-      if bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1; then
+      _installer_rc=0
+      bash "$SKILL_INSTALLER" --idempotent >> "$LOG_FILE" 2>&1 || _installer_rc=$?
+      if [ "$_installer_rc" = "0" ]; then
         echo "    Installer OK: $SKILL_NAME"
       else
-        echo "    Installer reported warnings for $SKILL_NAME (see $LOG_FILE) -- continuing"
+        _INSTALLER_FAILED=1
+        echo "    Installer FAILED for $SKILL_NAME (rc=$_installer_rc; see $LOG_FILE) -- .wired sentinel withheld, will retry next roll"
       fi
     fi
 
@@ -5696,12 +5704,24 @@ PYEOF
       fi
     fi
 
-    # Mark skill as wired for this version
-    touch "$WIRED_SENTINEL" 2>/dev/null || true
-    # FIX 1: state transition -- installer + CORE_UPDATES merge ran = WIRED
-    # (still NOT "installed" until the verification gate passes below).
-    command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
-    WIRED_COUNT=$((WIRED_COUNT + 1))
+    # Mark skill as wired for this version -- UNLESS its own installer
+    # failed. This is the fix for tonight's false alarm: the sentinel used to
+    # be written unconditionally, so a failed `wire.sh` (e.g. the Rescue
+    # Rangers cron registration silently swallowing a gateway error) still
+    # got sentinel-gated and every later roll skipped the skill entirely --
+    # permanently reporting a wired/successful roll while nothing was ever
+    # scheduled. A failed installer must remain retryable on the next roll,
+    # so withhold the sentinel (and the "wired" status/count) when it failed.
+    if [ "$_INSTALLER_FAILED" = "1" ]; then
+      echo "    NOT marking $SKILL_NAME wired for $ONBOARDING_VERSION -- installer failed this pass, next roll will retry it"
+      command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "pending"
+    else
+      touch "$WIRED_SENTINEL" 2>/dev/null || true
+      # FIX 1: state transition -- installer + CORE_UPDATES merge ran = WIRED
+      # (still NOT "installed" until the verification gate passes below).
+      command -v obs_set_status >/dev/null 2>&1 && obs_set_status "$SKILL_NAME" "wired"
+      WIRED_COUNT=$((WIRED_COUNT + 1))
+    fi
   done
 
   echo "  Wiring complete: $WIRED_COUNT skill(s) wired, $SKIPPED_WIRED_COUNT already wired (idempotent skip)"
@@ -6862,28 +6882,12 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
-  # U134 -- Fleet tool allowlist config-patch step.
-  # Ships the CEO tool-gate allow/deny lists as part of the
-  # skills update so tool policy changes propagate fleet-wide.
-  # Sources hooks/lib-ceo-tool-gate.sh as single source of truth.
-  # Idempotent; non-fatal (skips consent-active/PA boxes).
+  # CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+  # U134 -- Fleet tool allowlist config-patch step (DISABLED).
   # ----------------------------------------------------------
   echo ""
-  echo "  Applying fleet tool allowlist (U134 config-patch)..."
-  _TOOL_AL="${OC_PERSISTENT_SCRIPTS_DIR:-$HOME/.openclaw/scripts}/u134-tool-allowlist-patch.sh"
-  [ -f "$_TOOL_AL" ] || _TOOL_AL="$ONBOARDING_DIR/scripts/u134-tool-allowlist-patch.sh"
-  if [ -f "$_TOOL_AL" ]; then
-    _TOOL_AL_OUT="$(bash "$_TOOL_AL" 2>&1)" || _TOOL_AL_RC=$?
-    case "$_TOOL_AL_OUT" in
-      *"APPLIED"*) echo "  (check) Tool allowlist applied - tool policy shipped fleet-wide" ;;
-      *"CANONICAL"*|*"already applied"*) echo "  (check) Tool allowlist already applied - idempotent no-op" ;;
-      *"consent"*|*"CONSENT"*) echo "  (info) Tool allowlist skipped - owner consent active" ;;
-      *"PA"*) echo "  (info) Tool allowlist skipped - PA-only box" ;;
-      *) echo "  (info) Tool allowlist: ""${_TOOL_AL_OUT:-no output}" ;;
-    esac
-  else
-    echo "  (info) u134-tool-allowlist-patch.sh not in bundle - step skipped"
-  fi
+  echo "  CEO tool deny gate removed 2026-08-05 -- U134 step skipped"
+  # The u134 script itself is a no-op (keep-safe SKIP) if ever called.
 
   # Fleet standards: ensure sub-agents fully permitted + Telegram media 50MB
   # (idempotent -- applied on every update, no-op if already canonical)
@@ -7238,40 +7242,17 @@ PYEOF
   fi
 
   # ----------------------------------------------------------
-  # CEO PreToolUse intent-gate — WIRE THE RUNTIME BRAKE (v16.2.19).
-  # apply-routing-fix.sh (above) stamps the presentation reflex + the SIGNED
-  # route-presentation.sh helper, but that reflex is only ENFORCED at runtime by
-  # the PreToolUse intent-gate hook (hooks/ceo-intent-gate.sh): the hook denies a
-  # raw `python3 build_deck.py` on the router/CEO and redirects it to route. The
-  # hook + its installer shipped but were NEVER invoked, so the brake stayed OFF
-  # on every box. Wire it here, mirroring the apply-routing-fix.sh pattern: prefer
-  # the persistent copy (survives the temp-clone cleanup); the installer reads its
-  # hook+lib source from the persisted ~/.openclaw/hooks/ library staged above.
-  # Idempotent (self-skips when already wired), self-skips on PA-default boxes,
-  # box-user (never root), non-fatal (a wiring error is a loud warning, NOT an
-  # update abort — same convention as the other verify/stamp steps here).
+  # ----------------------------------------------------------
+  # CEO gate removed 2026-08-05 per Trevor -- was creating loops; see openclaw-telegram-master-plan.md
+  # CEO PreToolUse intent-gate -- wiring DISABLED. The CEO tool-deny gate has been removed;
+  # the intent-gate hook installer is preserved for review but NOT invoked on update.
   # ----------------------------------------------------------
   echo ""
-  echo "  Wiring CEO PreToolUse intent-gate (runtime brake for the presentation reflex)..."
-  INTENT_GATE_INSTALLER="$_PERSIST_SCRIPTS/install-ceo-intent-gate.sh"
-  [ -f "$INTENT_GATE_INSTALLER" ] || INTENT_GATE_INSTALLER="$ONBOARDING_DIR/scripts/install-ceo-intent-gate.sh"
-  if [ -f "$INTENT_GATE_INSTALLER" ]; then
-    if bash "$INTENT_GATE_INSTALLER" 2>&1; then
-      echo "  ✓ CEO intent-gate wired (or already wired / PA-box skip)"
-    else
-      echo "  ⚠ install-ceo-intent-gate.sh reported errors (update continues — re-run install-ceo-intent-gate.sh)"
-    fi
-  else
-    echo "  ⚠ install-ceo-intent-gate.sh not found (skipping intent-gate wire)"
-  fi
+  echo "  CEO tool deny gate removed 2026-08-05 -- intent-gate wiring skipped (see openclaw-telegram-master-plan.md)"
 
   # ----------------------------------------------------------
-  # Post-stamp verification: verify-routing.sh static gates G1–G8 (v16.2.19).
-  # The updater applied the 4-layer routing fix + wired the intent-gate above but
-  # never VERIFIED them, so a box that silently failed a layer went unflagged. Run
-  # the gate now and surface per-gate PASS/FAIL. LOUD WARNING on failure — NOT a
-  # hard update abort (matches the non-fatal convention of the other steps here;
-  # the gate is read-only/static G1–G8, no --probe).
+  # Post-stamp verification: verify-routing.sh static gates G1–G8.
+  # (CEO tool deny gate removed 2026-08-05 — intent-gate wiring not applied on update.)
   # ----------------------------------------------------------
   VERIFY_ROUTING="$_PERSIST_SCRIPTS/verify-routing.sh"
   [ -f "$VERIFY_ROUTING" ] || VERIFY_ROUTING="$ONBOARDING_DIR/scripts/verify-routing.sh"
@@ -7282,7 +7263,7 @@ PYEOF
       echo "  ✓ verify-routing: all static gates PASS"
     else
       echo "  ⚠ verify-routing: one or more gates FAILED — routing/intent-gate wiring incomplete on this box."
-      echo "  ⚠ Update continues; re-run apply-routing-fix.sh + install-ceo-intent-gate.sh, then 'bash scripts/verify-routing.sh' to see which gate."
+      echo "  ⚠ Update continues; re-run apply-routing-fix.sh, then 'bash scripts/verify-routing.sh' to see which gate. (CEO tool deny gate removed 2026-08-05.)"
     fi
   else
     echo "  ⚠ verify-routing.sh not found (skipping post-stamp routing verification)"
