@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
-description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries four loop-specific detectors D1-D4 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port) that Skill 60's S1-S10 lack, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.3.2
+description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries five loop-specific detectors D1-D5 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, and self-blocking-run / transcript poison) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
+version: 0.4.0
 ---
 
 # Loop Protection System (Skill 61)
@@ -72,26 +72,64 @@ escalated), and never client-facing.
 | Skill 59/60 four-scanner merge-gate family | `guard-no-anthropic-runtime.py`, `scan-no-secrets.sh`, `scan-no-client-identifiers.sh`, `scan-no-json-exports.sh`, same 0/1/2/3/4 exit contract and value-free doctrine. |
 | `scripts/skill-content-hash.sh` (repo root) | Auto-picks up `61-*` as a hashed skill dir; the update stamp gate covers Skill 61 with no extra wiring. |
 
-## The four loop-specific detectors (D1-D4; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
+## The five loop-specific detectors (D1-D5; full taxonomy in docs/LOOP-CLASS-CATALOG.md)
 
 These are absent from Skill 60's S1-S10 catalog; they are proposed for registration
-as Skill 60 signals S11-S14 (Open Decision T2) so the fleet keeps ONE vocabulary.
+as Skill 60 signals S11-S15 (Open Decision T2) so the fleet keeps ONE vocabulary.
 
 | # | Detector | Source (all local, deterministic, zero model calls) | Feeds |
 |---|---|---|---|
-| D1 | **Restart velocity** | `pm2 jlist` restarts / `launchctl` runs / `docker` RestartCount, delta per unit per tick (name/status/pid/restarts ONLY) | LP-B1..B4, the process breaker |
+| D1 | **Restart velocity** | `pm2 jlist` restarts / `launchctl` runs / `docker` RestartCount, delta per unit per tick, BASELINED per unit so first sight reads 0 (name/status/pid/restarts ONLY) | LP-B1..B4, the process breaker |
 | D2 | **Token-burn rate** | trajectory usage per window, paid vs local, correlated with initiated-session presence | LP-A2/A5/A6/A7 |
 | D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
 | D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
+| D5 | **Self-blocking run / transcript poison** | bounded TAIL of each session transcript: runtime tool-loop block records (matched structurally on `details.status=blocked` + `deniedReason=tool-loop`, never on prose), longest block burst, trailing-window block share, and compaction summaries that captured loop text | LP-A8, the session breaker |
 
-## The five circuit breakers (spec 5.1; config/breakers.json)
+### D5 measures a STOCK, not a flow - that is the whole point
+
+D1-D4 all measure FLOW: events per tick. They answer *"is a loop running right
+now?"* and go silent the moment it pauses. D5 answers a different question:
+***how much of this transcript is ALREADY loop wreckage?*** That distinction is
+load-bearing. A loop can stop while its transcript stays full of its own refusals,
+and every later turn on that transcript starts degraded - so a flow detector hands
+back a false all-clear on a fault that is still doing damage. The incident this
+detector comes from survived three separate fixes aimed at the ENVIRONMENT while
+the fault sat in the CONTEXT.
+
+D5 has two faces, in the order they matter:
+
+- **IGNITION (primary, early).** Consecutive blocks inside one run. High-precision
+  and fires seconds in - long before the transcript is measurably poisoned, and
+  long before the run's hold on the conversation lane becomes user-visible.
+- **AFTERMATH (secondary).** The trailing-window block share plus compaction
+  summaries that captured the loop verbatim. This is the part that persists and
+  that a roll must clear. It is deliberately a TRAILING window and never a
+  cumulative ratio: a whole-file ratio lags by thousands of records and stays
+  quiet for hours after onset.
+
+Two properties are non-negotiable and are drilled as such:
+
+1. **Size never fires on its own.** Transcript size is a severity MODIFIER only.
+   The control archive used to prove this is larger than the poisoned one on every
+   axis and must stay perfectly silent.
+2. **A live transcript is never rolled.** The auto-fix refuses a transcript still
+   being written; a burning session gets the P1 and a prepared abort, never a file
+   pulled from under a running gateway.
+
+**The symptom signature to recognise by hand:** *an agent that answers CORRECTLY
+but SLOWLY.* A broken agent gives wrong answers; a poisoned one gives right answers
+slowly, because a doomed run is holding the lane while messages queue behind it.
+Emergency operator recovery is `/new` - start a fresh session.
+
+## The six circuit breakers (spec 5.1; config/breakers.json)
 
 process (D1 restart velocity -> stop+park), turn (D2 paid burn -> heartbeat
 allowlist enforce + park cron, never touches the model), retry (D3 identical
 signature -> park resumable + escalate), cron (D4 re-fire -> disable, never delete),
-healer (the watchdog's OWN fixes -> stop fixing a target fixed >3x/24h or whose last
-fix failed verify). Every ceiling is a SAFETY CAP under Skill 60 Signal S4: a raise
-without an operator stamp is a P1.
+**session (D5 transcript poison -> archive the transcript and roll, MOVE never
+delete, and never while it is live)**, healer (the watchdog's OWN fixes -> stop
+fixing a target fixed >3x/24h or whose last fix failed verify). Every ceiling is a
+SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is a P1.
 
 ## Three fix tiers (spec 6.2)
 
@@ -117,11 +155,16 @@ without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (fourteen drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (eighteen drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
-revert (`unpark --finding <id>`) and asserts it unparks.
+revert (`unpark --finding <id>`) and asserts it unparks. Four more prove D5 in BOTH
+directions - **D-POISON** (a blocked-burst transcript is P1), **D-POISON-CLEAN** (a
+LARGER, busier, clean transcript stays silent even past the re-arm floor),
+**D-POISON-ROLL** (an armed tick archives it, moved not deleted) and **D-POISON-LIVE**
+(a transcript still being written is refused) - and all four are mutation-proven
+failable (see `tests/drills/D-POISON.md`).
 
 **What the operator commands actually do.** `park <unit>` / `unpark <unit>` and the
 emitted revert `unpark --finding <id>` (finding→unit resolved from the ledger) are

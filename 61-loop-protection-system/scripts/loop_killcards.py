@@ -28,6 +28,7 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 _HERE = Path(__file__).resolve().parent
@@ -164,6 +165,63 @@ def lf2_rewind_offset(offset_file, dry_run=True):
             "revert": "restore stored_offset=%d" % prior}
 
 
+def lf10_archive_and_roll_session(session_path, dry_run=True, min_idle_minutes=10,
+                                  idle_minutes=None, now=None):
+    """LF-10: ARCHIVE a loop-poisoned session transcript so the next turn on that
+    session key starts clean. MOVE, NEVER DELETE - the transcript is renamed to a
+    timestamped archive beside itself and the one-line revert moves it back.
+
+    This is the STOCK fix. Every other kill card in this file changes the
+    environment; this one is the only one that clears the CONTEXT, which is the
+    thing that outlived three environment-level fixes during the incident this
+    class exists for.
+
+    THE LIVE-SESSION GUARD is the safety property that makes this auto-appliable:
+    a transcript still being written is REFUSED outright. The watchdog never yanks
+    a file out from under a running gateway - a burning session gets the P1 and the
+    prepared abort (LF-9); only a QUIESCENT poisoned transcript is rolled. So the
+    unattended tick can clear yesterday's wreckage without ever touching the
+    conversation someone is having right now.
+
+    Config-FREE: no client config, no model, no credential, blast radius of one
+    file. Returns {applied, reason, archived_to, revert}."""
+    p = Path(session_path)
+    if not p.is_file():
+        return {"applied": False, "reason": "no session transcript at that path",
+                "dry_run": dry_run}
+    if idle_minutes is None:
+        try:
+            ref = now if now is not None else datetime.now(timezone.utc).timestamp()
+            idle_minutes = (ref - p.stat().st_mtime) / 60.0
+        except OSError:
+            return {"applied": False, "reason": "cannot stat transcript; refusing",
+                    "dry_run": dry_run}
+    if idle_minutes < float(min_idle_minutes):
+        return {"applied": False,
+                "reason": "REFUSED: transcript is LIVE (idle %.1fm < %sm). A running "
+                          "session is never rolled from under the gateway; escalate "
+                          "the P1 and abort the run instead (LF-9)."
+                          % (idle_minutes, min_idle_minutes),
+                "dry_run": dry_run}
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    archive = p.with_name("%s.loop-archive-%s%s" % (p.stem, stamp, p.suffix))
+    if dry_run:
+        return {"applied": False,
+                "reason": "DRY_RUN: would archive the poisoned transcript to %s "
+                          "(move, never delete) and let the next turn open a fresh one"
+                          % archive.name,
+                "dry_run": True, "archived_to": str(archive)}
+    if archive.exists():
+        return {"applied": False, "reason": "archive target already exists; refusing "
+                                            "to overwrite", "dry_run": False}
+    shutil.move(str(p), str(archive))
+    return {"applied": True,
+            "reason": "archived poisoned transcript to %s (moved, NOT deleted); the "
+                      "next turn on this session key starts clean" % archive.name,
+            "dry_run": False, "archived_to": str(archive),
+            "revert": "mv %s %s" % (archive, p)}
+
+
 def lf6_park_process(unit, ledger, dry_run=True):
     """LF-6: park a crash-looping process unit on a process-breaker trip. STOP + park
     (visible-red; never silently respawns). Reversible via unpark. Returns
@@ -279,7 +337,9 @@ def self_test():
     assert p["fix_class"] == "LF-6" and p["tier"] == 1 and "unpark --finding 7" in p["revert_cmd"]
     p3 = plan({"loop_class": "LP-D1", "finding_id": 9})   # empty-prompt cron = propose-and-hold
     assert p3["fix_class"] is None and p3["tier"] == 3
-    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-D1->propose-and-hold tier3)")
+    p4 = plan({"loop_class": "LP-A8", "finding_id": 11})  # D5 transcript poison
+    assert p4["fix_class"] == "LF-10" and p4["tier"] == 1
+    print("  plan case: PASS (LP-B1->LF-6 tier1; LP-A8->LF-10 tier1; LP-D1->hold tier3)")
 
     with tempfile.TemporaryDirectory() as td:
         # LF-1: a DEAD-pid JSON lock is archived; a LIVE-pid lock is refused; a
@@ -318,6 +378,28 @@ def self_test():
         r2 = lf2_rewind_offset(off, dry_run=False)
         assert r2["applied"] and json.loads(off.read_text())["stored_offset"] == 100399
         print("  LF-2 case: PASS (DRY_RUN byte-identical; armed rewinds to oldest-1)")
+
+        # LF-10: DRY_RUN leaves the transcript byte-identical; armed MOVES it (never
+        # deletes) and the emitted revert restores it; a LIVE transcript is REFUSED.
+        sess = Path(td) / "poisoned.jsonl"
+        sess.write_text('{"type":"message"}\n', encoding="utf-8")
+        sbefore = sess.read_bytes()
+        d10 = lf10_archive_and_roll_session(sess, dry_run=True, idle_minutes=60)
+        assert not d10["applied"] and sess.read_bytes() == sbefore  # D-DRYRUN invariant
+        live = lf10_archive_and_roll_session(sess, dry_run=False, idle_minutes=0.5,
+                                             min_idle_minutes=10)
+        assert not live["applied"] and "LIVE" in live["reason"] and sess.is_file()
+        a10 = lf10_archive_and_roll_session(sess, dry_run=False, idle_minutes=60)
+        arch = Path(a10["archived_to"])
+        assert a10["applied"] and not sess.exists() and arch.is_file()
+        assert arch.read_bytes() == sbefore          # archived, never truncated
+        shutil.move(str(arch), str(sess))            # the emitted one-line revert
+        assert sess.is_file() and sess.read_bytes() == sbefore
+        missing = lf10_archive_and_roll_session(Path(td) / "nope.jsonl", dry_run=False,
+                                                idle_minutes=60)
+        assert not missing["applied"]
+        print("  LF-10 case: PASS (DRY_RUN byte-identical; LIVE transcript REFUSED; "
+              "armed MOVES not deletes; revert restores; missing path safe)")
 
         led = Ledger(Path(td) / "loop-protection")
         # DRY_RUN apply mutates nothing and reports planned

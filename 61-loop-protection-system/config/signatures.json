@@ -15,6 +15,7 @@
     {"id": "LP-A5", "family": "A", "f_taxonomy": "F9-adjacent", "name": "provider 429 / failover retry storm", "detector": "D3", "tier_default": 2},
     {"id": "LP-A6", "family": "A", "f_taxonomy": "F3", "name": "context-bloat zero-tool-call loop", "detector": "D2", "tier_default": 1},
     {"id": "LP-A7", "family": "A", "f_taxonomy": "F2", "name": "memory dreaming / re-embedding storm", "detector": "D2", "tier_default": 2},
+    {"id": "LP-A8", "family": "A", "f_taxonomy": "F15", "name": "self-blocking flush run / transcript poison", "detector": "D5", "tier_default": 1},
     {"id": "LP-B1", "family": "B", "f_taxonomy": "F5", "name": "supervisor boot-crash restart storm", "detector": "D1", "tier_default": 1},
     {"id": "LP-B2", "family": "B", "f_taxonomy": "F4", "name": "watchdog kill-spawn loop", "detector": "D1", "tier_default": 1},
     {"id": "LP-B3", "family": "B", "f_taxonomy": "F5-adjacent", "name": "gateway deferral deadlock / orphan handoff", "detector": "D4", "tier_default": 1},
@@ -26,6 +27,21 @@
     {"id": "LP-D2", "family": "D", "f_taxonomy": "F3", "name": "stale-gate false-fail loop", "detector": "D3", "tier_default": 2},
     {"id": "LP-D3", "family": "D", "f_taxonomy": "F10/F11", "name": "broken-delivery / duplicate-cron churn", "detector": "D4", "tier_default": 1}
   ],
+  "tool_loop_block": {
+    "record_type": "message",
+    "role": "toolResult",
+    "details_status": "blocked",
+    "details_denied_reason": "tool-loop",
+    "note": "The D5 ignition signature is STRUCTURAL, never prose. The OpenClaw runtime's own identical-call guard emits a session record {type:message, message:{role:toolResult, isError:true, toolName:<tool>, details:{status:'blocked', deniedReason:'tool-loop', reason:<text>}}}. D5 matches on the two ENUM fields above and never on `reason` - so it is language-independent, wording-drift-proof, and carries no message content into a finding. The blocked tool NAME is recorded (counts only); its arguments and the reason prose never are. Confirmed by structural parse of one archived operator-box incident transcript: 1,135 such records, blocked tool names {read, tool_call} - so D5 must NOT hard-code a single tool name.",
+    "checkpoint_carrier": {
+      "record_type": "compaction",
+      "field": "summary",
+      "note": "SECOND CARRIER. Compaction checkpoint summaries can capture the loop transcript VERBATIM; they are re-injected on resume and SURVIVE a session-file roll, so archiving the transcript alone does not clear the poison. Measured: 7 of 16 checkpoint summaries carried the block signature (163 hits) in the incident file vs 0 of 14 in a larger healthy control archive. Detecting this carrier requires a text count over the summary field, so the block sentence is pinned as DATA here rather than compiled into code."
+    },
+    "checkpoint_text_marker": "Session execution blocked to prevent runaway loops",
+    "flush_run_marker": "Continue the OpenClaw runtime event.",
+    "flush_run_note": "The runtime-event prompt that opens a memory-flush run. Measured 9 occurrences (role=user) in the incident transcript, matching the observed burst count - a flush run is the usual ignition context. Recorded as CONTEXT data only; D5 does not require it to fire, because the structural block signature above is sufficient and higher-precision."
+  },
   "secret_shapes": {
     "detector": "scan-no-secrets.sh",
     "class_pin": "provider_sk|caf_pit|google_api|aws_akid|slack_token|github_pat|private_key|jwt|bearer_literal",
