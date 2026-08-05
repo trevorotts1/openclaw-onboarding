@@ -260,6 +260,23 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.audio = os.path.join(self.tmp, "episode.mp3")
         with open(self.audio, "wb") as f:
             f.write(b"not-real-audio-bytes")
+        # U2.4 (2026-08-04): provision a stub state-writer that answers
+        # `get --job-id` with a CLEAN job (no --force-waiver marker), so the
+        # waiver gate (assert_not_waived) sees resolvable, non-waived state
+        # instead of failing closed on "no job data". Mirrors the established
+        # ProxyMediaGuardTest._run_media pattern. Tests that probe the waiver
+        # gate itself provision a waived job explicitly.
+        self.state_writer = os.path.join(self.tmp, "podcast_state.py")
+        with open(self.state_writer, "w") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] == 'get':\n"
+                "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                "else:\n"
+                "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+            )
+        os.chmod(self.state_writer, 0o755)
 
     # ---------------------------------------------------------- helpers ----
     def _run(self, args, env_extra=None, timeout=20):
@@ -279,7 +296,8 @@ class PodbeanPublishProxyTest(unittest.TestCase):
             env.update(env_extra)
         proc = subprocess.run(
             ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode",
-             "--description", VALID_DESCRIPTION] + args,
+             "--description", VALID_DESCRIPTION,
+             "--state-writer", self.state_writer] + args,
             env=env,
             capture_output=True,
             text=True,
@@ -295,13 +313,19 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.tmp,
-            "PODBEAN_SKIP_MEDIA_PROBE": "1",
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",   # crs: transport tests skip probe
+            # The transport tests skip the probe; per master-plan 1.8 the skip
+            # requires the operator force flag even in the test harness (the
+            # ledger-default success tests reach the media-probe gate once the
+            # U2.4 waiver gate resolves a clean job).
+            "PODBEAN_OPERATOR_FORCE": "1",
         }
         if env_extra:
             env.update(env_extra)
         return subprocess.run(
             ["bash", str(_SCRIPT), "--audio", self.audio,
-             "--title", "Test Episode"] + args,
+             "--title", "Test Episode",
+             "--state-writer", self.state_writer] + args,
             env=env,
             capture_output=True,
             text=True,
