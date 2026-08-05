@@ -326,6 +326,21 @@ if [ "$MODE" = "verify" ]; then
     MISS=$((MISS+1))
   fi
 
+  # Unit 3.5 — the runtime dir must be a self-sufficient runtime, never an
+  # empty directory. resolveSpecialistSessionKey probes this dir; the Command
+  # Center holds the task as routed_but_not_dispatched when it is empty.
+  RUNTIME_FILES="AGENTS.md IDENTITY.md SOUL.md MEMORY.md HEARTBEAT"
+  RUNTIME_MISSING=""
+  for f in $RUNTIME_FILES; do
+    [ -f "$AGENT_DIR/$f" ] || RUNTIME_MISSING="$RUNTIME_MISSING $f"
+  done
+  if [ -z "$RUNTIME_MISSING" ]; then
+    log "  [PASS] runtime-dir per-agent files present (AGENTS.md IDENTITY.md SOUL.md MEMORY.md HEARTBEAT)"
+  else
+    log "  [MISS] runtime-dir per-agent files absent:$RUNTIME_MISSING (re-run this installer to materialize them)"
+    MISS=$((MISS+1))
+  fi
+
   SQLITE_PATH="$(find_sqlite "$AGENT_DIR" || true)"
   if [ -n "$SQLITE_PATH" ]; then
     log "  [PASS] sqlite store present ($SQLITE_PATH)"
@@ -420,11 +435,48 @@ AGENT_DIR="$(read_agent_dir)"
 # Step 4: ensure the storage tree the gateway expects. The sqlite itself is
 # LAZY (see THE SQLITE in the header): registration and mkdir never create it;
 # only the first dispatch does. Step 5 below can force that.
+#
+# Unit 3.5 (master plan 2026-08-04): the RUNTIME DIR must also carry the
+# per-agent files (AGENTS.md, IDENTITY.md, SOUL.md, MEMORY.md, HEARTBEAT) so
+# `~/.openclaw/agents/dept-podcast/` is a self-sufficient runtime the Command
+# Center dispatch resolver can rely on. resolveSpecialistSessionKey
+# (task-dispatcher.ts) probes this exact directory; a bare empty dir is the
+# `no_specialist_runtime` hold. We materialize the files here (copying the
+# workspace-scaffolded versions when they exist, else writing lightweight
+# stubs), so the runtime dir is NEVER empty on a box this installer has run on.
 # --------------------------------------------------------------------------- #
 log "step 4: ensuring storage tree under $AGENT_DIR"
 mkdir -p "$AGENT_DIR" "$AGENT_DIR/agent" "$AGENT_DIR/sessions"
 log "  + $AGENT_DIR/agent (sqlite home; created lazily by the gateway on first dispatch)"
 log "  + $AGENT_DIR/sessions (session transcripts)"
+
+# Unit 3.5 — materialize the per-agent files into the runtime dir. Sources, in
+# priority order: the workspace-scaffolded file (scaffold-agent-files.sh wrote
+# it at $WORKSPACE_DIR/IDENTITY.md etc.), then a lightweight stub. The shared
+# AGENTS.md lives at the workspace root as a symlink to the shared copy; when
+# present we copy the resolved target (never a dangling symlink).
+RUNTIME_FILES="AGENTS.md IDENTITY.md SOUL.md MEMORY.md HEARTBEAT"
+for f in $RUNTIME_FILES; do
+  if [ -f "$AGENT_DIR/$f" ]; then
+    continue  # already materialized — never overwrite operator-curated content
+  fi
+  if [ -f "$WORKSPACE_DIR/$f" ]; then
+    cp "$WORKSPACE_DIR/$f" "$AGENT_DIR/$f" 2>/dev/null \
+      && log "  + $AGENT_DIR/$f (copied from workspace scaffold)" \
+      || log "  WARNING: could not copy $WORKSPACE_DIR/$f into $AGENT_DIR"
+  elif [ -L "$WORKSPACE_DIR/$f" ] && [ -f "$(readlink "$WORKSPACE_DIR/$f" 2>/dev/null || true)" ]; then
+    cp -- "$(readlink "$WORKSPACE_DIR/$f")" "$AGENT_DIR/$f" 2>/dev/null \
+      && log "  + $AGENT_DIR/$f (resolved from workspace symlink)" \
+      || log "  WARNING: could not resolve $WORKSPACE_DIR/$f into $AGENT_DIR"
+  else
+    # Lightweight stub — the runtime dir is never empty. Content is a pointer
+    # to the workspace originals so a later full scaffold supersedes it.
+    printf '# %s — dept-podcast runtime dir placeholder.\n# Full content lives in the workspace scaffold (%s/%s).\n# Re-run scaffold-agent-files.sh or install-podcast-department.sh to supersede.\n' \
+      "$f" "$WORKSPACE_DIR" "$f" > "$AGENT_DIR/$f" 2>/dev/null \
+      && log "  + $AGENT_DIR/$f (lightweight stub)" \
+      || log "  WARNING: could not write $AGENT_DIR/$f"
+  fi
+done
 
 # --------------------------------------------------------------------------- #
 # Step 5 (optional): prime one session so the lazy storage exists NOW
