@@ -12,7 +12,15 @@
 #
 # KILL CONDITIONS:
 #   • interviewComplete == true → self-remove this cron + exit 0 (no nudge)
+#     — this kill condition is UNCHANGED under AI Workforce standard-first
+#     (2026-08-04): the prebuild is not interview progress and never silences
+#     the nudge.
 #   • No companies with a lastQuestionAt set → nothing to do (exit 0)
+#     — under standard-first the prebuild writes NO lastQuestionAt, so a
+#     prebuilt box whose owner never started the interview stays in this
+#     not-started state until the first answer; the prebuild does not count
+#     as interview progress (asserted by
+#     tests/unit/standard-first-cron-awareness.test.sh).
 #   • Under 24h idle → exit 0 (cheap check)
 #
 # GATEWAY RULE (BINDING - no exceptions):
@@ -202,6 +210,13 @@ command -v python3 >/dev/null 2>&1 || { log "python3 not found - skipping (canno
 # ── Cheap trigger check (token-free) ─────────────────────────────────────────
 interview_complete=$(state_get '.interviewComplete')
 last_q_at=$(state_get '.interviewProgress.lastQuestionAt')
+# AI WORKFORCE STANDARD-FIRST (2026-08-04): read-only awareness of the
+# prebuild state. The kill condition below stays interviewComplete == true;
+# a standard prebuild is NOT interview progress and never silences this cron.
+# These reads are the only standard-first coupling in this file.
+build_type=$(state_get '.buildType')
+prebuild_status=$(state_get '.standardPrebuild.status')
+prebuild_ready_at=$(state_get '.standardPrebuild.standardReadyAt')
 
 if [[ "${interview_complete}" == "true" ]]; then
   log "interviewComplete=true - interview done, no nudge needed; self-removing cron"
@@ -210,8 +225,36 @@ if [[ "${interview_complete}" == "true" ]]; then
 fi
 
 if [[ -z "${last_q_at}" ]]; then
-  log "interviewProgress.lastQuestionAt not set - interview not started or state missing; exit"
+  if [[ "${build_type}" == "standard-first" && "${prebuild_status}" == "done" ]]; then
+    # Standard-first: the company's standard foundation is already prebuilt,
+    # but the owner has not started the interview yet (the prebuild writes no
+    # lastQuestionAt, so this state is exactly "prebuilt, interview not
+    # started"). There is nothing to measure idle time against until the first
+    # answer, so exit the same as the legacy not-started path - but log the
+    # standard-first condition explicitly so the box is visible in the nudge
+    # log. Once the owner answers one question, lastQuestionAt exists and this
+    # box rejoins the normal nudge cadence below (with the standard-first
+    # nudge copy exported to the worker).
+    log "standard-first: standard foundation prebuilt (standardPrebuild.status=done) but interviewProgress.lastQuestionAt not set - owner has not started the interview; nothing to nudge against yet (prebuild does not count as interview progress); exit"
+  else
+    log "interviewProgress.lastQuestionAt not set - interview not started or state missing; exit"
+  fi
   exit 0
+fi
+
+# ── AI WORKFORCE STANDARD-FIRST (2026-08-04): nudge copy ─────────────────────
+# A standard-first box whose owner STARTED the interview then stalled is
+# nudged with the SAME cadence as today (24h idle floor, same thresholds).
+# The standard-first nudge copy ("Review your pre-built company" instead of
+# "Finish your interview") is exported to the worker via WORKFORCE_NUDGE_COPY
+# so the owner-facing text matches the review-the-built-set flow. The legacy
+# box (buildType absent) exports the default copy and is otherwise untouched.
+WORKFORCE_NUDGE_COPY="default"
+export WORKFORCE_NUDGE_COPY
+if [[ "${build_type}" == "standard-first" && "${prebuild_status}" == "done" ]]; then
+  WORKFORCE_NUDGE_COPY="review-prebuilt-company"
+  export WORKFORCE_NUDGE_COPY
+  log "standard-first: exporting WORKFORCE_NUDGE_COPY=review-prebuilt-company (owner-facing copy: review your pre-built company, not 'finish your interview')"
 fi
 
 # ── PRD-3.3 R3.5 (auto-closeout): do NOT nudge an owner who already FINISHED ──
@@ -266,6 +309,47 @@ try:
 except Exception as e:
     print(0)
 " 2>/dev/null || echo 0)
+
+# AI WORKFORCE STANDARD-FIRST (2026-08-04): if lastQuestionAt carries an
+# implausibly old timestamp (a seeding/migration artifact: older than the
+# prebuild ready-time, or older than 10 years), anchor the idle clock to
+# standardReadyAt instead so the first nudge is measured from a real system
+# event rather than firing immediately. Real interview answers are always
+# NEWER than the prebuild, so this fallback can never move a genuine idle
+# measurement. Legacy boxes (buildType absent / prebuild not done) skip it.
+if [[ "${build_type}" == "standard-first" && "${prebuild_status}" == "done" \
+      && -n "${prebuild_ready_at}" && "${prebuild_ready_at}" != "null" ]]; then
+  if python3 -c "
+from datetime import datetime, timezone
+import sys
+
+def epoch(ts):
+    try:
+        return int(datetime.fromisoformat(ts.rstrip('Z')).replace(tzinfo=timezone.utc).timestamp())
+    except Exception:
+        return None
+
+last_q = epoch('${last_q_at}')
+ready = epoch('${prebuild_ready_at}')
+if last_q is None or ready is None:
+    sys.exit(1)
+# Artifact: at/before the prebuild ready-time, or older than 10 years.
+sys.exit(0 if (last_q <= ready or last_q <= ready - 315360000) else 1)
+" 2>/dev/null; then
+    LAST_Q_AT_ORIGINAL="${last_q_at}"
+    last_q_at="${prebuild_ready_at}"
+    LAST_EPOCH=$(python3 -c "
+from datetime import datetime, timezone
+ts = '${last_q_at}'.rstrip('Z')
+try:
+    dt = datetime.fromisoformat(ts).replace(tzinfo=timezone.utc)
+    print(int(dt.timestamp()))
+except Exception:
+    print(0)
+" 2>/dev/null || echo 0)
+    log "standard-first: lastQuestionAt='${LAST_Q_AT_ORIGINAL}' is at or before the prebuild ready-time (seeding artifact) - anchoring the nudge idle clock to standardReadyAt=${prebuild_ready_at}"
+  fi
+fi
 
 if [[ "${LAST_EPOCH}" -eq 0 ]]; then
   log "WARN: could not parse lastQuestionAt='${last_q_at}'; skipping"

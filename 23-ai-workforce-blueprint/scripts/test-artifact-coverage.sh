@@ -126,21 +126,30 @@ if [ "$rc" -eq 6 ]; then ok "command-center dropping a dept -> exit 6"; else bad
 
 echo "=== A4: DREAMING drift FAILS (dept-workspace unwired from floor loop) ==="
 sb="$(make_sandbox | head -1)"
-# Replace the selected_departments loop that drives create_department_workspace
+# Replace EVERY selected_departments loop that drives create_department_workspace
 # with a hardcoded 1-dept subset -> floor depts excluded from the dreaming substrate.
+# Since PHASE 3 there are TWO call sites (floor-loop :3581, apply-diff :4098); the
+# qc-assert-repo-consistency.py DREAMING gate declares the call "wired_in_loop" if
+# ANY call site is driven by a selected_departments loop, so ALL governing loops
+# must be neutered for the drift to be detectable.
 python3 - "$sb/scripts/build-workforce.py" <<'PY'
 import sys, re
 p = sys.argv[1]; lines = open(p, encoding="utf-8").read().splitlines(keepends=True)
-# Find the call line, walk back to its governing `for ... in selected_departments` header.
-call_i = next(i for i, ln in enumerate(lines)
-              if "create_department_workspace(" in ln and not ln.lstrip().startswith("def "))
-hdr = None
-for j in range(call_i, max(0, call_i - 60), -1):
-    if re.match(r"\s*for\s+\w+(?:\s*,\s*\w+)?\s+in\s+selected_departments", lines[j]):
-        hdr = j; break
-assert hdr is not None, "dept-workspace floor loop header not found"
-indent = lines[hdr][:len(lines[hdr]) - len(lines[hdr].lstrip())]
-lines[hdr] = f'{indent}for dept_id, dept_info in {{"marketing": selected_departments.get("marketing", {{}})}}.items():\n'
+call_is = [i for i, ln in enumerate(lines)
+           if "create_department_workspace(" in ln and not ln.lstrip().startswith("def ")]
+assert call_is, "no create_department_workspace call site found"
+rewritten = 0
+for ci in call_is:
+    hdr = None
+    for j in range(ci, max(0, ci - 60), -1):
+        if re.match(r"\s*for\s+\w+(?:\s*,\s*\w+)?\s+in\s+selected_departments", lines[j]):
+            hdr = j; break
+    if hdr is None:
+        continue
+    indent = lines[hdr][:len(lines[hdr]) - len(lines[hdr].lstrip())]
+    lines[hdr] = f'{indent}for dept_id, dept_info in {{"marketing": selected_departments.get("marketing", {{}})}}.items():\n'
+    rewritten += 1
+assert rewritten >= 1, "no create_department_workspace governing selected_departments loop found"
 open(p, "w", encoding="utf-8").write("".join(lines))
 PY
 rc="$(run_artifact "$sb")"

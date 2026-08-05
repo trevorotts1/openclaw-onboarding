@@ -38,7 +38,30 @@ floor library and proves it landed, with receipts.
 ## Edge cases (binding)
 
 - **Interview incomplete → no ZHE; the box is EXEMPT.** The prover skips the checks and
-  passes (exit 0). A not-completed box does nothing and fails nothing.
+  passes (exit 0). A not-completed box does nothing and fails nothing. This exemption
+  holds for boxes that have NOT been standard-prebuilt.
+- **Interview incomplete BUT standard-prebuilt → the box proves STANDARD_READY and is
+  EXEMPT from the registration/routing checks** (standard-first redesign, 2026-08-04;
+  master plan §3.3 + §5.2). When build-state carries `standardPrebuild.status == "done"`
+  while `interviewComplete` is not true, the operator's prebuild has already provisioned
+  the full canonical floor from the role library. Such a box is neither EXEMPT (that
+  would blind the fleet signal — a broken prebuild would prove nothing) nor held to the
+  full ZHE (it deliberately defers the rest). `prove-zhe.py` runs the STANDARD_READY
+  subset instead:
+  - **(SR-A)** the floor departments are present **ON DISK** — measured by
+    `department_floor.evaluate_floor()`, never the build-state JSON;
+  - **(SR-B)** the chosen-departments artifact (`<company>/departments.json`) is present
+    and non-empty;
+  - **(SR-C)** the Command Center board join holds (`prove-board-join.py`:
+    chosen == provisioned == displayed).
+  SKIPPED until `interviewComplete` (by design): agent registration (lazy `agents.list`
+  rows land at interview-completion for confirmed-kept departments only), persona
+  indexing, AGENTS.md doctrine stamping, and the provisioning-receipt equality. The
+  receipt carries `standard_ready: true` + `verdict: "standard-ready"`; the prover exits
+  0 on subset pass and 1 on a broken prebuild. A standard-prebuilt box that ALSO has
+  `interviewComplete == true` runs the FULL `ZHE_SEQUENCE_V1` (the apply-diff build has
+  run; the whole sequence applies). The fleet aggregate counts STANDARD_READY as its OWN
+  column — never folded into PASS or EXEMPT.
 - **Custom departments present →** assert via the custom-dept wiring path (spec §2), not
   as a violation. A custom dept is "done" only when routable + on the board + persona-matchable.
 - **Offline / partial install →** the gate records the verdict and **auto-resumes on the
@@ -58,13 +81,20 @@ pure-code gate (no LLM is ever in the counting or the verdict):
   (54 personas, ~4413-row `embeddings` index with `mode`/`section_number`); Command Center
   DB reachable + `workspaces` rows present + a board lane per floor department; AGENTS.md
   carrying the routing + persona-reflex + full-context-handoff + reporting + **platform-facts**
-  markers. Exempt for not-completed boxes. Mirrored into `~/clawd/fleet-prover/` for the
-  fleet operator aggregate (`--with-subprovers` delegates to `prove-floor.py`).
+  markers. Exempt for not-completed boxes; **STANDARD_READY** for standard-prebuilt boxes
+  whose interview has not completed (see edge cases). Mirrored into `~/clawd/fleet-prover/`
+  for the fleet operator aggregate (`--with-subprovers` delegates to `prove-floor.py`).
 - **`run-full-install.sh` phase 7z** (Skill 32) — runs `prove-zhe.py --local` after the
   full provisioning; records `zheGateStatus` and prints the verdict loud.
 - **`scripts/verify-library-gate.sh`** — runs the prover as the **highest-priority
   verdict** (rc 9), alongside the canonical-authoring / role / SOP / trio / boundary gates;
-  records `zheStatus`.
+  records `zheStatus`. A STANDARD_READY receipt is **pass-equivalent** (`zheStatus =
+  "standard-ready"`); rc 9 stays reserved for genuine failures — a complete box that
+  misses the ZHE, or a prebuilt box whose STANDARD_READY subset is broken.
+- **`scripts/verify-zhc-standard.sh`** — the closeout preflight's standard check. A
+  standard-prebuilt, interview-incomplete box is reported **STANDARD_READY** with its own
+  exit code (10) instead of going red (rc 2) on every newly-prebuilt box; a broken
+  prebuild still fails loud (rc 3 floor / rc 8 chosen artifact).
 
 **BLOCKING BY DEFAULT (plan §6; Issue #6, v17.0.11):** the prover was authored RED
 before everything so each ZHE step was built to turn it green. The routing,
@@ -73,9 +103,10 @@ stamped via `apply-fleet-standards.sh`, so the RED-first precondition has landed
 two gates above therefore **hard-fail the build BY DEFAULT** (`ZHE_ENFORCE` unset
 behaves as `=1`); an explicit `ZHE_ENFORCE=0` escape hatch is retained to unblock a box
 while a genuine prover regression is triaged. The default is safe for fresh/in-flight
-builds because a box that did NOT complete the interview is **EXEMPT** (prover exits 0).
-A hard fail marks the install failed so the resume cron re-proves on the next update
-(fail-loud + auto-repair).
+builds because a box that did NOT complete the interview is **EXEMPT** (prover exits 0),
+and a standard-prebuilt box proves **STANDARD_READY** (pass-equivalent) instead of
+failing. A hard fail marks the install failed so the resume cron re-proves on the next
+update (fail-loud + auto-repair).
 
 ---
 
@@ -87,3 +118,8 @@ its CEO routes every task to a department with full context + pointer refs; comm
 assignment/start/done with persona + dept + specialist + SOP + role; nothing sticks on
 the Kanban; platform-aware with per-box env locations stamped. **All live-proven,
 receipt-backed** (a `prove-zhe` receipt is the single source of "ZHE done").
+
+A box that is standard-prebuilt but interview-incomplete gets **STANDARD_READY**
+(floor on disk + chosen artifact + board join proven; registration/routing deferred to
+`interviewComplete`) — receipt-backed, with its own column in the fleet aggregate, and
+never confused with either the full ZHE or the EXEMPT state.

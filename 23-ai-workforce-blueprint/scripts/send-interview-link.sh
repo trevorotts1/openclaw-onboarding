@@ -35,6 +35,18 @@
 #     .workforce-build-state.json + interview-handoff.md and writes ONLY its
 #     own non-canonical ledger line. It never touches build-state, the
 #     transcript, or the handoff.
+#   • STANDARD-FIRST DAY-ONE LINK. Under the standard-first onboarding lane
+#     (build-state buildType == "standard-first"), the operator runs this
+#     script on DAY ONE — after the locked Command Center shell + tunnel are
+#     deployed (run-full-install.sh BLOCK A) and the standard foundation is
+#     prebuilt (prebuild-standard-workforce.sh, STANDARD_READY) — so the owner
+#     receives the interview link before answering a single question. The
+#     message wording is chosen from build-state (legacy vs standard-first);
+#     NOTHING else changes here: the exit codes, START vs RESUME mode, the
+#     30-minute anti-spam guard, and the refuse-on-complete behavior all stay
+#     byte-identical across both lanes, and the link destination stays
+#     <dashboard>/interview. Legacy boxes (buildType absent or "legacy") get
+#     today's wording unchanged.
 #
 # Usage:
 #   bash scripts/send-interview-link.sh              # resolve + send
@@ -58,6 +70,9 @@
 #   3 interview already complete  4 no owner chat resolvable
 #   5 openclaw CLI missing        6 gateway send failed
 #   7 re-send guard (use FORCE=1)
+#   lane=standard-first in the DRY-RUN banner / SENT line marks the
+#   standard-first wording; it is informational only (the exit codes are
+#   identical in both lanes).
 #
 # set -euo pipefail; bash -n clean; OS-aware (uname) not required — pure
 # POSIX-y bash + python3 for JSON reads (same pattern as resolve-owner-chat.sh).
@@ -70,7 +85,7 @@ DRY_RUN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dry-run) DRY_RUN=1; shift ;;
-    -h|--help) sed -n '1,66p' "$0"; exit 0 ;;
+    -h|--help) sed -n '1,78p' "$0"; exit 0 ;;
     *) echo "Unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -97,12 +112,21 @@ except Exception:
     s = {}
 complete = "1" if (s.get("interviewComplete") is True or s.get("buildCompletedAt")) else "0"
 slug = str(s.get("companySlug") or s.get("interviewSessionId") or "").strip()
-print(f"{complete}|{slug}")
+# buildType: absent or "legacy" -> legacy lane (today's wording, byte-identical);
+# "standard-first" -> standard-first lane (day-one-link wording).
+standard = "1" if s.get("buildType") == "standard-first" else "0"
+print(f"{complete}|{slug}|{standard}")
 PYEOF
 }
 STATE_OUT="$(read_state)"
 IS_COMPLETE="${STATE_OUT%%|*}"
-SLUG="${STATE_OUT#*|}"
+STATE_REST="${STATE_OUT#*|}"
+SLUG="${STATE_REST%%|*}"
+STANDARD_FIRST="${STATE_REST##*|}"
+LANE="legacy"
+if [ "$STANDARD_FIRST" = "1" ]; then
+  LANE="standard-first"
+fi
 
 if [ "$IS_COMPLETE" = "1" ]; then
   echo "[send-interview-link] REFUSED: the interview is already complete — nothing to invite the owner to." >&2
@@ -116,6 +140,14 @@ if [ -f "$HANDOFF_FILE" ] && [ -n "$SLUG" ]; then
 fi
 
 # ── Build the message (jargon-free; the link is the only instruction) ─────────
+# Wording is lane-selected from build-state buildType:
+#   legacy lane (buildType absent or "legacy")  -> today's wording, unchanged.
+#   standard-first lane (buildType == "standard-first") -> day-one framing:
+#   the owner's company already has its standard foundation, and the
+#   interview tailors it (master plan section 3.2: "your company's standard
+#   foundation is already set up — this conversation tailors it to you").
+# The RESUME variants are lane-neutral (the interview is underway either way,
+# so the "continue where you left off" wording is identical in both lanes).
 FIRST_NAME="${CLIENT_FIRST_NAME:-there}"
 DASH="${OPENCLAW_DASHBOARD_URL:-}"
 DASH="${DASH%/}"
@@ -136,6 +168,12 @@ Welcome back, $FIRST_NAME — your interview is saved exactly where you left off
 
 It works great on your phone, and you can pause again anytime.
 EOF
+elif [ -n "$LINK" ] && [ "$LANE" = "standard-first" ]; then
+  cat > "$TMP_MSG" <<EOF
+Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. When you're ready, start here: $LINK
+
+It works great on your phone. Every answer is saved as you go, so you can pause anytime and pick up right where you left off.
+EOF
 elif [ -n "$LINK" ]; then
   cat > "$TMP_MSG" <<EOF
 Hi $FIRST_NAME — your AI Workforce Interview is ready. It's a short conversation in your own words, and we build your company from what you tell us. When you're ready, start here: $LINK
@@ -145,6 +183,10 @@ EOF
 elif [ "$MODE" = "resume" ]; then
   cat > "$TMP_MSG" <<EOF
 Welcome back, $FIRST_NAME — your interview is saved exactly where you left off. Whenever you're ready, just reply here and we'll continue from your next question.
+EOF
+elif [ "$LANE" = "standard-first" ]; then
+  cat > "$TMP_MSG" <<EOF
+Hi $FIRST_NAME — your company's standard foundation is already set up, and your AI Workforce Interview is ready. It's a short conversation in your own words that tailors that foundation to you. Whenever you're ready, just reply "ready" here and we'll begin. Every answer is saved as you go, so you can pause anytime.
 EOF
 else
   cat > "$TMP_MSG" <<EOF
@@ -189,7 +231,7 @@ fi
 MASKED="…${CHAT_ID: -4}"
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "[send-interview-link] DRY-RUN mode=$MODE chat=$MASKED"
+  echo "[send-interview-link] DRY-RUN lane=$LANE mode=$MODE chat=$MASKED"
   echo "----- message -----"
   cat "$TMP_MSG"
   echo "-------------------"
@@ -206,8 +248,9 @@ if ! openclaw message send --channel telegram --target "$CHAT_ID" --file "$TMP_M
   exit 6
 fi
 
-# ── Audit ledger (non-canonical; epoch|mode|link-or-chat-invite) ──────────────
+# ── Audit ledger (non-canonical; epoch|mode|lane|link-or-chat-invite) ─────────
+# The guard above reads ONLY field 1 (epoch); the lane field is informational.
 mkdir -p "$(dirname "$LEDGER_FILE")"
-printf '%s|%s|%s\n' "$(date +%s)" "$MODE" "${LINK:-telegram-chat-invite}" >> "$LEDGER_FILE"
+printf '%s|%s|%s|%s\n' "$(date +%s)" "$MODE" "$LANE" "${LINK:-telegram-chat-invite}" >> "$LEDGER_FILE"
 
-echo "[send-interview-link] SENT mode=$MODE chat=$MASKED link=${LINK:-telegram-chat-invite}"
+echo "[send-interview-link] SENT lane=$LANE mode=$MODE chat=$MASKED link=${LINK:-telegram-chat-invite}"
