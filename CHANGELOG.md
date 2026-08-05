@@ -1,3 +1,107 @@
+## [v21.7.35]  -  2026-08-05  -  fix(ceo-gate): RETIRE the CEO write-deny gate fleet-wide, actively un-wire already-wired boxes, and restore write/edit to the generation departments
+
+Trevor's directive: *"I don't want to use the CEO gate anymore. I deleted the CEO gate
+because it was causing too many problems. I replaced it with a prompt injection."* The CEO
+production-tool deny denied `write` on the router while `memoryFlush` demanded a memory
+write, creating a self-blocking loop that ate Telegram messages for roughly two weeks. This
+release removes the gate rather than repairing it, and — critically — actively UN-WIRES boxes
+that are already carrying it, because removing an installer uninstalls nothing.
+
+### Removed — the gate itself
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_DENY_TOOLS` is now permanently EMPTY, and the
+  emptiness is an ASSERTED state: `scripts/test-ceo-tool-gate.sh` pins `EXPECT_DENY=""`, so
+  re-adding any production tool fails CI instead of silently re-creating the outage
+  (mutation-proved: planting `("write" "edit")` returns rc=1, reverting returns rc=0).
+- The `write/edit/apply_patch/browser/canvas/image/process` deny is gone from all three fleet
+  stampers (`build-workforce.py` `CEO_TOOL_DENY`, `apply-fleet-standards.sh`
+  `_CEO_TOOL_DENY`, `apply-routing-fix.sh` Layer 5), so no roll can resurrect it.
+- `apply-routing-fix.sh` Layer 5: the `ALREADY_GATED` early-exit — the "already gated, refresh
+  the hard allowlist" heal path — is DELETED, not repaired, along with its now-dead
+  `L5_RESULT` case arm. `verify-routing.sh` G7's `REQUIRED_DENY` assertion and `INTERIM_EXEC`
+  posture are likewise retired, mirroring how G8 was retired.
+- The GHL MCP deny (`byProvider` + name-globs) SURVIVES. It is a separate brake keeping the
+  router out of client CRM and was never part of the loop.
+
+### Fixed — two defects that made the original removal a no-op or a hazard
+- **`apply-routing-fix.sh` Layer 5 never executed on ANY box.** The upstream removal deleted
+  the string `"write"` from the already-gated predicate and left `and  in tools["deny"]:` — a
+  SyntaxError. Python compiles the whole heredoc before running any of it, so the entire Layer
+  was dead, and `bash -n` passed clean, which is why it survived review.
+- **`verify-routing.sh` G7's neutralization was dead code.** `G7_RESULT` was set and then
+  unconditionally overwritten one block later, so every `G7_REMOVED` arm was unreachable and
+  G7 still failed a correctly-rolled box.
+
+### Fixed — a NEW write-deny that the removal accidentally introduced
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: `"write"` and `"edit"` are RESTORED
+  to `GENERATION_TOOLS_ALLOW`. **This hunk GRANTS write; it is not gate machinery — read it as
+  the opposite.** That list governs `GENERATION_DEPT_IDS = {graphics, video, audio,
+  presentations}`, and the file's own comment records that an explicit per-agent `tools.allow`
+  is a HARD allowlist and that presentations "stalled headless with 'no permission'" without
+  write/edit. Leaving the removal in place would have created a brand-new write-deny on four
+  department agents — the exact bug this release exists to eliminate.
+
+### Added — un-wire, the priority deliverable
+`update-skills.sh` stages hooks with `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`, a copy that
+NEVER prunes, so deleting the hook files from the repo left already-wired boxes running the
+loop. Confirmed on the operator box: the gate is OFF there, yet `ceo-intent-gate.sh`,
+`lib-ceo-consent.sh` and `lib-ceo-tool-gate.sh` are all still on disk plus a `.bak-*` — dormant
+and re-armable by any future roll. Other boxes are UNVERIFIED. The roll now:
+- deletes stale `ceo-intent-gate.sh` / `lib-ceo-consent.sh` and their `.bak-*` siblings;
+- strips every `ceo-intent-gate.sh` entry from `hooks.PreToolUse` in BOTH
+  `~/.claude/settings.json` and `settings.local.json`, handling the flat and nested
+  matcher forms, dropping a matcher group only when it empties, never clobbering the array;
+- clears any RESIDUAL production deny left on a ROUTER agent or `agents.defaults` by a
+  pre-retirement roll (nothing else removes it — the stampers only ever ADD);
+- writes every config atomically (temp + fsync + `os.replace`) after a timestamped backup.
+Idempotent, strictly NON-FATAL, and a true no-op on a box already cleaned by hand.
+
+### Fixed — fleet-safety of the replacement plugin (`ceo-routing-doctrine`)
+- **Linux boxes could never load it.** `plugins.load.paths` was built as
+  `"/Users/%s/.openclaw/extensions" % USER` — macOS-only, so on Linux boxes ($HOME `/root` or
+  `/home/x`) the path did not exist and the doctrine never loaded, leaving neither gate nor
+  replacement. It also hardcoded an operator username into a client-neutral repo. Now
+  `os.path.expanduser`.
+- **It nested a copy on every roll.** `cp -r SRC DST` copies the directory INTO the destination
+  once it exists (run 2 produced `ceo-routing-doctrine/ceo-routing-doctrine/`). Now
+  `cp -R SRC/. DST/`, verified stable across 3+ runs; the `2>/dev/null || true` that hid real
+  copy failures is dropped.
+- **A later roll silently disabled it.** `apply-fleet-standards.sh` rewrites `plugins.allow` to
+  the currently-BUNDLED plugin ids, and this extension reports `origin:"config"`, NOT
+  `"bundled"` — confirmed against a live `openclaw plugins list --json`. It also runs EARLIER
+  in a roll than the plugin install, so the drop would not self-repair. Fixed on both sides.
+- **A crash mid-write truncated `openclaw.json`.** Now an atomic write with a backup.
+
+### Fixed — bash 3.2 abort on the now-empty deny array
+`hooks/lib-ceo-tool-gate.sh` expanded the emptied array bare as `"${CEO_GATE_DENY_TOOLS[*]}"`.
+On macOS `/bin/bash` 3.2.57 an EMPTY array expanded that way under `set -u` is an UNBOUND
+VARIABLE and aborts the shell, and `scripts/grant-ceo-consent.sh` calls `ceo_gate_tools` under
+`set -euo pipefail` — so the consent script died outright on every macOS box. Proven with a
+paired control: /bin/bash 3.2.57 aborts, bash 5.3.12 returns rc=0. Guarded with `"${arr[*]:-}"`.
+
+### Fixed — dangling references the removal left behind
+- `scripts/grant-ceo-consent.sh` hard-ERRORed and exited 1 when the deleted
+  `lib-ceo-consent.sh` was absent, i.e. always — making it unrunnable fleet-wide. The single
+  symbol it consumed (`ceo_consent_file`) is inlined as a fallback with identical semantics.
+- `scripts/test-ceo-tool-gate.sh` iterated two DELETED paths, so `grep -q` returned rc=2 (an
+  ERROR, not "no match"), producing 8 phantom failures. Now asserts those files STAY deleted.
+- `tests/unit/test-u134.sh` was 9 PASS / 12 FAIL and in NO workflow, so it failed silently.
+  Rewritten to guard the inert contract of `u134-tool-allowlist-patch.sh` — it must never write
+  a `tools.deny` into a box config — with a mutation proof that the assertion can actually fail.
+- Pruned the deleted hook from `ceo-tools-root-schema-guard.yml` path filters; corrected
+  `docs/MC-ROUTE.md`, which claimed the intent-gate still enforces a command-level exec
+  restriction (nothing does now — the replacement carries no tool-deny).
+
+### Also
+- `update-skills.sh` gains the `_INSTALLER_FAILED` guard: a skill whose installer fails no
+  longer receives the `.wired` sentinel, so a hollow success is not recorded as a win.
+
+`hooks/lib-ceo-tool-gate.sh` is deliberately KEPT as an empty-deny shim, not deleted: it still
+supplies `CEO_GATE_ALLOW_TOOLS` (a GRANT list) and `CEO_GATE_MCP_PROVIDERS`, and
+`grant-ceo-consent.sh` sources it.
+
+**No fleet roll is performed by this release.** `fleet_rollout_enabled` stays `false`; the
+operator rolls, and not before one canary box is hand-verified.
+
 ## [v21.7.34]  -  2026-08-05  -  fix(skill58): draft-cleanup workflow Delete node verb DELETE -> POST /v1/episodes/{id}/delete
 
 The n8n `draft-cleanup` workflow's "Delete Episode" node used `DELETE /v1/episodes/{id}`,
