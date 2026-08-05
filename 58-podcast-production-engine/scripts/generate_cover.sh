@@ -3,7 +3,7 @@
 #
 # Kie.ai GPT-image-2 cover generation seeded from Skill 57 prompt 14, then an
 # in-house ffmpeg finalize chain that produces an Apple-Podcasts-valid square
-# JPEG (1400 to 3000 on a side, RGB, under 512 kilobytes) with a spec-valid
+# JPEG (1500 to 3000 on a side, RGB, under 512 kilobytes) with a spec-valid
 # filename. The pipeline owns the up-to-3 image attempts (furnace
 # image_gen_attempts_max); this script performs ONE generate-and-finalize cycle
 # and returns a typed exit code so the caller can hold and alert (deduped) on a
@@ -12,7 +12,7 @@
 # Doctrine honored here:
 #   - Bounded polling: backoff schedule 5,10,20,40,60 then 60, total timeout 600s.
 #     Never poll faster than 5s; never poll forever.
-#   - Never below 1400 square. Square, JPEG, RGB, under 512 kilobytes.
+#   - Never below 1500 square. Square, JPEG, RGB, under 512 kilobytes.
 #   - Silence: operator/agent stdout only. No client message. No Telegram.
 #   - Secrecy: the API key is read from the environment or a 0600 secrets file
 #     and is NEVER printed, echoed, or written to the receipt.
@@ -37,13 +37,15 @@
 #   KIE_API_BASE               default https://api.kie.ai
 #   KIE_COVER_MODEL            default gpt-image-2-text-to-image
 #   KIE_COVER_ASPECT           default 1:1
-#   KIE_COVER_RESOLUTION       default 1K   (PRD Step 10: 1K square; live-verify pins it)
+#   KIE_COVER_RESOLUTION       default 2K   (2048px; inside Podbean's 1500-3000 range, no upscale)
 #   KIE_COVER_RESOLUTION_FALLBACK  default 2K (used once if the API rejects the primary)
 #   KIE_COVER_OUTPUT_FORMAT    default png  (ffmpeg does the JPEG conversion in-house)
 #   KIE_BACKOFF_SCHEDULE       default "5 10 20 40 60"
 #   KIE_POLL_TIMEOUT_SECONDS   default 600
 #   KIE_CREATE_RETRIES         default 2    (transient createTask retries)
-#   COVER_MIN_SIDE             default 1400
+#   COVER_MIN_SIDE             default 1500 (Podbean safe higher bound: satisfies the 1500
+#                                           Basic-Settings article and the 1400 episode-logo
+#                                           article; never below this)
 #   COVER_MAX_SIDE             default 3000
 #   COVER_MAX_BYTES            default 524288 (512 kilobytes)
 #
@@ -66,13 +68,18 @@ set -euo pipefail
 KIE_API_BASE="${KIE_API_BASE:-https://api.kie.ai}"
 KIE_COVER_MODEL="${KIE_COVER_MODEL:-gpt-image-2-text-to-image}"
 KIE_COVER_ASPECT="${KIE_COVER_ASPECT:-1:1}"
-KIE_COVER_RESOLUTION="${KIE_COVER_RESOLUTION:-1K}"
+KIE_COVER_RESOLUTION="${KIE_COVER_RESOLUTION:-2K}"
+# Kie.ai remains the PRIMARY cover provider (2026-08-03 ruling: KIE + Agnes + FAL
+# are the sanctioned image providers). Agnes is architecturally incompatible with
+# this step (its `agnes-image-2.1-flash` requires a 5,000-19,000 character prompt
+# floor; the cover prompt here is a short visual description), so Kie stays wired
+# in. The fallback only fires ONCE if the API rejects the primary resolution.
 KIE_COVER_RESOLUTION_FALLBACK="${KIE_COVER_RESOLUTION_FALLBACK:-2K}"
 KIE_COVER_OUTPUT_FORMAT="${KIE_COVER_OUTPUT_FORMAT:-png}"
 KIE_BACKOFF_SCHEDULE="${KIE_BACKOFF_SCHEDULE:-5 10 20 40 60}"
 KIE_POLL_TIMEOUT_SECONDS="${KIE_POLL_TIMEOUT_SECONDS:-600}"
 KIE_CREATE_RETRIES="${KIE_CREATE_RETRIES:-2}"
-COVER_MIN_SIDE="${COVER_MIN_SIDE:-1400}"
+COVER_MIN_SIDE="${COVER_MIN_SIDE:-1500}"
 COVER_MAX_SIDE="${COVER_MAX_SIDE:-3000}"
 COVER_MAX_BYTES="${COVER_MAX_BYTES:-524288}"
 

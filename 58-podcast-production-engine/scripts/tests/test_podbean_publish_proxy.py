@@ -694,8 +694,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         # 1x1 PNG (too small).
         self.tiny_png_data = _make_png(1, 1)
 
-        # 1400x1400 PNG (meets minimum).
-        self.ok_png_data = _make_png(1400, 1400)
+        # 1500x1500 PNG (meets the current Podbean minimum).
+        self.ok_png_data = _make_png(1500, 1500)
 
     def _register_files(self, files_dict):
         self.mock.server.files.update(files_dict)  # type: ignore[attr-defined]
@@ -767,7 +767,7 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
     def test_probe_passes_valid_media(self):
-        """A 30s MP3 and 1400x1400 PNG must pass the probe and reach publish."""
+        """A 30s MP3 and 1500x1500 PNG must pass the probe and reach publish."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-probe/",

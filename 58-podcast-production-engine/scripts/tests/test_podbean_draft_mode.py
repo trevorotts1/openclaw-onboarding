@@ -80,6 +80,12 @@ class TestPodbeanDraftMode(unittest.TestCase):
         self.bindir = bindir
         self.audio = self.dir / "episode.mp3"
         self.audio.write_bytes(b"fake mp3 bytes" * 100)
+        # Cover is REQUIRED in broker/local mode (unit 1.4.5). Use a tiny valid
+        # JPEG so the upload path is exercised end-to-end without a real image.
+        self.cover = self.dir / "cover.jpg"
+        self.cover.write_bytes(
+            b"\xff\xd8\xff\xe0" + b"\x00" * 32 + b"\xff\xd9"  # minimal JPEG SOI/EOI
+        )
         self.call_log = self.dir / "calls.log"
         self.status_file = self.dir / "statuses.txt"
         self.status_file.write_text("\n")  # all calls default to 200
@@ -102,6 +108,7 @@ class TestPodbeanDraftMode(unittest.TestCase):
             env.pop(k, None)
         return subprocess.run(
             ["bash", str(_SCRIPT), "--audio", str(self.audio),
+             "--cover", str(self.cover),
              "--title", "Test Episode", *extra_args],
             env=env, capture_output=True, text=True, timeout=120,
         )

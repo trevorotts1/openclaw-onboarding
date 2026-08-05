@@ -1,3 +1,17 @@
+## [v21.7.24]  -  2026-08-04  -  fix(podcast): raise the Podbean cover floor to 1500 and the generation default to 2K (unit 1.4)
+
+Unit 1.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Cover floor raised 1400 -> 1500.** The Podbean cover image floor is now 1500x1500 (the sanctioned safe floor per the master plan). The workflow webhook entry-guard notes, the generate_cover.sh resize range (1500-3000), and SKILL.md STEP 10 all now say 1500. A 1400x1400 image is REJECTED (new negative test T5 proves the floor actually bites).
+- **Generation default raised to 2K.** Kie.ai GPT-image-2 now generates a 2048 square cover by default instead of 1024, so the final resized-to-spec image has headroom above the 1500 floor.
+- **Regression test made line-independent (QC fix 9d459e6a).** tests/unit/test_generate_cover_probe.sh previously extracted probe_downloaded_image() from generate_cover.sh with a hardcoded sed line range, which broke when the commit inserted lines near the top of the script. Now an awk extractor anchored on the function declaration prints through the first top-level closing brace -- line-shift resilient. Fixture raised to 1500, negative 1400 case added. 6/6 tests pass (was 5/5 pre-regression).
+
+### Scope
+
+16 files, all under 58-podcast-production-engine/ plus the repo-root regression test. No live n8n, CC, or client-box changes.
+
 ## [v21.7.23]  -  2026-08-04  -  fix(podcast): re-export the n8n publish rail drifts (Standing Gate MULTIROW + Fleet Gate FIX-RESCUE-19), document legacy deactivation and stale pinData
 
 Unit 2.5-2.7 of the podcast publish fix train, QC-passed (Fable max review, 2026-08-04) and merged to main.
