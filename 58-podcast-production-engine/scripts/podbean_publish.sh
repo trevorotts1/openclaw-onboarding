@@ -544,8 +544,10 @@ else:
 # temp file and validate it with ffprobe before the publish payload is built.
 # KIND is "audio" (expects decodable MP3 with duration >= min_duration) or
 # "image" (expects JPEG/PNG with width and height both >= min_side).
-# PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe entirely (escape hatch).
-# If ffprobe is absent, degrades to a HEAD-reachability check + warning.
+# PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe entirely, but ONLY with the
+# operator flag PODBEAN_OPERATOR_FORCE=1 (the skip gate lives at the caller).
+# ffprobe ABSENCE is a HARD FAIL in publish-proxy mode: the box that runs the
+# publish pipeline must have ffmpeg/ffprobe. There is no HEAD-only degrade.
 proxy_media_probe() {
   local url="$1" kind="$2" tmpdir="$3" probe_file max_bytes min_duration min_side
 
@@ -598,13 +600,7 @@ proxy_media_probe() {
         ;;
     esac
   else
-    local head_ok
-    head_ok="$(curl -sS -o /dev/null -w '%{http_code}' --head -L --max-time 30 --connect-timeout 15 "$url" || true)"
-    if [ "$head_ok" = "200" ] || [ "$head_ok" = "302" ] || [ "$head_ok" = "301" ]; then
-      log "WARNING media-probe ${kind}: ffprobe not available; HEAD reachable (HTTP ${head_ok}) but no content validation performed"
-    else
-      die "media-probe ${kind}: ffprobe absent and HEAD check failed (HTTP ${head_ok:-000}) for ${url}"
-    fi
+    die "ffprobe required for media-probe in publish-proxy mode: ffprobe not available for ${kind} ${url}"
   fi
   rm -f "$probe_file"
 }
@@ -969,15 +965,20 @@ print(json.dumps(d))
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
 
   # Media content probe: validate audio + image before building the v2 payload.
-  # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch (e.g. air-gapped boxes
-  # without ffprobe, or known-good pre-validated URLs).
-  if [ "${PODBEAN_SKIP_MEDIA_PROBE:-0}" != "1" ]; then
+  # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch -- but only for the OPERATOR.
+  # A client-box env var must NEVER defeat all content validation, so the skip
+  # is refused in publish-proxy mode unless PODBEAN_OPERATOR_FORCE=1 is ALSO
+  # set (master-plan 1.8). The box that runs the publish must have ffprobe.
+  if [ "${PODBEAN_SKIP_MEDIA_PROBE:-0}" = "1" ]; then
+    if [ "${PODBEAN_OPERATOR_FORCE:-0}" != "1" ]; then
+      die "PODBEAN_SKIP_MEDIA_PROBE=1 refuses to run in publish-proxy mode unless the operator flag PODBEAN_OPERATOR_FORCE=1 is also set (a client-box env var must not defeat media content validation)"
+    fi
+    log "media-probe: PODBEAN_SKIP_MEDIA_PROBE=1 + PODBEAN_OPERATOR_FORCE=1 - operator-sanctioned skip of content validation"
+  else
     MEDIA_TMP="$(mktemp -d "${TMPDIR:-/tmp}/podbean-media-probe-XXXXXX")" || die "media-probe: cannot create temp dir"
     proxy_media_probe "$AUDIO_URL" audio "$MEDIA_TMP"
     proxy_media_probe "$IMAGE_URL" image "$MEDIA_TMP"
     rm -rf "$MEDIA_TMP"
-  else
-    log "media-probe: PODBEAN_SKIP_MEDIA_PROBE=1 - skipping content validation"
   fi
 
   if [ -n "$RELEASE_DATE" ]; then

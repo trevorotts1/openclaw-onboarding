@@ -644,6 +644,63 @@ def missing_required_outputs(row: sqlite3.Row, frm: str, to_status: str,
     return missing
 
 
+# ---------------------------------------------------------------------------
+# Force-waiver tightening (master-plan 1.6). The waiver escape exists so a
+# genuinely broken job can still move, but a client-facing 'complete' must
+# never be reached by silently waiving a publish-required deliverable.
+# ---------------------------------------------------------------------------
+
+# Env override for the operator to explicitly authorize a one-off waive-to-
+# complete on a REAL (non-test) job. This is the ONLY way a non-test job may
+# waive past a publish-required gate; anything else fails closed.
+OPERATOR_WAIVE_TO_COMPLETE_ENV = "PODCAST_OPERATOR_WAIVE_TO_COMPLETE"
+
+
+def _is_test_job(conn: sqlite3.Connection, job_id: str) -> bool:
+    """A job is a TEST job when its stored intake payload carries the `_test`
+    flag (the webhook layer's designated-test-contact gate sets this; a stray
+    `_test` on a real contact is ignored there and never lands in the payload).
+    The SQLite state machine has no `test` status, so the payload flag is the
+    durable marker that distinguishes a dry-run test episode from a real one."""
+    try:
+        r = conn.execute(
+            "SELECT payload_json FROM podcast_job_payloads WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+        if r and r[0]:
+            payload = json.loads(r[0])
+            if isinstance(payload, dict):
+                return bool(payload.get("_test"))
+    except Exception:
+        return False
+    return False
+
+
+def _waiver_count(conn: sqlite3.Connection, job_id: str) -> int:
+    """Cumulative number of required-outputs waivers already recorded for this
+    job (audit events the waiver path writes). A job that has ever waived is
+    marked for operator review on the next waive-to-complete."""
+    try:
+        r = conn.execute(
+            "SELECT count(*) FROM podcast_job_events "
+            "WHERE job_id = ? AND note LIKE '%required-outputs WAIVED%'",
+            (job_id,),
+        ).fetchone()
+        return int(r[0]) if r and r[0] else 0
+    except Exception:
+        return 0
+
+
+def _is_publish_required_preset(preset: str | None) -> bool:
+    """True when the resolved preset publishes to Podbean (publish_podbean True)
+    or stores media (store_media True) -- i.e. a preset whose deliverables are
+    the client-facing assets a waiver must never silently skip."""
+    if not preset:
+        return False
+    flags = preset_flags(preset)
+    return bool(flags.get("publish_podbean")) or bool(flags.get("store_media"))
+
+
 def check_transition(row: sqlite3.Row, to_status: str, preset: str | None = None,
                      waiver: bool = False) -> None:
     """Raise TransitionError if row.status -> to_status is not legal.
@@ -1073,6 +1130,61 @@ def cmd_advance(conn, args):
     waived = (missing_required_outputs(row, row["status"], to_status, preset_flags(preset))
               if waiver else [])
     check_transition(row, to_status, preset=preset, waiver=waiver)
+
+    # ------------------------------------------------------------------ #
+    # Force-waiver tightening (master-plan 1.6): the waiver escape must
+    # never silently complete a real episode on missing publish deliverables.
+    # ------------------------------------------------------------------ #
+    if waiver:
+        is_test = _is_test_job(conn, args.job_id)
+        cum_waivers = _waiver_count(conn, args.job_id)
+        # (1) A test job may NOT advance to 'complete' at all (its ledger 'test'
+        #     state is terminal short of a real episode). A test job advancing
+        #     anywhere else stays allowed so the test can walk the pipeline.
+        if is_test and to_status == "complete":
+            raise UsageError(
+                "advance refused: job is a TEST run and a test job must not "
+                "advance to 'complete'. Test jobs live in the ledger 'test' "
+                "state and are never published."
+            )
+        # (2) Cumulative waivers: >= 1 waiver already on a publish-required
+        #     preset means this job has a history of missing deliverables.
+        #     A further waive-to-'complete' then routes to 'failed' (operator
+        #     review) unless the operator explicitly overrides for THIS run.
+        #     Never a silent 'complete'.
+        waiving_to_complete = to_status == "complete"
+        publish_required = _is_publish_required_preset(preset)
+        operator_override = (
+            os.environ.get(OPERATOR_WAIVE_TO_COMPLETE_ENV, "").strip() == "1"
+        )
+        if waiving_to_complete and publish_required and cum_waivers >= 1:
+            if not operator_override:
+                raise UsageError(
+                    "advance refused: job {job} has already recorded {n} "
+                    "required-outputs waiver(s) on a publish-required preset "
+                    "and a further waiver would silently complete it. Route the "
+                    "job to 'failed' for review, or set {env}=1 to explicitly "
+                    "override for THIS run.".format(
+                        job=args.job_id, n=cum_waivers, env=OPERATOR_WAIVE_TO_COMPLETE_ENV
+                    )
+                )
+        if is_test and waiving_to_complete:
+            raise UsageError(
+                "advance refused: a TEST job may not waive to 'complete' "
+                "(see the test-state rule above)."
+            )
+        # (3) --force-waiver is gated to test jobs: the reason string
+        #     "[reason: test-run]" is rejected unless the job is explicitly
+        #     tagged test_run. A waiver on a REAL job requires the operator
+        #     override env as well (non-test waive-to-complete is gated above;
+        #     here we gate the flag itself for the test-run reason).
+        reason_text = str(waiver_reason or "").lower()
+        if "test-run" in reason_text and not is_test:
+            raise UsageError(
+                "advance refused: --force-waiver reason 'test-run' is only valid "
+                "for jobs explicitly tagged test_run (job payload `_test`). This "
+                "job is not a test job."
+            )
 
     frm = row["status"]
     conn.execute("BEGIN IMMEDIATE")

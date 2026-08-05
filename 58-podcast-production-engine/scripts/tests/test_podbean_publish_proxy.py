@@ -258,7 +258,10 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.tmp,
-            "PODBEAN_SKIP_MEDIA_PROBE": "1",  # crs: transport tests skip probe
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",   # crs: transport tests skip probe
+            # The transport tests skip the probe; per master-plan 1.8 the skip
+            # requires the operator force flag even in the test harness.
+            "PODBEAN_OPERATOR_FORCE": "1",
         }
         if env_extra:
             env.update(env_extra)
@@ -790,7 +793,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
 
     def test_probe_escape_hatch_skips_validation(self):
-        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish."""
+        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish
+        ONLY with the operator force flag (master-plan 1.8)."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-skip/",
@@ -807,11 +811,32 @@ class ProxyMediaGuardTest(unittest.TestCase):
             audio_url=self.mock.base_url + "/media/short.mp3",
             image_url=self.mock.base_url + "/media/tiny.png",
             PODBEAN_SKIP_MEDIA_PROBE="1",
+            PODBEAN_OPERATOR_FORCE="1",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = json.loads(proc.stdout.strip().splitlines()[-1])
         self.assertEqual(result["status"], "published")
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
+
+    def test_probe_escape_hatch_refused_without_operator_force(self):
+        """PODBEAN_SKIP_MEDIA_PROBE=1 without PODBEAN_OPERATOR_FORCE=1 refuses
+        to run in publish-proxy mode (fail-closed, master-plan 1.8)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-skip/",
+            "episode_id": "ep-2",
+            "episode_number": 2,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/short.mp3",
+            image_url=self.mock.base_url + "/media/tiny.png",
+            PODBEAN_SKIP_MEDIA_PROBE="1",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("PODBEAN_OPERATOR_FORCE", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
 
 if __name__ == "__main__":

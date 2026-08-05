@@ -61,6 +61,7 @@ import glob
 import hashlib
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -156,6 +157,30 @@ PODBEAN_BROKER_TOKEN_KEYS = ["PODBEAN_BROKER_TOKEN"]
 PODBEAN_CLIENT_ID_KEYS = ["PODBEAN_CLIENT_ID"]
 PODBEAN_CLIENT_SECRET_KEYS = ["PODBEAN_CLIENT_SECRET"]
 PODBEAN_PODCAST_ID_KEYS = ["PODBEAN_PODCAST_ID"]
+
+# --------------------------------------------------------------------------- #
+# Media provider credentials (Step 0 full mode; presence + behavior probes).
+# SKILL.md:371-376 promises the gate confirms "Podbean, Fish Audio (key plus
+# reference_id), and Kie.ai credentials are present." Today the gate only swept
+# GHL PIT + Podbean; these three media credentials were never checked, so a
+# missing KIE_API_KEY / FISH_AUDIO_API_KEY / client reference_id silently
+# degraded the pipeline at Steps 10 and 11. Missing any of them STOPS setup
+# (fail-closed). Values are never emitted; reports carry SET / NOT SET only.
+# --------------------------------------------------------------------------- #
+KIE_API_KEY_KEYS = ["KIE_API_KEY", "KIE_KEY", "KIEAI_API_KEY"]
+FISH_AUDIO_API_KEY_KEYS = ["FISH_AUDIO_API_KEY", "FISH_AUDIO_KEY", "FISH_API_KEY"]
+# The client's OWN Fish Audio voice reference_id. Stored under several aliases
+# across client env stores (provision-podcast-client / Skill 30); a reference_id
+# is not a secret value but is per-client and must be present before any Step 11
+# synthesis can run.
+FISH_AUDIO_REFERENCE_ID_KEYS = [
+    "FISH_AUDIO_REFERENCE_ID",
+    "FISH_REFERENCE_ID",
+    "FISH_AUDIO_REFERENCE",
+    "FISH_AUDIO_REF",
+    "FISH_AUDIO_REF_ID",
+    "PODCAST_FISH_REFERENCE_ID",
+]
 
 # --------------------------------------------------------------------------- #
 # HTTP / rate config
@@ -781,6 +806,75 @@ def _check_podbean_creds(stores: List[Tuple[str, Dict[str, str]]]) -> Dict[str, 
 
 
 # --------------------------------------------------------------------------- #
+# Media provider credential check (Step 0 full mode; SKILL.md:371-376)
+# --------------------------------------------------------------------------- #
+# Placeholder detection: a key whose value is a provisioning placeholder
+# (vault_n8n_credential.py's REPLACE_WITH_... convention, or common filler) is
+# NOT a real credential. Treating it as SET would let a no-op image/audio step
+# "succeed" against a stub. Values are never emitted -- only the placeholder
+# classification.
+PLACEHOLDER_RE = re.compile(
+    r"REPLACE_WITH_|PLACEHOLDER|YOUR[_A-Z]*KEY|YOUR-API-KEY|YOUR_API_KEY|"
+    r"<your|your-key|example-key|sk-xxx|api-key-here|TODO|XXX{3,}",
+    re.IGNORECASE,
+)
+
+
+def _is_placeholder(value: Optional[str]) -> bool:
+    if not value:
+        return True
+    return bool(PLACEHOLDER_RE.search(value))
+
+
+def _check_media_provider_creds(stores: List[Tuple[str, Dict[str, str]]]) -> Dict[str, object]:
+    """Presence + behavior probe for the two media providers + the reference_id.
+
+    KIE_API_KEY (Step 10 cover) and FISH_AUDIO_API_KEY plus the client's Fish
+    Audio reference_id (Step 11 audio) are required for a publishing run. Missing
+    any one STOPS setup (fail-closed) -- a missing key must never let the
+    pipeline degrade to a no-op image or audio step. Values are never emitted;
+    reports carry SET / NOT SET, the resolving alias, and a placeholder flag.
+
+    Behavior probes: (1) cross-store resolution (does the key actually resolve to
+    a value under any alias), and (2) placeholder classification (is the value a
+    provisioning stub rather than a real credential). The near-zero provider
+    reachability/balance endpoints are pinned in config/smoke-endpoints.json and
+    enforced by the daily smoke test; the Step 0 gate stays hermetic and
+    network-free (matching the Podbean presence-check design).
+    """
+    required = [
+        ("KIE_API_KEY", KIE_API_KEY_KEYS),
+        ("FISH_AUDIO_API_KEY", FISH_AUDIO_API_KEY_KEYS),
+        ("FISH_AUDIO_REFERENCE_ID", FISH_AUDIO_REFERENCE_ID_KEYS),
+    ]
+    checked: Dict[str, object] = {}
+    missing = []
+    for label, keys in required:
+        value, winner_key = _resolve_first(keys, stores)
+        placeholder = _is_placeholder(value)
+        checked[label] = {
+            "status": "SET" if value else "NOT SET",
+            "winner_alias": winner_key,
+            "placeholder": placeholder,
+        }
+        if not value or placeholder:
+            missing.append(label)
+    if missing:
+        return {
+            "verdict": "FAIL",
+            "reason": (
+                "media provider credential(s) missing or placeholder: "
+                + ", ".join(missing)
+                + ". KIE_API_KEY (Step 10 cover), FISH_AUDIO_API_KEY and the "
+                "client Fish Audio reference_id (Step 11 audio) are all required "
+                "before setup proceeds."
+            ),
+            "details": checked,
+        }
+    return {"verdict": "OK", "reason": "Media provider credentials present.", "details": checked}
+
+
+# --------------------------------------------------------------------------- #
 # The gate itself
 # --------------------------------------------------------------------------- #
 class CredentialGate:
@@ -1032,6 +1126,18 @@ class CredentialGate:
                 "Podbean credential gate failed: " + podbean_check["reason"],
             )
 
+        # CHECK 7c: media provider credential presence (full mode only; Step 0
+        # SKILL.md:371-376). KIE_API_KEY, FISH_AUDIO_API_KEY, and the client's
+        # Fish Audio reference_id must all be present. Missing any one STOPS
+        # setup (fail-closed) so Steps 10 and 11 never degrade to a no-op.
+        media_check = _check_media_provider_creds(stores)
+        v.checks["media_providers"] = media_check
+        if media_check["verdict"] != "OK":
+            return v.finish(
+                "MISSING", EXIT_MISSING,
+                "Media provider credential gate failed: " + media_check["reason"],
+            )
+
         # CHECK 8: write verdict/state for cached mode (never as root).
         patch: Dict[str, object] = {
             "client": self.client,
@@ -1248,6 +1354,12 @@ def _selftest() -> int:
         kv.setdefault("PODBEAN_PUBLISH_WEBHOOK_URL", "https://n8n.example.com/webhook/podcast-publish")
         kv.setdefault("PODBEAN_PUBLISH_TOKEN", "test-publish-token")
         kv.setdefault("PODBEAN_PODCAST_ID", "test-podcast-id")
+        # Media provider credentials (master-plan 1.7): present by default so the
+        # existing full-mode PASS cases keep passing. Cases that test the media
+        # gate override these.
+        kv.setdefault("KIE_API_KEY", "test-kie-key")
+        kv.setdefault("FISH_AUDIO_API_KEY", "test-fish-key")
+        kv.setdefault("FISH_AUDIO_REFERENCE_ID", "test-ref-id")
         return [("live-process-env(self)", kv)]
 
     with tempfile.TemporaryDirectory() as td:
@@ -1399,6 +1511,9 @@ def _selftest() -> int:
                 "PODBEAN_BROKER_WEBHOOK_URL": "https://n8n.example.com/webhook/broker",
                 "PODBEAN_BROKER_TOKEN": "test-broker-token",
                 "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                "FISH_AUDIO_REFERENCE_ID": "test-ref-id",
             }),
         ]
         g = CredentialGate(
@@ -1407,6 +1522,107 @@ def _selftest() -> int:
             stores=pod_stores_broker,
         )
         check("podbean broker pair OK", g.run().exit_code, EXIT_PASS)
+
+        # 14. MEDIA PROVIDERS: KIE_API_KEY missing fails (master-plan 1.7).
+        stores_no_kie: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                "FISH_AUDIO_REFERENCE_ID": "test-ref-id",
+                # KIE_API_KEY intentionally absent
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme14"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_no_kie,
+        )
+        check("media gate missing KIE_API_KEY", g.run().exit_code, EXIT_MISSING)
+
+        # 15. MEDIA PROVIDERS: FISH_AUDIO_API_KEY missing fails.
+        stores_no_fish: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_REFERENCE_ID": "test-ref-id",
+                # FISH_AUDIO_API_KEY intentionally absent
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme15"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_no_fish,
+        )
+        check("media gate missing FISH_AUDIO_API_KEY", g.run().exit_code, EXIT_MISSING)
+
+        # 16. MEDIA PROVIDERS: client reference_id missing fails.
+        stores_no_ref: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                # FISH_AUDIO_REFERENCE_ID intentionally absent
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme16"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_no_ref,
+        )
+        check("media gate missing reference_id", g.run().exit_code, EXIT_MISSING)
+
+        # 17. MEDIA PROVIDERS: reference_id via a non-canonical alias resolves.
+        stores_ref_alias: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "test-kie-key",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                # reference_id provided under a NON-canonical alias only.
+                "FISH_AUDIO_REF": "alias-ref-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme17"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_ref_alias,
+        )
+        check("media gate reference_id alias resolves", g.run().exit_code, EXIT_PASS)
+
+        # 18. MEDIA PROVIDERS: a placeholder KIE_API_KEY value fails (behavior probe).
+        stores_kie_placeholder: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GHL_LOCATION_ID": GOOD_LOC,
+                "GHL_API_KEY": FAKE_PIT,
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+                "KIE_API_KEY": "REPLACE_WITH_KIE_API_KEY",
+                "FISH_AUDIO_API_KEY": "test-fish-key",
+                "FISH_AUDIO_REFERENCE_ID": "test-ref-id",
+            }),
+        ]
+        g = CredentialGate(
+            "acme", GOOD_LOC, os.path.join(td, "acme18"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=stores_kie_placeholder,
+        )
+        check("media gate placeholder KIE_API_KEY", g.run().exit_code, EXIT_MISSING)
 
     for line in reports:
         REDACTOR.out(line)
