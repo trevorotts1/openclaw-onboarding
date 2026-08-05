@@ -6447,10 +6447,14 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   fi
 
   # v14.24.0: Persist hooks/ library before temp-clone is removed.
-  # grant-ceo-consent.sh + lib-ceo-tool-gate.sh look for lib-ceo-consent.sh at
-  # ~/.openclaw/hooks/ (or /data/.openclaw/hooks/ on VPS) as a fallback after
-  # the temp clone is gone.  Without this, update-only boxes keep the pre-#398/#403
-  # gate library until the next full install.
+  # lib-ceo-tool-gate.sh is resolved from ~/.openclaw/hooks/ (or
+  # /data/.openclaw/hooks/ on VPS) after the temp clone is gone. Without this,
+  # update-only boxes keep the pre-#398/#403 gate library until the next full
+  # install.
+  # NOTE 2026-08-05: lib-ceo-consent.sh used to be the other consumer named here.
+  # It and ceo-intent-gate.sh were DELETED with the intent-gate removal, and the
+  # copy below never prunes — see the UN-WIRE block right after it, which deletes
+  # those two stale files from already-wired boxes.
   _OC_HOOKS_DEST="$HOME/.openclaw/hooks"
   [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
   mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
@@ -6467,6 +6471,184 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     else
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
     fi
+  fi
+
+  # ----------------------------------------------------------
+  # UN-WIRE the removed CEO intent-gate (2026-08-05, Trevor).
+  #
+  # The hook staging above is COPY-ONLY: `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`
+  # never prunes. So deleting hooks/ceo-intent-gate.sh and hooks/lib-ceo-consent.sh
+  # from the REPO uninstalls NOTHING from a box that is already wired — the stale
+  # files keep sitting in ~/.openclaw/hooks/ and, worse, the PreToolUse entry in
+  # ~/.claude/settings.json keeps INVOKING them. That is precisely the write-deny
+  # loop that ate two weeks of Telegram messages. Removing the installer is not
+  # the same as uninstalling; a box has to be actively un-wired.
+  #
+  # Idempotent (a clean box changes nothing and prints nothing actionable) and
+  # strictly NON-FATAL — an un-wire failure must never fail a roll.
+  # ----------------------------------------------------------
+  for _stale in ceo-intent-gate.sh lib-ceo-consent.sh; do
+    for _stale_path in "$_OC_HOOKS_DEST/$_stale" "$_OC_HOOKS_DEST/$_stale".bak-*; do
+      if [ -e "$_stale_path" ]; then
+        if rm -f "$_stale_path"; then
+          echo "  ✓ un-wired: removed stale $(basename "$_stale_path") from $_OC_HOOKS_DEST"
+        else
+          echo "  ⚠ could not remove $_stale_path — advisory, does not fail the roll"
+        fi
+      fi
+    done
+  done
+  # NOTE on hooks/lib-ceo-tool-gate.sh — deliberately KEPT, not deleted.
+  # It is NOT the loop: the loop was the PreToolUse hook (ceo-intent-gate.sh)
+  # plus a non-empty production deny. The lib is now an EMPTY-DENY SHIM
+  # (CEO_GATE_DENY_TOOLS=()) that still supplies two things nobody asked to
+  # remove: CEO_GATE_ALLOW_TOOLS (a GRANT list, the opposite of a gate) and
+  # CEO_GATE_MCP_PROVIDERS (the GHL MCP deny-by-provider, a separate brake that
+  # keeps the router out of client CRM). scripts/grant-ceo-consent.sh sources it,
+  # so deleting it would break that script for the second time in one change.
+  # Its empty array is `set -u`-safe via the "${arr[*]:-}" guards in
+  # ceo_gate_tools() — proven under /bin/bash 3.2.57, which is what the fleet runs.
+  #
+  # Residual production deny on the router: a box rolled BEFORE the retirement can
+  # still carry write/edit/apply_patch in agents.list[].tools.deny. Nothing else
+  # in this roll removes it (the stampers only ADD), so it is cleared here.
+  # Claude settings: BOTH settings.json and settings.local.json are checked.
+  for _cs in "${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}" \
+             "$HOME/.claude/settings.local.json"; do
+    [ -f "$_cs" ] || continue
+    CEO_UNWIRE_SETTINGS="$_cs" python3 <<'PY' || echo "  ⚠ ceo-intent-gate un-wire from $(basename "$_cs") FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_SETTINGS"]
+TARGET = "ceo-intent-gate.sh"
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ settings.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+hooks = cfg.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+pre = hooks.get("PreToolUse")
+if not isinstance(pre, list):
+    sys.exit(0)
+
+removed = 0
+new_pre = []
+for group in pre:
+    if not isinstance(group, dict):
+        new_pre.append(group)
+        continue
+    # Flat form: the entry itself is the command hook.
+    if TARGET in str(group.get("command", "")):
+        removed += 1
+        continue
+    # Nested/matcher form: {"matcher": ..., "hooks": [{"command": ...}, ...]}
+    inner = group.get("hooks")
+    if isinstance(inner, list):
+        kept = [h for h in inner
+                if TARGET not in str(h.get("command", "") if isinstance(h, dict) else h)]
+        dropped = len(inner) - len(kept)
+        if dropped:
+            removed += dropped
+            if not kept:
+                # the matcher group existed only to run the removed hook
+                continue
+            group = dict(group)
+            group["hooks"] = kept
+    new_pre.append(group)
+
+if not removed:
+    sys.exit(0)
+
+if new_pre:
+    hooks["PreToolUse"] = new_pre
+else:
+    hooks.pop("PreToolUse", None)
+if not hooks:
+    cfg.pop("hooks", None)
+
+# Atomic write + timestamped backup: this is the user's live Claude settings.
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: removed %d ceo-intent-gate PreToolUse entr%s from %s (backup: %s)"
+      % (removed, "y" if removed == 1 else "ies", path, os.path.basename(_bak)))
+PY
+  done
+
+  # Clear any RESIDUAL production deny left on the router by a pre-retirement roll.
+  if [ -f "$OC_JSON" ]; then
+    CEO_UNWIRE_OC_JSON="$OC_JSON" python3 <<'PY' || echo "  ⚠ residual CEO production-deny sweep FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_OC_JSON"]
+# The retired gate's production tools. GHL MCP globs are NOT in this set — that
+# deny is a separate, still-wanted brake and must survive untouched.
+RETIRED = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+ROUTER_IDS = {"main", "dept-ceo", "ceo", "master-orchestrator",
+              "dept-master-orchestrator", "dept-executive-office"}
+
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ openclaw.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag["role"].strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
+cleared = []
+agents = (cfg.get("agents") or {}).get("list") or []
+targets = [a for a in agents if _is_router(a)]
+# agents.defaults can carry the same poison.
+_defaults = (cfg.get("agents") or {}).get("defaults")
+if isinstance(_defaults, dict):
+    targets.append(_defaults)
+
+for ag in targets:
+    t = ag.get("tools")
+    if not isinstance(t, dict) or not isinstance(t.get("deny"), list):
+        continue
+    keep = [x for x in t["deny"] if x not in RETIRED]
+    if len(keep) != len(t["deny"]):
+        gone = sorted(set(t["deny"]) - set(keep))
+        if keep:
+            t["deny"] = keep
+        else:
+            t.pop("deny", None)
+        cleared.append("%s:[%s]" % (ag.get("id", "agents.defaults"), ",".join(gone)))
+
+if not cleared:
+    sys.exit(0)
+
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: cleared the retired CEO production deny from %s (backup: %s)"
+      % ("; ".join(cleared), os.path.basename(_bak)))
+PY
   fi
 
   # Cleanup
