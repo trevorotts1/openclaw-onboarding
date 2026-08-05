@@ -275,5 +275,52 @@ class MainExitCodeTests(unittest.TestCase):
         self.assertEqual(mock_call.call_count, 2)
 
 
+class FindLiveWorkflowActivePreferenceTests(unittest.TestCase):
+    """When several live workflows share a webhook path (deploy cutover leaves
+    superseded twins INACTIVE), matching must prefer the ACTIVE one so the repo
+    export is reconciled against the deployed workflow, not a stale rollback."""
+
+    def _wf_with_path(self, name, active, path="podbean-publish"):
+        return {
+            "name": name,
+            "active": active,
+            "nodes": [{"type": "n8n-nodes-base.webhook",
+                       "parameters": {"path": path}}],
+            "connections": {},
+        }
+
+    def test_active_preferred_when_multiple_share_path(self):
+        export = {
+            "name": "create podcast episode from openclaw",
+            "active": True,
+            "nodes": [{"type": "n8n-nodes-base.webhook",
+                       "parameters": {"path": "podbean-publish"}}],
+            "connections": {},
+        }
+        live = [
+            self._wf_with_path("old 59-node superseded", False),
+            self._wf_with_path("old 70-node readback-bug", False),
+            self._wf_with_path("new 70-node fixed", True),
+        ]
+        got = VND._find_live_workflow(live, export)
+        self.assertIsNotNone(got)
+        self.assertTrue(got["active"])
+        self.assertEqual(got["name"], "new 70-node fixed")
+
+    def test_inactive_fallback_when_no_active_twin(self):
+        export = {
+            "name": "create podcast episode from openclaw",
+            "active": True,
+            "nodes": [{"type": "n8n-nodes-base.webhook",
+                       "parameters": {"path": "podbean-publish"}}],
+            "connections": {},
+        }
+        live = [
+            self._wf_with_path("only-twin-inactive", False),
+        ]
+        got = VND._find_live_workflow(live, export)
+        self.assertIsNotNone(got)
+        self.assertEqual(got["name"], "only-twin-inactive")
+
 if __name__ == "__main__":
     unittest.main()

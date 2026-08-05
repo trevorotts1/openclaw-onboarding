@@ -1,3 +1,55 @@
+## [v21.7.32]  -  2026-08-05  -  fix(skill58): podbean readback field names + rollback status-flip + filesystem-v2 binary gate (F-01/F-02)
+
+Final QC of units 2.1-2.4 (n8n publish rail fail-closed) found the live rail
+PASS but the merged repo STALE: the two live-proven fixes for the podcast
+publish workflow lived only on branch `fix/podcast-readback-fieldnames`, not
+on origin/main. Merged here so the repo matches the live rail
+(`ZpaoEQrHYtDM49y0`, 70 nodes, ACTIVE).
+
+### What changed
+
+- **F-01 readback field names (7818dd02).** `Readback Verdict -- Assert Media +
+  Description` now asserts Podbean's real GET response fields — `media_url`
+  (audio) and `logo` (cover) — instead of the never-returned `media_key`/
+  `logo_key`. Pre-fix, every valid publish failed readback → HTTP 500 →
+  duplicate-on-retry. Includes a defensive episode unwrap
+  (`{episode:{...}}` and `{body:{episode:{...}}}` shapes) and an
+  `extractUrl()` normalizer for string-or-object logo values. Empty
+  `media_url`/`logo` still fail closed.
+- **F-02 rollback status-flip (7818dd02).** `Podbean -- Rollback Unpublish
+  Created Episode` is now `POST /v1/episodes/{id}` with form body
+  `access_token` + `status=draft`, `neverError:true` — no more DELETE (which
+  403s without `episode_delete` scope). A degenerate episode is pulled off the
+  live feed as a draft instead of a failed delete.
+- **filesystem-v2 binary-mode gate fix (34030aa7).** The three binary Code
+  nodes (`Validate Audio Substance -- Byte-Level MP3 Gate`, `Prepare Audio
+  Upload -- Package for Podbean S3`, `Prepare Image Upload -- Package for
+  Podbean S3`) now read via n8n's canonical
+  `await this.helpers.getBinaryDataBuffer(0, '<prop>')` instead of
+  `Buffer.from(binary.data,'base64')`. On this instance's `filesystem-v2`
+  binary mode the old read decoded the 9-byte marker `"filesystem-v2"`,
+  rejecting every valid MP3/JPEG. Live-proven: real contract-v2 publish →
+  HTTP 200 `{ok:true}` (readback passed on real `media_url`/`logo`), negative
+  empty-`image_url` → HTTP 422.
+- **verify-n8n-deploy.py active-preference (34030aa7).** The deploy drift
+  matcher now prefers the ACTIVE live workflow when several share a webhook
+  path (deploy cutover keeps superseded twins inactive). 2 new unit tests
+  (13 total pass).
+- **U041 meta restoration.** The re-export had stripped the `meta` version
+  marker, which the repo's own validator (`scripts/validate_n8n_workflow.py`)
+  and the `qc-podcast.sh` onb-10 gate require (all other config/n8n exports
+  carry it). Restored — node/connection/fix content unchanged (70 nodes, 42
+  connections).
+
+### Merge notes
+
+Cherry-picked 7818dd02 + 34030aa7 onto origin/main (9f993953) — clean, zero
+conflict surface (the branch base was an ancestor of main). All 10 version
+markers rolled v21.7.31 -> v21.7.32 (bump-version.sh). Skill 58 version 0.1.36
+-> 0.1.37 (SKILL.md frontmatter + skill-version.txt). CHANGELOG entry added.
+`verify-n8n-deploy.py` re-run from the merged tree: `podbean-publish.workflow.json`
+MATCH (nodes=70 connections=42 active=True webhooks=['podbean-publish']).
+
 ## [v21.7.31]  -  2026-08-05  -  fix(skill58): capability manifest + dept-podcast runtime dir materialization (units 3.4-3.5)
 
 Unit 3.4-3.5 of the podcast publish fix train (onboarding half of the capability

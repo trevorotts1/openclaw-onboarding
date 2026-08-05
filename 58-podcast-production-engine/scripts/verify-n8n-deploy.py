@@ -135,25 +135,33 @@ def _find_live_workflow(
     """Find the live workflow that matches an exported one.
 
     Matches in priority order:
-      1. By webhook path (any exported webhook path === any live webhook path)
-      2. By name (case-insensitive)
+      1. By webhook path (any exported webhook path === any live webhook path),
+         preferring the ACTIVE live workflow when several share the path (the
+         deploy cutover keeps superseded workflows as INACTIVE rollback
+         artifacts, so a naive first-match can report DRIFT against a stale
+         twin).
+      2. By name (case-insensitive), also preferring the ACTIVE twin.
     """
     exported_paths = set(_extract_webhook_paths(exported_workflow))
     exported_name = (exported_workflow.get("name") or "").strip().lower()
 
-    # Priority 1: webhook path match
+    # Priority 1: webhook path match (active preferred)
     if exported_paths:
-        for live in live_workflows:
-            live_paths = set(_extract_webhook_paths(live))
-            if exported_paths & live_paths:
-                return live
+        by_path = [
+            live for live in live_workflows
+            if exported_paths & set(_extract_webhook_paths(live))
+        ]
+        if by_path:
+            return next((w for w in by_path if w.get("active")), by_path[0])
 
-    # Priority 2: name match
+    # Priority 2: name match (active preferred)
     if exported_name:
-        for live in live_workflows:
-            live_name = (live.get("name") or "").strip().lower()
-            if live_name == exported_name:
-                return live
+        by_name = [
+            live for live in live_workflows
+            if (live.get("name") or "").strip().lower() == exported_name
+        ]
+        if by_name:
+            return next((w for w in by_name if w.get("active")), by_name[0])
 
     return None
 
