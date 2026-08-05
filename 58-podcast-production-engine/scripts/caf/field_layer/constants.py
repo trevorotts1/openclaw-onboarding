@@ -41,6 +41,10 @@ PIT_PREFIX = "pit-"
 # never falsely reports a client key missing while that shared change lands.
 # ---------------------------------------------------------------------------
 LOCATION_PIT_ALIASES = (
+    # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
+    # CjxATjhv9Gt21qSqURIt). Checked FIRST so the engine tenant always wins
+    # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+    "PODCAST_ENGINE_GHL_PIT",
     "GOHIGHLEVEL_API_KEY",          # canonical
     "GHL_API_KEY",
     "GHL_PIT",
@@ -69,6 +73,9 @@ FORBIDDEN_PIT_ALIASES = (
 )
 
 LOCATION_ID_ALIASES = (
+    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
+    # Checked FIRST so the engine tenant always wins over generic ids.
+    "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",              # canonical for this alias set
     "GOHIGHLEVEL_LOCATION_ID",
     "LOCATION_ID",

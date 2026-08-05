@@ -1,3 +1,17 @@
+## [v21.7.25]  -  2026-08-04  -  fix(podcast): engine GHL credential aliases now win over generic keys in every resolver (unit 1.3)
+
+Unit 1.3 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC-failure fix) and merged to main.
+
+### What changed
+
+- **Alias-major credential resolution (F1 fix).** ghl_credential_gate.py's _resolve now iterates aliases outer, stores inner — so PODCAST_ENGINE_GHL_PIT / PODCAST_ENGINE_GHL_LOCATION_ID found in ANY store (including a later ~/.openclaw/secrets/.env) win over a generic GOHIGHLEVEL_API_KEY in the live process env. This closes the exact Leanne-incident shape: a box with GOHIGHLEVEL_* set but PODCAST_ENGINE_GHL_* only in secrets/.env now resolves the engine tenant correctly. Selftest case 14 (two-store incident repro) passes; gate selftest 16/16.
+- **field_layer engine aliases (F2 fix).** caf/field_layer/constants.py prepends the engine PIT and LOCATION_ID aliases; resolver._resolve_one is alias-major, so the Step 14-17 write-back path resolves the engine tenant first. Three new resolver tests including the two-store shape. field_layer 10/10.
+- **Typo fixed (F3).** No stray CJxAT reference anywhere.
+
+### Scope
+
+7 files across 06-ghl-install-pages/ and 58-podcast-production-engine/scripts/caf/. All suites verified: ghl_credential_gate --selftest 16/16, field_layer resolver 10/10, upload_media 35/35.
+
 ## [v21.7.24]  -  2026-08-04  -  fix(podcast): raise the Podbean cover floor to 1500 and the generation default to 2K (unit 1.4)
 
 Unit 1.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.

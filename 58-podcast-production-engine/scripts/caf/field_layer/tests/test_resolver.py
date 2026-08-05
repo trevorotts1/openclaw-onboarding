@@ -46,6 +46,51 @@ def test_convertflow_branded_alias_resolves(clean_env):
     assert res.pit_alias == "CONVERTFLOW_API_KEY"
 
 
+def test_engine_pit_alias_wins_over_generic_in_live_env(clean_env):
+    """The Podcast Engine's OWN PIT is checked FIRST: when both the engine PIT
+    and a generic GOHIGHLEVEL_API_KEY are present, the engine PIT must win
+    (wrong-tenant 403 guard)."""
+    clean_env.setenv("PODCAST_ENGINE_GHL_PIT", "pit-enginealias1")
+    clean_env.setenv("GOHIGHLEVEL_API_KEY", "pit-genericvalue1")
+    res = resolver.resolve_credentials()
+    assert res.pit_found is True
+    assert res.pit_alias == "PODCAST_ENGINE_GHL_PIT"
+
+
+def test_engine_location_alias_wins_over_generic(clean_env):
+    """The engine's OWN location id wins over generic ids in the same env."""
+    clean_env.setenv("PODCAST_ENGINE_GHL_LOCATION_ID", "LOC-ENGINE-1")
+    clean_env.setenv("GOHIGHLEVEL_LOCATION_ID", "loc-generic-1")
+    res = resolver.resolve_credentials()
+    assert res.location_found is True
+    assert res.location_id == "LOC-ENGINE-1"
+    assert res.location_alias == "PODCAST_ENGINE_GHL_LOCATION_ID"
+
+
+def test_engine_pit_alias_wins_over_generic_in_later_store(clean_env, monkeypatch):
+    """F2 incident shape: a generic GOHIGHLEVEL_API_KEY in the LIVE env (seeded
+    from openclaw.json — Leanne's box) must NOT outrank PODCAST_ENGINE_GHL_PIT
+    sitting in a LATER env store. The field-layer resolver is alias-major, so the
+    engine alias found in a later store wins."""
+    clean_env.setenv("GOHIGHLEVEL_API_KEY", "pit-livegeneric1")
+    clean_env.setenv("GHL_LOCATION_ID", "loc-live-1")
+    # Later store holds the engine's own PIT + location id.
+    monkeypatch.setattr(
+        resolver,
+        "_parse_env_file",
+        lambda path: {
+            "PODCAST_ENGINE_GHL_PIT": "pit-enginelater1",
+            "PODCAST_ENGINE_GHL_LOCATION_ID": "LOC-ENGINE-LATER-1",
+        },
+    )
+    res = resolver.resolve_credentials()
+    assert res.pit_found is True
+    assert res.pit_alias == "PODCAST_ENGINE_GHL_PIT"
+    assert res.pit_store.startswith("env-file:")
+    assert res.location_id == "LOC-ENGINE-LATER-1"
+    assert res.location_alias == "PODCAST_ENGINE_GHL_LOCATION_ID"
+
+
 def test_agency_pit_is_never_resolved(clean_env):
     # Only the forbidden agency alias is present.
     clean_env.setenv("GOHIGHLEVEL_AGENCY_PIT", "pit-agencytoken1")
