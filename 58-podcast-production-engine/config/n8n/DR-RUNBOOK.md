@@ -60,3 +60,16 @@ These were applied to the repo export from a live API read of `TkL0rn2SH3q32SeB`
 ### 2.7 Stale pinData (contract-v2 re-pin — operator-live)
 
 The repo export carries **no pinData** (stripped during sanitization), so there is nothing stale to strip here. **The LIVE workflow's pinned webhook payload is stale** — it predates the contract-v2 guard (missing `contract_version: "2"` and `idempotency_key`) and would be REFUSED by the current guard. This is an operator-live action: re-pin the webhook node on the live workflow with a contract-v2 fixture containing a real `description` and a valid `idempotency_key`, or delete the pin entirely. This repo file needs no change for that.
+
+### 2.8 Re-deploy + live-proof (2026-08-05) — readback field-name fix + binary-mode gate fix
+
+**Deployed state (verified live 2026-08-05):** the ACTIVE publish workflow is `ZpaoEQrHYtDM49y0` ("Podcast: Publish Episode (Skill 58) — FAIL-CLOSED v70 FIXED readback", 70 nodes, 42 connection keys, `active: true`, webhook `/webhook/podbean-publish` POST). The two prior publish workflows are **INACTIVE rollback artifacts**: `vuhpiTRVw66HsX3T` (70 nodes, the readback-bug deploy) and `TkL0rn2SH3q32SeB` (59 nodes, the original). A DR restore must import THIS export and activate it — it is the only one with all three fixes.
+
+**Fixes carried in this export (all live-proven):**
+1. **F-01 readback field names** — `Readback Verdict  --  Assert Media + Description` now asserts Podbean's real GET fields `media_url` (audio) and `logo` (cover), not the never-present `media_key`/`logo_key`. Live proof: a real publish returned HTTP 200 `{ok:true}` with `readback_failed: false` (the pre-fix workflow 500'd every valid publish).
+2. **F-02 rollback status-flip** — `Podbean  --  Rollback Unpublish Created Episode` now POSTs `status=draft` (with `neverError: true`) instead of DELETE (which 403s on this token). Live proof: the test episode was flipped to `status: draft` off the live feed.
+3. **BINARY-MODE GATE FIX (new 2026-08-05)** — the three binary-handling Code nodes (`Validate Audio Substance -- Byte-Level MP3 Gate`, `Prepare Audio Upload -- Package for Podbean S3`, `Prepare Image Upload -- Package for Podbean S3`) now read the real byte buffer via n8n's canonical `await this.helpers.getBinaryDataBuffer(0, '<prop>')` instead of `Buffer.from(binary.data, 'base64')`. **Why:** this n8n instance runs binary mode `filesystem-v2`, where `item.binary.<prop>.data` is the marker string `"filesystem-v2"` (9 chars), NOT the base64 payload — the old decode yielded 9 bytes, so the byte-substance gates rejected every valid episode and the image gate's dimension parse (0x0) also threw. This was a latent defect in the merged fail-closed workflow, never caught because Phase 4 only exercised the draft-test rail (which lacks the gates).
+
+**verify-n8n-deploy.py change:** the matcher now prefers the ACTIVE live workflow when several share a webhook path (deploy cutover keeps superseded twins INACTIVE). Without this, the tool reports DRIFT against a stale inactive twin. Unit tests extended (13 pass).
+
+**Secret guard:** `qc-assert-no-n8n-plaintext-secrets.sh` PASS on this export.
