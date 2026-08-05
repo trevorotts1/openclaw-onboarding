@@ -289,8 +289,19 @@ def _resolve_preset_flags(ps, db_path, job_id, row) -> dict:
 # ---------------------------------------------------------------------------
 # Step resolution: which step is the runbook on, and what is next?
 # ---------------------------------------------------------------------------
+def _produces_media(flags: dict) -> bool:
+    """True when the preset produces media artifacts, mirroring the writer's
+    podcast_state._gate_satisfied('produces_media') predicate EXACTLY: any of
+    render_audio / publish_podbean / store_media. Used to gate Step 10 (cover)
+    so the driver orders a cover exactly when the transition gate requires
+    cover_image_url, and never otherwise."""
+    return any(bool(flags.get(k)) for k in
+               ("render_audio", "publish_podbean", "store_media"))
+
+
 def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
-    """Derive the CURRENT pipeline step from the job's recorded status + outputs.
+    """Derive the CURRENT pipeline step from the job's recorded status + outputs
+    + PRESET FLAGS (config/presets.json, resolved exactly like the writer).
 
     A status may host several steps (writing hosts 2,4,5,6,7,8; publishing hosts
     12,13,14,15,16). The step is derived from which output columns are already
@@ -302,7 +313,30 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
       publishing (12..16): documents done => 12 recorded; teaser done => 13
                recorded (interview only); media URLs recorded => 14 done;
                permalink recorded => 15 done; otherwise 16 (link back) is next.
-    """
+
+    PRESET GATING (N1 fix). Every media/emission step is emitted ONLY when the
+    job's preset flags require it, so `next` never orders work that the writer's
+    required-outputs gate (`verify`) does not owe, and never WITHHOLDS work the
+    gate demands:
+      - Step 10 (generating_art, cover) requires produces_media (render_audio
+        OR publish_podbean OR store_media -- the SAME helper the writer's gate
+        uses for cover_image_url, podcast_state.py _gate_satisfied); a preset
+        that stores media (episode_asset_pack) still owes the cover even though
+        it never re-renders audio;
+      - Step 11 (producing_audio, audio) requires render_audio; a preset that
+        never re-renders audio (episode_asset_pack hard-refuses audio re-render)
+        owes no audio step, and the writer's next gate requires no output;
+      - Step 14 (store media) requires store_media;
+      - Step 15 (Podbean publish) requires publish_podbean;
+      - Step 16 (link back) requires link_back;
+      - Step 17 (enroll / spreadsheet) requires workflow_enrollment OR
+        running_spreadsheet_update (the preset's terminal action).
+    A preset that skips a step returns None for it: a document-only preset
+    (season_strategy) at `publishing` with its documents rendered carries NO
+    runbook step (its deliverable is the document); the writer advances it to
+    enrolling with zero media, and the driver now says exactly that. An empty
+    flags dict (unresolvable preset) FAILS CLOSED: nothing is emitted."""
+
     flags = flags or {}
     status = row.get("status")
     steps = STEPS_BY_STATUS.get(status, [])
@@ -320,10 +354,29 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
     if status == "in_qc":
         return 9
     if status == "generating_art":
+        # Step 10 (cover) is owed exactly when the writer's transition gate
+        # requires cover_image_url, i.e. produces_media. Use the SAME predicate
+        # the writer uses (render_audio OR publish_podbean OR store_media) so the
+        # driver never withholds a cover the gate demands (episode_asset_pack
+        # stores media => owes the cover) nor orders one the gate never owed.
+        if not _produces_media(flags):
+            return None
         return 10
     if status == "producing_audio":
+        # Step 11 (audio) is owed only when the preset re-renders audio. A preset
+        # that hard-refuses audio re-render (episode_asset_pack) owes no step at
+        # producing_audio; the writer's next transition requires no output there.
+        if flags.get("render_audio") is not True:
+            return None
         return 11
     if status == "enrolling":
+        # Step 17's two flavors are the preset's TERMINAL ACTION: interview
+        # enrolls workflows, solo appends the running spreadsheet. A preset with
+        # neither (season_strategy, episode_asset_pack) skips Step 17 entirely;
+        # the writer advances enrolling -> complete with no enrollment owed.
+        if not (flags.get("workflow_enrollment") is True
+                or flags.get("running_spreadsheet_update") is True):
+            return None
         return 17
     if status == "complete":
         return 18
@@ -344,11 +397,16 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
             return 12  # documents not yet rendered
         if teaser_required and not row.get("book_teaser_url"):
             return 13  # book teaser pending (interview preset)
-        if not row.get("mp3_media_url") or not row.get("cover_image_url"):
+        # Steps 14/15/16 are preset-gated (N1): a document-only preset owes no
+        # media store, no Podbean publish, and no link-back, so none is emitted.
+        if flags.get("store_media") is True and (
+                not row.get("mp3_media_url") or not row.get("cover_image_url")):
             return 14  # store media not yet done
-        if not row.get("podbean_permalink"):
+        if flags.get("publish_podbean") is True and not row.get("podbean_permalink"):
             return 15  # publish not yet done
-        return 16  # everything else done -> link back
+        if flags.get("link_back") is True:
+            return 16  # everything else done -> link back
+        return None  # preset requires no further publishing-block step
 
     return steps[0]
 
@@ -376,6 +434,10 @@ def _next_step(ps, db_path, job_id, row, current: int | None) -> int | None:
             return 6
         return current
     if status == "publishing":
+        if current is None:
+            # The preset requires no further publishing-block step (N1): do NOT
+            # fall back to Step 12; the runbook's move is a writer advance.
+            return None
         steps = STEPS_BY_STATUS.get("publishing", [])
         if current in steps:
             return current
@@ -639,6 +701,40 @@ def cmd_next(args) -> int:
                       % (args.job_id, row.get("status")))
                 print("  %s" % off[0])
             return EXIT_REFUSED
+        # A PIPELINE status with no step owed: the job's preset flags skip the
+        # remaining work of this status (N1). This is NOT an error and NOT a
+        # terminal edge: the writer's gate is already satisfied, so the runbook
+        # move is a plain `podcast_state.py advance`, then call `next` again.
+        status = row.get("status")
+        if status in STEPS_BY_STATUS:
+            preset_name = _resolve_preset(ps, db_path, args.job_id, row) or "?"
+            advance_to = _next_status(ps, status)
+            note = (
+                "no runbook step is owed at status '%s' for preset '%s': the "
+                "preset's flags skip the remaining work of this status (a "
+                "document-only preset orders no cover, audio, media store, "
+                "publish, or link-back). The writer's required-outputs gate for "
+                "this transition is already satisfied; run `podcast_state.py "
+                "advance --job-id %s --to %s` and call next again."
+                % (status, preset_name, args.job_id, advance_to or "?")
+            )
+            out = {
+                "job_id": args.job_id,
+                "status": status,
+                "step": None,
+                "name": None,
+                "done": False,
+                "command": None,
+                "note": note,
+                "advance_to": advance_to,
+            }
+            if args.json:
+                print(json.dumps(out, ensure_ascii=False))
+            else:
+                print("NO RUNBOOK STEP OWED (job %s at %s, preset %s)"
+                      % (args.job_id, status, preset_name))
+                print("  %s" % note)
+            return EXIT_OK
         raise StepDriverError(
             "job %s has status '%s', which is not a pipeline status the step "
             "driver can sequence" % (args.job_id, row.get("status"))
@@ -772,8 +868,56 @@ def cmd_self_test(args) -> int:
     check("publishing starts at step 12", _current_step(None, "", "", pub) == 12)
     pub2 = dict(pub, episode_package_url="https://x/pkg",
                 mp3_media_url="https://x/a.mp3", cover_image_url="https://x/c.jpg")
+    # Preset-gated step emission (N1): the full-producing flag set (solo) keeps
+    # the media ordering; the step table below asserts every skip.
+    SOLO = {"render_audio": True, "publish_podbean": True, "book_teaser": False,
+            "store_media": True, "link_back": True,
+            "workflow_enrollment": False, "running_spreadsheet_update": True}
     check("publishing with media but no permalink -> 15",
-          _current_step(None, "", "", pub2) == 15)
+          _current_step(None, "", "", pub2, SOLO) == 15)
+    SEASON = {"render_audio": False, "publish_podbean": False,
+              "book_teaser": False, "store_media": False, "link_back": False,
+              "workflow_enrollment": False, "running_spreadsheet_update": False}
+    ASSET = {"render_audio": False, "publish_podbean": False,
+             "book_teaser": "conditional_interview_source", "store_media": True,
+             "link_back": True, "workflow_enrollment": False,
+             "running_spreadsheet_update": False}
+    check("N1: empty flags fail closed (no step emitted)",
+          _current_step(None, "", "", pub2, {}) is None)
+    check("N1: season_strategy docs-only publishing owes NO step",
+          _current_step(None, "", "", pub2, SEASON) is None)
+    check("N1: season_strategy without docs still renders them (12)",
+          _current_step(None, "", "", dict(pub), SEASON) == 12)
+    check("N1: episode_asset_pack skips publish, still links back (16)",
+          _current_step(None, "", "", pub2, ASSET) == 16)
+    check("N1: episode_asset_pack still stores regenerated media (14)",
+          _current_step(None, "", "", dict(pub, episode_package_url="https://x/p"),
+                        ASSET) == 14)
+    art_off = dict(pub, status="generating_art")
+    audio_off = dict(pub, status="producing_audio")
+    check("N1: generating_art with no media flags owes no step",
+          _current_step(None, "", "", art_off, SEASON) is None)
+    check("N1: generating_art with render_audio True emits 10",
+          _current_step(None, "", "", art_off, SOLO) == 10)
+    # Step 10 is gated on produces_media (mirrors the writer's cover gate), so
+    # a preset that STORES media but never renders audio (episode_asset_pack)
+    # still owes the cover the writer's transition gate demands.
+    check("N1: generating_art with store_media only still emits 10",
+          _current_step(None, "", "", art_off, ASSET) == 10)
+    check("N1: producing_audio with render_audio False owes no step",
+          _current_step(None, "", "", audio_off, SEASON) is None
+          and _current_step(None, "", "", audio_off, ASSET) is None)
+    check("N1: producing_audio with render_audio True emits 11",
+          _current_step(None, "", "", audio_off, SOLO) == 11)
+    enr = dict(pub, status="enrolling")
+    check("N1: enrolling with no terminal action owes no step",
+          _current_step(None, "", "", enr, SEASON) is None
+          and _current_step(None, "", "", enr, ASSET) is None)
+    check("N1: enrolling emits 17 for workflow and spreadsheet presets",
+          _current_step(None, "", "", enr, dict(SOLO)) == 17
+          and _current_step(None, "", "", enr, {"workflow_enrollment": True}) == 17)
+    check("N1: _next_step honors None (no 12 fallback)",
+          _next_step(None, "", "", pub2, None) is None)
 
     # Command shapes for deterministic steps (no import of podcast_state needed).
     row = dict(fake, status="generating_art", episode_title="T",
