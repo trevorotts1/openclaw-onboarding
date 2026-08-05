@@ -1368,7 +1368,9 @@ if _healed_keys:
 
 # Owner-consent carve-out guard: if a grant is ACTIVE the gate is intentionally
 # lifted; re-gating here would silently revoke the owner's grant. Same single
-# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh.
+# shared sidecar src/lib/consent.ts reads and scripts/grant-ceo-consent.sh writes.
+# (hooks/lib-ceo-consent.sh was the third reader; deleted 2026-08-05 with the
+# intent-gate removal — grant-ceo-consent.sh now inlines the path resolver.)
 import os as _os
 def _ceo_consent_active():
     cands = []

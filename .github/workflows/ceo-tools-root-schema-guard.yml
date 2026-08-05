@@ -27,7 +27,6 @@ on:
       - "scripts/verify-routing.sh"
       - "scripts/test-ceo-tool-gate.sh"
       - "hooks/lib-ceo-tool-gate.sh"
-      - "hooks/ceo-intent-gate.sh"
       - "23-ai-workforce-blueprint/scripts/build-workforce.py"
       - ".github/workflows/ceo-tools-root-schema-guard.yml"
   pull_request:
@@ -39,7 +38,6 @@ on:
       - "scripts/verify-routing.sh"
       - "scripts/test-ceo-tool-gate.sh"
       - "hooks/lib-ceo-tool-gate.sh"
-      - "hooks/ceo-intent-gate.sh"
       - "23-ai-workforce-blueprint/scripts/build-workforce.py"
       - ".github/workflows/ceo-tools-root-schema-guard.yml"
 

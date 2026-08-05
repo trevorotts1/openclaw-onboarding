@@ -412,8 +412,11 @@ _CEO_MCP_DENY = {
 
 # Owner-consent carve-out guard: if an owner-consent grant is ACTIVE, the gate
 # is intentionally lifted — re-asserting it here would silently revoke the
-# owner's grant. Skip the re-gate while consent is present (the same single
-# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh).
+# owner's grant. Skip the re-gate while consent is present. The sidecar is the
+# same one src/lib/consent.ts reads and scripts/grant-ceo-consent.sh writes.
+# (hooks/lib-ceo-consent.sh used to be the third reader; it was deleted
+# 2026-08-05 with the intent-gate removal, and grant-ceo-consent.sh now inlines
+# the same path resolver as a fallback.)
 import os as _os
 def _ceo_consent_active():
     cands = []
