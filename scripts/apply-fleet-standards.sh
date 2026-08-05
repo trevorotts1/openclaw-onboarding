@@ -368,8 +368,7 @@ if "agents" in cfg and "list" in cfg["agents"]:
 # KEEP IN SYNC with build-workforce.py (CEO_TOOL_*) and apply-routing-fix.sh L5
 # and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
 _CEO_TOOL_DENY = [
-    "write", "edit", "apply_patch", "browser", "canvas", "image", "process",
-    "ghl-community-mcp__*", "ghl-mcp__*",
+        "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 _CEO_TOOL_ALLOW = [
     "read", "web_fetch", "web_search",

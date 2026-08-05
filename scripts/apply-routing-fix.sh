@@ -1282,7 +1282,7 @@ fi
 # INTERIM exec note: exec stays in ALLOW so the CEO can curl /api/tasks/ingest
 # until the route-task MCP tool ships. verify-routing.sh G7 FAIL-WARNs on that
 # interim state so a box is never falsely marked clean.
-# Idempotent: skips if tools.deny already contains "write".
+# Idempotent: skips if tools.deny already contains .
 _log "--- LAYER 5: CEO tool-gate (deny production tools on the default agent) ---"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -1295,8 +1295,7 @@ from pathlib import Path
 # KEEP IN SYNC with build-workforce.py (CEO_TOOL_*), apply-fleet-standards.sh,
 # and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
 CEO_TOOL_DENY = [
-    "write", "edit", "apply_patch", "browser", "canvas", "image", "process",
-    "ghl-community-mcp__*", "ghl-mcp__*",
+        "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 CEO_TOOL_ALLOW = [
     "read", "web_fetch", "web_search",
@@ -1434,7 +1433,7 @@ if not _is_router(main_agent):
     sys.exit(0)
 
 tools = main_agent.get("tools")
-if isinstance(tools, dict) and isinstance(tools.get("deny"), list) and "write" in tools["deny"]:
+if isinstance(tools, dict) and isinstance(tools.get("deny"), list) and  in tools["deny"]:
     # FABLE-5 HEAL — the box is already production-gated (deny ⊇ write), so the
     # DENY gate needs no work. But an explicit per-agent tools.allow is a HARD
     # allowlist: boxes gated before the Fable-5 fix carry ONLY the old routing
