@@ -81,10 +81,19 @@
 set -uo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# The retire script lives at the REPO ROOT's scripts/ dir; Skill 23 is one
-# level up (23-ai-workforce-blueprint/scripts/).
-REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# The retire script is CO-LOCATED with build-workforce.py + canonical_decline.py
+# inside the Skill 23 scripts dir (23-ai-workforce-blueprint/scripts/ in the
+# checkout; ~/.openclaw/skills/23-ai-workforce-blueprint/scripts/ on a deployed
+# box). It MUST ship inside the skill — placing it at the repo root's scripts/
+# dir meant it never deployed with the skill, so build-workforce.py's
+# apply-standard-edits path and update-interview-state.sh's [WORKFORCE-RESUME]
+# kick dispatched to a NONEXISTENT entry point on every fleet box (QC finding).
+# SCRIPT_DIR itself is therefore the first candidate (the co-located case); the
+# repo-root relative path and the two live deploy paths remain as fallbacks for
+# any legacy invocation that still resolves to a different copy.
+REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 SKILL23_CANDIDATES=(
+  "$SCRIPT_DIR"
   "$REPO_ROOT/23-ai-workforce-blueprint/scripts"
   "$HOME/.openclaw/skills/23-ai-workforce-blueprint/scripts"
   "/data/.openclaw/skills/23-ai-workforce-blueprint/scripts"
@@ -340,7 +349,13 @@ else
 import json, sqlite3, sys
 db_path, targets = sys.argv[1], json.loads(sys.argv[2])
 norm = lambda s: "".join(c for c in str(s).lower() if c.isalnum())
-EXEMPT = {"ceo", "deptceo", "masterorchestrator"}  # orchestrator column exempt
+# EXEMPT mirrors archiveDepartment()'s isDepartmentOptoutExempt() EXACTLY (src/
+# lib/workspaces/department-optout.ts DEPARTMENT_OPTOUT_EXEMPT_IDS = ['ceo',
+# 'master-orchestrator'], normalized). The spurious 'deptceo' was removed so
+# the retire path's CC archive and its tree archive (step 2) agree on every
+# slug — a divergence left a 'dept-ceo' tree archived but its CC lane live
+# (ghost column), the exact bug department-optout.ts exists to prevent.
+EXEMPT = {"ceo", "masterorchestrator"}  # orchestrator column exempt (only)
 conn = sqlite3.connect(db_path)
 cols = {r[1] for r in conn.execute("PRAGMA table_info(workspaces)")}
 if "workspaces" not in {r[0] for r in conn.execute(
@@ -354,7 +369,7 @@ rows = conn.execute("SELECT id, slug FROM workspaces").fetchall()
 archived, already, refused = [], [], []
 for t in targets:
     key = norm(t)
-    if key in EXEMPT or norm(t) == norm("master-orchestrator"):
+    if key in EXEMPT:
         refused.append(t)
         continue
     for wid, wslug in rows:

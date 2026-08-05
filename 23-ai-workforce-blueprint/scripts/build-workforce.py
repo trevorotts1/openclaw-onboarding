@@ -2623,8 +2623,8 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 # master plan section 2.3): the declined department already EXISTS on disk
 # (the prebuild materialized it), so honoring the decline means archive +
 # deregister + lane removal, not skip-at-creation. The four steps live in
-# scripts/retire-confirmed-decline.sh (repo root, per the master plan's scope
-# list), which gates EVERY decline through canonical_decline.py's shared
+# scripts/retire-confirmed-decline.sh (CO-LOCATED in this skill's scripts dir,
+# so it ships with the skill), which gates EVERY decline through canonical_decline.py's shared
 # reader (the same provenance gate this module enforces) and NEVER deletes —
 # archive only (APFS snapshot doctrine). This helper is the glue the
 # apply-diff build uses to drive it.
@@ -2638,7 +2638,7 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 # fail-safe-to-the-LARGER-floor posture, identical to the decline reader's.
 _RETIRE_SCRIPT = os.path.normpath(os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
-    "..", "..", "scripts", "retire-confirmed-decline.sh",
+    "retire-confirmed-decline.sh",
 ))
 
 
