@@ -80,7 +80,7 @@ FOLDER_NAMES = (PARENT_FOLDER, IMAGES_FOLDER, EPISODES_FOLDER)
 # order so behavior matches the shared resolver once it lands.
 PIT_ALIASES: Tuple[str, ...] = (
     # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
-    # CJxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
+    # CjxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
     # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
     "PODCAST_ENGINE_GHL_PIT",
     "GOHIGHLEVEL_API_KEY",
