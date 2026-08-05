@@ -7996,13 +7996,6 @@ def add_agent_to_config(config, dept_id, dept_info):
     # state so a box is never falsely marked clean. When the route-task MCP tool
     # is present, move `exec` from CEO_TOOL_ALLOW into CEO_TOOL_DENY.
     CEO_TOOL_DENY = [
-        "write",
-        "edit",
-        "apply_patch",
-        "browser",
-        "canvas",
-        "image",
-        "process",
         # Belt-and-suspenders MCP deny by name-glob, in case a gateway version
         # does not honor tools.byProvider. Denies always win and are restrict-only.
         "ghl-community-mcp__*",
