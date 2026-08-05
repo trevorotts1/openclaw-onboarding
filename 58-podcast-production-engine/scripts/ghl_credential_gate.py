@@ -84,6 +84,10 @@ EXIT_RATE_FLOOR = 5
 # they are separate credentials and must never satisfy this gate.
 # --------------------------------------------------------------------------- #
 PIT_ALIASES: List[str] = [
+    # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
+    # CJxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
+    # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+    "PODCAST_ENGINE_GHL_PIT",
     # 11 canonical, first hit wins, canonical name first.
     "GOHIGHLEVEL_API_KEY",
     "GHL_API_KEY",
@@ -108,6 +112,9 @@ PIT_ALIASES: List[str] = [
 ]
 
 LOCATION_ALIASES: List[str] = [
+    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
+    # Checked FIRST so the engine tenant always wins over generic ids.
+    "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",
     "GOHIGHLEVEL_LOCATION_ID",
     "LOCATION_ID",

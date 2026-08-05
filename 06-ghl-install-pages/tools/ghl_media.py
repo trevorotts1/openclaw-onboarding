@@ -44,15 +44,16 @@ KEYS — OPERATOR'S OWN, NEVER A CLIENT'S
 ``KIE_API_KEY`` is read by the reused ``kie_generate.py`` from the environment or
 the standard env stores. The GHL LOCATION Private Integration Token (PIT) is read
 by ``resolve_location_pit`` from EVERY known LOCATION-class env-var alias
-(``GOHIGHLEVEL_API_KEY`` preferred → ``GHL_API_KEY`` → ``GOHIGHLEVEL_LOCATION_PIT``
-→ ``GHL_LOCATION_PIT``) AND — when the live env is empty — the canonical env
-STORES (``~/.openclaw/secrets/.env`` → ``~/clawd/secrets/.env`` →
-``~/.openclaw/workspace/.env``), so a clean agent shell can never false-fail on a
-token that physically lives in the store. It NEVER falls back to an AGENCY-class
-PIT (``*_AGENCY_PIT``/``*_AGENCY_API_KEY``) — agency tokens 401 for media. The
-location id is resolved the same way by ``resolve_location_id``
-(``GOHIGHLEVEL_LOCATION_ID`` → ``GHL_LOCATION_ID`` → the ``*_ALLOWED_LOCATION_IDS``
-single-id fallbacks → the same stores). In THIS phase the keys are the operator's
+(``PODCAST_ENGINE_GHL_PIT`` preferred → ``GOHIGHLEVEL_API_KEY`` → ``GHL_API_KEY`` →
+``GOHIGHLEVEL_LOCATION_PIT`` → ``GHL_LOCATION_PIT``) AND — when the live env is
+empty — the canonical env STORES (``~/.openclaw/secrets/.env`` →
+``~/clawd/secrets/.env`` → ``~/.openclaw/workspace/.env``), so a clean agent shell
+can never false-fail on a token that physically lives in the store. It NEVER falls
+back to an AGENCY-class PIT (``*_AGENCY_PIT``/``*_AGENCY_API_KEY``) — agency tokens
+401 for media. The location id is resolved the same way by ``resolve_location_id``
+(``PODCAST_ENGINE_GHL_LOCATION_ID`` → ``GOHIGHLEVEL_LOCATION_ID`` →
+``GHL_LOCATION_ID`` → the ``*_ALLOWED_LOCATION_IDS`` single-id fallbacks → the
+same stores). In THIS phase the keys are the operator's
 own fixture keys; a client key must never appear here.
 
 NO-FABRICATION / FAIL-LOUD
@@ -172,6 +173,7 @@ _KIE_GENERATE_RELPATH = os.path.join(
 # short alias; GOHIGHLEVEL_LOCATION_PIT / GHL_LOCATION_PIT are explicit names for
 # the same LOCATION token.
 _PIT_ENV_NAMES = (
+    "PODCAST_ENGINE_GHL_PIT",          # the Podcast Engine's OWN Location PIT — checked FIRST so the engine tenant always wins over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard)
     "GOHIGHLEVEL_API_KEY",             # preferred — the LOCATION PIT (medias.write); matches openclaw.json + upload-ghl-media.sh
     "GHL_API_KEY",                     # legacy short alias for the same LOCATION PIT
     "GHL_PIT",                         # canonical short alias
@@ -197,6 +199,7 @@ _AGENCY_PIT_ENV_NAMES = (
 
 # Canonical GHL location-id env-var aliases, in preference order.
 _LOCATION_ENV_NAMES = (
+    "PODCAST_ENGINE_GHL_LOCATION_ID",   # the Podcast Engine's OWN subaccount location id — checked FIRST so the engine tenant always wins
     "GOHIGHLEVEL_LOCATION_ID",   # preferred — matches openclaw.json + secrets/.env
     "GHL_LOCATION_ID",           # short alias
     "GOHIGHLEVEL_ALLOWED_LOCATION_IDS",  # single-location allowlist fallback (first id)
@@ -315,8 +318,9 @@ def resolve_location_pit(env: dict | None = None, *, search_stores: bool = True)
 
     Resolution order (REAL research before any honest-fail):
       1. The live process environment, across EVERY LOCATION-class alias in
-         ``_PIT_ENV_NAMES`` (``GOHIGHLEVEL_API_KEY`` preferred, then ``GHL_API_KEY``,
-         then the explicit ``*_LOCATION_PIT`` names) — preferred alias wins.
+         ``_PIT_ENV_NAMES`` (``PODCAST_ENGINE_GHL_PIT`` preferred, then
+         ``GOHIGHLEVEL_API_KEY``, then ``GHL_API_KEY``, then the explicit
+         ``*_LOCATION_PIT`` names) — preferred alias wins.
          A placeholder-shaped value (see ``_is_placeholder``) is SKIPPED here, not
          returned: on a real box the live process env is seeded from openclaw.json
          ``env.vars`` at gateway launch, and those config copies are placeholders BY
