@@ -1303,10 +1303,16 @@ CEO_TOOL_ALLOW = [
     "sessions_send", "sessions_list", "sessions_history",
     # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
     # the CEO routes by CALLING it (structured tool call, no shell) — that presence
-    # is what clears verify-routing.sh G7. exec is RETAINED (per G1's decision in
-    # hooks/lib-ceo-tool-gate.sh), NOT removed: it stays ONLY as the exec channel for
-    # the two anchored helpers (route-presentation.sh + mc-route.sh); the intent-gate
-    # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+    # is what clears verify-routing.sh G7. exec is RETAINED, NOT removed: it is the
+    # exec channel for the two anchored helpers (route-presentation.sh + mc-route.sh).
+    #
+    # ⚠ CORRECTION 2026-08-05: an earlier version of this comment claimed "the
+    # intent-gate default-denies every other exec". THAT IS NO LONGER TRUE and must
+    # not be relied on. The PreToolUse intent-gate (hooks/ceo-intent-gate.sh) was
+    # DELETED from the repo and un-wired fleet-wide with the rest of the CEO gate,
+    # so there is currently NO command-level exec restriction — only the
+    # {security,ask} config-layer exec policy, which cannot allowlist by command.
+    # KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "mc-route__route_task",
     "exec",
     # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow is
@@ -1318,6 +1324,24 @@ CEO_TOOL_ALLOW = [
     # Additive — G7 still passes. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "memory_search", "memory_get",
     "cron", "gateway", "nodes",
+    # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ─────────────────
+    # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+    # exactly as effectively as one named in tools.deny. The CEO gate that justified
+    # omitting them is GONE (deny set retired, PreToolUse intent-gate deleted, hooks
+    # un-wired) — so the omission is now a vestigial gate that still produces the
+    # original failure.
+    #
+    # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+    # compaction. With no write tool, the agent cannot comply and cannot stop trying —
+    # it re-reads an empty file and retries, looping for up to 163 minutes per turn
+    # and swallowing the owner's Telegram messages. Two weeks of outage. Removing the
+    # deny alone did NOT fix it; the allowlist omission reproduced it verbatim.
+    #
+    # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+    # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+    # prompt-injection plugin), NEVER a tool removal. Taking write away does not make
+    # the CEO route — it makes it hang.
+    "write", "edit",
 ]
 CEO_MCP_DENY = {
     "ghl-community-mcp": {"deny": ["*"]},

@@ -4,9 +4,14 @@
 #
 # THE single source of truth for the two CEO tool-policy postures:
 #
-#   GATED      (default): the orchestrator is a pure router. Production tools
-#              (write/edit/apply_patch/browser/canvas/image/process + ALL GHL MCP
-#              tools) are DENIED. Only routing/conversation tools are allowed.
+#   GATED      (default): ⚠ NO LONGER A PRODUCTION-TOOL GATE (2026-08-05). This
+#              posture once DENIED write/edit/apply_patch/browser/canvas/image/
+#              process. That deny is RETIRED — it caused the write-deny/memoryFlush
+#              loop. What survives under this name is ONLY the GHL MCP deny
+#              (CEO_GATE_MCP_PROVIDERS, keeping the router out of client CRM) plus
+#              the CEO_GATE_ALLOW_TOOLS grant list below. Routing-to-departments is
+#              now behavioral DOCTRINE (the ceo-routing-doctrine prompt-injection
+#              plugin), not a tool removal.
 #
 #   CONSENTED  (owner carve-out): the production denies are LIFTED so the owner
 #              can tell the CEO to do the work directly. Because OpenClaw tool
@@ -24,14 +29,14 @@
 #     origin; keep the two in sync (one test asserts they match — see
 #     scripts/test-ceo-tool-gate.sh).
 #
-#   SYNC NOTE (mc-route ship): CEO_GATE_ALLOW_TOOLS now carries the shipped
-#   `mc-route__route_task` routing tool (below). This canonical source LEADS; the
-#   write-sites that actually stamp the config onto boxes — build-workforce.py and
-#   scripts/apply-routing-fix.sh / scripts/apply-fleet-standards.sh (whose inline
-#   allow lists still read `"exec"  # INTERIM — replace with mc-route__route_task
-#   once that MCP tool ships`) — must be re-synced by their owners to add
-#   mc-route__route_task so a real box's G7 clears. Until then boxes stay in the
-#   PRE-EXISTING INTERIM state (no regression). See docs/MC-ROUTE.md.
+#   SYNC NOTE: CEO_GATE_ALLOW_TOOLS carries the shipped `mc-route__route_task`
+#   routing tool (below). This canonical source LEADS; the three write-sites that
+#   actually stamp the config onto boxes — 23-ai-workforce-blueprint/scripts/
+#   build-workforce.py, scripts/apply-routing-fix.sh and
+#   scripts/apply-fleet-standards.sh — carry byte-identical copies of this list and
+#   are RE-SYNCED as of 2026-08-05 (mc-route__route_task present; write + edit
+#   granted). scripts/test-ceo-tool-gate.sh asserts all four match, so a drift in
+#   any one of them fails CI. See docs/MC-ROUTE.md.
 #
 # The HARD CONSTRAINT this satisfies: never strip the CEO's abilities outright.
 # GATED is a gate, not a removal — CONSENTED restores everything.
@@ -106,6 +111,22 @@ CEO_GATE_ALLOW_TOOLS=(
   # Operational tools the orchestrator needs to run itself (schedule heartbeats,
   # introspect the gateway/nodes) — NOT production content tools.
   "cron" "gateway" "nodes"
+  # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ────────────────
+  # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+  # exactly as effectively as one named in tools.deny. Emptying CEO_GATE_DENY_TOOLS
+  # above was therefore NOT sufficient — this list still withheld `write`, which
+  # reproduced the outage verbatim after the deny was retired.
+  #
+  # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+  # compaction. With no write tool, the agent cannot comply and cannot stop trying —
+  # it re-reads an empty file and retries, looping for up to 163 minutes per turn
+  # and swallowing the owner's Telegram messages. Two weeks of outage.
+  #
+  # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+  # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+  # prompt-injection plugin), NEVER a tool removal. Taking write away does not make
+  # the CEO route — it makes it hang.
+  "write" "edit"
 )
 
 # GHL MCP servers to deny by provider in the GATED posture (both live ids).

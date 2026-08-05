@@ -3,6 +3,45 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.5.0] - 2026-08-05
+
+**The post-update restore-verify script lands in the skill.**
+
+`openclaw update` reinstalls node_modules and silently reverts the dist patch that makes
+a runaway tool loop actually abort; it can also regenerate the gateway service-env file.
+Until now the only record of how to put that protection back was a scratch file. Two new
+files:
+
+- `scripts/openclaw-loop-protection-restore.sh` — detects all nine pieces of the
+  protection stack (dist runaway-abort patch, the Telegram spooled-handler turn timeout,
+  memory-flush journaling and its byte-exact prompt hints, the six loop-detection
+  thresholds plus any per-agent override that would silently beat them, the daily
+  memory-stub guard and its cron registration, the `ceo-routing-doctrine` plugin, and
+  that the retired CEO intent-gate has not resurrected). Read-only by default; `--apply`
+  repairs only what is safe to repair. Exit 0 clean / 3 drift / 4 hard fail / 2 usage.
+  It NEVER restarts the gateway — it says a restart is needed and stops.
+  Fail-loud by design: if a dist anchor is neither found nor already-applied it reports
+  `UPSTREAM_CHANGED` and refuses to patch rather than guessing.
+  Section 9 also flags the failure shape that caused the two-week outage from the other
+  direction — a `tools.allow` list that OMITS `write` — and deliberately does not
+  auto-fix it, because an agent's tool grants are the operator's call.
+- `tests/secret-leak-test.sh` — builds a fake HOME whose secret-bearing files are stuffed
+  with unique tracer strings, stubs the `openclaw` CLI so every config read returns
+  tracer-laden output, runs the restore script in BOTH modes, and asserts no tracer
+  reaches stdout, stderr, or any written file. Carries its own 4/4 instrument control so a
+  pass cannot be a silently-broken test. The one sanctioned exception is the mode-600
+  backup of the secrets file itself, which is asserted to be a faithful copy.
+
+Hardening applied before commit: two predictable `/tmp/<name>.$$` staging paths were
+replaced with `mktemp`. A PID-named path in a world-writable directory is a
+symlink-clobber target, and one of those values is fed straight back into
+`openclaw config set`.
+
+Portability: every path derives from `$HOME` or the resolved `openclaw` binary. No
+hostnames, client names, chat IDs, tokens, or machine-specific absolute paths — clean
+under all three repo scanners (client-identifiers, secrets, json-exports), each run
+with its own `--self-test` control.
+
 ## [0.4.0] - 2026-08-05
 
 **D5 - the first detector in this skill that measures a STOCK instead of a flow.**

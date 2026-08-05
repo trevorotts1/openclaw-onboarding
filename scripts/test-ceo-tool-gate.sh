@@ -67,7 +67,12 @@ EXPECT_DENY=""
 # an explicit per-agent tools.allow is a HARD allowlist, so omitting them stripped
 # the plugin's tool calls ("No callable tools remain ..."). Keep sorted to match
 # the lib's sorted CEO_GATE_ALLOW_TOOLS.
-EXPECT_ALLOW="cron discord exec gateway mc-route__route_task memory_get memory_search message nodes read sessions_history sessions_list sessions_send slack telegram web_fetch web_search"
+# LOOP FIX 2026-08-05: `write` and `edit` are now REQUIRED members. An explicit
+# tools.allow is a HARD allowlist, so omitting write denied it exactly as the
+# retired deny did — memoryFlush then ordered a memory write the agent could not
+# perform, and it looped. Emptying EXPECT_DENY was not sufficient; this set is the
+# other half of the same fix. Removing them here re-creates the two-week outage.
+EXPECT_ALLOW="cron discord edit exec gateway mc-route__route_task memory_get memory_search message nodes read sessions_history sessions_list sessions_send slack telegram web_fetch web_search write"
 EXPECT_MCP="ghl-community-mcp ghl-mcp"
 
 # ── 1. lib-ceo-tool-gate.sh is the reference; extract its canonical sets ───────
@@ -99,17 +104,71 @@ for tok in "ghl-community-mcp__\*" "ghl-mcp__\*"; do
 done
 _ok "surviving deny tokens (GHL MCP globs) present across build-workforce.py / apply-routing-fix.sh / apply-fleet-standards.sh"
 
-# ── 2b. The RETIRED production deny must NOT come back to any write-site ───────
-# This is the anti-regression assertion that replaces the old presence check: if
-# a future edit re-adds the write-deny to a stamper, the outage returns silently.
-# Scoped to the CEO deny literals so unrelated uses of these words do not trip it.
-for f in "$APPLY_FIX" "$APPLY_STD"; do
-  if grep -nE '^[[:space:]]*"?(write|edit|apply_patch)"?,' "$f" \
-       | grep -qvE 'GENERATION|allow' ; then
-    _bad "RETIRED production deny token reappeared in $(basename "$f") — this re-creates the write-deny loop"
+# ── 2b. Deny must stay retired AND write/edit must stay GRANTED ────────────────
+# Both halves of the same outage, asserted per write-site:
+#   (a) no retired production tool may reappear in a CEO_TOOL_DENY block;
+#   (b) `write` and `edit` MUST be present in every CEO_TOOL_ALLOW block. An
+#       explicit tools.allow is a HARD allowlist, so dropping them denies them
+#       exactly as the retired deny did and re-creates the memoryFlush loop.
+#
+# PRECISION NOTE (2026-08-05): this used to be a blunt single-line scan,
+#   grep -nE '^[[:space:]]*"?(write|edit|apply_patch)"?,' | grep -qvE 'GENERATION|allow'
+# which cannot tell a deny array from an allow array — it excluded a hit only when
+# the literal word "allow" happened to sit on that same line. The moment write/edit
+# were legitimately added to CEO_TOOL_ALLOW it fired a FALSE FAILURE. It now parses
+# the named DENY and ALLOW blocks and inspects their actual members.
+#
+# BASH 3.2 NOTE: the checker is written to a temp file and invoked, NOT inlined as
+# a heredoc inside $( ). macOS /bin/bash 3.2 scans a command substitution for its
+# matching ")" and mis-parses the quotes/parens in the Python body — "unexpected
+# EOF while looking for matching `)'" — before the script ever runs.
+_CHK_PY="$(mktemp)"
+cat >"$_CHK_PY" <<'PY'
+import os, re, sys
+RETIRED  = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+REQUIRED = {"write", "edit"}
+src = open(sys.argv[1], encoding="utf-8").read()
+
+def block(name):
+    m = re.search(r'^[ \t]*%s\s*=\s*\[(.*?)^[ \t]*\]' % name, src, re.S | re.M)
+    return m.group(1) if m else None
+
+def toks(body):
+    if body is None:
+        return None
+    body = re.sub(r'#[^\n]*', '', body)          # drop comments first
+    return {a or b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', body)}
+
+problems, seen_allow = [], False
+for n in ("CEO_TOOL_DENY", "_CEO_TOOL_DENY"):
+    d = toks(block(n))
+    if d is None:
+        continue
+    bad = sorted(RETIRED & d)
+    if bad:
+        problems.append("%s re-added retired deny: %s" % (n, ",".join(bad)))
+for n in ("CEO_TOOL_ALLOW", "_CEO_TOOL_ALLOW"):
+    a = toks(block(n))
+    if a is None:
+        continue
+    seen_allow = True
+    missing = sorted(REQUIRED - a)
+    if missing:
+        problems.append("%s missing required grant: %s" % (n, ",".join(missing)))
+if not seen_allow:
+    problems.append("no CEO_TOOL_ALLOW block found — parser drift, not a clean file")
+print("; ".join(problems) if problems else "OK")
+PY
+
+for f in "$BUILD_WF" "$APPLY_FIX" "$APPLY_STD"; do
+  _res="$(python3 "$_CHK_PY" "$f" 2>&1)" || _res="PARSE_ERROR (python3 exited non-zero): $_res"
+  if [ "$_res" = "OK" ]; then
+    _ok "2b: $(basename "$f") — deny stays retired, write+edit stay granted"
+  else
+    _bad "2b: $(basename "$f") — $_res"
   fi
 done
-_ok "2b: retired production deny (write/edit/apply_patch) has NOT reappeared in the stampers"
+rm -f "$_CHK_PY"
 
 # Each site must deny BOTH GHL MCP providers.
 for prov in "ghl-community-mcp" "ghl-mcp"; do
