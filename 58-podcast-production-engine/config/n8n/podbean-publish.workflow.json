@@ -366,7 +366,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// PURPOSE: Package cover image binary for Podbean S3 upload\n// Detects image format (JPEG or PNG) from binary mimeType  --  does NOT assume JPEG\n// Podbean + Apple Podcasts accept JPEG and PNG only. WebP, GIF, and other formats\n// are rejected by Apple Podcasts downstream so we fail fast here with a clear message.\n// Calculates byte filesize for the uploadAuthorize request.\n// Captures and carries forward the audio file_key as media_key so Set Upload Keys\n// can access it cleanly without a long back-reference chain.\n\nconst imageOutput = $input.first();\nconst imageBinary = imageOutput.binary?.image;\n\nif (!imageBinary) {\n  throw new Error('No image binary found. Verify the GHL image_url is publicly accessible and returns a valid image file.');\n}\n\n// Detect format from MIME type reported by the download\nconst mimeType = (imageBinary.mimeType || '').toLowerCase();\n\nlet imageContentType;\nlet imageExtension;\n\nif (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {\n  imageContentType = 'image/jpeg';\n  imageExtension = 'jpg';\n} else if (mimeType === 'image/png') {\n  imageContentType = 'image/png';\n  imageExtension = 'png';\n} else {\n  // WebP, GIF, TIFF, BMP, AVIF etc. are all rejected by Apple Podcasts\n  // Podbean enforces Apple's spec  --  these will fail at distribution\n  throw new Error(\n    'Unsupported image format: ' + mimeType + '. ' +\n    'Podbean and Apple Podcasts accept JPEG (.jpg) and PNG (.png) only. ' +\n    'WebP, GIF, and other formats will be rejected. Please re-export the cover art as JPEG or PNG and re-upload to GHL.'\n  );\n}\n\nconst episode_number = $('Set Config  --  Consolidate Workflow Variables').first().json.episode_number;\nconst access_token = $('Set Config  --  Consolidate Workflow Variables').first().json.access_token;\n\n// Carry audio file_key forward  --  it becomes media_key in the publish call\nconst media_key = $('Podbean  --  uploadAuthorize Audio').first().json.file_key;\n\n// Calculate byte size from base64 binary\nconst buffer = Buffer.from(imageBinary.data, 'base64');\nconst filesize = buffer.length;\n\nconst paddedEpisode = String(episode_number).padStart(4, '0');\n\nreturn [{\n  json: {\n    imageFilename: `episode_${paddedEpisode}_cover.${imageExtension}`,\n    imageFilesize: filesize,\n    imageContentType,\n    access_token,\n    media_key\n  },\n  binary: { image: imageBinary }\n}];"
+        "jsCode": "// PURPOSE: Package cover image binary for Podbean S3 upload\n// Detects image format (JPEG or PNG) from binary mimeType  --  does NOT assume JPEG\n// Podbean + Apple Podcasts accept JPEG and PNG only. WebP, GIF, and other formats\n// are rejected by Apple Podcasts downstream so we fail fast here with a clear message.\n// Calculates byte filesize for the uploadAuthorize request.\n// Captures and carries forward the audio file_key as media_key so Set Upload Keys\n// can access it cleanly without a long back-reference chain.\n\nconst imageOutput = $input.first();\nconst imageBinary = imageOutput.binary?.image;\n\nif (!imageBinary) {\n  throw new Error('No image binary found. Verify the GHL image_url is publicly accessible and returns a valid image file.');\n}\n\n// Detect format from MIME type reported by the download\nconst mimeType = (imageBinary.mimeType || '').toLowerCase();\n\nlet imageContentType;\nlet imageExtension;\n\nif (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {\n  imageContentType = 'image/jpeg';\n  imageExtension = 'jpg';\n} else if (mimeType === 'image/png') {\n  imageContentType = 'image/png';\n  imageExtension = 'png';\n} else {\n  // WebP, GIF, TIFF, BMP, AVIF etc. are all rejected by Apple Podcasts\n  // Podbean enforces Apple's spec  --  these will fail at distribution\n  throw new Error(\n    'Unsupported image format: ' + mimeType + '. ' +\n    'Podbean and Apple Podcasts accept JPEG (.jpg) and PNG (.png) only. ' +\n    'WebP, GIF, and other formats will be rejected. Please re-export the cover art as JPEG or PNG and re-upload to GHL.'\n  );\n}\n\nconst episode_number = $('Set Config  --  Consolidate Workflow Variables').first().json.episode_number;\nconst access_token = $('Set Config  --  Consolidate Workflow Variables').first().json.access_token;\n\n// Carry audio file_key forward  --  it becomes media_key in the publish call\nconst media_key = $('Podbean  --  uploadAuthorize Audio').first().json.file_key;\n\n// U2.1 FAIL-CLOSED IMAGE SUBSTANCE GATE (2026-08-04, master plan unit 2.1):\n// validate bytes BEFORE packaging for the Podbean S3 upload, so an empty / non-square /\n// undersized / oversized / >2MB cover can never be uploaded or published.\n// Podbean cover spec: 1:1 square, min 1500x1500px, max 3000x3000px, JPEG/PNG, <= 2 MB.\n\nconst MIN_IMAGE_SIDE = 1500;\nconst MAX_IMAGE_SIDE = 3000;\nconst MAX_IMAGE_BYTES = 2 * 1024 * 1024; // 2 MB Podbean hard cap\n\n// Calculate byte size from base64 binary\nconst buffer = Buffer.from(imageBinary.data, 'base64');\nconst filesize = buffer.length;\nif (filesize > MAX_IMAGE_BYTES) {\n  throw new Error('IMAGE SUBSTANCE GATE FAILED: cover image is ' + filesize + ' bytes (> ' + MAX_IMAGE_BYTES + ' = 2 MB Podbean cap). Re-export the cover under 2 MB. No Podbean upload was attempted.');\n}\n\n// Parse real image dimensions from the binary header (no external library needed).\n// JPEG: SOF0..SOF15 markers carry height (2 bytes) then width (2 bytes).\n// PNG: 8-byte signature then IHDR width (4 bytes) then height (4 bytes).\nlet width = 0, height = 0;\nconst sig = buffer.slice(0, 8);\nif (sig[0] === 0x89 && sig[1] === 0x50 && sig[2] === 0x4e && sig[3] === 0x47) {\n  // PNG\n  width = buffer.readUInt32BE(16);\n  height = buffer.readUInt32BE(20);\n} else if (sig[0] === 0xff && sig[1] === 0xd8) {\n  // JPEG: scan markers for SOF\n  let off = 2;\n  while (off + 9 < buffer.length) {\n    if (buffer[off] !== 0xff) { off++; continue; }\n    const marker = buffer[off + 1];\n    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {\n      height = buffer.readUInt16BE(off + 5);\n      width = buffer.readUInt16BE(off + 7);\n      break;\n    }\n    const segLen = buffer.readUInt16BE(off + 2);\n    if (segLen < 2) break;\n    off += 2 + segLen;\n  }\n}\nif (width < MIN_IMAGE_SIDE || height < MIN_IMAGE_SIDE) {\n  throw new Error('IMAGE SUBSTANCE GATE FAILED: cover image is ' + (width || '?') + 'x' + (height || '?') + 'px -- below the ' + MIN_IMAGE_SIDE + 'x' + MIN_IMAGE_SIDE + 'px Podbean minimum. Re-generate the cover at >= ' + MIN_IMAGE_SIDE + 'px. No Podbean upload was attempted.');\n}\nif (width > MAX_IMAGE_SIDE || height > MAX_IMAGE_SIDE) {\n  throw new Error('IMAGE SUBSTANCE GATE FAILED: cover image is ' + width + 'x' + height + 'px -- above the ' + MAX_IMAGE_SIDE + 'x' + MAX_IMAGE_SIDE + 'px Podbean maximum. No Podbean upload was attempted.');\n}\nif (width !== height) {\n  throw new Error('IMAGE SUBSTANCE GATE FAILED: cover image is ' + width + 'x' + height + 'px -- not square (Podbean requires 1:1). Re-generate a square cover. No Podbean upload was attempted.');\n}\n\nconst paddedEpisode = String(episode_number).padStart(4, '0');\n\nreturn [{\n  json: {\n    imageFilename: `episode_${paddedEpisode}_cover.${imageExtension}`,\n    imageFilesize: filesize,\n    imageContentType,\n    access_token,\n    media_key\n  },\n  binary: { image: imageBinary }\n}];"
       },
       "id": "e49c8579-594e-4069-99b4-dab9fcd0450c",
       "name": "Prepare Image Upload  --  Package for Podbean S3",
@@ -718,7 +718,7 @@
         1420
       ],
       "parameters": {
-        "jsCode": "// PURPOSE: Fail-closed entry guard (GK-01 / U63). Runs immediately after the webhook,\n// before ANY Podbean API call (OAuth, fetch, upload, publish), so a payload missing a\n// required field -- most notably image_url, the root cause of the 2026-07-12T03:04Z\n// failure -- never reaches Podbean and audio is never uploaded ahead of a later crash.\n// Replaces the old failure mode where the workflow crashed deep in the pipeline\n// (Download Image node, after audio was already uploaded to Podbean S3).\n//\n// U6 EXTENSION (2026-07-16): upgrades the entry guard to payload contract v2 (spec\n// Section 3). Appended to this lineage, not a rewrite. Adds on top of the original\n// seven required fields: (1) contract_version must be the literal string \"2\" -- wrong\n// or missing value is refused with its own distinct reason so v3 payloads can be\n// introduced later without silently passing this guard; (2) client_last_name and\n// idempotency_key are now REQUIRED (client_last_name feeds U5's roster lookup;\n// idempotency_key feeds U8's server-side idempotency ledger -- both are already read\n// directly off the webhook body by downstream nodes; this guard now also refuses early\n// if either is absent); (3) audio_url/image_url must be https:// specifically -- plain\n// http:// is no longer tolerated (was previously accepted by the ^https?:// check);\n// (4) title <= 200 chars, description <= 3000 chars (spec Section 3 rows 6-7). Output\n// shape for existing consumers is UNCHANGED (guard_ok, guard_error,\n// guard_missing_fields, guard_bad_url_fields, client_email, title) with two new keys\n// appended: guard_contract_version_mismatch, guard_length_errors.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\n\nconst REQUIRED = ['podcast_id', 'audio_url', 'image_url', 'title', 'description', 'publish_date', 'client_email', 'client_last_name', 'idempotency_key'];\nconst missing = REQUIRED.filter((key) => {\n  const v = body[key];\n  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\n});\n\nconst URL_FIELDS = ['audio_url', 'image_url'];\nconst badUrls = URL_FIELDS.filter((key) => {\n  const v = body[key];\n  return typeof v === 'string' && v.trim() !== '' && !/^https:\\/\\//i.test(v);\n});\n\n// U6: contract_version is checked separately from \"missing\" so a WRONG value (present\n// but not \"2\") gets its own refusal reason distinct from an ABSENT field.\nconst cv = body.contract_version;\nconst cvPresent = !(cv === null || cv === undefined || (typeof cv === 'string' && cv.trim() === ''));\nconst contractVersionMismatch = cvPresent && String(cv).trim() !== '2';\nif (!cvPresent && !missing.includes('contract_version')) missing.push('contract_version');\n\n// U6: title/description length caps (spec Section 3 rows 6-7).\nconst lengthErrors = [];\nif (typeof body.title === 'string' && body.title.length > 200) {\n  lengthErrors.push('title exceeds 200 chars (' + body.title.length + ')');\n}\nif (typeof body.description === 'string' && body.description.length > 3000) {\n  lengthErrors.push('description exceeds 3000 chars (' + body.description.length + ')');\n}\n\nconst guard_ok = missing.length === 0 && badUrls.length === 0 && !contractVersionMismatch && lengthErrors.length === 0;\n\nlet guard_error = '';\nif (!guard_ok) {\n  const parts = [];\n  if (missing.length) parts.push('missing required field(s): ' + missing.join(', '));\n  if (badUrls.length) parts.push('invalid (must be https://) URL in field(s): ' + badUrls.join(', '));\n  if (contractVersionMismatch) parts.push('unsupported contract_version: \"' + cv + '\" (only \"2\" is accepted)');\n  if (lengthErrors.length) parts.push(lengthErrors.join('; '));\n  guard_error = 'Podcast publish REFUSED at entry guard: ' + parts.join('; ') + '. No Podbean call was made; no audio or image was uploaded.';\n}\n\nreturn [{\n  json: {\n    guard_ok,\n    guard_error,\n    guard_missing_fields: missing,\n    guard_bad_url_fields: badUrls,\n    guard_contract_version_mismatch: contractVersionMismatch,\n    guard_length_errors: lengthErrors,\n    client_email: body.client_email || '',\n    title: body.title || '(untitled)'\n  }\n}];"
+        "jsCode": "// PURPOSE: Fail-closed entry guard (GK-01 / U63). Runs immediately after the webhook,\n// before ANY Podbean API call (OAuth, fetch, upload, publish), so a payload missing a\n// required field -- most notably image_url, the root cause of the 2026-07-12T03:04Z\n// failure -- never reaches Podbean and audio is never uploaded ahead of a later crash.\n// Replaces the old failure mode where the workflow crashed deep in the pipeline\n// (Download Image node, after audio was already uploaded to Podbean S3).\n//\n// U6 EXTENSION (2026-07-16): upgrades the entry guard to payload contract v2 (spec\n// Section 3). Appended to this lineage, not a rewrite. Adds on top of the original\n// seven required fields: (1) contract_version must be the literal string \"2\" -- wrong\n// or missing value is refused with its own distinct reason so v3 payloads can be\n// introduced later without silently passing this guard; (2) client_last_name and\n// idempotency_key are now REQUIRED (client_last_name feeds U5's roster lookup;\n// idempotency_key feeds U8's server-side idempotency ledger -- both are already read\n// directly off the webhook body by downstream nodes; this guard now also refuses early\n// if either is absent); (3) audio_url/image_url must be https:// specifically -- plain\n// http:// is no longer tolerated (was previously accepted by the ^https?:// check);\n// (4) title <= 200 chars, description <= 3000 chars (spec Section 3 rows 6-7). Output\n// shape for existing consumers is UNCHANGED (guard_ok, guard_error,\n// guard_missing_fields, guard_bad_url_fields, client_email, title) with two new keys\n// appended: guard_contract_version_mismatch, guard_length_errors.\n\nconst wh = $('Webhook  --  Receive Podcast Payload').first().json;\nconst body = wh.body || wh;\n\nconst REQUIRED = ['podcast_id', 'audio_url', 'image_url', 'title', 'description', 'publish_date', 'client_email', 'client_last_name', 'idempotency_key'];\nconst missing = REQUIRED.filter((key) => {\n  const v = body[key];\n  return v === null || v === undefined || (typeof v === 'string' && v.trim() === '');\n});\n\nconst URL_FIELDS = ['audio_url', 'image_url'];\nconst badUrls = URL_FIELDS.filter((key) => {\n  const v = body[key];\n  return typeof v === 'string' && v.trim() !== '' && !/^https:\\/\\//i.test(v);\n});\n\n// U6: contract_version is checked separately from \"missing\" so a WRONG value (present\n// but not \"2\") gets its own refusal reason distinct from an ABSENT field.\nconst cv = body.contract_version;\nconst cvPresent = !(cv === null || cv === undefined || (typeof cv === 'string' && cv.trim() === ''));\nconst contractVersionMismatch = cvPresent && String(cv).trim() !== '2';\nif (!cvPresent && !missing.includes('contract_version')) missing.push('contract_version');\n\n// U6: title/description length caps (spec Section 3 rows 6-7).\n// U2.2 FAIL-CLOSED FLOOR (2026-08-04, master plan unit 2.2): the description must be a\n// REAL show note, not a stub. Adds a minimum-length floor (>= 150 chars after trim),\n// a title-vs-description check (kills the title-substitution fallback at the n8n layer),\n// and a placeholder denylist so a placeholder description/title can never pass the gate.\nconst MIN_DESC_LEN = 150;\nconst PLACEHOLDER_DENYLIST = ['tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba', 'lorem', 'lorem ipsum', 'placeholder', 'todo', 'test', 'coming soon', 'soon'];\n\nconst lengthErrors = [];\nif (typeof body.title === 'string' && body.title.length > 200) {\n  lengthErrors.push('title exceeds 200 chars (' + body.title.length + ')');\n}\nif (typeof body.description === 'string' && body.description.length > 3000) {\n  lengthErrors.push('description exceeds 3000 chars (' + body.description.length + ')');\n}\n\n// U2.2: minimum description floor (trimmed length).\nconst descTrimmed = typeof body.description === 'string' ? body.description.trim() : '';\nconst descriptionTooShort = descTrimmed.length < MIN_DESC_LEN;\n\n// U2.2: title must differ from the description after trimming (kills the\n// 'DESCRIPTION=\"$FINAL_TITLE\"' substitution path at the n8n layer).\nconst titleTrimmed = typeof body.title === 'string' ? body.title.trim() : '';\nconst titleEqualsDescription = titleTrimmed !== '' && descTrimmed === titleTrimmed;\n\n// U2.2: placeholder denylist for title + description (FIX-RESCUE-19 set + lorem etc.).\nfunction isPlaceholder(text) {\n  const t = (text || '').trim().toLowerCase();\n  if (t === '') return false;\n  return PLACEHOLDER_DENYLIST.some((p) => t === p || t === p + '.' || t === p + '...');\n}\nconst titlePlaceholder = isPlaceholder(titleTrimmed);\nconst descPlaceholder = isPlaceholder(descTrimmed);\n\n// U2.2: combine length + floor + identity + placeholder into one guard.\nconst semanticErrors = [];\nif (descriptionTooShort) semanticErrors.push('description too short (' + descTrimmed.length + ' chars, minimum ' + MIN_DESC_LEN + ')');\nif (titleEqualsDescription) semanticErrors.push('title must differ from the description (title-substitution is refused)');\nif (titlePlaceholder) semanticErrors.push('title is a placeholder value: \"' + titleTrimmed + '\"');\nif (descPlaceholder) semanticErrors.push('description is a placeholder value: \"' + descTrimmed + '\"');\n\nconst guard_ok = missing.length === 0 && badUrls.length === 0 && !contractVersionMismatch && lengthErrors.length === 0 && semanticErrors.length === 0;\n\nlet guard_error = '';\nif (!guard_ok) {\n  const parts = [];\n  if (missing.length) parts.push('missing required field(s): ' + missing.join(', '));\n  if (badUrls.length) parts.push('invalid (must be https://) URL in field(s): ' + badUrls.join(', '));\n  if (contractVersionMismatch) parts.push('unsupported contract_version: \"' + cv + '\" (only \"2\" is accepted)');\n  if (lengthErrors.length) parts.push(lengthErrors.join('; '));\n  if (semanticErrors.length) parts.push(semanticErrors.join('; '));\n  guard_error = 'Podcast publish REFUSED at entry guard: ' + parts.join('; ') + '. No Podbean call was made; no audio or image was uploaded.';\n}\n\nreturn [{\n  json: {\n    guard_ok,\n    guard_error,\n    guard_missing_fields: missing,\n    guard_bad_url_fields: badUrls,\n    guard_contract_version_mismatch: contractVersionMismatch,\n    guard_length_errors: lengthErrors,\n    guard_semantic_errors: semanticErrors,\n    guard_description_too_short: descriptionTooShort,\n    guard_title_equals_description: titleEqualsDescription,\n    guard_title_placeholder: titlePlaceholder,\n    guard_desc_placeholder: descPlaceholder,\n    client_email: body.client_email || '',\n    title: body.title || '(untitled)'\n  }\n}];"
       }
     },
     {
@@ -906,7 +906,7 @@
       ],
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { ok: false, reason: 'invalid_payload', missing: $json.guard_missing_fields, bad_urls: $json.guard_bad_url_fields, message: $json.guard_error } }}",
+        "responseBody": "={{ { ok: false, reason: $json.guard_description_too_short ? 'description_too_short' : ($json.guard_title_equals_description ? 'title_equals_description' : ($json.guard_title_placeholder ? 'title_placeholder' : ($json.guard_desc_placeholder ? 'description_placeholder' : 'invalid_payload'))), semantic_errors: $json.guard_semantic_errors, missing: $json.guard_missing_fields, bad_urls: $json.guard_bad_url_fields, message: $json.guard_error } }}",
         "options": {
           "responseCode": 422
         }
@@ -1724,6 +1724,188 @@
       "parameters": {
         "content": "## DUAL STANDING SOURCES  --  layered, not redundant (operator ruling 2026-07-31: KEEP BOTH)\n\nTwo independent standing gates run before any publish. They check different tables and are intentionally layered.\n\n**1. Roster gate**  --  `Standing Gate  --  Normalize Lookup Keys` → `Standing Gate  --  Roster Lookup By Email` → `Standing Gate  --  Determine Verdict` → `IF  --  Standing Identity Gate Passed`.\nSource: the `podcast_publish_roster` data table, matched by (last_name, email) with a channel-id cross-check. Verds: `identity_mismatch` / `not_in_good_standing`.\n\n**2. Fleet gate**  --  `Fleet Gate  --  Lookup All Rows` → `Fleet Gate  --  Resolve Identity + Verdict` → `IF  --  Fleet Standing Gate Passed`.\nSource: `fleet_standing`, matched by alias/last-name/label. Master rule:\n`approved = (good_standing === true) && (podcast_approved === true)`;\n`good_standing === false` → reason `standing` (outranks everything); otherwise `not_enrolled`.\n\nBoth must pass for a publish. `fleet_standing` is the newer authority and supersedes the roster in intent; the roster chain remains by operator decision. Do not remove either without his ruling. Verified 2026-08-01."
       }
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: U2.1 FAIL-CLOSED AUDIO SUBSTANCE GATE (2026-08-04, master plan unit 2.1).\n// Replaces the HEAD-only preflight with a byte-level check of the actually-downloaded\n// audio binary, so an empty/placeholder/HTML-error body can NEVER reach the Podbean\n// uploadAuthorize call. Runs immediately after 'Download Audio  --  Fetch From GHL URL'\n// and before 'Prepare Audio Upload  --  Package for Podbean S3'.\n// Throwing here = execution error = fail closed = no Podbean byte moves.\n\nconst MIN_AUDIO_BYTES = 50 * 1024; // 50 KB -- a real episode is never smaller\n\nconst audioBinary = $input.first().binary?.audio;\nif (!audioBinary) {\n  throw new Error('AUDIO SUBSTANCE GATE FAILED: no audio binary was downloaded. The GHL audio_url did not return a file. No Podbean upload was attempted.');\n}\n\n// Byte size assertion from base64 binary.\nconst buffer = Buffer.from(audioBinary.data, 'base64');\nconst byteSize = buffer.length;\nif (byteSize < MIN_AUDIO_BYTES) {\n  throw new Error('AUDIO SUBSTANCE GATE FAILED: downloaded audio is only ' + byteSize + ' bytes (< ' + MIN_AUDIO_BYTES + ' byte minimum). This is not a real MP3 episode. No Podbean upload was attempted.');\n}\n\n// Magic-bytes assertion: a real MP3 starts with an ID3 tag (\"ID3\") or an MPEG frame\n// sync (0xFF 0xEx / 0xFF 0xFx). A text/html error page or an empty body must fail.\nconst b0 = buffer[0], b1 = buffer[1];\nconst hasId3 = b0 === 0x49 && b1 === 0x44 && buffer[2] === 0x33; // 'ID3'\nconst hasFrameSync = b0 === 0xff && (b1 & 0xe0) === 0xe0;        // 0xFFEx / 0xFFFx\nconst mimeType = (audioBinary.mimeType || '').toLowerCase();\nconst isHtmlBody = mimeType.indexOf('text/html') !== -1 || mimeType.indexOf('text/plain') !== -1;\nif (!hasId3 && !hasFrameSync) {\n  throw new Error('AUDIO SUBSTANCE GATE FAILED: downloaded bytes do not match an MP3 (no ID3 tag, no MPEG frame sync). First bytes: ' + (b0 === undefined ? '(none)' : '0x' + b0.toString(16)) + (b1 === undefined ? '' : ' 0x' + b1.toString(16)) + '. The GHL audio_url is likely returning an error page or a non-MP3 file. No Podbean upload was attempted.');\n}\nif (isHtmlBody) {\n  throw new Error('AUDIO SUBSTANCE GATE FAILED: the download reported content-type ' + mimeType + ', which is an HTML/error page, not an MP3. No Podbean upload was attempted.');\n}\n\n// Forward the untouched item so 'Prepare Audio Upload' receives identical input.\nreturn $input.all();"
+      },
+      "id": "f6e8e1a2-3b2c-4d5e-8f9a-0b1c2d3e4f01",
+      "name": "Validate Audio Substance  --  Byte-Level MP3 Gate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -3008,
+        1536
+      ],
+      "notes": "U2.1 (2026-08-04): byte-level audio validation on the actually-downloaded binary. Asserts size >= 50 KB, real MP3 magic bytes (ID3 tag or 0xFFEx/0xFFFx frame sync), and rejects text/html bodies. Throws on failure -> execution error -> fail closed, no Podbean upload."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ 'https://api.podbean.com/v1/episodes/' + $json.episode?.id + '?access_token=' + encodeURIComponent($('Set Config  --  Consolidate Workflow Variables').item.json.access_token) }}",
+        "sendQuery": false,
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "a7b3c9d1-2e4f-5a6b-8c9d-0e1f2a3b4c5d",
+      "name": "Podbean  --  Readback Created Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -16,
+        1552
+      ],
+      "notes": "U2.3 (2026-08-04): GET the just-created episode back from Podbean and assert media_key + logo_key are non-empty and the description meets the floor. This is the guarantee that an EMPTY publish can never report success -- if the readback fails any assertion the episode is treated as failed and rolled back (unpublish/delete).",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// PURPOSE: U2.3 POST-PUBLISH READBACK VERDICT (2026-08-04, master plan unit 2.3).\n// The single fix that guarantees an empty publish can NEVER report success, regardless\n// of how degenerate the input is. After Podbean returns an episode id, we GET the\n// episode back and assert the three things that define a real published episode:\n//   1. media_key present and non-empty  (audio actually attached)\n//   2. logo_key present and non-empty   (cover actually attached)\n//   3. content/description length >= the floor (a real show note, not a stub)\n// On failure this returns readback_failed:true (no throw) so the workflow can route to the\n// rollback path (delete/unpublish the just-created episode, failure gmail, mark failed).\n// The publish response is spread through so downstream success nodes keep their data.\n\nconst published = $('Podbean  --  Publish Episode').first().json;\nconst readbackItem = $('Podbean  --  Readback Created Episode').first();\nconst rb = readbackItem ? readbackItem.json : null;\n\nconst errors = [];\nlet raw = null;\n\nif (!rb) {\n  errors.push('readback GET returned no response for episode ' + (published.episode?.id || published.id || '?'));\n} else if (typeof rb.statusCode === 'number' && (rb.statusCode < 200 || rb.statusCode >= 300)) {\n  errors.push('readback GET returned HTTP ' + rb.statusCode + ' for episode ' + (published.episode?.id || published.id || '?'));\n} else {\n  raw = (rb.body && typeof rb.body === 'object') ? rb.body : (rb.episode || rb);\n\n  const mediaKey = (raw.media_key || raw.mediaKey || '').toString().trim();\n  const logoKey = (raw.logo_key || raw.logoKey || '').toString().trim();\n  const content = (raw.content || raw.description || '').toString().trim();\n\n  if (!mediaKey) errors.push('readback: media_key is empty -- audio is NOT attached to the episode');\n  if (!logoKey) errors.push('readback: logo_key is empty -- cover image is NOT attached to the episode');\n  if (content.length < 150) {\n    errors.push('readback: description is only ' + content.length + ' chars (< 150 floor) -- the episode did not receive a real show note');\n  }\n}\n\nconst readback_failed = errors.length > 0;\n\nreturn [{\n  json: Object.assign({}, published, {\n    readback_failed,\n    readback_errors: errors,\n    readback_media_key: raw ? (raw.media_key || raw.mediaKey || '').toString().trim() : '',\n    readback_logo_key: raw ? (raw.logo_key || raw.logoKey || '').toString().trim() : '',\n    readback_description_length: raw ? (raw.content || raw.description || '').toString().trim().length : 0\n  })\n}];"
+      },
+      "id": "b8c4d0e2-3f5a-6b7c-9d0e-1f2a3b4c5d6e",
+      "name": "Readback Verdict  --  Assert Media + Description",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        224,
+        1552
+      ],
+      "notes": "U2.3 (2026-08-04): asserts media_key + logo_key non-empty and description length >= 150 on the fetched-back episode. Returns readback_failed:true on any failure so the workflow routes to rollback. Preserves the publish response for downstream success nodes."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "check-readback-failed",
+              "leftValue": "={{ $json.readback_failed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "false",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "c9d5e1f3-4a6b-7c8d-9e0f-1a2b3c4d5e6f",
+      "name": "IF  --  Readback Passed",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        464,
+        1552
+      ],
+      "notes": "U2.3: True (output 0) when the readback assertions all passed -> route to success. False (output 1) -> rollback + failure response."
+    },
+    {
+      "parameters": {
+        "method": "DELETE",
+        "url": "={{ 'https://api.podbean.com/v1/episodes/' + $('Podbean  --  Publish Episode').first().json.episode?.id + '?access_token=' + encodeURIComponent($('Set Config  --  Consolidate Workflow Variables').item.json.access_token) }}",
+        "sendBody": false,
+        "options": {
+          "timeout": 15000
+        }
+      },
+      "id": "d0e6f2a4-5b7c-8d9e-0f1a-2b3c4d5e6f70",
+      "name": "Podbean  --  Rollback Unpublish Created Episode",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        304,
+        1888
+      ],
+      "notes": "U2.3 (2026-08-04): deletes/unpublishes the just-created episode after a readback failure so an empty or degenerate episode is never left live. Runs on the failure path only.",
+      "onError": "continueRegularOutput",
+      "alwaysOutputData": true
+    },
+    {
+      "id": "e1f7a3b5-6c8d-9e0f-1a2b-3c4d5e6f7081",
+      "name": "Respond  --  Publish Readback Failed",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        584,
+        1888
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { ok: false, reason: 'publish_readback_failed', detail: 'The episode was created but the post-publish readback failed its media/description assertions; the episode was rolled back. ' + JSON.stringify($json).slice(0, 500) } }}",
+        "options": {
+          "responseCode": 500
+        }
+      }
+    },
+    {
+      "id": "f2a8b4c6-7d9e-0f1a-2b3c-4d5e6f708192",
+      "name": "Gmail  --  Readback Failed Notification",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        384,
+        1668
+      ],
+      "parameters": {
+        "sendTo": "={{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.client_email }}",
+        "subject": "={{ '\\u274C Podcast Publish FAILED READBACK  --  Episode #' + $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number }}",
+        "message": "=<html><body style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; background-color: #f4f4f4;'><div style='background: #ffffff; border-radius: 8px; padding: 30px; border-left: 5px solid #ef4444;'><h2 style='color: #dc2626; margin-top: 0;'>&#x274C; Podcast Episode Publish Failed Post-Publish Readback</h2><p style='color: #374151; font-size: 15px;'>An episode was created on Podbean but the automated post-publish verification failed: the episode did not carry a real audio file, a real cover image, or a real description. The episode was rolled back so it is not left live in a broken state.</p><table style='width: 100%; border-collapse: collapse; margin: 20px 0;'><tr style='background: #f9fafb;'><td style='padding: 10px 14px; font-weight: bold; color: #374151; width: 38%;'>Episode Number</td><td style='padding: 10px 14px; color: #111827;'>#{{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.episode_number }}</td></tr><tr><td style='padding: 10px 14px; font-weight: bold; color: #374151;'>Title</td><td style='padding: 10px 14px; color: #111827;'>{{ $('Set Upload Keys  --  Assemble Publish Payload').item.json.title }}</td></tr></table><p style='color: #374151; font-size: 14px;'>Please regenerate the assets and resubmit. No episode number was consumed by this failure.</p><p style='color: #6b7280; font-size: 13px; margin-top: 24px; padding-top: 16px; border-top: 1px solid #e5e7eb;'>This notification was generated automatically by BlackCEO Automations (U2.3 readback gate).</p></div></body></html>",
+        "options": {}
+      },
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "I2d9UsGSGeMXbitw",
+          "name": "trevor@blackceo.com"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a3f9c5d7-8e0f-1a2b-3c4d-5e6f708192a3",
+      "name": "Idempotency  --  Mark Failed (Readback)",
+      "type": "n8n-nodes-base.dataTable",
+      "typeVersion": 1.1,
+      "position": [
+        584,
+        2128
+      ],
+      "parameters": {
+        "resource": "row",
+        "operation": "update",
+        "dataTableId": {
+          "mode": "id",
+          "value": "3anOzegbKtLcgVud"
+        },
+        "matchType": "allConditions",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "idempotency_key",
+              "condition": "eq",
+              "keyValue": "={{ $('Idempotency  --  Determine Verdict').item.json.idempotency_key }}"
+            }
+          ]
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "status": "failed",
+            "reason": "={{ JSON.stringify($json).slice(0, 500) }}"
+          }
+        },
+        "options": {}
+      },
+      "onError": "continueRegularOutput"
     }
   ],
   "connections": {
@@ -1786,7 +1968,7 @@
       "main": [
         [
           {
-            "node": "Prepare Audio Upload  --  Package for Podbean S3",
+            "node": "Validate Audio Substance  --  Byte-Level MP3 Gate",
             "type": "main",
             "index": 0
           }
@@ -1945,7 +2127,7 @@
       "main": [
         [
           {
-            "node": "IF  --  Episode Created Successfully",
+            "node": "Podbean  --  Readback Created Episode",
             "type": "main",
             "index": 0
           }
@@ -2248,6 +2430,72 @@
           },
           {
             "node": "Idempotency  --  Mark Refused (Fleet Standing Gate)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Audio Substance  --  Byte-Level MP3 Gate": {
+      "main": [
+        [
+          {
+            "node": "Prepare Audio Upload  --  Package for Podbean S3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Podbean  --  Readback Created Episode": {
+      "main": [
+        [
+          {
+            "node": "Readback Verdict  --  Assert Media + Description",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Readback Verdict  --  Assert Media + Description": {
+      "main": [
+        [
+          {
+            "node": "IF  --  Readback Passed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "IF  --  Readback Passed": {
+      "main": [
+        [
+          {
+            "node": "IF  --  Episode Created Successfully",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Podbean  --  Rollback Unpublish Created Episode",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Gmail  --  Readback Failed Notification",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Respond  --  Publish Readback Failed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Idempotency  --  Mark Failed (Readback)",
             "type": "main",
             "index": 0
           }
