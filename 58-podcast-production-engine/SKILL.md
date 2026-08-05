@@ -238,7 +238,15 @@ deterministic first step, scripts/webhook/intake_handler.py --mode in-flow,
 and continues the 18-step pipeline in the same session. The act-2 controller
 daemon was EXCLUDED from this campaign as a design violation; no file named
 podcast_controller.py or podcast_scheduler.py is part of this engine, and a
-guard or verifier that requires one is a gate-contract error. Three build
+guard or verifier that requires one is a gate-contract error. The runbook's
+mechanism for Steps 2-18 is the DETERMINISTIC STEP DRIVER,
+scripts/podcast_step_driver.py: the controllerId runbook calls
+`podcast_step_driver.py next --job-id <id>` in the agent's OWN tool-bearing
+turn, the driver emits the EXACT next command (deterministic steps call the
+production script directly; content steps emit the model_router.py route the
+agent fills from the runbook), and the agent records every stage change
+through podcast_state.py advance. The step driver is a TOOL the agent calls,
+not a resident process: no daemon, no cron, no poller. Three build
 files make up the activation layer, in dependency order:
 
 | Component | What it does | Concrete pointer |

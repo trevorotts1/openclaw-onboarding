@@ -15,9 +15,15 @@
 # violation). The bound department agent advances each flow in its OWN turn:
 # the intake route's controllerId runbook opens with ONE deterministic step,
 # scripts/webhook/intake_handler.py --mode in-flow, and continues the 18-step
-# pipeline in the same session. The ONLY recurring podcast cron in the design
-# is the daily smoke test (podcast-smoke-test.py via openclaw cron); no second
-# cron, no queue poller, ever.
+# pipeline in the same session. The runbook's mechanism for Steps 2-18 is the
+# DETERMINISTIC STEP DRIVER, scripts/podcast_step_driver.py: the agent calls
+# `podcast_step_driver.py next --job-id <id>` in its OWN turn, runs the emitted
+# command, and records the advance through podcast_state.py. The step driver is
+# a TOOL the agent calls, not a resident process. A bounded single invocation
+# is NOT a daemon; a CRON line that calls the driver repeatedly WOULD be a
+# poller and is FAILED below (B5 no-poller). The ONLY recurring podcast cron in
+# the design is the daily smoke test (podcast-smoke-test.py via openclaw cron);
+# no second cron, no queue poller, ever.
 #
 # WHAT IT CHECKS
 #
@@ -29,14 +35,20 @@
 #                                               advances each accepted intake
 #     R3. scripts/install-podcast-department.sh department agent installer for
 #                                               the box
+#     R4. scripts/podcast_step_driver.py        the deterministic step driver
+#                                               (the runbook mechanism for
+#                                               Steps 2-18; `next --job-id`)
 #     A missing file means the pipeline can never activate on ANY box. Any miss
 #     FAILS (exit 2). Paths are overridable for relocation tests but never
 #     exemptable.
 #
 #   ON-BOX ACTIVATION (default mode; skipped by --repo-only):
-#     B1. the three activation scripts are installed on this box (the installed
+#     B1. the four activation scripts are installed on this box (the installed
 #         skill copy under $SKILLS_DIR_DEFAULT, resolved exactly like
 #         qc-podcast.sh does it)
+#     B6. the deterministic step driver is callable: a bounded `--help` probe
+#         under the box python exits 0 (no daemon armed; a cron line naming the
+#         driver is still a poller and is flagged in B5)
 #     B2. the podcast department agent directory is registered and NON-EMPTY
 #         (<root>/agents/dept-podcast, root candidates: repo root, the skills
 #         dir parent, $HOME/.openclaw; override with --agents-root). An empty
@@ -88,7 +100,9 @@
 # Test seams: $PODCAST_CRONTAB_BIN overrides the crontab binary (default
 # "crontab"); $PODCAST_LAUNCHD_DIR overrides the launchd plist directory
 # (default $HOME/Library/LaunchAgents; kept for B5's no-poller scan);
-# $OPENCLAW_CONFIG overrides the box config file path.
+# $OPENCLAW_CONFIG overrides the box config file path; and
+# $PODCAST_STEP_DRIVER_PY overrides the python used for the step-driver --help
+# probe (default: the python running this guard).
 # =============================================================================
 """Fail-loud activation-layer health gate for the Podcast Production Engine."""
 
@@ -117,10 +131,16 @@ DEFAULT_GATEWAY_URL = "http://127.0.0.1:18789"
 
 # Skill-root-relative canonical paths for the activation layer (no-daemon
 # design: no controller daemon, no poller scheduler; the bound department
-# agent advances each flow in its own turn).
+# agent advances each flow in its own turn). The deterministic step driver
+# (podcast_step_driver.py) is the runbook's mechanism for Steps 2-18: the
+# controllerId runbook calls `podcast_step_driver.py next --job-id <id>` in
+# the agent's OWN tool-bearing turn. A bounded single invocation is NOT a
+# resident daemon: the no-poller rule below forbids a CRON line naming it
+# (that would be a poller), never the agent's own in-turn call.
 DEFAULT_HOOK_SCRIPT = "scripts/register-podcast-hook.sh"
 DEFAULT_HANDLER_SCRIPT = "scripts/webhook/intake_handler.py"
 DEFAULT_INSTALLER_SCRIPT = "scripts/install-podcast-department.sh"
+DEFAULT_DRIVER_SCRIPT = "scripts/podcast_step_driver.py"
 
 DEPT_AGENT_DIRNAME = "dept-podcast"
 ROUTE_ID_PREFIX = "podcast-intake-"
@@ -141,7 +161,10 @@ INTAKE_SECRETS = (
 # A cron line naming any of these names a controller/scheduler daemon, which
 # the no-daemon design forbids (no poller, no per-job watcher, nothing
 # sub-daily; the sole recurring podcast cron is the daily smoke test).
-DAEMON_NAME_NEEDLES = ("podcast_controller", "podcast_scheduler")
+# podcast_step_driver is listed because a CRON line calling it repeatedly
+# WOULD be a poller (a bounded in-turn `next --job-id <id>` is not).
+DAEMON_NAME_NEEDLES = ("podcast_controller", "podcast_scheduler",
+                       "podcast_step_driver")
 
 # Statuses a check line can carry.
 PASS = "PASS"
@@ -157,14 +180,16 @@ def _result(check_id, title, status, detail):
 # --------------------------------------------------------------------------- #
 # Repo presence checks (always run)
 # --------------------------------------------------------------------------- #
-def repo_checks(skill_root, hook_rel, handler_rel, installer_rel):
-    """R1-R3: the activation layer files must exist in the build."""
+def repo_checks(skill_root, hook_rel, handler_rel, installer_rel, driver_rel):
+    """R1-R4: the activation layer files must exist in the build."""
     out = []
     for check_id, rel, what in (
         ("R1", hook_rel, "intake hook registration script"),
         ("R2", handler_rel, "deterministic intake handler "
                             "(first step of the controllerId runbook)"),
         ("R3", installer_rel, "department agent installer"),
+        ("R4", driver_rel, "deterministic step driver "
+                           "(the runbook mechanism for Steps 2-18)"),
     ):
         path = skill_root / rel
         if path.is_file():
@@ -180,13 +205,14 @@ def repo_checks(skill_root, hook_rel, handler_rel, installer_rel):
 # On-box checks
 # --------------------------------------------------------------------------- #
 def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
-               hook_rel, handler_rel, installer_rel):
-    """B1-B5: the activation layer must be live on this box."""
+               hook_rel, handler_rel, installer_rel, driver_rel,
+               step_driver_python=None):
+    """B1-B6: the activation layer must be live on this box."""
     out = []
 
     # B1: installed activation scripts ----------------------------------------
     missing = []
-    for rel in (hook_rel, handler_rel, installer_rel):
+    for rel in (hook_rel, handler_rel, installer_rel, driver_rel):
         if not (skill_root / rel).is_file():
             missing.append(rel)
     if missing:
@@ -194,7 +220,37 @@ def box_checks(skill_root, agents_root_override, gateway_url, slugs, timeout,
                            "missing under %s: %s" % (skill_root, ", ".join(missing))))
     else:
         out.append(_result("B1", "activation scripts installed on this box", PASS,
-                           "all three present under %s" % skill_root))
+                           "all four present under %s" % skill_root))
+
+    # B6: the deterministic step driver is callable (no-daemon, bounded) ------
+    driver_path = skill_root / driver_rel
+    if not driver_path.is_file():
+        out.append(_result("B6", "step driver callable on this box", FAIL,
+                           "missing: %s" % driver_path))
+    else:
+        # A bounded single invocation (--help) proves the driver runs under the
+        # box python without ever arming a daemon or poller. A cron line that
+        # names the driver repeatedly is still a poller (flagged in B5); a
+        # one-shot in-turn call is not.
+        py = step_driver_python or _python_bin()
+        try:
+            proc = subprocess.run(
+                [py, str(driver_path), "--help"],
+                capture_output=True, text=True, timeout=timeout)
+        except (OSError, subprocess.SubprocessError) as exc:
+            out.append(_result("B6", "step driver callable on this box", FAIL,
+                               "%s could not run: %s" % (driver_path, exc)))
+        else:
+            if proc.returncode == 0:
+                out.append(_result(
+                    "B6", "step driver callable on this box", PASS,
+                    "%s --help exited 0 under %s" % (driver_path, py)))
+            else:
+                out.append(_result(
+                    "B6", "step driver callable on this box", FAIL,
+                    "%s --help exited %s under %s (stderr: %s)"
+                    % (driver_path, proc.returncode, py,
+                       proc.stderr.strip()[:200] or "empty")))
 
     # B2: department agent directory registered and non-empty ------------------
     agent_dir, candidates = _resolve_agent_dir(skill_root, agents_root_override)
@@ -415,6 +471,13 @@ def scan_route_shapes(text):
     return shapes
 
 
+def _python_bin():
+    """Python used to probe the step driver (--help). Mirrors the skill's
+    `#!/usr/bin/env python3` shebang resolution; overridable for tests via
+    $PODCAST_STEP_DRIVER_PY (e.g. a venv python)."""
+    return os.environ.get("PODCAST_STEP_DRIVER_PY") or sys.executable
+
+
 def _crontab_lines():
     """crontab listing, bounded. An absent crontab yields an empty listing,
     never an error (the $PODCAST_CRONTAB_BIN seam points tests at a stub)."""
@@ -519,6 +582,9 @@ def main(argv=None):
     ap.add_argument("--hook-script", default=DEFAULT_HOOK_SCRIPT)
     ap.add_argument("--handler-script", default=DEFAULT_HANDLER_SCRIPT)
     ap.add_argument("--installer-script", default=DEFAULT_INSTALLER_SCRIPT)
+    ap.add_argument("--driver-script", default=DEFAULT_DRIVER_SCRIPT,
+                    help="skill-root-relative path to the deterministic step "
+                         "driver (default: scripts/podcast_step_driver.py)")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--self-test", dest="self_test", action="store_true")
     args = ap.parse_args(argv)
@@ -542,7 +608,8 @@ def main(argv=None):
     slugs = sorted(set(slugs))
 
     repo_results = repo_checks(skill_root, args.hook_script,
-                               args.handler_script, args.installer_script)
+                               args.handler_script, args.installer_script,
+                               args.driver_script)
     if args.repo_only:
         fatal, warn, skip = classify(repo_results, [], False, False)
         return emit(repo_results, fatal, warn, skip, "repo-only",
@@ -550,7 +617,8 @@ def main(argv=None):
 
     box_results = box_checks(skill_root, args.agents_root, args.gateway_url,
                              slugs, args.timeout, args.hook_script,
-                             args.handler_script, args.installer_script)
+                             args.handler_script, args.installer_script,
+                             args.driver_script)
     provisioned = is_provisioned(slugs)
     fatal, warn, skip = classify(repo_results, box_results,
                                  args.strict, provisioned)
@@ -582,6 +650,9 @@ def self_test():
                 "#!/usr/bin/env python3\n# deterministic first step of the "
                 "controllerId runbook\n")
             (scripts / "install-podcast-department.sh").write_text("#!/usr/bin/env bash\nexit 0\n")
+            (scripts / "podcast_step_driver.py").write_text(
+                "#!/usr/bin/env python3\nimport sys\n"
+                "print('podcast_step_driver stub')\nsys.exit(0)\n")
         return root / "58-podcast-production-engine"
 
     print("== self-test: repo presence ==")
@@ -589,15 +660,22 @@ def self_test():
         root = Path(td)
         skill = make_skill(root, with_files=True)
         res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
-                          DEFAULT_INSTALLER_SCRIPT)
+                          DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
         check("all-present-passes", all(r["status"] == PASS for r in res))
         (skill / DEFAULT_HANDLER_SCRIPT).unlink()
         res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
-                          DEFAULT_INSTALLER_SCRIPT)
+                          DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
         check("missing-handler-fails",
               any(r["status"] == FAIL for r in res))
         check("fail-detail-names-the-file",
               any("intake_handler.py" in r["detail"] for r in res if r["status"] == FAIL))
+        check("driver-present-pass", any(
+            r["id"] == "R4" and r["status"] == PASS for r in res))
+        (skill / DEFAULT_DRIVER_SCRIPT).unlink()
+        res = repo_checks(skill, DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
+                          DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
+        check("missing-driver-fails",
+              any(r["id"] == "R4" and r["status"] == FAIL for r in res))
 
     print("== self-test: route-shape scan (JSON5 tolerant, no secrets) ==")
     json5 = """
@@ -684,7 +762,8 @@ def self_test():
         try:
             res = box_checks(skill, str(root / "agents"), "http://127.0.0.1:1",
                              ["acme-media"], 1, DEFAULT_HOOK_SCRIPT,
-                             DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                             DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT,
+                             DEFAULT_DRIVER_SCRIPT)
             by_id = {r["id"]: r for r in res}
             check("B1-installed-passes", by_id["B1"]["status"] == PASS)
             check("B2-agent-dir-passes", by_id["B2"]["status"] == PASS)
@@ -695,6 +774,7 @@ def self_test():
                   "PODCAST_INTAKE_HOOK_SECRET NOT-SET" in by_id["B5"]["detail"])
             check("B5-no-poller-ok-in-detail",
                   "no-poller OK" in by_id["B5"]["detail"])
+            check("B6-driver-callable-passes", by_id["B6"]["status"] == PASS)
             # secrets both set: B5 flips to PASS
             os.environ["PODCAST_INTAKE_HOOK_SECRET"] = "sandbox-not-a-real-secret"
             os.environ["PODCAST_INTAKE_INBOUND_SECRET"] = "sandbox-not-a-real-secret"
@@ -702,7 +782,7 @@ def self_test():
                 res2 = box_checks(skill, str(root / "agents"),
                                   "http://127.0.0.1:1", ["acme-media"], 1,
                                   DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
-                                  DEFAULT_INSTALLER_SCRIPT)
+                                  DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
                 by_id2 = {r["id"]: r for r in res2}
                 check("B5-secrets-present-passes", by_id2["B5"]["status"] == PASS)
             finally:
@@ -737,13 +817,13 @@ def self_test():
             res = box_checks(skill, str(root / "agents"),
                              "http://127.0.0.1:1", ["acme-media"], 1,
                              DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
-                             DEFAULT_INSTALLER_SCRIPT)
+                             DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
             by_id = {r["id"]: r for r in res}
             check("B4-correct-shape-passes", by_id["B4"]["status"] == PASS)
             res = box_checks(skill, str(root / "agents"),
                              "http://127.0.0.1:1", ["zeta-corp"], 1,
                              DEFAULT_HOOK_SCRIPT, DEFAULT_HANDLER_SCRIPT,
-                             DEFAULT_INSTALLER_SCRIPT)
+                             DEFAULT_INSTALLER_SCRIPT, DEFAULT_DRIVER_SCRIPT)
             by_id = {r["id"]: r for r in res}
             check("B4-wrong-session-key-fails", by_id["B4"]["status"] == FAIL)
             check("B4-detail-names-the-route",
@@ -759,7 +839,8 @@ def self_test():
         root = Path(td)
         skill = make_skill(root, with_files=True)
         repo_res = repo_checks(skill, DEFAULT_HOOK_SCRIPT,
-                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT,
+                               DEFAULT_DRIVER_SCRIPT)
         box_fail = [_result("B3", "gateway", FAIL, "unreachable")]
         fatal, warn, _skip = classify(repo_res, box_fail, strict=False, provisioned=False)
         check("unprovisioned-box-finding-is-warn", fatal == [] and len(warn) == 1)
@@ -769,7 +850,8 @@ def self_test():
         check("provisioned-makes-box-finding-fatal", len(fatal) == 1)
         (skill / DEFAULT_HOOK_SCRIPT).unlink()
         repo_res = repo_checks(skill, DEFAULT_HOOK_SCRIPT,
-                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT)
+                               DEFAULT_HANDLER_SCRIPT, DEFAULT_INSTALLER_SCRIPT,
+                               DEFAULT_DRIVER_SCRIPT)
         fatal, warn, _skip = classify(repo_res, [], strict=False, provisioned=False)
         check("repo-missing-always-fatal", len(fatal) == 1)
 

@@ -5,7 +5,7 @@
 **Owning role:** Operator (the fleet-wide rescue). The director-of-podcast observes the proof flow that closes the run.
 **Stage:** On demand, once per box whose activation health fails, and fleet-wide whenever the activation audit names a box.
 **Produces:** the four-layer activation (department agent, intake hook, scheduler, controller), one observed proof flow advancing `received -> researching` through the sole writer, the board card for that flow, and the operator ledger entry.
-**Enforcement pointer (binding):** `58-podcast-production-engine/scripts/guard-activation-health.py` (the diagnosis primitive: checks the four layers against the wiring contract in `23-ai-workforce-blueprint/department-wiring/podcast-engine/wiring.json`, exit 0 when all four are present, nonzero with a JSON report naming every MISSING layer); `58-podcast-production-engine/scripts/install-podcast-department.sh` and `58-podcast-production-engine/scripts/register-podcast-hook.sh` (the activation scripts, both idempotent); `58-podcast-production-engine/scripts/podcast_controller.py --once` (one bounded pass that advances stalled flows in the podcast agent's OWN turn); `58-podcast-production-engine/scripts/cc_board.py` (the fail-soft Command Center card caller); and `58-podcast-production-engine/scripts/podcast_state.py`, which remains the SOLE writer of engine state. A stage change recorded nowhere is not a stage change.
+**Enforcement pointer (binding):** `58-podcast-production-engine/scripts/guard-activation-health.py` (the diagnosis primitive: checks the four layers against the wiring contract in `23-ai-workforce-blueprint/department-wiring/podcast-engine/wiring.json`, exit 0 when all four are present, nonzero with a JSON report naming every MISSING layer); `58-podcast-production-engine/scripts/install-podcast-department.sh` and `58-podcast-production-engine/scripts/register-podcast-hook.sh` (the activation scripts, both idempotent); `58-podcast-production-engine/scripts/podcast_step_driver.py` (the deterministic, no-daemon step driver: `podcast_step_driver.py next --job-id <id>` emits the EXACT next command for Steps 2-18 in the podcast agent's OWN turn); `58-podcast-production-engine/scripts/cc_board.py` (the fail-soft Command Center card caller); and `58-podcast-production-engine/scripts/podcast_state.py`, which remains the SOLE writer of engine state. A stage change recorded nowhere is not a stage change.
 
 ---
 
@@ -49,11 +49,11 @@ Order matters: the department agent must exist before the hook binds a session t
 
        python3 58-podcast-production-engine/scripts/guard-cron-inventory.py --client <slug>
 
-4. WAKE THE CONTROLLER. Run:
+4. WAKE THE STEP DRIVER. Run:
 
-       python3 58-podcast-production-engine/scripts/podcast_controller.py --once
+       python3 58-podcast-production-engine/scripts/podcast_step_driver.py next --job-id <id>
 
-   The controller is the runbook that advances flows in the podcast agent's OWN turn; `--once` performs exactly ONE bounded pass over pending flows and exits. There is no daemon, no watcher, no resident poller: activation adds no furnace to the box (SOP-PODCAST-04 Section 1 stands). This is the step that picks up any flow already parked in `received` while the processor was missing.
+   The step driver is the runbook that advances flows in the podcast agent's OWN turn; `next --job-id <id>` emits the EXACT next command for Steps 2-18, and the agent runs it and records the stage change through `podcast_state.py advance`. One invocation is ONE deterministic pass, not a resident process: there is no daemon, no watcher, no resident poller, and activation adds no furnace to the box (SOP-PODCAST-04 Section 1 stands). This is the step that picks up any flow already parked in `received` while the processor was missing.
 
 ## 3. VERIFICATION (observed, never claimed; the run is not done until the flow moves)
 
