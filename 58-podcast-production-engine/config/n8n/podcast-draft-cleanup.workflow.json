@@ -91,8 +91,8 @@
     },
     {
       "parameters": {
-        "method": "DELETE",
-        "url": "=https://api.podbean.com/v1/episodes/{{ $('Guard - Episode ID').item.json.episode_id }}?access_token={{ $json.access_token }}",
+        "method": "POST",
+        "url": "=https://api.podbean.com/v1/episodes/{{ $('Guard - Episode ID').item.json.episode_id }}/delete?access_token={{ $json.access_token }}",
         "options": {
           "response": {
             "response": {
