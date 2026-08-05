@@ -1,20 +1,39 @@
 #!/usr/bin/env bash
-# test-ceo-tool-gate.sh — GOAL-5 Item 1 self-test for the CEO tool-gate.
+# test-ceo-tool-gate.sh — self-test for the CEO routing posture.
 #
-# Asserts the four write-sites of the CEO tool-gate carry the SAME canonical
-# constants (drift between them is the classic way a "fixed" box ships ungated):
+# SCOPE CHANGE 2026-08-05: the CEO production-tool deny (write/edit/apply_patch/
+# browser/canvas/image/process) was RETIRED per Trevor because denying `write`
+# while memoryFlush demanded a memory write created a self-blocking loop that ate
+# Telegram messages for two weeks. Every assertion about that deny set is GONE.
 #
+# This test is NOT a skip and NOT a historical record — it still runs and still
+# fails CI. What it guards now is (a) that the retired deny STAYS retired, and
+# (b) the parts of the routing posture that never had anything to do with the
+# loop and are still load-bearing:
+#
+#   * EXPECT_DENY="" is PINNED — re-adding any production tool to
+#     hooks/lib-ceo-tool-gate.sh CEO_GATE_DENY_TOOLS fails this test. That is the
+#     regression guard against silently re-creating the two-week outage.
+#   * GHL MCP deny (byProvider + name-glob) across all write-sites.
+#   * skills:[] on the router, and the router-vs-PA classification (PA-freeze).
+#   * per-agent tools schema validity (no sessions/agentToAgent) + self-heal.
+#
+# Write-sites kept in sync:
 #   1. 23-ai-workforce-blueprint/scripts/build-workforce.py  (build-time origin)
 #   2. scripts/apply-routing-fix.sh  Layer 5                  (already-built boxes)
 #   3. scripts/apply-fleet-standards.sh  re-assert            (fleet roll)
 #   4. hooks/lib-ceo-tool-gate.sh                             (grant/verify source)
 #
 # Then exercises:
-#   A. apply-routing-fix.sh L5 gates an ungated box (deny ⊇ canonical set).
+#   A. apply-routing-fix.sh L5 applies the surviving posture to an ungated box.
 #   B. L5 is idempotent (second run = no-op).
-#   C. grant-ceo-consent.sh lifts the gate (consented) then --revoke restores it.
+#   C. RETIRED — grant/revoke of the production deny (the deny no longer exists).
 #   D. L5 SKIPS while an owner-consent grant is active (never revokes the owner).
-#   E. verify-routing.sh G7 reports the gated box correctly (INTERIM warn / PASS).
+#   E. verify-routing.sh G7 evaluates the box.
+#
+# ⛔ RUN ONLY WITH HOME POINTED AT A SANDBOX. This script reassigns HOME to a
+# mktemp dir at section 3, but CEO_CONSENT_FILE is derived from HOME and `rm -f`d
+# repeatedly. Invoke as: HOME=/some/sandbox bash scripts/test-ceo-tool-gate.sh
 #
 # Exit 0 = all pass. Exit 1 = a drift or behavior failure (FATAL).
 
@@ -34,7 +53,13 @@ _ok()   { printf '[test-ceo-tool-gate] PASS  %s\n' "$*"; }
 _bad()  { printf '[test-ceo-tool-gate] FAIL  %s\n' "$*" >&2; FAILS=$((FAILS+1)); }
 
 # Canonical expected sets (the single source of truth this test enforces).
-EXPECT_DENY="apply_patch browser canvas edit ghl-community-mcp__* ghl-mcp__* image process write"
+#
+# EXPECT_DENY is INTENTIONALLY EMPTY and this emptiness is the assertion. The CEO
+# production-tool deny was retired 2026-08-05 (it caused the write-deny/
+# memoryFlush loop). If someone re-adds ANY tool to CEO_GATE_DENY_TOOLS, the
+# "lib deny set canonical" check below FAILS — that is the point. Do not
+# "helpfully" repopulate this string. GHL MCP deny lives in EXPECT_MCP.
+EXPECT_DENY=""
 # mc-route__route_task = the SHIPPED routing tool (scripts/mc-route.sh impl).
 # Its presence is what lets verify-routing.sh G7 clear the INTERIM-exec warning.
 # FABLE-5: the allow list ALSO carries the plugin/operational tools the CEO needs
@@ -48,24 +73,43 @@ EXPECT_MCP="ghl-community-mcp ghl-mcp"
 # ── 1. lib-ceo-tool-gate.sh is the reference; extract its canonical sets ───────
 # shellcheck source=/dev/null
 . "$GATE_LIB"
-LIB_DENY=$(printf '%s\n' "${CEO_GATE_DENY_TOOLS[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
-LIB_ALLOW=$(printf '%s\n' "${CEO_GATE_ALLOW_TOOLS[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
-LIB_MCP=$(printf '%s\n' "${CEO_GATE_MCP_PROVIDERS[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
+# BASH 3.2 SAFETY: macOS /bin/bash 3.2 treats an EMPTY array expanded as
+# "${arr[@]}" under `set -u` as an unbound variable and ABORTS. CEO_GATE_DENY_TOOLS
+# is now legitimately empty, so every expansion here MUST carry the
+# "${arr[@]+"${arr[@]}"}" guard or this test dies before its first assertion.
+LIB_DENY=$(printf '%s\n' "${CEO_GATE_DENY_TOOLS[@]+"${CEO_GATE_DENY_TOOLS[@]}"}" | sort | tr '\n' ' ' | sed 's/ $//')
+LIB_ALLOW=$(printf '%s\n' "${CEO_GATE_ALLOW_TOOLS[@]+"${CEO_GATE_ALLOW_TOOLS[@]}"}" | sort | tr '\n' ' ' | sed 's/ $//')
+LIB_MCP=$(printf '%s\n' "${CEO_GATE_MCP_PROVIDERS[@]+"${CEO_GATE_MCP_PROVIDERS[@]}"}" | sort | tr '\n' ' ' | sed 's/ $//')
 
 [ "$LIB_DENY" = "$EXPECT_DENY" ]   && _ok "lib deny set canonical"   || _bad "lib deny drift: [$LIB_DENY] != [$EXPECT_DENY]"
 [ "$LIB_ALLOW" = "$EXPECT_ALLOW" ] && _ok "lib allow set canonical" || _bad "lib allow drift: [$LIB_ALLOW] != [$EXPECT_ALLOW]"
 [ "$LIB_MCP" = "$EXPECT_MCP" ]     && _ok "lib mcp set canonical"   || _bad "lib mcp drift: [$LIB_MCP] != [$EXPECT_MCP]"
 
-# ── 2. Each write-site must mention every canonical deny token ────────────────
+# ── 2. Each write-site must mention every SURVIVING canonical deny token ──────
 # Coarse but effective: a missing token in any site is a drift we must catch.
-for tok in write edit apply_patch browser canvas image process "ghl-community-mcp__\*"; do
+# RETIRED 2026-08-05: write/edit/apply_patch/browser/canvas/image/process are no
+# longer expected in any write-site — they were the loop-causing gate. Only the
+# GHL MCP name-globs survive as denies.
+for tok in "ghl-community-mcp__\*" "ghl-mcp__\*"; do
   for f in "$BUILD_WF" "$APPLY_FIX" "$APPLY_STD"; do
     if ! grep -qE "\"${tok}\"|'${tok}'" "$f"; then
       _bad "deny token '${tok}' missing from $(basename "$f")"
     fi
   done
 done
-_ok "deny tokens present across build-workforce.py / apply-routing-fix.sh / apply-fleet-standards.sh"
+_ok "surviving deny tokens (GHL MCP globs) present across build-workforce.py / apply-routing-fix.sh / apply-fleet-standards.sh"
+
+# ── 2b. The RETIRED production deny must NOT come back to any write-site ───────
+# This is the anti-regression assertion that replaces the old presence check: if
+# a future edit re-adds the write-deny to a stamper, the outage returns silently.
+# Scoped to the CEO deny literals so unrelated uses of these words do not trip it.
+for f in "$APPLY_FIX" "$APPLY_STD"; do
+  if grep -nE '^[[:space:]]*"?(write|edit|apply_patch)"?,' "$f" \
+       | grep -qvE 'GENERATION|allow' ; then
+    _bad "RETIRED production deny token reappeared in $(basename "$f") — this re-creates the write-deny loop"
+  fi
+done
+_ok "2b: retired production deny (write/edit/apply_patch) has NOT reappeared in the stampers"
 
 # Each site must deny BOTH GHL MCP providers.
 for prov in "ghl-community-mcp" "ghl-mcp"; do
@@ -98,40 +142,47 @@ if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"][0]
 t=m.get("tools",{})
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-ok = need.issubset(set(t.get("deny") or [])) and \
-     (t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
-     "exec" in (t.get("allow") or []) and m.get("skills")==[]
+# RETIRED 2026-08-05: the production-deny assertion (need ⊆ deny) is gone.
+# The surviving posture is: GHL MCP denied by provider, exec allowed (routing
+# path), skills:[] preserved. Also assert the retired deny did NOT come back.
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+deny=set(t.get("deny") or [])
+ok = (t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
+     "exec" in (t.get("allow") or []) and m.get("skills")==[] and \
+     RETIRED.isdisjoint(deny)
 sys.exit(0 if ok else 1)
 PYEOF
-then _ok "A: L5 gates an ungated box (deny set + GHL MCP + skills:[] preserved)"
-else _bad "A: L5 did not gate the box correctly"; fi
+then _ok "A: L5 applies the surviving posture (GHL MCP deny + exec + skills:[]) and does NOT re-add the retired production deny"
+else _bad "A: L5 did not apply the surviving posture correctly (or re-added the retired production deny)"; fi
 
-# B. idempotent
-B_OUT=$(bash "$APPLY_FIX" 2>&1 | grep -E "L5:.*already" || true)
-[ -n "$B_OUT" ] && _ok "B: L5 idempotent (no-op on re-run)" || _bad "B: L5 not idempotent"
+# B. idempotent.
+# Was: grep the log for "L5: ... already", which depended on the ALREADY_GATED
+# early-exit. That branch was gate machinery and is deleted (2026-08-05), so the
+# log string is gone. Assert idempotence DIRECTLY instead — a byte-identical
+# config across a re-run is a strictly stronger proof than a log-line match.
+_B_BEFORE=$(shasum -a 256 "$HOME/.openclaw/openclaw.json" | awk '{print $1}')
+bash "$APPLY_FIX" >/dev/null 2>&1 || true
+_B_AFTER=$(shasum -a 256 "$HOME/.openclaw/openclaw.json" | awk '{print $1}')
+[ "$_B_BEFORE" = "$_B_AFTER" ] \
+  && _ok "B: L5 idempotent (re-run leaves openclaw.json byte-identical, sha256 unchanged)" \
+  || _bad "B: L5 NOT idempotent — re-run changed openclaw.json ($_B_BEFORE -> $_B_AFTER)"
 
-# C. consent lifts + revoke restores
-bash "$GRANT" "task:zzz" --phrase "owner says do it" >/dev/null 2>&1 || true
-if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
-import json,sys
-m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"][0]
-t=m.get("tools",{})
-# gate LIFTED: no production deny present
-sys.exit(0 if "write" not in (t.get("deny") or []) else 1)
-PYEOF
-then _ok "C1: grant lifted the gate (production deny removed)"
-else _bad "C1: grant did NOT lift the gate"; fi
-
-bash "$GRANT" --revoke >/dev/null 2>&1 || true
-if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
-import json,sys
-m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"][0]
-t=m.get("tools",{})
-sys.exit(0 if "write" in (t.get("deny") or []) and t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] else 1)
-PYEOF
-then _ok "C2: revoke restored the gate (deny + GHL MCP back)"
-else _bad "C2: revoke did NOT restore the gate"; fi
+# C. RETIRED 2026-08-05 — consent lift / revoke of the production deny.
+# C1 asserted that grant-ceo-consent.sh REMOVED "write" from tools.deny and C2
+# that --revoke put it BACK. Both are meaningless now: the production deny no
+# longer exists in any posture, so there is nothing to lift and nothing to
+# restore. Retired rather than rewritten (same treatment as section K).
+#
+# What IS still worth proving is that the consent script does not CRASH — it
+# sources hooks/lib-ceo-tool-gate.sh and calls ceo_gate_tools under
+# `set -euo pipefail`, and an empty CEO_GATE_DENY_TOOLS array aborts macOS
+# /bin/bash 3.2 unless the expansion is guarded. That is a real fleet-fatal path.
+if /bin/bash -c 'set -euo pipefail; . "$1"; ceo_gate_tools >/dev/null' _ "$GATE_LIB" 2>/dev/null; then
+  _ok "C: ceo_gate_tools survives bash 3.2 + set -u with an EMPTY deny array (grant-ceo-consent.sh path)"
+else
+  _bad "C: ceo_gate_tools ABORTS under bash 3.2 + set -u (empty-array unbound-variable) — grant-ceo-consent.sh dies on every macOS box"
+fi
+_ok "C1/C2: consent lift/revoke of the production deny RETIRED (Trevor 2026-08-05) — no deny exists to lift or restore"
 
 # D. L5 skips while consent active
 _write_ungated
@@ -153,10 +204,13 @@ printf '<!-- ROLE_DISCIPLINE_V1 -->\nCEO_ROUTING_NO_LOOPHOLES_V1\n' > "$HOME/.op
 printf '<!-- CEO_ORCHESTRATOR_RULE_V2 -->\n' > "$HOME/.openclaw/workspace/SOUL.md"
 python3 -c "import sqlite3;c=sqlite3.connect('$HOME/projects/command-center/mission-control.db');c.execute('CREATE TABLE workspaces(id TEXT)');c.executemany('INSERT INTO workspaces VALUES(?)',[('default',),('presentations',)]);c.commit()"
 E_OUT=$(bash "$VERIFY" 2>&1 || true)
-if printf '%s' "$E_OUT" | grep -qE "G7: CEO tool-gate INTERIM|G7: CEO tool-gate present"; then
-  _ok "E: verify-routing G7 evaluated the CEO tool-gate"
+# G7's message set changed with the retirement: the INTERIM/"tool-gate present"
+# lines are gone; it now reports the retirement plus the surviving tools-policy
+# result. Accept either the retirement INFO/PASS or the tools-policy PASS.
+if printf '%s' "$E_OUT" | grep -qE "G7: CEO production-tool deny RETIRED|G7: CEO production-tool deny intentionally absent|G7: CEO agent tools policy OK"; then
+  _ok "E: verify-routing G7 evaluated the box (retirement reported / tools policy checked)"
 else
-  _bad "E: verify-routing G7 did not evaluate the gate"
+  _bad "E: verify-routing G7 did not evaluate the box — G7=[$(printf '%s' "$E_OUT" | grep -E 'G7:' | grep -v G7b | head -2 | tr '\n' '|')]"
 fi
 
 # ── F. GOAL-4 D4 (4B+4C) — no-refusal baseline + CEO-deny COORDINATION ────────
@@ -190,18 +244,21 @@ cfg=json.load(open(sys.argv[1]))
 # (a) defaults baseline
 base = cfg.get("agents",{}).get("defaults",{}).get("tools",{}).get("allow")
 base_ok = base == ["*"]
-# (b) CEO still gated
+# (b) RETIRED: "CEO still gated" (need ⊆ deny). The production deny is gone.
+#     Replaced by its inverse — the retired deny must NOT be re-asserted, and
+#     the surviving GHL MCP deny must still be in place.
 m=[a for a in cfg["agents"]["list"] if a["id"]=="main"][0]
 deny=set(m.get("tools",{}).get("deny") or [])
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-ceo_ok = need.issubset(deny)
-# (c) the wildcard did NOT leak into main's allow (deny-wins enforced)
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+ceo_ok = RETIRED.isdisjoint(deny) and \
+         m.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]
+# (c) the wildcard did NOT leak into main's allow
 main_allow=set(m.get("tools",{}).get("allow") or [])
-no_leak = need.isdisjoint(main_allow) and "*" not in main_allow
+no_leak = "*" not in main_allow
 sys.exit(0 if (base_ok and ceo_ok and no_leak) else 1)
 PYEOF
-then _ok "F1: ungate+gate coexist — agents.defaults.tools.allow==['*'] AND main.tools.deny ⊇ production set (no leak into main.allow)"
-else _bad "F1: GOAL-4 D4 coordination broken — baseline absent OR CEO re-opened OR wildcard leaked into main.allow"; fi
+then _ok "F1: ungate + surviving posture coexist — agents.defaults.tools.allow==['*'], GHL MCP denied, retired production deny NOT re-asserted, no wildcard leak into main.allow"
+else _bad "F1: GOAL-4 D4 coordination broken — baseline absent OR retired production deny re-asserted OR GHL MCP deny lost OR wildcard leaked into main.allow"; fi
 
 # F2. Idempotent: a second apply-fleet-standards.sh run keeps both invariants
 #     and does not duplicate the CEO deny entries.
@@ -213,12 +270,12 @@ base = cfg.get("agents",{}).get("defaults",{}).get("tools",{}).get("allow")
 m=[a for a in cfg["agents"]["list"] if a["id"]=="main"][0]
 deny_list=m.get("tools",{}).get("deny") or []
 deny=set(deny_list)
-need={"write","edit","apply_patch","browser","canvas","image","process"}
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
 no_dupes = len(deny_list)==len(deny)
-sys.exit(0 if (base==["*"] and need.issubset(deny) and no_dupes) else 1)
+sys.exit(0 if (base==["*"] and RETIRED.isdisjoint(deny) and no_dupes) else 1)
 PYEOF
-then _ok "F2: apply-fleet-standards.sh idempotent (baseline stable, deny not duplicated)"
-else _bad "F2: re-run drifted the baseline or duplicated the CEO deny"; fi
+then _ok "F2: apply-fleet-standards.sh idempotent (baseline stable, deny not duplicated, retired deny not re-added on re-run)"
+else _bad "F2: re-run drifted the baseline, duplicated deny entries, or re-added the retired production deny"; fi
 
 # ── G. DEFECT 1 — schema-version-aware no-refusal baseline (2026.6.8) ──────────
 # OpenClaw 2026.6.8 REJECTS agents.defaults.tools.* . apply-fleet-standards.sh must
@@ -256,11 +313,11 @@ exec_ok=cfg.get("tools",{}).get("exec")=={"security":"full","ask":"off"}
 sub=cfg.get("agents",{}).get("defaults",{}).get("subagents",{}).get("allowAgents")
 m=[a for a in cfg["agents"]["list"] if a["id"]=="main"][0]
 deny=set(m.get("tools",{}).get("deny") or [])
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-sys.exit(0 if (adt is None and exec_ok and sub==["*"] and need.issubset(deny)) else 1)
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+sys.exit(0 if (adt is None and exec_ok and sub==["*"] and RETIRED.isdisjoint(deny)) else 1)
 PYEOF
-then _ok "G1: 2026.6.8 schema — agents.defaults.tools stripped/omitted, config valid (no rollback), functional ungate + CEO gate present"
-else _bad "G1: apply-fleet-standards.sh wrote/kept agents.defaults.tools on a 2026.6.8 schema (would self-roll-back)"; fi
+then _ok "G1: 2026.6.8 schema — agents.defaults.tools stripped/omitted, config valid (no rollback), functional ungate present, retired deny absent"
+else _bad "G1: apply-fleet-standards.sh wrote/kept agents.defaults.tools on a 2026.6.8 schema (would self-roll-back), or re-added the retired deny"; fi
 
 # G2: verify-routing.sh G7b PASSES on the functional ungate at 2026.6.8 (no
 #     agents.defaults.tools required). Provide AGENTS.md/SOUL.md/DB so the run
@@ -294,12 +351,12 @@ if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 cfg=json.load(open(sys.argv[1]))
 ag={a["id"]:a for a in cfg["agents"]["list"]}
-need={"write","edit","apply_patch","browser","canvas","image","process"}
+# "gated" now means the SURVIVING posture: GHL MCP denied by provider + skills:[].
+# The retired production deny is no longer part of the definition.
 deo=ag["dept-executive-office"]; mn=ag["main"]
-deo_gated = need.issubset(set((deo.get("tools") or {}).get("deny") or [])) and \
-            (deo.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
+deo_gated = (deo.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) and \
             deo.get("skills")==[]
-main_gated = need.issubset(set((mn.get("tools") or {}).get("deny") or []))
+main_gated = (mn.get("tools",{}).get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"])
 sys.exit(0 if (deo_gated and not main_gated) else 1)
 PYEOF
 then _ok "H1: apply-routing-fix.sh gated the default:true agent (dept-executive-office), NOT the present 'main'"
@@ -338,9 +395,10 @@ if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 pa=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="personal-assistant"][0]
 t=pa.get("tools") or {}
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-# NOT gated: no production deny, no GHL byProvider deny, skills untouched (not []).
-ungated = need.isdisjoint(set(t.get("deny") or [])) \
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+# NOT gated: no GHL byProvider deny, skills untouched (not []). The retired
+# production deny must also be absent (it must never be stamped on a PA either).
+ungated = RETIRED.isdisjoint(set(t.get("deny") or [])) \
           and not (t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"]) \
           and pa.get("skills")==["inbox","calendar","deck"]
 sys.exit(0 if ungated else 1)
@@ -364,9 +422,11 @@ if printf '%s' "$I2_OUT" | grep -qi "PERSONAL-ASSISTANT/non-router" \
    && python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 pa=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="personal-assistant"][0]
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-# CEO deny must NOT have been re-asserted onto the PA.
-sys.exit(0 if need.isdisjoint(set((pa.get("tools") or {}).get("deny") or [])) else 1)
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+# Neither the retired production deny nor the GHL deny may be stamped on a PA.
+t=(pa.get("tools") or {})
+sys.exit(0 if (RETIRED.isdisjoint(set(t.get("deny") or []))
+               and t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")!=["*"]) else 1)
 PYEOF
 then _ok "I2: apply-fleet-standards.sh re-assert SKIPPED the PA-default box (no CEO deny re-asserted)"
 else _bad "I2: apply-fleet-standards.sh re-asserted the CEO gate onto a PA (froze it)"; fi
@@ -383,16 +443,21 @@ else
   _bad "I3: verify-routing did NOT pass a PA-default box — G4=[$(printf '%s' "$I3_OUT"|grep 'G4:'|head -1)] G7=[$(printf '%s' "$I3_OUT"|grep -E 'G7:'|grep -v G7b|head -1)]"
 fi
 
-# I4: G8a does NOT force-wire the unscoped hook on a PA-default box. Simulate a
-#     Claude-Code box (settings.json present) with NO hook wired → must PASS.
+# I4: RETIRED 2026-08-05 — asserted that verify-routing.sh gate G8a did not
+# force-wire the ceo-intent-gate hook on a PA-default box. G8a itself was DELETED
+# from verify-routing.sh when the intent-gate was removed fleet-wide (all 6 of its
+# occurrences are gone; origin/main still had them, so this is a real removal and
+# not a search artifact). The hook is now unwired EVERYWHERE, PA-default or not,
+# so there is no force-wiring left to guard against. Kept as an explicit skip so
+# the numbering and the intent stay legible.
 _write_pa_default
 mkdir -p "$HOME/.claude"
 printf '{}\n' > "$HOME/.claude/settings.json"
 I4_OUT=$(CLAUDE_SETTINGS_FILE="$HOME/.claude/settings.json" bash "$VERIFY" 2>&1 || true)
-if printf '%s' "$I4_OUT" | grep -qE "PASS  G8a: PA-default box .* intentionally NOT wired"; then
-  _ok "I4: verify-routing G8a does NOT force-wire the hook on a PA-default box (PASS, not FATAL)"
+if ! printf '%s' "$I4_OUT" | grep -q 'G8a'; then
+  _ok "I4: G8a hook-wiring gate RETIRED (Trevor 2026-08-05) — verify-routing.sh no longer emits G8a; nothing can force-wire the removed hook"
 else
-  _bad "I4: verify-routing G8a wrongly demanded the hook on a PA-default box — [$(printf '%s' "$I4_OUT"|grep 'G8a:'|head -1)]"
+  _bad "I4: verify-routing.sh still emits a G8a gate — the intent-gate hook was removed 2026-08-05, so G8a should be gone: [$(printf '%s' "$I4_OUT"|grep 'G8a'|head -1)]"
 fi
 rm -f "$HOME/.claude/settings.json"
 
@@ -410,13 +475,15 @@ import json,os,sys
 rid=os.environ["RID"]
 a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]==rid][0]
 t=a.get("tools") or {}
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-ok = need.issubset(set(t.get("deny") or [])) \
-     and t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] \
-     and a.get("skills")==[]
+RETIRED={"write","edit","apply_patch","browser","canvas","image","process"}
+# "gated" = the SURVIVING posture (GHL MCP deny + skills:[]); the retired
+# production deny must NOT be present.
+ok = t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] \
+     and a.get("skills")==[] \
+     and RETIRED.isdisjoint(set(t.get("deny") or []))
 sys.exit(0 if ok else 1)
 PYEOF
-  then _ok "J: router-default box (id=$RID) IS gated (deny set + GHL deny + skills:[])"
+  then _ok "J: router-default box (id=$RID) IS gated (GHL deny + skills:[], no retired production deny)"
   else _bad "J: router-default box (id=$RID) was NOT gated — legitimate router gating broke"; fi
 done
 
@@ -429,8 +496,10 @@ bash "$APPLY_FIX" >/dev/null 2>&1 || true
 if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]=="orchestra-prime"][0]
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-sys.exit(0 if need.issubset(set((a.get("tools") or {}).get("deny") or [])) else 1)
+# Surviving marker of "was gated": GHL MCP denied by provider (the retired
+# production deny is no longer stamped, so it cannot be the probe).
+t=(a.get("tools") or {})
+sys.exit(0 if t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] else 1)
 PYEOF
 then _ok "J2: role:'router' agent (unknown id) IS gated (explicit router marker honored)"
 else _bad "J2: role:'router' marker was ignored — router not gated"; fi
@@ -444,76 +513,50 @@ bash "$APPLY_FIX" >/dev/null 2>&1 || true
 if python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 a=[x for x in json.load(open(sys.argv[1]))["agents"]["list"] if x["id"]=="the-boss"][0]
-need={"write","edit","apply_patch","browser","canvas","image","process"}
-sys.exit(0 if need.issubset(set((a.get("tools") or {}).get("deny") or [])) else 1)
+# Surviving marker of "was gated" — see J2.
+t=(a.get("tools") or {})
+sys.exit(0 if t.get("byProvider",{}).get("ghl-community-mcp",{}).get("deny")==["*"] else 1)
 PYEOF
 then _ok "J3: is_master:true agent (unknown id) IS gated (explicit master marker honored)"
 else _bad "J3: is_master:true marker was ignored — router not gated"; fi
 
-# ── K. The HOOK allows a non-router agent and still denies the router ──────────
-# ceo-intent-gate.sh must exit 0 (ALLOW) for a personal-assistant/owner agent on
-# a production tool, and only emit a deny for the router (with no consent).
-HOOK="$ONBOARDING_DIR/hooks/ceo-intent-gate.sh"
-rm -f "$CEO_CONSENT_FILE"
-
-# K1: PA agent (via env marker) → ALLOW (no deny JSON), even on a Write.
-K1_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
-  | OPENCLAW_AGENT_ID="personal-assistant" bash "$HOOK" 2>/dev/null || true)
-if [ -z "$K1_OUT" ]; then
-  _ok "K1: hook ALLOWs a personal-assistant agent on Write (no deny emitted)"
-else
-  _bad "K1: hook did NOT allow a PA agent — emitted: [$K1_OUT]"
-fi
-
-# K1b: explicit role marker (non-router) → ALLOW.
-K1B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{}}' \
-  | OPENCLAW_AGENT_ROLE="assistant" OPENCLAW_AGENT_ID="inbox-manager" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K1B_OUT" ] && _ok "K1b: hook ALLOWs a non-router role agent on Edit" || _bad "K1b: hook denied a non-router agent — [$K1B_OUT]"
-
-# K2: router agent (id=main via env marker), NO consent → DENY emitted.
-K2_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
-  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
-if printf '%s' "$K2_OUT" | grep -q '"permissionDecision":"deny"' \
-   && printf '%s' "$K2_OUT" | grep -q '/api/tasks/ingest'; then
-  _ok "K2: hook DENIES + redirects the router (id=main) on Write with no consent"
-else
-  _bad "K2: hook did NOT deny the router — [$K2_OUT]"
-fi
-
-# K2b: router via is_master marker (unknown id) → DENY.
-K2B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /x"}}' \
-  | OPENCLAW_AGENT_IS_MASTER="true" OPENCLAW_AGENT_ID="the-boss" bash "$HOOK" 2>/dev/null || true)
-printf '%s' "$K2B_OUT" | grep -q '"permissionDecision":"deny"' \
-  && _ok "K2b: hook DENIES a router-by-is_master on non-routing Bash" \
-  || _bad "K2b: hook did not deny an is_master router — [$K2B_OUT]"
-
-# K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOW even for id=main.
-K3_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{}}' \
-  | OPENCLAW_AGENT_ID="main" OPENCLAW_CEO_GATE_SCOPE="non-router" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K3_OUT" ] && _ok "K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOWs even id=main" || _bad "K3: scope override non-router did not allow — [$K3_OUT]"
-
-# K4: router still ALLOWED to ROUTE — a curl to /api/tasks/ingest passes even gated.
-K4_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -s -X POST http://localhost:4000/api/tasks/ingest -d @t.json"}}' \
-  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K4_OUT" ] && _ok "K4: hook still ALLOWs the router's ingest-routing curl (routing not blocked)" || _bad "K4: hook blocked the router's routing curl — [$K4_OUT]"
+# ── K. CEO intent-gate hook — INTENTIONALLY REMOVED (2026-08-05) ──────────────
+# The ceo-intent-gate.sh PreToolUse hook has been REMOVED from the repo and all
+# boxes per Trevor's directive (was creating loops). These tests are retired.
+_ok "K: ceo-intent-gate hook INTENTIONALLY REMOVED (Trevor 2026-08-05) — hook tests skipped (no longer required)"
 
 # ── L. lib router-detection canonical / drift ─────────────────────────────────
 # hooks/lib-ceo-tool-gate.sh exposes ceo_agent_is_router + CEO_ROUTER_IDS; assert
 # the canonical router-id set matches every embedded copy (apply-*, verify, hook).
 EXPECT_ROUTER_IDS="ceo dept-ceo dept-executive-office dept-master-orchestrator main master-orchestrator"
-LIB_ROUTER_IDS=$(printf '%s\n' "${CEO_ROUTER_IDS[@]}" | sort | tr '\n' ' ' | sed 's/ $//')
+LIB_ROUTER_IDS=$(printf '%s\n' "${CEO_ROUTER_IDS[@]+"${CEO_ROUTER_IDS[@]}"}" | sort | tr '\n' ' ' | sed 's/ $//')
 [ "$LIB_ROUTER_IDS" = "$EXPECT_ROUTER_IDS" ] \
   && _ok "L0: lib CEO_ROUTER_IDS canonical" \
   || _bad "L0: CEO_ROUTER_IDS drift: [$LIB_ROUTER_IDS] != [$EXPECT_ROUTER_IDS]"
 
 # Every embedded ROUTER_IDS copy must contain all six canonical ids + the markers.
-for f in "$APPLY_FIX" "$APPLY_STD" "$VERIFY" "$ONBOARDING_DIR/hooks/ceo-intent-gate.sh" "$SCRIPT_DIR/install-ceo-intent-gate.sh"; do
+# 2026-08-05: hooks/ceo-intent-gate.sh and scripts/install-ceo-intent-gate.sh were
+# DELETED with the intent-gate removal. They were still listed here, so `grep -q`
+# ran against missing files → rc=2 (an ERROR, not "no match") → 8 phantom
+# failures. Dropped from the loop; 5 gate-target sites became 3.
+for f in "$APPLY_FIX" "$APPLY_STD" "$VERIFY"; do
   for rid in "dept-master-orchestrator" "dept-executive-office" "master-orchestrator"; do
     grep -q "\"$rid\"" "$f" || _bad "L: router id '$rid' missing from $(basename "$f")"
   done
   grep -q "is_master" "$f" || _bad "L: is_master marker missing from $(basename "$f")"
 done
-_ok "L: router-id set + is_master marker present in all 5 gate-target sites"
+_ok "L: router-id set + is_master marker present in all 3 surviving gate-target sites"
+
+# L1b: the two deleted intent-gate files must STAY deleted (they are what wired
+# the write-deny loop). A reappearance means someone restored the outage path.
+for _gone in "$ONBOARDING_DIR/hooks/ceo-intent-gate.sh" \
+             "$ONBOARDING_DIR/hooks/lib-ceo-consent.sh" \
+             "$SCRIPT_DIR/install-ceo-intent-gate.sh"; do
+  if [ -e "$_gone" ]; then
+    _bad "L1b: $(basename "$_gone") REAPPEARED in the repo — the intent-gate was removed 2026-08-05 (loop cause); it must stay deleted"
+  fi
+done
+_ok "L1b: the deleted intent-gate files (ceo-intent-gate.sh, lib-ceo-consent.sh, install-ceo-intent-gate.sh) are still absent"
 
 # L2 (behavior): ceo_agent_is_router classifies router vs PA correctly.
 ceo_agent_is_router '{"id":"main"}'                 && _ok "L-fn: id=main → router"          || _bad "L-fn: id=main misclassified"
@@ -579,7 +622,7 @@ fi
 rm -f "$CEO_CONSENT_FILE"
 cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
 { "agents": { "list": [ { "id": "main", "default": true, "skills": [],
-  "tools": { "deny": ["write"], "sessions": {"visibility":"all"},
+  "tools": { "deny": ["ghl-mcp__*"], "sessions": {"visibility":"all"},
              "agentToAgent": {"enabled": true, "allow": ["*"]} } } ] } }
 JSON
 bash "$APPLY_STD" >/dev/null 2>&1 || true
@@ -590,11 +633,14 @@ else
 fi
 
 # M3b. apply-routing-fix.sh ALSO self-heals an ALREADY-GATED corrupted box (the
-# heal runs before the ALREADY_GATED early-exit, so the early-exit still repairs).
+# heal runs FIRST, before any early-exit, so a corrupted box is repaired on every
+# path. It used to also have to survive the ALREADY_GATED early-exit; that branch
+# was deleted with the gate machinery on 2026-08-05, so the box now simply falls
+# through to the idempotent deep-merge.)
 rm -f "$CEO_CONSENT_FILE"
 cat > "$HOME/.openclaw/openclaw.json" <<'JSON'
 { "agents": { "list": [ { "id": "main", "default": true, "skills": [],
-  "tools": { "deny": ["write","edit","apply_patch","browser","canvas","image","process","ghl-community-mcp__*","ghl-mcp__*"],
+  "tools": { "deny": ["ghl-community-mcp__*","ghl-mcp__*"],
              "allow": ["read","exec"],
              "byProvider": {"ghl-community-mcp":{"deny":["*"]},"ghl-mcp":{"deny":["*"]}},
              "sessions": {"visibility":"all"},
@@ -604,9 +650,12 @@ bash "$APPLY_FIX" >/dev/null 2>&1 || true
 if _assert_routing_layout && python3 - "$HOME/.openclaw/openclaw.json" <<'PYEOF'
 import json,sys
 m=[a for a in json.load(open(sys.argv[1]))["agents"]["list"] if a["id"]=="main"][0]
-sys.exit(0 if "write" in (m.get("tools",{}).get("deny") or []) else 1)
+# The already-gated marker is now the MCP glob (the retired production deny is
+# no longer stamped, so "write" can never be the probe). Prove it was PRESERVED
+# through the heal — that is what "deny preserved" means post-retirement.
+sys.exit(0 if "ghl-mcp__*" in (m.get("tools",{}).get("deny") or []) else 1)
 PYEOF
-then _ok "M3b: apply-routing-fix.sh SELF-HEALED an already-gated corrupted box (deny preserved, per-agent keys stripped)"
+then _ok "M3b: apply-routing-fix.sh SELF-HEALED an already-gated corrupted box (MCP deny preserved, per-agent keys stripped)"
 else _bad "M3b: apply-routing-fix.sh did NOT self-heal an already-gated corrupted box"; fi
 
 # M4. IDEMPOTENT: a second apply-fleet-standards.sh run never re-introduces the keys.
