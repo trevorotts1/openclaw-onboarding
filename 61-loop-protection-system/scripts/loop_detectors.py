@@ -201,6 +201,95 @@ def d4_timer_refire(crons, wedge, thresholds):
 
 
 # --------------------------------------------------------------------------- #
+# D5 - self-blocking flush run / transcript poison
+# --------------------------------------------------------------------------- #
+def d5_transcript_poison(sessions, thresholds):
+    """D1-D4 all measure FLOW - events per tick. They answer "is a loop running
+    RIGHT NOW?" and go quiet the moment it pauses. D5 measures a STOCK: how much
+    of a transcript is ALREADY loop wreckage. That distinction is the whole point
+    of this detector. A flow detector reports all-clear on a paused loop while the
+    transcript stays poisoned and every future turn on it starts degraded, so the
+    fault outlives every fix aimed at the environment.
+
+    `sessions` = list of per-transcript measurements (pure data; the collector does
+    the reading):
+      {unit, path, bytes, tail_records, blocked_records, max_burst, trailing_ratio,
+       blocked_tools, checkpoint_rows, poisoned_checkpoints, idle_minutes}
+    A "block" is ONE runtime tool-loop refusal, matched STRUCTURALLY on
+    details.status=='blocked' + details.deniedReason=='tool-loop' (never on prose).
+
+    Two faces, in the order they matter:
+      IGNITION (primary)  max_burst - consecutive blocks inside one run. This is
+                          the early, high-precision signal: it fires seconds into a
+                          burst, long before the transcript is measurably poisoned.
+      AFTERMATH (secondary) trailing_ratio + poisoned_checkpoints - the stock that
+                          persists after the burst ends and that a roll must clear.
+
+    THE SILENCE RULE (what makes this a detector and not an alarm bell): a
+    transcript with ZERO blocks yields ZERO findings no matter how large it is.
+    Size NEVER fires on its own - it only annotates a finding and can raise a WARN
+    to P1. The control archive is 17,160,766 bytes (8x the flush re-arm floor) with
+    zero blocks and must stay perfectly silent."""
+    t = thresholds["d5_transcript_poison"]
+    out = []
+    for s in sessions:
+        blocked = int(s.get("blocked_records", 0) or 0)
+        if blocked <= 0:
+            continue  # THE SILENCE RULE - no loop evidence, no finding, any size
+        unit = s.get("unit") or "session:<unknown>"
+        burst = int(s.get("max_burst", 0) or 0)
+        ratio = float(s.get("trailing_ratio", 0.0) or 0.0)
+        cps = int(s.get("poisoned_checkpoints", 0) or 0)
+        size = int(s.get("bytes", 0) or 0)
+        window = int(t["window_records"])
+        rearm = size >= int(t["rearm_risk_bytes"])
+
+        reasons = []
+        severity = None
+        if burst >= t["p1_blocks_per_burst"]:
+            severity = P1
+            reasons.append("IGNITION: %d consecutive runtime tool-loop blocks in one "
+                           "burst (>= %d)" % (burst, t["p1_blocks_per_burst"]))
+        if ratio >= t["p1_trailing_ratio"]:
+            severity = P1
+            reasons.append("AFTERMATH: %.0f%% of the trailing %d records are blocks "
+                           "(>= %.0f%%)" % (ratio * 100, window,
+                                            float(t["p1_trailing_ratio"]) * 100))
+        if cps >= t["p1_poisoned_checkpoints"]:
+            severity = P1
+            reasons.append("SECOND CARRIER: %d compaction checkpoint summary(s) "
+                           "captured loop text verbatim - these are re-injected on "
+                           "resume and SURVIVE a transcript roll (needs LF-11)" % cps)
+        if severity is None:
+            if burst >= t["warn_blocks_per_burst"] or ratio >= t["warn_trailing_ratio"]:
+                severity = WARN
+                reasons.append("%d blocks, longest burst %d, trailing-%d share %.0f%%"
+                               % (blocked, burst, window, ratio * 100))
+            else:
+                continue
+        # Size is a MODIFIER, never a trigger: past the memoryFlush re-arm floor
+        # every compaction re-arms a forced flush, so a poisoned transcript that is
+        # ALSO oversized will keep re-igniting. That escalates a WARN; it never
+        # creates a finding on its own.
+        if rearm:
+            reasons.append("transcript %d bytes is past the flush re-arm floor (%d) - "
+                           "every compaction re-arms a forced flush"
+                           % (size, int(t["rearm_risk_bytes"])))
+            if severity == WARN:
+                severity = P1
+        tools = s.get("blocked_tools") or []
+        if tools:
+            reasons.append("blocked tool(s): %s" % ",".join(sorted(str(x) for x in tools)))
+        idle = s.get("idle_minutes")
+        if idle is not None:
+            reasons.append("transcript idle %.0fm (auto-roll needs >= %dm)"
+                           % (float(idle), int(t["roll_min_idle_minutes"])))
+        out.append(_finding("LP-A8", severity, unit, "; ".join(reasons), "D5",
+                            tier=1, evidence_path=s.get("path")))
+    return out
+
+
+# --------------------------------------------------------------------------- #
 # self-test (deterministic, no box access, no network, no model)
 # --------------------------------------------------------------------------- #
 def self_test():
@@ -269,6 +358,53 @@ def self_test():
     assert "LP-A4" in classes and "LP-B5" in classes and "LP-B3" in classes
     assert not any(x["unit"] == "healthy" for x in f4)  # firing at its declared rate
     print("  D4 case: PASS (over-fire + wedge + orphan each P1; healthy cron silent)")
+
+    # D5: the STOCK detector. Values below are the MEASURED shape of one archived
+    # operator-box incident vs its healthy control, not invented numbers.
+    poisoned = [{"unit": "session:example-poisoned", "bytes": 4607807,
+                 "tail_records": 3393, "blocked_records": 1135, "max_burst": 275,
+                 "trailing_ratio": 0.50, "blocked_tools": ["read", "tool_call"],
+                 "checkpoint_rows": 16, "poisoned_checkpoints": 7,
+                 "idle_minutes": 240.0}]
+    f5 = d5_transcript_poison(poisoned, th)
+    assert len(f5) == 1 and f5[0]["severity"] == P1 and f5[0]["loop_class"] == "LP-A8"
+    assert "IGNITION" in f5[0]["detail"] and "SECOND CARRIER" in f5[0]["detail"]
+
+    # THE CONTROL, and the whole reason this is a detector: a transcript 3.7x LARGER
+    # than the poisoned one, 8x past the flush re-arm floor, with many checkpoints -
+    # but ZERO blocks. It must be perfectly silent. A detector that fires on
+    # everything is not a detector.
+    healthy = [{"unit": "session:example-healthy", "bytes": 17160766,
+                "tail_records": 8042, "blocked_records": 0, "max_burst": 0,
+                "trailing_ratio": 0.0, "blocked_tools": [],
+                "checkpoint_rows": 14, "poisoned_checkpoints": 0,
+                "idle_minutes": 99999.0}]
+    assert d5_transcript_poison(healthy, th) == []
+
+    # The smallest burst measured in the incident (8) still trips P1 - that is the
+    # threshold's whole job: catch 11/11 historical bursts, ~6.5% into the median
+    # one, instead of waiting for the transcript to be measurably poisoned.
+    smallest = [dict(poisoned[0], blocked_records=8, max_burst=8, trailing_ratio=0.04,
+                     poisoned_checkpoints=0, bytes=100000)]
+    f5c = d5_transcript_poison(smallest, th)
+    assert f5c and f5c[0]["severity"] == P1 and "IGNITION" in f5c[0]["detail"]
+
+    # A brief 3-block stutter on a SMALL transcript is a WARN, not a P1...
+    stutter = [dict(poisoned[0], blocked_records=3, max_burst=3, trailing_ratio=0.015,
+                    poisoned_checkpoints=0, bytes=100000)]
+    f5d = d5_transcript_poison(stutter, th)
+    assert f5d and f5d[0]["severity"] == WARN
+    # ...but the SAME stutter past the flush re-arm floor is a P1, because every
+    # compaction there re-arms a forced flush and it will keep re-igniting.
+    f5e = d5_transcript_poison([dict(stutter[0], bytes=3000000)], th)
+    assert f5e and f5e[0]["severity"] == P1 and "re-arm floor" in f5e[0]["detail"]
+
+    # A 1-2 block blip below the WARN floor stays silent (no noise on a healthy box).
+    assert d5_transcript_poison(
+        [dict(poisoned[0], blocked_records=2, max_burst=2, trailing_ratio=0.01,
+              poisoned_checkpoints=0, bytes=100000)], th) == []
+    print("  D5 case: PASS (poisoned=P1 ignition+carrier; 17MB clean control SILENT; "
+          "smallest-observed burst 8=P1; stutter=WARN, oversized stutter=P1; blip silent)")
 
     print("[loop_detectors] self-test: PASS")
     return 0

@@ -38,6 +38,20 @@
     "gateway_port": 18789,
     "_source": "Cron fires > 2x declared cadence = P1; healthy-probe-but-no-progress 3 ticks = P1 wedge; any orphan listener on :18789 = P1 (Box E deferral deadlock)."
   },
+  "d5_transcript_poison": {
+    "gap_records": 3,
+    "warn_blocks_per_burst": 3,
+    "p1_blocks_per_burst": 8,
+    "window_records": 200,
+    "warn_trailing_ratio": 0.2,
+    "p1_trailing_ratio": 0.4,
+    "p1_poisoned_checkpoints": 1,
+    "rearm_risk_bytes": 2097152,
+    "roll_min_idle_minutes": 10,
+    "max_session_files": 40,
+    "tail_bytes": 2000000,
+    "_source": "Derived from ONE archived operator-box incident transcript (4,607,807 bytes / 3,506 lines / 3,393 message records / 1,135 runtime tool-loop blocks) measured against a 70-file same-box healthy corpus. NOT round numbers: p1_blocks_per_burst=8 is the SMALLEST burst observed in that incident (bursts, gap<=3: 275,171,156,143,122,122,76,50,11,8,1), so firing at 8 catches 11/11 historical bursts while landing ~6.5% into the median burst - seconds to ~1 minute in, far before the ten-minute lane occupancy the incident cost. warn=3 sits one below the runtime's own identical-call guard. The ratio is a TRAILING window, never cumulative: the measured cumulative share was still only 0.122 at record 1250 while the local rate was already 0.244, so a whole-file ratio detector stays silent for thousands of records (a flow detector's false all-clear). Measured max trailing-200 share: poisoned 0.50, healthy corpus 0.0000 - warn 0.20 / P1 0.40 sit inside that gap. p1_poisoned_checkpoints=1 because a compaction summary that captured loop text verbatim is RE-INJECTED on resume and SURVIVES a session roll (measured: 7 of 16 checkpoint summaries poisoned, 163 block-signature hits) - the control archive carried 14 checkpoints and 0 hits, so 1 is safe. rearm_risk_bytes=2097152 is the OpenClaw memoryFlush forceFlushTranscriptBytes default (2 MiB), past which every compaction re-arms a forced flush; it is a SEVERITY MODIFIER ONLY and never fires alone - the control archive is 17,160,766 bytes (8x over it) with zero blocks and MUST stay silent. tail_bytes=2000000 matches the existing D3 slice bound and covered all 7 poisoned checkpoints (deepest at 1,617,348 bytes from end)."
+  },
   "backoff": {
     "base_seconds": 7200,
     "multiplier": 2,
