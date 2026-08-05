@@ -1,3 +1,17 @@
+## [v21.7.29]  -  2026-08-05  -  fix(podcast): deterministic step driver — preset-gated step emission, produces_media gating (unit 1.2)
+
+Unit 1.2 of the podcast publish fix train, QC-passed (Opus RE-REVIEW-2, 2026-08-05) and merged to main. This is the final unit of the 9-unit podcast fix train.
+
+### What changed
+
+- **Deterministic step driver.** New podcast_step_driver.py emits the canonical per-step runbook commands for the 18-step podcast pipeline, preset-aware (interview / solo / episode_asset_pack / season_strategy).
+- **N1 preset-blindness resolved (fix 9e99d389).** Step emission is now gated on the preset's actual media flags: Step 10 (generating_art) gates on produces_media (covers asset-pack cover generation the writer's transition gate demands), Step 11 (producing_audio) gates on render_audio, Steps 14/15/16 gate on store_media / publish_podbean / link_back, Step 17 honors the preset's terminal action. Live-verified against a fresh SQLite DB for all four presets.
+- **QC fixes (c68d54dd).** guard-activation-health.py, SKILL.md, WIRING.md, SOP-PODCAST-07-ACTIVATION-RESCUE.md tightened; N1 fix is exactly 1 file (podcast_step_driver.py, +150/-6).
+
+### Merge notes
+
+Resolved a trivial universal-sops/_content-manifest.json generated_at timestamp conflict (deduplicated; manifest re-verified clean, 108 files all sha256 match). Deleted a stray local-only v21.7.29 tag (pointed at an unrelated aiwf-standard-first commit, never pushed to remote) that the release-integrity guard flagged. Step driver self-test PASS. Cherry-picked 829c9c15 + c68d54dd + 9e99d389.
+
 ## [v21.7.28]  -  2026-08-04  -  fix(podcast): fail-closed hardening — empty-required store refusal, test-job complete bar, media-probe escape-hatch refusal (unit 1.5-1.8)
 
 Unit 1.5-1.8 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC fix-first) and merged to main.
