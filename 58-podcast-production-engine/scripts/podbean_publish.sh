@@ -849,6 +849,28 @@ fi
 # publish. Only explicit --status draft / --draft / test runs may fall back to
 # the title stub, where a stub is intended for verification. Never inject an
 # em dash or a code fence.
+# 1.1.5: resolve the description from the Step 12.5 ledger BEFORE the hard
+# refusal below. The ledger handoff in the publish-proxy branch resolves the
+# media URLs; the description must be resolved here so a real publish with no
+# --description but a valid ledger episode_description uses the ledger value by
+# default. The old ordering died at the refusal before ever reaching the
+# handoff, contradicting every doc's "Step 15 resolves it from the ledger by
+# default" promise. Mirrors how AUDIO_URL/IMAGE_URL are resolved before their
+# required-checks. Scoped to publish-proxy mode, matching the handoff block.
+if [ "$PROXY_MODE" = "1" ] && [ -n "$LEDGER" ] && [ -n "$JOB_ID" ]; then
+  ledger_description="$(ledger_field "$LEDGER" episode_description || true)"
+  # CLI-vs-ledger conflict: the publish must use the show notes that Step 12.5
+  # drafted and recorded. Die when both are present and differ.
+  if [ -n "$DESCRIPTION" ] && [ -n "$ledger_description" ] && [ "$DESCRIPTION" != "$ledger_description" ]; then
+    die "DESCRIPTION conflict: CLI flag (--description=...) differs from Step 12.5 ledger episode_description. Remove --description to use the ledger value, or fix the ledger if it is stale."
+  fi
+  # Default resolution: when --description is absent, use the ledger value.
+  if [ -z "$DESCRIPTION" ] && [ -n "$ledger_description" ]; then
+    DESCRIPTION="$ledger_description"
+    log "DESCRIPTION resolved from Step 12.5 ledger (episode_description)"
+  fi
+fi
+
 if [ -z "$DESCRIPTION" ]; then
   if [ "$DRAFT_MODE" = "1" ] || [ "$TEST_RUN" = "1" ] || [ "$DRY_RUN" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then
     DESCRIPTION="$FINAL_TITLE"
@@ -975,9 +997,11 @@ print(json.dumps(d))
     ledger_audio="$(ledger_field "$LEDGER" mp3_media_url)"
     ledger_image="$(ledger_field "$LEDGER" cover_image_url)"
     # Step 12.5 (SHOW NOTES) recorded episode_description via
-    # `podcast_state.py output --field episode_description`; resolve it by
-    # default so a publish is never left to the title fallback.
-    ledger_description="$(ledger_field "$LEDGER" episode_description)"
+    # `podcast_state.py output --field episode_description`; the default
+    # resolution and CLI-vs-ledger conflict check now run in the SHARED
+    # section BEFORE the hard description refusal (see the block above), so a
+    # real publish with no --description but a valid ledger value uses the
+    # ledger by default. Nothing to do for DESCRIPTION here.
 
     # Resolve AUDIO_URL from ledger when CLI flag was NOT passed.
     if [ -z "$AUDIO_URL" ] && [ -n "$ledger_audio" ]; then
@@ -991,14 +1015,6 @@ print(json.dumps(d))
       log "IMAGE_URL resolved from Step 14 ledger (cover_image_url)"
     fi
 
-    # Resolve DESCRIPTION from ledger when the CLI flag was NOT passed. The
-    # ledger is the Step 12.5 producer's handoff; a real publish must use it
-    # rather than silently degrading to the title.
-    if [ -z "$DESCRIPTION" ] && [ -n "$ledger_description" ]; then
-      DESCRIPTION="$ledger_description"
-      log "DESCRIPTION resolved from Step 12.5 ledger (episode_description)"
-    fi
-
     # If BOTH the CLI flag and the ledger supply a value and they DIFFER,
     # refuse to proceed -- the publish must use the GHL URL that Step 14
     # recorded. The operator must re-run without the conflicting flag, or
@@ -1009,11 +1025,7 @@ print(json.dumps(d))
     if [ -n "$IMAGE_URL" ] && [ -n "$ledger_image" ] && [ "$IMAGE_URL" != "$ledger_image" ]; then
       die "IMAGE_URL conflict: CLI flag (--image-url=$IMAGE_URL) differs from Step 14 ledger cover_image_url ($ledger_image). Remove --image-url to use the ledger value, or fix the ledger if it is stale."
     fi
-    # DESCRIPTION conflict: the CLI flag and the Step 12.5 ledger must agree.
-    # The publish must use the show notes that Step 12.5 drafted and recorded.
-    if [ -n "$DESCRIPTION" ] && [ -n "$ledger_description" ] && [ "$DESCRIPTION" != "$ledger_description" ]; then
-      die "DESCRIPTION conflict: CLI flag (--description=...) differs from Step 12.5 ledger episode_description. Remove --description to use the ledger value, or fix the ledger if it is stale."
-    fi
+    # DESCRIPTION conflict already handled in the shared section above.
   fi
 
   [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it and recorded mp3_media_url in the ledger)"
