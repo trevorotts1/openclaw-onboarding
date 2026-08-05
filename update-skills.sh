@@ -7281,26 +7281,65 @@ PYEOF
   _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
   _RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
   if [ -d "$_RD_SRC" ]; then
-    mkdir -p "$HOME/.openclaw/extensions"
-    cp -r "$_RD_SRC" "$_RD_DST" 2>/dev/null || true
-    python3 - "$_RD_DST" <<'PY'
-import json, os, sys
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+      echo "  ⚠ FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+      python3 - <<'PY'
+import json, os, shutil, time
 cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
 if os.path.isfile(cfg_path):
-    cfg = json.load(open(cfg_path))
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
     cfg.setdefault("plugins", {}).setdefault("entries", {})
     cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
         "enabled": True,
         "hooks": {"allowPromptInjection": True}
     }
     cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
-    p = "/Users/%s/.openclaw/extensions" % (os.environ.get("USER") or "blackceomacmini")
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
     if p not in cfg["plugins"]["load"]["paths"]:
         cfg["plugins"]["load"]["paths"].append(p)
-    json.dump(cfg, open(cfg_path, "w"), indent=2)
-    print("ceo-routing-doctrine enabled + load.paths set")
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
 PY
-    echo "  ✓ CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+      echo "  ✓ CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
   else
     echo "  ⚠ ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
   fi

@@ -312,6 +312,19 @@ if _plugins_enum_ok and _plugins_json_file:
     except Exception as _e:
         print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
         _bundled_ids = []
+    # ONBOARDING-MANAGED, PATH-LOADED plugins must survive this rewrite. The
+    # enumeration above keeps only origin=="bundled", but ceo-routing-doctrine is
+    # installed by update-skills.sh/install.sh into ~/.openclaw/extensions and
+    # reports origin=="config" (verified against a live `openclaw plugins list
+    # --json`), so a bundled-only allowlist SILENTLY DISABLES it. This stamper
+    # also runs EARLIER in a roll than the plugin installer, so the drop would
+    # not even be repaired later in the same roll — the box would end up with
+    # neither the retired CEO gate nor its replacement doctrine.
+    if _bundled_ids:
+        for _keep in ("ceo-routing-doctrine",):
+            if _keep not in _bundled_ids:
+                _bundled_ids.append(_keep)
+        _bundled_ids = sorted(_bundled_ids)
     if _bundled_ids:
         cfg.setdefault("plugins", {})["allow"] = _bundled_ids
         print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-bundled plugin id(s) — non-bundled/third-party plugins will no longer auto-load")
