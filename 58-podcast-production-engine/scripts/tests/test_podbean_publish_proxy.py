@@ -838,6 +838,56 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertIn("PODBEAN_OPERATOR_FORCE", proc.stderr)
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
+    def test_probe_ffprobe_absence_is_a_hard_fail(self):
+        """ffprobe ABSENCE in publish-proxy mode is a HARD FAIL: the script must
+        die with the exact 'ffprobe required for media-probe' message and never
+        reach the publish endpoint (master-plan 1.8; no HEAD-only degrade)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-nofprobe/",
+            "episode_id": "ep-3",
+            "episode_number": 3,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        self._register_files({
+            "/media/ok.mp3": open(self.ok_mp3, "rb").read(),
+            "/media/ok.png": self.ok_png_data,
+        })
+
+        # Build a PATH that has every tool the script needs BEFORE the probe
+        # (curl, python3, mktemp, date, grep, cut, rm, wc, tr, printf, bash, ...)
+        # but NO ffprobe. Symlink the real system binaries so the script's normal
+        # command path is exercised right up to the ffprobe gate.
+        shim = os.path.join(self.tmp, "no-ffprobe-bin")
+        os.makedirs(shim)
+        for tool in ("bash", "curl", "python3", "mktemp", "date", "grep", "cut",
+                     "rm", "wc", "tr", "printf", "sed", "awk", "sort", "uniq",
+                     "head", "cat", "mkdir", "touch", "basename", "dirname"):
+            real = shutil.which(tool)
+            if real:
+                os.symlink(real, os.path.join(shim, tool))
+
+        env = self._proxy_env_media()
+        env["PATH"] = shim
+        env["HOME"] = self.tmp
+        proc = subprocess.run(
+            ["bash", str(_SCRIPT),
+             "--audio-url", self.mock.base_url + "/media/ok.mp3",
+             "--image-url", self.mock.base_url + "/media/ok.png",
+             "--title", "Media Probe No-ffprobe",
+             "--job-id", "pd-no-ffprobe"],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("ffprobe required for media-probe", proc.stderr)
+        self.assertIn("ffprobe not available", proc.stderr)
+        # Fail closed: never reaches the publish webhook.
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
 
 if __name__ == "__main__":
     unittest.main()

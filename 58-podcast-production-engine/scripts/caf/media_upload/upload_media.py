@@ -703,6 +703,16 @@ def store_media(
         raise CredentialError("Location PIT is NOT SET; cannot upload media.")
     if required is None:
         required = _default_required(job)
+    # An explicit empty requirement set would bypass the plan gate and let the
+    # run exit 0 with an empty asset map -- the exact fail-open this unit closes.
+    # Treat it as a defect: the caller must either omit --required (preset
+    # default applies) or name at least one asset key.
+    if not required:
+        raise MediaError(
+            "store_media refuses to run: the required asset set is empty. "
+            "Omit --required to use the preset-derived default, or name at "
+            "least one asset key ('cover', 'mp3', 'teaser')."
+        )
 
     mode = job.get("mode", "")
     client = job.get("client_name", "")
@@ -818,6 +828,25 @@ def store_media(
 # --------------------------------------------------------------------------- #
 
 def _cmd_store(args: argparse.Namespace) -> int:
+    # Fail-fast degenerate --required: a present flag that parses to an EMPTY
+    # set (e.g. "--required ," or "--required  , ") is truthy but would be
+    # treated by store_media as an explicit requirement set, bypassing the plan
+    # gate and letting the run exit 0 with an empty asset map. Reject it as a
+    # usage error BEFORE touching credentials or the job file.
+    required: Optional[Tuple[str, ...]] = None
+    if args.required:
+        required = tuple(
+            part.strip() for part in args.required.split(",") if part.strip()
+        )
+        if not required:
+            print(json.dumps({
+                "error": "usage",
+                "detail": "--required must name at least one asset key "
+                          "('cover', 'mp3', 'teaser'); got an empty set. "
+                          "Omit --required to use the preset-derived default.",
+            }))
+            return 3
+
     with open(args.job, "r", encoding="utf-8") as handle:
         job = json.load(handle)
     state = None
@@ -831,11 +860,6 @@ def _cmd_store(args: argparse.Namespace) -> int:
     location_id = resolve_location_id(
         payload_location_id=job.get("location_id")
     )
-    required: Optional[Tuple[str, ...]] = None
-    if args.required:
-        required = tuple(
-            part.strip() for part in args.required.split(",") if part.strip()
-        )
     try:
         result = store_media(job, cred, location_id, state=state, required=required)
     except RateLimited as exc:

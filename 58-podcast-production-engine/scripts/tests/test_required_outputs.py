@@ -270,6 +270,38 @@ class ForceWaiverTighteningCli(unittest.TestCase):
         self.assertEqual(r.returncode, 2, r.stderr)
         self.assertIn("test", r.stderr.lower())
 
+    def test_test_job_cannot_advance_to_complete_without_waiver(self):
+        # QC finding 1 (HIGH): the test-job-to-complete refusal must fire with NO
+        # waiver flag at all. A _test-tagged job can never advance to 'complete',
+        # even when every required output is present and no waiver is requested.
+        jid = self._create_and_walk(test_payload=True)
+        # Set every required output so the required-outputs gate would NOT block
+        # either the publishing -> enrolling or the enrolling -> complete
+        # transition on its own. (interview preset: book_teaser_url gates the
+        # former; cover_image_url + episode_title gate the latter.)
+        for field, value in (
+            ("mp3_media_url", "https://x/a.mp3"),
+            ("episode_package_url", "https://x/pkg"),
+            ("podbean_permalink", "https://pb/ep"),
+            ("book_teaser_url", "https://x/t.pdf"),
+            ("cover_image_url", "https://x/c.png"),
+            ("episode_title", "Some Episode"),
+        ):
+            r = self._ps("output", "--job-id", jid, "--field", field, "--value", value)
+            self.assertEqual(r.returncode, 0, r.stderr)
+        # Walk to enrolling (forward path, no waiver needed).
+        r = self._ps("advance", "--job-id", jid, "--to", "enrolling")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        # Advance to complete with NO --force-waiver: must be REFUSED.
+        r = self._ps("advance", "--job-id", jid, "--to", "complete")
+        self.assertEqual(r.returncode, 2, r.stderr)
+        self.assertIn("test", r.stderr.lower())
+        # Status must NOT be complete.
+        status = sqlite3.connect(self.db).execute(
+            "SELECT status FROM podcast_jobs WHERE job_id = ?", (jid,)
+        ).fetchone()[0]
+        self.assertEqual(status, "enrolling")
+
     def test_cumulative_waiver_blocks_silent_complete_without_override(self):
         # >= 1 waiver on a publish-required preset -> a further waive to
         # 'complete' is refused unless the operator override env is set.

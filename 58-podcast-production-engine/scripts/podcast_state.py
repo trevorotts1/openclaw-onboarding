@@ -1135,18 +1135,21 @@ def cmd_advance(conn, args):
     # Force-waiver tightening (master-plan 1.6): the waiver escape must
     # never silently complete a real episode on missing publish deliverables.
     # ------------------------------------------------------------------ #
+    # (1) UNCONDITIONAL test-state rule: a test job may NOT advance to
+    #     'complete' at all (its ledger 'test' state is terminal short of a
+    #     real episode). This fires with OR without a waiver flag -- a
+    #     _test-tagged job can never become a real episode. A test job
+    #     advancing anywhere else stays allowed so the test can walk the
+    #     pipeline.
+    is_test = _is_test_job(conn, args.job_id)
+    if is_test and to_status == "complete":
+        raise UsageError(
+            "advance refused: job is a TEST run and a test job must not "
+            "advance to 'complete'. Test jobs live in the ledger 'test' "
+            "state and are never published."
+        )
     if waiver:
-        is_test = _is_test_job(conn, args.job_id)
         cum_waivers = _waiver_count(conn, args.job_id)
-        # (1) A test job may NOT advance to 'complete' at all (its ledger 'test'
-        #     state is terminal short of a real episode). A test job advancing
-        #     anywhere else stays allowed so the test can walk the pipeline.
-        if is_test and to_status == "complete":
-            raise UsageError(
-                "advance refused: job is a TEST run and a test job must not "
-                "advance to 'complete'. Test jobs live in the ledger 'test' "
-                "state and are never published."
-            )
         # (2) Cumulative waivers: >= 1 waiver already on a publish-required
         #     preset means this job has a history of missing deliverables.
         #     A further waive-to-'complete' then routes to 'failed' (operator
@@ -1168,11 +1171,6 @@ def cmd_advance(conn, args):
                         job=args.job_id, n=cum_waivers, env=OPERATOR_WAIVE_TO_COMPLETE_ENV
                     )
                 )
-        if is_test and waiving_to_complete:
-            raise UsageError(
-                "advance refused: a TEST job may not waive to 'complete' "
-                "(see the test-state rule above)."
-            )
         # (3) --force-waiver is gated to test jobs: the reason string
         #     "[reason: test-run]" is rejected unless the job is explicitly
         #     tagged test_run. A waiver on a REAL job requires the operator
