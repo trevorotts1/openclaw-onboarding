@@ -8,7 +8,7 @@
     "words_per_minute_target": {"exact": 140, "unit": "wpm", "field": "wordsPerMinute", "note": "Pacing target used to size the word budget.", "af": "AF-POD-WPM"},
     "tag_sentences_per_tag": {"min": 2, "max": 5, "unit": "sentences", "field": "sentencesPerTag", "note": "One Fish Audio tag roughly every two to five sentences, concentrated at pivots.", "af": "AF-POD-TAGDENSITY"},
     "tag_min_per_paragraph": {"min": 1, "max": null, "unit": "count", "field": "minTagsPerParagraph", "note": "At least one delivery tag per paragraph (density floor, mirrors Skill 57 podcast_tag_density).", "af": "AF-POD-TAGDENSITY"},
-    "cover_px": {"min": 1400, "max": 3000, "unit": "pixels", "field": "coverWidth/coverHeight", "note": "Square cover; within 1400 to 3000; NEVER below 1400 square.", "af": "AF-POD-COVER-PX"},
+    "cover_px": {"min": 1500, "max": 3000, "unit": "pixels", "field": "coverWidth/coverHeight", "note": "Square cover; within 1500 to 3000; NEVER below 1500 square (Podbean safe higher bound).", "af": "AF-POD-COVER-PX"},
     "cover_bytes": {"min": 0, "max": 524288, "unit": "bytes", "field": "coverBytes", "note": "Under 512 kilobytes, JPEG, RGB.", "af": "AF-POD-COVER-SIZE"},
     "audio_bitrate_kbps": {"min": 192, "max": null, "unit": "kbps", "field": "bitrateKbps", "note": "MP3 output at 192 kbps.", "af": "AF-POD-AUDIO-BITRATE"},
     "audio_lufs_integrated": {"min": -16.0, "max": -14.0, "unit": "LUFS", "field": "lufsIntegrated", "note": "Skill 23 loudness doctrine: integrated loudness between minus 16 and minus 14 LUFS. Values are negative; the prover checks min less-than-or-equal measured less-than-or-equal max.", "af": "AF-POD-AUDIO-LUFS"},

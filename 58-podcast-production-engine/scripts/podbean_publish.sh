@@ -551,7 +551,7 @@ proxy_media_probe() {
 
   max_bytes="${PODCAST_MEDIA_MAX_BYTES:-524288000}"      # 500 MiB default
   min_duration="${PODCAST_MEDIA_MIN_DURATION:-30}"       # seconds
-  min_side="${PODCAST_MEDIA_MIN_SIDE:-1400}"             # pixels
+  min_side="${PODCAST_MEDIA_MIN_SIDE:-1500}"             # pixels (Podbean safe higher bound)
 
   probe_file="$tmpdir/probe"
   log "media-probe: fetching ${kind} url head bytes (max ${max_bytes})"
@@ -1256,12 +1256,16 @@ log "authorizing and uploading audio (${AUDIO_CT})"
 MEDIA_KEY="$(upload_file "$AUDIO" "$AUDIO_CT")" || die "audio upload to Podbean failed"
 [ -n "$MEDIA_KEY" ] || die "audio upload returned no media_key"
 
+# Cover is REQUIRED in broker/local mode: a cover-less publish is a fail-open
+# that violates the fail-closed doctrine (incomplete payloads must never publish).
+# Proxy mode enforces the cover earlier via --image-url; this matches that.
+[ -n "$COVER" ] || die "--cover is required in broker/local mode (the finalized cover image; Step 10 produced it - a cover-less publish would ship an episode with no artwork)"
+[ -f "$COVER" ] || die "cover file not found: $COVER"
 LOGO_KEY=""
-if [ -n "$COVER" ]; then
-  COVER_CT="$(content_type_for "$COVER")"
-  log "authorizing and uploading cover (${COVER_CT})"
-  LOGO_KEY="$(upload_file "$COVER" "$COVER_CT")" || die "cover upload to Podbean failed"
-fi
+COVER_CT="$(content_type_for "$COVER")"
+log "authorizing and uploading cover (${COVER_CT})"
+LOGO_KEY="$(upload_file "$COVER" "$COVER_CT")" || die "cover upload to Podbean failed"
+[ -n "$LOGO_KEY" ] || die "cover upload returned no logo_key"
 
 # ---------------------------------------------------------- create episode ----
 # T0-19: refuse to create an episode on a token whose channel scope was never

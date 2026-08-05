@@ -24,7 +24,7 @@
     "format": "JPEG",
     "color_space": "RGB",
     "square": true,
-    "within_1400_to_3000": true
+    "within_1500_to_3000": true
   },
   "teaser_spec": {
     "font_floor_pt": 14,

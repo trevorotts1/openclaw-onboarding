@@ -156,14 +156,19 @@ if [ ! -f "$TEST_MP3" ] || [ ! -s "$TEST_MP3" ]; then
 fi
 green "  OK — test mp3 ready ($(stat -f%z "$TEST_MP3" 2>/dev/null || stat -c%s "$TEST_MP3" 2>/dev/null) bytes)"
 
+# Cover is REQUIRED in broker/local mode (unit 1.4.5). A tiny valid JPEG.
+TEST_COVER="$WORK/cover.jpg"
+printf '\xff\xd8\xff\xe0\x00\x00\x00\x00\xff\xd9' > "$TEST_COVER"
+
 # --- Run the publish+verify+delete cycle --------------------------------------
 UNIQUE_TITLE="U040-integration-test-$(date -u +%Y%m%dT%H%M%SZ)"
-log "running: podbean_publish.sh --draft --audio $TEST_MP3 --title \"$UNIQUE_TITLE\""
+log "running: podbean_publish.sh --draft --audio $TEST_MP3 --cover $TEST_COVER --title \"$UNIQUE_TITLE\""
 
 set +e
 bash "$PUBLISH_SCRIPT" \
   --draft \
   --audio "$TEST_MP3" \
+  --cover "$TEST_COVER" \
   --title "$UNIQUE_TITLE" \
   --out "$RESULT_FILE" \
   > "$WORK/stdout.log" 2>"$WORK/stderr.log"

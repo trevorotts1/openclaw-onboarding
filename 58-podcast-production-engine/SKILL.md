@@ -439,10 +439,10 @@ frozen research is reused), a hard stop at three failures with a founder notific
 the failing checks and the best draft. The QC persona is qc-specialist-podcast and MUST be a
 different persona from whichever persona drafted (independence rule).
 
-STEP 10, COVER ART. status `generating_art`. Kie.ai GPT-image-2, 1K square (1024), prompt built
+STEP 10, COVER ART. status `generating_art`. Kie.ai GPT-image-2, 2K square (2048), prompt built
 from the respondent's visual description anchored by the episode theme and title; poll with the
-bounded backoff schedule; then ffmpeg in-house: confirm square, resize into the 1400 to 3000
-range, JPEG, RGB, under 512 kilobytes, spec-valid filename. Never below 1400 square.
+bounded backoff schedule; then ffmpeg in-house: confirm square, resize into the 1500 to 3000
+range, JPEG, RGB, under 512 kilobytes, spec-valid filename. Never below 1500 square.
 
 STEP 11, AUDIO. status `producing_audio`. Fish Audio s2.1-pro via header with the client's own
 reference_id, mp3 at 192; split at natural beat boundaries only if a per-request limit demands
