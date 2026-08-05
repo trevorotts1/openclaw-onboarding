@@ -1,3 +1,18 @@
+## [v21.7.23]  -  2026-08-04  -  fix(podcast): re-export the n8n publish rail drifts (Standing Gate MULTIROW + Fleet Gate FIX-RESCUE-19), document legacy deactivation and stale pinData
+
+Unit 2.5-2.7 of the podcast publish fix train, QC-passed (Fable max review, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.5 legacy deactivation documented.** The ungated legacy workflow `COfgxe6HXRcWOleV` ("Podbean Channel IDs to Google Doc") is NOT part of the `config/n8n` set and must never be restored from it — it carries an independent Podbean publish chain that bypasses the roster check, entry guard, and media preflight. The DR-RUNBOOK now documents the operator-live deactivation requirement and the NEVER-PRINT disposition. Verified live 2026-08-04: `active: false` on main.blackceoautomations.com.
+- **2.6 DRIFT-1 — Standing Gate MULTIROW.** The `Standing Gate -- Determine Verdict` node now selects the roster row whose `podbean_channel_id` equals the payload `podcast_id` (channel-preferred), falling back to the first last-name row only when the payload carries no `podcast_id`. A DR restore can no longer pick the wrong row for a client with two shows.
+- **2.6 DRIFT-2 — Fleet Gate FIX-RESCUE-19.** The `Fleet Gate -- Resolve Identity + Verdict` node now carries the shared identity placeholder denylist (`'', 'tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba'`), whitespace collapse, and the `fleet_roster_rows` diagnostic. A placeholder identifier can no longer function as a real identity.
+- **2.7 stale pinData.** The repo export carries no pinData (stripped during sanitization). The LIVE workflow's pinned webhook payload predates the contract-v2 guard (missing `contract_version: "2"` and `idempotency_key`) and would be refused — documented as an operator-live re-pin action; no repo change needed.
+
+### Verification
+
+QC review (Fable, thinking max) verified independently on disk and against the live n8n API: all 58 functional nodes match live after dash-canonicalization, the 38-edge connection graph is identical, JSON parses cleanly, no pinData, no credential values, no real client names, only the two sanctioned files changed. Working tree clean; commit is the single change on the branch.
+
 ## [v21.7.22]  -  2026-08-04  -  fix(update-skills): an un-provisioned box, and a Command Center runtime-config data problem this box's operator must fix, no longer withhold the version stamp entirely
 
 Wave-2 fleet guardrail, proven live tonight: Step U6d of `update-skills.sh` runs `reconcile_command_center_runtime.py` to populate the Command Center's departments/branding config from this box's own ZHC provisioning artifacts. Two distinct FATAL messages, both correct in principle, blocked 2 boxes each fleet-wide, with no path forward: (a) `DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client ZHC artifact exists` — a box whose workforce interview never completed, i.e. legitimately un-provisioned; (b) `existing departments.json is non-empty but invalid; refusing to clobber operator/client data` — correct caution against overwriting real data, but a dead end once triggered. Both boxes had SKILL38 and the GHL MCP converge perfectly that night; only the stamp was withheld, over a gap unrelated to skills content.
