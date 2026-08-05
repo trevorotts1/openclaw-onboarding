@@ -197,15 +197,42 @@ else:  # vps
     else:
         print(f"OK P3 vps apiKey present ({'<placeholder>' if key.startswith('{{') else '<set>'})")
 
-# ── Invariant P4: every :cloud model carries maxTokens <= 64000 ───────────
-# Inspect provider-level model list AND any agent model objects that pin maxTokens.
+# ── Invariant P4: every :cloud model caps output at <= 32768 on ALL THREE keys ──
+# Lowered from 64000 -> 32768 on 2026-08-05. WHY: the output reservation is
+# subtracted from the context window to get the usable PROMPT budget:
+#     promptBudget = contextWindow - outputReserve      (verified in the OpenClaw
+#     bundle, run/preemptive-compaction.ts -> buildPrePromptContextBudgetStatus)
+# while the compaction TRIGGER is a separate formula with NO output term:
+#     trigger = contextWindow - reserveTokensFloor - softThresholdTokens
+# On the operator box (kimi-k2.6:cloud, 262144 window) a 65536 reserve put the
+# provider wall at 196608 and the compaction trigger at 196144 -- a 464-token
+# gap. A single tool result jumps that, so sessions blew past the wall before
+# compaction could fire, and then compaction ITSELF was rejected by the same
+# precheck: "Context overflow: prompt too large for the model (precheck)",
+# 28 occurrences in one day at prompts of 212253 and 226744 tokens.
+# 32768 moves the wall to 229376 -> ~33k of margin, which clears the largest
+# observed overshoot (30136).
+#
+# ⛔ ALL THREE KEYS. OpenClaw configs carry max_tokens, maxTokens AND num_predict.
+# NOTE: no apostrophes in this heredoc -- it sits inside a $( ) command
+# substitution and bash tracks quotes through it even though PYEOF is quoted.
+# The native Ollama path honours num_predict; the OpenAI-compatible path honours
+# max_tokens. Checking only one lets the others drift and the effective cap stays
+# high -- a SILENT no-op. Real drift found on the operator box 2026-08-05:
+# minimax-m3 had max_tokens=32768 but num_predict=65536, and nemotron-3-super
+# had max_tokens=131072 (HALF its 262144 window) while maxTokens read 65536.
+CLOUD_OUTPUT_CAP = 32768
+TOKEN_KEYS = ("max_tokens", "maxTokens", "num_predict")
+
 def walk_models(obj, path):
     found = []
     if isinstance(obj, dict):
         mid = obj.get("id") or obj.get("model") or obj.get("name")
         if isinstance(mid, str) and mid.endswith(":cloud"):
-            mt = obj.get("maxTokens", obj.get("max_tokens"))
-            found.append((path, mid, mt))
+            # Caps may sit on the model object or one level down in .params
+            src = obj.get("params") if isinstance(obj.get("params"), dict) else obj
+            vals = {k: src.get(k, obj.get(k)) for k in TOKEN_KEYS}
+            found.append((path, mid, vals))
         for k, v in obj.items():
             found += walk_models(v, f"{path}.{k}")
     elif isinstance(obj, list):
@@ -214,23 +241,27 @@ def walk_models(obj, path):
     return found
 
 cloud_hits = walk_models(cfg.get("models", {}), "models")
-# C2/P4: a :cloud model with NO maxTokens key is also a violation — the caller
+# C2/P4: a :cloud model with NO cap key at all is also a violation — the caller
 # would hit the Ollama Cloud default (unbounded → HTTP 400 on long outputs).
 bad_tokens = []
 missing_tokens = []
-for (p, m, mt) in cloud_hits:
-    if mt is None:
+for (p, m, vals) in cloud_hits:
+    present = {k: v for k, v in vals.items() if isinstance(v, int)}
+    if not present:
         missing_tokens.append((p, m))
-    elif isinstance(mt, int) and mt > 64000:
-        bad_tokens.append((p, m, mt))
+        continue
+    over = {k: v for k, v in present.items() if v > CLOUD_OUTPUT_CAP}
+    if over:
+        bad_tokens.append((p, m, over))
 if bad_tokens or missing_tokens:
-    for (p, m, mt) in bad_tokens:
-        print(f"VIOLATED P4 :cloud model {m} at {p} has maxTokens={mt} > 64000 (Ollama Cloud caps output at 65536 → HTTP 400 / silent failure)")
+    for (p, m, over) in bad_tokens:
+        detail = ", ".join(f"{k}={v}" for k, v in sorted(over.items()))
+        print(f"VIOLATED P4 :cloud model {m} at {p} has {detail} > {CLOUD_OUTPUT_CAP} (output reserve is subtracted from the context window; too large collapses the gap between the provider wall and the compaction trigger → 'prompt too large (precheck)')")
     for (p, m) in missing_tokens:
-        print(f"VIOLATED P4 :cloud model {m} at {p} has NO maxTokens key (Ollama Cloud hard-cap is 65536; omitting maxTokens risks HTTP 400 on long outputs). Set maxTokens <= 64000.")
+        print(f"VIOLATED P4 :cloud model {m} at {p} has NONE of {TOKEN_KEYS} (Ollama Cloud hard-cap is 65536; omitting these risks HTTP 400 on long outputs). Set all three to {CLOUD_OUTPUT_CAP}.")
 else:
     n = len(cloud_hits)
-    print(f"OK P4 no :cloud model exceeds maxTokens 64000 ({n} :cloud model entr{'y' if n==1 else 'ies'} inspected)")
+    print(f"OK P4 all :cloud models cap output at <= {CLOUD_OUTPUT_CAP} on {'/'.join(TOKEN_KEYS)} ({n} :cloud model entr{'y' if n==1 else 'ies'} inspected)")
 PYEOF
 )" || { _fail "python3 evaluator failed (parse error or unexpected exit)"; exit 1; }
 
