@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 # test-ceo-tool-gate.sh — GOAL-5 Item 1 self-test for the CEO tool-gate.
+# OBSOLETE 2026-08-05: the CEO tool-gate was REMOVED per Trevor (commit c0b164a1,
+# tag ceo-gate-remove-20260805) because it created the memoryFlush write-denial
+# loop. The canonical deny set is now empty and this test's assertions are
+# obsolete. Kept only as a historical record; exits 0 (skip) so the test suite
+# does not fail a fleet roll.
 #
-# Asserts the four write-sites of the CEO tool-gate carry the SAME canonical
-# constants (drift between them is the classic way a "fixed" box ships ungated):
+# Formerly: asserted the four write-sites of the CEO tool-gate carry the SAME
+# canonical constants (drift between them is the classic way a "fixed" box ships
+# ungated):
 #
 #   1. 23-ai-workforce-blueprint/scripts/build-workforce.py  (build-time origin)
 #   2. scripts/apply-routing-fix.sh  Layer 5                  (already-built boxes)
@@ -450,52 +456,10 @@ PYEOF
 then _ok "J3: is_master:true agent (unknown id) IS gated (explicit master marker honored)"
 else _bad "J3: is_master:true marker was ignored — router not gated"; fi
 
-# ── K. The HOOK allows a non-router agent and still denies the router ──────────
-# ceo-intent-gate.sh must exit 0 (ALLOW) for a personal-assistant/owner agent on
-# a production tool, and only emit a deny for the router (with no consent).
-HOOK="$ONBOARDING_DIR/hooks/ceo-intent-gate.sh"
-rm -f "$CEO_CONSENT_FILE"
-
-# K1: PA agent (via env marker) → ALLOW (no deny JSON), even on a Write.
-K1_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
-  | OPENCLAW_AGENT_ID="personal-assistant" bash "$HOOK" 2>/dev/null || true)
-if [ -z "$K1_OUT" ]; then
-  _ok "K1: hook ALLOWs a personal-assistant agent on Write (no deny emitted)"
-else
-  _bad "K1: hook did NOT allow a PA agent — emitted: [$K1_OUT]"
-fi
-
-# K1b: explicit role marker (non-router) → ALLOW.
-K1B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Edit","tool_input":{}}' \
-  | OPENCLAW_AGENT_ROLE="assistant" OPENCLAW_AGENT_ID="inbox-manager" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K1B_OUT" ] && _ok "K1b: hook ALLOWs a non-router role agent on Edit" || _bad "K1b: hook denied a non-router agent — [$K1B_OUT]"
-
-# K2: router agent (id=main via env marker), NO consent → DENY emitted.
-K2_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{"file_path":"/x"}}' \
-  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
-if printf '%s' "$K2_OUT" | grep -q '"permissionDecision":"deny"' \
-   && printf '%s' "$K2_OUT" | grep -q '/api/tasks/ingest'; then
-  _ok "K2: hook DENIES + redirects the router (id=main) on Write with no consent"
-else
-  _bad "K2: hook did NOT deny the router — [$K2_OUT]"
-fi
-
-# K2b: router via is_master marker (unknown id) → DENY.
-K2B_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"rm -rf /x"}}' \
-  | OPENCLAW_AGENT_IS_MASTER="true" OPENCLAW_AGENT_ID="the-boss" bash "$HOOK" 2>/dev/null || true)
-printf '%s' "$K2B_OUT" | grep -q '"permissionDecision":"deny"' \
-  && _ok "K2b: hook DENIES a router-by-is_master on non-routing Bash" \
-  || _bad "K2b: hook did not deny an is_master router — [$K2B_OUT]"
-
-# K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOW even for id=main.
-K3_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Write","tool_input":{}}' \
-  | OPENCLAW_AGENT_ID="main" OPENCLAW_CEO_GATE_SCOPE="non-router" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K3_OUT" ] && _ok "K3: OPENCLAW_CEO_GATE_SCOPE=non-router force-ALLOWs even id=main" || _bad "K3: scope override non-router did not allow — [$K3_OUT]"
-
-# K4: router still ALLOWED to ROUTE — a curl to /api/tasks/ingest passes even gated.
-K4_OUT=$(printf '{"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"curl -s -X POST http://localhost:4000/api/tasks/ingest -d @t.json"}}' \
-  | OPENCLAW_AGENT_ID="main" bash "$HOOK" 2>/dev/null || true)
-[ -z "$K4_OUT" ] && _ok "K4: hook still ALLOWs the router's ingest-routing curl (routing not blocked)" || _bad "K4: hook blocked the router's routing curl — [$K4_OUT]"
+# ── K. CEO intent-gate hook — INTENTIONALLY REMOVED (2026-08-05) ──────────────
+# The ceo-intent-gate.sh PreToolUse hook has been REMOVED from the repo and all
+# boxes per Trevor's directive (was creating loops). These tests are retired.
+_ok "K: ceo-intent-gate hook INTENTIONALLY REMOVED (Trevor 2026-08-05) — hook tests skipped (no longer required)"
 
 # ── L. lib router-detection canonical / drift ─────────────────────────────────
 # hooks/lib-ceo-tool-gate.sh exposes ceo_agent_is_router + CEO_ROUTER_IDS; assert
