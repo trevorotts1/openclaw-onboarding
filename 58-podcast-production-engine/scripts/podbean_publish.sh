@@ -187,7 +187,11 @@ Common options:
   --image-url <url>       HTTPS URL to the cover (Step 14 output). REQUIRED in
                           proxy mode only; ignored in broker/local mode.
   --speaker <name>        speaker or guest name; appends "Inspired by <name>" to the title
-  --description <text>    show notes (plain text or html, kept under 3000 chars)
+  --description <text>    show notes (plain text or html, kept under 3000 chars).
+                          REQUIRED for a real publish (>= PODBEAN_MIN_DESCRIPTION_LEN,
+                          default 200 chars); Step 12.5 drafts it and records it in
+                          the ledger. --status draft / --draft / --test fall back to
+                          the title stub for verification only.
   --release-date <when>   contact.date_for_release (ISO 8601 or unix seconds);
                           a future value schedules the episode instead of publishing now
   --status <value>        force publish | draft | future (default derives from --release-date)
@@ -261,22 +265,37 @@ content_type_for() {
 # documented "kept under 3000 chars" contract (usage text, line ~150); the
 # episode-type set is the Podbean episode type vocabulary.
 readonly PODBEAN_MAX_DESCRIPTION_LEN="${PODBEAN_MAX_DESCRIPTION_LEN:-3000}"
+# U048: minimum description floor. Step 12.5 (SHOW NOTES) drafts thorough show
+# notes (800-2500 chars); a description shorter than this floor is a stub (the
+# old silent title-substitution produced exactly a one-line description). A
+# publish-proxy run must never send a stub to Podbean. Mirrors the >= 200-char
+# rule in podcast_state.py MIN_EPISODE_DESCRIPTION_LEN so the state gate and the
+# publish script enforce the same floor.
+readonly PODBEAN_MIN_DESCRIPTION_LEN="${PODBEAN_MIN_DESCRIPTION_LEN:-200}"
 readonly PODBEAN_MAX_TITLE_LEN="${PODBEAN_MAX_TITLE_LEN:-200}"
 readonly PODBEAN_EPISODE_TYPES="full trailer bonus"
 
-# validate_episode_metadata <title> <description> <episode_type>
+# validate_episode_metadata <title> <description> <episode_type> [stub_ok]
 #   Pre-flight bounds/content checks run BEFORE any Podbean API call. Dies with
 #   a clear message on:
+#     - show notes (description) shorter than PODBEAN_MIN_DESCRIPTION_LEN when
+#       stub_ok is not 1 (a stub description -- Step 12.5 produced the real show
+#       notes, so a short one is an upstream defect, not a publishable input);
 #     - show notes (description) longer than PODBEAN_MAX_DESCRIPTION_LEN;
 #     - title longer than PODBEAN_MAX_TITLE_LEN;
 #     - an episode type outside PODBEAN_EPISODE_TYPES (full/trailer/bonus).
+#   stub_ok=1 (draft / --test / --status draft verification runs) permits a
+#   short stub description; a real publish always enforces the minimum floor.
 #   Returns 0 (proceeds) when every field is within bounds. Never makes a network
 #   call. Lengths are counted in characters (wc -m), matching the "chars" contract.
 validate_episode_metadata() {
-  local title="$1" description="$2" episode_type="${3:-full}"
+  local title="$1" description="$2" episode_type="${3:-full}" stub_ok="${4:-0}"
   local desc_len title_len
 
   desc_len="$(printf '%s' "$description" | wc -m | tr -d ' ')"
+  if [ "$stub_ok" != "1" ] && [ "$desc_len" -lt "$PODBEAN_MIN_DESCRIPTION_LEN" ]; then
+    die "pre-flight: show notes are only ${desc_len} chars, below the minimum of ${PODBEAN_MIN_DESCRIPTION_LEN}; Step 12.5 produced a real description -- a stub (or the title fallback) must never be published"
+  fi
   if [ "$desc_len" -gt "$PODBEAN_MAX_DESCRIPTION_LEN" ]; then
     die "pre-flight: show notes are ${desc_len} chars, over the Podbean limit of ${PODBEAN_MAX_DESCRIPTION_LEN}; shorten the --description before publishing (the API would reject this)"
   fi
@@ -824,9 +843,19 @@ if [ -n "$SPEAKER" ] && [[ "$FINAL_TITLE" != *"Inspired by ${SPEAKER}"* ]]; then
   FINAL_TITLE="${TITLE} Inspired by ${SPEAKER}"
 fi
 
-# Description defaults to the final title when show notes are absent (Podbean
-# requires episode content). Never inject an em dash or a code fence.
-[ -n "$DESCRIPTION" ] || DESCRIPTION="$FINAL_TITLE"
+# Description is a hard publish input produced by Step 12.5 (SHOW NOTES). The
+# OLD silent substitution of the episode title for missing show notes is what
+# shipped the one-line "piss-poor" description -- it must never run in a real
+# publish. Only explicit --status draft / --draft / test runs may fall back to
+# the title stub, where a stub is intended for verification. Never inject an
+# em dash or a code fence.
+if [ -z "$DESCRIPTION" ]; then
+  if [ "$DRAFT_MODE" = "1" ] || [ "$TEST_RUN" = "1" ] || [ "$DRY_RUN" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then
+    DESCRIPTION="$FINAL_TITLE"
+  else
+    die "--description is required in publish-proxy mode (Step 12.5 produced it; the empty title fallback silently degrades the episode)"
+  fi
+fi
 
 # Status: publish now, or schedule for a future release date. A future date maps
 # to Podbean status "future" plus a unix publish_timestamp.
@@ -870,7 +899,13 @@ log "plan: status=${PUBLISH_STATUS} type=${EP_TYPE} title=$(jstr "$FINAL_TITLE")
 # over-length show-notes/title or an invalid episode type is rejected HERE with a
 # clear message instead of a cryptic API rejection after the upload. Dies on a
 # violation; proceeds silently when every field is within bounds.
-validate_episode_metadata "$FINAL_TITLE" "$DESCRIPTION" "$EPISODE_TYPE"
+# stub_ok=1 for explicit --status draft / --draft / test verification runs where
+# a short title stub is intended; a real publish enforces the minimum floor.
+STUB_OK=0
+if [ "$DRAFT_MODE" = "1" ] || [ "$TEST_RUN" = "1" ] || [ "$DRY_RUN" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then
+  STUB_OK=1
+fi
+validate_episode_metadata "$FINAL_TITLE" "$DESCRIPTION" "$EPISODE_TYPE" "$STUB_OK"
 
 if [ "$TEST_RUN" = "1" ]; then
   emit_result "{\"status\":\"test-skipped\",\"reason\":\"test_flag\",\"idempotent_skip\":false,\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS")}"
@@ -939,6 +974,10 @@ print(json.dumps(d))
   if [ -n "$LEDGER" ] && [ -n "$JOB_ID" ]; then
     ledger_audio="$(ledger_field "$LEDGER" mp3_media_url)"
     ledger_image="$(ledger_field "$LEDGER" cover_image_url)"
+    # Step 12.5 (SHOW NOTES) recorded episode_description via
+    # `podcast_state.py output --field episode_description`; resolve it by
+    # default so a publish is never left to the title fallback.
+    ledger_description="$(ledger_field "$LEDGER" episode_description)"
 
     # Resolve AUDIO_URL from ledger when CLI flag was NOT passed.
     if [ -z "$AUDIO_URL" ] && [ -n "$ledger_audio" ]; then
@@ -952,6 +991,14 @@ print(json.dumps(d))
       log "IMAGE_URL resolved from Step 14 ledger (cover_image_url)"
     fi
 
+    # Resolve DESCRIPTION from ledger when the CLI flag was NOT passed. The
+    # ledger is the Step 12.5 producer's handoff; a real publish must use it
+    # rather than silently degrading to the title.
+    if [ -z "$DESCRIPTION" ] && [ -n "$ledger_description" ]; then
+      DESCRIPTION="$ledger_description"
+      log "DESCRIPTION resolved from Step 12.5 ledger (episode_description)"
+    fi
+
     # If BOTH the CLI flag and the ledger supply a value and they DIFFER,
     # refuse to proceed -- the publish must use the GHL URL that Step 14
     # recorded. The operator must re-run without the conflicting flag, or
@@ -961,6 +1008,11 @@ print(json.dumps(d))
     fi
     if [ -n "$IMAGE_URL" ] && [ -n "$ledger_image" ] && [ "$IMAGE_URL" != "$ledger_image" ]; then
       die "IMAGE_URL conflict: CLI flag (--image-url=$IMAGE_URL) differs from Step 14 ledger cover_image_url ($ledger_image). Remove --image-url to use the ledger value, or fix the ledger if it is stale."
+    fi
+    # DESCRIPTION conflict: the CLI flag and the Step 12.5 ledger must agree.
+    # The publish must use the show notes that Step 12.5 drafted and recorded.
+    if [ -n "$DESCRIPTION" ] && [ -n "$ledger_description" ] && [ "$DESCRIPTION" != "$ledger_description" ]; then
+      die "DESCRIPTION conflict: CLI flag (--description=...) differs from Step 12.5 ledger episode_description. Remove --description to use the ledger value, or fix the ledger if it is stale."
     fi
   fi
 

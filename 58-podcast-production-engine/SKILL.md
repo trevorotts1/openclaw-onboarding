@@ -456,6 +456,16 @@ plain text last resort). Episode Package rich and fully rendered with no font be
 Speech Script clean text only. Where Google is the destination, sharing is set to anyone with
 the link can edit.
 
+STEP 12.5, SHOW NOTES. status `publishing`. Draft thorough, enticing show notes (800 to 2500
+characters) from the FROZEN research package and the blueprint alone -- thesis, power statements,
+takeaways, and case studies -- routed through `model_router.py route` on the CONTENT tier (Kimi
+2.6, then GLM 5.2; never an Anthropic model). Honor the writing rules for every produced output:
+zero em dashes, no triple backtick or code-fence markers of any kind. This is the ONE source of
+the Podbean description: a show note shorter than the 200-character floor is a defect, never
+publishable. Persist via `podcast_state.py output --field episode_description`; Step 15 resolves
+it from the ledger by default. The silent title-substitution fallback in the publish script is
+dead for real publishes -- a real episode always carries a real description.
+
 STEP 13, BOOK TEASER (Interview mode ONLY; Personal mode skips entirely). status `publishing`.
 First-chapter book intro, at most three pages, in the person's own voice, ending on a
 cliffhanger, built only from what they shared plus verified research, written on Kimi 2.6 or

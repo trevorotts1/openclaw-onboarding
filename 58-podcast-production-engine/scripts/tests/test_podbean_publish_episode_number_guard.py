@@ -161,9 +161,12 @@ class EpisodeNumberGuardTest(unittest.TestCase):
             f.write(b"not-real-audio-bytes")
 
     def _run(self, args, env_extra=None, timeout=30):
+        # Isolate HOME so the script's secrets-env sourcing can never reach the
+        # real ~/.openclaw/secrets/.env of the test machine (which would set
+        # publish-proxy vars and divert a broker/local run to proxy mode).
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
-            "HOME": os.environ.get("HOME", self.tmp),
+            "HOME": self.tmp,
             "PODBEAN_RETRY_BASE_DELAY": "0",
         }
         if env_extra:

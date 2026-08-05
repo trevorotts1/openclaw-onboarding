@@ -116,6 +116,18 @@ def _canonical_utc(release_date: str) -> str:
 _HERE = Path(__file__).resolve()
 _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 
+# A real show-notes description meeting the Step 12.5 floor (>= 200 chars).
+# Proxy publish mode now requires a real description (U048), so transport and
+# media-guard tests supply a valid one by default; tests that specifically probe
+# the missing/short-description refusals override it.
+VALID_DESCRIPTION = (
+    "In this episode we explore how conviction becomes a competitive edge. "
+    "Our guest shares the decisions, the false starts, and the one turning "
+    "point that reshaped everything. We unpack the framework, the research "
+    "behind it, and the practical first step you can take this week. "
+    "A full conversation with real takeaways for leaders who build. " * 2
+)
+
 # Fixture-only literal. Never a real credential; exists so the mock can assert
 # the header the script sends matches what it was configured with, and so a
 # redaction test can prove this literal never reaches stdout/stderr verbatim.
@@ -263,7 +275,8 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         if env_extra:
             env.update(env_extra)
         proc = subprocess.run(
-            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode"] + args,
+            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode",
+             "--description", VALID_DESCRIPTION] + args,
             env=env,
             capture_output=True,
             text=True,
@@ -387,7 +400,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         proc = self._run(
             ["--audio-url", "https://media.example.test/a.mp3",
              "--image-url", "https://media.example.test/i.jpg",
-             "--description", "Show notes for the full-contract test.",
+             "--description", VALID_DESCRIPTION,
              "--release-date", "2026-08-01T10:00:00",
              "--speaker", "Dana",
              "--job-id", "pd-full-contract"],
@@ -405,7 +418,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(req["title"], "Test Episode Inspired by Dana",
                           "title must carry the 'Inspired by <speaker>' transform, "
                           "not just the raw --title flag")
-        self.assertEqual(req["description"], "Show notes for the full-contract test.")
+        self.assertEqual(req["description"], VALID_DESCRIPTION)
         self.assertEqual(req["audio_url"], "https://media.example.test/a.mp3")
         self.assertEqual(req["image_url"], "https://media.example.test/i.jpg")
         # publish_date is the canonical ISO-8601 UTC normalization of
@@ -724,6 +737,7 @@ class ProxyMediaGuardTest(unittest.TestCase):
              "--audio-url", audio_url,
              "--image-url", image_url,
              "--title", "Media Probe Test",
+             "--description", VALID_DESCRIPTION,
              "--job-id", job_id],
             env=env,
             capture_output=True,
