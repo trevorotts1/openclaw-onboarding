@@ -1,3 +1,21 @@
+## [v21.7.34]  -  2026-08-05  -  fix(skill58): draft-cleanup workflow Delete node verb DELETE -> POST /v1/episodes/{id}/delete
+
+The n8n `draft-cleanup` workflow's "Delete Episode" node used `DELETE /v1/episodes/{id}`,
+which Podbean answers with HTTP 403 (verified 2026-08-05 against the operator test channel).
+Podbean's documented delete endpoint is `POST /v1/episodes/{id}/delete`, requiring only
+`episode_publish` scope (the channel-scoped token already carries it) and returning HTTP 200
+`{"msg":"Delete episode success!"}`. Changed the node method to POST and appended `/delete`
+to the URL, preserving the `episode_id` and `access_token` interpolation. All 18 residual test
+drafts were deleted with this path (channel now empty). This merge is repo-only; deploying the
+fixed verb to the LIVE draft-cleanup workflow in n8n is a separate live step.
+
+### Merge notes
+
+Cherry-picked `bf1d1b22` (+2/-2, workflow file only) onto origin/main — clean, no conflict
+(file path unchanged). Version rolled v21.7.33 -> v21.7.34 across all 10 markers via
+bump-version.sh. Skill 58 0.1.38 -> 0.1.39 (SKILL.md frontmatter + skill-version.txt).
+CHANGELOG entry added. Annotated tag v21.7.34 pushed.
+
 ## [v21.7.33]  -  2026-08-05  -  fix(skill58): proxy test-harness stub state-writer + deploy the capability-manifest gate (CC pinnedTag v6.0.82 -> v6.0.88)
 
 Two final-QC fixes for the podcast publish fix train, merged to main and verified green:
