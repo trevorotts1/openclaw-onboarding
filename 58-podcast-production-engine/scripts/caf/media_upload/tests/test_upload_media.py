@@ -111,6 +111,20 @@ def test_credential_report_has_no_value():
 # Credential resolution
 # --------------------------------------------------------------------------- #
 
+def test_resolve_pit_engine_alias_wins_when_present():
+    # The engine's OWN PIT is checked FIRST: when both the engine PIT and a
+    # generic GOHIGHLEVEL_API_KEY are present, the engine PIT must win
+    # (wrong-tenant 403 guard).
+    env = {
+        "PODCAST_ENGINE_GHL_PIT": "pit-engine",
+        "GOHIGHLEVEL_API_KEY": "pit-generic",
+    }
+    cred = mu.resolve_pit(env)
+    assert cred.present
+    assert cred.alias == "PODCAST_ENGINE_GHL_PIT"
+    assert cred.value == "pit-engine"
+
+
 def test_resolve_pit_precedence_canonical_first():
     env = {"GHL_API_KEY": "pit-second", "GOHIGHLEVEL_API_KEY": "pit-first"}
     cred = mu.resolve_pit(env)
@@ -126,6 +140,12 @@ def test_resolve_pit_convertflow_alias():
 def test_resolve_pit_missing():
     cred = mu.resolve_pit({})
     assert not cred.present and cred.report()["status"] == "NOT SET"
+
+
+def test_resolve_location_engine_alias_wins_when_present():
+    # The engine's OWN location id is checked FIRST over generic ids.
+    env = {"PODCAST_ENGINE_GHL_LOCATION_ID": "LOC_ENGINE", "GHL_LOCATION_ID": "LOC_GENERIC"}
+    assert mu.resolve_location_id(env) == "LOC_ENGINE"
 
 
 def test_resolve_location_mismatch_is_tenant_abort():
