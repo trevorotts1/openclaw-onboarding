@@ -1,3 +1,18 @@
+## [v21.7.28]  -  2026-08-04  -  fix(podcast): fail-closed hardening — empty-required store refusal, test-job complete bar, media-probe escape-hatch refusal (unit 1.5-1.8)
+
+Unit 1.5-1.8 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC fix-first) and merged to main.
+
+### What changed
+
+- **1.5 store_media refuses to run with an empty required asset set.** store_media raises MediaError before any network call when cover/mp3 are missing; a --required cover,mp3[,teaser] CLI flag (preset-driven) is added. A present-but-empty --required value (e.g. ",") is rejected as a usage error (exit 3) before touching credentials or the job file. Never exits 0 with an empty asset map.
+- **1.6 advance --force-waiver tightened.** A test job (_test payload) may not advance to complete under ANY flag combination (hoisted unconditional refusal); cumulative waivers >= 1 on a publish-required preset block a silent waive-to-complete unless PODBEAN_OPERATOR_WAIVE_TO_COMPLETE=1; the [reason: test-run] waiver is rejected unless the job is tagged test_run.
+- **1.7 ghl_credential_gate full mode checks KIE_API_KEY, FISH_AUDIO_API_KEY, and the client Fish Audio reference_id** (SET/NOT-SET + placeholder behavior probe). Missing any one stops setup fail-closed.
+- **1.8 media-probe escape hatch refused.** PODBEAN_SKIP_MEDIA_PROBE=1 in publish-proxy mode is refused unless PODBEAN_OPERATOR_FORCE=1 is also set; ffprobe absence is a hard fail in the proxy media probe (no HEAD-only degrade).
+
+### Merge notes
+
+Two cross-unit test-harness conflicts with units already on main were resolved: ghl_credential_gate selftest (unit 1.3's F1 two-store case now provides the media-provider creds unit 1.7 requires; 21/21 pass) and the proxy media-guard tests (added a stub state-writer so the U2.4 waiver gate sees a clean job; ProxyMediaGuardTest 6/6, upload_media 43/43, required_outputs 21/21). Cherry-picked c460c19d + fe571e06.
+
 ## [v21.7.27]  -  2026-08-04  -  fix(podcast): n8n publish rail fails closed — byte-level media gates, entry-guard semantic reasons (unit 2.1-2.4)
 
 Unit 2.1-2.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC fix-first, 2026-08-04) and merged to main.

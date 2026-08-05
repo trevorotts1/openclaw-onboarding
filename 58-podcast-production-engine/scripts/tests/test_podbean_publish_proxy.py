@@ -270,7 +270,10 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         env = {
             "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
             "HOME": self.tmp,
-            "PODBEAN_SKIP_MEDIA_PROBE": "1",  # crs: transport tests skip probe
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",   # crs: transport tests skip probe
+            # The transport tests skip the probe; per master-plan 1.8 the skip
+            # requires the operator force flag even in the test harness.
+            "PODBEAN_OPERATOR_FORCE": "1",
         }
         if env_extra:
             env.update(env_extra)
@@ -872,13 +875,30 @@ class ProxyMediaGuardTest(unittest.TestCase):
             "HOME": self.tmp,
         }
         env.update(self._proxy_env_media(**extra_env))
+        # A stub state-writer so the U2.4 waiver gate (assert_not_waived) sees a
+        # CLEAN job (no --force-waiver marker) instead of failing closed on a
+        # non-existent job. These media-probe tests exercise the probe path, not
+        # the waiver gate; the real podcast_state.py would refuse "no job data".
+        stub_writer = os.path.join(self.tmp, "podcast_state.py")
+        if not os.path.exists(stub_writer):
+            with open(stub_writer, "w") as f:
+                f.write(
+                    "#!/usr/bin/env python3\n"
+                    "import json, sys\n"
+                    "if sys.argv[1] == 'get':\n"
+                    "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                    "else:\n"
+                    "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+                )
+            os.chmod(stub_writer, 0o755)
         return subprocess.run(
             ["bash", str(_SCRIPT),
              "--audio-url", audio_url,
              "--image-url", image_url,
              "--title", "Media Probe Test",
              "--description", VALID_DESCRIPTION,
-             "--job-id", job_id],
+             "--job-id", job_id,
+             "--state-writer", stub_writer],
             env=env,
             capture_output=True,
             text=True,
@@ -944,7 +964,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
 
     def test_probe_escape_hatch_skips_validation(self):
-        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish."""
+        """PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe and proceeds to publish
+        ONLY with the operator force flag (master-plan 1.8)."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-skip/",
@@ -961,11 +982,99 @@ class ProxyMediaGuardTest(unittest.TestCase):
             audio_url=self.mock.base_url + "/media/short.mp3",
             image_url=self.mock.base_url + "/media/tiny.png",
             PODBEAN_SKIP_MEDIA_PROBE="1",
+            PODBEAN_OPERATOR_FORCE="1",
         )
         self.assertEqual(proc.returncode, 0, proc.stderr)
         result = json.loads(proc.stdout.strip().splitlines()[-1])
         self.assertEqual(result["status"], "published")
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 1)
+
+    def test_probe_escape_hatch_refused_without_operator_force(self):
+        """PODBEAN_SKIP_MEDIA_PROBE=1 without PODBEAN_OPERATOR_FORCE=1 refuses
+        to run in publish-proxy mode (fail-closed, master-plan 1.8)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-skip/",
+            "episode_id": "ep-2",
+            "episode_number": 2,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        proc = self._run_media(
+            audio_url=self.mock.base_url + "/media/short.mp3",
+            image_url=self.mock.base_url + "/media/tiny.png",
+            PODBEAN_SKIP_MEDIA_PROBE="1",
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("PODBEAN_OPERATOR_FORCE", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_probe_ffprobe_absence_is_a_hard_fail(self):
+        """ffprobe ABSENCE in publish-proxy mode is a HARD FAIL: the script must
+        die with the exact 'ffprobe required for media-probe' message and never
+        reach the publish endpoint (master-plan 1.8; no HEAD-only degrade)."""
+        self.mock.route("/webhook/podbean-publish", [(200, {
+            "ok": True,
+            "permalink_url": "https://example.podbean.com/e/test-nofprobe/",
+            "episode_id": "ep-3",
+            "episode_number": 3,
+            "scheduled": False,
+            "idempotent_replay": False,
+        })])
+        self._register_files({
+            "/media/ok.mp3": open(self.ok_mp3, "rb").read(),
+            "/media/ok.png": self.ok_png_data,
+        })
+
+        # Build a PATH that has every tool the script needs BEFORE the probe
+        # (curl, python3, mktemp, date, grep, cut, rm, wc, tr, printf, bash, ...)
+        # but NO ffprobe. Symlink the real system binaries so the script's normal
+        # command path is exercised right up to the ffprobe gate.
+        shim = os.path.join(self.tmp, "no-ffprobe-bin")
+        os.makedirs(shim)
+        for tool in ("bash", "curl", "python3", "mktemp", "date", "grep", "cut",
+                     "rm", "wc", "tr", "printf", "sed", "awk", "sort", "uniq",
+                     "head", "cat", "mkdir", "touch", "basename", "dirname"):
+            real = shutil.which(tool)
+            if real:
+                os.symlink(real, os.path.join(shim, tool))
+
+        env = self._proxy_env_media()
+        env["PATH"] = shim
+        env["HOME"] = self.tmp
+        # Stub state-writer so the U2.4 waiver gate sees a clean (non-waived)
+        # job and does not fail closed before the ffprobe gate. Also provide a
+        # real description (U048) so the description-required check does not
+        # intercept first.
+        stub_writer = os.path.join(self.tmp, "podcast_state.py")
+        with open(stub_writer, "w") as f:
+            f.write(
+                "#!/usr/bin/env python3\n"
+                "import json, sys\n"
+                "if sys.argv[1] == 'get':\n"
+                "    print(json.dumps({'job_id': sys.argv[3], 'events': []}))\n"
+                "else:\n"
+                "    print('stub-writer-called:' + ' '.join(sys.argv[1:]))\n"
+            )
+        os.chmod(stub_writer, 0o755)
+        proc = subprocess.run(
+            ["bash", str(_SCRIPT),
+             "--audio-url", self.mock.base_url + "/media/ok.mp3",
+             "--image-url", self.mock.base_url + "/media/ok.png",
+             "--title", "Media Probe No-ffprobe",
+             "--description", VALID_DESCRIPTION,
+             "--job-id", "pd-no-ffprobe",
+             "--state-writer", stub_writer],
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=20,
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("ffprobe required for media-probe", proc.stderr)
+        self.assertIn("ffprobe not available", proc.stderr)
+        # Fail closed: never reaches the publish webhook.
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
 
 if __name__ == "__main__":

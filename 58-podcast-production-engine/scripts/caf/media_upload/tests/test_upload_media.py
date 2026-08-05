@@ -380,6 +380,7 @@ def test_store_media_personal_skips_teaser():
 
 def test_store_media_reachability_failure_propagates_before_podbean():
     cover = _tmpfile(".jpg")
+    mp3 = _tmpfile(".mp3")
     state = {"folders": {mu.PARENT_FOLDER: "P", mu.IMAGES_FOLDER: "I",
                          mu.EPISODES_FOLDER: "E"}}
     rec = Recorder([
@@ -388,10 +389,11 @@ def test_store_media_reachability_failure_propagates_before_podbean():
         FakeResp(200, headers={"Content-Type": "text/html"}),  # GET fallback
     ])
     job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y",
-           "cover_path": cover}
+           "cover_path": cover, "mp3_path": mp3}
     with pytest.raises(mu.ReachabilityError):
         mu.store_media(job, CRED, "LOC", state=state, transport=rec)
     os.unlink(cover)
+    os.unlink(mp3)
 
 
 def test_store_media_missing_credential_refuses():
@@ -399,6 +401,103 @@ def test_store_media_missing_credential_refuses():
         mu.store_media({"mode": mu.PERSONAL_MODE, "client_name": "X",
                         "episode_title": "Y"},
                        mu.Credential(present=False), "LOC")
+
+
+def test_store_media_refuses_empty_plan_for_publishing_preset():
+    # Master-plan 1.5: a publishing preset (store_media True) must NEVER exit 0
+    # with an empty asset map. No cover_path / mp3_path on the job -> MediaError.
+    state = {"folders": {mu.PARENT_FOLDER: "P", mu.IMAGES_FOLDER: "I",
+                         mu.EPISODES_FOLDER: "E"}}
+    rec = Recorder([])  # any network call would fail; we must refuse BEFORE it
+    job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y"}
+    with pytest.raises(mu.MediaError) as exc:
+        mu.store_media(job, CRED, "LOC", state=state, transport=rec)
+    assert "store_media refuses to run" in str(exc.value)
+    assert rec.calls == []  # refused before any upload
+
+
+def test_store_media_refuses_when_mp3_missing_but_cover_present():
+    cover = _tmpfile(".jpg")
+    state = {"folders": {mu.PARENT_FOLDER: "P", mu.IMAGES_FOLDER: "I",
+                         mu.EPISODES_FOLDER: "E"}}
+    rec = Recorder([])
+    job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y",
+           "cover_path": cover}
+    with pytest.raises(mu.MediaError) as exc:
+        mu.store_media(job, CRED, "LOC", state=state, transport=rec)
+    assert "store_media refuses to run" in str(exc.value)
+    assert rec.calls == []
+    os.unlink(cover)
+
+
+def test_store_media_refuses_empty_explicit_required_set():
+    # Master-plan 1.5 fail-closed invariant: an explicit but EMPTY required set
+    # (e.g. --required "," parsing to ()) must never bypass the plan gate and
+    # exit 0 with an empty asset map. It is a MediaError regardless of whether
+    # the job carries assets, because an empty requirement is a degenerate input.
+    cover = _tmpfile(".jpg")
+    state = {"folders": {mu.PARENT_FOLDER: "P", mu.IMAGES_FOLDER: "I",
+                         mu.EPISODES_FOLDER: "E"}}
+    rec = Recorder([])
+    job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y",
+           "cover_path": cover}
+    with pytest.raises(mu.MediaError) as exc:
+        mu.store_media(job, CRED, "LOC", state=state, transport=rec,
+                       required=())
+    assert "required asset set is empty" in str(exc.value)
+    assert rec.calls == []  # refused before any upload
+    os.unlink(cover)
+
+
+def test_default_required_personal_is_cover_mp3():
+    assert mu._default_required({"mode": mu.PERSONAL_MODE}) == ("cover", "mp3")
+
+
+def test_default_required_interview_adds_teaser():
+    assert mu._default_required({"mode": mu.INTERVIEW_MODE}) == \
+        ("cover", "mp3", "teaser")
+
+
+def test_default_required_preset_drives_teaser():
+    # When the job carries an explicit preset, the preset's book_teaser flag
+    # (not the mode alone) decides the teaser requirement.
+    assert mu._default_required({"preset": "interview"}) == \
+        ("cover", "mp3", "teaser")
+    assert mu._default_required({"preset": "solo"}) == ("cover", "mp3")
+    assert mu._default_required({"preset": "season_strategy"}) == ("cover", "mp3")
+
+
+def test_explicit_required_overrides_default():
+    # A caller may narrow the requirement set (e.g. cover-only repair) -- the
+    # gate honors the explicit set, not the preset default.
+    cover = _tmpfile(".jpg")
+    state = {"folders": {mu.PARENT_FOLDER: "P", mu.IMAGES_FOLDER: "I",
+                         mu.EPISODES_FOLDER: "E"}}
+    rec = Recorder([
+        FakeResp(200, {"fileId": "id", "url": "https://cdn/cover.jpg"}),
+        FakeResp(200, headers={"Content-Type": "image/jpeg"}),
+    ])
+    job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y",
+           "cover_path": cover}
+    # required=("cover",) only: mp3 absence is not a refusal under this explicit set.
+    result = mu.store_media(job, CRED, "LOC", state=state, transport=rec,
+                            required=("cover",))
+    assert set(result["assets"]) == {"cover"}
+    os.unlink(cover)
+
+
+def test_cli_required_comma_only_is_rejected():
+    # Master-plan 1.5 fail-closed invariant at the CLI boundary: "--required ,"
+    # is truthy but parses to an empty requirement set, which must NEVER exit 0
+    # with an empty asset map. The CLI must reject it as a usage error (exit 3)
+    # BEFORE touching credentials or the job file.
+    job = {"mode": mu.PERSONAL_MODE, "client_name": "X", "episode_title": "Y"}
+    with tempfile.TemporaryDirectory() as td:
+        job_path = os.path.join(td, "job.json")
+        with open(job_path, "w", encoding="utf-8") as fh:
+            json.dump(job, fh)
+        code = mu.main(["store", "--job", job_path, "--required", ","])
+        assert code == 3
 
 
 def test_self_test_passes():
