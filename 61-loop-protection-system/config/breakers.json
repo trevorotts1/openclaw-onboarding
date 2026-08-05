@@ -29,6 +29,14 @@
       "trip_action": "disable_cron_not_delete",
       "note": "Cron disabled (not deleted) + P1 with the cron id and its declared-vs-actual cadence. Feeds LP-A6/LP-C2/LP-D3 (LF-4)."
     },
+    "session": {
+      "watches": "D5 runtime tool-loop blocks per session transcript",
+      "max_blocks_per_burst": 8,
+      "max_trailing_ratio": 0.4,
+      "trip_action": "archive_session_and_roll_never_delete",
+      "note": "ARCHIVE (move aside) the poisoned transcript so the next turn starts clean, then P1. DISABLE-NEVER-DELETE applies in full: the transcript is MOVED to a timestamped archive name and the one-line revert moves it back - a session is never deleted. Refuses to touch a session whose file is still being written (the live-session guard, roll_min_idle_minutes): a burning session gets the P1 + the prepared abort, never a file yanked from under a running gateway. Feeds LP-A8 (LF-10). NOTE: the poisoned COMPACTION CHECKPOINTS survive this roll and need LF-11, which is Tier 2 (prepare-only) because the live gateway rewrites the session store.",
+      "_source": "max_blocks_per_burst mirrors thresholds.d5_transcript_poison.p1_blocks_per_burst (smallest burst measured in the archived incident: 8)."
+    },
     "healer": {
       "watches": "the watchdog's OWN fix actions per target",
       "max_fixes_per_target_per_day": 3,

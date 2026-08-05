@@ -17,6 +17,7 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 | LP-A5 | F9-adj | rapid retries against a 429/dead provider; paid-fallback drain | D3 | full stop -> honor retry window -> exactly one scheduled resume |
 | LP-A6 | F3 | resume cron without light-context: huge input, zero tool calls | D2 | LF-5 set `lightContext:true` |
 | LP-A7 | F2 | dreaming / re-embed under the sanctioned interval; per-agent shared-corpus re-embed | D2 | pin interval >= floor; point at the single shared index |
+| LP-A8 | F15 | a run blocked by the runtime's own identical-call guard, over and over, inside one run; the transcript (and its compaction summaries) fill with the refusals | D5 | LF-10 archive the transcript + roll (move, never delete, never while live); LF-9 abort the run to free the lane (Tier 2); LF-11 prune poisoned checkpoints (Tier 2) |
 
 ## Family B - PROCESS / SUPERVISOR LOOPS (restart storms: churn + outage, no model call)
 
@@ -42,6 +43,25 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 | LP-D1 | F10 | empty-prompt no-op cron: fires ok forever, does nothing | D4 | escalate with the exact cron id (directive is client-specific; escalate-not-guess) |
 | LP-D2 | F3 | build cron re-running because an outdated QC script can never pass | D3 | pull updated gate scripts via the sanctioned skill-update path, re-run |
 | LP-D3 | F10/F11 | delivery retried against a completed/failed id; two crons trigger one function | D4 | LF-4 mark the ledger, disable the duplicate (comment out, never delete) |
+
+## A note on LP-A8: it is the only class whose fault lives in the CONTEXT
+
+Every other class here is a fault in the ENVIRONMENT - a timer, a supervisor, a
+port, a config key. You fix the environment and the loop ends. LP-A8 is different:
+the run that ignites it can be gone, its trigger removed and its config corrected,
+and the transcript it left behind will still degrade every later turn, because the
+model reads that transcript as its own history. That is why D5 measures a stock
+rather than a flow, and why its fix ARCHIVES the transcript rather than restarting
+anything.
+
+**Recognising it by hand:** an agent that answers CORRECTLY but SLOWLY. A broken
+agent gives wrong answers; a poisoned one gives right answers slowly. Operator
+emergency recovery is `/new`.
+
+**The catch that makes it two-part:** compaction checkpoint summaries can capture
+the loop verbatim, and those are re-injected on resume and SURVIVE a transcript
+roll. Rolling the transcript alone is not a complete fix (that is LF-11's job, and
+it is Tier 2 because the live gateway rewrites the session store).
 
 ## Two deliberate non-classes (stated so nobody adds them)
 

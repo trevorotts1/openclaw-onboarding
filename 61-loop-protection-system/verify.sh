@@ -48,7 +48,7 @@ SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-client-identifiers.sh" --root "$SELF_DIR
 SCAN_ALL_FILES=1 bash "$SCRIPTS/scan-no-json-exports.sh" --root "$SELF_DIR" >/dev/null 2>&1 && ok "scan-no-json-exports (0)" || bad "scan-no-json-exports"
 
 # ---- 3. fixture drills, one per class (all OFFLINE) -------------------------
-step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK)"
+step "3/3 fixture drills (D-RESTART, D-SIG, D-OFFSET, D-ORPHAN, D-BURN, D-BACKOFF, D-HEALERLOOP, D-ESCALATE, D-DRYRUN, D-ARMED-PARK, D-REVERT, D-COLLECT, D-COLLECT-DELTA, D-COLLECT-FALLBACK, D-POISON, D-POISON-CLEAN, D-POISON-ROLL, D-POISON-LIVE)"
 SCRIPTS="$SCRIPTS" SKILL_DIR="$SELF_DIR" python3 - <<'PY'
 import json, os, sys, tempfile
 sys.path.insert(0, os.environ["SCRIPTS"])
@@ -338,6 +338,89 @@ with tempfile.TemporaryDirectory() as td:
     check("D-COLLECT-FALLBACK total_tokens-only row charges non-zero; D2 P1 fires "
           "(multi-candidate raw-alias fallback)",
           paidF == 500000 and any(x["severity"] == "P1" for x in d2F))
+
+# D-POISON / D-POISON-CLEAN: the STOCK detector, proven in BOTH directions in one
+# drill pair. D1-D4 measure flow and go quiet when a loop pauses; D5 measures how
+# much of a transcript is ALREADY loop wreckage, which is what persists and keeps
+# degrading every later turn. A detector is only worth shipping if it discriminates,
+# so the control here is deliberately the HARDER file: the clean fixture is BIGGER
+# (more bytes, 7x the records, more compaction checkpoints) than the poisoned one.
+# If size or age could trip D5, D-POISON-CLEAN fails.
+with tempfile.TemporaryDirectory() as td:
+    os.environ["LOOP_STATE_DIR"] = os.path.join(td, "loop-protection")
+    os.environ["LOOP_OPENCLAW_ROOT"] = os.path.join(td, "openclaw")
+    os.environ["LOOP_NO_PROBES"] = "1"
+    sess = os.path.join(td, "openclaw", "agents", "main", "sessions")
+    os.makedirs(sess)
+    import shutil as _sh
+    for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+        _sh.copy2(os.path.join(fx, _n), os.path.join(sess, _n))
+    measured = W.collect_sessions()
+    bymap = {os.path.basename(m["path"]): m for m in measured}
+    poisoned = bymap["loop-blocked-session.jsonl"]
+    control = bymap["healthy-session.jsonl"]
+    f5 = D.d5_transcript_poison(measured, th)
+    p1s = [x for x in f5 if x["severity"] == "P1" and x["loop_class"] == "LP-A8"]
+    check("D-POISON blocked-burst transcript = P1 LP-A8 (ignition + the checkpoint "
+          "carrier that survives a roll)",
+          poisoned["blocked_records"] == 60 and poisoned["max_burst"] == 60
+          and poisoned["poisoned_checkpoints"] == 1
+          and len(p1s) == 1
+          and "IGNITION" in p1s[0]["detail"] and "SECOND CARRIER" in p1s[0]["detail"])
+    # The control is asserted TWICE: once as measured, and once with its byte count
+    # forced past the memoryFlush re-arm floor (the real-world control archive was
+    # 17,160,766 bytes - 8x that floor - with zero blocks). Size is a severity
+    # MODIFIER in D5, never a trigger; this is the assertion that pins that down,
+    # because the committed fixture is deliberately small and would not reach the
+    # floor on its own.
+    _huge_clean = dict(control, bytes=17160766)
+    check("D-POISON-CLEAN control transcript is BIGGER and busier yet D5 is SILENT, "
+          "and stays silent even 8x past the flush re-arm floor (size NEVER fires "
+          "alone; a detector that fires on everything is not a detector)",
+          control["bytes"] > poisoned["bytes"]
+          and control["tail_records"] > poisoned["tail_records"]
+          and control["checkpoint_rows"] >= poisoned["checkpoint_rows"]
+          and control["blocked_records"] == 0
+          and D.d5_transcript_poison([control], th) == []
+          and D.d5_transcript_poison([_huge_clean], th) == []
+          and len(f5) == 1)
+    # ARMED: the poisoned transcript is MOVED to an archive (never deleted) and the
+    # control is untouched; a transcript still being written is REFUSED.
+    _past = __import__("time").time() - 3600
+    for _n in ("loop-blocked-session.jsonl", "healthy-session.jsonl"):
+        os.utime(os.path.join(sess, _n), (_past, _past))
+    _led = Ledger()
+    _sum = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                   "sessions": W.collect_sessions()}, _led, armed=True,
+                  escalate_transport=lambda u, b: True, box="box-example")
+    _arch = [n for n in os.listdir(sess) if n.startswith("loop-blocked-session.loop-archive-")]
+    _orig_gone = not os.path.exists(os.path.join(sess, "loop-blocked-session.jsonl"))
+    _ctl_ok = os.path.isfile(os.path.join(sess, "healthy-session.jsonl"))
+    _archived_bytes = os.path.getsize(os.path.join(sess, _arch[0])) if _arch else 0
+    _led.close()
+    check("D-POISON-ROLL armed tick ARCHIVES the poisoned transcript (moved, never "
+          "deleted) and leaves the clean one untouched",
+          _sum["applied"] == 1 and len(_arch) == 1 and _orig_gone and _ctl_ok
+          and _archived_bytes == poisoned["bytes"])
+    # copy2 preserves the SOURCE mtime, so without the utime below this fixture
+    # would read as STALE once the repo checkout aged past roll_min_idle_minutes -
+    # the drill would pass on a fresh clone and fail days later. Stamp it to NOW so
+    # "still being written" means live at RUN time.
+    _sh.copy2(os.path.join(fx, "loop-blocked-session.jsonl"),
+              os.path.join(sess, "live-session.jsonl"))
+    os.utime(os.path.join(sess, "live-session.jsonl"), None)
+    _led = Ledger()
+    _live_ev = [m for m in W.collect_sessions() if m["path"].endswith("live-session.jsonl")]
+    _s = W.tick({"units": [], "windows": [], "runs": [], "crons": [], "wedge": {},
+                 "sessions": _live_ev}, _led, armed=True,
+                escalate_transport=lambda u, b: True, box="box-example")
+    _live_still = os.path.isfile(os.path.join(sess, "live-session.jsonl"))
+    _led.close()
+    check("D-POISON-LIVE a transcript still being written is REFUSED even when armed "
+          "(never roll the conversation someone is in); the P1 still lands",
+          _s["findings"] == 1 and _s["applied"] == 0 and _live_still)
+    for k in ("LOOP_STATE_DIR", "LOOP_OPENCLAW_ROOT", "LOOP_NO_PROBES"):
+        os.environ.pop(k, None)
 
 os.environ.pop("LOOP_ALLOW_ROOT", None)
 if fails:

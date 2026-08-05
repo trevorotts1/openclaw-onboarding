@@ -3,6 +3,116 @@
 All notable changes to this skill. The skill versions independently of the repo
 line (its own `skill-version.txt`), like Skill 60.
 
+## [0.4.0] - 2026-08-05
+
+**D5 - the first detector in this skill that measures a STOCK instead of a flow.**
+D1-D4 all count events per tick: they answer "is a loop running right now?" and go
+quiet the moment it pauses. That leaves a real gap, and an operator-box incident
+walked straight through it - a run wedged against the runtime's own identical-call
+guard filled a session transcript with ~1,100 of its own refusals, and because the
+model reads that transcript back as its own history, every later turn on it stayed
+degraded after the run was long dead. Three fixes aimed at the ENVIRONMENT were
+deployed during that incident and none ended it, because the fault was in the
+CONTEXT. D3 hashes the new-bytes-since-last-tick slice, so once the loop paused D3
+reported all-clear on a transcript that was still ~72% wreckage.
+
+**ARMED on the operator box; fleet rollout still HELD** (`config/rollout.json`
+`fleet_rollout_enabled` stays `false`, awaiting a separate explicit operator GO).
+
+### A correction to this entry's own premise, recorded on purpose
+
+D5 was first specified against the theory that accumulated transcript poison was
+the PRIMARY cause of that incident. **That theory was refuted before this shipped**
+and the detector was redesigned rather than quietly re-labelled. The counterexamples
+were decisive: the first burst ignited from a context measured at 0% loop text, and
+the fully-poisoned session still answered a normal question correctly in seconds.
+Poison was neither necessary nor sufficient. The apparent "clean experiment" behind
+the original theory was confounded - the fast reply came from a brand-new session
+created seconds after the old one died, so the variable that actually moved was
+conversation-lane occupancy, not transcript cleanliness.
+
+So D5 ships with IGNITION (a blocked-call burst) as the primary, early, high-
+precision face, and poison ratio DEMOTED to a secondary aftermath signal. The
+aftermath face is still worth having - it is what persists and what a roll must
+clear - but a detector built on it alone fires late, after the damage.
+
+### Added
+
+- **`d5_transcript_poison()`** in `loop_detectors.py` + **`collect_sessions()`** in
+  `loop_watchdog.py`, wired into `run_detectors`/`collect_evidence` exactly like
+  D1-D4. New loop class **LP-A8** (F15), new **session** circuit breaker, new fix
+  classes **LF-9/LF-10/LF-11**.
+- The block signature is **STRUCTURAL, never prose**: `details.status == "blocked"`
+  and `details.deniedReason == "tool-loop"` on a `toolResult` record. It is
+  therefore language- and wording-drift-independent, and no message content enters
+  a finding (counts, enum values and tool NAMES only). The blocked tool name is
+  recorded but never assumed - both `read` and `tool_call` appeared in the measured
+  incident, so nothing hard-codes a single tool.
+- **Second carrier detection.** Compaction checkpoint summaries can capture the
+  loop verbatim; those are re-injected on resume and **survive a transcript roll**,
+  which is why rolling the file alone is not a complete fix. D5 counts them and
+  says so in the finding (`SECOND CARRIER`). Measured: 7 of 16 checkpoint summaries
+  poisoned in the incident file, 0 of 14 in a healthy control archive.
+- **LF-10 auto-roll**: archives a confirmed-poisoned transcript to a timestamped
+  name beside it so the next turn starts clean. **MOVE, never delete**; the
+  one-line revert moves it back. Guarded by a **live-transcript refusal** - the
+  unattended tick can clear yesterday's wreckage but can never roll a conversation
+  in progress.
+- **Four failable drills** (`D-POISON`, `D-POISON-CLEAN`, `D-POISON-ROLL`,
+  `D-POISON-LIVE`) over two new synthetic fixtures, plus `tests/drills/D-POISON.md`.
+
+### Fixed
+
+- **`collect_units()` reported a unit's LIFETIME restart count as its per-tick
+  delta.** pm2's `restart_time` is cumulative, so the first tick on any real box
+  read a long-lived unit's entire history as one storm - a false D1 P1 for every
+  unit that had ever restarted, and on an armed box a false park. Restart counts
+  are now baselined per unit in ledger meta: first sight is always delta 0, and a
+  counter that goes backwards re-baselines instead of spiking. Found while
+  assessing whether arming this box was safe; it was not, and this is why. Covered
+  by a new self-test case.
+
+### Proven
+
+- **Offline (drills, in `verify.sh`, exit 0):** 18 drills, all four merge-gate
+  scanners clean.
+- **Failability, mutation-tested rather than assumed:** raising the D5 thresholds
+  out of reach fails all four D5 drills; removing BOTH the silence rule and the
+  size guard fails `D-POISON-CLEAN`. Honestly noted in `D-POISON.md`: removing
+  either guard *alone* is masked by the other, so no single mutation catches it -
+  the two are redundant by design.
+- **Live, read-only, on the operator box** (detector only - `tick()` was never
+  called, so LF-10 could not run and no real file was moved):
+  - TRUE POSITIVE - the archived incident transcript (4,607,807 bytes) yields
+    exactly one P1 `LP-A8`: 275-block ignition burst, 50% trailing-200 share,
+    7 poisoned checkpoints.
+  - TRUE NEGATIVE (hard control) - a **larger** healthy archive from the same box
+    and same agent (17,160,766 bytes, 3.7x the poisoned one, 8x past the flush
+    re-arm floor): **0 findings**.
+  - TRUE NEGATIVE (breadth) - all 69 live session transcripts for that agent:
+    **0 findings**. One carried a single block, correctly below the WARN floor of
+    3 and correctly silent.
+
+### NOT verified (stated plainly)
+
+- **LF-9 (abort the run) has never been executed and cannot be.** No supported
+  run-abort CLI was found in OpenClaw 2026.7.1-2 (`openclaw sessions` offers
+  `cleanup`/`compact`/`export-trajectory`/`list` only). It ships **Tier 2,
+  prepare-only**. Aborting is believed to be the highest-value remediation - it is
+  what frees the conversation lane, and the runtime rather than the model ended
+  most observed bursts - but this skill does not do it today.
+- **LF-11 (prune poisoned checkpoints) is prepare-only and was never executed.**
+  The live gateway rewrites the session store, so an in-place edit without a
+  restart is clobbered.
+- **LF-10 has never fired on a real poisoned transcript in production.** It is
+  proven on fixtures and by the armed-tick drill; the archived incident transcript
+  was rolled by hand before this work began.
+- The thresholds are derived from **ONE** incident on **ONE** box against that
+  box's own healthy corpus. They are measured, not invented, and the derivation is
+  recorded in `config/thresholds.json`, but a second incident could move them.
+- **No claim is made about which config change prevents recurrence.** Config
+  remediation was owned by other work and is not part of this skill.
+
 ## [0.3.2] - 2026-07-16
 
 X/U-X3 (U93), D20 Option B: `scripts/loop-protection-canary.sh` renamed to
