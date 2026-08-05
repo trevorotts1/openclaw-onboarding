@@ -1,3 +1,61 @@
+## [v21.7.26]  -  2026-08-04  -  fix(podcast): deterministic show-notes producer, description gate, kill the title fallback (unit 1.1)
+
+Unit 1.1 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Deterministic Show Notes producer step (12.5).** SKILL.md, PRD, SOP-PODCAST-01, and CHECKLIST now specify a deterministic 800-2500 char show-notes producer, content-tiered via model_router.py, no-em-dash/no-code-fence rules, persisted via podcast_state.py output --field episode_description.
+- **Description gate.** episode_description is now a required output on both transitions (publishing->enrolling publish_podbean, enrolling->complete produces_media) with MIN_EPISODE_DESCRIPTION_LEN >= 200 enforced in missing_required_outputs.
+- **Title fallback killed.** The silent description->title substitution is removed; a real (non-draft) publish now hard-refuses without a real description (PODBEAN_MIN_DESCRIPTION_LEN, default 200). The title stub survives only in draft/test/dry-run modes.
+- **Ledger-default resolution fixed (QC fix 12eb1506).** The description is now resolved from the Step 12.5 ledger BEFORE the hard refusal (shared section), mirroring AUDIO_URL/IMAGE_URL resolution — the F1 dead-code finding. Five new regression tests, mutation-proved.
+
+### Verification
+
+Opus re-review: F1 ledger-default dead code FIXED (live repro: ledger default succeeds, no-description hard-refuses, short description refuses, CLI-vs-ledger conflict dies), F2 no-test-covered FIXED (5 new tests), F3/F4 doc-only acceptable. 308 tests pass (13 files). Cherry-picked b6250ac8 + 12eb1506 with two test-file conflicts resolved (kept both --cover and --description args).
+
+## [v21.7.25]  -  2026-08-04  -  fix(podcast): engine GHL credential aliases now win over generic keys in every resolver (unit 1.3)
+
+Unit 1.3 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC-failure fix) and merged to main.
+
+### What changed
+
+- **Alias-major credential resolution (F1 fix).** ghl_credential_gate.py's _resolve now iterates aliases outer, stores inner — so PODCAST_ENGINE_GHL_PIT / PODCAST_ENGINE_GHL_LOCATION_ID found in ANY store (including a later ~/.openclaw/secrets/.env) win over a generic GOHIGHLEVEL_API_KEY in the live process env. This closes the exact Leanne-incident shape: a box with GOHIGHLEVEL_* set but PODCAST_ENGINE_GHL_* only in secrets/.env now resolves the engine tenant correctly. Selftest case 14 (two-store incident repro) passes; gate selftest 16/16.
+- **field_layer engine aliases (F2 fix).** caf/field_layer/constants.py prepends the engine PIT and LOCATION_ID aliases; resolver._resolve_one is alias-major, so the Step 14-17 write-back path resolves the engine tenant first. Three new resolver tests including the two-store shape. field_layer 10/10.
+- **Typo fixed (F3).** No stray CJxAT reference anywhere.
+
+### Scope
+
+7 files across 06-ghl-install-pages/ and 58-podcast-production-engine/scripts/caf/. All suites verified: ghl_credential_gate --selftest 16/16, field_layer resolver 10/10, upload_media 35/35.
+
+## [v21.7.24]  -  2026-08-04  -  fix(podcast): raise the Podbean cover floor to 1500 and the generation default to 2K (unit 1.4)
+
+Unit 1.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Cover floor raised 1400 -> 1500.** The Podbean cover image floor is now 1500x1500 (the sanctioned safe floor per the master plan). The workflow webhook entry-guard notes, the generate_cover.sh resize range (1500-3000), and SKILL.md STEP 10 all now say 1500. A 1400x1400 image is REJECTED (new negative test T5 proves the floor actually bites).
+- **Generation default raised to 2K.** Kie.ai GPT-image-2 now generates a 2048 square cover by default instead of 1024, so the final resized-to-spec image has headroom above the 1500 floor.
+- **Regression test made line-independent (QC fix 9d459e6a).** tests/unit/test_generate_cover_probe.sh previously extracted probe_downloaded_image() from generate_cover.sh with a hardcoded sed line range, which broke when the commit inserted lines near the top of the script. Now an awk extractor anchored on the function declaration prints through the first top-level closing brace -- line-shift resilient. Fixture raised to 1500, negative 1400 case added. 6/6 tests pass (was 5/5 pre-regression).
+
+### Scope
+
+16 files, all under 58-podcast-production-engine/ plus the repo-root regression test. No live n8n, CC, or client-box changes.
+
+## [v21.7.23]  -  2026-08-04  -  fix(podcast): re-export the n8n publish rail drifts (Standing Gate MULTIROW + Fleet Gate FIX-RESCUE-19), document legacy deactivation and stale pinData
+
+Unit 2.5-2.7 of the podcast publish fix train, QC-passed (Fable max review, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.5 legacy deactivation documented.** The ungated legacy workflow `COfgxe6HXRcWOleV` ("Podbean Channel IDs to Google Doc") is NOT part of the `config/n8n` set and must never be restored from it — it carries an independent Podbean publish chain that bypasses the roster check, entry guard, and media preflight. The DR-RUNBOOK now documents the operator-live deactivation requirement and the NEVER-PRINT disposition. Verified live 2026-08-04: `active: false` on main.blackceoautomations.com.
+- **2.6 DRIFT-1 — Standing Gate MULTIROW.** The `Standing Gate -- Determine Verdict` node now selects the roster row whose `podbean_channel_id` equals the payload `podcast_id` (channel-preferred), falling back to the first last-name row only when the payload carries no `podcast_id`. A DR restore can no longer pick the wrong row for a client with two shows.
+- **2.6 DRIFT-2 — Fleet Gate FIX-RESCUE-19.** The `Fleet Gate -- Resolve Identity + Verdict` node now carries the shared identity placeholder denylist (`'', 'tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba'`), whitespace collapse, and the `fleet_roster_rows` diagnostic. A placeholder identifier can no longer function as a real identity.
+- **2.7 stale pinData.** The repo export carries no pinData (stripped during sanitization). The LIVE workflow's pinned webhook payload predates the contract-v2 guard (missing `contract_version: "2"` and `idempotency_key`) and would be refused — documented as an operator-live re-pin action; no repo change needed.
+
+### Verification
+
+QC review (Fable, thinking max) verified independently on disk and against the live n8n API: all 58 functional nodes match live after dash-canonicalization, the 38-edge connection graph is identical, JSON parses cleanly, no pinData, no credential values, no real client names, only the two sanctioned files changed. Working tree clean; commit is the single change on the branch.
+
 ## [v21.7.22]  -  2026-08-04  -  fix(update-skills): an un-provisioned box, and a Command Center runtime-config data problem this box's operator must fix, no longer withhold the version stamp entirely
 
 Wave-2 fleet guardrail, proven live tonight: Step U6d of `update-skills.sh` runs `reconcile_command_center_runtime.py` to populate the Command Center's departments/branding config from this box's own ZHC provisioning artifacts. Two distinct FATAL messages, both correct in principle, blocked 2 boxes each fleet-wide, with no path forward: (a) `DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client ZHC artifact exists` — a box whose workforce interview never completed, i.e. legitimately un-provisioned; (b) `existing departments.json is non-empty but invalid; refusing to clobber operator/client data` — correct caution against overwriting real data, but a dead end once triggered. Both boxes had SKILL38 and the GHL MCP converge perfectly that night; only the stamp was withheld, over a gap unrelated to skills content.

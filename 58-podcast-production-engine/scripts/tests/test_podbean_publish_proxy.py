@@ -116,6 +116,18 @@ def _canonical_utc(release_date: str) -> str:
 _HERE = Path(__file__).resolve()
 _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 
+# A real show-notes description meeting the Step 12.5 floor (>= 200 chars).
+# Proxy publish mode now requires a real description (U048), so transport and
+# media-guard tests supply a valid one by default; tests that specifically probe
+# the missing/short-description refusals override it.
+VALID_DESCRIPTION = (
+    "In this episode we explore how conviction becomes a competitive edge. "
+    "Our guest shares the decisions, the false starts, and the one turning "
+    "point that reshaped everything. We unpack the framework, the research "
+    "behind it, and the practical first step you can take this week. "
+    "A full conversation with real takeaways for leaders who build. " * 2
+)
+
 # Fixture-only literal. Never a real credential; exists so the mock can assert
 # the header the script sends matches what it was configured with, and so a
 # redaction test can prove this literal never reaches stdout/stderr verbatim.
@@ -263,13 +275,35 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         if env_extra:
             env.update(env_extra)
         proc = subprocess.run(
-            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode"] + args,
+            ["bash", str(_SCRIPT), "--audio", self.audio, "--title", "Test Episode",
+             "--description", VALID_DESCRIPTION] + args,
             env=env,
             capture_output=True,
             text=True,
             timeout=timeout,
         )
         return proc
+
+    def _run_no_desc(self, args, env_extra=None, timeout=20):
+        # Identical to _run but does NOT force --description, so the 1.1.5
+        # ledger-default resolution and the no-description-anywhere hard
+        # refusal can be exercised (a test that passes --description would
+        # never reach either path).
+        env = {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            "HOME": self.tmp,
+            "PODBEAN_SKIP_MEDIA_PROBE": "1",
+        }
+        if env_extra:
+            env.update(env_extra)
+        return subprocess.run(
+            ["bash", str(_SCRIPT), "--audio", self.audio,
+             "--title", "Test Episode"] + args,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
 
     def _proxy_env(self, **extra):
         env = {
@@ -291,6 +325,21 @@ class PodbeanPublishProxyTest(unittest.TestCase):
             "scheduled": scheduled,
             "idempotent_replay": idempotent,
         }
+
+    def _write_ledger(self, episode_description, state="enrolling",
+                      permalink=None):
+        """Write a job ledger JSON fixture (pre-U035: no _checksum, which
+        verify_ledger_checksum accepts) and return its path. NO permalink by
+        default so the idempotency early-exit is never triggered."""
+        record = {"state": state}
+        if episode_description is not None:
+            record["episode_description"] = episode_description
+        if permalink is not None:
+            record["podbean_permalink"] = permalink
+        path = os.path.join(self.tmp, "ledger.json")
+        with open(path, "w") as f:
+            json.dump(record, f)
+        return path
 
     # --------------------------------------------------- precedence -------
     def test_proxy_wins_over_broker_and_local_when_all_three_are_configured(self):
@@ -387,7 +436,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         proc = self._run(
             ["--audio-url", "https://media.example.test/a.mp3",
              "--image-url", "https://media.example.test/i.jpg",
-             "--description", "Show notes for the full-contract test.",
+             "--description", VALID_DESCRIPTION,
              "--release-date", "2026-08-01T10:00:00",
              "--speaker", "Dana",
              "--job-id", "pd-full-contract"],
@@ -405,7 +454,7 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(req["title"], "Test Episode Inspired by Dana",
                           "title must carry the 'Inspired by <speaker>' transform, "
                           "not just the raw --title flag")
-        self.assertEqual(req["description"], "Show notes for the full-contract test.")
+        self.assertEqual(req["description"], VALID_DESCRIPTION)
         self.assertEqual(req["audio_url"], "https://media.example.test/a.mp3")
         self.assertEqual(req["image_url"], "https://media.example.test/i.jpg")
         # publish_date is the canonical ISO-8601 UTC normalization of
@@ -644,6 +693,110 @@ class PodbeanPublishProxyTest(unittest.TestCase):
         self.assertEqual(result["status"], "test-skipped")
         self.assertEqual(len(self.mock.requests), 0)
 
+    # --------------------------------------- 1.1.5 ledger-default --------
+    # Every OTHER proxy test supplies --description explicitly, so none of them
+    # reaches the ledger-description default path. These two regression tests
+    # exercise exactly the broken ordering Finding 1 described: a real proxy
+    # publish with a ledger holding a valid >200-char episode_description and
+    # NO --description must SUCCEED using the ledger value (the behavior every
+    # doc promises), and a proxy publish with NO description ANYWHERE (no flag,
+    # no ledger value) must still hard-refuse.
+
+    def test_proxy_ledger_default_description_succeeds_and_uses_ledger_value(self):
+        """A real proxy publish with a ledger holding a valid >200-char
+        episode_description and NO --description must SUCCEED and send the
+        ledger value in the v2 payload (1.1.5 default resolution). This is the
+        regression for the ordering bug that died at '--description is required'
+        before ever reading the ledger."""
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(VALID_DESCRIPTION)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-ledger-default",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertEqual(proc.returncode, 0,
+                         f"ledger-default proxy publish must succeed; stderr: {proc.stderr}")
+        result = json.loads(proc.stdout.strip().splitlines()[-1])
+        self.assertEqual(result["status"], "published")
+        hits = self.mock.hits("/webhook/podbean-publish")
+        self.assertEqual(len(hits), 1)
+        self.assertEqual(hits[0]["body"]["description"], VALID_DESCRIPTION,
+                         "the payload description must be the ledger episode_description, "
+                         "resolved by default when --description is absent")
+
+    def test_proxy_ledger_default_description_resolves_even_when_over_200_chars(self):
+        """The ledger-default value is NOT truncated or re-derived: a ledger
+        description at the Step 12.5 band (674 chars here) passes through
+        intact and satisfies the min-length floor."""
+        long_desc = VALID_DESCRIPTION + " " + VALID_DESCRIPTION  # > 400 chars
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(long_desc)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-ledger-long",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        req = self.mock.hits("/webhook/podbean-publish")[0]["body"]
+        self.assertEqual(req["description"], long_desc)
+
+    def test_proxy_no_description_anywhere_is_still_a_hard_refusal(self):
+        """The no-description-anywhere path (no --description, no ledger) must
+        still die with the refusal before any publish call. The ledger-default
+        fix must NOT have weakened the fail-closed default."""
+        ledger = self._write_ledger(None)  # ledger with NO episode_description
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-no-desc-anywhere",
+             "--ledger", ledger],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("--description is required", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
+                          "a publish must never fire when no description exists anywhere")
+
+    def test_proxy_short_description_is_still_a_min_length_refusal(self):
+        """A short --description (below the 200-char floor) with no ledger value
+        must still be refused by validate_episode_metadata before any publish."""
+        ledger = self._write_ledger(None)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-short-desc",
+             "--ledger", ledger,
+             "--description", "one line"],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("minimum", proc.stderr.lower())
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
+
+    def test_proxy_cli_vs_ledger_description_conflict_still_dies(self):
+        """1.1.5's conflict half must survive the reorder: when BOTH the CLI
+        flag and the ledger supply a description and they DIFFER, refuse before
+        any publish call."""
+        self.mock.route("/webhook/podbean-publish", [(200, self._happy_body())])
+        ledger = self._write_ledger(VALID_DESCRIPTION)
+        proc = self._run_no_desc(
+            ["--audio-url", "https://media.example.test/a.mp3",
+             "--image-url", "https://media.example.test/i.jpg",
+             "--job-id", "pd-desc-conflict",
+             "--ledger", ledger,
+             "--description", VALID_DESCRIPTION + " DIFFERENT"],
+            env_extra=self._proxy_env(),
+        )
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("DESCRIPTION conflict", proc.stderr)
+        self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0,
+                          "a conflicting description must never reach the publish call")
+
 
 # ---- png helpers (stdlib only, no PIL) ----
 def _png_chunk(chunk_type: bytes, data: bytes) -> bytes:
@@ -694,8 +847,8 @@ class ProxyMediaGuardTest(unittest.TestCase):
         # 1x1 PNG (too small).
         self.tiny_png_data = _make_png(1, 1)
 
-        # 1400x1400 PNG (meets minimum).
-        self.ok_png_data = _make_png(1400, 1400)
+        # 1500x1500 PNG (meets the current Podbean minimum).
+        self.ok_png_data = _make_png(1500, 1500)
 
     def _register_files(self, files_dict):
         self.mock.server.files.update(files_dict)  # type: ignore[attr-defined]
@@ -724,6 +877,7 @@ class ProxyMediaGuardTest(unittest.TestCase):
              "--audio-url", audio_url,
              "--image-url", image_url,
              "--title", "Media Probe Test",
+             "--description", VALID_DESCRIPTION,
              "--job-id", job_id],
             env=env,
             capture_output=True,
@@ -767,7 +921,7 @@ class ProxyMediaGuardTest(unittest.TestCase):
         self.assertEqual(len(self.mock.hits("/webhook/podbean-publish")), 0)
 
     def test_probe_passes_valid_media(self):
-        """A 30s MP3 and 1400x1400 PNG must pass the probe and reach publish."""
+        """A 30s MP3 and 1500x1500 PNG must pass the probe and reach publish."""
         self.mock.route("/webhook/podbean-publish", [(200, {
             "ok": True,
             "permalink_url": "https://example.podbean.com/e/test-probe/",

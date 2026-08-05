@@ -84,6 +84,10 @@ EXIT_RATE_FLOOR = 5
 # they are separate credentials and must never satisfy this gate.
 # --------------------------------------------------------------------------- #
 PIT_ALIASES: List[str] = [
+    # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
+    # CjxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
+    # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+    "PODCAST_ENGINE_GHL_PIT",
     # 11 canonical, first hit wins, canonical name first.
     "GOHIGHLEVEL_API_KEY",
     "GHL_API_KEY",
@@ -108,6 +112,9 @@ PIT_ALIASES: List[str] = [
 ]
 
 LOCATION_ALIASES: List[str] = [
+    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
+    # Checked FIRST so the engine tenant always wins over generic ids.
+    "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",
     "GOHIGHLEVEL_LOCATION_ID",
     "LOCATION_ID",
@@ -421,8 +428,12 @@ def _ordered_stores() -> List[Tuple[str, Dict[str, str]]]:
 
 
 def _resolve(aliases: List[str], stores: List[Tuple[str, Dict[str, str]]]) -> Dict[str, object]:
-    """Resolve an alias set across ordered stores. First (alias, store) hit wins,
-    but the full audit (every alias x every store) is always recorded.
+    """Resolve an alias set across ordered stores. ALIAS-major: the first alias
+    (in list order) found in ANY store wins, so a preferred alias sitting in a
+    LATER store still outranks a generic alias in the live process env (wrong-
+    tenant 403 guard — e.g. PODCAST_ENGINE_GHL_PIT in secrets/.env beats a
+    GOHIGHLEVEL_API_KEY seeded into the live env). The full audit (every alias x
+    every store) is always recorded.
 
     Returns {value, winner_alias, winner_store, audit} where audit maps
     alias -> list of store labels the alias was found in. VALUES ARE NEVER in audit.
@@ -431,8 +442,8 @@ def _resolve(aliases: List[str], stores: List[Tuple[str, Dict[str, str]]]) -> Di
     winner_value: Optional[str] = None
     winner_alias: Optional[str] = None
     winner_store: Optional[str] = None
-    for store_label, kv in stores:
-        for alias in aliases:
+    for alias in aliases:
+        for store_label, kv in stores:
             val = kv.get(alias)
             if val:
                 audit[alias].append(store_label)
@@ -1407,6 +1418,49 @@ def _selftest() -> int:
             stores=pod_stores_broker,
         )
         check("podbean broker pair OK", g.run().exit_code, EXIT_PASS)
+
+        # 14. INCIDENT-REPRO (F1, TWO STORE): a generic GOHIGHLEVEL_API_KEY in the
+        # live process env (the exact shape of Leanne's box, where GOHIGHLEVEL_*
+        # are seeded via openclaw.json) must NOT outrank PODCAST_ENGINE_GHL_PIT
+        # sitting in a LATER store (secrets/.env). Alias-major resolution required.
+        ENGINE_LOC = "LOC_ENGINE_1234567890"
+        engine_two_store: List[Tuple[str, Dict[str, str]]] = [
+            ("live-process-env(self)", {
+                "GOHIGHLEVEL_API_KEY": FAKE_PIT,   # generic, earlier store
+                "GHL_LOCATION_ID": GOOD_LOC,       # generic, earlier store
+                "PODBEAN_PUBLISH_WEBHOOK_URL": "https://n8n.example.com/webhook/podcast-publish",
+                "PODBEAN_PUBLISH_TOKEN": "test-publish-token",
+                "PODBEAN_PODCAST_ID": "test-podcast-id",
+            }),
+            ("envfile:secrets/.env", {
+                "PODCAST_ENGINE_GHL_PIT": "pit-ENGINE-000000000000000000000",
+                "PODCAST_ENGINE_GHL_LOCATION_ID": ENGINE_LOC,
+            }),
+        ]
+        g = CredentialGate(
+            "acme", ENGINE_LOC, os.path.join(td, "acme14"), mode="full",
+            http_get=fake_http(list(all_fields.values()), 190000),
+            stores=engine_two_store,
+        )
+        v14 = g.run()
+        d14 = v14.to_dict()
+        res14 = d14["checks"].get("resolution") or {}
+        loc14 = d14["checks"].get("location") or {}
+        winner_pit = res14.get("winner_alias")
+        winner_loc = loc14.get("winner_alias")
+        pit_ok = winner_pit == "PODCAST_ENGINE_GHL_PIT"
+        loc_ok = winner_loc == "PODCAST_ENGINE_GHL_LOCATION_ID"
+        reports.append(
+            f"[{'PASS' if pit_ok else 'FAIL'}] F1 two-store: engine PIT wins over "
+            f"live-env generic key (winner_alias={winner_pit})"
+        )
+        reports.append(
+            f"[{'PASS' if loc_ok else 'FAIL'}] F1 two-store: engine LOCATION_ID wins "
+            f"over live-env generic id (winner_alias={winner_loc})"
+        )
+        passed += int(pit_ok) + int(loc_ok)
+        failed += int(not pit_ok) + int(not loc_ok)
+        check("F1 two-store incident-repro gate pass", v14.exit_code, EXIT_PASS)
 
     for line in reports:
         REDACTOR.out(line)

@@ -79,6 +79,10 @@ FOLDER_NAMES = (PARENT_FOLDER, IMAGES_FOLDER, EPISODES_FOLDER)
 # resolve at runtime without importing a sibling slice, and kept in the same
 # order so behavior matches the shared resolver once it lands.
 PIT_ALIASES: Tuple[str, ...] = (
+    # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
+    # CjxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
+    # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+    "PODCAST_ENGINE_GHL_PIT",
     "GOHIGHLEVEL_API_KEY",
     "GHL_API_KEY",
     "GHL_PIT",
@@ -98,6 +102,9 @@ PIT_ALIASES: Tuple[str, ...] = (
 )
 
 LOCATION_ALIASES: Tuple[str, ...] = (
+    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
+    # Checked FIRST so the engine tenant always wins over generic ids.
+    "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",
     "GOHIGHLEVEL_LOCATION_ID",
     "LOCATION_ID",
