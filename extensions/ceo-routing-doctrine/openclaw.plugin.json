@@ -3,7 +3,6 @@
   "name": "CEO Routing Doctrine (pre-injection)",
   "description": "Replaces the removed CEO gate with a prompt-injection layer. Injects the routing doctrine (route work, don't self-execute) into every agent turn via before_prompt_build prependSystemContext. No tool-deny \u2014 no loop possible. Honor an explicit human override when the owner asks the agent to do the work personally.",
   "version": "1.0.0",
-  "kind": "memory",
   "contracts": {
     "tools": []
   },
