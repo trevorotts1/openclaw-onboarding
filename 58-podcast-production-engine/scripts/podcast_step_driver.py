@@ -57,8 +57,18 @@
 # USAGE:
 #   python3 podcast_step_driver.py next --job-id <id> [--json]
 #   python3 podcast_step_driver.py verify --job-id <id> [--json]
-#   python3 podcast_step_driver.py list-steps
+#   python3 podcast_step_driver.py list-steps [--job-id <id>]
 #   python3 podcast_step_driver.py self-test
+#
+# PYTHON VERSION (honest, verified). This file itself uses `from __future__
+# import annotations`, so its own PEP 604 (`int | None`) annotations are strings
+# at runtime and the FILE imports on 3.9+. BUT `next`, `verify`, and
+# `list-steps --job-id <id>` all import the sibling podcast_state.py, which has
+# NO future-annotations import and writes `str | None` unions that are evaluated
+# at def time -- so podcast_state.py, and therefore those three subcommand forms,
+# REQUIRE Python 3.10+. Only `--help`, `self-test`, and bare `list-steps` (the
+# static step table; no sibling import) run on 3.9. Boxes on 3.9 can list the
+# step table and read help but cannot drive a job.
 #
 # EXIT: 0 ok / 2 usage / 3 blocked transition (missing required outputs)
 #       / 4 no such job or writer refused / 1 error.
@@ -258,9 +268,22 @@ def _next_status(ps, status: str):
     return None
 
 
+def _resolve_preset(ps, db_path, job_id, row):
+    """Resolve the job's preset EXACTLY the way podcast_state.cmd_advance does
+    (podcast_state.py:1068): through a LIVE connection, so an explicit in-enum
+    preset stored in the intake payload wins over the mode-derived default.
+    Passing conn=None here silently dropped the payload preset and mis-gated
+    the verify (a season_strategy job in interview mode demanded media outputs
+    the writer never required)."""
+    conn = ps.connect(db_path)
+    try:
+        return ps.resolve_preset(conn, job_id, row.get("mode") or "")
+    finally:
+        conn.close()
+
+
 def _resolve_preset_flags(ps, db_path, job_id, row) -> dict:
-    preset = ps.resolve_preset(None, job_id, row.get("mode") or "")
-    return ps.preset_flags(preset)
+    return ps.preset_flags(_resolve_preset(ps, db_path, job_id, row))
 
 
 # ---------------------------------------------------------------------------
@@ -331,15 +354,18 @@ def _current_step(ps, db_path, job_id, row, flags=None) -> int | None:
 
 
 def _next_step(ps, db_path, job_id, row, current: int | None) -> int | None:
-    """Return the next step the runbook must execute, or None at the terminal
-    edge (complete). If the current status still has runbook work, next ==
-    current (the driver re-emits the SAME step's command, idempotently, until
-    the agent records progress and advances status)."""
+    """Return the next step the runbook must execute, or None when no step
+    applies (an unknown status). If the current status still has runbook work,
+    next == current (the driver re-emits the SAME step's command, idempotently,
+    until the agent records progress and advances status). At `complete` the
+    next step is 18 DELIVER: the delivery report is a real runbook step owned
+    by the complete status, so the driver emits it (the plan requires the
+    EXACT command for Steps 2-18, and Step 18 must be reachable)."""
     if current is None:
         return None
     status = row.get("status")
     if status == "complete":
-        return None
+        return 18
     if status == "writing":
         if current == 2:
             return 2
@@ -453,15 +479,19 @@ def _emit_step_command(step: int, job_id: str, row: dict, payload: dict,
 
     if step == 15:
         mode = row.get("mode") or "personal_podcast_style"
+        base = "bash %s" % _script("podbean_publish.sh")
+        speaker = ""
         if mode == "interview_style_podcast":
-            base = "bash %s" % _script("podbean_publish.sh")
-        else:
-            base = "bash %s" % _script("podbean_publish.sh")
+            # Interview titles append "Inspired by <speaker>" (SKILL.md Step 15
+            # title convention). The guest name is survey data the mapper never
+            # guesses, so the agent fills this placeholder from the intake
+            # survey's guest_first_name. Personal mode carries no speaker.
+            speaker = " --speaker \"<guest_first_name>\""
         return (
             "%s --title \"%s\" --audio-url \"<mp3_media_url>\" "
-            "--image-url \"<cover_image_url>\" --description \"<episode_description>\" "
+            "--image-url \"<cover_image_url>\" --description \"<episode_description>\"%s "
             "--job-id %s"
-            % (base, title, job_id)
+            % (base, title, speaker, job_id)
         )
 
     if step == 16:
@@ -498,17 +528,65 @@ def _emit_step_command(step: int, job_id: str, row: dict, payload: dict,
 
 
 # ---------------------------------------------------------------------------
+# Off-pipeline statuses (held / blocked / failed): the driver must report the
+# REAL state, never claim the run is done. These statuses are outside the linear
+# FORWARD_ORDER step table, so step resolution returns nothing for them; the
+# handlers below translate that nothing into an honest, non-zero report.
+# ---------------------------------------------------------------------------
+def _off_pipeline_report(row) -> tuple:
+    """Return (message, done_flag) for a job NOT on the forward pipeline, or
+    None when the status is a normal pipeline status. `complete` is handled by
+    the caller (it is the legitimate terminal edge, not an off-pipeline state)."""
+    status = row.get("status")
+    if status == "queued_credit_out":
+        return (
+            "job is HELD on the credit-out queue (service: %s; resume_stage: %s). "
+            "The step driver never advances a held job. Restore credits and run "
+            "`podcast_state.py resume --job-id <id>`; the driver then picks up at "
+            "the recorded resume_stage." % (
+                row.get("queued_service") or "?",
+                row.get("resume_stage") or "?"),
+            False,
+        )
+    if status == "blocked_standing":
+        return (
+            "job is BLOCKED on the client's standing (the Step 1 standing "
+            "pre-check refused it). Nothing is produced or deleted. When standing "
+            "returns to YES the same idempotency_key resumes cleanly; until then "
+            "the step driver emits no command.",
+            False,
+        )
+    if status == "failed":
+        return (
+            "job is FAILED (terminal). failed_step: %s; last_error: %s. The step "
+            "driver emits no command for a failed job; the runbook's failure "
+            "handling (founder alert via alert-dedup.py) owns it from here." % (
+                row.get("failed_step") or "?",
+                (row.get("last_error") or "?")[:120]),
+            False,
+        )
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Required-outputs gate (verify)
 # ---------------------------------------------------------------------------
 def _verify_outputs(ps, db_path, job_id, row):
     """Run the required-outputs gate for the current status -> next status
     transition. Raises BlockedTransitionError (exit 3) naming every missing
-    output. Mirrors podcast_state.check_transition's gate semantics."""
+    output. Mirrors podcast_state.check_transition's gate semantics, including
+    the writer's preset resolution (live-connection payload lookup)."""
     status = row.get("status")
+    off = _off_pipeline_report(row)
+    if off is not None:
+        # Held / blocked / failed: there is no forward edge to verify. Fail
+        # loud with the REAL state instead of a silent VERIFY PASS.
+        raise BlockedTransitionError(off[0])
     to_status = _next_status(ps, status)
     if to_status is None:
         return []  # terminal edge (complete): nothing owed forward
-    flags = _resolve_preset_flags(ps, db_path, job_id, row)
+    preset = _resolve_preset(ps, db_path, job_id, row)
+    flags = ps.preset_flags(preset)
     conn = ps.connect(db_path)
     try:
         db_row = conn.execute(
@@ -522,7 +600,7 @@ def _verify_outputs(ps, db_path, job_id, row):
             "cannot advance %s -> %s: preset '%s' requires output(s) not yet "
             "recorded: %s. Set them with `podcast_state.py output`, or pass "
             "--force-waiver (audited) only for a test run."
-            % (status, to_status, row.get("mode") or "?", ", ".join(missing))
+            % (status, to_status, preset or "?", ", ".join(missing))
         )
     return missing
 
@@ -541,31 +619,40 @@ def cmd_next(args) -> int:
     step = _next_step(ps, db_path, args.job_id, row, current)
 
     if step is None:
-        out = {
-            "job_id": args.job_id,
-            "status": row.get("status"),
-            "step": None,
-            "name": None,
-            "done": True,
-            "command": None,
-            "note": "job is at the terminal edge (complete); the run is done.",
-        }
-        if args.json:
-            print(json.dumps(out, ensure_ascii=False))
-        else:
-            print("STEP 18 DELIVER (job %s already complete)" % args.job_id)
-            print("  %s" % out["note"])
-        return EXIT_OK
+        # A held, blocked-on-standing, or failed job carries NO step: report the
+        # REAL state with a non-zero exit. Never claim such a job is complete.
+        off = _off_pipeline_report(row)
+        if off is not None:
+            out = {
+                "job_id": args.job_id,
+                "status": row.get("status"),
+                "step": None,
+                "name": None,
+                "done": False,
+                "command": None,
+                "note": off[0],
+            }
+            if args.json:
+                print(json.dumps(out, ensure_ascii=False))
+            else:
+                print("NO NEXT STEP (job %s is %s)"
+                      % (args.job_id, row.get("status")))
+                print("  %s" % off[0])
+            return EXIT_REFUSED
+        raise StepDriverError(
+            "job %s has status '%s', which is not a pipeline status the step "
+            "driver can sequence" % (args.job_id, row.get("status"))
+        )
 
     command = _emit_step_command(step, args.job_id, row, payload, flags)
-    status = STATUS_BY_STEP.get(step, row.get("status"))
+    step_status = STATUS_BY_STEP.get(step, row.get("status"))
     name = STEP_NAMES.get(step, "")
     out = {
         "job_id": args.job_id,
         "status": row.get("status"),
         "step": step,
         "name": name,
-        "step_status": status,
+        "step_status": step_status,
         "command": command,
         "content_step": step in CONTENT_STEPS,
     }
@@ -573,7 +660,13 @@ def cmd_next(args) -> int:
         print(json.dumps(out, ensure_ascii=False))
     else:
         kind = "CONTENT" if step in CONTENT_STEPS else "DETERMINISTIC"
-        print("STEP %d %s [%s | status %s]" % (step, name.upper(), kind, status))
+        # Show the JOB's own status (the state machine's truth); the step's
+        # owning status rides along in the JSON as step_status.
+        line = "STEP %d %s [%s | job status %s" % (
+            step, name.upper(), kind, row.get("status"))
+        if step_status != row.get("status"):
+            line += ", step %s's status %s" % (step, step_status)
+        print(line + "]")
         print("  %s" % command)
         if step in CONTENT_STEPS:
             print("  (content step: fill the model_router route payload from the runbook)")
@@ -604,10 +697,10 @@ def cmd_verify(args) -> int:
 
 
 def cmd_list_steps(args) -> int:
-    ps = _podcast_state()
-    db_path = args.db_path or ps.resolve_db_path()
     rows = []
     if args.job_id:
+        ps = _podcast_state()  # job-position mode REQUIRES the sibling module
+        db_path = args.db_path or ps.resolve_db_path()
         row = _load_job_row(ps, db_path, args.job_id)
         flags = _resolve_preset_flags(ps, db_path, args.job_id, row)
         current = _current_step(ps, db_path, args.job_id, row, flags)
@@ -703,6 +796,36 @@ def cmd_self_test(args) -> int:
     check("step 9 emits judge route",
           "model_router.py route" in _emit_step_command(9, "j", row, {}, {})
           and "qc_judge" in _emit_step_command(9, "j", row, {}, {}))
+
+    # Off-pipeline honesty: held / blocked / failed must NEVER read "complete".
+    held = dict(fake, status="queued_credit_out", queued_service="kie_ai",
+                resume_stage="writing")
+    off = _off_pipeline_report(held)
+    check("held job reports HELD, not complete",
+          off is not None and "HELD" in off[0] and "resume" in off[0])
+    failed = dict(fake, status="failed", failed_step="10",
+                  last_error="kie refused")
+    off_f = _off_pipeline_report(failed)
+    check("failed job reports FAILED, not complete",
+          off_f is not None and "FAILED" in off_f[0])
+    check("pipeline status yields no off-pipeline report",
+          _off_pipeline_report(fake) is None)
+
+    # Step 18 is reachable: a complete job's next step is 18 DELIVER, and its
+    # command is the delivery report.
+    done = dict(fake, status="complete")
+    check("complete -> next step is 18 (delivery report reachable)",
+          _next_step(None, "", "", done, _current_step(None, "", "", done)) == 18)
+    check("step 18 emits delivery_report.py",
+          "delivery_report.py" in _emit_step_command(18, "j", row, {}, {}))
+
+    # Step 15 speaker wiring: interview carries --speaker, personal does not.
+    iv = dict(row, status="publishing", mode="interview_style_podcast")
+    check("step 15 interview carries --speaker",
+          "--speaker" in _emit_step_command(15, "j", iv, {}, {}))
+    pv = dict(row, status="publishing", mode="personal_podcast_style")
+    check("step 15 personal has no --speaker",
+          "--speaker" not in _emit_step_command(15, "j", pv, {}, {}))
 
     print("RESULT:", "PASS" if ok else "FAIL")
     return EXIT_OK if ok else EXIT_ERROR
