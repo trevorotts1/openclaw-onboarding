@@ -403,10 +403,16 @@ _CEO_TOOL_ALLOW = [
     "sessions_send", "sessions_list", "sessions_history",
     # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
     # the CEO routes by CALLING it (structured tool call, no shell) — that presence
-    # is what clears verify-routing.sh G7. exec is RETAINED (per G1's decision in
-    # hooks/lib-ceo-tool-gate.sh), NOT removed: it stays ONLY as the exec channel for
-    # the two anchored helpers (route-presentation.sh + mc-route.sh); the intent-gate
-    # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+    # is what clears verify-routing.sh G7. exec is RETAINED, NOT removed: it is the
+    # exec channel for the two anchored helpers (route-presentation.sh + mc-route.sh).
+    #
+    # ⚠ CORRECTION 2026-08-05: an earlier version of this comment claimed "the
+    # intent-gate default-denies every other exec". THAT IS NO LONGER TRUE and must
+    # not be relied on. The PreToolUse intent-gate (hooks/ceo-intent-gate.sh) was
+    # DELETED from the repo and un-wired fleet-wide with the rest of the CEO gate,
+    # so there is currently NO command-level exec restriction — only the
+    # {security,ask} config-layer exec policy, which cannot allowlist by command.
+    # KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "mc-route__route_task",
     "exec",
     # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow is
@@ -418,6 +424,24 @@ _CEO_TOOL_ALLOW = [
     # Additive — G7 still passes. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "memory_search", "memory_get",
     "cron", "gateway", "nodes",
+    # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ─────────────────
+    # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+    # exactly as effectively as one named in tools.deny. The CEO gate that justified
+    # omitting them is GONE (deny set retired, PreToolUse intent-gate deleted, hooks
+    # un-wired) — so the omission is now a vestigial gate that still produces the
+    # original failure.
+    #
+    # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+    # compaction. With no write tool, the agent cannot comply and cannot stop trying —
+    # it re-reads an empty file and retries, looping for up to 163 minutes per turn
+    # and swallowing the owner's Telegram messages. Two weeks of outage. Removing the
+    # deny alone did NOT fix it; the allowlist omission reproduced it verbatim.
+    #
+    # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+    # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+    # prompt-injection plugin), NEVER a tool removal. Taking write away does not make
+    # the CEO route — it makes it hang.
+    "write", "edit",
 ]
 _CEO_MCP_DENY = {
     "ghl-community-mcp": {"deny": ["*"]},
@@ -2346,6 +2370,60 @@ All agents report back to the owner according to these rules:
 
 OREOF
   echo "[apply-fleet-standards] OWNER_REPORTING_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+# ─── 5e. Inject EXEC_CHAIN_DISCIPLINE_V1 into workspace/AGENTS.md ────────────
+# THE LOOP FIX (2026-08-05). Root cause of the 163-minute turns: the agent batched
+# 30-40 verification probes into ONE `&&`-joined command. A probe that legitimately
+# found nothing returned exit 1, `&&` aborted the chain, and the runtime surfaced a
+# single atomic "Exec failed" with no indication of WHICH link failed. Unable to
+# isolate it, the agent's only recovery was to re-run the whole chain — identical
+# command, identical result, 425 times. A missing file was the AUDIT'S FINDING and
+# it was being reported as a TOOL FAILURE.
+#
+# This is the same defect class as the write-deny loop: an exit code misread as a
+# fact. It belongs in AGENTS.md rather than universal-sops/ because the gateway
+# injects AGENTS.md into the system prompt every turn, whereas a universal SOP is
+# only read when an agent is already told to go read it — and an agent mid-loop
+# never gets told anything.
+# Idempotent: guarded by <!-- EXEC_CHAIN_DISCIPLINE_V1 -->.
+EXEC_CHAIN_MARKER="<!-- EXEC_CHAIN_DISCIPLINE_V1 -->"
+
+if grep -qF "$EXEC_CHAIN_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] EXEC_CHAIN_DISCIPLINE_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'ECDEOF'
+
+<!-- EXEC_CHAIN_DISCIPLINE_V1 -->
+## Exec Chain Discipline — a negative result is DATA, not a failure (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `EXEC_CHAIN_DISCIPLINE_V1`. Idempotent — re-stamped on every install/update.
+
+This is the rule that stops verification loops. Real incident (2026-08-05): an agent ran one 40-probe chain **425 times**. A single `ls` hit a genuinely missing file, returned exit 1, `&&` aborted the chain, and the runtime reported one atomic `Exec failed` with no indication of which link failed — so the only recovery left was to re-run the whole chain. The absence the agent was sent to discover is what broke the tool it was discovering with.
+
+1. **Never join independent probes with `&&`.** `&&` means "abort if this is non-zero", which is wrong for a probe whose job is to report either outcome. Use `;` between independent probes, or send them as separate calls.
+2. **Turn absence into OUTPUT, never into exit status.** The highest-value habit on this page:
+   - `ls -la "$P" 2>&1 || echo "ABSENT: $P"`
+   - `grep -n "$PAT" "$F" || echo "NO MATCH: $PAT"`
+   A probe written this way reports its own negative, so the chain cannot fail.
+3. **Read exit codes correctly.** `grep`/`ls`/`test` exit 1 = NOT FOUND — a RESULT, not an error. `grep` exit >=2 = a REAL error (file missing or unreadable). Exit 127 = the shell could not resolve the command or its interpreter — a fact about your command line, never a fact about the system you are probing.
+4. **Never re-run a compound command that "failed."** Isolate which link failed first. Re-running an identical chain IS the loop: same input, same output, duplicate-call guard trips, turn burned.
+5. **Cap a verification chain at 5 probes.** Small enough that each output line maps to its probe by eye, so an unexpected result is attributable without a re-run.
+
+Worked example — the same audit, written so it cannot false-fail:
+
+```bash
+echo "=== CHECK 1: route-presentation.sh ==="; ls -la "$P1" 2>&1 || echo "ABSENT: $P1"
+echo "=== CHECK 2: onboarding-state.sh ===";   ls -la "$P2" 2>&1 || echo "ABSENT: $P2"
+```
+
+Every probe reports. Nothing aborts. `Exec failed` never fires, so there is nothing to retry.
+ECDEOF
+  echo "[apply-fleet-standards] EXEC_CHAIN_DISCIPLINE_V1 injected into $AGENTS_FILE"
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then

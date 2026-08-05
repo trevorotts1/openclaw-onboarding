@@ -1,3 +1,77 @@
+## [v21.7.36]  -  2026-08-05  -  fix(loops): grant write/edit in the CEO allowlist (the other half of the gate) and teach the fleet that a no-match exit 1 is a RESULT
+
+v21.7.35 retired the CEO production-tool **deny**. It was not enough. Two separate
+mechanisms were still producing the same 163-minute turns, and both are fixed here.
+
+**1. The allowlist was a second gate nobody removed.** An explicit per-agent
+`tools.allow` is a HARD allowlist in OpenClaw: a tool omitted from it is denied exactly
+as effectively as one named in a deny list. All four in-repo copies of the CEO/router
+allow list carried 17 tools and omitted `write` and `edit`. So after the deny was
+retired, `memoryFlush` still ordered a memory-file write on every compaction that the
+agent had no tool to perform — it re-read an empty file and retried, looping. `write`
+and `edit` are now granted in all four copies (17 → 19 tools), which are asserted
+byte-identical by `scripts/test-ceo-tool-gate.sh`:
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` `CEO_TOOL_ALLOW`
+- `scripts/apply-fleet-standards.sh` `_CEO_TOOL_ALLOW`
+- `scripts/apply-routing-fix.sh` `CEO_TOOL_ALLOW`
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_ALLOW_TOOLS` (also the source
+  `scripts/grant-ceo-consent.sh` reads, so that write-site is fixed transitively)
+
+Already-deployed boxes SELF-HEAL on the next `update-skills.sh` roll: the residual-deny
+sweep (update-skills.sh) clears any stale `write`/`edit` from `tools.deny` BEFORE the
+stampers run, and the stampers' heal path appends any missing allow entry, so the
+"deny wins" filter can no longer strip the new grants. No per-box touch is needed.
+
+The stale comments that justified the omission are corrected. They claimed "the
+intent-gate default-denies every other exec" — that gate was deleted on 2026-08-05, so
+the comment described a control that no longer exists and would mislead the next reader
+exactly as it misled this one.
+
+Guard `2b` in `scripts/test-ceo-tool-gate.sh` was rewritten. It was a blunt single-line
+scan that could not tell a deny array from an allow array, so it fired a FALSE FAILURE
+the moment `write` was legitimately added to `CEO_TOOL_ALLOW`. It now parses the named
+DENY and ALLOW blocks and asserts both halves — the retired deny stays retired AND
+write/edit stay granted — across all three stampers. Both directions are mutation-proven.
+
+**2. `Exec failed` on a legitimate no-match is what actually spun the loops.** New
+`EXEC_CHAIN_DISCIPLINE_V1` block, stamped into every box's `$WORKSPACE_DIR/AGENTS.md` by
+`scripts/apply-fleet-standards.sh` (which both `install.sh` and `update-skills.sh` call,
+so it reaches fresh boxes and existing boxes alike). The mechanism, read out of a live
+session trajectory: an agent batched 30-40 verification probes into ONE `&&`-joined
+command; one `ls` hit a genuinely missing file and returned exit 1; `&&` aborted the
+chain; the runtime surfaced a single atomic `Exec failed` naming no link; the agent could
+not isolate it and re-ran the whole chain — 425 times. **The absence the agent was sent
+to discover is what broke the tool it was discovering with.** The guidance is five rules
+plus a worked example: never join independent probes with `&&`; turn absence into OUTPUT
+(`ls -la "$P" 2>&1 || echo "ABSENT: $P"`); grep/ls/test exit 1 = NOT FOUND (a result),
+grep exit ≥2 = a real error, exit 127 = a shell abort and never a fact about the system;
+never re-run a "failed" compound command without isolating the failing link; cap a
+verification chain at 5 probes. AGENTS.md is the home rather than `universal-sops/`
+because the gateway injects AGENTS.md into the system prompt every turn, whereas a
+universal SOP is only read when an agent is told to go read it — and an agent mid-loop is
+never told anything.
+
+**3. Post-update restore-verify script committed** at
+`61-loop-protection-system/scripts/openclaw-loop-protection-restore.sh` (+ its secret-leak
+test at `61-loop-protection-system/tests/secret-leak-test.sh`). `openclaw update`
+reinstalls node_modules and silently reverts the dist patch that makes a runaway tool
+loop actually abort; this script detects every piece of the protection stack and, with
+`--apply`, restores what is safe to restore. Read-only by default, never restarts the
+gateway, atomic cmp-verified backups, and value-blind on the two secret-bearing files
+(no flag disables redaction; `ps eww` and `launchctl print` are never used). Its section
+9 independently detects the very allowlist shape fixed above. Hardened before commit:
+two predictable `/tmp/<name>.$$` staging paths — symlink-clobber targets whose contents
+are fed back into `openclaw config set` — now use `mktemp`.
+
+**Observed, not fixed — a confabulated self-critique.** While reporting on a failed
+audit the router told the owner it had "spawned 6 parallel sub-agent sessions flooding
+you with duplicates — exactly the No Sub-Agent Storms violation from SOUL.md." That did
+not happen: `sessions_spawn` fired 5 times across the whole day and zero times during
+either audit window, and no session-creation event exists in that window. The phrase "No
+Sub-Agent Storms" does not appear anywhere in this repo either. Recorded here as
+observed behavior; no guard is added for it in this release.
+
 ## [v21.7.35]  -  2026-08-05  -  fix(ceo-gate): RETIRE the CEO write-deny gate fleet-wide, actively un-wire already-wired boxes, and restore write/edit to the generation departments
 
 Trevor's directive: *"I don't want to use the CEO gate anymore. I deleted the CEO gate

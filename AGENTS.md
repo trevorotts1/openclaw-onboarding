@@ -22,6 +22,31 @@ No agent decides what it will or will not do.
 This rule is role-scoped so it reinforces the CEO routing mandate WITHOUT gagging executing
 specialists. Both behaviors — the CEO routing and specialists executing — are equally required.
 
+<!-- EXEC_CHAIN_DISCIPLINE_V1 -->
+## Exec Chain Discipline — a negative result is DATA, not a failure (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `EXEC_CHAIN_DISCIPLINE_V1`. Idempotent — re-stamped on every install/update.
+
+This is the rule that stops verification loops. Real incident (2026-08-05): an agent ran one 40-probe chain **425 times**. A single `ls` hit a genuinely missing file, returned exit 1, `&&` aborted the chain, and the runtime reported one atomic `Exec failed` with no indication of which link failed — so the only recovery left was to re-run the whole chain. The absence the agent was sent to discover is what broke the tool it was discovering with.
+
+1. **Never join independent probes with `&&`.** `&&` means "abort if this is non-zero", which is wrong for a probe whose job is to report either outcome. Use `;` between independent probes, or send them as separate calls.
+2. **Turn absence into OUTPUT, never into exit status.** The highest-value habit on this page:
+   - `ls -la "$P" 2>&1 || echo "ABSENT: $P"`
+   - `grep -n "$PAT" "$F" || echo "NO MATCH: $PAT"`
+   A probe written this way reports its own negative, so the chain cannot fail.
+3. **Read exit codes correctly.** `grep`/`ls`/`test` exit 1 = NOT FOUND — a RESULT, not an error. `grep` exit >=2 = a REAL error (file missing or unreadable). Exit 127 = the shell could not resolve the command or its interpreter — a fact about your command line, never a fact about the system you are probing.
+4. **Never re-run a compound command that "failed."** Isolate which link failed first. Re-running an identical chain IS the loop: same input, same output, duplicate-call guard trips, turn burned.
+5. **Cap a verification chain at 5 probes.** Small enough that each output line maps to its probe by eye, so an unexpected result is attributable without a re-run.
+
+Worked example — the same audit, written so it cannot false-fail:
+
+```bash
+echo "=== CHECK 1: route-presentation.sh ==="; ls -la "$P1" 2>&1 || echo "ABSENT: $P1"
+echo "=== CHECK 2: onboarding-state.sh ===";   ls -la "$P2" 2>&1 || echo "ABSENT: $P2"
+```
+
+Every probe reports. Nothing aborts. `Exec failed` never fires, so there is nothing to retry.
+
 <!-- WE_MOVE_IN_SILENCE_V1 -->
 ## ⛔ WE MOVE IN SILENCE — updates & maintenance are SILENT (non-negotiable)
 
