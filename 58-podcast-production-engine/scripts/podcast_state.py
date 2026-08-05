@@ -536,12 +536,16 @@ REQUIRED_OUTPUTS_BY_TRANSITION = {
     ("generating_art", "producing_audio"): [
         ("cover_image_url", "produces_media"),
     ],
-    # Leaving publishing (Steps 12-16: documents, media upload, Podbean, link-back):
-    # the stored audio and the Podbean permalink must exist.
+    # Leaving publishing (Steps 12-16: documents, show notes, media upload,
+    # Podbean, link-back): the stored audio, the Podbean permalink, and the
+    # drafted show notes (episode_description) must exist. The description is
+    # produced by Step 12.5 (SHOW NOTES) and is a hard publish input -- the
+    # silent title-substitution fallback must never satisfy this gate.
     ("publishing", "enrolling"): [
         ("mp3_media_url", "store_media"),
         ("episode_package_url", "store_media"),
         ("podbean_permalink", "publish_podbean"),
+        ("episode_description", "publish_podbean"),
         ("book_teaser_url", "book_teaser"),
     ],
     # Terminal backstop: no job reaches 'complete' missing its core deliverables.
@@ -551,6 +555,7 @@ REQUIRED_OUTPUTS_BY_TRANSITION = {
         ("podbean_permalink", "publish_podbean"),
         ("cover_image_url", "produces_media"),
         ("episode_title", "produces_media"),
+        ("episode_description", "produces_media"),
     ],
 }
 
@@ -631,15 +636,29 @@ def required_outputs_for(frm: str, to_status: str, flags: dict) -> list:
     return [col for (col, gate) in reqs if _gate_satisfied(gate, flags)]
 
 
+# A produced episode description (Step 12.5 SHOW NOTES) must be substantial,
+# not a one-line stub that merely mirrors the title. The publish floor is 200
+# chars (matches PODBEAN_MIN_DESCRIPTION_LEN in podbean_publish.sh), so the
+# silent title-substitution fallback can never satisfy the gate.
+MIN_EPISODE_DESCRIPTION_LEN = 200
+
+
 def missing_required_outputs(row: sqlite3.Row, frm: str, to_status: str,
                              flags: dict) -> list:
     """Output columns that this (frm -> to_status) transition requires for the
-    resolved preset but that are unset (NULL or empty) on the row."""
+    resolved preset but that are unset (NULL or empty) on the row.
+
+    The `episode_description` column additionally carries a minimum-length rule:
+    a present-but-too-short value (< MIN_EPISODE_DESCRIPTION_LEN chars) is
+    reported as missing so the title-fallback can never satisfy the gate."""
     cols = set(row.keys())
     missing = []
     for col in required_outputs_for(frm, to_status, flags):
         val = row[col] if col in cols else None
         if val is None or (isinstance(val, str) and not val.strip()):
+            missing.append(col)
+        elif col == "episode_description" and isinstance(val, str) \
+                and len(val) < MIN_EPISODE_DESCRIPTION_LEN:
             missing.append(col)
     return missing
 

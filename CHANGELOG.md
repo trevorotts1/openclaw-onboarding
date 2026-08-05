@@ -1,3 +1,18 @@
+## [v21.7.26]  -  2026-08-04  -  fix(podcast): deterministic show-notes producer, description gate, kill the title fallback (unit 1.1)
+
+Unit 1.1 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Deterministic Show Notes producer step (12.5).** SKILL.md, PRD, SOP-PODCAST-01, and CHECKLIST now specify a deterministic 800-2500 char show-notes producer, content-tiered via model_router.py, no-em-dash/no-code-fence rules, persisted via podcast_state.py output --field episode_description.
+- **Description gate.** episode_description is now a required output on both transitions (publishing->enrolling publish_podbean, enrolling->complete produces_media) with MIN_EPISODE_DESCRIPTION_LEN >= 200 enforced in missing_required_outputs.
+- **Title fallback killed.** The silent description->title substitution is removed; a real (non-draft) publish now hard-refuses without a real description (PODBEAN_MIN_DESCRIPTION_LEN, default 200). The title stub survives only in draft/test/dry-run modes.
+- **Ledger-default resolution fixed (QC fix 12eb1506).** The description is now resolved from the Step 12.5 ledger BEFORE the hard refusal (shared section), mirroring AUDIO_URL/IMAGE_URL resolution — the F1 dead-code finding. Five new regression tests, mutation-proved.
+
+### Verification
+
+Opus re-review: F1 ledger-default dead code FIXED (live repro: ledger default succeeds, no-description hard-refuses, short description refuses, CLI-vs-ledger conflict dies), F2 no-test-covered FIXED (5 new tests), F3/F4 doc-only acceptable. 308 tests pass (13 files). Cherry-picked b6250ac8 + 12eb1506 with two test-file conflicts resolved (kept both --cover and --description args).
+
 ## [v21.7.25]  -  2026-08-04  -  fix(podcast): engine GHL credential aliases now win over generic keys in every resolver (unit 1.3)
 
 Unit 1.3 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC-failure fix) and merged to main.

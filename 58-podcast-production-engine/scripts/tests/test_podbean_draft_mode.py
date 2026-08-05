@@ -27,6 +27,17 @@ from pathlib import Path
 _HERE = Path(__file__).resolve()
 _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 
+# A real show-notes description meeting the Step 12.5 floor (>= 200 chars).
+# A real (non-draft) publish now requires it (U048); draft runs exercise the
+# title-stub fallback.
+VALID_DESCRIPTION = (
+    "In this episode we explore how conviction becomes a competitive edge. "
+    "Our guest shares the decisions, the false starts, and the one turning "
+    "point that reshaped everything. We unpack the framework, the research "
+    "behind it, and the practical first step you can take this week. "
+    "A full conversation with real takeaways for leaders who build. " * 2
+)
+
 # Mock curl: parses the -K config for method + url, captures any `status=`
 # --data-urlencode field, logs each call, and prints "<json body>\n<status>".
 MOCK_CURL = r'''#!/usr/bin/env bash
@@ -91,9 +102,13 @@ class TestPodbeanDraftMode(unittest.TestCase):
         self.status_file.write_text("\n")  # all calls default to 200
 
     def run_publish(self, extra_args):
-        env = dict(os.environ)
+        # Isolate HOME so the script's secrets-env sourcing can never reach the
+        # real ~/.openclaw/secrets/.env of the test machine (which would set
+        # publish-proxy vars and divert the run to proxy mode). Every test that
+        # needs proxy/broker/local env vars passes them explicitly.
+        env = {"PATH": f"{self.bindir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+               "HOME": str(self.dir)}
         env.update({
-            "PATH": f"{self.bindir}:{env.get('PATH', '')}",
             "PODBEAN_API_BASE": "http://mock.invalid/v1",
             "PODBEAN_PODCAST_ID": "12345",
             "PODBEAN_CLIENT_ID": "test-client-id",
@@ -109,7 +124,12 @@ class TestPodbeanDraftMode(unittest.TestCase):
         return subprocess.run(
             ["bash", str(_SCRIPT), "--audio", str(self.audio),
              "--cover", str(self.cover),
-             "--title", "Test Episode", *extra_args],
+             "--title", "Test Episode",
+             # A real show-note description meeting the Step 12.5 floor
+             # (>= 200 chars). A real (non-draft) publish now requires it (U048);
+             # draft runs still exercise the title-stub fallback.
+             "--description", VALID_DESCRIPTION,
+             *extra_args],
             env=env, capture_output=True, text=True, timeout=120,
         )
 

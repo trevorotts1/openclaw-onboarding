@@ -71,21 +71,42 @@ class GateUnitTests(unittest.TestCase):
         self.assertFalse(PS._gate_satisfied("book_teaser", PS.preset_flags("episode_asset_pack")))
 
     # -- the gate blocks / passes on the producing transitions -------------
-    def test_publish_transition_requires_audio_and_permalink(self):
+    def test_publish_transition_requires_audio_permalink_and_description(self):
         row = _row("publishing")  # interview, no outputs set
         missing = PS.missing_required_outputs(
             row, "publishing", "enrolling", PS.preset_flags("interview"))
         self.assertIn("mp3_media_url", missing)
         self.assertIn("podbean_permalink", missing)
+        self.assertIn("episode_description", missing)
         with self.assertRaises(PS.MissingRequiredOutputError):
             PS.check_transition(row, "enrolling", preset="interview")
 
     def test_publish_transition_passes_when_artifacts_present(self):
         row = _row("publishing", mp3_media_url="https://x/a.mp3",
                    episode_package_url="https://x/pkg",
-                   podbean_permalink="https://pb/ep", book_teaser_url="https://x/t.pdf")
+                   podbean_permalink="https://pb/ep", book_teaser_url="https://x/t.pdf",
+                   episode_description="A real show note, well over two hundred characters long, "
+                                       "because the silent title fallback must never satisfy the gate. " * 3)
         # Must not raise.
         PS.check_transition(row, "enrolling", preset="interview")
+
+    def test_description_min_length_blocks_a_stub(self):
+        # A present-but-too-short episode_description (< 200 chars) must be
+        # reported missing, so the title fallback can never satisfy the gate.
+        stub = _row("publishing", episode_description="one line")
+        missing = PS.missing_required_outputs(
+            stub, "publishing", "enrolling", PS.preset_flags("interview"))
+        self.assertIn("episode_description", missing)
+        with self.assertRaises(PS.MissingRequiredOutputError):
+            PS.check_transition(stub, "enrolling", preset="interview")
+
+    def test_description_min_length_met_passes(self):
+        good = "A thorough show note of well over two hundred characters, " * 6
+        self.assertGreaterEqual(len(good), PS.MIN_EPISODE_DESCRIPTION_LEN)
+        row = _row("publishing", episode_description=good)
+        missing = PS.missing_required_outputs(
+            row, "publishing", "enrolling", PS.preset_flags("interview"))
+        self.assertNotIn("episode_description", missing)
 
     def test_complete_transition_backstops_core_deliverables(self):
         row = _row("enrolling", mp3_media_url="https://x/a.mp3",
@@ -95,7 +116,9 @@ class GateUnitTests(unittest.TestCase):
             PS.check_transition(row, "complete", preset="interview")
         row2 = _row("enrolling", mp3_media_url="https://x/a.mp3",
                     episode_package_url="https://x/pkg", podbean_permalink="https://pb/ep",
-                    cover_image_url="https://x/c.png", episode_title="An Episode")
+                    cover_image_url="https://x/c.png", episode_title="An Episode",
+                    episode_description="A real show note, well over two hundred characters long, "
+                                        "because the silent title fallback must never satisfy the gate. " * 3)
         PS.check_transition(row2, "complete", preset="interview")
 
     def test_art_transition_requires_cover(self):

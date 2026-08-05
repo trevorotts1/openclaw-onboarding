@@ -29,6 +29,16 @@ _SCRIPT = _HERE.parent.parent / "podbean_publish.sh"
 EXIT_TERMINAL = 1
 EXIT_TRANSIENT = 5
 
+# A real show-notes description meeting the Step 12.5 floor (>= 200 chars).
+# A real (non-draft) publish now requires it (U048).
+VALID_DESCRIPTION = (
+    "In this episode we explore how conviction becomes a competitive edge. "
+    "Our guest shares the decisions, the false starts, and the one turning "
+    "point that reshaped everything. We unpack the framework, the research "
+    "behind it, and the practical first step you can take this week. "
+    "A full conversation with real takeaways for leaders who build. " * 2
+)
+
 # Mock curl: reads the -K config to learn the method + url, consumes the next
 # scripted status from $MOCK_SCRIPT (one per line; empty/absent -> 200), logs
 # each call to $MOCK_CALL_LOG, and prints "<json body>\n<status>" the way the
@@ -89,9 +99,12 @@ class TestPodbeanTransientRetry(unittest.TestCase):
 
     def run_publish(self, statuses):
         self.status_file.write_text("\n".join(statuses) + "\n")
-        env = dict(os.environ)
+        # Isolate HOME so the script's secrets-env sourcing can never reach the
+        # real ~/.openclaw/secrets/.env of the test machine (which would set
+        # publish-proxy vars and divert the run to proxy mode).
+        env = {"PATH": f"{self.bindir}:{os.environ.get('PATH', '/usr/bin:/bin')}",
+               "HOME": str(self.dir)}
         env.update({
-            "PATH": f"{self.bindir}:{env.get('PATH', '')}",
             "PODBEAN_API_BASE": "http://mock.invalid/v1",
             "PODBEAN_PODCAST_ID": "12345",
             "PODBEAN_CLIENT_ID": "test-client-id",
@@ -108,7 +121,10 @@ class TestPodbeanTransientRetry(unittest.TestCase):
         return subprocess.run(
             ["bash", str(_SCRIPT), "--audio", str(self.audio),
              "--cover", str(self.cover),
-             "--title", "Test Episode"],
+             "--title", "Test Episode",
+             # A real show-note description meeting the Step 12.5 floor
+             # (>= 200 chars). A real (non-draft) publish now requires it (U048).
+             "--description", VALID_DESCRIPTION],
             env=env, capture_output=True, text=True, timeout=120,
         )
 
