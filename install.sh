@@ -8662,6 +8662,43 @@ if [ -f "$ONBOARDING_DIR/scripts/verify-routing.sh" ]; then
 else
     warn "verify-routing.sh not found at $ONBOARDING_DIR/scripts/verify-routing.sh (skipping post-stamp routing verification)"
 fi
+
+# ----------------------------------------------------------
+# CEO Routing Doctrine pre-injection plugin (2026-08-05, Trevor).
+# Replaces the removed CEO gate with a before_prompt_build prompt-injection
+# layer: injects "route, don't self-execute" + the human-override carve-out
+# every turn, with NO tool-deny (so no write-denial loop). Installs the
+# extension to ~/.openclaw/extensions/ and enables it in openclaw.json with
+# allowPromptInjection:true. Idempotent.
+# ----------------------------------------------------------
+note "Installing CEO Routing Doctrine pre-injection plugin..."
+_RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
+_RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
+if [ -d "$_RD_SRC" ]; then
+    mkdir -p "$HOME/.openclaw/extensions"
+    cp -r "$_RD_SRC" "$_RD_DST" 2>/dev/null || true
+    python3 - "$_RD_DST" <<'PY'
+import json, os, sys
+dst = sys.argv[1]
+cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
+if os.path.isfile(cfg_path):
+    cfg = json.load(open(cfg_path))
+    cfg.setdefault("plugins", {}).setdefault("entries", {})
+    cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
+        "enabled": True,
+        "hooks": {"allowPromptInjection": True}
+    }
+    cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
+    p = "/Users/%s/.openclaw/extensions" % (os.environ.get("USER") or "blackceomacmini")
+    if p not in cfg["plugins"]["load"]["paths"]:
+        cfg["plugins"]["load"]["paths"].append(p)
+    json.dump(cfg, open(cfg_path, "w"), indent=2)
+    print("ceo-routing-doctrine enabled + load.paths set")
+PY
+    success "CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+else
+    warn "ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
+fi
 echo ""
 
 # U006 — Co-locate the canonical presentation entry script + guard into the
