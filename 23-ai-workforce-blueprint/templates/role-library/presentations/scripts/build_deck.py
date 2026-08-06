@@ -7671,6 +7671,14 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
     certified. It is REQUIRED here: an ABSENT transcript is a fail, because otherwise
     the cheapest way to pass a conversation gate is to conduct no recorded conversation.
 
+    FIX-3 ("intake must be a real conversation"): the transcript must ALSO be
+    DRIVER-PRODUCED — a signed envelope (format 'sp-intake-transcript-v1' +
+    driver_signature + qid_sequence) written by deck-intake-driver.py's turn-gate.
+    A hand-written transcript (bare JSON list, or a list hand-written next to a
+    hand-written intake_ledger.json — ERROR 3 of the 2026-08-06 E2E audit) fails
+    fail-closed with AF-INTAKE-BATCH (NO-DRIVER-ENVELOPE / NO-DRIVER-SIGNATURE).
+    Presence of a transcript file is not proof it came from a real conversation.
+
     DEFERS (no-op) unless intake.json declares deck_type == signature_presentation, so
     every other deck type takes the identical pre-existing path.
     """
@@ -7687,15 +7695,29 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
                 " — a signature-presentation intake must be CONDUCTED choice-first and one "
                 "question per turn, and the turn-gate records that conversation mechanically. "
                 "An absent transcript is not proof of a compliant intake (fail-closed). Run "
-                "the intake through deck-intake-driver.py --signature, or export the "
-                "assistant/owner turns to that path as a JSON list of {\"role\",\"text\"}.")
+                "the intake through deck-intake-driver.py --signature, which writes a signed "
+                "driver envelope at that path (a hand-written intake_ledger.json with no "
+                "transcript is NOT an interview).")
     try:
         raw = tpath.read_text(encoding="utf-8")
+        # FIX-3: the raw envelope (for the driver-provenance gate) and the parsed
+        # turns (for the conversation scan). A bare list has NO driver provenance.
+        import json as _json
+        try:
+            envelope = _json.loads(raw)
+        except _json.JSONDecodeError:
+            envelope = raw
+        prov_fails = mod.check_driver_provenance(envelope)
         turns = mod.parse_transcript(raw)
         if not turns:
             return ("AF-INTAKE-BATCH: the intake transcript at " + str(SP_TRANSCRIPT_REL) +
                     " parsed to zero turns (unreadable format) — fail-closed.")
         result = mod.scan_transcript(turns, mod.load_bank_questions())
+        # Driver provenance failures are treated as violations of the same gate.
+        prov_violations = [{"code": mod.AF_CODE, "reason": code, "turn_index": None,
+                            "detail": msg} for code, msg in prov_fails]
+        result["violations"] = prov_violations + result.get("violations", [])
+        result["pass"] = len(result["violations"]) == 0
     except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
         return ("AF-INTAKE-BATCH: the intake-conversation scanner raised " + repr(exc)
                 + " — fail-closed (the conversation gate cannot be skipped).")

@@ -37,6 +37,14 @@ gates*; the department engine owns *execution*. It never builds a deck itself an
   and an ABSENT transcript is a fail — otherwise the cheapest way past a conversation gate is
   to record no conversation. The QC Specialist / Healer still run it out-of-band as a
   post-hoc scan (SOP 9.1 / SOP 9.13); that duty is unchanged.
+  > FIX-3 (2026-08-06 Gauntlet Loop): the transcript is now a **SIGNED DRIVER ENVELOPE** —
+  > `deck-intake-driver.py --signature`'s turn-gate writes `working/interview/
+  > intake_transcript.json` as `{"format":"sp-intake-transcript-v1","qid_sequence":[...],
+  > "turns":[{...,"qid":...}],"driver_signature":...}`. A hand-written bare-list transcript
+  > (the shape ERROR 3 of the E2E audit fabricated) FAILS the scanner as
+  > `NO-DRIVER-ENVELOPE` / `NO-DRIVER-SIGNATURE`, and the canonical door GATE 0b requires
+  > the transcript with **NO owner override** — a hand-written `intake_ledger.json` with no
+  > driver-produced transcript can no longer satisfy the front door.
   > Corrected in A10 / T0-12: this scanner was previously documented as advisory and
   > non-gating on the same page that declares every rule machine-enforced and never advisory.
   > The rule that defines this skill's value — choice-first, one question per turn — was the

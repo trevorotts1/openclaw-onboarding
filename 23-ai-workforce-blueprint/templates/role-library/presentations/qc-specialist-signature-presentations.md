@@ -56,7 +56,7 @@ Review the QC rubric against any MASTERDOC revision; propose lockstep updates (S
 ## 8. Tools You Use
 
 - The three provers under `51-signature-presentation/scripts/` (the deterministic floor).
-- `51-signature-presentation/scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner (advisory, NON-gating; SOP 9.1). Reads `<RUN_DIR>/working/interview/intake_transcript.json`.
+- `51-signature-presentation/scripts/intake_trace_check.py` — the AF-INTAKE-BATCH conversation-trace scanner (FIX-3: gating for signature decks via `build_deck._chk_sp_intake_trace` P-SP-INTAKE-TRACE, and the canonical door GATE 0b requires the transcript with NO owner override; a hand-written bare-list transcript fails NO-DRIVER-ENVELOPE). Reads `<RUN_DIR>/working/interview/intake_transcript.json` (a SIGNED DRIVER ENVELOPE written by deck-intake-driver.py --signature's turn-gate).
 - `scripts/build_deck.py` `_chk_sp_intake` / `_chk_sp_structure` / `_chk_sp_no_pitch` (the manifest-wired preflight wrappers; they DEFER for non-signature decks).
 - The MASTER QC ruleset (`universal-sops/presentation-slide-craft/MASTER-QC-AUTOFAIL-RULESET.md`, Section 5) — the AF-SP-* rows are the wireable list.
 - The client's independent scoring chain (`qwen3-vl:235b-cloud` primary / DeepSeek fallback, client keys).
