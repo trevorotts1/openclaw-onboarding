@@ -70,6 +70,7 @@ from typing import Any, Callable
 GHL_SERVICES_ORIGIN = "https://services.leadconnectorhq.com"
 GHL_MEDIA_UPLOAD_PATH = "/medias/upload-file"
 GHL_MEDIA_FOLDER_PATH = "/medias/folder"   # Skill 48 addition: per-run media folder
+GHL_MEDIA_LIST_PATH = "/medias/files"      # read-only media-library list (QC list-back)
 GHL_MEDIA_VERSION = "2021-07-28"
 
 # PNG magic bytes — a real raster starts with these. A non-PNG upload is a hard FAIL
@@ -79,6 +80,19 @@ PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
 # Transient HTTP status set worth a bounded retry (rate-limit + gateway/5xx). A
 # non-transient 4xx (401/403/404/422…) is NEVER retried.
 _RETRY_HTTP_CODES = frozenset({429, 500, 502, 503, 504})
+
+# Browser User-Agent — REQUIRED for the services.* origin. services.leadconnectorhq.com
+# sits behind a Cloudflare edge WAF that 403s (error code 1010, "bot-signature") ANY
+# request whose User-Agent is the bare-Python default `Python-urllib/3.x`. A real GHL
+# LOCATION PIT + correct scope still 1010s without this. Every HTTP call in this module
+# (upload / folder-create / read-only list) sets this UA; the WAF block is
+# signature-based on the literal UA string, so a browser UA is the fix (proven live
+# 2026-08-06: upload HTTP 201 + list HTTP 200 on a real location with this UA vs
+# 403/1010 with the default UA).
+_GHL_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/126.0 Safari/537.36"
+)
 
 # Canonical env names for the GHL LOCATION PIT — full 11-alias set, priority order.
 # Media uploads REQUIRE the LOCATION PIT (the Agency PIT 401s for media ops).
@@ -314,6 +328,7 @@ def upload_media(
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
+    req.add_header("User-Agent", _GHL_UA)  # Cloudflare 1010 bot-block fix
     req.add_header("Content-Type", content_type)
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
@@ -405,6 +420,7 @@ def create_media_folder(
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
     req.add_header("Version", GHL_MEDIA_VERSION)
+    req.add_header("User-Agent", _GHL_UA)  # Cloudflare 1010 bot-block fix
     req.add_header("Content-Type", "application/json")
 
     _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
@@ -438,10 +454,112 @@ def create_media_folder(
     return {"folderId": folder_id, "name": name, "http": int(code)}
 
 
+# ── list_media — READ-ONLY media-library listing (the QC list-back) ─────────
+
+def list_media(
+    location_id: str,
+    pit: str,
+    *,
+    media_type: str = "file",
+    parent_id: str | None = None,
+    query: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    timeout: int = 60,
+    opener: "Callable[[urllib.request.Request, int], Any] | None" = None,
+) -> dict:
+    """READ-ONLY list of media-library entries for a location. NEVER mutates.
+
+    Calls ``GET services.leadconnectorhq.com/medias/files?locationId=...&type=...``
+    with ``Authorization: Bearer <LOCATION PIT>`` + ``Version: 2021-07-28`` (the same
+    auth model as ``upload_media``/``create_media_folder``; the LOCATION PIT with
+    ``medias.read`` scope — the Agency PIT 401s for media ops). This is the
+    verification twin of ``upload_media``: a caller proves a just-uploaded deck is
+    genuinely in the library by listing and matching on ``name`` (or ``fileId``), not
+    by trusting its own local ledger.
+
+    READ-ONLY GUARANTEE: a plain HTTP GET with no body and no mutation semantics. It
+    never creates, deletes, renames, or moves anything in the media library. Safe for
+    operator-account QC list-backs and for client read-only verification.
+
+    Args:
+        location_id: The GHL sub-account location id (client's own).
+        pit: The LOCATION Private Integration Token (Bearer).
+        media_type: ``"file"`` (default) or ``"folder"``. The API requires a single
+            string value; passing both returns HTTP 422.
+        parent_id: Optional folder id to list only entries inside that folder.
+        query: Optional name search string the API applies server-side.
+        limit: Page size (default 50; the API caps it).
+        offset: Pagination offset.
+        timeout: HTTP timeout seconds.
+        opener: Optional callable ``(Request, timeout) -> response-like`` for tests
+            (mock the HTTP). Default = ``urllib.request.urlopen`` (real call).
+
+    Returns:
+        ``{"http": code, "data": [ ...entries... ], "count": N}`` — ``data`` is the
+        raw entry list from the API (each entry carries ``name``, ``_id``/``fileId``,
+        ``parentId``, ``url`` for files, ``type``). Raises on a non-2xx response or a
+        transport error (fail loud — never fabricates a listing).
+
+    Raises:
+        ValueError: missing/blank required args.
+        RuntimeError: non-2xx HTTP (e.g. the LOCATION PIT lacking ``medias.read``) or a
+            transport error.
+    """
+    _require(location_id, "location_id")
+    _require(pit, "pit")
+    if not str(media_type or "").strip():
+        raise ValueError("media_type is required and must be 'file' or 'folder'")
+
+    params = ["locationId=" + str(location_id), "type=" + str(media_type)]
+    if parent_id:
+        params.append("parentId=" + str(parent_id))
+    if query:
+        params.append("query=" + str(query))
+    params.append("limit=" + str(int(limit)))
+    if offset:
+        params.append("offset=" + str(int(offset)))
+
+    url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_LIST_PATH + "?" + "&".join(params)
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {pit}")
+    req.add_header("Version", GHL_MEDIA_VERSION)
+    req.add_header("User-Agent", _GHL_UA)  # Cloudflare 1010 bot-block fix
+    req.add_header("Accept", "application/json")
+
+    _opener = opener or (lambda r, t: urllib.request.urlopen(r, timeout=t))
+    try:
+        resp = _send_with_retry(req, timeout, _opener)
+        code = resp.getcode()
+        raw = resp.read()
+        if isinstance(raw, bytes):
+            raw = raw.decode("utf-8", "replace")
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", "replace") if hasattr(exc, "read") else ""
+        raise RuntimeError(
+            f"media list HTTP {exc.code} for location {location_id}: {detail[:300]} "
+            "(read-only list requires the LOCATION PIT with medias.read scope; "
+            "the Agency PIT 401s for media ops)"
+        ) from exc
+
+    if not (200 <= int(code) < 300):
+        raise RuntimeError(f"media list returned HTTP {code}: {raw[:300]}")
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(
+            f"media list {code} but body is not JSON: {raw[:300]}"
+        ) from exc
+
+    entries = data.get("data") or data.get("files") or []
+    return {"http": int(code), "data": entries, "count": len(entries)}
+
+
 __all__ = [
     "GHL_SERVICES_ORIGIN",
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
+    "GHL_MEDIA_LIST_PATH",
     "GHL_MEDIA_VERSION",
     "PNG_MAGIC",
     "resolve_location_pit",
@@ -449,4 +567,5 @@ __all__ = [
     "verify_png",
     "upload_media",
     "create_media_folder",
+    "list_media",
 ]

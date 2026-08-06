@@ -476,6 +476,19 @@ def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX-11 verifier: the local GHL ledger AND — when the LOCATION PIT resolves —
+    a READ-ONLY media-library list-back proving the deck is genuinely in the GHL
+    library (the QC gate: "the deck appears in the listing").
+
+    The local ledger (working/checkpoints/media_library.json) is the fast first
+    check. When `pptx_ghl_media_id` + the canonical GHL env names resolve, this
+    verifier additionally calls the read-only GET /medias/files list-back (via the
+    shared ghl_media.list_media) and confirms the deck entry is present by name or
+    fileId. The list-back is deliberately FAIL-SOFT (NOTE on any transport/scope
+    issue): a box with no GHL env, or whose LOCATION PIT lacks medias.read, must
+    not block the run — but on a box where the PIT DOES resolve, a missing deck in
+    the listing is a real AF-BUNDLE-COMPLETE finding, not a silent pass. It NEVER
+    mutates the media library (read-only GET only)."""
     ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
     if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
     try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
@@ -483,7 +496,39 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     reasons: List[str] = []
     if not isinstance(obj, dict): return True, reasons
     if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
-    return True, reasons
+    pptx_id = str(obj.get("pptx_ghl_media_id") or obj.get("pptx_ghl_url") or "").strip()
+    pptx_name = str(obj.get("pptx_ghl_remote_name") or "").strip()
+    if not pptx_id:
+        reasons.append("AF-BUNDLE-COMPLETE: media_library.json has no pptx_ghl_media_id "
+                       "— the final assembled deck was never recorded as uploaded to GHL.")
+        return (len(reasons) == 0), reasons
+    # READ-ONLY LIST-BACK (FIX-11 QC gate). Lazy + fail-soft: only when the shared
+    # module AND the canonical LOCATION PIT resolve. Never blocks on absence.
+    try:
+        import ghl_media
+        pit = ghl_media.resolve_location_pit()
+        loc = ghl_media.resolve_location_id()
+    except Exception as exc:  # noqa: BLE001
+        return True, reasons + [f"NOTE: GHL list-back skipped (env/import: {exc})"]
+    if not pit or not loc:
+        return True, reasons + ["NOTE: GHL list-back skipped (no LOCATION PIT/location id)"]
+    try:
+        listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
+    except Exception as exc:  # noqa: BLE001 — read-only transport issue -> NOTE, never block
+        return True, reasons + [f"NOTE: GHL read-only list-back failed ({exc})"]
+    entries = listing.get("data") or []
+    found = [
+        e for e in entries if isinstance(e, dict)
+        and (str(e.get("fileId") or e.get("_id") or "") == pptx_id
+             or (pptx_name and str(e.get("name") or "") == pptx_name))
+    ]
+    if not found:
+        reasons.append(
+            "AF-BUNDLE-COMPLETE: the final deck is NOT present in the GHL media "
+            "library listing (read-only GET /medias/files) — the local ledger claims "
+            f"pptx_ghl_media_id={pptx_id[:24]}… but the library has no matching entry. "
+            "An upload record that does not survive a real list-back is not an upload.")
+    return (len(reasons) == 0), reasons
 
 
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -520,6 +565,19 @@ def _verify_fish_tag(run_dir: Path) -> Tuple[bool, List[str]]:
 
 
 def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
+    """FIX-11 verifier: the local GHL ledger AND — when the LOCATION PIT resolves —
+    a READ-ONLY media-library list-back proving the deck is genuinely in the GHL
+    library (the QC gate: "the deck appears in the listing").
+
+    The local ledger (working/checkpoints/media_library.json) is the fast first
+    check. When `pptx_ghl_media_id` + the canonical GHL env names resolve, this
+    verifier additionally calls the read-only GET /medias/files list-back (via the
+    shared ghl_media.list_media) and confirms the deck entry is present by name or
+    fileId. The list-back is deliberately FAIL-SOFT (NOTE on any transport/scope
+    issue): a box with no GHL env, or whose LOCATION PIT lacks medias.read, must
+    not block the run — but on a box where the PIT DOES resolve, a missing deck in
+    the listing is a real AF-BUNDLE-COMPLETE finding, not a silent pass. It NEVER
+    mutates the media library (read-only GET only)."""
     ledger_p = run_dir / "working" / "checkpoints" / "media_library.json"
     if not ledger_p.exists(): return True, ["NOTE: media_library.json not found"]
     try: obj = json.loads(ledger_p.read_text(encoding="utf-8",errors="replace"))
@@ -527,7 +585,39 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
     reasons: List[str] = []
     if not isinstance(obj, dict): return True, reasons
     if "ghl_folder_id" not in obj: reasons.append("NOTE: ghl_folder_id absent")
-    return True, reasons
+    pptx_id = str(obj.get("pptx_ghl_media_id") or obj.get("pptx_ghl_url") or "").strip()
+    pptx_name = str(obj.get("pptx_ghl_remote_name") or "").strip()
+    if not pptx_id:
+        reasons.append("AF-BUNDLE-COMPLETE: media_library.json has no pptx_ghl_media_id "
+                       "— the final assembled deck was never recorded as uploaded to GHL.")
+        return (len(reasons) == 0), reasons
+    # READ-ONLY LIST-BACK (FIX-11 QC gate). Lazy + fail-soft: only when the shared
+    # module AND the canonical LOCATION PIT resolve. Never blocks on absence.
+    try:
+        import ghl_media
+        pit = ghl_media.resolve_location_pit()
+        loc = ghl_media.resolve_location_id()
+    except Exception as exc:  # noqa: BLE001
+        return True, reasons + [f"NOTE: GHL list-back skipped (env/import: {exc})"]
+    if not pit or not loc:
+        return True, reasons + ["NOTE: GHL list-back skipped (no LOCATION PIT/location id)"]
+    try:
+        listing = ghl_media.list_media(loc, pit, media_type="file", limit=200)
+    except Exception as exc:  # noqa: BLE001 — read-only transport issue -> NOTE, never block
+        return True, reasons + [f"NOTE: GHL read-only list-back failed ({exc})"]
+    entries = listing.get("data") or []
+    found = [
+        e for e in entries if isinstance(e, dict)
+        and (str(e.get("fileId") or e.get("_id") or "") == pptx_id
+             or (pptx_name and str(e.get("name") or "") == pptx_name))
+    ]
+    if not found:
+        reasons.append(
+            "AF-BUNDLE-COMPLETE: the final deck is NOT present in the GHL media "
+            "library listing (read-only GET /medias/files) — the local ledger claims "
+            f"pptx_ghl_media_id={pptx_id[:24]}… but the library has no matching entry. "
+            "An upload record that does not survive a real list-back is not an upload.")
+    return (len(reasons) == 0), reasons
 
 
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
