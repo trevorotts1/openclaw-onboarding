@@ -412,6 +412,58 @@ def _resolve_owner_route() -> tuple:
     return (channel, target) if target else (None, None)
 
 
+def _extract_gateway_msg_id(raw: str) -> str:
+    """Extract the confirmed gateway message id from an `openclaw message send
+    --json` response.
+
+    The gateway CLI (register.message) renders a successful send with a camelCase
+    TOP-LEVEL `messageId` (e.g. `{"action":"send",...,"messageId":"64828",
+    "payload":{...}}`), falling back to a nested `result.messageId` inside the
+    payload; it never emits a snake_case `message_id`. Prior to this fix the
+    parser looked up `message_id`, which the gateway never emits, so the whole
+    raw JSON blob was stored in gateway_msg_id instead of the clean confirmed id.
+
+    This parser reads, in order: top-level `messageId`, then the same key nested
+    under `result`/`payload`/arbitrary sub-dicts (the shapes the gateway
+    produces, e.g. `payload.result.messageId`), then the legacy snake_case
+    aliases (`message_id`, `msg_id`) for older gateways. A JSON that yields no id
+    returns the raw string unchanged (best-effort: the evidence is preserved; the
+    send itself already succeeded, rc == 0)."""
+    if not raw:
+        return raw
+    try:
+        obj = json.loads(raw)
+    except Exception:  # noqa: BLE001 — non-JSON output: keep the raw evidence.
+        return raw
+    if not isinstance(obj, dict):
+        return raw
+
+    # Walk the parsed object, preferring the camelCase key at every dict level so
+    # both the top-level `messageId` and nested `payload.result.messageId` shapes
+    # resolve. The key preference order is always messageId -> message_id -> msg_id.
+    def _walk(node):
+        if isinstance(node, dict):
+            for key in ("messageId", "message_id", "msg_id"):
+                val = node.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+                if isinstance(val, (int, float)) and not isinstance(val, bool):
+                    return str(val)
+            for value in node.values():
+                found = _walk(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, list):
+            for item in node:
+                found = _walk(item)
+                if found is not None:
+                    return found
+        return None
+
+    found = _walk(obj)
+    return found if found is not None else raw
+
+
 def _send_owner_message(text: str) -> tuple:
     """Best-effort send via `openclaw message send` (NEVER the Telegram API directly).
     Uses the correct CLI flags (-m / --channel / -t) and an env-resolved target.
@@ -434,10 +486,7 @@ def _send_owner_message(text: str) -> tuple:
             print(f"[client_report] openclaw message send rc={proc.returncode}: "
                   f"{(proc.stderr or raw)[:200]}", file=sys.stderr)
             return raw, False
-        try:
-            msg_id = json.loads(raw).get("message_id") or raw
-        except Exception:  # noqa: BLE001
-            msg_id = raw
+        msg_id = _extract_gateway_msg_id(raw)
         return msg_id, True
     except Exception as exc:  # noqa: BLE001
         print(f"[client_report] send failed: {exc}", file=sys.stderr)
