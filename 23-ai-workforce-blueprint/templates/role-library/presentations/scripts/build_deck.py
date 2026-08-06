@@ -236,15 +236,51 @@ LOGO_MARGIN_IN = 0.25        # small consistent margin from the top/right edges
 # DEAD endpoint — refuse to ever touch it.
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# Poll cadence per the recipe: ~8s interval, up to ~7 minutes total.
+# Poll cadence per the recipe: exponential backoff 10s/20s/40s with a HARD cap at
+# ~15 minutes (D14 / FIX-7). A dead or never-completing kie task must surface a
+# terminal FAIL (RenderPollTimeout) instead of hanging the run in 'in_progress'.
 # Heavy gpt-image-2 renders (e.g. a split then-vs-now band with two photoreal scenes
 # and multiple text zones) regularly exceed 3 minutes of pure render latency. 180s was
-# too low and made merely-slow slides time out and fail loud with outputPath=null. 420s
-# gives slow-but-healthy renders room to finish; genuine terminal failures still fail
-# immediately (see poll_task: 'fail'/'error'/'cancelled' short-circuit).
-POLL_INTERVAL_S = 8
-POLL_MAX_SECONDS = 420
-POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
+# too low and made merely-slow slides time out and fail loud with outputPath=null.
+# The backoff ladder below (10s for the first 2 min, 20s for the next 3 min, then 40s)
+# gives slow-but-healthy renders room to finish while guaranteeing a hard stop at
+# POLL_MAX_SECONDS; genuine terminal failures still fail immediately (see poll_task:
+# 'fail'/'error'/'cancelled' short-circuit). All three are overridable via env so a
+# slow kit render can stretch the wall-clock ceiling without editing code.
+def _poll_ladder() -> tuple:
+    """Return (fast_s, fast_window_s, medium_s, medium_window_s, slow_s).
+    The schedule is 10s for the first 2 min, 20s for the next 3 min, then 40s after."""
+    def _f(name, default):
+        try:
+            v = int(os.environ.get(name, str(default)))
+        except ValueError:
+            v = default
+        return max(1, v)
+    return (_f("BUILD_DECK_POLL_FAST_S", 10),
+            _f("BUILD_DECK_POLL_FAST_WINDOW_S", 120),
+            _f("BUILD_DECK_POLL_MEDIUM_S", 20),
+            _f("BUILD_DECK_POLL_MEDIUM_WINDOW_S", 180),
+            _f("BUILD_DECK_POLL_SLOW_S", 40))
+
+
+POLL_FAST_S, POLL_FAST_WINDOW_S, POLL_MEDIUM_S, POLL_MEDIUM_WINDOW_S, POLL_SLOW_S = _poll_ladder()
+
+# Hard wall-clock cap for a single task's poll (FIX-7: ~15 min). Beyond this the poll
+# raises RenderPollTimeout (a terminal FAIL), never a silent hang.
+def _poll_max_seconds() -> int:
+    try:
+        v = int(os.environ.get("BUILD_DECK_POLL_MAX_SECONDS", "900"))
+    except ValueError:
+        v = 900
+    return max(30, v)
+
+
+POLL_MAX_SECONDS = _poll_max_seconds()
+
+# Backward-compatible alias: the old fixed 8s interval / pass count are gone; code
+# that referenced POLL_INTERVAL_S / POLL_MAX_PASSES now uses the ladder. Kept as a
+# derived value so any external reader still resolves a sane number.
+POLL_INTERVAL_S = POLL_FAST_S
 
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
@@ -1214,6 +1250,14 @@ class RateLimited(Exception):
     pass
 
 
+class RenderPollTimeout(Exception):
+    """Terminal FAIL surfaced when a kie task did not reach a terminal state within
+    the poll hard cap (POLL_MAX_SECONDS, ~15 min by default). Raised by poll_task
+    so a dead / never-completing render FAILS loudly instead of hanging the run in
+    'in_progress' (D14 / FIX-7). Carries the elapsed seconds and last observed
+    state so the caller can log a precise failure."""
+
+
 # C1 (SSRF / local-file read guard): the ONLY URL schemes this pipeline is ever
 # allowed to open. urllib.request.urlopen will happily honour file://, ftp://,
 # data:, etc. — so a KIE result URL, a --logo URL, or any API URL that resolves to
@@ -1386,44 +1430,47 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
     return task_id
 
 
-def poll_task(task_id: str, api_key: str) -> str:
-    """Poll recordInfo every ~8s up to ~7 min. Returns resultUrls[0] on success.
+def _poll_interval_for_elapsed(elapsed_s: float) -> int:
+    """Exponential backoff ladder per FIX-7: 10s for the first 2 min, 20s for the
+    next 3 min, then 40s after. Returns the sleep seconds for a poll at elapsed_s
+    seconds since the poll started. The ladder keeps the FIRST polls cheap so a
+    fast render finishes in <2 min, then slows to cut request volume on the long
+    tail — while the hard cap (POLL_MAX_SECONDS) bounds total wall-clock time."""
+    if elapsed_s < POLL_FAST_WINDOW_S:
+        return POLL_FAST_S
+    if elapsed_s < POLL_FAST_WINDOW_S + POLL_MEDIUM_WINDOW_S:
+        return POLL_MEDIUM_S
+    return POLL_SLOW_S
 
-    A genuinely failed/garbled render still fails loud: any terminal state
-    ('fail'/'failed'/'error'/'cancelled') short-circuits immediately. The extra
-    patience is ONLY for slides that keep reporting a healthy non-terminal state
-    ('generating'/'waiting'/'queuing'/'processing'/'running') — those are merely
-    slow, so if we reach the ceiling while the slide is still actively making
-    progress we grant a bounded grace window rather than killing a healthy render.
+
+def poll_task(task_id: str, api_key: str) -> str:
+    """Poll recordInfo with exponential backoff (10s/20s/40s) and a HARD cap at
+    POLL_MAX_SECONDS (~15 min). Returns resultUrls[0] on success.
+
+    FIX-7 (D14): a task that never completes must surface a TERMINAL FAIL
+    (RenderPollTimeout) instead of hanging the run in 'in_progress'. The wall-clock
+    deadline is absolute — there is NO unbounded grace window. A genuinely failed/
+    garbled render still fails loud: any terminal state ('fail'/'failed'/'error'/
+    'cancelled') short-circuits immediately. Slow-but-healthy renders are given the
+    full ladder; only a task that is still non-terminal at the hard cap raises.
     """
     url = f"{POLL_URL}?taskId={task_id}"
 
     # States KIE reports while a slide is healthily in-flight (not yet done, not failed).
     HEALTHY_INFLIGHT = ("generating", "waiting", "queuing", "queued", "processing", "running", "pending")
 
-    # Grace: if the slide is STILL actively generating when the normal ceiling is hit,
-    # allow up to this many extra passes (~25% more time) before declaring a timeout.
-    # This only ever fires for slides that never reached a terminal-failure state.
-    GRACE_PASSES = POLL_MAX_PASSES // 4  # ~13 extra passes (~104s) for slow renders
-
-    deadline = time.time() + POLL_MAX_SECONDS
+    started = time.time()
+    deadline = started + POLL_MAX_SECONDS
     passes = 0
-    grace_used = 0
     last_state = ""
-    # +2 normal slack passes, plus the grace passes so a healthy-but-slow render is
-    # not cut short by the pass cap before its grace window is exhausted.
-    while passes < POLL_MAX_PASSES + 2 + GRACE_PASSES:
-        # Past the wall-clock deadline: only keep going if the slide is still a
-        # healthy in-flight render AND we have grace passes left. Otherwise stop.
+    while True:
         if time.time() >= deadline:
-            if last_state in HEALTHY_INFLIGHT and grace_used < GRACE_PASSES:
-                grace_used += 1
-                print(
-                    f"    [poll grace {grace_used}/{GRACE_PASSES}] taskId={task_id} "
-                    f"still {last_state!r} past {POLL_MAX_SECONDS}s; extending", flush=True
-                )
-            else:
-                break
+            # HARD CAP reached — terminal FAIL, never a silent hang.
+            raise RenderPollTimeout(
+                f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
+                f"hard cap (last state {last_state!r}; {passes} polls). "
+                "Render FAILED — the kie task never reached a terminal state."
+            )
         passes += 1
         try:
             resp = _http_json("GET", url, api_key)
@@ -1451,13 +1498,11 @@ def poll_task(task_id: str, api_key: str) -> str:
                 f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
             )
 
-        print(f"    [poll {passes}] taskId={task_id} state={state!r}; sleep {POLL_INTERVAL_S}s", flush=True)
-        time.sleep(POLL_INTERVAL_S)
-
-    raise RuntimeError(
-        f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
-        f"(+{grace_used * POLL_INTERVAL_S}s grace; last state {last_state!r})."
-    )
+        elapsed = time.time() - started
+        interval = _poll_interval_for_elapsed(elapsed)
+        print(f"    [poll {passes}] taskId={task_id} state={state!r}; "
+              f"elapsed={elapsed:.0f}s sleep {interval}s", flush=True)
+        time.sleep(interval)
 
 
 def download_unauthenticated(url: str, dest: Path) -> None:
@@ -1634,6 +1679,13 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
+        except RenderPollTimeout:
+            # FIX-7 (D14): a task that never reaches a terminal state within the
+            # poll hard cap is a TERMINAL FAIL — surface it immediately. Re-submitting
+            # a fresh identical task would only re-poll a (probably) dead task for
+            # another full cap; a never-completing render must FAIL at ≤15 min, never
+            # hang the run in 'in_progress'. No retry, no backoff.
+            raise
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
             print(f"    FAIL attempt {attempt}: {exc}", file=sys.stderr, flush=True)
@@ -9831,7 +9883,13 @@ def main():
     task_ids = [r["taskId"] for r in rendered]
     failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
 
-    # FAIL LOUD: never produce a partial deck silently.
+    # FAIL LOUD: never produce a partial deck silently. FIX-7 (D14): a render that
+    # failed (e.g. a RenderPollTimeout from a never-completing kie task) must NOT
+    # leave the CC card in 'in_progress' — surface a terminal status so the run
+    # never hangs. 'blocked' is a CC_TASK_STATUSES member; mid-run this is legal
+    # because the run is ending with a hard failure (no process cert is minted, so
+    # the cert-gate 422 concern does not apply to an abort). Fail-soft: a disabled
+    # board / missing task_id is a clean no-op.
     if failures:
         summary = {
             "slidesRendered": len(rendered),
@@ -9841,6 +9899,11 @@ def main():
         }
         print("\n=== SUMMARY (FAILED) ===", file=sys.stderr)
         print(json.dumps(summary, indent=2))
+        if not adhoc:
+            _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "blocked",
+                               note=f"render FAILED: {len(failures)} slide(s) did not "
+                                    f"complete (e.g. poll hard cap / terminal state). "
+                                    f"Never hangs.")
         sys.exit(1)
 
     # BOARD: every slide rendered cleanly — log render-phase PROGRESS as an ACTIVITY
