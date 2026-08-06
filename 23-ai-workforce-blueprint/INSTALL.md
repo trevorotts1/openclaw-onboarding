@@ -1077,6 +1077,76 @@ When a gateway restart is needed:
 
 ## PHASE 10 - COMPLETION CHECKLIST
 
+### Phase 10a — Abandonment Rate Measurement (standard-first boxes, 2026-08-04)
+
+The standard-first redesign writes three timestamps into
+`.workforce-build-state.json` that together enable computing the
+**abandonment rate** — the fraction of boxes where the operator prebuilt the
+canonical floor but the owner never completed the interview.
+
+| Timestamp | Writer | Meaning |
+|---|---|---|
+| `standardPrebuild.prebuildStartedAt` | `prebuild-standard-workforce.py` | When materialization actually began (written ONCE before the first mutation, never rewritten on resume). |
+| `standardPrebuild.standardReadyAt` | `prebuild-standard-workforce.py` | When the prebuild reached `status: "done"` (floor met + CC seeded + chosen artifact written). |
+| `interviewCompletedAt` | `update-interview-state.sh --complete` | When the owner finished the interview (written at interview-completion, legacy field reused — no schema change). |
+
+**Abandonment rate formula:**
+
+```
+abandonment_rate = count(boxes where prebuildStartedAt exists AND interviewCompletedAt is NULL) / count(boxes where prebuildStartedAt exists)
+```
+
+A box with `prebuildStartedAt` but no `interviewCompletedAt` is **abandoned**:
+the operator provisioned it and the prebuild ran, but the owner never finished the
+interview (so the apply-diff build never ran). This is the metric that Phase 10
+of the master plan requires.
+
+The `on-first-answer` trigger mode adds a **second abandonment tier**:
+boxes where `operatorConsent` was recorded but `prebuildStartedAt` is NULL
+(prebuild armed but never started because the owner never answered a single
+interview question).
+
+### Phase 10b — STANDARD_FIRST_ONBOARDING config: WHEN the prebuild fires
+
+The `standardFirstOnboarding` field in `.workforce-build-state.json` (and the
+`--standard-first-onboarding` CLI flag on `prebuild-standard-workforce.sh`)
+controls WHEN the standard prebuild materializes the canonical floor.
+
+| Value | Behavior | Default? |
+|---|---|---|
+| `at-onboarding` | Materialize immediately when the operator consents — the floor is prebuilt BEFORE the owner answers a single interview question. This is the original prebuild behavior and the **default**. | YES |
+| `on-first-answer` | **Defer:** record the consent and arm the prebuild lane but do NOT materialize. The prebuild fires later, when the owner answers their first interview question (the interview-start hook drives `prebuild-standard-workforce.sh` at that moment). `prebuildStartedAt` stays NULL until materialization actually begins, so boxes abandoned before the first answer are measurable. | NO |
+
+**How to configure:**
+
+```bash
+# Shell wrapper (STANDARD_FIRST_ONBOARDING env var enables the lane):
+STANDARD_FIRST_ONBOARDING=1 bash scripts/prebuild-standard-workforce.sh \
+  --operator-consent-file consent.json \
+  --standard-first-onboarding on-first-answer \
+  --apply
+
+# Direct Python engine:
+python3 scripts/prebuild-standard-workforce.py \
+  --operator-consent-file consent.json \
+  --standard-first-onboarding on-first-answer \
+  --apply
+```
+
+**How the deferred lane fires later:** when the owner answers their first
+interview question, the interview-start hook reads `standardFirstOnboarding:
+"on-first-answer"` and `standardPrebuild.status: "pending"` from the build-state,
+then re-invokes `prebuild-standard-workforce.sh` (idempotent: the consent gate
+recognizes the prior consent and re-runs the materializer; `prebuildStartedAt` is
+written at that point).
+
+The rollback switch is separate from the timing config: setting
+`STANDARD_FIRST_ONBOARDING` env to anything other than `1`/`true`/`yes`/`on`
+causes the entire standard-first lane to refuse to run (exit 9), falling back to
+the legacy interview-first path — independent of which timing value was chosen.
+
+### Phase 10c — Completion Checklist
+
 Before reporting done, verify every item:
 
 - [ ] Model check passed (high reasoning model confirmed)

@@ -1041,6 +1041,14 @@
       ],
       "description": "AI Workforce standard-first redesign (2026-08-04): which build lane this box runs on. ABSENT = 'legacy' — every box onboarded before the standard-first cutover simply carries no buildType field (frozen in-flight clients are never backfilled; the reader treats absent and 'legacy' identically). 'legacy' = the build-from-scratch lane (interview gathers the department set first, then the build creates everything at interviewComplete). 'standard-first' = the standard-prebuild lane: the canonical library prebuild materializes the full canonical floor at onboarding (operator-triggered, BEFORE the interview), the interview EDITS the prebuilt set, and the build at interviewComplete becomes an apply-diff event. Every standard-first code path branches on buildType == 'standard-first' via build-workforce.py's _standard_first_mode(); the legacy lane is byte-identical with or without this field (rollback property 1: stop setting buildType on new boxes and every new box reverts to today's flow). Written ONLY by the standard prebuild driver (scripts/prebuild-standard-workforce.sh) after the operator consent gate passes. Never hand-write it."
     },
+    "standardFirstOnboarding": {
+      "type": "string",
+      "enum": [
+        "at-onboarding",
+        "on-first-answer"
+      ],
+      "description": "AI Workforce standard-first redesign (2026-08-04): controls WHEN the standard prebuild fires. 'at-onboarding' (DEFAULT) = the prebuild materializes the canonical floor immediately when the operator consents, BEFORE the owner has answered a single interview question — unchanged from the original prebuild behavior. 'on-first-answer' = DEFER the prebuild: record the consent and arm the prebuild lane but do NOT materialize until the owner answers their FIRST interview question (the interview-start hooks fires the prebuild at that point). This allows boxes where the operator provisions the box but the owner hasn't started the interview to avoid prebuilding a floor the owner may never see. Both modes record prebuildStartedAt (written at materialization time) and standardReadyAt for abandonment-rate computation. ABSENT = 'at-onboarding' (the reader treats absent identically to 'at-onboarding' — every box cut over before this field was added carries the original at-onboarding trigger). Written by the prebuild driver from its --standard-first-onboarding flag; read by the prebuild driver itself and by the interview-start hooks. Never hand-write it."
+    },
     "standardPrebuild": {
       "type": "object",
       "description": "AI Workforce standard-first redesign (2026-08-04): the namespaced state block for the standard prebuild. Written EXCLUSIVELY by the prebuild driver (scripts/prebuild-standard-workforce.sh) — never by the interview, the apply-diff build, or an agent hand-write. The prebuild writes NO interviewProgress / interviewQc fields (anti-fabrication: the prebuild is operator-initiated, library-sourced, and records no owner answers); its entire record lives in this block so the two surfaces can never be confused. The no-fabrication rule (master plan section 2.5) binds this block: nothing inside it may ever be read back as interview content.",
@@ -1053,6 +1061,14 @@
             "failed"
           ],
           "description": "Prebuild lifecycle. 'pending' = materialization started; 'done' = canonical library materialization + Command Center board seeding + chosen-artifact write + STANDARD_READY prover pass all completed (this is the STANDARD_READY signal downstream gates branch on); 'failed' = the driver exited non-zero before completing (see standardPrebuildFailureReason)."
+        },
+        "prebuildStartedAt": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "format": "date-time",
+          "description": "ISO timestamp written ONCE at the START of prebuild materialization (before any mutation, right after the consent gate passes). Downstream gate: prebuildStartedAt + interviewCompletedAt compute the prebuild-to-completion elapsed time; prebuildStartedAt + standardReadyAt measure the prebuild engine's own runtime. Together with interviewCompletedAt this enables ABANDONMENT RATE measurement (boxes where prebuildStartedAt existed but interviewCompletedAt was never written). Written ONLY by the prebuild driver; never rewritten on a re-run that finds status already 'done'."
         },
         "standardReadyAt": {
           "type": [

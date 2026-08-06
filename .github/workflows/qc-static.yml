@@ -2845,3 +2845,17 @@ jobs:
           rm -rf "$ng"
           [ "$rc2" -eq 0 ] || { echo "✗ write-back auth gate should PASS (exit 0) once the unauthenticated example is removed, got $rc2"; exit 1; }
           echo "✓ guard-taskapi-auth-docs negative test passes (fails on a planted unauthenticated example, passes once removed)"
+
+      - name: AI Workforce standard-first cron awareness (S1-S8, N1-N5)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Hermetic fixture tests for the two durable crons under the
+          # standard-first build pipeline:
+          #   S1-S5  resume-workforce-build.sh  (prebuilt storm/TTL/gate)
+          #   S6-S8  resume + stale + legacy
+          #   N1-N5  interview-nudge-cron.sh   (nudge copy/anchor/kill)
+          # Each behavioral group is paired with a MUTATION PROOF.
+          # The test uses python3 (not jq) so it works in any CI runner.
+          bash tests/unit/standard-first-cron-awareness.test.sh
+          echo "✓ All standard-first cron awareness checks pass (S1-S8, N1-N5 + mutation proofs)"

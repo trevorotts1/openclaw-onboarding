@@ -174,7 +174,15 @@ except Exception as _e:  # pragma: no cover - defensive
 
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
-    """Return Path to .workforce-build-state.json or None if workspace not found."""
+    """Return Path to .workforce-build-state.json or None if workspace not found.
+
+    SCRATCH ISOLATION (standard-first redesign): $WORKFORCE_BUILD_STATE_FILE
+    overrides resolution (mirrors _build_state_path) so scratch/prebuild runs
+    never read the live box state.
+    """
+    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
+    if _env_state:
+        return Path(_env_state)
     vps = Path("/data/.openclaw/workspace")
     if vps.is_dir():
         return vps / ".workforce-build-state.json"
@@ -369,37 +377,43 @@ def load_non_interactive_config(config_file):
     # with no recorded pack is not industry-custom and must not proceed blindly.
     # Edge case: slug="unknown" is allowed with a loud warning (unclassifiable business
     # should not be un-buildable). Absent slug entirely = hard fail.
-    _state_path = _resolve_build_state_path()
-    if _state_path is not None and _state_path.exists():
-        try:
-            _state = json.loads(_state_path.read_text(encoding="utf-8"))
-            _pack = _state.get("industryPack") or {}
-            _slug = _pack.get("slug")
-            if not _slug:
-                print(
-                    "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
-                    "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
-                    "  Or confirm the vertical in Phase 5 before building.\n"
-                    "  State file: " + str(_state_path),
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            elif _slug == "unknown":
-                print(
-                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
-                    "was detected or confirmed. Building will proceed but industry customization may be generic. "
-                    "Phase 5 confirmation was expected to set the slug.",
-                    file=sys.stderr,
-                )
-        except Exception as _e:
-            print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
-            # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
-    else:
-        print(
-            "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
-            "Proceeding without industry-pack verification.",
-            file=sys.stderr,
-        )
+    # STANDARD-FIRST LANE: the prebuild deliberately records NO industryPack (the
+    # industry is unknown until the interview), so this hard-gate would strand every
+    # web-completed standard-first box. Skip the gate in that lane (the interview's
+    # industry confirmation happens during apply-diff, and _standard_first_mode()
+    # already exempts the consent gate on the same basis).
+    if not _standard_first_mode():
+        _state_path = _resolve_build_state_path()
+        if _state_path is not None and _state_path.exists():
+            try:
+                _state = json.loads(_state_path.read_text(encoding="utf-8"))
+                _pack = _state.get("industryPack") or {}
+                _slug = _pack.get("slug")
+                if not _slug:
+                    print(
+                        "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
+                        "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
+                        "  Or confirm the vertical in Phase 5 before building.\n"
+                        "  State file: " + str(_state_path),
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                elif _slug == "unknown":
+                    print(
+                        "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
+                        "was detected or confirmed. Building will proceed but industry customization may be generic. "
+                        "Phase 5 confirmation was expected to set the slug.",
+                        file=sys.stderr,
+                    )
+            except Exception as _e:
+                print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
+                # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
+        else:
+            print(
+                "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
+                "Proceeding without industry-pack verification.",
+                file=sys.stderr,
+            )
 
     return config
 
@@ -1870,9 +1884,54 @@ def _read_prior_chosen_entries(company_dir):
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return [], "corrupt"
+    if isinstance(data, dict):
+        # The retire-confirmed-decline.sh writes a {removedWithProvenance, departments}
+        # dict shape. Extract the departments list — it is NOT a corrupt artifact.
+        depts = data.get("departments")
+        if isinstance(depts, list):
+            return depts, "ok"
+        return [], "corrupt"
     if not isinstance(data, list):
         return [], "corrupt"
     return data, "ok"
+
+
+def _read_prior_removed_with_provenance(cdir):
+    """A7: read any existing removedWithProvenance records from the prior artifact.
+
+    The retire-confirmed-decline.sh writes departments.json as
+    {removedWithProvenance:[{slug,retiredAt,source,...}], departments:[...]}.
+    When a subsequent apply-diff build overwrites the artifact it must preserve
+    these provenance records so the audit trail is not silently discarded.
+    Returns a (possibly empty) list of provenance dicts.
+    """
+    if not cdir:
+        return []
+    path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, dict):
+        prov = data.get("removedWithProvenance")
+        if isinstance(prov, list):
+            return prov
+    return []
+
+
+def _make_artifact_payload(departments, provenance):
+    """A7: produce the artifact payload, preferring the retire-script dict shape
+    when there are provenance records to preserve.
+
+    With provenance records present:  {removedWithProvenance:[...], departments:[...]}
+    Without (first-ever write):       [ ... ]  (bare CC-schema list)
+    """
+    if provenance:
+        return {"removedWithProvenance": provenance, "departments": departments}
+    return departments
 
 
 def _bare_norm_slug(raw):
@@ -2182,11 +2241,25 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             slugs.append(s)
     written = []
     artifact_path = None
+
+    # ── A7: preserve removedWithProvenance dict shape (retire-script audit trail) ──
+    # The retire-confirmed-decline.sh writes departments.json as
+    # {removedWithProvenance:[...], departments:[...]}.  A subsequent apply-diff
+    # build must NOT clobber this dict shape with a bare list — that silently
+    # discards the provenance records that gate-A7 requires.
+    prior_provenance = _read_prior_removed_with_provenance(cdir)
+
+    # Build the payload: always prefer the retire-script dict shape when there
+    # are existing provenance records to preserve.  (A first-ever write with
+    # zero provenance still emits the bare CC-schema list — the retire script
+    # itself introduces the dict shape.)
+    payload = _make_artifact_payload(dept_json, prior_provenance)
+
     if cdir:
         try:
             os.makedirs(cdir, exist_ok=True)
             artifact_path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(artifact_path, dept_json)
+            _atomic_write_json(artifact_path, payload)
             written.append(artifact_path)
             print(f"[CHOSEN-LIST] Wrote durable departments.json "
                   f"({len(slugs)} departments) to {artifact_path}", file=sys.stderr)
@@ -2197,7 +2270,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
     if discovery_dir:
         try:
             legacy_path = os.path.join(discovery_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(legacy_path, dept_json)
+            _atomic_write_json(legacy_path, payload)
             written.append(legacy_path)
         except OSError as e:
             print(f"[CHOSEN-LIST WARNING] Could not write legacy mirror to {discovery_dir}: {e}",

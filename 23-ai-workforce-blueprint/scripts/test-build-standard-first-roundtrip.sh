@@ -321,7 +321,10 @@ fi
 # A8: legacy lane untouched — a legacy-state box (NO buildType) is refused by the
 # apply-diff entry's buildType gate. Give it the genuine transcript so the
 # consent gate passes and execution actually REACHES the buildType check.
-echo '{"version":1,"interviewComplete":true,"ownerChat":0,"departments":[]}' > "$TMP/state-legacy.json"
+# Include an industryPack so the pre-existing PRD-2.15 gate passes and the flow
+# actually reaches the buildType gate (since _resolve_build_state_path now
+# honors WORKFORCE_BUILD_STATE_FILE, the fixture state IS read).
+echo '{"version":1,"interviewComplete":true,"ownerChat":0,"departments":[],"industryPack":{"slug":"coaching"}}' > "$TMP/state-legacy.json"
 "${RUN_ENV[@]}" env "WORKFORCE_BUILD_STATE_FILE=$TMP/state-legacy.json" \
   python3 "$BW" --non-interactive --config-file "$CONFIG" \
   --apply-standard-edits > "$TMP/a8.out" 2>"$TMP/a8.err" < /dev/null
