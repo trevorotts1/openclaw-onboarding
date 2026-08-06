@@ -90,6 +90,11 @@ PUBLIC API
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
   stamp_task_id(run_dir, task_id) -> bool
+  register_deliverable(task_id, url, meta=None, *, env=None) -> bool
+      # POST /api/tasks/{task_id}/deliverables — the FIX-12 registration bridge
+      # (ported from Skill-06 cc_board.py). FAIL-SOFT: never raises; a False
+      # return never blocks the deck build. The task can leave in_progress only
+      # once task_deliverables holds a row (POST 2xx -> row created).
   count_successful_advances(run_dir) -> int
   assert_min_one_advance(run_dir) -> bool
 """
@@ -869,6 +874,112 @@ def stamp_task_id(run_dir, task_id: str) -> bool:
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
+
+
+# ---------------------------------------------------------------------------
+# DELIVERABLE REGISTRATION — POST /api/tasks/{id}/deliverables (FIX-12).
+#
+# The producer-side registration bridge (ported from Skill-06's
+# register_deliverable at 06-ghl-install-pages/tools/cc_board.py). M11 in
+# ERRORS-DETECTED: the dept cc_board.py had NO register_deliverable, so a
+# completed deck was never registered and its task could never leave
+# in_progress. POST a 2xx -> the CC server inserts a task_deliverables row ->
+# the task is registerable and may advance. The CC route validates against
+# CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+# non-empty title; optional path/description) — it does NOT accept a bare
+# `url` or `meta` key, so the payload carries deliverable_type='url' +
+# title + path (the artifact URL), with meta folded into `description`.
+# FAIL-SOFT: never raises; a False return (board disabled, missing id/url,
+# transport error, non-2xx) never blocks the deck build.
+# ---------------------------------------------------------------------------
+def register_deliverable(
+    task_id: str,
+    url: str,
+    meta: Optional[dict] = None,
+    *,
+    env: Optional[dict] = None,
+) -> bool:
+    """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
+
+    Auth: both headers (Bearer + HMAC) per this module's AUTH PARITY rules —
+    the same signed _request() every other advance uses. If the /deliverables
+    endpoint is absent (404) the call fail-softs and the build continues
+    unregistered (the deck's task_id is still on disk via stamp_task_id).
+
+    FAIL-SOFT: never raises; a False return never blocks the build.
+
+    Args:
+        task_id: CC task UUID returned by ingest_deck_task (or read from the
+                 process_manifest cc_task_id).
+        url:     The built artifact URL (e.g. the deck/guide location) to
+                 register on the card.
+        meta:    Optional metadata dict (e.g. {"type": "deck_pptx",
+                 "title": "My Deck", "slug": "deck-1"}). A title found here
+                 becomes the deliverable title; the rest rides in description.
+        env:     Override os.environ (for testing).
+
+    Returns:
+        True on 2xx, False on any failure (including 404 if endpoint absent).
+    """
+    cfg = board_config(env)
+    if cfg is None:
+        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled; "
+             "deliverable not registered.")
+        return False
+
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("register_deliverable skipped — empty task_id.")
+        return False
+
+    artifact_url = (url or "").strip()
+    if not artifact_url:
+        _log("register_deliverable skipped — empty url.")
+        return False
+
+    # The CC server's POST /api/tasks/{id}/deliverables validates against the
+    # CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+    # a non-empty title, optional path/description) — it does NOT accept a
+    # bare `url` or `meta` key, so the old {"url": ..., "meta": ...} shape 400s.
+    title = "Artifact URL"
+    if meta and isinstance(meta, dict):
+        for _key in ("title", "slug", "type"):
+            _val = meta.get(_key)
+            if _val:
+                title = str(_val)
+                break
+
+    payload: dict = {
+        "deliverable_type": "url",
+        "title": title,
+        "path": artifact_url,
+    }
+    if meta and isinstance(meta, dict):
+        # Fold the metadata into `description` (JSON) so nothing is lost — the
+        # schema has no `meta` field to carry it.
+        payload["description"] = json.dumps(meta, separators=(",", ":"))
+
+    endpoint = f"{cfg['base_url']}/api/tasks/{tid}/deliverables"
+    try:
+        http_status, body = _request("POST", endpoint, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"POST {endpoint} failed ({type(exc).__name__}: {exc}); "
+            "deliverable not registered; build continues."
+        )
+        return False
+
+    if 200 <= http_status < 300:
+        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
+             f"http={http_status}.")
+        return True
+
+    _log(
+        f"POST /deliverables non-2xx (HTTP {http_status}) for task {tid}: "
+        f"{body}; build continues. If 404, confirm /deliverables endpoint in "
+        "blackceo-command-center."
+    )
+    return False
 
 
 # ---------------------------------------------------------------------------
