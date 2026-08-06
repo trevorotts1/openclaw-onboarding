@@ -20,11 +20,16 @@ audio being far shorter than the written script. This script fixes both:
      speech, the script EXITS NON-ZERO and does NOT overwrite the deliverable.
 
 Fish Audio facts (per 30-fish-audio-api-reference/references/fish-audio-api-reference.md):
-  - POST https://api.fish.audio/v1/tts , Bearer auth, header model: s2-pro
+  - POST https://api.fish.audio/v1/tts , Bearer auth, header model: s2.1-pro (the
+    current PAID production model; the interim s2-pro id was superseded by S2.1 Pro
+    and is NOT a durable default for client work).
   - chunk_length param max 300; we additionally pre-chunk the text ourselves and
     send each chunk as its own request so a single oversized request can never
     silently truncate the talk.
   - format mp3, mp3_bitrate 192, normalize true (set false only for tag fidelity).
+  - MP3 VALIDITY PROBE (FIX-9, T-10): the final mp3 must be a REAL, parseable MP3 —
+    ID3v2 header present and at least one valid MPEG audio frame header. A file that
+    only "exists" but is not decodable audio FAILS the probe (verify_mp3).
 
 USAGE
 -----
@@ -33,7 +38,7 @@ USAGE
       --speech /path/PRESENTER-SPEECH.md \
       --out    /path/PRESENTER-AUDIO.mp3 \
       [--voice-id <reference_id>] [--api-key <key>] \
-      [--model s2-pro] [--bitrate 192] [--wpm 140] [--min-ratio 0.80] \
+      [--model s2.1-pro] [--bitrate 192] [--wpm 140] [--min-ratio 0.80] \
       [--chunk-chars 280] [--workdir <dir>]
 
 The speech is cleaned the same way the word-count gate expects: markdown
@@ -144,6 +149,14 @@ def chunk_text(text: str, chunk_chars: int) -> list[str]:
 # ----------------------------------------------------------------------------
 FISH_URL = "https://api.fish.audio/v1/tts"
 
+# The authoritative Fish Audio model for CLIENT production (FIX-9 / T-10 model
+# truth): S2.1 Pro (paid), per 30-fish-audio-api-reference/references/
+# fish-audio-api-reference.md and SKILL.md. The interim `s2-pro` id was superseded
+# by S2.1 Pro; `s2.1-pro-free` is operator-internal ONLY (no SLA, may train on
+# submitted inputs, expires end of July 2026) and is FORBIDDEN for client work.
+# This is the single source for the argparse default.
+MAIN_MODEL_DEFAULT = "s2.1-pro"
+
 
 def synth_chunk(text, api_key, voice_id, model, bitrate, out_path,
                 normalize=True, retries=3):
@@ -206,6 +219,58 @@ def ffprobe_duration(path: str) -> float:
     return float(out)
 
 
+# ----------------------------------------------------------------------------
+# MP3 VALIDITY PROBE — FIX-9 / T-10 QC gate. A deliverable that "exists" but is
+# not decodable audio is a defect, not an MP3. This proves the file is a REAL MP3:
+#   (1) size > 10 KB floor (matches the FIX-9 QC row: "valid MP3 > 10KB");
+#   (2) an ID3v2 header (tag 'ID3' at offset 0) — the standard MP3 metadata frame;
+#   (3) at least one valid MPEG audio frame header (11-bit frame-sync 0xFFE0)
+#       parsed after the ID3 tag (or at offset 0 for tag-less MP3s).
+# Returns '' on PASS, or a non-empty reason string on FAIL (fail-loud).
+# ----------------------------------------------------------------------------
+MP3_MIN_BYTES = 10_000  # 10 KB floor from the FIX-9 QC row
+
+
+def _is_mp3_frame_sync(b: bytes) -> bool:
+    """True iff the two bytes carry a valid MPEG audio frame sync (11-bit 1s)."""
+    return (b[0] == 0xFF) and ((b[1] & 0xE0) == 0xE0) and ((b[1] & 0x06) != 0x00)
+
+
+def verify_mp3(path: str) -> str:
+    """Probe an MP3 file for real audio content. Returns '' (PASS) or a reason
+    string (FAIL). Never raises: any probe error is a FAIL, never an exception."""
+    try:
+        if not os.path.exists(path):
+            return f"missing file: {path}"
+        size = os.path.getsize(path)
+        if size < MP3_MIN_BYTES:
+            return f"too small: {size} bytes < {MP3_MIN_BYTES} floor"
+        with open(path, "rb") as f:
+            head = f.read(16)
+        if not head:
+            return "empty file"
+        # ID3v2 header present? tag 'ID3' + major version + 4 syncsafe size bytes.
+        offset = 0
+        if head.startswith(b"ID3"):
+            if len(head) < 10:
+                return "truncated ID3v2 header"
+            id3_size = ((head[6] & 0x7F) << 21) | ((head[7] & 0x7F) << 14) \
+                     | ((head[8] & 0x7F) << 7) | (head[9] & 0x7F)
+            offset = 10 + id3_size
+        # Read the frame header at (or after) the ID3 tag.
+        with open(path, "rb") as f:
+            f.seek(offset)
+            frame = f.read(4)
+        if len(frame) < 4:
+            return f"no audio frame after ID3 (frame offset {offset})"
+        if not _is_mp3_frame_sync(frame[:2]):
+            return (f"no valid MPEG audio frame header at offset {offset} "
+                    f"(bytes {frame[:2].hex()}); not decodable audio")
+        return ""
+    except Exception as exc:  # noqa: BLE001 — any probe error fails closed
+        return f"probe error: {exc!r}"
+
+
 def ffmpeg_concat_normalize(chunk_paths, raw_out, final_out, bitrate):
     list_path = raw_out + ".concat.txt"
     with open(list_path, "w") as f:
@@ -233,7 +298,12 @@ def main():
     ap.add_argument("--out", required=True, help="Path to write the final full-length mp3")
     ap.add_argument("--api-key", default=os.environ.get("FISH_AUDIO_API_KEY"))
     ap.add_argument("--voice-id", default=os.environ.get("FISH_AUDIO_VOICE_ID"))
-    ap.add_argument("--model", default="s2-pro")
+    ap.add_argument("--model", default=MAIN_MODEL_DEFAULT,
+                    help="Fish Audio model (HTTP model header). Current PAID production "
+                         "model is s2.1-pro (per 30-fish-audio-api-reference); the interim "
+                         "s2-pro id was superseded and is NOT a durable default for client "
+                         "work. Never default to s2.1-pro-free (no SLA / data-retention / "
+                         "client-prod prohibited).")
     ap.add_argument("--bitrate", type=int, default=192)
     ap.add_argument("--wpm", type=float, default=140.0, help="Expected speaking rate for the duration gate")
     ap.add_argument("--min-ratio", type=float, default=0.80,
@@ -275,6 +345,12 @@ def main():
         cp = os.path.join(workdir, f"chunk_{i:03d}.mp3")
         n = synth_chunk(c, args.api_key, args.voice_id, args.model, args.bitrate, cp,
                         normalize=args.normalize)
+        # FIX-9 MP3 validity probe per chunk — a chunk that is not real audio
+        # must fail BEFORE it can poison the concat.
+        _mp3_reason = verify_mp3(cp)
+        if _mp3_reason:
+            sys.exit(f"FAIL (MP3 PROBE): chunk {i+1} is not a valid MP3 ({_mp3_reason}). "
+                     f"Aborting before concat — a corrupt chunk must never reach the deliverable.")
         chunk_paths.append(cp)
         print(f"  [{i+1}/{len(chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
 
@@ -301,8 +377,25 @@ def main():
             "Re-run synthesis over the ENTIRE speech."
         )
 
+    # ---- FIX-9 MP3 VALIDITY PROBE (HARD, FAIL LOUD) on the FINAL deliverable ----
+    # The FIX-9 / T-10 QC gate: audio_mp3 must EXIST, be > 10 KB, and be a VALID,
+    # decodable MP3 (parseable header/frame). Size alone is not proof.
+    _final_mp3_reason = verify_mp3(final_out)
+    if _final_mp3_reason:
+        bad = final_out + ".FAILED-NOT-MP3"
+        try:
+            os.replace(final_out, bad)
+        except OSError:
+            bad = final_out
+        sys.exit(
+            "FAIL (MP3 PROBE): the final deliverable is not a valid MP3 "
+            f"({_final_mp3_reason}). Moved to {bad}. A non-audio file must never "
+            "ship as the presentation audio."
+        )
     print(f"[PASS]   audio {audio_sec:.1f}s >= floor {floor_sec:.1f}s "
-          f"({audio_sec/expected_sec:.0%} of expected). Full-length audio OK -> {final_out}")
+          f"({audio_sec/expected_sec:.0%} of expected); MP3 validity probe PASS "
+          f"({os.path.getsize(final_out):,} bytes, valid MP3). "
+          f"Full-length audio OK -> {final_out}")
 
 
 if __name__ == "__main__":

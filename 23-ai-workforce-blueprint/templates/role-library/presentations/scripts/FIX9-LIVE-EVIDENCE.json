@@ -1,0 +1,28 @@
+{
+  "fix": "FIX-9",
+  "requirement": "T-10",
+  "producer": "scripts/synthesize_full_speech.py (manifest P9-DELIVER executor)",
+  "source_speech": "/tmp/gl2-fix9-run/working/deliverables/PRESENTERS-SPEECH.md",
+  "output": "/tmp/gl2-fix9-run/working/delivery/PRESENTER-AUDIO.mp3",
+  "size_bytes": 2404269,
+  "size_gate": "exists & > 10000 (10 KB) floor",
+  "size_pass": true,
+  "verify_mp3_probe": "PASS",
+  "header_magic_bytes": "494433",
+  "model": "s2.1-pro",
+  "afinfo_rc": 0,
+  "afinfo_summary": "File:           /tmp/gl2-fix9-run/working/delivery/PRESENTER-AUDIO.mp3\nFile type ID:   MPG3\nNum Tracks:     1\n----\nData format:     1 ch,  48000 Hz, .mp3 (0x00000000) 0 bits/channel, 0 bytes/packet, 1152 frames/packet, 0 bytes/frame\n                no channel layout.\nestimated duration: 100.152000 sec\naudio bytes: 2403648",
+  "ffprobe": {
+    "format": {
+      "format_name": "mp3",
+      "duration": "100.127354",
+      "size": "2404269",
+      "bit_rate": "192096"
+    }
+  },
+  "live_call": true,
+  "operator_env_keys": {
+    "FISH_AUDIO_API_KEY": "SET",
+    "FISH_AUDIO_VOICE_ID": "SET"
+  }
+}
