@@ -1870,9 +1870,54 @@ def _read_prior_chosen_entries(company_dir):
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return [], "corrupt"
+    if isinstance(data, dict):
+        # The retire-confirmed-decline.sh writes a {removedWithProvenance, departments}
+        # dict shape. Extract the departments list — it is NOT a corrupt artifact.
+        depts = data.get("departments")
+        if isinstance(depts, list):
+            return depts, "ok"
+        return [], "corrupt"
     if not isinstance(data, list):
         return [], "corrupt"
     return data, "ok"
+
+
+def _read_prior_removed_with_provenance(cdir):
+    """A7: read any existing removedWithProvenance records from the prior artifact.
+
+    The retire-confirmed-decline.sh writes departments.json as
+    {removedWithProvenance:[{slug,retiredAt,source,...}], departments:[...]}.
+    When a subsequent apply-diff build overwrites the artifact it must preserve
+    these provenance records so the audit trail is not silently discarded.
+    Returns a (possibly empty) list of provenance dicts.
+    """
+    if not cdir:
+        return []
+    path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, dict):
+        prov = data.get("removedWithProvenance")
+        if isinstance(prov, list):
+            return prov
+    return []
+
+
+def _make_artifact_payload(departments, provenance):
+    """A7: produce the artifact payload, preferring the retire-script dict shape
+    when there are provenance records to preserve.
+
+    With provenance records present:  {removedWithProvenance:[...], departments:[...]}
+    Without (first-ever write):       [ ... ]  (bare CC-schema list)
+    """
+    if provenance:
+        return {"removedWithProvenance": provenance, "departments": departments}
+    return departments
 
 
 def _bare_norm_slug(raw):
@@ -2182,11 +2227,25 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             slugs.append(s)
     written = []
     artifact_path = None
+
+    # ── A7: preserve removedWithProvenance dict shape (retire-script audit trail) ──
+    # The retire-confirmed-decline.sh writes departments.json as
+    # {removedWithProvenance:[...], departments:[...]}.  A subsequent apply-diff
+    # build must NOT clobber this dict shape with a bare list — that silently
+    # discards the provenance records that gate-A7 requires.
+    prior_provenance = _read_prior_removed_with_provenance(cdir)
+
+    # Build the payload: always prefer the retire-script dict shape when there
+    # are existing provenance records to preserve.  (A first-ever write with
+    # zero provenance still emits the bare CC-schema list — the retire script
+    # itself introduces the dict shape.)
+    payload = _make_artifact_payload(dept_json, prior_provenance)
+
     if cdir:
         try:
             os.makedirs(cdir, exist_ok=True)
             artifact_path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(artifact_path, dept_json)
+            _atomic_write_json(artifact_path, payload)
             written.append(artifact_path)
             print(f"[CHOSEN-LIST] Wrote durable departments.json "
                   f"({len(slugs)} departments) to {artifact_path}", file=sys.stderr)
@@ -2197,7 +2256,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
     if discovery_dir:
         try:
             legacy_path = os.path.join(discovery_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(legacy_path, dept_json)
+            _atomic_write_json(legacy_path, payload)
             written.append(legacy_path)
         except OSError as e:
             print(f"[CHOSEN-LIST WARNING] Could not write legacy mirror to {discovery_dir}: {e}",
