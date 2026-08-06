@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECTION 3 OF 4\n\nPersistence\n\nThe profession of follow-up\n\u00a2"
+}

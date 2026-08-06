@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECTION 2\n\nFind The\nHot Button\n\nAsk a question. Observe. Then LISTEN.\n\nThe hot button lives in their answer, not your pitch."
+}

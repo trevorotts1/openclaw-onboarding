@@ -121,13 +121,16 @@ def _install_mock(monkeypatch):
     # download call is what matters — record it per slide.
     download_log = {}
 
-    def _fake_download(url, dest):
+    def _fake_download(url, dest, api_key=None):
         # record when this slide's download started (after ITS task completed)
         download_log[Path(dest).stem] = time.time()
         # minimal valid 1x1 PNG (magic + minimal chunks) so verify_png passes
         dest.write_bytes(b"\x89PNG\r\n\x1a\n" + b"\x00" * 64)
 
-    monkeypatch.setattr(bd, "download_unauthenticated", _fake_download)
+    # The batch now downloads via the AUTHENTICATED path (Bearer + browser UA,
+    # download_image) — FIX-4's proven CDN contract. Patch that helper so the
+    # mock measures download timing without touching the network.
+    monkeypatch.setattr(bd, "download_image", _fake_download)
     # load_rich_prompt needs real prompt files >= 9000 chars — stub it to avoid
     # authoring 20 x 9KB files in the test.
     monkeypatch.setattr(

@@ -1523,6 +1523,27 @@ def poll_task_once(task_id: str, api_key: str) -> dict:
     return {"state": state, "result_url": None}
 
 
+def download_image(url: str, dest: Path, api_key: str) -> int:
+    """AUTHENTICATED GET of the KIE CDN result URL (tempfile.aiquickdraw.com).
+
+    The result URLs KIE returns require `Authorization: Bearer <key>` plus a browser
+    User-Agent. A plain urllib GET with neither header returns HTTP 403, which left
+    renders/ empty despite successful createTask calls (D22 root cause A). This is the
+    FIX-4 helper: send both headers, write the bytes, return the on-disk size.
+    """
+    # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
+    # Refuse anything that is not http(s) before opening it (a file:// result URL
+    # would otherwise read an arbitrary local file into the slide PNG).
+    assert_url_scheme_allowed(url, what="KIE result URL")
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        dest.write_bytes(resp.read())
+    return dest.stat().st_size
+
+
 def download_unauthenticated(url: str, dest: Path) -> None:
     """UNAUTHENTICATED GET of the CDN result URL (Bearer token causes 403)."""
     # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
@@ -1662,7 +1683,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 "taskId": "resumed-completed"}
     if resumed_url is not None:
         print(f"  [{name}] resume polling succeeded -- downloading result.")
-        download_unauthenticated(resumed_url, out_path)
+        download_image(resumed_url, out_path, api_key)
         verify_png(out_path)
         _verify_aspect_and_readback(out_path, slide, ordinal)
         size = out_path.stat().st_size
@@ -1686,7 +1707,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
             result_url = poll_task(task_id, api_key)
             print(f"    success resultUrls[0]={result_url}", flush=True)
-            download_unauthenticated(result_url, out_path)
+            download_image(result_url, out_path, api_key)
             verify_png(out_path)
             # POST-DOWNLOAD aspect/2K verification + OCR text-readback (shared prompt_gate).
             # A non-16:9 / sub-2K response, or rendered text that does not match the approved
@@ -1835,7 +1856,7 @@ def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: 
             result_url = status.get("result_url")
             try:
                 out_path = renders_dir / f"{name}.png"
-                download_unauthenticated(result_url, out_path)
+                download_image(result_url, out_path, api_key)
                 verify_png(out_path)
                 _verify_aspect_and_readback(out_path, slide, ordinal)
                 size = out_path.stat().st_size
@@ -9504,7 +9525,7 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
             print(f"  [sample] variant {vid} / slide {ordn} -> {png.name}", flush=True)
             task_id = submit_task(prompt, api_key, logo_url=logo_url)
             result_url = poll_task(task_id, api_key)
-            download_unauthenticated(result_url, png)
+            download_image(result_url, png, api_key)
             verify_png(png)
             samples.append({
                 "variant": vid,

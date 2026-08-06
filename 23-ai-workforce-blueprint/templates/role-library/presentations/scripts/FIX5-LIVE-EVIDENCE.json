@@ -1,0 +1,597 @@
+{
+  "test": "FIX-5 live kie.ai QC gate",
+  "started_at_utc": "2026-08-06T21:04:09.642505+00:00",
+  "api": {
+    "createTask": "https://api.kie.ai/api/v1/jobs/createTask",
+    "recordInfo": "https://api.kie.ai/api/v1/jobs/recordInfo",
+    "model": "gpt-image-2-text-to-image",
+    "aspect_ratio": "16:9",
+    "resolution": "2K"
+  },
+  "submit_interval_s": 0.6,
+  "n_prompts": 20,
+  "prompt_files": [
+    "slide-01.txt",
+    "slide-02.txt",
+    "slide-03.txt",
+    "slide-04.txt",
+    "slide-05.txt",
+    "slide-06.txt",
+    "slide-07.txt",
+    "slide-08.txt",
+    "slide-09.txt",
+    "slide-10.txt",
+    "slide-11.txt",
+    "slide-12.txt",
+    "slide-13.txt",
+    "slide-14.txt",
+    "slide-15.txt",
+    "slide-16.txt",
+    "slide-17.txt",
+    "slide-18.txt",
+    "slide-19.txt",
+    "slide-20.txt"
+  ],
+  "submits": [
+    {
+      "taskId": "ff9e25128eca11fbe82965bab8481257",
+      "t_plus_s": 0.0
+    },
+    {
+      "taskId": "5fb9b7bbecaaa0c2b97a3e878b2980e3",
+      "t_plus_s": 0.863
+    },
+    {
+      "taskId": "6a4ea64def9c7bed2330eeca2b3ec46c",
+      "t_plus_s": 1.733
+    },
+    {
+      "taskId": "4e0dd8fb02a308fc1ee0c97737a4769f",
+      "t_plus_s": 2.575
+    },
+    {
+      "taskId": "edbf83a1f8ae6121352911ea36fe5da0",
+      "t_plus_s": 3.423
+    },
+    {
+      "taskId": "61d3769cb499b8044ec9955218bdace3",
+      "t_plus_s": 4.278
+    },
+    {
+      "taskId": "9107d88caf1e38934d902a0e87d2c19d",
+      "t_plus_s": 5.137
+    },
+    {
+      "taskId": "95626c070c9c0cf1eca355d353fd6f66",
+      "t_plus_s": 6.005
+    },
+    {
+      "taskId": "49d97913a1d9e43a64ac61a94e6050d4",
+      "t_plus_s": 6.892
+    },
+    {
+      "taskId": "5e2b376abf4b4b2f7c6a91d95db1d825",
+      "t_plus_s": 7.721
+    },
+    {
+      "taskId": "fc24102c9096f83b3246e0d85cdc38d1",
+      "t_plus_s": 8.599
+    },
+    {
+      "taskId": "48174283a39d4e67dfbb29d5d056edfa",
+      "t_plus_s": 9.464
+    },
+    {
+      "taskId": "222b82dcc44f74b8c549fec3f4735441",
+      "t_plus_s": 10.279
+    },
+    {
+      "taskId": "977e1a5747f0335425fb428e014a2031",
+      "t_plus_s": 11.121
+    },
+    {
+      "taskId": "e0acf1a9de1a03c12828178542a55e97",
+      "t_plus_s": 12.013
+    },
+    {
+      "taskId": "2d8bfdcea210a8914fdb374980b2a3e4",
+      "t_plus_s": 12.852
+    },
+    {
+      "taskId": "f71326b0cd2c3b5c32e16e8cdd8162f6",
+      "t_plus_s": 13.679
+    },
+    {
+      "taskId": "adad5685e1cd40f97dc577473d443661",
+      "t_plus_s": 14.548
+    },
+    {
+      "taskId": "aa5e343b6b46be1db5dbcc6a8abe225f",
+      "t_plus_s": 15.425
+    },
+    {
+      "taskId": "40451864573abb16a00381db16b48956",
+      "t_plus_s": 16.258
+    }
+  ],
+  "task_ids": {
+    "1": "ff9e25128eca11fbe82965bab8481257",
+    "2": "5fb9b7bbecaaa0c2b97a3e878b2980e3",
+    "3": "6a4ea64def9c7bed2330eeca2b3ec46c",
+    "4": "4e0dd8fb02a308fc1ee0c97737a4769f",
+    "5": "edbf83a1f8ae6121352911ea36fe5da0",
+    "6": "61d3769cb499b8044ec9955218bdace3",
+    "7": "9107d88caf1e38934d902a0e87d2c19d",
+    "8": "95626c070c9c0cf1eca355d353fd6f66",
+    "9": "49d97913a1d9e43a64ac61a94e6050d4",
+    "10": "5e2b376abf4b4b2f7c6a91d95db1d825",
+    "11": "fc24102c9096f83b3246e0d85cdc38d1",
+    "12": "48174283a39d4e67dfbb29d5d056edfa",
+    "13": "222b82dcc44f74b8c549fec3f4735441",
+    "14": "977e1a5747f0335425fb428e014a2031",
+    "15": "e0acf1a9de1a03c12828178542a55e97",
+    "16": "2d8bfdcea210a8914fdb374980b2a3e4",
+    "17": "f71326b0cd2c3b5c32e16e8cdd8162f6",
+    "18": "adad5685e1cd40f97dc577473d443661",
+    "19": "aa5e343b6b46be1db5dbcc6a8abe225f",
+    "20": "40451864573abb16a00381db16b48956"
+  },
+  "poll_passes": [
+    {
+      "taskId": "ff9e25128eca11fbe82965bab8481257",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 7
+    },
+    {
+      "taskId": "5fb9b7bbecaaa0c2b97a3e878b2980e3",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "6a4ea64def9c7bed2330eeca2b3ec46c",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 6
+    },
+    {
+      "taskId": "4e0dd8fb02a308fc1ee0c97737a4769f",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "edbf83a1f8ae6121352911ea36fe5da0",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "61d3769cb499b8044ec9955218bdace3",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 4
+    },
+    {
+      "taskId": "9107d88caf1e38934d902a0e87d2c19d",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 10
+    },
+    {
+      "taskId": "95626c070c9c0cf1eca355d353fd6f66",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "49d97913a1d9e43a64ac61a94e6050d4",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "5e2b376abf4b4b2f7c6a91d95db1d825",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 7
+    },
+    {
+      "taskId": "fc24102c9096f83b3246e0d85cdc38d1",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "48174283a39d4e67dfbb29d5d056edfa",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "222b82dcc44f74b8c549fec3f4735441",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "977e1a5747f0335425fb428e014a2031",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 6
+    },
+    {
+      "taskId": "e0acf1a9de1a03c12828178542a55e97",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    },
+    {
+      "taskId": "2d8bfdcea210a8914fdb374980b2a3e4",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "f71326b0cd2c3b5c32e16e8cdd8162f6",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "adad5685e1cd40f97dc577473d443661",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "aa5e343b6b46be1db5dbcc6a8abe225f",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 8
+    },
+    {
+      "taskId": "40451864573abb16a00381db16b48956",
+      "states": [
+        "generating",
+        "generating",
+        "generating",
+        "generating",
+        "success"
+      ],
+      "n_polls": 5
+    }
+  ],
+  "downloads": [
+    {
+      "slide": 1,
+      "taskId": "ff9e25128eca11fbe82965bab8481257",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-01.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4075873,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 2,
+      "taskId": "5fb9b7bbecaaa0c2b97a3e878b2980e3",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-02.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2425957,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 3,
+      "taskId": "6a4ea64def9c7bed2330eeca2b3ec46c",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-03.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2847742,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 4,
+      "taskId": "4e0dd8fb02a308fc1ee0c97737a4769f",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-04.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2219214,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 5,
+      "taskId": "edbf83a1f8ae6121352911ea36fe5da0",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-05.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2550724,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 6,
+      "taskId": "61d3769cb499b8044ec9955218bdace3",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-06.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2371864,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 7,
+      "taskId": "9107d88caf1e38934d902a0e87d2c19d",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-07.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4431242,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 8,
+      "taskId": "95626c070c9c0cf1eca355d353fd6f66",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-08.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2618493,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 9,
+      "taskId": "49d97913a1d9e43a64ac61a94e6050d4",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-09.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4079851,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 10,
+      "taskId": "5e2b376abf4b4b2f7c6a91d95db1d825",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-10.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 5858042,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 11,
+      "taskId": "fc24102c9096f83b3246e0d85cdc38d1",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-11.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4191011,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 12,
+      "taskId": "48174283a39d4e67dfbb29d5d056edfa",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-12.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2763463,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 13,
+      "taskId": "222b82dcc44f74b8c549fec3f4735441",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-13.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 1975678,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 14,
+      "taskId": "977e1a5747f0335425fb428e014a2031",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-14.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2518798,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 15,
+      "taskId": "e0acf1a9de1a03c12828178542a55e97",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-15.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2841321,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 16,
+      "taskId": "2d8bfdcea210a8914fdb374980b2a3e4",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-16.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 3754327,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 17,
+      "taskId": "f71326b0cd2c3b5c32e16e8cdd8162f6",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-17.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2524693,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    },
+    {
+      "slide": 18,
+      "taskId": "adad5685e1cd40f97dc577473d443661",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-18.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4029066,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 19,
+      "taskId": "aa5e343b6b46be1db5dbcc6a8abe225f",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-19.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 4040063,
+      "width": 2688,
+      "height": 1520,
+      "aspect": 1.7684
+    },
+    {
+      "slide": 20,
+      "taskId": "40451864573abb16a00381db16b48956",
+      "file": "/tmp/gl-fix5/live-run/renders/slide-20.png",
+      "png_magic": "89504e470d0a1a0a",
+      "bytes": 2550786,
+      "width": 2048,
+      "height": 1152,
+      "aspect": 1.7778
+    }
+  ],
+  "failures": [],
+  "ratelimited_count": 0,
+  "submit_window_span_s": 16.258,
+  "total_batch_wall_s": 146.366,
+  "rendered_count": 20,
+  "end_utc": "2026-08-06T21:06:36.024462+00:00"
+}

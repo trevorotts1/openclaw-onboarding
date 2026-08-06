@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "ONE BIG IDEA\n\nThe Shift\n\nStop selling AT people. Start\nmaking it easy for them to BUY.\n\nThis is not about being pushy.\nThis is about being helpful.\n\nSALES\nBIBLE"
+}
