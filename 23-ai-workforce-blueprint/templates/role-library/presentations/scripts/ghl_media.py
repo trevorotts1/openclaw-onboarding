@@ -25,6 +25,13 @@ the Skill-48 Facebook-ad generator already proved against a live GoHighLevel loc
         -> {fileId, url, http} ; url is the PUBLIC storage.googleapis.com/msgsndr/...
            GCS object URL (login-free). FAIL-LOUD on non-2xx / missing fileId/url.
 
+    list_media(location_id, pit, *, media_type="file", ...)
+        -> READ-ONLY GET services.leadconnectorhq.com/medias/files?locationId=...
+           Authorization: Bearer <LOCATION PIT> ; Version: 2021-07-28.
+           The verification twin of upload_media: proves a just-uploaded deck is
+           genuinely in the GHL media library by listing and matching on name/fileId.
+           Plain GET, never mutates — safe for operator-account QC list-backs.
+
     resolve_location_pit() / resolve_location_id()  — read the canonical env names
         (GOHIGHLEVEL_API_KEY then GHL_API_KEY ; GOHIGHLEVEL_LOCATION_ID then
         GHL_LOCATION_ID). For a CLIENT deck these resolve the CLIENT's LOCATION PIT —
@@ -85,12 +92,14 @@ _spec.loader.exec_module(_canon)  # type: ignore[union-attr]
 # DECK-artifact gate (the lowest GHL upload chokepoint). Every other symbol, and the
 # actual REST upload underneath the wrapper, is the canonical, verified-working code.
 create_media_folder = _canon.create_media_folder
+list_media = _canon.list_media
 resolve_location_pit = _canon.resolve_location_pit
 resolve_location_id = _canon.resolve_location_id
 verify_png = _canon.verify_png
 GHL_SERVICES_ORIGIN = _canon.GHL_SERVICES_ORIGIN
 GHL_MEDIA_UPLOAD_PATH = _canon.GHL_MEDIA_UPLOAD_PATH
 GHL_MEDIA_FOLDER_PATH = _canon.GHL_MEDIA_FOLDER_PATH
+GHL_MEDIA_LIST_PATH = _canon.GHL_MEDIA_LIST_PATH
 GHL_MEDIA_VERSION = _canon.GHL_MEDIA_VERSION
 
 CANONICAL_SOURCE = str(_CANON_PATH)
@@ -170,12 +179,14 @@ def upload_media(png_path, location_id, name, pit, *, hosted=False, parent_id=No
 __all__ = [
     "create_media_folder",
     "upload_media",
+    "list_media",
     "resolve_location_pit",
     "resolve_location_id",
     "verify_png",
     "GHL_SERVICES_ORIGIN",
     "GHL_MEDIA_UPLOAD_PATH",
     "GHL_MEDIA_FOLDER_PATH",
+    "GHL_MEDIA_LIST_PATH",
     "GHL_MEDIA_VERSION",
     "CANONICAL_SOURCE",
 ]
