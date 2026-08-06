@@ -103,6 +103,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -868,6 +869,61 @@ def stamp_task_id(run_dir, task_id: str) -> bool:
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
+
+
+# ---------------------------------------------------------------------------
+# OWNER-MESSAGE ORACLE — the authoritative owner-approval check (FIX-1).
+#
+# A phase-skip approval is authentic ONLY when its owner_msg_id resolves to a
+# REAL owner-authored message row in the Command Center task_activities table.
+# Presence of a string in phase_skip_approvals.json is NEVER proof — the live
+# E2E forged "e2e-test-002". This client is the fail-closed oracle: when the
+# owner-ids endpoint is unreachable or the task is unknown, the check returns
+# None (UNDETERMINED), which the caller treats as DENIED — undetermined never
+# opens the gate. See the CC route GET /api/tasks/[id]/messages/owner-ids.
+# ---------------------------------------------------------------------------
+def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Resolve `task_id` to the set of REAL owner-authored message ids in CC
+    task_activities. Returns a frozenset of ids on success; None when the board
+    is disabled, the endpoint errors, or the result cannot be proven (the caller
+    must fail CLOSED on None — a skip that cannot be verified is DENIED)."""
+    if not task_id or not str(task_id).strip():
+        return None
+    cfg = board_config(env)
+    if cfg is None:
+        return None
+    tid = urllib.parse.quote(str(task_id).strip(), safe="")
+    url = f"{cfg['base_url']}/api/tasks/{tid}/messages/owner-ids"
+    try:
+        status, parsed = _request("GET", url, {}, cfg)
+    except Exception:  # noqa: BLE001 — fail-closed: a transport error is DENIED
+        _log(f"owner-message oracle {url} raised; owner approval treated as DENIED.")
+        return None
+    if status != 200 or not isinstance(parsed, list):
+        _log(f"owner-message oracle {url} returned HTTP {status} — owner approval "
+             "treated as DENIED (undetermined never opens the gate).")
+        return None
+    ids = set()
+    for item in parsed:
+        if isinstance(item, str) and item.strip():
+            ids.add(item.strip())
+        elif isinstance(item, dict):
+            v = item.get("id")
+            if isinstance(v, str) and v.strip():
+                ids.add(v.strip())
+    return frozenset(ids)
+
+
+def owner_message_ids_match(run_dir, task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Compatibility helper: resolve the CC task id from the run's
+    process_manifest.json (cc_task_id) and return its real owner-message ids.
+    None when the run has no cc_task_id or the oracle cannot resolve — fail-closed.
+    Delegates to list_owner_message_ids so there is ONE oracle implementation."""
+    if run_dir is not None:
+        tid = _read_manifest(run_dir).get("cc_task_id")
+        if tid:
+            return list_owner_message_ids(str(tid), env=env)
+    return None
 
 
 # ---------------------------------------------------------------------------
