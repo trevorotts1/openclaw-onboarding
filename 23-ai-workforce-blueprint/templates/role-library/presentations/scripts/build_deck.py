@@ -9180,6 +9180,36 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
 
+    # --- FIX-2: QC REPORT FLOOR sub-check (AF-QC-PLACEHOLDER) — at the pre-delivery
+    # closeout gate, re-prove every PRESENT QC phase report (copy / prompt / typography
+    # / shift) clears the REAL-CONTENT floor (> QC_REPORT_FLOOR_BYTES bytes, valid JSON,
+    # >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts). A 3-byte '{}' placeholder (the
+    # exact Error-2 artifact) can never satisfy a QC phase, so a deck delivered on a
+    # placeholder QC report is a hard delivery failure. DEFERS on an ABSENT report file
+    # (a standalone / adhoc run legitimately has no QC artifacts — report existence is
+    # enforced fail-closed at attest time by run_signature_deck.attest_phase); once a
+    # report EXISTS it must be real.
+    qc_floor_reason = ""
+    if run_dir is not None:
+        for _qc_phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+            _qc_rel = QC_PHASE_REPORT[_qc_phase_id]
+            if not (run_dir / _qc_rel).is_file():
+                continue  # no report yet — defer (the attestation gate owns absence)
+            _qc_floor = check_qc_phase_report_real(run_dir, _qc_phase_id)
+            if _qc_floor:
+                qc_floor_reason = _qc_floor
+                break
+        if qc_floor_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "real QC report floor (each present QC report clears >256 bytes, valid "
+                "JSON, >=20 real per-slide verdicts; a 3-byte '{}' placeholder never "
+                "satisfies a QC phase)",
+                0, 0, "QC_REPORT_PLACEHOLDER"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=qc_floor_reason)
+
     # --- U047: SLIDE-GEOMETRY sub-checks (AF-TEXT-OVERFLOW / AF-SPELLING /
     # AF-TYPE-SIZE-MEASURED) — the three pixel-level checks that did not exist. They read
     # BAKED renders, so postflight is the only place they can run: preflight has no PNGs.
@@ -9337,6 +9367,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                       f"must return", file=sys.stderr)
                 print(f"           HTTP 200. See teleprompter_publish.json.",
                       file=sys.stderr)
+            elif reason == "QC_REPORT_PLACEHOLDER":
+                print(f"  QC-PLACEHOLDER [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {qc_floor_reason}", file=sys.stderr)
+                print("           A QC phase report is a placeholder / sub-floor — a "
+                      "3-byte '{}' rubber stamp", file=sys.stderr)
+                print(f"           can never satisfy a QC phase (FIX-2 / Error 2). "
+                      f"Re-run the QC phase to", file=sys.stderr)
+                print(f"           produce a real per-slide report "
+                      f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
