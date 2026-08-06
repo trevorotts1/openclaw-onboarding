@@ -75,6 +75,15 @@ class Engine:
             hb["interval_source"] = ("manifest_heartbeat_minutes" if ph.heartbeat_minutes
                                      else "phase_budget_fallback")
         self.store.save(self.state)
+        # FIX-20 (D19): checkpoint phase state to disk so a compaction that
+        # drops in-memory history cannot lose it. Best-effort — a working-set
+        # checkpoint failure must never block the phase loop (mirrors the
+        # invariant-1 fail-soft discipline of the board mirror).
+        try:
+            from . import workingset
+            workingset.checkpoint_phase(self.run_dir, pid, self.state, self.store)
+        except Exception:  # noqa: BLE001
+            pass
 
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
