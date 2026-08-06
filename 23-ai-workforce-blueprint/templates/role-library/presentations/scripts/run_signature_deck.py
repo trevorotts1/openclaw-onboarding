@@ -512,6 +512,121 @@ def emit_client_report(run_dir: Path, phase_id: str, kind: str,
 
 
 # ---------------------------------------------------------------------------
+# FIX-13 — OWNER DELIVERY LINK (M12). After the deck is registered and the
+# delivery phase is attested, the OWNER must receive a Telegram message naming
+# WHERE the deck is. Prior to this fix the pipeline only ever told the owner a
+# generic "P9-DELIVER — complete"; the deck LOCATION (GHL public URL / live
+# teleprompter URL / local package path) was never sent.
+#
+# Routing NEVER hardcodes a chat id. It reuses the same owner-routing env the
+# gateway exposes (_resolve_owner_route), so on a client box the message lands
+# with the deck's own owner and on the OPERATOR box it lands wherever
+# PRESENTATION_OWNER_CHAT_ID points (the operator test target). The transport is
+# `openclaw message send` via _send_owner_message — the CC report-back loop's
+# send path — NEVER the raw Telegram API (fleet rule: never-bypass-openclaw-
+# telegram).
+#
+# The send is recorded in client_reports.json as a `delivery_link` record whose
+# `text` carries the resolved deck location and whose gateway_msg_id is the
+# confirmed send id — so "the deck link is in the sent-message record" is
+# mechanically provable (the FIX-13 QC gate). Never raises; a box with no
+# resolvable owner target records an honest undeliverable and the run ships
+# (matching the U046 report contract: the gate bites on a MISSING record, not on
+# an unconfirmed send).
+# ---------------------------------------------------------------------------
+def _resolve_deck_location(run_dir: Path) -> str:
+    """Resolve a human-readable deck location for the owner delivery message.
+
+    Priority order (first source that yields a usable value wins):
+      1. the live teleprompter public URL  — <bundle_dir>/teleprompter_publish.json
+         (the verified HTTP-200 host; the most owner-actionable link);
+      2. the GHL deck public URL           — working/checkpoints/media_library.json
+         `pptx_ghl_url` (the deck's hosted GHL object);
+      3. the local client package path     — delivery/*-FINAL/ (the on-disk folder).
+
+    Returns a non-empty string; falls back to the run dir itself. Never raises.
+    """
+    run_dir = Path(run_dir)
+    # 1. Teleprompter public URL (verified live at publish).
+    try:
+        import fix_bundle_complete as _fbc
+        bundle_dir = _fbc.resolve_bundle_dir(run_dir)
+        tp = bundle_dir / "teleprompter_publish.json"
+        if tp.exists():
+            rec = json.loads(tp.read_text())
+            url = str(rec.get("public_url") or "").strip()
+            if url:
+                return url
+    except Exception:  # noqa: BLE001 — never let a location read break the send
+        pass
+    # 2. GHL deck public URL.
+    try:
+        ml = run_dir / "working" / "checkpoints" / "media_library.json"
+        if ml.exists():
+            rec = json.loads(ml.read_text())
+            url = str(rec.get("pptx_ghl_url") or rec.get("pptx_url") or "").strip()
+            if url:
+                return url
+    except Exception:  # noqa: BLE001
+        pass
+    # 3. Local client package path (AF-DH1 six-file folder).
+    try:
+        pkgs = sorted(run_dir.glob("delivery/*-FINAL"))
+        if pkgs:
+            return str(pkgs[0])
+    except Exception:  # noqa: BLE001
+        pass
+    return str(run_dir)
+
+
+def emit_delivery_link(run_dir: Path, deck_slug: str = "") -> str | None:
+    """Send the owner the deck LOCATION via the CC report-back transport and
+    record the send-log row (FIX-13 / M12).
+
+    Composes a delivery message that names WHERE the deck is, sends it through
+    `openclaw message send` (never the raw Telegram API), and appends a
+    `delivery_link` record to working/checkpoints/client_reports.json whose
+    `text` IS the deck-location message and whose gateway_msg_id is the confirmed
+    send id — the QC evidence that "the deck link is in the sent-message record".
+
+    Returns the gateway message id on a confirmed send, else None. Never raises:
+    an unresolved owner target or a failed send records `undeliverable` (honest)
+    and the run continues (the delivery itself is already complete at this
+    point — the link message is the final notification, not a gate)."""
+    slug = (deck_slug or _deck_slug(run_dir)).strip()
+    location = _resolve_deck_location(run_dir)
+    # Snippet-able deck link for the sent-message record's readability check. When
+    # the resolved location IS the link (a public URL) the same value is used so the
+    # "Deck link:" line is always present and machine-checkable; otherwise the local
+    # package path is named (a deck that lives on disk, not on a URL).
+    link_hint = ""
+    if location.startswith("http"):
+        link_hint = location
+    elif location:
+        link_hint = location.split("delivery/")[-1] if "delivery/" in location else location
+    text = (f"Your deck is ready, {slug}.\n"
+            f"Location: {location}")
+    if link_hint:
+        text += f"\nDeck link: {link_hint}"
+    msg_id, sent = _send_owner_message(text)
+    undeliverable = ""
+    if not sent:
+        _ch, _t = _resolve_owner_route()
+        undeliverable = ("no owner target configured" if not _t
+                         else "gateway send did not confirm")
+    _append_report_record(run_dir, DELIVERY_PHASE_ID, "delivery_link",
+                          msg_id, text, sent=sent, undeliverable=undeliverable)
+    if sent and msg_id:
+        print(f"=== FIX-13 OWNER DELIVERY LINK: sent (msg_id={msg_id}) — {location} ===",
+              flush=True)
+    else:
+        print(f"[FIX-13] owner delivery link not confirmed "
+              f"({undeliverable or 'unknown'}) — recorded; delivery already complete.",
+              file=sys.stderr, flush=True)
+    return msg_id or None
+
+
+# ---------------------------------------------------------------------------
 # Up-front step declaration (FIX 4a — step contract for prove-deck.py)
 # ---------------------------------------------------------------------------
 def _deck_slug(run_dir: Path) -> str:
@@ -2203,6 +2318,13 @@ def main():
             # a run that closed with zero successful board advances.
             if args.phase == DELIVERY_PHASE_ID:
                 _board_assert_advanced(run_dir)
+                # FIX-13 (M12): the deck is registered and delivered — send the OWNER
+                # the deck LOCATION via the CC report-back loop (openclaw message send,
+                # never the raw Telegram API). Recorded in client_reports.json as a
+                # `delivery_link` row whose text carries the deck link + msg id.
+                # Fail-soft by contract: a box with no owner target records an honest
+                # undeliverable and the run still exits clean (delivery is complete).
+                emit_delivery_link(run_dir)
             sys.exit(0)
         print(
             f"FATAL: phase {args.phase} produces_artifact "
