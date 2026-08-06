@@ -1,5 +1,5 @@
 {
-  "manifest_version": 35,
+  "manifest_version": 36,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1241,6 +1241,17 @@
       "trigger": "postflight completeness gate \u2014 one or more required deliverables missing or below size threshold",
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
+    },
+  {
+      "code": "AF-BUNDLE-INCOMPLETE",
+      "stage": "Postflight/Bundle",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) \u2014 one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
+      "enforced_by": "fix_bundle_complete",
+      "py_symbol": null,
+      "check_script": "scripts/fix_bundle_complete.py::check_bundle_complete",
+      "sop_ref": "SOP-PITCH-05-DELIVERABLE-BUNDLE.md"
     },
     {
       "code": "AF-SPEECH-SHORT",
