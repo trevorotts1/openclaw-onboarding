@@ -56,14 +56,14 @@ INV_FULL = [
     "ollama/deepseek-v4-pro:cloud",          # T1 heavy text
     "ollama/kimi-k2.6:cloud",                # T1 heavy text
     "ollama/minimax-m1:cloud",               # T1 mid text
-    "ollama/deepseek-v4-flash:cloud",        # T1 fast text
+    "ollama/deepseek-v4-flash:0731-cloud",   # T1 fast text (live 2026-08-06 fleet build)
     "openrouter/qwen/qwen3-vl:235b",         # T2 vision
     "openrouter/z-ai/glm-4.5",               # T2 mid text
     "openrouter/free",                       # T3 free
 ]
 INV_NO_VISION = [
     "ollama/deepseek-v4-pro:cloud",
-    "ollama/deepseek-v4-flash:cloud",
+    "ollama/deepseek-v4-flash:0731-cloud",
     "openrouter/free",
 ]
 

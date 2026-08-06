@@ -236,7 +236,7 @@ openclaw cron create \
   --tz "America/New_York" \
   --agent main \
   --session isolated \
-  --model "ollama/deepseek-v4-flash:cloud" \
+  --model "ollama/deepseek-v4-flash:0731-cloud" \
   --tools exec \
   --message "Run the fleet embedding health probe: exec python3 ~/.openclaw/skills/32-command-center-setup/scripts/heartbeat-embedding-probe.py && echo PROBE_OK || echo PROBE_FAIL"
 ```
