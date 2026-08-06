@@ -6,6 +6,13 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .state import utcnow, EXIT_OK, EXIT_EXECUTOR_FAILED
 
+# FIX-21 (D21): process-group exec with cleanup — the retry rungs must not leave
+# orphaned grandchildren when a regenerated/alt-route exec times out.
+try:
+    from process_reaper import run_with_cleanup
+except ImportError:  # pragma: no cover — module ships beside presentation_job
+    run_with_cleanup = None
+
 HEAL_CAP_TRANSIENT = 3
 HEAL_CAP_REGENERATE = 2
 HEAL_CAP_ALT_ROUTE = 1
@@ -41,8 +48,12 @@ def rung2_regenerate(engine, phase, deficiency):
         engine._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow())
         try:
             budget = phase.budget_minutes * 60
-            r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
-                               timeout=budget, capture_output=False)
+            if run_with_cleanup is not None:
+                r = run_with_cleanup(argv, cwd=str(engine.run_dir),
+                                     timeout=budget, capture=False)
+            else:
+                r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
+                                   timeout=budget, capture_output=False)
             if r.returncode == 0:
                 return EXIT_OK
         except (subprocess.TimeoutExpired, OSError):
@@ -70,8 +81,12 @@ def rung3_alt_route(engine, phase):
                           rung=3, attempt=attempt, reason="alternate route")
         try:
             budget = phase.budget_minutes * 60
-            r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
-                               timeout=budget, capture_output=False)
+            if run_with_cleanup is not None:
+                r = run_with_cleanup(argv, cwd=str(engine.run_dir),
+                                     timeout=budget, capture=False)
+            else:
+                r = subprocess.run(argv, shell=False, cwd=str(engine.run_dir),
+                                   timeout=budget, capture_output=False)
             if r.returncode == 0:
                 return EXIT_OK
         except (subprocess.TimeoutExpired, OSError):

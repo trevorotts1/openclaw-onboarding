@@ -115,6 +115,22 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from manifest_source import resolve_manifest, resolve_ruleset, refuse, find_repo_root
 
+# FIX-21 (D21): run_with_cleanup dispatches the build_deck.py render/notes-sync and
+# manifest executors in a NEW PROCESS GROUP and, on timeout, kills the WHOLE group
+# (SIGTERM -> SIGKILL). Previously these dispatchers had NO timeout at all — a hung
+# build_deck.py ran forever and its `find`-style scanning orphans matched the old
+# name-based process filter, masking the dead render for 18+ minutes.
+try:
+    from process_reaper import run_with_cleanup
+except ImportError:  # pragma: no cover — module ships beside run_signature_deck.py
+    run_with_cleanup = None
+
+# Hard wall-clock cap for a build_deck.py render/notes-sync/executor subprocess.
+# build_deck.py is the canonical renderer and self-limits internally; this is the
+# outer fail-safe so a hung subprocess can never orphan forever (D21).
+RENDER_DISPATCH_TIMEOUT_SECONDS = 240 * 60   # 240 min — the P4-RENDER phase budget
+EXECUTOR_TIMEOUT_SECONDS = 60 * 60           # 60 min outer cap for manifest executors
+
 # Reuse build_deck.py's primitives — do NOT reimplement (detect_platform,
 # find_run_dir, the shared Kie balance pre-flight, the run-dir JSON reader).
 import build_deck as bd
@@ -2476,7 +2492,22 @@ def _dispatch_generic_executor(run_dir: Path, executor: dict, phase_id: str) -> 
         stage = f" (stage {i}/{n})" if n > 1 else ""
         print(f"=== DISPATCH {phase_id}{stage} (executor): {' '.join(argv)} ===", flush=True)
         try:
-            proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+            # FIX-21 (D21): process-group exec + timeout so a hung executor can never
+            # orphan. TimeoutExpired is caught below and surfaces as a phase FAIL
+            # (AF-EXECUTOR-TIMEOUT via the exit code) — never a silent hang.
+            if run_with_cleanup is not None:
+                proc = run_with_cleanup(argv, cwd=str(HERE.parent),
+                                        timeout=EXECUTOR_TIMEOUT_SECONDS, capture=False)
+            else:
+                proc = subprocess.run(argv, shell=False, cwd=str(HERE.parent))
+        except subprocess.TimeoutExpired as exc:
+            print(
+                f"FATAL: phase {phase_id!r} executor{stage} exceeded the "
+                f"{EXECUTOR_TIMEOUT_SECONDS}s outer cap (AF-EXECUTOR-TIMEOUT). "
+                f"Process group killed — no orphan left. Phase NOT attested.",
+                file=sys.stderr,
+            )
+            return EXIT_EXECUTOR_FAILED
         except OSError as exc:
             print(
                 f"FATAL: phase {phase_id!r} executor{stage} could not start "
@@ -2522,7 +2553,21 @@ def _dispatch_render(run_dir: Path, slides_path: Path, out_path: Path,
     if adhoc:
         cmd += ["--adhoc-no-process"]
     print(f"=== DISPATCH RENDER (subprocess): {' '.join(cmd)} ===", flush=True)
-    proc = subprocess.run(cmd)
+    # FIX-21 (D21): this dispatcher previously had NO timeout — a hung build_deck.py
+    # ran forever and its scanning orphans masked the dead render. Now: process-group
+    # exec with a hard wall-clock cap; on timeout the whole group is killed and the
+    # render FAILS LOUD (no silent hang, no orphan).
+    try:
+        if run_with_cleanup is not None:
+            proc = run_with_cleanup(cmd, timeout=RENDER_DISPATCH_TIMEOUT_SECONDS,
+                                    capture=False)
+        else:
+            proc = subprocess.run(cmd)
+    except subprocess.TimeoutExpired:
+        print("FATAL PRE-DELIVERY: AF-RENDER-TIMEOUT — build_deck.py render exceeded "
+              f"{RENDER_DISPATCH_TIMEOUT_SECONDS}s and was killed (process group "
+              "cleaned up). No orphan remains.", file=sys.stderr)
+        return EXIT_GUARD_BLOCK
     if proc.returncode == 0:
         # build_deck.py appends its own render record; the attestation reader counts it.
         print("=== RENDER phase complete — build_deck.py render record attested ===",
@@ -2549,7 +2594,18 @@ def _dispatch_notes_sync(run_dir: Path, slides_path: Path, out_path: Path,
     if adhoc:
         cmd += ["--adhoc-no-process"]
     print(f"=== DISPATCH P9.5-NOTES-SYNC (subprocess): {' '.join(cmd)} ===", flush=True)
-    proc = subprocess.run(cmd)
+    # FIX-21 (D21): process-group exec + timeout, same discipline as _dispatch_render.
+    try:
+        if run_with_cleanup is not None:
+            proc = run_with_cleanup(cmd, timeout=EXECUTOR_TIMEOUT_SECONDS,
+                                    capture=False)
+        else:
+            proc = subprocess.run(cmd)
+    except subprocess.TimeoutExpired:
+        print("FATAL PRE-DELIVERY: AF-NOTES-SYNC-TIMEOUT — notes-sync exceeded "
+              f"{EXECUTOR_TIMEOUT_SECONDS}s and was killed (process group cleaned up).",
+              file=sys.stderr)
+        return EXIT_GUARD_BLOCK
     if proc.returncode == 0:
         print("=== P9.5-NOTES-SYNC complete — notes_sync.json written ===", flush=True)
     return proc.returncode
