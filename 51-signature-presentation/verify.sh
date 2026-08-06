@@ -183,6 +183,37 @@ else
     fails=$((fails + 1))
 fi
 
+# 3) FIX-14 regression guard — MC_API_TOKEN / MISSION_CONTROL_URL wired into the
+#    agent runtime env (Error 8 / D-8). check_agent_env.py lives in the Skill-23
+#    presentations engine's scripts dir (the same tree the canonical runner reads
+#    `_agent_env` from). Two checks:
+#      3a. Self-test (always, CI-safe): the probe's own fixture matrix must pass —
+#          a regression in the PROBE itself is caught even when no real box env is
+#          present.
+#      3b. Live probe (only when a real engine scripts dir + a real box are
+#          present): check_agent_env.py must exit 0. In CI there is no materialized
+#          department and no gateway env, so the live probe is not run there — but
+#          on a box the probe is the exact preflight the canonical runner enforces
+#          at Phase-0, and verify.sh must hold it to the same bar.
+FIX14_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX14_SCRIPTS/check_agent_env.py" ]; then
+    run "FIX-14 check_agent_env.py --self-test (probe fixture matrix)" \
+        "$PY" "$FIX14_SCRIPTS/check_agent_env.py" --self-test
+    # Live probe: only when this run has a real process env (not a bare CI
+    # sandbox). The probe itself fails closed when the gateway env is absent, so a
+    # box that dropped the token FAILS here — the exact 15-day regression.
+    if [ -n "${MC_API_TOKEN:-}" ] || [ -f "$HOME/.openclaw/service-env/ai.openclaw.gateway.env" ]; then
+        run "FIX-14 check_agent_env.py (MC_API_TOKEN + MISSION_CONTROL_URL in runtime env)" \
+            "$PY" "$FIX14_SCRIPTS/check_agent_env.py"
+    else
+        printf '  [SKIP] FIX-14 live probe: no gateway env and no MC_API_TOKEN in this process env (CI sandbox); self-test above still ran\n'
+    fi
+else
+    printf '  [FAIL] FIX-14 check_agent_env.py NOT found at %s — ' "$FIX14_SCRIPTS"
+    printf 'the FIX-14 regression guard is unwired; a box whose token was dropped from the gateway env would silently 401 every CC write.\n'
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 51 self-verification checks green."

@@ -1,7 +1,7 @@
 {
   "_comment": "Connection-manifest for the Presentations department. Every 'required: true' entry must resolve to a non-empty value in openclaw.json before this dept may be marked done. verify-wiring.sh reads this file and checks each cfg_key (and each listed cfg_key_alias). A hook may also carry assert_contains_dept:true to require that this dept's slug is present in the resolved JSON file.",
   "dept": "presentations",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "connection_points": [
     {
       "name": "kie-api-key",
@@ -47,6 +47,13 @@
       "description": "CC base URL for producer-side board writes (job-start ingest via POST /api/tasks/ingest + per-phase PATCH). Used by cc_board.ingest_deck_task and cc_board.patch_phase; absent => clean no-op (logged, run continues ungrouped). verify-wiring.sh reads COMMAND_CENTER_URL first, then the alias MISSION_CONTROL_URL.",
       "cfg_key": "env.vars.COMMAND_CENTER_URL",
       "cfg_key_aliases": ["env.vars.MISSION_CONTROL_URL"],
+      "required": true
+    },
+    {
+      "name": "command-center-token",
+      "description": "CC bearer token for producer-side board writes and deliverable registration (Authorization: Bearer). FIX-14 (Error 8 / D-8): the token MUST be wired into the gateway service-env (and be a member of OPENCLAW_SERVICE_MANAGED_ENV_KEYS) or every board write silently 401s for days. cc_board reads CC_API_TOKEN first, then the alias MC_API_TOKEN; the FIX-14 regression guard (check_agent_env.py) verifies the runtime env carries it. Absent => the phase0_preflight guard refuses (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED).",
+      "cfg_key": "env.vars.MC_API_TOKEN",
+      "cfg_key_aliases": ["env.vars.CC_API_TOKEN"],
       "required": true
     },
     {
