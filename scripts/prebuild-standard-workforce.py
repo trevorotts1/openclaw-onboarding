@@ -586,6 +586,35 @@ def main(argv=None):
         bw._build_state_path = lambda: str(state_path)  # type: ignore[method-assign]
         bw._load_build_state = lambda: _load_state(state_path)  # type: ignore[method-assign]
 
+    # ══ STEP 0 — STANDARD_FIRST_ONBOARDING FLAG GATE (fail-safe, before ANY mutation) ══
+    # This is THE rollback switch. When the operator env var STANDARD_FIRST_ONBOARDING
+    # is OFF or unset, this driver REFUSES TO RUN (exit 9) and new boxes fall back to
+    # the legacy interview-first lane. No code change or git revert is needed.
+    standard_first_flag = os.environ.get("STANDARD_FIRST_ONBOARDING", "").strip().lower()
+    standard_first_enabled = standard_first_flag in {"1", "true", "yes", "on"}
+    if not standard_first_enabled:
+        flag_display = f"'{standard_first_flag}'" if standard_first_flag else "<unset>"
+        return emit(_refuse(result, EXIT_FLAG_OFF,
+                            f"STANDARD_FIRST_ONBOARDING is OFF (value={flag_display}) — "
+                            "the standard-first prebuild lane is NOT engaged. New boxes "
+                            "fall back to the legacy interview-first lane. This is the "
+                            "rollback switch: set STANDARD_FIRST_ONBOARDING=1 in the "
+                            "operator environment to enable the standard-first lane."))
+    result["standardFirstOnboardingEnabled"] = True
+    result["standardFirstOnboardingValue"] = standard_first_flag
+    _log(f"STANDARD_FIRST_ONBOARDING={standard_first_flag} — standard-first prebuild lane engaged")
+
+    # Resolve --standard-first-onboarding: if the CLI arg is None, first check the
+    # existing build-state (carry forward a prior choice), then default to the
+    # current-lane default "at-onboarding" (materialize immediately).
+    if args.standard_first_onboarding is None:
+        existing_timing = state.get("standardFirstOnboarding") if isinstance(state, dict) else None
+        if existing_timing in ("at-onboarding", "on-first-answer"):
+            args.standard_first_onboarding = existing_timing
+        else:
+            args.standard_first_onboarding = "at-onboarding"
+    result["standardFirstOnboarding"] = args.standard_first_onboarding
+
     # ══ STEP 1 — CONSENT GATE (fail-closed, before ANY mutation) ══
     if not args.operator_consent_file:
         return emit(_refuse(result, EXIT_CONSENT_REFUSED,
@@ -638,6 +667,82 @@ def main(argv=None):
     else:
         return emit(_refuse(result, EXIT_LANE_REFUSED,
                             f"buildType '{build_type}' is unrecognized — refusing"))
+
+    # ── STANDARD_FIRST_ONBOARDING timing (args.standard_first_onboarding already resolved) ──
+    # "at-onboarding" is the default — proceed to materialize now.
+    # "on-first-answer" defers until the owner answers their first interview question.
+
+    # on-first-answer DEFERRAL: write the consent and arm the lane but do NOT
+    # materialize. The prebuild state records the consent and the deferred
+    # status; the interview-start hook fires the prebuild driver at the first
+    # answer moment. prebuildStartedAt stays NULL until materialization actually
+    # begins, so abandonment measurement treats this as "prebuild armed but
+    # never started — owner never answered a single question."
+    if args.standard_first_onboarding == "on-first-answer" and not state.get("standardPrebuild", {}).get("status") == "done":
+        if args.apply:
+            deferred_state = _load_state(state_path)
+            deferred_state["buildType"] = "standard-first"
+            deferred_state["standardFirstOnboarding"] = "on-first-answer"
+            deferred_state["operatorConsent"] = consent
+            deferred_state["standardPrebuild"] = {
+                "status": "pending",
+                "prebuildStartedAt": None,
+                "standardReadyAt": None,
+                "floorVersion": None,
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }
+            deferred_state["departments"] = deferred_state.get("departments") or []
+            deferred_state.setdefault("version", 1)
+            deferred_state.setdefault("interviewComplete", False)
+            deferred_state.setdefault("ownerChat", 0)
+            try:
+                _atomic_write_json(state_path, deferred_state)
+            except OSError as exc:
+                result["standardPrebuildStatus"] = "failed"
+                result["reason"] = f"could not write deferred prebuild state: {exc}"
+                return emit(EXIT_STEP_FAILED)
+            result["standardPrebuildStatus"] = "deferred"
+            result["deferredMode"] = "on-first-answer"
+            result["abandonmentMeasurement"] = {
+                "prebuildStartedAt": None,
+                "prebuildReadyAt": None,
+                "note": ("abandonment-rate computation: prebuild armed (consent recorded) but "
+                         "not yet started — if interviewCompletedAt is never written, this "
+                         "box was abandoned before the owner ever answered a single question "
+                         "(prebuild started = never). When the interview-start hook fires the "
+                         "prebuild, prebuildStartedAt will be written, and the abandonment "
+                         "clock starts from that point.")
+            }
+            result["selfDisable"] = {
+                "cronRegistered": False,
+                "note": ("one-shot operator-run driver; prebuild deferred until "
+                         "interview-start hook fires it"),
+            }
+            _log(f"prebuild DEFERRED (on-first-answer): state recorded; materialization "
+                 f"will fire when the owner answers their first interview question")
+            return emit(EXIT_OK)
+        else:
+            result["standardPrebuildStatus"] = "dry-run-deferred"
+            result["deferredMode"] = "on-first-answer"
+            result["note"] = ("dry-run: would write deferred prebuild state; "
+                            "materialization would fire at the first interview answer")
+
+    # ── prebuildStartedAt (written ONCE before materialization, never rewritten) ──
+    existing_sp = state.get("standardPrebuild") or {}
+    if existing_sp.get("prebuildStartedAt") and args.apply:
+        result["prebuildStartedAt"] = existing_sp["prebuildStartedAt"]
+        _log(f"prebuildStartedAt already recorded: {result['prebuildStartedAt']} "
+             f"(resuming a prior run)")
+    elif args.apply:
+        result["prebuildStartedAt"] = _now_iso()
+        _log(f"recording prebuildStartedAt: {result['prebuildStartedAt']}")
+    else:
+        result["prebuildStartedAt"] = _now_iso()
+        _log(f"(dry-run) would record prebuildStartedAt: {result['prebuildStartedAt']}")
 
     # ══ STEP 2 — FLOOR RESOLUTION (live naming map, declines honored) ══
     if args.apply:
@@ -975,11 +1080,17 @@ def main(argv=None):
 
     if args.apply:
         new_state = _load_state(state_path)  # re-read: the chosen-artifact writer may have touched it
+        prebuild_started_at = result.get("prebuildStartedAt")  # snapshot from before materialization
         new_state["buildType"] = "standard-first"
         new_state["operatorConsent"] = consent
+        # standardFirstOnboarding: record the operator's chosen timing to the build-state
+        # so downstream consumers (resume cron, interview, CC) know whether this box was
+        # prebuilt "at-onboarding" (default) or deferred to "on-first-answer".
+        new_state["standardFirstOnboarding"] = args.standard_first_onboarding
         new_state["standardPrebuild"] = {
             "status": "done",
             "standardReadyAt": _now_iso(),
+            "prebuildStartedAt": prebuild_started_at,
             "floorVersion": floor_version,
             "prebuiltDepartments": prebuilt_slugs,
             "agentRegistration": "deferred",
