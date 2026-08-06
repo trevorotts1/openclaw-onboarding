@@ -641,6 +641,123 @@ def ocr_readback(png_path, expected_texts, slide_id=None) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# CANONICAL PROMPT-FILE NAMING + DUPLICATE DETECTION  (FIX-22 / D16)
+# ---------------------------------------------------------------------------
+# D16 (ERRORS-DETECTED): the prompt generator produced BOTH `slide-1.txt` and
+# `slide-01.txt` — a zero-padding naming collision that made 21 prompt files for
+# 20 slides. `slide-1.txt` and `slide-01.txt` are treated as DIFFERENT files by
+# the build but both target slide 1. Root cause: mixed `%d` and `%02d` formatting.
+#
+# The canonical per-slide prompt filename is ZERO-PADDED `slide-%02d.txt`
+# (build_deck.PROMPT_FILE_PATTERNS also accepts `slide-%02d-prompt.txt`; both
+# variants must be zero-padded). These two helpers are the single duplicate-detector:
+#   * scan_prompt_dir()   — returns a structured report of the prompt dir
+#   * prompt_dir_problems() — returns fatal AF-PROMPT-DUP-FILE / AF-PROMPT-NAME
+#     strings for every non-canonical or duplicate-target file ([] = clean).
+#
+# Every path that consumes `working/prompts/slide-*.txt` must run this before
+# trusting the per-slide file set, so a `slide-1.txt` vs `slide-01.txt` collision
+# fails the build instead of silently shipping two prompts for slide 1.
+CANONICAL_PROMPT_FILE_RE = re.compile(r"^slide-(\d+)\.txt$")
+CANONICAL_PROMPT_ALT_RE = re.compile(r"^slide-(\d+)-prompt\.txt$")
+# The canonical ordinal field is EXACTLY two digits (`%02d`): slide-01..slide-99.
+# A 1-digit (`slide-1.txt`) or 3+ digit (`slide-100.txt`) number is non-canonical
+# and collides with its zero-padded twin — that is the D16 defect.
+CANONICAL_PROMPT_DIGITS_RE = re.compile(r"^\d{2}$")
+
+
+def _prompt_file_ordinal(name: str) -> int:
+    """Parse the slide ordinal from a prompt filename (canonical or `-prompt`
+    variant). Returns -1 when the name does not carry a slide number."""
+    for r in (CANONICAL_PROMPT_FILE_RE, CANONICAL_PROMPT_ALT_RE):
+        m = r.match(name)
+        if m:
+            return int(m.group(1))
+    return -1
+
+
+def scan_prompt_dir(prompts_dir) -> dict:
+    """Scan a `working/prompts/` directory and return a structured report of the
+    per-slide prompt files. Never raises on a missing/unreadable dir — it returns
+    a fail-closed report the caller decides on.
+
+    Return shape:
+      {
+        "dir": str,
+        "exists": bool,
+        "files": [str],            # every slide-*.txt name, sorted
+        "count": int,              # number of slide-*.txt files
+        "canonical": [str],        # names that are exactly slide-%02d.txt / slide-%02d-prompt.txt
+        "non_canonical": [str],    # slide-*.txt names whose ordinal is NOT zero-padded %02d
+        "targets": {ordinal: [names...]},  # every file grouped by its slide target
+        "duplicates": [str],       # names whose slide target is ALSO carried by another file
+      }
+    """
+    d = Path(prompts_dir)
+    base = {"dir": str(d), "exists": d.is_dir(), "files": [], "count": 0,
+            "canonical": [], "non_canonical": [], "targets": {}, "duplicates": []}
+    if not d.is_dir():
+        return base
+    names = sorted(p.name for p in d.glob("slide-*.txt"))
+    base["files"] = names
+    base["count"] = len(names)
+    targets: dict = {}
+    for name in names:
+        ordinal = _prompt_file_ordinal(name)
+        if ordinal < 0:
+            continue  # a slide-*.txt with no numeric suffix — leave out of targets
+        targets.setdefault(ordinal, []).append(name)
+    base["targets"] = {k: sorted(v) for k, v in targets.items()}
+    for name in names:
+        digit_part = name[len("slide-"):].split("-")[0].split(".")[0]
+        if CANONICAL_PROMPT_DIGITS_RE.match(digit_part):
+            base["canonical"].append(name)
+        else:
+            base["non_canonical"].append(name)
+    for ordn, group in targets.items():
+        if len(group) > 1:
+            base["duplicates"].extend(group)
+    base["duplicates"] = sorted(set(base["duplicates"]))
+    return base
+
+
+def prompt_dir_problems(prompts_dir) -> list:
+    """Return EVERY fatal problem in a `working/prompts/` directory, or [] when it
+    is clean. Two defect classes (D16 / FIX-22):
+      * AF-PROMPT-DUP-FILE  — two+ files target the SAME slide (e.g. slide-1.txt
+        and slide-01.txt both target slide 1); the build must fail closed because
+        one slide would get two prompts (21 files for 20 slides).
+      * AF-PROMPT-NAME      — a slide-*.txt name is NOT canonical zero-padded
+        `slide-%02d.txt` / `slide-%02d-prompt.txt` (e.g. slide-1.txt); it is the
+        half of the D16 collision that must never be authored.
+    Callers (build_deck preflight, presentation_job.gates, prove_pres_prompt_floor
+    --dir) all run this and fail closed when it is non-empty."""
+    problems = []
+    rep = scan_prompt_dir(prompts_dir)
+    if not rep["exists"]:
+        return problems  # the caller owns the "no prompts dir" case
+    if rep["duplicates"]:
+        dup_names = ", ".join(rep["duplicates"])
+        # Name every colliding target with its exact file set so the fix is obvious.
+        for ordn, group in sorted(rep["targets"].items()):
+            if len(group) > 1:
+                problems.append(
+                    f"AF-PROMPT-DUP-FILE: slide {ordn} has {len(group)} prompt files "
+                    f"({', '.join(group)}) — a zero-padding naming collision (D16). "
+                    "Exactly ONE canonical zero-padded slide-%02d.txt per slide is "
+                    "allowed; delete the non-canonical twin and regenerate prompts.")
+        if not problems:
+            problems.append(f"AF-PROMPT-DUP-FILE: duplicate slide targets: {dup_names}")
+    for name in rep["non_canonical"]:
+        problems.append(
+            f"AF-PROMPT-NAME: {name!r} is NOT the canonical zero-padded "
+            f"'slide-%02d.txt' (or 'slide-%02d-prompt.txt') prompt filename. A "
+            "non-zero-padded name (e.g. slide-1.txt) collides with its zero-padded "
+            "twin (slide-01.txt) — rename it to the %02d form.")
+    return problems
+
+
+# ---------------------------------------------------------------------------
 # self-check (invoked by prove_pres_prompt_floor.py; `python3 prompt_gate.py --self-test`)
 # ---------------------------------------------------------------------------
 def _self_test() -> int:
@@ -687,6 +804,42 @@ def _self_test() -> int:
         pass
     # Consistent I2I with inputs is fine.
     check_mode_consistency(MODEL_I2I, ["https://x/logo.png"])
+
+    # FIX-22 / D16: canonical zero-padded prompt-file naming + duplicate detection.
+    import tempfile
+    td = Path(tempfile.mkdtemp(prefix="pg_dupfix_"))
+    try:
+        # Clean dir: 3 canonical zero-padded files -> NO problems, count == 3.
+        for i in (1, 2, 3):
+            (td / f"slide-{i:02d}.txt").write_text("x" * 100)
+        clean_problems = prompt_dir_problems(td)
+        if clean_problems:
+            failures.append(f"canonical prompt dir must be clean, got {clean_problems}")
+        clean_rep = scan_prompt_dir(td)
+        if clean_rep["count"] != 3 or clean_rep["duplicates"] or clean_rep["non_canonical"]:
+            failures.append(f"canonical prompt dir scan wrong: {clean_rep}")
+
+        # The D16 collision: slide-1.txt + slide-01.txt both target slide 1.
+        (td / "slide-1.txt").write_text("y" * 100)
+        dup_problems = prompt_dir_problems(td)
+        if not any("AF-PROMPT-DUP-FILE" in p and "slide 1" in p for p in dup_problems):
+            failures.append(f"D16 dup detector did not fire on slide-1.txt vs slide-01.txt: "
+                            f"{dup_problems}")
+        dup_rep = scan_prompt_dir(td)
+        if "slide-1.txt" not in dup_rep["non_canonical"]:
+            failures.append("slide-1.txt must be flagged non-canonical (not %02d)")
+        if len(dup_rep["targets"].get(1, [])) != 2:
+            failures.append(f"both slide-1.txt and slide-01.txt must target slide 1: "
+                            f"{dup_rep['targets']}")
+
+        # A 3-digit ordinal is also non-canonical (slide-100.txt).
+        (td / "slide-100.txt").write_text("z" * 100)
+        name_problems = prompt_dir_problems(td)
+        if not any("AF-PROMPT-NAME" in p and "slide-100" in p for p in name_problems):
+            failures.append(f"AF-PROMPT-NAME did not fire on slide-100.txt: {name_problems}")
+    finally:
+        import shutil
+        shutil.rmtree(td, ignore_errors=True)
 
     if failures:
         for f in failures:
