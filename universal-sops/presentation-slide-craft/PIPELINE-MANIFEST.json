@@ -1242,7 +1242,7 @@
       "enforced_by": "build_deck",
       "py_symbol": "run_postflight_gate"
     },
-  {
+    {
       "code": "AF-BUNDLE-INCOMPLETE",
       "stage": "Postflight/Bundle",
       "level": "DECK",
@@ -2683,7 +2683,7 @@
       "stage": "Phase0",
       "level": "deck",
       "in_ruleset": true,
-      "trigger": "FIX-14 (Error 8 / D-8): MC_API_TOKEN / MISSION_CONTROL_URL are present in a store but NOT members of OPENCLAW_SERVICE_MANAGED_ENV_KEYS — a regeneration will DROP them (the exact 15-day regression). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh to add the labels to the managed list, restart the gateway, re-run.",
+      "trigger": "FIX-14 (Error 8 / D-8): MC_API_TOKEN / MISSION_CONTROL_URL are present in a store but NOT members of OPENCLAW_SERVICE_MANAGED_ENV_KEYS \u2014 a regeneration will DROP them (the exact 15-day regression). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh to add the labels to the managed list, restart the gateway, re-run.",
       "enforced_by": "runner",
       "py_symbol": null
     },
@@ -2901,6 +2901,30 @@
         "FONT_BODY_PT_FLOOR",
         "DARK_THEME_BODY_PT_FLOOR",
         "SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX"
+      ]
+    },
+    {
+      "code": "AF-KIE-AUTH",
+      "stage": "Phase-0",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched \u2014 an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_preflight_kie_auth",
+      "secondary_py_symbols": [
+        "kie_balance_preflight"
+      ]
+    },
+    {
+      "code": "AF-FORGED-APPROVAL",
+      "stage": "1Q/QC",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending \u2014 a phase can never be skipped on an approval that is not a real owner message.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_phase_preconditions",
+      "secondary_py_symbols": [
+        "_http_json"
       ]
     }
   ],

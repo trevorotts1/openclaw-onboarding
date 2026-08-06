@@ -240,6 +240,10 @@ def _as_list(v: Any) -> List[str]:
 # AF-AGENT-ENV-UNKNOWN (the MC_API_TOKEN regression guard) in PIPELINE-MANIFEST.autofails.
 # 37 -> 38: FIX-18 registers AF-TOOL-SCHEMA-LOOP (tool-schema hardening: normalized schema
 # hint + 5-consecutive-failure loop alert) in PIPELINE-MANIFEST.autofails.
+
+# 37 -> 38: FIX-23(c) registers AF-KIE-AUTH (auth preflight) + AF-FORGED-APPROVAL
+# (authentic skip approvals) in PIPELINE-MANIFEST.autofails so sync_check lockstep
+# passes (the repo-side half of the 27-drift-item repair). Floor moves WITH the manifest.
 MIN_MANIFEST_VERSION = 38  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 

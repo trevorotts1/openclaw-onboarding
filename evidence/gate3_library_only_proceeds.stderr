@@ -1,0 +1,1 @@
+    sync_check> {"in_sync": false, "manifest_version": 38, "drift": [{"check": "A5", "item": "undeclared-role", "detail": "x", "class": "A5/A6"}, {"check": "A6", "item": "P-SOME", "detail": "y", "class": "A5/A6"}], "drift_summary": {"total": 2, "render_path": 0, "library_only": 2}}

@@ -64,20 +64,58 @@ from pathlib import Path
 
 def _find_canonical_ghl_media() -> Path:
     """Locate the verified-working tools/ghl_media.py shipped by the Skill-48
-    Facebook-ad generator. Walks up from this file to the repo root (the dir that
-    contains 48-facebook-ad-generator) so it resolves in the repo AND on a deployed
-    client box where the sibling skill dirs are present. Raises if not found
-    (fail loud rather than silently fork the proven REST calls)."""
+    Facebook-ad generator. Resolves in every layout the Presentations dept can
+    run from. PRIORITY (FIX-23(d) — the GHL co-location fix):
+
+      1. Co-located _skill48_ghl_media.py next to THIS module — the materializer
+         (create_role_workspaces.py) copies the CANONICAL repo module here on
+         every floor-fill, so this is the AUTHORITATIVE, always-current copy for
+         a deployed department. A deployed box must never silently fall back to
+         a stale installed Skill-48 sibling (measured: the installed
+         ~/.openclaw/skills/48-facebook-ad-generator/tools/ghl_media.py was a
+         22KB pre-list_media version while the repo's verified-working module is
+         25KB — a stale sibling would silently fork the media contract).
+      2. Repo tree:       walking up from this file to the repo root (the dir
+                           that contains 48-facebook-ad-generator).
+      3. Skills tree:     the OpenClaw skills dir where Skill-48 actually lands
+                           on a box (~/.openclaw/skills or /data/.openclaw/skills
+                           on a VPS, i.e. OC_SKILLS_DIR) — used only when no
+                           co-located copy and no repo sibling exist.
+
+    Raises if not found (fail loud rather than silently fork the proven REST
+    calls). GATE 1b asserts this import under the render interpreter BEFORE any
+    render spend."""
     here = Path(__file__).resolve()
+    # 1. Self-contained co-located copy (materializer-installed sibling) — FIRST,
+    #    so a deployed department always loads the canonical, always-current module.
+    local = here.parent / "_skill48_ghl_media.py"
+    if local.is_file():
+        return local
+    # 2. Repo tree: walk up for a sibling 48-facebook-ad-generator dir.
     for parent in here.parents:
         cand = parent / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
         if cand.is_file():
             return cand
+    # 3. Deployed box: the OpenClaw skills tree (Skill-48 installs here) — last
+    #    resort, because the installed copy can lag the repo's canonical module.
+    for skills_root in (
+        Path(os.environ.get("OPENCLAW_SKILLS_DIR", "")),
+        Path.home() / ".openclaw" / "skills",
+        Path("/data/.openclaw/skills"),
+    ):
+        if not skills_root or not skills_root.is_dir():
+            continue
+        cand = skills_root / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+        if cand.is_file():
+            return cand
     raise FileNotFoundError(
-        "canonical ghl_media.py not found — expected "
-        "<repo>/48-facebook-ad-generator/tools/ghl_media.py (the verified-working "
-        "GHL media folder-create + upload module the Presentations dept SHARES). "
-        "The dept must never fork these REST calls; ship the sibling skill dir."
+        "canonical ghl_media.py not found — expected a co-located "
+        "_skill48_ghl_media.py next to this module, "
+        "<repo>/48-facebook-ad-generator/tools/ghl_media.py, or "
+        "<skills>/48-facebook-ad-generator/tools/ghl_media.py (the verified-working "
+        "GHL media folder-create + upload module the Presentations dept SHARES). The "
+        "dept must never fork these REST calls; install the Skill-48 sibling "
+        "(48-facebook-ad-generator) or run the materializer to co-locate it."
     )
 
 
