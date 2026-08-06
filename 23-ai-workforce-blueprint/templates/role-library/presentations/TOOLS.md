@@ -44,6 +44,31 @@ shortcut past Layer A.
 
 ---
 
+## Tool arguments are ALWAYS a JSON object (FIX-18 / Error 10)
+
+A malformed tool call burns a full retry cycle and — repeated — trips the
+`AF-TOOL-SCHEMA-LOOP` alert that stops a build. Two durable rules, enforced by
+`tool_schema_validator.py` and stated here so the model reads the SAME rule the
+validator enforces:
+
+1. **`write` takes `path`, never `file`.** The `write` tool's arguments are
+   `write(path: string, content: string)`. There is no `file` argument; calling
+   `write` with `file:` and no `path` FAILS with "missing required parameter:
+   path". The same holds for `read(path: string)` and `Edit(file_path: string,
+   old_string: string, new_string: string)`.
+
+2. **Tool args are a JSON object, never a string.** Every tool's arguments must
+   be emitted as a JSON object literal (`{"key": "value", ...}`), not as a
+   serialized string (`'{"key": "value"}'`) and never as a bare prose string.
+   If you receive a validation error, read the normalized schema hint in the
+   error, correct the args to an object, and do NOT re-emit the schema dump.
+
+When a tool's malformed calls hit 5 CONSECUTIVE failures, the run records an
+`AF-TOOL-SCHEMA-LOOP` event and the Phase-0 preflight stops the build — the
+model is re-oriented, not silently re-run.
+
+---
+
 ## What the canonical pipeline does (so you don't have to)
 
 You hand `slides.json`, the pre-authored `working/prompts/slide-NN.txt` rich prompts, and

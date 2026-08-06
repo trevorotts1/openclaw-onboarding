@@ -1,5 +1,5 @@
 {
-  "manifest_version": 37,
+  "manifest_version": 38,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -2693,6 +2693,15 @@
       "level": "deck",
       "in_ruleset": true,
       "trigger": "FIX-14 (Error 8 / D-8): check_agent_env.py is not co-located beside run_signature_deck.py, so the regression guard cannot run. A missing probe must never read as PASS (fail-closed). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: install check_agent_env.py into the department scripts dir, re-run.",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-TOOL-SCHEMA-LOOP",
+      "stage": "Phase0",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) — path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
       "enforced_by": "runner",
       "py_symbol": null
     },
