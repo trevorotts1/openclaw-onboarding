@@ -1,0 +1,9 @@
+
+(W) STEP-CONTRACT WARNINGS — ADVISORY, exit code unaffected (1 of 33 phases):
+  WARN W1: [P-QC-AGGREGATE] phase P-QC-AGGREGATE declares no verifier. step (i) — declare executor and verifier on the phase in PIPELINE-MANIFEST.json (the step contract). ADVISORY until every phase carries both; then this class is promoted to fail-closed in a separate unit.
+
+1 warning(s). These do NOT fail the check. Drive the count to zero, then promote W1 to fail-closed in a separate change.
+=== sync_check: PRESENTATIONS SOP <-> build_deck.py LOCKSTEP ===
+manifest_version: 38
+phases: 33  autofails: 166  roles: 34
+IN SYNC — the Python renderer, the MASTER ruleset Section-5 table, the role roster, and the SOP set all match PIPELINE-MANIFEST.json.

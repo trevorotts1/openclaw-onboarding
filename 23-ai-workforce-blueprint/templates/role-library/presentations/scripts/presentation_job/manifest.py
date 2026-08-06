@@ -238,7 +238,10 @@ def _as_list(v: Any) -> List[str]:
 # fix_bundle_complete.py) in PIPELINE-MANIFEST.autofails. The floor moves WITH the manifest.
 # 36 -> 37: FIX-14 registers AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED /
 # AF-AGENT-ENV-UNKNOWN (the MC_API_TOKEN regression guard) in PIPELINE-MANIFEST.autofails.
-MIN_MANIFEST_VERSION = 37  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 37 -> 38: FIX-23(c) registers AF-KIE-AUTH (auth preflight) + AF-FORGED-APPROVAL
+# (authentic skip approvals) in PIPELINE-MANIFEST.autofails so sync_check lockstep
+# passes (the repo-side half of the 27-drift-item repair). Floor moves WITH the manifest.
+MIN_MANIFEST_VERSION = 38  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

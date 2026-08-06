@@ -2492,6 +2492,39 @@ def scaffold_department(dept_path, dept_slug, dry_run=False):
                     f"copy sha256={_dst_hash[:16]}... — refusing to ship a "
                     f"drifted governance file")
 
+        # FIX-23(d) — SKILL-48 GHL-MODULE CO-LOCATION. ghl_media.py (Presentations)
+        # RE-EXPORTS the canonical 48-facebook-ad-generator/tools/ghl_media.py and
+        # raises FileNotFoundError at import if the sibling is absent. A deployed
+        # department scripts dir walks up to <workspace>/departments/Presentations/scripts
+        # and does NOT contain the sibling skill — so every materialized department
+        # that ships ghl_media.py (the Presentations media path SHARES it) would fail
+        # GATE 1b and die mid-deck on PAID Kie credits. Co-locate the canonical module
+        # as _skill48_ghl_media.py next to ghl_media.py so the deployed department is
+        # self-contained (ghl_media._find_canonical_ghl_media() resolves it directly).
+        # The copy is ALWAYS overwritten from the repo source of truth (never a stale
+        # sibling): a diverged shared module is worse than an absence, exactly like the
+        # blend_voice_governance assertion above. The sibling resolves from the skills
+        # tree root (the dir that CONTAINS 23-ai-workforce-blueprint also contains
+        # 48-facebook-ad-generator), i.e. _resolve_skill_dir().parent.
+        _skills_root = _resolve_skill_dir().parent
+        _ghl_src = _skills_root / "48-facebook-ad-generator" / "tools" / "ghl_media.py"
+        _ghl_dst = scripts_target / "_skill48_ghl_media.py"
+        if _ghl_src.is_file() and dept_slug.lower() in ("presentations",):
+            import hashlib as _hashlib48
+            if not dry_run:
+                import shutil as _shutil48
+                _shutil48.copy2(_ghl_src, _ghl_dst)
+                _src48 = _hashlib48.sha256(_ghl_src.read_bytes()).hexdigest()
+                _dst48 = _hashlib48.sha256(_ghl_dst.read_bytes()).hexdigest()
+                if _src48 != _dst48:
+                    raise RuntimeError(
+                        f"_skill48_ghl_media.py materialized copy has diverged "
+                        f"from its source. source sha256={_src48[:16]}... "
+                        f"copy sha256={_dst48[:16]}... — refusing to ship a "
+                        f"drifted GHL sibling")
+                written.setdefault("ghl_sibling", 0)
+                written["ghl_sibling"] += 1
+
     return written
 
 def instantiate_department(dept_path, dept_slug, roles, workspace_root,

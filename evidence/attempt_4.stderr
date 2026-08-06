@@ -1,0 +1,1 @@
+FATAL [presentation-canonical-entry.sh]: canonical entry attempted 4 times (>3). Do NOT write a custom driver. The sanctioned door is failing — open a maintenance ticket, apply the sync/ghl fix, then retry.

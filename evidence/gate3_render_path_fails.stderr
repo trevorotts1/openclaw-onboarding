@@ -1,0 +1,8 @@
+    sync_check> {"in_sync": false, "manifest_version": 38, "drift": [{"check": "B2", "item": "AF-ORPHAN", "detail": "y", "class": "render_path"}], "drift_summary": {"total": 1, "render_path": 1, "library_only": 0}}
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+GATE FAILED [AF-CANONICAL-RENDER-BYPASS]: renderer/SOP lockstep drift (sync_check.py exit 4): the deployed build_deck.py has drifted from the SOP/manifest stack. Re-sync to the pinned governed version before building.
+This gate may be skipped ONLY by a logged owner approval token in
+  /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev2_p9sg__ev/run2/working/checkpoints/process_manifest.json
+  (owner_skip_approval: {gate:"AF-CANONICAL-RENDER-BYPASS", approved:true, approved_by, reason}).
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
