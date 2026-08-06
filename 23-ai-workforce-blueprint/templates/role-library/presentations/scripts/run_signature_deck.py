@@ -312,6 +312,16 @@ def attest_phase(run_dir: Path, phase_id: str, role: str, status: str,
             file=sys.stderr,
         )
         sys.exit(2)
+    # FIX-2 (Error 2): a QC phase may NOT attest unless its report clears the
+    # REAL-CONTENT floor (>256 bytes, valid JSON, >=20 real per-slide verdicts).
+    # A 3-byte '{}' placeholder (the exact Error-2 artifact) can never satisfy a
+    # QC phase — refusing the attestation makes QC structurally unskippable at the
+    # ledger, not just in prose. AF-QC-PLACEHOLDER.
+    _qc_floor = bd.check_qc_phase_report_real(run_dir, phase_id)
+    if _qc_floor:
+        print("FATAL: " + _qc_floor + " Refusing to attest phase " + phase_id + ".",
+              file=sys.stderr)
+        sys.exit(2)
     p = _process_manifest_path(run_dir)
     p.parent.mkdir(parents=True, exist_ok=True)
     obj = _load_process_manifest(run_dir)
@@ -816,6 +826,19 @@ def load_skip_approvals(run_dir: Path) -> dict:
                 f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
                 "record lacks owner_msg_id or owner_action — a verifiable owner "
                 "reference is required to trace the skip to a real human decision.",
+                file=sys.stderr,
+            )
+            continue
+
+        # (4) FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE. No owner
+        # record — real or forged — can waive a QC phase. A skip record for
+        # P1Q-COPY-QC / P-PROMPT-QC / P-TYPO-QC / P-SHIFT-QC is REFUSED outright.
+        pid = str(rec["phase_id"]).strip()
+        if pid in bd.UNSKIPPABLE_QC_PHASES:
+            print(
+                f"[load_skip_approvals] REFUSED phase {pid!r}: QC phases are "
+                "structurally unskippable (AF-QC-SKIP) — no owner record can waive "
+                "a QC phase.",
                 file=sys.stderr,
             )
             continue

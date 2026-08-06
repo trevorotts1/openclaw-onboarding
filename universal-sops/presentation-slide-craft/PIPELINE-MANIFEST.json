@@ -1,5 +1,5 @@
 {
-  "manifest_version": 35,
+  "manifest_version": 36,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1619,6 +1619,29 @@
         "FORBIDDEN_QC_GRADER_IDENTITIES",
         "QC_BUILDER_ROLE"
       ]
+    },
+    {
+      "code": "AF-QC-PLACEHOLDER",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a QC report for one of the four QC phases (copy / prompt / typography / shift) is a placeholder or sub-floor: it is missing, <= 256 bytes (the 3-byte \"{}\" rubber-stamp), not valid JSON, or carries fewer than 20 real per-slide verdicts. FIX-2 (Error 2) makes QC structurally unskippable + real-content-floor: a QC phase cannot attest without a real report.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_qc_phase_report_real",
+      "secondary_py_symbols": [
+        "QC_PHASE_REPORT",
+        "QC_REPORT_FLOOR_BYTES",
+        "QC_REPORT_SLIDE_FLOOR"
+      ]
+    },
+    {
+      "code": "AF-QC-SKIP",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a phase-skip approval record (phase_skip_approvals.json) or owner_skip_approval token names one of the four QC phases (copy / prompt / typography / shift) \u2014 QC phases are STRUCTURALLY UNSKIPPABLE (FIX-2, Error 2); no owner record can waive a QC phase. The skip is refused and the QC phase stays required.",
+      "enforced_by": "build_deck",
+      "py_symbol": "UNSKIPPABLE_QC_PHASES"
     },
     {
       "code": "AF-TYPOGRAPHY-QC",
