@@ -134,6 +134,17 @@ try:
 except ImportError:
     _pv = None
 
+# FIX-14 — MC_API_TOKEN / MISSION_CONTROL_URL regression guard. Imported
+# defensively so CI/test contexts that lack the sibling module (or run on a box
+# where it has not been installed) still parse; the Phase-0 preflight refuses
+# (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED) only when the module is present
+# AND its verdict is not PASS — a missing module is never silently "PASS" (see
+# phase0_preflight below).
+try:
+    import check_agent_env as _agent_env
+except ImportError:
+    _agent_env = None
+
 # FIX-PRES-07: the GOVERNED set of phases that REQUIRE a substance verifier. When
 # phase_verifiers.py is importable we derive it LIVE from the registry; when the
 # module is MISSING beside the runner (_pv is None) we fall back to this pinned
@@ -1138,10 +1149,11 @@ def _slide_count(run_dir: Path, slides_path: Path) -> int:
 def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
                      adhoc: bool = False) -> None:
     """Phase-0: OCR-engine availability pre-flight (AF-OCR-ENGINE-MISSING, MASTER-SPEC
-    7.4) + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
-    (exit 4) on AF-OCR-ENGINE-MISSING or AF-KIE-BALANCE before any phase is
-    dispatched — this runs before research/copy/QC as well as before render, the
-    earliest possible point in the entire run."""
+    7.4) + FIX-14 agent-env pre-flight (AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED)
+    + detect box type (resource note) + Kie balance pre-flight. HARD-ABORT
+    (exit 4) on AF-OCR-ENGINE-MISSING, AF-AGENT-ENV-*, or AF-KIE-BALANCE before any
+    phase is dispatched — this runs before research/copy/QC as well as before
+    render, the earliest possible point in the entire run."""
     platform = bd.detect_platform(run_dir, override=platform_override)
     worker_note = "mac -> fewer parallel render workers" if platform == "mac" else \
                   "vps -> more parallel render workers"
@@ -1172,6 +1184,42 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
         sys.exit(4)
     print("=== PHASE-0 — OCR-engine pre-flight PASSED (engine available in this "
           "render environment) ===", flush=True)
+
+    # FIX-14 — MC_API_TOKEN / MISSION_CONTROL_URL regression guard (Error 8 / D-8).
+    # The 15-day 401 stall happened because the token was NOT in the gateway
+    # service-env. check_agent_env.py probes the agent runtime env live-process-first
+    # across the gateway service-env + secrets stores, AND verifies both labels are
+    # in the OPENCLAW_SERVICE_MANAGED_ENV_KEYS regeneration allow-list (a token in a
+    # store but not in that list is dropped on the next regeneration — the exact
+    # regression shape). HARD-ABORT (exit 4) here, before any phase is dispatched,
+    # so a box whose CC registration would silently 401 stops at minute zero.
+    #
+    # FAIL-CLOSED ON A MISSING MODULE: this preflight is wired into the canonical
+    # runner, so a deployment that drops check_agent_env.py must NOT silently pass
+    # the guard — a missing module reads as UNKNOWN and fails closed (AF-AGENT-ENV-
+    # UNKNOWN), so a regression can never hide behind an absent probe.
+    if _agent_env is not None:
+        _env_report = _agent_env.probe()
+        if _env_report["exit_code"] != 0:
+            print("\n" + "!" * 78, file=sys.stderr)
+            print("FATAL PHASE-0: %s (%s) — Command Center registration/delivery "
+                  "would silently 401. See the stores checked + per-label presence "
+                  "above; run regenerate-gateway-env.sh to wire the labels, restart "
+                  "the gateway, then re-run." % (
+                      _env_report["verdict"], _env_report["exit_code"]), file=sys.stderr)
+            print("!" * 78 + "\n", file=sys.stderr)
+            sys.exit(4)
+        print("=== PHASE-0 — agent-env pre-flight PASSED (MC_API_TOKEN + "
+              "MISSION_CONTROL_URL present and managed) ===", flush=True)
+    else:
+        print("\n" + "!" * 78, file=sys.stderr)
+        print("FATAL PHASE-0: AF-AGENT-ENV-UNKNOWN — check_agent_env.py is not "
+              "co-located beside run_signature_deck.py. The FIX-14 regression guard "
+              "cannot run, so this box refuses (fail-closed; a missing probe must "
+              "never read as PASS). Install check_agent_env.py into the department "
+              "scripts dir and re-run.", file=sys.stderr)
+        print("!" * 78 + "\n", file=sys.stderr)
+        sys.exit(4)
 
     api_key = ""
     try:

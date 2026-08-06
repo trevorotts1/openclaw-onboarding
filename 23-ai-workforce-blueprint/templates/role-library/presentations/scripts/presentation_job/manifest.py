@@ -236,7 +236,9 @@ def _as_list(v: Any) -> List[str]:
 # manifest is bumped to 35 to keep the floor and the manifest in lockstep.
 # 35 -> 36: FIX-8 registers AF-BUNDLE-INCOMPLETE (the full 9-deliverable bundle gate,
 # fix_bundle_complete.py) in PIPELINE-MANIFEST.autofails. The floor moves WITH the manifest.
-MIN_MANIFEST_VERSION = 36  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 36 -> 37: FIX-14 registers AF-AGENT-ENV-MISSING / AF-AGENT-ENV-UNMANAGED /
+# AF-AGENT-ENV-UNKNOWN (the MC_API_TOKEN regression guard) in PIPELINE-MANIFEST.autofails.
+MIN_MANIFEST_VERSION = 37  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
