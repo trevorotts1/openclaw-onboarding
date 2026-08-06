@@ -322,7 +322,14 @@ _INFRA_DIRS = {"scripts", "sops", "memory", "working", ".openclaw"}
 # are declared in PIPELINE-MANIFEST.roles today; U009 removes them from the manifest in
 # THIS SAME COMMIT, and without this set that removal creates five new A5 items.
 _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
-                  "how-to-use-this-department"}
+                  "how-to-use-this-department",
+                  # Fleet-scaffolding docs that the fleet sync copies into every
+                  # department dir (NOT department roles). They must not count as
+                  # un-declared roles (A5) on a DEPLOYED layout — FIX-23c repaired
+                  # the repo (which has no such files) but the deployed dept dirs
+                  # carry them, so excluding here closes the 27-drift debt for the
+                  # fleet-deployed layouts too.
+                  "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER"}
 
 
 def scan_roles_and_sops():
