@@ -1,5 +1,37 @@
 # TOOLS.md — Presentations Builder Tools (DETERMINISTIC PIPELINE)
 
+## SLICED READS FOR LARGE FILES (FIX-19 / D18 — READ THIS FIRST)
+
+The department's SOP/role files are **25–125KB**. Reading one WHOLE into a tool
+result is what fired `[tool-result-truncation]` **33 times** in the 2026-08-06
+E2E (D18) — the harness truncated the giant result and you reasoned from
+incomplete context. **Never read a SOP/role file whole.**
+
+The engine ships ONE sliced-read tool: `scripts/read_slice.py`. Use it for any
+file over ~32KB:
+
+```
+# 1. Find the section you need (cheap — headers + line numbers only):
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --index
+
+# 2. Fetch exactly the slice you need:
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --lines 262-270
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --offset 1000 --length 2000
+```
+
+A bare filename resolves to the department `sops/` mirror (and the
+universal-sops clusters) the same way the engine resolves `sop_refs`. The tool
+prints the slice + the slice bounds + byte counts to stderr, and maintains a
+truncation-event counter at
+`working/checkpoints/read_slice_truncations.json`. A sliced build keeps that
+counter at **0** — that is the FIX-19 QC gate.
+
+The `--next` phase turn-gate emits each `sop_ref` with a `read_slice_hint`
+(and marks `sliced_read_required: true` when the SOP exceeds the guard budget),
+so follow the hint the runner gives you rather than doing a whole-file read.
+
+---
+
 ## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `presentation-canonical-entry.sh`
 
 You do NOT generate images. You do NOT call KIE.ai. You do NOT assemble `.pptx` files.

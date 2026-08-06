@@ -1297,6 +1297,53 @@ def _next_required_phase(run_dir: Path, phases: list):
     return None, total, total
 
 
+# ---------------------------------------------------------------------------
+# FIX-19 (D18) — right-size tool results. The --next payload hands the agent SOP
+# refs as bare filenames; reading one WHOLE (a 34-102KB SOP/role file) returns a
+# tool result the harness truncates ([tool-result-truncation] fired 33x in the
+# 2026-08-06 E2E). Each sop_ref is enriched with its resolved size + a
+# read_slice hint so the agent fetches ONLY the slice it needs.
+# ---------------------------------------------------------------------------
+def _sop_slice_guidance(sop_refs: list, run_dir: Path) -> list:
+    """Return [{ref, size_bytes, resolved, read_slice_hint, kind}] per sop_ref.
+
+    The hint is the exact CLI that returns just that slice; 'index' means the
+    ref is > MAX_SLICE_BYTES and the agent should run read_slice.py --index
+    first to find the section, then --lines to fetch it. Never raises: a ref
+    that cannot be resolved is returned with a null hint (the agent still has
+    the filename to read conventionally)."""
+    try:
+        import read_slice as _rs
+    except Exception:  # noqa: BLE001
+        _rs = None
+    out = []
+    for ref in sop_refs:
+        entry = {"ref": ref}
+        if _rs is not None:
+            try:
+                resolved = _rs._find_sop_file(ref, Path(__file__).resolve().parent)
+            except Exception:  # noqa: BLE001
+                resolved = None
+            if resolved is not None and resolved.is_file():
+                size = resolved.stat().st_size
+                entry.update({
+                    "resolved": str(resolved),
+                    "size_bytes": size,
+                    "kind": "sop",
+                    "read_slice_hint":
+                        f"python3 read_slice.py {ref} --index   # {size}B SOP — find the section"
+                        if size > _rs.MAX_SLICE_BYTES
+                        else f"python3 read_slice.py {ref} --lines A-B   # {size}B SOP",
+                    "sliced_read_required": size > _rs.MAX_SLICE_BYTES,
+                })
+            else:
+                entry.update({"resolved": None, "size_bytes": None,
+                              "kind": "unresolved",
+                              "read_slice_hint": None})
+        out.append(entry)
+    return out
+
+
 def emit_next(run_dir: Path, phases: list) -> None:
     """--next PHASE TURN-GATE. Emits ONE JSON payload for ONLY the single next
     required phase — its id/order/owning role, the artifact contract
@@ -1343,12 +1390,20 @@ def emit_next(run_dir: Path, phases: list) -> None:
                 "required_brief_categories": ph.get("required_brief_categories", []),
                 "has_substance_verifier": pid in _GOVERNED_VERIFIER_PHASES,
             },
-            "sop_refs": ph.get("sop_refs", []),
+            "sop_refs": _sop_slice_guidance(ph.get("sop_refs", []), run_dir),
             "gate_codes": ph.get("gate_codes", []),
             "client_report": ph.get("client_report"),
             "attest_command": attest_cmd,
         },
         "doctrine_home": "universal-sops/PRESENTATION-MASTER-DOCTRINE.md",
+        "read_slice_doctrine": (
+            "FIX-19: SOP files are 25-125KB. NEVER read one whole — a whole-file "
+            "tool result is truncated ([tool-result-truncation], D18) and you "
+            "reason from incomplete context. For each sop_ref use its "
+            "read_slice_hint: run `python3 read_slice.py <ref> --index` to find "
+            "the section, then `--lines A-B` to fetch only that slice. A sliced "
+            "read returns just the slice; the truncation counter stays 0."
+        ),
         "instruction": (
             "Do EXACTLY this one phase: produce its produces_artifact per the cited "
             "sop_refs, then run the attest_command to verify + attest it. Then run "

@@ -214,6 +214,38 @@ else
     fails=$((fails + 1))
 fi
 
+# 4) FIX-19 regression guard — right-size tool results (D18). read_slice.py is
+#    the engine's sliced-read path: a whole-file read of a 34-102KB SOP/role file
+#    returns a tool result the harness truncates ([tool-result-truncation] fired
+#    33x in the 2026-08-06 E2E). This check proves (a) the tool's own hermetic
+#    fixture battery passes and (b) a real large SOP read through the sliced path
+#    returns only the requested slice with a truncation counter of 0.
+FIX19_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX19_SCRIPTS/read_slice.py" ]; then
+    run "FIX-19 read_slice.py --self-test (sliced-read fixture battery)" \
+        "$PY" "$FIX19_SCRIPTS/read_slice.py" --self-test
+    # Live sliced read of a known 34-102KB SOP through the sliced-read path —
+    # QC gate for FIX-19: result returns only the requested slice; truncation
+    # counter = 0. Hermetic (reads a tracked SOP file), CI-safe.
+    run "FIX-19 sliced read of a large SOP returns only the slice (truncation_events=0)" \
+        "$PY" -c "
+import sys
+sys.path.insert(0, '$FIX19_SCRIPTS')
+import read_slice as rs
+r = rs.read_slice('qc-specialist-presentations-sops.md', lines=(262, 270))
+assert r['total_bytes'] > 100_000, r
+assert r['returned_bytes'] < 4000, r
+assert r['truncation_events'] == 0, r
+assert r['slice']['lines'] == [262, 270], r
+print('sliced read OK: returned %dB of %dB, truncation_events=%s' % (
+    r['returned_bytes'], r['total_bytes'], r['truncation_events']))
+"
+else
+    printf '  [FAIL] FIX-19 read_slice.py NOT found at %s — ' "$FIX19_SCRIPTS"
+    printf 'the sliced-read path is unwired; an agent reading a whole 34-102KB SOP would truncate its tool result (D18).\n'
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 51 self-verification checks green."
