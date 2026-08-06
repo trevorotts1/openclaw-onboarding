@@ -5539,6 +5539,22 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             # refuses msg-id-less records up front.
             if (isinstance(r, dict) and r.get("owner_approved") is True
                     and str(r.get("phase_id") or "").strip()
+                    and not str(r.get("owner_msg_id") or "").strip()):
+                # FIX-1 / FIX-23 manifest reconcile: a msg-id-less (or owner_action-
+                # only) skip record is the exact self-forgery vector the live E2E
+                # used. Refuse it explicitly AND surface AF-FORGED-APPROVAL here so
+                # the build_deck enforcement path (Guard A py_symbol
+                # check_phase_preconditions) emits the code text its manifest row
+                # declares — the phase stays required, fail-closed.
+                print(
+                    f"[check_phase_preconditions] AF-FORGED-APPROVAL: skip record "
+                    f"for phase {str(r.get('phase_id') or '').strip()!r} has NO "
+                    "owner_msg_id — an owner_action-only record is a forged approval "
+                    "by definition; the phase remains REQUIRED.",
+                    file=sys.stderr,
+                )
+            if (isinstance(r, dict) and r.get("owner_approved") is True
+                    and str(r.get("phase_id") or "").strip()
                     and str(r.get("owner_msg_id") or "").strip()):
                 pid = str(r["phase_id"]).strip()
                 if pid in UNSKIPPABLE_QC_PHASES:

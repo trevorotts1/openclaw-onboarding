@@ -23,6 +23,8 @@ Plus unit assertions on the build_deck.py check functions directly (no subproces
 Run:  python3 test_preflight.py
 Exit: 0 = all assertions passed; 1 = a case failed.
 """
+import contextlib
+import io
 import json
 import os
 import subprocess
@@ -3728,6 +3730,37 @@ def emit_af_coverage():
     # HARD ABORT from kie_balance_preflight. We monkeypatch _fetch_kie_balance to a
     # below-floor balance so the gate fires deterministically with no network.
     record("AF-KIE-BALANCE", _kie_balance_probe())
+
+    # AF-KIE-AUTH (FIX-6/FIX-23 manifest reconcile) — a PERMANENT auth failure on the
+    # balance call (AuthError, the 401 storm class) surfaces AF-KIE-AUTH from
+    # kie_balance_preflight, never 'unknown balance'. Monkeypatch _fetch_kie_balance
+    # to raise AuthError so the gate fires deterministically with no network.
+    _auth_orig = build_deck._fetch_kie_balance
+    try:
+        def _auth_fail(*a, **k):
+            raise build_deck.AuthError("401 Unauthorized — permanent auth failure")
+        build_deck._fetch_kie_balance = _auth_fail
+        record("AF-KIE-AUTH", build_deck.kie_balance_preflight(
+            _g4_run_dir("deck_g4_kieauth_"), 20, "stub-key"))
+    finally:
+        build_deck._fetch_kie_balance = _auth_orig
+
+    # AF-FORGED-APPROVAL (FIX-1/FIX-23 manifest reconcile) — an owner_action-only skip
+    # record (NO owner_msg_id) is the exact self-forgery vector the live E2E used; the
+    # shared gate check_phase_preconditions REFUSES it and surfaces AF-FORGED-APPROVAL,
+    # keeping the phase REQUIRED (fail-closed). Write a forged skip record and drive
+    # the gate; capture stderr so the record() self-check sees the code text.
+    _forged_root = _g4_run_dir("deck_g4_forged_")
+    _forged_ck = _forged_root / "working" / "checkpoints"
+    _forged_ck.mkdir(parents=True, exist_ok=True)
+    (_forged_ck / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
+                        "approved_by": "owner", "reason": "self-forged, no message id",
+                        "timestamp": "2026-06-20T00:00:00Z"}]}))  # NO owner_msg_id
+    _forged_buf = io.StringIO()
+    with contextlib.redirect_stderr(_forged_buf):
+        build_deck.check_phase_preconditions(_forged_root, "P4-RENDER", ["P3-ARC"])
+    record("AF-FORGED-APPROVAL", _forged_buf.getvalue())
 
     # AF-OVERLAY-DELIVERED (5C) — a present pptx_text_overlays.json (the eliminated
     # native-overlay path) FAILS _chk_no_overlay.
