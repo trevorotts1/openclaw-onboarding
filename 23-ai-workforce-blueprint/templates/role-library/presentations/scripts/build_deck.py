@@ -3052,6 +3052,10 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
     prob = _collect_prompt_problems(run_dir, slides_path)
     if prob and prob[0][0] == 0:
         return ""  # slide count unknown — _chk_rich_prompts owns the "no slides.json" case.
+    if prob and prob[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file) —
+        # a Prompt-QC report cannot be trusted when the on-disk prompt set is broken.
+        return ("AF-PROMPT-QC: " + prob[0][1])
     if not prob:
         return ""
     offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in prob[:10])
@@ -3988,6 +3992,20 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
         return [(0, "cannot determine the slide count (no slides.json / "
                     "arc_allocation.json), so the per-slide rich prompts cannot be "
                     "verified. Produce slides.json before render.")]
+    # FIX-22 / D16: BEFORE trusting any per-slide prompt, run the canonical
+    # zero-padded + duplicate-detector over the whole prompts dir. A `slide-1.txt`
+    # vs `slide-01.txt` collision (both target slide 1) or ANY non-%02d prompt
+    # filename is a build-blocking defect — the preflight rich-prompt gate AND the
+    # governed Prompt-QC teeth both route through here, so it is caught at exit 3
+    # before any KIE dispatch, never mid-render.
+    _pg22 = _import_prompt_gate()
+    if _pg22 is not None:
+        dir_problems = _pg22.prompt_dir_problems(run_dir / "working" / "prompts")
+        if dir_problems:
+            # Fatal directory-level defect, reported at the sentinel ordinal -1 so
+            # callers can tell it apart from the "slide count unknown" sentinel (0).
+            # The message already names the offending files; the ordinal is cosmetic.
+            return [(-1, "; ".join(dir_problems))]
     copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
@@ -4037,6 +4055,9 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     # rich-prompt gate verifies a prompt for every slide that will actually render.
     problems = _collect_prompt_problems(run_dir, slides_path)
     if problems and problems[0][0] == 0:
+        return "AF-P1: " + problems[0][1]
+    if problems and problems[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file).
         return "AF-P1: " + problems[0][1]
     if problems:
         n = _count_output_slides(run_dir, slides_path)

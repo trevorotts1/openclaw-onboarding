@@ -38,6 +38,19 @@ class Gates:
     def __init__(self, run_dir: Path, state: Dict[str, Any]) -> None:
         self.run_dir = run_dir
         self.state = state
+    def _prompt_gate(self):
+        """Lazily import the shared prompt_gate module (ships beside this package's
+        parent scripts dir). Returns the module or None so callers degrade gracefully
+        to their built-in checks — mirrors build_deck._import_prompt_gate."""
+        try:
+            import importlib
+            import sys as _sys
+            here = Path(__file__).resolve().parent.parent  # scripts/
+            if str(here) not in _sys.path:
+                _sys.path.insert(0, str(here))
+            return importlib.import_module("prompt_gate")
+        except Exception:  # noqa: BLE001
+            return None
     def evaluate_all(self) -> Dict[str, Dict[str, Any]]:
         g = self.state.setdefault("gates", {})
         g["script"] = self._artifact_gate_any(["working/deliverables/PRESENTERS-SPEECH.md","working/presenter-speech/PRESENTERS-SPEECH.md"], 2048)
@@ -65,6 +78,15 @@ class Gates:
         floor = 9000
         d = self.run_dir / "working" / "prompts"
         if not d.is_dir(): return {"state":"fail","evidence":"working/prompts","reason":"no prompts directory -- nothing to measure"}
+        # FIX-22 / D16: a zero-padding naming collision (slide-1.txt vs slide-01.txt)
+        # or any non-canonical prompt filename fails the gate BEFORE the floor measure —
+        # two files for one slide would silently ship a wrong/duplicate render.
+        _pg = self._prompt_gate()
+        if _pg is not None:
+            dir_problems = _pg.prompt_dir_problems(d)
+            if dir_problems:
+                return {"state":"fail","evidence":"working/prompts",
+                        "reason":"; ".join(dir_problems[:5])}
         files = sorted(d.glob("slide-*.txt"))
         if not files: return {"state":"fail","evidence":"working/prompts","reason":"prompts directory is empty"}
         lengths = [(f.name, len(f.read_text(encoding="utf-8", errors="replace"))) for f in files]
