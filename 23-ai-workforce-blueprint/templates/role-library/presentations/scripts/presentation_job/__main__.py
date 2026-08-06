@@ -10,6 +10,7 @@ from .state import (
     StateStore, RunLock, utcnow, sha256_text, _read_json,
     die, EXIT_OK, EXIT_USAGE, EXIT_MANIFEST_MISMATCH,
     EXIT_STATE_CORRUPT, EXIT_LOCK_HELD, STATE_SCHEMA_VERSION,
+    EXIT_GATE_BLOCKED,
 )
 from .manifest import Manifest, resolve_manifest
 from .phases import Engine
@@ -41,6 +42,10 @@ def build_parser() -> argparse.ArgumentParser:
                         "reports only unless --apply is given")
     m.add_argument("--sweep-undeliverable", action="store_true",
                    help="retry every queued undeliverable message for --run-dir, oldest first")
+    m.add_argument("--workingset", nargs="?", const="__all__", default=None, metavar="PHASE",
+                   help="FIX-20: measure one phase's working-set token count (or all phases) and "
+                        "report fit against the context-window cap. Exit 0 if every measured phase "
+                        "fits one window, exit 3 (EXIT_GATE_BLOCKED) if any exceeds it.")
     p.add_argument("--run-dir", type=Path, help="the job's run directory")
     p.add_argument("--intake", type=Path, help="intake JSON for --new")
     p.add_argument("--manifest", help="explicit PIPELINE-MANIFEST.json path")
@@ -197,6 +202,50 @@ def cmd_sweep_undeliverable(args) -> int:
         return EXIT_OK if still == 0 else 1
 
 
+def cmd_workingset(args, scripts_dir: Path) -> int:
+    """FIX-20 gate: measure phase working sets against the context-window cap.
+
+    With no phase argument, measures every manifest phase. Prints one JSON
+    report per phase. Exit 0 when every measured phase fits one context
+    window; exit EXIT_GATE_BLOCKED (3) when any phase's estimated token count
+    exceeds the cap. Reading a run dir; never mutates state."""
+    from .workingset import measure_all, measure_workingset, list_checkpoints
+    run_dir = args.run_dir.expanduser().resolve()
+    manifest = None
+    store = StateStore(run_dir)
+    state = {}
+    if store.exists():
+        state = store.load()
+        mp = state.get("manifest_path")
+        if mp and Path(mp).is_file():
+            manifest = Manifest(Path(mp))
+
+    results = []
+    if args.workingset == "__all__":
+        results = measure_all(run_dir, manifest)
+    else:
+        results = [measure_workingset(run_dir, args.workingset, manifest)]
+
+    checkpoints = list_checkpoints(run_dir)
+    overview = {
+        "mode": "all" if args.workingset == "__all__" else args.workingset,
+        "run_dir": str(run_dir),
+        "phases_measured": len(results),
+        "context_window_cap": results[0]["context_window_cap"] if results else None,
+        "phases_fit": sum(1 for r in results if r["fits"]),
+        "phases_over": sum(1 for r in results if not r["fits"]),
+        "disk_checkpoints": checkpoints,
+        "measurements": results,
+    }
+    print(json.dumps(overview, indent=2))
+    for r in results:
+        if not r["fits"]:
+            print(f"AF-WORKINGSET-OVER: phase {r['phase_id']} estimated "
+                  f"{r['estimated_tokens']} tokens, cap {r['context_window_cap']} "
+                  f"({r['tokens_pct_of_cap'] * 100:.1f}% of window)", file=sys.stderr)
+    return EXIT_OK if all(r["fits"] for r in results) else EXIT_GATE_BLOCKED
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
     scripts_dir = Path(__file__).resolve().parent.parent
@@ -241,6 +290,8 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     if args.new:
         return cmd_new(args, scripts_dir)
+    if args.workingset is not None:
+        return cmd_workingset(args, scripts_dir)
     if args.status:
         return cmd_status(args)
     if args.sweep_undeliverable:
