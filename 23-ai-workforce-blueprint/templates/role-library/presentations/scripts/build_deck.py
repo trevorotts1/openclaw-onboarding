@@ -249,6 +249,23 @@ POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
 
+# ---------------------------------------------------------------------------
+# BATCH-RENDER cadence (FIX-5 / D22 root cause B). KIE allows 20 new generation
+# requests per 10s per account and 100+ concurrent tasks. The old path submitted
+# ONE slide and polled it to completion before submitting the next (or ran a
+# small thread pool), which serialized submit+poll+download and wasted 20+ min.
+# The batch path submits ALL prompts once at BATCH_SUBMIT_INTERVAL_S (0.6s),
+# so a 20-slide deck lands its 20 createTask calls in ~12s — inside the 20/10s
+# window, empirically proven 200 for a burst of 8 (see ERRORS-DETECTED D22) —
+# then polls all taskIds together every BATCH_POLL_INTERVAL_S and downloads each
+# image the moment ITS task completes (downloads do not wait for the slowest
+# slide). These are the DEFAULTS; render_slides_batch accepts them as parameters
+# so a box can tune the cadence at the call site without a code edit. The
+# defaults implement the documented 20/10s + concurrent-task model.
+BATCH_SUBMIT_INTERVAL_S = 0.6   # seconds between consecutive createTask calls
+BATCH_POLL_INTERVAL_S = 10.0    # seconds between poll passes over ALL pending tasks
+BATCH_MAX_POLL_SECONDS = 900    # hard cap (15 min) — a stuck task surfaces FAIL, no hang
+
 # Per-slide retries (full re-submit) on any failure.
 # A KIE failCode 400 "Internal Error, Please try again later" is a VERIFIED
 # TRANSIENT upstream error: retry the IDENTICAL request with exponential backoff
@@ -1460,6 +1477,52 @@ def poll_task(task_id: str, api_key: str) -> str:
     )
 
 
+def poll_task_once(task_id: str, api_key: str) -> dict:
+    """Single recordInfo status check for ONE task (used by the batch poll pass).
+
+    Unlike poll_task — which BLOCKS for a single slide until that slide completes
+    (up to ~7 min) — poll_task_once issues exactly ONE recordInfo GET and returns a
+    plain status dict:
+
+        {"state": "success", "result_url": "<first resultUrls[0]>"}
+        {"state": "<in-flight>", "result_url": None}   # generating/waiting/queuing/etc.
+        raises RuntimeError on a terminal FAIL state
+
+    The batch loop calls this for every pending task on a shared 10s cadence, so one
+    slow slide never delays the download of a fast one and a failed slide surfaces
+    immediately instead of holding the pass. 429 is surfaced as RateLimited (the
+    caller retries that task on the next pass)."""
+    url = f"{POLL_URL}?taskId={task_id}"
+    resp = _http_json("GET", url, api_key)
+    data = resp.get("data") or {}
+    state = str(data.get("state", "")).lower()
+
+    if state == "success":
+        result_json_str = data.get("resultJson")
+        if not result_json_str:
+            raise RuntimeError(
+                f"taskId {task_id}: success but no resultJson: {json.dumps(resp)}")
+        try:
+            result_obj = json.loads(result_json_str)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"taskId {task_id}: resultJson is not valid JSON: {exc}") from exc
+        urls = result_obj.get("resultUrls", []) or []
+        if not urls:
+            raise RuntimeError(f"taskId {task_id}: empty resultUrls: {json.dumps(result_obj)}")
+        return {"state": "success", "result_url": urls[0]}
+
+    if state in ("fail", "failed", "error", "cancelled"):
+        raise RuntimeError(
+            f"taskId {task_id}: terminal state '{state}' "
+            f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
+        )
+
+    # Any other state = still in flight (generating/waiting/queuing/queued/processing/
+    # running/pending). Return it verbatim so the batch loop can log + keep polling.
+    return {"state": state, "result_url": None}
+
+
 def download_unauthenticated(url: str, dest: Path) -> None:
     """UNAUTHENTICATED GET of the CDN result URL (Bearer token causes 403)."""
     # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
@@ -1646,6 +1709,163 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 time.sleep(backoff)
 
     raise RuntimeError(f"{name}: failed after {SLIDE_MAX_ATTEMPTS} attempts. Last error: {last_err}")
+
+
+# ---------------------------------------------------------------------------
+# BATCH RENDER (FIX-5 / D22 root cause B) — submit ALL prompts once, then poll
+# all together, download each image the moment ITS task finishes.
+# ---------------------------------------------------------------------------
+
+def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: Path,
+                        has_official_logo: bool = False, logo_url: Optional[str] = None,
+                        submit_interval: float = BATCH_SUBMIT_INTERVAL_S,
+                        poll_interval: float = BATCH_POLL_INTERVAL_S,
+                        max_seconds: float = BATCH_MAX_POLL_SECONDS) -> dict:
+    """Batch-render every slide against KIE.ai, the way D22's live fix proved works.
+
+    Phase A — SUBMIT ALL: every prompt is submitted once to createTask, spaced
+      BATCH_SUBMIT_INTERVAL_S (0.6s) apart. KIE allows 20 requests per 10s and 100+
+      concurrent tasks (verified live: a burst of 8 rapid submits all returned 200;
+      a 17-slide batch rendered + downloaded in ~3 min), so a 20-slide deck lands its
+      whole submission window in ~12s — far under the 20/10s cap. A 429 (rate limit)
+      is the ONLY submission error that retries, with the existing RATE_LIMIT_SLEEP_S
+      backoff; any other error is recorded against that slide and submission continues,
+      so one bad prompt never blocks the other 19 (the run still FAILS LOUD at the end
+      if any slide failed — never a silently-partial deck).
+
+    Phase B — POLL ALL + DOWNLOAD AS FINISHED: every submitted taskId is polled on
+      one shared cadence (BATCH_POLL_INTERVAL_S = 10s). The moment a task's state
+      turns 'success' its image is downloaded + verified + recorded, and that task is
+      removed from the poll set — so a fast slide is never held hostage by the slowest
+      one. Terminal states (fail/failed/error/cancelled) are recorded as failures and
+      also removed. A hard wall-clock cap (BATCH_MAX_POLL_SECONDS = 15 min) makes a
+      genuinely-stuck task surface FAIL instead of hanging the run forever (D14).
+
+    The per-slide rich-prompt gate (load_rich_prompt), the English pin, logo compositing
+    (i2i via input_urls), post-download aspect/OCR verification, and the U028 task-id
+    checkpoint all still run per slide — batch does NOT weaken a single gate; it only
+    changes WHEN submission happens (all up front) and WHEN polling happens (all at once).
+
+    Returns the same contract main() consumed from the thread pool:
+      {"rendered": [ {slide,file,taskId} ... ], "failures": [ {slide,error} ... ]}
+    """
+    ordered = sorted(slides, key=lambda s: s["slide"])
+    n = len(ordered)
+    renders_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- Phase A: submit every prompt once, 0.6s apart ----
+    submitted = {}  # ordinal -> (slide, task_id)
+    submit_failures = []  # {slide, error}
+    start = time.time()
+    print(f"=== BATCH SUBMIT: {n} prompts, {submit_interval:.1f}s apart "
+          f"(kie 20/10s cap + 100 concurrent tasks) ===", flush=True)
+    for slide in ordered:
+        ordinal = int(slide["slide"])
+        name = f"slide-{ordinal:02d}"
+        try:
+            prompt = load_rich_prompt(slide, run_dir)
+            # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
+            # everything else (network, shape, 401) fails that slide without blocking
+            # the batch. Never re-submit a slide that already has a taskId.
+            while True:
+                try:
+                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                    break
+                except RateLimited:
+                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
+                    time.sleep(RATE_LIMIT_SLEEP_S)
+            submitted[ordinal] = (slide, task_id)
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
+            print(f"  [{name}] submitted -> taskId={task_id}", flush=True)
+        except Exception as exc:  # noqa: BLE001 — one bad prompt must not block 19
+            submit_failures.append({"slide": ordinal, "error": str(exc)})
+            print(f"  [{name}] SUBMIT FAILED: {exc}", file=sys.stderr, flush=True)
+        # Space submissions inside the 20/10s window.
+        if submit_interval > 0:
+            time.sleep(submit_interval)
+    submit_wall = time.time() - start
+    print(f"=== BATCH SUBMIT DONE: {len(submitted)}/{n} submitted in "
+          f"{submit_wall:.1f}s ===", flush=True)
+
+    # ---- Phase B: poll every submitted task together, download as each finishes ----
+    rendered = []
+    poll_failures = list(submit_failures)
+    pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
+    poll_start = time.time()
+    pass_no = 0
+    while pending:
+        elapsed = time.time() - poll_start
+        if elapsed >= max_seconds:
+            # Hard cap: whatever is still pending is STUCK — surface FAIL, no hang.
+            for ordinal, (slide, task_id) in list(pending.items()):
+                name = f"slide-{ordinal:02d}"
+                poll_failures.append({"slide": ordinal,
+                                      "error": f"taskId {task_id} still pending after "
+                                               f"{max_seconds:.0f}s — surfaced FAIL (no hang)"})
+                print(f"  [{name}] POLL CAP REACHED ({max_seconds:.0f}s) — FAIL: {task_id}",
+                      file=sys.stderr, flush=True)
+                _clear_pending_task(run_dir, ordinal)
+            pending.clear()
+            break
+
+        pass_no += 1
+        done_this_pass = []
+        for ordinal, (slide, task_id) in list(pending.items()):
+            name = f"slide-{ordinal:02d}"
+            try:
+                status = poll_task_once(task_id, api_key)
+            except RateLimited:
+                # Transient 429 on the poll — retry the same task on the next pass.
+                print(f"    [poll {pass_no}] {name} 429 — retry next pass", flush=True)
+                continue
+            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+                print(f"  [{name}] POLL FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+                done_this_pass.append(ordinal)
+                continue
+
+            if status.get("state") != "success":
+                # Still in flight (generating/waiting/queuing/...). Leave it in the
+                # pending set and let the next shared pass check it again — a slow
+                # slide never delays a fast one.
+                print(f"    [poll {pass_no}] {name} state={status.get('state')!r}", flush=True)
+                continue
+
+            result_url = status.get("result_url")
+            try:
+                out_path = renders_dir / f"{name}.png"
+                download_unauthenticated(result_url, out_path)
+                verify_png(out_path)
+                _verify_aspect_and_readback(out_path, slide, ordinal)
+                size = out_path.stat().st_size
+                print(f"  [{name}] downloaded+verified -> {out_path} ({size:,} bytes)",
+                      flush=True)
+                _record_completed_task(run_dir, ordinal, task_id, out_path)
+                rendered.append({"slide": ordinal, "file": str(out_path), "taskId": task_id})
+            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+                print(f"  [{name}] DOWNLOAD/VERIFY FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+            done_this_pass.append(ordinal)
+
+        for ordinal in done_this_pass:
+            pending.pop(ordinal, None)
+
+        if pending:
+            remaining = ", ".join(f"slide-{o:02d}" for o in sorted(pending))
+            print(f"    [poll pass {pass_no}] waiting on: {remaining} "
+                  f"(next poll in {poll_interval:.0f}s)", flush=True)
+            time.sleep(poll_interval)
+
+    poll_wall = time.time() - poll_start
+    print(f"=== BATCH RENDER DONE: {len(rendered)}/{n} rendered in "
+          f"{time.time() - start:.1f}s total (submit {submit_wall:.1f}s + "
+          f"poll/download {poll_wall:.1f}s) ===", flush=True)
+
+    rendered.sort(key=lambda r: r["slide"])
+    poll_failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
+    return {"rendered": rendered, "failures": poll_failures}
 
 
 # ---------------------------------------------------------------------------
@@ -9800,31 +10020,25 @@ def main():
     has_official_logo = (logo_path is not None) or (logo_url is not None)
     ordered = sorted(slides, key=lambda s: s["slide"])
 
-    # PARALLEL RENDER: each slide is an independent KIE generation, so fan them out
-    # across a bounded ThreadPoolExecutor. Per-slide retry / 429 backoff still live
-    # inside render_slide; we just run the slides concurrently.
-    workers = min(_render_workers(), len(ordered))
-    print(f"=== rendering {len(ordered)} slides with {workers} parallel workers ===\n", flush=True)
+    # BATCH RENDER (FIX-5 / D22 root cause B): submit ALL prompts once (0.6s apart,
+    # inside kie's 20/10s window + 100 concurrent tasks), then poll every submitted
+    # task together every 10s and download each image the moment ITS task finishes.
+    # This replaces the old submit-one-then-poll path, which serialized submit+poll+
+    # download per slide and wasted 20+ min on a 20-slide deck. Per-slide gates are
+    # unchanged: rich-prompt floor, English pin, i2i logo compositing, post-download
+    # aspect/OCR verification and the U028 task-id checkpoint all still run.
+    print(f"=== rendering {len(ordered)} slides via BATCH (submit all, then poll all) ===\n",
+          flush=True)
     # BOARD: the render phase is now the one being worked (fail-soft; no-op when
     # the board is disabled / the ingest never returned a task_id).
     if not adhoc:
         _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "in_progress",
-                           note=f"rendering {len(ordered)} slides")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_slide = {
-            pool.submit(render_slide, slide, api_key, renders_dir, run_dir,
-                        has_official_logo=has_official_logo, logo_url=logo_url): slide
-            for slide in ordered
-        }
-        for fut in concurrent.futures.as_completed(future_to_slide):
-            slide = future_to_slide[fut]
-            try:
-                result = fut.result()
-                rendered.append(result)
-                task_ids.append(result["taskId"])
-            except Exception as exc:  # noqa: BLE001
-                failures.append({"slide": slide.get("slide"), "error": str(exc)})
-                print(f"  SLIDE FAILED: {exc}", file=sys.stderr, flush=True)
+                           note=f"batch-rendering {len(ordered)} slides")
+    batch_result = render_slides_batch(
+        ordered, api_key, renders_dir, run_dir,
+        has_official_logo=has_official_logo, logo_url=logo_url)
+    rendered = batch_result["rendered"]
+    failures = batch_result["failures"]
 
     # Deterministic order for the summary / manifest regardless of completion order.
     rendered.sort(key=lambda r: r["slide"])
