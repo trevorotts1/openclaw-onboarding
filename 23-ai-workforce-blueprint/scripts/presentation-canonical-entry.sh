@@ -280,6 +280,23 @@ gate_fail() {
     exit "$exitcode"
 }
 
+# trace_fail — the intake-TRACE evidence gate has NO owner override (FIX-3).
+# The transcript is EVIDENCE that a real one-at-a-time conversation happened; a
+# gate you can waive is a gate a hand-written ledger can skip. Distinguishes the
+# trace gate from every waivable gate above.
+trace_fail() {
+    local code="$1" exitcode="$2"; shift 2
+    echo >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    echo "GATE FAILED [$code]: $*" >&2
+    echo "This gate is the intake-CONVERSATION EVIDENCE gate and has NO owner override:" >&2
+    echo "the intake transcript is proof the interview was CONDUCTED, not a skippable" >&2
+    echo "permission. Run the real interview (deck-intake-driver.py --signature" >&2
+    echo "  --next/--answer) so the driver writes the transcript itself." >&2
+    printf '!%.0s' {1..78} >&2; echo >&2
+    exit "$exitcode"
+}
+
 # ===========================================================================
 # GATE 0 — INTAKE-LEDGER CHECK (fail-closed)
 # The intake interview (deck-intake-driver.py) must be complete before any
@@ -385,6 +402,66 @@ except Exception:
 }
 
 check_intake_ledger "$RUN_DIR"
+
+# ===========================================================================
+# GATE 0b — INTAKE-TRACE CHECK (FIX-3: intake must be a REAL conversation)
+# ---------------------------------------------------------------------------
+# The intake LEDGER (GATE 0 above) proves the interview was COMPLETED. It does
+# NOT prove the interview was CONDUCTED — a hand-written intake_ledger.json with
+# invented answers (ERROR 3 of the 2026-08-06 E2E audit: the agent deleted the
+# driver's ledger and hand-wrote it in python) satisfies GATE 0 with zero
+# conversation. The TRANSCRIPT is the evidence that a real one-at-a-time
+# conversation happened: deck-intake-driver.py --signature's turn-gate writes it
+# mechanically as a SIGNED DRIVER ENVELOPE.
+#
+# This gate requires working/interview/intake_transcript.json to exist AND be
+# non-trivial. It is NOT owner-skippable: the transcript is EVIDENCE, not a
+# gate you can waive (FIX-PLAN-OPUS Error 3 fix 1: "only the ledger may have an
+# owner waiver; the trace is evidence, not a gate you can waive"). A hand-written
+# intake_ledger.json with no transcript FAILS the build.
+#
+# Fail-closed: absent file, empty file, or a sub-200-byte placeholder all fail
+# with INTAKE-TRACE-MISSING. --plan (read-only inspection) is exempt exactly as
+# GATE 0 is. A signature-presentation intake (intake.json deck_type ==
+# signature_presentation) is additionally held to the signed driver-envelope
+# requirement by the engine's P-SP-INTAKE-TRACE preflight (AF-INTAKE-BATCH).
+# ===========================================================================
+note "GATE 0b — INTAKE-TRACE CHECK (intake_transcript.json required; NO owner override)"
+check_intake_trace() {
+    local run_dir="$1"
+    [ -n "$run_dir" ] || return 0
+    [ "$PLAN" -eq 1 ] && return 0
+    _INT_TRACE="$run_dir/working/interview/intake_transcript.json"
+    if [ ! -f "$_INT_TRACE" ]; then
+        trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json missing ($_INT_TRACE) — the intake interview must be a REAL conversation (deck-intake-driver.py --signature --next/--answer). A hand-written intake_ledger.json is NOT an interview. This gate has NO owner override: the trace is evidence of the conversation, not a skippable gate."
+    fi
+    if command -v python3 >/dev/null 2>&1; then
+        local _trace_bytes
+        _trace_bytes="$(python3 -c "
+import json, sys
+p = '$run_dir/working/interview/intake_transcript.json'
+try:
+    with open(p, encoding='utf-8') as f:
+        raw = f.read()
+except OSError:
+    print('0'); sys.exit(0)
+print('%d' % len(raw.strip()))
+" 2>/dev/null)"
+        _trace_bytes="$(printf '%s' "$_trace_bytes" | tr -d ' ')"
+        if [ -z "$_trace_bytes" ] || [ "$_trace_bytes" -lt 200 ]; then
+            trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_trace_bytes:-0} bytes — a real one-at-a-time intake conversation produces a multi-KB transcript. Run deck-intake-driver.py --signature --next/--answer/--complete and do NOT hand-write the transcript. No owner override for the trace."
+        fi
+    else
+        # python3 absent: size-only fallback.
+        local _sz
+        _sz="$(wc -c < "$_INT_TRACE" 2>/dev/null | tr -d ' ')"
+        [ -n "$_sz" ] && [ "$_sz" -ge 200 ] || trace_fail "INTAKE-TRACE-MISSING" 5 "intake_transcript.json is ${_sz:-0} bytes — a real interview produces a multi-KB transcript. No owner override for the trace."
+    fi
+    note "  GATE 0b PASSED (intake transcript present and non-trivial)"
+    return 0
+}
+
+check_intake_trace "$RUN_DIR"
 
 # ===========================================================================
 # GATE 1 — DEPS CHECK (the four runtime deps; exit 6 PRESENTATION_DEPS_MISSING)

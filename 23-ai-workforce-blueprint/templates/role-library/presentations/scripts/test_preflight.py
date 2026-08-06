@@ -3156,24 +3156,59 @@ def _sp_provers():
 # A COMPLIANT intake conversation: choice-first opener, then exactly one bank question
 # per assistant turn. This is the shape deck-intake-driver.py's turn-gate records, and it
 # is what P-SP-INTAKE-TRACE (A10 / T0-12) proves. A signature run dir gets it by default
-# so every other SP fixture stays green against the new gate.
+# so every other SP fixture stays green against the new gate. FIX-3: each turn carries the
+# bank question id it was surfaced under (the driver stamps `qid` per turn), so the
+# signed-envelope provenance gate accepts it.
 _SP_CLEAN_TRANSCRIPT = [
-    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
-    {"role": "owner", "text": "quick"},
-    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
-    {"role": "owner", "text": "The Signature Talk"},
-    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?"},
-    {"role": "owner", "text": "the overlooked mid-career expert"},
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?",
+     "qid": "interview_choice"},
+    {"role": "owner", "text": "quick", "qid": "interview_choice"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+    {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?", "qid": "q3"},
+    {"role": "owner", "text": "the overlooked mid-career expert", "qid": "q3"},
 ]
 # The documented anti-pattern: three bank questions dumped in ONE assistant turn, with no
-# quick-vs-in-depth choice offered first.
+# quick-vs-in-depth choice offered first. Still a signed envelope so the failure surfaced
+# is the CONVERSATION batch (BATCH-IN-TURN), not the provenance.
 _SP_BATCHED_TRANSCRIPT = [
     {"role": "assistant", "text": (
         "What is the title of your Signature Presentation? "
         "Any specific pain points to address in the avatar section? "
-        "What product(s) will you offer at the end?")},
-    {"role": "owner", "text": "give me whatever you have got and I will get moving"},
+        "What product(s) will you offer at the end?"),
+     "qid": "q1"},
+    {"role": "owner", "text": "give me whatever you have got and I will get moving", "qid": "q1"},
 ]
+
+
+def _sp_qid_sequence(turns):
+    """Derive the monotonic qid sequence from the assistant turns' qid stamps,
+    mirroring deck-intake-driver._transcript_qid_sequence (first-surfaced order,
+    no duplicates)."""
+    seen = []
+    seen_set = set()
+    for t in turns:
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("role") or "").strip().lower() != "assistant":
+            continue
+        qid = str(t.get("qid") or "").strip()
+        if qid and qid not in seen_set:
+            seen_set.add(qid)
+            seen.append(qid)
+    return seen
+
+
+def _sp_signed_envelope(turns):
+    """FIX-3: wrap a turn list in the signed driver envelope the turn-gate writes.
+    Falls back to a bare list when the checker module is not resolvable (so the
+    conversation-rule fixtures still work in isolation); the engine's provenance
+    gate requires the envelope, and the checker's own module-level provenance
+    tests cover the bare-list rejection."""
+    itc = build_deck._sp_prover("intake_trace_check")
+    if itc is not None and hasattr(itc, "build_driver_envelope"):
+        return itc.build_driver_envelope(_sp_qid_sequence(turns), turns)
+    return turns
 
 
 def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript="clean"):
@@ -3181,8 +3216,11 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     signature=True (else omitted, so the _chk_sp_* wrappers DEFER).
 
     transcript: "clean" (default) writes the compliant one-question-per-turn intake
-    transcript at working/interview/intake_transcript.json; "batched" writes the batched
-    anti-pattern; None writes no transcript at all (the OMISSION case)."""
+    transcript at working/interview/intake_transcript.json (as a SIGNED DRIVER
+    ENVELOPE — FIX-3); "batched" writes the batched anti-pattern (signed envelope,
+    so the conversation-rule failure is the BATCH, not the provenance); "bare"
+    writes a hand-written BARE LIST (the fabricated shape FIX-3 rejects);
+    None writes no transcript at all (the OMISSION case)."""
     rd = Path(tempfile.mkdtemp(prefix="deck_sp_test_"))
     (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
     intake = {"deck_type": "signature_presentation"} if signature else {"interview_confirmed": True}
@@ -3192,9 +3230,18 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     if sp_structure is not None:
         (rd / "working" / "copy" / "sp_structure.json").write_text(json.dumps(sp_structure))
     if transcript is not None:
-        turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
-        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
-        (rd / "working" / "interview" / "intake_transcript.json").write_text(json.dumps(turns))
+        if transcript == "bare":
+            # FABRICATED shape (FIX-3): a hand-written bare JSON list — no driver
+            # envelope, no signature. Written RAW so the provenance gate rejects it.
+            turns = _SP_CLEAN_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(turns))
+        else:
+            turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(_sp_signed_envelope(turns)))
     return rd
 
 
@@ -3260,6 +3307,13 @@ def _sp_adversarial_cases(spi, sps, spn):
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="batched")))
     cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript=None)))
+    # FIX-3 — FABRICATION: a hand-written BARE LIST transcript (no driver envelope,
+    # no signature) next to a complete hand-written intake_ledger.json. This is the
+    # exact shape ERROR 3 of the 2026-08-06 E2E audit produced. It must FAIL with
+    # AF-INTAKE-BATCH even though its content is conversationally compliant —
+    # a bare list is not proof of a real one-at-a-time conversation.
+    cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
+                  _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="bare")))
     return cases
 
 
