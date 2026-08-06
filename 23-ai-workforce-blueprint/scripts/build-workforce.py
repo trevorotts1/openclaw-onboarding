@@ -174,7 +174,15 @@ except Exception as _e:  # pragma: no cover - defensive
 
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
-    """Return Path to .workforce-build-state.json or None if workspace not found."""
+    """Return Path to .workforce-build-state.json or None if workspace not found.
+
+    SCRATCH ISOLATION (standard-first redesign): $WORKFORCE_BUILD_STATE_FILE
+    overrides resolution (mirrors _build_state_path) so scratch/prebuild runs
+    never read the live box state.
+    """
+    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
+    if _env_state:
+        return Path(_env_state)
     vps = Path("/data/.openclaw/workspace")
     if vps.is_dir():
         return vps / ".workforce-build-state.json"
@@ -369,37 +377,43 @@ def load_non_interactive_config(config_file):
     # with no recorded pack is not industry-custom and must not proceed blindly.
     # Edge case: slug="unknown" is allowed with a loud warning (unclassifiable business
     # should not be un-buildable). Absent slug entirely = hard fail.
-    _state_path = _resolve_build_state_path()
-    if _state_path is not None and _state_path.exists():
-        try:
-            _state = json.loads(_state_path.read_text(encoding="utf-8"))
-            _pack = _state.get("industryPack") or {}
-            _slug = _pack.get("slug")
-            if not _slug:
-                print(
-                    "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
-                    "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
-                    "  Or confirm the vertical in Phase 5 before building.\n"
-                    "  State file: " + str(_state_path),
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            elif _slug == "unknown":
-                print(
-                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
-                    "was detected or confirmed. Building will proceed but industry customization may be generic. "
-                    "Phase 5 confirmation was expected to set the slug.",
-                    file=sys.stderr,
-                )
-        except Exception as _e:
-            print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
-            # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
-    else:
-        print(
-            "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
-            "Proceeding without industry-pack verification.",
-            file=sys.stderr,
-        )
+    # STANDARD-FIRST LANE: the prebuild deliberately records NO industryPack (the
+    # industry is unknown until the interview), so this hard-gate would strand every
+    # web-completed standard-first box. Skip the gate in that lane (the interview's
+    # industry confirmation happens during apply-diff, and _standard_first_mode()
+    # already exempts the consent gate on the same basis).
+    if not _standard_first_mode():
+        _state_path = _resolve_build_state_path()
+        if _state_path is not None and _state_path.exists():
+            try:
+                _state = json.loads(_state_path.read_text(encoding="utf-8"))
+                _pack = _state.get("industryPack") or {}
+                _slug = _pack.get("slug")
+                if not _slug:
+                    print(
+                        "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
+                        "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
+                        "  Or confirm the vertical in Phase 5 before building.\n"
+                        "  State file: " + str(_state_path),
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                elif _slug == "unknown":
+                    print(
+                        "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
+                        "was detected or confirmed. Building will proceed but industry customization may be generic. "
+                        "Phase 5 confirmation was expected to set the slug.",
+                        file=sys.stderr,
+                    )
+            except Exception as _e:
+                print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
+                # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
+        else:
+            print(
+                "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
+                "Proceeding without industry-pack verification.",
+                file=sys.stderr,
+            )
 
     return config
 
