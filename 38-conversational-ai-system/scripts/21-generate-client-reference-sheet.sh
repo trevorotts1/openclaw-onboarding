@@ -442,7 +442,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4-flash:cloud",\n'
+  printf '  "model": "ollama/deepseek-v4-flash:0731-cloud",\n'
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'
@@ -507,7 +507,7 @@ LEAD_BLOCK="$STAGE_DIR/.reference-sheet.lead.md"
   printf '  "match": "%s",\n' "$REF_HOOK_NAME"
   printf '  "action": "agent",\n'
   printf '  "agent_id": "%s",\n' "$REF_AGENT_ID"
-  printf '  "model": "ollama/deepseek-v4-flash:cloud",\n'
+  printf '  "model": "ollama/deepseek-v4-flash:0731-cloud",\n'
   printf '  "wakeMode": "now",\n'
   printf '  "name": "GHL Sales Inbound",\n'
   printf '  "session_key": "hook:ghl:sms:{{contact.id}}",\n'

@@ -209,7 +209,7 @@ trap 'rm -f "$BODY_FILE" 2>/dev/null || true' EXIT
   printf '"match":"%s",'           "$HOOK_NAME"
   printf '"action":"agent",'
   printf '"agent_id":"%s",'        "${ROUTING_AGENT_ID:-${AGENT_ID:-main}}"
-  printf '"model":"%s",'           "${SELF_TEST_MODEL:-ollama/deepseek-v4-flash:cloud}"
+  printf '"model":"%s",'           "${SELF_TEST_MODEL:-ollama/deepseek-v4-flash:0731-cloud}"
   printf '"wakeMode":"now",'
   printf '"name":"Skill38 Self-Test Inbound",'
   printf '"session_key":"hook:ghl:sms:%s",' "$TEST_CONTACT_ID"
