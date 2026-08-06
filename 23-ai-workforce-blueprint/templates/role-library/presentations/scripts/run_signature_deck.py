@@ -1837,6 +1837,50 @@ def main():
                 print("!" * 78 + "\n", file=sys.stderr)
                 sys.exit(EXIT_GUARD_BLOCK)
 
+            # FIX-8: FULL 9-DELIVERABLE BUNDLE GATE (AF-BUNDLE-INCOMPLETE).
+            # The delivery boundary gate above proves the SHIPPED .pptx/.pdf and the
+            # SIX-file client package. This gate separately enforces the NINE-file
+            # OPERATOR build bundle (deck_pptx, deck_pdf, guide_pdf, speech_md,
+            # speech_pdf, speech_fish_md, audio_mp3, infographic_png,
+            # teleprompter_html) — the M2-M9 gap from the live E2E (task e738cff0),
+            # where only the deck PPTX existed. Fail-closed: a partial bundle can
+            # never be reported 'done', and the gate writes bundle_complete.json only
+            # when all nine are present and non-empty. The ONLY bypass is a logged
+            # owner_skip_approval token (gate=AF-BUNDLE-INCOMPLETE) — never an
+            # agent's own choice.
+            try:
+                import fix_bundle_complete as fbc
+                _bundle_dir = fbc.resolve_bundle_dir(run_dir)
+                _bundle_ok, _bundle_missing, _bundle_gate = fbc.run_bundle_gate(
+                    _bundle_dir, deck_slug=_deck_slug(run_dir))
+                if not _bundle_ok:
+                    print("\n" + "!" * 78, file=sys.stderr)
+                    print("FATAL PRE-DELIVERY (BUNDLE GATE): AF-BUNDLE-INCOMPLETE — the "
+                          f"full 9-deliverable bundle is incomplete in {_bundle_dir}:",
+                          file=sys.stderr)
+                    for _k in sorted(_bundle_missing):
+                        print(f"  - {_k}", file=sys.stderr)
+                    print("Re-run the upstream producer roles (guide / speech / audio / "
+                          "infographic / teleprompter) until all nine exist and are "
+                          "non-empty before attesting P9-DELIVER.", file=sys.stderr)
+                    print("The ONLY bypass is a logged owner_skip_approval token "
+                          "(gate=AF-BUNDLE-INCOMPLETE). An agent may NOT self-approve.",
+                          file=sys.stderr)
+                    print("!" * 78 + "\n", file=sys.stderr)
+                    sys.exit(EXIT_GUARD_BLOCK)
+                print("=== FULL-9-BUNDLE GATE: PASS — all nine operator deliverables "
+                      f"present and non-empty (bundle_complete.json: {_bundle_gate}) ===",
+                      flush=True)
+            except SystemExit:
+                raise
+            except Exception as exc:  # noqa: BLE001
+                print("\n" + "!" * 78, file=sys.stderr)
+                print(f"FATAL PRE-DELIVERY (BUNDLE GATE): fix_bundle_complete raised "
+                      f"{exc!r} — the full 9-deliverable bundle cannot be proven "
+                      "(fail-closed).", file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
+
             # FIX 2: prove-deck.py — end-of-process no-skip proof (AF-PROCESS-INTEGRITY).
             # Walks every declared step and asserts ordered / validated / reported.
             # Exit 9 from prove-deck is a HARD block on delivery attestation.

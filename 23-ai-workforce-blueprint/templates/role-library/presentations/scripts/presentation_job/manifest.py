@@ -234,7 +234,9 @@ def _as_list(v: Any) -> List[str]:
 # the six domain QC reports, verifies provenance, and writes final_qc_report.json) while main's
 # v34 carries AF-OCR-ENGINE-MISSING — neither parent had both features at v34, so the combined
 # manifest is bumped to 35 to keep the floor and the manifest in lockstep.
-MIN_MANIFEST_VERSION = 35  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 35 -> 36: FIX-8 registers AF-BUNDLE-INCOMPLETE (the full 9-deliverable bundle gate,
+# fix_bundle_complete.py) in PIPELINE-MANIFEST.autofails. The floor moves WITH the manifest.
+MIN_MANIFEST_VERSION = 36  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
