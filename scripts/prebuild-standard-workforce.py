@@ -146,12 +146,15 @@ EXIT CODES
   7  Command Center board join verification failed (DRIFT / CANNOT-VOUCH /
      GATE-ERROR) after --apply — chosen/provisioned/displayed disagree or
      could not be proven; needs operator attention
+  9  STANDARD_FIRST_ONBOARDING flag is off/absent — prebuild refused,
+     fall back to legacy interview-first lane (the rollback switch)
 """
 import argparse
 import importlib.util as _ilu
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from datetime import datetime, timezone
@@ -180,9 +183,19 @@ EXIT_CONSENT_REFUSED = 2
 EXIT_INTERVIEW_COMPLETE = 4
 EXIT_LANE_REFUSED = 5
 EXIT_JOIN_FAILED = 7
+EXIT_FLAG_OFF = 9  # STANDARD_FIRST_ONBOARDING is off/absent (rollback to legacy lane)
 
 # Join verdicts that block success (mirrors materialize-missing-departments.py).
 _BLOCKING_JOIN_STATUSES = ("DRIFT", "CANNOT-VOUCH", "GATE-ERROR")
+
+# STANDARD_FIRST_ONBOARDING flag: the operator env var that gates whether new
+# boxes enter the standard-first prebuild lane. Truthy values (1/true/yes/on,
+# case-insensitive) enable the prebuild. Absent or falsy (0/false/no/off)
+# disable it and fall back to the legacy interview-first lane. This is a
+# fail-safe: the flag defaults to OFF when unset, so an operator who has not
+# explicitly opted in never enters the standard-first lane.
+_TRUTHY_VALUES = frozenset({"1", "true", "yes", "on"})
+_STANDARD_FIRST_FLAG = os.environ.get("STANDARD_FIRST_ONBOARDING", "").strip().lower()
 
 
 def _log(msg):
@@ -307,6 +320,67 @@ def _atomic_write_json(path, obj):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(json.dumps(obj, indent=2), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def _write_prebuild_state(state_path, update, apply_):
+    """Write buildType + standardPrebuild into the build-state file.
+    Called BEFORE materialization (status=pending), on every failure path
+    (status=failed + reason), and on success (status=done — the existing
+    Step 8 write).  If apply_ is False, only report what would be written."""
+    if apply_:
+        try:
+            current = _load_state(state_path)
+        except Exception:
+            current = {}
+        current["buildType"] = "standard-first"
+        current["standardPrebuild"] = update
+        try:
+            _atomic_write_json(state_path, current)
+        except OSError as exc:
+            _log(f"WARNING: could not write prebuild state to {state_path}: {exc}")
+    else:
+        _log(f"  (dry-run) would write buildType=standard-first + standardPrebuild={update.get('status')} -> {state_path}")
+
+
+def _dept_has_roles(dept_dir):
+    """Check whether a department directory has any role content (subdirectories
+    or files beyond the skeleton).  Returns False for empty or skeleton-only
+    directories — these are unrecoverable partial prebuilds that need re-fill."""
+    if not dept_dir.is_dir():
+        return False
+    # A department directory with role workspaces has at least one subdirectory
+    # (the role workspace dirs).  A skeleton dir created by a partial prebuild
+    # that was killed mid-materialize has zero children (or only empty children).
+    try:
+        children = list(dept_dir.iterdir())
+    except OSError:
+        return False
+    if not children:
+        return False
+    # Check that at least one child has content (not an empty subdir).
+    for child in children:
+        if child.is_dir():
+            try:
+                if list(child.iterdir()):
+                    return True
+            except OSError:
+                pass
+        elif child.is_file():
+            return True
+    return False
+
+
+def _resume_empty_depts(expected_floor, departments_dir):
+    """Scan expected floor departments; any that have an existing but empty
+    (role-less) directory are returned as a list of department slugs that need
+    re-filling.  This lets the materializer fill roles into partial-prebuilt
+    directories rather than skipping them."""
+    empty = []
+    for dept_id in expected_floor:
+        dept_path = departments_dir / dept_id
+        if dept_path.is_dir() and not _dept_has_roles(dept_path):
+            empty.append(dept_id)
+    return empty
 
 
 def _git_short_sha():
@@ -440,6 +514,15 @@ def main(argv=None):
                          "(or $DASHBOARD_DB_PATH / $DATABASE_PATH). EXPLICIT-SIGNAL ONLY — "
                          "with none set, CC seeding + join proof are NOT-APPLICABLE and "
                          "recorded as such.")
+    ap.add_argument("--standard-first-onboarding", default=None,
+                    choices=["at-onboarding", "on-first-answer"],
+                    help="WHEN the prebuild fires (standardFirstOnboarding config). "
+                         "'at-onboarding' (DEFAULT) = materialize immediately at operator "
+                         "consent (the original prebuild behavior). 'on-first-answer' = "
+                         "DEFER: record the consent, arm the lane, but do NOT materialize "
+                         "until the owner answers their first interview question. If absent "
+                         "and the build-state already carries a standardFirstOnboarding "
+                         "value, that value is honored; otherwise defaults to 'at-onboarding'.")
     ap.add_argument("--apply", action="store_true",
                     help="mutate (default: dry-run report only)")
     ap.add_argument("--json", action="store_true", help="emit the result JSON on stdout")
@@ -576,6 +659,53 @@ def main(argv=None):
                             "is unreadable AND the hardcoded fallback failed; refusing to "
                             "prebuild nothing"))
 
+    # ── RESUME CHECK: partial prebuild with empty-but-present dept dirs ──
+    # A prebuild killed mid-materialize can leave department directories that
+    # exist but have no role content (empty or skeleton-only).  evaluate_floor()
+    # is dir-level only, so it sees these as "present" and the materializer's
+    # skip-existing logic leaves them unfilled — making the prebuild unrecoverable
+    # without manual intervention.  Remove role-less department directories so
+    # they show up as "missing" and the materializer fills them fresh.
+    empty_depts = _resume_empty_depts(expected_floor, dd)
+    if empty_depts:
+        _log(f"resume: {len(empty_depts)} empty/role-less dept dirs detected — "
+             f"removing so they re-materialize: {', '.join(empty_depts)}")
+        if args.apply:
+            for eid in empty_depts:
+                epath = dd / eid
+                if epath.is_dir():
+                    try:
+                        shutil.rmtree(epath)
+                    except OSError as exc:
+                        _log(f"  WARNING: could not remove {epath}: {exc}")
+        result["resume_empty_depts"] = empty_depts
+        result["resume_empty_depts_action"] = "removed-for-re-fill" if args.apply else "would-remove-for-re-fill"
+        # Re-evaluate the floor after removal so the materializer sees them as missing.
+        verdict_before = df.evaluate_floor(departments_dir=dd, build_state=state)
+        expected_floor = list(verdict_before["expected_floor"])
+        result["expected_floor"] = expected_floor
+        result["expected_floor_count"] = len(expected_floor)
+        _log(f"floor re-evaluated after empty-dept removal: {len(expected_floor)} departments")
+    else:
+        result["resume_empty_depts"] = []
+
+    # ── PRE-MATERIALIZER STATE WRITE (status=pending, so a mid-prebuild kill
+    #    leaves a recoverable state instead of a box that looks legacy) ──
+    if args.apply:
+        _write_prebuild_state(state_path, {
+            "status": "pending",
+            "standardReadyAt": None,
+            "floorVersion": "pending",
+            "prebuiltDepartments": [],
+            "agentRegistration": "deferred",
+            "source": "prebuild-standard-workforce.py",
+            "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                   f"{consent['decidedAt']}/{consent['decidedBy']}"),
+        }, args.apply)
+        result["prebuild_state"] = "wrote pending (pre-materializer)"
+    else:
+        result["prebuild_state"] = "would write pending (pre-materializer, dry-run)"
+
     # ══ STEP 3 — MATERIALIZATION (shipped materializer, additive-only) ══
     mat_script = skill23 / "materialize-missing-departments.py"
     mat_cmd = [sys.executable, str(mat_script), "--departments-dir", str(dd), "--json",
@@ -601,13 +731,39 @@ def main(argv=None):
         # rc 3 = dry-run with a short floor (EXPECTED in dry-run mode).
         if args.apply:
             result["standardPrebuildStatus"] = "failed"
-            result["reason"] = (f"materializer rc={mat_proc.returncode}: "
-                                f"{(mat_report or {}).get('reason') or 'see materializer output'}")
+            reason_str = (f"materializer rc={mat_proc.returncode}: "
+                          f"{(mat_report or {}).get('reason') or 'see materializer output'}")
+            result["reason"] = reason_str
+            _write_prebuild_state(state_path, {
+                "status": "failed",
+                "standardReadyAt": None,
+                "floorVersion": "failed",
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "failureReason": reason_str,
+                "failedAt": _now_iso(),
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }, args.apply)
             return emit(EXIT_STEP_FAILED)
         # dry-run: a short floor is exactly what the dry-run reports
     if args.apply and mat_proc.returncode == 0 and (mat_report or {}).get("after_floor_met") is False:
         result["standardPrebuildStatus"] = "failed"
-        result["reason"] = "materializer returned 0 but reports the floor still short"
+        reason_str = "materializer returned 0 but reports the floor still short"
+        result["reason"] = reason_str
+        _write_prebuild_state(state_path, {
+            "status": "failed",
+            "standardReadyAt": None,
+            "floorVersion": "failed",
+            "prebuiltDepartments": [],
+            "agentRegistration": "deferred",
+            "source": "prebuild-standard-workforce.py",
+            "failureReason": reason_str,
+            "failedAt": _now_iso(),
+            "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                   f"{consent['decidedAt']}/{consent['decidedBy']}"),
+        }, args.apply)
         return emit(EXIT_STEP_FAILED)
 
     # ══ STEP 4 — PERSONAS (token-fill only, never LLM-authored) ══
@@ -623,8 +779,21 @@ def main(argv=None):
         result["personas_rc"] = pproc.returncode
         if pproc.returncode != 0 and args.apply:
             result["standardPrebuildStatus"] = "failed"
-            result["reason"] = (f"generate-governing-personas.sh rc={pproc.returncode}: "
-                                f"{(pproc.stderr or pproc.stdout or '')[-1500:]}")
+            reason_str = (f"generate-governing-personas.sh rc={pproc.returncode}: "
+                          f"{(pproc.stderr or pproc.stdout or '')[-1500:]}")
+            result["reason"] = reason_str
+            _write_prebuild_state(state_path, {
+                "status": "failed",
+                "standardReadyAt": None,
+                "floorVersion": "failed",
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "failureReason": reason_str,
+                "failedAt": _now_iso(),
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }, args.apply)
             return emit(EXIT_STEP_FAILED)
     else:
         result["personas_rc"] = None
@@ -731,11 +900,46 @@ def main(argv=None):
         result["cc_seeding"] = join
         _log(f"CC seeding + join proof: status={join['status']} (seed rc={join['seed_rc']}, "
              f"join rc={join['join_rc']})")
+        # seed_rc != 0 with an explicit --db is a GATE-ERROR: the seed IS required
+        # when the operator explicitly gave a db, and failing it means the
+        # displayed layer is unfixably broken.
+        seed_rc = join.get("seed_rc")
+        if seed_rc is not None and seed_rc != 0:
+            result["standardPrebuildStatus"] = "failed"
+            reason_str = (f"seed-workspaces.py rc={seed_rc} with explicit --db {db_path}: "
+                          "Command Center seeding failed and the displayed layer is unfixably broken")
+            result["reason"] = reason_str
+            _write_prebuild_state(state_path, {
+                "status": "failed",
+                "standardReadyAt": None,
+                "floorVersion": "failed",
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "failureReason": reason_str,
+                "failedAt": _now_iso(),
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }, args.apply)
+            return emit(EXIT_JOIN_FAILED)
         if join["status"] in _BLOCKING_JOIN_STATUSES:
             result["standardPrebuildStatus"] = "failed"
-            result["reason"] = (f"board join verification {join['status']}: chosen / "
-                                "provisioned / displayed disagree or could not be proven "
-                                f"({(join.get('reason') or '')[-800:]})")
+            reason_str = (f"board join verification {join['status']}: chosen / "
+                          "provisioned / displayed disagree or could not be proven "
+                          f"({(join.get('reason') or '')[-800:]})")
+            result["reason"] = reason_str
+            _write_prebuild_state(state_path, {
+                "status": "failed",
+                "standardReadyAt": None,
+                "floorVersion": "failed",
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "failureReason": reason_str,
+                "failedAt": _now_iso(),
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }, args.apply)
             return emit(EXIT_JOIN_FAILED)
 
     # ══ STEP 2 (re-check) — the floor MUST be met after --apply ══
@@ -746,7 +950,20 @@ def main(argv=None):
                                    + list(verdict_after["missing_universal_primary"]))
         if not verdict_after["floor_met"]:
             result["standardPrebuildStatus"] = "failed"
-            result["reason"] = f"floor still short after --apply: {result['missing_after']}"
+            reason_str = f"floor still short after --apply: {result['missing_after']}"
+            result["reason"] = reason_str
+            _write_prebuild_state(state_path, {
+                "status": "failed",
+                "standardReadyAt": None,
+                "floorVersion": "failed",
+                "prebuiltDepartments": [],
+                "agentRegistration": "deferred",
+                "source": "prebuild-standard-workforce.py",
+                "failureReason": reason_str,
+                "failedAt": _now_iso(),
+                "operatorConsentRef": (f"{OPERATOR_CONSENT_SOURCE}/{consent['decision']}/"
+                                       f"{consent['decidedAt']}/{consent['decidedBy']}"),
+            }, args.apply)
             return emit(EXIT_STEP_FAILED)
     else:
         result["floor_met"] = bool(verdict_before["floor_met"])
