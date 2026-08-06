@@ -246,6 +246,24 @@ else
     fails=$((fails + 1))
 fi
 
+
+# 4) FIX-18 tool-schema hardening (Error 10 / D17) — normalized schema hint +
+#    5-strike AF-TOOL-SCHEMA-LOOP loop alert. tool_schema_validator.py lives in
+#    the Skill-23 presentations engine's scripts dir (the same tree the canonical
+#    runner reads `_tool_schema` from). The self-test matrix is CI-safe: it proves
+#    the string-args failure, the path/file trap, the normalized hint, and that 5
+#    consecutive failures write the loop event — a regression in the VALIDATOR
+#    itself is caught even when no run dir is present.
+FIX18_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX18_SCRIPTS/tool_schema_validator.py" ]; then
+    run "FIX-18 tool_schema_validator.py --self-test (normalized hint + 5-strike event)" \
+        "$PY" "$FIX18_SCRIPTS/tool_schema_validator.py" --self-test
+else
+    printf '  [FAIL] FIX-18 tool_schema_validator.py NOT found at %s — ' "$FIX18_SCRIPTS"
+    printf 'the FIX-18 tool-schema hardening is unwired; a model that loops on malformed tool args would burn turns unchecked.\n'
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 51 self-verification checks green."

@@ -145,6 +145,19 @@ try:
 except ImportError:
     _agent_env = None
 
+# FIX-18 — tool-schema hardening (Error 10 / D17). Imported defensively so
+# CI/test contexts that lack the sibling module still parse. The Phase-0
+# preflight reads this run's AF-TOOL-SCHEMA-LOOP event ledger and HARD-ABORTS
+# (exit 4) when a tool hit 5 consecutive malformed-args failures — a looping
+# model is stopped instead of silently burning turns. A missing module is a
+# WARNING, not an abort: this validator is a mitigation (the normalized schema
+# hint + loop alert), not a delivery credential — its absence is caught by the
+# dept verify.sh self-test, and delivery must not brick on a mitigation.
+try:
+    import tool_schema_validator as _tool_schema
+except ImportError:
+    _tool_schema = None
+
 # FIX-PRES-07: the GOVERNED set of phases that REQUIRE a substance verifier. When
 # phase_verifiers.py is importable we derive it LIVE from the registry; when the
 # module is MISSING beside the runner (_pv is None) we fall back to this pinned
@@ -1220,6 +1233,37 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
               "scripts dir and re-run.", file=sys.stderr)
         print("!" * 78 + "\n", file=sys.stderr)
         sys.exit(4)
+
+    # FIX-18 — TOOL-SCHEMA LOOP ALERT (Error 10 / D17). The 2026-08-06 E2E logged
+    # 12x "args: must be object" + 3x "missing path" — the model serialized tool
+    # args as a STRING and re-emitted schema dumps, burning a retry cycle per turn.
+    # tool_schema_validator.py returns a NORMALIZED schema hint on a malformed
+    # call (so the model self-corrects in one turn) and writes an AF-TOOL-SCHEMA-LOOP
+    # event when a tool hits 5 CONSECUTIVE failures (so a loop is ALERTED, not
+    # silently re-tried forever). This preflight HARD-ABORTS (exit 4) when a
+    # prior phase already recorded such a loop event in this run's ledger.
+    #
+    # A missing validator module is NOT a delivery blocker (unlike FIX-14's env
+    # probe): the validator is a mitigation, and the dept verify.sh self-test
+    # catches a box that dropped it. Presence here proves the ledger is readable.
+    if _tool_schema is not None:
+        _loops = _tool_schema.active_loop_events(run_dir)
+        if _loops:
+            print("\n" + "!" * 78, file=sys.stderr)
+            print("FATAL PHASE-0: %s — %d tool(s) hit %d consecutive schema "
+                  "failures in this run. The model is looping on malformed tool "
+                  "args; it must be re-oriented, not re-run. %s" % (
+                      _loops[0]["event"]["code"], len(_loops),
+                      _tool_schema.CONSECUTIVE_FAILURE_LIMIT,
+                      _loops[0]["event"]["message"]), file=sys.stderr)
+            print("!" * 78 + "\n", file=sys.stderr)
+            sys.exit(4)
+        print("=== PHASE-0 — tool-schema loop alert CLEAR (no AF-TOOL-SCHEMA-LOOP "
+              "event in this run's ledger) ===", flush=True)
+    else:
+        print("=== PHASE-0 — tool_schema_validator.py not co-located; FIX-18 "
+              "loop-alert SKIPPED (verify.sh self-test covers this; delivery "
+              "proceeds) ===", flush=True)
 
     api_key = ""
     try:
