@@ -20,6 +20,14 @@ from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
 from . import persona
+# FIX-21 (D21): run_with_cleanup spawns the phase exec in a NEW PROCESS GROUP and, on
+# budget expiry, kills the WHOLE group (SIGTERM -> SIGKILL) so a timed-out phase leaves
+# no orphaned grandchildren (the D21 zombie path). Direct-child-only `subprocess.run`
+# timeout is what let a `find` zombie run 18+ minutes beside the real build.
+try:
+    from process_reaper import run_with_cleanup
+except ImportError:  # pragma: no cover — module ships beside presentation_job
+    run_with_cleanup = None
 
 # ---------------------------------------------------------------------------
 # U069: named error for unparseable executor.cmd.
@@ -238,8 +246,16 @@ class Engine:
         budget = phase.budget_minutes * 60
         for attempt in range(1, heal.HEAL_CAP_TRANSIENT + 1):
             try:
-                r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
-                                   timeout=budget, capture_output=False)
+                # FIX-21 (D21): process-group exec with cleanup — on budget expiry the
+                # whole group dies, so a timed-out phase never leaves a stray orphan.
+                # Falls back to the old direct-child subprocess.run only if the reaper
+                # module is absent (it ships beside this package).
+                if run_with_cleanup is not None:
+                    r = run_with_cleanup(argv, cwd=str(self.run_dir),
+                                         timeout=budget, capture=False)
+                else:
+                    r = subprocess.run(argv, shell=False, cwd=str(self.run_dir),
+                                       timeout=budget, capture_output=False)
                 if r.returncode == 0:
                     return EXIT_OK
                 reason = f"exit {r.returncode}"
