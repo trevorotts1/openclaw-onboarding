@@ -112,14 +112,29 @@ if [[ -d /data/.openclaw ]]; then
   echo "!! SKIPPED: /data/.openclaw exists on this host — cannot guarantee fixture isolation"
   FUNCTIONAL=0
 fi
-if ! command -v jq >/dev/null 2>&1; then
-  echo "!! SKIPPED: jq not installed"
-  FUNCTIONAL=0
-fi
 if ! command -v python3 >/dev/null 2>&1; then
   echo "!! SKIPPED: python3 not installed"
   FUNCTIONAL=0
 fi
+
+# Python-based JSON value extractor — replaces jq for hermetic CI
+# where jq may not be available. All assertion logic that previously
+# piped through jq now routes through this single helper.
+_pyjson() {
+  # $1 = path to JSON file   $2 = Python expression (data = parsed dict)
+  python3 -c "
+import json, sys
+with open('$1') as f:
+    data = json.load(f)
+v = $2
+if v is None:
+    pass
+elif isinstance(v, bool):
+    sys.stdout.write('true' if v else 'false')
+else:
+    sys.stdout.write(str(v))
+"
+}
 
 if (( FUNCTIONAL == 1 )); then
 
@@ -257,7 +272,7 @@ if [[ -f "$BOXS1/.openclaw/workspace/.workforce-build-state.lock" ]]; then
 else
   pass "S1c: lockfile cleaned up on exit"
 fi
-_ic_after=$(jq -r '.interviewComplete // false' "$BOXS1/.openclaw/workspace/.workforce-build-state.json")
+_ic_after=$(_pyjson "$BOXS1/.openclaw/workspace/.workforce-build-state.json" "data.get('interviewComplete', False)")
 if [[ "$_ic_after" == "true" ]]; then
   fail "S2a: the cron PROMOTED interviewComplete on prebuild state alone — HOP-1 misfired on the prebuild"
 else
@@ -308,7 +323,7 @@ BOXS3="$(_mkbox boxs3 "$STATE_SF_SETTLED" "ops-custom")"
 _runbox "$BOXS3" "$BOXS3/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 SLOG3="$BOXS3/.openclaw/workspace/.workforce-build-state.log"
 
-_bca=$(jq -r '.buildCompletedAt // empty' "$BOXS3/.openclaw/workspace/.workforce-build-state.json")
+_bca=$(_pyjson "$BOXS3/.openclaw/workspace/.workforce-build-state.json" "data.get('buildCompletedAt') or ''")
 if [[ -n "$_bca" ]]; then
   pass "S3a: HOP-4 wrote buildCompletedAt under the standard-first contract (prebuilt depts confirmed-or-declined, non-prebuilt done)"
 else
@@ -365,7 +380,7 @@ STATE_SF_UNSETTLED='{
 BOXS4="$(_mkbox boxs4 "$STATE_SF_UNSETTLED" "ops-custom")"
 _runbox "$BOXS4" "$BOXS4/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 SLOG4="$BOXS4/.openclaw/workspace/.workforce-build-state.json"
-_bca4=$(jq -r '.buildCompletedAt // empty' "$SLOG4")
+_bca4=$(_pyjson "$SLOG4" "data.get('buildCompletedAt') or ''")
 if [[ -z "$_bca4" ]]; then
   pass "S4a: buildCompletedAt NOT written while the prebuilt set is unreviewed (confirmationsComplete absent)"
 else
@@ -397,7 +412,7 @@ if (( muts4_rc != 0 )); then
   fail "S4-MUT: could not revert the confirmationsComplete conjunct — cannot prove S4a discriminates"
 else
   _runbox "$BOXS4M" "$MUTS4"
-  _bca4m=$(jq -r '.buildCompletedAt // empty' "$BOXS4M/.openclaw/workspace/.workforce-build-state.json")
+  _bca4m=$(_pyjson "$BOXS4M/.openclaw/workspace/.workforce-build-state.json" "data.get('buildCompletedAt') or ''")
   if [[ -n "$_bca4m" ]]; then
     pass "S4-MUT: the mutated script DOES write buildCompletedAt prematurely — S4a is a real, non-vacuous check"
   else
@@ -607,7 +622,7 @@ STATE_SF_STALETRAP='{
 BOXS8="$(_mkbox boxs8 "$STATE_SF_STALETRAP" "ops-custom")"
 _runbox "$BOXS8" "$BOXS8/.openclaw/skills/23-ai-workforce-blueprint/scripts/resume-workforce-build.sh"
 SLOG8="$BOXS8/.openclaw/workspace/.workforce-build-state.log"
-_status8=$(jq -r '.departments[] | select(.id=="marketing") | .status' "$BOXS8/.openclaw/workspace/.workforce-build-state.json")
+_status8=$(_pyjson "$BOXS8/.openclaw/workspace/.workforce-build-state.json" "next((d['status'] for d in data.get('departments',[]) if d.get('id')=='marketing'), '')")
 if [[ "$_status8" == "prebuilt" ]]; then
   pass "S8a: the prebuilt department survived the stale-state reset at status=prebuilt"
 else
@@ -637,7 +652,7 @@ if (( muts8_rc != 0 )); then
   fail "S8-MUT: could not remove the prebuilt skip — cannot prove S8a discriminates"
 else
   _runbox "$BOXS8M" "$MUTS8"
-  _status8m=$(jq -r '.departments[] | select(.id=="marketing") | .status' "$BOXS8M/.openclaw/workspace/.workforce-build-state.json")
+  _status8m=$(_pyjson "$BOXS8M/.openclaw/workspace/.workforce-build-state.json" "next((d['status'] for d in data.get('departments',[]) if d.get('id')=='marketing'), '')")
   if [[ "$_status8m" == "pending" ]]; then
     pass "S8-MUT: without the skip the prebuilt dept IS demoted to pending — S8a is a real, non-vacuous check"
   else

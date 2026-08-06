@@ -95,6 +95,12 @@ def main():
         props.get("buildType", {}).get("enum") == ["legacy", "standard-first"],
         f"got {props.get('buildType', {}).get('enum')!r}",
     )
+    check("standardFirstOnboarding property present", "standardFirstOnboarding" in props)
+    check(
+        "standardFirstOnboarding enum is exactly [at-onboarding, on-first-answer]",
+        props.get("standardFirstOnboarding", {}).get("enum") == ["at-onboarding", "on-first-answer"],
+        f"got {props.get('standardFirstOnboarding', {}).get('enum')!r}",
+    )
 
     sp = props.get("standardPrebuild", {})
     check("standardPrebuild property present", bool(sp))
@@ -102,8 +108,8 @@ def main():
     check("standardPrebuild requires ['status']", sp.get("required") == ["status"])
     sp_props = sp.get("properties", {})
     for key in (
-        "status", "standardReadyAt", "floorVersion", "prebuiltDepartments",
-        "agentRegistration", "source", "operatorConsentRef",
+        "status", "prebuildStartedAt", "standardReadyAt", "floorVersion",
+        "prebuiltDepartments", "agentRegistration", "source", "operatorConsentRef",
     ):
         check(f"standardPrebuild.{key} present", key in sp_props)
     check(
