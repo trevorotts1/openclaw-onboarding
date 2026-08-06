@@ -1214,6 +1214,16 @@ class RateLimited(Exception):
     pass
 
 
+class AuthError(Exception):
+    """Permanent authentication failure (HTTP 401/403) — the request is identical
+    and will fail forever: the key is wrong, the Authorization header format is
+    wrong, or the account is locked/rate-locked by the provider. Retrying the same
+    request is a guaranteed token furnace. Fail loud, NEVER back off, NEVER
+    re-submit. Raised by _http_json on HTTP 401/403 and swallowed by NO retry loop:
+    render_slide re-raises it immediately (< 2s) instead of entering the
+    exponential-backoff re-submit path."""
+
+
 # C1 (SSRF / local-file read guard): the ONLY URL schemes this pipeline is ever
 # allowed to open. urllib.request.urlopen will happily honour file://, ftp://,
 # data:, etc. — so a KIE result URL, a --logo URL, or any API URL that resolves to
@@ -1257,6 +1267,17 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
             raise RateLimited(f"HTTP 429 from {url}")
+        if exc.code in (401, 403):
+            # PERMANENT auth failure (FIX-6): never transient, never retried. The
+            # key/header/account is wrong and an identical re-submit fails forever —
+            # the observed 164x "backing off" 401 tailspin. Raised as AuthError so
+            # render_slide fails the slide immediately instead of backoff-resubmitting.
+            body_text = exc.read().decode(errors="replace")
+            raise AuthError(
+                f"HTTP {exc.code} {method} {url}\nResponse: {body_text}\n"
+                "Permanent auth failure — do NOT re-submit. Check the KIE_API_KEY, "
+                "the Authorization: Bearer header format, and that the key is not "
+                "locked/rate-blocked by the provider.") from exc
         body_text = exc.read().decode(errors="replace")
         raise RuntimeError(f"HTTP {exc.code} {method} {url}\nResponse: {body_text}") from exc
     except urllib.error.URLError as exc:
@@ -1634,6 +1655,12 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
+        except AuthError:
+            # FIX-6 — fail-fast on auth errors. A 401/403 is PERMANENT: the identical
+            # request can never succeed, so backoff-re-submitting is a token furnace
+            # (the observed 164x "backing off" 401 tailspin). Re-raise immediately —
+            # zero backoff, zero re-submits — so the slide fails fast (< 2s).
+            raise
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
             print(f"    FAIL attempt {attempt}: {exc}", file=sys.stderr, flush=True)
@@ -4803,7 +4830,14 @@ def _fetch_kie_balance(api_key: str, url: str = KIE_CREDIT_URL,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+    except urllib.error.HTTPError as exc:
+        # FIX-6 — a 401/403 on the credit call is a PERMANENT auth failure (wrong
+        # key / header / locked account). Never transient: surface it as AuthError
+        # so the preflight fails fast instead of being treated as 'unknown balance'.
+        if exc.code in (401, 403):
+            raise AuthError(f"Kie credit endpoint returned HTTP {exc.code} ({url})") from exc
+        raise RuntimeError(f"Kie credit endpoint unreachable ({url}): HTTP {exc.code}") from exc
+    except (urllib.error.URLError, OSError) as exc:
         raise RuntimeError(f"Kie credit endpoint unreachable ({url}): {exc}")
     try:
         obj = json.loads(raw)
@@ -4855,6 +4889,12 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
     estimated_floor = float(slide_count) * PER_SLIDE_CREDIT_ESTIMATE * KIE_BALANCE_FLOOR_MULTIPLIER
     try:
         balance = _fetch_kie_balance(api_key)
+    except AuthError as exc:
+        # FIX-6 — a permanent auth failure on the balance call must abort the run
+        # with the auth diagnosis, never be treated as 'unknown balance'.
+        return (f"AF-KIE-AUTH: kie.ai key did not authenticate before render ({exc}). "
+                "Check the KIE_API_KEY, the Authorization: Bearer header format, and "
+                "that the key is not locked/rate-blocked by the provider.")
     except RuntimeError as exc:
         return ("AF-KIE-BALANCE: could not verify the Kie.ai credit balance before "
                 f"render ({exc}). An unverifiable balance is a HARD ABORT — never render "
@@ -4866,6 +4906,26 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
                 f"{KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any render so "
                 "the run does not die mid-deck. Top up Kie.ai credits and retry.")
     return ""
+
+
+def _preflight_kie_auth(api_key: str) -> None:
+    """FIX-6 — one-shot auth proof BEFORE any parallel render. A single authenticated
+    call to the live Kie credit endpoint must succeed or the run stops here. This
+    converts a 401 storm (the observed 164x backoff tailspin on a submission-path bug)
+    into ONE clear block: if the balance call authenticates, the key/header is valid
+    and any later createTask 401 is a request-shape/header bug that surfaces as
+    AuthError instead of burning the retry budget. Raises AuthError on a 401/403
+    (permanent — never retried); raises RuntimeError on any other failure to reach
+    the endpoint (fail loud, never 'unknown = enough')."""
+    try:
+        balance = _fetch_kie_balance(api_key)
+    except AuthError:
+        raise
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "AF-KIE-AUTH: kie.ai auth preflight could not verify the key "
+            f"({exc}). Do NOT render on an unverifiable key.")
+    print(f"  OK: kie.ai auth preflight passed (credit {balance:g})", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -9769,6 +9829,13 @@ def main():
         _ocr_engine_reason = ocr_engine_preflight(run_dir)
         if _ocr_engine_reason:
             print("\nFATAL: " + _ocr_engine_reason, file=sys.stderr)
+            sys.exit(4)
+        # FIX-6 — one-shot auth proof BEFORE any render: a 401 here aborts with the
+        # auth diagnosis instead of a 164x backoff tailspin mid-render.
+        try:
+            _preflight_kie_auth(api_key)
+        except AuthError as exc:
+            print(f"\nFATAL: {exc}", file=sys.stderr)
             sys.exit(4)
         _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
         if _balance_reason:
