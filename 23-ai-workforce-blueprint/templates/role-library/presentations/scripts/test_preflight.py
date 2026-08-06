@@ -3806,6 +3806,57 @@ def emit_af_coverage():
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
 
+    # ---- FIX-2 (Error 2) NEW-GATE negative-test coverage (AF-QC-PLACEHOLDER +
+    #      AF-QC-SKIP). These two gates are declared enforced_by:build_deck in
+    #      PIPELINE-MANIFEST.json, so Guard A requires a deliberately-failing fixture
+    #      that REALLY trips each one (hardcoded labels never register — the guard
+    #      records a code only when it appears in a genuinely-failing path). ----
+
+    # AF-QC-PLACEHOLDER — a 3-byte "{}" QC report (the exact Error-2 artifact)
+    # driven through build_deck.check_qc_phase_report_real (the symbol declared in
+    # PIPELINE-MANIFEST.json, now wired into the run_postflight_gate pre-delivery
+    # enforcement path). The gate returns a fatal AF-QC-PLACEHOLDER reason.
+    _qcph_root = Path(tempfile.mkdtemp(prefix="deck_qcph_probe_"))
+    (_qcph_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    # 3-byte "{}" placeholder for the copy-QC report — sub-floor by every measure.
+    (_qcph_root / "working" / "qc" / "copy_qc_report.json").write_text("{}")
+    record("AF-QC-PLACEHOLDER",
+           build_deck.check_qc_phase_report_real(_qcph_root, "P1Q-COPY-QC"))
+
+    # AF-QC-SKIP — a logged owner-authorized phase-skip record naming a QC phase
+    # (P-PROMPT-QC) is REFUSED by build_deck.check_phase_preconditions: the QC phase
+    # stays a required precondition. AF-QC-SKIP is surfaced on stderr by the refusal
+    # path (the function still returns AF-PHASE-SKIPPED), so we capture stderr and
+    # record the code from the refusal line. Mirror the _emit_af_bundle_probe pattern.
+    import io as _io
+    import contextlib as _contextlib
+    _qcsk_root = Path(tempfile.mkdtemp(prefix="deck_qcsk_probe_"))
+    (_qcsk_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_qcsk_root / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(
+        json.dumps({"approvals": [{
+            "phase_id": "P-PROMPT-QC",
+            "owner_approved": True,
+            "approved_by": "Trevor BlackCEO",
+            "reason": "owner authorized this QC phase skip",
+            "timestamp": "2026-08-06T14:30:00Z",
+            "owner_msg_id": "real-owner-msg-001",
+            "owner_action": "approved_skip",
+        }]}))
+    _qcsk_buf = _io.StringIO()
+    try:
+        with _contextlib.redirect_stderr(_qcsk_buf):
+            build_deck.check_phase_preconditions(_qcsk_root, "P4-RENDER",
+                                                 ["P-PROMPT-QC"])
+    except Exception as _exc:  # noqa: BLE001
+        _qcsk_buf.write(str(_exc))
+    _qcsk_text = _qcsk_buf.getvalue()
+    record("AF-QC-SKIP", _qcsk_text)
+    # The refusal path must ALSO return AF-PHASE-SKIPPED naming the QC phase (belt and
+    # braces) so a silent pass can never record AF-QC-SKIP from a non-failing fixture.
+    _qcsk_reason = build_deck.check_phase_preconditions(
+        _qcsk_root, "P4-RENDER", ["P-PROMPT-QC"])
+    record("AF-PHASE-SKIPPED", _qcsk_reason or "")
+
     # AF-OCR-READBACK (U027) — a rendered PNG whose sidecar carries checked:false
     # (the OCR engine never ran against that render) FAILS check_ocr_readback; this
     # branch is NEVER waivable. Guard-A negative-test coverage for the postflight

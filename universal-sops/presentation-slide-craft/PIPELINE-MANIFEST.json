@@ -1632,6 +1632,29 @@
       ]
     },
     {
+      "code": "AF-QC-PLACEHOLDER",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a QC report for one of the four QC phases (copy / prompt / typography / shift) is a placeholder or sub-floor: it is missing, <= 256 bytes (the 3-byte \"{}\" rubber-stamp), not valid JSON, or carries fewer than 20 real per-slide verdicts. FIX-2 (Error 2) makes QC structurally unskippable + real-content-floor: a QC phase cannot attest without a real report.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_qc_phase_report_real",
+      "secondary_py_symbols": [
+        "QC_PHASE_REPORT",
+        "QC_REPORT_FLOOR_BYTES",
+        "QC_REPORT_SLIDE_FLOOR"
+      ]
+    },
+    {
+      "code": "AF-QC-SKIP",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a phase-skip approval record (phase_skip_approvals.json) or owner_skip_approval token names one of the four QC phases (copy / prompt / typography / shift) \u2014 QC phases are STRUCTURALLY UNSKIPPABLE (FIX-2, Error 2); no owner record can waive a QC phase. The skip is refused and the QC phase stays required.",
+      "enforced_by": "build_deck",
+      "py_symbol": "UNSKIPPABLE_QC_PHASES"
+    },
+    {
       "code": "AF-TYPOGRAPHY-QC",
       "stage": "Typography-QC",
       "level": "DECK",

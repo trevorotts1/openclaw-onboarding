@@ -2796,6 +2796,141 @@ def _qc_report_substance_problems(obj: dict) -> list:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# FIX-2 (Error 2) — QC phases structurally unskippable + real report floor.
+# The four QC phases (copy / prompt / typography / shift) may NEVER be waived by
+# a phase-skip record, and their report files must clear a REAL-CONTENT floor
+# (not a 3-byte "{}" placeholder) before the phase may attest. These are the
+# exact codes the fix must raise (shared with run_signature_deck + the guard):
+#   AF-QC-SKIP        — a skip-approval record names a QC phase (refused)
+#   AF-QC-PLACEHOLDER — a QC report is a 3-byte "{}" / sub-floor / verdict-less
+# ---------------------------------------------------------------------------
+UNSKIPPABLE_QC_PHASES = frozenset({
+    "P1Q-COPY-QC",      # -> working/qc/copy_qc_report.json
+    "P-PROMPT-QC",      # -> working/qc/prompt_qc_report.json
+    "P-TYPO-QC",        # -> working/qc/typography_qc_report.json
+    "P-SHIFT-QC",       # -> working/qc/priority_shift_report.json
+})
+
+# QC phase id -> the report file it must produce (mirrors PIPELINE-MANIFEST
+# produces_artifact for the four QC phases). Used by the report-floor gate.
+QC_PHASE_REPORT = {
+    "P1Q-COPY-QC": "working/qc/copy_qc_report.json",
+    "P-PROMPT-QC": "working/qc/prompt_qc_report.json",
+    "P-TYPO-QC": "working/qc/typography_qc_report.json",
+    "P-SHIFT-QC": "working/qc/priority_shift_report.json",
+}
+
+QC_REPORT_FLOOR_BYTES = 256   # bytes; a real per-slide QC report is far larger
+QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry
+
+
+def _qc_report_per_slide_verdicts(obj) -> list:
+    """Return the real per-slide verdict list from a QC report object.
+
+    Accepts the per-slide structures the four QC report schemas actually use:
+      * copy_qc_report.json     -> per_slide_scores: [{slide, average, pass, ...}]
+      * prompt_qc_report.json   -> slides / results / per_slide_scores
+      * typography_qc_report.json -> slides / per_slide_scores (per-slide archetype)
+      * priority_shift_report.json -> items: [{item, pass, evidence}] (the 14-point
+        ship gate) AND, after FIX-2, a per-slide `slides` list added by the ledger.
+    Returns [] when the report carries no per-slide verdict structure."""
+    if not isinstance(obj, dict):
+        return []
+    for key in ("per_slide_scores", "slides", "results", "per_slide",
+                "per_slide_verdicts", "slide_verdicts", "items"):
+        v = obj.get(key)
+        if isinstance(v, list):
+            return [e for e in v if isinstance(e, dict)]
+        if isinstance(v, dict):
+            return [e for e in v.values() if isinstance(e, dict)]
+    return []
+
+
+def _qc_slide_verdict_is_real(entry: dict) -> bool:
+    """True when a per-slide verdict entry carries an explicit PASS/FAIL/score — a
+    real verdict, not a bare slide id or empty stub. `pass` must be a real bool or
+    a verdict string; a numeric score counts; a slide-only dict does not."""
+    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
+                "pass_fail", "passed"):
+        val = entry.get(key)
+        if isinstance(val, bool):
+            return True
+        if isinstance(val, (int, float)):
+            return True
+        if isinstance(val, str) and val.strip():
+            low = val.strip().lower()
+            if low in ("pass", "passed", "fail", "failed", "ok", "pending", "warn"):
+                return True
+    return False
+
+
+def check_qc_reports_real(run_dir: Path, slides_path=None) -> str:
+    """FIX-2 REPORT FLOOR — fail-closed real-content floor for the FOUR QC reports.
+
+    Returns "" when every QC report exists, is > QC_REPORT_FLOOR_BYTES, parses as
+    JSON, and carries >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts. Returns a
+    fatal 'AF-QC-PLACEHOLDER: ...' message naming the FIRST failing report otherwise.
+    A 3-byte '{}' placeholder (the exact Error-2 artifact) fails here."""
+    for phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+        rel = QC_PHASE_REPORT[phase_id]
+        p = run_dir / rel
+        if not p.is_file():
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                    "QC report must exist before the phase can attest.")
+        raw = p.read_bytes()
+        if len(raw) <= QC_REPORT_FLOOR_BYTES:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                    f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                    "a real QC report. Re-run the QC phase.")
+        try:
+            obj = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception as exc:  # noqa: BLE001
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                    f"({exc}).")
+        if not isinstance(obj, dict):
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+        verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                    if _qc_slide_verdict_is_real(e)]
+        if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                    f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                    "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
+def check_qc_phase_report_real(run_dir: Path, phase_id: str) -> str:
+    """FIX-2 per-phase report floor — returns "" when ONE QC phase's report is real,
+    or a fatal 'AF-QC-PLACEHOLDER: ...' message naming it otherwise. Called at QC
+    phase attestation so a 3-byte placeholder can never satisfy a QC phase."""
+    if phase_id not in UNSKIPPABLE_QC_PHASES:
+        return ""
+    rel = QC_PHASE_REPORT[phase_id]
+    p = run_dir / rel
+    if not p.is_file():
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                "QC report must exist before the phase can attest.")
+    raw = p.read_bytes()
+    if len(raw) <= QC_REPORT_FLOOR_BYTES:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                "a real QC report. Re-run the QC phase.")
+    try:
+        obj = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                f"({exc}).")
+    if not isinstance(obj, dict):
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+    verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                if _qc_slide_verdict_is_real(e)]
+    if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
 def _chk_copy_qc(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -5384,7 +5519,19 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             if (isinstance(r, dict) and r.get("owner_approved") is True
                     and str(r.get("phase_id") or "").strip()
                     and str(r.get("owner_msg_id") or "").strip()):
-                approved.add(str(r["phase_id"]).strip())
+                pid = str(r["phase_id"]).strip()
+                if pid in UNSKIPPABLE_QC_PHASES:
+                    # FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE — a
+                    # phase-skip record for a QC phase authorizes nothing. The QC
+                    # phase stays a required precondition (AF-QC-SKIP refused here).
+                    print(
+                        f"[check_phase_preconditions] AF-QC-SKIP: phase {pid!r} is a "
+                        "QC phase and is structurally unskippable — its skip record is "
+                        "REFUSED; the phase remains required.",
+                        file=sys.stderr,
+                    )
+                    continue
+                approved.add(pid)
     for prior in (prior_phase_ids or []):
         pid = str(prior).strip()
         if not pid or pid in attested or pid in approved:
@@ -7521,6 +7668,23 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "spec carries the single promise + wow + demonstration anchors")
 
     passed = all(r["pass"] for r in rows)
+    # FIX-2 (Error 2): real per-slide verdicts. P-SHIFT-QC runs AFTER render (order
+    # 7.5), so every rendered slide exists and the ship gate grades each one. Each
+    # per-slide verdict records the slide ordinal and an explicit pass (a rendered
+    # slide present + non-degenerate in the run dir). This is the per-slide coverage
+    # the QC report floor (>= 20 real per-slide verdicts) requires — a 14-row
+    # checklist alone can never satisfy the floor.
+    per_slide = []
+    for png in sorted(_gather_rendered_pngs(run_dir)):
+        sid = _png_ordinal(png)
+        if sid is None:
+            continue
+        per_slide.append({
+            "slide": sid,
+            "pass": png.is_file(),
+            "verdict": "pass" if png.is_file() else "fail",
+            "evidence": "rendered slide present in run dir (ship-gate per-slide pass)",
+        })
     report = {
         "schema": "priority_shift_report/v1",
         "gate": "AF-PRIORITY-SHIFT",
@@ -7528,6 +7692,7 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "pass": passed,
         "items": rows,
+        "slides": per_slide,
     }
     try:
         out = run_dir / PRIORITY_SHIFT_REPORT_REL
@@ -9390,6 +9555,36 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
 
+    # --- FIX-2: QC REPORT FLOOR sub-check (AF-QC-PLACEHOLDER) — at the pre-delivery
+    # closeout gate, re-prove every PRESENT QC phase report (copy / prompt / typography
+    # / shift) clears the REAL-CONTENT floor (> QC_REPORT_FLOOR_BYTES bytes, valid JSON,
+    # >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts). A 3-byte '{}' placeholder (the
+    # exact Error-2 artifact) can never satisfy a QC phase, so a deck delivered on a
+    # placeholder QC report is a hard delivery failure. DEFERS on an ABSENT report file
+    # (a standalone / adhoc run legitimately has no QC artifacts — report existence is
+    # enforced fail-closed at attest time by run_signature_deck.attest_phase); once a
+    # report EXISTS it must be real.
+    qc_floor_reason = ""
+    if run_dir is not None:
+        for _qc_phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+            _qc_rel = QC_PHASE_REPORT[_qc_phase_id]
+            if not (run_dir / _qc_rel).is_file():
+                continue  # no report yet — defer (the attestation gate owns absence)
+            _qc_floor = check_qc_phase_report_real(run_dir, _qc_phase_id)
+            if _qc_floor:
+                qc_floor_reason = _qc_floor
+                break
+        if qc_floor_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "real QC report floor (each present QC report clears >256 bytes, valid "
+                "JSON, >=20 real per-slide verdicts; a 3-byte '{}' placeholder never "
+                "satisfies a QC phase)",
+                0, 0, "QC_REPORT_PLACEHOLDER"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=qc_floor_reason)
+
     # --- U047: SLIDE-GEOMETRY sub-checks (AF-TEXT-OVERFLOW / AF-SPELLING /
     # AF-TYPE-SIZE-MEASURED) — the three pixel-level checks that did not exist. They read
     # BAKED renders, so postflight is the only place they can run: preflight has no PNGs.
@@ -9547,6 +9742,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                       f"must return", file=sys.stderr)
                 print(f"           HTTP 200. See teleprompter_publish.json.",
                       file=sys.stderr)
+            elif reason == "QC_REPORT_PLACEHOLDER":
+                print(f"  QC-PLACEHOLDER [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {qc_floor_reason}", file=sys.stderr)
+                print("           A QC phase report is a placeholder / sub-floor — a "
+                      "3-byte '{}' rubber stamp", file=sys.stderr)
+                print(f"           can never satisfy a QC phase (FIX-2 / Error 2). "
+                      f"Re-run the QC phase to", file=sys.stderr)
+                print(f"           produce a real per-slide report "
+                      f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",

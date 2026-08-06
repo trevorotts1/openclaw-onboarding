@@ -63,6 +63,19 @@ AF_CANONICAL_RENDER_BYPASS = "AF-CANONICAL-RENDER-BYPASS"
 AF_LOCAL_CANVAS = "AF-LOCAL-CANVAS"
 AF_IMAGE_QC_VISION = "AF-IMAGE-QC-VISION"
 
+# FIX-2 (Error 2): the four QC phases are STRUCTURALLY UNSKIPPABLE. A skip record
+# (phase_skip_approvals.json) or an owner_skip_approval token can never waive a QC
+# phase — the phase must be genuinely attested with a REAL report (see build_deck's
+# check_qc_phase_report_real for the >256-byte / >=20-per-slide-verdict floor).
+# This mirrors build_deck.UNSKIPPABLE_QC_PHASES exactly (kept in lockstep; the guard
+# is intentionally import-free so it can never crash on a missing symbol).
+UNSKIPPABLE_QC_PHASES = frozenset({
+    "P1Q-COPY-QC",
+    "P-PROMPT-QC",
+    "P-TYPO-QC",
+    "P-SHIFT-QC",
+})
+
 # Canonical, sanctioned scripts. These ARE the governed render path; the patterns
 # below (createTask, per-deck render functions, etc.) legitimately live here. They
 # are allow-listed by BASENAME so that even if copied into a run dir they pass. The
@@ -286,6 +299,14 @@ def missing_attestations(run_dir: Path, phases: list, phase_skip_approvals=None,
         if not pid:
             continue
         if target_order is not None and ph.get("order", 0) >= target_order:
+            continue
+        # FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE — neither a
+        # phase_skip_approvals record NOR a process_manifest owner_skip_approval
+        # token can waive a QC phase. The QC phase must be genuinely attested (with
+        # a real report); a skip never satisfies it at pre-delivery. AF-QC-SKIP.
+        if pid in UNSKIPPABLE_QC_PHASES:
+            if pid not in attested:
+                missing.append(pid)
             continue
         if pid in attested or pid in owner_skips or pid in phase_skips:
             continue
