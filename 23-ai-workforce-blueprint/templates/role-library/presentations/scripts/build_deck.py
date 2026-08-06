@@ -5371,8 +5371,19 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             (sobj.get("approvals") or sobj.get("skips") or [])
             if isinstance(sobj, dict) else [])
         for r in records if isinstance(records, list) else []:
+            # FIX-1 (AF-FORGED-APPROVAL): a skip record is ONLY a verifiable
+            # owner-authorized skip when it carries a NON-EMPTY owner_msg_id. An
+            # owner_action-only record — or any record with no owner_msg_id — is
+            # exactly the self-forgery vector the live E2E used (it passed with no
+            # oracle query). Such records are FAIL-CLOSED here: the phase is NOT
+            # added to `approved`, so it stays an unmet precondition (the runner's
+            # load_skip_approvals additionally raises AF-FORGED-APPROVAL on them).
+            # The full owner-message resolution happens in the runner's
+            # load_skip_approvals -> cc_board owner-ids oracle; this shared gate
+            # refuses msg-id-less records up front.
             if (isinstance(r, dict) and r.get("owner_approved") is True
-                    and str(r.get("phase_id") or "").strip()):
+                    and str(r.get("phase_id") or "").strip()
+                    and str(r.get("owner_msg_id") or "").strip()):
                 approved.add(str(r["phase_id"]).strip())
     for prior in (prior_phase_ids or []):
         pid = str(prior).strip()

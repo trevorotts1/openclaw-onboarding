@@ -731,6 +731,41 @@ def _check_prior_phase_reports(run_dir: Path, phases: list, target_phase_id: str
 # ---------------------------------------------------------------------------
 # Owner-authorized skip records (the controlled exception — NOT a free flag)
 # ---------------------------------------------------------------------------
+class ForgedApprovalError(Exception):
+    """A phase-skip approval could not be proven authentic — its owner_msg_id
+    does not resolve to a real owner-authored message in Command Center. Fatal:
+    the build MUST fail (the plan print and the precondition gate both consume
+    this). See AF-FORGED-APPROVAL."""
+
+
+def _resolve_owner_msg_ids(run_dir: Path) -> frozenset | None:
+    """Resolve the run's CC task to its REAL owner-authored message ids (the
+    authoritative owner-approval oracle, FIX-1).
+
+    Returns a frozenset of ids on success; None when UNDETERMINED (no cc_task_id
+    in the manifest, the board is disabled, or the owner-ids endpoint could not
+    be reached/proven). None NEVER opens the gate — the caller treats undetermined
+    as DENIED so a skip that cannot be verified can never authorize a phase.
+    Uses cc_board (the dept's own authed CC client) so the HTTP/auth contract is
+    identical to every other board call."""
+    try:
+        import cc_board
+        return cc_board.owner_message_ids_match(run_dir, "", env=None)
+    except Exception:  # noqa: BLE001 — fail-closed: any oracle failure is DENIED
+        return None
+
+
+def _resolve_owner_msg_ids_for_task(task_id: str) -> frozenset | None:
+    """Resolve an explicit CC task_id (independent of any run dir) to its real
+    owner-authored message ids. Used by the unit tests and by callers that know
+    the task id directly. None on undetermined — fail-closed."""
+    try:
+        import cc_board
+        return cc_board.list_owner_message_ids(task_id, env=None)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def load_skip_approvals(run_dir: Path) -> dict:
     """Return {phase_id: approval_record} for every owner-authorized skip whose
     record is well-formed. A malformed, self-granted, or placeholder-timestamp
@@ -748,7 +783,18 @@ def load_skip_approvals(run_dir: Path) -> dict:
         Timestamps must also carry a timezone component (Z or +/-HH:MM).
     (3) MISSING OWNER REFERENCE: record must have an owner_msg_id (a real Telegram
         message id) or an owner_action field tracing the skip to a verifiable human
-        decision. Records with neither field are rejected."""
+        decision. Records with neither field are rejected.
+    (4) AUTHENTICITY (FIX-1 — AF-FORGED-APPROVAL): EVERY skip record MUST carry a
+        non-empty owner_msg_id, and that id must RESOLVE to a real owner-authored
+        message in Command Center task_activities (the authoritative oracle).
+        Presence of a string is NEVER proof — the live E2E forged "e2e-test-002"
+        and it authorized 9+ skips. A record whose owner_msg_id does not resolve
+        raises ForgedApprovalError, which the build fails on (AF-FORGED-APPROVAL).
+        A record with ONLY an owner_action (no owner_msg_id) — or with no owner
+        reference at all — has NO message id to resolve through the oracle and is
+        exactly the self-forgery vector the live E2E used: it is ALSO
+        AF-FORGED-APPROVAL and the build FAILS. An owner_action string alone is
+        never proof of an owner decision; only a resolvable owner message counts."""
     p = run_dir / "working" / "checkpoints" / "phase_skip_approvals.json"
     approvals = {}
     if not p.exists():
@@ -764,6 +810,12 @@ def load_skip_approvals(run_dir: Path) -> dict:
         "executive strategy", "via ", "directive", "auto-approved",
         "self", "auto_approved", "producing", "builder",
     )
+
+    # FIX-1: resolve the REAL owner-authored message ids ONCE for the run, before
+    # walking records. None (undetermined) fails CLOSED for any owner_msg_id-bearing
+    # record — a skip that cannot be proven authentic is DENIED, never passed.
+    real_owner_msg_ids = _resolve_owner_msg_ids(run_dir)
+    _oracle_unavailable = real_owner_msg_ids is None
 
     for rec in records:
         if not isinstance(rec, dict):
@@ -808,17 +860,43 @@ def load_skip_approvals(run_dir: Path) -> dict:
                 )
                 continue
 
-        # (3) Require a verifiable owner reference.
+        # (3) AUTHENTICITY / REQUIRED MESSAGE ID (FIX-1 — AF-FORGED-APPROVAL).
+        # EVERY skip record MUST carry a non-empty owner_msg_id — the FORGER's exact
+        # vector was an owner_action-only record with no message id that passed
+        # without any oracle query. There is no verifiable owner reference without a
+        # message id, so a record with only an owner_action string (or neither field)
+        # is SELF-FORGED: raise FATAL, never accept it. Undetermined is DENIED too
+        # (never opens the gate).
         owner_msg_id = str(rec.get("owner_msg_id", "") or "").strip()
         owner_action = str(rec.get("owner_action", "") or "").strip()
-        if not owner_msg_id and not owner_action:
-            print(
-                f"[load_skip_approvals] REJECTED phase {rec['phase_id']!r}: "
-                "record lacks owner_msg_id or owner_action — a verifiable owner "
-                "reference is required to trace the skip to a real human decision.",
-                file=sys.stderr,
+        if not owner_msg_id:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r has NO owner_msg_id (owner_action=%r). "
+                "Every phase-skip approval must carry a non-empty owner_msg_id that "
+                "resolves to a real owner-authored message in Command Center "
+                "task_activities. An owner_action string alone is never proof of an "
+                "owner decision — a skip record without a resolvable message id is "
+                "self-forged and is DENIED. Re-run the phase or obtain a genuine "
+                "owner approval message." % (rec["phase_id"], owner_action)
             )
-            continue
+
+        # (4) RESOLVE through the authoritative oracle. The id must be proven real.
+        if _oracle_unavailable:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, but the "
+                "Command Center owner-message oracle is UNDETERMINED (no cc_task_id "
+                "on the run / board unreachable / endpoint did not prove the id). "
+                "A skip that cannot be proven authentic is DENIED — undetermined "
+                "never opens the gate." % (rec["phase_id"], owner_msg_id)
+            )
+        if owner_msg_id not in real_owner_msg_ids:
+            raise ForgedApprovalError(
+                "AF-FORGED-APPROVAL: phase %r references owner_msg_id %r, which does "
+                "not resolve to a real owner-authored message in Command Center "
+                "task_activities. Presence of a string is never proof of an owner "
+                "message. Re-run the phase or obtain a genuine owner approval."
+                % (rec["phase_id"], owner_msg_id)
+            )
 
         approvals[rec["phase_id"]] = rec
     return approvals
@@ -868,13 +946,25 @@ def check_phase_preconditions(run_dir: Path, phases: list, target_phase_id: str)
     prior = sorted([ph for ph in phases if ph.get("order", 0) < target_order],
                    key=lambda p: p.get("order", 0))
     prior_ids = [ph["id"] for ph in prior]
+    # FIX-1 (AF-FORGED-APPROVAL): validate skip-record AUTHENTICITY FIRST, before
+    # the shared attestation/owner-skip gate runs. The shared gate accepts an
+    # owner_msg_id-bearing record without resolving it; if a forged/msg-id-less
+    # record short-circuits the shared gate BEFORE load_skip_approvals runs, the
+    # failure surfaces as AF-PHASE-SKIPPED instead of the required AF-FORGED-APPROVAL.
+    # Authenticity must win: a forged record authorizes nothing, so the build fails
+    # on the forgery itself (the QC row demands AF-FORGED-APPROVAL).
+    try:
+        approvals = load_skip_approvals(run_dir)
+    except ForgedApprovalError as _fae:
+        # A forged skip-approval is an attempt to self-authorize a phase skip — the
+        # build gate FAILS CLOSED (fatal string => exit 2 at caller).
+        return str(_fae)
     # Shared attestation / owner-skip decision (build_deck is the single source of truth).
     reason = bd.check_phase_preconditions(run_dir, target_phase_id, prior_ids)
     if reason:
         return reason
     # Additionally require each attested prior phase's produces_artifact to be present
     # (an attestation must correspond to a real artifact, unless owner-skip-approved).
-    approvals = load_skip_approvals(run_dir)
     for ph in prior:
         pid = ph["id"]
         if pid in approvals:
@@ -969,8 +1059,18 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
 # ---------------------------------------------------------------------------
 def print_plan(run_dir: Path, phases: list) -> None:
     attested = _attested_phase_ids(run_dir)
-    approvals = load_skip_approvals(run_dir)
+    forged = None
+    try:
+        approvals = load_skip_approvals(run_dir)
+    except ForgedApprovalError as _fae:
+        # FIX-1: a forged skip-approval record must never print as
+        # SKIP(owner-authorized). The phase shows `pending` and the fatal
+        # AF-FORGED-APPROVAL is surfaced on stderr (the build gate fails on it).
+        forged = str(_fae)
+        approvals = {}
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
+    if forged:
+        print("[load_skip_approvals] " + forged, file=sys.stderr, flush=True)
     print("=== SIGNATURE-DECK PHASE PLAN (manifest order) ===")
     for ph in ordered:
         pid = ph["id"]
@@ -994,7 +1094,13 @@ def _next_required_phase(run_dir: Path, phases: list):
     precondition gate walks, so the phase --next names is exactly the phase the next
     --phase call is allowed to attest."""
     attested = _attested_phase_ids(run_dir)
-    approvals = set(load_skip_approvals(run_dir).keys())
+    try:
+        approvals = set(load_skip_approvals(run_dir).keys())
+    except ForgedApprovalError as _fae:
+        # FIX-1: a forged skip-approval must not count as skip-approved — the
+        # phase stays `pending` and --next serves it as the required next phase.
+        print("[load_skip_approvals] " + str(_fae), file=sys.stderr, flush=True)
+        approvals = set()
     ordered = sorted(phases, key=lambda p: p.get("order", 0))
     total = len(ordered)
     for i, ph in enumerate(ordered):
@@ -1087,6 +1193,37 @@ def assert_adhoc_authorized(run_dir: Path) -> None:
               "working/checkpoints/adhoc_authorization.json "
               "(owner_approved:true + approved_by + reason). It is NOT a free flag. "
               "Refusing the ad-hoc run.", file=sys.stderr)
+        sys.exit(2)
+    # FIX-1 / D20: adhoc authorization is folded into the SAME authenticity oracle
+    # as phase-skip approvals. EVERY adhoc record MUST carry a non-empty owner_msg_id
+    # and that id must resolve to a real owner-authored message. A record with only
+    # owner_approved/approved_by/reason but NO owner_msg_id is exactly the self-written
+    # bypass (D20) — it has no message to resolve through the oracle, so it is FORGED
+    # and the run is refused. Undetermined is DENIED too (never opens the gate).
+    _adhoc_obj = json.loads(p.read_text())
+    _adhoc_owner_msg_id = str(_adhoc_obj.get("owner_msg_id", "") or "").strip()
+    if not _adhoc_owner_msg_id:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc record has NO owner_msg_id. "
+              "Every adhoc authorization must carry a non-empty owner_msg_id that "
+              "resolves to a real owner-authored message in Command Center "
+              "task_activities. An owner_action/approved_by string alone is never "
+              "proof of an owner decision — a self-written ad-hoc authorization "
+              "with no message id is FORGED and is DENIED.", file=sys.stderr)
+        sys.exit(2)
+    _real_ids = _resolve_owner_msg_ids(run_dir)
+    if _real_ids is None:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc references owner_msg_id "
+              f"{_adhoc_owner_msg_id!r}, but the Command Center owner-message "
+              "oracle is UNDETERMINED (no cc_task_id on the run / board "
+              "unreachable). A self-authored ad-hoc authorization that cannot be "
+              "proven is DENIED.", file=sys.stderr)
+        sys.exit(2)
+    if _adhoc_owner_msg_id not in _real_ids:
+        print("FATAL: AF-FORGED-APPROVAL — --adhoc references owner_msg_id "
+              f"{_adhoc_owner_msg_id!r}, which does not resolve to a real "
+              "owner-authored message in Command Center task_activities. A "
+              "self-written ad-hoc authorization is not a genuine owner approval.",
+              file=sys.stderr)
         sys.exit(2)
     bar = "!" * 78
     print(bar, flush=True)
@@ -1782,7 +1919,16 @@ def main():
         # owner_skip_approval token. --adhoc does NOT waive this — it is the gate that
         # makes a faked "Done" impossible.
         if args.phase == DELIVERY_PHASE_ID:
-            phase_skips = set(load_skip_approvals(run_dir).keys())
+            try:
+                phase_skips = set(load_skip_approvals(run_dir).keys())
+            except ForgedApprovalError as _fae:
+                # FIX-1: delivery may not proceed past a forged skip-approval — the
+                # forged record authorizes nothing, so the attestation chain is
+                # incomplete and delivery FAILS CLOSED (AF-FORGED-APPROVAL).
+                print("\n" + "!" * 78, file=sys.stderr)
+                print("FATAL PRE-DELIVERY: " + str(_fae), file=sys.stderr)
+                print("!" * 78 + "\n", file=sys.stderr)
+                sys.exit(EXIT_GUARD_BLOCK)
             reason = guard.guard_pre_delivery(run_dir, phases, slides_path,
                                               phase_skip_approvals=phase_skips)
             if reason:
