@@ -23,6 +23,7 @@ import {
   SPA_INJECT_TEMPLATE,
   render401,
 } from './lib.js';
+import { handleJobRequest } from './job.js';
 
 const DEFAULT_MODE = 'full';
 const DEFAULT_PHASE_ORDER = [
@@ -62,6 +63,13 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
     const [slug, phaseId] = path;
+
+    // API routes (U14 job state machine / intake assembly gate). The edge is a
+    // DUMB RELAY: /api/job stages nothing and holds zero PITs — it only runs the
+    // fail-closed assembly gate over already-staged evidence.
+    if (slug === 'api' && phaseId === 'job') {
+      return handleJobRequest(request, env);
+    }
 
     // Universal link shape: /<slug>/<phase>?tk=<token>  (any extra segments → 404)
     if (path.length !== 2 || !slug || !phaseId) {
