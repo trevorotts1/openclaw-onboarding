@@ -38,6 +38,7 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P8-ASSEMBLE": 30,
     "P8.1-PDF-EXPORT": 15,
     "P8.2-GUIDE": 20,
+    "P8.25-WORKBOOK": 30,      # Feature L2-D: kie.ai page design (parallel) + reportlab assembly
     "P8.4-FISH-TAG": 15,
     "P9-SPEECH": 45,
     "P9.1-SPEECH-PDF": 15,
@@ -244,7 +245,10 @@ def _as_list(v: Any) -> List[str]:
 # 37 -> 38: FIX-23(c) registers AF-KIE-AUTH (auth preflight) + AF-FORGED-APPROVAL
 # (authentic skip approvals) in PIPELINE-MANIFEST.autofails so sync_check lockstep
 # passes (the repo-side half of the 27-drift-item repair). Floor moves WITH the manifest.
-MIN_MANIFEST_VERSION = 38  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 38 -> 39: Feature L2-D (Gauntlet Loop 2, Feature B) adds P8.25-WORKBOOK — the fillable
+# PDF workbook phase (kie.ai gpt-image-2 backgrounds + reportlab AcroForm assembly,
+# scripts/workbook_builder.py) — raising manifest_version to 39 in the same commit.
+MIN_MANIFEST_VERSION = 39  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

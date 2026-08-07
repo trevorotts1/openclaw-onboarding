@@ -23,6 +23,11 @@ half of (c). Its attestation and done-report are written by the runner AFTER thi
 passes, so they cannot pre-exist; it is reported as "in-flight". Every other declared
 step keeps the full check set.
 
+CERTIFICATE DESTINATION: written into the single existing delivery/*-FINAL/ client-package
+dir when exactly one exists (the dir cc_board and the delivery gates glob), falling back to
+delivery/<DECK_SLUG>-FINAL/ — never a fresh slug-derived dir that would make delivery/
+ambiguous (AF-DH1).
+
 BYPASS:
     A logged owner_skip_approval record in process_manifest.json["owner_skip_approvals"]
     for the relevant phase_id, passing the same well-formed-record validation enforced
@@ -416,14 +421,39 @@ def _cert_sha(body: dict) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _resolve_cert_dir(run_dir: Path, deck_slug: str) -> Path:
+    """Resolve the client-package dir the PROCESS-CERTIFICATE must land in.
+
+    Prefers the SINGLE existing delivery/*-FINAL/ client-package dir when exactly
+    one exists — that is the dir cc_board and the delivery gates glob and target
+    (delivery/*-FINAL/PROCESS-CERTIFICATE.json), and the actual bundle may carry a
+    slug that differs from a stale declared_plan.deck_slug. Creating a fresh
+    slug-derived dir instead would make delivery/ ambiguous (AF-DH1 fails on more
+    than one *-FINAL package). When zero or many *-FINAL dirs exist, falls back to
+    delivery/<DECK_SLUG>-FINAL/ (the legacy slug-derived location)."""
+    delivery = run_dir / "delivery"
+    if delivery.is_dir():
+        finals = sorted(
+            p for p in delivery.iterdir()
+            if p.is_dir() and p.name.endswith("-FINAL")
+        )
+        if len(finals) == 1:
+            return finals[0]
+    return delivery / f"{deck_slug}-FINAL"
+
+
 def write_certificate(
     run_dir: Path,
     deck_slug: str,
     declared_at: str,
     step_results: List[StepResult],
 ) -> Path:
-    """Write PROCESS-CERTIFICATE.json + .md under delivery/<DECK_SLUG>-FINAL/."""
-    out_dir = run_dir / "delivery" / f"{deck_slug}-FINAL"
+    """Write PROCESS-CERTIFICATE.json + .md under delivery/<DECK_SLUG>-FINAL/.
+
+    The target dir is the single existing delivery/*-FINAL/ client package when one
+    exists (see _resolve_cert_dir) — never a fresh slug-derived dir that would make
+    the delivery package ambiguous."""
+    out_dir = _resolve_cert_dir(run_dir, deck_slug)
     out_dir.mkdir(parents=True, exist_ok=True)
 
     certified_at = _now_iso()
@@ -790,6 +820,40 @@ def _selftest() -> None:
     if _delivery_phase_id(declared_with_delivery) != "P9-DELIVER":
         test_fails.append("T13: _delivery_phase_id should prefer the canonical "
                           "P9-DELIVER id when present")
+
+    # T14: FIX #10 — certificate destination. A single existing delivery/*-FINAL/
+    # client-package dir is preferred over the slug-derived dir (the declared plan's
+    # slug can be stale vs the actual bundle slug); creating a fresh slug-derived dir
+    # would make delivery/ ambiguous (AF-DH1 fails on >1 *-FINAL package).
+    # T14a: single existing *-FINAL client-package dir wins over a stale declared slug.
+    with tempfile.TemporaryDirectory(prefix="pd_t14a_") as tmp:
+        rd = Path(tmp)
+        (rd / "delivery").mkdir(parents=True, exist_ok=True)
+        deck = rd / "delivery" / "CLIENT-DECK-FINAL"
+        deck.mkdir()
+        got = _resolve_cert_dir(rd, "e2e-run-dir")
+        if got != deck:
+            test_fails.append(f"T14a: single existing *-FINAL client package should win; "
+                              f"got {got!r}, want {deck!r}")
+    # T14b: no *-FINAL dir -> fall back to the slug-derived dir.
+    with tempfile.TemporaryDirectory(prefix="pd_t14b_") as tmp:
+        rd = Path(tmp)
+        (rd / "delivery").mkdir(parents=True, exist_ok=True)
+        got2 = _resolve_cert_dir(rd, "acme-deck")
+        if got2 != rd / "delivery" / "acme-deck-FINAL":
+            test_fails.append(f"T14b: no *-FINAL dir should fall back to slug-derived; "
+                              f"got {got2!r}")
+    # T14c: ambiguous (>1 *-FINAL) -> fall back to slug-derived (delivery gate fails
+    # on ambiguity regardless; callers/CC glob can still find the cert).
+    with tempfile.TemporaryDirectory(prefix="pd_t14c_") as tmp:
+        rd = Path(tmp)
+        (rd / "delivery").mkdir(parents=True, exist_ok=True)
+        (rd / "delivery" / "first-FINAL").mkdir()
+        (rd / "delivery" / "second-FINAL").mkdir()
+        got3 = _resolve_cert_dir(rd, "acme-deck")
+        if got3 != rd / "delivery" / "acme-deck-FINAL":
+            test_fails.append(f"T14c: ambiguous *-FINAL dirs should fall back to "
+                              f"slug-derived; got {got3!r}")
 
     if test_fails:
         for f in test_fails:

@@ -561,6 +561,56 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
             f"pptx_ghl_media_id={pptx_id[:24]}… but the library has no matching entry. "
             "An upload record that does not survive a real list-back is not an upload.")
     return (len(reasons) == 0), reasons
+def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Feature L2-D verifier: the fillable PDF workbook exists, is non-empty, and pypdf
+    reads it back with at least one AcroForm field and /NeedAppearances true.
+
+    The workbook PDF lives at working/deliverables/<deck_slug>-WORKBOOK.pdf. Its assembly
+    (scripts/workbook_builder.py) already verifies with pypdf before writing the ledger at
+    working/checkpoints/workbook.json; this verifier is the runner-side substance proof so
+    a phase attestation cannot pass on a missing/zero-byte/garbled workbook. pypdf is a
+    hard dependency of the assembly step; a box without it records a NOTE and degrades to
+    the existence+size check rather than crashing the phase."""
+    reasons: List[str] = []
+    candidates = sorted((run_dir / "working" / "deliverables").glob("*-WORKBOOK.pdf")) \
+        if (run_dir / "working" / "deliverables").is_dir() else []
+    if not candidates:
+        reasons.append("workbook PDF (*-WORKBOOK.pdf) not found in working/deliverables")
+        return (False, reasons)
+    pdf = candidates[0]
+    size = pdf.stat().st_size
+    if size < 2048:
+        reasons.append(f"workbook PDF {pdf.name} is only {size} bytes — too small for a "
+                       "fillable form (no fields rendered)")
+        return (False, reasons)
+    try:
+        from pypdf import PdfReader
+        r = PdfReader(str(pdf))
+        n_pages = len(r.pages)
+        fields = r.get_fields() or {}
+        need_app = False
+        try:
+            need_app = bool(r.trailer["/Root"]["/AcroForm"]["/NeedAppearances"])
+        except Exception:  # noqa: BLE001
+            need_app = False
+        if n_pages < 1:
+            reasons.append(f"workbook PDF {pdf.name}: pypdf read {n_pages} pages")
+        if not fields:
+            reasons.append(f"workbook PDF {pdf.name}: pypdf read ZERO AcroForm fields — "
+                           "the fillable form did not survive")
+        if not need_app:
+            reasons.append(f"workbook PDF {pdf.name}: /NeedAppearances not set — fields will "
+                           "not render in viewers")
+        if reasons:
+            return (False, reasons)
+        return (True, [])
+    except ImportError:
+        return (True, ["NOTE: pypdf not importable — workbook verifier degraded to "
+                       "existence+size check (pass)"])
+    except Exception as exc:  # noqa: BLE001
+        return (False, [f"workbook verifier raised {exc!r}"])
+
+
 
 
 def _verify_sp_claim(run_dir: Path) -> Tuple[bool, List[str]]:
@@ -724,6 +774,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P8.4-FISH-TAG":      _verify_fish_tag,
     "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
     "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
+    # --- Feature L2-D: fillable PDF workbook ---
+    "P8.25-WORKBOOK":     _verify_workbook,
     # --- U012 SP registry gaps ---
     "P-SP-CLAIM":         _verify_sp_claim,
     "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,
