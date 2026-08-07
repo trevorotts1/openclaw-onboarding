@@ -10393,7 +10393,14 @@ def main():
         except AuthError as exc:
             print(f"\nFATAL: {exc}", file=sys.stderr)
             sys.exit(4)
-        _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
+        # FIX-E2E (incremental resume): count only the UN-rendered slides for the
+        # balance floor. A resume/re-render that already produced 18 of 20 slides
+        # only needs credit for the remaining 2, not the full deck — the old code
+        # passed len(slides) (the full count), so a low-but-sufficient balance
+        # (2 remaining ≈ 10 credits) was rejected against a 100-credit full-deck
+        # floor, bricking every OCR-retry resume.
+        _remaining = max(0, len(slides) - len(_gather_rendered_pngs(run_dir)))
+        _balance_reason = kie_balance_preflight(run_dir, _remaining, api_key)
         if _balance_reason:
             print("\nFATAL: " + _balance_reason, file=sys.stderr)
             sys.exit(4)
