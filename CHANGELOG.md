@@ -1,3 +1,20 @@
+## [v22.0.3]  -  2026-08-07  -  Presentation Interview app: write GATE 0b intake_transcript.json
+
+Fixes the GATE 0b blocker on app-captured runs. `presentation-canonical-entry.sh`
+GATE 0b requires `working/interview/intake_transcript.json` to exist and be
+`>= 200` bytes — a REAL one-at-a-time conversation trace. The poll bridge wrote
+`intake.json` + `intake_ledger.json` but NOT the transcript, so any app-captured
+run would fail GATE 0b at canonical entry and never build.
+
+- `intake_writer.py`: add `write_transcript()` — builds the trace from the app's
+  captured answers (each Q&A → a dialogue turn). `cmd()` writes it too.
+- `intake_bridge.py`: poll/ingest now also writes the transcript.
+- `test_intake_writer.py`: new GATE 0b test (file exists, `>= 200` bytes, real turns).
+- README: document the transcript file.
+- Verified live E2E: poll → `intake_transcript.json` 989 bytes, 4 real turns.
+- Version rolled v22.0.2 → v22.0.3 in lockstep (10 markers).
+
+
 ## [v22.0.2]  -  2026-08-07  -  Presentation Interview app: box-side intake poll cron + worker list endpoint + key fix
 
 Complete the interview-app → presentation-department wiring.
