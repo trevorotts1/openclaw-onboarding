@@ -447,20 +447,31 @@ def assemble_delivery(bk: Book, out: Path) -> Path:
 
 
 def write_index_and_manifest(bk: Book, delivery: Path, measured: dict):
-    files = []
-    for p in sorted(delivery.rglob("*")):
-        if p.is_file():
-            sha = hashlib.sha256(p.read_bytes()).hexdigest()
-            files.append({"file": str(p.relative_to(delivery)), "sha256": sha})
-    manifest = {"skill": "book-writer", "author": "%s %s" % bk.author(),
-                "measured": measured, "files": files}
-    (delivery / "MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    # 00-INDEX.md is written FIRST: its content depends only on the file NAME list
+    # (not any sha), so once it is on disk its sha256 is final and can be recorded
+    # in MANIFEST.json below. Writing it before hashing avoids the chicken-and-egg
+    # where the recorded sha would describe the PRE-index 00-INDEX.md while the
+    # on-disk file lists MANIFEST.json/itself (the BUG-22 sha-mismatch trap).
+    names = sorted(p.relative_to(delivery).as_posix()
+                   for p in delivery.rglob("*") if p.is_file())
     idx = ["# Book Writer — deliverable index", "",
            "Everything below is a LOCAL labeled deliverable (no n8n / Airtable / Google / Gmail /",
            "Slack / GHL). See PROCESS-CERTIFICATE.json for the signed provenance.", ""]
-    for f in files:
-        idx.append("- `%s`" % f["file"])
+    for rel in names:
+        idx.append("- `%s`" % rel)
     (delivery / "00-INDEX.md").write_text("\n".join(idx) + "\n", encoding="utf-8")
+    # MANIFEST.json cannot carry its own sha256 (self-referential — the file content
+    # would change as soon as the hash is written). List it with a null sha so it still
+    # appears in the INDEX / file list, and the verifier checks existence only for this
+    # entry. Every other file (00-INDEX.md now finalized, certs, content) gets a real sha.
+    files = []
+    for rel in names:
+        sha = None if rel == "MANIFEST.json" else hashlib.sha256(
+            (delivery / rel).read_bytes()).hexdigest()
+        files.append({"file": rel, "sha256": sha})
+    manifest = {"skill": "book-writer", "author": "%s %s" % bk.author(),
+                "measured": measured, "files": files}
+    (delivery / "MANIFEST.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
 
 
 def write_certificate(bk: Book, delivery: Path, steps, measured):
@@ -559,12 +570,19 @@ def verify_bundle_against_manifest(bundle: Path):
     for entry in files:
         rel = entry.get("file")
         want = entry.get("sha256")
-        if not rel or not want:
+        if not rel:
             problems.append("malformed MANIFEST entry: %r" % entry)
             continue
         fp = bundle / rel
         if not fp.is_file():
             problems.append("MANIFEST lists %s but it is absent from the bundle" % rel)
+            continue
+        if want is None:
+            # MANIFEST.json is self-referential (a file cannot contain its own sha256),
+            # so it carries sha256=null and is checked existence-only.
+            continue
+        if not want:
+            problems.append("malformed MANIFEST entry: %r" % entry)
             continue
         got = hashlib.sha256(fp.read_bytes()).hexdigest()
         if got != want:
@@ -697,6 +715,30 @@ def run(bk: Book) -> int:
                         shutil.copy2(src, Path(dl) / cf)
                     except OSError:
                         pass
+    # BUG-22: the first write_index_and_manifest (before P8-DELIVER) ran BEFORE the
+    # certs were minted, so the delivered MANIFEST under-listed the bundle (00-INDEX.md,
+    # MANIFEST.json, PROCESS-CERTIFICATE.{json,md} were missing). Re-generate INDEX +
+    # MANIFEST over the COMPLETE delivery bundle now that every file exists, refresh the
+    # ~/Downloads mirror, and re-verify BOTH against the final MANIFEST so the delivered
+    # manifest lists exactly what is on disk (certs + INDEX included).
+    write_index_and_manifest(bk, delivery, measured)
+    dl = measured.get("downloads_bundle")
+    if dl:
+        for refresh in ("MANIFEST.json", "00-INDEX.md"):
+            src = delivery / refresh
+            if src.is_file():
+                try:
+                    shutil.copy2(src, Path(dl) / refresh)
+                except OSError:
+                    pass
+        ok_del, prob_del = verify_bundle_against_manifest(delivery)
+        ok_dl, prob_dl = verify_bundle_against_manifest(Path(dl))
+        if not (ok_del and ok_dl):
+            print("BUG-22 FINAL MANIFEST RE-VERIFY FAILED: delivery=%s dl=%s"
+                  % (prob_del, prob_dl), file=sys.stderr)
+            _quarantine(bk, staging)
+            shutil.rmtree(delivery, ignore_errors=True)
+            return EXIT_GATE
     shutil.rmtree(staging.parent, ignore_errors=True)  # staging is transient
     print("ALL PHASES PASSED (P0->P8).")
     return EXIT_PASS
