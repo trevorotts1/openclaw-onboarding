@@ -562,45 +562,59 @@ def _verify_ghl_upload(run_dir: Path) -> Tuple[bool, List[str]]:
             "An upload record that does not survive a real list-back is not an upload.")
     return (len(reasons) == 0), reasons
 def _verify_workbook(run_dir: Path) -> Tuple[bool, List[str]]:
-    """Feature L2-D verifier: the fillable PDF workbook exists, is non-empty, and pypdf
-    reads it back with at least one AcroForm field and /NeedAppearances true.
+    """WORKBOOK REDESIGN verifier (AF-WORKBOOK-BOTH): BOTH deliverables must exist and
+    verify — the regular (*-WORKBOOK.pdf) AND the fillable (*-WORKBOOK-FILLABLE.pdf).
 
-    The workbook PDF lives at working/deliverables/<deck_slug>-WORKBOOK.pdf. Its assembly
-    (scripts/workbook_builder.py) already verifies with pypdf before writing the ledger at
-    working/checkpoints/workbook.json; this verifier is the runner-side substance proof so
-    a phase attestation cannot pass on a missing/zero-byte/garbled workbook. pypdf is a
-    hard dependency of the assembly step; a box without it records a NOTE and degrades to
-    the existence+size check rather than crashing the phase."""
+    The dual contract is the anti-wireframe substance proof: the regular PDF carries the
+    designed content-baked pages, the fillable adds the AcroForm overlay. Either side
+    missing / zero-byte / garbled fails the phase attestation. pypdf is a hard dependency
+    of the assembly step; a box without it records a NOTE and degrades to the
+    existence+size check rather than crashing the phase."""
     reasons: List[str] = []
-    candidates = sorted((run_dir / "working" / "deliverables").glob("*-WORKBOOK.pdf")) \
-        if (run_dir / "working" / "deliverables").is_dir() else []
-    if not candidates:
-        reasons.append("workbook PDF (*-WORKBOOK.pdf) not found in working/deliverables")
+    dl = run_dir / "working" / "deliverables"
+    regulars = sorted(dl.glob("*-WORKBOOK.pdf")) if dl.is_dir() else []
+    fillables = sorted(dl.glob("*-WORKBOOK-FILLABLE.pdf")) if dl.is_dir() else []
+    if not regulars:
+        reasons.append("regular workbook PDF (*-WORKBOOK.pdf) not found in working/deliverables")
+    if not fillables:
+        reasons.append("fillable workbook PDF (*-WORKBOOK-FILLABLE.pdf) not found — "
+                       "AF-WORKBOOK-BOTH requires BOTH deliverables")
+    if not regulars or not fillables:
         return (False, reasons)
-    pdf = candidates[0]
-    size = pdf.stat().st_size
-    if size < 2048:
-        reasons.append(f"workbook PDF {pdf.name} is only {size} bytes — too small for a "
-                       "fillable form (no fields rendered)")
-        return (False, reasons)
-    try:
+
+    def _read(pdf: Path) -> Tuple[int, int, bool]:
         from pypdf import PdfReader
         r = PdfReader(str(pdf))
-        n_pages = len(r.pages)
         fields = r.get_fields() or {}
         need_app = False
         try:
             need_app = bool(r.trailer["/Root"]["/AcroForm"]["/NeedAppearances"])
         except Exception:  # noqa: BLE001
             need_app = False
-        if n_pages < 1:
-            reasons.append(f"workbook PDF {pdf.name}: pypdf read {n_pages} pages")
-        if not fields:
-            reasons.append(f"workbook PDF {pdf.name}: pypdf read ZERO AcroForm fields — "
-                           "the fillable form did not survive")
+        return (len(r.pages), len(fields), need_app)
+
+    for pdf in regulars + fillables:
+        size = pdf.stat().st_size
+        if size < 2048:
+            reasons.append(f"workbook PDF {pdf.name} is only {size} bytes — too small")
+    if reasons:
+        return (False, reasons)
+    try:
+        reg_pages, reg_fields, _ = _read(regulars[0])
+        if reg_pages < 1:
+            reasons.append(f"regular workbook {regulars[0].name}: pypdf read {reg_pages} pages")
+        if reg_fields != 0:
+            reasons.append(f"regular workbook {regulars[0].name}: pypdf read {reg_fields} "
+                           "AcroForm fields — the regular PDF must be image-only (no overlay)")
+        fill_pages, fill_fields, need_app = _read(fillables[0])
+        if fill_pages < 1:
+            reasons.append(f"fillable workbook {fillables[0].name}: pypdf read {fill_pages} pages")
+        if fill_fields < 1:
+            reasons.append(f"fillable workbook {fillables[0].name}: pypdf read ZERO AcroForm "
+                           "fields — the fillable form did not survive")
         if not need_app:
-            reasons.append(f"workbook PDF {pdf.name}: /NeedAppearances not set — fields will "
-                           "not render in viewers")
+            reasons.append(f"fillable workbook {fillables[0].name}: /NeedAppearances not set — "
+                           "fields will not render in viewers")
         if reasons:
             return (False, reasons)
         return (True, [])
@@ -775,6 +789,85 @@ def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
     return (len(reasons) == 0), reasons
 
 
+def _verify_webinarized_speech(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Feature L2-H verifier (P9-SPEECH-WEBINAR-INTRO): the webinarized speech audio
+    exists, is a valid MP3, AND the host framing (welcome / chat Q&A / crescendo close)
+    is structurally proven.
+
+    The audio lives at working/delivery/PRESENTER-AUDIO-WEBINAR.mp3, produced by
+    synthesize_full_speech.py --webinar-intro-outro (the P9-SPEECH-WEBINAR-INTRO
+    executor). The executor injects the framing in-memory (the on-disk UNTAGGED
+    PRESENTERS-SPEECH.md is never modified), so the MP3 duration gate already counts
+    the framing words; this verifier adds the runner-side substance proof:
+
+      1. the webinarized audio exists, is non-empty, and passes the shared MP3
+         validity probe (synthesize_full_speech.verify_mp3) — a plain deck-only
+         audio renamed as the webinar audio is a defect;
+      2. the framing layer is the wired one: webinar_intro_outro.build_framing_markdown()
+         must carry the three `## Section ... (WEBINAR FRAMING)` headers (WELCOME /
+         QNA / CLOSE) and every section must hit its word budget within tolerance.
+
+    Defensive: a missing sibling module (synthesize_full_speech / webinar_intro_outro)
+    degrades to a NOTE, never a crash and never a silent pass on a real substance
+    failure."""
+    reasons: List[str] = []
+
+    candidates = sorted((run_dir / "working" / "delivery").glob("PRESENTER-AUDIO-WEBINAR.mp3")) \
+        if (run_dir / "working" / "delivery").is_dir() else []
+    if not candidates:
+        reasons.append("webinarized speech audio (working/delivery/PRESENTER-AUDIO-WEBINAR.mp3) "
+                       "not found — the webinar host framing was never synthesized")
+        return (False, reasons)
+    audio = candidates[0]
+    size = audio.stat().st_size
+    if size < 10000:
+        reasons.append(f"webinarized speech audio {audio.name} is only {size} bytes — too "
+                       "small for a full webinarized render (framing + deck)")
+        return (False, reasons)
+
+    # MP3 validity via the shared probe (the same probe the synthesis executor runs on
+    # every chunk and the final deliverable). Defensive import: a missing module is a
+    # NOTE-degrade, never a crash and never a silent pass on a bad file.
+    try:
+        import synthesize_full_speech as _syn
+        probe_reason = _syn.verify_mp3(str(audio))
+        if probe_reason:
+            reasons.append(f"webinarized speech audio {audio.name} is not a valid MP3: "
+                           f"{probe_reason} — a plain deck-only audio renamed as the "
+                           "webinar audio is a defect")
+    except Exception as exc:  # noqa: BLE001
+        reasons.append(f"NOTE: synthesize_full_speech.verify_mp3 unavailable ({exc!r}) — "
+                       "webinarized-audio probe degraded (size check only)")
+
+    # Framing structure proof: the framing layer must be the wired one (welcome before
+    # the deck, chat Q&A + crescendo close after), with in-band word budgets. This is
+    # the substance half that makes a plain audio un-skippable as the webinar audio.
+    try:
+        import webinar_intro_outro as _w
+        framing = _w.build_framing_markdown()
+        for label in ("WELCOME", "QNA", "CLOSE"):
+            if f"## Section {label}" not in framing:
+                reasons.append(f"AF-WEBINAR-INTRO: framing layer is missing the {label} "
+                               "section — the webinar host framing is not the wired "
+                               "generator")
+        report = _w.verify_sections()
+        for name, r in report.items():
+            if not r["within_band"]:
+                reasons.append(f"AF-WEBINAR-INTRO: {name} framing section is {r['words']} "
+                               f"words, outside the +/-{_w.TOLERANCE:.0%} band of target "
+                               f"{r['target']}")
+            if r["n_distinct_tags"] < 2:
+                reasons.append(f"AF-WEBINAR-INTRO: {name} framing section has flat reader "
+                               "tags (fewer than 2 distinct) — the host delivery would "
+                               "read monotonically")
+    except Exception as exc:  # noqa: BLE001
+        reasons.append(f"NOTE: webinar_intro_outro unavailable ({exc!r}) — framing "
+                       "structure check degraded (audio existence + MP3 probe only)")
+
+    hard = [r for r in reasons if not r.startswith("NOTE")]
+    return (len(hard) == 0), reasons
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -831,6 +924,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
     "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
     "P8.4-FISH-TAG":      _verify_fish_tag,
+    # --- Feature L2-H: webinarized speech audio (welcome + Q&A + crescendo close) ---
+    "P9-SPEECH-WEBINAR-INTRO": _verify_webinarized_speech,
     "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
     "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
     # --- Feature L2-D: fillable PDF workbook ---

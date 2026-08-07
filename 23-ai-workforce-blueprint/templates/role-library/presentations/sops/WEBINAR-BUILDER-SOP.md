@@ -42,6 +42,12 @@ path.
 - `working/delivery/PRESENTER-AUDIO.mp3` — the single continuous TTS mp3
 - `working/delivery/_audio_chunks_full/chunk_NNN.mp3` — the real per-chunk Fish audio
 - `working/deliverables/PRESENTERS-SPEECH.md` — the UNTAGGED speech (what was synthesized)
+- `working/delivery/PRESENTER-AUDIO-WEBINAR.mp3` — the WEBINARIZED speech audio (Feature
+  L2-H), produced by the dedicated `P9-SPEECH-WEBINAR-INTRO` phase (order 8.54, before
+  this phase): the plain deck audio plus the ~5-min WELCOME / ~2-min CHAT Q&A /
+  ~3-min CRESCENDO CLOSE host framing (AF-WEBINAR-INTRO). It is the host-framed variant
+  of the presenter audio for webinar decks. See the audio SOP
+  (`audio-demonstration-specialist-sops.md`, SOP 9.2).
 - `working/copy/intake.json` — brand palette + client name + deck slug
 
 It produces:

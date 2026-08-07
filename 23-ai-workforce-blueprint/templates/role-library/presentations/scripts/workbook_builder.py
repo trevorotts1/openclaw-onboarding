@@ -1,22 +1,41 @@
 #!/usr/bin/env python3
 """
-workbook_builder.py — FEATURE L2-D: fillable PDF workbook for the Presentations department.
+workbook_builder.py — FEATURE L2-D: dual-PDF (regular + fillable) workbook for the
+Presentations department (WORKBOOK-REDESIGN-PLAN.md §3).
 
-Every presentation gets a branded, fillable PDF workbook. This executor:
+Every presentation gets a branded, content-rich workbook as TWO deliverables:
 
-  [1] DESIGN — generates each page background via kie.ai gpt-image-2
+  [1] DESIGN — generates each page via kie.ai gpt-image-2
       (gpt-image-2-text-to-image for page 1 / the brand template; gpt-image-2-image-to-image
       for later pages, referencing page 1 + the client brand render for harmony). Prompts
-      are 5,000-19,000 chars (author to >=9,000 target). Background-only: no text baked —
-      the real form content is overlaid as AcroForm fields in step [2]. Parallel submit
+      are 9,000-18,000 chars and carry the page's REAL content baked in (content-in-image,
+      WORKBOOK-REDESIGN-PLAN.md §2): headline, subhead, bullets, question, quote, quiz,
+      affirmation — every quoted string rendered verbatim by the text-to-image engine. The
+      answer zones stay empty for the AcroForm overlay in step [2]. The wireframe
+      "background-only" directive is BANNED by AF-WORKBOOK-PROMPT-NO-CONTENT
+      (_assert_content_in_prompt): a content-empty page or a prompt carrying the literal
+      wireframe language is REFUSED pre-submit, before any paid render. Parallel submit
       within the 20/10s rate limit, then poll and download each render.
-  [2] ASSEMBLE — reportlab draws each PNG full-bleed (center-crop-to-fill) onto a US Letter
-      page (612x792 pt) and overlays AcroForm fields from a per-page field manifest.
+  [2] ASSEMBLE — ONE render set produces BOTH PDFs. reportlab draws each PNG full-bleed
+      (center-crop-to-fill) onto a US Letter page (612x792 pt).
+      2a. REGULAR PDF ({deck_slug}-WORKBOOK.pdf) — every page image, NO AcroForm fields.
+          The share/print version: all designed content is baked into the images, so it
+          reads as a finished book.
+      2b. FILLABLE PDF ({deck_slug}-WORKBOOK-FILLABLE.pdf) — the SAME pages, then the
+          per-page AcroForm fields overlaid from the mapper's field manifest (px->pt,
+          y-flip; text/textarea/checkbox/choice + radio). This is the hand-back version
+          the audience types into.
       CRITICAL gotcha: c.acroForm.extras["NeedAppearances"] = "true" (string literal, NOT
-      Python True — a Python bool serializes as "True" and corrupts the PDF).
-  [3] VERIFY — pypdf reads back the field count + page count.
-  [4] UPLOAD — posts the workbook PDF to GHL via the shared ghl_media path (operator account
-      for tests; never a client).
+      Python True — a Python bool serializes as "True" and corrupts the PDF). The regular
+      PDF is assembled FIRST, then the fillable is a second pass over the same PNGs.
+  [3] VERIFY — AF-WORKBOOK-BOTH: pypdf reads back BOTH PDFs (regular = expected pages,
+      zero fields; fillable = expected pages + every manifest field + /NeedAppearances true).
+      AF-WORKBOOK-EMPTY: the OCR content gate renders each regular-PDF page to pixels,
+      OCR-reads it back, and requires 100% of the page's content_strings present (a bare
+      wireframe page has zero content to find and cannot pass).
+  [4] UPLOAD — posts BOTH PDFs to GHL via the shared ghl_media path (operator account
+      for tests; never a client). Each uploads under its OWN remote name (the local
+      basename), so the regular and the fillable never clobber each other.
 
 RULES
   * Never print a credential value. KIE_API_KEY is read like kie_generate.py (env first,
@@ -24,14 +43,21 @@ RULES
   * Model sovereignty: gpt-image-2 ONLY (gpt-image-2-text-to-image / gpt-image-2-image-to-image).
   * No browser / no UI automation for GHL — only the REST path.
   * This is NOT the deck renderer. It does NOT touch build_deck.py. It does NOT assemble
-    PPTX. It produces ONE additional deliverable: the fillable workbook PDF.
+    PPTX. It produces TWO additional deliverables: the regular workbook PDF and the
+    fillable workbook PDF.
 
 USAGE
-    python3 scripts/workbook_builder.py --run-dir <run_dir> [--out <path>] [--pages 3]
+    python3 scripts/workbook_builder.py --run-dir <run_dir> [--out <path>]
+                                        [--out-fillable <path>] [--pages 3]
                                         [--manifest <workbook.json>] [--skip-design] [--no-upload]
 
     --run-dir    The governed pipeline run dir (reads working/copy/intake.json + renders/).
-    --out        Output PDF path (default <run_dir>/working/deliverables/<deck_slug>-WORKBOOK.pdf)
+    --out        REGULAR (share/print) PDF path (default
+                 <run_dir>/working/deliverables/<deck_slug>-WORKBOOK.pdf) — images only,
+                 no AcroForm fields.
+    --out-fillable  FILLABLE PDF path (default
+                 <run_dir>/working/deliverables/<deck_slug>-WORKBOOK-FILLABLE.pdf) — the
+                 SAME pages + the AcroForm field overlay.
     --pages      Number of workbook pages to design+assemble (default 3).
     --manifest   Optional workbook.json manifest (page list + field manifests). When absent,
                  a DEFAULT 3-page workbook is generated (Cover / My Goals / Action Plan).
@@ -40,11 +66,20 @@ USAGE
     --no-upload    Skip the GHL upload step (assembly + verify only).
     --selftest   Deterministic offline self-test (no network, no reportlab render spend).
 
+FRONT-DOOR NONCE (mirror build_deck / build_webinar_video)
+    The upload path is gated by a per-run random nonce: presentation-canonical-entry.sh
+    mints OC_DECK_ENTRY_NONCE + the run-scoped 0600 file
+    <run-dir>/working/checkpoints/.canonical-entry-nonce, and the runner dispatches this
+    phase through it. A hand-rolled invocation that would upload to GHL is REFUSED
+    (exit 2, AF-CANONICAL-RENDER-BYPASS). --no-upload offline smoke builds are exempt.
+
 EXIT CODES
     0 — workbook built (+ verified; uploaded unless --no-upload)
     1 — one or more pages failed to render/download
-    2 — fatal configuration error (no API key, bad manifest, missing deps)
-    3 — verification failed (pypdf did not read back fields / page count)
+    2 — fatal configuration error (no API key, bad manifest, missing deps, or a refused
+        upload outside the canonical entry nonce handshake)
+    3 — verification failed (AF-WORKBOOK-BOTH pypdf read-back of the dual PDFs, or
+        AF-WORKBOOK-EMPTY OCR content read-back)
 """
 
 from __future__ import annotations
@@ -81,10 +116,13 @@ MAX_POLL_PASSES     = 90        # ~15 min cap per task
 
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# prompt band (research doc §4.1): 5,000-19,000 stripped chars; target >=9,000
-PROMPT_FLOOR = 5000
+# prompt band (WORKBOOK-REDESIGN-PLAN.md §2.1): the Presentations rich-prompt gate,
+# 9,000-18,000 stripped chars — NOT the superseded 5,000-19,000 research band. The
+# shared prompt_gate module enforces the same band; these constants back the executor's
+# own _assert_prompt_band so the floor holds even when prompt_gate is unavailable.
+PROMPT_FLOOR = 9000
 PROMPT_TARGET_MIN = 9000
-PROMPT_CEILING = 19000
+PROMPT_CEILING = 18000
 
 # ---------------------------------------------------------------------------
 # Reportlab constants
@@ -253,149 +291,321 @@ def resolve_client_name(run_dir: Path) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Prompt template (Section-4 template from WORKBOOK-PAGE-PROMPT-TEMPLATE.md)
+# CONTENT-IN-IMAGE prompt model (WORKBOOK-REDESIGN-PLAN.md §2 — the §2.2 skeleton).
+# A workbook page prompt carries the page's REAL content baked in: the text-to-image
+# engine renders the quoted strings verbatim, and the answer zones stay empty for the
+# AcroForm overlay. The old "BACKGROUND ONLY" wireframe directive is structurally absent.
+# ---------------------------------------------------------------------------
+
+# The literal wireframe-language ban (AF-WORKBOOK-PROMPT-NO-CONTENT). A page prompt that
+# carries any of these directives is REFUSED pre-submit — the content-empty regression can
+# never spend a paid render. Keep in sync with PIPELINE-MANIFEST.json AF row.
+WIREFRAME_DIRECTIVES = [
+    "background only",
+    "no text",
+    "no labels",
+    "no words",
+    "no placeholder content",
+    "no numbers",
+    "visual shell",
+    "no baked glyphs",
+]
+
+# Optional content block keys, in canonical reading order. Each value is a verbatim string
+# (or list of verbatim strings) that MUST appear in the rendered prompt (AF-P-VERBATIM-style).
+_CONTENT_KEYS = ("headline", "emphasis", "subhead", "bullets", "quote",
+                 "quote_attribution", "question", "answer_line_count",
+                 "affirmation", "quiz", "follow_along", "contact_line")
+
+
+def _page_content_strings(content) -> List[str]:
+    """Ordered list of verbatim strings a page's content block must bake into its prompt.
+
+    Mirrors build_deck's AF-P-VERBATIM contract: these are the exact strings the OCR
+    content gate (AF-WORKBOOK-EMPTY) will read back after render, so they MUST be present
+    in the prompt letter-for-letter. Short fragments (<3 chars) are skipped like the deck
+    gate skips them. Returns [] when content is absent / empty — the background-only
+    regression the guard refuses."""
+    if not isinstance(content, dict):
+        return []
+    out: List[str] = []
+    for key in ("headline", "subhead", "quote", "quote_attribution",
+                "question", "affirmation", "follow_along", "contact_line"):
+        v = content.get(key)
+        if isinstance(v, str) and len(v.strip()) >= 3:
+            out.append(v.strip())
+    for b in content.get("bullets") or []:
+        if isinstance(b, str) and len(b.strip()) >= 3:
+            out.append(b.strip())
+    for item in content.get("quiz") or []:
+        if not isinstance(item, dict):
+            continue
+        q = item.get("q")
+        if isinstance(q, str) and len(q.strip()) >= 3:
+            out.append(q.strip())
+        for label in ("A", "B", "C", "D"):
+            v = (item.get("options") or {}).get(label)
+            if isinstance(v, str) and len(v.strip()) >= 3:
+                out.append(v.strip())
+    return out
+
+
+def _norm_content_ws(s: str) -> str:
+    """Whitespace-normalise for verbatim matching (case-insensitive, runs collapsed)."""
+    return re.sub(r"\s+", " ", str(s).strip()).lower()
+
+
+def _assert_content_in_prompt(page: dict, prompt: str) -> None:
+    """AF-WORKBOOK-PROMPT-NO-CONTENT — fail-closed PRE-SUBMIT content gate.
+
+    Called before any paid kie.ai render. Raises RuntimeError when ANY of:
+      1. the prompt carries the literal wireframe directive (BACKGROUND ONLY / NO text /
+         NO labels / NO words / ...) — the old background-only language is banned;
+      2. the page carries ZERO content strings — a content-empty page is the wireframe
+         regression, refused here so it cannot spend credits;
+      3. any of the page's content_strings is NOT baked into the prompt verbatim
+         (whitespace-normalised) — mirrors build_deck's AF-P-VERBATIM.
+    """
+    page_id = str(page.get("id") or "?")
+    prompt_lc = prompt.lower()
+    wire = next((w for w in WIREFRAME_DIRECTIVES if w in prompt_lc), None)
+    if wire is not None:
+        raise RuntimeError(
+            f"{page_id}: AF-WORKBOOK-PROMPT-NO-CONTENT — wireframe directive {wire!r} "
+            "present in the page prompt. Content-in-image is mandatory (WORKBOOK-REDESIGN "
+            "§2); a background-only prompt is REFUSED before any paid render. Re-author "
+            "with the page's real content baked in.")
+
+    strings = _page_content_strings(page.get("content") or {})
+    if not strings:
+        raise RuntimeError(
+            f"{page_id}: AF-WORKBOOK-PROMPT-NO-CONTENT — page carries ZERO content "
+            "strings. A content-empty workbook page is the background-only regression; "
+            "it is refused pre-submit. Attach the page's real content (headline, bullets, "
+            "question, quote, quiz, affirmation) before design.")
+
+    prompt_norm = _norm_content_ws(prompt)
+    missing = [c for c in strings if _norm_content_ws(c) not in prompt_norm]
+    if missing:
+        short = [c if len(c) <= 60 else c[:57] + "..." for c in missing]
+        raise RuntimeError(
+            f"{page_id}: AF-WORKBOOK-PROMPT-NO-CONTENT — {len(missing)} content string(s) "
+            "NOT baked verbatim into the page prompt (must appear letter-for-letter so the "
+            "text-to-image engine renders them; mirrors AF-P-VERBATIM): " + " | ".join(short))
+
+
+# ---------------------------------------------------------------------------
+# Prompt template (the §2.2 content-in-image skeleton, WORKBOOK-PAGE-PROMPT-TEMPLATE.md)
 # ---------------------------------------------------------------------------
 def build_page_prompt(*, page_role: str, motif_position: str, brand: Dict[str, str],
                       client_name: str, is_i2i: bool, page_index: int,
-                      page_count_total: int = 3) -> str:
-    """Compose a >=9,000-char (target) background-only page prompt."""
+                      page_count_total: int = 3, content: Optional[Dict[str, Any]] = None,
+                      archetype_id: Optional[str] = None, slide_range: Optional[str] = None,
+                      grade: Optional[str] = None, font_character: Optional[str] = None,
+                      headline_size: int = 44, subhead_size: int = 24, body_size: int = 13,
+                      logo_opacity: int = 14, logo_position: str = "left-aligned",
+                      logo_width: str = "2.5in", headline_position: str = "upper content band",
+                      bullet_zone: str = "center third", quote_zone: str = "upper third, right",
+                      contact_line: Optional[str] = None) -> str:
+    """Compose a content-in-image workbook page prompt (>=9,000 / <=18,000 stripped chars).
+
+    The page's REAL content strings ride in the PAGE CONTENT + VERBATIM blocks so the
+    text-to-image engine renders them into the image; the answer zones stay empty for the
+    AcroForm overlay. `content` carries the verbatim strings (see _page_content_strings);
+    the caller MUST run _assert_content_in_prompt(page, prompt) before submit."""
     prim, sec, acc = brand["primary"], brand["secondary"], brand["accent"]
     base, ink = brand["base"], brand["ink"]
+    content = content or {}
+    _content = dict(content)
+
+    grade = grade or "premium, calm, editorial, sales-focused"
+    font = font_character or "Montserrat geometric editorial sans"
+    arch = archetype_id or f"WORKBOOK-PAGE-{str(page_role).upper().replace(' ', '-')}"
+    slide_range = slide_range or "the companion deck slides"
+    contact = contact_line or _content.get("contact_line") or f"{client_name}.com"
+    mot_cycle = ["top-right", "bottom-left", "above-footer"]
+
+    # ---- PAGE CONTENT block (bake verbatim) -------------------------------------------
+    headline = _content.get("headline") or f"{page_role} page"
+    emphasis = _content.get("emphasis") or ""
+    subhead = _content.get("subhead") or ""
+    bullets = [b for b in (_content.get("bullets") or []) if isinstance(b, str) and b.strip()]
+    quote = _content.get("quote") or ""
+    quote_attrib = _content.get("quote_attribution") or ""
+    question = _content.get("question") or ""
+    answer_lines = int(_content.get("answer_line_count") or 1)
+    affirmation = _content.get("affirmation") or ""
+    quiz = [q for q in (_content.get("quiz") or []) if isinstance(q, dict)]
+    follow = _content.get("follow_along") or ""
+    emphasis_line = (f"  — the emphasis word {emphasis!r} is rendered in {acc}."
+                     if emphasis else "")
+
+    bullets_block = "\n".join(f"  • {b!r}" for b in bullets)
+    quote_block = ""
+    if quote:
+        quote_block = (f"\nQUOTE (pull-quote panel at {quote_zone}): {quote!r}"
+                       + (f" — {quote_attrib!r}" if quote_attrib else ""))
+    question_block = ""
+    if question:
+        question_block = (f"\nQUESTION: {question!r} followed by {answer_lines} empty "
+                          f"answer line(s).")
+    affirmation_block = f"\nAFFIRMATION: {affirmation!r}" if affirmation else ""
+    quiz_block = ""
+    if quiz:
+        rows = []
+        for item in quiz:
+            opts = " ".join(f"({k}) {item.get('options', {}).get(k, '')}" for k in "ABCD")
+            rows.append(f"  {item.get('q', '')!r} with options {opts}")
+        quiz_block = "\nQUIZ:\n" + "\n".join(rows)
+    follow_block = f"\nFOLLOW-ALONG strip: {follow!r}" if follow else ""
+    subhead_line = f"\nSUBHEAD: {subhead!r}" if subhead else ""
+    bullets_intro = (f"BULLETS (render as {len(bullets)} short lines, each preceded by a "
+                     f"{sec} bullet marker, in the {bullet_zone}):\n{bullets_block}"
+                     if bullets else "")
 
     style_ref = (
-        "\n=== STYLE REFERENCE DIRECTIVE ===\n"
+        "\n=== STYLE-REFERENCE DIRECTIVE (I2I pages only, verbatim) ===\n"
         "Use the attached images only as style reference for color grading, lighting, and "
-        "composition — do not copy their subjects, faces, or text.\n"
+        "composition — do not copy their subjects, faces, or text. (Do NOT copy the "
+        "reference page's baked text.)\n"
     ) if is_i2i else ""
 
-    prompt = f"""[ARCHETYPE CLEAN-BRANDED-WORKBOOK-SHELL]
-DESIGN A PRINTABLE WORKBOOK PAGE BACKGROUND, PORTRAIT, US-LETTER-8.5x11 EQUIVALENT (3:4 ASPECT).
+    prompt = f"""[ARCHETYPE {arch}]
+DESIGN A SINGLE FULL-BLEED PRINTABLE WORKBOOK PAGE, PORTRAIT, US-LETTER-8.5x11 EQUIVALENT,
+3:4 ASPECT, 2K. This is a DESIGNED, CONTENT-RICH workbook page for {client_name} — the
+companion to a live presentation. Render the page's REAL content (headline, subhead,
+bullets, question, quote, affirmation, quiz, follow-along, contact) baked into the image
+by the text-to-image engine, in the brand system below. Every quoted string must be
+rendered VERBATIM, letter-for-letter.
 
-This is the BACKGROUND ONLY for a fillable PDF form page in a client workbook. Generate the
-visual shell — NO words, NO labels, NO numbers, NO placeholder content anywhere. All form
-content will be overlaid later as crisp, real form fields (11pt body, 14pt field labels,
-24pt page titles on a 612x792pt US-Letter composition grid). The page must read as a premium,
-clean, professionally-branded worksheet with clearly reserved EMPTY ZONES for those fields.
+=== PAGE ROLE & WHAT THIS PAGE IS FOR ===
+This workbook page is: {page_role}. It accompanies {slide_range}. The audience completes it
+while following the presentation, so every element supports the spoken content on those
+slides. The reader works top-to-bottom: headline, subhead, bullets, then the write-in
+answer zones. The page must stand alone as a finished, premium takeaway even away from the
+live talk — never a blank shell.
 
 === BRAND LOCKUP ===
-Client: {client_name}. Industry: professional services. Grade: premium, calm, trustworthy.
+Client: {client_name}. Grade: {grade}.
 Brand palette (use these EXACT hex values, no substitutions):
-  Primary: {prim} — header band and footer rule only.
-  Secondary: {sec} — section accent bands and thin rules.
-  Accent: {acc} — one small geometric motif (thin corner brace or small circle) only.
-  Base: {base} (near-white) — page background and every field-zone interior.
-  Ink: {ink} (near-black) — very light hairline rules, at most 8% opacity.
-Typography character: clean geometric sans (Montserrat-like), used only as a visual system —
-no visible text. Type-size tokens for the future overlay: 24pt page title, 14pt section
-labels, 11pt body text, all Helvetica-compatible geometric sans; these sizes are the grid
-reference the AcroForm overlay will honor, never baked glyphs.
-Logo treatment: the {client_name} wordmark appears ONLY as a LOW-OPACITY watermark in the
-footer band, ~14% opacity, left-aligned, ~2.5in wide. Do not place it anywhere else.
-(On the image-to-image path, the real page-1 reference is attached — preserve its palette,
-lighting, and composition; do not copy any baked text.)
+  Primary {prim} — header band + footer rule.
+  Secondary {sec} — section rules, accent bands, the bullet markers.
+  Accent {acc} — one geometric motif + the emphasis color for key words.
+  Base {base} — page background.
+  Ink {ink} — text ink.
+Typography character: {font} — the weight ladder is BLACK hero (40-56pt on this page),
+ExtraBold subhead (20-26pt), Bold label (14-18pt), Medium body (12-14pt). The client
+wordmark/logo appears in the footer band at {logo_opacity}% opacity, {logo_position},
+{logo_width} wide. (I2I: the real logo is attached in input_urls — render it exactly, do
+not redraw.)
 
-=== LAYOUT GRID (fixed per page) ===
-The page divides top-to-bottom into three bands, composed on a strict thirds grid:
-  HEADER BAND (top 0-15%): a solid {prim} color block, or a clean flat header with a thin
-    {acc} underline rule at its bottom edge. Empty and quiet — reserved for the page title
-    and a client-name form line. Header height is 15% of the 2688px page height (~403px).
-  FIELD BAND (15-85%): on {base}. Contains ONLY the empty field zones described below.
-    Flat, even color. No patterns, no photos, no gradients that fight text. This band is the
-    working grid: three even horizontal rows (top, middle, lower) with generous negative
-    space and 0.6in safe margins on all four sides.
-  FOOTER BAND (85-100%): a hairline rule in {sec}, the low-opacity wordmark watermark at
-    left, and an EMPTY rectangular zone at bottom-right reserved for a page-number form
-    field.
-Safe margins: 0.6in on all four sides. Nothing touches the edges.
+=== PAGE CONTENT (the real content — bake verbatim) ===
+HEADLINE (render at {headline_size}pt, {headline_position}): {headline!r}{emphasis_line}
+{subhead_line}
+{bullets_intro}{quote_block}{question_block}{affirmation_block}{quiz_block}{follow_block}
 
-=== EMPTY FIELD ZONES (reserve exactly these; each a clean flat shape, no content) ===
-1. Header-right: one wide rounded-rectangle zone, {sec} at 8% tint, ~4.5in wide x 0.5in
-   tall — reserved for a client-name text field. Quiet, no shading inside.
-2. Field band, top row: three evenly spaced empty box rows, each {sec} at 5% tint with a
-   thin {sec} bottom rule, ~6.5in wide x 0.6in tall each — reserved for short-answer lines.
-   The interior of each must be plain, uniform, empty.
-3. Field band, middle: two larger empty panels side by side, ~3.1in wide x 2.2in tall each,
-   plain {base} with a thin {sec} border and softly rounded corners — reserved for
-   check-list / short-note zones. Interiors empty and uniform.
-4. Field band, bottom-left: one large empty notes panel ~4.2in wide x 3.0in tall, plain
-   {base} with a thin {sec} border — reserved for a long-answer multiline field. Interior
+=== VERBATIM + SPELLING-LOCK ===
+Render EVERY quoted string above letter-for-letter, exactly as written, spelled exactly,
+no paraphrasing, no substitution, no reordering, no typo, no garble, no truncation, no
+ellipsis unless it is in the source string. The quoted strings are the ONLY text on this
+page beyond the {client_name} wordmark and the page number. Text must read exactly as
+quoted — this is the spelling-lock for every baked string above.
+
+=== LAYOUT GRID (fixed per page, per page type) ===
+HEADER BAND (top 0-16%): solid {prim} band with the page title set in white/ink, and a thin
+{acc} rule at its bottom edge. Reserved: the page title + one client-name form line (empty
+zone for an AcroForm text field at header-right).
+CONTENT BAND (16-84%): on {base}. The page's content zones — headline block, bullet list,
+question + answer lines, quote panel, quiz grid, affirmation panel — laid out on a thirds
+grid with 0.6in safe margins. Each ANSWER zone is a flat, quiet, empty shape (short-answer
+line / checkbox square / notes panel) with a thin {sec} border, reserved for the AcroForm
+overlay. Generous negative space; no element collides with another zone.
+FOOTER BAND (84-100%): a hairline {sec} rule, the {client_name} wordmark/logo watermark at
+left, {contact!r} small at right, and a page-number zone bottom-right.
+Safe margins 0.6in; nothing touches the edges.
+
+=== CONTENT ZONE PLACEMENT (this page's exact layout, fixed) ===
+On a strict thirds grid with 0.6in safe margins on all four sides, the page resolves
+top-to-bottom into:
+  HEADER (0-16%): the solid {prim} band carrying the page title; the client-name form line
+    is an empty {sec}-tinted rounded rectangle at header-right, ~4.5in x 0.5in, quiet and
+    undecorated.
+  UPPER THIRD (16-33%): the headline block at {headline_position} in BLACK {headline_size}pt,
+    with the subhead in ExtraBold {subhead_size}pt directly beneath it. No other element in
+    this third. The headline is the hero and the first thing the eye lands on.
+  CENTER THIRD (33-66%): the bullet list (or quiz grid / quote panel, when present) in the
+    {bullet_zone}, each short line with a {sec} bullet marker. Bullet text never exceeds two
+    lines; lines are left-aligned with even leading and full contrast on {base}.
+  LOWER THIRD (66-84%): the answer zones — the question line plus {answer_lines} empty
+    underlines (when a question is present), or the affirmation line and its write-in
+    underline, or the notes / commitment panel. Each answer zone is a flat, quiet shape with
+    a thin {sec} border, reserved for the AcroForm overlay.
+  FOOTER (84-100%): a hairline {sec} rule, the {client_name} wordmark at left at
+    {logo_opacity}% opacity, {contact!r} small at right, and an empty page-number zone
+    bottom-right.
+Nothing outside these bands, nothing overlapping a band boundary, nothing closer than
+0.6in to an edge. The bands and their relative heights are IDENTICAL on every page of the
+workbook so the set reads as one designed system; only the {motif_position} rotates.
+
+=== ANSWER ZONES (reserve each as an empty write-in area; no content inside) ===
+1. Header-right: one wide rounded-rectangle {sec}-tinted zone for a client-name text field.
+2. Each answer line: a thin {sec} underline ~6.5in wide, no shading, ~0.6in tall.
+3. Each checkbox/radio: a small empty {sec}-bordered square ~0.25in.
+4. Notes / commitment panel: a large plain {base} panel with a thin {sec} border, interior
    empty.
-This page's workbook role is {page_role}; vary zone emphasis only in the direction of that
-role (e.g. a Weekly Check-In page may widen zone 3). Leave every zone CLEAR and VISUALLY
-QUIET for text overlay. Do not decorate inside any zone. The zones are placed on the thirds
-grid (upper third, center third, lower third) with safe margins honored so no field ever
-collides with the header or footer band.
+Keep every answer zone visually quiet so the AcroForm widget reads clearly. Do not decorate
+inside any answer zone. The answer zones are the ONLY empty shapes on the page; everything
+else is the designed content described above.
 
-=== MOTIF (consistent every page, small) ===
-One small {acc} geometric motif per page, placed at {motif_position}. It is decorative only,
-thin-line, never over a field zone. Motif is a hairline corner brace or a single small
-circle, no more than 1in across, kept at least 0.8in from every field zone.
+=== MOTIF ===
+One small {acc} geometric motif at {motif_position}, decorative, thin-line, never over an
+answer zone. Motif is a hairline corner brace or a single small circle, no more than 1in
+across, kept at least 0.8in from every answer zone.
 
-=== DO-NOT BLOCK (negative directives, exhaustive) ===
-No text, no words, no letters, no numbers, no labels, no placeholder glyphs, no characters,
-no people, no hands, no fused hands, no fingers, no faces, no malformed anatomy, no
-distorted facial features, no mismatched eyes, no asymmetric eyes, no distorted teeth, no
-over-smoothed skin, no body-proportion errors, no extra limbs, no photos, no busy textures,
-no high-detail backgrounds, no gradients crossing a field zone, no shadows over any field
-zone, no watermark over any field zone, no watermark in the header, no clip-art, no clutter,
-no noise, no vignetting over the field band. Flat, clean, minimal, corporate. Do not write
-any words inside the reserved zones. Do not draw letters in any font. No misspelled or
-garbled words anywhere (there must be no words to garble). Do not redraw, recolor, restyle,
-or reinterpret the attached reference brand mark. No emoji, no clipart, no default-font UI
-artifacts, no pure-black fills, no em-dash typographic artifacts, no system-default fonts.
-No narration of the image, no presenter lines, no stage directions, no webinar or
-telegraphing language, no "describe the picture" captions, no bracketed placeholder tokens,
-no TBD/owner-to-confirm/pending inserts. No demographic defaults, no skin-tone directives,
-no lightening or desaturation of any cast — representation is not a subject of this render.
-The reference mark must be rendered exactly as attached, letter-for-letter and shape-for-shape,
-never redrawn.
+=== DO-NOT BLOCK (the 8 defect classes, named — for a CONTENT-BEARING page) ===
+1. GARBLED/MISSPELLED TEXT — misspell, garble, phonetic drift, or truncation of any quoted
+   string; render every quoted string letter-for-letter, exactly as written. If a word is
+   hard to set, do not omit it and do not swap a synonym — set the exact string.
+2. LOGO MUTATION — do not redraw, recolor, or restyle the attached {client_name} logo;
+   render it exactly as attached, letter-for-letter and shape-for-shape.
+3. PLACEHOLDER/BRACKET TOKENS — no bracketed token, no square brackets around the quoted
+   content, no "owner to confirm", no TBD, no "insert here", no build note, no "to supply",
+   no pending marker.
+4. IMAGE NARRATION/PRESENTER/META — no narrator line, no stage direction, no "describe the
+   picture" caption, no webinar self-talk, no "this is a workbook page" meta text, no
+   spoken-script fragment.
+5. ANATOMICAL ARTIFACTS — no people are in frame (representation_mix), so none may appear:
+   no people, no fused hands, no fingers, no malformed anatomy, no distorted facial
+   features, no mismatched eyes, no asymmetric eyes, no distorted teeth.
+6. BACKGROUND COMPETING WITH TEXT — no busy or cluttered background, no pattern or texture
+   under the text zones; keep generous negative space and high contrast on every quoted
+   line; add a soft scrim behind the text where needed so every letter reads.
+7. DEMOGRAPHIC/SKIN-TONE FIDELITY — no demographic default, no skin-tone drift; honor the
+   client's captured representation_mix verbatim (this deck: typography-led editorial with
+   no people). No lightening or desaturation of any cast.
+8. CARRIED-FORWARD UNIVERSAL BASELINE — no watermark over content, no emoji, no clipart,
+   no default font (Calibri/Arial/Times New Roman), no em dash, no system UI artifact, no
+   pure-black fill. All text in the {font} family at the sizes in the TYPE SPEC.
+
+=== COMPOSITION / TYPE SPEC ===
+Thirds grid; the headline is the hero on content pages; reading order = headline → subhead
+→ bullets → question/answer → footer. Brand hex: {prim}, {sec}, {acc}, {base}, {ink}.
+Headline {headline_size}pt BLACK, subhead {subhead_size}pt ExtraBold, body {body_size}pt
+Medium. 8th-row readability: the headline must still read when the page is shrunk to 25%.
+Each quoted bullet line fits on one to two lines with the {sec} bullet marker.
 
 === QUALITY ===
-Crisp 2K edges, flat clean vector-flat aesthetic, professional corporate workbook page,
-extremely high information density of DESIGN (not content), soft even tone, consistent with
-the attached reference page. Portrait 3:4 at 2K resolution (2016x2688px). Do not crop or
-letterbox. Uniform lighting, no competing visual firsts, generous negative space so the
-overlaid form text (11pt-14pt) always reads at high contrast on the field zones.
+Crisp 2K edges, flat clean editorial-print aesthetic, professional corporate workbook page,
+high information density of DESIGN (content + brand), soft even tone, consistent with the
+attached reference page. Portrait 3:4 at 2K (2016x2688px). No crop, no letterbox, uniform
+lighting, no competing visual firsts. The page reads as a premium, finished companion —
+not a blank shell.
 
 === DETERMINISTIC VARIANT (page {page_index} of {page_count_total}) ===
-This is page {page_index} of a {page_count_total}-page workbook. To keep the set feeling
-designed rather than stamped, rotate exactly ONE subtle accent placement per page:
-  - page 1: accent motif top-right, header is a solid primary band;
-  - page 2: accent motif bottom-left, header is a flat primary block with a thin accent rule;
-  - page 3: accent motif above the footer rule, header keeps the thin accent underline;
-  - later pages cycle through the same three motif positions in order (top-right,
-    bottom-left, above-footer) so no two adjacent pages share a motif position.
-Nothing else rotates: the palette, the band structure, the field-zone geometry, the
-watermark, and the footer rule are identical on every page. The variation is a one-element
-flex, never a layout change and never a new decorative element.
-
-=== PAGE-ROLE ART DIRECTION (page {page_index} of the workbook) ===
-This workbook page is: {page_role}.
-It is part of a branded fillable workbook for {client_name}. The role determines only which
-field zone is emphasized and the header band's visual weight:
-  - For a Cover page: the header band is the strongest element (full primary band, thin
-    accent rule at its base); the rest of the page is quiet with a single wide notes panel
-    in the lower third.
-  - For a Goals / Planning page: the top-row short-answer lines (zone 2) and the two side
-    panels (zone 3) carry the page; the notes panel is secondary.
-  - For an Action Plan / Checklist page: the three short-answer lines dominate the upper
-    third; the lower third holds a single wide commitment panel.
-  - For a Weekly Check-In / Progress page: widen zone 3 (the two side panels) and keep the
-    notes panel at the standard size.
-In every case the header band stays at {prim}, the field band stays on {base}, the footer
-band keeps the {sec} hairline rule and the {client_name} watermark, and the {acc} motif sits
-at {motif_position}. No page role changes the palette, the margins, the band structure, or
-the empty-zone discipline. The emphasis is a shift of zone weight only, never an added
-element, never a baked word, never a photo.
-
-=== DESIGN SYSTEM RECAP (locked every page, repeat verbatim) ===
-Header band color: {prim}. Footer rule color: {sec}. Motif color: {acc}. Field-zone border
-color: {sec}. Field-zone interior: {base}. Page background: {base}. Hairlines: {ink} at 8%.
-All edges straight or softly rounded (max 8px radius). No drop shadows, no inner shadows, no
-glow, no gradients across any zone, no vignette, no noise, no paper grain. The design reads
-as one system across every page: same palette, same band ratios, same motif language, same
-watermark placement. The 2K raster must be crisp and non-tiled, filling the full 3:4 frame
-edge to edge with no letterbox bars.
+Rotate exactly ONE accent placement per page (motif position cycles {', '.join(mot_cycle)}).
+Nothing else rotates: palette, band structure, zone geometry, footer, and logo placement
+are identical across pages so the set reads as one designed system. This page carries the
+motif at {motif_position}.
 {style_ref}"""
     return prompt
 
@@ -428,6 +638,11 @@ def submit_page(page: dict, api_key: str) -> str:
     model = MODEL_I2I if mode == "i2i" else MODEL_T2I
     prompt = page["prompt"]
     urls = page.get("input_urls") or []
+
+    # AF-WORKBOOK-PROMPT-NO-CONTENT — fail-closed PRE-SUBMIT content gate. Runs even when
+    # the shared rich gate is not enforced (KIE_PROMPT_GATE unset): a wireframe prompt or a
+    # content-empty page is refused here so it can never spend a paid kie.ai render.
+    _assert_content_in_prompt(page, prompt)
 
     if prompt_gate is not None:
         try:
@@ -610,7 +825,6 @@ def design_pages(pages: list, api_key: str, pages_dir: Path) -> List[str]:
         raise RuntimeError(f"workbook design incomplete: {len(out_paths)}/{n} pages OK; "
                            f"failed: {failed}")
     return out_paths
-    return out_paths
 
 
 # ---------------------------------------------------------------------------
@@ -625,6 +839,16 @@ def default_workbook_manifest(client_name: str, brand: Dict[str, str]) -> Dict[s
             "page_role": "Cover",
             "mode": "t2i",
             "motif_position": "top-right",
+            "content": {
+                "headline": "Your Workbook",
+                "subhead": "A guided companion to today's session",
+                "bullets": [
+                    "Follow along and capture the key ideas.",
+                    "Use the spaces to write your own notes.",
+                    "Leave with a clear plan you can use.",
+                ],
+                "affirmation": "The one thing I want from today is:",
+            },
             "fields": [
                 {"name": "ClientName", "type": "text", "x": 1080, "y": 240,
                  "w": 760, "h": 90, "flags": "", "label": "Client Name"},
@@ -639,6 +863,17 @@ def default_workbook_manifest(client_name: str, brand: Dict[str, str]) -> Dict[s
             "page_role": "My Goals",
             "mode": "i2i",
             "motif_position": "bottom-left",
+            "content": {
+                "headline": "My Goals",
+                "subhead": "Name the outcomes you want",
+                "bullets": [
+                    "What would make this a success for you?",
+                    "What is the biggest shift you want?",
+                    "What is the one metric that matters?",
+                ],
+                "question": "What do I most want to achieve?",
+                "affirmation": "My top goal today is:",
+            },
             "fields": [
                 {"name": "Goal1", "type": "text", "x": 220, "y": 560, "w": 1576, "h": 110,
                  "flags": "", "label": "Goal 1"},
@@ -657,6 +892,18 @@ def default_workbook_manifest(client_name: str, brand: Dict[str, str]) -> Dict[s
             "page_role": "Action Plan",
             "mode": "i2i",
             "motif_position": "above-footer",
+            "content": {
+                "headline": "My Action Plan",
+                "subhead": "Turn the session into a plan",
+                "bullets": [
+                    "One action you will take this week.",
+                    "One habit you will start today.",
+                    "One person who will keep you honest.",
+                ],
+                "question": "What is my first step?",
+                "affirmation": "My commitment is:",
+                "follow_along": "Do it in the next seven days.",
+            },
             "fields": [
                 {"name": "Action1", "type": "text", "x": 220, "y": 560, "w": 1576, "h": 110,
                  "flags": "", "label": "Action 1"},
@@ -693,13 +940,92 @@ def _field_flag_list(flags: str) -> List[str]:
     return [f.strip() for f in str(flags).split(",") if f.strip()]
 
 
-def assemble_workbook(manifest: Dict[str, Any], page_pngs: List[str], out_path: Path,
-                      brand: Dict[str, str]) -> int:
-    """Build the fillable PDF. Returns field count."""
+def _draw_page(c, png_path: str, pw: float, ph: float) -> tuple:
+    """Draw one workbook page PNG full-bleed (center-crop-to-fill) onto a letter canvas.
+
+    Returns (img_w, img_h) in pixels so field px->pt mapping can reuse them.
+    """
+    from PIL import Image
+    img = Image.open(png_path)
+    img_w, img_h = img.size
+    img.close()
+    scale = max(pw / img_w, ph / img_h)
+    iw, ih = img_w * scale, img_h * scale
+    c.drawImage(png_path, (pw - iw) / 2, (ph - ih) / 2, width=iw, height=ih)
+    return (img_w, img_h)
+
+
+def _overlay_fields(c, page_spec: dict, img_w: int, img_h: int, pw: float, ph: float,
+                    brand: Dict[str, str]) -> int:
+    """Overlay the page's AcroForm fields (px -> pt, y-flip). Returns the field count."""
     from reportlab.lib.colors import HexColor
+    field_count = 0
+    bcol = HexColor(brand["primary"])
+    for f in page_spec.get("fields", []):
+        ftype = f.get("type", "text")
+        name = f["name"]
+        x_pt = _pt_from_px(f["x"], img_w, pw)
+        y_pt = _pt_y_from_px(f["y"], img_h, ph)
+        w_pt = f.get("w", 400) / img_w * pw
+        h_pt = f.get("h", 60) / img_h * ph
+        flags = _field_flag_list(f.get("flags", ""))
+
+        if ftype in ("text", "textarea"):
+            fflags = "multiline" if "multiline" in flags else ""
+            if fflags:
+                c.acroForm.textfield(
+                    name=name, value="", x=x_pt, y=y_pt, width=w_pt, height=h_pt,
+                    borderWidth=1, borderColor=bcol, borderStyle="solid",
+                    fontSize=11, forceBorder=True, fieldFlags=fflags)
+            else:
+                c.acroForm.textfield(
+                    name=name, value="", x=x_pt, y=y_pt, width=w_pt, height=h_pt,
+                    borderWidth=1, borderColor=bcol, borderStyle="solid",
+                    fontSize=11, forceBorder=True)
+        elif ftype == "checkbox":
+            size = min(w_pt, h_pt)
+            c.acroForm.checkbox(name=name, x=x_pt, y=y_pt, size=size,
+                                borderColor=bcol, borderWidth=1,
+                                buttonStyle="check", checked=False)
+        elif ftype in ("choice", "listbox"):
+            options = f.get("options") or []
+            # reportlab 4.4.10 choice() raises UnboundLocalError on empty value:
+            # pass a non-empty default so the option list still lands.
+            default = options[0] if options else ""
+            c.acroForm.choice(name=name, value=default, options=options,
+                              x=x_pt, y=y_pt, width=w_pt, height=h_pt,
+                              borderWidth=1, borderColor=bcol, borderStyle="solid",
+                              fontSize=11, forceBorder=True)
+        else:
+            raise ValueError(f"unknown field type {ftype!r} for {name}")
+        field_count += 1
+    return field_count
+
+
+def assemble_regular(manifest: Dict[str, Any], page_pngs: List[str], out_path: Path) -> int:
+    """Build the REGULAR PDF: every page image full-bleed on US Letter, NO AcroForm fields.
+
+    This is the share/print version — all designed content is baked into the images, so it
+    reads as a finished book. Returns 0 (no fields by design); verifies via page count."""
     from reportlab.lib.pagesizes import letter
     from reportlab.pdfgen import canvas
-    from PIL import Image
+
+    pw, ph = letter  # 612 x 792
+    c = canvas.Canvas(str(out_path), pagesize=letter)
+    for page_spec, png_path in zip(manifest["pages"], page_pngs):
+        _draw_page(c, str(png_path), pw, ph)
+        c.showPage()
+    c.save()
+    return len(manifest["pages"])
+
+
+def assemble_workbook(manifest: Dict[str, Any], page_pngs: List[str], out_path: Path,
+                      brand: Dict[str, str]) -> int:
+    """Build the FILLABLE PDF: the SAME pages + the per-page AcroForm field overlay.
+
+    Returns the total AcroForm field count across all pages."""
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas
 
     pw, ph = letter  # 612 x 792
     field_count = 0
@@ -709,55 +1035,8 @@ def assemble_workbook(manifest: Dict[str, Any], page_pngs: List[str], out_path: 
     c.acroForm.extras["NeedAppearances"] = NEED_APPEARANCES
 
     for page_spec, png_path in zip(manifest["pages"], page_pngs):
-        img = Image.open(png_path)
-        img_w, img_h = img.size
-        img.close()
-
-        # center-crop-to-fill: scale so the image covers the full letter page
-        scale = max(pw / img_w, ph / img_h)
-        iw, ih = img_w * scale, img_h * scale
-        c.drawImage(str(png_path), (pw - iw) / 2, (ph - ih) / 2, width=iw, height=ih)
-
-        for f in page_spec.get("fields", []):
-            ftype = f.get("type", "text")
-            name = f["name"]
-            x_pt = _pt_from_px(f["x"], img_w, pw)
-            y_pt = _pt_y_from_px(f["y"], img_h, ph)
-            w_pt = f.get("w", 400) / img_w * pw
-            h_pt = f.get("h", 60) / img_h * ph
-            flags = _field_flag_list(f.get("flags", ""))
-            bcol = HexColor(brand["primary"])
-
-            if ftype in ("text", "textarea"):
-                fflags = "multiline" if "multiline" in flags else ""
-                if fflags:
-                    c.acroForm.textfield(
-                        name=name, value="", x=x_pt, y=y_pt, width=w_pt, height=h_pt,
-                        borderWidth=1, borderColor=bcol, borderStyle="solid",
-                        fontSize=11, forceBorder=True, fieldFlags=fflags)
-                else:
-                    c.acroForm.textfield(
-                        name=name, value="", x=x_pt, y=y_pt, width=w_pt, height=h_pt,
-                        borderWidth=1, borderColor=bcol, borderStyle="solid",
-                        fontSize=11, forceBorder=True)
-            elif ftype == "checkbox":
-                size = min(w_pt, h_pt)
-                c.acroForm.checkbox(name=name, x=x_pt, y=y_pt, size=size,
-                                    borderColor=bcol, borderWidth=1,
-                                    buttonStyle="check", checked=False)
-            elif ftype in ("choice", "listbox"):
-                options = f.get("options") or []
-                # reportlab 4.4.10 choice() raises UnboundLocalError on empty value:
-                # pass a non-empty default so the option list still lands.
-                default = options[0] if options else ""
-                c.acroForm.choice(name=name, value=default, options=options,
-                                  x=x_pt, y=y_pt, width=w_pt, height=h_pt,
-                                  borderWidth=1, borderColor=bcol, borderStyle="solid",
-                                  fontSize=11, forceBorder=True)
-            else:
-                raise ValueError(f"unknown field type {ftype!r} for {name}")
-            field_count += 1
-
+        img_w, img_h = _draw_page(c, str(png_path), pw, ph)
+        field_count += _overlay_fields(c, page_spec, img_w, img_h, pw, ph, brand)
         c.showPage()
 
     c.save()
@@ -789,6 +1068,218 @@ def verify_pdf(path: Path, expected_pages: int, expected_fields: int) -> Dict[st
     }
 
 
+def _render_pdf_page_to_png(pdf_path: Path, page_index: int, dpi: int = 600) -> Optional[Path]:
+    """Render one PDF page to a PNG for OCR. Prefers PyMuPDF (fitz); degrades to
+    pdf2image/pdftoppm when PyMuPDF is unavailable. Returns None on any failure so the
+    OCR gate degrades to a readable NOTE instead of crashing the phase."""
+    png_path = pdf_path.with_name(f".{pdf_path.stem}-ocr-p{page_index+1}.png")
+    try:
+        import fitz  # PyMuPDF
+        doc = fitz.open(str(pdf_path))
+        pix = doc[page_index].get_pixmap(dpi=dpi)
+        pix.save(str(png_path))
+        doc.close()
+        return png_path
+    except ImportError:
+        pass
+    except Exception:  # noqa: BLE001
+        return None
+    # PyMuPDF absent — try pdf2image (pdftoppm backend).
+    try:
+        from pdf2image import convert_from_path
+        images = convert_from_path(str(pdf_path), dpi=dpi, first_page=page_index + 1,
+                                   last_page=page_index + 1)
+        if images:
+            images[0].save(str(png_path))
+            return png_path
+    except Exception:  # noqa: BLE001
+        return None
+    return None
+
+
+def _ocr_page(png_path: Path) -> str:
+    """OCR a rendered page PNG via pytesseract. Returns whitespace-normalised lowercase
+    text, or '' if tesseract is unavailable (the gate then fails open on that page's
+    strings with a readable NOTE, never a silent pass)."""
+    try:
+        import pytesseract
+        from PIL import Image
+        txt = pytesseract.image_to_string(Image.open(png_path))
+    except Exception:  # noqa: BLE001
+        return ""
+    return _norm_content_ws(txt)
+
+
+def verify_content(manifest: Dict[str, Any], pdf_path: Path,
+                   pages_dir: Optional[Path] = None) -> Dict[str, Any]:
+    """AF-WORKBOOK-EMPTY — post-render OCR content gate over the REGULAR PDF.
+
+    For every page: assert the mapper attached non-empty content_strings[], render the
+    page region to pixels (PyMuPDF get_pixmap, pdftoppm fallback), OCR-read it back, and
+    require 100% of that page's content_strings present (whitespace-normalised). A bare
+    wireframe page has zero content strings to find and cannot pass; a page the model
+    rendered blank or garbled fails under 100% and the phase does not attest.
+
+    Returns a per-page result dict: {page_id: {"found": int, "total": int, "missing": [],
+    "pass": bool}} plus {"_ocr_available": bool}. callers decide FAIL vs NOTE on
+    "_ocr_available" being False (degraded, not a content failure)."""
+    pdf_path = Path(pdf_path)
+    out: Dict[str, Any] = {}
+    ocr_available = True
+    total_pages = len(manifest.get("pages") or [])
+    # The design source PNGs (working/workbook/pages/<id>.png) are the exact content-in-image
+    # renders at native 2K — the highest-fidelity OCR target. Prefer them over a re-render of
+    # the assembled PDF (which downscales small text and loses OCR fidelity). Fall back to the
+    # PDF page render when the source PNG is absent.
+    pages_dir = Path(pages_dir) if pages_dir else None
+    for idx, page_spec in enumerate(manifest.get("pages") or []):
+        page_id = str(page_spec.get("id") or f"page-{idx+1}")
+        strings = _page_content_strings(page_spec.get("content") or {})
+        if not strings:
+            out[page_id] = {"found": 0, "total": 0, "missing": [],
+                            "pass": False, "reason": "no content_strings attached"}
+            continue
+        src_png = (pages_dir / f"{page_id}.png") if (page_id and pages_dir) else None
+        if src_png is not None and src_png.exists():
+            try:
+                import pytesseract
+                from PIL import Image as _PIL
+                text = _norm_content_ws(pytesseract.image_to_string(_PIL.open(str(src_png))))
+                png = None
+            except Exception:  # noqa: BLE001
+                png = _render_pdf_page_to_png(pdf_path, idx)
+        else:
+            png = _render_pdf_page_to_png(pdf_path, idx)
+        if png is not None:
+            try:
+                text = _ocr_page(png)
+            finally:
+                if png.exists():
+                    png.unlink(missing_ok=True)
+        if not text:
+            ocr_available = False
+            out[page_id] = {"found": 0, "total": len(strings), "missing": strings,
+                            "pass": False,
+                            "reason": "OCR read no text (tesseract unavailable or blank page)"}
+            continue
+        # Fuzzy match, not strict substring: OCR confuses single chars on small accent /
+        # italic lines ("I" -> "|", kerning drift). Mirror the deck's AF-OCR-READBACK
+        # tolerance (prompt_gate.OCR_MATCH_RATIO = 0.82): a normalized-substring hit, else
+        # a difflib similarity >= 0.82 against the best-matching window of the OCR text.
+        missing = [c for c in strings if not _ocr_present(c, text)]
+        found = len(strings) - len(missing)
+        out[page_id] = {"found": found, "total": len(strings), "missing": missing,
+                        "pass": len(missing) == 0}
+    out["_ocr_available"] = ocr_available
+    out["_pages"] = total_pages
+    return out
+
+
+_OCR_MATCH_RATIO = 0.82  # mirror prompt_gate.OCR_MATCH_RATIO
+
+
+def _ocr_present(needle: str, haystack_norm: str) -> bool:
+    """True iff `needle` is readable in the whitespace-normalised OCR text: a normalized
+    substring hit, else a difflib similarity >= 0.82 against the best-matching window
+    (tolerant of OCR noise / kerning on small accent lines), else a word-coverage test
+    (>= 80% of the needle's content words present). Mirrors the deck's
+    prompt_gate._text_present plus a word-coverage fallback that tolerates column-split
+    OCR (a quiz grid reads options interleaved with the question stems on the same row —
+    the full phrase is never contiguous, but every content word is present)."""
+    import difflib
+    n = _norm_content_ws(needle)
+    if len(n) < 3:
+        return True  # a 1-2 char fragment proves nothing either way
+    if n in haystack_norm:
+        return True
+    best = 0.0
+    step = max(1, len(n) // 4)
+    for i in range(0, max(1, len(haystack_norm) - len(n) + 1), step):
+        window = haystack_norm[i:i + len(n)]
+        r = difflib.SequenceMatcher(None, n, window).ratio()
+        if r > best:
+            best = r
+            if best >= _OCR_MATCH_RATIO:
+                return True
+    if best >= _OCR_MATCH_RATIO:
+        return True
+    # Word-coverage fallback: a wireframe page has ZERO words, so this cannot pass a
+    # blank page; it only rescues content that IS rendered but split across OCR columns
+    # or set in a stylized accent color OCR cannot read. Threshold: 80% of content words
+    # for phrases of 4+ words (a garbled/wireframe page misses most words); for short
+    # strings of <=3 content words, at least ONE word present plus >=50% coverage — OCR
+    # on a single accent-colored word (e.g. a gold "Roadmap" headline on a terracotta
+    # band) can drop that one word while every other content string on the page reads.
+    words = [w for w in re.findall(r"[a-z0-9']+", n) if len(w) >= 3]
+    if not words:
+        return True
+    hay_words = set(re.findall(r"[a-z0-9']+", haystack_norm))
+    hits = sum(1 for w in words if w in hay_words)
+    if len(words) >= 4:
+        return hits / len(words) >= 0.8
+    return hits >= 1 and hits / len(words) >= 0.5
+
+
+def verify_dual(regular_path: Path, fillable_path: Path, expected_pages: int,
+                expected_fields: int) -> Dict[str, Any]:
+    """AF-WORKBOOK-BOTH — the dual-PDF workbook contract.
+
+    Both PDFs must exist, be non-trivially sized, and pypdf must read them back: the
+    regular PDF as expected pages with the fillable carrying every manifest field and
+    /NeedAppearances true. Returns a dict with per-file verify_pdf results + a summary
+    'pass' flag; a missing/zero-byte/garbled either side is a FAIL."""
+    missing = [p.name for p in (regular_path, fillable_path) if not p.exists()]
+    if missing:
+        return {"pass": False, "missing": missing,
+                "reason": f"missing deliverable(s): {', '.join(missing)}"}
+    v_reg = verify_pdf(regular_path, expected_pages, 0)
+    v_fill = verify_pdf(fillable_path, expected_pages, expected_fields)
+    problems = []
+    if v_reg["pages"] != expected_pages:
+        problems.append(f"regular: expected {expected_pages} pages, pypdf read {v_reg['pages']}")
+    if v_reg["bytes"] < 2048:
+        problems.append(f"regular: only {v_reg['bytes']} bytes — too small for a designed page set")
+    if v_fill["pages"] != expected_pages:
+        problems.append(f"fillable: expected {expected_pages} pages, pypdf read {v_fill['pages']}")
+    if v_fill["fields"] < expected_fields or expected_fields < 1:
+        problems.append(f"fillable: expected >= {expected_fields} fields, pypdf read {v_fill['fields']}")
+    if not v_fill["need_appearances"]:
+        problems.append("fillable: /NeedAppearances not true (reportlab string-literal gotcha)")
+    return {
+        "pass": not problems,
+        "regular": v_reg,
+        "fillable": v_fill,
+        "problems": problems,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Front-door nonce (mirror build_deck._verify_entry_nonce)
+# ---------------------------------------------------------------------------
+
+ENTRY_NONCE_REL = Path("working") / "checkpoints" / ".canonical-entry-nonce"
+
+def _verify_entry_nonce(run_dir: Path) -> bool:
+    """True iff OC_DECK_ENTRY_NONCE is set AND equals the run-scoped nonce file.
+
+    Only presentation-canonical-entry.sh mints this file, so a hand-rolled workbook
+    invocation fails closed (AF-CANONICAL-RENDER-BYPASS). The path is derived from
+    run_dir (never from an attacker-controllable env var) and the comparison is
+    constant-time — the same contract build_deck._verify_entry_nonce enforces for the
+    deck renderer and build_webinar_video._verify_entry_nonce enforces for the
+    webinar video."""
+    import hmac
+    env_nonce = (os.environ.get("OC_DECK_ENTRY_NONCE") or "").strip()
+    if len(env_nonce) < 16:
+        return False
+    nf = run_dir / ENTRY_NONCE_REL
+    try:
+        file_nonce = nf.read_text(encoding="utf-8").strip()
+    except OSError:
+        return False
+    return hmac.compare_digest(env_nonce, file_nonce)
+
+
 # ---------------------------------------------------------------------------
 # GHL upload (shared ghl_media path — operator account for tests)
 # ---------------------------------------------------------------------------
@@ -796,7 +1287,11 @@ def upload_workbook(pdf_path: Path, run_dir: Path, deck_slug: str) -> dict:
     """Upload the workbook PDF to the GHL media library via the shared ghl_media module.
     Reads client LOCATION PIT via resolve_location_pit / resolve_location_id (never the
     operator's key). The workbook PDF is a non-deck media artifact (not named *-FINAL.pdf),
-    so it flows through the canonical upload with require_png=False."""
+    so it flows through the canonical upload with require_png=False.
+
+    The GHL remote name is the LOCAL basename — so the regular uploads as
+    {deck_slug}-WORKBOOK.pdf and the fillable uploads as {deck_slug}-WORKBOOK-FILLABLE.pdf,
+    each under its OWN remote name (AF-WORKBOOK-BOTH: both deliverables land, distinct)."""
     import sys as _sys
     here = Path(__file__).resolve().parent
     if str(here) not in _sys.path:
@@ -804,7 +1299,9 @@ def upload_workbook(pdf_path: Path, run_dir: Path, deck_slug: str) -> dict:
     import ghl_media
     pit = ghl_media.resolve_location_pit()
     location_id = ghl_media.resolve_location_id()
-    name = f"{deck_slug}-WORKBOOK.pdf"
+    # remote name = local basename, NOT a hardcoded slot: the regular and the fillable
+    # differ by suffix and must not clobber each other in the GHL media library.
+    name = Path(pdf_path).name or f"{deck_slug}-WORKBOOK.pdf"
     # require_png=False: a PDF is not a PNG; existence is checked by the canonical call.
     res = ghl_media.upload_media(str(pdf_path), location_id, name, pit,
                                  require_png=False, run_dir=run_dir)
@@ -839,7 +1336,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ap = argparse.ArgumentParser(description="Build the fillable PDF workbook "
                                              "(kie.ai gpt-image-2 backgrounds + reportlab AcroForm).")
     ap.add_argument("--run-dir", default=None)
-    ap.add_argument("--out", default=None)
+    ap.add_argument("--out", default=None, help="regular (share/print) workbook PDF path")
+    ap.add_argument("--out-fillable", default=None, help="fillable workbook PDF path")
     ap.add_argument("--pages", type=int, default=3)
     ap.add_argument("--manifest", default=None, help="workbook.json manifest path")
     ap.add_argument("--skip-design", action="store_true",
@@ -854,6 +1352,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not args.run_dir:
         ap.error("--run-dir is required (or --selftest)")
     run_dir = Path(args.run_dir).resolve()
+
+    # FRONT-DOOR NONCE — a hand-rolled workbook can never bypass the governed door.
+    # The canonical entry (presentation-canonical-entry.sh) mints OC_DECK_ENTRY_NONCE +
+    # the run-scoped .canonical-entry-nonce file and the runner dispatches this phase
+    # through it. --no-upload offline smoke runs (operator-only, no client GHL write)
+    # are exempt so a build-only smoke test does not need a minted nonce.
+    if not args.no_upload:
+        if not _verify_entry_nonce(run_dir):
+            print(
+                "FATAL [AF-CANONICAL-RENDER-BYPASS]: workbook_builder.py must run "
+                "via presentation-canonical-entry.sh, which mints the per-run front-door "
+                "nonce (exports OC_DECK_ENTRY_NONCE and writes the matching 0600 file "
+                "<run-dir>/working/checkpoints/.canonical-entry-nonce). Direct invocation "
+                "— or a guessed/stale nonce — is refused (a hand-rolled workbook cannot "
+                "bypass the door). Use --no-upload ONLY for an operator offline smoke "
+                "build (no client GHL write).",
+                file=sys.stderr)
+            return 2
 
     # --- brand + slug + client ---
     brand = resolve_brand(run_dir)
@@ -888,7 +1404,10 @@ def main(argv: Optional[List[str]] = None) -> int:
                 page_role=pg.get("page_role", f"Page {i+1}"),
                 motif_position=pg.get("motif_position", "top-right"),
                 brand=brand, client_name=client_name, is_i2i=is_i2i,
-                page_index=i + 1, page_count_total=len(pages))
+                page_index=i + 1, page_count_total=len(pages),
+                content=pg.get("content"))
+            # AF-WORKBOOK-PROMPT-NO-CONTENT — fail-closed BEFORE any paid render.
+            _assert_content_in_prompt(pg, pg["prompt"])
             _assert_prompt_band(pg["prompt"], pg["id"])
         # design_pages resolves the harmony reference itself: phase A renders the t2i
         # brand-template page first, then feeds its resultUrl to every i2i page.
@@ -901,49 +1420,80 @@ def main(argv: Optional[List[str]] = None) -> int:
             return 2
         page_pngs = [str(pages_dir / f"{p['id']}.png") for p in pages]
 
-    # --- assemble ---
-    out_path = Path(args.out) if args.out else \
-        run_dir / "working" / "deliverables" / f"{deck_slug}-WORKBOOK.pdf"
-    out_path.parent.mkdir(parents=True, exist_ok=True)
-    print(f"\n=== Assembling fillable PDF -> {out_path} ===")
-    field_count = assemble_workbook(manifest, page_pngs, out_path, brand)
+    # --- assemble BOTH deliverables (regular first, then the fillable over the same PNGs) ---
+    deliverables_dir = run_dir / "working" / "deliverables"
+    deliverables_dir.mkdir(parents=True, exist_ok=True)
+    out_regular = Path(args.out) if args.out else \
+        deliverables_dir / f"{deck_slug}-WORKBOOK.pdf"
+    out_fillable = Path(args.out_fillable) if args.out_fillable else \
+        deliverables_dir / f"{deck_slug}-WORKBOOK-FILLABLE.pdf"
+
+    print(f"\n=== Assembling REGULAR PDF (images only) -> {out_regular} ===")
+    assemble_regular(manifest, page_pngs, out_regular)
+    print(f"Assembled {len(page_pngs)} page(s), no AcroForm fields (by design).")
+
+    print(f"\n=== Assembling FILLABLE PDF (images + AcroForm) -> {out_fillable} ===")
+    field_count = assemble_workbook(manifest, page_pngs, out_fillable, brand)
     print(f"Assembled {len(page_pngs)} page(s), {field_count} AcroForm field(s).")
 
-    # --- verify ---
-    v = verify_pdf(out_path, len(page_pngs), field_count)
-    print("\n=== pypdf verification ===")
-    print(json.dumps(v, indent=2))
-    if v["pages"] != len(page_pngs):
-        print(f"FATAL: expected {len(page_pngs)} pages, pypdf read {v['pages']}", file=sys.stderr)
+    # --- verify BOTH (AF-WORKBOOK-BOTH) ---
+    dual = verify_dual(out_regular, out_fillable, len(page_pngs), field_count)
+    print("\n=== pypdf dual verification (AF-WORKBOOK-BOTH) ===")
+    print(json.dumps(dual, indent=2))
+    if not dual["pass"]:
+        print("FATAL [AF-WORKBOOK-BOTH]: " + " | ".join(dual["problems"]), file=sys.stderr)
         return 3
-    if v["fields"] < 1:
-        print("FATAL: pypdf read zero AcroForm fields — form did not survive.", file=sys.stderr)
+
+    # --- content gate (AF-WORKBOOK-EMPTY) over the REGULAR PDF ---
+    content = verify_content(manifest, out_regular, pages_dir=pages_dir)
+    ocr_ok = content.pop("_ocr_available", True)
+    n_pages = content.pop("_pages", 0)
+    print("\n=== OCR content gate (AF-WORKBOOK-EMPTY) ===")
+    per_page_pass = all(v.get("pass", False) for k, v in content.items() if not k.startswith("_"))
+    print(json.dumps({k: {kk: vv for kk, vv in v.items()} for k, v in content.items()
+                      if not k.startswith("_")}, indent=2))
+    if not ocr_ok:
+        print("NOTE: OCR unavailable (tesseract/PyMuPDF absent) — content gate degraded. "
+              "Not a pass; the phase cannot attest content-in-image on this box.",
+              file=sys.stderr)
         return 3
-    if not v["need_appearances"]:
-        print("FATAL: /NeedAppearances not set (reportlab string-literal gotcha).", file=sys.stderr)
+    if not per_page_pass:
+        print("FATAL [AF-WORKBOOK-EMPTY]: one or more pages failed the OCR content read-back "
+              "(a blank/garbled page cannot pass).", file=sys.stderr)
         return 3
 
     record = {
         "deck_slug": deck_slug,
-        "workbook_pdf": str(out_path),
-        "workbook_pdf_bytes": v["bytes"],
-        "workbook_pages": v["pages"],
-        "workbook_fields": v["fields"],
-        "workbook_field_names": v["field_names"],
-        "need_appearances": v["need_appearances"],
+        "workbook_pdf": str(out_regular),
+        "workbook_pdf_bytes": dual["regular"]["bytes"],
+        "workbook_fillable_pdf": str(out_fillable),
+        "workbook_fillable_bytes": dual["fillable"]["bytes"],
+        "workbook_pages": dual["regular"]["pages"],
+        "workbook_fields": dual["fillable"]["fields"],
+        "workbook_field_names": dual["fillable"]["field_names"],
+        "need_appearances": dual["fillable"]["need_appearances"],
+        "content_gate": content,
         "status": "built+verified",
         "built_at": _now_iso(),
     }
     _record_ledger(run_dir, record)
 
-    # --- upload ---
+    # --- upload BOTH deliverables (shared ghl_media REST path, require_png=False) ---
     if not args.no_upload:
-        print("\n=== Uploading to GHL (shared ghl_media path) ===")
+        print("\n=== Uploading BOTH PDFs to GHL (shared ghl_media path) ===")
         try:
-            up = upload_workbook(out_path, run_dir, deck_slug)
+            up = upload_workbook(out_regular, run_dir, deck_slug)
             print(json.dumps(up, indent=2))
             record["status"] = "built+verified+uploaded"
             record.update(up)
+            # Each PDF uploads under its OWN remote name (the local basename): the regular
+            # is {deck_slug}-WORKBOOK.pdf, the fillable is {deck_slug}-WORKBOOK-FILLABLE.pdf.
+            # The fillable must land under a DISTINCT name so it does not clobber the regular
+            # in the GHL media library (AF-WORKBOOK-BOTH).
+            up2 = upload_workbook(out_fillable, run_dir, deck_slug)
+            record["workbook_fillable_ghl_url"] = up2["workbook_ghl_url"]
+            record["workbook_fillable_ghl_file_id"] = up2["workbook_ghl_file_id"]
+            record["workbook_fillable_ghl_remote_name"] = up2["workbook_ghl_remote_name"]
             _record_ledger(run_dir, record)
         except Exception as exc:  # noqa: BLE001
             print(f"GHL UPLOAD FAILED (workbook still built+verified): {exc}", file=sys.stderr)
@@ -964,12 +1514,26 @@ def _selftest() -> int:
     fails = []
     here = Path(__file__).resolve().parent
 
-    # 1) prompt band: build a prompt, confirm 5,000-19,000 and full-rich-gate pass.
+    # 1) prompt band + content gate: build a CONTENT-BEARING prompt, confirm the
+    #    9,000-18,000 band (the Presentations rich-prompt gate, plan §2.1), full-rich-gate
+    #    pass, AND the AF-WORKBOOK-PROMPT-NO-CONTENT guard PASSES (content present verbatim).
     brand = {"primary": DEFAULT_PRIMARY, "secondary": DEFAULT_SECONDARY,
              "accent": DEFAULT_ACCENT, "base": DEFAULT_BASE, "ink": DEFAULT_INK}
+    content = {
+        "headline": "My Goals",
+        "subhead": "Name the outcomes you want",
+        "bullets": [
+            "One goal I will commit to.",
+            "One habit that helps me move.",
+            "One result I want this month.",
+        ],
+        "question": "What is the one thing I must start today?",
+        "affirmation": "My commitment is:",
+    }
+    page = {"id": "page-01", "content": content}
     p = build_page_prompt(page_role="My Goals", motif_position="top-right", brand=brand,
                           client_name="Test Client", is_i2i=True, page_index=1,
-                          page_count_total=3)
+                          page_count_total=3, content=content)
     if not (PROMPT_FLOOR <= len(p.strip()) <= PROMPT_CEILING):
         fails.append(f"prompt band: {len(p.strip())} chars outside {PROMPT_FLOOR}-{PROMPT_CEILING}")
     if prompt_gate is not None:
@@ -979,6 +1543,34 @@ def _selftest() -> int:
             fails.append(f"prompt_gate.verify_prompt failed: {exc}")
     if len(p.strip()) < PROMPT_TARGET_MIN:
         fails.append(f"prompt length {len(p.strip())} below target {PROMPT_TARGET_MIN}")
+    # AF-WORKBOOK-PROMPT-NO-CONTENT: content-bearing prompt must PASS.
+    try:
+        _assert_content_in_prompt(page, p)
+    except Exception as exc:  # noqa: BLE001
+        fails.append(f"content gate REJECTED a content-bearing prompt: {exc}")
+    # The content strings must actually be baked verbatim into the prompt.
+    missing = [c for c in _page_content_strings(content) if _norm_content_ws(c) not in _norm_content_ws(p)]
+    if missing:
+        fails.append(f"content strings NOT baked verbatim into prompt: {missing}")
+
+    # 2) AF-WORKBOOK-PROMPT-NO-CONTENT adversarial proofs:
+    #    a) ZERO content strings -> MUST be refused (the background-only regression).
+    empty_page = {"id": "page-empty", "content": {}}
+    try:
+        _assert_content_in_prompt(empty_page, "DESIGN A PRINTABLE WORKBOOK PAGE BACKGROUND...")
+        fails.append("content gate ACCEPTED a page with ZERO content strings (wireframe regression NOT blocked)")
+    except RuntimeError as exc:
+        if "AF-WORKBOOK-PROMPT-NO-CONTENT" not in str(exc):
+            fails.append(f"zero-content rejection did not name the AF code: {exc}")
+    #    b) literal wireframe directive present -> MUST be refused even WITH content.
+    wire_page = {"id": "page-wire", "content": content}
+    wire_prompt = "This is the BACKGROUND ONLY for a fillable PDF form page. NO text, NO labels."
+    try:
+        _assert_content_in_prompt(wire_page, wire_prompt)
+        fails.append("content gate ACCEPTED a prompt carrying the BACKGROUND ONLY wireframe directive")
+    except RuntimeError as exc:
+        if "AF-WORKBOOK-PROMPT-NO-CONTENT" not in str(exc):
+            fails.append(f"wireframe rejection did not name the AF code: {exc}")
 
     # 2) assembly + pypdf verify on a synthetic 2016x2688 background.
     from PIL import Image
@@ -1020,7 +1612,9 @@ def _selftest() -> int:
             print("  -", f)
         return 1
     print("workbook_builder selftest -> PASS "
-          "(prompt band + rich gate + 2-page assembly + pypdf fields/NeedAppearances)")
+          "(content-in-image prompt band + rich gate + AF-WORKBOOK-PROMPT-NO-CONTENT "
+          "pass/zero-content-refuse/wireframe-refuse + 2-page assembly + pypdf "
+          "fields/NeedAppearances)")
     return 0
 
 

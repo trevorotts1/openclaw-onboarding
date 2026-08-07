@@ -54,12 +54,14 @@ REQUEST CONTRACT (matched to the live /api/tasks/ingest endpoint):
     (the minted PROCESS-CERTIFICATE sha); the word "delivered" belongs in the note.
 
   ACTIVITY POST {base}/api/tasks/{task_id}/activities   (mid-run phase PROGRESS)
-    body:  {activity_type:"updated", message}
+    body:  {activity_type:"updated", message, metadata:{phase_id}}
     return: 201 -> {activity}
     Mid-run phase boundaries (P4-RENDER complete, P8-ASSEMBLE complete) are logged
     as ACTIVITIES, never as task-level status changes: a mid-run status='done'
     422s the presentations cert done-gate (no PROCESS-CERTIFICATE exists yet) and
-    would wrongly close a non-presentation card.
+    would wrongly close a non-presentation card. The phase id rides in BOTH the
+    message text (human-readable) and metadata.phase_id (machine-readable — the
+    U060 stepper reducer reads it there, not from the message).
 
 MOVEMENT RECEIPT — every advance ATTEMPT (status change or activity post) plus its
 HTTP status / body is appended to working/checkpoints/cc-board.json (mirroring the
@@ -86,6 +88,8 @@ PUBLIC API
                 scores=None) -> bool
       # mid-run phase PROGRESS via the /activities endpoint (NOT a status change);
       # optional per-gate `scores` fold into the message + a structured scores key.
+      # Always carries metadata.phase_id — the field the U060 stepper reducer reads
+      # (a phase id only in the message text never advances the stepper).
   post_qc_activities(run_dir, task_id) -> int
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
@@ -753,8 +757,12 @@ def post_activity(
 
     Body matches the CC CreateActivitySchema: activity_type in
     {spawned,updated,completed,file_created,status_changed} + a non-empty message
-    (the phase id is embedded in the message). Every attempt is recorded to the
-    movement receipt. FAIL-SOFT: returns False (never raises)."""
+    (the phase id is embedded in the message for human readers) + structured
+    ``metadata = {"phase_id": phase_id}``. The metadata field is what the U060 phase
+    reducer (computePhaseProgress / phaseIdOf in src/lib/presentation-phases.ts)
+    reads to advance the stepper — the phase id in the message text is NOT seen by
+    the reducer. Every attempt is recorded to the movement receipt. FAIL-SOFT:
+    returns False (never raises)."""
     endpoint = "POST /api/tasks/{id}/activities"
     cfg = board_config(env)
     if cfg is None:
@@ -774,7 +782,16 @@ def post_activity(
         return False
 
     message = (f"[{phase_id}] {note}".strip() if note else f"[{phase_id}]")
-    payload: dict = {"activity_type": activity_type, "message": message}
+    payload: dict = {
+        "activity_type": activity_type,
+        "message": message,
+        # Structured phase id for the U060 phase reducer
+        # (computePhaseProgress / phaseIdOf in src/lib/presentation-phases.ts reads
+        # task_activities.metadata.phase_id). The phase MUST ride in metadata, not
+        # just the message text — the reducer ignores message content entirely, so a
+        # phase id only in the message never advances the stepper.
+        "metadata": {"phase_id": phase_id},
+    }
     # OPTIONAL structured QC scores on a per-gate QC activity: fold a compact score
     # tail into the (always-accepted) message AND attach the structured `scores` key
     # for a lenient CC. A strict server that 422s the unknown key gets a one-shot
@@ -788,10 +805,11 @@ def post_activity(
     url = f"{cfg['base_url']}/api/tasks/{task_id}/activities"
     try:
         st, body = _request("POST", url, payload, cfg)
-        if st in (400, 422) and "scores" in payload:
-            _log(f"post_activity {phase_id} HTTP {st} with scores present — retrying "
-                 "once without the structured enrichment key.")
-            core = {k: v for k, v in payload.items() if k != "scores"}
+        if st in (400, 422) and ("scores" in payload or "metadata" in payload):
+            _log(f"post_activity {phase_id} HTTP {st} with structured enrichment "
+                 "present — retrying once without the structured keys "
+                 "(scores/metadata); the phase id still rides in the message.")
+            core = {k: v for k, v in payload.items() if k not in ("scores", "metadata")}
             st, body = _request("POST", url, core, cfg)
     except (urllib.error.URLError, OSError, ValueError) as exc:
         _log(f"post_activity {phase_id} failed ({type(exc).__name__}: {exc}).")
