@@ -315,6 +315,12 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
                        "cannot complete without the authored 30-Day Challenge (authoring stage "
                        "deferred to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
     res_ch = p_chal.evaluate(ch.read_text(encoding="utf-8"))
+    # cover prompt (manifest stage 22-cover-prompt, P6-PACKAGE, floor title_lock)
+    cover = bk.artifacts / "22-cover-prompt.md"
+    if not cover.is_file():
+        return False, ("missing run/artifacts/22-cover-prompt.md — FAIL-CLOSED: the book "
+                       "cannot complete without the authored cover prompt (P6-PACKAGE stage "
+                       "22-cover-prompt declares floor title_lock; author it and re-run)"), {}
     # title-lock across required artifacts
     title, subtitle = bk.title_subtitle()
     targets = {}
