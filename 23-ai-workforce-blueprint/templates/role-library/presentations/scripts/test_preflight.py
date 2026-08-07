@@ -3835,6 +3835,24 @@ def emit_af_coverage():
         "distinct_items_used": 0}))
     record("AF-RESEARCH-WEAVE", build_deck._chk_research_map(rw_root))
 
+    # AF-RESEARCH-REACHES-RENDER — research is woven into slides_copy.md (weave gate
+    # passes) but the RENDER copy (working/copy/slides.json copy[]) drops the mapped
+    # anchor -> _chk_research_reaches_render FAILS so research cannot silently miss
+    # the baked deck even though slides_copy.md looked fine.
+    rr_root = Path(tempfile.mkdtemp(prefix="deck_render_probe_"))
+    (rr_root / "working" / "copy").mkdir(parents=True, exist_ok=True)
+    (rr_root / "working" / "research").mkdir(parents=True, exist_ok=True)
+    (rr_root / "working" / "copy" / "slides_copy.md").write_text("## Slide 1\nHEADLINE: x\n")
+    (rr_root / "working" / "research" / "research_map.json").write_text(json.dumps({
+        "deck_slug": "demo",
+        "slides": [{"slide": 1, "section": "Teaching", "assigned": [
+            {"item_id": "C-01", "anchor": "STAT $1.2M"}]}],
+        "distinct_items_used": 1}))
+    (rr_root / "working" / "copy" / "slides.json").write_text(json.dumps(
+        [{"slide": 1, "scene": "x", "copy": ["Headline", "No research here"]}]))
+    record("AF-RESEARCH-REACHES-RENDER",
+           build_deck._chk_research_reaches_render(rr_root))
+
     # ---- FIX-2 / FIX-9 shared-contract gate probes (AF-CANONICAL-RENDER-BYPASS,
     #      AF-LOCAL-CANVAS, AF-IMAGE-QC-VISION) ----
 
