@@ -158,8 +158,12 @@ VILLAIN_TOKENS = ["villain", "antagonist", "the enemy", "the real enemy",
 HERO_TOKENS = ["hero", "the solution", "the breakthrough", "the way out",
                "the answer", "the promise", "the new way", "you become",
                "the transformation", "the path forward"]
-# price/offer presence tokens for arc-order (promise -> price -> recap) reasoning
-PRICE_TOKENS = ["ladder", "drop1", "drop2", "drop3", "anchor", "final price",
+# price/offer presence tokens for arc-order (promise -> price -> recap) reasoning.
+# "ladder" and "anchor" are intentionally NOT prose tokens here: the `LADDER:` and
+# `TEXT_ANCHOR:` metadata field NAMES on every slide block contain those substrings,
+# so a whole-block substring match made every block a price beat. The ladder beat is
+# read from the `LADDER:` field VALUE via LADDER_BEAT_TAGS in _has_price_beat.
+PRICE_TOKENS = ["drop1", "drop2", "drop3", "final price",
                 "investment", "your price", "the price", "repitch", "re-pitch"]
 # recap / re-pitch tokens (post-price restatement of value + price)
 RECAP_TOKENS = ["recap", "to recap", "re-pitch", "repitch", "here's everything",
@@ -184,9 +188,21 @@ def _load_intake_hook(run_dir):
 
 
 def _has_price_beat(body):
-    """True if a slide body carries a price/ladder/offer beat (arc-order helper)."""
-    if any(re.search(rf"\b{t}\b", body, re.IGNORECASE) for t in LADDER_BEAT_TAGS):
-        return True
+    """True if a slide body carries a price/ladder/offer beat (arc-order helper).
+
+    The ladder beat is read from the block's OWN `LADDER:` field value, NOT by
+    substring-matching the whole block. The old whole-block substring match on
+    PRICE_TOKENS ("ladder", "anchor") fired on the `LADDER:` and `TEXT_ANCHOR:`
+    metadata field NAMES of EVERY slide, so first_price_beat was always block 0
+    and AF-NARRATIVE-HARMONY falsely fired "PROMISE after PRICE" on any deck that
+    used those fields. The field VALUE is the real signal: `LADDER: ANCHOR /
+    BUILDUP / DROP1-3 / FINAL`. `$`-amount and the remaining prose price tokens
+    are preserved."""
+    m = re.search(r"(?im)^\s*LADDER\s*:\s*(\S+)", body)
+    if m:
+        val = m.group(1).strip().upper()
+        if val in LADDER_BEAT_TAGS:
+            return True
     if re.search(r"\$\s?\d", body):
         return True
     return _has_any(body.lower(), PRICE_TOKENS)

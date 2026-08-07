@@ -139,7 +139,7 @@ DEFAULT_REASONING_EFFORT = ""
 # minimax-m3:cloud return full, budget-hitting content at ~4000 tokens for a 40-word slide,
 # but EMPTY at <=1500). Non-thinking OpenAI-compatible providers simply stop at content, so
 # the extra ceiling is harmless there.
-REASONING_HEADROOM_TOKENS: int = 4096
+REASONING_HEADROOM_TOKENS: int = 8192
 
 
 def resolve_base_url() -> str:
@@ -734,7 +734,10 @@ def load_slides(slides_path: str, arc_path: str) -> list[SlideSpec]:
 
     import re
     text = Path(slides_path).read_text()
-    blocks = re.split(r"(?m)^##\s+Slide\s+(\d+)", text)
+    # Accept BOTH "## Slide N" (markdown header) and plain "SLIDE N" — the
+    # canonical slides_copy.md uses plain "SLIDE N" (matches build_deck's tolerant
+    # parser). E2E finding: the old regex parsed 0 slides on a plain-SLIDE deck.
+    blocks = re.split(r"(?m)^(?:#{1,3}\s+)?SLIDE\s+(\d+)\b", text)
     # blocks[0] = preamble, then pairs (slide_no, content)
     i = 1
     while i + 1 < len(blocks):

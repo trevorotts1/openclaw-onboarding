@@ -17,6 +17,12 @@ WHAT IT CHECKS (for every declared step in declared order):
         (out-of-order execution = FAIL)
     (e) No declared step is missing (gap in attestation chain = FAIL)
 
+DELIVERY-PHASE EXEMPTION (FIX #10): the delivery phase being proven (the max-order
+declared step — manifest order 9, P9-DELIVER) is exempted from (a) and the done-report
+half of (c). Its attestation and done-report are written by the runner AFTER this proof
+passes, so they cannot pre-exist; it is reported as "in-flight". Every other declared
+step keeps the full check set.
+
 BYPASS:
     A logged owner_skip_approval record in process_manifest.json["owner_skip_approvals"]
     for the relevant phase_id, passing the same well-formed-record validation enforced
@@ -61,6 +67,13 @@ _SELF_GRANT_MARKERS: Tuple[str, ...] = (
     "on behalf",
 )
 
+# The delivery phase id — the phase whose attestation THIS run is about to write.
+# prove-deck.py is invoked at P9-DELIVER dispatch, BEFORE the delivery attestation
+# exists, so the delivery phase can never have an attestation or done-report yet.
+# Mirrors canonical_render_guard.DELIVERY_PHASE_ID; kept self-contained to avoid a
+# guard<->prover import cycle. See check_all_steps' delivery_phase_id exemption.
+DELIVERY_PHASE_ID = "P9-DELIVER"
+
 
 # ---------------------------------------------------------------------------
 # File loaders
@@ -103,6 +116,22 @@ def _load_client_reports(run_dir: Path) -> list:
     p = run_dir / "working" / "checkpoints" / "client_reports.json"
     obj = _load_json_optional(p)
     return obj if isinstance(obj, list) else []
+
+
+def _delivery_phase_id(declared_steps: List[dict]) -> Optional[str]:
+    """Return the id of the delivery phase being proven — the LAST declared step
+    (highest order; the manifest's order-9 P9-DELIVER). Its attestation and
+    done-report are written AFTER this proof passes, so prove-deck exempts it from
+    the (a) attestation-exists and (c) done-report checks (FIX #10). Prefers the
+    known DELIVERY_PHASE_ID; falls back to the max-order declared step if a plan
+    omits/renames it. Returns None when no steps are declared (no exemption)."""
+    if not declared_steps:
+        return None
+    ids = {str(s.get("id") or "") for s in declared_steps}
+    if DELIVERY_PHASE_ID in ids:
+        return DELIVERY_PHASE_ID
+    return str(max(declared_steps, key=lambda s: float(s.get("order", 0) or 0))
+               .get("id") or "") or None
 
 
 # ---------------------------------------------------------------------------
@@ -256,8 +285,16 @@ def check_all_steps(
     attestation_index: Dict[str, dict],
     report_index: Dict[str, Dict[str, dict]],
     skip_index: Dict[str, dict],
+    delivery_phase_id: Optional[str] = None,
 ) -> List[StepResult]:
-    """Walk declared steps in declared order; return one StepResult per step."""
+    """Walk declared steps in declared order; return one StepResult per step.
+
+    delivery_phase_id, when given, is exempted from the (a) attestation-exists and
+    (c) done-report checks (FIX #10): that phase's attestation and done-report are
+    written AFTER this proof passes (it is the phase being proven), so requiring
+    them here makes the delivery phase structurally un-attestable. The delivery
+    phase is reported as "in-flight"; every OTHER declared step keeps the full
+    check set (a, b, c start+done, d, e)."""
     results: List[StepResult] = []
     last_ts: Optional[datetime] = None  # Monotonic check anchor.
 
@@ -276,6 +313,23 @@ def check_all_steps(
                 f"Owner-approved skip: approved_by={skip_rec.get('approved_by')!r} "
                 f"at {skip_rec.get('approved_at')!r} "
                 f"msg_id={skip_rec.get('owner_msg_id')!r}"
+            )
+            results.append(sr)
+            continue
+
+        # ---- Delivery-phase exemption (FIX #10) ----
+        # The delivery phase being proven is IN FLIGHT: its attestation and done
+        # report are written after this proof returns, so requiring them here is a
+        # structural false block. It still contributes to the ordered walk (its
+        # timestamp participates in monotonicity) but its missing attestation /
+        # done-report cannot fail the proof.
+        if phase_id == delivery_phase_id:
+            sr.ok = True
+            sr.disposition = "in-flight"
+            sr.findings.append(
+                f"Delivery phase {phase_id!r} is in flight — its attestation and "
+                "done-report are written after this proof passes (FIX #10); "
+                "exempted from (a)/(c)."
             )
             results.append(sr)
             continue
@@ -376,6 +430,7 @@ def write_certificate(
     total = len(step_results)
     attested = sum(1 for s in step_results if s.disposition == "attested")
     owner_skips = sum(1 for s in step_results if s.disposition == "owner-skip")
+    in_flight = sum(1 for s in step_results if s.disposition == "in-flight")
 
     # Build body WITHOUT certificate_sha so the sha covers a stable structure.
     body: dict = {
@@ -386,6 +441,7 @@ def write_certificate(
         "declared_steps": total,
         "verified_steps": attested,
         "skipped_with_approval": owner_skips,
+        "delivery_phase_in_flight": in_flight,
         "all_steps_pass": all(s.ok for s in step_results),
         "steps": [s.to_dict() for s in step_results],
     }
@@ -412,6 +468,7 @@ def write_certificate(
         f"| Declared steps | {total} |",
         f"| Verified steps | {attested} |",
         f"| Owner-approved skips | {owner_skips} |",
+        f"| Delivery phase in flight | {in_flight} |",
         f"| Certificate SHA | `{sha}` |",
         "",
         "## Step Detail",
@@ -662,6 +719,78 @@ def _selftest() -> None:
             test_fails.append("T10: missing P-SP-STRUCTURE attestation should fail "
                               "(a signature deck must not reach the cert without the SP provers)")
 
+    # T11: FIX #10 — the delivery phase being proven (max-order declared step) is
+    # exempt from (a) attestation-exists and (c) done-report, because its own
+    # attestation/done-report are written AFTER this proof passes. An
+    # otherwise-complete run with P9-DELIVER unattested + unreported must PASS,
+    # and P9-DELIVER must be reported in-flight (not 'attested').
+    declared_with_delivery = declared_steps + [
+        {"order": 9.0, "id": "P9-DELIVER", "name": "Delivery Interlock"},
+    ]
+    with tempfile.TemporaryDirectory(prefix="pd_t11_") as tmp:
+        rd = _mk_run(tmp)
+        _write(rd, "process_manifest.json", good_manifest)   # no P9-DELIVER attestation
+        # good_reports has no P9-DELIVER records — no start, no done.
+        attest_idx = _build_attestation_index(good_manifest)
+        report_idx = _build_report_index(good_reports)
+        skip_idx = _build_skip_index(good_manifest)
+        results = check_all_steps(
+            declared_with_delivery, attest_idx, report_idx, skip_idx,
+            delivery_phase_id="P9-DELIVER",
+        )
+        deliv_r = next((r for r in results if r.phase_id == "P9-DELIVER"), None)
+        if deliv_r is None or not deliv_r.ok:
+            test_fails.append("T11: P9-DELIVER (delivery phase) must be exempt from "
+                              "its own attestation/report checks (FIX #10)")
+        if deliv_r is not None and deliv_r.disposition != "in-flight":
+            test_fails.append(f"T11: P9-DELIVER disposition should be 'in-flight', got "
+                              f"{deliv_r.disposition!r}")
+        if not all(r.ok for r in results):
+            bad = [f"{r.phase_id}: {r.findings}" for r in results if not r.ok]
+            test_fails.append(f"T11: with P9-DELIVER exempted, every step should pass; "
+                              f"got failures: {bad}")
+
+    # T12: FIX #10 — the exemption must NOT create a hole. A genuinely unattested
+    # EARLIER phase (P4-COPY) must STILL fail even when the delivery phase is exempted.
+    with tempfile.TemporaryDirectory(prefix="pd_t12_") as tmp:
+        m_missing_copy = {
+            "phase_attestations": [
+                a for a in good_manifest["phase_attestations"]
+                if a["phase_id"] != "P4-COPY"
+            ],
+            "owner_skip_approvals": [],
+        }
+        attest_idx = _build_attestation_index(m_missing_copy)
+        report_idx = _build_report_index(good_reports)
+        skip_idx = _build_skip_index(m_missing_copy)
+        results = check_all_steps(
+            declared_with_delivery, attest_idx, report_idx, skip_idx,
+            delivery_phase_id="P9-DELIVER",
+        )
+        copy_r = next((r for r in results if r.phase_id == "P4-COPY"), None)
+        deliv_r = next((r for r in results if r.phase_id == "P9-DELIVER"), None)
+        if copy_r is None or copy_r.ok:
+            test_fails.append("T12: a genuinely missing earlier phase (P4-COPY) must "
+                              "STILL fail even with the delivery exemption")
+        if deliv_r is not None and not deliv_r.ok:
+            test_fails.append("T12: P9-DELIVER must stay exempt (in-flight) even when an "
+                              "earlier phase fails")
+
+    # T13: FIX #10 — the max-order fallback identifies the delivery phase even when
+    # the canonical P9-DELIVER id is absent (plan omits/renames it).
+    renamed = declared_steps + [
+        {"order": 9.0, "id": "P9-SHIP", "name": "Shipment"},
+    ]
+    got = _delivery_phase_id(renamed)
+    if got != "P9-SHIP":
+        test_fails.append(f"T13: _delivery_phase_id max-order fallback should return "
+                          f"'P9-SHIP', got {got!r}")
+    if _delivery_phase_id([]) is not None:
+        test_fails.append("T13: _delivery_phase_id on an empty plan should return None")
+    if _delivery_phase_id(declared_with_delivery) != "P9-DELIVER":
+        test_fails.append("T13: _delivery_phase_id should prefer the canonical "
+                          "P9-DELIVER id when present")
+
     if test_fails:
         for f in test_fails:
             print(f"[prove-deck selftest] FAIL: {f}", file=sys.stderr)
@@ -714,13 +843,21 @@ def main() -> int:
     deck_slug: str = declared_plan.get("deck_slug") or run_dir.name
     declared_at: str = declared_plan.get("declared_at") or ""
 
+    # FIX #10: identify the delivery phase being proven (max-order declared step /
+    # P9-DELIVER) so its own attestation + done-report — which are written AFTER
+    # this proof passes — do not self-block the certificate.
+    delivery_phase_id = _delivery_phase_id(raw_steps)
+
     # Build indices.
     attestation_index = _build_attestation_index(process_manifest)
     report_index = _build_report_index(client_reports)
     skip_index = _build_skip_index(process_manifest)
 
     # Run the main check loop.
-    step_results = check_all_steps(raw_steps, attestation_index, report_index, skip_index)
+    step_results = check_all_steps(
+        raw_steps, attestation_index, report_index, skip_index,
+        delivery_phase_id=delivery_phase_id,
+    )
     failures = [sr for sr in step_results if not sr.ok]
 
     if failures:
@@ -736,13 +873,15 @@ def main() -> int:
         return 9
 
     # All steps pass — write certificate.
+    in_flight = sum(1 for s in step_results if s.disposition == "in-flight")
+    attested_or_skipped = len(step_results) - in_flight
     cert_path = write_certificate(run_dir, deck_slug, declared_at, step_results)
     cert_data = json.loads(cert_path.read_text(encoding="utf-8"))
     sha = cert_data.get("certificate_sha", "?")
 
     print(
-        f"PROCESS-CERTIFICATE: all {len(step_results)} declared steps verified "
-        f"(substance_validated + client_reported + attested in order).",
+        f"PROCESS-CERTIFICATE: all {len(step_results)} declared steps pass "
+        f"({attested_or_skipped} verified in order; delivery phase in flight).",
         flush=True,
     )
     print(f"  certificate_sha: {sha}", flush=True)

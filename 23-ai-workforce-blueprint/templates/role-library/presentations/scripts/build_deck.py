@@ -2054,6 +2054,7 @@ def discover_speech_chunks(run_dir: Path, bundle_dir: Path) -> Optional[dict]:
     (audio-demonstration-specialist.md's legacy reference name) are also accepted —
     legacy tolerance, so no producer's output silently never reaches the notes pane."""
     candidates = [
+        run_dir / "working/deliverables/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/speech.md",
         run_dir / "working/delivery/PRESENTERS-SPEECH.md",
         run_dir / "working/presenter-speech/PRESENTERS-SPEECH.md",

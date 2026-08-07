@@ -424,10 +424,31 @@ def _verify_json_artifact(pattern: str, required_keys: tuple = ()):
     return _v
 
 
-def _verify_text_artifact(pattern: str, min_bytes: int = 50):
-    """Factory returning a verifier that checks a text artifact."""
+def _verify_text_artifact(pattern: str, min_bytes: int = 50,
+                          scale_by_slides: bool = False):
+    """Factory returning a verifier that checks a text artifact. When
+    scale_by_slides is True, min_bytes is scaled by the deck's slide count
+    (MIN_BYTES was tuned for a ~34-slide reference deck; a fully-populated
+    smaller deck legitimately renders smaller — E2E finding)."""
     def _v(run_dir: Path) -> Tuple[bool, List[str]]:
-        return _check_text_nonempty(run_dir, pattern, min_bytes)
+        if not scale_by_slides:
+            return _check_text_nonempty(run_dir, pattern, min_bytes)
+        try:
+            _n = 0
+            for _cand in sorted((run_dir / "working/copy").glob("slides*.json")):
+                import json as _json
+                _data = _json.load(open(_cand))
+                if isinstance(_data, list):
+                    _n = len(_data)
+                elif isinstance(_data, dict) and _data.get("slides"):
+                    _n = len(_data["slides"])
+                if _n:
+                    break
+            _n = _n or 1
+            _scaled = max(int(min_bytes * _n // 34), 8192)
+        except Exception:  # noqa: BLE001 — fall back to the fixed floor
+            _scaled = min_bytes
+        return _check_text_nonempty(run_dir, pattern, _scaled)
     return _v
 
 
@@ -699,7 +720,7 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     # --- U012 new phases ---
     "P7-TELEPROMPTER":    _verify_text_artifact("working/deliverables/presenter-teleprompter.html", 10240),
     "P8.1-PDF-EXPORT":    _verify_text_artifact("working/deliverables/*-FINAL.pdf", 51200),
-    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200),
+    "P8.2-GUIDE":         _verify_text_artifact("working/deliverables/PRESENTER-GUIDE.pdf", 51200, scale_by_slides=True),
     "P8.4-FISH-TAG":      _verify_fish_tag,
     "P9.1-SPEECH-PDF":    _verify_text_artifact("working/deliverables/PRESENTERS-SPEECH.pdf", 20480),
     "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
