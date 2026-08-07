@@ -496,5 +496,87 @@ class StampTest(unittest.TestCase):
             self.assertFalse(cc_board.stamp_task_id(Path(d), ""))
 
 
+class DeliverableTest(unittest.TestCase):
+    """Hermetic tests for register_deliverable — the FIX-12 registration bridge
+    (ported from Skill-06 cc_board.py). Covers the POST /api/tasks/{id}/deliverables
+    contract, auth parity, and the fail-soft discipline (never raises; a non-2xx,
+    transport error, empty id/url, or disabled board yields False, never an
+    exception, so a deck build is never blocked by registration)."""
+
+    def setUp(self):
+        self.rec = _Recorder()
+        self._orig = cc_board.urllib.request.urlopen
+        cc_board.urllib.request.urlopen = self.rec
+
+    def tearDown(self):
+        cc_board.urllib.request.urlopen = self._orig
+
+    def _verify_signature(self, request):
+        body = request["body"].encode("utf-8")
+        expected = hmac.new(b"shh-secret", body, hashlib.sha256).hexdigest()
+        self.assertEqual(request["headers"]["x-webhook-signature"], expected)
+
+    def test_register_deliverable_contract_and_auth(self):
+        # POST /api/tasks/{id}/deliverables with the CreateDeliverableSchema shape:
+        # deliverable_type='url' + non-empty title + path (artifact URL), meta
+        # folded into description. Auth parity: Bearer + HMAC signature on the
+        # exact raw body.
+        self.rec.queue(201, {
+            "id": "deliv-1", "task_id": "task-xyz",
+            "deliverable_type": "url", "title": "My Deck",
+            "path": "https://s3.test/decks/my-deck.pptx",
+            "description": "{}",
+        })
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx",
+            meta={"title": "My Deck", "type": "deck_pptx"}, env=ENV)
+        self.assertTrue(ok)
+        req = self.rec.requests[-1]
+        self.assertEqual(req["method"], "POST")
+        self.assertEqual(req["url"],
+                         "https://cc.example.test/api/tasks/task-xyz/deliverables")
+        self.assertEqual(req["headers"]["authorization"], "Bearer tok-abc")
+        self.assertEqual(req["headers"]["content-type"], "application/json")
+        self._verify_signature(req)
+        body = json.loads(req["body"])
+        self.assertEqual(body["deliverable_type"], "url")
+        self.assertEqual(body["title"], "My Deck")
+        self.assertEqual(body["path"], "https://s3.test/decks/my-deck.pptx")
+        # meta is NOT a top-level key (the schema rejects it) — it rides in description.
+        self.assertNotIn("meta", body)
+        self.assertIn("deck_pptx", body["description"])
+
+    def test_register_deliverable_title_falls_back_to_artifact_url(self):
+        self.rec.queue(201, {"id": "d2"})
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertTrue(ok)
+        body = json.loads(self.rec.requests[-1]["body"])
+        self.assertEqual(body["title"], "Artifact URL")
+        self.assertEqual(body["deliverable_type"], "url")
+
+    def test_register_deliverable_non_2xx_is_fail_soft(self):
+        # The fake layer raises HTTPError for status >= 400; register_deliverable
+        # must catch it and return False (never raise).
+        self.rec.queue(404, {"error": "deliverables endpoint not found"})
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertFalse(ok)
+
+    def test_register_deliverable_transport_error_is_fail_soft(self):
+        self.rec.queue_raise(urllib.error.URLError("conn refused"))
+        ok = cc_board.register_deliverable(
+            "task-xyz", "https://s3.test/decks/my-deck.pptx", env=ENV)
+        self.assertFalse(ok)
+
+    def test_register_deliverable_disabled_board_is_fail_soft(self):
+        # No COMMAND_CENTER_URL / MISSION_CONTROL_URL => board disabled => False, no raise.
+        self.assertFalse(cc_board.register_deliverable("task-xyz", "https://x.test/deck.pptx", env={}))
+
+    def test_register_deliverable_empty_task_id_or_url_is_fail_soft(self):
+        self.assertFalse(cc_board.register_deliverable("", "https://x.test/deck.pptx", env=ENV))
+        self.assertFalse(cc_board.register_deliverable("task-xyz", "   ", env=ENV))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

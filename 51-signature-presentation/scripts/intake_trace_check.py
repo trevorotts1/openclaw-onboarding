@@ -77,6 +77,8 @@ USAGE:
 """
 
 import argparse
+import hashlib
+import hmac
 import json
 import re
 import sys
@@ -88,6 +90,83 @@ EXIT_USAGE = 3
 
 AF_CODE = "AF-INTAKE-BATCH"
 BANNED_PHRASE = "give me whatever you have got"
+
+# ---------------------------------------------------------------------------
+# DRIVER PROVENANCE (FIX-3 — "intake must be a real conversation")
+#
+# A transcript that satisfies the conversation scan below is not enough: a
+# hand-written intake_ledger.json with a hand-written bare transcript would
+# pass every content rule while being fabricated (ERROR 3 of the 2026-08-06
+# E2E audit — the agent deleted the driver's ledger and hand-wrote it in
+# Python with invented answers). To make the intake conversation
+# UNFAKEABLE at the transcript layer, a transcript must be PRODUCED BY the
+# interview driver (deck-intake-driver.py --signature turn-gate) and carry
+# that production as a signed envelope:
+#
+#     {
+#       "format": "sp-intake-transcript-v1",
+#       "driver": "deck-intake-driver.py",
+#       "qid_sequence": ["interview_choice", "q1", "q2", ..., "frame_selection"],
+#       "turns": [{"role": "assistant", "text": "...", "qid": "q1"}, ...],
+#       "driver_signature": "<hex sha256-hmac>"
+#     }
+#
+#   * qid_sequence is the strictly-ordered, non-duplicated list of bank
+#     question ids the turn-gate surfaced (one per --next) — a monotonic
+#     sequence a hand-written dump cannot reproduce without faking the whole
+#     one-at-a-time walk.
+#   * driver_signature is an HMAC-SHA256 over the canonical serialization of
+#     {"qid_sequence":..., "turns":...} under DRIVER_SIGNATURE_KEY. It binds
+#     the sequence to the turns so a block cannot be edited piecemeal without
+#     invalidating the signature. The key is a PUBLISHED integrity key (same
+#     threat model as prove_sp_intake.py's TURN_LEDGER_KEY): it is NOT a
+#     secrecy boundary and cannot stop a source-literate adversary, but it
+#     forces any forgery to reproduce the entire ordered structure by hand —
+#     meaningfully harder than flipping a boolean or omitting the file.
+#
+# The DRIVER and this CHECKER MUST serialize identically — keep
+# _canonical_transcript_payload() byte-identical with
+# deck-intake-driver.py's _transcript_sign_payload().
+# ---------------------------------------------------------------------------
+DRIVER_FORMAT = "sp-intake-transcript-v1"
+DRIVER_NAME = "deck-intake-driver.py"
+DRIVER_SIGNATURE_KEY = b"skill51-sp-intake-transcript-driver-v1"
+
+PROV_NO_FORMAT = "NO-DRIVER-ENVELOPE"
+PROV_NOT_SIGNED = "NO-DRIVER-SIGNATURE"
+PROV_BAD_SIG = "BAD-DRIVER-SIGNATURE"
+PROV_BAD_QID = "BAD-QID-SEQUENCE"
+PROV_UNSIGNED_TURNS = "UNSIGNED-TURN"
+
+
+def _canonical_transcript_payload(qid_sequence, turns):
+    """Deterministic serialization the driver signs and this checker verifies.
+    MUST match deck-intake-driver.py's _transcript_sign_payload() exactly."""
+    payload = {"qid_sequence": qid_sequence, "turns": turns}
+    return json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+
+
+def _sign_transcript(qid_sequence, turns):
+    return hmac.new(DRIVER_SIGNATURE_KEY, _canonical_transcript_payload(qid_sequence, turns),
+                    hashlib.sha256).hexdigest()
+
+
+def build_driver_envelope(qid_sequence, turns):
+    """Build a signed driver envelope EXACTLY as deck-intake-driver.py's
+    turn-gate writes it. Single source of truth for the signed shape — the
+    driver, the engine gate, and the test fixtures all use this so the
+    canonical payload and signature stay byte-identical across producers.
+
+    qid_sequence: ordered, non-duplicated list of surfaced bank question ids.
+    turns: list of {"role", "text", "qid"} turn records.
+    """
+    return {
+        "format": DRIVER_FORMAT,
+        "driver": DRIVER_NAME,
+        "qid_sequence": list(qid_sequence),
+        "turns": turns,
+        "driver_signature": _sign_transcript(list(qid_sequence), turns),
+    }
 
 HERE = Path(__file__).resolve().parent
 SP_SPEC_PATH = HERE.parent / "intake" / "sp-8-questions.json"
@@ -176,6 +255,21 @@ def parse_transcript(raw: str) -> list:
         if isinstance(data, list):
             turns = []
             for item in data:
+                if not isinstance(item, dict):
+                    continue
+                role_raw = str(item.get("role") or item.get("speaker") or "").strip().lower()
+                text = item.get("text") or item.get("content") or item.get("message") or ""
+                role = _normalize_role(role_raw)
+                if text:
+                    turns.append({"role": role, "text": str(text)})
+            return turns
+        # FIX-3: the DRIVER ENVELOPE format — {"format": "sp-intake-transcript-v1",
+        # "qid_sequence": [...], "turns": [...], "driver_signature": "..."}. The
+        # conversation scan consumes only .turns; the provenance gate (below)
+        # validates the envelope itself (signature + monotonic qid sequence).
+        if isinstance(data, dict) and isinstance(data.get("turns"), list):
+            turns = []
+            for item in data["turns"]:
                 if not isinstance(item, dict):
                     continue
                 role_raw = str(item.get("role") or item.get("speaker") or "").strip().lower()
@@ -357,6 +451,98 @@ def scan_transcript(turns: list, bank: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# DRIVER PROVENANCE (FIX-3) — a transcript must be driver-produced, not
+# hand-written. Returns a list of (code, message) provenance violations; empty
+# == the transcript carries a valid signed driver envelope with a monotonic
+# one-question-per-turn qid sequence.
+#
+# `envelope` is the raw parsed transcript object (a bare list has NO driver
+# provenance at all -> PROV_NO_FORMAT). A transcript that is a bare list is
+# the exact shape a hand-written intake_ledger.json producer would emit, so it
+# fails fail-closed even when its content is conversationally compliant.
+# ---------------------------------------------------------------------------
+def check_driver_provenance(envelope) -> list:
+    """Return [(code, message), ...] — empty means the transcript is a valid
+    driver-produced signed envelope. A bare list / bare object is REFUSED."""
+    if not isinstance(envelope, dict):
+        return [(PROV_NO_FORMAT,
+                 "the intake transcript is not a driver envelope — it must be produced by "
+                 "deck-intake-driver.py --signature (format='sp-intake-transcript-v1', "
+                 "driver_signature + qid_sequence). A hand-written transcript (e.g. a bare "
+                 "JSON list) is not proof of a real one-at-a-time conversation (fail-closed).")]
+
+    if envelope.get("format") != DRIVER_FORMAT:
+        return [(PROV_NO_FORMAT,
+                 "the intake transcript envelope format is %r, expected %r — it was not "
+                 "produced by deck-intake-driver.py's turn-gate." % (
+                     envelope.get("format"), DRIVER_FORMAT))]
+
+    turns = envelope.get("turns")
+    if not isinstance(turns, list) or not turns:
+        return [(PROV_NOT_SIGNED,
+                 "driver envelope has no turns — a real conversation records at least one "
+                 "assistant/owner turn.")]
+
+    seq = envelope.get("qid_sequence")
+    if not isinstance(seq, list) or not seq:
+        return [(PROV_BAD_QID,
+                 "driver envelope has no qid_sequence — the monotonic one-question-per-turn "
+                 "order the turn-gate surfaced is missing (hand-written).")]
+
+    # Strictly-ordered, non-duplicated qid sequence.
+    seen = set()
+    prev = None
+    for qid in seq:
+        qs = str(qid or "").strip()
+        if not qs:
+            return [(PROV_BAD_QID, "qid_sequence contains an empty question id.")]
+        if qs in seen:
+            return [(PROV_BAD_QID, "qid_sequence repeats %r — a real turn-gate surfaces each "
+                                   "question exactly once." % qs)]
+        seen.add(qs)
+        prev = qs
+
+    # Every turn must be signed: each assistant/owner turn carries the qid it was
+    # surfaced under. A hand-written transcript cannot reproduce the qid-per-turn
+    # walk without faking the entire ordered structure.
+    for t in turns:
+        if isinstance(t, dict):
+            role = str(t.get("role") or "").strip().lower()
+            if role in ("assistant", "owner", "user", "client"):
+                if "qid" not in t:
+                    return [(PROV_UNSIGNED_TURNS,
+                             "driver envelope has a %s turn with no qid — the turn-gate stamps "
+                             "each recorded turn with the question it answered." % role)]
+
+    sig = envelope.get("driver_signature")
+    if not isinstance(sig, str) or not sig.strip():
+        return [(PROV_NOT_SIGNED,
+                 "driver envelope has no driver_signature — it was not produced by "
+                 "deck-intake-driver.py's turn-gate (fail-closed: a hand-written transcript "
+                 "is not proof of a real intake conversation).")]
+
+    expected = _sign_transcript(seq, turns)
+    if not hmac.compare_digest(expected, sig.strip()):
+        return [(PROV_BAD_SIG,
+                 "driver envelope signature does not match its recomputed digest — the "
+                 "transcript was tampered with or copied from another intake.")]
+
+    return []
+
+
+def _driver_provenance_violations(envelope) -> list:
+    """Thin alias so the CLI and the engine can share one call shape."""
+    return check_driver_provenance(envelope)
+
+
+def _provenance_to_violations(prov_fails) -> list:
+    """Map provenance failures onto the scanner's violation shape so a single
+    result dict can carry both kinds."""
+    return [{"code": AF_CODE, "reason": code, "turn_index": None,
+             "detail": msg} for code, msg in prov_fails]
+
+
+# ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
 def main(argv=None) -> int:
@@ -388,13 +574,30 @@ def main(argv=None) -> int:
         print(json.dumps({"status": "error", "message": f"cannot read transcript: {exc}"}))
         return EXIT_USAGE
 
+    # FIX-3: parse the raw payload as the envelope object (bare list OR driver
+    # envelope). The provenance gate needs the raw envelope (to check format +
+    # signature + qid_sequence); the conversation scan needs only the turns.
+    try:
+        envelope = json.loads(raw)
+    except json.JSONDecodeError:
+        envelope = raw  # plain-text transcript: no driver envelope -> NO-FORMAT
+
     turns = parse_transcript(raw)
     if not turns:
         print(json.dumps({"status": "error", "message": "transcript parsed to zero turns (unparseable format)"}))
         return EXIT_USAGE
 
+    # DRIVER PROVENANCE first — a fabricated (hand-written) transcript must
+    # fail regardless of how conversationally compliant its content is.
+    prov_fails = check_driver_provenance(envelope)
+    provenance_violations = _provenance_to_violations(prov_fails)
+
     bank = load_bank_questions(args.sp_spec, args.deck_questions)
     result = scan_transcript(turns, bank)
+    result["violations"] = provenance_violations + result["violations"]
+    result["pass"] = len(result["violations"]) == 0
+    result["driver_provenance"] = {"pass": len(prov_fails) == 0,
+                                   "violations": prov_fails}
 
     if args.json:
         print(json.dumps(result, indent=2))
@@ -527,6 +730,59 @@ def _self_test() -> bool:
     print(f"[self-test] Test 7 {'PASS' if t7 else 'FAIL'}: every canonical bank prompt "
           f"({len(bank)} loaded) passes when asked verbatim, one-per-turn "
           f"(failures={t7_failures})")
+
+    # ---- FIX-3 — DRIVER PROVENANCE (intake must be a REAL conversation) ----
+    # Test 8: a signed driver envelope with a monotonic qid sequence PASSES the
+    # provenance gate (the driver-produced shape).
+    t8_turns = [
+        {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?",
+         "qid": "interview_choice"},
+        {"role": "owner", "text": "quick", "qid": "interview_choice"},
+        {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+        {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    ]
+    t8_env = build_driver_envelope(["interview_choice", "q1"], t8_turns)
+    t8 = check_driver_provenance(t8_env) == []
+    ok = ok and t8
+    print(f"[self-test] Test 8 {'PASS' if t8 else 'FAIL'}: signed driver envelope with a "
+          f"monotonic qid sequence passes provenance")
+
+    # Test 9: a HAND-WRITTEN bare-list transcript (no envelope, no signature) is
+    # REJECTED — the exact shape ERROR 3 of the 2026-08-06 E2E audit produced.
+    bare_fails = check_driver_provenance(clean)
+    t9 = len(bare_fails) > 0 and bare_fails[0][0] == PROV_NO_FORMAT
+    ok = ok and t9
+    print(f"[self-test] Test 9 {'PASS' if t9 else 'FAIL'}: hand-written bare-list transcript "
+          f"is rejected as NO-DRIVER-ENVELOPE (fabricated)")
+
+    # Test 10: a tampered signature (turns edited after signing) is REJECTED.
+    t10_env = build_driver_envelope(["interview_choice", "q1"], t8_turns)
+    t10_env["turns"][1]["text"] = "IN-DEPTH (tampered)"
+    t10 = any(code == PROV_BAD_SIG for code, _ in check_driver_provenance(t10_env))
+    ok = ok and t10
+    print(f"[self-test] Test 10 {'PASS' if t10 else 'FAIL'}: tampered signature is rejected "
+          f"as BAD-DRIVER-SIGNATURE")
+
+    # Test 11: a non-monotonic / duplicated qid_sequence is REJECTED.
+    t11_env = build_driver_envelope(["q1", "q1"], t8_turns)
+    t11 = any(code == PROV_BAD_QID for code, _ in check_driver_provenance(t11_env))
+    ok = ok and t11
+    print(f"[self-test] Test 11 {'PASS' if t11 else 'FAIL'}: duplicated qid_sequence is "
+          f"rejected as BAD-QID-SEQUENCE")
+
+    # Test 12: the CLI (main) rejects a bare-list transcript FILE (integration:
+    # writing a bare list to disk and running the scanner must exit 2). This is
+    # the FIX-3 file-level gate, not just the in-memory function.
+    import tempfile
+    _tmpf = tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False)
+    json.dump(clean, _tmpf); _tmpf.close()
+    rc12 = main([_tmpf.name, "--json"])
+    _t12 = rc12 == EXIT_AUTOFAIL
+    ok = ok and _t12
+    import os as _os
+    _os.unlink(_tmpf.name)
+    print(f"[self-test] Test 12 {'PASS' if _t12 else 'FAIL'}: CLI rejects a bare-list "
+          f"transcript FILE (exit {rc12}, want {EXIT_AUTOFAIL})")
 
     print(f"[intake_trace_check] --self-test: {'ALL PASS' if ok else 'FAILED'}")
     return ok

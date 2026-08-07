@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "THE\nSALE\n\nTi ey\n\nTHE SALES BIBLE WEBINAR\n\nMake it Easy :\nto Buy\n\nThe Sales Bible Webinar\n\nRelationship. Value. Persistence."
+}

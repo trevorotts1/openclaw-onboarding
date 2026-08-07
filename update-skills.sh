@@ -7457,7 +7457,24 @@ PYEOF
   # layer: injects "route, don't self-execute" + the human-override carve-out
   # every turn, with NO tool-deny (so no write-denial loop). Installs the
   # extension to ~/.openclaw/extensions/ and enables it in openclaw.json with
-  # allowPromptInjection:true. Idempotent.
+  # enabled:true ONLY. Idempotent.
+  #
+  # FLEET-KILL DEFECT FIX (2026-08-06): this block used to ALSO write
+  # plugins.entries.ceo-routing-doctrine.hooks = {allowPromptInjection:true}.
+  # `hooks` on a plugins.entries.<id> is additionalProperties:false and does
+  # NOT accept `allowPromptInjection` on OpenClaw <=2026.6.11 (the extension's
+  # own dist/index.js comment claims that gate only as of 2026.7.1-2, a schema
+  # version not yet uniformly on the fleet) -- writing it made
+  # `openclaw config validate` FAIL with "hooks: Invalid input". Config
+  # validation is FATAL at gateway startup: the gateway never starts, the
+  # cron scheduler never initializes, next_run_at_ms freezes in the past
+  # forever, and NO cron on the box ever fires again -- silently, because the
+  # ALREADY-RUNNING gateway is unaffected until the box's NEXT restart/reboot
+  # (this is exactly what update-skills.sh triggers on every fleet roll).
+  # DO NOT re-add this key here without first confirming (via
+  # `openclaw config validate` against the box's actual installed gateway
+  # version) that the target schema accepts
+  # plugins.entries.<id>.hooks.allowPromptInjection.
   # ----------------------------------------------------------
   echo "  Installing CEO Routing Doctrine pre-injection plugin..."
   _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
@@ -7483,7 +7500,6 @@ if os.path.isfile(cfg_path):
     cfg.setdefault("plugins", {}).setdefault("entries", {})
     cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
         "enabled": True,
-        "hooks": {"allowPromptInjection": True}
     }
     cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
     # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users

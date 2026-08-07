@@ -1,0 +1,19 @@
+=== [presentation-canonical-entry.sh] canonical scripts: /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/fake-scripts  (source: --scripts-dir / /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/fake-scripts) ===
+=== [presentation-canonical-entry.sh] GATE 0 — INTAKE-LEDGER CHECK ===
+=== [presentation-canonical-entry.sh]   GATE 0 PASSED ===
+=== [presentation-canonical-entry.sh] GATE 0b — INTAKE-TRACE CHECK (intake_transcript.json required; NO owner override) ===
+=== [presentation-canonical-entry.sh]   GATE 0b PASSED (intake transcript present and non-trivial) ===
+=== [presentation-canonical-entry.sh] GATE 1/3 — DEPS CHECK (soffice, pdftoppm, reportlab, python-pptx) ===
+  SKIP: QC_SKIP_PRESENTATION_DEPS=1 honored — test-context marker present (/var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run/working/checkpoints/.test-context)
+  [dep_gate_bypassed] recorded (env:QC_SKIP_PRESENTATION_DEPS) in /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run/working/checkpoints/process_manifest.json
+=== [presentation-canonical-entry.sh] GATE 1b/3 — SKILL-48 GHL MODULE CO-LOCATION (ghl_media importable) ===
+  OK: ghl_media importable from /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/fake-scripts
+=== [presentation-canonical-entry.sh] GATE 2/3 — BYPASS-SCAN (hand-rolled renderer detection in /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run) ===
+  OK: no hand-rolled renderer/assembler found in the run directory
+=== [presentation-canonical-entry.sh] GATE 3/3 — VERSION/HASH PIN (renderer lockstep + content hash) ===
+  OK: sync_check.py — renderer in lockstep with the SOP/manifest stack
+  renderer hash (sha256 of build_deck.py+run_signature_deck.py): a2f50ce0b91d4bc5ff0c01c4aad16d60090845ec7b63dca0c4f7cd7540e1f192
+  (no CANONICAL-RENDERER-PIN.sha256; hash recorded, not enforced)
+=== [presentation-canonical-entry.sh] ALL GATES PASSED — dispatching the canonical orchestrator (run_signature_deck.py) ===
+=== [presentation-canonical-entry.sh] run: python3 /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/fake-scripts/run_signature_deck.py --run-dir /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run --slides /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run/slides.json --out /var/folders/yf/zc5k46g93zs1dp56646v91rm0000gn/T/gl3_ev3__ld8hcfx/run/out.pptx --phase P4-RENDER ===
+stub runner

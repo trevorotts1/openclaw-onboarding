@@ -87,8 +87,38 @@ The `ollama` model provider is wired **by box type**. There is exactly ONE
 - **VPS client** (Hostinger Docker / any Linux container, no local daemon): ONE
   `ollama` provider, cloud-direct — `baseUrl: "https://ollama.com"` + the client's
   own `OLLAMA_API_KEY`. A loopback baseUrl → `ECONNREFUSED` (HARD VIOLATION).
-- **All boxes:** every `:cloud` model carries `maxTokens: 64000` (Ollama Cloud
-  caps output at 65536). Always confirm a live PONG, not just config-valid.
+- **All boxes:** every `:cloud` model carries **`max_tokens`, `maxTokens` AND
+  `num_predict` all set to `32768`** (lowered from 64000 on 2026-08-05). Always
+  confirm a live PONG, not just config-valid.
+
+  **Why 32768, not 64000 —** the output reserve is *subtracted from the context
+  window* to yield the usable **prompt** budget
+  (`promptBudget = contextWindow − outputReserve`), while the compaction
+  **trigger** is a separate formula with **no output term**
+  (`trigger = contextWindow − reserveTokensFloor − softThresholdTokens`). Set the
+  reserve too high and the two collapse onto each other. On the operator box
+  (`kimi-k2.6:cloud`, 262,144 window) a 65,536 reserve put the provider wall at
+  196,608 and the trigger at 196,144 — a **464-token gap**. One tool result
+  clears that, so sessions shot past the wall before compaction fired, and then
+  compaction itself was rejected by the same precheck:
+  `Context overflow: prompt too large for the model (precheck)` — **28 times in
+  one day**, at prompts of 212,253 and 226,744 tokens. 32,768 moves the wall to
+  229,376, giving ~33k of margin against a largest-observed overshoot of 30,136.
+
+  **⛔ All three keys, every time.** Ollama's native path honours `num_predict`;
+  the OpenAI-compatible path honours `max_tokens`. Setting one and not the others
+  leaves the effective cap high — a **silent no-op**. Real drift found on the
+  operator box: `minimax-m3` had `max_tokens: 32768` but `num_predict: 65536`,
+  and `nemotron-3-super` had `max_tokens: 131072` — half its 262,144 window.
+
+  **⛔ Apply with `openclaw config patch --stdin`, never a loop of
+  `openclaw config set`.** Quoted paths like
+  `agents.defaults.models.'ollama/x:cloud'.params.max_tokens` do **not** resolve:
+  they exit 0, change nothing, and silently create a literal-quoted junk key. That
+  happened here — 33 sets reported 18 successes and wrote **zero** real values
+  while creating 6 bogus keys. `config patch` is one validated atomic write, and
+  `null` deletes a path. **Always read the values back afterwards; never trust the
+  set command's exit code.**
 
 **Enforced (hard-fail) by** `scripts/qc-assert-ollama-provider-platform.sh`
 (single source of truth) via `scripts/qc-system-integrity.sh` CHECK X.9. Full

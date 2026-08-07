@@ -390,8 +390,9 @@ def gate_ghl_media_complete(run_dir, *, expected_slide_count: int | None = None)
 
 def main():
     ap = argparse.ArgumentParser(description="Host a deck's images + deliverables in GHL, "
-                                             "or run the GHL-upload closeout gate.")
-    ap.add_argument("--run-dir", required=True)
+                                             "run the GHL-upload closeout gate, or LIST "
+                                             "the media library read-only.")
+    ap.add_argument("--run-dir", default=None)
     ap.add_argument("--deck-slug", default=None)
     ap.add_argument("--images", nargs="*", default=None)
     ap.add_argument("--extra", nargs="*", default=None,
@@ -400,7 +401,43 @@ def main():
                     help="run the HARD closeout gate (no upload, exit 1 on fail).")
     ap.add_argument("--expected-slides", type=int, default=None,
                     help="optional per-slide coverage count for the gate.")
+    ap.add_argument("--list", action="store_true",
+                    help="READ-ONLY list of the GHL media library (GET /medias/files; "
+                         "never mutates). No --run-dir needed. Optional --list-name "
+                         "filters by name.")
+    ap.add_argument("--list-name", default=None,
+                    help="with --list, only show entries whose name contains this string.")
+    ap.add_argument("--list-type", default="file", choices=["file", "folder"],
+                    help="with --list, list files (default) or folders.")
+    ap.add_argument("--list-limit", type=int, default=200,
+                    help="with --list, max entries to fetch (default 200).")
     args = ap.parse_args()
+
+    if args.list:
+        # READ-ONLY LIST-BACK — never mutates the media library.
+        try:
+            pit = ghl_media.resolve_location_pit()
+            loc = ghl_media.resolve_location_id()
+        except Exception as exc:  # noqa: BLE001
+            print(f"GHL MEDIA LIST: FAIL (credential resolution: {exc})", file=sys.stderr)
+            return 2
+        try:
+            listing = ghl_media.list_media(loc, pit, media_type=args.list_type,
+                                           limit=args.list_limit)
+        except Exception as exc:  # noqa: BLE001
+            print(f"GHL MEDIA LIST: FAIL ({exc})", file=sys.stderr)
+            return 2
+        entries = listing.get("data") or []
+        if args.list_name:
+            needle = str(args.list_name).lower()
+            entries = [e for e in entries if isinstance(e, dict)
+                       and needle in str(e.get("name") or "").lower()]
+        print(json.dumps({"http": listing.get("http"), "count": len(entries),
+                          "data": entries}, indent=2))
+        return 0
+
+    if not args.run_dir:
+        ap.error("--run-dir is required (or use --list / --gate)")
     rd = Path(args.run_dir).resolve()
 
     if args.gate:

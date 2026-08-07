@@ -53,7 +53,7 @@ The four hard rules:
 | 2 | `match` | The route match token (the per-client hook name; mirrors `id`). |
 | 3 | `action` | Always `agent` — this inbound is handled by an agent, not a static reply. |
 | 4 | `agent_id` | Which agent runs this inbound (e.g. `main`, `sales`) — the routing agent. |
-| 5 | `model` | The model the agent runs on (e.g. `ollama/deepseek-v4-flash:cloud`). |
+| 5 | `model` | The model the agent runs on (e.g. `ollama/deepseek-v4-flash:0731-cloud`). |
 | 6 | `wakeMode` | `now` — process the inbound immediately (not queued/deferred). |
 | 7 | `name` | Human-readable label for the inbound (e.g. `GHL Sales Inbound`). |
 | 8 | `session_key` | The conversation session key — `hook:ghl:<channel>:{{contact.id}}` (channel + contact). |
@@ -85,7 +85,7 @@ The 23 keys (exact): `id`, `match`, `action`, `agent_id`, `model`, `wakeMode`, `
   "match": "ghl-sales",
   "action": "agent",
   "agent_id": "sales",
-  "model": "ollama/deepseek-v4-flash:cloud",
+  "model": "ollama/deepseek-v4-flash:0731-cloud",
   "wakeMode": "now",
   "name": "GHL Sales Inbound",
   "session_key": "hook:ghl:sms:{{contact.id}}",

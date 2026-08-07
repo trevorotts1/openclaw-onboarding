@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECTION 1 OF 4\n\nThe Three BIG Secrets\n\nThe relationship engine that makes buying easy"
+}

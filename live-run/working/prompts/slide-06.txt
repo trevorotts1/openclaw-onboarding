@@ -1,0 +1,110 @@
+[ARCHETYPE A4] [SECTION: 1] [LADDER: none]
+ONE BIG IDEA: The Three BIG Secrets
+
+FORMAT: Create a 16:9 presentation slide image
+SCENE SPECIFICATION:
+SCENE EXTENSION: The section divider uses a deep navy background with a subtle radial gradient creating a spotlight effect. Fine geometric lines (triangles, circles) appear at 3% opacity, adding texture without distraction. The section title is centered in white Montserrat Black, with gold rules above and below. The text "SECTION 1 OF 4" appears as a kicker label in gold at the top. This creates a clean pause in the presentation flow.
+ A bold minimal section divider with a deep navy (#1A1A2E) background, a single warm gold spotlight from above creating a subtle radial gradient, fine geometric line texture overlay at 5% opacity, lots of negative space, premium editorial design aesthetic, the section title centered with gold rules above and below.
+ at 2K resolution (2560x1440 pixels).
+
+BACKGROUND: Dark background permitted per DARK_OK=true. Use #1A1A2E as the dominant background color. White text (#FFFFFF) for all headlines and body copy. Gold accent (#C9A84C) for rules, kicker labels, and emphasis words. No more than 20% of visual area may be non-#1A1A2E accent elements.
+
+HEADLINE VERBATIM: The slide headline reads exactly: 'The Three BIG Secrets'. This text is the primary typographic element. Place it in the [position per thirds grid based on archetype].
+Render this exact string, letter-for-letter, correctly spelled, with no added, dropped, doubled, or substituted characters: 'The Three BIG Secrets'. Do not alter, misspell, duplicate, abbreviate, translate, or garble any character of it.
+The sub-headline reads exactly: 'The relationship engine that makes buying easy'. Place it beneath the headline in the [position per type card].
+Render this exact string, letter-for-letter, correctly spelled, with no added, dropped, doubled, or substituted characters: 'The relationship engine that makes buying easy'. Do not alter, misspell, duplicate, abbreviate, translate, or garble any character of it.
+The supporting line reads exactly: 'SECTION 1 OF 4'. Place it in the [position per type card].
+Render this exact string, letter-for-letter, correctly spelled, with no added, dropped, doubled, or substituted characters: 'SECTION 1 OF 4'. Do not alter, misspell, duplicate, abbreviate, translate, or garble any character of it.
+
+TYPOGRAPHY: One typeface family (Montserrat); hierarchy by WEIGHT, never by mixing typefaces. Headlines and giant numbers in Montserrat Black; sub-headlines and body beats in Montserrat ExtraBold; gold all-caps letter-spaced kicker labels in Montserrat Bold; section labels and subheads in Montserrat SemiBold; tertiary breathing lines in Montserrat Medium italic; footnotes in Montserrat Regular. Every text line in this prompt declares its exact weight AND a large pt size relative to slide height: giant numbers 110-150pt, hero 2-line headline 62-86pt, secondary headline 42-62pt, sub-headline 24-32pt, body beat 17-22pt, tertiary italic 16-19pt, kicker label ~13pt, footnote 11-13pt. The typography is DESIGNED INTO the image as part of the composition (text baked into the pixels as rendered designed type), not a basic font dropped on top. Basic or default fonts (Calibri, Arial, Times, system default) are forbidden.
+
+FONT PLACEMENT: Apply the canonical stack for this archetype. Gold all-caps letter-spaced kicker label -> thin gold breathing rule -> massive charcoal Black 2-line headline (dominates the zone, the first thing the eye reads) -> white ExtraBold sub-headline -> a second thin gold rule -> white body beat -> logo chip bottom-right. No text appears within 5% of any edge.
+
+THIRDS GRID: Using the rule of thirds: the typographic event (headline/number) dominates the center and upper-thirds region. Text occupies the center zone. This creates a bold, commanding presence.
+
+OBJECT PLACEMENT: [Specific objects per slide context] placed in [specific region per archetype]. Objects must not overlap the headline text zone. Gold rules separate hierarchy elements. Logo chip sits at the lower-right third intersection on a white background chip.
+
+OVERLAYS: There is NO hook footer band. DELETED. The hook renders ONLY as the type-dominant content of its dedicated slide (slide 2). On every non-hook slide write: 'No text overlays on this slide beyond the headline. No hook footer band.'
+
+BRAND PALETTE: Primary background: #1A1A2E [deep navy, dominant background]. Secondary accent: #C9A84C [warm gold, rules, kicker labels, emphasis words, price highlights]. Tertiary: #FFFFFF [white, all text]. All backgrounds are dark per DARK_OK=true. Gold = money, value, and dividers. White = text and clarity.
+
+LOGO: The first reference image is the company logo at https://api.kie.ai/api/v1/media/logos/sales-bible-logo.png: place it on a white chip (~9% of slide width, subtle 1px gold border) in the lower-right corner, do not redraw, recolor, or restyle it. One locked mark, composited identically on every slide.
+
+MOOD: This slide carries its OWN felt emotional moment, readable in 2 seconds without narration. The visual energy should feel sectional, authoritative, clean to sales professionals and business owners seeking to improve their close rates through relationship-based selling.
+
+PROFESSIONALISM: Production quality: this slide must read as a finished, gallery-grade STANDALONE PIECE OF ART, complete on its own with no other slide for context. Intentional art direction (focal hierarchy, negative space, depth of field), premium lifestyle-documentary photography (never stock, clipart, or cartoon), directional warm lighting, a clear hero subject, and the large creative typography composed INTO the image as part of the composition (not pasted on top). Magazine-grade. No amateur stock photo aesthetic. No watermarks. No blur. Sharp focus on the human subject if people are present. This image is one you could frame and hang.
+
+
+
+
+COMPOSITION AND ART DIRECTION DETAILS:
+
+TYPOGRAPHIC HIERARCHY:
+The typographic hierarchy follows the established weight ladder for this deck:
+- Kicker label: Montserrat Bold, ~13pt, gold (#C9A84C), all-caps, letter-spaced, positioned above the headline with a thin gold rule beneath
+- Hero headline: Montserrat Black, 62-86pt, white (#FFFFFF), positioned as the dominant visual element
+- Sub-headline: Montserrat ExtraBold, 32-42pt, white, positioned beneath the headline
+- Supporting text: Montserrat Regular, 17-22pt, white or gold, positioned in the supporting zone
+- Footnote/disclaimer: Montserrat Regular, 11-13pt, gold, positioned in the lower margin if required
+
+VISUAL WEIGHT AND BALANCE:
+The composition balances visual weight through strategic placement of elements. The headline carries the heaviest visual weight and anchors the composition. Supporting elements are scaled proportionally to create a clear reading path. Negative space is used intentionally to prevent visual clutter and guide the eye through the hierarchy.
+
+COLOR GRADING AND ATMOSPHERE:
+The color grading follows a premium editorial aesthetic with:
+- Warm color temperature (5500K equivalent) for natural, inviting atmosphere
+- Slight contrast boost to enhance depth without losing detail
+- Subtle color grading to unify the composition (warm highlights, cool shadows)
+- Skin tones rendered with accurate fidelity and appropriate dimensional lighting
+
+LIGHTING DESIGN:
+Lighting follows the premium lifestyle-documentary style:
+- Key light: Directional, creating dimension and separation from background
+- Fill light: Soft, reducing harsh shadows while maintaining depth
+- Rim/hair light: Visible separation light along the subject's edge, crucial for depth
+- Background lighting: Softer, lower contrast to keep focus on the subject
+- Time of day: Morning or golden hour for warmth and optimism
+
+DEPTH OF FIELD AND FOCUS:
+- Subject focus: Sharp, with fine detail retention
+- Background: Soft blur (bokeh) creating separation
+- Depth of field: Shallow to moderate (f/2.8 - f/5.6 equivalent)
+- Focus point: Eyes for people shots, primary text for type-dominant slides
+
+TEXTURE AND MATERIAL QUALITY:
+- Skin: Natural texture visible, not smoothed or plastic-looking
+- Clothing: Fabric texture apparent, appropriate to the professional context
+- Environment: Material qualities rendered authentically (wood grain, glass reflections, paper texture)
+- Typography: Clean, sharp edges, no anti-aliasing artifacts
+
+COMPOSITION RULES APPLIED:
+- Rule of thirds: Primary elements placed at intersection points
+- Leading lines: Architectural or design elements guiding the eye
+- Framing: Natural or artificial frames within the composition
+- Symmetry/Asymmetry: Intentional balance choices based on slide content
+- Golden ratio: Subtle proportional relationships in element sizing
+
+PRODUCTION QUALITY STANDARDS:
+- Resolution: 2560x1440 pixels (2K), suitable for professional display
+- Color space: sRGB for digital display consistency
+- Bit depth: 8-bit minimum, 16-bit preferred for grading flexibility
+- Sharpness: Crisp focus on primary subjects, controlled falloff
+- Noise: Minimal, clean image suitable for projection
+- Dynamic range: Preserved highlights and shadows without clipping
+
+PRE-RENDER CHECKLIST:
+- All text strings spelled correctly with spelling locks applied
+- Logo composite instruction included and precise
+- All 15 SOP elements present and complete
+- Character count within 9,000-14,000 target range
+- No placeholder tokens or build notes as rendered copy
+- Archetype declaration on line 1
+- Color verification comment present
+- Negative block covering all eight defect classes
+- Positive twins stated for each critical negative
+
+
+AVOID THE FOLLOWING DEFECTS:
+Do not render any text with garbled, misspelled, or substituted characters — every headline, subhead, supporting line, and price must appear letter-for-letter exactly as specified. Do not redraw, recolor, or restyle the logo mark; composite the locked logo asset identically on every slide without invention. Do not include any bracketed placeholder tokens such as "[...]", "owner to confirm", "insert", "tbd", "placeholder", "client win", "endorsement", "real result", "to supply", or "pending" as rendered copy. Do not narrate the image with presenter commentary, AI meta-language, stage directions like "one last proof before you decide", or the literal word "webinar" as on-slide text — only the verbatim copy from the slide copy block appears. Do not render anatomical artifacts such as extra fingers, malformed hands, distorted faces, or impossible肢体; every human subject must display natural, proportionate anatomy. Do not allow the background to compete with the headline text zone — maintain clear visual hierarchy with the text group occupying its designated thirds region unobstructed. Do not lighten, ashen, grey, or desaturate deep skin tones; render all skin tones with accurate color fidelity and appropriate lighting dimension. Do not use basic or default fonts (Calibri, Arial, Times, system defaults) — every text line must use the specified Montserrat weight and size. Do not place text within 5% of any slide edge. Do not render a hook footer band on any non-hook slide. Do not depict a generic studio backdrop where a real-world setting belongs. Do not use dark backgrounds unless DARK_OK is true (it is, so dark backgrounds are permitted here).
+
+// COLOR VERIFICATION: PRIMARY=#1A1A2E, SECONDARY=#C9A84C, TERTIARY=#E8E8E8, DARK_OK=true

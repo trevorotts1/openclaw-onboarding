@@ -23,11 +23,14 @@ Plus unit assertions on the build_deck.py check functions directly (no subproces
 Run:  python3 test_preflight.py
 Exit: 0 = all assertions passed; 1 = a case failed.
 """
+import contextlib
+import io
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import unittest.mock as _mock
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -37,6 +40,62 @@ BUILD = HERE / "build_deck.py"
 sys.path.insert(0, str(HERE))
 import build_deck  # noqa: E402
 import delivery_gate  # noqa: E402  (R9-F9 mechanical last-mile gate)
+
+
+# ---------------------------------------------------------------------------
+# FIX-1 oracle mock — patch cc_board's HTTP layer so the owner-ids endpoint
+# returns a scripted set of REAL owner-authored message ids. Undetermined (no
+# patch) fails CLOSED in the engine; a patched set is the positive control.
+# ---------------------------------------------------------------------------
+def _patch_owner_ids_oracle(real_ids):
+    """Return an active mock.patch on cc_board's urlopen whose GET
+    /api/tasks/*/messages/owner-ids returns `real_ids` (HTTP 200). Anything
+    else raises — the engine should only ever make this one oracle call.
+
+    Also pins cc_board.board_config so the oracle is REACHABLE regardless of the
+    host environment (no COMMAND_CENTER_URL / MISSION_CONTROL_URL in the env means
+    board_config returns None and the oracle is UNDETERMINED -> fail-closed)."""
+    import cc_board  # noqa: E402
+
+    class _FakeResp:
+        def __init__(self, payload):
+            self._b = json.dumps(payload).encode()
+
+        def read(self):
+            return self._b
+
+        def getcode(self):
+            return 200
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *a):
+            return False
+
+    def _fake_open(req, timeout=None):
+        if req.full_url.endswith("/messages/owner-ids"):
+            return _FakeResp(sorted(real_ids))
+        raise AssertionError(f"unexpected oracle URL {req.full_url!r}")
+
+    patches = [
+        _mock.patch.object(cc_board.urllib.request, "urlopen", _fake_open),
+        _mock.patch.object(cc_board, "board_config", return_value={
+            "base_url": "https://cc.example.test",
+            "token": "tok-test",
+            "secret": "",
+            "timeout": 8,
+        }),
+    ]
+    for p in patches:
+        p.start()
+
+    class _Both:
+        def stop(self):
+            for p in patches:
+                p.stop()
+
+    return _Both()
 
 SLIDES = [
     {"slide": 1, "scene": "A sunlit modern office, editorial photography.",
@@ -2612,13 +2671,19 @@ def test_check_phase_preconditions():
     if build_deck.check_phase_preconditions(root, "P4-RENDER", ["P3-ARC"]):
         fails.append("PHASE-SKIP: attested prior should PASS but failed")
     # Owner-authorized skip of a NOT-attested phase => precondition satisfied.
+    # FIX-1 (AF-FORGED-APPROVAL): a skip is a verifiable owner-authorized skip ONLY
+    # when it carries a NON-EMPTY owner_msg_id. The full message resolution goes
+    # through the runner's cc_board owner-ids oracle (covered by the authenticity
+    # test); the shared gate here refuses msg-id-less records up front. The record
+    # below carries an owner_msg_id so it is a well-formed FIX-1 skip that PASSES.
     root2 = _g4_run_dir("deck_g4_phaseskip2_")
     ck2 = root2 / "working" / "checkpoints"
     ck2.mkdir(parents=True, exist_ok=True)
     (ck2 / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
                         "approved_by": "owner", "reason": "no pitch in this deck",
-                        "timestamp": "2026-06-20T00:00:00Z"}]}))
+                        "timestamp": "2026-06-20T00:00:00Z",
+                        "owner_msg_id": "owner-msg-p3-arc"}]}))
     if build_deck.check_phase_preconditions(root2, "P4-RENDER", ["P3-ARC"]):
         fails.append("PHASE-SKIP: owner-authorized skip should PASS but failed")
     print(f"PHASE-PRECONDITIONS (3C)     -> {'PASS' if not fails else 'FAIL'}")
@@ -2712,11 +2777,23 @@ def test_runner_next_turn_gate():
                      f"step 2, got {ph2 and ph2['id']!r} step {k2}")
 
     # (c) an owner-authorized skip of the second phase => it is treated as satisfied.
+    #     FIX-1 (AF-FORGED-APPROVAL): the skip is authentic ONLY when owner_msg_id
+    #     resolves to a real owner message. Seed the CC owner-ids oracle so "42" is
+    #     a GENUINE owner message id (the positive control); a forged id must fail
+    #     closed (covered by test_forged_owner_msg_id_* below).
+    _pm_path = rd / "working" / "checkpoints" / "process_manifest.json"
+    _pm_obj = json.loads(_pm_path.read_text()) if _pm_path.exists() else {}
+    _pm_obj["cc_task_id"] = "task-oracle-seeded"  # merge — keep the attestation from (b)
+    _pm_path.write_text(json.dumps(_pm_obj))
     (rd / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(json.dumps(
         {"approvals": [{"phase_id": second_id, "owner_approved": True,
                         "approved_by": "owner", "reason": "not applicable to this deck",
                         "timestamp": "2026-07-10T12:00:00Z", "owner_msg_id": "42"}]}))
-    ph3, _, _ = rsd._next_required_phase(rd, phases)
+    _oracle = _patch_owner_ids_oracle({"42"})
+    try:
+        ph3, _, _ = rsd._next_required_phase(rd, phases)
+    finally:
+        _oracle.stop()
     if ph3 is not None and ph3["id"] == second_id:
         fails.append(f"NEXT-GATE (c): an owner-authorized skip of {second_id!r} should be treated "
                      f"as satisfied, but --next still served it")
@@ -2743,8 +2820,12 @@ def test_runner_next_turn_gate():
         fails.append(f"NEXT-GATE (e): all-complete emit_next should report all_phases_complete/None, "
                      f"got status={done_payload.get('status')!r}")
     buf2 = io.StringIO()
-    with contextlib.redirect_stdout(buf2):
-        rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    _oracle2 = _patch_owner_ids_oracle({"42"})  # authentic skip (positive control)
+    try:
+        with contextlib.redirect_stdout(buf2):
+            rsd.emit_next(rd, phases)  # rd: first attested, second skip-approved -> serves 3rd
+    finally:
+        _oracle2.stop()
     served = json.loads(buf2.getvalue()).get("next_phase") or {}
     cmd = served.get("attest_command", "")
     if not served.get("id") or f"--phase {served.get('id')}" not in cmd:
@@ -3156,24 +3237,59 @@ def _sp_provers():
 # A COMPLIANT intake conversation: choice-first opener, then exactly one bank question
 # per assistant turn. This is the shape deck-intake-driver.py's turn-gate records, and it
 # is what P-SP-INTAKE-TRACE (A10 / T0-12) proves. A signature run dir gets it by default
-# so every other SP fixture stays green against the new gate.
+# so every other SP fixture stays green against the new gate. FIX-3: each turn carries the
+# bank question id it was surfaced under (the driver stamps `qid` per turn), so the
+# signed-envelope provenance gate accepts it.
 _SP_CLEAN_TRANSCRIPT = [
-    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
-    {"role": "owner", "text": "quick"},
-    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
-    {"role": "owner", "text": "The Signature Talk"},
-    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?"},
-    {"role": "owner", "text": "the overlooked mid-career expert"},
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?",
+     "qid": "interview_choice"},
+    {"role": "owner", "text": "quick", "qid": "interview_choice"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+    {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    {"role": "assistant", "text": "Any specific pain points to address in the avatar section?", "qid": "q3"},
+    {"role": "owner", "text": "the overlooked mid-career expert", "qid": "q3"},
 ]
 # The documented anti-pattern: three bank questions dumped in ONE assistant turn, with no
-# quick-vs-in-depth choice offered first.
+# quick-vs-in-depth choice offered first. Still a signed envelope so the failure surfaced
+# is the CONVERSATION batch (BATCH-IN-TURN), not the provenance.
 _SP_BATCHED_TRANSCRIPT = [
     {"role": "assistant", "text": (
         "What is the title of your Signature Presentation? "
         "Any specific pain points to address in the avatar section? "
-        "What product(s) will you offer at the end?")},
-    {"role": "owner", "text": "give me whatever you have got and I will get moving"},
+        "What product(s) will you offer at the end?"),
+     "qid": "q1"},
+    {"role": "owner", "text": "give me whatever you have got and I will get moving", "qid": "q1"},
 ]
+
+
+def _sp_qid_sequence(turns):
+    """Derive the monotonic qid sequence from the assistant turns' qid stamps,
+    mirroring deck-intake-driver._transcript_qid_sequence (first-surfaced order,
+    no duplicates)."""
+    seen = []
+    seen_set = set()
+    for t in turns:
+        if not isinstance(t, dict):
+            continue
+        if str(t.get("role") or "").strip().lower() != "assistant":
+            continue
+        qid = str(t.get("qid") or "").strip()
+        if qid and qid not in seen_set:
+            seen_set.add(qid)
+            seen.append(qid)
+    return seen
+
+
+def _sp_signed_envelope(turns):
+    """FIX-3: wrap a turn list in the signed driver envelope the turn-gate writes.
+    Falls back to a bare list when the checker module is not resolvable (so the
+    conversation-rule fixtures still work in isolation); the engine's provenance
+    gate requires the envelope, and the checker's own module-level provenance
+    tests cover the bare-list rejection."""
+    itc = build_deck._sp_prover("intake_trace_check")
+    if itc is not None and hasattr(itc, "build_driver_envelope"):
+        return itc.build_driver_envelope(_sp_qid_sequence(turns), turns)
+    return turns
 
 
 def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript="clean"):
@@ -3181,8 +3297,11 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     signature=True (else omitted, so the _chk_sp_* wrappers DEFER).
 
     transcript: "clean" (default) writes the compliant one-question-per-turn intake
-    transcript at working/interview/intake_transcript.json; "batched" writes the batched
-    anti-pattern; None writes no transcript at all (the OMISSION case)."""
+    transcript at working/interview/intake_transcript.json (as a SIGNED DRIVER
+    ENVELOPE — FIX-3); "batched" writes the batched anti-pattern (signed envelope,
+    so the conversation-rule failure is the BATCH, not the provenance); "bare"
+    writes a hand-written BARE LIST (the fabricated shape FIX-3 rejects);
+    None writes no transcript at all (the OMISSION case)."""
     rd = Path(tempfile.mkdtemp(prefix="deck_sp_test_"))
     (rd / "working" / "copy").mkdir(parents=True, exist_ok=True)
     intake = {"deck_type": "signature_presentation"} if signature else {"interview_confirmed": True}
@@ -3192,9 +3311,18 @@ def _sp_run_dir(*, signature=True, sp_intake=None, sp_structure=None, transcript
     if sp_structure is not None:
         (rd / "working" / "copy" / "sp_structure.json").write_text(json.dumps(sp_structure))
     if transcript is not None:
-        turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
-        (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
-        (rd / "working" / "interview" / "intake_transcript.json").write_text(json.dumps(turns))
+        if transcript == "bare":
+            # FABRICATED shape (FIX-3): a hand-written bare JSON list — no driver
+            # envelope, no signature. Written RAW so the provenance gate rejects it.
+            turns = _SP_CLEAN_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(turns))
+        else:
+            turns = _SP_CLEAN_TRANSCRIPT if transcript == "clean" else _SP_BATCHED_TRANSCRIPT
+            (rd / "working" / "interview").mkdir(parents=True, exist_ok=True)
+            (rd / "working" / "interview" / "intake_transcript.json").write_text(
+                json.dumps(_sp_signed_envelope(turns)))
     return rd
 
 
@@ -3260,6 +3388,13 @@ def _sp_adversarial_cases(spi, sps, spn):
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="batched")))
     cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
                   _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript=None)))
+    # FIX-3 — FABRICATION: a hand-written BARE LIST transcript (no driver envelope,
+    # no signature) next to a complete hand-written intake_ledger.json. This is the
+    # exact shape ERROR 3 of the 2026-08-06 E2E audit produced. It must FAIL with
+    # AF-INTAKE-BATCH even though its content is conversationally compliant —
+    # a bare list is not proof of a real one-at-a-time conversation.
+    cases.append(("AF-INTAKE-BATCH", "_chk_sp_intake_trace",
+                  _sp_run_dir(sp_intake=spi._valid_runtime_fixture(), transcript="bare")))
     return cases
 
 
@@ -3596,6 +3731,37 @@ def emit_af_coverage():
     # below-floor balance so the gate fires deterministically with no network.
     record("AF-KIE-BALANCE", _kie_balance_probe())
 
+    # AF-KIE-AUTH (FIX-6/FIX-23 manifest reconcile) — a PERMANENT auth failure on the
+    # balance call (AuthError, the 401 storm class) surfaces AF-KIE-AUTH from
+    # kie_balance_preflight, never 'unknown balance'. Monkeypatch _fetch_kie_balance
+    # to raise AuthError so the gate fires deterministically with no network.
+    _auth_orig = build_deck._fetch_kie_balance
+    try:
+        def _auth_fail(*a, **k):
+            raise build_deck.AuthError("401 Unauthorized — permanent auth failure")
+        build_deck._fetch_kie_balance = _auth_fail
+        record("AF-KIE-AUTH", build_deck.kie_balance_preflight(
+            _g4_run_dir("deck_g4_kieauth_"), 20, "stub-key"))
+    finally:
+        build_deck._fetch_kie_balance = _auth_orig
+
+    # AF-FORGED-APPROVAL (FIX-1/FIX-23 manifest reconcile) — an owner_action-only skip
+    # record (NO owner_msg_id) is the exact self-forgery vector the live E2E used; the
+    # shared gate check_phase_preconditions REFUSES it and surfaces AF-FORGED-APPROVAL,
+    # keeping the phase REQUIRED (fail-closed). Write a forged skip record and drive
+    # the gate; capture stderr so the record() self-check sees the code text.
+    _forged_root = _g4_run_dir("deck_g4_forged_")
+    _forged_ck = _forged_root / "working" / "checkpoints"
+    _forged_ck.mkdir(parents=True, exist_ok=True)
+    (_forged_ck / "phase_skip_approvals.json").write_text(json.dumps(
+        {"approvals": [{"phase_id": "P3-ARC", "owner_approved": True,
+                        "approved_by": "owner", "reason": "self-forged, no message id",
+                        "timestamp": "2026-06-20T00:00:00Z"}]}))  # NO owner_msg_id
+    _forged_buf = io.StringIO()
+    with contextlib.redirect_stderr(_forged_buf):
+        build_deck.check_phase_preconditions(_forged_root, "P4-RENDER", ["P3-ARC"])
+    record("AF-FORGED-APPROVAL", _forged_buf.getvalue())
+
     # AF-OVERLAY-DELIVERED (5C) — a present pptx_text_overlays.json (the eliminated
     # native-overlay path) FAILS _chk_no_overlay.
     record("AF-OVERLAY-DELIVERED",
@@ -3672,6 +3838,57 @@ def emit_af_coverage():
          "note": "all slides look good", "triggered_autofails": []}))
     record("AF-IMAGE-QC-VISION",
            build_deck.check_image_qc_vision(iqv_root))
+
+    # ---- FIX-2 (Error 2) NEW-GATE negative-test coverage (AF-QC-PLACEHOLDER +
+    #      AF-QC-SKIP). These two gates are declared enforced_by:build_deck in
+    #      PIPELINE-MANIFEST.json, so Guard A requires a deliberately-failing fixture
+    #      that REALLY trips each one (hardcoded labels never register — the guard
+    #      records a code only when it appears in a genuinely-failing path). ----
+
+    # AF-QC-PLACEHOLDER — a 3-byte "{}" QC report (the exact Error-2 artifact)
+    # driven through build_deck.check_qc_phase_report_real (the symbol declared in
+    # PIPELINE-MANIFEST.json, now wired into the run_postflight_gate pre-delivery
+    # enforcement path). The gate returns a fatal AF-QC-PLACEHOLDER reason.
+    _qcph_root = Path(tempfile.mkdtemp(prefix="deck_qcph_probe_"))
+    (_qcph_root / "working" / "qc").mkdir(parents=True, exist_ok=True)
+    # 3-byte "{}" placeholder for the copy-QC report — sub-floor by every measure.
+    (_qcph_root / "working" / "qc" / "copy_qc_report.json").write_text("{}")
+    record("AF-QC-PLACEHOLDER",
+           build_deck.check_qc_phase_report_real(_qcph_root, "P1Q-COPY-QC"))
+
+    # AF-QC-SKIP — a logged owner-authorized phase-skip record naming a QC phase
+    # (P-PROMPT-QC) is REFUSED by build_deck.check_phase_preconditions: the QC phase
+    # stays a required precondition. AF-QC-SKIP is surfaced on stderr by the refusal
+    # path (the function still returns AF-PHASE-SKIPPED), so we capture stderr and
+    # record the code from the refusal line. Mirror the _emit_af_bundle_probe pattern.
+    import io as _io
+    import contextlib as _contextlib
+    _qcsk_root = Path(tempfile.mkdtemp(prefix="deck_qcsk_probe_"))
+    (_qcsk_root / "working" / "checkpoints").mkdir(parents=True, exist_ok=True)
+    (_qcsk_root / "working" / "checkpoints" / "phase_skip_approvals.json").write_text(
+        json.dumps({"approvals": [{
+            "phase_id": "P-PROMPT-QC",
+            "owner_approved": True,
+            "approved_by": "Trevor BlackCEO",
+            "reason": "owner authorized this QC phase skip",
+            "timestamp": "2026-08-06T14:30:00Z",
+            "owner_msg_id": "real-owner-msg-001",
+            "owner_action": "approved_skip",
+        }]}))
+    _qcsk_buf = _io.StringIO()
+    try:
+        with _contextlib.redirect_stderr(_qcsk_buf):
+            build_deck.check_phase_preconditions(_qcsk_root, "P4-RENDER",
+                                                 ["P-PROMPT-QC"])
+    except Exception as _exc:  # noqa: BLE001
+        _qcsk_buf.write(str(_exc))
+    _qcsk_text = _qcsk_buf.getvalue()
+    record("AF-QC-SKIP", _qcsk_text)
+    # The refusal path must ALSO return AF-PHASE-SKIPPED naming the QC phase (belt and
+    # braces) so a silent pass can never record AF-QC-SKIP from a non-failing fixture.
+    _qcsk_reason = build_deck.check_phase_preconditions(
+        _qcsk_root, "P4-RENDER", ["P-PROMPT-QC"])
+    record("AF-PHASE-SKIPPED", _qcsk_reason or "")
 
     # AF-OCR-READBACK (U027) — a rendered PNG whose sidecar carries checked:false
     # (the OCR engine never ran against that render) FAILS check_ocr_readback; this

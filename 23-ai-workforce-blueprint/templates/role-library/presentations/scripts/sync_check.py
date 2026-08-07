@@ -35,6 +35,16 @@ DRIFT DIRECTIONS (both fail loud with the exact offending item + the fix verb):
       orphan `AF-...` string cited in build_deck.py, that the manifest does not
       declare. The code moved; the manifest did not.
 
+DRIFT CLASS (FIX-23(a)) — every drift item in the `--json` output carries a `class`
+  field so the canonical door (presentation-canonical-entry.sh GATE 3) can tell
+  SOP-LIBRARY maintenance debt from RENDER-PATH drift:
+    "A5/A6"       — library-only. Undeclared roles / owning_role -> missing .md.
+                    Does NOT change render correctness. GATE 3 PROCEEDS (evented),
+                    so library maintenance debt can never brick the sanctioned door.
+    "render_path" — every other class (A1-A4/A7/A8, B*, C*, D*, E*, V*). The actual
+                    renderer has drifted from the manifest/ruleset. GATE 3 FAILS
+                    CLOSED (AF-CANONICAL-RENDER-BYPASS / exit 7), exactly as before.
+
 EXIT CODES:
     0 — in sync.
     4 — drift (distinct from build_deck's 1/2/3 so a caller can tell lockstep
@@ -312,7 +322,14 @@ _INFRA_DIRS = {"scripts", "sops", "memory", "working", ".openclaw"}
 # are declared in PIPELINE-MANIFEST.roles today; U009 removes them from the manifest in
 # THIS SAME COMMIT, and without this set that removal creates five new A5 items.
 _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
-                  "how-to-use-this-department"}
+                  "how-to-use-this-department",
+                  # Fleet-scaffolding docs that the fleet sync copies into every
+                  # department dir (NOT department roles). They must not count as
+                  # un-declared roles (A5) on a DEPLOYED layout — FIX-23c repaired
+                  # the repo (which has no such files) but the deployed dept dirs
+                  # carry them, so excluding here closes the 27-drift debt for the
+                  # fleet-deployed layouts too.
+                  "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER"}
 
 
 def scan_roles_and_sops():
@@ -417,7 +434,9 @@ def value_checks(manifest_text):
     drift = []
 
     def add(check, item, detail):
-        drift.append({"check": check, "item": item, "detail": detail})
+        # FIX-23(a) — V-class is render-path (the cited NUMBER must equal the code
+        # constant); fail closed. Same `class` contract as run_checks().
+        drift.append({"check": check, "item": item, "detail": detail, "class": "render_path"})
 
     bd_vals = _const_int_values(BUILD_DECK)
     floor = bd_vals.get("PROMPT_CHAR_FLOOR")
@@ -520,10 +539,20 @@ def warn_checks(manifest):
 
 
 def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
-    drift = []  # list of {check, item, detail}
+    drift = []  # list of {check, item, detail, class}
 
     def add(check, item, detail):
-        drift.append({"check": check, "item": item, "detail": detail})
+        # FIX-23(a) — every drift item carries a `class` so the canonical door
+        # (GATE 3) can tell SOP-LIBRARY maintenance debt from RENDER-PATH drift.
+        # A5 (undeclared roles) and A6 (owning_role -> missing .md) are library-only:
+        # they do not change render correctness and MUST NOT brick the render path.
+        # Every other class (A1-A4/A7/A8, B*, C*, D*, E*, V*) is render-path: the
+        # actual renderer has drifted from the manifest/ruleset and must fail closed.
+        if check in ("A5", "A6"):
+            cls = "A5/A6"  # library-only
+        else:
+            cls = "render_path"
+        drift.append({"check": check, "item": item, "detail": detail, "class": cls})
 
     phases = manifest["phases"]
     autofails = manifest["autofails"]
@@ -825,6 +854,10 @@ def main():
     warnings = warn_checks(manifest)
 
     if as_json:
+        # FIX-23(a) — expose the render-path vs library-only split so the canonical
+        # door's GATE 3 can classify without re-parsing every drift item itself.
+        render_path = [x for x in drift if x.get("class") != "A5/A6"]
+        library_only = [x for x in drift if x.get("class") == "A5/A6"]
         print(json.dumps({
             "in_sync": not drift,
             "manifest_version": manifest["manifest_version"],
@@ -832,6 +865,11 @@ def main():
                        "autofails": len(manifest["autofails"]),
                        "roles": len(manifest["roles"])},
             "drift": drift,
+            "drift_summary": {
+                "total": len(drift),
+                "render_path": len(render_path),
+                "library_only": len(library_only),
+            },
             "warnings": warnings,
             "warn_count": len(warnings),
         }, indent=2))

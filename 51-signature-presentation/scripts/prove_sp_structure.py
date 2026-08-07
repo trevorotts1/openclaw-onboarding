@@ -203,9 +203,22 @@ def verify(structure: Dict[str, Any], deck: Dict[str, Any]) -> Tuple[List[Tuple[
                  f"(phases must run in order, each contiguous, starting at slide 1)")
 
     # === CHECK D: per-phase min_slides floor ==================================
+    # FIX-E2E (client-exact law): when the client states an exact slide count,
+    # the structure template's documented rule is "Phase min_slides floors still
+    # apply proportionally in order." The absolute phase floors (11/13/36/40 =
+    # 100) must scale to the client's number so a client-exact 20-slide deck can
+    # pass. Compute the override/scale factor BEFORE the phase floors; a scaled
+    # floor is max(1, round(min_slides * exact / 100)) so every phase keeps a
+    # non-zero presence and the ordering is preserved. When no override is
+    # active, floors are absolute (unchanged behaviour).
+    _sp_override = bool(deck.get(override_flag))
+    _sp_exact = deck.get(override_count_field)
+    _sp_scale = (_sp_exact / default_min) if (_sp_override and isinstance(_sp_exact, int) and _sp_exact > 0) else None
     counts = Counter(s.get("phase") for s in slides if isinstance(s, dict))
     for pid, p in phase_by_id.items():
         floor = int(p.get("min_slides", 0))
+        if _sp_scale is not None:
+            floor = max(1, int(round(floor * _sp_scale)))
         have = int(counts.get(pid, 0))
         if have < floor:
             fail("AF-SP-PHASE-RANGE",

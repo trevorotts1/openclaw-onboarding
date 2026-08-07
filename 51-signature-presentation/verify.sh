@@ -183,6 +183,87 @@ else
     fails=$((fails + 1))
 fi
 
+# 3) FIX-14 regression guard — MC_API_TOKEN / MISSION_CONTROL_URL wired into the
+#    agent runtime env (Error 8 / D-8). check_agent_env.py lives in the Skill-23
+#    presentations engine's scripts dir (the same tree the canonical runner reads
+#    `_agent_env` from). Two checks:
+#      3a. Self-test (always, CI-safe): the probe's own fixture matrix must pass —
+#          a regression in the PROBE itself is caught even when no real box env is
+#          present.
+#      3b. Live probe (only when a real engine scripts dir + a real box are
+#          present): check_agent_env.py must exit 0. In CI there is no materialized
+#          department and no gateway env, so the live probe is not run there — but
+#          on a box the probe is the exact preflight the canonical runner enforces
+#          at Phase-0, and verify.sh must hold it to the same bar.
+FIX14_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX14_SCRIPTS/check_agent_env.py" ]; then
+    run "FIX-14 check_agent_env.py --self-test (probe fixture matrix)" \
+        "$PY" "$FIX14_SCRIPTS/check_agent_env.py" --self-test
+    # Live probe: only when this run has a real process env (not a bare CI
+    # sandbox). The probe itself fails closed when the gateway env is absent, so a
+    # box that dropped the token FAILS here — the exact 15-day regression.
+    if [ -n "${MC_API_TOKEN:-}" ] || [ -f "$HOME/.openclaw/service-env/ai.openclaw.gateway.env" ]; then
+        run "FIX-14 check_agent_env.py (MC_API_TOKEN + MISSION_CONTROL_URL in runtime env)" \
+            "$PY" "$FIX14_SCRIPTS/check_agent_env.py"
+    else
+        printf '  [SKIP] FIX-14 live probe: no gateway env and no MC_API_TOKEN in this process env (CI sandbox); self-test above still ran\n'
+    fi
+else
+    printf '  [FAIL] FIX-14 check_agent_env.py NOT found at %s — ' "$FIX14_SCRIPTS"
+    printf 'the FIX-14 regression guard is unwired; a box whose token was dropped from the gateway env would silently 401 every CC write.\n'
+    fails=$((fails + 1))
+fi
+
+# 4) FIX-19 regression guard — right-size tool results (D18). read_slice.py is
+#    the engine's sliced-read path: a whole-file read of a 34-102KB SOP/role file
+#    returns a tool result the harness truncates ([tool-result-truncation] fired
+#    33x in the 2026-08-06 E2E). This check proves (a) the tool's own hermetic
+#    fixture battery passes and (b) a real large SOP read through the sliced path
+#    returns only the requested slice with a truncation counter of 0.
+FIX19_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX19_SCRIPTS/read_slice.py" ]; then
+    run "FIX-19 read_slice.py --self-test (sliced-read fixture battery)" \
+        "$PY" "$FIX19_SCRIPTS/read_slice.py" --self-test
+    # Live sliced read of a known 34-102KB SOP through the sliced-read path —
+    # QC gate for FIX-19: result returns only the requested slice; truncation
+    # counter = 0. Hermetic (reads a tracked SOP file), CI-safe.
+    run "FIX-19 sliced read of a large SOP returns only the slice (truncation_events=0)" \
+        "$PY" -c "
+import sys
+sys.path.insert(0, '$FIX19_SCRIPTS')
+import read_slice as rs
+r = rs.read_slice('qc-specialist-presentations-sops.md', lines=(262, 270))
+assert r['total_bytes'] > 100_000, r
+assert r['returned_bytes'] < 4000, r
+assert r['truncation_events'] == 0, r
+assert r['slice']['lines'] == [262, 270], r
+print('sliced read OK: returned %dB of %dB, truncation_events=%s' % (
+    r['returned_bytes'], r['total_bytes'], r['truncation_events']))
+"
+else
+    printf '  [FAIL] FIX-19 read_slice.py NOT found at %s — ' "$FIX19_SCRIPTS"
+    printf 'the sliced-read path is unwired; an agent reading a whole 34-102KB SOP would truncate its tool result (D18).\n'
+    fails=$((fails + 1))
+fi
+
+
+# 4) FIX-18 tool-schema hardening (Error 10 / D17) — normalized schema hint +
+#    5-strike AF-TOOL-SCHEMA-LOOP loop alert. tool_schema_validator.py lives in
+#    the Skill-23 presentations engine's scripts dir (the same tree the canonical
+#    runner reads `_tool_schema` from). The self-test matrix is CI-safe: it proves
+#    the string-args failure, the path/file trap, the normalized hint, and that 5
+#    consecutive failures write the loop event — a regression in the VALIDATOR
+#    itself is caught even when no run dir is present.
+FIX18_SCRIPTS="$(dirname "$ENGINE")"
+if [ -f "$FIX18_SCRIPTS/tool_schema_validator.py" ]; then
+    run "FIX-18 tool_schema_validator.py --self-test (normalized hint + 5-strike event)" \
+        "$PY" "$FIX18_SCRIPTS/tool_schema_validator.py" --self-test
+else
+    printf '  [FAIL] FIX-18 tool_schema_validator.py NOT found at %s — ' "$FIX18_SCRIPTS"
+    printf 'the FIX-18 tool-schema hardening is unwired; a model that loops on malformed tool args would burn turns unchecked.\n'
+    fails=$((fails + 1))
+fi
+
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
     echo "RESULT: PASS — all Skill 51 self-verification checks green."

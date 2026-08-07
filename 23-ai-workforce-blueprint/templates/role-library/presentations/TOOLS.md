@@ -1,5 +1,37 @@
 # TOOLS.md — Presentations Builder Tools (DETERMINISTIC PIPELINE)
 
+## SLICED READS FOR LARGE FILES (FIX-19 / D18 — READ THIS FIRST)
+
+The department's SOP/role files are **25–125KB**. Reading one WHOLE into a tool
+result is what fired `[tool-result-truncation]` **33 times** in the 2026-08-06
+E2E (D18) — the harness truncated the giant result and you reasoned from
+incomplete context. **Never read a SOP/role file whole.**
+
+The engine ships ONE sliced-read tool: `scripts/read_slice.py`. Use it for any
+file over ~32KB:
+
+```
+# 1. Find the section you need (cheap — headers + line numbers only):
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --index
+
+# 2. Fetch exactly the slice you need:
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --lines 262-270
+python3 <SCRIPTS_DIR>/read_slice.py <sop-file.md> --offset 1000 --length 2000
+```
+
+A bare filename resolves to the department `sops/` mirror (and the
+universal-sops clusters) the same way the engine resolves `sop_refs`. The tool
+prints the slice + the slice bounds + byte counts to stderr, and maintains a
+truncation-event counter at
+`working/checkpoints/read_slice_truncations.json`. A sliced build keeps that
+counter at **0** — that is the FIX-19 QC gate.
+
+The `--next` phase turn-gate emits each `sop_ref` with a `read_slice_hint`
+(and marks `sliced_read_required: true` when the SOP exceeds the guard budget),
+so follow the hint the runner gives you rather than doing a whole-file read.
+
+---
+
 ## YOU HAVE EXACTLY ONE TOOL FOR DECKS: `presentation-canonical-entry.sh`
 
 You do NOT generate images. You do NOT call KIE.ai. You do NOT assemble `.pptx` files.
@@ -41,6 +73,31 @@ shortcut past Layer A.
 - Touching the dead endpoint `/api/v1/image/gpt-image` (HTTP 404).
 - Hand-editing PNGs or substituting any image the script did not render. No placeholders.
 - Assembling a `.pptx` yourself — `build_deck.py` does the assembly.
+
+---
+
+## Tool arguments are ALWAYS a JSON object (FIX-18 / Error 10)
+
+A malformed tool call burns a full retry cycle and — repeated — trips the
+`AF-TOOL-SCHEMA-LOOP` alert that stops a build. Two durable rules, enforced by
+`tool_schema_validator.py` and stated here so the model reads the SAME rule the
+validator enforces:
+
+1. **`write` takes `path`, never `file`.** The `write` tool's arguments are
+   `write(path: string, content: string)`. There is no `file` argument; calling
+   `write` with `file:` and no `path` FAILS with "missing required parameter:
+   path". The same holds for `read(path: string)` and `Edit(file_path: string,
+   old_string: string, new_string: string)`.
+
+2. **Tool args are a JSON object, never a string.** Every tool's arguments must
+   be emitted as a JSON object literal (`{"key": "value", ...}`), not as a
+   serialized string (`'{"key": "value"}'`) and never as a bare prose string.
+   If you receive a validation error, read the normalized schema hint in the
+   error, correct the args to an object, and do NOT re-emit the schema dump.
+
+When a tool's malformed calls hit 5 CONSECUTIVE failures, the run records an
+`AF-TOOL-SCHEMA-LOOP` event and the Phase-0 preflight stops the build — the
+model is re-oriented, not silently re-run.
 
 ---
 

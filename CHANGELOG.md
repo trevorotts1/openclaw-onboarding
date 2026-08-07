@@ -1946,6 +1946,48 @@ non-Tier-2 box is affected by it.
   pre-existing `update-skills.sh` allowlist line number — stale since 2026-07-30
   — is re-derived.
 
+## [Unreleased]  -  2026-08-06  -  FIX-23 canonical-entry door reliability (Error 5/R5)
+
+### The sanctioned door now works under library-only drift, caps attempts, and
+ships a self-contained GHL module.
+
+FIX-23 (the highest-leverage fix from the Presentation Department Gauntlet): the
+canonical-entry door bricked on SOP-library maintenance debt (27 A5/A6 drift items),
+so the agent engineered around the sanctioned path with a custom driver. Four sub-units:
+
+### What changed
+
+- **(a) Drift classification.** `sync_check.py` now emits a `class` on every drift item
+  (`A5/A6` = library-only, `render_path` = everything else) and `--json` carries a
+  `drift_summary` with the render_path/library_only split. GATE 3 in
+  `presentation-canonical-entry.sh` proceeds (evented, `sync_drift_deferred`) when the
+  ONLY drift is A5/A6 library debt — it can never brick the render path — and still
+  FAILS CLOSED (`AF-CANONICAL-RENDER-BYPASS`, exit 7) on any render-path drift.
+- **(b) 3-attempt cap.** `presentation-canonical-entry.sh` now caps canonical-entry
+  invocations per run dir at 3; the 4th dies with an explicit
+  "Do NOT write a custom driver" message (no agent-engineered workaround loop).
+  `--plan` (read-only inspection) never consumes the budget.
+- **(c) Drift repaired.** The two orphan AF codes cited by `build_deck.py`
+  (`AF-FORGED-APPROVAL`, `AF-KIE-AUTH`) are registered in
+  `PIPELINE-MANIFEST.autofails` (manifest v38) and the `MIN_MANIFEST_VERSION` floor
+  moved to 38. `sync_check.py --json` reports 0 drift.
+- **(d) GHL co-location.** GATE 1b imports `ghl_media` with the render interpreter and
+  surfaces the real import error (a Skill-48 co-location gap is now diagnosable).
+  `ghl_media.py` resolves the canonical Skill-48 module from the co-located
+  `_skill48_ghl_media.py` copy FIRST (materializer-installed, always-current),
+  then the repo tree, then the installed skills tree. The materializer
+  (`create_role_workspaces.py`) co-locates the canonical Skill-48 module next to
+  `ghl_media.py` on every Presentations floor-fill so a deployed department is
+  self-contained.
+
+### QC evidence
+
+- `tests/test_fix23_door_reliability.py` (16 tests): A5/A6-only drift proceeds through
+  GATE 3 end-to-end; render-path drift fails closed; the 4th canonical-entry attempt
+  dies; `sync_check --json` reports 0 drift; `ghl_media` imports under the render
+  interpreter and resolves the co-located Skill-48 sibling.
+- Full `tests/` suite: 422 passed, 2 skipped.
+
 ## [Unreleased]  -  2026-08-03  -  Skill 58 v0.1.28: podcast activation layer landed, two-show fleet model, act-9 bash-3.2 compat
 
 The podcast activation campaign merged: the activation layer (register-podcast-hook.sh,

@@ -396,16 +396,16 @@ Model switches for revenue-critical agents require Director approval. Optimizati
 
 ### Example B — Model Comparison Evaluation
 
-> **Model Evaluation: deepseek-v4-flash:cloud vs. kimi-k2.6:cloud for Customer Support Agent**
+> **Model Evaluation: deepseek-v4-flash:0731-cloud vs. kimi-k2.6:cloud for Customer Support Agent**
 >
 > **Evaluation Date:** 2026-05-19
 > **Current Model:** kimi-k2.6:cloud (cost: $X/1M tokens)
-> **Candidate Model:** deepseek-v4-flash:cloud (cost: $Y/1M tokens, ~70% cheaper)
+> **Candidate Model:** deepseek-v4-flash:0731-cloud (cost: $Y/1M tokens, ~70% cheaper)
 >
 > **Test Suite:** 200 representative customer support tasks (50 simple FAQ, 50 product troubleshooting, 50 account management, 50 complaint handling).
 >
 > **Results:**
-> | Metric | kimi-k2.6:cloud (Current) | deepseek-v4-flash:cloud (Candidate) | Difference |
+> | Metric | kimi-k2.6:cloud (Current) | deepseek-v4-flash:0731-cloud (Candidate) | Difference |
 > |--------|-------------------|----------------------|------------|
 > | p95 Latency | 18s | 9s | -50% (Flash faster) |
 > | Tokens/Task | 3,200 | 2,800 | -12% |
@@ -416,10 +416,10 @@ Model switches for revenue-critical agents require Director approval. Optimizati
 > | Quality Score (Account) | 4.3/5 | 4.2/5 | -0.1 |
 > | Quality Score (Complaints) | 4.0/5 | 3.5/5 | -0.5 ⚠️ |
 >
-> **Analysis:** deepseek-v4-flash:cloud performs comparably to kimi-k2.6:cloud on simple tasks (FAQ, account management) but shows meaningful quality degradation on complex tasks (troubleshooting, complaint handling). The cost savings are substantial (75% per task) but come with a quality trade-off on the most difficult tasks.
+> **Analysis:** deepseek-v4-flash:0731-cloud performs comparably to kimi-k2.6:cloud on simple tasks (FAQ, account management) but shows meaningful quality degradation on complex tasks (troubleshooting, complaint handling). The cost savings are substantial (75% per task) but come with a quality trade-off on the most difficult tasks.
 >
 > **Recommendation: CONDITIONAL SWITCH.** Implement a routing strategy:
-> - Route FAQ and account management tasks to deepseek-v4-flash:cloud (70% of volume).
+> - Route FAQ and account management tasks to deepseek-v4-flash:0731-cloud (70% of volume).
 > - Route troubleshooting and complaint handling tasks to kimi-k2.6:cloud (30% of volume).
 > - Projected blended cost reduction: ~50% while maintaining quality on complex tasks.
 >

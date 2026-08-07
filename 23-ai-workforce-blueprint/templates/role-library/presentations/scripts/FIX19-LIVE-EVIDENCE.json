@@ -1,0 +1,159 @@
+{
+  "fix": "FIX-19",
+  "requirement": "T-19",
+  "qc_gate": "Read a large file (34-102KB class) through the sliced-read path. Result returns only the requested slice; zero [tool-result-truncation] events; truncation counter = 0.",
+  "target_file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+  "total_bytes": 125617,
+  "before_d18": {
+    "description": "whole-file read (the D18 pattern that fired [tool-result-truncation] 33x)",
+    "read_bytes": 125617,
+    "would_exceed_budget": true,
+    "slice": {
+      "lines": [
+        1,
+        661
+      ],
+      "lines_total": 661
+    }
+  },
+  "after_fix19": {
+    "description": "sliced reads of the same 125KB SOP",
+    "slices": [
+      {
+        "lines": {
+          "lines": [
+            9,
+            21
+          ],
+          "lines_total": 661
+        },
+        "returned_bytes": 1325,
+        "would_exceed_budget": false
+      },
+      {
+        "lines": {
+          "lines": [
+            262,
+            274
+          ],
+          "lines_total": 661
+        },
+        "returned_bytes": 755,
+        "would_exceed_budget": false
+      },
+      {
+        "lines": {
+          "lines": [
+            545,
+            557
+          ],
+          "lines_total": 661
+        },
+        "returned_bytes": 1143,
+        "would_exceed_budget": false
+      },
+      {
+        "lines": {
+          "lines": [
+            619,
+            631
+          ],
+          "lines_total": 661
+        },
+        "returned_bytes": 3039,
+        "would_exceed_budget": false
+      },
+      {
+        "lines": {
+          "lines": [
+            635,
+            647
+          ],
+          "lines_total": 661
+        },
+        "returned_bytes": 766,
+        "would_exceed_budget": false
+      }
+    ],
+    "total_slice_bytes": 7028,
+    "pct_of_file": 5.595
+  },
+  "truncation_counter": {
+    "truncation_events": 0,
+    "reads": [
+      {
+        "file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+        "total_bytes": 125617,
+        "mode": "lines",
+        "would_exceed_budget": false,
+        "returned_bytes": 1325,
+        "slice": {
+          "lines": [
+            9,
+            21
+          ],
+          "lines_total": 661
+        }
+      },
+      {
+        "file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+        "total_bytes": 125617,
+        "mode": "lines",
+        "would_exceed_budget": false,
+        "returned_bytes": 755,
+        "slice": {
+          "lines": [
+            262,
+            274
+          ],
+          "lines_total": 661
+        }
+      },
+      {
+        "file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+        "total_bytes": 125617,
+        "mode": "lines",
+        "would_exceed_budget": false,
+        "returned_bytes": 1143,
+        "slice": {
+          "lines": [
+            545,
+            557
+          ],
+          "lines_total": 661
+        }
+      },
+      {
+        "file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+        "total_bytes": 125617,
+        "mode": "lines",
+        "would_exceed_budget": false,
+        "returned_bytes": 3039,
+        "slice": {
+          "lines": [
+            619,
+            631
+          ],
+          "lines_total": 661
+        }
+      },
+      {
+        "file": "/private/tmp/gl3-fix-19/23-ai-workforce-blueprint/templates/role-library/presentations/sops/qc-specialist-presentations-sops.md",
+        "total_bytes": 125617,
+        "mode": "lines",
+        "would_exceed_budget": false,
+        "returned_bytes": 766,
+        "slice": {
+          "lines": [
+            635,
+            647
+          ],
+          "lines_total": 661
+        }
+      }
+    ],
+    "total_bytes_returned": 7028
+  },
+  "truncation_events_after_sliced_build": 0,
+  "live_call": false
+}

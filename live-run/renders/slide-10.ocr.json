@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "SECTION 2 OF 4\n\nThe Hot Button\n\nThe one emotional reason your buyer buys"
+}

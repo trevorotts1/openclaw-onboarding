@@ -106,9 +106,19 @@ def validate_waiver(w: Dict[str, Any], run_dir: Path) -> None:
         raise WaiverError(f"waiver for {rule!r} cites the transcript, but "
                           "working/interview/intake_transcript.json does not exist.")
     try:
-        turns = json.loads(tp.read_text(encoding="utf-8"))
+        loaded = json.loads(tp.read_text(encoding="utf-8"))
     except (json.JSONDecodeError, OSError) as exc:
         raise WaiverError(f"transcript unreadable: {exc}")
+    # FIX-3: the driver writes a SIGNED ENVELOPE ({"format": ..., "turns": [...]});
+    # legacy bare-list transcripts are still accepted here (waivers read the text,
+    # they do not gate conversation provenance — the P-SP-INTAKE-TRACE preflight does).
+    if isinstance(loaded, dict) and isinstance(loaded.get("turns"), list):
+        turns = loaded["turns"]
+    elif isinstance(loaded, list):
+        turns = loaded
+    else:
+        raise WaiverError(f"transcript at {tp} is neither a bare turn list nor a "
+                          "driver envelope with a turns array.")
     owner_text = " ".join(
         (t.get("text") or "") for t in turns
         if isinstance(t, dict) and (t.get("role") or "").lower() in ("owner", "user", "client"))
