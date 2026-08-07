@@ -1116,6 +1116,7 @@ _VALID_MAGIC_FOR_TEST = {
     "speech_md":         b"# speech\n",          # no magic required; arbitrary text
     "speech_fish_md":    b"# fish-tagged\n",     # no magic required; arbitrary text
     "teleprompter_html": b"<!DOCTYPE html>\n",   # HTML magic (teleprompter app)
+    "webinar_mp4":       b"\x00\x00\x00\x18ftypmp42",  # MP4 ftyp box magic (webinar video)
 }
 
 
@@ -1270,10 +1271,11 @@ def test_postflight_gate():
             f"got {build_deck.BUNDLE_DIR_DEFAULT!r}")
     print(f"POSTFLIGHT-G (Downloads def) -> {'PASS' if not [f for f in fails if 'POSTFLIGHT-G' in f] else 'FAIL'}")
 
-    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 9 required keys ---
+    # --- Sub-test H: Verify DELIVERABLES_REQUIRED has exactly the 10 required keys ---
+    # (Loop-2 added the 10th: webinar_mp4 — the Webinar Creator video deliverable.)
     required_keys = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_md",
                      "speech_pdf", "speech_fish_md", "audio_mp3", "infographic_png",
-                     "teleprompter_html"}
+                     "teleprompter_html", "webinar_mp4"}
     actual_keys = {spec["key"] for spec in build_deck.DELIVERABLES_REQUIRED}
     if actual_keys != required_keys:
         fails.append(
@@ -4939,7 +4941,7 @@ def main():
     # proves the gate exits 5 when any deliverable is missing/under-threshold and
     # does NOT exit when all are present; proves guide_pdf + infographic_png are
     # hard-required (never silently skipped); proves ~/Downloads is the default
-    # destination; proves DELIVERABLES_REQUIRED has exactly the 9 required keys.
+    # destination; proves DELIVERABLES_REQUIRED has exactly the 10 required keys.
     failures += test_postflight_gate()
 
     # Unit test — TELEPROMPTER-PUBLISH sub-check (folded under AF-BUNDLE-COMPLETE):

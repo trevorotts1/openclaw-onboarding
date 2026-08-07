@@ -8873,6 +8873,11 @@ def init_deliverables_ledger(bundle_dir: Path, deck_slug: str) -> Path:
         if key in existing and existing[key].get("status") == "verified":
             entries.append(existing[key])
         else:
+            # produced_later specs (e.g. webinar_mp4 — rendered by P9.6-WEBINAR-VIDEO
+            # AFTER postflight) are skipped by run_postflight_gate's existence loop by
+            # design; initialize them as verified so the extra_unverified catch-all does
+            # not flag a file that is not expected at this stage.
+            init_status = "verified" if spec.get("produced_later") else "pending"
             entries.append({
                 "key": key,
                 "filename": fname,
@@ -8880,7 +8885,7 @@ def init_deliverables_ledger(bundle_dir: Path, deck_slug: str) -> Path:
                 "label": spec["label"],
                 "min_bytes": spec["min_bytes"],
                 "note": spec["note"],
-                "status": "pending",
+                "status": init_status,
                 "size": None,
                 "error": None,
             })
