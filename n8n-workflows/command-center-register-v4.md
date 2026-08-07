@@ -232,3 +232,18 @@ Less risk of credential drift if you migrate. Steps:
 - `n8n-wf-before.json` — v3 (no ingress curl) — original broken state
 - `n8n-wf-before-optionB.json` — v4 with env-var refs — before going to Option B
 - Live workflow as of 2026-05-24T04:56:37Z — v4 Option B (inline creds)
+
+---
+
+## Source workflows for the local 53-book-writer skill (BUG-11)
+
+The local **53-book-writer** skill was converted from these two n8n source
+workflows (the Book Writer factories). The conversion is complete — the skill
+runs with **zero n8n at runtime** — but the source workflow IDs are recorded
+here for provenance/traceability:
+
+- **Book Writer** — n8n workflow id `4d50PNmVOyE9GJWz`
+- **4x3x3 w Book Writer** — n8n workflow id `KF6PCxzSzKWeOwN6`
+
+Both are the source n8n workflows for the local 53-book-writer skill (converted,
+zero-n8n-at-runtime).
