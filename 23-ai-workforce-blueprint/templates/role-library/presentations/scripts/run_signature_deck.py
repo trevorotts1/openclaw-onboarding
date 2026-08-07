@@ -1288,7 +1288,16 @@ def phase0_preflight(run_dir: Path, slides_path: Path, platform_override=None,
         # No key on this box — the render-phase subprocess will fail loud on its own.
         print("=== PHASE-0 — no Kie API key on this box; balance pre-flight deferred to "
               "the render subprocess ===", flush=True)
-    reason = bd.kie_balance_preflight(run_dir, slide_count, api_key or None)
+    # FIX-E2E (incremental resume): mirror build_deck — count only the
+    # UN-rendered slides for the balance floor so a resume/re-render (e.g. an
+    # OCR-retry on 2 of 20 slides) needs credit for the remaining 2, not the
+    # full deck. The pre-render phase passes the full slide_count; a
+    # low-but-sufficient balance would otherwise brick every resume.
+    try:
+        _remaining_count = max(0, slide_count - len(bd._gather_rendered_pngs(run_dir)))
+    except Exception:  # noqa: BLE001 — helper unavailable; fall back to full count
+        _remaining_count = slide_count
+    reason = bd.kie_balance_preflight(run_dir, _remaining_count, api_key or None)
     if reason:
         print("\n" + "!" * 78, file=sys.stderr)
         print("FATAL PHASE-0: " + reason, file=sys.stderr)
