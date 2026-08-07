@@ -46,7 +46,7 @@
       "stages": ["01-avatar-questions-1-30", "02-avatar-questions-31-32", "03-rewrite-avatar"],
       "preflight": {"required": true, "checker": "_chk_avatar",
         "label": "avatar dossier authored (stages 01-03); primary goal echoed."},
-      "gate_codes": []
+      "gate_codes": ["AF-BK-AVATAR-MISSING"]
     },
     {
       "id": "P2-TONE",
