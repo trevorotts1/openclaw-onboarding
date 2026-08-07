@@ -586,6 +586,9 @@ def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str,
 # ---------------------------------------------------------------------------
 # Validation
 # ---------------------------------------------------------------------------
+_YES_NO_LOWER = frozenset(("yes", "no", "y", "n", "true", "false", "1", "0"))
+
+
 def validate_answer(text: str, question: dict) -> tuple[bool, str]:
     """
     On-topic validation: non-empty + length floor + simple keyword heuristic.
@@ -594,14 +597,14 @@ def validate_answer(text: str, question: dict) -> tuple[bool, str]:
     stripped = (text or "").strip()
     if not stripped:
         return False, "Answer is empty. Please provide a response."
-    if len(stripped) < 3:
-        return False, "Answer is too short. Please be more specific."
+
+    lowered = stripped.lower()
+    is_yesno = lowered in _YES_NO_LOWER
 
     # Length floor by question kind: boolean can be short ("yes"/"no"/etc.)
     kind = question.get("kind", "text")
     if kind == "boolean":
-        lowered = stripped.lower()
-        if lowered not in ("yes", "no", "true", "false", "y", "n", "1", "0"):
+        if not is_yesno:
             if len(stripped) < 2:
                 return False, "Please answer yes or no."
     elif kind == "integer":
@@ -613,8 +616,11 @@ def validate_answer(text: str, question: dict) -> tuple[bool, str]:
             if len(stripped) < 4:
                 return False, "Please specify a words-per-minute value or a pace description."
     else:
-        # text: length floor 3 chars already checked above
-        pass
+        # text: accept yes/no answers (common for yes/no questions stored as
+        # kind:text, e.g. the upsell toggles want_vsl_page) but keep the >=3
+        # floor for everything else.
+        if not is_yesno and len(stripped) < 3:
+            return False, "Answer is too short. Please be more specific."
 
     # Simple heuristic: reject single-character non-boolean answers (e.g. "k")
     if kind == "text" and len(stripped) <= 1:

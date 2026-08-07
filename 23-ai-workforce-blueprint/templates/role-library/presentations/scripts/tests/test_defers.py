@@ -49,6 +49,25 @@ class TestResolver:
         intake = {"waivers": [{"rule": "sales_checkout", "client_request_quote": "no thanks"}]}
         assert resolve_intake_value(intake, "want_sales_checkout") == "no"
 
+    def test_bare_no_accepted_as_decline(self):
+        """Regression for intake-no-length-hazard: a 2-char "no" stored under the
+        pre_presentation_capture key for want_vsl_page is accepted and recorded as
+        a decline. The intake driver's validate_answer() used to reject any text
+        kind answer shorter than 3 characters, so a client typing "no" to a yes/no
+        upsell question could not submit. The fix widens the floor for yes/no
+        answers regardless of the question kind."""
+        intake = {"pre_presentation_capture": {"WANT_VSL_PAGE": "no"}}
+        assert resolve_intake_value(intake, "want_vsl_page") == "no"
+        # Confirm the evaluator sees this as a decline.
+        assert evaluate_defers_unless('intake.want_vsl_page == "yes"', intake) is False
+
+    def test_bare_yes_accepted(self):
+        """Bare "yes" (3 chars, so it skirted the old floor) also resolves correctly
+        for want_sales_checkout."""
+        intake = {"pre_presentation_capture": {"WANT_SALES_CHECKOUT": "yes"}}
+        assert resolve_intake_value(intake, "want_sales_checkout") == "yes"
+        assert evaluate_defers_unless('intake.want_sales_checkout == "yes"', intake) is True
+
     def test_defaults(self):
         # want_sales_checkout defaults to yes; want_vsl_page defaults to no.
         assert resolve_intake_value({}, "want_sales_checkout") == "yes"
