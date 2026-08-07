@@ -1,0 +1,186 @@
+{
+  "schema_version": "1.0",
+  "spec": "VSL Email/Phone Gate — Skill-44 FORM object contract",
+  "design_source": "DESIGN-OPUS.md §6.2 / §6.5 (Presentation Collateral Gauntlet)",
+  "owner_skill": "44-convert-and-flow-operator",
+  "cli": "caf (PIT-authenticated)",
+  "mechanism": "SKILL44_WIDGET -> FORM",
+  "status": "REAL GHL object contract — NOT a stub. Skill 44 builds a live form, live custom fields, and a live Form-Submitted -> Add-Contact-Tag workflow; every creation is receipted (status:201, re-GET 200).",
+  "form": {
+    "name": "ZHC <SLUG> VSL Gate",
+    "name_note": "UPPERCASE 'ZHC ' prefix is the fleet container-NAME convention (ensure_zhc_prefix). <SLUG> is replaced at build time (lowercase, hyphens).",
+    "start_from": "scratch",
+    "default_fields_keep": [],
+    "default_fields_delete": ["First Name", "Last Name", "Email", "Phone", "Terms & Conditions"],
+    "embed_target": {
+      "type": "website",
+      "note": "The VSL page is a Skill-6 website/funnel page; the gate form embeds in a gate overlay div. Target resolved at build time by Skill 6 (ghl_form_builder embed_target)."
+    },
+    "fields": [
+      {
+        "source": "custom",
+        "element": "Email",
+        "label": "Email",
+        "field_type": "single_line",
+        "quick_add_category": null,
+        "width_pct": 100,
+        "required": true,
+        "hidden": false,
+        "placeholder": "you@example.com",
+        "options": [],
+        "settings": {
+          "input_type": "email",
+          "autocomplete": "email",
+          "inputmode": "email"
+        },
+        "field_key": "zhc_vsl_email",
+        "merge_token": "{{contact.zhc_vsl_email}}",
+        "add_via": "add_object_fields",
+        "validate": "email"
+      },
+      {
+        "source": "custom",
+        "element": "Single Line",
+        "label": "First Name",
+        "field_type": "single_line",
+        "quick_add_category": null,
+        "width_pct": 100,
+        "required": true,
+        "hidden": false,
+        "placeholder": "First name",
+        "options": [],
+        "settings": {
+          "autocomplete": "given-name"
+        },
+        "field_key": "zhc_vsl_first_name",
+        "merge_token": "{{contact.zhc_vsl_first_name}}",
+        "add_via": "add_object_fields"
+      },
+      {
+        "source": "custom",
+        "element": "Phone",
+        "label": "Cell Phone",
+        "field_type": "single_line",
+        "quick_add_category": null,
+        "width_pct": 100,
+        "required": true,
+        "hidden": false,
+        "placeholder": "(555) 555-5555",
+        "options": [],
+        "settings": {
+          "input_type": "tel",
+          "autocomplete": "tel",
+          "inputmode": "tel",
+          "format": "phone"
+        },
+        "field_key": "zhc_vsl_phone",
+        "merge_token": "{{contact.zhc_vsl_phone}}",
+        "add_via": "add_object_fields",
+        "validate": "phone"
+      }
+    ],
+    "design": {
+      "field_order": ["email", "first_name", "phone"],
+      "button_copy": "Continue to the Video",
+      "position": "centered overlay",
+      "privacy_line": "We respect your privacy. No spam, ever. Unsubscribe anytime.",
+      "brand_note": "The HTML writer applies a CSS polish wrapper (Skill 6 permits optional CSS wrapper for visual polish) so the embedded form matches the Kie/Agnes VSL design — brand colors, field order, button copy, privacy line."
+    }
+  },
+  "dependency_plan": {
+    "owner_skill": "44-convert-and-flow-operator",
+    "cli": "caf (PIT-authenticated)",
+    "idempotency": {
+      "live_get_required": true,
+      "rule": "GET existing custom fields + tags on the location; REUSE any matching zhc_ key/name; only CREATE the remainder. Never duplicate."
+    },
+    "custom_fields": [
+      {
+        "field_key": "zhc_vsl_email",
+        "custom_field_name": "zhc_vsl_email",
+        "label": "Email",
+        "data_type": "single_line",
+        "options": [],
+        "settings": {},
+        "merge_token": "{{contact.zhc_vsl_email}}",
+        "action": "create_or_reuse"
+      },
+      {
+        "field_key": "zhc_vsl_first_name",
+        "custom_field_name": "zhc_vsl_first_name",
+        "label": "First Name",
+        "data_type": "single_line",
+        "options": [],
+        "settings": {},
+        "merge_token": "{{contact.zhc_vsl_first_name}}",
+        "action": "create_or_reuse"
+      },
+      {
+        "field_key": "zhc_vsl_phone",
+        "custom_field_name": "zhc_vsl_phone",
+        "label": "Cell Phone",
+        "data_type": "single_line",
+        "options": [],
+        "settings": {},
+        "merge_token": "{{contact.zhc_vsl_phone}}",
+        "action": "create_or_reuse"
+      }
+    ],
+    "tags": [
+      {
+        "tag": "zhc_vsl_engaged",
+        "action": "create_or_reuse"
+      }
+    ]
+  },
+  "workflow": {
+    "name": "ZHC <SLUG> VSL Gate Engaged",
+    "trigger": {
+      "type": "form_submitted",
+      "filter": {
+        "form": "<this gate form>",
+        "note": "Filter binds to the gate form's live id AFTER creation — built by Skill 44 only once the form exists."
+      }
+    },
+    "steps": [
+      {
+        "id": "s1",
+        "type": "add_contact_tag",
+        "name": "Tag: zhc_vsl_engaged",
+        "order": 0,
+        "attributes": {
+          "tags": ["zhc_vsl_engaged"]
+        },
+        "note": "Tag attachment is NOT native to GHL forms — the Form-Submitted -> Add Contact Tag workflow is what writes the tag."
+      },
+      {
+        "id": "s2",
+        "type": "add_to_workflow",
+        "name": "Route to Sales/Checkout funnel (optional)",
+        "order": 1,
+        "attributes": {},
+        "optional": true,
+        "note": "Optional second action routing the contact to the sales/checkout funnel or an email/SMS sequence (Skill 44 conversation templates). Skipped if the target workflow/campaign is not yet built — honest receipt."
+      }
+    ],
+    "draft_only": true,
+    "qc": "Skill 44 PLAN-MODE + QC gate (WF-1..21, rubric >= 8.5) applies. Workflows are created as DRAFT, never auto-published.",
+    "token_note": "Workflow writes require GOHIGHLEVEL_FIREBASE_REFRESH_TOKEN. If dead -> 06-ghl-install-pages/tools/ghl_auth.py Tier-2 gated self-heal. If unhealable, the gate workflow is NOT built — the gate form still writes the CRM contact on submit, but tag attachment is skipped with an honest receipt."
+  },
+  "embed_contract": {
+    "type": "form_embed_js",
+    "verbatim": true,
+    "sri": false,
+    "sri_note": "Skill 6 hard rule: the GHL form embed snippet is spliced VERBATIM into the page blob with NO SRI attributes (DESIGN-OPUS §6.2; ghl_form_builder.py 'embed VERBATIM, NO SRI attrs'). The embed token is GHL-native and page-specific; SRI is deliberately NOT applied.",
+    "placement": "gate overlay div (vsl_gate_overlay.js integration contract)",
+    "capture": ["embed_code_js", "form_link"],
+    "verify": "render_check 200 + snippet tag present in RENDERED DOM (ghl_verify.render_check)"
+  },
+  "write_to_crm": {
+    "on_submit": "GHL creates/updates the contact (email matched; first name + phone populated) -> workflow adds zhc_vsl_engaged tag -> optional follow-up (email/SMS via Skill 44 conversation templates). Standard SKILL44_WIDGET submit path, no custom code."
+  },
+  "receipt": {
+    "path": "ecosystem/gate-form.json",
+    "required": ["status:201", "live form id", "live custom field ids", "workflow trigger id", "re-GET 200", "embed snippet"]
+  }
+}
