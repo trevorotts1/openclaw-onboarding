@@ -93,6 +93,14 @@ REQUIRED_DELIVERABLES = [
     {"key": "audio_mp3",        "filename": "PRESENTER-AUDIO.mp3",      "label": "presenter audio MP3"},
     {"key": "infographic_png",  "filename": "infographic.png",          "label": "infographic checklist PNG"},
     {"key": "teleprompter_html","filename": "presenter-teleprompter.html", "label": "presenter teleprompter web app"},
+    # Feature L2-G (P9.6-WEBINAR-VIDEO): the webinar video is a TENTH, video-phase-owned
+    # build deliverable. It is produced AFTER P8 assembly — build_deck.DELIVERABLES_REQUIRED
+    # carries it with `produced_later: True` so the P8 postflight gate skips it, and the
+    # P9.6 phase + this bundle gate + the delivery gate own its real presence. It is NOT a
+    # loose client file (it is hosted in GHL via the v3 tier — never in client_package_files).
+    # It IS required for the final closeout bundle: a build whose webinar never rendered
+    # must not be reported done.
+    {"key": "webinar_mp4",      "filename": "{deck_slug}-WEBINAR.mp4",  "label": "webinar video mp4"},
 ]
 
 # The nine canonical keys (for direct set comparison in tests / reports).

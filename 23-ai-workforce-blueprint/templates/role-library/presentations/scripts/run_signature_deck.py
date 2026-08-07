@@ -460,8 +460,11 @@ def _compute_artifact_sha(run_dir: Path, produces_artifact: str) -> str:
     """Compute sha256 of the phase's produces_artifact file(s). For glob specs,
     hashes the concatenation of all matching file contents (sorted path order).
     Returns a deterministic hex string. Returns 'no-artifact-spec' when the spec
-    is empty (the phase declares no concrete artifact — gate accepts this marker)."""
-    spec = (produces_artifact or "").strip()
+    is empty (the phase declares no concrete artifact — gate accepts this marker).
+
+    '{deck_slug}' placeholder is expanded to the run's deck slug first (mirroring
+    _artifact_present)."""
+    spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return "no-artifact-spec"
     h = hashlib.sha256()
@@ -1156,11 +1159,32 @@ def load_skip_approvals(run_dir: Path) -> dict:
     return approvals
 
 
+def _expand_artifact_spec(run_dir: Path, spec: str) -> str:
+    """Resolve a manifest produces_artifact spec against the run's deck slug.
+
+    The manifest declares deck-owned artifacts as '{deck_slug}-templated' (e.g.
+    'working/delivery/{deck_slug}-WEBINAR.mp4' or 'working/deliverables/
+    {deck_slug}-WORKBOOK.pdf') — the same convention DELIVERABLES_REQUIRED and
+    the client_package_files set use. The filesystem never contains a literal
+    '{deck_slug}' directory/file, so every artifact-presence / sha check that
+    consumes a produces_artifact spec MUST expand the placeholder to the run's
+    deck slug (via _deck_slug) before comparing against disk. Missing/empty
+    specs and specs with no placeholder pass through unchanged."""
+    spec = (spec or "").strip()
+    if not spec or "{deck_slug}" not in spec:
+        return spec
+    slug = _deck_slug(run_dir) or "deck"
+    return spec.replace("{deck_slug}", slug)
+
 def _artifact_present(run_dir: Path, produces_artifact: str) -> bool:
     """True when a phase's declared produces_artifact exists in the run dir.
     Supports glob patterns (e.g. 'working/research/brief-*.md'). A null/empty
-    artifact spec counts as satisfied (the phase declares no concrete artifact)."""
-    spec = (produces_artifact or "").strip()
+    artifact spec counts as satisfied (the phase declares no concrete artifact).
+
+    '{deck_slug}' placeholder in the spec is expanded to the run's deck slug
+    first (the manifest convention for deck-owned artifacts like
+    '{deck_slug}-WORKBOOK.pdf' / '{deck_slug}-WEBINAR.mp4')."""
+    spec = _expand_artifact_spec(run_dir, produces_artifact)
     if not spec:
         return True
     # Try run-dir-relative, then a bundle-style bare filename glob anywhere.

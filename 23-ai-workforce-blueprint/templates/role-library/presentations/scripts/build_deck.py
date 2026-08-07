@@ -962,6 +962,24 @@ DELIVERABLES_REQUIRED = [
                 "build_teleprompter.py generator (owned by the speech/teleprompter "
                 "role). REQUIRED UPSTREAM STEP.",
     },
+    {
+        "key": "webinar_mp4",
+        "filename": "{deck_slug}-WEBINAR.mp4",
+        "label": "webinar video mp4",
+        # P3-01(c)5 — Feature L2-G (Gauntlet Loop 2, Feature C): the fluid webinar video
+        # slideshow (Ken Burns + xfade, synced to the spoken audio). PRODUCED LATER than
+        # P8-ASSEMBLE/postflight: build_webinar_video.py (P9.6-WEBINAR-VIDEO, order 8.92)
+        # renders it AFTER the render/assemble phases, from the deck's slide PNGs + the
+        # PRESENTERS-SPEECH.md + PRESENTER-AUDIO.mp3 + the Fish chunk mp3s. It is hosted in
+        # the client's GHL media library via the v3 500MB video tier. `produced_later: True`
+        # tells run_postflight_gate to SKIP the file-existence loop at P8-ASSEMBLE time (the
+        # file does not exist yet); the P9.6 phase + fix_bundle_complete + delivery_gate own
+        # the webinar's real presence gate.
+        "min_bytes": 1_048_576,          # 1 MB — a real rendered webinar video floor
+        "note": ">1MB; produced by build_webinar_video.py (P9.6-WEBINAR-VIDEO, Feature "
+                "L2-G) — NOT present at P8-ASSEMBLE time. REQUIRED UPSTREAM STEP.",
+        "produced_later": True,
+    },
 ]
 
 
@@ -9280,6 +9298,10 @@ DELIVERABLE_MAGIC = {
     # self-contained teleprompter page passes while a decoy of the wrong type fails.
     "teleprompter_html": (b"<!DOCTYPE", b"<!doctype", b"<!Doctype",
                           b"<html", b"<HTML", b"<!--"),
+    # webinar_mp4: an MP4 leads with a 32-bit box size + 'ftyp' at offset 4 (ISO-BMFF
+    # container signature) — the same guard ghl_media.verify_video uses. A non-video
+    # stub of the right size is rejected.
+    "webinar_mp4": (b"\x00\x00\x00\x18ftyp", b"ftyp", b"\x00\x00\x00\x10ftyp"),
     # speech_md / speech_fish_md: intentionally absent — plain/tagged markdown has no
     # magic signature, so md stays size-only (per spec).
 }
@@ -9391,6 +9413,13 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
     missing_or_short = []
     for spec in DELIVERABLES_REQUIRED:
         key = spec["key"]
+        # Feature L2-G (P9.6-WEBINAR-VIDEO): `webinar_mp4` is PRODUCED LATER than this
+        # gate (build_webinar_video.py runs at order 8.92, after P8-ASSEMBLE/this
+        # postflight). It does NOT exist at render/assemble time, so it is skipped here —
+        # the P9.6 phase, fix_bundle_complete (FIX-8) and the delivery gate own its real
+        # presence gate. A spec without `produced_later` is required exactly as before.
+        if spec.get("produced_later"):
+            continue
         fname = _expand_filename(spec["filename"], deck_slug)
         path = bundle_dir / fname
         # exists() follows symlinks; use lexists so a broken/dangling symlink is seen

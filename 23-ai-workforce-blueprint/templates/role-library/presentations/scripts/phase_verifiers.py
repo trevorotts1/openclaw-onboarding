@@ -716,6 +716,65 @@ def _verify_sp_intake_trace(run_dir: Path) -> Tuple[bool, List[str]]:
     return (True, []) if _checker_pass(result) else (False, [str(result)])
 
 
+def _verify_webinar_video(run_dir: Path) -> Tuple[bool, List[str]]:
+    """Feature L2-G verifier (P9.6-WEBINAR-VIDEO): the webinar mp4 exists, is non-empty,
+    is a real MP4 (ftyp box), and the timing track records a sane per-slide mapping.
+
+    The video lives at working/delivery/<deck_slug>-WEBINAR.mp4 and its timing track at
+    working/checkpoints/webinar_timing.json. The build_webinar_video.py executor already
+    runs the AF-WEBINAR-SIZE gate + ffprobe verification; this verifier is the
+    runner-side substance proof so a phase attestation cannot pass on a missing /
+    zero-byte / non-MP4 video or an empty timing track."""
+    reasons: List[str] = []
+
+    candidates = sorted((run_dir / "working" / "delivery").glob("*-WEBINAR.mp4")) \
+        if (run_dir / "working" / "delivery").is_dir() else []
+    if not candidates:
+        reasons.append("webinar video (*-WEBINAR.mp4) not found in working/delivery")
+        return (False, reasons)
+    video = candidates[0]
+    size = video.stat().st_size
+    if size < 4096:
+        reasons.append(f"webinar video {video.name} is only {size} bytes — too small for a "
+                       "real rendered mp4 (no slide content)")
+        return (False, reasons)
+    # MP4 ftyp-box magic (mirrors ghl_media.verify_video).
+    try:
+        with open(video, "rb") as fh:
+            head = fh.read(8)
+        if len(head) < 8 or head[4:8] != b"ftyp":
+            reasons.append(f"webinar video {video.name} is not a real MP4 (no 'ftyp' box "
+                           "at offset 4) — a decoy/stub is not a video")
+            return (False, reasons)
+    except OSError as exc:  # noqa: BLE001
+        reasons.append(f"webinar video {video.name} unreadable: {exc!r}")
+        return (False, reasons)
+
+    # Timing track: present, parseable, contiguous 1..N with non-empty durations.
+    timing_p = run_dir / "working" / "checkpoints" / "webinar_timing.json"
+    obj = _read_json(timing_p)
+    timing = obj.get("timing") if isinstance(obj, dict) else None
+    if not isinstance(timing, list) or not timing:
+        reasons.append("webinar timing track (working/checkpoints/webinar_timing.json) is "
+                       "absent or has no timing[] entries")
+        return (False, reasons)
+    expected = 1
+    for i, entry in enumerate(timing):
+        if not isinstance(entry, dict):
+            reasons.append(f"timing[{i}] is not an object")
+            return (False, reasons)
+        if entry.get("slide") != expected:
+            reasons.append(f"timing slides must be contiguous 1..N; got slide "
+                           f"{entry.get('slide')!r} at index {i} (expected {expected})")
+            return (False, reasons)
+        dur = entry.get("duration")
+        if not isinstance(dur, (int, float)) or dur <= 0:
+            reasons.append(f"timing[{i}] duration must be > 0, got {dur!r}")
+            return (False, reasons)
+        expected += 1
+    return (len(reasons) == 0), reasons
+
+
 PHASE_VERIFIERS: dict[str, Callable] = {
     # Phase -1    Content-to-Presentation Conversion
     "P-CONVERTER":        _verify_json_artifact("working/copy/intake.json", ("slides",)),
@@ -776,6 +835,8 @@ PHASE_VERIFIERS: dict[str, Callable] = {
     "P9.2-GHL-UPLOAD":    _verify_ghl_upload,
     # --- Feature L2-D: fillable PDF workbook ---
     "P8.25-WORKBOOK":     _verify_workbook,
+    # --- Feature L2-G: webinar video ---
+    "P9.6-WEBINAR-VIDEO": _verify_webinar_video,
     # --- U012 SP registry gaps ---
     "P-SP-CLAIM":         _verify_sp_claim,
     "P-SP-INTAKE-TRACE":  _verify_sp_intake_trace,

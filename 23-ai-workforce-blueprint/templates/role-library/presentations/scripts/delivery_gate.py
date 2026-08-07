@@ -12,7 +12,7 @@ NINE-file operator build bundle in ~/Downloads — the actual client package
 relied on the Concierge agent obeying the SOPs. This script closes that gap.
 
 It mechanically enforces, over a run dir:
-  1. AF-DH1 — delivery/[DECK_SLUG]-FINAL/ contains EXACTLY the six whitelisted,
+  1. AF-DH1 — delivery/[DECK_SLUG]-FINAL/ contains EXACTLY the seven whitelisted,
      correctly-named client files and NOTHING else (no extras, no working/ dirs,
      no .md guide/speech, pptx/pdf carry the -FINAL suffix).
   2. GHL upload record — when the resolved delivery_plan.json carries a `ghl`
@@ -184,8 +184,13 @@ _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n
 #            criterion: a zero warn count across the golden corpus.
 # Land stage 1 only. Do NOT set this to frozenset() in the same commit that
 # adds the sixth key — that is stage 3, and it is deliberately deferred.
+# Feature L2-G (P9.6-WEBINAR-VIDEO) adds the webinar as a SEVENTH client-package key.
+# It is warn-only at stage 1 for the same reason the teleprompter was: every deck
+# already delivered predates the webinar, so a hard seven-file requirement would
+# reject every historical package dir on sight. Drive the warning count to zero
+# across the corpus, then promote to frozenset() in a separate change.
 # ---------------------------------------------------------------------------
-CLIENT_PACKAGE_WARN_ONLY = frozenset({"teleprompter_html"})
+CLIENT_PACKAGE_WARN_ONLY = frozenset({"teleprompter_html", "webinar_mp4"})
 
 
 def _categorize(name: str) -> str:
@@ -202,12 +207,17 @@ def _categorize(name: str) -> str:
         return "deck_pptx"
     if name.endswith("-FINAL.pdf"):
         return "deck_pdf"
+    # Feature L2-G (P9.6-WEBINAR-VIDEO): the webinar video is a client-package file
+    # (webinar_mp4). The mp4 itself lives in GHL via the v3 tier; the client package
+    # carries a reference copy as <deck_slug>-WEBINAR.mp4.
+    if name.endswith("-WEBINAR.mp4"):
+        return "webinar_mp4"
     return ""
 
 
 def check_af_dh1(package_dir: Path) -> str:
     """AF-DH1 hygiene gate over the resolved client package dir. Returns '' on PASS,
-    or a specific failure reason. Enforces: exactly the six whitelisted client files,
+    or a specific failure reason. Enforces: exactly the seven whitelisted client files,
     correctly named; no extra/wrongly-named file; no forbidden subdir; pptx/pdf carry
     the -FINAL suffix; no .md guide/speech. (teleprompter_html is warn-only at stage 1
     — see CLIENT_PACKAGE_WARN_ONLY.)"""
@@ -230,12 +240,13 @@ def check_af_dh1(package_dir: Path) -> str:
                 return f"AF-DH1: blocklisted dev artifact in client package: {nm}"
         cat = _categorize(nm)
         if not cat:
-            return f"AF-DH1: file not on the six-item whitelist: {nm}"
+            return f"AF-DH1: file not on the seven-item whitelist: {nm}"
         if cat in found:
             return (f"AF-DH1: two files map to the same client slot {cat!r}: "
                     f"{found[cat]} + {nm}")
         found[cat] = nm
-    required = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3", "teleprompter_html"}
+    required = {"deck_pptx", "deck_pdf", "guide_pdf", "speech_pdf", "audio_mp3",
+                "teleprompter_html", "webinar_mp4"}
     missing = required - set(found)
     hard_missing = missing - CLIENT_PACKAGE_WARN_ONLY
     warn_missing = missing & CLIENT_PACKAGE_WARN_ONLY
@@ -557,8 +568,8 @@ def _lead_af_code(reason):
 # (4) BUNDLE-COMPLETENESS — the FULL deliverable set must be present.
 # ---------------------------------------------------------------------------
 def _bundle_completeness(run_dir, *, verify_destinations: bool = True):
-    """Require the full deliverable set before delivery: the six-file client package
-    (deck pptx + deck pdf + presenter guide + presenter speech + audio + teleprompter,
+    """Require the full deliverable set before delivery: the seven-file client package
+    (deck pptx + deck pdf + presenter guide + presenter speech + audio + teleprompter + webinar,
     via AF-DH1 — teleprompter_html is warn-only at stage 1, see
     CLIENT_PACKAGE_WARN_ONLY), the GoHighLevel upload record + destination ground-truth
     (via delivery_gate), AND the teleprompter deliverable somewhere in the run dir
@@ -768,11 +779,12 @@ def _write_media(base: Path, media):
     (p / "media_library.json").write_text(json.dumps(media))
 
 
-# U019 (D02, ratified 2026-07-26): the six-file client package. Named CLIENT_PACKAGE,
-# not FIVE, so a future seventh addition does not have to rename it again.
+# U019 (D02, ratified 2026-07-26): the six-file client package; Feature L2-G adds the
+# webinar video as a SEVENTH client-package file. Named CLIENT_PACKAGE, not SIX, so a
+# future addition does not have to rename it again.
 CLIENT_PACKAGE = ["demo-deck-FINAL.pptx", "demo-deck-FINAL.pdf", "PRESENTER-GUIDE.pdf",
                   "PRESENTERS-SPEECH.pdf", "PRESENTER-AUDIO.mp3",
-                  "presenter-teleprompter.html"]
+                  "presenter-teleprompter.html", "demo-deck-WEBINAR.mp4"]
 
 _SLIDE_IMG_ONLY = (
     '<?xml version="1.0"?><p:sld xmlns:p="x" xmlns:a="y"><p:cSld><p:spTree>'

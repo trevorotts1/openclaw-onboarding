@@ -1,5 +1,5 @@
 {
-  "manifest_version": 39,
+  "manifest_version": 40,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -66,9 +66,17 @@
       "label": "presenter teleprompter web app",
       "min_bytes": 10240,
       "note": ">10KB; the standalone scrolling teleprompter app (HTML + inline CSS/JS). Produced by build_teleprompter.py (teleprompter role). REQUIRED UPSTREAM STEP."
+    },
+    {
+      "key": "webinar_mp4",
+      "filename": "{deck_slug}-WEBINAR.mp4",
+      "label": "webinar video mp4",
+      "min_bytes": 1048576,
+      "note": ">1MB; the fluid webinar video slideshow (Ken Burns + xfade, synced to the spoken audio). Produced by build_webinar_video.py (P9.6-WEBINAR-VIDEO, Feature L2-G) from the deck's slide PNGs + PRESENTERS-SPEECH.md + PRESENTER-AUDIO.mp3 + the Fish chunk mp3s. Hosted in the client's GHL media library via the v3 500MB video tier. REQUIRED UPSTREAM STEP.",
+      "produced_later": true
     }
   ],
-  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the NINE operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the SIX files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist) -- as of D02 (ratified 2026-07-26) this now includes teleprompter_html. The three remaining build-only artifacts (speech_md, speech_fish_md, infographic_png) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (SIX); the per-artifact existence/size gate reads build_bundle_files (NINE).",
+  "$bundle_note": "TWO distinct file sets, explicitly separated so 'the bundle' is never ambiguous. build_bundle_files = the TEN operator-side build artifacts (the full DELIVERABLES_REQUIRED key set in build_deck.py) that must all exist + clear their min_bytes before closeout. client_package_files = the SEVEN files the client actually receives in delivery/[DECK_SLUG]-FINAL/ (the AF-DH1 whitelist) -- as of D02 (ratified 2026-07-26) this includes teleprompter_html, and Feature L2-G (Gauntlet Loop 2, Feature C) adds webinar_mp4. The three remaining build-only artifacts (speech_md, speech_fish_md, infographic_png) are inputs/working products, not loose client files. AF-DELIVER + AF-DH1 + AF-DELIVERY-COMPLETE all read client_package_files (SEVEN); the per-artifact existence/size gate reads build_bundle_files (TEN).",
   "build_bundle_files": [
     "deck_pptx",
     "deck_pdf",
@@ -78,7 +86,8 @@
     "speech_fish_md",
     "audio_mp3",
     "infographic_png",
-    "teleprompter_html"
+    "teleprompter_html",
+    "webinar_mp4"
   ],
   "client_package_files": [
     "deck_pptx",
@@ -86,7 +95,8 @@
     "guide_pdf",
     "speech_pdf",
     "audio_mp3",
-    "teleprompter_html"
+    "teleprompter_html",
+    "webinar_mp4"
   ],
   "phases": [
     {
@@ -1006,6 +1016,29 @@
       "verifier": "phase_verifiers.verify"
     },
     {
+      "id": "P9.6-WEBINAR-VIDEO",
+      "order": 8.92,
+      "name": "Webinar Video Build (ffmpeg Ken Burns + xfade slideshow; GHL v3 500MB video upload)",
+      "owning_role": "media-librarian-ghl-updater",
+      "sop_refs": [
+        "media-librarian-ghl-updater-sops.md"
+      ],
+      "produces_artifact": "working/delivery/{deck_slug}-WEBINAR.mp4",
+      "gate_codes": [
+        "AF-WEBINAR-SIZE"
+      ],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/build_webinar_video.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
       "id": "P7-TELEPROMPTER",
       "order": 8.95,
       "name": "Presenter Teleprompter HTML",
@@ -1274,6 +1307,20 @@
       "py_symbol": null,
       "check_script": "scripts/fix_bundle_complete.py::check_bundle_complete",
       "sop_ref": "SOP-PITCH-05-DELIVERABLE-BUNDLE.md"
+    },
+    {
+      "code": "AF-WEBINAR-SIZE",
+      "stage": "8.92",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "the webinar video (P9.6-WEBINAR-VIDEO, Feature L2-G) is absent, zero-byte, not a real MP4 (no ISO-BMFF 'ftyp' box), or exceeds the size gate: fail loud > 500MB (WEBINAR_TARGET_MAX_BYTES, the GHL v3 video-upload ceiling) and hard fail > 900MB (WEBINAR_HARD_MAX_BYTES). The GHL v3 video tier hosts at most 500MB per file, so an over-cap webinar cannot be delivered; re-render at a lower CRF. Enforced by build_webinar_video.py (the phase executor) which fails the phase exit code; the phase's runner-side substance verifier (phase_verifiers._verify_webinar_video) enforces the mp4-exists / non-empty / ftyp-magic / timing-track half at attestation time.",
+      "enforced_by": "build_webinar_video",
+      "py_symbol": null,
+      "check_script": "scripts/build_webinar_video.py::gate_size",
+      "secondary_py_symbols": [
+        "WEBINAR_TARGET_MAX_BYTES",
+        "WEBINAR_HARD_MAX_BYTES"
+      ]
     },
     {
       "code": "AF-SPEECH-SHORT",

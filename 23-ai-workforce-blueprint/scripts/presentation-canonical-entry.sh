@@ -518,6 +518,14 @@ deps_check() {
     else
         missing+=("python3")
     fi
+    # Feature L2-G (P9.6-WEBINAR-VIDEO): ffmpeg is a REAL runtime dep of the webinar
+    # phase (build_webinar_video.py -> webinar_ffmpeg.py renders the Ken Burns + xfade
+    # slideshow + muxes the audio). It is NOT gated by the audio phase's own check, so
+    # it must be gated here so a box without ffmpeg fails the dep gate BEFORE the
+    # webinar phase runs (owner-token skippable via PRESENTATION_DEPS_MISSING exactly
+    # like the other deps).
+    command -v ffmpeg >/dev/null 2>&1 || missing+=("ffmpeg (webinar video render; brew install ffmpeg)")
+    command -v ffprobe >/dev/null 2>&1 || missing+=("ffprobe (webinar video probe; part of ffmpeg)")
     if [ "${#missing[@]}" -gt 0 ]; then
         # FIX-PRES-09(iv): event-shaped reassert. On a VPS the four deps do not
         # survive a Docker force-recreate; rather than lean solely on a periodic
@@ -615,7 +623,8 @@ import os, re, sys
 run_dir = os.path.realpath(os.environ["RUN_DIR"])
 scripts_dir = os.path.realpath(os.environ["SCRIPTS_DIR"])
 CANON = {"build_deck.py", "run_signature_deck.py", "build_teleprompter.py",
-         "kie_generate.py", "presentation-canonical-entry.sh"}
+         "kie_generate.py", "presentation-canonical-entry.sh",
+         "build_webinar_video.py"}
 
 # Slide canvas at the 16:9 2K deck dimensions: Image.new(...2048...1152...)
 re_canvas = re.compile(r"Image\.new\s*\([^)]*\b2048\b[^)]*\b1152\b", re.S)

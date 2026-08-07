@@ -44,6 +44,7 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     "P9.1-SPEECH-PDF": 15,
     "P9.2-GHL-UPLOAD": 30,
     "P9.5-NOTES-SYNC": 20,
+    "P9.6-WEBINAR-VIDEO": 240,  # Feature L2-G: per-slide ffmpeg Ken Burns clips + xfade chain + 500MB GHL v3 upload
     # These five phase ids do not exist in manifest v25 (26 phases). U012 creates them.
     # Budgets are pre-seeded here on purpose so U012 does not have to touch this table.
     "P7-TELEPROMPTER": 10,
@@ -248,7 +249,11 @@ def _as_list(v: Any) -> List[str]:
 # 38 -> 39: Feature L2-D (Gauntlet Loop 2, Feature B) adds P8.25-WORKBOOK — the fillable
 # PDF workbook phase (kie.ai gpt-image-2 backgrounds + reportlab AcroForm assembly,
 # scripts/workbook_builder.py) — raising manifest_version to 39 in the same commit.
-MIN_MANIFEST_VERSION = 39  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+# 39 -> 40: Feature L2-G (Gauntlet Loop 2, Feature C) adds P9.6-WEBINAR-VIDEO — the
+# webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,
+# scripts/build_webinar_video.py) + AF-WEBINAR-SIZE autofail — raising manifest_version
+# to 40 in the same commit.
+MIN_MANIFEST_VERSION = 40  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:
