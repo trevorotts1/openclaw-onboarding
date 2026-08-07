@@ -15,7 +15,7 @@ using ONLY these strings. Fleet law: no client names; no Anthropic/`claude-*` id
 | Skill directory | `53-book-writer/` (repo root) |
 | Frontmatter `name` | `book-writer` |
 | Human name | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version)** |
-| `skill-version.txt` / frontmatter `version` | `1.0.0` |
+| `skill-version.txt` / frontmatter `version` | `1.1.6` |
 | Canonical entry filename | `book-writer-entry.sh` |
 | Orchestrator | `run_book_writer.py` (repo-root of the skill dir, mirrors 55's `run_product_bio.py`) |
 | Manifest (single source of truth) | `BOOK-WRITER-MANIFEST.json` |
@@ -29,19 +29,19 @@ using ONLY these strings. Fleet law: no client names; no Anthropic/`claude-*` id
 
 ## 2. universal-sops craft dir (create)
 
-- **Chosen craft dir name:** `universal-sops/book-craft/`
+- **Chosen craft dir name:** `universal-sops/book-writer-craft/`
   (parallel to the existing `universal-sops/product-bio-craft/`, `email-craft/`, `funnel-craft/`,
   `avatar-craft/`). Seed with a `README.md` + one pipeline SOP file
   `SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md` documenting the gate order + certificate contract (enforcement
   lives in the Python provers; the SOP documents it — enforcement, not description).
-- The SKILL.md and role files reference the shared procedure as `universal-sops/book-craft/`.
+- The SKILL.md and role files reference the shared procedure as `universal-sops/book-writer-craft/`.
 
 ---
 
 ## 3. README catalog row (one row; insert after the `52-avatar-alchemist` row)
 
 ```
-| 53-book-writer | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (v1.0.0)** — a governed skill that turns ONE completed **book-intake interview** into a tone-matched **12-chapter nonfiction book** plus companion assets (avatar dossier, the blended **"The {First} {Last} Tone"**, locked title/subtitle + approved outline, print-ready manuscript, a **30-Day Challenge**, and an AI cover prompt) as a LOCAL-ONLY labeled `~/Downloads` bundle with a signed process certificate, on the CLIENT's own model providers — never Anthropic, never operator keys. A **Book/Brand version selector runs FIRST** (`version=book` targets this skill; `version=brand` hands off to Skill 52). Modes: **full** (flagship 12-chapter book) and **4x3x3** (offer book: 30 titles / 4 Transformational Outcomes / KP doc / `433_Deck_Data.json` → Skill 51). Fail-closed **model-free** provers MEASURE the stripped text and ignore self-reported counts — exactly 12 chapters, 2000–3500 words each, ≥3000-word blended tone, exactly 30 challenge days, byte-exact locked title/subtitle, verbatim personal-story placement, sequential chapter-batch continuity (`scripts/prove_bw_*.py`); the orchestrator (`run_book_writer.py`) runs through ONE canonical entry (`book-writer-entry.sh`, deps / bypass-scan / hash-pin) and issues a `PROCESS-CERTIFICATE` only on a full pass (no certificate = not done). The tone subsystem is a lockstep copy of the shared **`shared-utils/tone-writing-core/`** (proved by `verify_tone_core_sync.py`), shared with Skills 52 (Brand) + 54 (Anthology). Cross-linked with (never merged into) Skill 52 Avatar Alchemist; anthology is the separate sibling Skill 54. No n8n / Airtable / Google / Gmail / Slack / GHL at runtime. Standalone — no prerequisite skill. |
+| 53-book-writer | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (v1.1.6)** — a governed skill that turns ONE completed **book-intake interview** into a tone-matched **12-chapter nonfiction book** plus companion assets (avatar dossier, the blended **"The {First} {Last} Tone"**, locked title/subtitle + approved outline, print-ready manuscript, a **30-Day Challenge**, and an AI cover prompt) as a LOCAL-ONLY labeled `~/Downloads` bundle with a signed process certificate, on the CLIENT's own model providers — never Anthropic, never operator keys. A **Book/Brand version selector runs FIRST** (`version=book` targets this skill; `version=brand` hands off to Skill 52). Modes: **full** (flagship 12-chapter book) and **4x3x3** (offer book: 30 titles / 4 Transformational Outcomes / KP doc / `433_Deck_Data.json` → Skill 51). Fail-closed **model-free** provers MEASURE the stripped text and ignore self-reported counts — exactly 12 chapters, 2000–3500 words each, ≥3000-word blended tone, exactly 30 challenge days, byte-exact locked title/subtitle, verbatim personal-story placement, sequential chapter-batch continuity (`scripts/prove_bw_*.py`); the orchestrator (`run_book_writer.py`) runs through ONE canonical entry (`book-writer-entry.sh`, deps / bypass-scan / hash-pin) and issues a `PROCESS-CERTIFICATE` only on a full pass (no certificate = not done). The tone subsystem is a lockstep copy of the shared **`shared-utils/tone-writing-core/`** (proved by `verify_tone_core_sync.py`), shared with Skills 52 (Brand) + 54 (Anthology). Cross-linked with (never merged into) Skill 52 Avatar Alchemist; anthology is the separate sibling Skill 54. No n8n / Airtable / Google / Gmail / Slack / GHL at runtime. Standalone — no prerequisite skill. |
 ```
 
 ---

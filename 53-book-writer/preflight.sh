@@ -135,9 +135,19 @@ for t in OPTIONAL:
     if v and ANTH.search(v):
         problems.append("tier %s resolves to an Anthropic/claude id %r — forbidden" % (t, v))
 
+if problems:
+    print("PREFLIGHT FAIL — the box is not configured for a book run:", file=sys.stderr)
+    for p in problems:
+        print("  - %s" % p, file=sys.stderr)
+    sys.exit(7)
+print("all REQUIRED tiers resolved to non-Anthropic client models.")
+
 # --- optional cross-check into the run ledger --------------------------------
+# Only after REQUIRED-tier enforcement PASSES (any `problems` above exits 7 before
+# this runs), and only when at least one tier is non-empty. A failing preflight
+# must never mutate a (possibly git-tracked) RUN-LEDGER.json.
 run_dir = os.environ.get("RUN_DIR", "").strip()
-if run_dir:
+if run_dir and any(tiers.get(t, "") for t in (*REQUIRED, *OPTIONAL)):
     ledger_path = os.path.join(run_dir, "run", "RUN-LEDGER.json")
     try:
         led = {}
@@ -151,13 +161,6 @@ if run_dir:
         print("cross-checked resolved tier->model map into", ledger_path)
     except Exception as exc:  # fail-soft: the ledger cross-check must not abort preflight
         print("[preflight] ledger cross-check skipped (%s)" % exc, file=sys.stderr)
-
-if problems:
-    print("PREFLIGHT FAIL — the box is not configured for a book run:", file=sys.stderr)
-    for p in problems:
-        print("  - %s" % p, file=sys.stderr)
-    sys.exit(7)
-print("all REQUIRED tiers resolved to non-Anthropic client models.")
 PY
 RC=$?
 
