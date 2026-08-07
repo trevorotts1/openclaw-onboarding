@@ -61,11 +61,17 @@ def _load_cc_board() -> object | None:
     return None
 
 
+_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+       "(KHTML, like Gecko) Chrome/126.0 Safari/537.36")
+
+
 def _http(method: str, url: str, *, token: str | None = None, body: dict | None = None,
           timeout: int = 20) -> tuple[int, dict]:
     data = json.dumps(body).encode("utf-8") if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
     req.add_header("content-type", "application/json")
+    # Browser-like UA so Cloudflare's bot check does not 1010-block the bridge.
+    req.add_header("user-agent", _UA)
     if token:
         req.add_header("authorization", f"Bearer {token}")
     try:
@@ -143,6 +149,77 @@ def cmd_ingest(args) -> int:
     return 4
 
 
+def _list_intakes(args) -> list:
+    """GET /api/intake/list — enumerate finished intakes stored in the worker."""
+    admin = os.environ.get("INTAKE_ADMIN_TOKEN", "")
+    if not admin:
+        print("error: INTAKE_ADMIN_TOKEN not set in env", file=sys.stderr)
+        sys.exit(2)
+    url = args.worker_url.rstrip("/") + "/api/intake/list"
+    status, resp = _http("GET", url, token=admin)
+    if status != 200:
+        print(f"error: intake list failed (HTTP {status}): {resp.get('error')}", file=sys.stderr)
+        sys.exit(3)
+    return resp.get("intakes") or []
+
+
+def _processed_ledger(args) -> set:
+    """Read the poll ledger (session ids already ingested) if present."""
+    led = pathlib.Path(args.poll_ledger).expanduser()
+    try:
+        return set(led.read_text().split())
+    except FileNotFoundError:
+        return set()
+
+
+def _mark_processed(args, session_id: str) -> None:
+    """Append a session id to the poll ledger (idempotent — a session is ingested once)."""
+    led = pathlib.Path(args.poll_ledger).expanduser()
+    led.parent.mkdir(parents=True, exist_ok=True)
+    done = _processed_ledger(args)
+    done.add(session_id)
+    led.write_text("\n".join(sorted(done)) + "\n")
+
+
+def cmd_poll(args) -> int:
+    """Discover finished intakes via the list endpoint and ingest each one once."""
+    intakes = _list_intakes(args)
+    if args.verbose:
+        print(f"poll: {len(intakes)} stored intake(s) discovered")
+    processed = _processed_ledger(args)
+    ingested = 0
+    skipped = 0
+    for it in intakes:
+        sid = it.get("session_id")
+        if not sid:
+            continue
+        if sid in processed:
+            skipped += 1
+            if args.verbose:
+                print(f"poll: {sid} already processed — skip")
+            continue
+        # Ingest this session (mirrors `ingest` with a per-session run dir).
+        run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
+        if args.per_session_dirs:
+            run_dir = run_dir / sid
+        # Reuse the ingest machinery via a synthetic args namespace.
+        sub = argparse.Namespace(
+            worker_url=args.worker_url, session_id=sid, run_dir=str(run_dir),
+            verbose=args.verbose, func=cmd_ingest,
+        )
+        rc = cmd_ingest(sub)
+        if rc == 0:
+            _mark_processed(args, sid)
+            ingested += 1
+            print(json.dumps({"status": "ingested", "session_id": sid}))
+        else:
+            # Failed — do NOT mark processed; the next poll retries it.
+            print(json.dumps({"status": "ingest_failed", "session_id": sid, "rc": rc}))
+    print(json.dumps({"status": "poll_done", "discovered": len(intakes),
+                      "ingested": ingested, "already_processed": skipped}))
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -152,6 +229,14 @@ def main(argv=None) -> int:
     i.add_argument("--run-dir", required=True, help="deck run directory to stamp")
     i.add_argument("--verbose", action="store_true")
     i.set_defaults(func=cmd_ingest)
+    p = sub.add_parser("poll", help="list finished intakes and ingest each once")
+    p.add_argument("--worker-url", required=True)
+    p.add_argument("--run-dir", required=True, help="deck run directory to stamp each intake under")
+    p.add_argument("--poll-ledger", required=True, help="path to the poll ledger (processed session ids)")
+    p.add_argument("--per-session-dirs", action="store_true",
+                   help="stamp each intake under <run-dir>/<session-id>/ instead of a single run dir")
+    p.add_argument("--verbose", action="store_true")
+    p.set_defaults(func=cmd_poll)
     args = ap.parse_args(argv)
     return args.func(args)
 
