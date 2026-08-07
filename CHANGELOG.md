@@ -1,3 +1,23 @@
+## [v22.0.1]  -  2026-08-07  -  fix(ci): close AF-RESEARCH-REACHES-RENDER Guard A gap + lockstep v22.0.1 version roll
+
+**Patch release on the `merge/apicur-train` train (PR #873).** Two CI blockers on PR #873
+(sync_check Guard A + G3) closed, plus the lockstep version roll they forced.
+
+### Changes
+1. **AF-RESEARCH-REACHES-RENDER Guard A probe (test_preflight.py):** added the negative-test
+   fixture to `emit_af_coverage()` — research map weaves an anchor into `slides_copy.md`
+   (weave gate passes) but `slides.json` copy[] drops it, so `_chk_research_reaches_render`
+   FAILS. This closes the declared-but-untested gap sync_check (Guard A) flagged. Verified
+   locally: `gate_integrity_check` DECLARED(100)==ENFORCED==TESTED(101), `sync_check`
+   IN SYNC (v44), `test_chk_research_reaches_render` PASS.
+2. **Version roll to v22.0.1 in lockstep (bump-version.sh):** the skill-version bump (G3)
+   forced the "all version markers agree" guard — all 10 markers rolled to v22.0.1
+   (`version`, `install.sh`, `23-ai-workforce-blueprint/skill-version.txt` + SKILL.md
+   frontmatter, `_index.json`, `README.md` x2, `update-skills.sh`,
+   `DIRECT-TO-AGENT-UPDATE-MESSAGE.md`, `cc-compat.json`, and the `06-ghl-install-pages`
+   skill in lockstep).
+
+
 ## [v22.0.0]  -  2026-08-07  -  CAPSTONE: Presentation Department Gauntlet Loop + BAR-MET closure — the 10-fix E2E train lands on the v21.7.38 Loop completion (v21.7.38 -> v22.0.0)
 
 **Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by the Kofi run into `main`. This capstone adds the **10 E2E-found defects** from the same Kofi live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
