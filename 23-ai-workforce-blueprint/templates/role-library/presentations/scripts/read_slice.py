@@ -348,6 +348,14 @@ def main(argv=None) -> int:
         # should carry the slice + bounds, not a duplicate payload).
         out = {k: v for k, v in result.items() if k != "text"}
         print(json.dumps(out, indent=2))
+    elif result.get("index") is not None:
+        # Index mode: the result carries a markdown section table of contents,
+        # not slice text. Emit it as a compact human-readable index.
+        for sec in result["index"]:
+            print(f"{sec['line']:6d} {'#' * sec['level']} {sec['header']}")
+        print(f"# read_slice: {result['file']} index "
+              f"({len(result['index'])} sections, "
+              f"{result['total_bytes']}B total)", file=sys.stderr)
     else:
         print(result["text"], end="" if result["text"].endswith("\n") else "\n")
         print(f"# read_slice: {result['file']} [{result['slice']}] "
