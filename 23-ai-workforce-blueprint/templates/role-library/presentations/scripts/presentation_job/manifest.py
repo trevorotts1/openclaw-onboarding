@@ -70,6 +70,28 @@ PHASE_BUDGET_MINUTES: Dict[str, int] = {
     # existing qc_generator_guard.py sweep, write one JSON file); no agent authoring,
     # no render, no network call.
     "P-QC-AGGREGATE": 10,
+    # Presentation Upsell (P-U-*) budgets — DESIGN-OPUS.md §10.1. These optional
+    # phases are defers_unless-gated on the intake answers; deck-only runs never
+    # reach them. DESIGN-* 60, HTML-* 30, GHL-* 60, FORM-* 30, VSL-RESEARCH 15,
+    # COLLATERAL 20, QC 30, copy phases 20 (the DEFAULT_PHASE_BUDGET_MINUTES floor;
+    # listed explicitly because test_budget_covers_all_canonical_phases requires
+    # every canonical manifest id to have a PHASE_BUDGET_MINUTES entry).
+    "P-U-SALES-COPY": 20,
+    "P-U-CHECKOUT-COPY": 20,
+    "P-U-VSL-COPY": 20,
+    "P-U-DESIGN-SALES": 60,
+    "P-U-DESIGN-CHECKOUT": 60,
+    "P-U-DESIGN-VSL": 60,
+    "P-U-HTML-SALES": 30,
+    "P-U-HTML-CHECKOUT": 30,
+    "P-U-HTML-VSL": 30,
+    "P-U-GHL-SALES": 60,
+    "P-U-GHL-VSL": 60,
+    "P-U-FORM-CHECKOUT": 30,
+    "P-U-FORM-GATE": 30,
+    "P-U-VSL-RESEARCH": 15,
+    "P-U-COLLATERAL": 20,
+    "P-U-QC": 30,
 }
 
 # ---------------------------------------------------------------------------
@@ -254,10 +276,13 @@ def _as_list(v: Any) -> List[str]:
 # webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,
 # scripts/build_webinar_video.py) + AF-WEBINAR-SIZE autofail — raising manifest_version
 # to 40 in the same commit.
-MIN_MANIFEST_VERSION = 43  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 44  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
+    # (44 = PRESENTATION UPSELL 2026-08-07: 16 optional P-U-* phases gated by
+    #  defers_unless on intake.want_sales_checkout / intake.want_vsl_page. Deck-only
+    #  runs (both no) execute the identical manifest as today — zero extra phases.)
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

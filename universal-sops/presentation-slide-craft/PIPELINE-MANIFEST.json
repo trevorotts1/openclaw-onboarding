@@ -1,5 +1,5 @@
 {
-  "manifest_version": 43,
+  "manifest_version": 44,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1247,6 +1247,294 @@
         "checker": "_chk_sp_no_pitch",
         "label": "signature-presentation Phase-3 no-pitch hygiene (AF-SP-P3-PITCH): no q7 offer/product name, no price/monetary token, and no enroll/buy/scarcity CTA on any teaching-band slide, and a contiguous Phase-3 to Phase-4 bridge (the final teaching step may promise what comes next but may NOT name a price or product). DEFERS (returns empty) unless intake.json deck_type == signature_presentation."
       },
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-SALES-COPY",
+      "order": 3.6,
+      "name": "Upsell Sales Page Copy (8-section main structure)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/sales.fragment.md + working/upsell/copy/copy_ledger.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-CHECKOUT-COPY",
+      "order": 3.7,
+      "name": "Upsell Checkout Page Copy (lean order-form structure)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/checkout.fragment.md",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-VSL-RESEARCH",
+      "order": 3.8,
+      "name": "Upsell VSL Research (length, hook-to-reveal timing, gating practice)",
+      "owning_role": "deep-research-specialist-presentations",
+      "produces_artifact": "working/upsell/vsl-research.md",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-VSL-COPY",
+      "order": 3.9,
+      "name": "Upsell VSL Page Copy (headline, body, CTA)",
+      "owning_role": "slide-copywriter",
+      "produces_artifact": "working/upsell/copy/vsl.fragment.md",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-DESIGN-SALES",
+      "order": 4.2,
+      "name": "Upsell Sales Page Design (5,000–19,000 prompt band)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/sales.design.txt + design/sales-design.png",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-DESIGN-CHECKOUT",
+      "order": 4.3,
+      "name": "Upsell Checkout Page Design (includes order/payment form design)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/checkout.design.txt + design/checkout-design.png",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-DESIGN-VSL",
+      "order": 4.4,
+      "name": "Upsell VSL Page Design (includes email/phone gate form design)",
+      "owning_role": "slide-image-creator",
+      "produces_artifact": "prompts/vsl.design.txt + design/vsl-design.png",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-HTML-SALES",
+      "order": 5.2,
+      "name": "Upsell Sales Page HTML (mirrors design; GHL code-block ready)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/sales.fragment.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-HTML-CHECKOUT",
+      "order": 5.3,
+      "name": "Upsell Checkout Page HTML (mirrors design; SKILL44_WIDGET form embed)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/checkout.fragment.html",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-HTML-VSL",
+      "order": 5.4,
+      "name": "Upsell VSL Page HTML (mirrors design; gate overlay with Skill-44 form embed)",
+      "owning_role": "pptx-assembly-specialist",
+      "produces_artifact": "pages/vsl.fragment.html",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-FORM-CHECKOUT",
+      "order": 5.5,
+      "name": "Upsell Checkout Order Form (Skill 44; SKILL44_WIDGET)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "ecosystem/checkout-form.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-FORM-GATE",
+      "order": 5.6,
+      "name": "Upsell VSL Email/Phone Gate Form + Workflow (Skill 44)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "ecosystem/gate-form.json + workflows/gate-workflow.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-GHL-SALES",
+      "order": 6.2,
+      "name": "Upsell Sales + Checkout GHL Funnel Build (Skill 6)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "build_receipt.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-GHL-VSL",
+      "order": 6.4,
+      "name": "Upsell VSL GHL Funnel Build (Skill 6; gate form SKILL44_WIDGET)",
+      "owning_role": "media-librarian-ghl-updater",
+      "produces_artifact": "build_receipt.json",
+      "defers_unless": "intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-COLLATERAL",
+      "order": 8.8,
+      "name": "Upsell Collateral Backup (delivery/<SLUG>-FINAL/upsell/*)",
+      "owning_role": "delivery-concierge",
+      "produces_artifact": "delivery/{deck_slug}-FINAL/upsell/*",
+      "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} — {name} — starting{eta}",
+        "done_template": "Step {k} of {N} — {name} — complete"
+      },
+      "executor": {
+        "kind": "agent"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
+      "id": "P-U-QC",
+      "order": 9.05,
+      "name": "Upsell QC + Playwright Verify (brand, logo, mirror, band, copy)",
+      "owning_role": "qc-specialist-presentations",
+      "produces_artifact": "qc/upsell-scorecard.json",
+      "defers_unless": "intake.want_sales_checkout == \"yes\" or intake.want_vsl_page == \"yes\"",
+      "gate_codes": [],
+      "preflight": null,
       "client_report": {
         "start_template": "Step {k} of {N} — {name} — starting{eta}",
         "done_template": "Step {k} of {N} — {name} — complete"
