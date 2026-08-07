@@ -1,0 +1,71 @@
+{
+  "config_kind": "book-writer-phase-config/v1",
+  "derived_from": {
+    "intake_schema": "intake/intake-schema.json",
+    "intake_schema_sha256": "739e5124b4d1cd8067e7d450e1d21e40c3bee2bfe46e1947cc2cee20964aeead",
+    "manifest": "BOOK-WRITER-MANIFEST.json",
+    "manifest_sha256": "de80a7a9e3954374f850eede69903bc127a2800b06b7e29e27b19ab14488211f"
+  },
+  "gate": {
+    "approved_by": true,
+    "approved_on": true,
+    "byte_exact": true,
+    "must_match": [
+      "title",
+      "subtitle"
+    ],
+    "prover": "prove_bw_titlelock"
+  },
+  "modes": [
+    "full",
+    "4x3x3"
+  ],
+  "phase": "GATE-1-title",
+  "phase_version": "1.2.0",
+  "progress_label": "Question {n} of 2",
+  "progress_total": 2,
+  "questions": [
+    {
+      "answer_your_way": [
+        "text"
+      ],
+      "custom_field": "bw_title",
+      "id": "title",
+      "kind": "text",
+      "label": "Book title",
+      "max_chars": 50000,
+      "question": "Book title",
+      "required": true,
+      "why": "Just a little about you, so the book sounds like you."
+    },
+    {
+      "answer_your_way": [
+        "text"
+      ],
+      "custom_field": "bw_subtitle",
+      "id": "subtitle",
+      "kind": "text",
+      "label": "Book subtitle",
+      "max_chars": 50000,
+      "question": "Book subtitle",
+      "required": true,
+      "why": "Just a little about you, so the book sounds like you."
+    }
+  ],
+  "submit": {
+    "action": "gate_receipt",
+    "custom_field_map": {
+      "subtitle": "bw_subtitle",
+      "title": "bw_title"
+    },
+    "dedupe_key": "run_id+phase_id+identity",
+    "raw_json_note": true,
+    "tags": [
+      "book-writer",
+      "gate",
+      "phase-p3"
+    ]
+  },
+  "title": "Lock in your title",
+  "warm_intro": "Your suggested titles are ready. Type the exact title and subtitle you want to lock in \u2014 they stay byte-exact through every chapter."
+}
