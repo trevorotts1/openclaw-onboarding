@@ -204,15 +204,26 @@ def _verify_research(run_dir: Path) -> Tuple[bool, List[str]]:
             return False, r
         return True, ["NOTE: build_deck not importable — research engine checks degraded (pass)"]
 
+    # FIX-E2E: _chk_research_brief / _chk_research_cited take a FILE path (they
+    # call path.read_text()), but this verifier passed run_dir (a directory) —
+    # an IsADirectoryError that failed every P-0.5-RESEARCH attestation at
+    # substance-verify time even when the brief was valid. build_deck's own
+    # preflight resolves the glob to a file first; mirror that here. The
+    # globbed brief file (if any) is the target for both file-path checkers;
+    # _chk_claims_without_citation takes run_dir, which stays unchanged.
+    brief_files = sorted((run_dir / "working" / "research").glob("brief-*.md")) \
+        if (run_dir / "working" / "research").is_dir() else []
+    brief_path = brief_files[0] if brief_files else None
+
     if fn_brief is not None:
-        result = fn_brief(run_dir)
+        result = fn_brief(brief_path)
         if not _checker_pass(result):
             reasons.append(f"AF-RESEARCH-GATE: research brief check failed: {result}")
     else:
         reasons.append("NOTE: _chk_research_brief unavailable — skipped")
 
     if fn_cited is not None:
-        result = fn_cited(run_dir)
+        result = fn_cited(brief_path)
         if not _checker_pass(result):
             reasons.append(f"AF-RESEARCH-UNCITED: cited-URL check failed: {result}")
     else:
