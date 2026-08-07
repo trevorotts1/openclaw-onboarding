@@ -212,8 +212,8 @@ def check_avatar(bk: Book):
     p = bk.artifacts / "01-avatar.md"
     if not p.is_file():
         return False, ("missing run/artifacts/01-avatar.md — FAIL-CLOSED: the book cannot "
-                       "complete without the authored avatar dossier (authoring stage deferred "
-                       "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "complete without the authored avatar dossier (authored by the baked "
+                       "stage prompt; see prompts/01-avatar-questions-1-30)"), {}
     return True, "avatar dossier present", {}
 
 
@@ -244,8 +244,8 @@ def check_outline(bk: Book, approvals: dict):
     stories = bk.rd / "stories.json"
     if not outline.is_file():
         return False, ("missing run/artifacts/13-outline.md — FAIL-CLOSED: the book cannot "
-                       "complete without the authored outline (authoring stage deferred to a "
-                       "scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "complete without the authored outline (authored by the baked "
+                       "stage prompt; see prompts/13-create-outline)"), {}
     if not stories.is_file():
         return False, "missing run/stories.json", {}
     if not _gate_ok(approvals, "GATE-2-outline"):
@@ -267,8 +267,8 @@ def check_chapters(bk: Book):
     files = bk.chapter_files()
     if not files:
         return False, ("no run/chapters/ch*.md — FAIL-CLOSED: the book cannot complete without "
-                       "authored chapters (authoring stage deferred to a scoped follow-up "
-                       "campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "authored chapters (authored by the baked chapter-batch stage prompts; "
+                       "see prompts/15-write-chapters-b1 … 18-write-chapters-b4)"), {}
     chap_texts = {}
     for i, p in enumerate(files, 1):
         chap_texts[i] = p.read_text(encoding="utf-8")
@@ -312,8 +312,8 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
     ch = bk.artifacts / "21-30day-challenge.md"
     if not ch.is_file():
         return False, ("missing run/artifacts/21-30day-challenge.md — FAIL-CLOSED: the book "
-                       "cannot complete without the authored 30-Day Challenge (authoring stage "
-                       "deferred to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. PENDING')"), {}
+                       "cannot complete without the authored 30-Day Challenge (authored by the "
+                       "baked stage prompt; see prompts/21-30day-challenge)"), {}
     res_ch = p_chal.evaluate(ch.read_text(encoding="utf-8"))
     # cover prompt (manifest stage 22-cover-prompt, P6-PACKAGE, floor title_lock)
     cover = bk.artifacts / "22-cover-prompt.md"
