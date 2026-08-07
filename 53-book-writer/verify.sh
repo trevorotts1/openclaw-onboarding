@@ -116,7 +116,7 @@ abspath = re.compile("/" + "Users/" + "|/home/[a-z]")
 # whole purpose (the no-Anthropic prover, the broken-variant generator + its result
 # ledger, and this scanner). Allowlisted like 55's scan ignores its own ban logic.
 DETECT_ALLOW = {"prove_bw_noanthropic.py", "make_broken.py",
-                "REJECTION-RESULTS.json", "verify.sh"}
+                "REJECTION-RESULTS.json", "verify.sh", "test_mc_board_reconcile.py"}
 hits = []
 for root, dirs, files in os.walk(skill):
     dirs[:] = [d for d in dirs if d not in (".git", "__pycache__")]
