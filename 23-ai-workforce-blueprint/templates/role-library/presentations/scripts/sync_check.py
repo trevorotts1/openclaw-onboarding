@@ -344,7 +344,13 @@ _NON_ROLE_DOCS = {"BUILDER-PROMPT", "IDENTITY", "SOUL", "TOOLS",
                   # the repo (which has no such files) but the deployed dept dirs
                   # carry them, so excluding here closes the 27-drift debt for the
                   # fleet-deployed layouts too.
-                  "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER"}
+                  "AGENTS", "DREAMS", "HEARTBEAT", "MEMORY", "USER",
+                  # Fleet-deployed scaffolding seen on client boxes (verified during
+                  # the Loop-2 fleet roll): a fleet-generated ROSTER.md and a
+                  # governing-personas.md ship into deployed department dirs but are
+                  # not department roles. Exclude them so A5 does not false-DRIFT a
+                  # box that is fully on the current manifest (FIX-23c + roll fix).
+                  "ROSTER", "GOVERNING-PERSONAS"}
 
 
 def scan_roles_and_sops():
