@@ -182,6 +182,14 @@ def _load_api_key() -> str:
     sys.exit(2)
 
 
+class AuthError(Exception):
+    """Permanent authentication failure (HTTP 401/403) — the request is identical
+    and will fail forever: the key is wrong, the Authorization header format is
+    wrong, or the account is locked/rate-locked by the provider. Retrying the same
+    request is a guaranteed token furnace. Fail loud, NEVER back off, NEVER
+    re-submit. FIX-6: a 401/403 raised as AuthError is never treated as transient."""
+
+
 def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None) -> dict:
     """Minimal HTTP helper; returns parsed JSON response. Raises on non-200."""
     if DEAD_ENDPOINT_FRAGMENT in url:
@@ -200,6 +208,16 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
             raw = resp.read().decode()
             return json.loads(raw)
     except urllib.error.HTTPError as exc:
+        if exc.code in (401, 403):
+            # PERMANENT auth failure (FIX-6): never transient, never retried.
+            body_text = exc.read().decode(errors="replace")
+            raise AuthError(
+                f"HTTP {exc.code} {method} {url}\n"
+                f"Response: {body_text}\n"
+                "Permanent auth failure — do NOT re-submit. Check the KIE_API_KEY, "
+                "the Authorization: Bearer header format, and that the key is not "
+                "locked/rate-blocked by the provider."
+            ) from exc
         body_text = exc.read().decode(errors="replace")
         raise RuntimeError(
             f"HTTP {exc.code} {method} {url}\n"
@@ -440,6 +458,16 @@ def main():
                 task_id = _submit_slide(slide, api_key)
                 task_map[task_id] = slide
                 print(f"  SUBMITTED {slide_name} -> taskId={task_id}")
+            except AuthError as exc:
+                # FIX-6 — fail-fast on auth errors: a 401/403 is PERMANENT, so EVERY
+                # remaining slide would fail identically. Abort the run now (one clear
+                # diagnosis) instead of burning the whole wave budget on guaranteed
+                # failures. No backoff, no re-submit.
+                print(f"FATAL: {exc}", file=sys.stderr)
+                print("A 401/403 is a permanent auth failure — no slide can submit. "
+                      "Fix the KIE_API_KEY / Authorization header, do NOT retry.",
+                      file=sys.stderr)
+                sys.exit(2)
             except Exception as exc:
                 print(f"  SUBMIT ERROR {slide_name}: {exc}", file=sys.stderr)
                 # record as failed with sentinel

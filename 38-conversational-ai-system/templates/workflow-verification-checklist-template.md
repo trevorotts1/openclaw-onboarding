@@ -118,7 +118,7 @@ If any item is wrong, the fix is listed right there.
   "match": "<HOOK_NAME>",
   "action": "agent",
   "agent_id": "<ROUTING_AGENT_ID>",
-  "model": "ollama/deepseek-v4-flash:cloud",
+  "model": "ollama/deepseek-v4-flash:0731-cloud",
   "wakeMode": "now",
   "name": "GHL Sales Inbound",
   "session_key": "hook:ghl:<channel>:{{contact.id}}",

@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "Secret Two\n\nYour best prospects are\nyour present customers\n\nThey already know you, like you, trust you,\nand have a buying history.\n\nTHE\n\nQ SALES\nBIBLE"
+}

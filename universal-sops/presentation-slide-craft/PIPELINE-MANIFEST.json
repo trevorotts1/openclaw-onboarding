@@ -1,5 +1,5 @@
 {
-  "manifest_version": 35,
+  "manifest_version": 38,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -1243,6 +1243,17 @@
       "py_symbol": "run_postflight_gate"
     },
     {
+      "code": "AF-BUNDLE-INCOMPLETE",
+      "stage": "Postflight/Bundle",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "full 9-deliverable bundle gate (fix_bundle_complete.py, FIX-8) \u2014 one or more of the nine operator build deliverables (deck_pptx, deck_pdf, guide_pdf, speech_md, speech_pdf, speech_fish_md, audio_mp3, infographic_png, teleprompter_html) is absent or empty in the bundle dir. Fail-closed: a partial bundle can never be reported 'done'. On pass writes bundle_complete.json.",
+      "enforced_by": "fix_bundle_complete",
+      "py_symbol": null,
+      "check_script": "scripts/fix_bundle_complete.py::check_bundle_complete",
+      "sop_ref": "SOP-PITCH-05-DELIVERABLE-BUNDLE.md"
+    },
+    {
       "code": "AF-SPEECH-SHORT",
       "stage": "9",
       "level": "DECK",
@@ -1619,6 +1630,29 @@
         "FORBIDDEN_QC_GRADER_IDENTITIES",
         "QC_BUILDER_ROLE"
       ]
+    },
+    {
+      "code": "AF-QC-PLACEHOLDER",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a QC report for one of the four QC phases (copy / prompt / typography / shift) is a placeholder or sub-floor: it is missing, <= 256 bytes (the 3-byte \"{}\" rubber-stamp), not valid JSON, or carries fewer than 20 real per-slide verdicts. FIX-2 (Error 2) makes QC structurally unskippable + real-content-floor: a QC phase cannot attest without a real report.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_qc_phase_report_real",
+      "secondary_py_symbols": [
+        "QC_PHASE_REPORT",
+        "QC_REPORT_FLOOR_BYTES",
+        "QC_REPORT_SLIDE_FLOOR"
+      ]
+    },
+    {
+      "code": "AF-QC-SKIP",
+      "stage": "QC",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "a phase-skip approval record (phase_skip_approvals.json) or owner_skip_approval token names one of the four QC phases (copy / prompt / typography / shift) \u2014 QC phases are STRUCTURALLY UNSKIPPABLE (FIX-2, Error 2); no owner record can waive a QC phase. The skip is refused and the QC phase stays required.",
+      "enforced_by": "build_deck",
+      "py_symbol": "UNSKIPPABLE_QC_PHASES"
     },
     {
       "code": "AF-TYPOGRAPHY-QC",
@@ -2636,6 +2670,42 @@
       "py_symbol": null
     },
     {
+      "code": "AF-AGENT-ENV-MISSING",
+      "stage": "Phase0",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "FIX-14 (Error 8 / D-8): the presentation agent runtime env does not carry MC_API_TOKEN or MISSION_CONTROL_URL (live-process-first across the gateway service-env + secrets stores). Command Center registration/delivery would silently 401. run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh, restart the gateway, re-run.",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-AGENT-ENV-UNMANAGED",
+      "stage": "Phase0",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "FIX-14 (Error 8 / D-8): MC_API_TOKEN / MISSION_CONTROL_URL are present in a store but NOT members of OPENCLAW_SERVICE_MANAGED_ENV_KEYS \u2014 a regeneration will DROP them (the exact 15-day regression). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: run regenerate-gateway-env.sh to add the labels to the managed list, restart the gateway, re-run.",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-AGENT-ENV-UNKNOWN",
+      "stage": "Phase0",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "FIX-14 (Error 8 / D-8): check_agent_env.py is not co-located beside run_signature_deck.py, so the regression guard cannot run. A missing probe must never read as PASS (fail-closed). run_signature_deck.phase0_preflight hard-aborts (exit 4) BEFORE any phase is dispatched. Repair: install check_agent_env.py into the department scripts dir, re-run.",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
+      "code": "AF-TOOL-SCHEMA-LOOP",
+      "stage": "Phase0",
+      "level": "deck",
+      "in_ruleset": true,
+      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) — path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
+      "enforced_by": "runner",
+      "py_symbol": null
+    },
+    {
       "code": "AF-CC-UNREGISTERED",
       "stage": "Process",
       "level": "deck",
@@ -2831,6 +2901,30 @@
         "FONT_BODY_PT_FLOOR",
         "DARK_THEME_BODY_PT_FLOOR",
         "SLIDE_GEOMETRY_PT_REFERENCE_HEIGHT_PX"
+      ]
+    },
+    {
+      "code": "AF-KIE-AUTH",
+      "stage": "Phase-0",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "Decision 3C companion. The kie.ai key could not be verified BEFORE render (HTTP 401/403 on the credit or auth preflight, or the preflight could not verify the key). HARD-ABORTS before any slide is dispatched \u2014 an unauthenticated key is a PERMANENT auth failure, never a transient condition to back off and re-submit (retrying an identical 401 request is a token furnace).",
+      "enforced_by": "build_deck",
+      "py_symbol": "_preflight_kie_auth",
+      "secondary_py_symbols": [
+        "kie_balance_preflight"
+      ]
+    },
+    {
+      "code": "AF-FORGED-APPROVAL",
+      "stage": "1Q/QC",
+      "level": "DECK",
+      "in_ruleset": false,
+      "trigger": "A phase-skip approval record in working/checkpoints/phase_skip_approvals.json references an owner_msg_id that does NOT resolve to a real owner message in the Command Center task_activities store, or lacks the required owner_action == 'approved_skip'. A forged/self-issued skip is refused (PermissionError) and the phase stays pending \u2014 a phase can never be skipped on an approval that is not a real owner message.",
+      "enforced_by": "build_deck",
+      "py_symbol": "check_phase_preconditions",
+      "secondary_py_symbols": [
+        "_http_json"
       ]
     }
   ],

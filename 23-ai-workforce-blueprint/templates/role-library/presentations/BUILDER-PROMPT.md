@@ -59,6 +59,13 @@ is order-enforced (`AF-PHASE-SKIPPED` on an out-of-order attempt), so you physic
 cannot run the process out of the order the runner serves it. `--plan` is a read-only
 view of the whole phase list if you need orientation (never a substitute for `--next`).
 
+**SLICED READS — FIX-19 (D18).** The SOP/role files `sop_refs` point at are 25–125KB.
+Reading one WHOLE is what fired `[tool-result-truncation]` 33× in the 2026-08-06 E2E —
+you reasoned from incomplete context. Each `sop_ref` in the `--next` payload carries a
+`read_slice_hint`; a ref marked `sliced_read_required: true` MUST be fetched with
+`read_slice.py --index` then `--lines A-B`, never read whole. The truncation counter
+(`working/checkpoints/read_slice_truncations.json`) must stay 0 across the build.
+
 **Do not hand-author `slides.json` in isolation and skip straight to a render command.**
 Walk the loop above from wherever the ledger says you are; the runner will emit intake,
 structure, copy, copy-QC, prompt-authoring, and prompt-QC phases (per

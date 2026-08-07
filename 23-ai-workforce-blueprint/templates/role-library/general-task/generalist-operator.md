@@ -129,7 +129,7 @@ Every task you complete prevents a piece of operational work from being dropped.
 2. **Measure** — Score across 5 dimensions (1–10): (D1) Completeness, (D2) Accuracy, (D3) Clarity, (D4) Efficiency, (D5) Hand-off readiness. Compute weighted average.
 3. **Analyze** — Gate: ≥8.5 = PASS; <8.5 = identify lowest-scoring dimension.
 4. **Improve** — Surgical fix on the failing dimension. Re-score.
-5. **Control** — Max 3 loops. On PASS: deliver. On persistent FAIL: escalate with scores. QC runs on a DIFFERENT model than the writer (writer: ollama/deepseek-v4-flash:cloud; QC: ollama/kimi-k2.6:cloud).
+5. **Control** — Max 3 loops. On PASS: deliver. On persistent FAIL: escalate with scores. QC runs on a DIFFERENT model than the writer (writer: ollama/deepseek-v4-flash:0731-cloud; QC: ollama/kimi-k2.6:cloud).
 **Outputs:** QC-passed deliverable.
 **Failure mode:** 3 failed QC loops → escalate to Head of General Task. Never ship below 8.5.
 
@@ -212,4 +212,4 @@ Every task you complete prevents a piece of operational work from being dropped.
 ## 19. When to Spawn a Sub-Specialist
 
 - If a task requires parallel research sub-tasks (e.g., "compare 3 vendors across 5 criteria"), spawn up to 2 research sub-agents with individual assignments, then aggregate.
-- Maximum 2 concurrent sub-spawns. Model: ollama/deepseek-v4-flash:cloud, timeout: 900s. Never spawn for tasks you can complete in under 30 minutes.
+- Maximum 2 concurrent sub-spawns. Model: ollama/deepseek-v4-flash:0731-cloud, timeout: 900s. Never spawn for tasks you can complete in under 30 minutes.

@@ -90,6 +90,11 @@ PUBLIC API
       # post one QC-grade activity per graded gate (from collect_qc_summary).
   collect_qc_summary(run_dir) -> dict   # distil working/qc/*.json into board scores
   stamp_task_id(run_dir, task_id) -> bool
+  register_deliverable(task_id, url, meta=None, *, env=None) -> bool
+      # POST /api/tasks/{task_id}/deliverables — the FIX-12 registration bridge
+      # (ported from Skill-06 cc_board.py). FAIL-SOFT: never raises; a False
+      # return never blocks the deck build. The task can leave in_progress only
+      # once task_deliverables holds a row (POST 2xx -> row created).
   count_successful_advances(run_dir) -> int
   assert_min_one_advance(run_dir) -> bool
 """
@@ -103,6 +108,7 @@ import os
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -868,6 +874,167 @@ def stamp_task_id(run_dir, task_id: str) -> bool:
     if not ok:
         _log(f"stamp_task_id failed for task_id={task_id}.")
     return ok
+
+
+# ---------------------------------------------------------------------------
+# DELIVERABLE REGISTRATION — POST /api/tasks/{id}/deliverables (FIX-12).
+#
+# The producer-side registration bridge (ported from Skill-06's
+# register_deliverable at 06-ghl-install-pages/tools/cc_board.py). M11 in
+# ERRORS-DETECTED: the dept cc_board.py had NO register_deliverable, so a
+# completed deck was never registered and its task could never leave
+# in_progress. POST a 2xx -> the CC server inserts a task_deliverables row ->
+# the task is registerable and may advance. The CC route validates against
+# CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+# non-empty title; optional path/description) — it does NOT accept a bare
+# `url` or `meta` key, so the payload carries deliverable_type='url' +
+# title + path (the artifact URL), with meta folded into `description`.
+# FAIL-SOFT: never raises; a False return (board disabled, missing id/url,
+# transport error, non-2xx) never blocks the deck build.
+# ---------------------------------------------------------------------------
+def register_deliverable(
+    task_id: str,
+    url: str,
+    meta: Optional[dict] = None,
+    *,
+    env: Optional[dict] = None,
+) -> bool:
+    """Register a built artifact via ``POST /api/tasks/{id}/deliverables``.
+
+    Auth: both headers (Bearer + HMAC) per this module's AUTH PARITY rules —
+    the same signed _request() every other advance uses. If the /deliverables
+    endpoint is absent (404) the call fail-softs and the build continues
+    unregistered (the deck's task_id is still on disk via stamp_task_id).
+
+    FAIL-SOFT: never raises; a False return never blocks the build.
+
+    Args:
+        task_id: CC task UUID returned by ingest_deck_task (or read from the
+                 process_manifest cc_task_id).
+        url:     The built artifact URL (e.g. the deck/guide location) to
+                 register on the card.
+        meta:    Optional metadata dict (e.g. {"type": "deck_pptx",
+                 "title": "My Deck", "slug": "deck-1"}). A title found here
+                 becomes the deliverable title; the rest rides in description.
+        env:     Override os.environ (for testing).
+
+    Returns:
+        True on 2xx, False on any failure (including 404 if endpoint absent).
+    """
+    cfg = board_config(env)
+    if cfg is None:
+        _log("COMMAND_CENTER_URL/MISSION_CONTROL_URL unset — board disabled; "
+             "deliverable not registered.")
+        return False
+
+    tid = (task_id or "").strip()
+    if not tid:
+        _log("register_deliverable skipped — empty task_id.")
+        return False
+
+    artifact_url = (url or "").strip()
+    if not artifact_url:
+        _log("register_deliverable skipped — empty url.")
+        return False
+
+    # The CC server's POST /api/tasks/{id}/deliverables validates against the
+    # CreateDeliverableSchema (deliverable_type enum file|url|artifact|image +
+    # a non-empty title, optional path/description) — it does NOT accept a
+    # bare `url` or `meta` key, so the old {"url": ..., "meta": ...} shape 400s.
+    title = "Artifact URL"
+    if meta and isinstance(meta, dict):
+        for _key in ("title", "slug", "type"):
+            _val = meta.get(_key)
+            if _val:
+                title = str(_val)
+                break
+
+    payload: dict = {
+        "deliverable_type": "url",
+        "title": title,
+        "path": artifact_url,
+    }
+    if meta and isinstance(meta, dict):
+        # Fold the metadata into `description` (JSON) so nothing is lost — the
+        # schema has no `meta` field to carry it.
+        payload["description"] = json.dumps(meta, separators=(",", ":"))
+
+    endpoint = f"{cfg['base_url']}/api/tasks/{tid}/deliverables"
+    try:
+        http_status, body = _request("POST", endpoint, payload, cfg)
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        _log(
+            f"POST {endpoint} failed ({type(exc).__name__}: {exc}); "
+            "deliverable not registered; build continues."
+        )
+        return False
+
+    if 200 <= http_status < 300:
+        _log(f"task {tid} deliverable registered: url={artifact_url!r} "
+             f"http={http_status}.")
+        return True
+
+    _log(
+        f"POST /deliverables non-2xx (HTTP {http_status}) for task {tid}: "
+        f"{body}; build continues. If 404, confirm /deliverables endpoint in "
+        "blackceo-command-center."
+    )
+    return False
+
+
+# ---------------------------------------------------------------------------
+# OWNER-MESSAGE ORACLE — the authoritative owner-approval check (FIX-1).
+#
+# A phase-skip approval is authentic ONLY when its owner_msg_id resolves to a
+# REAL owner-authored message row in the Command Center task_activities table.
+# Presence of a string in phase_skip_approvals.json is NEVER proof — the live
+# E2E forged "e2e-test-002". This client is the fail-closed oracle: when the
+# owner-ids endpoint is unreachable or the task is unknown, the check returns
+# None (UNDETERMINED), which the caller treats as DENIED — undetermined never
+# opens the gate. See the CC route GET /api/tasks/[id]/messages/owner-ids.
+# ---------------------------------------------------------------------------
+def list_owner_message_ids(task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Resolve `task_id` to the set of REAL owner-authored message ids in CC
+    task_activities. Returns a frozenset of ids on success; None when the board
+    is disabled, the endpoint errors, or the result cannot be proven (the caller
+    must fail CLOSED on None — a skip that cannot be verified is DENIED)."""
+    if not task_id or not str(task_id).strip():
+        return None
+    cfg = board_config(env)
+    if cfg is None:
+        return None
+    tid = urllib.parse.quote(str(task_id).strip(), safe="")
+    url = f"{cfg['base_url']}/api/tasks/{tid}/messages/owner-ids"
+    try:
+        status, parsed = _request("GET", url, {}, cfg)
+    except Exception:  # noqa: BLE001 — fail-closed: a transport error is DENIED
+        _log(f"owner-message oracle {url} raised; owner approval treated as DENIED.")
+        return None
+    if status != 200 or not isinstance(parsed, list):
+        _log(f"owner-message oracle {url} returned HTTP {status} — owner approval "
+             "treated as DENIED (undetermined never opens the gate).")
+        return None
+    ids = set()
+    for item in parsed:
+        if isinstance(item, str) and item.strip():
+            ids.add(item.strip())
+        elif isinstance(item, dict):
+            v = item.get("id")
+            if isinstance(v, str) and v.strip():
+                ids.add(v.strip())
+    return frozenset(ids)
+
+
+def owner_message_ids_match(run_dir, task_id: str, env: Optional[dict] = None) -> Optional[frozenset]:
+    """Compatibility helper: resolve the CC task id from the run's
+    process_manifest.json (cc_task_id) and return its real owner-message ids.
+    None when the run has no cc_task_id or the oracle cannot resolve — fail-closed.
+    Delegates to list_owner_message_ids so there is ONE oracle implementation."""
+    if run_dir is not None:
+        tid = _read_manifest(run_dir).get("cc_task_id")
+        if tid:
+            return list_owner_message_ids(str(tid), env=env)
+    return None
 
 
 # ---------------------------------------------------------------------------

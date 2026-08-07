@@ -216,7 +216,7 @@ PAO converts vague requests into completed, quality-gated deliverables — the c
 4. **Improve** — Spawn sub-agent: `openclaw_subagent.spawn({role, task, output_path, model, timeout_seconds: 1800, birth_prompt: "you are a short-lived specialist — write output to {output_path}, return a one-line status"})`. Sub-agents are short-lived: one deliverable, write to disk, return one-line status, die.
 5. **Control** — Track spawned sub-agents in `loop-state.json.active_agents[]`. Mark `timeout_seconds: 1800` (30 min) for all subs. If a sub exceeds timeout without returning status: kill it (`openclaw_subagent.kill(id)`), log the kill in CHANGELOG.md, re-queue the work item. Update `loop-state.json.active_agents` on kill.
 **Model selection (Tier 1 → 2 → 3):**
-- Tier 1 (default): `ollama/deepseek-v4-pro:cloud` (orchestrator, QC, code-editor), `ollama/deepseek-v4-flash:cloud` (research, monitor), `ollama/kimi-k2.6:cloud` (long-context QC).
+- Tier 1 (default): `ollama/deepseek-v4-pro:cloud` (orchestrator, QC, code-editor), `ollama/deepseek-v4-flash:0731-cloud` (research, monitor), `ollama/kimi-k2.6:cloud` (long-context QC).
 - Tier 2 (failover when Ollama Cloud down): `openrouter/deepseek/deepseek-v3.2`, `openrouter/moonshotai/kimi-k2.6`, `openrouter/z-ai/glm-5`, `openrouter/qwen/qwen3.5-plus-02-15`.
 - Tier 3 (LAST RESORT — ask owner first): per-token frontier models. Never use without owner approval.
 **Outputs:** Sub-agent spawned + tracked in `loop-state.json`.

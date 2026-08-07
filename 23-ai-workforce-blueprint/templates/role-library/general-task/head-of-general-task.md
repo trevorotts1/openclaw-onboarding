@@ -327,4 +327,4 @@ Spawn a `generalist-operator` sub-agent (SOP-02) when:
 - The accepted task requires more than 30 minutes of execution work.
 - Spawn a `triage-classifier` sub-agent when you have 3+ simultaneous fallback tasks and need parallel re-classification.
 - Spawn a `qc-specialist-general-task` sub-agent when the deliverable is high-stakes (owner-facing, external) and you want independent QC.
-- Maximum 3 concurrent sub-agents. Each sub must write output to disk and return a one-line status. Spawn config: `model: ollama/deepseek-v4-flash:cloud`, `timeout_seconds: 1800`.
+- Maximum 3 concurrent sub-agents. Each sub must write output to disk and return a one-line status. Spawn config: `model: ollama/deepseek-v4-flash:0731-cloud`, `timeout_seconds: 1800`.

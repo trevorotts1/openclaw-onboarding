@@ -1,3 +1,9 @@
+## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
+
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+
+## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
+
 ## [v21.7.36]  -  2026-08-05  -  fix(loops): grant write/edit in the CEO allowlist (the other half of the gate) and teach the fleet that a no-match exit 1 is a RESULT
 
 v21.7.35 retired the CEO production-tool **deny**. It was not enough. Two separate
@@ -1945,6 +1951,48 @@ non-Tier-2 box is affected by it.
   temp file, no unfiltered variable, nothing to leak under `set -x`), and the
   pre-existing `update-skills.sh` allowlist line number — stale since 2026-07-30
   — is re-derived.
+
+## [Unreleased]  -  2026-08-06  -  FIX-23 canonical-entry door reliability (Error 5/R5)
+
+### The sanctioned door now works under library-only drift, caps attempts, and
+ships a self-contained GHL module.
+
+FIX-23 (the highest-leverage fix from the Presentation Department Gauntlet): the
+canonical-entry door bricked on SOP-library maintenance debt (27 A5/A6 drift items),
+so the agent engineered around the sanctioned path with a custom driver. Four sub-units:
+
+### What changed
+
+- **(a) Drift classification.** `sync_check.py` now emits a `class` on every drift item
+  (`A5/A6` = library-only, `render_path` = everything else) and `--json` carries a
+  `drift_summary` with the render_path/library_only split. GATE 3 in
+  `presentation-canonical-entry.sh` proceeds (evented, `sync_drift_deferred`) when the
+  ONLY drift is A5/A6 library debt — it can never brick the render path — and still
+  FAILS CLOSED (`AF-CANONICAL-RENDER-BYPASS`, exit 7) on any render-path drift.
+- **(b) 3-attempt cap.** `presentation-canonical-entry.sh` now caps canonical-entry
+  invocations per run dir at 3; the 4th dies with an explicit
+  "Do NOT write a custom driver" message (no agent-engineered workaround loop).
+  `--plan` (read-only inspection) never consumes the budget.
+- **(c) Drift repaired.** The two orphan AF codes cited by `build_deck.py`
+  (`AF-FORGED-APPROVAL`, `AF-KIE-AUTH`) are registered in
+  `PIPELINE-MANIFEST.autofails` (manifest v38) and the `MIN_MANIFEST_VERSION` floor
+  moved to 38. `sync_check.py --json` reports 0 drift.
+- **(d) GHL co-location.** GATE 1b imports `ghl_media` with the render interpreter and
+  surfaces the real import error (a Skill-48 co-location gap is now diagnosable).
+  `ghl_media.py` resolves the canonical Skill-48 module from the co-located
+  `_skill48_ghl_media.py` copy FIRST (materializer-installed, always-current),
+  then the repo tree, then the installed skills tree. The materializer
+  (`create_role_workspaces.py`) co-locates the canonical Skill-48 module next to
+  `ghl_media.py` on every Presentations floor-fill so a deployed department is
+  self-contained.
+
+### QC evidence
+
+- `tests/test_fix23_door_reliability.py` (16 tests): A5/A6-only drift proceeds through
+  GATE 3 end-to-end; render-path drift fails closed; the 4th canonical-entry attempt
+  dies; `sync_check --json` reports 0 drift; `ghl_media` imports under the render
+  interpreter and resolves the co-located Skill-48 sibling.
+- Full `tests/` suite: 422 passed, 2 skipped.
 
 ## [Unreleased]  -  2026-08-03  -  Skill 58 v0.1.28: podcast activation layer landed, two-show fleet model, act-9 bash-3.2 compat
 

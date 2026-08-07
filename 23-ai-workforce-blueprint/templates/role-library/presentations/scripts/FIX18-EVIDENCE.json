@@ -1,0 +1,45 @@
+{
+  "fix": "FIX-18",
+  "title": "Tool-schema hardening — normalized schema hint + 5-strike AF-TOOL-SCHEMA-LOOP",
+  "requirement": "T-19",
+  "qc_gate": "Send malformed tool args through the gateway validator. Response carries the normalized schema hint; 5 consecutive failures write an AF-TOOL-SCHEMA-LOOP event. Evidence: validator test transcript.",
+  "validator": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tool_schema_validator.py",
+  "test": "23-ai-workforce-blueprint/templates/role-library/presentations/scripts/tests/test_fix18_tool_schema.py",
+  "runner_wiring": "run_signature_deck.phase0_preflight HARD-ABORTS (exit 4) on a non-empty AF-TOOL-SCHEMA-LOOP event ledger; defensive import (_tool_schema).",
+  "manifest": "AF-TOOL-SCHEMA-LOOP registered in PIPELINE-MANIFEST.autofails (enforced_by: runner), manifest_version 37 -> 38, MIN_MANIFEST_VERSION 37 -> 38.",
+  "ruleset": "AF-TOOL-SCHEMA-LOOP row added to MASTER-QC-AUTOFAIL-RULESET.md Section 5.",
+  "verify": "51-signature-presentation/verify.sh runs tool_schema_validator.py --self-test (FIX-18 check).",
+  "docs": "presentations/TOOLS.md documents the durable rule: write takes path (never file); tool args are always a JSON object, never a string.",
+  "qc_probe_output": [
+    {
+      "probe": "malformed write args through validator",
+      "command": "python3 tool_schema_validator.py --validate write '{\"file\":\"x\"}'",
+      "output": "INVALID: missing required parameter: path. write(path: string, content: string) — path is REQUIRED, not file; content is the full file body.",
+      "exit": 2,
+      "normalized_hint_present": true
+    },
+    {
+      "probe": "5 consecutive malformed calls through the ledger CLI",
+      "command": "python3 tool_schema_validator.py --ledger <run> write '{\"file\":\"x\"}' x5",
+      "output": "AF-TOOL-SCHEMA-LOOP event: write-5",
+      "event_written": {
+        "code": "AF-TOOL-SCHEMA-LOOP",
+        "consecutive_failures": 5,
+        "message": "5 consecutive schema failures on tool \"write\". write(path: string, content: string) — path is REQUIRED, not file; content is the full file body."
+      }
+    }
+  ],
+  "test_results": {
+    "python3 tests/test_fix18_tool_schema.py": "FIX-18 test: PASS — hint, 5-strike event, streak reset, and phase-0 enforcement all green.",
+    "pytest tests/test_fix18_tool_schema.py -q": "12 passed",
+    "pytest tests/ -q": "418 passed, 2 skipped",
+    "pytest test_autofail_registry.py test_manifest_source.py tests/test_client_package.py tests/test_fix14_agent_env.py tests/test_fix2_symbols.py -q": "42 passed, 2 skipped",
+    "python3 test_preflight.py": "ALL PREFLIGHT TESTS PASSED (exit 0)",
+    "python3 gate_integrity_check.py": "OK — every build_deck-enforced autofail enforced + tested (exit 0)"
+  },
+  "pre_existing_drift_not_from_this_fix": [
+    "sync_check B2 AF-FORGED-APPROVAL (from FIX-1)",
+    "sync_check B2 AF-KIE-AUTH (from FIX-6)"
+  ],
+  "notes": "verify.sh FIX-18 self-test PASSES when ENGINE resolves to the repo template (CI/repo context). On this operator box the materialized department under ~/.openclaw/workspace/departments/Presentations is pre-FIX-14 install (stale), so both FIX-14 and FIX-18 checks FAIL there identically — a deployment-state artifact, not a defect in this fix."
+}

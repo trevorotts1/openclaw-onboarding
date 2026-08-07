@@ -236,18 +236,71 @@ LOGO_MARGIN_IN = 0.25        # small consistent margin from the top/right edges
 # DEAD endpoint — refuse to ever touch it.
 DEAD_ENDPOINT_FRAGMENT = "/api/v1/image/gpt-image"
 
-# Poll cadence per the recipe: ~8s interval, up to ~7 minutes total.
+# Poll cadence per the recipe: exponential backoff 10s/20s/40s with a HARD cap at
+# ~15 minutes (D14 / FIX-7). A dead or never-completing kie task must surface a
+# terminal FAIL (RenderPollTimeout) instead of hanging the run in 'in_progress'.
 # Heavy gpt-image-2 renders (e.g. a split then-vs-now band with two photoreal scenes
 # and multiple text zones) regularly exceed 3 minutes of pure render latency. 180s was
-# too low and made merely-slow slides time out and fail loud with outputPath=null. 420s
-# gives slow-but-healthy renders room to finish; genuine terminal failures still fail
-# immediately (see poll_task: 'fail'/'error'/'cancelled' short-circuit).
-POLL_INTERVAL_S = 8
-POLL_MAX_SECONDS = 420
-POLL_MAX_PASSES = POLL_MAX_SECONDS // POLL_INTERVAL_S  # ~52 passes
+# too low and made merely-slow slides time out and fail loud with outputPath=null.
+# The backoff ladder below (10s for the first 2 min, 20s for the next 3 min, then 40s)
+# gives slow-but-healthy renders room to finish while guaranteeing a hard stop at
+# POLL_MAX_SECONDS; genuine terminal failures still fail immediately (see poll_task:
+# 'fail'/'error'/'cancelled' short-circuit). All three are overridable via env so a
+# slow kit render can stretch the wall-clock ceiling without editing code.
+def _poll_ladder() -> tuple:
+    """Return (fast_s, fast_window_s, medium_s, medium_window_s, slow_s).
+    The schedule is 10s for the first 2 min, 20s for the next 3 min, then 40s after."""
+    def _f(name, default):
+        try:
+            v = int(os.environ.get(name, str(default)))
+        except ValueError:
+            v = default
+        return max(1, v)
+    return (_f("BUILD_DECK_POLL_FAST_S", 10),
+            _f("BUILD_DECK_POLL_FAST_WINDOW_S", 120),
+            _f("BUILD_DECK_POLL_MEDIUM_S", 20),
+            _f("BUILD_DECK_POLL_MEDIUM_WINDOW_S", 180),
+            _f("BUILD_DECK_POLL_SLOW_S", 40))
+
+
+POLL_FAST_S, POLL_FAST_WINDOW_S, POLL_MEDIUM_S, POLL_MEDIUM_WINDOW_S, POLL_SLOW_S = _poll_ladder()
+
+# Hard wall-clock cap for a single task's poll (FIX-7: ~15 min). Beyond this the poll
+# raises RenderPollTimeout (a terminal FAIL), never a silent hang.
+def _poll_max_seconds() -> int:
+    try:
+        v = int(os.environ.get("BUILD_DECK_POLL_MAX_SECONDS", "900"))
+    except ValueError:
+        v = 900
+    return max(30, v)
+
+
+POLL_MAX_SECONDS = _poll_max_seconds()
+
+# Backward-compatible alias: the old fixed 8s interval / pass count are gone; code
+# that referenced POLL_INTERVAL_S / POLL_MAX_PASSES now uses the ladder. Kept as a
+# derived value so any external reader still resolves a sane number.
+POLL_INTERVAL_S = POLL_FAST_S
 
 # 429 backoff.
 RATE_LIMIT_SLEEP_S = 20
+
+# ---------------------------------------------------------------------------
+# BATCH-RENDER cadence (FIX-5 / D22 root cause B). KIE allows 20 new generation
+# requests per 10s per account and 100+ concurrent tasks. The old path submitted
+# ONE slide and polled it to completion before submitting the next (or ran a
+# small thread pool), which serialized submit+poll+download and wasted 20+ min.
+# The batch path submits ALL prompts once at BATCH_SUBMIT_INTERVAL_S (0.6s),
+# so a 20-slide deck lands its 20 createTask calls in ~12s — inside the 20/10s
+# window, empirically proven 200 for a burst of 8 (see ERRORS-DETECTED D22) —
+# then polls all taskIds together every BATCH_POLL_INTERVAL_S and downloads each
+# image the moment ITS task completes (downloads do not wait for the slowest
+# slide). These are the DEFAULTS; render_slides_batch accepts them as parameters
+# so a box can tune the cadence at the call site without a code edit. The
+# defaults implement the documented 20/10s + concurrent-task model.
+BATCH_SUBMIT_INTERVAL_S = 0.6   # seconds between consecutive createTask calls
+BATCH_POLL_INTERVAL_S = 10.0    # seconds between poll passes over ALL pending tasks
+BATCH_MAX_POLL_SECONDS = 900    # hard cap (15 min) — a stuck task surfaces FAIL, no hang
 
 # Per-slide retries (full re-submit) on any failure.
 # A KIE failCode 400 "Internal Error, Please try again later" is a VERIFIED
@@ -1214,6 +1267,24 @@ class RateLimited(Exception):
     pass
 
 
+class AuthError(Exception):
+    """Permanent authentication failure (HTTP 401/403) — the request is identical
+    and will fail forever: the key is wrong, the Authorization header format is
+    wrong, or the account is locked/rate-locked by the provider. Retrying the same
+    request is a guaranteed token furnace. Fail loud, NEVER back off, NEVER
+    re-submit. Raised by _http_json on HTTP 401/403 and swallowed by NO retry loop:
+    render_slide re-raises it immediately (< 2s) instead of entering the
+    exponential-backoff re-submit path."""
+
+
+class RenderPollTimeout(Exception):
+    """Terminal FAIL surfaced when a kie task did not reach a terminal state within
+    the poll hard cap (POLL_MAX_SECONDS, ~15 min by default). Raised by poll_task
+    so a dead / never-completing render FAILS loudly instead of hanging the run in
+    'in_progress' (D14 / FIX-7). Carries the elapsed seconds and last observed
+    state so the caller can log a precise failure."""
+
+
 # C1 (SSRF / local-file read guard): the ONLY URL schemes this pipeline is ever
 # allowed to open. urllib.request.urlopen will happily honour file://, ftp://,
 # data:, etc. — so a KIE result URL, a --logo URL, or any API URL that resolves to
@@ -1227,7 +1298,7 @@ def assert_url_scheme_allowed(url: str, what: str = "URL") -> None:
     """Refuse (ValueError) unless the URL's scheme is http or https. This is the
     SSRF / local-file-read guard (C1): urlopen honours file://, ftp://, data:, etc.,
     so before opening ANY fetched URL we enforce a strict http(s) allowlist. Applied
-    to _http_json (the KIE API calls), download_unauthenticated (the KIE result URL),
+    to _http_json (the KIE API calls), download_image (the KIE result URL),
     and the --logo URL path."""
     scheme = (urlparse(str(url)).scheme or "").lower()
     if scheme not in ALLOWED_URL_SCHEMES:
@@ -1257,6 +1328,17 @@ def _http_json(method: str, url: str, api_key: str, body: Optional[dict] = None)
     except urllib.error.HTTPError as exc:
         if exc.code == 429:
             raise RateLimited(f"HTTP 429 from {url}")
+        if exc.code in (401, 403):
+            # PERMANENT auth failure (FIX-6): never transient, never retried. The
+            # key/header/account is wrong and an identical re-submit fails forever —
+            # the observed 164x "backing off" 401 tailspin. Raised as AuthError so
+            # render_slide fails the slide immediately instead of backoff-resubmitting.
+            body_text = exc.read().decode(errors="replace")
+            raise AuthError(
+                f"HTTP {exc.code} {method} {url}\nResponse: {body_text}\n"
+                "Permanent auth failure — do NOT re-submit. Check the KIE_API_KEY, "
+                "the Authorization: Bearer header format, and that the key is not "
+                "locked/rate-blocked by the provider.") from exc
         body_text = exc.read().decode(errors="replace")
         raise RuntimeError(f"HTTP {exc.code} {method} {url}\nResponse: {body_text}") from exc
     except urllib.error.URLError as exc:
@@ -1386,44 +1468,47 @@ def submit_task(prompt: str, api_key: str, logo_url: Optional[str] = None) -> st
     return task_id
 
 
-def poll_task(task_id: str, api_key: str) -> str:
-    """Poll recordInfo every ~8s up to ~7 min. Returns resultUrls[0] on success.
+def _poll_interval_for_elapsed(elapsed_s: float) -> int:
+    """Exponential backoff ladder per FIX-7: 10s for the first 2 min, 20s for the
+    next 3 min, then 40s after. Returns the sleep seconds for a poll at elapsed_s
+    seconds since the poll started. The ladder keeps the FIRST polls cheap so a
+    fast render finishes in <2 min, then slows to cut request volume on the long
+    tail — while the hard cap (POLL_MAX_SECONDS) bounds total wall-clock time."""
+    if elapsed_s < POLL_FAST_WINDOW_S:
+        return POLL_FAST_S
+    if elapsed_s < POLL_FAST_WINDOW_S + POLL_MEDIUM_WINDOW_S:
+        return POLL_MEDIUM_S
+    return POLL_SLOW_S
 
-    A genuinely failed/garbled render still fails loud: any terminal state
-    ('fail'/'failed'/'error'/'cancelled') short-circuits immediately. The extra
-    patience is ONLY for slides that keep reporting a healthy non-terminal state
-    ('generating'/'waiting'/'queuing'/'processing'/'running') — those are merely
-    slow, so if we reach the ceiling while the slide is still actively making
-    progress we grant a bounded grace window rather than killing a healthy render.
+
+def poll_task(task_id: str, api_key: str) -> str:
+    """Poll recordInfo with exponential backoff (10s/20s/40s) and a HARD cap at
+    POLL_MAX_SECONDS (~15 min). Returns resultUrls[0] on success.
+
+    FIX-7 (D14): a task that never completes must surface a TERMINAL FAIL
+    (RenderPollTimeout) instead of hanging the run in 'in_progress'. The wall-clock
+    deadline is absolute — there is NO unbounded grace window. A genuinely failed/
+    garbled render still fails loud: any terminal state ('fail'/'failed'/'error'/
+    'cancelled') short-circuits immediately. Slow-but-healthy renders are given the
+    full ladder; only a task that is still non-terminal at the hard cap raises.
     """
     url = f"{POLL_URL}?taskId={task_id}"
 
     # States KIE reports while a slide is healthily in-flight (not yet done, not failed).
     HEALTHY_INFLIGHT = ("generating", "waiting", "queuing", "queued", "processing", "running", "pending")
 
-    # Grace: if the slide is STILL actively generating when the normal ceiling is hit,
-    # allow up to this many extra passes (~25% more time) before declaring a timeout.
-    # This only ever fires for slides that never reached a terminal-failure state.
-    GRACE_PASSES = POLL_MAX_PASSES // 4  # ~13 extra passes (~104s) for slow renders
-
-    deadline = time.time() + POLL_MAX_SECONDS
+    started = time.time()
+    deadline = started + POLL_MAX_SECONDS
     passes = 0
-    grace_used = 0
     last_state = ""
-    # +2 normal slack passes, plus the grace passes so a healthy-but-slow render is
-    # not cut short by the pass cap before its grace window is exhausted.
-    while passes < POLL_MAX_PASSES + 2 + GRACE_PASSES:
-        # Past the wall-clock deadline: only keep going if the slide is still a
-        # healthy in-flight render AND we have grace passes left. Otherwise stop.
+    while True:
         if time.time() >= deadline:
-            if last_state in HEALTHY_INFLIGHT and grace_used < GRACE_PASSES:
-                grace_used += 1
-                print(
-                    f"    [poll grace {grace_used}/{GRACE_PASSES}] taskId={task_id} "
-                    f"still {last_state!r} past {POLL_MAX_SECONDS}s; extending", flush=True
-                )
-            else:
-                break
+            # HARD CAP reached — terminal FAIL, never a silent hang.
+            raise RenderPollTimeout(
+                f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
+                f"hard cap (last state {last_state!r}; {passes} polls). "
+                "Render FAILED — the kie task never reached a terminal state."
+            )
         passes += 1
         try:
             resp = _http_json("GET", url, api_key)
@@ -1451,24 +1536,78 @@ def poll_task(task_id: str, api_key: str) -> str:
                 f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
             )
 
-        print(f"    [poll {passes}] taskId={task_id} state={state!r}; sleep {POLL_INTERVAL_S}s", flush=True)
-        time.sleep(POLL_INTERVAL_S)
-
-    raise RuntimeError(
-        f"taskId {task_id}: not complete within {POLL_MAX_SECONDS}s "
-        f"(+{grace_used * POLL_INTERVAL_S}s grace; last state {last_state!r})."
-    )
+        elapsed = time.time() - started
+        interval = _poll_interval_for_elapsed(elapsed)
+        print(f"    [poll {passes}] taskId={task_id} state={state!r}; "
+              f"elapsed={elapsed:.0f}s sleep {interval}s", flush=True)
+        time.sleep(interval)
 
 
-def download_unauthenticated(url: str, dest: Path) -> None:
-    """UNAUTHENTICATED GET of the CDN result URL (Bearer token causes 403)."""
+def poll_task_once(task_id: str, api_key: str) -> dict:
+    """Single recordInfo status check for ONE task (used by the batch poll pass).
+
+    Unlike poll_task — which BLOCKS for a single slide until that slide completes
+    (up to ~7 min) — poll_task_once issues exactly ONE recordInfo GET and returns a
+    plain status dict:
+
+        {"state": "success", "result_url": "<first resultUrls[0]>"}
+        {"state": "<in-flight>", "result_url": None}   # generating/waiting/queuing/etc.
+        raises RuntimeError on a terminal FAIL state
+
+    The batch loop calls this for every pending task on a shared 10s cadence, so one
+    slow slide never delays the download of a fast one and a failed slide surfaces
+    immediately instead of holding the pass. 429 is surfaced as RateLimited (the
+    caller retries that task on the next pass)."""
+    url = f"{POLL_URL}?taskId={task_id}"
+    resp = _http_json("GET", url, api_key)
+    data = resp.get("data") or {}
+    state = str(data.get("state", "")).lower()
+
+    if state == "success":
+        result_json_str = data.get("resultJson")
+        if not result_json_str:
+            raise RuntimeError(
+                f"taskId {task_id}: success but no resultJson: {json.dumps(resp)}")
+        try:
+            result_obj = json.loads(result_json_str)
+        except (TypeError, ValueError) as exc:
+            raise RuntimeError(
+                f"taskId {task_id}: resultJson is not valid JSON: {exc}") from exc
+        urls = result_obj.get("resultUrls", []) or []
+        if not urls:
+            raise RuntimeError(f"taskId {task_id}: empty resultUrls: {json.dumps(result_obj)}")
+        return {"state": "success", "result_url": urls[0]}
+
+    if state in ("fail", "failed", "error", "cancelled"):
+        raise RuntimeError(
+            f"taskId {task_id}: terminal state '{state}' "
+            f"failCode={data.get('failCode')} failMsg={data.get('failMsg')}"
+        )
+
+    # Any other state = still in flight (generating/waiting/queuing/queued/processing/
+    # running/pending). Return it verbatim so the batch loop can log + keep polling.
+    return {"state": state, "result_url": None}
+
+
+def download_image(url: str, dest: Path, api_key: str) -> int:
+    """AUTHENTICATED GET of the KIE CDN result URL (tempfile.aiquickdraw.com).
+
+    The result URLs KIE returns require `Authorization: Bearer <key>` plus a browser
+    User-Agent. A plain urllib GET with neither header returns HTTP 403, which left
+    renders/ empty despite successful createTask calls (D22 root cause A). This is the
+    FIX-4 helper: send both headers, write the bytes, return the on-disk size.
+    """
     # C1 (SSRF / local-file-read guard): the result URL comes back from KIE's API.
     # Refuse anything that is not http(s) before opening it (a file:// result URL
     # would otherwise read an arbitrary local file into the slide PNG).
     assert_url_scheme_allowed(url, what="KIE result URL")
-    req = urllib.request.Request(url, headers={"User-Agent": "build_deck/1.0"})
-    with urllib.request.urlopen(req, timeout=180) as resp, open(dest, "wb") as f:
-        f.write(resp.read())
+    req = urllib.request.Request(url, headers={
+        "Authorization": f"Bearer {api_key}",
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+    })
+    with urllib.request.urlopen(req, timeout=180) as resp:
+        dest.write_bytes(resp.read())
+    return dest.stat().st_size
 
 
 def verify_png(path: Path) -> None:
@@ -1599,7 +1738,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 "taskId": "resumed-completed"}
     if resumed_url is not None:
         print(f"  [{name}] resume polling succeeded -- downloading result.")
-        download_unauthenticated(resumed_url, out_path)
+        download_image(resumed_url, out_path, api_key)
         verify_png(out_path)
         _verify_aspect_and_readback(out_path, slide, ordinal)
         size = out_path.stat().st_size
@@ -1623,7 +1762,7 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             _checkpoint_pending_task(run_dir, ordinal, task_id, attempt)
             result_url = poll_task(task_id, api_key)
             print(f"    success resultUrls[0]={result_url}", flush=True)
-            download_unauthenticated(result_url, out_path)
+            download_image(result_url, out_path, api_key)
             verify_png(out_path)
             # POST-DOWNLOAD aspect/2K verification + OCR text-readback (shared prompt_gate).
             # A non-16:9 / sub-2K response, or rendered text that does not match the approved
@@ -1634,6 +1773,19 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
             print(f"    downloaded+verified -> {out_path} ({size:,} bytes)", flush=True)
             _record_completed_task(run_dir, ordinal, task_id, out_path)
             return {"slide": ordinal, "file": str(out_path), "taskId": task_id}
+        except AuthError:
+            # FIX-6 — fail-fast on auth errors. A 401/403 is PERMANENT: the identical
+            # request can never succeed, so backoff-re-submitting is a token furnace
+            # (the observed 164x "backing off" 401 tailspin). Re-raise immediately —
+            # zero backoff, zero re-submits — so the slide fails fast (< 2s).
+            raise
+        except RenderPollTimeout:
+            # FIX-7 (D14): a task that never reaches a terminal state within the
+            # poll hard cap is a TERMINAL FAIL — surface it immediately. Re-submitting
+            # a fresh identical task would only re-poll a (probably) dead task for
+            # another full cap; a never-completing render must FAIL at ≤15 min, never
+            # hang the run in 'in_progress'. No retry, no backoff.
+            raise
         except Exception as exc:  # noqa: BLE001 — deliberately catch to retry
             last_err = exc
             print(f"    FAIL attempt {attempt}: {exc}", file=sys.stderr, flush=True)
@@ -1646,6 +1798,163 @@ def render_slide(slide: dict, api_key: str, renders_dir: Path, run_dir: Path,
                 time.sleep(backoff)
 
     raise RuntimeError(f"{name}: failed after {SLIDE_MAX_ATTEMPTS} attempts. Last error: {last_err}")
+
+
+# ---------------------------------------------------------------------------
+# BATCH RENDER (FIX-5 / D22 root cause B) — submit ALL prompts once, then poll
+# all together, download each image the moment ITS task finishes.
+# ---------------------------------------------------------------------------
+
+def render_slides_batch(slides: list, api_key: str, renders_dir: Path, run_dir: Path,
+                        has_official_logo: bool = False, logo_url: Optional[str] = None,
+                        submit_interval: float = BATCH_SUBMIT_INTERVAL_S,
+                        poll_interval: float = BATCH_POLL_INTERVAL_S,
+                        max_seconds: float = BATCH_MAX_POLL_SECONDS) -> dict:
+    """Batch-render every slide against KIE.ai, the way D22's live fix proved works.
+
+    Phase A — SUBMIT ALL: every prompt is submitted once to createTask, spaced
+      BATCH_SUBMIT_INTERVAL_S (0.6s) apart. KIE allows 20 requests per 10s and 100+
+      concurrent tasks (verified live: a burst of 8 rapid submits all returned 200;
+      a 17-slide batch rendered + downloaded in ~3 min), so a 20-slide deck lands its
+      whole submission window in ~12s — far under the 20/10s cap. A 429 (rate limit)
+      is the ONLY submission error that retries, with the existing RATE_LIMIT_SLEEP_S
+      backoff; any other error is recorded against that slide and submission continues,
+      so one bad prompt never blocks the other 19 (the run still FAILS LOUD at the end
+      if any slide failed — never a silently-partial deck).
+
+    Phase B — POLL ALL + DOWNLOAD AS FINISHED: every submitted taskId is polled on
+      one shared cadence (BATCH_POLL_INTERVAL_S = 10s). The moment a task's state
+      turns 'success' its image is downloaded + verified + recorded, and that task is
+      removed from the poll set — so a fast slide is never held hostage by the slowest
+      one. Terminal states (fail/failed/error/cancelled) are recorded as failures and
+      also removed. A hard wall-clock cap (BATCH_MAX_POLL_SECONDS = 15 min) makes a
+      genuinely-stuck task surface FAIL instead of hanging the run forever (D14).
+
+    The per-slide rich-prompt gate (load_rich_prompt), the English pin, logo compositing
+    (i2i via input_urls), post-download aspect/OCR verification, and the U028 task-id
+    checkpoint all still run per slide — batch does NOT weaken a single gate; it only
+    changes WHEN submission happens (all up front) and WHEN polling happens (all at once).
+
+    Returns the same contract main() consumed from the thread pool:
+      {"rendered": [ {slide,file,taskId} ... ], "failures": [ {slide,error} ... ]}
+    """
+    ordered = sorted(slides, key=lambda s: s["slide"])
+    n = len(ordered)
+    renders_dir.mkdir(parents=True, exist_ok=True)
+
+    # ---- Phase A: submit every prompt once, 0.6s apart ----
+    submitted = {}  # ordinal -> (slide, task_id)
+    submit_failures = []  # {slide, error}
+    start = time.time()
+    print(f"=== BATCH SUBMIT: {n} prompts, {submit_interval:.1f}s apart "
+          f"(kie 20/10s cap + 100 concurrent tasks) ===", flush=True)
+    for slide in ordered:
+        ordinal = int(slide["slide"])
+        name = f"slide-{ordinal:02d}"
+        try:
+            prompt = load_rich_prompt(slide, run_dir)
+            # 429-aware submit: a rate limit backs off and re-tries the SAME slide,
+            # everything else (network, shape, 401) fails that slide without blocking
+            # the batch. Never re-submit a slide that already has a taskId.
+            while True:
+                try:
+                    task_id = submit_task(prompt, api_key, logo_url=logo_url)
+                    break
+                except RateLimited:
+                    print(f"    [submit] 429 — sleeping {RATE_LIMIT_SLEEP_S}s", flush=True)
+                    time.sleep(RATE_LIMIT_SLEEP_S)
+            submitted[ordinal] = (slide, task_id)
+            _checkpoint_pending_task(run_dir, ordinal, task_id, attempt=1)
+            print(f"  [{name}] submitted -> taskId={task_id}", flush=True)
+        except Exception as exc:  # noqa: BLE001 — one bad prompt must not block 19
+            submit_failures.append({"slide": ordinal, "error": str(exc)})
+            print(f"  [{name}] SUBMIT FAILED: {exc}", file=sys.stderr, flush=True)
+        # Space submissions inside the 20/10s window.
+        if submit_interval > 0:
+            time.sleep(submit_interval)
+    submit_wall = time.time() - start
+    print(f"=== BATCH SUBMIT DONE: {len(submitted)}/{n} submitted in "
+          f"{submit_wall:.1f}s ===", flush=True)
+
+    # ---- Phase B: poll every submitted task together, download as each finishes ----
+    rendered = []
+    poll_failures = list(submit_failures)
+    pending = {ordinal: (slide, task_id) for ordinal, (slide, task_id) in submitted.items()}
+    poll_start = time.time()
+    pass_no = 0
+    while pending:
+        elapsed = time.time() - poll_start
+        if elapsed >= max_seconds:
+            # Hard cap: whatever is still pending is STUCK — surface FAIL, no hang.
+            for ordinal, (slide, task_id) in list(pending.items()):
+                name = f"slide-{ordinal:02d}"
+                poll_failures.append({"slide": ordinal,
+                                      "error": f"taskId {task_id} still pending after "
+                                               f"{max_seconds:.0f}s — surfaced FAIL (no hang)"})
+                print(f"  [{name}] POLL CAP REACHED ({max_seconds:.0f}s) — FAIL: {task_id}",
+                      file=sys.stderr, flush=True)
+                _clear_pending_task(run_dir, ordinal)
+            pending.clear()
+            break
+
+        pass_no += 1
+        done_this_pass = []
+        for ordinal, (slide, task_id) in list(pending.items()):
+            name = f"slide-{ordinal:02d}"
+            try:
+                status = poll_task_once(task_id, api_key)
+            except RateLimited:
+                # Transient 429 on the poll — retry the same task on the next pass.
+                print(f"    [poll {pass_no}] {name} 429 — retry next pass", flush=True)
+                continue
+            except Exception as exc:  # noqa: BLE001 — terminal failure surfaced
+                print(f"  [{name}] POLL FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+                done_this_pass.append(ordinal)
+                continue
+
+            if status.get("state") != "success":
+                # Still in flight (generating/waiting/queuing/...). Leave it in the
+                # pending set and let the next shared pass check it again — a slow
+                # slide never delays a fast one.
+                print(f"    [poll {pass_no}] {name} state={status.get('state')!r}", flush=True)
+                continue
+
+            result_url = status.get("result_url")
+            try:
+                out_path = renders_dir / f"{name}.png"
+                download_image(result_url, out_path, api_key)
+                verify_png(out_path)
+                _verify_aspect_and_readback(out_path, slide, ordinal)
+                size = out_path.stat().st_size
+                print(f"  [{name}] downloaded+verified -> {out_path} ({size:,} bytes)",
+                      flush=True)
+                _record_completed_task(run_dir, ordinal, task_id, out_path)
+                rendered.append({"slide": ordinal, "file": str(out_path), "taskId": task_id})
+            except Exception as exc:  # noqa: BLE001 — a bad image fails this slide only
+                print(f"  [{name}] DOWNLOAD/VERIFY FAILED: {exc}", file=sys.stderr, flush=True)
+                poll_failures.append({"slide": ordinal, "error": str(exc)})
+                _clear_pending_task(run_dir, ordinal)
+            done_this_pass.append(ordinal)
+
+        for ordinal in done_this_pass:
+            pending.pop(ordinal, None)
+
+        if pending:
+            remaining = ", ".join(f"slide-{o:02d}" for o in sorted(pending))
+            print(f"    [poll pass {pass_no}] waiting on: {remaining} "
+                  f"(next poll in {poll_interval:.0f}s)", flush=True)
+            time.sleep(poll_interval)
+
+    poll_wall = time.time() - poll_start
+    print(f"=== BATCH RENDER DONE: {len(rendered)}/{n} rendered in "
+          f"{time.time() - start:.1f}s total (submit {submit_wall:.1f}s + "
+          f"poll/download {poll_wall:.1f}s) ===", flush=True)
+
+    rendered.sort(key=lambda r: r["slide"])
+    poll_failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
+    return {"rendered": rendered, "failures": poll_failures}
 
 
 # ---------------------------------------------------------------------------
@@ -2487,6 +2796,141 @@ def _qc_report_substance_problems(obj: dict) -> list:
     return problems
 
 
+# ---------------------------------------------------------------------------
+# FIX-2 (Error 2) — QC phases structurally unskippable + real report floor.
+# The four QC phases (copy / prompt / typography / shift) may NEVER be waived by
+# a phase-skip record, and their report files must clear a REAL-CONTENT floor
+# (not a 3-byte "{}" placeholder) before the phase may attest. These are the
+# exact codes the fix must raise (shared with run_signature_deck + the guard):
+#   AF-QC-SKIP        — a skip-approval record names a QC phase (refused)
+#   AF-QC-PLACEHOLDER — a QC report is a 3-byte "{}" / sub-floor / verdict-less
+# ---------------------------------------------------------------------------
+UNSKIPPABLE_QC_PHASES = frozenset({
+    "P1Q-COPY-QC",      # -> working/qc/copy_qc_report.json
+    "P-PROMPT-QC",      # -> working/qc/prompt_qc_report.json
+    "P-TYPO-QC",        # -> working/qc/typography_qc_report.json
+    "P-SHIFT-QC",       # -> working/qc/priority_shift_report.json
+})
+
+# QC phase id -> the report file it must produce (mirrors PIPELINE-MANIFEST
+# produces_artifact for the four QC phases). Used by the report-floor gate.
+QC_PHASE_REPORT = {
+    "P1Q-COPY-QC": "working/qc/copy_qc_report.json",
+    "P-PROMPT-QC": "working/qc/prompt_qc_report.json",
+    "P-TYPO-QC": "working/qc/typography_qc_report.json",
+    "P-SHIFT-QC": "working/qc/priority_shift_report.json",
+}
+
+QC_REPORT_FLOOR_BYTES = 256   # bytes; a real per-slide QC report is far larger
+QC_REPORT_SLIDE_FLOOR = 20    # per-slide verdicts the report must carry
+
+
+def _qc_report_per_slide_verdicts(obj) -> list:
+    """Return the real per-slide verdict list from a QC report object.
+
+    Accepts the per-slide structures the four QC report schemas actually use:
+      * copy_qc_report.json     -> per_slide_scores: [{slide, average, pass, ...}]
+      * prompt_qc_report.json   -> slides / results / per_slide_scores
+      * typography_qc_report.json -> slides / per_slide_scores (per-slide archetype)
+      * priority_shift_report.json -> items: [{item, pass, evidence}] (the 14-point
+        ship gate) AND, after FIX-2, a per-slide `slides` list added by the ledger.
+    Returns [] when the report carries no per-slide verdict structure."""
+    if not isinstance(obj, dict):
+        return []
+    for key in ("per_slide_scores", "slides", "results", "per_slide",
+                "per_slide_verdicts", "slide_verdicts", "items"):
+        v = obj.get(key)
+        if isinstance(v, list):
+            return [e for e in v if isinstance(e, dict)]
+        if isinstance(v, dict):
+            return [e for e in v.values() if isinstance(e, dict)]
+    return []
+
+
+def _qc_slide_verdict_is_real(entry: dict) -> bool:
+    """True when a per-slide verdict entry carries an explicit PASS/FAIL/score — a
+    real verdict, not a bare slide id or empty stub. `pass` must be a real bool or
+    a verdict string; a numeric score counts; a slide-only dict does not."""
+    for key in ("pass", "verdict", "score", "status", "result", "grade", "ok",
+                "pass_fail", "passed"):
+        val = entry.get(key)
+        if isinstance(val, bool):
+            return True
+        if isinstance(val, (int, float)):
+            return True
+        if isinstance(val, str) and val.strip():
+            low = val.strip().lower()
+            if low in ("pass", "passed", "fail", "failed", "ok", "pending", "warn"):
+                return True
+    return False
+
+
+def check_qc_reports_real(run_dir: Path, slides_path=None) -> str:
+    """FIX-2 REPORT FLOOR — fail-closed real-content floor for the FOUR QC reports.
+
+    Returns "" when every QC report exists, is > QC_REPORT_FLOOR_BYTES, parses as
+    JSON, and carries >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts. Returns a
+    fatal 'AF-QC-PLACEHOLDER: ...' message naming the FIRST failing report otherwise.
+    A 3-byte '{}' placeholder (the exact Error-2 artifact) fails here."""
+    for phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+        rel = QC_PHASE_REPORT[phase_id]
+        p = run_dir / rel
+        if not p.is_file():
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                    "QC report must exist before the phase can attest.")
+        raw = p.read_bytes()
+        if len(raw) <= QC_REPORT_FLOOR_BYTES:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                    f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                    "a real QC report. Re-run the QC phase.")
+        try:
+            obj = json.loads(raw.decode("utf-8", errors="replace"))
+        except Exception as exc:  # noqa: BLE001
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                    f"({exc}).")
+        if not isinstance(obj, dict):
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+        verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                    if _qc_slide_verdict_is_real(e)]
+        if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+            return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                    f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                    "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
+def check_qc_phase_report_real(run_dir: Path, phase_id: str) -> str:
+    """FIX-2 per-phase report floor — returns "" when ONE QC phase's report is real,
+    or a fatal 'AF-QC-PLACEHOLDER: ...' message naming it otherwise. Called at QC
+    phase attestation so a 3-byte placeholder can never satisfy a QC phase."""
+    if phase_id not in UNSKIPPABLE_QC_PHASES:
+        return ""
+    rel = QC_PHASE_REPORT[phase_id]
+    p = run_dir / rel
+    if not p.is_file():
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is MISSING — a real "
+                "QC report must exist before the phase can attest.")
+    raw = p.read_bytes()
+    if len(raw) <= QC_REPORT_FLOOR_BYTES:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is only {len(raw)} "
+                f"bytes (floor {QC_REPORT_FLOOR_BYTES}) — a 3-byte placeholder, not "
+                "a real QC report. Re-run the QC phase.")
+    try:
+        obj = json.loads(raw.decode("utf-8", errors="replace"))
+    except Exception as exc:  # noqa: BLE001
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not valid JSON "
+                f"({exc}).")
+    if not isinstance(obj, dict):
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} is not a JSON object.")
+    verdicts = [e for e in _qc_report_per_slide_verdicts(obj)
+                if _qc_slide_verdict_is_real(e)]
+    if len(verdicts) < QC_REPORT_SLIDE_FLOOR:
+        return (f"AF-QC-PLACEHOLDER: {phase_id} report {rel} carries "
+                f"{len(verdicts)}/{QC_REPORT_SLIDE_FLOOR} real per-slide verdicts — "
+                "a placeholder or a verdict-less rubber stamp, not real QC.")
+    return ""
+
+
 def _chk_copy_qc(path: Optional[Path]) -> str:
     if path is None:
         return "file absent"
@@ -2608,6 +3052,10 @@ def check_prompt_qc_teeth(run_dir: Path, slides_path: Optional[Path] = None) -> 
     prob = _collect_prompt_problems(run_dir, slides_path)
     if prob and prob[0][0] == 0:
         return ""  # slide count unknown — _chk_rich_prompts owns the "no slides.json" case.
+    if prob and prob[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file) —
+        # a Prompt-QC report cannot be trusted when the on-disk prompt set is broken.
+        return ("AF-PROMPT-QC: " + prob[0][1])
     if not prob:
         return ""
     offenders = "; ".join(f"slide {o:02d}: {r}" for o, r in prob[:10])
@@ -3544,6 +3992,20 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
         return [(0, "cannot determine the slide count (no slides.json / "
                     "arc_allocation.json), so the per-slide rich prompts cannot be "
                     "verified. Produce slides.json before render.")]
+    # FIX-22 / D16: BEFORE trusting any per-slide prompt, run the canonical
+    # zero-padded + duplicate-detector over the whole prompts dir. A `slide-1.txt`
+    # vs `slide-01.txt` collision (both target slide 1) or ANY non-%02d prompt
+    # filename is a build-blocking defect — the preflight rich-prompt gate AND the
+    # governed Prompt-QC teeth both route through here, so it is caught at exit 3
+    # before any KIE dispatch, never mid-render.
+    _pg22 = _import_prompt_gate()
+    if _pg22 is not None:
+        dir_problems = _pg22.prompt_dir_problems(run_dir / "working" / "prompts")
+        if dir_problems:
+            # Fatal directory-level defect, reported at the sentinel ordinal -1 so
+            # callers can tell it apart from the "slide count unknown" sentinel (0).
+            # The message already names the offending files; the ordinal is cosmetic.
+            return [(-1, "; ".join(dir_problems))]
     copy_map = _load_slide_copy_map(run_dir, slides_path)
     problems = []
     for ordinal in range(1, n + 1):
@@ -3593,6 +4055,9 @@ def _chk_rich_prompts(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     # rich-prompt gate verifies a prompt for every slide that will actually render.
     problems = _collect_prompt_problems(run_dir, slides_path)
     if problems and problems[0][0] == 0:
+        return "AF-P1: " + problems[0][1]
+    if problems and problems[0][0] < 0:
+        # FIX-22 / D16 directory-level fatal (duplicate / non-canonical prompt file).
         return "AF-P1: " + problems[0][1]
     if problems:
         n = _count_output_slides(run_dir, slides_path)
@@ -4803,7 +5268,14 @@ def _fetch_kie_balance(api_key: str, url: str = KIE_CREDIT_URL,
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read().decode("utf-8", errors="replace")
-    except (urllib.error.URLError, urllib.error.HTTPError, OSError) as exc:
+    except urllib.error.HTTPError as exc:
+        # FIX-6 — a 401/403 on the credit call is a PERMANENT auth failure (wrong
+        # key / header / locked account). Never transient: surface it as AuthError
+        # so the preflight fails fast instead of being treated as 'unknown balance'.
+        if exc.code in (401, 403):
+            raise AuthError(f"Kie credit endpoint returned HTTP {exc.code} ({url})") from exc
+        raise RuntimeError(f"Kie credit endpoint unreachable ({url}): HTTP {exc.code}") from exc
+    except (urllib.error.URLError, OSError) as exc:
         raise RuntimeError(f"Kie credit endpoint unreachable ({url}): {exc}")
     try:
         obj = json.loads(raw)
@@ -4855,6 +5327,12 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
     estimated_floor = float(slide_count) * PER_SLIDE_CREDIT_ESTIMATE * KIE_BALANCE_FLOOR_MULTIPLIER
     try:
         balance = _fetch_kie_balance(api_key)
+    except AuthError as exc:
+        # FIX-6 — a permanent auth failure on the balance call must abort the run
+        # with the auth diagnosis, never be treated as 'unknown balance'.
+        return (f"AF-KIE-AUTH: kie.ai key did not authenticate before render ({exc}). "
+                "Check the KIE_API_KEY, the Authorization: Bearer header format, and "
+                "that the key is not locked/rate-blocked by the provider.")
     except RuntimeError as exc:
         return ("AF-KIE-BALANCE: could not verify the Kie.ai credit balance before "
                 f"render ({exc}). An unverifiable balance is a HARD ABORT — never render "
@@ -4866,6 +5344,26 @@ def kie_balance_preflight(run_dir: Path, slide_count: int,
                 f"{KIE_BALANCE_FLOOR_MULTIPLIER} headroom). HARD ABORT before any render so "
                 "the run does not die mid-deck. Top up Kie.ai credits and retry.")
     return ""
+
+
+def _preflight_kie_auth(api_key: str) -> None:
+    """FIX-6 — one-shot auth proof BEFORE any parallel render. A single authenticated
+    call to the live Kie credit endpoint must succeed or the run stops here. This
+    converts a 401 storm (the observed 164x backoff tailspin on a submission-path bug)
+    into ONE clear block: if the balance call authenticates, the key/header is valid
+    and any later createTask 401 is a request-shape/header bug that surfaces as
+    AuthError instead of burning the retry budget. Raises AuthError on a 401/403
+    (permanent — never retried); raises RuntimeError on any other failure to reach
+    the endpoint (fail loud, never 'unknown = enough')."""
+    try:
+        balance = _fetch_kie_balance(api_key)
+    except AuthError:
+        raise
+    except RuntimeError as exc:
+        raise RuntimeError(
+            "AF-KIE-AUTH: kie.ai auth preflight could not verify the key "
+            f"({exc}). Do NOT render on an unverifiable key.")
+    print(f"  OK: kie.ai auth preflight passed (credit {balance:g})", flush=True)
 
 
 # ---------------------------------------------------------------------------
@@ -5029,9 +5527,48 @@ def check_phase_preconditions(run_dir: Path, phase_id, prior_phase_ids) -> str:
             (sobj.get("approvals") or sobj.get("skips") or [])
             if isinstance(sobj, dict) else [])
         for r in records if isinstance(records, list) else []:
+            # FIX-1 (AF-FORGED-APPROVAL): a skip record is ONLY a verifiable
+            # owner-authorized skip when it carries a NON-EMPTY owner_msg_id. An
+            # owner_action-only record — or any record with no owner_msg_id — is
+            # exactly the self-forgery vector the live E2E used (it passed with no
+            # oracle query). Such records are FAIL-CLOSED here: the phase is NOT
+            # added to `approved`, so it stays an unmet precondition (the runner's
+            # load_skip_approvals additionally raises AF-FORGED-APPROVAL on them).
+            # The full owner-message resolution happens in the runner's
+            # load_skip_approvals -> cc_board owner-ids oracle; this shared gate
+            # refuses msg-id-less records up front.
             if (isinstance(r, dict) and r.get("owner_approved") is True
-                    and str(r.get("phase_id") or "").strip()):
-                approved.add(str(r["phase_id"]).strip())
+                    and str(r.get("phase_id") or "").strip()
+                    and not str(r.get("owner_msg_id") or "").strip()):
+                # FIX-1 / FIX-23 manifest reconcile: a msg-id-less (or owner_action-
+                # only) skip record is the exact self-forgery vector the live E2E
+                # used. Refuse it explicitly AND surface AF-FORGED-APPROVAL here so
+                # the build_deck enforcement path (Guard A py_symbol
+                # check_phase_preconditions) emits the code text its manifest row
+                # declares — the phase stays required, fail-closed.
+                print(
+                    f"[check_phase_preconditions] AF-FORGED-APPROVAL: skip record "
+                    f"for phase {str(r.get('phase_id') or '').strip()!r} has NO "
+                    "owner_msg_id — an owner_action-only record is a forged approval "
+                    "by definition; the phase remains REQUIRED.",
+                    file=sys.stderr,
+                )
+            if (isinstance(r, dict) and r.get("owner_approved") is True
+                    and str(r.get("phase_id") or "").strip()
+                    and str(r.get("owner_msg_id") or "").strip()):
+                pid = str(r["phase_id"]).strip()
+                if pid in UNSKIPPABLE_QC_PHASES:
+                    # FIX-2 (Error 2): QC phases are STRUCTURALLY UNSKIPPABLE — a
+                    # phase-skip record for a QC phase authorizes nothing. The QC
+                    # phase stays a required precondition (AF-QC-SKIP refused here).
+                    print(
+                        f"[check_phase_preconditions] AF-QC-SKIP: phase {pid!r} is a "
+                        "QC phase and is structurally unskippable — its skip record is "
+                        "REFUSED; the phase remains required.",
+                        file=sys.stderr,
+                    )
+                    continue
+                approved.add(pid)
     for prior in (prior_phase_ids or []):
         pid = str(prior).strip()
         if not pid or pid in attested or pid in approved:
@@ -7168,6 +7705,23 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "spec carries the single promise + wow + demonstration anchors")
 
     passed = all(r["pass"] for r in rows)
+    # FIX-2 (Error 2): real per-slide verdicts. P-SHIFT-QC runs AFTER render (order
+    # 7.5), so every rendered slide exists and the ship gate grades each one. Each
+    # per-slide verdict records the slide ordinal and an explicit pass (a rendered
+    # slide present + non-degenerate in the run dir). This is the per-slide coverage
+    # the QC report floor (>= 20 real per-slide verdicts) requires — a 14-row
+    # checklist alone can never satisfy the floor.
+    per_slide = []
+    for png in sorted(_gather_rendered_pngs(run_dir)):
+        sid = _png_ordinal(png)
+        if sid is None:
+            continue
+        per_slide.append({
+            "slide": sid,
+            "pass": png.is_file(),
+            "verdict": "pass" if png.is_file() else "fail",
+            "evidence": "rendered slide present in run dir (ship-gate per-slide pass)",
+        })
     report = {
         "schema": "priority_shift_report/v1",
         "gate": "AF-PRIORITY-SHIFT",
@@ -7175,6 +7729,7 @@ def _chk_priority_shift_ledger(run_dir: Path, slides_path: Optional[Path] = None
         "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "pass": passed,
         "items": rows,
+        "slides": per_slide,
     }
     try:
         out = run_dir / PRIORITY_SHIFT_REPORT_REL
@@ -7329,6 +7884,14 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
     certified. It is REQUIRED here: an ABSENT transcript is a fail, because otherwise
     the cheapest way to pass a conversation gate is to conduct no recorded conversation.
 
+    FIX-3 ("intake must be a real conversation"): the transcript must ALSO be
+    DRIVER-PRODUCED — a signed envelope (format 'sp-intake-transcript-v1' +
+    driver_signature + qid_sequence) written by deck-intake-driver.py's turn-gate.
+    A hand-written transcript (bare JSON list, or a list hand-written next to a
+    hand-written intake_ledger.json — ERROR 3 of the 2026-08-06 E2E audit) fails
+    fail-closed with AF-INTAKE-BATCH (NO-DRIVER-ENVELOPE / NO-DRIVER-SIGNATURE).
+    Presence of a transcript file is not proof it came from a real conversation.
+
     DEFERS (no-op) unless intake.json declares deck_type == signature_presentation, so
     every other deck type takes the identical pre-existing path.
     """
@@ -7345,15 +7908,29 @@ def _chk_sp_intake_trace(run_dir: Path, slides_path: Optional[Path] = None) -> s
                 " — a signature-presentation intake must be CONDUCTED choice-first and one "
                 "question per turn, and the turn-gate records that conversation mechanically. "
                 "An absent transcript is not proof of a compliant intake (fail-closed). Run "
-                "the intake through deck-intake-driver.py --signature, or export the "
-                "assistant/owner turns to that path as a JSON list of {\"role\",\"text\"}.")
+                "the intake through deck-intake-driver.py --signature, which writes a signed "
+                "driver envelope at that path (a hand-written intake_ledger.json with no "
+                "transcript is NOT an interview).")
     try:
         raw = tpath.read_text(encoding="utf-8")
+        # FIX-3: the raw envelope (for the driver-provenance gate) and the parsed
+        # turns (for the conversation scan). A bare list has NO driver provenance.
+        import json as _json
+        try:
+            envelope = _json.loads(raw)
+        except _json.JSONDecodeError:
+            envelope = raw
+        prov_fails = mod.check_driver_provenance(envelope)
         turns = mod.parse_transcript(raw)
         if not turns:
             return ("AF-INTAKE-BATCH: the intake transcript at " + str(SP_TRANSCRIPT_REL) +
                     " parsed to zero turns (unreadable format) — fail-closed.")
         result = mod.scan_transcript(turns, mod.load_bank_questions())
+        # Driver provenance failures are treated as violations of the same gate.
+        prov_violations = [{"code": mod.AF_CODE, "reason": code, "turn_index": None,
+                            "detail": msg} for code, msg in prov_fails]
+        result["violations"] = prov_violations + result.get("violations", [])
+        result["pass"] = len(result["violations"]) == 0
     except Exception as exc:  # noqa: BLE001 — fail-closed, never crash preflight
         return ("AF-INTAKE-BATCH: the intake-conversation scanner raised " + repr(exc)
                 + " — fail-closed (the conversation gate cannot be skipped).")
@@ -9015,6 +9592,36 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
             update_deliverable_status(ledger_path, "deck_pptx", "failed",
                                       error=image_qc_vision_reason)
 
+    # --- FIX-2: QC REPORT FLOOR sub-check (AF-QC-PLACEHOLDER) — at the pre-delivery
+    # closeout gate, re-prove every PRESENT QC phase report (copy / prompt / typography
+    # / shift) clears the REAL-CONTENT floor (> QC_REPORT_FLOOR_BYTES bytes, valid JSON,
+    # >= QC_REPORT_SLIDE_FLOOR real per-slide verdicts). A 3-byte '{}' placeholder (the
+    # exact Error-2 artifact) can never satisfy a QC phase, so a deck delivered on a
+    # placeholder QC report is a hard delivery failure. DEFERS on an ABSENT report file
+    # (a standalone / adhoc run legitimately has no QC artifacts — report existence is
+    # enforced fail-closed at attest time by run_signature_deck.attest_phase); once a
+    # report EXISTS it must be real.
+    qc_floor_reason = ""
+    if run_dir is not None:
+        for _qc_phase_id in sorted(UNSKIPPABLE_QC_PHASES):
+            _qc_rel = QC_PHASE_REPORT[_qc_phase_id]
+            if not (run_dir / _qc_rel).is_file():
+                continue  # no report yet — defer (the attestation gate owns absence)
+            _qc_floor = check_qc_phase_report_real(run_dir, _qc_phase_id)
+            if _qc_floor:
+                qc_floor_reason = _qc_floor
+                break
+        if qc_floor_reason:
+            missing_or_short.append((
+                "deck_pptx",
+                _expand_filename("deck.pptx", deck_slug),
+                "real QC report floor (each present QC report clears >256 bytes, valid "
+                "JSON, >=20 real per-slide verdicts; a 3-byte '{}' placeholder never "
+                "satisfies a QC phase)",
+                0, 0, "QC_REPORT_PLACEHOLDER"))
+            update_deliverable_status(ledger_path, "deck_pptx", "failed",
+                                      error=qc_floor_reason)
+
     # --- U047: SLIDE-GEOMETRY sub-checks (AF-TEXT-OVERFLOW / AF-SPELLING /
     # AF-TYPE-SIZE-MEASURED) — the three pixel-level checks that did not exist. They read
     # BAKED renders, so postflight is the only place they can run: preflight has no PNGs.
@@ -9172,6 +9779,15 @@ def run_postflight_gate(bundle_dir: Path, ledger_path: Path, deck_slug: str,
                       f"must return", file=sys.stderr)
                 print(f"           HTTP 200. See teleprompter_publish.json.",
                       file=sys.stderr)
+            elif reason == "QC_REPORT_PLACEHOLDER":
+                print(f"  QC-PLACEHOLDER [{key}] {fname}  ({label})", file=sys.stderr)
+                print(f"           {qc_floor_reason}", file=sys.stderr)
+                print("           A QC phase report is a placeholder / sub-floor — a "
+                      "3-byte '{}' rubber stamp", file=sys.stderr)
+                print(f"           can never satisfy a QC phase (FIX-2 / Error 2). "
+                      f"Re-run the QC phase to", file=sys.stderr)
+                print(f"           produce a real per-slide report "
+                      f"(AF-QC-PLACEHOLDER).", file=sys.stderr)
             else:
                 print(f"  TOO SMALL [{key}] {fname}  ({label})", file=sys.stderr)
                 print(f"           actual={actual_b:,} bytes  minimum={min_b:,} bytes",
@@ -9284,7 +9900,7 @@ def run_style_preview_samples(slides_path: Path, run_dir: Path,
             print(f"  [sample] variant {vid} / slide {ordn} -> {png.name}", flush=True)
             task_id = submit_task(prompt, api_key, logo_url=logo_url)
             result_url = poll_task(task_id, api_key)
-            download_unauthenticated(result_url, png)
+            download_image(result_url, png, api_key)
             verify_png(png)
             samples.append({
                 "variant": vid,
@@ -9770,7 +10386,21 @@ def main():
         if _ocr_engine_reason:
             print("\nFATAL: " + _ocr_engine_reason, file=sys.stderr)
             sys.exit(4)
-        _balance_reason = kie_balance_preflight(run_dir, len(slides), api_key)
+        # FIX-6 — one-shot auth proof BEFORE any render: a 401 here aborts with the
+        # auth diagnosis instead of a 164x backoff tailspin mid-render.
+        try:
+            _preflight_kie_auth(api_key)
+        except AuthError as exc:
+            print(f"\nFATAL: {exc}", file=sys.stderr)
+            sys.exit(4)
+        # FIX-E2E (incremental resume): count only the UN-rendered slides for the
+        # balance floor. A resume/re-render that already produced 18 of 20 slides
+        # only needs credit for the remaining 2, not the full deck — the old code
+        # passed len(slides) (the full count), so a low-but-sufficient balance
+        # (2 remaining ≈ 10 credits) was rejected against a 100-credit full-deck
+        # floor, bricking every OCR-retry resume.
+        _remaining = max(0, len(slides) - len(_gather_rendered_pngs(run_dir)))
+        _balance_reason = kie_balance_preflight(run_dir, _remaining, api_key)
         if _balance_reason:
             print("\nFATAL: " + _balance_reason, file=sys.stderr)
             sys.exit(4)
@@ -9800,38 +10430,38 @@ def main():
     has_official_logo = (logo_path is not None) or (logo_url is not None)
     ordered = sorted(slides, key=lambda s: s["slide"])
 
-    # PARALLEL RENDER: each slide is an independent KIE generation, so fan them out
-    # across a bounded ThreadPoolExecutor. Per-slide retry / 429 backoff still live
-    # inside render_slide; we just run the slides concurrently.
-    workers = min(_render_workers(), len(ordered))
-    print(f"=== rendering {len(ordered)} slides with {workers} parallel workers ===\n", flush=True)
+    # BATCH RENDER (FIX-5 / D22 root cause B): submit ALL prompts once (0.6s apart,
+    # inside kie's 20/10s window + 100 concurrent tasks), then poll every submitted
+    # task together every 10s and download each image the moment ITS task finishes.
+    # This replaces the old submit-one-then-poll path, which serialized submit+poll+
+    # download per slide and wasted 20+ min on a 20-slide deck. Per-slide gates are
+    # unchanged: rich-prompt floor, English pin, i2i logo compositing, post-download
+    # aspect/OCR verification and the U028 task-id checkpoint all still run.
+    print(f"=== rendering {len(ordered)} slides via BATCH (submit all, then poll all) ===\n",
+          flush=True)
     # BOARD: the render phase is now the one being worked (fail-soft; no-op when
     # the board is disabled / the ingest never returned a task_id).
     if not adhoc:
         _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "in_progress",
-                           note=f"rendering {len(ordered)} slides")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=workers) as pool:
-        future_to_slide = {
-            pool.submit(render_slide, slide, api_key, renders_dir, run_dir,
-                        has_official_logo=has_official_logo, logo_url=logo_url): slide
-            for slide in ordered
-        }
-        for fut in concurrent.futures.as_completed(future_to_slide):
-            slide = future_to_slide[fut]
-            try:
-                result = fut.result()
-                rendered.append(result)
-                task_ids.append(result["taskId"])
-            except Exception as exc:  # noqa: BLE001
-                failures.append({"slide": slide.get("slide"), "error": str(exc)})
-                print(f"  SLIDE FAILED: {exc}", file=sys.stderr, flush=True)
+                           note=f"batch-rendering {len(ordered)} slides")
+    batch_result = render_slides_batch(
+        ordered, api_key, renders_dir, run_dir,
+        has_official_logo=has_official_logo, logo_url=logo_url)
+    rendered = batch_result["rendered"]
+    failures = batch_result["failures"]
 
     # Deterministic order for the summary / manifest regardless of completion order.
     rendered.sort(key=lambda r: r["slide"])
     task_ids = [r["taskId"] for r in rendered]
     failures.sort(key=lambda f: (f.get("slide") is None, f.get("slide")))
 
-    # FAIL LOUD: never produce a partial deck silently.
+    # FAIL LOUD: never produce a partial deck silently. FIX-7 (D14): a render that
+    # failed (e.g. a RenderPollTimeout from a never-completing kie task) must NOT
+    # leave the CC card in 'in_progress' — surface a terminal status so the run
+    # never hangs. 'blocked' is a CC_TASK_STATUSES member; mid-run this is legal
+    # because the run is ending with a hard failure (no process cert is minted, so
+    # the cert-gate 422 concern does not apply to an abort). Fail-soft: a disabled
+    # board / missing task_id is a clean no-op.
     if failures:
         summary = {
             "slidesRendered": len(rendered),
@@ -9841,6 +10471,11 @@ def main():
         }
         print("\n=== SUMMARY (FAILED) ===", file=sys.stderr)
         print(json.dumps(summary, indent=2))
+        if not adhoc:
+            _board_patch_phase(run_dir, _cc_task_id, "P4-RENDER", "blocked",
+                               note=f"render FAILED: {len(failures)} slide(s) did not "
+                                    f"complete (e.g. poll hard cap / terminal state). "
+                                    f"Never hangs.")
         sys.exit(1)
 
     # BOARD: every slide rendered cleanly — log render-phase PROGRESS as an ACTIVITY

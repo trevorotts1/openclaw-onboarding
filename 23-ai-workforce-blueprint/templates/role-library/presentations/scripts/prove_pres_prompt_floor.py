@@ -190,6 +190,21 @@ def main(argv=None) -> int:
         if not prompts_dir.is_dir():
             print(f"FAIL-CLOSED: {prompts_dir} is not a directory", file=sys.stderr)
             return EXIT_FAILCLOSED
+        # FIX-22 / D16: run the canonical zero-padded + duplicate detector over the
+        # whole prompts dir BEFORE gating individual files — a `slide-1.txt` vs
+        # `slide-01.txt` collision or any non-%02d prompt filename is a build-
+        # blocking defect (D16: 21 prompt files for 20 slides).
+        dir_problems = prompt_gate.prompt_dir_problems(prompts_dir)
+        if dir_problems:
+            print("FIX-22 DUPLICATE-PROMPT-FILE DETECTOR FAIL:", file=sys.stderr)
+            for prob in dir_problems:
+                print("   - " + prob, file=sys.stderr)
+            rep = prompt_gate.scan_prompt_dir(prompts_dir)
+            print(f"   prompt files found: {rep['count']}", file=sys.stderr)
+            print(f"   canonical: {len(rep['canonical'])}", file=sys.stderr)
+            print(f"   non-canonical: {rep['non_canonical']}", file=sys.stderr)
+            print(f"   duplicate targets: {rep['duplicates']}", file=sys.stderr)
+            return EXIT_VIOLATION
         paths.extend(sorted(prompts_dir.glob("slide-*.txt")))
     paths.extend(Path(p) for p in args.prompts)
 

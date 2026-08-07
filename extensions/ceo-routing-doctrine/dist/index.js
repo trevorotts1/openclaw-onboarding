@@ -9,6 +9,18 @@
 // api.on("before_prompt_build", ...) returning { prependSystemContext }.
 //
 // gated by: plugins.entries.<id>.hooks.allowPromptInjection (OpenClaw 2026.7.1-2).
+//
+// Gateway permission gate: on some OpenClaw versions this before_prompt_build
+// injection is claimed to require plugins.entries.<id>.hooks.allowPromptInjection
+// (reportedly OpenClaw 2026.7.1-2+). DO NOT write that key from install.sh /
+// update-skills.sh without first confirming it against the box's actual
+// installed gateway's `openclaw config validate` -- on OpenClaw <=2026.6.11 it
+// is REJECTED ("hooks: Invalid input"), which is FATAL at gateway startup and
+// silently kills cron on the box forever after the next restart (see the
+// FLEET-KILL DEFECT FIX comment in install.sh / update-skills.sh, 2026-08-06).
+// This plugin module never reads this key itself -- removing it from config
+// does not change this file's runtime behavior; it only affects whether the
+// gateway honors the returned prependSystemContext.
 
 'use strict';
 

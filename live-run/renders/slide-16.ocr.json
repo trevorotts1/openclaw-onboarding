@@ -1,0 +1,9 @@
+{
+  "engine": "pytesseract",
+  "available": true,
+  "checked": true,
+  "matched": true,
+  "expected": [],
+  "misses": [],
+  "ocr_text": "' STRATEGY\n\n\u2018 RESULTS\n\nSECTION 3\n\n\u00a9 The AHA!\n_ Formula\n\nAttitude + Humor + Action\n\nYour daily discipline for sales success."
+}

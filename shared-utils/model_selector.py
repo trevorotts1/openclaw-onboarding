@@ -671,7 +671,7 @@ TREVOR_LINEUP = [
     "ollama/kimi-k2.6:cloud",
     "ollama/minimax-m1:cloud",
     "openrouter/xiaomi/mimo-v2.5-pro",
-    "ollama/deepseek-v4-flash:cloud",
+    "ollama/deepseek-v4-flash:0731-cloud",
     "openrouter/google/gemini-3.1-flash-lite-preview",
     "openrouter/z-ai/glm-4.5",
     "openrouter/qwen/qwen3-vl:235b",
@@ -679,7 +679,7 @@ TREVOR_LINEUP = [
 
 # Degraded lineup — only the cheapest two remain
 DEGRADED_LINEUP = [
-    "ollama/deepseek-v4-flash:cloud",
+    "ollama/deepseek-v4-flash:0731-cloud",
     "openrouter/z-ai/glm-4.5",
 ]
 

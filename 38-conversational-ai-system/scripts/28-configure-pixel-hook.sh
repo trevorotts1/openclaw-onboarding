@@ -31,7 +31,7 @@ HOOK_ID="pixel-visitor-signal"
 PIXEL_AGENT_ID="${ZHC_PIXEL_AGENT_ID:-pixel-concierge}"
 # A cheap real-time model — most signals are dropped before any reasoning. Operator
 # may override; default mirrors the e2e test default used elsewhere in the skill.
-PIXEL_MODEL="${ZHC_PIXEL_MODEL:-ollama/deepseek-v4-flash:cloud}"
+PIXEL_MODEL="${ZHC_PIXEL_MODEL:-ollama/deepseek-v4-flash:0731-cloud}"
 
 append_secret() {
   local k="$1" v="$2"

@@ -1,0 +1,44 @@
+{
+  "fix": "FIX-22",
+  "bar": "T-20 — No duplicate prompt files. Canonical zero-padded slide-%02d.txt; duplicate detector fails on slide-1.txt vs slide-01.txt.",
+  "qc_gate": "Generate prompts for 20 slides; seed a conflicting slide-1.txt. Exactly 20 zero-padded slide-%02d.txt files; duplicate-detection FAILS the seeded conflict.",
+  "implemented_at": "2026-08-06",
+  "changes": [
+    "scripts/prompt_gate.py: added scan_prompt_dir() + prompt_dir_problems() — the shared canonical-filename (slide-%02d.txt) + duplicate-target detector (AF-PROMPT-DUP-FILE / AF-PROMPT-NAME), extended _self_test()",
+    "scripts/build_deck.py: _collect_prompt_problems() now runs the dir-level duplicate detector first and returns a fatal sentinel (-1) on a collision, so the preflight rich-prompt gate (_chk_rich_prompts) AND the governed Prompt-QC teeth (check_prompt_qc_teeth) fail closed at exit 3 before any KIE dispatch",
+    "scripts/presentation_job/gates.py: _prompt_floor_gate() runs the detector so the close-out gate can never pass DONE over a broken prompt set",
+    "scripts/prove_pres_prompt_floor.py: --dir mode runs the detector and exits EXIT_VIOLATION(2) on a collision",
+    "scripts/tests/test_fix22_prompt_dup_detector.py: 7 tests proving the 20-file clean set, the seeded slide-1.txt collision firing at every enforcement point, and the non-canonical 3-digit name check"
+  ],
+  "evidence": {
+    "detector_clean_20": {
+      "prompt_files": "slide-01.txt .. slide-20.txt (20 canonical zero-padded files)",
+      "count": 20,
+      "duplicates": [],
+      "non_canonical": [],
+      "problems": []
+    },
+    "detector_seeded_conflict": {
+      "seeded": "slide-1.txt alongside slide-01.txt",
+      "detected_problems": [
+        "AF-PROMPT-DUP-FILE: slide 1 has 2 prompt files (slide-01.txt, slide-1.txt) — a zero-padding naming collision (D16)",
+        "AF-PROMPT-NAME: 'slide-1.txt' is NOT the canonical zero-padded 'slide-%02d.txt' prompt filename"
+      ],
+      "targets_slide1": ["slide-01.txt", "slide-1.txt"]
+    },
+    "enforcement": {
+      "build_deck._chk_rich_prompts": "FAILS on seeded conflict (AF-P1: AF-PROMPT-DUP-FILE ...)",
+      "build_deck.check_prompt_qc_teeth": "FAILS on seeded conflict (AF-PROMPT-QC: AF-PROMPT-DUP-FILE ...)",
+      "presentation_job.gates._prompt_floor_gate": "FAILS on seeded conflict; PASSES once the twin is removed",
+      "prove_pres_prompt_floor.py --dir": "EXIT 2 (EXIT_VIOLATION) on seeded conflict; EXIT 0 on clean dir"
+    }
+  },
+  "tests_run": [
+    "pytest tests/test_fix22_prompt_dup_detector.py -> 7 passed",
+    "pytest tests/ (full dir, final) -> 413 passed, 2 skipped (406 original + 7 new FIX-22)",
+    "python3 prompt_gate.py --self-test -> PASS",
+    "python3 prove_pres_prompt_floor.py --self-test -> PASS",
+    "python3 sync_check.py -> drift output IDENTICAL to base commit (the 2 AF-FORGED-APPROVAL / AF-KIE-AUTH drift items are pre-existing from FIX-1/FIX-6, not introduced here)"
+  ],
+  "regression_note": "test_fix2_qc_unskippable.py::test_qc_phase_skip_record_refused_in_load_skip_approvals FAILS identically on the base commit (verified by stash) — it is FIX-1's owner-message-oracle dependency, not a FIX-22 regression."
+}

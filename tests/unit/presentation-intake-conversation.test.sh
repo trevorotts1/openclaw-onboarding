@@ -205,23 +205,35 @@ fi
 # frame_selection turn is asked VERBATIM, alone, was previously misdetected as a
 # 3-question BATCH-IN-TURN ([sp:frame_selection, sp:q5, sp:q6]) purely from
 # incidental keyword overlap inside that ONE compliant bank question. This must
-# now PASS (exit 0), not autofail (exit 2).
+# now PASS (exit 0), not autofail (exit 2). FIX-3: the compliant transcript is a
+# SIGNED DRIVER ENVELOPE (the shape deck-intake-driver.py writes), so it passes
+# the conversation scan AND the driver-provenance gate.
 echo "--- AF-INTAKE-BATCH: compliant transcript (frame prompt verbatim, alone) does not autofail ---"
 if [ -f "$TRACE_CHECK" ]; then
   TRANSCRIPT_TMP="$(mktemp -t sp-intake-compliant-transcript.XXXXXX.json 2>/dev/null || mktemp)"
   if OUT="$("$PY" - "$SPEC" "$TRANSCRIPT_TMP" <<'PYEOF'
-import json, sys
+import json, sys, os, importlib.util
 spec = json.load(open(sys.argv[1]))
 frame_prompt = spec["frame_selection_question"]["prompt"]
 turns = [
-    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
-    {"role": "owner", "text": "quick"},
-    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
-    {"role": "owner", "text": "The Signature Talk"},
-    {"role": "assistant", "text": frame_prompt},
-    {"role": "owner", "text": "rulebook"},
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?", "qid": "interview_choice"},
+    {"role": "owner", "text": "quick", "qid": "interview_choice"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+    {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    {"role": "assistant", "text": frame_prompt, "qid": "frame_selection"},
+    {"role": "owner", "text": "rulebook", "qid": "frame_selection"},
 ]
-json.dump(turns, open(sys.argv[2], "w"))
+# Build the signed driver envelope via the checker's own canonical producer
+# (51-signature-presentation/scripts/intake_trace_check.py, resolved from $SPEC).
+cand = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(sys.argv[1])),
+                                     "..", "scripts", "intake_trace_check.py"))
+if os.path.exists(cand):
+    s = importlib.util.spec_from_file_location("itc_fix3", cand)
+    itc = importlib.util.module_from_spec(s); s.loader.exec_module(itc)
+    env = itc.build_driver_envelope(["interview_choice", "q1", "frame_selection"], turns)
+else:
+    env = turns
+json.dump(env, open(sys.argv[2], "w"))
 PYEOF
   )"; then
     if OUT="$("$PY" "$TRACE_CHECK" "$TRANSCRIPT_TMP" --json 2>&1)"; then
@@ -237,6 +249,77 @@ PYEOF
   rm -f "$TRANSCRIPT_TMP"
 else
   bad "intake_trace_check.py missing at $TRACE_CHECK -- cannot regression-test E2"
+fi
+
+# ---- (K) FIX-3: intake must be a REAL conversation — a hand-written bare-list
+# transcript is REJECTED by the scanner (exit 2, NO-DRIVER-ENVELOPE). This is the
+# file-level gate that makes a hand-written intake_ledger.json with no driver
+# transcript fail the build. A compliant transcript that is NOT driver-produced is
+# indistinguishable from fabrication, so it must fail regardless of content.
+echo "--- FIX-3: hand-written bare-list transcript is REJECTED (NO-DRIVER-ENVELOPE) ---"
+if [ -f "$TRACE_CHECK" ]; then
+  BARE_TMP="$(mktemp -t sp-intake-bare-transcript.XXXXXX.json 2>/dev/null || mktemp)"
+  "$PY" - "$SPEC" "$BARE_TMP" <<'PYEOF' >/dev/null
+import json, sys
+spec = json.load(open(sys.argv[1]))
+frame_prompt = spec["frame_selection_question"]["prompt"]
+turns = [
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?"},
+    {"role": "owner", "text": "quick"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?"},
+    {"role": "owner", "text": "The Signature Talk"},
+    {"role": "assistant", "text": frame_prompt},
+    {"role": "owner", "text": "rulebook"},
+]
+json.dump(turns, open(sys.argv[2], "w"))
+PYEOF
+  if OUT="$("$PY" "$TRACE_CHECK" "$BARE_TMP" --json 2>&1)"; then
+    bad "intake_trace_check.py: hand-written bare-list transcript PASSED (FIX-3 regression — fabricated transcript not rejected)"
+  else
+    if printf '%s' "$OUT" | grep -q 'NO-DRIVER-ENVELOPE'; then
+      ok "intake_trace_check.py: hand-written bare-list transcript REJECTED (NO-DRIVER-ENVELOPE)"
+    else
+      bad "intake_trace_check.py: bare-list transcript rejected but not as NO-DRIVER-ENVELOPE"
+      printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+    fi
+  fi
+  rm -f "$BARE_TMP"
+else
+  bad "intake_trace_check.py missing at $TRACE_CHECK -- cannot regression-test FIX-3"
+fi
+
+# ---- (L) FIX-3: a SIGNED driver envelope (the shape deck-intake-driver.py writes)
+# passes the scanner end-to-end. Proves the positive control for (K): the scanner is
+# not broken, it specifically rejects the fabricated (bare) shape.
+echo "--- FIX-3: signed driver envelope transcript PASSES (positive control) ---"
+if [ -f "$TRACE_CHECK" ]; then
+  SIGNED_TMP="$(mktemp -t sp-intake-signed-transcript.XXXXXX.json 2>/dev/null || mktemp)"
+  "$PY" - "$SPEC" "$TRACE_CHECK" "$SIGNED_TMP" <<'PYEOF' >/dev/null
+import json, sys, importlib.util, os
+spec = json.load(open(sys.argv[1]))
+frame_prompt = spec["frame_selection_question"]["prompt"]
+cand = os.path.normpath(os.path.join(os.path.dirname(os.path.realpath(sys.argv[2])), "..", "scripts", "intake_trace_check.py"))
+s = importlib.util.spec_from_file_location("itc_fix3b", cand)
+itc = importlib.util.module_from_spec(s); s.loader.exec_module(itc)
+turns = [
+    {"role": "assistant", "text": "Love this -- QUICK or IN-DEPTH, which would you like?", "qid": "interview_choice"},
+    {"role": "owner", "text": "quick", "qid": "interview_choice"},
+    {"role": "assistant", "text": "What is the title of your Signature Presentation?", "qid": "q1"},
+    {"role": "owner", "text": "The Signature Talk", "qid": "q1"},
+    {"role": "assistant", "text": frame_prompt, "qid": "frame_selection"},
+    {"role": "owner", "text": "rulebook", "qid": "frame_selection"},
+]
+json.dump(itc.build_driver_envelope(["interview_choice", "q1", "frame_selection"], turns), open(sys.argv[3], "w"))
+PYEOF
+  if OUT="$("$PY" "$TRACE_CHECK" "$SIGNED_TMP" --json 2>&1)"; then
+    ok "intake_trace_check.py: signed driver envelope transcript PASSES (positive control for FIX-3)"
+  else
+    bad "intake_trace_check.py: signed driver envelope AUTOFAILED (positive control broken)"
+    printf '%s\n' "$OUT" | sed 's/^/         /' >&2
+  fi
+  rm -f "$SIGNED_TMP"
+else
+  bad "intake_trace_check.py missing at $TRACE_CHECK -- cannot run FIX-3 positive control"
 fi
 
 # ---- (F) client-facing WORDING never regresses to the banned quick-questions phrasing ----
