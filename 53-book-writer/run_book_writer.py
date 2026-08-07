@@ -321,6 +321,16 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
         return False, ("missing run/artifacts/22-cover-prompt.md — FAIL-CLOSED: the book "
                        "cannot complete without the authored cover prompt (P6-PACKAGE stage "
                        "22-cover-prompt declares floor title_lock; author it and re-run)"), {}
+    # BUG-5 FAIL-CLOSED: the blurb, suggested titles, and chapter titles are REQUIRED
+    # P6-PACKAGE deliverables — the certificate must never claim all_phases_pass
+    # without them. Mirrors the hard requirement on 21-30day-challenge.md above.
+    for rel in ("10-suggested-titles.md", "11-blurb.md", "12-chapter-titles.md"):
+        req = bk.artifacts / rel
+        if not req.is_file():
+            return False, ("missing run/artifacts/%s — FAIL-CLOSED: the book cannot "
+                           "complete without the authored %s (authoring stage deferred "
+                           "to a scoped follow-up campaign; see SKILL.md 'SHIPPED vs. "
+                           "PENDING')" % (rel, rel)), {}
     # title-lock across required artifacts
     title, subtitle = bk.title_subtitle()
     targets = {}
@@ -428,22 +438,27 @@ def assemble_delivery(bk: Book, out: Path) -> Path:
 
     copy("01-avatar.md", "Avatar_Document-%s_%s.md" % (first, last))
     copy("08-blended-tone.md", "Tone_Communication_Style_Analysis-%s_%s.md" % (first, last))
-    copy("10-suggested-titles.md", "Suggested_Titles-%s_%s.md" % (first, last))
     copy("APPROVED-TITLE.txt", "APPROVED-TITLE.txt")
     copy("13-outline.md", "APPROVED-OUTLINE.md")
     copy("21-30day-challenge.md", "30_Day_Challenge-%s_%s.md" % (first, last))
     copy("22-cover-prompt.md", "Book_Cover_Prompt.md")
-    # blurb + chapter titles combined
-    blurb = bk.artifacts / "11-blurb.md"
-    ctitles = bk.artifacts / "12-chapter-titles.md"
+    # BUG-5 FAIL-CLOSED: the blurb, suggested titles, and chapter titles are REQUIRED
+    # P6-PACKAGE deliverables. A bundle silently missing any of them must never be
+    # assembled (check_package enforces the same presence check; this raises so the
+    # staging bundle can never carry a certificate-free partial delivery either).
+    for rel in ("10-suggested-titles.md", "11-blurb.md", "12-chapter-titles.md"):
+        req = bk.artifacts / rel
+        if not req.is_file():
+            raise FileNotFoundError(
+                "missing run/artifacts/%s — FAIL-CLOSED: required deliverable absent; "
+                "refusing to assemble the delivery bundle" % rel)
+    copy("10-suggested-titles.md", "Suggested_Titles-%s_%s.md" % (first, last))
+    # blurb + chapter titles combined (both guaranteed present above)
     combo = []
-    if blurb.is_file():
-        combo.append(blurb.read_text(encoding="utf-8"))
-    if ctitles.is_file():
-        combo.append("\n\n" + ctitles.read_text(encoding="utf-8"))
-    if combo:
-        (out / ("Book_Blurb_and_Chapter_Titles-%s_%s.md" % (first, last))).write_text(
-            "".join(combo), encoding="utf-8")
+    combo.append((bk.artifacts / "11-blurb.md").read_text(encoding="utf-8"))
+    combo.append("\n\n" + (bk.artifacts / "12-chapter-titles.md").read_text(encoding="utf-8"))
+    (out / ("Book_Blurb_and_Chapter_Titles-%s_%s.md" % (first, last))).write_text(
+        "".join(combo), encoding="utf-8")
     # chapters + manuscript
     for p in bk.chapter_files():
         (out / "chapters" / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
@@ -649,7 +664,18 @@ def run(bk: Book) -> int:
     # P8-DELIVER, after P0->P7 all pass.
     staging = bk.run_dir / "staging" / bundle_name(bk)
     delivery = bk.run_dir / "delivery" / bundle_name(bk)
-    assemble_delivery(bk, staging)
+    try:
+        assemble_delivery(bk, staging)
+    except FileNotFoundError as exc:
+        # BUG-5 fail-closed: a required deliverable (blurb / suggested titles /
+        # chapter titles) is absent — never assemble a partial bundle.
+        _LAST_BLOCK.clear()
+        _LAST_BLOCK.update({"phase_id": "P6-PACKAGE", "note": str(exc)})
+        print("=== PHASE P6-PACKAGE === [FAIL] %s" % exc)
+        print("BLOCKED at P6-PACKAGE (fail-closed). Author the missing deliverable and re-run.",
+              file=sys.stderr)
+        _quarantine(bk, staging)
+        return EXIT_GATE
     approvals = load_gate_receipts(bk.run_dir)
     measured = {}
     steps = []
