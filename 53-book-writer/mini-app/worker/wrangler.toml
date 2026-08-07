@@ -1,61 +1,64 @@
-# Book Writer mini-app — Cloudflare Worker (API) — U04 media upload bindings
+# Book Writer mini-app — Cloudflare Worker (single engine: U02 core + U03
+# answers + U04 media). Merged from the three unit configs onto the U02
+# contract: one Worker at bookwriter.zerohumanworkforce.com, main = src/index.js.
 #
 # ┌─────────────────────────────────────────────────────────────────────────┐
-# │ NO REAL ZONE / ACCOUNT IDS IN THIS FILE. Everything is <PLACEHOLDER> —  │
-# │ fill in at deploy time via U19 deploy.sh (npx wrangler, operator's      │
-# │ CLOUDFLARE_ZHW_APPS_API_TOKEN). Never commit a real account/zone id.    │
+# │ NO REAL ZONE / ACCOUNT / KV / R2 IDS IN THIS FILE. Everything is a       │
+# │ <PLACEHOLDER> resolved by U19 deploy.sh (npx wrangler, operator's        │
+# │ CLOUDFLARE_ZHW_APPS_API_TOKEN) at deploy time. Never commit a real id.   │
+# │ ZONE LANDMINE: the zerohumanworkforce.com zone id is a DIFFERENT zone    │
+# │ than businessaftersixty.com — never reuse CLOUDFLARE_ZONE_ID for a       │
+# │ *.zerohumanworkforce.com binding (master-plan section 1 + U19 guard).    │
 # └─────────────────────────────────────────────────────────────────────────┘
 #
-# The book-writer zone is zerohumanworkforce.com (MASTER-PLAN section 1).
-# ZONE LANDMINE: CLOUDFLARE_ZONE_ID points at a DIFFERENT zone — for any
-# `*.zerohumanworkforce.com` binding use the literal zerohumanworkforce.com
-# zone id, never $CLOUDFLARE_ZONE_ID.
+# The edge Worker is a DUMB RELAY: it holds ZERO client GHL credentials. The
+# KV binding row (bw_bindings) is the SOLE authority for where an answer lands
+# (per-client isolation BY CONSTRUCTION — master plan section 3). The GHL
+# write happens on the run box that owns the run (U12 poller / U15, Skill 44
+# rails). No client credential ever binds here.
 #
-# Deploy (see U19 deploy.sh):
-#   1. Create the R2 bucket:
-#        npx wrangler r2 bucket create zhw-bookwriter
-#   2. Create the KV namespace:
-#        npx wrangler kv namespace create bw-media-jobs
-#      Copy the returned id into [[kv_namespaces]] below.
-#   3. Set secrets (NEVER in this file):
-#        npx wrangler secret put R2_ACCOUNT_ID
-#        npx wrangler secret put R2_ACCESS_KEY_ID
-#        npx wrangler secret put R2_SECRET_ACCESS_KEY
-#   4. Deploy:
+# Deploy (once, by U19 deploy.sh via npx wrangler):
+#   1. Create the KV namespace bw_bindings and the R2 bucket zhw-bookwriter
+#      (see U19 deploy.sh — ids are <PLACEHOLDER> until then).
+#   2. Set secrets (NEVER in this file, via `wrangler secret put`):
+#        R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+#      (operator's own R2 API token; the Worker still holds zero client keys.)
+#   3. Deploy:
 #        npx wrangler deploy
+#   4. Verify:
+#        curl https://bookwriter.zerohumanworkforce.com/api/answers -X POST
+#        (expect 400 bad token)
+#
+# Routes: bookwriter.zerohumanworkforce.com/* — the universal-link host. The
+# DNS CNAME for bookwriter.zerohumanworkforce.com points at the Worker.
 
 name               = "book-writer-mini-app"
 main               = "src/index.js"
 compatibility_date = "2024-09-23"
 account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"
 
-# Workers + Pages routes. Fill in the operator's zerohumanworkforce.com zone.
 routes = [
-  { pattern = "bookwriter.<PLACEHOLDER_FLEET_DOMAIN>/*", zone_name = "<PLACEHOLDER_FLEET_DOMAIN>" }
+  { pattern = "bookwriter.zerohumanworkforce.com/*", zone_name = "zerohumanworkforce.com" }
 ]
 
 # R2 bucket for media staging (audio/video), transcripts, app shell, per-client
 # configs. Convention: zhw-<app>. MASTER-PLAN section 1: R2 `zhw-bookwriter`.
 [[r2_buckets]]
-binding      = "MEDIA_BUCKET"
-bucket_name  = "zhw-bookwriter"
+binding     = "ZHW_BOOKWRITER"
+bucket_name = "zhw-bookwriter"
 
-# KV: job registry for media uploads (U04) + token bindings / client registry /
-# per-run state (U02/U03). Namespace is created per-bucket-clone by the box
-# (each run box owns its own KV copy; never a cross-client store).
+# KV binding — token bindings + client registry + per-run state + per-step
+# consumed counters + staged answers. The SOLE destination authority.
+# Fill id/preview_id from `npx wrangler kv namespace create bw_bindings`.
 [[kv_namespaces]]
-binding    = "MEDIA_JOBS"
-id         = "<PLACEHOLDER_KV_NAMESPACE_ID>"
-preview_id = "<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID>"
+binding    = "bw_bindings"
+id         = "<PLACEHOLDER_KV_NAMESPACE_ID_BW_BINDINGS>"
+preview_id = "<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID_BW_BINDINGS>"
 
 [observability]
 enabled = true
 
-# Secrets (NEVER in this file — set via `wrangler secret put`, see deploy.sh):
-#   R2_ACCOUNT_ID           -- operator Cloudflare account id for R2 S3 endpoint
-#   R2_ACCESS_KEY_ID        -- R2 API token access key id (operator's own key)
-#   R2_SECRET_ACCESS_KEY    -- R2 API token secret (operator's own key)
-#   MEDIA_BUCKET_NAME       -- bucket name (defaults to zhw-bookwriter in code)
-#
-# The Worker is a DUMB RELAY: it holds ZERO client PITs. No client credential
-# ever binds here.
+# Secrets (NEVER in this file — set via `wrangler secret put`, see U19):
+#   R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY
+# No PITs, no client GHL keys — the box ingest poller (U12) + GHL write-back
+# (U15) own the GHL write via Skill 44 rails on the run box.
