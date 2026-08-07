@@ -1,0 +1,144 @@
+{
+  "config_kind": "book-writer-phase-config/v1",
+  "derived_from": {
+    "intake_schema": "intake/intake-schema.json",
+    "intake_schema_sha256": "739e5124b4d1cd8067e7d450e1d21e40c3bee2bfe46e1947cc2cee20964aeead",
+    "manifest": "BOOK-WRITER-MANIFEST.json",
+    "manifest_sha256": "de80a7a9e3954374f850eede69903bc127a2800b06b7e29e27b19ab14488211f"
+  },
+  "gate": {
+    "approve_token": "approve",
+    "approved_by": true,
+    "approved_on": true,
+    "must_match": [
+      "approval"
+    ]
+  },
+  "modes": [
+    "4x3x3"
+  ],
+  "phase": "GATE-433",
+  "phase_version": "1.2.0",
+  "progress_label": "Question {n} of 3",
+  "progress_total": 3,
+  "questions": [
+    {
+      "answer_your_way": [
+        "text",
+        "media",
+        "file-pdf",
+        "file-txt"
+      ],
+      "custom_field": "bw_avatar_dossier",
+      "depends_on": {
+        "mode": "4x3x3",
+        "version": "book"
+      },
+      "handlers": {
+        "file-pdf": {
+          "kind": "file-pdf",
+          "note": "Browser pdf.js TEXT extraction only \u2014 text is sent, the PDF is NEVER uploaded."
+        },
+        "file-txt": {
+          "kind": "file-txt",
+          "note": "Browser FileReader reads the file as text."
+        },
+        "media": {
+          "accept": [
+            "audio",
+            "video"
+          ],
+          "kind": "media",
+          "note": "Presigned DIRECT-to-R2 upload (never through a Worker request body), then async transcription, then poll.",
+          "poll": true,
+          "transcript": true
+        }
+      },
+      "id": "avatar_dossier",
+      "kind": "textarea",
+      "label": "Avatar dossier path / content",
+      "max_chars": 50000,
+      "question": "Avatar dossier path / content",
+      "required": true,
+      "why": "There are no wrong answers \u2014 just start typing, it doesn't have to be perfect."
+    },
+    {
+      "answer_your_way": [
+        "text",
+        "media",
+        "file-pdf",
+        "file-txt"
+      ],
+      "custom_field": "bw_tone_doc",
+      "depends_on": {
+        "mode": "4x3x3",
+        "version": "book"
+      },
+      "handlers": {
+        "file-pdf": {
+          "kind": "file-pdf",
+          "note": "Browser pdf.js TEXT extraction only \u2014 text is sent, the PDF is NEVER uploaded."
+        },
+        "file-txt": {
+          "kind": "file-txt",
+          "note": "Browser FileReader reads the file as text."
+        },
+        "media": {
+          "accept": [
+            "audio",
+            "video"
+          ],
+          "kind": "media",
+          "note": "Presigned DIRECT-to-R2 upload (never through a Worker request body), then async transcription, then poll.",
+          "poll": true,
+          "transcript": true
+        }
+      },
+      "id": "tone_doc",
+      "kind": "textarea",
+      "label": "Tone doc path / content",
+      "max_chars": 50000,
+      "question": "Tone doc path / content",
+      "required": true,
+      "why": "There are no wrong answers \u2014 just start typing, it doesn't have to be perfect."
+    },
+    {
+      "answer_your_way": [
+        "choice"
+      ],
+      "custom_field": "bw_433_approval",
+      "depends_on": {
+        "mode": "4x3x3",
+        "version": "book"
+      },
+      "enum": [
+        "approve",
+        "needs-changes"
+      ],
+      "id": "approval",
+      "kind": "choice",
+      "label": "Do you approve the 30 titles and 4 outcomes?",
+      "no_default": true,
+      "question": "Do you approve the 30 titles and 4 outcomes?",
+      "required": true,
+      "why": "This chooses which pipeline runs \u2014 there is no wrong answer, and it cannot be inferred from your other answers."
+    }
+  ],
+  "submit": {
+    "action": "gate_receipt",
+    "custom_field_map": {
+      "approval": "bw_433_approval",
+      "avatar_dossier": "bw_avatar_dossier",
+      "tone_doc": "bw_tone_doc"
+    },
+    "dedupe_key": "run_id+phase_id+identity",
+    "raw_json_note": true,
+    "tags": [
+      "book-writer",
+      "gate",
+      "phase-p4"
+    ]
+  },
+  "title": "Approve your offer book",
+  "warm_intro": "Your 30 titles and 4 outcomes are ready. Confirm them and drop in your avatar dossier and tone doc."
+}
