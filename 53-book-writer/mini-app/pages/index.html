@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="X-Content-Type-Options" content="nosniff">
+<meta name="referrer" content="no-referrer">
+<title>Your book</title>
+<!--
+  BOOK WRITER MINI-APP (Wave A) :: U05 — SPA RENDERER CORE (shell)
+  ---------------------------------------------------------------------------
+  Single self-contained shell, inline CSS only, ZERO external dependencies
+  (no CDN, no fonts fetched, no pdf.js yet — that lands in U09). Served from
+  R2 at app/<version>/index.html next to app.js. The Worker (U02) injects the
+  phase config + binding context as a JSON <script id="bw-bootstrap"> right
+  before the page's closing body tag; app.js (the renderer core) reads that
+  payload and drives the screen. This shell only owns the warm design system +
+  layout.
+
+  CONTRACT (MASTER-PLAN section 5):
+    - ONE question per screen; the renderer rejects any batch/grouped screen.
+    - Persistent "Question X of Y" + thin progress rail + growing page-stack
+      book motif (each answer adds a page; completion resolves to a closed
+      book with a warm glow).
+    - Per-question warm inline SVG imagery, content-bound, never generic.
+    - Palette tokens light-first with dark variants guarded per theme.
+    - Anti-anxiety copy: banned words (Submit/Required/Final/Deadline/
+      You must/Error) never render. "Save & come back later" on every screen.
+
+  NO Anthropic ids anywhere. This is a dumb renderer: it holds no PITs and
+  only ever talks to the Worker's own /api routes.
+-->
+<style>
+  /* ==========================================================================
+     WARM PALETTE TOKENS — light-first, dark variants guarded per theme.
+     MASTER-PLAN section 5: warm cream bg, parchment surface, deep espresso
+     ink (never pure black), terracotta primary, warm peach, sage accent,
+     moss success, warm sand border. Primary buttons are DEEP ESPRESSO TEXT
+     ON TERRACOTTA (white-on-terracotta fails contrast — avoided). Body-on-
+     cream >= 4.5:1; large headers >= 3:1.
+     ========================================================================== */
+  :root {
+    --bg:            #FBF6EE;
+    --surface:       #FFF9F0;
+    --ink:           #3a2e22;   /* deep warm espresso — never pure black */
+    --ink-soft:      #6b5b47;   /* secondary text on cream (>= 4.5:1)   */
+    --primary:       #C96F4A;   /* terracotta                           */
+    --primary-strong:#B85E3B;   /* terracotta, pressed/hover             */
+    --primary-ink:   #3a2e22;   /* espresso text ON terracotta (button)  */
+    --peach:         #F4D9C8;   /* warm peach soft                       */
+    --sage:          #8FA98C;   /* sage accent                           */
+    --moss:          #6A8A5F;   /* warm moss success                     */
+    --sand:          #E5D8C3;   /* warm sand border                      */
+    --sand-deep:     #D8C6A8;
+    --shadow:        0 18px 48px rgba(90, 66, 40, 0.14);
+    --shadow-sm:     0 4px 14px rgba(90, 66, 40, 0.10);
+    --radius:        20px;
+    --serif:  Georgia, 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', serif;
+    --sans:   'Nunito Sans', 'Avenir Next', 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:            #2A2119;
+      --surface:       #3A2E22;
+      --ink:           #F3E9D8;
+      --ink-soft:      #D8C6A8;
+      --primary:       #D9855E;
+      --primary-strong:#E29471;
+      --primary-ink:   #241B12;
+      --peach:         #6B4A38;
+      --sage:          #7E9A7B;
+      --moss:          #9DBB90;
+      --sand:          #57462F;
+      --sand-deep:     #6A573C;
+      --shadow:        0 18px 48px rgba(0, 0, 0, 0.45);
+      --shadow-sm:     0 4px 14px rgba(0, 0, 0, 0.4);
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg:            #2A2119;
+    --surface:       #3A2E22;
+    --ink:           #F3E9D8;
+    --ink-soft:      #D8C6A8;
+    --primary:       #D9855E;
+    --primary-strong:#E29471;
+    --primary-ink:   #241B12;
+    --peach:         #6B4A38;
+    --sage:          #7E9A7B;
+    --moss:          #9DBB90;
+    --sand:          #57462F;
+    --sand-deep:     #6A573C;
+    --shadow:        0 18px 48px rgba(0, 0, 0, 0.45);
+    --shadow-sm:     0 4px 14px rgba(0, 0, 0, 0.4);
+  }
+
+  /* ==========================================================================
+     BASE
+     ========================================================================== */
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 17px;
+    line-height: 1.6;
+    min-height: 100vh;
+    display: grid;
+    place-items: center;
+    padding: 24px 16px;
+  }
+  h1, h2, h3 { font-family: var(--serif); line-height: 1.2; color: var(--ink); }
+
+  /* Visible warm focus ring, keyboard-navigable (a11y floor) */
+  :focus-visible {
+    outline: 3px solid var(--primary);
+    outline-offset: 3px;
+    border-radius: 6px;
+  }
+
+  /* ==========================================================================
+     CHROME — persistent "Question X of Y" + progress rail + page-stack motif
+     ========================================================================== */
+  #app {
+    width: 100%;
+    max-width: 680px;
+    display: grid;
+    gap: 18px;
+    grid-template-rows: auto auto;
+  }
+  .chrome {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    justify-content: space-between;
+    padding: 4px 4px;
+  }
+  .rail-wrap { flex: 1 1 auto; min-width: 0; display: grid; gap: 6px; }
+  .qcount {
+    font-family: var(--serif);
+    font-size: 15px;
+    letter-spacing: 0.4px;
+    color: var(--ink-soft);
+    text-align: right;
+    white-space: nowrap;
+  }
+  .rail { position: relative; height: 8px; border-radius: 999px; background: var(--sand); overflow: hidden; }
+  .rail-fill {
+    position: absolute; inset: 0 auto 0 0; width: 0%;
+    background: linear-gradient(90deg, var(--primary), var(--peach));
+    border-radius: 999px;
+    transition: width 420ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  .pages {
+    display: flex;
+    align-items: flex-end;
+    gap: 3px;
+    height: 34px;
+    padding-top: 6px;
+  }
+  .page {
+    width: 13px; height: 20px;
+    background: var(--surface);
+    border: 1px solid var(--sand-deep);
+    border-radius: 3px 5px 5px 3px;
+    box-shadow: var(--shadow-sm);
+    transition: transform 400ms cubic-bezier(0.22, 1, 0.36, 1), background 300ms, border-color 300ms;
+  }
+  .page.done {
+    background: linear-gradient(180deg, var(--peach), var(--primary));
+    border-color: var(--primary-strong);
+  }
+  .page.lift { transform: translateY(-7px) rotate(-1.2deg); }
+  .page.lift:nth-child(even) { transform: translateY(-7px) rotate(1.2deg); }
+  .book {
+    width: 46px; height: 30px;
+    background: linear-gradient(180deg, var(--primary), var(--primary-strong));
+    border: 1px solid var(--primary-strong);
+    border-radius: 4px 9px 9px 4px;
+    box-shadow: 0 0 0 2px var(--surface), var(--shadow);
+    position: relative;
+  }
+  .book::after {
+    content: ""; position: absolute; left: 46%; top: 2px; bottom: 2px; width: 2px;
+    background: rgba(255, 255, 255, 0.55); border-radius: 2px;
+  }
+  .book.glow {
+    animation: bw-glow 2.2s ease-in-out infinite;
+    box-shadow: 0 0 0 2px var(--surface), 0 0 26px 4px rgba(201, 111, 74, 0.55);
+  }
+  @keyframes bw-glow {
+    0%, 100% { box-shadow: 0 0 0 2px var(--surface), 0 0 14px 2px rgba(201, 111, 74, 0.4); }
+    50%      { box-shadow: 0 0 0 2px var(--surface), 0 0 30px 8px rgba(201, 111, 74, 0.65); }
+  }
+
+  /* ==========================================================================
+     QUESTION CARD — one centered card <= 640px, giant margins, 24-32px rhythm
+     ========================================================================== */
+  .card {
+    width: 100%;
+    max-width: 640px;
+    margin: 0 auto;
+    background: var(--surface);
+    border: 1px solid var(--sand);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 28px 28px 24px;
+    display: grid;
+    gap: 20px;
+    animation: bw-in 460ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  @keyframes bw-in { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+
+  .imagery { display: flex; justify-content: center; margin-bottom: 2px; }
+  .imagery svg { width: 88px; height: 88px; filter: drop-shadow(0 6px 10px rgba(90, 66, 40, 0.16)); }
+
+  h1.q-text {
+    font-size: clamp(24px, 4.6vw, 34px);
+    margin: 0;
+    text-align: center;
+    letter-spacing: -0.2px;
+  }
+  p.why {
+    margin: 0;
+    text-align: center;
+    color: var(--ink-soft);
+    font-size: 16px;
+    max-width: 46ch;
+    margin-inline: auto;
+  }
+  p.permission {
+    margin: 0;
+    text-align: center;
+    font-family: var(--serif);
+    font-style: italic;
+    color: var(--moss);
+    font-size: 16px;
+  }
+
+  /* ---- Answer-your-way tabs (type / upload / audio / video) --------------- */
+  .tabs {
+    display: flex;
+    gap: 8px;
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-top: 4px;
+  }
+  .tab {
+    appearance: none;
+    border: 1px solid var(--sand-deep);
+    background: transparent;
+    color: var(--ink-soft);
+    font-family: var(--sans);
+    font-size: 15px;
+    font-weight: 600;
+    padding: 8px 16px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: background 180ms, color 180ms, border-color 180ms;
+  }
+  .tab:hover { background: var(--peach); border-color: var(--primary); color: var(--ink); }
+  .tab.active {
+    background: var(--primary);
+    border-color: var(--primary-strong);
+    color: var(--primary-ink);
+  }
+  .tabpanel { margin-top: 6px; display: grid; gap: 12px; }
+
+  /* ---- Fields ------------------------------------------------------------- */
+  textarea.field-textarea,
+  input.field-input {
+    width: 100%;
+    font-family: var(--sans);
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--sand-deep);
+    border-radius: 14px;
+    padding: 14px 16px;
+    resize: vertical;
+    min-height: 120px;
+    transition: border-color 180ms, box-shadow 180ms;
+  }
+  input.field-input { min-height: 0; }
+  textarea.field-textarea:focus, input.field-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px rgba(201, 111, 74, 0.22);
+  }
+  textarea::placeholder, input::placeholder { color: var(--ink-soft); opacity: 0.78; }
+
+  /* segmented enum (choice) — no default (AF-BK-VERSION) */
+  .seg { display: grid; gap: 10px; }
+  .seg-btn {
+    appearance: none;
+    text-align: left;
+    font-family: var(--sans);
+    font-size: 17px;
+    color: var(--ink);
+    background: var(--bg);
+    border: 1px solid var(--sand-deep);
+    border-radius: 14px;
+    padding: 14px 16px;
+    cursor: pointer;
+    transition: border-color 180ms, background 180ms, box-shadow 180ms;
+  }
+  .seg-btn:hover { border-color: var(--primary); }
+  .seg-btn.selected {
+    background: var(--peach);
+    border-color: var(--primary);
+    box-shadow: inset 0 0 0 1px var(--primary);
+  }
+  .seg-btn small { display: block; color: var(--ink-soft); font-size: 14px; margin-top: 2px; }
+
+  /* drop zone for PDF/.txt */
+  .dropzone {
+    border: 2px dashed var(--sand-deep);
+    border-radius: 14px;
+    padding: 22px 16px;
+    text-align: center;
+    color: var(--ink-soft);
+    cursor: pointer;
+    transition: border-color 180ms, background 180ms;
+  }
+  .dropzone:hover, .dropzone.drag { border-color: var(--primary); background: var(--peach); }
+  .dropzone.drag { background: var(--peach); }
+  .file-input { position: absolute; width: 1px; height: 1px; opacity: 0; overflow: hidden; }
+  .fname { font-weight: 600; color: var(--ink); margin-top: 6px; }
+  .file-note { font-size: 14px; color: var(--ink-soft); margin-top: 4px; }
+
+  /* recorder (audio/video) — permissions only on deliberate tap */
+  .rec { display: grid; gap: 12px; justify-items: center; }
+  .rec-expect { text-align: center; color: var(--ink-soft); font-size: 15px; max-width: 42ch; }
+  .rec-btn {
+    appearance: none;
+    width: 84px; height: 84px;
+    border-radius: 50%;
+    border: 2px solid var(--primary);
+    background: var(--peach);
+    color: var(--primary-ink);
+    font-size: 15px; font-weight: 700;
+    font-family: var(--sans);
+    cursor: pointer;
+    display: grid; place-items: center;
+    transition: transform 160ms, background 180ms, box-shadow 180ms;
+    box-shadow: var(--shadow-sm);
+  }
+  .rec-btn:hover { transform: scale(1.05); background: var(--primary); color: var(--primary-ink); }
+  .rec-btn.recording {
+    background: var(--primary);
+    color: var(--primary-ink);
+    animation: bw-pulse 1.4s ease-in-out infinite;
+  }
+  @keyframes bw-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(201, 111, 74, 0.45); }
+    50%      { box-shadow: 0 0 0 14px rgba(201, 111, 74, 0); }
+  }
+  .rec-timer { font-family: var(--serif); font-size: 20px; color: var(--ink-soft); }
+
+  .pill {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    font-size: 14px; font-weight: 600;
+    background: var(--peach); color: var(--ink);
+  }
+  .pill.transcribing { background: var(--peach); color: var(--ink); }
+  .pill.failed { background: #F6D8C8; color: var(--ink); }
+  .pill.done { background: var(--sage); color: var(--ink); }
+
+  textarea.transcript { min-height: 90px; }
+
+  .whisper {
+    font-size: 14px;
+    color: var(--ink-soft);
+    text-align: right;
+    min-height: 1.2em;
+  }
+  .whisper.limit { color: var(--primary-strong); font-weight: 600; }
+
+  /* ---- Actions ------------------------------------------------------------ */
+  .actions { display: grid; gap: 10px; margin-top: 6px; }
+  .primary {
+    appearance: none;
+    width: 100%;
+    border: none;
+    border-radius: 999px;
+    padding: 16px 24px;
+    font-family: var(--serif);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+    cursor: pointer;
+    background: var(--primary);
+    color: var(--primary-ink);
+    box-shadow: var(--shadow-sm);
+    transition: transform 160ms, background 180ms;
+  }
+  .primary:hover { background: var(--primary-strong); transform: translateY(-1px); }
+  .primary:disabled { opacity: 0.55; cursor: default; transform: none; }
+  .primary.celebration { background: var(--moss); color: var(--ink); }
+  .primary.celebration:hover { background: var(--sage); }
+  .savelater {
+    text-align: center;
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0;
+  }
+
+  /* ---- Completion ---------------------------------------------------------- */
+  .completion { text-align: center; gap: 18px; }
+  .completion h2 { font-size: clamp(26px, 5vw, 38px); margin: 0; }
+  .completion p { color: var(--ink-soft); max-width: 48ch; margin: 0 auto; font-size: 17px; }
+  .completion .book { margin: 6px auto 0; }
+  .email-row { display: flex; gap: 8px; max-width: 400px; margin: 6px auto 0; }
+  .email-row input {
+    flex: 1 1 auto;
+    font-family: var(--sans); font-size: 16px; color: var(--ink);
+    background: var(--bg); border: 1px solid var(--sand-deep); border-radius: 12px; padding: 10px 14px;
+  }
+  .email-row button {
+    appearance: none; border: none; cursor: pointer;
+    background: var(--primary); color: var(--primary-ink);
+    font-family: var(--sans); font-weight: 700; font-size: 15px;
+    padding: 10px 16px; border-radius: 12px;
+  }
+  .email-row button:hover { background: var(--primary-strong); }
+  .keep-link {
+    font-size: 15px; color: var(--ink-soft);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .keep-link button {
+    appearance: none; cursor: pointer;
+    background: transparent; color: var(--primary-strong);
+    border: 1px solid var(--sand-deep); border-radius: 999px;
+    font-family: var(--sans); font-size: 14px; font-weight: 600; padding: 6px 14px;
+  }
+  .keep-link button:hover { background: var(--peach); }
+
+  /* ---- Hand-off (version=brand) / reject (batch) / error states ------------ */
+  .handoff { text-align: center; gap: 14px; }
+  .handoff h2 { margin: 0; font-size: clamp(24px, 4.6vw, 32px); }
+  .handoff p { color: var(--ink-soft); max-width: 46ch; margin: 0 auto; }
+
+  .reject { text-align: center; gap: 14px; }
+  .reject h2 { margin: 0; font-size: clamp(24px, 4.6vw, 32px); }
+  .reject p { color: var(--ink-soft); max-width: 46ch; margin: 0 auto; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 22px;
+    transform: translate(-50%, 24px);
+    background: var(--ink); color: var(--bg);
+    font-size: 15px; font-weight: 600;
+    padding: 12px 20px; border-radius: 12px;
+    box-shadow: var(--shadow);
+    opacity: 0; pointer-events: none;
+    transition: opacity 220ms, transform 220ms;
+    z-index: 50;
+    max-width: 88vw; text-align: center;
+  }
+  .toast.show { opacity: 1; transform: translate(-50%, 0); }
+
+  .visually-hidden {
+    position: absolute; width: 1px; height: 1px; margin: -1px;
+    overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap;
+  }
+
+  /* ---- prefers-reduced-motion: disable lift, glow, pulse, entrance -------- */
+  @media (prefers-reduced-motion: reduce) {
+    .page.lift, .page.lift:nth-child(even) { transform: none; }
+    .book.glow { animation: none; }
+    .rec-btn.recording { animation: none; }
+    .card { animation: none; }
+    .rail-fill { transition: none; }
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 16px 12px; }
+    .card { padding: 22px 18px 20px; }
+    .chrome { gap: 10px; }
+    .qcount { font-size: 14px; }
+  }
+</style>
+</head>
+<body>
+  <div id="app"><noscript><div class="card"><p>This page needs JavaScript to ask you your questions — please turn it on and try again.</p></div></noscript></div>
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <!-- The Worker (U02) injects <script id="bw-bootstrap" type="application/json"
+       data-config="..." data-context="..."> immediately before the closing
+       body tag. app.js reads it on DOMContentLoaded. -->
+  <script src="app.js"></script>
+</body>
+</html>
