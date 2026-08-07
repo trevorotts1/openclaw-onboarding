@@ -96,6 +96,42 @@ class BoardContractTest(unittest.TestCase):
         self.assertTrue(any(c["payload"].get("deliverable_url") for c in review_calls),
                         "the deliverable link must be registered on the review move")
 
+    def test_block_run_payload_carries_cc_blocked_fields(self):
+        rec = _Recorder(current_status="in_progress")
+        self._patch(rec)
+        ok = mc_board.block_run(self.run_dir, "TASK-1", phase_id="P3",
+                                note="AF-BK-433 approval gate failed", env=_ENABLED_ENV)
+        self.assertTrue(ok)
+        blocked = [c for c in rec.calls
+                   if isinstance(c["payload"], dict) and c["payload"].get("status") == "blocked"]
+        self.assertTrue(blocked, "block_run must issue a status=blocked write")
+        payload = blocked[-1]["payload"]
+        # CC PATCH /api/tasks/[id] requires all three, else 400 and the card strands.
+        self.assertEqual(payload.get("blocked_reason"), "approval",
+                         "blocked_reason must be present and a valid CC enum value")
+        self.assertEqual(payload.get("blocked_on_human"), "operator",
+                         "blocked_on_human must be 'owner' or 'operator'")
+        self.assertTrue(payload.get("ask"),
+                        "ask must be a non-empty one-line question")
+        self.assertIn("AF-BK-433", payload["ask"],
+                      "the failing AF code must surface in the ask")
+
+    def test_block_run_allows_explicit_blocked_fields(self):
+        rec = _Recorder(current_status="in_progress")
+        self._patch(rec)
+        ok = mc_board.block_run(self.run_dir, "TASK-1", phase_id="P3",
+                                note="credential expired", blocked_reason="credential",
+                                blocked_on_human="owner", ask="Please rotate the API key",
+                                env=_ENABLED_ENV)
+        self.assertTrue(ok)
+        blocked = [c for c in rec.calls
+                   if isinstance(c["payload"], dict) and c["payload"].get("status") == "blocked"]
+        self.assertTrue(blocked)
+        payload = blocked[-1]["payload"]
+        self.assertEqual(payload["blocked_reason"], "credential")
+        self.assertEqual(payload["blocked_on_human"], "owner")
+        self.assertEqual(payload["ask"], "Please rotate the API key")
+
     def test_card_advance_hard_blocks_done(self):
         rec = _Recorder(current_status="review")
         self._patch(rec)
