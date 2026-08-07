@@ -354,10 +354,26 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
         else:
             gates_ok = False
             gate_msgs.append("GATE-4-approval-r2 receipt missing/malformed (revision round 2 ran)")
-    ok = res_ch.passed and res_tl.passed and res_ph.passed and res_anon.passed and gates_ok
-    msg = "challenge %s | title-lock %s | placeholder %s | anon %s | revision-gates %s" % (
+    # BUG-20: a certified 4x3x3 bundle MUST actually contain the offer-book extras
+    # (30 titles / outcomes / KP doc / deck data / deck outline). The 4x3x3 prover in
+    # P7-QC validates the SOURCE artifacts under run/433/; here we fail-closed unless
+    # every one of the five labeled extras is PRESENT in the assembled bundle.
+    bundle_433_ok = True
+    bundle_433_msg = "none required"
+    if bk.mode() == "4x3x3":
+        expected = ["30_Titles-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "Transformational_Outcomes-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "KP_Document-%s_%s.md" % (bk.author()[0], bk.author()[1]),
+                    "433_Deck_Data.json", "433_Deck_Outline.md"]
+        missing = [name for name in expected if not (staging_dir / name).is_file()]
+        bundle_433_ok = not missing
+        bundle_433_msg = ("4x3x3 bundle extras present" if bundle_433_ok
+                          else "4x3x3 bundle MISSING extras: %s" % ", ".join(missing))
+    ok = res_ch.passed and res_tl.passed and res_ph.passed and res_anon.passed and gates_ok and bundle_433_ok
+    msg = "challenge %s | title-lock %s | placeholder %s | anon %s | revision-gates %s | 433-bundle %s" % (
         _phase_result(res_ch)[1], _phase_result(res_tl)[1], _phase_result(res_ph)[1],
-        _phase_result(res_anon)[1], ("; ".join(gate_msgs) if gate_msgs else "none required"))
+        _phase_result(res_anon)[1], ("; ".join(gate_msgs) if gate_msgs else "none required"),
+        bundle_433_msg)
     return ok, msg, {"challenge_sections": c.count_day_sections(ch.read_text(encoding="utf-8")),
                      "title_lock_ok": res_tl.passed}
 
@@ -443,6 +459,21 @@ def assemble_delivery(bk: Book, out: Path) -> Path:
         (out / "chapters" / p.name).write_text(p.read_text(encoding="utf-8"), encoding="utf-8")
     stem = (title or "Book").replace(" ", "_")
     (out / ("%s-Manuscript.md" % stem)).write_text(bk.manuscript_text(title, subtitle), encoding="utf-8")
+    # BUG-20: a 4x3x3 run ships its offer-book extras (the Skill 51 handoff
+    # payload under run/433/) into the labeled bundle. Without this, a certified
+    # 4x3x3 book carries ZERO of its 30 titles / outcomes / KP doc / deck data /
+    # deck outline. full-mode behavior is unchanged.
+    if bk.mode() == "4x3x3":
+        def _copy433(src_rel, dst_name):
+            src = bk.d433 / src_rel
+            if src.is_file():
+                (out / dst_name).write_text(src.read_text(encoding="utf-8"), encoding="utf-8")
+
+        _copy433("41-30-titles.md", "30_Titles-%s_%s.md" % (first, last))
+        _copy433("42-outcomes.md", "Transformational_Outcomes-%s_%s.md" % (first, last))
+        _copy433("43-kp-document.md", "KP_Document-%s_%s.md" % (first, last))
+        _copy433("433_Deck_Data.json", "433_Deck_Data.json")
+        _copy433("433_Deck_Outline.md", "433_Deck_Outline.md")
     return out
 
 
