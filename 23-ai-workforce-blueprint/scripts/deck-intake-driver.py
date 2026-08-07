@@ -526,7 +526,7 @@ def _build_waiver_records(qdata: dict, ledger: dict) -> list:
         })
     return out
 
-def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str) -> None:
+def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str, qdata: Optional[dict] = None) -> None:
     """After presentation_type or signature_source is recorded, (re)compute the
     derived legacy fields and merge them into working/copy/intake.json. No-op
     (and never raises) if presentation_type has not been validated yet or
@@ -545,14 +545,14 @@ def _apply_type_picker_derivation(run_dir: pathlib.Path, ledger: dict, qid: str)
 
     # U026: waiver-question answers always trigger a consent-record write.
     if qid in _WAIVER_IDS:
-        waivers = _build_waiver_records(qdata, ledger)
+        waivers = _build_waiver_records(qdata or {}, ledger)
         merge_intake_json(run_dir, {"waivers": waivers})
         # Still do the type-picker derivation if presentation_type is validated
         # (belt-and-suspenders — ensures the waiver write and the derived fields
         # both land when an answer is recorded).
         entries = ledger.get("entries", {})
         if entries.get("presentation_type", {}).get("validated"):
-            _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+            _apply_type_picker_derivation(run_dir, ledger, "presentation_type", qdata)
         return
 
     entries = ledger.get("entries", {})
@@ -772,7 +772,7 @@ def cmd_next(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
                 entries[qid]["validated"] = True
                 entries[qid]["validated_at"] = _now()
                 auto_skip_all_conditionals(qdata, ledger)
-                _apply_type_picker_derivation(run_dir, ledger, qid)
+                _apply_type_picker_derivation(run_dir, ledger, qid, qdata)
             else:
                 # File exists but content is invalid: re-ask same question
                 entries.setdefault(qid, {})
@@ -853,7 +853,7 @@ def cmd_answer(run_dir: pathlib.Path, qdata: dict, ledger: dict, qid: str, text:
             # Mark as asked if it wasn't already (direct --answer without --next)
             entries[qid]["asked_at"] = _now()
         auto_skip_all_conditionals(qdata, ledger)
-        _apply_type_picker_derivation(run_dir, ledger, qid)
+        _apply_type_picker_derivation(run_dir, ledger, qid, qdata)
         save_ledger(run_dir, ledger)
         print(json.dumps({
             "status": "accepted",
@@ -934,7 +934,7 @@ def cmd_complete(run_dir: pathlib.Path, qdata: dict, ledger: dict) -> None:
     # that wrote ledger entries directly instead of going through --answer/
     # --next, e.g. test fixtures or a resumed/edited ledger).
     if entries.get("presentation_type", {}).get("validated"):
-        _apply_type_picker_derivation(run_dir, ledger, "presentation_type")
+        _apply_type_picker_derivation(run_dir, ledger, "presentation_type", qdata)
 
     # U026: the CLIENT CONSENT record. NOT fail-soft — a lost waiver is a gate the
     # client legitimately declined that nobody can pass without an agent forging a
