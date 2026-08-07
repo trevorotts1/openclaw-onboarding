@@ -394,28 +394,68 @@ def check_package(bk: Book, staging_dir: Path, approvals: dict):
                      "title_lock_ok": res_tl.passed}
 
 
+def _write_qc_report(bk: Book, report: dict):
+    """Persist the P7-QC report artifact (manifest produces_artifact
+    run/qc/book_qc_report.json) FAIL-SOFT: a write error is logged to stderr and
+    swallowed — the QC verdict is decided by the checkers, never by our ability to
+    persist the report, so a write problem can never fail the run."""
+    try:
+        out = bk.rd / "qc" / "book_qc_report.json"
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_text(json.dumps(report, indent=2), encoding="utf-8")
+    except OSError as exc:
+        print("P7-QC report write skipped (fail-soft): %s" % exc, file=sys.stderr)
+
+
 def check_qc(bk: Book):
+    report = {
+        "artifact": "run/qc/book_qc_report.json",
+        "schema": "book-writer-qc-report-v1",
+        "mode": bk.mode(),
+        "no_anthropic": {"passed": False, "violations": [], "notes": []},
+        "433": None,
+        "measured": {},
+        "qc_passed": False,
+        "message": "",
+    }
     ledger = bk.rd / "RUN-LEDGER.json"
     # FAIL-CLOSED: a missing RUN-LEDGER (or one that records ZERO model ids) means
     # the no-Anthropic / client-provider provenance was never established — the QC
     # gate cannot pass on an absent ledger. And the credential scan runs against the
     # LIVE process env by NAME only (masked), never a disabled env={}.
     if not ledger.is_file():
-        return False, ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
-                       "provenance (client's OWN providers, never Anthropic) is unproven "
-                       "(fail-closed; the ledger must record each stage's resolved model id)"), {}
+        msg = ("no-anthropic FAIL: run/RUN-LEDGER.json is absent — the model "
+               "provenance (client's OWN providers, never Anthropic) is unproven "
+               "(fail-closed; the ledger must record each stage's resolved model id)")
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
     try:
         ledger_obj = json.loads(ledger.read_text(encoding="utf-8"))
     except ValueError as exc:
-        return False, "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc, {}
-    if _ledger_model_id_count(ledger_obj) == 0:
-        return False, ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
-                       "client-provider provenance is empty (fail-closed; a real run records "
-                       "each stage's resolved model id)"), {}
+        msg = "no-anthropic FAIL: RUN-LEDGER.json is not valid JSON (%s)" % exc
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
+    report["measured"]["model_id_count"] = _ledger_model_id_count(ledger_obj)
+    if report["measured"]["model_id_count"] == 0:
+        msg = ("no-anthropic FAIL: RUN-LEDGER.json records ZERO model ids — the "
+               "client-provider provenance is empty (fail-closed; a real run records "
+               "each stage's resolved model id)")
+        report["message"] = msg
+        report["no_anthropic"]["violations"].append({"code": "AF-BK-ANTHROPIC", "message": msg})
+        _write_qc_report(bk, report)
+        return False, msg, {}
     res_anth = p_anth.evaluate(ledger_obj, env=dict(os.environ))
     ok = res_anth.passed
     msg = "no-anthropic %s" % _phase_result(res_anth)[1]
+    report["no_anthropic"]["passed"] = ok
+    report["no_anthropic"]["violations"] = [{"code": cd, "message": m} for cd, m in res_anth.violations]
+    report["no_anthropic"]["notes"] = res_anth.notes
     if bk.mode() == "4x3x3":
+        report["433"] = {"passed": False, "violations": [], "notes": [], "measured": {}}
         titles = bk.d433 / "41-30-titles.md"
         outcomes = bk.d433 / "42-outcomes.md"
         deck = bk.d433 / "433_Deck_Data.json"
@@ -425,9 +465,31 @@ def check_qc(bk: Book):
                                      json.loads(deck.read_text(encoding="utf-8")))
             ok = ok and res_433.passed
             msg += " | 4x3x3 %s" % _phase_result(res_433)[1]
+            report["433"]["passed"] = res_433.passed
+            report["433"]["violations"] = [{"code": cd, "message": m} for cd, m in res_433.violations]
+            report["433"]["notes"] = res_433.notes
+            report["433"]["measured"]["program_titles"] = c.count_list_items(
+                titles.read_text(encoding="utf-8"))
+            report["433"]["measured"]["transformational_outcomes"] = c.count_list_items(
+                outcomes.read_text(encoding="utf-8"))
+            # chapters mapped across the deck's phase map (report-only, fail-soft)
+            try:
+                deck_obj = json.loads(deck.read_text(encoding="utf-8"))
+                phases = deck_obj.get("phases") if isinstance(deck_obj, dict) else None
+                if isinstance(phases, list):
+                    report["433"]["measured"]["chapters_mapped"] = sum(
+                        len(ph.get("chapters", [])) for ph in phases if isinstance(ph, dict))
+            except (ValueError, AttributeError) as exc:
+                print("P7-QC deck measured value skipped (fail-soft): %s" % exc, file=sys.stderr)
         else:
             ok = False
             msg += " | 4x3x3 artifacts missing"
+            report["433"]["violations"].append(
+                {"code": "AF-BK-433-MAP",
+                 "message": "4x3x3 artifacts missing (41-30-titles.md / 42-outcomes.md / 433_Deck_Data.json)"})
+    report["qc_passed"] = ok
+    report["message"] = msg
+    _write_qc_report(bk, report)
     return ok, msg, {}
 
 
