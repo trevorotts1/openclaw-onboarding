@@ -10,20 +10,42 @@ OWNED BY: Presenter's Speech Writer (ROLE-20), Presentations department.
 Consumes PRESENTERS-SPEECH.md, intake.json, slides_copy.md, and the
 Fish Audio tags master catalog.  Produces PRESENTERS-SPEECH-FISH-TAGGED.md.
 
+EXPRESSIVE TAGGING (GAUNTLET LOOP 2 + RICH READ-DIRECTOR PALETTES)
+-------------------------------------------------------------------
+The tagger emits RICH, stage-appropriate reader tags — large per-stage palettes
+(10-14 tags each) that blend VERIFIED emotion cues, COMPOSED instructional
+descriptors (feeling + direction, FISH-READER-TAG-LIBRARY.md §2.5/2.8/2.9),
+INTENSITY MODIFIERS (very/super/increasingly, §2.4), and DYNAMIC PROSODY levers
+(slow down / low voice / speed up, §2.11). Rotation is DETERMINISTIC — seeded by
+stage + slide index (zlib.crc32, stable across runs/hosts) — and an anti-repeat
+guard guarantees consecutive blocks never reuse the same tag, even across slide
+boundaries. [emphasis] lands on price/promise/CTA words in OFFER, SCARCITY, CTA
+and LADDER_DROP beats; [pause]/[long pause]/[short pause] are placed
+strategically per stage (before refrains, before the crescendo turn, around the
+price, at story turns). Webinar-framing sections (`## Section ... (WEBINAR
+FRAMING)`) are classified into WELCOME / QNA / CRESCENDO palettes so the framing
+read is as alive as the deck.
+
+Reference palettes: FISH-READER-TAG-LIBRARY.md in the presentations fish-audio/
+dir (a SOURCE, not a limit — S2 is open-domain).
+Output ALWAYS satisfies verify_strip_equals_source: tags are added, never words
+changed. The audio executor consumes this FISH-TAGGED file (--tagged-speech) so
+the tags reach the Fish API — the root-cause fix for flat audio.
+
 USAGE
 -----
   python3 speech_fish_tag.py --run-dir <run_dir>
   python3 speech_fish_tag.py --run-dir <run_dir> --verify-only
   python3 speech_fish_tag.py --run-dir <run_dir> --sample
 
-TAG GRAMMAR (from the role doc)
--------------------------------
-  - Pair a physical / vocal tag with at most ONE emotion tag.
-  - NEVER stack two emotion tags on the same line.
-  - Maximum 2 tags per line unless a specific performance reason demands a
-    third (e.g., [laughing][happy][whispering] for a layered moment).
+TAG GRAMMAR (from the role doc + FISH-READER-TAG-LIBRARY.md)
+-----------------------------------------------------------
+  - Emotion cue at the START of the sentence it governs; tone/sound cues anywhere.
+  - Stack max 3 cues per sentence (e.g. [sad][whispering] ...).
   - Every tag MUST be followed by text to speak on the same line.
-  - S2 syntax: [square brackets] with natural-language descriptors.
+  - S2 syntax: [square brackets] with natural-language descriptors (open-domain).
+  - Pauses ([pause]/[long pause]) are qualitative; the audio executor splices
+    EXACT silence (1-5 s) at the ffmpeg stage. (OWNER: ...) notes are dropped.
 """
 
 import argparse
@@ -31,6 +53,7 @@ import json
 import os
 import re
 import sys
+import zlib
 from pathlib import Path
 from typing import Optional
 
@@ -137,11 +160,39 @@ def _parse_slides_copy_markers(slides_copy_text: str) -> dict:
 # ---------------------------------------------------------------------------
 
 
+def _header_slide_stage(text: str, section_counter: list):
+    """Return (slide_no, stage) for a header line, or (None, None).
+
+    Handles BOTH deck slide headers (`## Slide N -- Title (STAGE)`) and
+    webinar-framing section headers (`## Section LABEL -- STAGE (WEBINAR
+    FRAMING)`). Framing sections have no Slide N number, so they receive a
+    synthetic slide number from *section_counter* (a single-element list,
+    mutable so the tokenizer, classifier and builder all see the SAME numbering).
+    """
+    m = re.match(r"^##\s+Slide\s+(\d+)\s+--", text)
+    if m:
+        slide_no = int(m.group(1))
+        stage_match = re.search(r"\((\w+)\)", text)
+        stage = stage_match.group(1).upper() if stage_match else "NORMAL"
+        return slide_no, stage
+    sec = re.match(
+        r"^##\s+Section\s+\S+\s+--\s+(\S+)", text, re.IGNORECASE)
+    if sec:
+        slide_no = section_counter[0]
+        section_counter[0] += 1
+        return slide_no, sec.group(1).upper()
+    return None, None
+
+
 def _tokenize_speech(speech_text: str) -> list:
     """Tokenise the speech markdown into a list of typed tokens.
 
     Each token is a dict:
-        {'type': 'meta'|'header'|'meta_line'|'separator'|'blank'|'cue'|'spoken', 'text': str}
+        {'type': 'meta'|'header'|'meta_line'|'separator'|'blank'|'cue'|'spoken',
+         'text': str}
+    Header tokens also carry 'slide' (int) and 'stage' (str) so downstream
+    classification/rebuild never has to re-parse header text — framing sections
+    (which have no Slide N number) get the same synthetic numbering everywhere.
 
     This preserves every byte of the original so reconstruction is exact.
     """
@@ -149,16 +200,22 @@ def _tokenize_speech(speech_text: str) -> list:
     lines_raw = speech_text.splitlines(True)
     current_slide_no = None
     after_meta = False
+    # Webinar-framing sections (`## Section <LABEL> -- <STAGE> (WEBINAR FRAMING)`)
+    # have no Slide N number, so the tagger assigns synthetic slide numbers from
+    # a high base that can never collide with real deck slides. This lets the
+    # QNA / CRESCENDO palettes engage with the same deterministic rotation.
+    section_counter = [1000]
 
     for line in lines_raw:
         stripped = line.strip()
 
-        # Slide header
-        hdr = re.match(r"^##\s+Slide\s+(\d+)\s+--", stripped)
-        if hdr:
-            current_slide_no = int(hdr.group(1))
+        # Slide header OR webinar-framing section header (shared parser).
+        slide_no, stage = _header_slide_stage(stripped, section_counter)
+        if slide_no is not None:
+            current_slide_no = slide_no
             after_meta = False
-            tokens.append({"type": "header", "text": stripped})
+            tokens.append({"type": "header", "text": stripped,
+                           "slide": slide_no, "stage": stage})
             continue
 
         # Metadata line within a slide body
@@ -205,6 +262,14 @@ def _classify_slide_from_tokens(tokens: list) -> dict:
     """Walk tokens and derive slide classification from stage/kind info.
 
     Returns dict {slide_no: classification}.
+
+    Handles the deck stages (WELCOME / PAIN / STORY / HOOK_REFRAIN / TEACH /
+    PROOF / OFFER / SCARCITY / CTA_CLOSE / LADDER_DROP) AND the webinar-framing
+    stage names emitted by webinar_intro_outro.py — "QNA" (and "Q&A", "QA")
+    map to the QNA palette, "CRESCENDO" (and "CLOSE" with KIND framing) map to
+    the CRESCENDO palette, and the "WELCOME" framing section reuses the
+    WELCOME palette. This keeps the tagger's own output aligned with the
+    framing sections the synthesizer injects.
     """
     classifications = {}
     current_slide = None
@@ -213,21 +278,27 @@ def _classify_slide_from_tokens(tokens: list) -> dict:
 
     for tok in tokens:
         if tok["type"] == "header":
-            m = re.search(r"Slide\s+(\d+)", tok["text"])
-            if m:
-                current_slide = int(m.group(1))
-                stage_match = re.search(r"\((\w+)\)", tok["text"])
-                current_stage = stage_match.group(1).upper() if stage_match else "NORMAL"
+            # slide/stage are stamped by the tokenizer (shared numbering for
+            # deck slides AND webinar-framing sections).
+            if tok.get("slide") is not None:
+                current_slide = tok["slide"]
+                current_stage = tok.get("stage") or "NORMAL"
                 current_kind = "normal"
         elif tok["type"] == "meta_line" and current_slide is not None:
             kind_match = re.search(r"KIND:\s*(\w+)", tok["text"])
             if kind_match:
                 current_kind = kind_match.group(1).lower()
-            stage = current_stage.upper()
+            stage_match_meta = re.search(r"STAGE:\s*(\S+)", tok["text"])
+            stage = stage_match_meta.group(1).upper() if stage_match_meta else current_stage.upper()
             kind = current_kind.lower()
 
             if "DROP" in stage or "LADDER" in stage or kind in ("drop", "final", "ladder"):
                 classifications[current_slide] = "LADDER_DROP"
+            elif stage in ("QNA", "QA", "Q&A", "CHAT_QNA") or kind in ("qna", "qa"):
+                classifications[current_slide] = "QNA"
+            elif stage in ("CRESCENDO", "CRESCENDO_CLOSE", "PEP") \
+                    or (kind == "framing" and stage in ("CLOSE", "CTA", "OUTRO")):
+                classifications[current_slide] = "CRESCENDO"
             elif "PAIN" in stage or kind == "pain":
                 classifications[current_slide] = "PAIN"
             elif "STORY" in stage or kind == "story":
@@ -236,6 +307,20 @@ def _classify_slide_from_tokens(tokens: list) -> dict:
                 classifications[current_slide] = "CTA_CLOSE"
             elif stage in ("HOOK", "BIG_PROMISE") or kind == "hook":
                 classifications[current_slide] = "HOOK_REFRAIN"
+            elif stage in ("WELCOME", "OPEN", "INTRO") or kind == "welcome":
+                classifications[current_slide] = "WELCOME"
+            elif stage in ("TEACH", "VALUE", "HOW", "MECHANISM", "EDUCATE") \
+                    or kind in ("teach", "value", "how"):
+                classifications[current_slide] = "TEACH"
+            elif stage in ("PROOF", "RESULTS", "SOCIAL_PROOF", "WALL_OF_WINS") \
+                    or kind in ("proof", "results"):
+                classifications[current_slide] = "PROOF"
+            elif stage in ("OFFER", "PITCH", "PRICE", "VALUE_STACK") \
+                    or kind in ("offer", "pitch"):
+                classifications[current_slide] = "OFFER"
+            elif stage in ("SCARCITY", "URGENCY", "DEADLINE") \
+                    or kind in ("scarcity", "urgency"):
+                classifications[current_slide] = "SCARCITY"
             else:
                 classifications[current_slide] = "DEFAULT"
 
@@ -292,6 +377,271 @@ def _extract_hook_refrain_text(slides_copy_markers):
 
 
 # ---------------------------------------------------------------------------
+# Expressive tag palettes (GAUNTLET LOOP 2 + richer read-director palettes)
+#
+# Each classification carries a LARGE ROTATING palette of S2/S2.1-Pro reader
+# cues so consecutive lines inside a slide NEVER share a tag (the "minimal"
+# flat-tagging defect — one tag on every line produces a monotone read). Tags
+# come from FISH-AUDIO-TAGS-MASTER.md, the composed descriptor library in
+# section L, and FISH-READER-TAG-LIBRARY.md §2 (all open-domain, valid on S2).
+#
+# Each palette blends, per stage:
+#   - strong COMPOSED instructional descriptors (feeling + direction, §2.5/2.8/2.9)
+#   - INTENSITY MODIFIERS (very / super / increasingly / slightly, §2.4)
+#   - DYNAMIC PROSODY levers (slow down / speed up / low voice / volume up, §2.11)
+# Stacked entries (two bracketed cues) stay within the max-3-cues-per-sentence
+# rule and are stripped cleanly by verify_strip_equals_source.
+#
+# Rotation is DETERMINISTIC: the start offset is seeded from the stage key +
+# slide index (_stage_slide_seed), so the same stage on the same slide always
+# produces the same tag sequence, while different slides of a stage diverge.
+# An anti-repeat guard in the caller keeps consecutive blocks from sharing a tag
+# even across slide boundaries.
+#
+# Verified source tags: [confident] [calm] [excited] [happy] [sad] [empathetic]
+#   [proud] [grateful] [curious] [hopeful] [determined] [nostalgic]
+#   [whispering] [emphasis] [pause] [long pause] [short pause]
+#   [slow down] [speed up] [low voice] [soft voice] [volume up]
+# Composed (open-domain S2 descriptors): [warm and welcoming] [reflective, looking back]
+#   [vulnerable, almost confessional] [calm, grounded authority] [deliberate and measured]
+#   [understated, letting the numbers speak] [building excitement] [urgent but controlled]
+#   [sincere, warm] [smiling while speaking] [a knowing smile]
+#   [barely contained enthusiasm] [rising energy] [quietly triumphant]
+#   [speaking slowly, almost hesitant] [slowing down for weight] [quickening pace]
+# ---------------------------------------------------------------------------
+_EXPRESSIVE_PALETTES = {
+    "WELCOME": [
+        "[warm and welcoming]",
+        "[smiling while speaking]",
+        "[genuinely caring]",
+        "[warm, credible]",
+        "[grateful and sincere]",
+        "[upbeat and bright]",
+        "[like talking to an old friend]",
+        "[deliberate and measured]",
+        "[soft, intimate]",
+        "[genuinely enthusiastic]",
+    ],
+    "PAIN": [
+        "[empathetic, unhurried]",
+        "[quiet, sincere]",
+        "[like talking to an old friend]",
+        "[genuinely caring]",
+        "[soft and intimate]",
+        "[serious, compassionate]",
+        "[quietly concerned]",
+        "[gentle encouragement]",
+        "[slightly anxious]",
+        "[understanding, patient]",
+    ],
+    "STORY": [
+        "[reflective, looking back]",
+        "[vulnerable, almost confessional]",
+        "[nostalgic]",
+        "[wistful]",
+        "[bittersweet]",
+        "[hopeful rising]",
+        "[a knowing smile]",
+        "[quiet before a turn]",
+        "[soft, intimate]",
+        "[slightly wistful]",
+        "[emotionally moved]",
+        "[determined]",
+    ],
+    "HOOK_REFRAIN": [
+        "[deliberate and measured]",
+        "[calm, grounded authority]",
+        "[confident, building]",
+        "[unshakeable confidence]",
+        "[steady, certain]",
+        "[matter-of-fact]",
+        "[leaning in, conspiratorial]",
+        "[lowering voice for emphasis]",
+        "[slow down, deliberate]",
+        "[measured and deliberate]",
+        "[direct, assured]",
+    ],
+    "TEACH": [
+        "[calm, clear]",
+        "[helpful, generous]",
+        "[measured and deliberate]",
+        "[matter-of-fact]",
+        "[steady, certain]",
+        "[calm, grounded authority]",
+        "[gently encouraging]",
+        "[clinical precision]",
+        "[clear and patient]",
+        "[slow down, clear]",
+        "[warm, knowledgeable]",
+    ],
+    "PROOF": [
+        "[confident and factual]",
+        "[understated, letting the numbers speak]",
+        "[proud but humble]",
+        "[quietly proud]",
+        "[matter-of-fact]",
+        "[clinical precision]",
+        "[steady, certain]",
+        "[satisfied]",
+        "[proud]",
+        "[modest and grounded]",
+    ],
+    "OFFER": [
+        "[building excitement]",
+        "[excited]",
+        "[delighted]",
+        "[barely contained enthusiasm]",
+        "[rising energy]",
+        "[upbeat and bright]",
+        "[celebratory]",
+        "[contagious energy]",
+        "[very excited]",
+        "[excited tone]",
+        "[fast and punchy]",
+        "[confident]",
+        "[super happy]",
+        "[joyful]",
+    ],
+    "SCARCITY": [
+        "[urgent but controlled]",
+        "[serious, direct]",
+        "[quickening pace]",
+        "[in a hurry tone]",
+        "[time-pressure tone]",
+        "[clipped and direct]",
+        "[speed up]",
+        "[serious warning]",
+        "[no-nonsense]",
+        "[determined]",
+        "[increasingly urgent]",
+    ],
+    "CTA_CLOSE": [
+        "[sincere, warm]",
+        "[confident, reassuring]",
+        "[grateful]",
+        "[warm and welcoming]",
+        "[calm, grounded authority]",
+        "[speaking slowly, almost hesitant]",
+        "[slowing down for weight]",
+        "[grateful and sincere]",
+        "[warm and reassuring]",
+        "[soft voice]",
+        "[low voice]",
+        "[quietly triumphant]",
+        "[reassuring]",
+    ],
+    "QNA": [
+        "[confident]",
+        "[calm, grounded authority]",
+        "[warm, credible]",
+        "[helpful, generous]",
+        "[steady, certain]",
+        "[matter-of-fact]",
+        "[genuinely caring]",
+        "[direct, assured]",
+        "[clear and patient]",
+        "[warm and helpful]",
+    ],
+    "CRESCENDO": [
+        "[passionate]",
+        "[uplifting]",
+        "[determined]",
+        "[building to a crescendo]",
+        "[inspiring]",
+        "[rising energy]",
+        "[hopeful rising]",
+        "[celebratory]",
+        "[sincere, warm]",
+        "[joyful]",
+        "[powerful and certain]",
+        "[quietly triumphant]",
+    ],
+    "LADDER_DROP": [
+        "[calm, grounded authority]",
+        "[slowing down for weight]",
+        "[understated, letting the numbers speak]",
+        "[quietly triumphant]",
+        "[measured and deliberate]",
+        "[low voice]",
+        "[steady, certain]",
+        "[a knowing smile]",
+        "[confident and quiet]",
+    ],
+    "DEFAULT": [
+        "[warm and credible]",
+        "[confident]",
+        "[warm, credible]",
+        "[calm, grounded authority]",
+        "[measured and deliberate]",
+        "[genuinely caring]",
+    ],
+}
+
+# Words that carry emphasis in a price / promise / CTA line. When present, the
+# tagger inserts [emphasis] before the word so the number or the action lands.
+_EMPHASIS_WORDS = (
+    "today", "now", "nineteen", "ninety", "one", "first", "exact", "only",
+    "never", "free", "thousand", "payment", "inside", "decision", "right",
+    "tonight", "immediately", "start", "join", "worth", "best", "choose",
+    "difference", "exactly", "guarantee",
+)
+
+# Stage + line-hash seed: deterministic rotation so the SAME stage on the SAME
+# slide always produces the same tag sequence (stable output), while different
+# slides of a stage diverge. Uses zlib.crc32 (stable across runs / hosts —
+# builtin hash() is randomized per process and must NOT be used here).
+
+
+def _stage_seed(classification: str, slide_no: int) -> int:
+    """Return a deterministic integer seed for (stage, slide index)."""
+    return zlib.crc32(f"{classification}|{slide_no}".encode("utf-8"))
+
+
+def _rotate_seeded(palette, slide_seed, line_idx):
+    """Deterministic rotation within a stage/slide: the palette walk starts at a
+    stage+slide-derived offset (so two different slides of the same stage diverge)
+    and advances by line_idx with a coprime stride for non-adjacent variety."""
+    if not palette:
+        return ""
+    n = len(palette)
+    # stride coprime to n (always 1 for prime-ish lengths; else pick one)
+    stride = 1
+    for s in (2, 3, 5, 7, 11, 13):
+        if n % s != 0:
+            stride = s
+            break
+    start = slide_seed % n
+    return palette[(start + line_idx * stride) % n]
+
+
+def _emphasize_line(line_text):
+    """Return line_text with [emphasis] injected before the first high-value word
+    (price / promise / CTA trigger). If none matches, return line_text unchanged.
+    Safe: [emphasis] is a reader tag, stripped by verify_strip_equals_source."""
+    lowered = line_text.lower()
+    for w in _EMPHASIS_WORDS:
+        # word-boundary, not inside another word (e.g. 'someone' vs 'one')
+        m = re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", lowered)
+        if m:
+            pos = m.start()
+            # find the real start of that word in the ORIGINAL case text
+            word_match = re.search(
+                r"\S*" + re.escape(w) + r"\S*", line_text, re.IGNORECASE)
+            if word_match:
+                return line_text[:word_match.start()] + "[emphasis] " + line_text[word_match.start():]
+    return line_text
+
+
+# Dynamic-prosody and pacing levers applied strategically per stage (not on
+# every line — seasoning, not the meal). Each is a bracket reader tag the
+# executor strips/splices exactly like the other pauses.
+_LEAD_IN_PAUSE = "[long pause]"       # the single biggest line of the section
+_PAUSE = "[pause]"
+_SHORT_PAUSE = "[short pause]"
+
+
+
+# ---------------------------------------------------------------------------
 # Core: rebuild speech with tags
 # ---------------------------------------------------------------------------
 
@@ -299,9 +649,12 @@ def _extract_hook_refrain_text(slides_copy_markers):
 def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
     """Produce the full tagged speech markdown.
 
-    Tokenises the entire speech, applies tags to 'spoken' tokens, and
-    reconstructs the output line-for-line.  All non-spoken tokens
-    (headers, meta, blanks, separators, cues) pass through unchanged.
+    Tokenises the entire speech, applies expressive (rotating, stage-appropriate)
+    tags to 'spoken' tokens, injects [pause]/[long pause] at dramatic points and
+    [emphasis] on high-value words, then reconstructs the output line-for-line.
+    All non-spoken tokens (headers, meta, blanks, separators, cues) pass through
+    unchanged. The output ALWAYS satisfies verify_strip_equals_source — tags are
+    added, never words changed.
     """
     tone = intake.get("TONE", "warm and passionate")
     slides_copy_markers = _parse_slides_copy_markers(slides_copy_text)
@@ -312,13 +665,19 @@ def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
 
     current_slide = None
     output_lines = []
+    # per-slide tag rotation counters so consecutive lines differ
+    line_index = {"n": 0}
+    last_slide_no = None
+    last_tag_emitted = None
 
     for tok in tokens:
         if tok["type"] == "header":
             current_slide = None
-            m = re.search(r"Slide\s+(\d+)", tok["text"])
-            if m:
-                current_slide = int(m.group(1))
+            if tok.get("slide") is not None:
+                current_slide = tok["slide"]
+                if current_slide != last_slide_no:
+                    line_index["n"] = 0
+                    last_slide_no = current_slide
             output_lines.append(tok["text"])
 
         elif tok["type"] == "meta_line":
@@ -345,24 +704,73 @@ def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
                 and _is_hook_refrain_line(line_text, hook_refrain_text)
             )
 
-            # Build tag
-            if classification == "HOOK_REFRAIN" and is_refrain:
-                tag = "[deliberate and measured]"
-            elif classification == "PAIN":
-                tag = "[empathetic, unhurried]"
-            elif classification == "STORY":
-                tag = "[storytelling tone]"
-            elif classification == "CTA_CLOSE":
-                tag = "[confident]"
-            else:
-                tag = _default_tag(tone)
+            # Build a stage-appropriate tag via DETERMINISTIC seeded rotation:
+            # same stage + same slide => same sequence; different slides diverge.
+            palette = _EXPRESSIVE_PALETTES.get(classification,
+                                               _EXPRESSIVE_PALETTES["DEFAULT"])
+            slide_seed = _stage_seed(classification, current_slide)
+            tag = _rotate_seeded(palette, slide_seed, line_index["n"])
+            line_index["n"] += 1
+
+            # Anti-repeat: a consecutive block NEVER reuses the previous block's
+            # tag (across slide boundaries too) when the palette allows.
+            if tag == last_tag_emitted and len(palette) > 1:
+                tag = _rotate_seeded(palette, slide_seed + 1, line_index["n"])
+            last_tag_emitted = tag
 
             tagged_line = f"{tag} {line_text}"
-            output_lines.append(tagged_line)
 
-            # For LADDER_DROP slides: inject [long pause] after a price line
-            if classification == "LADDER_DROP" and _is_price_line(line_text):
+            # Strategic [emphasis] on price/promise/CTA words across the offer,
+            # scarcity, close and ladder-drop beats (not just price lines).
+            emphasize_now = (
+                _is_price_line(line_text)
+                or classification in ("CTA_CLOSE", "LADDER_DROP")
+                or (classification == "SCARCITY" and line_index["n"] % 2 == 0)
+                or (classification == "OFFER" and line_index["n"] % 3 == 0)
+            )
+            if emphasize_now:
+                tagged_line = _emphasize_line(tagged_line)
+
+            # ---- Strategic [pause]/[long pause] placement per stage ----
+            # Price lines: the number must land. Long pause after the reveal.
+            if _is_price_line(line_text):
+                output_lines.append(tagged_line)
+                output_lines.append(
+                    "[long pause]" if classification == "LADDER_DROP" else "[pause]")
+                continue
+
+            # Hook / promise lines: a beat BEFORE the refrain so it lands.
+            if classification == "HOOK_REFRAIN" and is_refrain:
+                output_lines.append("[pause]")
+                output_lines.append(tagged_line)
+                continue
+
+            # CTA / close: a short pause after the final directive.
+            if classification == "CTA_CLOSE":
+                output_lines.append(tagged_line)
+                output_lines.append("[short pause]")
+                continue
+
+            # Crescendo (webinar framing): the biggest line gets a long pause
+            # BEFORE it so the turn lands, then a beat after.
+            if classification == "CRESCENDO" and line_index["n"] == 1:
                 output_lines.append("[long pause]")
+                output_lines.append(tagged_line)
+                continue
+
+            # Welcome / Q&A framing: an opening beat to settle the listener.
+            if classification in ("WELCOME", "QNA") and line_index["n"] == 1:
+                output_lines.append("[pause]")
+                output_lines.append(tagged_line)
+                continue
+
+            # Story: a beat at the emotional turn (a pause before a hopeful line).
+            if classification == "STORY" and line_index["n"] % 3 == 0:
+                output_lines.append("[pause]")
+                output_lines.append(tagged_line)
+                continue
+
+            output_lines.append(tagged_line)
 
         elif tok["type"] == "meta":
             output_lines.append(tok["text"])

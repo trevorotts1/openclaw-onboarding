@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.7.38"
+ONBOARDING_VERSION="v22.0.0"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -4069,8 +4069,13 @@ fi
 # Skill 23 (AI Workforce Blueprint) includes a presentation pipeline that needs:
 #   • reportlab       — presenter-guide PDF renderer (presenters_speech_pdf.py)
 #   • python-pptx     — PPTX deck assembly (build_deck.py)
+#   • pypdf           — workbook PDF read-back verification (Feature L2-D, P8.25-WORKBOOK,
+#                       workbook_builder.py reads the assembled PDF back with pypdf to prove
+#                       the AcroForm fields + /NeedAppearances survived before upload)
 #   • poppler/pdftoppm — PDF→PNG page extraction for Phase-6 QC
 #   • LibreOffice/soffice — PPTX→PDF export (PPTX Assembly Specialist, SOP 9.2)
+#   • ffmpeg + ffprobe — webinar video render + size probe (Feature L2-G,
+#     P9.6-WEBINAR-VIDEO, build_webinar_video.py → webinar_ffmpeg.py)
 #
 # Platform branches:
 #   Mac  — Python deps via _install_py_pkg_mac; poppler via formula; LibreOffice
@@ -4078,13 +4083,13 @@ fi
 #   VPS  — System packages (libreoffice-impress, poppler-utils) via the REAL
 #          Debian apt at /usr/bin/apt-get — NOT the Linuxbrew shim at
 #          /usr/local/bin/apt-get (INSTALL-GOTCHAS.md: apt/apt-get redirect to
-#          brew on these images). Python deps (reportlab, python-pptx) via pip
+#          brew on these images). Python deps (reportlab, python-pptx, pypdf) via pip
 #          --break-system-packages into the SAME python3 that build_deck.py runs.
 #          NOTE — VPS DURABILITY: the upstream Docker image is external and cannot
 #          be edited from this repo, so neither the apt packages nor the pip deps
 #          live in a layer that survives `docker compose up --force-recreate`
-#          (only the /data bind-mount persists). We therefore RE-ASSERT all four
-#          deps EVENT-shaped on the GATE-1 deps-missing path
+#          (only the /data bind-mount persists). We therefore RE-ASSERT all deps
+#          EVENT-shaped on the GATE-1 deps-missing path
 #          (presentation-canonical-entry.sh) plus a DAILY backstop via the OpenClaw
 #          scheduler (`openclaw cron create`, "0 4 * * *"; FIX-PRES-09(iv) retired
 #          the old */15 furnace), which is the same durable recurring-task
@@ -4095,12 +4100,13 @@ fi
 #          that approach was removed.
 #
 # The Capacity & Reliability Engineer (capacity-reliability-engineer.md §11) verifies
-# all four at Phase-0.5. The qc-completeness.sh gate (install step 6b) hard-fails
-# (command -v soffice / command -v pdftoppm / python3 -c "import reportlab, pptx")
-# if any dep is missing at the time the operator declares install complete.
+# all deps at Phase-0.5. The qc-completeness.sh gate (install step 6b) hard-fails
+# (command -v soffice / command -v pdftoppm / python3 -c "import reportlab, pptx, pypdf" /
+# command -v ffmpeg / command -v ffprobe) if any dep is missing at the time the
+# operator declares install complete.
 # ────────────────────────────────────────────────────────────────────────────
 
-step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, poppler, LibreOffice)"
+step "Step 6.5: Installing presentation pipeline runtime dependencies (reportlab, python-pptx, pypdf, poppler, LibreOffice, ffmpeg)"
 
 if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     # ── VPS ARM ──────────────────────────────────────────────────────────────
@@ -4119,14 +4125,18 @@ if [ "$OPENCLAW_PLATFORM" = "vps" ]; then
     mkdir -p /data/.openclaw/scripts /data/.openclaw/logs
     cat > "$_VPS_REASSERT_SCRIPT" << 'REASSERT_EOF'
 #!/usr/bin/env bash
-# reassert-presentation-deps.sh — (re)installs the four presentation-pipeline deps
+# reassert-presentation-deps.sh — (re)installs the presentation-pipeline deps
 # on a VPS container. The upstream Docker image is external and cannot be edited
-# from this repo, so apt packages (libreoffice-impress, poppler-utils) and pip
-# deps (reportlab, python-pptx) do NOT survive `docker compose up --force-recreate`
-# (only the /data bind-mount persists). This script is invoked once by install.sh
-# Step 6.5 AND re-fired on a schedule by the OpenClaw scheduler cron
-# "reassert-presentation-deps" so the deps are re-installed per container start.
-# Idempotent — safe to re-run. Installed by install.sh Step 6.5. DO NOT EDIT.
+# from this repo, so apt packages (libreoffice-impress, poppler-utils, ffmpeg) and
+# pip deps (reportlab, python-pptx, pypdf) do NOT survive `docker compose up
+# --force-recreate` (only the /data bind-mount persists). This script is invoked
+# once by install.sh Step 6.5 AND re-fired on a schedule by the OpenClaw scheduler
+# cron "reassert-presentation-deps" so the deps are re-installed per container
+# start. Idempotent — safe to re-run. Installed by install.sh Step 6.5. DO NOT EDIT.
+# Feature L2-G (P9.6-WEBINAR-VIDEO) adds ffmpeg + ffprobe — the webinar phase renders
+# the Ken Burns + xfade video with ffmpeg (GATE-1 dep in presentation-canonical-entry.sh).
+# Feature L2-D (P8.25-WORKBOOK) adds pypdf — workbook_builder.py reads the assembled
+# PDF back with pypdf (also a GATE-1 dep in presentation-canonical-entry.sh).
 set -uo pipefail
 LOG=/data/.openclaw/logs/reassert-presentation-deps.log
 mkdir -p "$(dirname "$LOG")"
@@ -4137,20 +4147,21 @@ echo "[$(ts)] reassert-presentation-deps starting" >> "$LOG"
 APT_GET="/usr/bin/apt-get"
 PY3="$(command -v python3 || echo /usr/bin/python3)"
 
-# --- System packages: libreoffice-impress (provides soffice) + poppler-utils (pdftoppm)
+# --- System packages: libreoffice-impress (soffice) + poppler-utils (pdftoppm) + ffmpeg.
 if [ -x "$APT_GET" ]; then
-    if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1; then
-        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils" >> "$LOG"
+    if ! command -v soffice >/dev/null 2>&1 || ! command -v pdftoppm >/dev/null 2>&1 \
+       || ! command -v ffmpeg >/dev/null 2>&1; then
+        echo "[$(ts)] apt-get update + install libreoffice-impress poppler-utils ffmpeg" >> "$LOG"
         ( "$APT_GET" update -y && \
           DEBIAN_FRONTEND=noninteractive "$APT_GET" install -y --no-install-recommends \
-              libreoffice-impress poppler-utils ) >> "$LOG" 2>&1 \
+              libreoffice-impress poppler-utils ffmpeg ) >> "$LOG" 2>&1 \
             && echo "[$(ts)] apt packages OK" >> "$LOG" \
             || echo "[$(ts)] WARN: apt install failed (see above)" >> "$LOG"
     else
-        echo "[$(ts)] soffice + pdftoppm already present — apt install skipped" >> "$LOG"
+        echo "[$(ts)] soffice + pdftoppm + ffmpeg already present — apt install skipped" >> "$LOG"
     fi
 else
-    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm" >> "$LOG"
+    echo "[$(ts)] WARN: real apt-get not found at $APT_GET — cannot install soffice/pdftoppm/ffmpeg" >> "$LOG"
 fi
 
 # --- Python deps into the SAME interpreter build_deck.py runs.
@@ -4160,18 +4171,24 @@ fi
 "$PY3" -m pip install --break-system-packages --quiet python-pptx >> "$LOG" 2>&1 \
     && echo "[$(ts)] python-pptx OK" >> "$LOG" \
     || echo "[$(ts)] WARN: python-pptx install failed" >> "$LOG"
+"$PY3" -m pip install --break-system-packages --quiet pypdf >> "$LOG" 2>&1 \
+    && echo "[$(ts)] pypdf OK" >> "$LOG" \
+    || echo "[$(ts)] WARN: pypdf install failed (workbook PDF read-back)" >> "$LOG"
 
 # --- Verify (same checks qc-completeness.sh hard-fails on).
 command -v soffice  >/dev/null 2>&1 && echo "[$(ts)] verify soffice OK"  >> "$LOG" || echo "[$(ts)] WARN: soffice missing"  >> "$LOG"
 command -v pdftoppm >/dev/null 2>&1 && echo "[$(ts)] verify pdftoppm OK" >> "$LOG" || echo "[$(ts)] WARN: pdftoppm missing" >> "$LOG"
 "$PY3" -c "import reportlab, pptx" >/dev/null 2>&1 && echo "[$(ts)] verify reportlab+pptx OK" >> "$LOG" || echo "[$(ts)] WARN: reportlab/pptx import failed" >> "$LOG"
+"$PY3" -c "import pypdf" >/dev/null 2>&1 && echo "[$(ts)] verify pypdf OK" >> "$LOG" || echo "[$(ts)] WARN: pypdf import failed (workbook PDF read-back)" >> "$LOG"
+command -v ffmpeg  >/dev/null 2>&1 && echo "[$(ts)] verify ffmpeg OK"  >> "$LOG" || echo "[$(ts)] WARN: ffmpeg missing (webinar video render)" >> "$LOG"
+command -v ffprobe >/dev/null 2>&1 && echo "[$(ts)] verify ffprobe OK" >> "$LOG" || echo "[$(ts)] WARN: ffprobe missing (webinar video probe)" >> "$LOG"
 
 echo "[$(ts)] reassert-presentation-deps done" >> "$LOG"
 REASSERT_EOF
     chmod +x "$_VPS_REASSERT_SCRIPT"
 
-    # Run the reassert script ONCE now to install all four deps for this container.
-    note "VPS: installing all four presentation deps via $_VPS_REASSERT_SCRIPT ..."
+    # Run the reassert script ONCE now to install all presentation deps for this container.
+    note "VPS: installing all presentation deps via $_VPS_REASSERT_SCRIPT ..."
     bash "$_VPS_REASSERT_SCRIPT" >> "$LOG_FILE" 2>&1 || true
 
     # Report per-dep result (read the verifier-equivalent checks directly).
@@ -4187,6 +4204,15 @@ REASSERT_EOF
     "$_PY3" -c "import pptx" >/dev/null 2>&1 \
         && success "python-pptx importable in $_PY3" \
         || warn "python-pptx NOT importable — deck assembly will fail at Phase 4. Manual fix: $_PY3 -m pip install --break-system-packages python-pptx"
+    "$_PY3" -c "import pypdf" >/dev/null 2>&1 \
+        && success "pypdf importable in $_PY3" \
+        || warn "pypdf NOT importable — the workbook PDF read-back (P8.25-WORKBOOK) cannot verify its AcroForm fields. Manual fix: $_PY3 -m pip install --break-system-packages pypdf"
+    command -v ffmpeg >/dev/null 2>&1 \
+        && success "ffmpeg on PATH (webinar video render, P9.6)" \
+        || warn "ffmpeg NOT on PATH after install — the webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: $_APT_GET install -y ffmpeg"
+    command -v ffprobe >/dev/null 2>&1 \
+        && success "ffprobe on PATH (webinar video probe, P9.6)" \
+        || warn "ffprobe NOT on PATH after install — the webinar size gate cannot probe. Manual fix: $_APT_GET install -y ffmpeg (provides ffprobe)"
 
     # ── VPS DURABILITY via the OpenClaw scheduler ────────────────────────────
     # The container has NO cron daemon and the gateway is PID 1, so a system
@@ -4230,7 +4256,7 @@ REASSERT_EOF
         if [ -n "${TELEGRAM_DEFAULT_AGENT_CACHED:-}" ]; then
             CHANNEL_AGENT="$TELEGRAM_DEFAULT_AGENT_CACHED"
         fi
-        local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
+        local REASSERT_PROMPT="[PRESENTATION-DEPS] Re-assert the presentation-pipeline runtime deps (libreoffice-impress, poppler-utils, reportlab, python-pptx, pypdf, ffmpeg) which do not survive a Docker force-recreate: bash $_VPS_REASSERT_SCRIPT . This is an idempotent maintenance script; it is a near-no-op once the deps are present."
         # The OpenClaw scheduler is time-based (5-field cron), not a vixie-cron
         # daemon, so there is no @reboot hook to fire on container start.
         # FIX-PRES-09(iv): the old "*/15 * * * *" cadence was a furnace — ~96
@@ -4261,6 +4287,7 @@ else
     # Python deps via the _install_py_pkg_mac helper already defined in Step 6.4.
     _install_py_pkg_mac "reportlab"   "reportlab" "reportlab (presenter-guide PDF)"
     _install_py_pkg_mac "python-pptx" "pptx"      "python-pptx (deck assembly)"
+    _install_py_pkg_mac "pypdf"       "pypdf"      "pypdf (workbook PDF read-back verification, P8.25-WORKBOOK)"
 
     # poppler (pdftoppm): Homebrew formula — no cask, no admin prompt.
     if command -v pdftoppm >/dev/null 2>&1; then
@@ -4314,6 +4341,21 @@ else
     else
         warn "Homebrew not found — cannot install LibreOffice. PPTX-to-PDF export will fail."
         warn "Operator fix: install Homebrew (https://brew.sh), then: brew install --cask libreoffice"
+    fi
+
+    # ffmpeg (webinar video render, Feature L2-G P9.6-WEBINAR-VIDEO): Homebrew formula.
+    # The webinar phase renders the Ken Burns + xfade slideshow with ffmpeg and probes
+    # with ffprobe (both the size gate and the timing track depend on them). Mirrors
+    # the GATE-1 dep check in presentation-canonical-entry.sh + qc-completeness.sh.
+    if command -v ffmpeg >/dev/null 2>&1 && command -v ffprobe >/dev/null 2>&1; then
+        success "ffmpeg + ffprobe already on PATH (webinar video render)"
+    elif command -v brew >/dev/null 2>&1; then
+        note "Installing ffmpeg (webinar video render) via Homebrew formula..."
+        brew install ffmpeg 2>&1 | tee -a "$LOG_FILE" | tail -3 \
+            && success "ffmpeg installed (provides ffprobe too)" \
+            || warn "brew install ffmpeg failed — the webinar video (P9.6) cannot render. Manual fix: brew install ffmpeg"
+    else
+        warn "Homebrew not found — cannot install ffmpeg. The webinar video (P9.6-WEBINAR-VIDEO) cannot render. Manual fix: brew install ffmpeg"
     fi
 fi
 

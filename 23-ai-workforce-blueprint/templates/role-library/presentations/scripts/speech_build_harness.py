@@ -117,6 +117,56 @@ STAGE_RUNTIME_SHARES: dict[str, float] = {
     "RECAP":       0.04,
 }
 
+# Webinar-arc EMOTION MAP (FISH-AUDIO-STRATEGIC-PLAN.md section 2). Every spoken
+# block is written to make the LISTENER feel the stage's target emotion first
+# (emotional contagion). These are the emotional targets the downstream Fish
+# reader-tagger (speech_fish_tag.py, FISH-READER-TAG-LIBRARY.md section 7) will
+# map to [bracket] tags — the writer's phrasing must give those tags real beats
+# to land on, and the delivered audio will be performed over a warm/confident
+# host-voice REFERENCE AUDIO whose baseline carries the default emotional tint.
+# Keyed on the slide KIND (from SLIDE_TYPE_WEIGHTS) and the STAGE label.
+STAGE_EMOTION_MAP: dict[str, str] = {
+    # listener target feeling -> voice job the writer must dramatize in the words
+    "hook":        "curiosity + 'this is for me' — confident, warm, intriguing; the hook line must LAND (earn one beat of silence after it)",
+    "welcome":     "welcomed, settled, present — warm and grounded; open like a live host greeting the room",
+    "credibility": "connection, 'that's my situation' — vulnerable -> hopeful arc; tag the turn, not every line",
+    "promise":     "a promise they can picture — deliberate, measured, one big promise stated plainly",
+    "teach":       "clarity, 'I'm learning, I trust them' — calm authority, generous, unhurried; LOWEST tag density",
+    "proof":       "belief, 'this actually works' — understated confidence; restraint reads as truth, under-tag deliberately",
+    "offer":       "desire, 'I want this' — excited, generous, certain; the ENERGY PEAK, highest tag density",
+    "drop":        "fear of missing out, deadline not threat — urgent but controlled; the price number lands with a beat after it",
+    "final":       "fear of missing out, deadline not threat — urgent but controlled; the final price lands with a beat after it",
+    "close":       "the decision is safe and right — warm, certain, reassuring; slow down, lower the voice, pause around the price",
+    "cta":         "the decision is safe and right — warm, certain, reassuring; land on a clear calm directive, never loud",
+    "recap":       "settled confidence, the journey complete — calm, grounded authority, quiet pride",
+    "normal":      "engaged and trusting — warm, credible, direct",
+}
+
+STAGE_EMOTION_BY_LABEL: dict[str, str] = {
+    "WELCOME":     STAGE_EMOTION_MAP["welcome"],
+    "CREDIBILITY": STAGE_EMOTION_MAP["credibility"],
+    "PROMISE":     STAGE_EMOTION_MAP["promise"],
+    "TEACH":       STAGE_EMOTION_MAP["teach"],
+    "PROOF":       STAGE_EMOTION_MAP["proof"],
+    "OFFER":       STAGE_EMOTION_MAP["offer"],
+    "DROPS":       STAGE_EMOTION_MAP["drop"],
+    "CLOSE":       STAGE_EMOTION_MAP["close"],
+    "CTA":         STAGE_EMOTION_MAP["cta"],
+    "RECAP":       STAGE_EMOTION_MAP["recap"],
+}
+
+
+def emotion_target_for(kind: str, stage: str) -> str:
+    """Resolve the target listener emotion + voice job for a slide, preferring
+    the slide KIND (specific), then the STAGE label, then the default."""
+    k = (kind or "normal").lower()
+    s = (stage or "").upper()
+    return (
+        STAGE_EMOTION_MAP.get(k)
+        or STAGE_EMOTION_BY_LABEL.get(s)
+        or STAGE_EMOTION_MAP["normal"]
+    )
+
 # ---------------------------------------------------------------------------
 # LLM provider transport (OpenAI-compatible chat/completions) — CLIENT-PORTABLE.
 # Default = Ollama Cloud; override via env for OpenRouter / any OpenAI-compatible
@@ -139,7 +189,7 @@ DEFAULT_REASONING_EFFORT = ""
 # minimax-m3:cloud return full, budget-hitting content at ~4000 tokens for a 40-word slide,
 # but EMPTY at <=1500). Non-thinking OpenAI-compatible providers simply stop at content, so
 # the extra ceiling is harmless there.
-REASONING_HEADROOM_TOKENS: int = 4096
+REASONING_HEADROOM_TOKENS: int = 8192
 
 
 def resolve_base_url() -> str:
@@ -513,6 +563,7 @@ def generate_slide_text(
     """
     action = "EXPAND" if is_expand else "WRITE"
     existing = f"\n\nCURRENT TEXT ({len(slide.spoken_text.split())} words):\n{slide.spoken_text}\n" if is_expand else ""
+    emotion_target = emotion_target_for(slide.kind, slide.stage)
     prompt = (
         f"You are writing a word-for-word WEBINAR SPEECH slide spoken block.\n"
         f"Deck context: {deck_context}\n\n"
@@ -522,10 +573,28 @@ def generate_slide_text(
         f"Presenter note: {slide.presenter_note}\n"
         f"WORD BUDGET: exactly {slide.word_budget} words (tolerance +/-10%).\n"
         f"Spoken rate: 130 wpm. Write prolific, passionate, vivid spoken English. "
-        f"No em dashes. Direct address ('you', 'we'). Stories before statistics.\n"
+        f"No em dashes. Direct address ('you', 'we'). Stories before statistics.\n\n"
+        f"EMOTIONAL ARC MANDATE (the audio is voiced over a warm/confident host-voice "
+        f"reference and performed with Fish Audio S2 reader tags downstream):\n"
+        f"- TARGET LISTENER EMOTION FOR THIS SLIDE: {emotion_target}\n"
+        f"- The words must DRAMATIZE that emotion with real beats: the hook/promise line "
+        f"earns a beat of silence after it; a reveal or price is preceded by a breath and "
+        f"allowed to sit alone; emotional turns are written so a tag can land on them "
+        f"(e.g. a sentence that begins with a feeling for the emotion cue, a key word a "
+        f"stress cue can hit, a 'sigh'/'pause' point on a vulnerable line).\n"
+        f"- DRAMATIC PACING: write to the arc of the stage, not a flat paragraph. Where a "
+        f"human would pause (after a promise, before a reveal, around the price), end the "
+        f"sentence and start a new one so the downstream tagger has a natural seam. Do NOT "
+        f"write run-on sentences that give a tag nowhere to breathe. Highest energy at "
+        f"offer/drop; calm, slow, quiet around a price; warm landing on the close.\n"
+        f"- REFERENCE-AUDIO NOTE: a calm/warm reference voice shows SUBTLER tag effects, so "
+        f"where a moment genuinely matters you must write it so even a subtle read lands — "
+        f"the words do the work; tags only amplify.\n"
+        f"- Do NOT add any [bracket] tags or (paren) cues in this output — tagging is done "
+        f"by a separate pass. Return ONLY the spoken words.\n"
         f"{existing}"
         f"ACTION: {action} the spoken block to hit the word budget of {slide.word_budget} words. "
-        f"Return ONLY the spoken text, no headers, no markdown.\n"
+        f"Return ONLY the spoken text, no headers, no markdown, no tags.\n"
     )
     # Content needs ~1.6 tokens/word; reasoning models (GLM/minimax/deepseek on Ollama Cloud)
     # ALSO emit a large chain-of-thought into message.reasoning BEFORE any content, so add
@@ -734,7 +803,10 @@ def load_slides(slides_path: str, arc_path: str) -> list[SlideSpec]:
 
     import re
     text = Path(slides_path).read_text()
-    blocks = re.split(r"(?m)^##\s+Slide\s+(\d+)", text)
+    # Accept BOTH "## Slide N" (markdown header) and plain "SLIDE N" — the
+    # canonical slides_copy.md uses plain "SLIDE N" (matches build_deck's tolerant
+    # parser). E2E finding: the old regex parsed 0 slides on a plain-SLIDE deck.
+    blocks = re.split(r"(?m)^(?:#{1,3}\s+)?SLIDE\s+(\d+)\b", text)
     # blocks[0] = preamble, then pairs (slide_no, content)
     i = 1
     while i + 1 < len(blocks):

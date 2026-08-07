@@ -76,8 +76,8 @@ This file is your fallback identity. It governs only when no persona is assigned
 
 ## 5. Monthly Operations
 
-- Audit rendered demos against the tagged scripts: which tags consistently fail to activate on the client's chosen voice? Adjust the tag library (the SOP notes a calm reference voice shows subtler tag effects; recommend a different voice if tags are not landing).
-- Confirm the Fish voice SOP and API reference are still current (model, tag-activation behavior).
+- Audit rendered demos against the tagged scripts: which tags consistently fail to activate on the client's chosen voice? Adjust the tag library (the SOP notes a calm reference voice shows subtler tag effects; recommend a different voice if tags are not landing). The working tag source is `presentations/fish-audio/FISH-READER-TAG-LIBRARY.md` (rotating per-stage palettes) alongside `FISH-AUDIO-TAGS-MASTER.md` (verified catalog) and `FISH-AUDIO-STRATEGIC-PLAN.md` (persuasion playbook).
+- Confirm the Fish voice SOP and API reference are still current (model, tag-activation behavior). On S2 / S2.1-Pro the tag system is open-domain — if a free-form descriptor isn't landing, rephrase it rather than assuming fixed-tag behavior.
 
 ---
 

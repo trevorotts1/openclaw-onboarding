@@ -2,7 +2,7 @@
 
 Bar (Gauntlet Loop FIX-8 / T-09 / M2-M9):
   * a DECK-ONLY bundle FAILS, enumerating exactly which deliverables are missing;
-  * the FULL 9-deliverable bundle PASSES and writes bundle_complete.json;
+  * the FULL deliverable bundle PASSES and writes bundle_complete.json;
   * a zero-byte / placeholder file is NOT 'done' (non-empty is required);
   * the gate is fail-closed: a partial bundle never gets a pass marker, and a
     stale pass marker is removed when the bundle regresses.
@@ -25,7 +25,7 @@ REQUIRED_KEYS = fbc.REQUIRED_KEYS
 
 
 def _write_full_bundle(base: pathlib.Path, deck_slug: str = "deck") -> None:
-    """Write all nine deliverables as real non-empty files."""
+    """Write all required deliverables as real non-empty files."""
     for spec in fbc.REQUIRED_DELIVERABLES:
         fname = fbc._expand_filename(spec["filename"], deck_slug)
         (base / fname).write_bytes(b"x" * 2048)
@@ -60,7 +60,7 @@ def test_deck_only_fails_and_enumerates_missing(tmp_path):
 
 
 def test_full_bundle_passes_and_writes_gate(tmp_path):
-    """All nine deliverables present and non-empty -> PASS, bundle_complete.json
+    """All required deliverables present and non-empty -> PASS, bundle_complete.json
     written with complete:true and all 9 recorded."""
     base = tmp_path / "full"
     base.mkdir(parents=True)
@@ -74,7 +74,7 @@ def test_full_bundle_passes_and_writes_gate(tmp_path):
     assert gate is not None and gate.is_file(), "bundle_complete.json must be written"
     rec = json.loads(gate.read_text())
     assert rec.get("complete") is True
-    assert rec.get("deliverable_count") == len(REQUIRED_KEYS) == 9
+    assert rec.get("deliverable_count") == len(REQUIRED_KEYS) == 10
     assert set(rec.get("deliverables", {})) == set(REQUIRED_KEYS)
 
 
@@ -162,7 +162,7 @@ def test_in_pipeline_runner_resolution_path(tmp_path):
 
 
 def test_manifest_lockstep():
-    """The nine REQUIRED_KEYS must equal PIPELINE-MANIFEST.build_bundle_files —
+    """The REQUIRED_KEYS must equal PIPELINE-MANIFEST.build_bundle_files —
     they must never drift apart."""
     import os
     cur = pathlib.Path(fbc.__file__).resolve().parent

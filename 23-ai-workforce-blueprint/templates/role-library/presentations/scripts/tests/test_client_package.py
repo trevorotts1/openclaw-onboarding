@@ -168,16 +168,16 @@ def test_extra_file_fails_with_six_item_whitelist_message():
     pkg = _mk_pkg(six + ["notes-draft.md"])
     result = dg.check_af_dh1(pkg)
     assert result != ""
-    assert "six-item" in result, f"expected the six-item whitelist count in the message, got {result!r}"
+    assert "seven-item" in result, f"expected the seven-item whitelist count in the message, got {result!r}"
 
 
 # ---------------------------------------------------------------------------
 # 7 — client_package_files has 6 entries and every one appears in deliverables_required.
 # ---------------------------------------------------------------------------
-def test_manifest_client_package_files_has_six_entries_all_in_deliverables_required():
+def test_manifest_client_package_files_has_seven_entries_all_in_deliverables_required():
     man = _load_manifest()
     cpf = man["client_package_files"]
-    assert len(cpf) == 6, f"expected 6 client_package_files, got {len(cpf)}: {cpf}"
+    assert len(cpf) == 7, f"expected 7 client_package_files, got {len(cpf)}: {cpf}"
     req_keys = {e["key"] for e in man["deliverables_required"]}
     missing = [k for k in cpf if k not in req_keys]
     assert not missing, f"client_package_files keys absent from deliverables_required: {missing}"
@@ -324,9 +324,12 @@ def test_mk_full_run_teleprompter_false_still_trips_case_k():
 # [:-1] would silently drop the wrong file).
 # ---------------------------------------------------------------------------
 def test_no_audio_fixture_excludes_audio_by_name_not_position():
-    assert dg.CLIENT_PACKAGE[-1] == "presenter-teleprompter.html", (
-        "this test's premise (the last element is the teleprompter, not the audio "
-        "file) no longer holds — a positional slice would drop the wrong file")
+    # Feature L2-G adds webinar_mp4 as the LAST client-package element (demo-deck-WEBINAR.mp4).
+    # The test's real premise is: audio_mp3 is NOT last, so a positional slice that drops
+    # the last element never drops the audio file. The audio is 5th; the last is the webinar.
+    assert dg.CLIENT_PACKAGE[-1] == "demo-deck-WEBINAR.mp4", (
+        "this test's premise (the last element is the webinar, not the audio file) no "
+        "longer holds — a positional slice would drop the wrong file")
     no_audio = [f for f in dg.CLIENT_PACKAGE if f != "PRESENTER-AUDIO.mp3"]
     assert "PRESENTER-AUDIO.mp3" not in no_audio
     assert "presenter-teleprompter.html" in no_audio

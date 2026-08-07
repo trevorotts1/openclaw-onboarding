@@ -145,7 +145,7 @@ def test_gate3_end_to_end_library_only_proceeds(tmp_path):
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     payload = {
         "in_sync": False,
-        "manifest_version": 38,
+        "manifest_version": 39,
         "drift": [
             {"check": "A5", "item": "undeclared-role", "detail": "x", "class": "A5/A6"},
             {"check": "A6", "item": "P-SOME", "detail": "y", "class": "A5/A6"},
@@ -175,7 +175,7 @@ def test_gate3_end_to_end_render_path_fails(tmp_path):
     (run_dir / "working" / "checkpoints" / ".test-context").write_text("")
     payload = {
         "in_sync": False,
-        "manifest_version": 38,
+        "manifest_version": 39,
         "drift": [
             {"check": "B2", "item": "AF-ORPHAN", "detail": "y", "class": "render_path"},
         ],
@@ -271,7 +271,7 @@ def test_attempt_cap_end_to_end_4th_dies(tmp_path):
     (run_dir / "working" / "interview" / "intake_transcript.json").write_text(
         json.dumps({"driver": "deck-intake-driver", "signature": "signed",
                     "turns": [{"q": "What topic?", "a": "A long enough answer " * 40}]}))
-    payload = {"in_sync": True, "manifest_version": 38, "drift": [],
+    payload = {"in_sync": True, "manifest_version": 39, "drift": [],
                "drift_summary": {"total": 0, "render_path": 0, "library_only": 0}}
     scripts = _make_fake_scripts_dir(tmp_path, json.dumps(payload))
     env = {"QC_SKIP_PRESENTATION_DEPS": "1"}

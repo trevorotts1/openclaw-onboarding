@@ -55,14 +55,14 @@ _PROD_SPEC.loader.exec_module(_prod)
 
 
 def _manifest() -> dict:
-    """Resolve PIPELINE-MANIFEST.json (walk up from scripts/)."""
-    cur = HERE
-    for _ in range(10):
-        cand = cur / "universal-sops" / "presentation-slide-craft" / "PIPELINE-MANIFEST.json"
-        if cand.is_file():
-            return json.loads(cand.read_text())
-        cur = cur.parent
-    raise FileNotFoundError("PIPELINE-MANIFEST.json not found by walking up from scripts/")
+    """Resolve PIPELINE-MANIFEST.json via manifest_source (the single canonical
+    resolver) — finds the installed manifest (sops/) OR the cluster copy
+    (universal-sops/presentation-slide-craft/) depending on the deployment."""
+    import manifest_source
+    path, _prov = manifest_source.resolve_manifest(HERE)
+    if path is None or not Path(path).is_file():
+        raise FileNotFoundError(f"PIPELINE-MANIFEST.json not resolved by manifest_source from {HERE}")
+    return json.loads(Path(path).read_text())
 
 
 def _make_real_mp3(path: Path, seconds: int = 3) -> Path:
@@ -103,7 +103,9 @@ def test_model_truth() -> list:
 
 def test_producer_wiring() -> list:
     """The manifest P9-DELIVER phase must wire synthesize_full_speech.py to produce
-    the canonical PRESENTER-AUDIO.mp3 (audio_mp3) in working/delivery/."""
+    the canonical PRESENTER-AUDIO.mp3 (audio_mp3) in working/delivery/, reading the
+    FISH-TAGGED speech so [bracket] reader tags reach the Fish API (the expressive
+    audio fix — the UNTAGGED file alone produced flat audio)."""
     fails = []
     man = _manifest()
     phases = {p.get("id"): p for p in man.get("phases", [])}
@@ -122,6 +124,14 @@ def test_producer_wiring() -> list:
         fails.append("WIRING: P9-DELIVER executor does not produce PRESENTER-AUDIO.mp3")
     if "PRESENTERS-SPEECH.md" not in cmd:
         fails.append("WIRING: P9-DELIVER executor does not read PRESENTERS-SPEECH.md")
+    # EXPRESSIVE-AUDIO REGRESSION GUARD: the executor MUST feed the FISH-TAGGED
+    # speech so the [bracket] tags reach the API. Without --tagged-speech the
+    # executor silently ships flat audio again (root cause of GAUNTLET LOOP 2-A).
+    if "PRESENTERS-SPEECH-FISH-TAGGED.md" not in cmd:
+        fails.append("EXPRESSIVE: P9-DELIVER executor does not consume the FISH-TAGGED "
+                     "speech (--tagged-speech) — bracket reader tags never reach the API")
+    if "--tagged-speech" not in cmd:
+        fails.append("EXPRESSIVE: P9-DELIVER executor does not pass --tagged-speech")
     # audio_mp3 must be one of the nine build-bundle files.
     bb = man.get("build_bundle_files", [])
     if "audio_mp3" not in bb:

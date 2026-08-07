@@ -463,6 +463,9 @@ class AuthAndContractTest(unittest.TestCase):
             self.assertNotIn("status", body)
             self.assertIn("P4-RENDER", body["message"])
             self.assertIn("12 slides rendered", body["message"])
+            # U060 stepper: the phase reducer reads task_activities.metadata.phase_id,
+            # NEVER the message text — the phase must ride in structured metadata.
+            self.assertEqual(body["metadata"], {"phase_id": "P4-RENDER"})
             self.assertTrue(cc_board.assert_min_one_advance(rd))
 
 

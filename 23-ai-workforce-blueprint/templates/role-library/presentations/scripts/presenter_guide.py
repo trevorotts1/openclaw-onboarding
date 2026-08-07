@@ -43,7 +43,7 @@ _LADDER_RE = re.compile(r"LADDER:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _SECTION_RE = re.compile(r"SECTION:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _PURPOSE_RE = re.compile(r"PURPOSE:?\s*(.+?)" + _BOUNDARY, re.DOTALL | re.I)
 _NOTE_RE = re.compile(r"PRESENTER\s+NOTE:?\s*(.+?)(?=\n(?:##\s+Slide|\Z))", re.DOTALL | re.I)
-_SLIDE_SPLIT_RE = re.compile(r"(?m)^##\s+Slide\s+(\d+)\b", re.I)
+_SLIDE_SPLIT_RE = re.compile(r"(?m)^(?:#{1,3}\s+)?SLIDE\s+(\d+)\b", re.I)
 _HEADLINE_RE = re.compile(r"(?m)^(?:\*\*(.+?)\*\*|Headline:?\s*(.+?)(?:\n|$))", re.I)
 _SPEECH_SLIDE_RE = re.compile(r"##\s+Slide\s+(\d+)\s+--\s+(.+?)\s+\((\w+)\)")
 _SPEECH_META_RE = re.compile(r">\s*STAGE:\s*(\w+)\s+KIND:\s*(\w+)")
@@ -377,7 +377,16 @@ class PresenterGuide:
             if si < len(self.sections) - 1: story.append(PageBreak())
         doc.build(story)
         size = os.path.getsize(out_path) if os.path.exists(out_path) else 0
-        floor = MIN_BYTES_SAMPLE if sample_mode else MIN_BYTES
+        if sample_mode:
+            floor = MIN_BYTES_SAMPLE
+        else:
+            # Scale the byte floor with the deck size. MIN_BYTES (51,200) was tuned
+            # for a ~34-slide reference deck (~1,500 bytes/slide); a smaller, fully
+            # populated deck legitimately renders smaller. Scaling proportionally
+            # keeps the floor catching an empty/garbled guide while not rejecting
+            # a real 20-slide guide that passes the font floor. (E2E finding.)
+            _n_slides = len(getattr(self, "slides", []) or []) or 1
+            floor = max(int(MIN_BYTES * _n_slides // 34), MIN_BYTES_SAMPLE)
         if size < floor:
             print(f"[FATAL] {Path(out_path).name} is {size} bytes, below {floor:,}-byte floor", file=sys.stderr)
             sys.exit(3)
@@ -512,7 +521,8 @@ def main():
     print(f"\n[presenter-guide] Rendering {out_path} ...")
     pages, size = guide.build(str(out_path), str(alias), sample_mode=is_sample)
 
-    floor = MIN_BYTES_SAMPLE if is_sample else MIN_BYTES
+    _n = len(getattr(guide, "slides", []) or []) or 1
+    floor = MIN_BYTES_SAMPLE if is_sample else max(int(MIN_BYTES * _n // 34), MIN_BYTES_SAMPLE)
     print(f"[presenter-guide] Rendered {out_path} ({pages} page(s), {size:,} bytes)")
     print(f"[presenter-guide] Alias: {alias}")
     if size >= floor:
