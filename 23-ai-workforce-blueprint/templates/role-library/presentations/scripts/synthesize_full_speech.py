@@ -19,31 +19,64 @@ audio being far shorter than the written script. This script fixes both:
      spoken word count at --wpm (default 140). If the audio is far short of the
      speech, the script EXITS NON-ZERO and does NOT overwrite the deliverable.
 
-Fish Audio facts (per 30-fish-audio-api-reference/references/fish-audio-api-reference.md):
-  - POST https://api.fish.audio/v1/tts , Bearer auth, header model: s2.1-pro (the
-    current PAID production model; the interim s2-pro id was superseded by S2.1 Pro
-    and is NOT a durable default for client work).
-  - chunk_length param max 300; we additionally pre-chunk the text ourselves and
-    send each chunk as its own request so a single oversized request can never
-    silently truncate the talk.
-  - format mp3, mp3_bitrate 192, normalize true (set false only for tag fidelity).
-  - MP3 VALIDITY PROBE (FIX-9, T-10): the final mp3 must be a REAL, parseable MP3 —
-    ID3v2 header present and at least one valid MPEG audio frame header. A file that
-    only "exists" but is not decodable audio FAILS the probe (verify_mp3).
+EXPRESSIVE AUDIO (GAUNTLET LOOP 2, Feature A) — why this is no longer flat
+-------------------------------------------------------------------------
+Fish Audio S2 / S2.1-Pro expressiveness is driven by INLINE [bracket] reader
+tags embedded in the text (e.g. `[confident]` `[pause]` `[whispering]`) — there
+is NO SSML / emotion request field. The department already produces those tags
+in `speech_fish_tag.py` -> `PRESENTERS-SPEECH-FISH-TAGGED.md`, but the executor
+fed the UNTAGGED `PRESENTERS-SPEECH.md` to the API, so the tags never reached
+the model and every read came out flat. This script now:
+
+  - Synthesizes the **FISH-TAGGED** speech (`--tagged-speech`) when provided,
+    so `[bracket]` emotion / reader tags actually reach the API.
+  - Sends the documented expressiveness knobs the API supports:
+      temperature          0.9 (higher = more expressive; default 0.7)
+      top_p                0.8 (nucleus-sampling diversity)
+      repetition_penalty   1.2 (suppress repetitive audio patterns)
+      prosody              {speed, volume, normalize_loudness}
+    (Fish OpenAPI: https://api.fish.audio/openapi.json — verified field names.)
+  - Splices **measured** silence at pause markers (see PAUSES below) so the
+    1-5 s dramatic pauses are EXACT, not whatever the model decides.
+
+PAUSES — exact 1-5 s dramatic silence
+-------------------------------------
+The Fish API pause tags (`[pause]`, `[long pause]`, `[long-break]`, `[break]`,
+`[short pause]`) have NO documented duration (docs only say "brief"/"extended").
+To get deterministic 1-5 s silences we do NOT rely on the model's guess: pause
+markers are stripped from the text sent to the API and replaced with a measured
+silent mp3 (ffmpeg anullsrc) spliced at the exact position in the concat.
+Defaults (override with --pause-short / --pause / --pause-long):
+  [short pause]                    -> 0.8 s
+  [pause] / [break] / [PAUSE]      -> 1.2 s
+  [BREATHE]                        -> 1.2 s (breath cue -> beat)
+  [long pause] / [long-break]      -> 2.5 s
+  (PAUSE N seconds)                -> N seconds (parsed)
+Director cues `(OWNER: ...)` are dropped entirely (never spoken aloud).
 
 USAGE
 -----
   FISH_AUDIO_API_KEY=... FISH_AUDIO_VOICE_ID=... \
   python3 synthesize_full_speech.py \
-      --speech /path/PRESENTER-SPEECH.md \
-      --out    /path/PRESENTER-AUDIO.mp3 \
+      --speech        /path/PRESENTERS-SPEECH.md \
+      --tagged-speech /path/PRESENTERS-SPEECH-FISH-TAGGED.md \
+      --out           /path/PRESENTER-AUDIO.mp3 \
       [--voice-id <reference_id>] [--api-key <key>] \
       [--model s2.1-pro] [--bitrate 192] [--wpm 140] [--min-ratio 0.80] \
-      [--chunk-chars 280] [--workdir <dir>]
+      [--chunk-chars 280] [--workdir <dir>] \
+      [--temperature 0.9] [--top-p 0.8] [--repetition-penalty 1.2] \
+      [--prosody-speed 1.0] [--prosody-volume 0] \
+      [--pause-short 0.8] [--pause 1.2] [--pause-long 2.5]
+
+The word-count / duration gate is computed from the UNTAGGED `--speech` (bracket
+tags are not spoken words). Synthesis chunks come from `--tagged-speech` when
+given, else fall back to `--speech`.
 
 The speech is cleaned the same way the word-count gate expects: markdown
 headers (## Slide N), the how-to blockquote, horizontal rules, and bold-only
-label lines are NOT spoken; everything else is.
+label lines are NOT spoken; everything else is. `[bracket]` tags are preserved;
+director cues (`[PAUSE]`/`[BREATHE]`/`(PAUSE N seconds)`/`(OWNER: ...)`) are
+converted to measured silence or dropped rather than spoken.
 """
 
 import argparse
@@ -96,6 +129,16 @@ def extract_spoken(md_text: str) -> str:
     return text
 
 
+def strip_cues(text: str) -> str:
+    """Remove director/pause cues for WORD COUNTING only — the duration gate must
+    count real spoken words, not `[PAUSE]`/`(OWNER: ...)` tokens. Pause cues are
+    later re-inserted as measured silence by segment_pauses(); this helper exists
+    so a cue never inflates the expected-duration estimate."""
+    text = _OWNER_CUE_RE.sub(" ", text)
+    text = _PAUSE_TAG_RE.sub(" ", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def word_count(text: str) -> int:
     return len(text.split())
 
@@ -145,6 +188,101 @@ def chunk_text(text: str, chunk_chars: int) -> list[str]:
 
 
 # ----------------------------------------------------------------------------
+# Pause markers -> measured silence (seconds).
+#
+# Fish S2/S2.1-Pro pause tags have NO documented duration. To get deterministic
+# 1-5 s dramatic pauses we splice a measured silent mp3 at the ffmpeg stage
+# instead of trusting the model's "brief"/"extended" guess. The tag is stripped
+# from the text sent to the API so it is never voiced as a word and never
+# double-pauses. Defaults are overridable via CLI.
+# ----------------------------------------------------------------------------
+DEFAULT_PAUSE_SECONDS = {
+    "short pause": 0.8,       # [short pause]  — quick beat
+    "pause": 1.2,             # [pause] / [break] / [PAUSE]  — beat / let it land
+    "breathe": 1.2,           # [BREATHE]  — breath cue -> beat
+    "long pause": 2.5,        # [long pause] / [long-break]  — big silence
+}
+
+# Regex that matches a pause marker ANYWHERE in the text (standalone line or
+# inline mid-sentence). Group(1) = numeric seconds for `(PAUSE N seconds)`.
+_PAUSE_TAG_RE = re.compile(
+    r"\[\s*short\s*pause\s*\]"                       # [short pause]
+    r"|\[\s*long\s*[- ]?pause\s*\]"                  # [long pause] / [long-pause]
+    r"|\[\s*long\s*[- ]?break\s*\]"                  # [long-break] / [long break]
+    r"|\[\s*(?:PAUSE|BREATHE|BREAK)\s*\]"            # [pause] [PAUSE] [breathe] [break]
+    r"|\(\s*PAUSE\s+(\d+(?:\.\d+)?)\s*seconds?\s*\)"  # (PAUSE 2 seconds) -> exact
+    ,
+    re.IGNORECASE,
+)
+
+# Regex that matches a (OWNER: ...) director cue INLINE so it is dropped, never
+# voiced as text.
+_OWNER_CUE_RE = re.compile(r"\(\s*OWNER\s*:.*?\)", re.IGNORECASE | re.DOTALL)
+
+
+def segment_pauses(text: str, pause_seconds: dict) -> list:
+    """Split *text* into an ordered list of ("speech", str) and ("silence", float)
+    items.
+
+    Pause markers (standalone or inline) are removed from the speech text and
+    turned into measured-silence items; `(OWNER: ...)` director cues are dropped
+    entirely. Adjacent silence items are merged so `[pause][long pause]` becomes
+    one 3.7 s gap instead of two separate files.
+    """
+    # Drop (OWNER: ...) director cues before anything else — they are notes, not
+    # spoken words, and must never reach the API.
+    text = _OWNER_CUE_RE.sub(" ", text)
+
+    items: list = []           # ("speech"|"silence", payload)
+    cursor = 0
+    for m in _PAUSE_TAG_RE.finditer(text):
+        before = text[cursor:m.start()]
+        if before.strip():
+            items.append(("speech", before.strip()))
+        tag = m.group(0)
+        if m.group(1) is not None:
+            seconds = float(m.group(1))
+        else:
+            low = tag.lower().strip()
+            if "short pause" in low:
+                seconds = pause_seconds["short pause"]
+            elif "long" in low:
+                seconds = pause_seconds["long pause"]
+            elif "breathe" in low:
+                seconds = pause_seconds["breathe"]
+            else:
+                seconds = pause_seconds["pause"]
+        items.append(("silence", seconds))
+        cursor = m.end()
+    tail = text[cursor:]
+    if tail.strip():
+        items.append(("speech", tail.strip()))
+
+    # Merge adjacent silence items.
+    merged: list = []
+    for kind, payload in items:
+        if kind == "silence" and merged and merged[-1][0] == "silence":
+            merged[-1] = ("silence", merged[-1][1] + payload)
+        else:
+            merged.append((kind, payload))
+    return merged
+
+
+def make_silence_mp3(seconds: float, out_path: str, bitrate: int,
+                     sample_rate: int = 44100) -> str:
+    """Generate a *measured* silent MP3 of exactly *seconds* via ffmpeg anullsrc.
+    Deterministic and reliable for the 1-5 s dramatic-pause requirement."""
+    subprocess.check_call([
+        "ffmpeg", "-y",
+        "-f", "lavfi", "-i", f"anullsrc=r={sample_rate}:cl=mono",
+        "-t", f"{seconds:.3f}",
+        "-c:a", "libmp3lame", "-b:a", f"{bitrate}k",
+        out_path,
+    ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return out_path
+
+
+# ----------------------------------------------------------------------------
 # Fish Audio synthesis (one request per chunk).
 # ----------------------------------------------------------------------------
 FISH_URL = "https://api.fish.audio/v1/tts"
@@ -159,7 +297,19 @@ MAIN_MODEL_DEFAULT = "s2.1-pro"
 
 
 def synth_chunk(text, api_key, voice_id, model, bitrate, out_path,
-                normalize=True, retries=3):
+                normalize=True, retries=3,
+                temperature=0.9, top_p=0.8, repetition_penalty=1.2,
+                prosody_speed=1.0, prosody_volume=0.0,
+                prosody_normalize_loudness=True):
+    """Synthesize *text* via Fish Audio /v1/tts.
+
+    EXPRESSIVE REQUEST (GAUNTLET LOOP 2): sends the Fish API's documented
+    expressiveness knobs — temperature (0-1, "controls expressiveness", default
+    0.7; we raise to 0.9), top_p (0-1, default 0.7 -> 0.8), repetition_penalty
+    (>1.0 suppresses repeating audio patterns, default 1.2), and prosody
+    {speed 0.5-2.0, volume dB, normalize_loudness}. Field names verified against
+    https://api.fish.audio/openapi.json (TTSRequest schema).
+    """
     body = {
         "text": text,
         "format": "mp3",
@@ -167,6 +317,14 @@ def synth_chunk(text, api_key, voice_id, model, bitrate, out_path,
         "chunk_length": 300,
         "normalize": normalize,
         "latency": "normal",
+        "temperature": temperature,
+        "top_p": top_p,
+        "repetition_penalty": repetition_penalty,
+        "prosody": {
+            "speed": prosody_speed,
+            "volume": prosody_volume,
+            "normalize_loudness": prosody_normalize_loudness,
+        },
     }
     if voice_id:
         body["reference_id"] = voice_id
@@ -294,7 +452,11 @@ def ffmpeg_concat_normalize(chunk_paths, raw_out, final_out, bitrate):
 # ----------------------------------------------------------------------------
 def main():
     ap = argparse.ArgumentParser(description="Full-length presenter-audio synthesis with duration gate.")
-    ap.add_argument("--speech", required=True, help="Path to PRESENTER-SPEECH.md")
+    ap.add_argument("--speech", required=True, help="Path to PRESENTERS-SPEECH.md (UNTAGGED — used for the word-count / duration gate)")
+    ap.add_argument("--tagged-speech", default=None,
+                    help="Path to PRESENTERS-SPEECH-FISH-TAGGED.md. When given, THIS is the "
+                         "text synthesized (so [bracket] reader tags reach the API). Falls "
+                         "back to --speech if omitted.")
     ap.add_argument("--out", required=True, help="Path to write the final full-length mp3")
     ap.add_argument("--api-key", default=os.environ.get("FISH_AUDIO_API_KEY"))
     ap.add_argument("--voice-id", default=os.environ.get("FISH_AUDIO_VOICE_ID"))
@@ -311,6 +473,27 @@ def main():
     ap.add_argument("--chunk-chars", type=int, default=280, help="Max chars per Fish request (API cap is 300)")
     ap.add_argument("--workdir", default=None, help="Where to write per-chunk mp3s (default: <out_dir>/_audio_chunks_full)")
     ap.add_argument("--normalize", action="store_true", default=True)
+    # ---- EXPRESSIVE AUDIO knobs (GAUNTLET LOOP 2) ----
+    ap.add_argument("--temperature", type=float, default=0.9,
+                    help="Fish API temperature (0-1). 'Controls expressiveness' — higher is "
+                         "more varied. Default 0.9 (OpenAPI default is 0.7).")
+    ap.add_argument("--top-p", type=float, default=0.8,
+                    help="Fish API top_p (0-1). Nucleus-sampling diversity. Default 0.8.")
+    ap.add_argument("--repetition-penalty", type=float, default=1.2,
+                    help="Fish API repetition_penalty (>1.0 reduces repeating audio patterns). Default 1.2.")
+    ap.add_argument("--prosody-speed", type=float, default=1.0,
+                    help="prosody.speed (0.5-2.0). Global speaking-rate multiplier. Default 1.0.")
+    ap.add_argument("--prosody-volume", type=float, default=0.0,
+                    help="prosody.volume (dB, ~ -20..+20). Default 0.")
+    ap.add_argument("--prosody-no-normalize-loudness", action="store_true",
+                    help="Set prosody.normalize_loudness=false (S2 family only; default true).")
+    # ---- measured silence defaults ----
+    ap.add_argument("--pause-short", type=float, default=DEFAULT_PAUSE_SECONDS["short pause"],
+                    help="Seconds for [short pause]")
+    ap.add_argument("--pause", type=float, default=DEFAULT_PAUSE_SECONDS["pause"],
+                    help="Seconds for [pause]/[break]/[PAUSE]")
+    ap.add_argument("--pause-long", type=float, default=DEFAULT_PAUSE_SECONDS["long pause"],
+                    help="Seconds for [long pause]/[long-break]")
     args = ap.parse_args()
 
     if not args.api_key:
@@ -321,39 +504,99 @@ def main():
         if subprocess.call(["which", tool], stdout=subprocess.DEVNULL) != 0:
             sys.exit(f"FAIL: {tool} not found on PATH. Install via 'brew install ffmpeg'.")
 
+    # ---- duration gate input: UNTAGGED speech (tags are not spoken words) ----
     md = open(args.speech).read()
     spoken = extract_spoken(md)
-    words = word_count(spoken)
+    words = word_count(strip_cues(spoken))
     expected_sec = words / args.wpm * 60.0
     floor_sec = expected_sec * args.min_ratio
-    print(f"[speech] spoken words = {words}")
+    print(f"[speech] spoken words (untagged gate) = {words}")
     print(f"[speech] expected duration @ {args.wpm:.0f} wpm = {expected_sec:.1f}s ({expected_sec/60:.2f} min)")
     print(f"[gate]   minimum acceptable duration = {floor_sec:.1f}s ({floor_sec/60:.2f} min)  (>= {args.min_ratio:.0%})")
 
-    chunks = chunk_text(spoken, args.chunk_chars)
-    total_chars = sum(len(c) for c in chunks)
-    print(f"[chunk]  {len(chunks)} chunks, {total_chars} total chars "
-          f"(speech is {len(spoken)} chars — {total_chars/max(1,len(spoken)):.0%} coverage)")
-    if total_chars < 0.95 * len(re.sub(r'\s+', ' ', spoken)):
-        sys.exit("FAIL: chunking dropped text (coverage < 95%). Aborting before synthesis.")
+    # ---- synthesis input: TAGGED speech (bracket reader tags must reach the API) ----
+    synth_md_path = args.tagged_speech or args.speech
+    synth_md = open(synth_md_path).read()
+    synth_spoken = extract_spoken(synth_md)
+    if args.tagged_speech and args.tagged_speech != args.speech:
+        # Sanity: the tagged text must contain the untagged words. Strip brackets
+        # from the tagged spoken text and assert word-for-word containment, else
+        # the tagged file is corrupt and we must not ship flat/broken audio.
+        import speech_fish_tag  # local import: same scripts dir
+        if not speech_fish_tag.verify_strip_equals_source(synth_spoken, spoken):
+            sys.exit("FAIL: --tagged-speech does not word-for-word match --speech after "
+                     "stripping tags. Refuse to synthesize a corrupt tagged file. "
+                     "Re-run speech_fish_tag.py and verify.")
+        print(f"[tagged] synthesis input = {synth_md_path} "
+              f"({len(synth_spoken)} chars, tags verified against untagged speech)")
 
+    # ---- segment into speech + measured silence, then chunk the speech ----
+    pause_seconds = {
+        "short pause": args.pause_short,
+        "pause": args.pause,
+        "long pause": args.pause_long,
+        "breathe": args.pause,  # breath cue -> beat
+    }
+    items = segment_pauses(synth_spoken, pause_seconds)
+
+    n_speech = sum(1 for k, _ in items if k == "speech")
+    n_silence = sum(1 for k, _ in items if k == "silence")
+    total_silence = sum(p for k, p in items if k == "silence")
+    print(f"[pause]  {n_silence} measured-silence insertions totalling {total_silence:.1f}s "
+          f"({n_speech} speech segments)")
+
+    # Build ordered chunks: speech segments chunked to --chunk-chars, silence
+    # segments as exact silent mp3s. Order is preserved for the concat.
     workdir = args.workdir or os.path.join(os.path.dirname(os.path.abspath(args.out)), "_audio_chunks_full")
     os.makedirs(workdir, exist_ok=True)
 
-    chunk_paths = []
-    for i, c in enumerate(chunks):
-        cp = os.path.join(workdir, f"chunk_{i:03d}.mp3")
-        n = synth_chunk(c, args.api_key, args.voice_id, args.model, args.bitrate, cp,
-                        normalize=args.normalize)
-        # FIX-9 MP3 validity probe per chunk — a chunk that is not real audio
-        # must fail BEFORE it can poison the concat.
-        _mp3_reason = verify_mp3(cp)
-        if _mp3_reason:
-            sys.exit(f"FAIL (MP3 PROBE): chunk {i+1} is not a valid MP3 ({_mp3_reason}). "
-                     f"Aborting before concat — a corrupt chunk must never reach the deliverable.")
-        chunk_paths.append(cp)
-        print(f"  [{i+1}/{len(chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
+    speech_segments = [p for k, p in items if k == "speech"]
+    speech_chunks: list[str] = []
+    for seg in speech_segments:
+        speech_chunks.extend(chunk_text(seg, args.chunk_chars))
 
+    total_chars = sum(len(c) for c in speech_chunks)
+    synth_norm = re.sub(r"\s+", " ", strip_cues(synth_spoken))
+    print(f"[chunk]  {len(speech_chunks)} speech chunks, {total_chars} total chars "
+          f"({len(synth_norm)} cue-stripped chars — {total_chars/max(1,len(synth_norm)):.0%} coverage of tagged text)")
+    if total_chars < 0.95 * len(synth_norm):
+        sys.exit("FAIL: chunking dropped text (coverage < 95%). Aborting before synthesis.")
+
+    # Assemble ordered render plan: interleave speech chunk paths and silence paths.
+    render_items: list = []      # ("file", path) for concat
+    speech_iter = iter(speech_chunks)
+    chunk_index = 0
+    for kind, payload in items:
+        if kind == "silence":
+            sp = os.path.join(workdir, f"silence_{chunk_index:03d}.mp3")
+            make_silence_mp3(payload, sp, args.bitrate)
+            _sp_reason = verify_mp3(sp)
+            if _sp_reason:
+                sys.exit(f"FAIL (MP3 PROBE): silence segment is not a valid MP3 ({_sp_reason}).")
+            render_items.append(("file", sp))
+            print(f"  [silence {len([r for r in render_items if r[1].startswith('silence_')]):02d}] "
+                  f"{payload:.1f}s -> {os.path.basename(sp)}", flush=True)
+        else:
+            c = next(speech_iter)
+            cp = os.path.join(workdir, f"chunk_{chunk_index:03d}.mp3")
+            chunk_index += 1
+            n = synth_chunk(c, args.api_key, args.voice_id, args.model, args.bitrate, cp,
+                            normalize=args.normalize,
+                            temperature=args.temperature, top_p=args.top_p,
+                            repetition_penalty=args.repetition_penalty,
+                            prosody_speed=args.prosody_speed,
+                            prosody_volume=args.prosody_volume,
+                            prosody_normalize_loudness=not args.prosody_no_normalize_loudness)
+            # FIX-9 MP3 validity probe per chunk — a chunk that is not real audio
+            # must fail BEFORE it can poison the concat.
+            _mp3_reason = verify_mp3(cp)
+            if _mp3_reason:
+                sys.exit(f"FAIL (MP3 PROBE): chunk {chunk_index} is not a valid MP3 ({_mp3_reason}). "
+                         f"Aborting before concat — a corrupt chunk must never reach the deliverable.")
+            render_items.append(("file", cp))
+            print(f"  [{chunk_index}/{len(speech_chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
+
+    chunk_paths = [p for _, p in render_items]
     raw_out = os.path.join(workdir, "concat_raw_full.mp3")
     final_out = args.out
     ffmpeg_concat_normalize(chunk_paths, raw_out, final_out, args.bitrate)

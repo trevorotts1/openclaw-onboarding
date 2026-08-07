@@ -1,5 +1,5 @@
 {
-  "manifest_version": 38,
+  "manifest_version": 39,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -826,6 +826,28 @@
       "verifier": "phase_verifiers.verify"
     },
     {
+      "id": "P8.25-WORKBOOK",
+      "order": 8.25,
+      "name": "Fillable PDF Workbook (kie.ai gpt-image-2 backgrounds + reportlab AcroForm)",
+      "owning_role": "pptx-assembly-specialist",
+      "sop_refs": [
+        "WORKBOOK-BUILDER-SOP.md",
+        "pptx-assembly-specialist-sops.md"
+      ],
+      "produces_artifact": "working/deliverables/{deck_slug}-WORKBOOK.pdf",
+      "gate_codes": [],
+      "preflight": null,
+      "client_report": {
+        "start_template": "Step {k} of {N} \u2014 {name} \u2014 starting{eta}",
+        "done_template": "Step {k} of {N} \u2014 {name} \u2014 complete"
+      },
+      "executor": {
+        "kind": "script",
+        "cmd": "python3 scripts/workbook_builder.py --run-dir {run_dir}"
+      },
+      "verifier": "phase_verifiers.verify"
+    },
+    {
       "id": "P9-SPEECH",
       "order": 8.5,
       "name": "Presenter Speech (length gate)",
@@ -1027,7 +1049,7 @@
       },
       "executor": {
         "kind": "script",
-        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
+        "cmd": "python3 scripts/synthesize_full_speech.py --speech {run_dir}/working/deliverables/PRESENTERS-SPEECH.md --tagged-speech {run_dir}/working/deliverables/PRESENTERS-SPEECH-FISH-TAGGED.md --out {run_dir}/working/delivery/PRESENTER-AUDIO.mp3"
       },
       "verifier": "phase_verifiers.verify"
     },
@@ -2701,7 +2723,7 @@
       "stage": "Phase0",
       "level": "deck",
       "in_ruleset": true,
-      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) — path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
+      "trigger": "FIX-18 (Error 10 / D17): the model serialized tool args as a STRING instead of a JSON object (12x 'args: must be object', 3x 'missing path' in the E2E). tool_schema_validator.py returns a NORMALIZED schema hint (e.g. 'write(path: string, content: string) \u2014 path is REQUIRED, not file') on a malformed call so the model self-corrects in ONE turn, and writes an AF-TOOL-SCHEMA-LOOP event to working/checkpoints/tool_schema_events.json when a tool hits 5 CONSECUTIVE failures. run_signature_deck.phase0_preflight hard-aborts (exit 4) on a non-empty loop-event ledger BEFORE any phase is dispatched, so a looping model is ALERTED (stopped), never silently re-tried. Repair: re-orient the model to emit args as a JSON object; the hint names the exact schema.",
       "enforced_by": "runner",
       "py_symbol": null
     },

@@ -10,20 +10,30 @@ OWNED BY: Presenter's Speech Writer (ROLE-20), Presentations department.
 Consumes PRESENTERS-SPEECH.md, intake.json, slides_copy.md, and the
 Fish Audio tags master catalog.  Produces PRESENTERS-SPEECH-FISH-TAGGED.md.
 
+EXPRESSIVE TAGGING (GAUNTLET LOOP 2, Feature A)
+-----------------------------------------------
+The tagger now emits ROTATING, stage-appropriate reader tags (not one static tag
+per line), injects [pause]/[long pause] at dramatic points, and [emphasis] on
+high-value price/promise words. Reference palettes: FISH-READER-TAG-LIBRARY.md
+in the presentations fish-audio/ dir (a SOURCE, not a limit — S2 is open-domain).
+Output ALWAYS satisfies verify_strip_equals_source: tags are added, never words
+changed. The audio executor consumes this FISH-TAGGED file (--tagged-speech) so
+the tags reach the Fish API — the root-cause fix for flat audio.
+
 USAGE
 -----
   python3 speech_fish_tag.py --run-dir <run_dir>
   python3 speech_fish_tag.py --run-dir <run_dir> --verify-only
   python3 speech_fish_tag.py --run-dir <run_dir> --sample
 
-TAG GRAMMAR (from the role doc)
--------------------------------
-  - Pair a physical / vocal tag with at most ONE emotion tag.
-  - NEVER stack two emotion tags on the same line.
-  - Maximum 2 tags per line unless a specific performance reason demands a
-    third (e.g., [laughing][happy][whispering] for a layered moment).
+TAG GRAMMAR (from the role doc + FISH-READER-TAG-LIBRARY.md)
+-----------------------------------------------------------
+  - Emotion cue at the START of the sentence it governs; tone/sound cues anywhere.
+  - Stack max 3 cues per sentence (e.g. [sad][whispering] ...).
   - Every tag MUST be followed by text to speak on the same line.
-  - S2 syntax: [square brackets] with natural-language descriptors.
+  - S2 syntax: [square brackets] with natural-language descriptors (open-domain).
+  - Pauses ([pause]/[long pause]) are qualitative; the audio executor splices
+    EXACT silence (1-5 s) at the ffmpeg stage. (OWNER: ...) notes are dropped.
 """
 
 import argparse
@@ -236,6 +246,20 @@ def _classify_slide_from_tokens(tokens: list) -> dict:
                 classifications[current_slide] = "CTA_CLOSE"
             elif stage in ("HOOK", "BIG_PROMISE") or kind == "hook":
                 classifications[current_slide] = "HOOK_REFRAIN"
+            elif stage in ("WELCOME", "OPEN", "INTRO") or kind == "welcome":
+                classifications[current_slide] = "WELCOME"
+            elif stage in ("TEACH", "VALUE", "HOW", "MECHANISM", "EDUCATE") \
+                    or kind in ("teach", "value", "how"):
+                classifications[current_slide] = "TEACH"
+            elif stage in ("PROOF", "RESULTS", "SOCIAL_PROOF", "WALL_OF_WINS") \
+                    or kind in ("proof", "results"):
+                classifications[current_slide] = "PROOF"
+            elif stage in ("OFFER", "PITCH", "PRICE", "VALUE_STACK") \
+                    or kind in ("offer", "pitch"):
+                classifications[current_slide] = "OFFER"
+            elif stage in ("SCARCITY", "URGENCY", "DEADLINE") \
+                    or kind in ("scarcity", "urgency"):
+                classifications[current_slide] = "SCARCITY"
             else:
                 classifications[current_slide] = "DEFAULT"
 
@@ -292,6 +316,66 @@ def _extract_hook_refrain_text(slides_copy_markers):
 
 
 # ---------------------------------------------------------------------------
+# Expressive tag palettes (GAUNTLET LOOP 2)
+#
+# Each classification has a ROTATING palette so consecutive lines inside a
+# slide do NOT all carry the same tag (that was the "minimal" flat-tagging
+# defect — [warm, credible] on every line produces a monotone read). Tags are
+# S2/S2.1-Pro square-bracket reader cues from FISH-AUDIO-TAGS-MASTER.md and the
+# composed descriptor library in section L (open-domain, valid on S2).
+#
+# Verified source tags: [confident] [calm] [excited] [happy] [sad] [empathetic]
+#   [proud] [grateful] [curious] [hopeful] [determined] [nostalgic]
+#   [whispering] [emphasis] [pause] [long pause] [short pause]
+# Composed (open-domain S2 descriptors): [warm and welcoming] [reflective, looking back]
+#   [vulnerable, almost confessional] [calm, grounded authority] [deliberate and measured]
+#   [understated, letting the numbers speak] [building excitement] [urgent but controlled]
+#   [sincere, warm] [smiling while speaking] [a knowing smile]
+# ---------------------------------------------------------------------------
+_EXPRESSIVE_PALETTES = {
+    "WELCOME": ["[warm and welcoming]", "[smiling while speaking]", "[genuinely caring]"],
+    "PAIN": ["[empathetic, unhurried]", "[quiet, sincere]", "[like talking to an old friend]"],
+    "STORY": ["[reflective, looking back]", "[vulnerable, almost confessional]", "[nostalgic]"],
+    "HOOK_REFRAIN": ["[deliberate and measured]", "[calm, grounded authority]", "[confident, building]"],
+    "TEACH": ["[calm, clear]", "[helpful, generous]", "[measured and deliberate]"],
+    "PROOF": ["[confident and factual]", "[understated, letting the numbers speak]", "[proud but humble]"],
+    "OFFER": ["[building excitement]", "[excited]", "[delighted]", "[confident]"],
+    "SCARCITY": ["[urgent but controlled]", "[serious, direct]", "[quickening pace]"],
+    "CTA_CLOSE": ["[sincere, warm]", "[confident, reassuring]", "[grateful]"],
+    "DEFAULT": ["[warm and credible]", "[confident]", "[warm, credible]"],
+}
+
+# Words that carry emphasis in a price / promise / CTA line. When present, the
+# tagger inserts [emphasis] before the word so the number or the action lands.
+_EMPHASIS_WORDS = (
+    "today", "now", "nineteen", "ninety", "one", "first", "exact", "only",
+    "never", "free", "thousand", "payment", "inside", "decision", "right",
+)
+
+
+def _rotate(palette, idx):
+    return palette[idx % len(palette)]
+
+
+def _emphasize_line(line_text):
+    """Return line_text with [emphasis] injected before the first high-value word
+    (price / promise / CTA trigger). If none matches, return line_text unchanged.
+    Safe: [emphasis] is a reader tag, stripped by verify_strip_equals_source."""
+    lowered = line_text.lower()
+    for w in _EMPHASIS_WORDS:
+        # word-boundary, not inside another word (e.g. 'someone' vs 'one')
+        m = re.search(r"(?<![a-z])" + re.escape(w) + r"(?![a-z])", lowered)
+        if m:
+            pos = m.start()
+            # find the real start of that word in the ORIGINAL case text
+            word_match = re.search(
+                r"\S*" + re.escape(w) + r"\S*", line_text, re.IGNORECASE)
+            if word_match:
+                return line_text[:word_match.start()] + "[emphasis] " + line_text[word_match.start():]
+    return line_text
+
+
+# ---------------------------------------------------------------------------
 # Core: rebuild speech with tags
 # ---------------------------------------------------------------------------
 
@@ -299,9 +383,12 @@ def _extract_hook_refrain_text(slides_copy_markers):
 def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
     """Produce the full tagged speech markdown.
 
-    Tokenises the entire speech, applies tags to 'spoken' tokens, and
-    reconstructs the output line-for-line.  All non-spoken tokens
-    (headers, meta, blanks, separators, cues) pass through unchanged.
+    Tokenises the entire speech, applies expressive (rotating, stage-appropriate)
+    tags to 'spoken' tokens, injects [pause]/[long pause] at dramatic points and
+    [emphasis] on high-value words, then reconstructs the output line-for-line.
+    All non-spoken tokens (headers, meta, blanks, separators, cues) pass through
+    unchanged. The output ALWAYS satisfies verify_strip_equals_source — tags are
+    added, never words changed.
     """
     tone = intake.get("TONE", "warm and passionate")
     slides_copy_markers = _parse_slides_copy_markers(slides_copy_text)
@@ -312,6 +399,9 @@ def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
 
     current_slide = None
     output_lines = []
+    # per-slide tag rotation counters so consecutive lines differ
+    line_index = {"n": 0}
+    last_slide_no = None
 
     for tok in tokens:
         if tok["type"] == "header":
@@ -319,6 +409,9 @@ def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
             m = re.search(r"Slide\s+(\d+)", tok["text"])
             if m:
                 current_slide = int(m.group(1))
+                if current_slide != last_slide_no:
+                    line_index["n"] = 0
+                    last_slide_no = current_slide
             output_lines.append(tok["text"])
 
         elif tok["type"] == "meta_line":
@@ -345,24 +438,40 @@ def _build_tagged_speech(speech_text, intake, slides_copy_text, catalog_text):
                 and _is_hook_refrain_line(line_text, hook_refrain_text)
             )
 
-            # Build tag
+            # Build a stage-appropriate tag, rotating so a slide does not read flat.
+            palette = _EXPRESSIVE_PALETTES.get(classification,
+                                               _EXPRESSIVE_PALETTES["DEFAULT"])
             if classification == "HOOK_REFRAIN" and is_refrain:
                 tag = "[deliberate and measured]"
-            elif classification == "PAIN":
-                tag = "[empathetic, unhurried]"
-            elif classification == "STORY":
-                tag = "[storytelling tone]"
-            elif classification == "CTA_CLOSE":
-                tag = "[confident]"
             else:
-                tag = _default_tag(tone)
+                tag = _rotate(palette, line_index["n"])
+            line_index["n"] += 1
 
             tagged_line = f"{tag} {line_text}"
-            output_lines.append(tagged_line)
 
-            # For LADDER_DROP slides: inject [long pause] after a price line
-            if classification == "LADDER_DROP" and _is_price_line(line_text):
-                output_lines.append("[long pause]")
+            # Price lines: [emphasis] on the number + a long pause AFTER it lands.
+            if _is_price_line(line_text):
+                tagged_line = _emphasize_line(tagged_line)
+                output_lines.append(tagged_line)
+                if classification == "LADDER_DROP":
+                    output_lines.append("[long pause]")
+                else:
+                    output_lines.append("[pause]")
+                continue
+
+            # Hook / promise lines: a beat BEFORE the refrain so it lands.
+            if classification == "HOOK_REFRAIN" and is_refrain:
+                output_lines.append("[pause]")
+                output_lines.append(tagged_line)
+                continue
+
+            # CTA / close: a short pause before the final directive.
+            if classification == "CTA_CLOSE":
+                output_lines.append(tagged_line)
+                output_lines.append("[short pause]")
+                continue
+
+            output_lines.append(tagged_line)
 
         elif tok["type"] == "meta":
             output_lines.append(tok["text"])

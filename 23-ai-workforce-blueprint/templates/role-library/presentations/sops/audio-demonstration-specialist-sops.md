@@ -66,6 +66,18 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 
    The committed pipeline that does this correctly is `Presentations/scripts/synthesize_full_speech.py` (cleans front-matter / headings / stage-directions out of the speech, chunks the whole talk, synthesizes every chunk via Fish Audio, concatenates with ffmpeg, and enforces the SOP 9.3 duration gate). Use it; do not hand-roll an ad-hoc subset run.
 
+   **EXPRESSIVE AUDIO (GAUNTLET LOOP 2, Feature A):** synthesize the **FISH-TAGGED**
+   speech (`PRESENTERS-SPEECH-FISH-TAGGED.md`, produced by `speech_fish_tag.py`) — pass
+   it via `--tagged-speech`. The untagged `PRESENTERS-SPEECH.md` alone produces FLAT
+   audio because the `[bracket]` reader tags never reach the Fish API. The executor now
+   sends `temperature: 0.9`, `top_p: 0.8`, `repetition_penalty: 1.2`, and
+   `prosody: {speed, volume, normalize_loudness}` (fields verified against the Fish
+   OpenAPI), and splices MEASURED silence (defaults 0.8 s / 1.2 s / 2.5 s) at
+   `[pause]` / `[long pause]` markers via ffmpeg — the Fish tags alone have no
+   documented duration. Reader-tag palettes: `presentations/fish-audio/
+   FISH-READER-TAG-LIBRARY.md`. If the audio executor is invoked directly, the P9-DELIVER
+   manifest cmd already passes `--tagged-speech`; never point it at the untagged file.
+
 2. Synthesize EACH chunk through the FALLBACK CHAIN, in order, falling through (LOUD-FAIL, log the leg error) on any leg failure:
    - PRIMARY: Fish Audio S2-Pro (`POST https://api.fish.audio/v1/tts`, Bearer auth, `model: s2-pro`, json or msgpack body, mp3 192 kbps; `normalize: false` for tag fidelity). Re-tag the chunk in S2 bracket syntax.
    - FALLBACK 1: ElevenLabs v3 (`eleven_v3`, inline audio tags). Re-tag the chunk in EL v3 inline-tag syntax. (Verify v3 capabilities/cost against live docs first.)

@@ -178,6 +178,16 @@ Master authority: universal-sops/CLIENT-WEBINAR-DECK-SOP.md
 1. CHUNK the ENTIRE speech into segments at or below the API input limit. The Fish Audio per-request limit is `chunk_length` MAX 300 characters (per 30-fish-audio-api-reference); pre-chunk to <= 280 chars and send EACH chunk as its own `/v1/tts` request so a single oversized request can never silently truncate the talk. Split on sentence / paragraph / slide boundaries. Each chunk keeps its expression tags.
    **FULL-COVERAGE RULE (hard):** Every spoken word of the QC-passed speech MUST land in some chunk. Assert >= 95% character coverage of the cleaned spoken text BEFORE any synthesis; if coverage is below that, ABORT and fix the chunker. NEVER synthesize only a "key beats" / "sizzle" / highlight subset and pass it off as the presentation audio. (Root-cause of the Corey 2026-06 incident: only 7 hand-picked beats — ~4 min — were synthesized instead of the full ~25 min, 62-slide speech.) A short highlight reel, if explicitly requested, is a SEPARATE deliverable (`<deck>_sizzle.mp3`) and MUST NOT overwrite the full presenter audio. The committed pipeline that does this correctly is `Presentations/scripts/synthesize_full_speech.py` — use it; do not hand-roll an ad-hoc subset run.
 
+   **EXPRESSIVE AUDIO (GAUNTLET LOOP 2, Feature A):** synthesize the **FISH-TAGGED**
+   speech (`PRESENTERS-SPEECH-FISH-TAGGED.md` from `speech_fish_tag.py`) — pass it via
+   `--tagged-speech`. The untagged `PRESENTERS-SPEECH.md` alone produces FLAT audio
+   because the `[bracket]` reader tags never reach the Fish API. The executor sends the
+   Fish expressiveness knobs (`temperature`, `top_p`, `repetition_penalty`, `prosody`),
+   and splices MEASURED silence at `[pause]` / `[long pause]` markers via ffmpeg
+   (Fish pause tags have no documented duration). Reader-tag palettes:
+   `presentations/fish-audio/FISH-READER-TAG-LIBRARY.md`. Never point the audio executor
+   at the untagged file.
+
 2. Synthesize EACH chunk through the FALLBACK CHAIN, in order, falling through (LOUD-FAIL, log the leg error) on any leg failure:
    - PRIMARY: Fish Audio S2-Pro (`POST https://api.fish.audio/v1/tts`, Bearer auth, `model: s2-pro`, json or msgpack body, mp3 192 kbps; `normalize: false` for tag fidelity). Re-tag the chunk in S2 bracket syntax.
    - FALLBACK 1: ElevenLabs v3 (`eleven_v3`, inline audio tags). Re-tag the chunk in EL v3 inline-tag syntax. (Verify v3 capabilities/cost against live docs first.)
