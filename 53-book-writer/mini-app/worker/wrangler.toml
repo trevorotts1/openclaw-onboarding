@@ -1,0 +1,49 @@
+# bookwriter.zerohumanworkforce.com — Cloudflare Worker core (U02)
+#
+# Master-plan section 1 contract:
+#   - Host: bookwriter.zerohumanworkforce.com (no collision, verified)
+#   - ZONE LANDMINE: the wildcard cert covers *.zerohumanworkforce.com. The
+#     zone that OWNS this host is zerohumanworkforce.com. Its zone id is NOT
+#     $CLOUDFLARE_ZONE_ID (that env var points at businessaftersixty.com, a
+#     DIFFERENT zone). U19 deploy.sh MUST use the literal zerohumanworkforce.com
+#     zone id, never $CLOUDFLARE_ZONE_ID.
+#   - Edge Worker is a DUMB RELAY: zero client PITs, zero API keys, zero
+#     Anthropic ids. The GHL write happens on the box that owns the run.
+#
+# NEVER put a real account/zone/namespace/bucket id in this file. The values
+# below are <PLACEHOLDER> tokens resolved by deploy.sh (U19) at deploy time.
+
+name = "bookwriter-mini-app"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+compatibility_flags = ["nodejs_compat"]
+
+# The zerohumanworkforce.com zone id (literal, NOT $CLOUDFLARE_ZONE_ID).
+# ZONE LANDMINE GUARD: deploy.sh replaces <PLACEHOLDER_ZONE_ID_ZEROHUMANWORKFORCE>
+# with the literal zerohumanworkforce.com zone id and refuses to run if it
+# ever resolves to the businessaftersixty.com zone.
+zone_id = "<PLACEHOLDER_ZONE_ID_ZEROHUMANWORKFORCE>"
+
+# U19 deploy.sh replaces this with the account id that owns the
+# zerohumanworkforce.com zone. NEVER the operator's account placeholder.
+account_id = "<PLACEHOLDER_ACCOUNT_ID>"
+
+# Workers Routes: the universal-link host. Pattern must match
+#   https://bookwriter.zerohumanworkforce.com/<slug>/<phase>?tk=<token>
+routes = [
+  { pattern = "bookwriter.zerohumanworkforce.com/*", zone_id = "<PLACEHOLDER_ZONE_ID_ZEROHUMANWORKFORCE>" }
+]
+
+# KV namespace "bw-bindings" — token -> {client_id, location_id, phase_id,
+# run_id, exp, status} binding rows, client registry, per-run state, per-step
+# consumed counters. See schema.sql for the exact key/value shapes.
+[[kv_namespaces]]
+binding = "bw_bindings"          # variable name inside the Worker
+id = "<PLACEHOLDER_KV_NAMESPACE_ID_BW_BINDINGS>"
+
+# R2 bucket "zhw-bookwriter" — app shell under app/<version>/, per-client phase
+# configs under config/<slug>/<phase>.json, media staging, transcripts. U19
+# creates the bucket; this Worker reads app shell + configs (media PUT is U04).
+[[r2_buckets]]
+binding = "ZHW_BOOKWRITER"       # variable name inside the Worker
+bucket_name = "zhw-bookwriter"
