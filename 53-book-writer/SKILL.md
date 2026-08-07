@@ -16,30 +16,28 @@ the client's own model providers (never Anthropic).**
 > The 12-chapter method captured in `MASTERDOC.md` is **SACRED** — never floored, reordered, or
 > reinterpreted. Every rule below is machine-enforced by a fail-closed prover, never advisory.
 
-## Authoring layer — SHIPPED vs. PENDING (truthful status)
+## Authoring layer — SHIPPED (all 27 baked prompt triplets on disk)
 
-> **Disclosure (no-false-done):** the sentence above about "baked versioned prompts" describes the
-> intended full architecture. As of this version, the baked prompt triplets that actually SHIP are the
-> **five shared-tone-core stages only** — `prompts/04-tone-style-1` … `prompts/08-blended-tone`, each a
-> `{system.md, methodology.md, user.md}` triplet byte-identical to `shared-utils/tone-writing-core`. The
-> full 12-chapter **authoring layer is PENDING** and is **deferred to a separate, scoped follow-up
-> campaign** (repo-only; fleet rollout stays HELD).
+> **Status (no-false-done):** the full authoring layer ships as baked prompt triplets. The **five
+> shared-tone-core stages** — `prompts/04-tone-style-1` … `prompts/08-blended-tone`, each a
+> `{system.md, methodology.md, user.md}` triplet byte-identical to `shared-utils/tone-writing-core` —
+> ship alongside the **22 non-tone authoring-stage triplets** that `BOOK-WRITER-MANIFEST.json`
+> `stages[]` references by `prompt_dir`: avatar (`01`–`03`), titles/blurb/chapter-titles (`10`–`12`),
+> outline/extract (`13`–`14`), the four chapter batches (`15`–`18`), the two book rewrites (`19`–`20`),
+> the 30-Day Challenge (`21`), cover prompt/image (`22`–`23`), and the 4x3x3 extras (`41`–`45`). Every
+> stage is now driven by a pinned baked prompt triplet, and a full end-to-end book is exercised through
+> the baked authoring prompts.
 
 - **Shipped now:** the intake + Book/Brand selector, `BOOK-WRITER-MANIFEST.json`, the deterministic
   assembler/certifier (`run_book_writer.py`), all twelve fail-closed provers + `verify_tone_core_sync.py`,
-  the seven role SOPs under `roles/` (registered in `roles/_index.json`), and the **five tone-core baked
-  prompt triplets (stages 04–08)**.
-- **Pending (NOT yet shipped):** the baked prompt triplets for the **22 non-tone authoring stages** that
-  `BOOK-WRITER-MANIFEST.json` `stages[]` references by `prompt_dir` but that are not present on disk —
-  avatar (`01`–`03`), titles/blurb/chapter-titles/outline/extract (`10`–`14`), the four chapter batches
-  (`15`–`18`), the two book rewrites (`19`–`20`), the 30-Day Challenge (`21`), cover prompt/image
-  (`22`–`23`), and the 4x3x3 extras (`41`–`45`). Until those triplets ship, the corresponding stages are
-  described by the `roles/` SOPs + `MASTERDOC.md` method rather than driven by a pinned baked prompt
-  triplet, so a full end-to-end book has not yet been exercised through baked authoring prompts.
-- **Unchanged by this disclosure:** every SACRED invariant below and its fail-closed prover still holds —
-  the provers MEASURE any produced artifact regardless of how the stage was generated; nothing here
-  weakens a gate. This section only corrects the over-claim that the *whole* stage graph already ships as
-  baked prompts. Building out the pending triplets is the follow-up campaign's scope, not this fix.
+  the seven role SOPs under `roles/` (registered in `roles/_index.json`), and **all 27 baked prompt
+  triplets** — the five tone-core stages (04–08, byte-identical to `shared-utils/tone-writing-core`) plus
+  the 22 non-tone authoring stages (01–03, 10–23, 41–45).
+- **No pending authoring stages.** The `roles/` SOPs remain the dispatchable agent definitions, but every
+  stage's content generation is now driven by its own pinned baked prompt triplet on disk under
+  `prompts/`; none is deferred to a follow-up campaign.
+- **Unchanged:** every SACRED invariant below and its fail-closed prover still holds — the provers
+  MEASURE any produced artifact regardless of how the stage was generated; nothing here weakens a gate.
 
 ## What this skill produces / owns
 
@@ -47,10 +45,10 @@ the client's own model providers (never Anthropic).**
   **Marcus Halloway**, *The Quiet Authority*).
 - `BOOK-WRITER-MANIFEST.json` — the single source of truth: phases (P0→P8), the stage graph, the
   `AF-BK-*` autofail map, tiers, modes, and the `shared_tone_core` key.
-- `prompts/<stage dirs>/{system.md, methodology.md, user.md}` — the baked generators. **Only stages
-  04–08 (the shared tone core, byte-identical to `shared-utils/tone-writing-core`) ship today; the
-  remaining authoring-stage prompt dirs referenced by the manifest are PENDING** — see "Authoring layer —
-  SHIPPED vs. PENDING" above.
+- `prompts/<stage dirs>/{system.md, methodology.md, user.md}` — the baked generators. **All 27 stage
+  dirs referenced by the manifest ship today**: the five tone-core stages (04–08, byte-identical to
+  `shared-utils/tone-writing-core`) and the 22 non-tone authoring stages (01–03, 10–23, 41–45) — see
+  "Authoring layer — SHIPPED" above.
 - `intake/{intake-schema.json, INTAKE-TEMPLATE.md}` — the Book/Brand selector (Q0) + the book intake.
 - `scripts/` — the twelve fail-closed provers, `verify_tone_core_sync.py`, and the process guard.
 - `run_book_writer.py` — the deterministic assembler/certifier.
