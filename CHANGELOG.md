@@ -1,3 +1,9 @@
+## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
+
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+
+## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
+
 ## [v21.7.36]  -  2026-08-05  -  fix(loops): grant write/edit in the CEO allowlist (the other half of the gate) and teach the fleet that a no-match exit 1 is a RESULT
 
 v21.7.35 retired the CEO production-tool **deny**. It was not enough. Two separate
