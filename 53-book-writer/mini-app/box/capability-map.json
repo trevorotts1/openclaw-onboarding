@@ -1,0 +1,23 @@
+{
+  "$note": "Per-box capability probe (U12, preflight.sh mirror). Honest booleans: a probe that cannot run reports false, never a fabricated true. No Anthropic ids, no client secrets on the edge \u2014 reachability + binary presence only.",
+  "probed_at": "2026-08-07T21:11:46+00:00",
+  "probe_source": "capability_probe.py (U12)",
+  "capabilities": {
+    "python3": true,
+    "whisper_binary": true,
+    "ffmpeg": true,
+    "worker_reachable": false,
+    "worker_media_api": false,
+    "ghl_reachable": false,
+    "transcribe": true
+  },
+  "details": {
+    "worker_base": "https://bookwriter.zerohumanworkforce.com",
+    "worker_status": null,
+    "media_status": null,
+    "whisper_bin": "/opt/homebrew/bin/whisper",
+    "ffmpeg_bin": "/opt/homebrew/bin/ffmpeg",
+    "ghl_base": null
+  },
+  "resolvers": {}
+}
