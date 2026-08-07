@@ -133,18 +133,38 @@ def _emit(source: str, failures: List[Tuple[str, str]], as_json: bool) -> None:
         print(f"  [{code}] {msg}")
 
 
+def _resolve_upsell_dir(p: Path) -> Optional[Path]:
+    """Resolve the collateral folder from a CLI path (design §3.4).
+
+    The collateral rail delivers into ``delivery/<SLUG>-FINAL/upsell/``, so a
+    caller may hand the prover either the ``upsell/`` folder itself or its
+    ``delivery/<SLUG>-FINAL/`` parent. Returns the resolved folder, or None when
+    neither the path nor an ``upsell/`` subdir holds the page files (the caller
+    then fails closed with AF-PRES-COLLATERAL-DIR-MISSING).
+    """
+    # The folder itself is already an upsell dir — use it directly.
+    if p.name == "upsell":
+        return p
+    # A delivery parent with an upsell/ subdir — descend into it.
+    if (p / "upsell").is_dir():
+        return p / "upsell"
+    # A folder that directly holds the page files (no upsell/ subdir).
+    if any((p / fname).is_file() for fname in PAGE_FILES.values()):
+        return p
+    return None
+
+
 def prove(path: str, expect: Dict[str, bool], as_json: bool = False,
           splice_roots: Optional[List[Path]] = None) -> int:
     p = Path(path)
-    # Accept either the upsell/ dir directly, or the delivery/<SLUG>-FINAL/ parent.
-    if p.is_dir() and p.name != "upsell" and not (p / "upsell").is_dir() and not any(
-            x.is_file() for x in PAGE_FILES.values() and (p / x).is_file()):
-        # If it doesn't contain the page files and has an upsell subdir, use that.
-        cand = p / "upsell"
-        if cand.is_dir():
-            p = cand
-    fails = _verify_dir(p, expect, splice_roots)
-    _emit(str(p), fails, as_json)
+    upsell_dir = _resolve_upsell_dir(p)
+    if upsell_dir is None:
+        # Fail-closed: no upsell/ dir and no page files at the given path.
+        fails = [(AF_DIR, f"collateral upsell folder missing: {p}")]
+        _emit(str(p), fails, as_json)
+        return EXIT_AUTOFAIL
+    fails = _verify_dir(upsell_dir, expect, splice_roots)
+    _emit(str(upsell_dir), fails, as_json)
     return EXIT_PASS if not fails else EXIT_AUTOFAIL
 
 
@@ -204,6 +224,28 @@ def self_test(tmp: Optional[Path] = None) -> int:
     (upsell / PAGE_FILES["vsl"]).unlink()
     check_pass("vsl-not-opted-in", _verify_dir(upsell, {"sales": True, "checkout": True,
                                                         "vsl": False}))
+
+    # PROVE() path-resolution regressions (the QC-FAIL class: a malformed generator
+    # in prove() made path resolution mis-route and crash with NameError). These go
+    # through prove() itself so the self-test would catch that bug class.
+    print("== self-test: prove() path resolution (QC-FAIL regression) ==")
+    # (a) delivery parent WITH upsell/ subdir — must resolve into upsell/ and pass.
+    parent = work / "delivery" / "TEST-FINAL"
+    parent_upsell = parent / "upsell"
+    parent_upsell.mkdir(parents=True, exist_ok=True)
+    # Re-seed all three page files in the upsell/ subdir of the delivery parent.
+    for pg in ("sales", "checkout", "vsl"):
+        _write(parent_upsell, PAGE_FILES[pg], _valid_fragment(pg))
+    rc = prove(str(parent), {"sales": True, "checkout": True, "vsl": True})
+    ok = ok and (rc == EXIT_PASS)
+    print(f"  [{'PASS' if rc == EXIT_PASS else 'MISS'}] prove(parent-with-upsell)   -> exit {rc}")
+    # (b) bare dir WITHOUT upsell/ — must fail closed (AF-PRES-COLLATERAL-DIR-MISSING,
+    # exit 2), never crash with a traceback.
+    bare = work / "bare-no-upsell"
+    bare.mkdir(parents=True, exist_ok=True)
+    rc = prove(str(bare), {"sales": True})
+    ok = ok and (rc == EXIT_AUTOFAIL)
+    print(f"  [{'PASS' if rc == EXIT_AUTOFAIL else 'MISS'}] prove(bare-dir-no-upsell)  -> exit {rc}")
 
     print("== self-test: VIOLATION fixtures (must FAIL) ==")
     # Opted-in file missing.
