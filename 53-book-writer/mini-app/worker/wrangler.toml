@@ -1,0 +1,61 @@
+# Book Writer mini-app — Cloudflare Worker (API) — U04 media upload bindings
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ NO REAL ZONE / ACCOUNT IDS IN THIS FILE. Everything is <PLACEHOLDER> —  │
+# │ fill in at deploy time via U19 deploy.sh (npx wrangler, operator's      │
+# │ CLOUDFLARE_ZHW_APPS_API_TOKEN). Never commit a real account/zone id.    │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# The book-writer zone is zerohumanworkforce.com (MASTER-PLAN section 1).
+# ZONE LANDMINE: CLOUDFLARE_ZONE_ID points at a DIFFERENT zone — for any
+# `*.zerohumanworkforce.com` binding use the literal zerohumanworkforce.com
+# zone id, never $CLOUDFLARE_ZONE_ID.
+#
+# Deploy (see U19 deploy.sh):
+#   1. Create the R2 bucket:
+#        npx wrangler r2 bucket create zhw-bookwriter
+#   2. Create the KV namespace:
+#        npx wrangler kv namespace create bw-media-jobs
+#      Copy the returned id into [[kv_namespaces]] below.
+#   3. Set secrets (NEVER in this file):
+#        npx wrangler secret put R2_ACCOUNT_ID
+#        npx wrangler secret put R2_ACCESS_KEY_ID
+#        npx wrangler secret put R2_SECRET_ACCESS_KEY
+#   4. Deploy:
+#        npx wrangler deploy
+
+name               = "book-writer-mini-app"
+main               = "src/index.js"
+compatibility_date = "2024-09-23"
+account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"
+
+# Workers + Pages routes. Fill in the operator's zerohumanworkforce.com zone.
+routes = [
+  { pattern = "bookwriter.<PLACEHOLDER_FLEET_DOMAIN>/*", zone_name = "<PLACEHOLDER_FLEET_DOMAIN>" }
+]
+
+# R2 bucket for media staging (audio/video), transcripts, app shell, per-client
+# configs. Convention: zhw-<app>. MASTER-PLAN section 1: R2 `zhw-bookwriter`.
+[[r2_buckets]]
+binding      = "MEDIA_BUCKET"
+bucket_name  = "zhw-bookwriter"
+
+# KV: job registry for media uploads (U04) + token bindings / client registry /
+# per-run state (U02/U03). Namespace is created per-bucket-clone by the box
+# (each run box owns its own KV copy; never a cross-client store).
+[[kv_namespaces]]
+binding    = "MEDIA_JOBS"
+id         = "<PLACEHOLDER_KV_NAMESPACE_ID>"
+preview_id = "<PLACEHOLDER_KV_NAMESPACE_PREVIEW_ID>"
+
+[observability]
+enabled = true
+
+# Secrets (NEVER in this file — set via `wrangler secret put`, see deploy.sh):
+#   R2_ACCOUNT_ID           -- operator Cloudflare account id for R2 S3 endpoint
+#   R2_ACCESS_KEY_ID        -- R2 API token access key id (operator's own key)
+#   R2_SECRET_ACCESS_KEY    -- R2 API token secret (operator's own key)
+#   MEDIA_BUCKET_NAME       -- bucket name (defaults to zhw-bookwriter in code)
+#
+# The Worker is a DUMB RELAY: it holds ZERO client PITs. No client credential
+# ever binds here.
