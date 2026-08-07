@@ -291,6 +291,30 @@ T3_BOX="$(mktemp -d)"; out="$(t3_run 'make_checkout "$HOME/projects/command-cent
 echo "$out" | grep -q "ADVISORY: skills CONTENT is current" && ok "advisory line emitted (parseable pattern)" || bad "advisory line missing"
 echo "$out" | grep -q "installer missing" && ok "installer-missing reason stated" || bad "no installer-missing reason"
 
+hdr "TRAP 3 / CASE 10 — DIRTY checkout must NOT abort the run; refresh SKIPPED, exit 0"
+# The defect this proves fixed: a dirty CC checkout used to hit the SAME 'refresh
+# failed or rolled back' exit-2 FATAL as CASE 7 (git pull against a dirty tree is
+# unpredictable), which killed the WHOLE updater before the PENDING-flag lifecycle
+# (far below this block in the real script) ever ran. A dirty client checkout is a
+# different, recoverable condition and must degrade to a WARNING + skip instead.
+unset FAKE_SKIP_INSTALLER
+export FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1
+T3_BOX="$(mktemp -d)"
+out="$(t3_run 'make_checkout "$HOME/projects/command-center" https://github.com/trevorotts1/blackceo-command-center.git; echo "// local edit" >> "$HOME/projects/command-center/package.json"')"; rc=$?
+[ "$rc" = "0" ] && ok "exit 0 (dirty checkout degrades to a warning, not a fatal abort)" || bad "expected exit 0, got $rc"
+grep -q 'INSTALLER_INVOKED' "$T3_BOX/invocations" && bad "installer invoked against a DIRTY checkout (a git pull would be unsafe/unpredictable)" || ok "installer NOT invoked (refresh correctly skipped)"
+echo "$out" | grep -qi "UNCOMMITTED local changes" && ok "dirty state reported" || bad "no dirty-checkout warning printed"
+echo "$out" | grep -qi "git stash" && ok "remediation (git stash / commit) shown" || bad "no remediation shown"
+echo "$out" | grep -qi "rest of this update continues normally" && ok "explicitly states the rest of the run is not aborted" || bad "no continuation statement printed"
+
+hdr "TRAP 3 / CASE 11 — CONTROL: CLEAN checkout still refreshes normally (dirty guard doesn't false-positive)"
+export FAKE_PM2_JLIST='[]' FAKE_PORT_BOUND_RC=1 FAKE_INSTALLER_EXIT=0
+T3_BOX="$(mktemp -d)"
+out="$(t3_run 'make_checkout "$HOME/projects/command-center" https://github.com/trevorotts1/blackceo-command-center.git')"; rc=$?
+[ "$rc" = "0" ] && ok "exit 0 (clean checkout refreshes and succeeds)" || bad "expected exit 0, got $rc"
+grep -q 'INSTALLER_INVOKED args=--update-only --app-dir' "$T3_BOX/invocations" && ok "installer WAS invoked for a clean checkout (guard does not over-block)" || bad "installer not invoked for a clean checkout"
+echo "$out" | grep -qi "UNCOMMITTED local changes" && bad "false-positive dirty warning on a clean checkout" || ok "no dirty warning on a clean checkout"
+
 printf '\n=========================================\n'
 printf 'TRAPS 1+3 REGRESSION SUITE: PASS=%d FAIL=%d\n' "$PASS" "$FAIL"
 printf '=========================================\n'

@@ -87,11 +87,25 @@ else
   fail "hook configurator MISSING: scripts/28-configure-pixel-hook.sh"
 fi
 
-# 3. AGENTS.md Pixel Concierge protocol + protocol doc.
+# 3. AGENTS.md Pixel Concierge protocol + protocol doc — SHIPPED SOURCE sanity.
 if [ -f "$AGENTS" ] && grep -q 'STEP_1_45_PIXEL_CONCIERGE' "$AGENTS"; then
-  pass "05-update-agents-md.sh inserts the STEP_1_45_PIXEL_CONCIERGE block (free slot 1.45)"
+  pass "05-update-agents-md.sh SOURCE carries the STEP_1_45_PIXEL_CONCIERGE marker text (free slot 1.45)"
 else
-  fail "05-update-agents-md.sh is missing the STEP_1_45_PIXEL_CONCIERGE block"
+  fail "05-update-agents-md.sh SOURCE is missing the STEP_1_45_PIXEL_CONCIERGE marker text"
+fi
+
+# 3b. AGENTS.md Pixel Concierge block — LIVE FILE assertion (content-version-aware).
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
+if [ -f "$AGENTS_MD" ]; then
+  if grep -q 'STEP_1_45_PIXEL_CONCIERGE' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the STEP_1_45_PIXEL_CONCIERGE marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the STEP_1_45_PIXEL_CONCIERGE marker — the pointer-stanza writer has not run on this box; a shipped-source check alone cannot prove this"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the marker (set AGENTS_MD to override)"
 fi
 if [ -f "$PROTO" ]; then
   pass "protocols/zhc-pixel-protocol.md exists"

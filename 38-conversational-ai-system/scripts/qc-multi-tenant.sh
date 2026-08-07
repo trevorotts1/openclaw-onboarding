@@ -61,6 +61,10 @@ echo ""
 
 PROTO="$SKILL_DIR/protocols/multi-tenant-isolation-protocol.md"
 AG_SCRIPT="$SKILL_DIR/scripts/05-update-agents-md.sh"
+# ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
 MEM_SCRIPT="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
 INSTR="$SKILL_DIR/INSTRUCTIONS.md"
 INSTALLER="$SKILL_DIR/scripts/25-seed-round3-feature-files.sh"
@@ -128,11 +132,22 @@ fi
 
 echo ""
 
-# 2. AGENTS.md marker block.
+# 2. AGENTS.md marker block — SHIPPED SOURCE sanity (the writer CAN produce it).
 if [ -f "$AG_SCRIPT" ] && grep -q 'STEP_0_8_MULTI_TENANT_ISOLATION' "$AG_SCRIPT"; then
-  pass "05-update-agents-md.sh inserts the STEP_0_8_MULTI_TENANT_ISOLATION block"
+  pass "05-update-agents-md.sh SOURCE carries the STEP_0_8_MULTI_TENANT_ISOLATION marker text"
 else
-  fail "05-update-agents-md.sh is missing the STEP_0_8_MULTI_TENANT_ISOLATION block"
+  fail "05-update-agents-md.sh SOURCE is missing the STEP_0_8_MULTI_TENANT_ISOLATION marker text"
+fi
+
+# 2b. AGENTS.md marker block — LIVE FILE assertion (content-version-aware).
+if [ -f "$AGENTS_MD" ]; then
+  if grep -q 'STEP_0_8_MULTI_TENANT_ISOLATION' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the STEP_0_8_MULTI_TENANT_ISOLATION marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the STEP_0_8_MULTI_TENANT_ISOLATION marker — the pointer-stanza writer (05-update-agents-md.sh) has not run on this box; a shipped-source check alone cannot prove this"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the marker (set AGENTS_MD to override)"
 fi
 
 # 3. MEMORY Rule 26.

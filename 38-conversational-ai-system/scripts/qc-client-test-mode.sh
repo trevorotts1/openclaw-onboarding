@@ -53,6 +53,10 @@ fail() { echo "  [FAIL] $1"; FAIL=1; }
 PROTO="$SKILL_DIR/protocols/client-test-mode-protocol.md"
 AG="$SKILL_DIR/scripts/05-update-agents-md.sh"
 MEM="$SKILL_DIR/references/memory-design-rules.md"   # rule text moved out of the appender (pointer-only writer)
+# ── LIVE AGENTS.md resolver (content-version-aware gate) — see qc-segmentation.sh
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
 
 echo "=== qc-client-test-mode: U-6 Client Test Mode surface gate ==="
 echo "skill_dir : $SKILL_DIR"
@@ -75,16 +79,33 @@ require_proto() {
   fi
 }
 
-# 2. AGENTS wiring: both marker blocks.
+# 2. AGENTS wiring: both marker blocks — SHIPPED SOURCE sanity.
 if [ -f "$AG" ] && grep -q 'CLIENT_TEST_MODE' "$AG"; then
-  pass "05-update-agents-md.sh inserts the CLIENT_TEST_MODE block"
+  pass "05-update-agents-md.sh SOURCE carries the CLIENT_TEST_MODE marker text"
 else
-  fail "05-update-agents-md.sh is MISSING the CLIENT_TEST_MODE block"
+  fail "05-update-agents-md.sh SOURCE is MISSING the CLIENT_TEST_MODE marker text"
 fi
 if [ -f "$AG" ] && grep -q 'STEP_0_4_TEST_MODE_REREAD' "$AG"; then
-  pass "05-update-agents-md.sh inserts the STEP_0_4_TEST_MODE_REREAD block"
+  pass "05-update-agents-md.sh SOURCE carries the STEP_0_4_TEST_MODE_REREAD marker text"
 else
-  fail "05-update-agents-md.sh is MISSING the STEP_0_4_TEST_MODE_REREAD block"
+  fail "05-update-agents-md.sh SOURCE is MISSING the STEP_0_4_TEST_MODE_REREAD marker text"
+fi
+
+# 2b. AGENTS wiring — LIVE FILE assertion (content-version-aware). A shipped
+#     script that CAN write these markers is not proof it EVER ran on this box.
+if [ -f "$AGENTS_MD" ]; then
+  if grep -q 'CLIENT_TEST_MODE' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the CLIENT_TEST_MODE marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the CLIENT_TEST_MODE marker — the pointer-stanza writer has not run on this box"
+  fi
+  if grep -q 'STEP_0_4_TEST_MODE_REREAD' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the STEP_0_4_TEST_MODE_REREAD marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the STEP_0_4_TEST_MODE_REREAD marker — the pointer-stanza writer has not run on this box"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the markers (set AGENTS_MD to override)"
 fi
 
 # 3. MEMORY Rule 37.

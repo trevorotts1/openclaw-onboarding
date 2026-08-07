@@ -11,15 +11,43 @@ PURPOSE
     build-state and are rendered by converge after this script runs.
 
 WHAT IT DOES
-    1. Loads _index.json (authoritative dept→roles list)
+    1. Loads _index.json (the CANONICAL role catalog — used only to look up
+       the planned role count for a department that IS canonical; it is never
+       the source of WHICH departments this client has).
     2. Loads existing .workforce-build-state.json (FAIL LOUD if absent — box
        must have been built first)
-    3. For each dept in _index.json: upserts an entry in state["departments"],
-       preserving the existing array OR keyed-object shape (matches file's shape)
+    3. For EACH DEPARTMENT ALREADY IN THIS CLIENT'S build-state (their own
+       roster, never the canonical index): refreshes rolesPlanned (from the
+       index when the dept is canonical; preserved untouched when it is a
+       client custom dept the index has never heard of) and rolesDone (disk
+       truth). NEVER adds a department the client does not already have —
+       that is the job of the build/reconciliation pipeline (build-workforce.py
+       reconcile_canonical_floor()), which records an auditable, provenanced
+       decision per department. A blind sync from the canonical index used to
+       add every canonical department to a custom-company client's roster
+       while their own real departments (living outside the guessed tree)
+       stayed unmeasured forever — see DONE-IS-GATED.md and the resolver
+       below.
     4. Per-dept roleLibraryFilled/sopLibraryFilled set via backfill-build-state heuristics
-    5. Recomputes any top-level totals the renderers read
+    5. Recomputes top-level totals from the CLIENT's own department set (not
+       the canonical index's)
     6. Atomically writes the updated state
     7. Exits 0, prints "changed=<0|1>" on stdout
+
+DEPARTMENTS TREE RESOLUTION
+    Which on-disk directory holds this client's departments is resolved, not
+    guessed: config-derived (openclaw.json agents.list dept-<slug>.workspace —
+    ground truth for what the agents actually run from) wins outright when it
+    resolves; otherwise every fixed candidate (workspaceRoot, the legacy
+    workspace tree, zero-human-company/<companySlug>/departments, any sibling
+    zero-human-company/*/departments) is SCORED by how many of the client's
+    OWN department slugs actually resolve inside it (suffix-tolerant: a slug
+    stored on disk as "<slug>-dept" still matches). If two or more distinct
+    directories tie for the best nonzero score, resolution is AMBIGUOUS and
+    the script exits FATAL rather than silently measuring the wrong tree — a
+    confident wrong measurement here corrupts the honesty-floor write (DEFECT
+    #5, below). The resolved tree + method are recorded in build-state
+    (departmentsTreeResolution) so a caller can tell what was measured.
 
 USAGE
     python3 refresh-build-state-from-index.py
@@ -30,12 +58,14 @@ USAGE
 
 EXIT CODES
     0 — success
-    1 — FATAL (no build-state found, malformed files, etc.)
+    1 — FATAL (no build-state found, malformed files, departments tree
+        resolution ambiguous, etc.)
 """
 
 import argparse
 import json
 import os
+import re
 import sys
 import tempfile
 from datetime import datetime, timezone
@@ -77,18 +107,258 @@ def find_index_json_path() -> Optional[Path]:
     return None
 
 
-def find_departments_dir() -> Optional[Path]:
-    """Locate the on-disk departments directory."""
-    workspace_candidates = [
-        Path("/data/.openclaw/workspace/agents/main/departments"),
-        Path.home() / ".openclaw/workspace/agents/main/departments",
-        Path("/data/.openclaw/workspace/departments"),
-        Path.home() / ".openclaw/workspace/departments",
-    ]
-    for c in workspace_candidates:
-        if c.is_dir():
-            return c
+def find_openclaw_config_path() -> Optional[Path]:
+    """Resolve openclaw.json (env override first, then VPS, then Mac)."""
+    # Test/override hook: lets the acceptance suite point at a sandbox config.
+    env_override = os.environ.get("WORKFORCE_OPENCLAW_CONFIG_PATH")
+    if env_override and Path(env_override).is_file():
+        return Path(env_override)
+    for p in (Path("/data/.openclaw/openclaw.json"), Path.home() / ".openclaw/openclaw.json"):
+        if p.is_file():
+            return p
     return None
+
+
+def _oc_root() -> Path:
+    """The OpenClaw root this box uses: /data/.openclaw if present, else
+    $HOME/.openclaw. Mirrors verify-wiring.sh's OC_ROOT resolution so the two
+    gates that read/write the same client build-state agree on platform."""
+    data_root = Path("/data/.openclaw")
+    if data_root.is_dir():
+        return data_root
+    return Path.home() / ".openclaw"
+
+
+_DEPT_PREFIX_RE = re.compile(r"^dept[-_]")
+_DEPT_SUFFIX_RE = re.compile(r"[-_]dept$")
+_DEPT_SEP_RE = re.compile(r"-+")
+
+
+def _norm_dept_key(s: str) -> str:
+    """Case/suffix/separator-tolerant normalization, mirroring verify-wiring.sh's
+    _norm_dept_key(): 'Trading-Operations-Dept' and 'trading_operations' both
+    normalize to 'trading-operations'."""
+    s = (s or "").lower()
+    s = _DEPT_PREFIX_RE.sub("", s)
+    s = _DEPT_SUFFIX_RE.sub("", s)
+    s = s.replace("_", "-")
+    s = _DEPT_SEP_RE.sub("-", s).strip("-")
+    return s
+
+
+def resolve_dept_dir_in_tree(root: Optional[Path], slug: str) -> Optional[Path]:
+    """
+    DEFECT D fix: resolve a department's real on-disk directory under `root`,
+    tolerant of the `-dept` suffix convention and case/separator drift. Mirrors
+    create_role_workspaces.resolve_dept_dir() / verify-wiring.sh's
+    resolve_one_dept() precedence so every reader of this tree agrees about
+    which directory a slug means:
+      1. the bare id            <root>/<slug>
+      2. the "-dept" suffixed   <root>/<slug>-dept   (a real layout on live boxes)
+      3. a normalized scan      case + separator drift
+    Without step 2, a slug like "trading-operations" silently measured ZERO
+    roles on a box that stores it as "trading-operations-dept/".
+    """
+    if not root or not root.is_dir():
+        return None
+    bare = root / slug
+    if bare.is_dir():
+        return bare
+    suffixed = root / f"{slug}-dept"
+    if suffixed.is_dir():
+        return suffixed
+    target = _norm_dept_key(slug)
+    if not target:
+        return None
+    try:
+        children = sorted(root.iterdir())
+    except OSError:
+        return None
+    for child in children:
+        if child.is_dir() and _norm_dept_key(child.name) == target:
+            return child
+    return None
+
+
+def _config_derived_departments_dir(cfg_path: Optional[Path], client_dept_slugs) -> Optional[Path]:
+    """
+    Resolve the departments tree from openclaw.json agents.list — the path the
+    gateway dispatcher and the department agents ACTUALLY run from (ground
+    truth, never a guess). For every client department slug with a registered
+    `dept-<slug>` agent whose `.workspace` exists on disk, take the workspace's
+    PARENT directory. If every resolvable dept agrees on one parent, that
+    parent IS the departments tree. Returns None when the config is absent, no
+    dept agent resolves, or resolved workspaces disagree on a parent (never
+    guesses across a disagreement — falls through to the scored fixed-candidate
+    tier instead).
+    """
+    if not cfg_path or not cfg_path.is_file():
+        return None
+    try:
+        cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    agents = ((cfg.get("agents") or {}).get("list") or [])
+    by_id = {a.get("id"): a for a in agents if isinstance(a, dict)}
+    parents = set()
+    for slug in client_dept_slugs:
+        agent = by_id.get(f"dept-{slug}")
+        if not agent:
+            continue
+        ws = agent.get("workspace")
+        if not ws:
+            continue
+        wp = Path(ws)
+        if wp.is_dir():
+            parents.add(wp.parent)
+    if len(parents) == 1:
+        return next(iter(parents))
+    return None
+
+
+class AmbiguousDepartmentsTreeError(RuntimeError):
+    """Raised when the departments tree cannot be resolved without guessing --
+    two or more candidate trees score equally on the client's own department
+    set. Refusing to pick one is the safe behavior: a confident wrong
+    measurement here corrupts the honesty-floor write (DEFECT #5)."""
+
+
+class DepartmentsTreeResolution:
+    """Result of resolve_departments_tree(): which tree was used (or None if
+    nothing is built yet), how it was resolved, and the full scored candidate
+    list for diagnostics / state recording."""
+
+    def __init__(self, path, resolved_via, score, checked, candidates):
+        self.path = path
+        self.resolved_via = resolved_via  # "config" | "scored" | "none"
+        self.score = score
+        self.checked = checked
+        self.candidates = candidates  # list[(str(path), score)]
+
+    def to_state_dict(self) -> dict:
+        return {
+            "path": str(self.path) if self.path else None,
+            "resolvedVia": self.resolved_via,
+            "score": self.score,
+            "checked": self.checked,
+        }
+
+
+def _departments_tree_candidates(state: dict) -> list:
+    """Ordered, deduplicated list of existing directories that MIGHT be the
+    departments tree (before scoring). Mirrors verify-wiring.sh
+    DEPT_TREE_CANDIDATES so the two gates that read/write the same client
+    build-state agree about where to look:
+      1. state.workspaceRoot/departments          (explicit, when present)
+      2. OC_ROOT/workspace/departments             (the standard tree)
+      3. zero-human-company/<companySlug>/departments  for the company slug
+         recorded in build-state
+      4. any zero-human-company/*/departments found on disk
+      5. OC_ROOT/workspace/agents/main/departments (legacy; this script's
+         pre-fix sole candidate)
+    """
+    seen = set()
+    out = []
+
+    def add(p):
+        if not p:
+            return
+        p = Path(p)
+        try:
+            if p in seen or not p.is_dir():
+                return
+        except OSError:
+            return
+        seen.add(p)
+        out.append(p)
+
+    ws_root = state.get("workspaceRoot")
+    if ws_root:
+        add(Path(ws_root) / "departments")
+
+    oc_root = _oc_root()
+    add(oc_root / "workspace" / "departments")
+
+    company_slug = state.get("companySlug") or state.get("clientSlug")
+    for zhc_root in (Path.home() / "clawd" / "zero-human-company",
+                      Path("/data/clawd/zero-human-company")):
+        if not zhc_root.is_dir():
+            continue
+        if company_slug:
+            add(zhc_root / str(company_slug) / "departments")
+        try:
+            for child in sorted(zhc_root.iterdir()):
+                add(child / "departments")
+        except OSError:
+            pass
+
+    add(oc_root / "workspace" / "agents" / "main" / "departments")
+
+    return out
+
+
+def resolve_departments_tree(client_dept_slugs, state: dict, verbose: bool = False) -> DepartmentsTreeResolution:
+    """
+    DEFECT B + C fix: resolve the ONE on-disk departments directory this
+    client's workforce actually lives in.
+
+    Precedence — evidence, not authority; the score decides:
+      1. config-derived (openclaw.json agents.list dept-<slug>.workspace) --
+         GROUND TRUTH. Preferred outright over every fixed-candidate guess
+         whenever it resolves, per client_dept_slugs.
+      2. Every fixed candidate from _departments_tree_candidates(), SCORED by
+         how many of `client_dept_slugs` (the client's OWN department set --
+         DEFECT A) actually resolve to a directory inside it
+         (suffix-tolerant -- DEFECT D).
+
+    If NO candidate scores > 0, nothing is built yet -- returns a resolution
+    with path=None, resolved_via="none" (the pre-existing "genuinely empty
+    box" case; never a failure).
+
+    If two or more DISTINCT directories tie for the best NONZERO score among
+    the scored (non-config) candidates, resolution is AMBIGUOUS --
+    AmbiguousDepartmentsTreeError is raised rather than silently picking one.
+    """
+    client_dept_slugs = list(client_dept_slugs)
+
+    cfg_path = find_openclaw_config_path()
+    config_dir = _config_derived_departments_dir(cfg_path, client_dept_slugs)
+    if config_dir is not None:
+        score = sum(1 for s in client_dept_slugs if resolve_dept_dir_in_tree(config_dir, s))
+        if verbose:
+            print(f"[refresh-build-state] departments tree (config-derived, preferred): "
+                  f"{config_dir} — resolves {score}/{len(client_dept_slugs)} dept(s)")
+        return DepartmentsTreeResolution(config_dir, "config", score,
+                                          len(client_dept_slugs), [(str(config_dir), score)])
+
+    candidates = _departments_tree_candidates(state)
+    scored = []
+    for c in candidates:
+        n = sum(1 for s in client_dept_slugs if resolve_dept_dir_in_tree(c, s))
+        scored.append((c, n))
+        if verbose:
+            print(f"[refresh-build-state] candidate tree: {c} — resolves {n}/{len(client_dept_slugs)} dept(s)")
+
+    if not scored or not client_dept_slugs:
+        return DepartmentsTreeResolution(None, "none", 0, len(client_dept_slugs),
+                                          [(str(c), n) for c, n in scored])
+
+    best_score = max(n for _, n in scored)
+    if best_score == 0:
+        return DepartmentsTreeResolution(None, "none", 0, len(client_dept_slugs),
+                                          [(str(c), n) for c, n in scored])
+
+    winners = [c for c, n in scored if n == best_score]
+    if len(winners) > 1:
+        raise AmbiguousDepartmentsTreeError(
+            f"{len(winners)} candidate departments trees tie at {best_score}/"
+            f"{len(client_dept_slugs)} resolved dept(s); refusing to guess: "
+            + "; ".join(str(w) for w in winners)
+        )
+
+    return DepartmentsTreeResolution(winners[0], "scored", best_score,
+                                      len(client_dept_slugs),
+                                      [(str(c), n) for c, n in scored])
 
 
 # ─── Per-dept status heuristics (reused from backfill-build-state.py) ────────
@@ -217,110 +487,119 @@ def main() -> None:
         print(f"[refresh-build-state] departments shape: {dept_shape}, "
               f"existing={len(existing_depts_dict)}")
 
-    # Locate on-disk departments dir for heuristic checks
-    depts_dir = find_departments_dir()
+    # DEFECT A + B + C: resolve the departments tree by SCORING candidates
+    # against this CLIENT's own department set (existing_depts_dict keys) --
+    # never the canonical index. A client with a custom company tree has real
+    # departments that a fixed-candidate guess never finds; scoring against
+    # what THEY actually have is the only way to pick the right tree without
+    # also picking up every generic canonical department.
+    client_dept_slugs = list(existing_depts_dict.keys())
+    try:
+        tree_resolution = resolve_departments_tree(client_dept_slugs, state, verbose=args.verbose)
+    except AmbiguousDepartmentsTreeError as e:
+        print(f"FATAL: departments tree resolution is ambiguous — refusing to guess. {e}",
+              file=sys.stderr)
+        print("       A confident wrong measurement here would corrupt the honesty-floor "
+              "write (DEFECT #5). Disambiguate by setting .workspaceRoot in build-state to "
+              "the workspace whose departments/ holds this workforce, then re-run.",
+              file=sys.stderr)
+        sys.exit(1)
 
-    # Upsert each dept from _index.json into build-state
+    depts_dir = tree_resolution.path
+    if args.verbose:
+        print(f"[refresh-build-state] departments tree resolved via "
+              f"'{tree_resolution.resolved_via}': {depts_dir} "
+              f"({tree_resolution.score}/{tree_resolution.checked} client dept(s) matched)")
+
+    # Upsert each dept the CLIENT ALREADY HAS in build-state (DEFECT A fix).
+    # Never iterate _index.json here -- that adds every canonical department
+    # to a client's roster regardless of whether they ever selected it. A
+    # department's presence in build-state is the ONLY signal this script
+    # trusts for "the client has this department"; the build/reconciliation
+    # pipeline (build-workforce.py) is what may add one, with a provenanced
+    # decision recorded.
     changed = False
-    for slug, idx_entry in index_depts.items():
-        dept_roles = idx_entry.get("roles", [])
-        roles_count = len(dept_roles)
+    for slug in list(existing_depts_dict.keys()):
+        entry = existing_depts_dict[slug]
+        idx_entry = index_depts.get(slug)
+        # rolesPlanned is authoritative from _index.json ONLY for a CANONICAL
+        # department. A client custom (non-canonical) department has no entry
+        # in _index.json -- preserve whatever rolesPlanned was already
+        # recorded rather than zeroing it out.
+        if idx_entry is not None:
+            roles_count = len(idx_entry.get("roles", []))
+        else:
+            roles_count = entry.get("rolesPlanned", 0)
 
-        # Get on-disk dept dir for heuristic checks
-        dept_on_disk = (depts_dir / slug) if depts_dir else None
+        # DEFECT D fix: suffix/case/separator-tolerant dept-dir resolution
+        # inside the resolved tree, mirroring verify-wiring.sh's
+        # resolve_one_dept(). A slug stored on disk as "<slug>-dept/" used to
+        # resolve to a non-existent bare path and measure ZERO roles.
+        dept_on_disk = resolve_dept_dir_in_tree(depts_dir, slug)
         rl_status = detect_role_library_status(dept_on_disk)
         sop_status = detect_sop_library_status(dept_on_disk)
         # DEFECT #5: rolesDone reflects DISK TRUTH, not the planned count.
         roles_on_disk = count_roles_on_disk(dept_on_disk)
 
-        if slug in existing_depts_dict:
-            # Upsert: update role counts and statuses, preserve other fields
-            entry = existing_depts_dict[slug]
-            # C1: Read library/wiring booleans from the gates (written by
-            # verify-library-gate.sh / verify-wiring.sh), not the local heuristics.
-            # Fall back to the heuristic only if gate fields are absent.
-            gate_rl_filled = entry.get("roleLibraryFilled")
-            gate_sop_filled = entry.get("sopLibraryFilled")
-            gate_wiring = entry.get("wiringStatus", "")
-            # If gate fields are missing, seed from heuristic (first-run fallback)
-            if gate_rl_filled is None:
-                gate_rl_filled = (rl_status == "done")
-            if gate_sop_filled is None:
-                gate_sop_filled = (sop_status == "done")
+        # C1: Read library/wiring booleans from the gates (written by
+        # verify-library-gate.sh / verify-wiring.sh), not the local heuristics.
+        # Fall back to the heuristic only if gate fields are absent.
+        gate_rl_filled = entry.get("roleLibraryFilled")
+        gate_sop_filled = entry.get("sopLibraryFilled")
+        gate_wiring = entry.get("wiringStatus", "")
+        # If gate fields are missing, seed from heuristic (first-run fallback)
+        if gate_rl_filled is None:
+            gate_rl_filled = (rl_status == "done")
+        if gate_sop_filled is None:
+            gate_sop_filled = (sop_status == "done")
 
-            # C2: Gate status:done on all three conditions (library + wiring)
-            if args.counts_only:
-                # --counts-only: never touch status
-                new_status = entry.get("status", "building")
-            elif args.strict:
-                wiring_done = (gate_wiring == "done")
-                dept_done = bool(gate_rl_filled) and bool(gate_sop_filled) and wiring_done
-                new_status = "done" if dept_done else entry.get("status", "building")
-            else:
-                new_status = "done"  # legacy/non-strict: count-based
-
-            # DEFECT #5 (honesty hard floor): a dept can NEVER be "done" while 0
-            # roles are on disk, regardless of gate booleans or --strict mode.
-            # status:"done" with rolesDone:0 was the exact fiction the canary hit.
-            if roles_on_disk == 0 and new_status == "done":
-                new_status = entry.get("status", "building")
-                if new_status == "done":
-                    new_status = "building"
-
-            if (entry.get("rolesPlanned") != roles_count or
-                    entry.get("rolesDone") != roles_on_disk or
-                    entry.get("status") != new_status):
-                entry["rolesPlanned"] = roles_count
-                entry["rolesDone"] = roles_on_disk
-                entry["status"] = new_status
-                entry["roleLibraryFilled"] = gate_rl_filled
-                entry["sopLibraryFilled"] = gate_sop_filled
-                entry["updatedAt"] = now
-                existing_depts_dict[slug] = entry
-                changed = True
-                if args.verbose:
-                    print(f"  updated dept: {slug} (planned={roles_count}, "
-                          f"onDisk={roles_on_disk}, status={new_status})")
+        # C2: Gate status:done on all three conditions (library + wiring)
+        if args.counts_only:
+            # --counts-only: never touch status
+            new_status = entry.get("status", "building")
+        elif args.strict:
+            wiring_done = (gate_wiring == "done")
+            dept_done = bool(gate_rl_filled) and bool(gate_sop_filled) and wiring_done
+            new_status = "done" if dept_done else entry.get("status", "building")
         else:
-            # New dept — add with full shape
-            # C2: New depts start as "building" — gates must pass before done
-            name = " ".join(w.capitalize() for w in slug.replace("-", " ").split())
-            _new_rl = (rl_status == "done")
-            _new_sop = (sop_status == "done")
-            if args.counts_only:
-                _new_status = "building"
-            elif args.strict:
-                # New dept: wiring is not yet done (no entry), so status=building
-                _new_status = "building"
-            else:
-                _new_status = "done"
-            # DEFECT #5: honesty floor also applies to new depts — never "done"
-            # with 0 roles on disk.
-            if roles_on_disk == 0 and _new_status == "done":
-                _new_status = "building"
-            existing_depts_dict[slug] = {
-                "slug": slug,
-                "name": name,
-                "status": _new_status,
-                "rolesPlanned": roles_count,
-                "rolesDone": roles_on_disk,
-                "roleLibraryFilled": _new_rl,
-                "sopLibraryFilled": _new_sop,
-                "wiringStatus": "pending",
-                "emoji": "",
-                "createdAt": now,
-                "updatedAt": now,
-            }
+            new_status = "done"  # legacy/non-strict: count-based
+
+        # DEFECT #5 (honesty hard floor): a dept can NEVER be "done" while 0
+        # roles are on disk, regardless of gate booleans or --strict mode.
+        # status:"done" with rolesDone:0 was the exact fiction the canary hit.
+        if roles_on_disk == 0 and new_status == "done":
+            new_status = entry.get("status", "building")
+            if new_status == "done":
+                new_status = "building"
+
+        if (entry.get("rolesPlanned") != roles_count or
+                entry.get("rolesDone") != roles_on_disk or
+                entry.get("status") != new_status):
+            entry["rolesPlanned"] = roles_count
+            entry["rolesDone"] = roles_on_disk
+            entry["status"] = new_status
+            entry["roleLibraryFilled"] = gate_rl_filled
+            entry["sopLibraryFilled"] = gate_sop_filled
+            entry["updatedAt"] = now
+            existing_depts_dict[slug] = entry
             changed = True
             if args.verbose:
-                print(f"  added dept: {slug} (planned={roles_count}, "
-                      f"onDisk={roles_on_disk}, status={_new_status})")
+                print(f"  updated dept: {slug} (planned={roles_count}, "
+                      f"onDisk={roles_on_disk}, status={new_status})")
 
-    # Recompute totals
-    total_roles = sum(len(d.get("roles", [])) for d in index_depts.values())
-    if state.get("totalRoles") != total_roles or state.get("totalDepartments") != len(index_depts):
+    # Recompute totals from the CLIENT's own department set (DEFECT A fix) --
+    # never the canonical index, which would report every canonical
+    # department's totals regardless of what this client actually has.
+    total_roles = sum(int(d.get("rolesPlanned", 0) or 0) for d in existing_depts_dict.values())
+    if state.get("totalRoles") != total_roles or state.get("totalDepartments") != len(existing_depts_dict):
         state["totalRoles"] = total_roles
-        state["totalDepartments"] = len(index_depts)
+        state["totalDepartments"] = len(existing_depts_dict)
+        changed = True
+
+    # Record which tree was resolved (and how) so a caller can tell what was
+    # actually measured, per DEFECT B/C.
+    if state.get("departmentsTreeResolution") != tree_resolution.to_state_dict():
+        state["departmentsTreeResolution"] = tree_resolution.to_state_dict()
         changed = True
 
     # Write back in original shape
@@ -352,7 +631,7 @@ def main() -> None:
                 Path(tmp_path).unlink(missing_ok=True)
             print(f"FATAL: write failed: {e}", file=sys.stderr)
             sys.exit(1)
-        print(f"[refresh-build-state] Updated {state_path} ({len(index_depts)} depts, "
+        print(f"[refresh-build-state] Updated {state_path} ({len(existing_depts_dict)} depts, "
               f"total_roles={total_roles})")
     else:
         if args.verbose:

@@ -1,0 +1,102 @@
+name: Status-writer resolution defects guard
+
+# refresh-build-state-from-index.py is the single writer of department
+# status:"done" (23-ai-workforce-blueprint/references/DONE-IS-GATED.md). Four
+# defects, each verified on a real client box, made it measure or mutate the
+# WRONG thing:
+#
+#   A. WRONG COLLECTION — the upsert loop iterated the canonical _index.json
+#      instead of the client's own department set, so a custom-company
+#      client's real departments were never visited while every generic
+#      canonical department got ADDED to their roster.
+#   B. WRONG TREE — find_departments_dir() had no
+#      zero-human-company/<companySlug>/departments candidate; a stray
+#      single-entry legacy dir won by being first-checked and everything
+#      measured 0 roles.
+#   C. WORKSPACE-ROOT KEY UNRELIABLE — .workspaceRoot is not written on every
+#      build path; resolution must not require it.
+#   D. SUFFIX MISMATCH — department dirs on disk sometimes carry a "-dept"
+#      suffix the slug does not, silently zeroing the measurement.
+#
+# This suite proves each defect BOTH ways: it runs the identical fixture
+# through a pre-fix copy and the post-fix copy in this checkout, and asserts
+# the defect reproduces pre-fix and is gone post-fix. It also asserts an
+# ambiguous-resolution fixture (two trees tying on score) FAILS LOUD rather
+# than silently guessing, and that the standard (no custom tree, no suffix
+# drift) case is byte-for-byte unchanged.
+#
+# REFRESH_PRE is pinned below to 699fc0be — main's HEAD immediately before
+# PR #828 merged this fix — rather than left to the test script's own default
+# of dynamically fetching origin/main. That default is correct for a PR
+# still in flight (origin/main IS the pre-fix code at that point) but
+# self-invalidates the instant the fix lands on main: origin/main becomes
+# the post-fix code too, pre-fix == post-fix, and the four reproduce-the-bug
+# assertions can never pass again ("premise may have changed" — see the
+# 2026-08-04 red run this pin fixes). Pinning to the one commit that is
+# provably pre-fix forever restores a real, permanent flip-proof. The 9
+# assertions that test actual current behavior (not the historical
+# before/after comparison) are unaffected either way and remain the ongoing
+# regression guard against a future revert of the fix.
+#
+# Hermetic: every path resolves inside a sandboxed HOME; refuses to run at all
+# if /data/.openclaw exists on the runner (that candidate cannot be
+# redirected by a HOME override). No client box, no real ~/.openclaw, no
+# network beyond the local git history already checked out (the pinned SHA
+# ships with fetch-depth: 0 below).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+      - "tests/unit/status-writer-resolution-defects.test.sh"
+      - ".github/workflows/status-writer-resolution-defects-guard.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py"
+      - "tests/unit/status-writer-resolution-defects.test.sh"
+      - ".github/workflows/status-writer-resolution-defects-guard.yml"
+
+jobs:
+  status-writer-resolution-defects-guard:
+    name: refresh-build-state-from-index.py measures the tree the client actually has
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Syntax-check the changed Python and shell
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py
+          bash -n tests/unit/status-writer-resolution-defects.test.sh
+          echo "OK: syntax checks passed"
+
+      - name: Materialize the pinned pre-#828 fixture (699fc0be)
+        shell: bash
+        env:
+          PRE_FIX_SHA: 699fc0bef96c040f7d5d14d16238493abf029042
+        run: |
+          set -euo pipefail
+          git rev-parse --verify "${PRE_FIX_SHA}^{commit}" >/dev/null
+          REFRESH_PRE="$(mktemp "${RUNNER_TEMP:-/tmp}/refresh-pre-fix.XXXXXX.py")"
+          git show "${PRE_FIX_SHA}:23-ai-workforce-blueprint/scripts/refresh-build-state-from-index.py" > "$REFRESH_PRE"
+          [[ -s "$REFRESH_PRE" ]]
+          echo "REFRESH_PRE=$REFRESH_PRE" >> "$GITHUB_ENV"
+          echo "OK: pinned pre-fix fixture materialized from ${PRE_FIX_SHA} -> $REFRESH_PRE"
+
+      - name: "Run the status-writer resolution suite (4 scenarios, 13 assertions)"
+        shell: bash
+        run: |
+          set -uo pipefail
+          chmod +x tests/unit/status-writer-resolution-defects.test.sh
+          bash tests/unit/status-writer-resolution-defects.test.sh

@@ -99,7 +99,7 @@ M2_MARKER="convertandflow-migration:tier2-deregister:$MIGRATION_TAG"
 # the end state has been OBSERVED, not merely attempted.
 #
 # Two ways the old code wrote it on an unverified assumption:
-#   1. After `openclaw mcp remove … || true` it wrote the marker unconditionally.
+#   1. After a de-registration call it wrote the marker unconditionally.
 #      The gateway rewrites openclaw.json from memory and can clobber a config
 #      write, so the removal genuinely may not stick — and the operator box was found
 #      with ghl-community-mcp STILL registered, exactly consistent with a removal
@@ -123,10 +123,24 @@ elif _m2_still_registered; then
   BYUP_BACKUP="${HOME}/.openclaw/backups/openclaw-config-before-tier2-deregister-${ISO}.json"
   mkdir -p "$(dirname "$BYUP_BACKUP")"
   openclaw config export > "$BYUP_BACKUP" 2>/dev/null || true
-  openclaw mcp remove ghl-community-mcp 2>/dev/null || true
+  # B2: `openclaw mcp remove` IS NOT A COMMAND on OpenClaw 2026.7.1-2 — it exits
+  # 1 with "Too many arguments for this command." The verb is `unset`. This call
+  # site used `remove`, swallowed by `|| true`, so M2 never de-registered
+  # anything on any box; the "did not stick" message below then MISDIAGNOSED it
+  # as a gateway rewrite, which sent every investigation down the wrong path.
+  # Try the real verb first, keep `remove` as the fallback for an older CLI, and
+  # report which verb the installed CLI actually documents.
+  _m2_unset() {
+    openclaw mcp unset ghl-community-mcp >/dev/null 2>&1 && return 0
+    openclaw mcp remove ghl-community-mcp >/dev/null 2>&1 && return 0
+    return 1
+  }
+  if ! _m2_unset; then
+    echo "STATUS: M2 WARNING — neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted by this CLI, so ghl-community-mcp is still registered. Run 'openclaw mcp --help' to see the supported verb. Marker NOT written; the next wiring pass will retry."
+  fi
   # RE-READ: the removal is only real if it is still gone when we look again.
   if _m2_still_registered; then
-    echo "STATUS: M2 WARNING — 'openclaw mcp remove ghl-community-mcp' did not stick (the gateway can rewrite openclaw.json from memory and clobber config writes). Marker NOT written; the next wiring pass will retry."
+    echo "STATUS: M2 WARNING — ghl-community-mcp is STILL registered after the de-registration attempt. Two causes are possible and they are NOT the same: (a) the CLI rejected the verb (check 'openclaw mcp --help' — 'remove' does not exist on 2026.7.1-2, 'unset' does), or (b) the gateway rewrote openclaw.json from memory and clobbered the config write. Marker NOT written; the next wiring pass will retry."
   else
     echo "STATUS: M2 tier2-deregister applied — ghl-community-mcp removed from mcp.servers (verified by re-reading 'openclaw mcp list')"
     # Verify service still responds

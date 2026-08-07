@@ -6,7 +6,15 @@
 # non-zero with a specific reason if not.
 #
 # Checks:
-#   1. ≥180 PASS role docs exist across the 16 mandatory dept folders
+#   1. At least as many PASS role docs exist as _index.json[total_roles]
+#      declares, across the (as of department-naming-map.json v2.8.0) 24
+#      mandatory + 6 universal-primary dept folders plus every industry-
+#      gated vertical-pack extra the library ships content for. The minimum
+#      is DERIVED from _index.json, never a hand-typed magic number: a fixed
+#      "≥180" threshold was left over from when the library had 16 mandatory
+#      dept folders and a much smaller role count, so it stopped meaning
+#      anything once the library grew past ~440 roles across 36 department
+#      folders (it would still PASS after losing hundreds of roles).
 #   2. Every PASS doc has at least 19 numbered sections
 #   3. Every PASS doc contains the Persona Governance Override clause
 #      (or the CEO variant for master-orchestrator)
@@ -73,7 +81,19 @@ else
   fi
 fi
 
-# ─── Check 3: ≥180 PASS docs across dept folders ──────────────────────────
+# ─── Check 3: >= _index.json[total_roles] PASS docs across dept folders ────
+# MIN_ROLES is DERIVED from _index.json's own declared total_roles (the same
+# trusted count Check 4 below cross-checks against), never hardcoded. Falls
+# back to the historical 180-role floor ONLY if the index is missing/
+# unparseable (Check 2 will already have failed in that case) -- fail-closed
+# never fail-open.
+MIN_ROLES=180
+if [ -f "$INDEX_JSON" ]; then
+  idx_total_roles=$(python3 -c "import json; print(json.load(open('$INDEX_JSON')).get('total_roles', 0))" 2>/dev/null || echo 0)
+  if [ "$idx_total_roles" -gt 0 ] 2>/dev/null; then
+    MIN_ROLES=$idx_total_roles
+  fi
+fi
 TOTAL=0
 for dept_dir in "$LIB_DIR"/*/; do
   dept=$(basename "$dept_dir")
@@ -83,10 +103,10 @@ for dept_dir in "$LIB_DIR"/*/; do
     TOTAL=$((TOTAL + count))
   fi
 done
-if [ $TOTAL -ge 180 ]; then
-  record_pass "≥180 PASS role docs found (actual: $TOTAL)"
+if [ $TOTAL -ge $MIN_ROLES ]; then
+  record_pass "≥$MIN_ROLES PASS role docs found (actual: $TOTAL)"
 else
-  record_fail "only $TOTAL PASS role docs (need ≥180)"
+  record_fail "only $TOTAL PASS role docs (need ≥$MIN_ROLES, derived from _index.json total_roles)"
 fi
 
 # ─── Check 4: total_roles in index matches actual file count ──────────────

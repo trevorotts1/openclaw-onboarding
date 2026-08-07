@@ -106,6 +106,38 @@ if [[ $DRY_RUN -eq 0 ]]; then
   fi
 fi
 
+# ─── Resolve THIS box's own company slug (multi-company glob hazard fix) ─────
+# Root 1 below (the canonical master-files ZHC tree) used to glob EVERY
+# company subdirectory under zero-human-company/ — "for _company_dir in
+# "$_mf_root"/*/" — with no scoping at all. On an operator/demo box that hosts
+# more than one client's ZHC build side by side, that registered ALL of their
+# departments into THIS box's single openclaw.json agents.list[], not just the
+# box's own. Resolve the box's own company slug the SAME way
+# run-full-install.sh / seed-workspaces.py / sync-departments-from-build-state.py
+# already do — an explicit $COMPANY_SLUG override, else
+# .workforce-build-state.json's companySlug (falling back to the legacy
+# clientSlug alias) — and scope root 1 to ONLY that company's directory. When
+# no slug can be resolved (older build-state, or a genuinely un-branded box),
+# fall back to the old glob-all behavior with a loud warning so a real
+# multi-company leak is at least visible in the log, not silent.
+_MATERIALIZE_COMPANY_SLUG="${COMPANY_SLUG:-}"
+if [[ -z "$_MATERIALIZE_COMPANY_SLUG" && -f "$_MATERIALIZE_STATE_FILE" ]]; then
+  _MATERIALIZE_COMPANY_SLUG="$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('$_MATERIALIZE_STATE_FILE'))
+except (OSError, json.JSONDecodeError):
+    sys.exit(0)
+slug = (d.get('companySlug') or d.get('clientSlug') or '').strip()
+sys.stdout.write(slug)
+" 2>/dev/null || true)"
+fi
+if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+  echo "[materialize-dept-agents] scoping the canonical ZHC dept scan to this box's own company: $_MATERIALIZE_COMPANY_SLUG"
+else
+  echo "[materialize-dept-agents] WARN: could not resolve this box's own company slug (no \$COMPANY_SLUG, no companySlug/clientSlug in $_MATERIALIZE_STATE_FILE) — falling back to scanning EVERY company directory under the canonical ZHC roots. On a box that hosts more than one client's build, this can register a FOREIGN client's departments into this box's agents.list[]. Set COMPANY_SLUG to fix." >&2
+fi
+
 # ─── Backup the config first (mirror Skill 32 INSTALL.md Phase 4.1) ──────────
 if [[ $DRY_RUN -eq 0 ]]; then
   mkdir -p "$BACKUP_DIR"
@@ -157,13 +189,22 @@ DEPT_SCAN_ROOTS=()
 
 # Expand the canonical master-files ZHC tree (root 1) FIRST — it is the most
 # authoritative source and must win any slug collision under setdefault().
-# We iterate every company directory and push its departments/ subdir into
-# DEPT_SCAN_ROOTS so the Python scanner sees it as a direct list of
-# dept-slug children.
+# Scoped to THIS BOX'S OWN company (_MATERIALIZE_COMPANY_SLUG, resolved
+# above) when known — pushing only that company's departments/ subdir into
+# DEPT_SCAN_ROOTS. Falls back to iterating every company directory ONLY when
+# the box's own slug could not be resolved (already warned above).
 for _mf_root in \
     "$HOME/Downloads/openclaw-master-files/zero-human-company" \
     "/data/openclaw-master-files/zero-human-company"; do
   [[ -d "$_mf_root" ]] || continue
+  if [[ -n "$_MATERIALIZE_COMPANY_SLUG" ]]; then
+    _dept_d="$_mf_root/$_MATERIALIZE_COMPANY_SLUG/departments"
+    if [[ -d "$_dept_d" ]]; then
+      DEPT_SCAN_ROOTS+=("$_dept_d")
+      echo "[materialize-dept-agents] including ZHC dept path: $_dept_d"
+    fi
+    continue
+  fi
   for _company_dir in "$_mf_root"/*/; do
     [[ -d "$_company_dir" ]] || continue
     _dept_d="${_company_dir%/}/departments"

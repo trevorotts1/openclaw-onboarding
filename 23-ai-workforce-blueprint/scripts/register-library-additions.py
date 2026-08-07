@@ -74,10 +74,22 @@ _INDEX_PATH = _LIBRARY_DIR / "_index.json"
 # Filenames directly under a <dept>/ that are NOT role docs (department-level
 # infra/scaffold). A canonical role is EITHER a folder `<dept>/<slug>/how-to.md`
 # OR a flat `<dept>/<slug>.md` whose stem is not one of these.
+#
+# CHANGELOG-RESCUE-DEPT (a build log) and RELAY-BRAIN-PATCH (an operator
+# runbook) were added after both were discovered auto-registered as roles[]
+# entries: neither is a role, so both got sop_count=0/sop_min=1 forever and
+# failed the role-substance floor (verify-library-gate.sh) permanently. This
+# discovery method is IDENTITY-based (the filename stem), same as every other
+# entry in this set — a scan of every dept-level .md file in the library for
+# an uppercase-bearing stem (the shape a role slug never takes; role slugs are
+# lowercase-hyphenated) turned up only these two, so no broader heuristic was
+# warranted. Any future infra-shaped addition is still caught: see check()'s
+# INFRA-STEM ROLE assertion below, which fires the moment such a file is
+# registered rather than waiting for the substance floor to fail downstream.
 _INFRA_STEMS = frozenset({
     "how-to-use-this-department", "00-START-HERE", "IDENTITY", "SOUL", "TOOLS",
     "USER", "AGENTS", "MEMORY", "HEARTBEAT", "BUILDER-PROMPT", "README",
-    "governing-personas", "00-INDEX",
+    "governing-personas", "00-INDEX", "CHANGELOG-RESCUE-DEPT", "RELAY-BRAIN-PATCH",
 })
 # Dept-folder names under role-library/ that are NOT departments (staging / meta).
 # Mirrors create_role_workspaces._ROSTER_SKIP_FOLDERS + the leading-underscore rule.
@@ -531,6 +543,24 @@ def check(data, disk_roles):
                     f"SOP LINKAGE DRIFT: {r.get('dept')}/{r.get('slug')} "
                     f"sop_min={stored_min}, expected {sop_floor} "
                     f"(run register-library-additions.py --apply)")
+
+    # (h) no roles[] entry may carry an infra-reserved stem. discover_role_files()
+    # already refuses to ADD one (the stem is filtered out during discovery), but
+    # this asserts the negative directly against roles[] itself — the backstop
+    # for a hand-edited or legacy entry that predates a stem's addition to
+    # _INFRA_STEMS (exactly how CHANGELOG-RESCUE-DEPT/RELAY-BRAIN-PATCH got in:
+    # they were registered before their stems were recognized as infra). Without
+    # this, such an entry sits silently in roles[] forever — --check has nothing
+    # else that would ever flag it, since its file genuinely exists on disk.
+    for r in roles:
+        rel = r.get("path", "")
+        stem = Path(rel).stem if rel else ""
+        if stem in _INFRA_STEMS:
+            problems.append(
+                f"INFRA-STEM ROLE: {r.get('dept')}/{r.get('slug')} -> {rel} "
+                f"is registered as a role but its filename stem ('{stem}') is "
+                f"reserved infra (not a role); remove this entry from "
+                f"_index.json roles[] and its department roles[] membership")
 
     return (len(problems) == 0), problems
 

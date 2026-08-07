@@ -1,7 +1,7 @@
 ---
 name: loop-protection-system
 description: The fleet's reflex arc against crash-loops and token furnaces - the single biggest daily problem on client boxes. A deterministic, zero-model-call, host-level watchdog that runs OUTSIDE every OpenClaw session so it survives the very wedges it treats. It adds the three layers Skill 60 (the Early Warning System) deliberately does not do - RESPOND (a per-class quarantine-and-fix engine), PROTECT (circuit breakers on every supervisor and retry path so a loop trips a breaker instead of running for weeks), and HEAL (auto-apply the proven-deterministic fixes, escalate everything ambiguous to Rescue Rangers, never guess). It carries five loop-specific detectors D1-D5 (restart velocity, idle token-burn rate, repeated-identical-signature, timer re-fire / wedge / orphan-port, and self-blocking-run / transcript poison) that Skill 60's S1-S10 lack - D5 being the one that measures a STOCK (how much of a session transcript is ALREADY loop wreckage) rather than a flow, because a paused loop leaves a poisoned transcript that keeps degrading every later turn, consumes Skill 60's ledger read-only, and contributes nothing client-visible. Deterministic Python + stdlib only, one 15-minute cron, CPU-cheap, DRY_RUN observe-only for the first 7 days on any box. It is OPERATED by the openclaw-maintenance department (the watchdog + sweeps), the Healer department (patches the causes so a loop never recurs), and Bugs (keeps the ledger honest). Trigger with "audit the loop protection", "why is this box restarting", "is a cron looping", "check for idle token burn", "install the loop watchdog", "verify loop protection", "park this unit", or "a loop is confirmed - kill it".
-version: 0.4.0
+version: 0.5.0
 ---
 
 # Loop Protection System (Skill 61)
@@ -155,7 +155,7 @@ SAFETY CAP under Skill 60 Signal S4: a raise without an operator stamp is a P1.
 The watchdog tick and every companion command route through the ONE sanctioned entry
 (`loop-companion.sh`). Every script implements `--self-test` (deterministic, no
 network, no model). `verify.sh` is the independent, failable, FULLY OFFLINE end-to-end
-proof (eighteen drills; the D-ESCALATE drill injects a failing transport, so no external
+proof (twenty-two drills; the D-ESCALATE drill injects a failing transport, so no external
 API is ever touched). Two drills prove the RESPOND path is wired, not just planned:
 **D-ARMED-PARK** runs an ARMED tick over the restart-storm fixture and asserts the unit
 is parked AND the process breaker tripped; **D-REVERT** executes the emitted one-line
@@ -165,6 +165,16 @@ LARGER, busier, clean transcript stays silent even past the re-arm floor),
 **D-POISON-ROLL** (an armed tick archives it, moved not deleted) and **D-POISON-LIVE**
 (a transcript still being written is refused) - and all four are mutation-proven
 failable (see `tests/drills/D-POISON.md`).
+
+Four more hold the line on a REPRODUCED crash: the roll was not idempotent, so LF-10
+re-archived its own archive every tick until the filename passed 255 bytes and an
+uncaught `OSError` killed the whole tick. **D-POISON-REROLL** asserts ten armed ticks
+over one poisoned transcript yield exactly one finding and one roll; **-BOUND** that the
+constructed name is byte-bounded and deterministic; **-REFUSAL** that a filesystem
+error is a refusal, not a crash; **-TICK** that an exception escaping a kill card is
+contained and the finding behind it is still processed. **One bad unit never kills the
+tick** - a watchdog that dies quietly leaves a box that only looks watched (see
+`tests/drills/D-POISON-REROLL.md`).
 
 **What the operator commands actually do.** `park <unit>` / `unpark <unit>` and the
 emitted revert `unpark --finding <id>` (finding→unit resolved from the ledger) are

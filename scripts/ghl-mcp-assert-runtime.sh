@@ -116,6 +116,10 @@ else
   MCP_DIR="$HOME/mcp-servers/ghl-community-mcp"
   LOG_DIR="$HOME/Library/Logs/ghl-mcp"
 fi
+# Test/override hook, same convention as GHL_MCP_DIR / GHL_MCP_PLIST below: lets
+# the VPS+pm2 branch (section B) be exercised in CI without a real /data mount.
+# Real boxes never set this — PLATFORM is always detected from the filesystem.
+PLATFORM="${GHL_MCP_PLATFORM_OVERRIDE:-$PLATFORM}"
 # Test/override hooks so this gate can be exercised against a simulated box.
 MCP_DIR="${GHL_MCP_DIR:-$MCP_DIR}"
 LOG_DIR="${GHL_MCP_LOG_DIR_OVERRIDE:-$LOG_DIR}"
@@ -123,6 +127,11 @@ OC_JSON="${GHL_MCP_OC_JSON:-$OC_ROOT/openclaw.json}"
 PLIST="${GHL_MCP_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp.plist}"
 PROBE_PLIST="${GHL_MCP_PROBE_PLIST:-$HOME/Library/LaunchAgents/com.clawd.ghl-mcp-probe.plist}"
 SYSTEMD_UNIT="${GHL_MCP_SYSTEMD_UNIT:-/etc/systemd/system/ghl-mcp.service}"
+# Bind-determination sources (check 13). Overridable ONLY so the "no method
+# available -> FATAL undeterminable" branch is reachable in CI; see the long
+# note at check 13. Real boxes never set these.
+_PROC_NET_TCP="${GHL_MCP_PROC_NET_TCP:-/proc/net/tcp}"
+_PROC_NET_TCP6="${GHL_MCP_PROC_NET_TCP6:-/proc/net/tcp6}"
 PM2_ECOSYSTEM="$MCP_DIR/ecosystem.config.js"
 BUILD_STAMP="$MCP_DIR/.ghl-mcp-build.json"
 LAUNCHER_NAME=".ghl-mcp-launch.sh"
@@ -210,7 +219,30 @@ for a in apps:
         continue
     env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
     print("__script__=%s" % (env.get("pm_exec_path") or a.get("pm_exec_path") or ""))
-    print("__stop_exit_codes__=%s" % ",".join(str(x) for x in (env.get("stop_exit_codes") or [])))
+    # DEFECT 3 (proven live 2026-08-04): pm2 v7.0.1 stores a single-element
+    # stop_exit_codes as the BARE SCALAR 0, not the list [0]. The old
+    # (env.get("stop_exit_codes") or []) treated the falsy int 0 as ABSENT and
+    # silently dropped it, so a CORRECTLY configured box (stop_exit_codes=0)
+    # produced an empty __stop_exit_codes__ field and a false FATAL downstream
+    # (the runtime gate reported stop_exit_codes as unset). Verified live: an
+    # isolated disposable pm2 app (exits 0, autorestart:true) was NOT
+    # restarted -- restart_time stayed 0 for 14+ seconds -- so crash-only
+    # semantics genuinely worked; only this parser was wrong. None (the dict
+    # key truly absent) is the only shape that means "nothing declared"; a
+    # real value -- scalar 0, "0", or a list -- must survive even when it is
+    # falsy. NOTE: this Python body is wrapped in a bash SINGLE-quoted string
+    # below, so these comments must never contain a literal apostrophe or
+    # single-quote mark -- one did once, and it silently closed the bash
+    # string early, splicing the rest of the Python source out onto the
+    # command line as literal bash commands.
+    _sec = env.get("stop_exit_codes")
+    if _sec is None or _sec == "":
+        _sec_list = []
+    elif isinstance(_sec, (list, tuple)):
+        _sec_list = list(_sec)
+    else:
+        _sec_list = [_sec]
+    print("__stop_exit_codes__=%s" % ",".join(str(x) for x in _sec_list))
     for k in ALLOWED:
         print("%s=%s" % (k, env.get(k) or ""))
     break
@@ -459,7 +491,7 @@ PYEOF
 fi
 case "$_REGISTERED" in
   no)  _pass "ghl-community-mcp is ABSENT from mcp.servers (Tier 2 stays on-demand curl — no per-init tool-catalogue tax)" ;;
-  yes) _fail "ghl-community-mcp IS REGISTERED in mcp.servers — skill 36 v1.1.0 doctrine (wire.sh migration M2, qc-ghl-mcp-setup.sh Section D, qc-assert CHECK 8) requires it ABSENT: its tool schemas otherwise ride in EVERY agent init, and a down/deaf server makes every init pay the full connectionTimeoutMs. Run: openclaw mcp remove ghl-community-mcp — then RE-READ the config, because the gateway rewrites openclaw.json from memory and can undo a file-level removal." ;;
+  yes) _fail "ghl-community-mcp IS REGISTERED in mcp.servers — skill 36 v1.1.0 doctrine (wire.sh migration M2, qc-ghl-mcp-setup.sh Section D, qc-assert CHECK 8) requires it ABSENT: its tool schemas otherwise ride in EVERY agent init, and a down/deaf server makes every init pay the full connectionTimeoutMs. Run: openclaw mcp unset ghl-community-mcp  (NOT 'mcp remove' — that is not a command on OpenClaw 2026.7.1-2 and exits 1 with 'Too many arguments for this command'; every call site in this repo used it, swallowed by '|| true', which is why this check never passed on any box). Then RE-READ the config: the gateway rewrites openclaw.json from memory and can undo a file-level removal." ;;
   *)   _warn "could not read mcp.servers from $OC_JSON — the Tier 2 registration assertion did not run." ;;
 esac
 
@@ -482,32 +514,136 @@ else
   _warn "$LOG_DIR does not exist — the log-size assertion did not run."
 fi
 
-# 13. loopback bind — WARN by default, FATAL under GHL_MCP_REQUIRE_LOOPBACK=1
-_BIND_VERDICT="unknown"
-if command -v lsof >/dev/null 2>&1; then
-  _L="$(lsof -nP -iTCP:"${EXPECT_PORT}" -sTCP:LISTEN 2>/dev/null || true)"
-  if [ -n "$_L" ]; then
-    case "$_L" in
-      *"127.0.0.1:${EXPECT_PORT}"*|*"[::1]:${EXPECT_PORT}"*) _BIND_VERDICT="loopback" ;;
-      *"*:${EXPECT_PORT}"*|*"0.0.0.0:${EXPECT_PORT}"*)       _BIND_VERDICT="all-interfaces" ;;
-      *)                                                      _BIND_VERDICT="other" ;;
-    esac
+# ── 13. LOOPBACK BIND ────────────────────────────────────────────────────────
+#
+# DEFECT 3 (proven on the VPS pilot box). The old form was `if command -v lsof`
+# with NO else branch, so in a slim container — where lsof simply is not
+# installed — `_BIND_VERDICT` stayed "unknown" and fell into an `_info` line
+# reading "no listener observed (or lsof unavailable)". That single sentence
+# conflated two completely different states:
+#
+#     the port is FREE                     (nothing to expose — genuinely fine)
+#     we have NO WAY TO TELL what is bound (a security check that did not run)
+#
+# The second was reported as INFO, which is indistinguishable from a pass. It
+# masked a real, independently-confirmed `0.0.0.0:8765` exposure on that box
+# (LISTEN state `0A` in /proc/net/tcp). A security check that cannot determine
+# its answer has FAILED; it has not passed.
+#
+# TWO CHANGES:
+#   1. lsof is no longer the only way to ask. Fall back to `ss`, then to
+#      /proc/net/tcp + /proc/net/tcp6 parsed directly (the container case — no
+#      tools needed at all, state 0A = LISTEN, the local address is hex
+#      ADDR:PORT). Determination now succeeds almost everywhere it previously
+#      silently gave up.
+#   2. UNDETERMINABLE IS FATAL. If no method could answer, that is a FATAL
+#      "cannot determine", never an INFO. "Port proven free" stays INFO, because
+#      that is a real answer, not an absence of one.
+#
+# The all-interfaces verdict is now FATAL BY DEFAULT. The old WARN existed
+# because "fixing it needs a server-side change (R2)" — R2 has since landed: the
+# generated .ghl-mcp-bind-guard.cjs moves the bind, proven differentially on a
+# live box (*:8791 -> 127.0.0.1:8791) and by tests/unit/ghl-mcp-bind-guard.test.sh.
+# The reason for the exemption is gone, so the exemption is gone.
+# GHL_MCP_REQUIRE_LOOPBACK=0 downgrades it for a deliberate, per-box operator
+# decision — it is no longer the default posture.
+
+# _bind_addrs_for_port <port> — print one local address per LISTEN socket on the
+# port, one per line. Exit 0 = the question was ANSWERED (zero lines = the port
+# is genuinely free). Exit 1 = no method available; the answer is UNKNOWN.
+_bind_addrs_for_port() {
+  local _p="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"$_p" -sTCP:LISTEN 2>/dev/null | tail -n +2 | awk '{print $9}'
+    return 0
   fi
+  if command -v ss >/dev/null 2>&1; then
+    ss -ltnH 2>/dev/null | awk -v p=":$_p" '$4 ~ p"$" {print $4}'
+    return 0
+  fi
+  # No tools at all — the slim-container case. /proc/net/tcp{,6} is always there
+  # on Linux. Columns: sl local_address rem_address st … ; st 0A = TCP_LISTEN.
+  # local_address is HEX addr:HEX port, little-endian for IPv4.
+  #
+  # The two paths are overridable for the SAME reason GHL_MCP_DIR / GHL_MCP_PLIST /
+  # GHL_MCP_OC_JSON above are: this gate must be exercisable against a simulated
+  # box. Specifically, the "no method available" branch below is otherwise
+  # unreachable on Linux (where /proc always exists) and therefore untestable in
+  # CI — and an untested fail-path is exactly what let the silent INFO downgrade
+  # survive. Defaults are the real paths; nothing on a box sets these.
+  # python3 is required to decode the hex addresses. Without it this branch would
+  # `return 127` from a missing interpreter, which the caller would read as
+  # "answered, zero listeners" — a FALSE INFO, i.e. the same silent downgrade in
+  # a new costume. Fall through to the undeterminable FATAL instead.
+  if { [ -r "$_PROC_NET_TCP" ] || [ -r "$_PROC_NET_TCP6" ]; } \
+     && command -v python3 >/dev/null 2>&1; then
+    PORT_DEC="$_p" PROC_TCP="$_PROC_NET_TCP" PROC_TCP6="$_PROC_NET_TCP6" python3 - <<'PYEOF' 2>/dev/null
+import os, socket, struct
+port = int(os.environ["PORT_DEC"])
+def emit(path, v6):
+    try:
+        lines = open(path).read().splitlines()[1:]
+    except Exception:
+        return
+    for ln in lines:
+        f = ln.split()
+        if len(f) < 4 or f[3] != "0A":
+            continue
+        hexaddr, hexport = f[1].split(":")
+        if int(hexport, 16) != port:
+            continue
+        if v6:
+            raw = bytes.fromhex(hexaddr)
+            raw = b"".join(struct.pack("<I", struct.unpack(">I", raw[i:i+4])[0])
+                           for i in range(0, 16, 4))
+            ip = socket.inet_ntop(socket.AF_INET6, raw)
+        else:
+            ip = socket.inet_ntop(socket.AF_INET, struct.pack("<I", int(hexaddr, 16)))
+        print("%s:%d" % (ip, port))
+emit(os.environ.get("PROC_TCP", "/proc/net/tcp"), False)
+emit(os.environ.get("PROC_TCP6", "/proc/net/tcp6"), True)
+PYEOF
+    return $?
+  fi
+  return 1
+}
+
+_BIND_ADDRS=""
+_BIND_DETERMINED=1
+if _BIND_ADDRS="$(_bind_addrs_for_port "$EXPECT_PORT")"; then
+  _BIND_DETERMINED=0
 fi
-case "$_BIND_VERDICT" in
-  loopback)
-    _pass "listener on :${EXPECT_PORT} is bound to LOOPBACK" ;;
-  all-interfaces)
-    if [ "${GHL_MCP_REQUIRE_LOOPBACK:-0}" = "1" ]; then
-      _fail "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (0.0.0.0) — this is an unauthenticated, CRM-credentialed endpoint reachable from the LAN. Bind 127.0.0.1."
-    else
-      _warn "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (0.0.0.0), not loopback. This is an unauthenticated CRM-credentialed endpoint reachable by any local process and any LAN host. Fixing it needs a server-side change (R2), so this is a WARN today — set GHL_MCP_REQUIRE_LOOPBACK=1 to make it FATAL once R2 lands."
-    fi ;;
-  unknown)
-    _info "no listener observed on :${EXPECT_PORT} (or lsof unavailable) — the bind-address check did not run." ;;
-  *)
-    _warn "listener on :${EXPECT_PORT} has an unrecognised bind address — inspect it by hand." ;;
-esac
+
+if [ "$_BIND_DETERMINED" != "0" ]; then
+  _fail "the bind address on :${EXPECT_PORT} is UNDETERMINABLE on this box — lsof, ss and /proc/net/tcp are all unavailable, so this security check could not run. This is a FATAL 'cannot determine', NOT a pass: the identical situation on a VPS box silently degraded to INFO and masked a real 0.0.0.0:${EXPECT_PORT} exposure. Install lsof or iproute2, or run this gate where /proc is readable."
+elif [ -z "$_BIND_ADDRS" ]; then
+  _info "nothing is LISTENING on :${EXPECT_PORT} (determined, not assumed) — there is no bind to expose. The server may be legitimately stopped after a clean credential-blocked exit."
+else
+  _BIND_VERDICT="loopback"
+  while IFS= read -r _addr; do
+    [ -n "$_addr" ] || continue
+    case "$_addr" in
+      127.*|"[::1]:"*|"::1:"*|localhost:*)            : ;;                       # loopback
+      "*:${EXPECT_PORT}"|"0.0.0.0:${EXPECT_PORT}"|"[::]:${EXPECT_PORT}"|":::${EXPECT_PORT}")
+                                                      _BIND_VERDICT="all-interfaces" ;;
+      *)                                              [ "$_BIND_VERDICT" = "all-interfaces" ] || _BIND_VERDICT="other" ;;
+    esac
+  done <<EOF
+$_BIND_ADDRS
+EOF
+  case "$_BIND_VERDICT" in
+    loopback)
+      _pass "listener on :${EXPECT_PORT} is bound to LOOPBACK (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' '))" ;;
+    all-interfaces)
+      if [ "${GHL_MCP_REQUIRE_LOOPBACK:-1}" = "0" ]; then
+        _warn "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')). Demoted to WARN only because GHL_MCP_REQUIRE_LOOPBACK=0 was set explicitly on this box."
+      else
+        _fail "listener on :${EXPECT_PORT} is bound to ALL INTERFACES (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')) — an UNAUTHENTICATED, CRM-credentialed endpoint reachable by any local process and any LAN host. The bind guard (.ghl-mcp-bind-guard.cjs) either is not installed or was not loaded by the running process. FIX: re-run scripts/ghl-mcp-autostart.sh, which regenerates the guard and restarts the service through the launcher that preloads it."
+      fi ;;
+    *)
+      _fail "listener on :${EXPECT_PORT} is bound to an address this gate does not recognise as loopback (observed: $(printf '%s' "$_BIND_ADDRS" | tr '\n' ' ')). An unrecognised bind on a CRM-credentialed, unauthenticated port is treated as exposed, never as fine — inspect it by hand." ;;
+  esac
+fi
 
 # ── Verdict ──────────────────────────────────────────────────────────────────
 if [ "$FATAL_FAILURES" -gt 0 ]; then

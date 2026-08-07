@@ -635,8 +635,14 @@ curl -sS -X POST "$GHL_COMMUNITY_MCP_URL/execute" \
   -d '{"name":"ghl_list_products","arguments":{"limit":3}}'
 ```
 
-If a prior install registered `ghl-community-mcp`, remove it:
-`openclaw mcp remove ghl-community-mcp` (wire.sh migration M2 does this on live boxes).
+If a prior install registered `ghl-community-mcp`, de-register it:
+`openclaw mcp unset ghl-community-mcp` (wire.sh migration M2 does this on live boxes).
+
+> **The verb is `unset`, not `remove`.** `openclaw mcp remove` is not a command on
+> OpenClaw 2026.7.1-2 — it exits 1 with `Too many arguments for this command`. Every
+> de-registration call site in this repo used `remove`, swallowed by `|| true`, so
+> Tier 2 was never actually de-registered on any box. Re-read `openclaw mcp list`
+> afterwards: the gateway can rewrite `openclaw.json` from memory and undo it.
 **Do NOT run `openclaw mcp set ghl-community-mcp`** — that re-introduces the standing
 context cost v1.1.0 removed.
 

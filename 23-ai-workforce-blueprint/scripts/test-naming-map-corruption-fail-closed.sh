@@ -8,10 +8,11 @@
 # 6 universal-primary). department-floor.py now carries a documented
 # "BROKEN-INSTALL SAFETY NET": mandatory_ids() and
 # universal_primary_vertical_departments() both fall back to the hardcoded
-# HARDCODED_MANDATORY / HARDCODED_UNIVERSAL_PRIMARY lists (23 + 6 = 29) the
-# moment the live map yields nothing usable. That fallback logic existed but
-# was NEVER independently exercised by a dedicated corruption test anywhere
-# in the suite (test-department-floor.sh's T1-T4 all use the REAL, healthy
+# HARDCODED_MANDATORY / HARDCODED_UNIVERSAL_PRIMARY lists (24 + 6 = 30 as of
+# v2.8.0, master-orchestrator registered) the moment the live map yields
+# nothing usable. That fallback logic existed but was NEVER independently
+# exercised by a dedicated corruption test anywhere in the suite
+# (test-department-floor.sh's T1-T4 all use the REAL, healthy
 # department-naming-map.json) — this is exactly the "UNVERIFIED" residue
 # P2-06 (b) called out. This suite closes it permanently.
 #
@@ -21,16 +22,16 @@
 # redirects load_naming_map()'s open() call without ever touching the real
 # repo file). Nothing under the repo checkout is ever written to.
 #
-#   T1. INVALID JSON + FULL 29-dept workspace on disk -> floor_met=True,
-#       expected_floor_count==29 (fallback keeps the full floor, no silent
-#       drop to the 23 mandatory).
-#   T2. INVALID JSON + a workspace with ONLY the 23 mandatory depts on disk
+#   T1. INVALID JSON + FULL 30-dept workspace on disk -> floor_met=True,
+#       expected_floor_count==30 (fallback keeps the full floor, no silent
+#       drop to the 24 mandatory).
+#   T2. INVALID JSON + a workspace with ONLY the 24 mandatory depts on disk
 #       (all 6 universal-primary depts absent) -> floor_met=False, rc=3, and
 #       missing_universal_primary reports EXACTLY the 6 hardcoded ids. THE
 #       ACCEPTANCE CASE: a corrupted map must NOT let a short board pass as
 #       floor_met=True — this is "the build refuses to go short."
 #   T3. NAMING MAP FILE DOES NOT EXIST AT ALL (unreadable, not just invalid)
-#       + FULL 29-dept workspace -> floor_met=True (same fallback fires on
+#       + FULL 30-dept workspace -> floor_met=True (same fallback fires on
 #       OSError, not just JSONDecodeError).
 #   T4. VALID JSON BUT SEMANTICALLY EMPTY ({}), i.e. a naming map that parses
 #       fine but carries neither a "mandatory" key nor "vertical_packs" +
@@ -95,54 +96,54 @@ print(json.dumps(out))
 PYEOF
 }
 
-MANDATORY_23="marketing sales billing-finance customer-support web-development app-development graphics funnels video audio research communications crm openclaw-maintenance legal social-media paid-advertisement personal-assistant general-task project-architecture-office bugs healer quality-control"
-FULL_29="$MANDATORY_23 presentations scheduling-dispatch logistics-fulfillment engineering account-management podcast"
+MANDATORY_24="marketing sales billing-finance customer-support web-development app-development graphics funnels video audio research communications crm openclaw-maintenance legal social-media paid-advertisement personal-assistant general-task project-architecture-office bugs healer quality-control master-orchestrator"
+FULL_30="$MANDATORY_24 presentations scheduling-dispatch logistics-fulfillment engineering account-management podcast"
 
-echo "=== T1: INVALID JSON + full 29-dept workspace -> floor_met=True, floor stays 29 ==="
+echo "=== T1: INVALID JSON + full 30-dept workspace -> floor_met=True, floor stays 30 ==="
 echo '{ this is not valid json ]]]' > "$TMP/invalid.json"
-OUT=$(run_case t1 "$TMP/invalid.json" $FULL_29)
+OUT=$(run_case t1 "$TMP/invalid.json" $FULL_30)
 echo "  $OUT"
 FLOOR_MET=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['floor_met'])")
 EXP=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['expected_floor_count'])")
-if [ "$FLOOR_MET" = "True" ] && [ "$EXP" = "29" ]; then
-  ok "T1: invalid-JSON map + full floor on disk -> floor_met=True, expected_floor_count=29 (no silent shrink)"
+if [ "$FLOOR_MET" = "True" ] && [ "$EXP" = "30" ]; then
+  ok "T1: invalid-JSON map + full floor on disk -> floor_met=True, expected_floor_count=30 (no silent shrink)"
 else
-  bad "T1: expected floor_met=True and expected_floor_count=29, got floor_met=$FLOOR_MET expected_floor_count=$EXP"
+  bad "T1: expected floor_met=True and expected_floor_count=30, got floor_met=$FLOOR_MET expected_floor_count=$EXP"
 fi
 
-echo "=== T2 (ACCEPTANCE CASE): INVALID JSON + only the 23 mandatory on disk -> rc=3, all 6 universal-primary MISSING ==="
-OUT=$(run_case t2 "$TMP/invalid.json" $MANDATORY_23)
+echo "=== T2 (ACCEPTANCE CASE): INVALID JSON + only the 24 mandatory on disk -> rc=3, all 6 universal-primary MISSING ==="
+OUT=$(run_case t2 "$TMP/invalid.json" $MANDATORY_24)
 echo "  $OUT"
 RC=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['rc'])")
 MISSING_UP_COUNT=$(echo "$OUT" | python3 -c "import json,sys;print(len(json.load(sys.stdin)['missing_universal_primary']))")
 if [ "$RC" = "3" ] && [ "$MISSING_UP_COUNT" = "6" ]; then
-  ok "T2: corrupted map did NOT let a 23-only board pass -- rc=3, 6 universal-primary depts correctly flagged missing"
+  ok "T2: corrupted map did NOT let a 24-only board pass -- rc=3, 6 universal-primary depts correctly flagged missing"
 else
   bad "T2 (THE ACCEPTANCE CASE): expected rc=3 and 6 missing universal-primary, got rc=$RC missing_universal_primary_count=$MISSING_UP_COUNT -- A CORRUPTED MAP LET THE FLOOR GO SHORT"
 fi
 
-echo "=== T3: naming map FILE DOES NOT EXIST (unreadable, OSError not JSONDecodeError) + full 29-dept workspace -> floor_met=True ==="
-OUT=$(run_case t3 "MISSING" $FULL_29)
+echo "=== T3: naming map FILE DOES NOT EXIST (unreadable, OSError not JSONDecodeError) + full 30-dept workspace -> floor_met=True ==="
+OUT=$(run_case t3 "MISSING" $FULL_30)
 echo "  $OUT"
 FLOOR_MET=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['floor_met'])")
 EXP=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['expected_floor_count'])")
-if [ "$FLOOR_MET" = "True" ] && [ "$EXP" = "29" ]; then
-  ok "T3: missing naming-map file + full floor on disk -> floor_met=True, expected_floor_count=29"
+if [ "$FLOOR_MET" = "True" ] && [ "$EXP" = "30" ]; then
+  ok "T3: missing naming-map file + full floor on disk -> floor_met=True, expected_floor_count=30"
 else
-  bad "T3: expected floor_met=True and expected_floor_count=29, got floor_met=$FLOOR_MET expected_floor_count=$EXP"
+  bad "T3: expected floor_met=True and expected_floor_count=30, got floor_met=$FLOOR_MET expected_floor_count=$EXP"
 fi
 
-echo "=== T4: VALID but semantically-empty JSON ({}) + only 23 mandatory on disk -> rc=3, fallback still fires ==="
+echo "=== T4: VALID but semantically-empty JSON ({}) + only 24 mandatory on disk -> rc=3, fallback still fires ==="
 echo '{}' > "$TMP/empty.json"
-OUT=$(run_case t4 "$TMP/empty.json" $MANDATORY_23)
+OUT=$(run_case t4 "$TMP/empty.json" $MANDATORY_24)
 echo "  $OUT"
 RC=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['rc'])")
 MAND_COUNT=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['mandatory_count'])")
 UP_COUNT=$(echo "$OUT" | python3 -c "import json,sys;print(json.load(sys.stdin)['universal_primary_count'])")
-if [ "$RC" = "3" ] && [ "$MAND_COUNT" = "23" ] && [ "$UP_COUNT" = "6" ]; then
-  ok "T4: valid-but-empty {} map -> mandatory_ids()/universal_primary_vertical_departments() still fall back to 23+6=29 (not just an exception path)"
+if [ "$RC" = "3" ] && [ "$MAND_COUNT" = "24" ] && [ "$UP_COUNT" = "6" ]; then
+  ok "T4: valid-but-empty {} map -> mandatory_ids()/universal_primary_vertical_departments() still fall back to 24+6=30 (not just an exception path)"
 else
-  bad "T4: expected rc=3, mandatory_count=23, universal_primary_count=6, got rc=$RC mandatory_count=$MAND_COUNT universal_primary_count=$UP_COUNT"
+  bad "T4: expected rc=3, mandatory_count=24, universal_primary_count=6, got rc=$RC mandatory_count=$MAND_COUNT universal_primary_count=$UP_COUNT"
 fi
 
 echo "--------------------------------------------"

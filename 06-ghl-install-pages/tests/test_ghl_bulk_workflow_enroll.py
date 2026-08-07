@@ -377,5 +377,54 @@ def test_selftest_cli_passes():
     assert rc == 0
 
 
+# ---------------------------------------------------------------------------
+# _get_token() placeholder-shadow fix (2026-08-03) — see TERMINOLOGY.md and
+# check-ghl-pit-liveness.sh's _is_placeholder() (the reference implementation
+# this resolver's shape rules mirror). A config-seeded placeholder inherited
+# into the live process env at gateway launch must never be accepted as a real
+# credential.
+# ---------------------------------------------------------------------------
+PLACEHOLDER_SHORT = "pit-abc123"
+REAL_LOOKING_PIT = "pit-real1234567890REALTOKEN"
+
+
+class TestIsPlaceholderShape:
+    def test_short_value_is_placeholder(self):
+        assert bwe._is_placeholder("pit-abc123") is True
+
+    def test_real_looking_value_is_not_placeholder(self):
+        assert bwe._is_placeholder(REAL_LOOKING_PIT) is False
+
+    def test_empty_is_placeholder(self):
+        assert bwe._is_placeholder("") is True
+
+
+def _clear_pit_env(monkeypatch):
+    for name in bwe._LOCATION_PIT_ENV_NAMES:
+        monkeypatch.delenv(name, raising=False)
+
+
+class TestGetTokenPlaceholderShadow:
+    def test_placeholder_alone_exits_nonzero_and_never_echoes_value(self, monkeypatch, capsys):
+        _clear_pit_env(monkeypatch)
+        monkeypatch.setenv("GOHIGHLEVEL_API_KEY", PLACEHOLDER_SHORT)
+        with pytest.raises(SystemExit) as ei:
+            bwe._get_token()
+        assert ei.value.code != 0
+        err = capsys.readouterr().err
+        assert PLACEHOLDER_SHORT not in err
+
+    def test_placeholder_in_preferred_alias_falls_through_to_real_legacy_alias(self, monkeypatch):
+        _clear_pit_env(monkeypatch)
+        monkeypatch.setenv("GOHIGHLEVEL_API_KEY", PLACEHOLDER_SHORT)  # placeholder, preferred
+        monkeypatch.setenv("GHL_API_KEY", REAL_LOOKING_PIT)           # real, legacy alias
+        assert bwe._get_token() == REAL_LOOKING_PIT
+
+    def test_real_value_in_preferred_alias_resolves_immediately(self, monkeypatch):
+        _clear_pit_env(monkeypatch)
+        monkeypatch.setenv("GOHIGHLEVEL_API_KEY", REAL_LOOKING_PIT)
+        assert bwe._get_token() == REAL_LOOKING_PIT
+
+
 if __name__ == "__main__":
     raise SystemExit(pytest.main([__file__, "-q"]))

@@ -60,6 +60,74 @@ STATE_FILE="${ZHC_STATE_FILE:-${OC_ROOT}/workspace/.workforce-build-state.json}"
 LOG_FILE="$OC_ROOT/workspace/.zhc-closeout.log"
 SKILL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# ---- env bootstrap: source THIS box's own credential stores (false-negative) --
+# run-closeout.sh is launched detached (nohup, resume-workforce-build.sh:1129/
+# resume-closeout-cron.sh) from a cron shell, which does not inherit whatever an
+# interactive/login shell had exported. KIE_API_KEY / NOTION_API_TOKEN then read
+# as EMPTY in the preflight below even when they are genuinely present and
+# correct -- a documented false negative: the key was never missing, this
+# process just never sourced the file holding it.
+#
+# Sources ONLY files rooted under THIS box's own already-resolved $OC_ROOT --
+# never any other path, never an operator-side store, never a substitute value.
+# Existing exported vars always win (never overwritten), so an operator-injected
+# env (tests, an already-exported shell) is never clobbered. Presence is the
+# only thing this changes; it never invents a value that was not already
+# sitting in one of the client's own files. Mirrors the store list every other
+# credential reader in this repo already agrees on (shared-utils/check-skill-
+# prereqs.sh's oc_root-relative candidates; shared-utils/check-credential.sh's
+# ENV-STORE tier) -- restricted here to the OC_ROOT-scoped subset, since this
+# is a live-resolve site (the value is about to authenticate a paid API call),
+# not a read-only presence report.
+_zhc_source_env_file() {
+  local f="$1" line key val
+  [[ -f "$f" ]] || return 0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    [[ "$line" =~ ^[[:space:]]*(#.*)?$ ]] && continue
+    [[ "$line" == export\ * ]] && line="${line#export }"
+    key="${line%%=*}"
+    key="${key//[[:space:]]/}"
+    [[ "$key" =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+    # never clobber a value already exported into this process
+    [[ -n "${!key:-}" ]] && continue
+    val="${line#*=}"
+    if [[ ${#val} -ge 2 && "${val:0:1}" == "${val: -1}" && ( "${val:0:1}" == '"' || "${val:0:1}" == "'" ) ]]; then
+      val="${val:1:-1}"
+    fi
+    export "$key=$val"
+  done < "$f"
+}
+for _zhc_env_candidate in \
+  "$OC_ROOT/secrets/.env" \
+  "$OC_ROOT/workspace/.env" \
+  "$OC_ROOT/.env" \
+  "$OC_ROOT/service-env/ai.openclaw.gateway.env"; do
+  _zhc_source_env_file "$_zhc_env_candidate"
+done
+unset -f _zhc_source_env_file
+
+# ---- operator escalation destination — via the shared resolver (once) -------
+# CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat. Resolved ONCE here so
+# every escalation site below (QC gates, quality holds, org-chart failures, the
+# provider smoke-test preflight, the operator success summary) answers "where
+# does an operator alert go" the SAME way instead of each reimplementing its own
+# fallback chain — several previously used a pure env-var read with no config-
+# file lookup and no OPERATOR_HELP_CHAT_ID fallback, the exact defect that let a
+# configured destination resolve empty. See shared-utils/operator-chat-id.sh.
+# Two candidate paths (repo checkout, then a deployed box's skills/ layout) —
+# same dual-candidate pattern used elsewhere in this file (the provider-smoke
+# script lookup below) and in 22-notify-client-doc.sh.
+for _oc_op_cand in \
+  "$SKILL_DIR/../shared-utils/operator-chat-id.sh" \
+  "$OC_ROOT/skills/shared-utils/operator-chat-id.sh"; do
+  if [[ -f "$_oc_op_cand" ]]; then
+    # shellcheck disable=SC1090
+    source "$_oc_op_cand" 2>/dev/null || true
+    break
+  fi
+done
+# OPERATOR_CHAT_ID is now set (possibly empty) — every site below reads it.
+
 log() {
   printf '%s [%-5s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2" >> "$LOG_FILE"
   printf '%s [%-5s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$1" "$2"
@@ -90,6 +158,23 @@ if ! source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib-closeout-state.sh
 fi
 
 now_iso() { date -u +%Y-%m-%dT%H:%M:%SZ; }
+
+# GATE-CONSISTENCY FIX: interviewQc build-eligibility is `pass` OR
+# `needs-review`, not `pass` alone. update-interview-state.sh's evidence gate
+# already treats qc rc=0 (pass) and rc=2 (needs-review) as "the evidence
+# supports completion" -- it writes interviewComplete=true and tells the
+# client they are finished. resume-workforce-build.sh's own QC-resume gate
+# (_qc_build_eligible(), same two-value case) and build-workforce.py
+# (state["interviewQc"]["status"] not in ("pass", "needs-review")) already
+# agree: a needs-review interview is build-eligible and the box builds fully
+# through to buildCompletedAt. Before this fix, run-closeout.sh alone still
+# demanded a strict `pass`, and nothing anywhere ever promotes
+# needs-review -> pass. So a needs-review box built completely, then blocked
+# FOREVER at closeoutStatus=blocked-qc-pending -- visible (not a silent
+# stall) but still never delivered. Aligning this predicate with the other
+# two build/QC gates closes that dead end; the QC notes still ride along as
+# advisory (recorded in .interviewQc for the operator either way).
+_qc_closeout_eligible() { case "${1:-}" in pass|needs-review) return 0 ;; *) return 1 ;; esac; }
 
 # FIX-S36-06: fail-soft Command Center card for the closeout ITSELF, keyed per
 # client slug, so a stuck closeout is board-VISIBLE. The helper never fails the
@@ -161,7 +246,7 @@ trap 'rm -f "$RUN_CLOSEOUT_LOCK_FILE"' EXIT
 # for a closeout we're about to refuse. This is a cheap token-free read.
 _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
 _early_build_done=$(jq -r '.buildCompletedAt // empty' "$STATE_FILE" 2>/dev/null || true)
-if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" != "pass" ]]; then
+if [[ -n "$_early_build_done" && "$_early_build_done" != "null" ]] && ! _qc_closeout_eligible "$_early_qc"; then
   # QC script search (best-effort, non-fatal if absent)
   _EARLY_QC_SCRIPT=""
   for _cand in \
@@ -177,7 +262,7 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     python3 "$_EARLY_QC_SCRIPT" --write-state --state "$STATE_FILE" >>"$LOG_FILE" 2>&1 || true
     _early_qc=$(jq -r '.interviewQc.status // empty' "$STATE_FILE" 2>/dev/null || true)
   fi
-  if [[ "$_early_qc" != "pass" ]]; then
+  if ! _qc_closeout_eligible "$_early_qc"; then
     # FIX (false-negative #2): distinguish a QC GAP from an actually-incomplete
     # interview. When the owner HAS completed the interview (interviewComplete
     # =true) but interviewQc has not yet passed, this is a QC-PENDING state, NOT
@@ -189,10 +274,10 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
     _early_interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
     if [[ "$_early_interview_complete" == "true" ]]; then
       _early_block_status="blocked-qc-pending"
-      _early_block_reason="interviewQc.status=${_early_qc} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py to reach status=pass. NOT an incomplete interview."
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass/needs-review) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py to reach status=pass or needs-review. NOT an incomplete interview."
     else
       _early_block_status="blocked-interview-incomplete"
-      _early_block_reason="interviewQc.status=${_early_qc} (not pass) - refusing to close out an unverified interview."
+      _early_block_reason="interviewQc.status=${_early_qc} (not pass/needs-review) - refusing to close out an unverified interview."
     fi
     log "ERROR" "BLOCKED (interviewQc gate): $_early_block_reason"
     # SK1-12: pass client-derived strings via jq --arg, never string-interpolate
@@ -213,7 +298,8 @@ if [[ -n "$_early_build_done" && "$_early_build_done" != "null" && "$_early_qc" 
       )' \
       "$STATE_FILE" > "$_tmp_b" && mv "$_tmp_b" "$STATE_FILE" || rm -f "$_tmp_b"
     # CO-MINGLING GUARD (v12.4.0): operator escalation is OPT-IN. NO hardcoded chat.
-    _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+    # Resolved once, near the top of this file, via the shared resolver.
+    _OP_CHAT="${OPERATOR_CHAT_ID:-}"
     if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
       openclaw message send --channel telegram -t "$_OP_CHAT" \
         -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_early_qc} - closeout refused for $(jq -r '.companyName // empty' "$STATE_FILE" 2>/dev/null). State: $STATE_FILE" \
@@ -269,7 +355,7 @@ fi
 # Gate is placed BEFORE the expensive generation preflight (KIE/Notion/TG checks)
 # so a stalled interview is surfaced immediately without requiring API keys.
 _qc_status=$(state_get '.interviewQc.status')
-if [[ "$_qc_status" != "pass" ]]; then
+if ! _qc_closeout_eligible "$_qc_status"; then
   # Try to (re)compute it autonomously before deciding
   _QC_SCRIPT=""
   for _cand in \
@@ -288,7 +374,7 @@ if [[ "$_qc_status" != "pass" ]]; then
     log "INFO" "interviewQc.status after inline QC run: ${_qc_status}"
   fi
 fi
-if [[ "$_qc_status" != "pass" ]]; then
+if ! _qc_closeout_eligible "$_qc_status"; then
   # FIX (false-negative #2): as in the early gate, a QC gap with a COMPLETE
   # interview (interviewComplete=true) is a QC-PENDING state, not an incomplete
   # interview. buildCompletedAt is already set (checked above), so the interview
@@ -296,10 +382,10 @@ if [[ "$_qc_status" != "pass" ]]; then
   _interview_complete=$(state_get '.interviewComplete')
   if [[ "$_interview_complete" == "true" ]]; then
     _block_status="blocked-qc-pending"
-    _block_reason="interviewQc.status=${_qc_status} (not pass) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py and ensure status=pass. NOT an incomplete interview."
+    _block_reason="interviewQc.status=${_qc_status} (not pass/needs-review) but interviewComplete=true - interview IS complete; QC verdict pending. Run qc-interview-completion.py and ensure status=pass or needs-review. NOT an incomplete interview."
   else
     _block_status="blocked-interview-incomplete"
-    _block_reason="interviewQc.status=${_qc_status} (not pass) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass."
+    _block_reason="interviewQc.status=${_qc_status} (not pass/needs-review) - refusing to close out an unverified interview. Run qc-interview-completion.py and ensure status=pass or needs-review."
   fi
   log "ERROR" "BLOCKED: $_block_reason"
   state_set ".closeoutStatus = \"$_block_status\" | .closeoutBlockReason = \"$_block_reason\""
@@ -314,7 +400,8 @@ if [[ "$_qc_status" != "pass" ]]; then
   " || true
   # Escalate operator via Telegram (non-fatal). CO-MINGLING GUARD (v12.4.0):
   # operator escalation is OPT-IN. NO hardcoded chat — empty => skip the send.
-  _OPERATOR_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+  # Resolved once, near the top of this file, via the shared resolver.
+  _OPERATOR_CHAT="${OPERATOR_CHAT_ID:-}"
   if [[ -n "$_OPERATOR_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
     openclaw message send --channel telegram -t "$_OPERATOR_CHAT" \
       -m "🚨 ZHC BLOCKED [STUCK_QC_FAILED] interviewQc.status=${_qc_status} - closeout refused for $(state_get '.companyName'). Verify interview + run QC. State: $STATE_FILE" \
@@ -322,7 +409,7 @@ if [[ "$_qc_status" != "pass" ]]; then
   fi
   exit 0  # never fail-hard; watchdog + resume cron drive it
 fi
-log "INFO" "interviewQc.status=pass - gate cleared"
+log "INFO" "interviewQc.status=${_qc_status} - gate cleared (build-eligible: pass|needs-review)"
 
 # ---- v10.x: ZHC-STANDARD PREFLIGHT (libraries must be REAL on disk) -------
 # buildCompletedAt alone is not proof: an agent could have written it while the
@@ -433,7 +520,7 @@ if [[ "${ZHC_SKIP_PROVIDER_SMOKE:-0}" != "1" ]]; then
   done
   if [[ -n "$PROVIDER_SMOKE_SCRIPT" ]]; then
     SMOKE_STATE_FILE="$STATE_FILE" \
-    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}" \
+    SMOKE_OPERATOR_CHAT_ID="${OPERATOR_CHAT_ID:-}" \
     bash "$PROVIDER_SMOKE_SCRIPT" >> "$LOG_FILE" 2>&1
     PROVIDER_SMOKE_RC=$?
     if [[ "$PROVIDER_SMOKE_RC" != "0" ]]; then
@@ -743,14 +830,11 @@ generate_rate_gate() {
   log "ERROR" "gate[$key]: could not reach $ZHC_QUALITY_MIN after $ZHC_QUALITY_MAX_ATTEMPTS attempts -- HOLDING (not delivering) + flagging for human review"
   eval "GATE_${name}_RESULT=held"
   state_set ".qualityHeld = ((.qualityHeld // []) + [\"$key\"] | unique) | .closeoutHoldReason = \"quality-gate: $key below $ZHC_QUALITY_MIN after $ZHC_QUALITY_MAX_ATTEMPTS attempts\"" || true
-  # escalate to operator -- a held artifact needs a human, do not ship subpar
-  if [[ -f "$OC_ROOT/skills/shared-utils/operator-chat-id.sh" ]]; then
-    # shellcheck disable=SC1091
-    source "$OC_ROOT/skills/shared-utils/operator-chat-id.sh" 2>/dev/null || true
-    if [[ -n "${OPERATOR_CHAT_ID:-}" ]]; then
-      openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" \
-        --message "Quality gate HOLD: closeout artifact '$key' could not reach $ZHC_QUALITY_MIN/10 after $ZHC_QUALITY_MAX_ATTEMPTS attempts. NOT delivered. State: $STATE_FILE" >/dev/null 2>&1 || true
-    fi
+  # escalate to operator -- a held artifact needs a human, do not ship subpar.
+  # Resolved once, near the top of this file, via the shared resolver.
+  if [[ -n "${OPERATOR_CHAT_ID:-}" ]]; then
+    openclaw message send --channel telegram --target "$OPERATOR_CHAT_ID" \
+      --message "Quality gate HOLD: closeout artifact '$key' could not reach $ZHC_QUALITY_MIN/10 after $ZHC_QUALITY_MAX_ATTEMPTS attempts. NOT delivered. State: $STATE_FILE" >/dev/null 2>&1 || true
   fi
   return 0
 }
@@ -855,7 +939,8 @@ if [[ "$GATE_INF1_RESULT" == "pass" ]]; then
         )
       " || true
       # Operator escalation. CO-MINGLING GUARD (v12.4.0): OPT-IN, no hardcoded chat.
-      _OP_CHAT="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+      # Resolved once, near the top of this file, via the shared resolver.
+      _OP_CHAT="${OPERATOR_CHAT_ID:-}"
       if [[ -n "$_OP_CHAT" ]] && command -v openclaw >/dev/null 2>&1 && [[ "${ZHC_SKIP_TG_PREFLIGHT:-0}" != "1" ]]; then
         openclaw message send --channel telegram -t "$_OP_CHAT" \
           -m "🚨 ZHC HOLD [org-chart-not-rendered] $(state_get '.companyName'): org-chart Playwright returned rc=3 (no artifact). Install Chromium or use ZHC_ORGCHART_FALLBACK=1. State: $STATE_FILE" \

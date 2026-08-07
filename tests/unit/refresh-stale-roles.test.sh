@@ -463,6 +463,227 @@ else
 fi
 rm -rf "$TMP10"
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-08-04 — DEFECT: "no reconciliation path" for a STALE row whose
+# department is legitimately RETIRED (owner-declined), scenarios 11-16.
+# ─────────────────────────────────────────────────────────────────────────────
+# A STALE role/sop/dept row whose department cannot be resolved on disk used
+# to be an UNCONDITIONAL failure, even when the box owner explicitly,
+# provenance-gated DECLINED that department (canonical_decline.py — the SAME
+# single source of truth build-workforce.py and department-floor.py's floor
+# gate already read). That declined department's absence is the box's
+# recorded INTENT, not a gap — but the pre-fix drain could never pass again.
+# Live: 5 missing department directories (billing/legal-compliance family)
+# blocked a box in one wave. Mutation-proven BOTH directions below: a
+# genuinely-missing (unprovenanced / not declined) row must still FAIL
+# LOUDLY, exactly as before this fix — the discrimination only ADDS the
+# retired outcome, it never weakens the existing one.
+
+# _mk_decline_state <path> <declined-dept-id> [provenanced=yes]
+# Writes a .workforce-build-state.json carrying a PROPERLY PROVENANCED
+# decline (object form, all 4 required fields) for one department id, or an
+# UNPROVENANCED bare-string "no" when provenanced=no (must still be REJECTED
+# by canonical_decline.py's fail-safe default).
+_mk_decline_state() {
+  local path="$1" dept_id="$2" provenanced="${3:-yes}"
+  if [ "$provenanced" = "yes" ]; then
+    cat > "$path" <<EOF
+{
+  "companyName": "Fixture Co",
+  "canonicalReconciliation": {
+    "decisions": {
+      "$dept_id": {"decision": "no", "source": "interview", "decidedAt": "2026-08-01T00:00:00Z", "decidedBy": "owner"}
+    }
+  }
+}
+EOF
+  else
+    cat > "$path" <<EOF
+{
+  "companyName": "Fixture Co",
+  "canonicalReconciliation": {
+    "decisions": {"$dept_id": "no"}
+  }
+}
+EOF
+  fi
+}
+
+# ─── Scenario 11: dept-branch STALE row, department PROPERLY DECLINED -> RETIRED, dropped, rc 0 ──
+_section "Scenario 11 — dept-kind STALE row, department carries a PROVENANCED owner decline -> RETIRED (dropped, rc 0)"
+TMP11="$(mktemp -d)"
+mkdir -p "$TMP11/departments/research"   # an unrelated dept stays on disk
+_mk_decline_state "$TMP11/.workforce-build-state.json" "billing-finance"
+cat > "$TMP11/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "billing-finance", "kind": "dept", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT11="$(python3 "$CONSUMER" --workspace "$TMP11" --apply 2>&1)"
+RC11=$?
+if [ "$RC11" -eq 0 ]; then
+  _pass "declined department: rc 0 (never counted against the completeness contract)"
+else
+  _fail "declined department wrongly failed the contract (rc=$RC11): $OUT11"
+fi
+if echo "$OUT11" | grep -q "RETIRED billing-finance"; then
+  _pass "a loud RETIRED line names the declined department"
+else
+  _fail "no RETIRED line printed for a declined department: $OUT11"
+fi
+DRAINED11="$(python3 -c "
+import json
+d = json.load(open('$TMP11/.artifact-refresh-queue.json'))
+print(len(d['items']))
+")"
+if [ "$DRAINED11" = "0" ]; then
+  _pass "declined department's stale row DROPPED from the queue"
+else
+  _fail "declined department's row was NOT dropped ($DRAINED11 remain)"
+fi
+rm -rf "$TMP11"
+
+# ─── Scenario 12: dept-branch STALE row, department NOT declined -> STILL FAILS LOUDLY (unchanged) ──
+_section "Scenario 12 — dept-kind STALE row, department genuinely missing (NO decline record) -> STILL FAILS (fail-closed preserved)"
+TMP12="$(mktemp -d)"
+mkdir -p "$TMP12/departments/research"
+# No .workforce-build-state.json at all -- the fail-safe default.
+cat > "$TMP12/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "legal", "kind": "dept", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT12="$(python3 "$CONSUMER" --workspace "$TMP12" --apply 2>&1)"
+RC12=$?
+if [ "$RC12" -eq 3 ] && echo "$OUT12" | grep -q "FAILED UNRESOLVABLE department directory for 'legal'"; then
+  _pass "genuinely-missing department (no decline evidence) still FAILS LOUDLY (rc 3) -- the fix never weakens this"
+else
+  _fail "genuinely-missing department did not fail as expected (rc=$RC12): $OUT12"
+fi
+STILLQUEUED12="$(python3 -c "
+import json
+d = json.load(open('$TMP12/.artifact-refresh-queue.json'))
+print(len(d['items']))
+")"
+if [ "$STILLQUEUED12" = "1" ]; then
+  _pass "genuinely-missing department's row stays queued (no reconciliation path fabricated)"
+else
+  _fail "genuinely-missing department's row was incorrectly dropped ($STILLQUEUED12 remain)"
+fi
+rm -rf "$TMP12"
+
+# ─── Scenario 13: role-branch STALE row, department declined -> RETIRED ─────
+_section "Scenario 13 — role-kind STALE row, department carries a PROVENANCED owner decline -> RETIRED (dropped, rc 0)"
+TMP13="$(mktemp -d)"
+mkdir -p "$TMP13/departments/research"
+_mk_decline_state "$TMP13/.workforce-build-state.json" "legal"
+cat > "$TMP13/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "legal-compliance/compliance-officer", "kind": "role",
+     "label": "Compliance Officer", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT13="$(python3 "$CONSUMER" --workspace "$TMP13" --apply 2>&1)"
+RC13=$?
+if [ "$RC13" -eq 0 ] && echo "$OUT13" | grep -q "RETIRED: 'legal-compliance/compliance-officer'"; then
+  _pass "role under a declined department (via 'legal-compliance' alias of canonical 'legal'): RETIRED, rc 0"
+else
+  _fail "role under a declined department was not retired correctly (rc=$RC13): $OUT13"
+fi
+rm -rf "$TMP13"
+
+# ─── Scenario 14: sop-branch STALE row, department declined -> RETIRED ──────
+# Uses a REAL library SOP source (graphics/SOP--chief-design-officer-sops.md)
+# so refresh_sop()'s own "no library SOP source" pre-check (which runs BEFORE
+# department resolution) does not short-circuit the scenario before it ever
+# reaches the retirement-evidence check under test.
+_section "Scenario 14 — sop-kind STALE row, department carries a PROVENANCED owner decline -> RETIRED (dropped, rc 0)"
+TMP14="$(mktemp -d)"
+mkdir -p "$TMP14/departments/research"
+_mk_decline_state "$TMP14/.workforce-build-state.json" "graphics"
+cat > "$TMP14/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "graphics/SOP--chief-design-officer-sops", "kind": "sop", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT14="$(python3 "$CONSUMER" --workspace "$TMP14" --apply 2>&1)"
+RC14=$?
+if [ "$RC14" -eq 0 ] && echo "$OUT14" | grep -q "RETIRED: 'graphics/SOP--chief-design-officer-sops'"; then
+  _pass "SOP under a declined department ('graphics'): RETIRED, rc 0"
+else
+  _fail "SOP under a declined department was not retired correctly (rc=$RC14): $OUT14"
+fi
+rm -rf "$TMP14"
+
+# ─── Scenario 15: UNPROVENANCED decline is REJECTED (fail-safe) -- still FAILS ──
+_section "Scenario 15 — an UNPROVENANCED bare 'no' decline is REJECTED (fail-safe) -- department still FAILS LOUDLY"
+TMP15="$(mktemp -d)"
+mkdir -p "$TMP15/departments/research"
+_mk_decline_state "$TMP15/.workforce-build-state.json" "billing-finance" no
+cat > "$TMP15/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "billing-finance", "kind": "dept", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT15="$(python3 "$CONSUMER" --workspace "$TMP15" --apply 2>&1)"
+RC15=$?
+if [ "$RC15" -eq 3 ] && echo "$OUT15" | grep -q "FAILED UNRESOLVABLE department directory for 'billing-finance'"; then
+  _pass "unprovenanced bare 'no' decline is REJECTED -- fail-safe to the larger floor preserved, still FAILS LOUDLY"
+else
+  _fail "unprovenanced decline was incorrectly honored as retirement (rc=$RC15): $OUT15"
+fi
+rm -rf "$TMP15"
+
+# ─── Scenario 16: a role MISSING from an EXISTING department is UNCHANGED -- ─
+# still fails loudly even when the box has SOME (unrelated) decline record.
+# This is the "should exist and is unexpectedly missing" branch of the fix's
+# own stated distinction -- no per-role decline concept exists in this repo,
+# so this must NEVER be treated as retired.
+_section "Scenario 16 — role folder missing from an EXISTING (non-declined) department -- UNCHANGED, still fails loudly"
+TMP16="$(mktemp -d)"
+_mk_workspace_at "$TMP16" "research"   # the department exists...
+rm -rf "$TMP16/departments/research/05-client-relationship-manager"  # ...but the specific role folder is gone
+mkdir -p "$TMP16/departments/research/01-other-role"
+_mk_decline_state "$TMP16/.workforce-build-state.json" "billing-finance"  # unrelated decline present
+cat > "$TMP16/.artifact-refresh-queue.json" <<'EOF'
+{
+  "summary": {"current": 0, "stale": 1, "missing": 0, "orphan": 0, "untracked": 0},
+  "items": [
+    {"key": "research/qc-specialist---research", "kind": "role",
+     "label": "QC Specialist", "status": "STALE",
+     "built_from": "sha256:old", "current": "sha256:new"}
+  ]
+}
+EOF
+OUT16="$(python3 "$CONSUMER" --workspace "$TMP16" --apply 2>&1)"
+RC16=$?
+if [ "$RC16" -eq 3 ] && echo "$OUT16" | grep -q "no EXISTING role folder for 'research/qc-specialist---research'"; then
+  _pass "role missing from an existing, non-declined department still FAILS LOUDLY -- unrelated decline never leaks in"
+else
+  _fail "role-within-existing-department case regressed (rc=$RC16): $OUT16"
+fi
+rm -rf "$TMP16"
+
 _section "SUMMARY"
 echo "  Passed: $PASS_COUNT   Failed: $FAIL_COUNT"
 if [ "$FAIL_COUNT" -gt 0 ]; then

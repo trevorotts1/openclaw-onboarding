@@ -231,5 +231,111 @@ else
   bad "U6d still hard-blocks on an empty logoUrl"
 fi
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# 2026-08-04 — DEFECT: an unrelated box-side CC runtime-config gap withheld
+# the skills-content stamp entirely, with no path forward. Scenarios G-K.
+# ─────────────────────────────────────────────────────────────────────────────
+# Live: "DEPARTMENTS UNRESOLVED" (un-provisioned box, interview never
+# completed -- a KNOWN VALID state) and "existing departments.json is
+# non-empty but invalid; refusing to clobber operator/client data" (correct
+# caution, but a dead end) each blocked 2 boxes fleet-wide. Fix: the
+# reconciler now distinguishes case (a) UNPROVISIONED (rc=2, a plain
+# advisory -- the caller must NOT withhold the stamp) from case (b) a
+# genuine data problem (rc=1 -- the caller still writes the stamp but
+# latches a non-zero FINAL exit and reports the exact remediation).
+
+echo "Scenario G: an un-provisioned box (no ZHC artifact at all) is rc=2, UNPROVISIONED, WARN -- not FATAL"
+G="$TMP/g"
+mkdir -p "$G/workspace" "$G/master/zero-human-company" \
+  "$G/command-center/config" "$G/command-center/public"
+# No fixture-company under master/zero-human-company/ at all -- this box's
+# workforce interview has never produced a ZHC departments.json artifact.
+cat > "$G/workspace/.workforce-build-state.json" <<'JSON'
+{}
+JSON
+printf '[]\n' > "$G/command-center/config/departments.json"
+cat > "$G/command-center/config/company-config.json" <<'JSON'
+{"companyName":"Your Company","industry":"","commandCenterName":"Command Center"}
+JSON
+printf '{}\n' > "$G/command-center/public/logo-config.json"
+run_reconciler "$G"
+RC_G=$?
+if [ "$RC_G" -eq 2 ] && grep -q 'DEPARTMENTS UNRESOLVED' "$G/run.log" && grep -qi '^\[cc-runtime\] WARN' "$G/run.log"; then
+  ok "un-provisioned box: rc=2 (distinct from genuine-failure rc=1), printed as WARN not FATAL"
+else
+  bad "un-provisioned box did not report rc=2/WARN as expected (rc=$RC_G): $(cat "$G/run.log")"
+fi
+
+echo "Scenario H: a genuine data problem (invalid existing departments.json) is rc=1, FATAL, WITH a remediation command"
+H="$TMP/h"; make_fixture "$H"
+# Corrupt the EXISTING departments.json into a non-empty, schema-invalid list
+# (entries missing slug/name) -- the reconciler must refuse to clobber it.
+printf '[{"nope":"not a valid department entry"}]\n' > "$H/command-center/config/departments.json"
+cp "$H/command-center/config/departments.json" "$H/departments.before.h"
+run_reconciler "$H"
+RC_H=$?
+if [ "$RC_H" -eq 1 ] \
+  && cmp -s "$H/departments.before.h" "$H/command-center/config/departments.json" \
+  && grep -q 'refusing to clobber operator/client data' "$H/run.log" \
+  && grep -q 'REMEDIATION' "$H/run.log" \
+  && grep -q "$H/command-center/config/departments.json" "$H/run.log"; then
+  ok "invalid existing departments.json: rc=1, untouched, FATAL names the exact file + a remediation command"
+else
+  bad "invalid-data case did not report rc=1/remediation as expected (rc=$RC_H): $(cat "$H/run.log")"
+fi
+
+echo "Scenario I: root updater latches _U6D_CC_RUNTIME_FATAL for a genuine rc=1 (not the stamp-withholding _U6D_CC_CONFIG_FAIL)"
+if grep -q '_U6D_CC_RUNTIME_FATAL' "$UPDATER" && grep -q '_U6D_CC_RUNTIME_DETAIL' "$UPDATER"; then
+  ok "root updater declares the U6D-CC-RUNTIME final-verdict latch"
+else
+  bad "root updater is missing the U6D-CC-RUNTIME final-verdict latch"
+fi
+if grep -qE '_U6D_RC.*-eq 2' "$UPDATER" && grep -q 'UNPROVISIONED' "$UPDATER"; then
+  ok "root updater special-cases rc=2 (UNPROVISIONED) separately from a genuine failure"
+else
+  bad "root updater does not distinguish rc=2 (UNPROVISIONED) from a genuine failure"
+fi
+if grep -q '_WORKFORCE_INCOMPLETE_NOTES.*Command Center runtime config' "$UPDATER"; then
+  ok "an un-provisioned CC runtime config gap is routed to the workforce-provisioning advisory bucket (never stamp-gating)"
+else
+  bad "un-provisioned CC runtime config gap is not routed to the advisory bucket"
+fi
+
+echo "Scenario J: root updater's FINAL exit code goes non-zero (2) on a genuine U6d failure without withholding the stamp"
+if grep -q '"\${_U6D_CC_RUNTIME_FATAL:-no}" = "yes"' "$UPDATER"; then
+  ok "root updater's final verdict checks _U6D_CC_RUNTIME_FATAL"
+else
+  bad "root updater's final verdict does not check _U6D_CC_RUNTIME_FATAL"
+fi
+if grep -q '"\${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" \] || \[ "\${_U6D_CC_RUNTIME_FATAL:-no}" = "yes"' "$UPDATER"; then
+  ok "final exit code 2 fires when EITHER the GHL-MCP or the U6D-CC-RUNTIME latch is set"
+else
+  bad "final exit-code combination of the two runtime latches not found"
+fi
+
+echo "Scenario K: an UnprovisionedError never reaches the OLD undifferentiated 'FATAL' catch (exception ordering)"
+python3 - "$RECONCILER" <<'PY'
+import importlib.util, os, sys
+path = sys.argv[1]
+sys.path.insert(0, os.path.dirname(path))  # reconcile_command_center_runtime.py imports sibling detect_platform.py
+spec = importlib.util.spec_from_file_location("cc_rt", path)
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+assert issubclass(mod.UnprovisionedError, mod.ReconcileError), "UnprovisionedError must subclass ReconcileError"
+try:
+    raise mod.UnprovisionedError("probe")
+except mod.UnprovisionedError:
+    pass
+else:
+    raise SystemExit("UnprovisionedError was not raised/caught as itself")
+print("OK")
+PY
+if [ $? -eq 0 ]; then
+  ok "UnprovisionedError is a proper ReconcileError subclass with its own catchable identity"
+else
+  bad "UnprovisionedError class shape is wrong"
+fi
+
 echo "RESULT pass=$PASS fail=$FAIL"
 [ "$FAIL" -eq 0 ]

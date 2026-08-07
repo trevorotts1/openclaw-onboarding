@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# verify-zhc-standard.sh — v10.15.26
+# verify-zhc-standard.sh — v10.15.26 + standard-first STANDARD_READY lane (2026-08-04)
 #
 # ONE source of truth for "is this Zero-Human Company built to the McDonald's
 # standard?" Callable from Skill 23 close AND Skill 37 closeout preflight. It
@@ -8,7 +8,7 @@
 #
 #   1. INTERVIEW COMPLETE   — build-state interviewComplete==true (or an
 #                             answers file with real, non-stub content)
-#   2. 16 CANONICAL DEPTS   — every mandatory dept from department-naming-map.json
+#   2. CANONICAL DEPT FLOOR — every mandatory dept from department-naming-map.json
 #                             is present on disk (minus any EXPLICITLY declined)
 #   3. ROLE LIBRARY DONE     — roleLibraryStatus==done: every dept meets its
 #                             canonical role count AND how-to.md filled
@@ -17,21 +17,39 @@
 #   5. CLOSEOUT CONFIRMED    — closeoutStatus in {done,sent} AND at least one
 #                             telegram message actually delivered
 #
+# STANDARD_READY LANE (standard-first redesign, master plan PHASE 4): a box whose
+# operator ran the standard prebuild (build-state standardPrebuild.status=="done")
+# while the interview has NOT completed is NOT a "standard not met" box — it is the
+# deliberately prebuilt state: the full canonical floor is on disk + the chosen
+# artifact is written, while agent registration, the role/SOP library completion and
+# the closeout are all deferred to interviewComplete by design. This script proves
+# that prebuilt subset (steps SR-A/SR-B below) and reports STANDARD_READY with its
+# OWN exit code (10) so fleet QC reports count it in its own column instead of going
+# red (rc=2 interview-incomplete) on every newly-prebuilt box. A BROKEN prebuild
+# still fails loud: floor missing on disk => rc 3, chosen artifact missing => rc 8.
+# The authoritative STANDARD_READY enforcement remains prove-zhe.py's subset (run by
+# verify-library-gate.sh); this lane is the closeout-preflight's awareness of it.
+#
 # This script does NOT fix anything — it MEASURES and reports. It delegates the
 # library verdicts to verify-library-gate.sh (the disk-QC authority) so there
 # is exactly one substance definition. Read-only except for the gate's state
 # write. Idempotent. Safe to re-run.
 #
 # EXIT CODES:
-#   0 = FULL STANDARD MET (build may close out / closeout may finalize)
-#   2 = interview incomplete
-#   3 = department floor not met ON DISK (missing mandatory or matched-vertical
-#       depts — measured by department-floor.py against real folders, NOT the
-#       build-state JSON; closeout MUST refuse on this code)
-#   4 = role library not done
-#   5 = SOP library not done
-#   6 = closeout not confirmed
-#   7 = no workforce / cannot resolve company
+#   0  = FULL STANDARD MET (build may close out / closeout may finalize)
+#   2  = interview incomplete
+#   3  = department floor not met ON DISK (missing mandatory or matched-vertical
+#        depts — measured by department-floor.py against real folders, NOT the
+#        build-state JSON; closeout MUST refuse on this code)
+#   4  = role library not done
+#   5  = SOP library not done
+#   6  = closeout not confirmed
+#   7  = no workforce / cannot resolve company
+#   8  = STANDARD_READY BROKEN — the standard prebuild claims done but the chosen
+#        artifact is missing/empty (fail-closed; the prebuild did not land cleanly)
+#   10 = STANDARD_READY — standard prebuild proven (floor on disk + chosen artifact),
+#        interview not yet complete. NOT the full standard (closeout stays gated on
+#        interviewComplete); counted as its own column by the fleet aggregate.
 #
 # Multiple gaps => the LOWEST-numbered gap is reported as the exit code, but ALL
 # gaps are printed so the operator/agent sees the whole picture in one run.
@@ -75,6 +93,90 @@ echo "============================================"
 if [ ! -f "$STATE_FILE" ]; then
   echo "[verify-zhc-standard] NO build-state file at $STATE_FILE — no workforce to verify; exiting 7" >&2
   exit 7
+fi
+
+# ---- STANDARD_READY LANE (standard-first prebuild, master plan PHASE 4) ----
+# When build-state carries standardPrebuild.status=="done" and the interview has NOT
+# completed, this box is the deliberately-prebuilt state — NOT a "standard not met"
+# box. Prove the prebuilt subset (floor ON DISK + chosen artifact) and report
+# STANDARD_READY with its own exit code (10), so fleet QC counts it in its own column
+# instead of going red (rc=2 interview-incomplete) on every newly-prebuilt box. A
+# BROKEN prebuild still fails loud: floor missing on disk => rc 3, chosen artifact
+# missing/empty => rc 8. Agent registration, the role/SOP library completion and the
+# closeout remain deferred to interviewComplete by design (lazy registration).
+SR_STATUS="$(jq -r '.standardPrebuild.status // ""' "$STATE_FILE" 2>/dev/null)"
+SR_INTERVIEW="$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null)"
+if [ "$SR_STATUS" = "done" ] && [ "$SR_INTERVIEW" != "true" ]; then
+  echo "[standard-first] standardPrebuild.status=done, interviewComplete!=true"
+  echo "[standard-first] evaluating the STANDARD_READY subset (prebuild proof)..."
+  SR_BROKEN=0
+  SR_FLOOR_JSON=""
+
+  # SR-A: the canonical floor is present ON DISK (department-floor.py — the
+  # build-state JSON is NEVER trusted as proof of floor compliance).
+  SR_FLOOR_SCRIPT="$SCRIPT_DIR/department-floor.py"
+  if [ -f "$SR_FLOOR_SCRIPT" ]; then
+    SR_FLOOR_JSON="$(python3 "$SR_FLOOR_SCRIPT" --json 2>/dev/null)"
+    SR_FLOOR_RC=$?
+    if [ "$SR_FLOOR_RC" = "7" ] || [ -z "$SR_FLOOR_JSON" ]; then
+      note_gap 3 "STANDARD_READY broken: no workforce on disk although the prebuild claims done"
+      echo "[standard-first] SR-A floor: NO WORKFORCE ON DISK — prebuild broken"
+      SR_BROKEN=1
+    elif [ "$SR_FLOOR_RC" != "0" ]; then
+      SR_ONDISK="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.on_disk_count')"
+      SR_EXPECTED="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.expected_floor_count')"
+      SR_MISS_M="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.missing_mandatory | join(", ")')"
+      SR_MISS_V="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.missing_universal_primary | join(", ")')"
+      _sr_msg="STANDARD_READY broken: floor not on disk ($SR_ONDISK depts vs expected $SR_EXPECTED)"
+      [ -n "$SR_MISS_M" ] && _sr_msg="$_sr_msg; missing mandatory: $SR_MISS_M"
+      [ -n "$SR_MISS_V" ] && _sr_msg="$_sr_msg; missing universal-primary: $SR_MISS_V"
+      note_gap 3 "$_sr_msg"
+      echo "[standard-first] SR-A floor: $_sr_msg"
+      SR_BROKEN=1
+    else
+      SR_ONDISK="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.on_disk_count')"
+      SR_EXPECTED="$(printf '%s' "$SR_FLOOR_JSON" | jq -r '.expected_floor_count')"
+      echo "[standard-first] SR-A floor: FLOOR MET on disk ($SR_ONDISK depts >= floor $SR_EXPECTED)"
+    fi
+  else
+    note_gap 3 "STANDARD_READY broken: department-floor.py missing — cannot prove the prebuilt floor"
+    echo "[standard-first] SR-A floor: CANNOT VERIFY (department-floor.py missing)"
+    SR_BROKEN=1
+  fi
+
+  # SR-B: the chosen-departments artifact is present and non-empty. Locate the
+  # company dir via the floor resolver's own verdict (never re-derive it).
+  SR_DD="$(printf '%s' "${SR_FLOOR_JSON:-}" | jq -r '.departments_dir // empty' 2>/dev/null)"
+  if [ -n "$SR_DD" ]; then
+    SR_COMPANY_DIR="$(dirname "$SR_DD")"
+    SR_ARTIFACT="$SR_COMPANY_DIR/departments.json"
+    if [ ! -f "$SR_ARTIFACT" ]; then
+      note_gap 8 "STANDARD_READY broken: chosen artifact missing at $SR_ARTIFACT"
+      echo "[standard-first] SR-B chosen artifact: MISSING ($SR_ARTIFACT)"
+      SR_BROKEN=1
+    else
+      SR_ART_N="$(jq -r 'length' "$SR_ARTIFACT" 2>/dev/null || echo 0)"
+      if [ "${SR_ART_N:-0}" -ge 1 ] 2>/dev/null; then
+        echo "[standard-first] SR-B chosen artifact: present ($SR_ART_N departments)"
+      else
+        note_gap 8 "STANDARD_READY broken: chosen artifact $SR_ARTIFACT lists no departments"
+        echo "[standard-first] SR-B chosen artifact: EMPTY"
+        SR_BROKEN=1
+      fi
+    fi
+  fi
+
+  echo "--------------------------------------------"
+  if [ "$SR_BROKEN" -eq 1 ]; then
+    echo "RESULT: ❌ STANDARD_READY BROKEN — the prebuild claims done but its subset fails:"
+    for g in "${GAPS[@]}"; do echo "  - $g"; done
+    echo "Exit code = $WORST_RC (lowest/most-fundamental gap)."
+    exit "$WORST_RC"
+  fi
+  echo "RESULT: ✅ STANDARD_READY — standard prebuild proven (floor on disk + chosen artifact)."
+  echo "        Interview NOT complete: the full ZHC standard applies at interviewComplete"
+  echo "        (agent registration, libraries, closeout are deferred by design)."
+  exit 10
 fi
 
 # ---- 1. INTERVIEW COMPLETE ----------------------------------------------
@@ -135,7 +237,8 @@ fi
 # against the REAL department directories ON DISK, NOT the build-state JSON's
 # .departments[] array. This kills the seeded-build-state bypass: a hand-written
 # build-state claiming "done" with 3 fake dept entries used to pass step 2;
-# now a 3-dept-on-disk workforce FAILS because the 16 mandatory + the
+# now a 3-dept-on-disk workforce FAILS because the 24 mandatory (department-
+# naming-map.json v2.8.0) + the
 # industry-matched vertical-pack departments are not present as real folders.
 # The ONLY way to be below the mandatory floor is an EXPLICIT recorded decline
 # (canonicalReconciliation.decisions[cid]=="no" or declinedDepartments[]).

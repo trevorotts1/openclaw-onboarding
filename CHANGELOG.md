@@ -1,3 +1,1680 @@
+## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
+
+The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
+
+## [v21.7.37]  -  2026-08-06  -  release(v21.7.37): atomic version bump — all 10 markers (aiwf-standard-first blocker PR + Skill 23 content change)
+
+## [v21.7.36]  -  2026-08-05  -  fix(loops): grant write/edit in the CEO allowlist (the other half of the gate) and teach the fleet that a no-match exit 1 is a RESULT
+
+v21.7.35 retired the CEO production-tool **deny**. It was not enough. Two separate
+mechanisms were still producing the same 163-minute turns, and both are fixed here.
+
+**1. The allowlist was a second gate nobody removed.** An explicit per-agent
+`tools.allow` is a HARD allowlist in OpenClaw: a tool omitted from it is denied exactly
+as effectively as one named in a deny list. All four in-repo copies of the CEO/router
+allow list carried 17 tools and omitted `write` and `edit`. So after the deny was
+retired, `memoryFlush` still ordered a memory-file write on every compaction that the
+agent had no tool to perform — it re-read an empty file and retried, looping. `write`
+and `edit` are now granted in all four copies (17 → 19 tools), which are asserted
+byte-identical by `scripts/test-ceo-tool-gate.sh`:
+
+- `23-ai-workforce-blueprint/scripts/build-workforce.py` `CEO_TOOL_ALLOW`
+- `scripts/apply-fleet-standards.sh` `_CEO_TOOL_ALLOW`
+- `scripts/apply-routing-fix.sh` `CEO_TOOL_ALLOW`
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_ALLOW_TOOLS` (also the source
+  `scripts/grant-ceo-consent.sh` reads, so that write-site is fixed transitively)
+
+Already-deployed boxes SELF-HEAL on the next `update-skills.sh` roll: the residual-deny
+sweep (update-skills.sh) clears any stale `write`/`edit` from `tools.deny` BEFORE the
+stampers run, and the stampers' heal path appends any missing allow entry, so the
+"deny wins" filter can no longer strip the new grants. No per-box touch is needed.
+
+The stale comments that justified the omission are corrected. They claimed "the
+intent-gate default-denies every other exec" — that gate was deleted on 2026-08-05, so
+the comment described a control that no longer exists and would mislead the next reader
+exactly as it misled this one.
+
+Guard `2b` in `scripts/test-ceo-tool-gate.sh` was rewritten. It was a blunt single-line
+scan that could not tell a deny array from an allow array, so it fired a FALSE FAILURE
+the moment `write` was legitimately added to `CEO_TOOL_ALLOW`. It now parses the named
+DENY and ALLOW blocks and asserts both halves — the retired deny stays retired AND
+write/edit stay granted — across all three stampers. Both directions are mutation-proven.
+
+**2. `Exec failed` on a legitimate no-match is what actually spun the loops.** New
+`EXEC_CHAIN_DISCIPLINE_V1` block, stamped into every box's `$WORKSPACE_DIR/AGENTS.md` by
+`scripts/apply-fleet-standards.sh` (which both `install.sh` and `update-skills.sh` call,
+so it reaches fresh boxes and existing boxes alike). The mechanism, read out of a live
+session trajectory: an agent batched 30-40 verification probes into ONE `&&`-joined
+command; one `ls` hit a genuinely missing file and returned exit 1; `&&` aborted the
+chain; the runtime surfaced a single atomic `Exec failed` naming no link; the agent could
+not isolate it and re-ran the whole chain — 425 times. **The absence the agent was sent
+to discover is what broke the tool it was discovering with.** The guidance is five rules
+plus a worked example: never join independent probes with `&&`; turn absence into OUTPUT
+(`ls -la "$P" 2>&1 || echo "ABSENT: $P"`); grep/ls/test exit 1 = NOT FOUND (a result),
+grep exit ≥2 = a real error, exit 127 = a shell abort and never a fact about the system;
+never re-run a "failed" compound command without isolating the failing link; cap a
+verification chain at 5 probes. AGENTS.md is the home rather than `universal-sops/`
+because the gateway injects AGENTS.md into the system prompt every turn, whereas a
+universal SOP is only read when an agent is told to go read it — and an agent mid-loop is
+never told anything.
+
+**3. Post-update restore-verify script committed** at
+`61-loop-protection-system/scripts/openclaw-loop-protection-restore.sh` (+ its secret-leak
+test at `61-loop-protection-system/tests/secret-leak-test.sh`). `openclaw update`
+reinstalls node_modules and silently reverts the dist patch that makes a runaway tool
+loop actually abort; this script detects every piece of the protection stack and, with
+`--apply`, restores what is safe to restore. Read-only by default, never restarts the
+gateway, atomic cmp-verified backups, and value-blind on the two secret-bearing files
+(no flag disables redaction; `ps eww` and `launchctl print` are never used). Its section
+9 independently detects the very allowlist shape fixed above. Hardened before commit:
+two predictable `/tmp/<name>.$$` staging paths — symlink-clobber targets whose contents
+are fed back into `openclaw config set` — now use `mktemp`.
+
+**Observed, not fixed — a confabulated self-critique.** While reporting on a failed
+audit the router told the owner it had "spawned 6 parallel sub-agent sessions flooding
+you with duplicates — exactly the No Sub-Agent Storms violation from SOUL.md." That did
+not happen: `sessions_spawn` fired 5 times across the whole day and zero times during
+either audit window, and no session-creation event exists in that window. The phrase "No
+Sub-Agent Storms" does not appear anywhere in this repo either. Recorded here as
+observed behavior; no guard is added for it in this release.
+
+## [v21.7.35]  -  2026-08-05  -  fix(ceo-gate): RETIRE the CEO write-deny gate fleet-wide, actively un-wire already-wired boxes, and restore write/edit to the generation departments
+
+Trevor's directive: *"I don't want to use the CEO gate anymore. I deleted the CEO gate
+because it was causing too many problems. I replaced it with a prompt injection."* The CEO
+production-tool deny denied `write` on the router while `memoryFlush` demanded a memory
+write, creating a self-blocking loop that ate Telegram messages for roughly two weeks. This
+release removes the gate rather than repairing it, and — critically — actively UN-WIRES boxes
+that are already carrying it, because removing an installer uninstalls nothing.
+
+### Removed — the gate itself
+- `hooks/lib-ceo-tool-gate.sh` `CEO_GATE_DENY_TOOLS` is now permanently EMPTY, and the
+  emptiness is an ASSERTED state: `scripts/test-ceo-tool-gate.sh` pins `EXPECT_DENY=""`, so
+  re-adding any production tool fails CI instead of silently re-creating the outage
+  (mutation-proved: planting `("write" "edit")` returns rc=1, reverting returns rc=0).
+- The `write/edit/apply_patch/browser/canvas/image/process` deny is gone from all three fleet
+  stampers (`build-workforce.py` `CEO_TOOL_DENY`, `apply-fleet-standards.sh`
+  `_CEO_TOOL_DENY`, `apply-routing-fix.sh` Layer 5), so no roll can resurrect it.
+- `apply-routing-fix.sh` Layer 5: the `ALREADY_GATED` early-exit — the "already gated, refresh
+  the hard allowlist" heal path — is DELETED, not repaired, along with its now-dead
+  `L5_RESULT` case arm. `verify-routing.sh` G7's `REQUIRED_DENY` assertion and `INTERIM_EXEC`
+  posture are likewise retired, mirroring how G8 was retired.
+- The GHL MCP deny (`byProvider` + name-globs) SURVIVES. It is a separate brake keeping the
+  router out of client CRM and was never part of the loop.
+
+### Fixed — two defects that made the original removal a no-op or a hazard
+- **`apply-routing-fix.sh` Layer 5 never executed on ANY box.** The upstream removal deleted
+  the string `"write"` from the already-gated predicate and left `and  in tools["deny"]:` — a
+  SyntaxError. Python compiles the whole heredoc before running any of it, so the entire Layer
+  was dead, and `bash -n` passed clean, which is why it survived review.
+- **`verify-routing.sh` G7's neutralization was dead code.** `G7_RESULT` was set and then
+  unconditionally overwritten one block later, so every `G7_REMOVED` arm was unreachable and
+  G7 still failed a correctly-rolled box.
+
+### Fixed — a NEW write-deny that the removal accidentally introduced
+- `23-ai-workforce-blueprint/scripts/build-workforce.py`: `"write"` and `"edit"` are RESTORED
+  to `GENERATION_TOOLS_ALLOW`. **This hunk GRANTS write; it is not gate machinery — read it as
+  the opposite.** That list governs `GENERATION_DEPT_IDS = {graphics, video, audio,
+  presentations}`, and the file's own comment records that an explicit per-agent `tools.allow`
+  is a HARD allowlist and that presentations "stalled headless with 'no permission'" without
+  write/edit. Leaving the removal in place would have created a brand-new write-deny on four
+  department agents — the exact bug this release exists to eliminate.
+
+### Added — un-wire, the priority deliverable
+`update-skills.sh` stages hooks with `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`, a copy that
+NEVER prunes, so deleting the hook files from the repo left already-wired boxes running the
+loop. Confirmed on the operator box: the gate is OFF there, yet `ceo-intent-gate.sh`,
+`lib-ceo-consent.sh` and `lib-ceo-tool-gate.sh` are all still on disk plus a `.bak-*` — dormant
+and re-armable by any future roll. Other boxes are UNVERIFIED. The roll now:
+- deletes stale `ceo-intent-gate.sh` / `lib-ceo-consent.sh` and their `.bak-*` siblings;
+- strips every `ceo-intent-gate.sh` entry from `hooks.PreToolUse` in BOTH
+  `~/.claude/settings.json` and `settings.local.json`, handling the flat and nested
+  matcher forms, dropping a matcher group only when it empties, never clobbering the array;
+- clears any RESIDUAL production deny left on a ROUTER agent or `agents.defaults` by a
+  pre-retirement roll (nothing else removes it — the stampers only ever ADD);
+- writes every config atomically (temp + fsync + `os.replace`) after a timestamped backup.
+Idempotent, strictly NON-FATAL, and a true no-op on a box already cleaned by hand.
+
+### Fixed — fleet-safety of the replacement plugin (`ceo-routing-doctrine`)
+- **Linux boxes could never load it.** `plugins.load.paths` was built as
+  `"/Users/%s/.openclaw/extensions" % USER` — macOS-only, so on Linux boxes ($HOME `/root` or
+  `/home/x`) the path did not exist and the doctrine never loaded, leaving neither gate nor
+  replacement. It also hardcoded an operator username into a client-neutral repo. Now
+  `os.path.expanduser`.
+- **It nested a copy on every roll.** `cp -r SRC DST` copies the directory INTO the destination
+  once it exists (run 2 produced `ceo-routing-doctrine/ceo-routing-doctrine/`). Now
+  `cp -R SRC/. DST/`, verified stable across 3+ runs; the `2>/dev/null || true` that hid real
+  copy failures is dropped.
+- **FLEET-ROLL BLOCKER — a roll silently disabled the doctrine on every box.**
+  `apply-fleet-standards.sh` filtered `openclaw plugins list --json` to `origin == "bundled"`
+  and then ASSIGNED that list over `plugins.allow`, a WHOLESALE REPLACEMENT. Measured on a live
+  box: **82 plugins — bundled=67, global=12, config=3**, and `ceo-routing-doctrine` is
+  `origin:"config"`, NOT `"bundled"`. So each roll dropped 15 currently-installed, currently-
+  loadable plugins from the allowlist, including the prompt-injection layer that REPLACED the
+  retired CEO gate. Because this stamper runs EARLIER in a roll (~6440) than the plugin
+  installer (~7281), the drop did not even self-repair within the same roll. Net effect per box:
+  allowlist stripped -> plugin installed -> plugin not allowed -> **never loads** -> the router
+  gets NEITHER the CEO gate NOR the routing doctrine, which is strictly worse than before the
+  gate was removed. This would have fired on the very next fleet roll.
+  Fixed as a **CLASS, not by name** — special-casing one id would leave the identical trap for
+  every future path-loaded or globally-installed plugin. `plugins.allow` is now the enumerated
+  bundled ids **UNION** the ids of all currently-present non-bundled plugins, so a roll still
+  ADDS newly-bundled plugins and still PRUNES genuinely-vanished ones, but never removes a
+  plugin that is installed and loadable right now. The fail-open posture is UNCHANGED (an empty
+  or untrustworthy enumeration still writes nothing and warns), and the misleading
+  "non-bundled/third-party plugins will no longer auto-load" log line now states the truth.
+  Proven against the real 82-plugin enumeration as a fixture: pre-fix the doctrine is ABSENT
+  from the computed allowlist, post-fix it is PRESENT along with all 12 `global` and all 3
+  `config` ids; a genuinely-bundled id still survives; a vanished id is still pruned (the fix is
+  not "allow everything"); the empty-enumeration path still leaves the config untouched; and
+  mutation-reverting the union drops the allowlist 82 -> 67 and the doctrine back out.
+- **A crash mid-write truncated `openclaw.json`.** Now an atomic write with a backup.
+
+### Fixed — bash 3.2 abort on the now-empty deny array
+`hooks/lib-ceo-tool-gate.sh` expanded the emptied array bare as `"${CEO_GATE_DENY_TOOLS[*]}"`.
+On macOS `/bin/bash` 3.2.57 an EMPTY array expanded that way under `set -u` is an UNBOUND
+VARIABLE and aborts the shell, and `scripts/grant-ceo-consent.sh` calls `ceo_gate_tools` under
+`set -euo pipefail` — so the consent script died outright on every macOS box. Proven with a
+paired control: /bin/bash 3.2.57 aborts, bash 5.3.12 returns rc=0. Guarded with `"${arr[*]:-}"`.
+
+### Fixed — dangling references the removal left behind
+- `scripts/grant-ceo-consent.sh` hard-ERRORed and exited 1 when the deleted
+  `lib-ceo-consent.sh` was absent, i.e. always — making it unrunnable fleet-wide. The single
+  symbol it consumed (`ceo_consent_file`) is inlined as a fallback with identical semantics.
+- `scripts/test-ceo-tool-gate.sh` iterated two DELETED paths, so `grep -q` returned rc=2 (an
+  ERROR, not "no match"), producing 8 phantom failures. Now asserts those files STAY deleted.
+- `tests/unit/test-u134.sh` was 9 PASS / 12 FAIL and in NO workflow, so it failed silently.
+  Rewritten to guard the inert contract of `u134-tool-allowlist-patch.sh` — it must never write
+  a `tools.deny` into a box config — with a mutation proof that the assertion can actually fail.
+- Pruned the deleted hook from `ceo-tools-root-schema-guard.yml` path filters; corrected
+  `docs/MC-ROUTE.md`, which claimed the intent-gate still enforces a command-level exec
+  restriction (nothing does now — the replacement carries no tool-deny).
+
+### Also
+- `update-skills.sh` gains the `_INSTALLER_FAILED` guard: a skill whose installer fails no
+  longer receives the `.wired` sentinel, so a hollow success is not recorded as a win.
+
+`hooks/lib-ceo-tool-gate.sh` is deliberately KEPT as an empty-deny shim, not deleted: it still
+supplies `CEO_GATE_ALLOW_TOOLS` (a GRANT list) and `CEO_GATE_MCP_PROVIDERS`, and
+`grant-ceo-consent.sh` sources it.
+
+**No fleet roll is performed by this release.** `fleet_rollout_enabled` stays `false`; the
+operator rolls, and not before a single pilot box has been hand-verified.
+
+## [v21.7.34]  -  2026-08-05  -  fix(skill58): draft-cleanup workflow Delete node verb DELETE -> POST /v1/episodes/{id}/delete
+
+The n8n `draft-cleanup` workflow's "Delete Episode" node used `DELETE /v1/episodes/{id}`,
+which Podbean answers with HTTP 403 (verified 2026-08-05 against the operator test channel).
+Podbean's documented delete endpoint is `POST /v1/episodes/{id}/delete`, requiring only
+`episode_publish` scope (the channel-scoped token already carries it) and returning HTTP 200
+`{"msg":"Delete episode success!"}`. Changed the node method to POST and appended `/delete`
+to the URL, preserving the `episode_id` and `access_token` interpolation. All 18 residual test
+drafts were deleted with this path (channel now empty). This merge is repo-only; deploying the
+fixed verb to the LIVE draft-cleanup workflow in n8n is a separate live step.
+
+### Merge notes
+
+Cherry-picked `bf1d1b22` (+2/-2, workflow file only) onto origin/main — clean, no conflict
+(file path unchanged). Version rolled v21.7.33 -> v21.7.34 across all 10 markers via
+bump-version.sh. Skill 58 0.1.38 -> 0.1.39 (SKILL.md frontmatter + skill-version.txt).
+CHANGELOG entry added. Annotated tag v21.7.34 pushed.
+
+## [v21.7.33]  -  2026-08-05  -  fix(skill58): proxy test-harness stub state-writer + deploy the capability-manifest gate (CC pinnedTag v6.0.82 -> v6.0.88)
+
+Two final-QC fixes for the podcast publish fix train, merged to main and verified green:
+
+### What changed
+
+- **Proxy test-harness fix (unit 1.1 / 1.5-1.8 follow-up).** `tests/test_podbean_publish_proxy.py`
+  now provisions a stub state-writer that answers `get --job-id` with a clean (non-waived)
+  job, and both transport helpers (`_run` / `_run_no_desc`) pass `--state-writer` to it. This
+  resolves the U2.4 waiver fail-closed gate (`assert_not_waived`) failing on un-provisioned
+  `--job-ids` — 13 proxy-suite failures on merged main. Test file only; product code
+  (`podbean_publish.sh`, the waiver gate, the ledger-resolution logic) untouched.
+  Suite result after: proxy 29/29, required-outputs 21, upload_media 43, gate selftest 21.
+- **CC pinnedTag bump (unit 3.4-3.6 deployment gap).** `cc-compat.json` `commandCenter.pinnedTag`
+  v6.0.82 -> v6.0.88, so fleet-refresh deploys the Command Center containing the capability-manifest
+  gate, GUARD 8, and the manual-dispatch mirror (the phantom-agent protection units 3.4-3.6 build).
+  Contract holds: v6.0.88 >= minVersion v4.73.0, maxVersion null. (`onboardingVersion` marker also
+  rolled by bump-version.sh.)
+
+### Merge notes
+
+Cherry-picked 48da3be9 (harness fix, +27/-3 test file only) and 12584719 (pinnedTag bump,
++2/-2) onto origin/main. All 10 version markers rolled v21.7.32 -> v21.7.33 via bump-version.sh
+(the readback train PR #863 landed v21.7.32 between this train's start and merge). Skill 58
+version 0.1.37 -> 0.1.38 (SKILL.md frontmatter + skill-version.txt) for the proxy test-harness
+change under `58-podcast-production-engine/`. CHANGELOG entry added. Tag v21.7.33 annotated.
+
+## [v21.7.32]  -  2026-08-05  -  fix(skill58): podbean readback field names + rollback status-flip + filesystem-v2 binary gate (F-01/F-02)
+
+Final QC of units 2.1-2.4 (n8n publish rail fail-closed) found the live rail
+PASS but the merged repo STALE: the two live-proven fixes for the podcast
+publish workflow lived only on branch `fix/podcast-readback-fieldnames`, not
+on origin/main. Merged here so the repo matches the live rail
+(`ZpaoEQrHYtDM49y0`, 70 nodes, ACTIVE).
+
+### What changed
+
+- **F-01 readback field names (7818dd02).** `Readback Verdict -- Assert Media +
+  Description` now asserts Podbean's real GET response fields — `media_url`
+  (audio) and `logo` (cover) — instead of the never-returned `media_key`/
+  `logo_key`. Pre-fix, every valid publish failed readback → HTTP 500 →
+  duplicate-on-retry. Includes a defensive episode unwrap
+  (`{episode:{...}}` and `{body:{episode:{...}}}` shapes) and an
+  `extractUrl()` normalizer for string-or-object logo values. Empty
+  `media_url`/`logo` still fail closed.
+- **F-02 rollback status-flip (7818dd02).** `Podbean -- Rollback Unpublish
+  Created Episode` is now `POST /v1/episodes/{id}` with form body
+  `access_token` + `status=draft`, `neverError:true` — no more DELETE (which
+  403s without `episode_delete` scope). A degenerate episode is pulled off the
+  live feed as a draft instead of a failed delete.
+- **filesystem-v2 binary-mode gate fix (34030aa7).** The three binary Code
+  nodes (`Validate Audio Substance -- Byte-Level MP3 Gate`, `Prepare Audio
+  Upload -- Package for Podbean S3`, `Prepare Image Upload -- Package for
+  Podbean S3`) now read via n8n's canonical
+  `await this.helpers.getBinaryDataBuffer(0, '<prop>')` instead of
+  `Buffer.from(binary.data,'base64')`. On this instance's `filesystem-v2`
+  binary mode the old read decoded the 9-byte marker `"filesystem-v2"`,
+  rejecting every valid MP3/JPEG. Live-proven: real contract-v2 publish →
+  HTTP 200 `{ok:true}` (readback passed on real `media_url`/`logo`), negative
+  empty-`image_url` → HTTP 422.
+- **verify-n8n-deploy.py active-preference (34030aa7).** The deploy drift
+  matcher now prefers the ACTIVE live workflow when several share a webhook
+  path (deploy cutover keeps superseded twins inactive). 2 new unit tests
+  (13 total pass).
+- **U041 meta restoration.** The re-export had stripped the `meta` version
+  marker, which the repo's own validator (`scripts/validate_n8n_workflow.py`)
+  and the `qc-podcast.sh` onb-10 gate require (all other config/n8n exports
+  carry it). Restored — node/connection/fix content unchanged (70 nodes, 42
+  connections).
+
+### Merge notes
+
+Cherry-picked 7818dd02 + 34030aa7 onto origin/main (9f993953) — clean, zero
+conflict surface (the branch base was an ancestor of main). All 10 version
+markers rolled v21.7.31 -> v21.7.32 (bump-version.sh). Skill 58 version 0.1.36
+-> 0.1.37 (SKILL.md frontmatter + skill-version.txt). CHANGELOG entry added.
+`verify-n8n-deploy.py` re-run from the merged tree: `podbean-publish.workflow.json`
+MATCH (nodes=70 connections=42 active=True webhooks=['podbean-publish']).
+
+## [v21.7.31]  -  2026-08-05  -  fix(skill58): capability manifest + dept-podcast runtime dir materialization (units 3.4-3.5)
+
+Unit 3.4-3.5 of the podcast publish fix train (onboarding half of the capability
+manifest), QC-passed (Fable QC-Fable.md VERDICT: PASS + Opus RE-REVIEW-Opus.md
+VERDICT: PASS, 2026-08-05) and merged to main. Adds the Skill 58 capability
+manifest and the dept-podcast runtime-dir materialization installer, matching
+the already-merged Command Center reader (`src/lib/capability-manifest.ts`) field
+contract exactly.
+
+### What changed
+
+- **Capability manifest (unit 3.4).** New
+  `58-podcast-production-engine/config/capability-manifest.json` (153 lines)
+  declaring `skill`, `activation`, `entrypoints`, `required_env`, `activation_layer_components`
+  and `dispatch_contract` — every field the merged CC reader consumes, with no
+  field-name mismatch (verified by automated field-walk). Declares
+  `audio-podcast-editor` in `forbidden_agent_ids`; no secret values (all env
+  labels are SET/SET_OR_NONE semantics with secrecy tags).
+- **Runtime dir materialization (unit 3.5).** `install-podcast-department.sh`
+  now materializes AGENTS.md/IDENTITY.md/SOUL.md/MEMORY.md/HEARTBEAT into
+  `~/.openclaw/agents/dept-podcast/` (workspace-scaffolded copy, symlink-resolve,
+  else lightweight stub) so the runtime dir is never empty. `--verify` asserts the
+  five per-agent files plus agents.list entry, storage tree, sqlite, and session
+  namespace, exiting EX_REFUSED (2) on any MISS. Never overwrites curated content
+  (guard fires before every write branch).
+
+### Merge notes
+
+Cherry-picked 28cc4f3a onto origin/main (f57556fe) — clean, zero conflict surface
+(the branch base was an ancestor). All 10 version markers rolled v21.7.30 ->
+v21.7.31 (bump-version.sh). Skill 58 version 0.1.35 -> 0.1.36 (SKILL.md frontmatter
++ skill-version.txt). CHANGELOG entry added. This is the 10th and final unit of the
+podcast fix train (9 campaign + manifest).
+
+## [v21.7.30]  -  2026-08-05  -  feat(aiwf): standard-first AI Workforce redesign
+
+The AI Workforce standard-first redesign (master plan 2026-08-04), merged from
+feat/aiwf-standard-first-2026-08-04 (fe21227a). Adds the standard prebuild lane
+(operator-triggered, pre-interviewComplete), the apply-diff build path, a
+provenanced decline-archival (never-delete) guarantee, and the STANDARD_READY
+prover verdict. Merged on top of the v21.7.29 podcast train (unit 1.2 step
+driver); all version markers rolled to v21.7.30.
+
+### What changed
+
+- **Standard prebuild lane (PHASE 2).** `scripts/prebuild-standard-workforce.sh`
+  + `.py` build the canonical floor EXCLUSIVELY from `templates/role-library/`
+  under an explicit provenanced OPERATOR consent record, before
+  `interviewComplete` — the ONE creation allowed under the No-Work-During-
+  Interview Gate's exemption 2. Writes no owner-facing deliverable and no
+  interview answer; defers ALL `agents.list` registration to interviewComplete.
+- **Apply-diff build (PHASE 3).** `build-workforce.py --apply-standard-edits`
+  takes the interview config and applies the standard-first diff: provenanced
+  declines are ARCHIVED to `.retired/` (never deleted), net-new custom
+  departments are built from the canonical library, kept prebuilt departments
+  stay built, and `agents.list` rows land for confirmed keeps.
+- **Anti-fabrication gates (PHASE 7).** exit 87 when `interviewComplete` is
+  absent and no genuine transcript/consent corroborates; exit 88 when a RECORDED
+  decline lacks provenance. The bare `interviewComplete` flag is never trusted —
+  `verify_interview_complete()` requires a genuine conversational transcript or a
+  valid owner-consent record.
+- **STANDARD_READY prover verdict (PHASE 4).** prove-zhe.py / verify-library-gate
+  recognize the standard-first build state and emit STANDARD_READY.
+- **Cron + link wiring (PHASES 5/8).** resume-workforce-build.sh and
+  interview-nudge-cron.sh are prebuilt-aware; send-interview-link.sh sends the
+  interview link at the beginning of the run; run-full-install ordering updated.
+- **Documentation.** SKILL.md, ZERO-HUMAN-EXPERIENCE.md, INSTRUCTIONS.md rewrite
+  the No-Work gate carve-out, the Phase 5.5 review-the-built-set inversion, and
+  the QC edit-mode exemption.
+
+### Merge notes
+
+The AIWF train initially collided with main's v21.7.29 podcast step-driver
+release (PR #859); merged onto it and rolled all version markers to v21.7.30.
+Both gates PASS on the merged state: test-artifact-coverage.sh 10/10,
+test-build-standard-first-roundtrip.sh 13/13.
+
+## [v21.7.29]  -  2026-08-05  -  fix(podcast): deterministic step driver — preset-gated step emission, produces_media gating (unit 1.2)
+
+Unit 1.2 of the podcast publish fix train, QC-passed (Opus RE-REVIEW-2, 2026-08-05) and merged to main. This is the final unit of the 9-unit podcast fix train.
+
+### What changed
+
+- **Deterministic step driver.** New podcast_step_driver.py emits the canonical per-step runbook commands for the 18-step podcast pipeline, preset-aware (interview / solo / episode_asset_pack / season_strategy).
+- **N1 preset-blindness resolved (fix 9e99d389).** Step emission is now gated on the preset's actual media flags: Step 10 (generating_art) gates on produces_media (covers asset-pack cover generation the writer's transition gate demands), Step 11 (producing_audio) gates on render_audio, Steps 14/15/16 gate on store_media / publish_podbean / link_back, Step 17 honors the preset's terminal action. Live-verified against a fresh SQLite DB for all four presets.
+- **QC fixes (c68d54dd).** guard-activation-health.py, SKILL.md, WIRING.md, SOP-PODCAST-07-ACTIVATION-RESCUE.md tightened; N1 fix is exactly 1 file (podcast_step_driver.py, +150/-6).
+
+### Merge notes
+
+Resolved a trivial universal-sops/_content-manifest.json generated_at timestamp conflict (deduplicated; manifest re-verified clean, 108 files all sha256 match). Deleted a stray local-only v21.7.29 tag (pointed at an unrelated aiwf-standard-first commit, never pushed to remote) that the release-integrity guard flagged. Step driver self-test PASS. Cherry-picked 829c9c15 + c68d54dd + 9e99d389.
+
+## [v21.7.28]  -  2026-08-04  -  fix(podcast): fail-closed hardening — empty-required store refusal, test-job complete bar, media-probe escape-hatch refusal (unit 1.5-1.8)
+
+Unit 1.5-1.8 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC fix-first) and merged to main.
+
+### What changed
+
+- **1.5 store_media refuses to run with an empty required asset set.** store_media raises MediaError before any network call when cover/mp3 are missing; a --required cover,mp3[,teaser] CLI flag (preset-driven) is added. A present-but-empty --required value (e.g. ",") is rejected as a usage error (exit 3) before touching credentials or the job file. Never exits 0 with an empty asset map.
+- **1.6 advance --force-waiver tightened.** A test job (_test payload) may not advance to complete under ANY flag combination (hoisted unconditional refusal); cumulative waivers >= 1 on a publish-required preset block a silent waive-to-complete unless PODBEAN_OPERATOR_WAIVE_TO_COMPLETE=1; the [reason: test-run] waiver is rejected unless the job is tagged test_run.
+- **1.7 ghl_credential_gate full mode checks KIE_API_KEY, FISH_AUDIO_API_KEY, and the client Fish Audio reference_id** (SET/NOT-SET + placeholder behavior probe). Missing any one stops setup fail-closed.
+- **1.8 media-probe escape hatch refused.** PODBEAN_SKIP_MEDIA_PROBE=1 in publish-proxy mode is refused unless PODBEAN_OPERATOR_FORCE=1 is also set; ffprobe absence is a hard fail in the proxy media probe (no HEAD-only degrade).
+
+### Merge notes
+
+Two cross-unit test-harness conflicts with units already on main were resolved: ghl_credential_gate selftest (unit 1.3's F1 two-store case now provides the media-provider creds unit 1.7 requires; 21/21 pass) and the proxy media-guard tests (added a stub state-writer so the U2.4 waiver gate sees a clean job; ProxyMediaGuardTest 6/6, upload_media 43/43, required_outputs 21/21). Cherry-picked c460c19d + fe571e06.
+
+## [v21.7.27]  -  2026-08-04  -  fix(podcast): n8n publish rail fails closed — byte-level media gates, entry-guard semantic reasons (unit 2.1-2.4)
+
+Unit 2.1-2.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC fix-first, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.1 Audio substance gate.** New Validate Audio Substance -- Byte-Level MP3 Gate node wired as the ONLY edge into Prepare Audio Upload: asserts byteSize >= 50KB from the base64-decoded binary, checks magic bytes (ID3 or MPEG frame sync), rejects text/html and text/plain mimeTypes. Fail-closed on error (no Podbean call).
+- **2.1 Image substance gate.** Prepare Image Upload extended: size cap > 2MB throws, real dimension parsing (PNG IHDR / JPEG SOF walk), enforces min 1500 / max 3000 / square 1:1 before any S3 upload.
+- **2.2 Entry guard.** Fail-closed entry guard wired; refusal returns 422.
+- **2.3 Readback verdict.** Assert Media + Description post-publish; FALSE -> Rollback + Mark Failed + 500.
+- **2.4 Waiver gate.** assert_not_waived called before payload build in BOTH proxy and broker/local modes.
+- **Entry-guard semantic reasons (QC fix 9261fc19).** The Respond -- Entry Guard Refused node now returns distinct reasons: description_too_short / title_equals_description / title_placeholder / description_placeholder, falling back to invalid_payload only for structural failures. Negative test 4.2.3 reproduced.
+
+### Verification
+
+Opus re-review: all six refusal scenarios reproduced, entry-guard returns distinct reason for 4.2.3, validator VALID (70 nodes/42 connections), node --check clean, no bypass routes into upload. Fable QC findings 2-4 remain open as Phase 4 verification items. Cherry-picked 5c52b5ef + 9261fc19.
+
+## [v21.7.26]  -  2026-08-04  -  fix(podcast): deterministic show-notes producer, description gate, kill the title fallback (unit 1.1)
+
+Unit 1.1 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Deterministic Show Notes producer step (12.5).** SKILL.md, PRD, SOP-PODCAST-01, and CHECKLIST now specify a deterministic 800-2500 char show-notes producer, content-tiered via model_router.py, no-em-dash/no-code-fence rules, persisted via podcast_state.py output --field episode_description.
+- **Description gate.** episode_description is now a required output on both transitions (publishing->enrolling publish_podbean, enrolling->complete produces_media) with MIN_EPISODE_DESCRIPTION_LEN >= 200 enforced in missing_required_outputs.
+- **Title fallback killed.** The silent description->title substitution is removed; a real (non-draft) publish now hard-refuses without a real description (PODBEAN_MIN_DESCRIPTION_LEN, default 200). The title stub survives only in draft/test/dry-run modes.
+- **Ledger-default resolution fixed (QC fix 12eb1506).** The description is now resolved from the Step 12.5 ledger BEFORE the hard refusal (shared section), mirroring AUDIO_URL/IMAGE_URL resolution — the F1 dead-code finding. Five new regression tests, mutation-proved.
+
+### Verification
+
+Opus re-review: F1 ledger-default dead code FIXED (live repro: ledger default succeeds, no-description hard-refuses, short description refuses, CLI-vs-ledger conflict dies), F2 no-test-covered FIXED (5 new tests), F3/F4 doc-only acceptable. 308 tests pass (13 files). Cherry-picked b6250ac8 + 12eb1506 with two test-file conflicts resolved (kept both --cover and --description args).
+
+## [v21.7.25]  -  2026-08-04  -  fix(podcast): engine GHL credential aliases now win over generic keys in every resolver (unit 1.3)
+
+Unit 1.3 of the podcast publish fix train, QC-passed (Opus re-review 2026-08-04 of the Fable QC-failure fix) and merged to main.
+
+### What changed
+
+- **Alias-major credential resolution (F1 fix).** ghl_credential_gate.py's _resolve now iterates aliases outer, stores inner — so PODCAST_ENGINE_GHL_PIT / PODCAST_ENGINE_GHL_LOCATION_ID found in ANY store (including a later ~/.openclaw/secrets/.env) win over a generic GOHIGHLEVEL_API_KEY in the live process env. This closes the exact Leanne-incident shape: a box with GOHIGHLEVEL_* set but PODCAST_ENGINE_GHL_* only in secrets/.env now resolves the engine tenant correctly. Selftest case 14 (two-store incident repro) passes; gate selftest 16/16.
+- **field_layer engine aliases (F2 fix).** caf/field_layer/constants.py prepends the engine PIT and LOCATION_ID aliases; resolver._resolve_one is alias-major, so the Step 14-17 write-back path resolves the engine tenant first. Three new resolver tests including the two-store shape. field_layer 10/10.
+- **Typo fixed (F3).** No stray CJxAT reference anywhere.
+
+### Scope
+
+7 files across 06-ghl-install-pages/ and 58-podcast-production-engine/scripts/caf/. All suites verified: ghl_credential_gate --selftest 16/16, field_layer resolver 10/10, upload_media 35/35.
+
+## [v21.7.24]  -  2026-08-04  -  fix(podcast): raise the Podbean cover floor to 1500 and the generation default to 2K (unit 1.4)
+
+Unit 1.4 of the podcast publish fix train, QC-passed (Opus re-review of the Fable QC-failure fix, 2026-08-04) and merged to main.
+
+### What changed
+
+- **Cover floor raised 1400 -> 1500.** The Podbean cover image floor is now 1500x1500 (the sanctioned safe floor per the master plan). The workflow webhook entry-guard notes, the generate_cover.sh resize range (1500-3000), and SKILL.md STEP 10 all now say 1500. A 1400x1400 image is REJECTED (new negative test T5 proves the floor actually bites).
+- **Generation default raised to 2K.** Kie.ai GPT-image-2 now generates a 2048 square cover by default instead of 1024, so the final resized-to-spec image has headroom above the 1500 floor.
+- **Regression test made line-independent (QC fix 9d459e6a).** tests/unit/test_generate_cover_probe.sh previously extracted probe_downloaded_image() from generate_cover.sh with a hardcoded sed line range, which broke when the commit inserted lines near the top of the script. Now an awk extractor anchored on the function declaration prints through the first top-level closing brace -- line-shift resilient. Fixture raised to 1500, negative 1400 case added. 6/6 tests pass (was 5/5 pre-regression).
+
+### Scope
+
+16 files, all under 58-podcast-production-engine/ plus the repo-root regression test. No live n8n, CC, or client-box changes.
+
+## [v21.7.23]  -  2026-08-04  -  fix(podcast): re-export the n8n publish rail drifts (Standing Gate MULTIROW + Fleet Gate FIX-RESCUE-19), document legacy deactivation and stale pinData
+
+Unit 2.5-2.7 of the podcast publish fix train, QC-passed (Fable max review, 2026-08-04) and merged to main.
+
+### What changed
+
+- **2.5 legacy deactivation documented.** The ungated legacy workflow `COfgxe6HXRcWOleV` ("Podbean Channel IDs to Google Doc") is NOT part of the `config/n8n` set and must never be restored from it — it carries an independent Podbean publish chain that bypasses the roster check, entry guard, and media preflight. The DR-RUNBOOK now documents the operator-live deactivation requirement and the NEVER-PRINT disposition. Verified live 2026-08-04: `active: false` on main.blackceoautomations.com.
+- **2.6 DRIFT-1 — Standing Gate MULTIROW.** The `Standing Gate -- Determine Verdict` node now selects the roster row whose `podbean_channel_id` equals the payload `podcast_id` (channel-preferred), falling back to the first last-name row only when the payload carries no `podcast_id`. A DR restore can no longer pick the wrong row for a client with two shows.
+- **2.6 DRIFT-2 — Fleet Gate FIX-RESCUE-19.** The `Fleet Gate -- Resolve Identity + Verdict` node now carries the shared identity placeholder denylist (`'', 'tbd', 'n/a', 'na', 'none', 'unknown', 'null', '-', '?', 'tba'`), whitespace collapse, and the `fleet_roster_rows` diagnostic. A placeholder identifier can no longer function as a real identity.
+- **2.7 stale pinData.** The repo export carries no pinData (stripped during sanitization). The LIVE workflow's pinned webhook payload predates the contract-v2 guard (missing `contract_version: "2"` and `idempotency_key`) and would be refused — documented as an operator-live re-pin action; no repo change needed.
+
+### Verification
+
+QC review (Fable, thinking max) verified independently on disk and against the live n8n API: all 58 functional nodes match live after dash-canonicalization, the 38-edge connection graph is identical, JSON parses cleanly, no pinData, no credential values, no real client names, only the two sanctioned files changed. Working tree clean; commit is the single change on the branch.
+
+## [v21.7.22]  -  2026-08-04  -  fix(update-skills): an un-provisioned box, and a Command Center runtime-config data problem this box's operator must fix, no longer withhold the version stamp entirely
+
+Wave-2 fleet guardrail, proven live tonight: Step U6d of `update-skills.sh` runs `reconcile_command_center_runtime.py` to populate the Command Center's departments/branding config from this box's own ZHC provisioning artifacts. Two distinct FATAL messages, both correct in principle, blocked 2 boxes each fleet-wide, with no path forward: (a) `DEPARTMENTS UNRESOLVED: dashboard departments are empty and no exact client ZHC artifact exists` — a box whose workforce interview never completed, i.e. legitimately un-provisioned; (b) `existing departments.json is non-empty but invalid; refusing to clobber operator/client data` — correct caution against overwriting real data, but a dead end once triggered. Both boxes had SKILL38 and the GHL MCP converge perfectly that night; only the stamp was withheld, over a gap unrelated to skills content.
+
+**The fix.** `reconcile_command_center_runtime.py` now distinguishes the two: a new `UnprovisionedError` (a `ReconcileError` subclass) is raised for the two "no legitimate ZHC identity exists yet" cases — `DEPARTMENTS UNRESOLVED` and its sibling `IDENTITY UNRESOLVED` — and `main()` reports it as `rc=2` / a `WARN`, not a `FATAL`. Every other genuine reconciliation failure (invalid/corrupt existing data the reconciler correctly refuses to clobber, or an I/O error) stays `rc=1` / `FATAL`, and the "refusing to clobber" message now states the exact file and the remediation command inline.
+
+`update-skills.sh`'s Step U6d call site reads that distinction: `rc=2` (case a, un-provisioned — a KNOWN, VALID state, the same interview-completion concept `_D2_MIGRATE_STATUS` already reads) is routed to the existing workforce-provisioning advisory bucket (`_WORKFORCE_INCOMPLETE_NOTES`) — plain WARNING, never touches the stamp-gating `_U6D_CC_CONFIG_FAIL` latch. Any other non-zero `rc` (case b, a genuine CC-side data problem) now latches a NEW `_U6D_CC_RUNTIME_FATAL` flag — mirroring the existing `GHL_MCP_RUNTIME_FATAL` pattern this file already ships for the GHL MCP Tier-2 runtime-conformance verdict — instead of the stamp-withholding `_U6D_CC_CONFIG_FAIL`: the roll CONTINUES, the version stamp still WRITES, and the run's FINAL exit code becomes 2 ("content current, infrastructure needs attention") instead of 0, with the reconciler's own remediation command surfaced in the closing summary. Latch, continue, report, exit non-zero — the same pattern this file already ships for the dirty-Command-Center-checkout skip and the GHL MCP runtime verdict, now applied consistently to U6d. The three PRE-EXISTING `_U6D_CC_CONFIG_FAIL` paths (python3 missing, the reconciler script missing, and a post-reconcile independent assertion that still finds empty departments or the exact placeholder company name) are UNCHANGED — those remain genuine content-integrity misses and still withhold the stamp.
+
+**Mutation-proven, both directions.** `tests/unit/update-command-center-runtime-config.test.sh` gained 5 new scenarios (G-K): an un-provisioned box (no ZHC artifact at all) reconciles at `rc=2`/`WARN` (not `FATAL`); a genuinely invalid existing `departments.json` stays `rc=1`/`FATAL`, untouched, with the remediation command named in the output; `update-skills.sh` declares and checks the new `_U6D_CC_RUNTIME_FATAL` latch separately from `_U6D_CC_CONFIG_FAIL`; the final exit code goes non-zero when either the GHL-MCP or the U6D-CC-RUNTIME latch fires; and `UnprovisionedError` is proven to be a distinct, correctly-ordered `ReconcileError` subclass. Full suite: 16/16 PASS (was 8/8). Wired into the existing `.github/workflows/command-center-runtime-config-update-guard.yml`.
+
+## [v21.7.21]  -  2026-08-04  -  fix(skill-23): refresh-stale-roles.py can now tell a legitimately RETIRED department from a genuinely missing one, closing the "no reconciliation path" dead end
+
+Wave-2 fleet guardrail, proven live tonight: `refresh-stale-roles.py` (P2-08 step 2, Step D2 of `update-skills.sh`) drains STALE role/sop/dept-kind rows from `.artifact-refresh-queue.json`. Its rule is correct — a role/dept the queue says this box HAS but whose department cannot be resolved on disk is a DETECTED gap, and the drain must refuse to fabricate it and fail loudly (exit 3, which withholds the version stamp via `_D2_REFRESH_STATUS`). But the rule had no exception for the one case where the department's absence is not a gap at all: the box owner explicitly, provenance-gated DECLINED it. That box could never pass this gate again. Live: 5 missing department directories (the billing/legal-compliance family) blocked one box; a single missing role within an otherwise-intact department blocked a second.
+
+**The fix.** When a STALE role/sop/dept row's department cannot be resolved on disk, the drain now checks this box's OWN `.workforce-build-state.json` for an EXPLICIT, PROVENANCE-GATED owner decline of that department — `canonical_decline.py`'s single-source-of-truth decline set, the SAME evidence `build-workforce.py` and `department-floor.py`'s own floor gate already read, so this drain can never disagree with the rest of the pipeline about what counts as "declined." A decline is honored ONLY when it carries the required provenance (the object form with `decision`/`source`/`decidedAt`/`decidedBy`, or the owner-confirmed block gate); absence of provenance is NEVER read as a decline — the fail-safe-to-the-larger-floor default is unchanged. The department slug is cross-referenced through `department-floor.py`'s `CANONICAL_VARIANT_SLUGS` alias table (imported via the same `importlib.util.spec_from_file_location` pattern `net-new-department.py` already uses for this hyphenated module) so a decline recorded against the canonical id (`billing-finance`) still matches a queue key carrying an on-disk-style alias (`billing`), and vice versa.
+
+A declined department's row is now DROPPED from the queue (never fabricated, never re-checked forever) and logged as `RETIRED`, never counted against the completeness contract. This applies ONLY to the department-level "cannot resolve the department at all" failure — a role or SOP whose OWN folder/file is missing while its department still exists on disk is UNCHANGED and still FAILS LOUDLY: this repo has no per-role/per-SOP decline concept, so there is no evidence that could ever justify treating that case as retired. The fix only ADDS the retired outcome; it never weakens the pre-existing fail-closed contract.
+
+**Mutation-proven, both directions.** `tests/unit/refresh-stale-roles.test.sh` gained 6 new scenarios (11-16) on top of its pre-existing 10: a dept-kind row with a properly provenanced decline is RETIRED (dropped, rc 0); the identical row with NO decline record still FAILS LOUDLY (rc 3) exactly as before; a role-kind and a sop-kind row each retire correctly through a canonical-vs-alias decline match; an UNPROVENANCED bare `"no"` decline is REJECTED (fail-safe preserved, still fails loudly); and a role missing from an EXISTING, non-declined department still fails loudly even when the box carries an unrelated decline record elsewhere — proving the fix never leaks retirement into the wrong branch. Full suite: 30/30 PASS (was 21/21 before the 9 new assertions across 6 scenarios). Wired into CI via the new `.github/workflows/refresh-stale-roles-retirement-guard.yml`.
+
+## [v21.7.20]  -  2026-08-04  -  fix(sop-library): missing sqlite3 CLI on the Hostinger base image turned a successful ingest into a false FATAL, and a set -e trap turned any component failure into a total roll abort
+
+Wave-2 fleet guardrail #3 of 3, proven live tonight on a client Hostinger VPS box: a roll aborted with exit 7 before reaching ANY skill-38 / MCP / pm2 work. Nothing broke, nothing changed — the run simply died. Two defects, both closed here.
+
+**Defect 1 — a false FATAL from a missing binary.** The shared container image `ghcr.io/hostinger/hvps-openclaw:latest` ships `libsqlite3-0` (the library) but NOT the `sqlite3` CLI. `ingest-sop-library.sh`'s population-verification shelled out to `sqlite3`; the "command not found" was swallowed by `2>/dev/null` and the accompanying `|| echo 0` silently substituted a FALSE ZERO for "the query never ran". The post-ingest gate read that false zero as "0 rows ingested" and FATALed (exit 7) a run that had actually landed all 2,640 rows — independently confirmed the same night via python3's stdlib `sqlite3` module against a canonical threshold of 2,555. `update-skills.sh`'s own redundant post-ingest re-verification (`_U6C_AFTER`, Step U6c) and its SOP-embeddings check (Step U6c2) carried the identical `sqlite3`-CLI-with-`|| echo 0` pattern one layer up, so fixing the leaf script alone would not have been sufficient end-to-end.
+
+**The fix.** python3's stdlib `sqlite3` module — already a hard dependency of both scripts' manifest/DB-resolution code — is now the PRIMARY path for every row-count read in `ingest-sop-library.sh` and in `update-skills.sh`'s Step U6c/U6c2. The `sqlite3` CLI is kept only as a fallback. True "neither tool available" now prints the distinguishable, non-numeric sentinel `SQLITE_UNAVAILABLE` and fails LOUD with an honest message — never a silent, numeric 0. `ingest-sop-library.sh` exits a new, distinct code (8) for this case, separate from exit 7's "genuinely under-populated" verdict.
+
+**Defect 2 — a `set -e` trap that turned any component failure into a total abort.** `update-skills.sh`'s Step U6c captured the ingester's output and exit code as `_U6C_OUT="$(...)"; _U6C_RC=$?` — a command-substitution ASSIGNMENT followed by a SEPARATE statement. Under `set -euo pipefail` (active at L128) a failing assignment aborts the script the instant the substitution returns non-zero, so `_U6C_RC=$?` was never even reached: a genuine ingest failure killed the WHOLE updater before Step U6c's own documented "FAILS LOUD... latches _U6C_SOPLIB_FAIL... continues to the end" contract ever ran, and every phase after U6c (skill-38, MCP, pm2, the stamp write) never executed. A sibling instance of the same set -e disease — an unguarded `python3` call inside `u004_assert_doctrine_provenance`'s documented "warn-mode" block, called unguarded — could equally abort the whole run on a real doctrine-provenance finding; both are fixed.
+
+**The fix.** `if _U6C_OUT="$(...)"; then _U6C_RC=0; else _U6C_RC=$?; fi` — the assignment is now the TESTED CONDITION of an `if`, which `set -e` never aborts on. This is the exact idiom this file already shipped for the sibling U6c2 capture and the R4 runtime-conformance verdict, now applied consistently. The full file was audited for every other `=$?` capture site; all others already used a set -e-safe idiom (guarded by `||`, or the `if VAR="$(...)"; then RC=0; else RC=$?; fi` form) — U6c's one-liner and U004's bare call were the only two live instances of the trap.
+
+**Mutation-proven, both directions.** `tests/unit/sop-library-no-sqlite3-cli.test.sh` builds a genuinely `sqlite3`-CLI-free PATH (python3 present) and proves the ingest still succeeds with the TRUE row count — reproducing the exact live incident against the unfixed script (FATAL, false 0) and proving it gone against the fix; a both-tools-present run reaches the identical count and exit code; a neither-tool-available run fails loud with a distinguishable message and never a false 0. `tests/unit/update-skills-u6c-set-e-continuation.test.sh` extracts Step U6c verbatim from `update-skills.sh`, proves a component failure now LATCHES `_U6C_SOPLIB_FAIL=1` and the run CONTINUES to completion (vs. the pre-fix one-liner, mechanically rebuilt from the current source, which aborts mid-phase under `set -e` — the negative control that confirms the test would have caught the live incident), and proves an all-clean component completes with no failure latched.
+
+## [v21.7.19]  -  2026-08-04  -  fix(ghl-mcp): `pm2 startOrReload` pairs a NEW interpreter with a STALE script and crash-loops after any interpreter change
+
+Wave-2 fleet guardrail #2 of 3, proven live tonight on a VPS box.
+
+**The defect.** `pm2 startOrReload ecosystem.config.js` MERGES the
+regenerated ecosystem file onto the app's EXISTING pm2 registration rather
+than replacing it. Every VPS provisioned before this repo's launcher existed
+registered `ghl-community-mcp` running `node dist/main.js` directly, with no
+`interpreter:` override. The first time `ghl-mcp-autostart.sh` runs on such a
+box under this release, it generates the crash-only launcher
+(`.ghl-mcp-launch.sh`) and writes a NEW `ecosystem.config.js` declaring
+`script: ".ghl-mcp-launch.sh"` + `interpreter: "bash"`. `pm2 startOrReload`
+merges that onto the live registration: pm2 keeps the STALE
+`script: dist/main.js` and pairs it with the NEW `interpreter: bash`. bash
+then tries to execute compiled JavaScript as a shell script — instant
+failure, `autorestart` relaunches it, crash-loop.
+
+**The fix.** `_pm2_registration_mismatch()` reads the LIVE pm2 registration
+(via `pm2 jlist`, parsed with the same `python3 -c "$snippet"` argument-
+passing discipline `ghl-mcp-assert-runtime.sh`'s pm2 filter already uses —
+NOT `python3 - <<EOF`, which consumes the heredoc as the script body and
+leaves nothing on stdin for the piped JSON, a second real bug this fix also
+catches and closes in the same commit) and compares its script/interpreter
+against what this run is about to write. On a MISMATCH, `start_service_vps()`
+now forces `pm2 delete ghl-community-mcp` + `pm2 start ecosystem.config.js` —
+the only way to change a live pm2 process's script/interpreter — accepting
+the one-time loss of that app's uptime/restart-count history. When nothing
+disagrees (a fresh install, or a box already on the correct registration),
+it still uses `pm2 startOrReload`, so ordinary restarts keep their history.
+Detect, don't assume: an unconditional delete was rejected as the fix,
+because it would reset history on every routine restart for no reason.
+
+**Mutation-proven, both directions:** `tests/unit/ghl-mcp-pm2-registration-
+mismatch.test.sh` proves 5 cases against a fake `pm2` on PATH (no real daemon
+touched) — the exact pre-fix on-disk shape (`dist/main.js`, no interpreter)
+reports MISMATCH; the half-migrated shape (`dist/main.js` + `bash`, the
+precise failure Trevor described) reports MISMATCH; an already-correct
+registration reports MATCH; a script-right/interpreter-wrong disagreement
+reports MISMATCH; and — the anti-vacuity control — no live app at all (a
+fresh install) reports MATCH, so this fix never forces an unnecessary delete
+on day one. Also confirms `start_service_vps()` actually branches on the
+decision function rather than defining it unused. Falsified against the
+pre-fix tree: fails closed (markers absent).
+
+## [v21.7.18]  -  2026-08-04  -  fix(ghl-mcp): root-vs-owner git failures were silently swallowed, defeating the mirror-migration self-heal and masquerading as an innocent pin failure
+
+Wave-2 fleet guardrail #1 of 3 (the worst of the three), found live tonight
+while unblocking a VPS box the roll could not converge — and the SAME disease
+as the root-cron bug fixed earlier the same night.
+
+**The defect.** `scripts/ghl-mcp-autostart.sh`'s `ensure_repo_at_pin()` has a
+correct self-healing MIRROR MIGRATION block that repoints a box's MCP
+`origin` from the retired third-party upstream to the org-controlled mirror.
+Every git command in that function carried a blanket `2>/dev/null`. When the
+script is invoked as ROOT against a checkout owned by a DIFFERENT uid — the
+fleet-standard VPS shape, where `$MCP_DIR` is owned by uid 1000/node — every
+one of those git commands hits git's "detected dubious ownership in
+repository at ..." fatal, and the `2>/dev/null` swallowed it: no WARN, no
+FATAL, no trace anywhere. The repoint block read the resulting empty
+`$_origin_url` as "nothing to repoint" and silently no-op'd; the pin-verify
+fetch/`cat-file` calls immediately below it failed for the identical
+swallowed reason and returned the generic `PIN_MISMATCH — cannot check out
+vetted commit`. The operator then reasonably blamed the pin gate, which was
+entirely innocent — the pin was fine, the box was simply never allowed to
+touch its own checkout.
+
+**The fix, three parts, as scoped:**
+  1. **Stop swallowing.** The MIRROR MIGRATION block's `git remote get-url
+     origin` / `git remote set-url origin` calls now CAPTURE stderr instead of
+     discarding it, and surface any failure they did not already anticipate
+     as a WARN — so a future "git just failed here for some other reason" can
+     never vanish again.
+  2. **Detect the ownership/root mismatch explicitly, and fail loud.** A new
+     `assert_ownership_matches_runtime_user()` guard runs BEFORE any git
+     command touches an existing checkout: if this process is uid 0 AND
+     `$MCP_DIR` is owned by a different uid, it refuses immediately, logs the
+     exact condition, and reports a new `ROOT_OWNERSHIP_MISMATCH` STATUS
+     naming the remedy verbatim — `docker exec -u node <ctr> bash ...` on
+     VPS/Docker, never `sudo` on Mac. It does NOT trip when root already owns
+     the checkout (root itself is not the defect; the DISAGREEMENT is), when
+     there is no checkout yet (a fresh clone as root is not this failure
+     mode), or when ownership cannot be determined (never block on a guess).
+  3. **Make the repo's own roll/update path consistent.** The sanctioned
+     convention already existed at `scripts/activate-loop-protection.sh:118`
+     (`docker exec -u node <ctr> ...` on a root-refusal). `install.sh` Step
+     14a and `update-skills.sh`'s post-wiring STATUS reaper now both route
+     `ROOT_OWNERSHIP_MISMATCH` to a DEDICATED warning naming that remedy,
+     instead of letting it fall through to the generic
+     "re-vet upstream and update config/ghl-mcp-pin.env" message — the exact
+     misdiagnosis that hid this defect in the first place.
+
+**FLEET CONTEXT for the next operator (Trevor, 2026-08-04):** every VPS
+provisioned BEFORE the org mirror existed has `origin` pointing at the
+retired upstream — confirmed identical on two other VPS boxes the same
+night, in addition to the box this was diagnosed on. Before this fix, a root
+invocation on any of those boxes could not repoint `origin`, could not verify
+the pin, and reported a misleading `PIN_MISMATCH`. Wave 2 must run
+`ghl-mcp-autostart.sh` as the box user (VPS/Docker: `docker exec -u node
+<ctr>`), never as root — the guard now makes a root invocation fail loud with
+the remedy instead of silently no-op'ing, but running it correctly the first
+time is still what actually converges a box.
+
+**Mutation-proven, both directions:** `tests/unit/ghl-mcp-root-ownership-
+guard.test.sh` proves the guard against 6 cases (no checkout yet, same-uid
+checkout, the `GHL_MCP_ALLOW_ROOT=1` escape hatch, the exact defect signature
+— uid 0 vs owner uid 1000 — fails loud with the remedy, a root-owned checkout
+run as root does NOT trip it, and an undeterminable owner does not block on a
+guess) and confirms `ensure_repo_at_pin()`'s caller special-cases the new
+rc=3 signal before the generic PIN_MISMATCH/BUILD_FAILED branches.
+`tests/unit/ghl-mcp-root-ownership-status-routing.test.sh` proves both
+`install.sh` and `update-skills.sh` route the new STATUS to its dedicated
+remedy (never the generic pin message), with an anti-vacuity control
+confirming an unrelated status (`HEALTHY_ALREADY`) still routes normally.
+Falsified against the pre-fix tree: fails closed (markers/behavior absent).
+
+## [v21.7.17]  -  2026-08-04  -  fix(ghl-mcp): the runtime pm2 gate reported a false FATAL on every correctly-configured pm2 box (stop_exit_codes scalar 0)
+
+Wave-2 fleet guardrail #3 of 3, found live tonight while unblocking a VPS box the
+roll could not converge. This one would have fired on EVERY pm2 box in wave 2.
+
+**The defect.** `scripts/ghl-mcp-assert-runtime.sh`'s pm2 record filter read
+`env.get("stop_exit_codes") or []`. pm2 v7.0.1 stores a single-element
+`stop_exit_codes` as the BARE SCALAR `0`, not the list `[0]`. Python's `or []`
+treats the falsy int `0` as absent, so the filter emitted an empty
+`__stop_exit_codes__` field for a CORRECTLY configured box, and the runtime
+gate reported `pm2 stop_exit_codes='<unset>'` FATAL — on a box where crash-only
+restart semantics were genuinely working. Verified live: an isolated,
+disposable pm2 test app (exits 0, `autorestart:true`) was NOT restarted —
+`restart_time` stayed 0 for 14+ seconds. Only the checker was wrong.
+
+**The fix.** The filter now distinguishes "genuinely absent" (`None`, the only
+shape that means nothing was declared) from a real, possibly-falsy value: a
+bare scalar (`0`, `"0"`), or a list (`[0]`, `[0,1]`), all normalize correctly
+and a value that is present but does NOT include `0` is still reported as the
+real (bad) value it is — never silently swallowed in either direction.
+
+**Also added:** a `GHL_MCP_PLATFORM_OVERRIDE` test hook (same convention as
+the file's existing `GHL_MCP_DIR`/`GHL_MCP_PLIST` overrides), so the VPS+pm2
+branch of this gate can finally be exercised end to end in CI — before this
+fix, PLATFORM was hardcoded off a real `/data/.openclaw/openclaw.json` check,
+so the pm2 branch had never run in any test at all, on this machine or in CI.
+
+**Mutation-proven, both directions, two layers:** `tests/unit/ghl-mcp-runtime-
+stop-exit-codes.test.sh` — (A) the embedded filter in isolation against every
+shape (bare scalar `0`, string `"0"`, list `[0]`, list `[0,1]`, absent, JSON
+`null`, and a genuinely bad `[1,2]`); (B) the real gate end to end against a
+simulated VPS+pm2 box (fake `pm2` on PATH, no real daemon touched) — a
+correctly-configured box now PASSES, a genuinely misconfigured one still
+FAILS (anti-vacuity control), and the pre-existing working shape (`[0]`)
+still passes (no regression). Falsified against the pre-fix tree: fails
+closed (markers absent) by design.
+
+## [v21.7.16]  -  2026-08-04  -  fix(skill-38): the AGENTS.md pointer-stanza rewriter is now WIRED IN, and 9 qc gates finally check the LIVE box instead of the shipped source
+
+Two-part defect, both halves required (either alone leaves it broken):
+
+**(i) The rewriter was never called.**
+`38-conversational-ai-system/scripts/05-update-agents-md.sh` (the pointer-
+stanza rewriter — the source of the ~24k-char win over the old 52KB
+full-corpus paste) was invoked NOWHERE in the automated update pipeline: not
+by the wiring phase, not by `wire_core_updates()`, not by `obs_verify_skill`.
+It was documented only as a MANUAL INSTALL.md step-5. Evidence it had not run
+in months on a real box: the newest `AGENTS.md.bak-skill38-*` was ~7 version
+bumps stale while sibling skills wrote fresh backups on every roll. Wired
+into `update-skills.sh`'s per-skill loop, scoped to `38-conversational-ai-
+system` only, NOT gated behind the per-version sentinel (same reasoning as
+the adjacent `wire_ghl_mcp` call: the script is idempotent/self-healing by
+design, and its own "staged descent" convergence for a box running a
+core-file watcher needs MULTIPLE passes — sentinel-gating it would break
+that).
+
+**(ii) The qc gate couldn't tell if the rewriter had ever run.**
+9 of skill 38's qc-*.sh gates (F17 segmentation, F21 multi-tenant, U-1
+tool-gating, U-2 workflow-exits, U-6 client-test-mode, ZHC tag-prefix, F16
+A/B testing, F49 ZHC pixel, F18 webhook-chaining) asserted their AGENTS
+marker was present by grepping the SHIPPED SOURCE script
+(`05-update-agents-md.sh`) for its own marker text — proof the writer CAN
+produce the marker, never that it EVER RAN on this box. So skill 38 read
+qc-passed whether or not the live file was ever rewritten, and the
+"reprocess skills not yet qc-passed" loop could never re-trigger fix (i).
+Each gate now ALSO asserts against the box's LIVE AGENTS.md (`AGENTS_MD` env
+override, else the writer's own platform default) — missing entirely (a bare
+CI checkout, no box) is a SKIP, not a false FAIL. `obs_verify_skill()`
+(`scripts/onboarding-state.sh`) and its canonical sibling `oc_gate_skill()`
+(`lib-onboarding-state.sh`) now hand the qc script the SAME resolved
+workspace they use elsewhere, so the gate checks the file the wiring loop
+actually wrote; `11-run-qc-checklist.sh` exports its own already-resolved
+`AGENTS_MD` to every sub-gate it runs for the same reason.
+
+**Mutation-proven, both halves:**
+`tests/unit/skill38-agents-md-wiring.test.sh` proves the wiring call exists,
+sits before the per-version sentinel, and — invoked EXACTLY the way
+`update-skills.sh` now does — actually transitions a stale fixture AGENTS.md
+(no SKILL38 stanzas) to current (all 24 stanzas present, pre-existing
+operator content untouched), and that a second pass is a true no-op.
+`tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh` proves, for
+every gate/marker pair: a live AGENTS.md that was never rewritten FAILS
+(citing the live file, not the source script); a live AGENTS.md produced by
+actually running the real writer PASSES; no live file at all SKIPs. 31/31 +
+14/14 new assertions, plus all 8 pre-existing per-gate negative-fixture
+suites unchanged (0 regressions — one drive-by fix along the way: the two
+python-embedded gates, qc-workflow-exits.sh and qc-tool-gating.sh, had their
+new live-file diagnostics leaking onto stdout and corrupting `--json` mode;
+routed to stderr).
+
+38-conversational-ai-system/skill-version.txt bumped independently: 1.11.0 ->
+1.11.1.
+
+## [v21.7.15]  -  2026-08-04  -  fix: retire `scripts/update-skills.sh` — the fleet-wide "two updaters, same name" fatal
+
+Two files shared the name `update-skills.sh`: the repo-root script (798+ commits,
+carries every v21.7.x fix — content-aware A3 gate, exit-2 FATAL semantics,
+stale-PENDING sweep, CORE_UPDATES wiring, MCP registration, Command Center
+refresh) and `scripts/update-skills.sh` (39 commits, last touched Jul 23, a
+much smaller independently-maintained "surgical update" script that received
+NONE of the v21.7.x work — `exit 2`: 0 hits; stale-PENDING logic: 0 hits). Two
+pilots ran the `scripts/` copy — via a stale crontab, an old doc, or plain
+muscle memory — and got a byte-identical AGENTS.md every week while the
+version stamp climbed anyway: a hollow update reported as a success. A
+disabled client-box crontab line (`bash ~/.openclaw/skills/scripts/update-
+skills.sh`) confirmed this reaches real boxes.
+
+**Decision (evidence-based, both files read in full before deciding):**
+retire `scripts/update-skills.sh` to a loud-failing shim rather than make it a
+thin forwarder. A forwarder would make the wrong invocation keep silently
+"working" forever, removing any signal that a crontab/doc reference needs
+fixing — exactly the failure mode this defect already demonstrated. The shim
+identifies itself, names the correct script (with the exact on-disk path when
+available), and `exit 1`s unconditionally — no flag, env var, or code path in
+it returns 0, and it mutates nothing (verified: writes zero files to HOME
+under every invocation shape tested).
+
+**Repointed every live reference:** `CONTRIBUTING.md`, `Start Here.md`,
+`install.sh` (2 remediation strings), `22-book-to-persona-coaching-leadership-
+system/INSTALL.md` (Step 6 was itself broken three ways — it called the
+legacy path with a `--setup-cron` flag NEITHER updater ever implemented,
+instead of the real cron installer `scripts/setup-weekly-update.sh`; the
+verification grep and the documented crontab line didn't match what
+`setup-weekly-update.sh` actually installs either — all three now corrected).
+`scripts/setup-weekly-update.sh` and the self-heal in `update-skills.sh`
+(repo root) already pointed at the canonical root URL; their comments are
+updated to describe the shim, not a "safer legacy script."
+
+**CI gate (new):** `scripts/test-single-update-skills-entrypoint.sh` +
+`.github/workflows/single-update-skills-entrypoint-guard.yml` prove (A) the
+shim cannot succeed under any flag/arg combination and writes nothing to
+HOME, (B) the root updater remains the real, substantial implementation
+(>1000 lines, still carries the weekly-cron self-heal), and (C) no
+doc/script/cron template in the repo references the legacy path outside an
+explicit, reasoned allowlist (self-heal detection code, negative-assertion
+tests, and historical/warning text) — so a NEW instruction telling a human or
+agent to run the legacy path can never again land silently. Mutation-proven
+both directions (a reverted shim, and a newly-added bad doc reference, both
+fail the gate).
+
+`tests/unit/cron-owner-chat-guard.test.sh` section 8c updated: absence of any
+notification code in the retired shim is now a stronger PASS condition than
+"the notification code that exists happens to be operator-routed" (there is
+no notification code at all to leak).
+
+22-book-to-persona-coaching-leadership-system/skill-version.txt bumped
+independently (INSTALL.md changed): v6.19.3 -> v6.19.4.
+
+## [v21.7.14]  -  2026-08-04  -  fix: a DIRTY Command Center git checkout no longer aborts the entire fleet update
+
+On 2 of 3 pilot boxes the root `update-skills.sh` hit an `exit 2` FATAL during the
+Command Center refresh (`run-full-install.sh --update-only` does a `git pull`,
+which is unsafe/unpredictable against an uncommitted local checkout) — and that
+`exit 2` terminated the ENTIRE updater before the PENDING-flag lifecycle further
+down the same script ever ran. A dirty client checkout is a routine, recoverable
+condition; it must never take down the rest of an otherwise-healthy update.
+
+**Fix:** detect a dirty CC checkout (`git status --porcelain`) BEFORE attempting
+the pull. When dirty, skip ONLY the Command Center refresh, print a WARNING with
+the exact remediation (`git stash` or `git add -A && git commit`, then re-run),
+and fall through so every other step — including the PENDING-flag lifecycle —
+still completes. Nothing is stashed, reset, or discarded automatically:
+uncommitted work on a client box is load-bearing. The three PRE-EXISTING U005
+exit-2 advisory paths (installer genuinely fails, checkout ends up off
+origin/main, installer script missing) are unchanged — those remain the
+documented "content current, CC infrastructure needs attention" contract; only
+the NEW dirty-checkout condition degrades to a warning instead of an abort.
+
+Mutation-proven: `scripts/test-updater-traps-1-and-3.sh` gained CASE 10 (a dirty
+checkout does NOT invoke the installer, exits 0, prints the warning + remediation,
+and explicitly states the rest of the update continues) and CASE 11 (a CONTROL
+proving a clean checkout still refreshes normally — the new guard does not
+over-block). Full suite: 48/48 PASS (was 40/40 before the two new cases).
+
+## [v21.7.13]  -  2026-08-04  -  fix(skill-32): qc-command-center-setup.sh's unbounded `find $HOME` no longer hangs a routine roll for 20+ minutes
+
+`qc-command-center-setup.sh` ran two unconditional `find $HOME /data -maxdepth 4 ...`
+scans on every QC pass (one for the Command Center checkout directory, one for its
+`package.json`). `maxdepth 4` does not bound the COST of a real, in-use Mac's `$HOME`:
+`~/Library`, iCloud/Dropbox sync mirrors, and node_modules-heavy dev trees explode
+into thousands of entries within four levels. Measured 20+ minutes PER find on a
+real box (40+ minutes for the pair) — a routine roll read as a hang with no useful
+signal.
+
+**Fix:** check the same known/candidate Command Center locations
+`update-skills.sh`'s `cc_resolve_existing_dir()` already uses FIRST (the common case
+never touches `find` at all — proven near-instant against a fixture with the
+canonical checkout present), then fall back to a depth- and time-bounded (`timeout`/
+`gtimeout` when available), heavy-dir-pruned (`Library`, `node_modules`, `.git`,
+`.Trash`, `.cache`, `.npm`) `find` only when nothing is found at a known location.
+The check's purpose (WARN-only signal that Command Center is/isn't cloned locally)
+is unchanged.
+
+**Drive-by fix (found while testing the above):** the script's own port-reachability
+check trips `set -u` — `CC_PORT: unbound variable` — on every box that sources the
+real `lib-shared.sh` (its `resolve_platform_paths()` never exports `CC_PORT`; only
+this script's own fallback stub does). Defaulted it to `4000` to match the fallback.
+
+32-command-center-setup/skill-version.txt bumped independently: v12.9.51 -> v12.9.52.
+
+## [v21.7.12]  -  2026-08-04  -  Upstream three box-local fixes: infra files miscounted as roles, a HOP-4 visibility gap, and run-closeout.sh's missing env bootstrap
+
+Three defects were found and fixed box-locally on one client's box to unblock her.
+A box-local fix is wiped by the next roll (`update-skills.sh` does a wholesale
+`rm -rf` + `cp -r` from `origin/main`), so it regresses on her next roll and the
+same defects reach every other box. This upstreams the fix permanently. A fourth
+reported defect (the refresher inventing departments) was checked against current
+main and confirmed already fixed by PR #828 (`6e8d02eb`) — not re-fixed here.
+
+### A — infrastructure files miscounted as roles (23-ai-workforce-blueprint)
+
+`register-library-additions.py`'s `_INFRA_STEMS` denylist did not exclude
+`CHANGELOG-RESCUE-DEPT` (a build log) and `RELAY-BRAIN-PATCH` (an operator
+runbook) sitting flat under the `rescue-rangers` department folder. Both were
+auto-registered as `roles[]` entries with `sop_count=0`/`sop_min=1` — neither is a
+role, so both failed the role-substance floor (`verify-library-gate.sh`)
+permanently. Confirmed present on current `origin/main`'s committed
+`_index.json` before this fix (both entries existed under `rescue-rangers`,
+inflating its role count from 5 to 7 and `total_roles` from 438 to 440).
+
+- Added both stems to `_INFRA_STEMS`. A scan of every dept-level `.md` file in
+  the library for an uppercase-bearing stem (the shape a real role slug never
+  takes) turned up only these two, so no broader heuristic was warranted.
+- Added a new `check()` assertion (`INFRA-STEM ROLE`) that fires the moment any
+  `roles[]` entry's filename stem is a reserved infra name — a backstop against
+  a future hand-edited/legacy entry sitting silently in the index forever, the
+  exact way these two got in.
+- Removed the two stale entries from `_index.json` (surgical edit: only
+  `rescue-rangers`'s `roles[]`/`count`/`content_sha` and the top-level
+  `total_roles`/`total_departments` changed — did not run the full restamp
+  chain, which would have touched every entry's `content_hashed_at` for zero
+  functional reason).
+- `23-ai-workforce-blueprint/scripts/test-library-register.sh`: 2 new hermetic
+  fixtures (13, 14), 4 new assertions, all shown failing against a pristine
+  pre-fix snapshot (`git archive` of the prior head) and passing post-fix.
+
+### B — HOP-4 could never fire for a `building` department with no `lastAttemptAt`
+
+`resume-workforce-build.sh`'s pending lane (`status == pending|failed`) and its
+stale-timeout lane (`status == building` AND `lastAttemptAt` older than N
+minutes) both require a signal that a department at `status=building` with NO
+`lastAttemptAt` at all does not have — the `DEFECT #5` honesty-floor demotion in
+`refresh-build-state-from-index.py` can produce exactly this shape (it flips a
+false "done" back to "building" but never stamps `lastAttemptAt`). With every
+other department done, `total_attention` landed on 0 and the cron logged "no
+pending/stale departments... nothing to do" and exited clean every 15 minutes
+forever — a silent strand nothing ever looks at.
+
+- Fixed toward visibility: a `building` department with a missing timestamp was
+  never actually attempted (nothing to time out against), so it now routes
+  through the **pending lane**, not the stale-timeout lane — picked up, named in
+  the `[WORKFORCE-RESUME]` ping, and (re)started like any other pending
+  department. Never double-counts: the stale lane still requires
+  `lastAttemptAt` to exist.
+- `tests/unit/bounded-workforce-build-resume.test.sh`: new functional group
+  (17) NO_LASTATTEMPTAT_VISIBILITY, 3 direct assertions + a mutation proof (the
+  same fixture against the pre-fix selection dispatches nothing).
+
+### C — run-closeout.sh never sourced any env file (37-zhc-closeout)
+
+Launched detached via `nohup` from the cron shell (`resume-workforce-build.sh`,
+`resume-closeout-cron.sh`), `run-closeout.sh` read `KIE_API_KEY` /
+`NOTION_API_TOKEN` as empty and failed preflight — a documented false negative:
+the key was never missing, this process just never sourced the file holding it.
+
+- Added an env bootstrap that sources ONLY this box's own credential stores,
+  scoped strictly under its already-resolved `$OC_ROOT`
+  (`secrets/.env`, `workspace/.env`, `.env`,
+  `service-env/ai.openclaw.gateway.env`) — never any operator-side path, never a
+  substitute value. Existing exported vars always win (never overwritten).
+  Checks presence only; never reads, echoes, or logs a credential value. Fits
+  the credential-passing mechanism #826 just landed (`-K` mktemp header files,
+  not argv).
+- `37-zhc-closeout/scripts/test-closeout-gated-pipeline.sh`: new functional
+  group T19 (7 assertions, not a grep) actually runs `run-closeout.sh` in a
+  hermetic sandbox HOME (no network, no real credential) and proves: a key
+  present only in the box's own store resolves (T19a, and T19b isolated from
+  T19a via a live-env-forced KIE key so the Notion check can never be
+  short-circuited); the fixture reaches a clean deterministic stop rather than
+  any real generation step (T19c); a genuinely-absent key still fails LOUD —
+  nothing invented, nothing substituted (T19d); the candidate list stays
+  OC_ROOT-scoped (T19e); and a mutation proof (bootstrap stripped from a
+  sandboxed copy) reproduces the false negative, proving T19a/b are not
+  vacuous. All shown failing against a pristine pre-fix snapshot and passing
+  post-fix.
+
+### D — verified already fixed, not re-fixed
+
+The refresher-inventing-departments report (`refresh-build-state-from-index.py`
+upserting every canonical index entry into a client's state regardless of
+whether the client ever had that department) was checked against current
+`origin/main` before starting. PR #828 (`6e8d02eb`, merged) already rewrote this
+file to loop the client's own roster (`existing_depts_dict.keys()`) with the
+add-branch removed. Confirmed via `git show 6e8d02eb` — the dead "add new dept"
+branch is gone. No residual path found; not touched here.
+
+### Follow-up flagged, not fixed here (different file than A-D touch)
+
+`37-zhc-closeout/scripts/resume-closeout-cron.sh`'s `run_count` (line ~106-111)
+is a lifetime-total counter that increments on every fire, including fires that
+do nothing but the cheap no-progress-pause check — it is never reset when the
+underlying build/closeout genuinely advances (unlike the sibling
+`closeoutResumeStallPasses` counter a few lines below, which already resets on
+a real fingerprint change). A box blocked for longer than `MAX_RUNS` (default
+48, 12h) accumulates a counter that outlives the block: the exact case observed
+live was `MAX RUNS EXCEEDED (438 > 48)`, where the cron self-removed
+immediately after the build had already recovered, because the counter itself
+never learned the build was moving again. Recommended fix: reset `run_count`
+(and rewrite `.closeout-resume-runs.count`) in the same branch that already
+resets `closeoutResumeStallPasses` on progress (line ~362-366). Left as a
+follow-up rather than fixed here — it is a different file than the one this fix
+touches for defect C, and the mission scoped in-file fixes only to files
+already being changed for A-D.
+
+37-zhc-closeout/skill-version.txt bumped independently (not one of the 10
+repo-wide lockstep markers): v12.14.23 -> v12.14.24.
+
+## [v21.7.11]  -  2026-08-03  -  Security: stop leaking the Notion token via curl argv (37-zhc-closeout)
+
+`notion_curl()` (`create-notion-closeout.sh`) and `notion_search_any_page()`
+(`ensure-notion-parent-page.sh`) interpolated `NOTION_API_TOKEN` directly into a
+`curl -H "Authorization: Bearer ..."` argument, putting the live token in
+plaintext in this host's process table for the life of every call — readable by
+any `ps` / `ps -eww` on the box for the duration of the request. 11 of 25
+reachable boxes carry a live token behind this code path.
+
+Both call sites now write their headers to a per-call `mktemp` file (mode 600,
+unlinked immediately after the curl call returns, exit code preserved) and pass
+it to curl via `-K` instead of `-H` on the command line, so the token never
+appears as a process argument. Only the header-transport mechanism changed —
+no header content, retry logic, or error handling was altered.
+
+37-zhc-closeout/skill-version.txt bumped independently (not one of the 10
+repo-wide lockstep markers): v12.14.22 -> v12.14.23. The repo-wide version is
+also bumped here (beyond what shipping the skill-level marker alone requires)
+so this fix ships under its own tag rather than riding along inside the
+existing v21.7.10 tag, which predates it — the exact "tag does not contain
+HEAD" gap scripts/bump-version.sh's own release-integrity guard flags.
+
+## [v21.7.10]  -  2026-08-03  -  Fix the circular alerting dependency: operator escalation now survives a dead gateway
+
+Proven live: a client box was down ~20h, its watchdog wrote 79 escalation attempts,
+and every one blanked. The cause was structural, not a missing config value: the
+shared operator-chat resolver's only lookup path was `openclaw config get`, which
+requires a live gateway websocket connection — during the outage the CLI failed with
+"1006 abnormal closure" on every call, so the destination resolved empty. The
+alerting depended on the exact thing it existed to report as broken.
+
+### Why
+
+Three defects in the same area, all proven live:
+
+1. `shared-utils/operator-chat-id.sh` never checked `OPERATOR_HELP_CHAT_ID` — the
+   back-compat key `scripts/configure-operator-telegram.sh` writes on every run.
+   Proven: a box with ONLY that key set in config resolved empty.
+2. The resolver's ONLY lookup path was the `openclaw` CLI. A dead/unreachable
+   gateway blanked every key, even ones actually persisted to disk.
+3. `closeout-readiness-watchdog.sh` and four sites in `run-closeout.sh` each
+   reimplemented their own pure-process-environment fallback chain instead of
+   calling the shared resolver — bypassing both the config-file lookup and the
+   `OPERATOR_HELP_CHAT_ID` fallback. Dispatched by `openclaw cron` as a child of
+   the running gateway, the watchdog's copy only ever saw the environment the
+   gateway had at its OWN start, so a `config set` was not live for it until the
+   gateway restarted.
+
+### What changed
+
+- `shared-utils/operator-chat-id.sh`: added `OPERATOR_HELP_CHAT_ID` to the lookup
+  chain (config and env tiers); added a direct on-disk read of `openclaw.json` as
+  a fallback whenever the CLI path comes back empty, so resolution now survives a
+  dead gateway entirely; a genuine double-failure (CLI shows a gateway-failure
+  signature AND the on-disk config can't be read either) now logs unmistakably
+  (stderr + `<OC_ROOT>/workspace/.operator-alert-resolution.log`) instead of
+  returning a silent empty string indistinguishable from a deliberate opt-out.
+  A clean, confirmed "nothing configured" answer stays silent, unchanged — this
+  never falls back to a client's own chat.
+- `closeout-readiness-watchdog.sh` and `run-closeout.sh` (five sites across the
+  two files): now source the shared resolver instead of reimplementing a
+  pure-env-var chain. One answer to "where does an operator alert go."
+- `tests/unit/operator-chat-id-resolver.test.sh` (new, hermetic, no real gateway
+  or Telegram send anywhere): 23 assertions, mutation-proved against a frozen
+  snapshot of the pre-fix resolver — the two headline assertions (dead-gateway
+  still resolves; `OPERATOR_HELP_CHAT_ID`-only config resolves) are confirmed to
+  fail against both the frozen fixture and the real pre-fix `origin/main` file,
+  and pass against the fix.
+- Version markers rolled to v21.7.10 via `scripts/bump-version.sh v21.7.10` (all
+  10 drift-checked markers agree; no tag cut here — that is the merge step's
+  job). `37-zhc-closeout/skill-version.txt` also bumped independently (not one
+  of the 10 lockstep markers): v12.14.21 -> v12.14.22, on top of #828's own bump
+  of the same file for its `_qc_closeout_eligible` predicate change — both
+  changes to `run-closeout.sh` coexist (confirmed by content, no lost edits).
+
+## [v21.7.9]  -  2026-08-03  -  The role library could not pass its own gate: 16 templates authored, and the wiring gate stops failing prose
+
+Two independent defects were blocking client builds at `sopLibraryStatus=failed`. Neither was
+box degradation -- the affected clients' files were byte-identical to the canonical templates.
+The templates themselves could not pass, and the wiring gate was failing files for containing
+authored prose.
+
+### 1. Sixteen role templates scored zero against the library gate
+
+`verify-library-gate.sh` delegates its SOP verdict to `qc-completeness.sh::embedded_sop_count()`,
+which requires each Section-9 SOP block to carry **>= 5 of 7** structured fields (`When-to-run` /
+`Frequency` / `Inputs` / `Steps` / `Outputs` / `Hand-to` / `Failure-mode`) inside a file of at
+least 7168 B. A cohort of templates -- the add-on roles from the 48/49/51/56/42 engines plus all
+of `rescue-rangers` -- was authored in a compact, summarised style: real content, but one or two
+fields per block. Their siblings in the same departments were authored properly, which is why
+this was invisible until a client's build sat on it.
+
+Measured against the gate's own parser (post-token-substitution, exactly as the gate sees a built
+box), **16 canonical non-exempt role templates scored `passing=0`**, and they account for **every**
+gated failure in the entire library -- there were none outside these six departments:
+
+| department | template | before | after |
+|---|---|---|---|
+| marketing | `sales-page-assets-specialist` | 13377 B, 4 blk, fields [1,1,1,2] | 35324 B, 6 blk, 7/7, **p6** |
+| marketing | `signature-funnel-specialist` | 11300 B, 4 blk, [1,1,1,2] | 33331 B, 6 blk, 7/7, **p6** |
+| paid-advertisement | `direct-response-ad-copywriter` | 4565 B, **no Section 9**, under floor | 22786 B, 5 blk, 7/7, **p5** |
+| paid-advertisement | `facebook-instagram-ad-run-producer` | 5744 B, **no Section 9**, under floor | 22812 B, 5 blk, 7/7, **p5** |
+| personal-assistant | `personal-coach` | 14741 B, 6 blk, [2,2,2,2,2,3] | 42749 B, 8 blk, 7/7, **p8** |
+| personal-assistant | `task-priority-manager` | 14678 B, 5 blk, [4,4,4,4,4] | 30936 B, 5 blk, 7/7, **p5** |
+| personal-assistant | `travel-logistics-specialist` | 12524 B, 5 blk, [3,3,3,3,3] | 31138 B, 5 blk, 7/7, **p5** |
+| presentations | `qc-specialist-signature-presentations` | 10307 B, 4 blk, [0,1,0,1] | 35572 B, 4 blk, 7/7, **p4** |
+| presentations | `signature-presentation-architect` | 16207 B, 5 blk, [1,1,2,1,3] | 44875 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `diagnostician` | 7374 B, **no Section 9** | 22306 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `director-of-rescue-rangers` | 9338 B, **no Section 9** | 25860 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `qc-postmortem-specialist` | 8613 B, **no Section 9** | 23971 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `structured-fix-operator` | 7737 B, **no Section 9** | 21927 B, 5 blk, 7/7, **p5** |
+| rescue-rangers | `ticket-clerk` | 9257 B, **no Section 9** | 24718 B, 5 blk, 7/7, **p5** |
+| web-development | `sales-page-assets-specialist` | 16068 B, 5 blk, [1,1,0,1,2] | 38668 B, 5 blk, 7/7, **p5** |
+| web-development | `signature-funnel-specialist` | 14248 B, 5 blk, [1,1,0,1,2] | 36028 B, 5 blk, 7/7, **p5** |
+
+Every block reaches **7/7** where the gate needs 5, and `passing == block count` on every file.
+No template that passed before fails now. By the index's own count, roles below the embedded-SOP
+floor drop from **9 to 2**. Independently re-measured against the current gate parser after this
+branch was rebased four times (onto v21.7.5, then v21.7.6 after PR #828 landed, then v21.7.7 after
+PR #836 landed, then v21.7.8 after PR #838 landed -- each concurrent merge taking the version
+number this branch had just claimed): same 16 files, same before/after numbers, zero regressions
+across the other 436 role templates in the library.
+
+**These files are the working instructions real client agents follow, so the bar was substance,
+not the counter.** Each SOP was grounded in this repo's own source of truth for that role rather
+than invented: `universal-sops/funnel-craft`, `sales-page-craft` and `fb-ad-craft`; the
+`MASTER-*-QC-AUTOFAIL` rulesets; the 49/51/56 engine MASTERDOCs and their `prove_*.py` provers;
+and the binding `rescue-rangers` department SOPs (the nine-field contract, the 25/day cap,
+FIX-RESCUE-05 tiers and budgets, `rescue_ledger.py`, the ledger/board/aging/digest machinery).
+Named scripts, auto-fail codes, thresholds and phase ids are verified against those files. Every
+pre-existing domain specific was preserved and expanded, never replaced. The five Rescue Rangers
+roles interlock: each role's `Outputs`/`Hand to` is exactly the next role's `Inputs`.
+
+Grounding the content in the sources also surfaced three real corrections: a fourth
+signature-presentation prover (`prove_sp_routing.py`, `AF-SP-TYPE-UNDECLARED`) that both
+presentation templates omitted while claiming "three fail-closed provers"; a stale contradiction
+about `AF-INTAKE-BATCH` that disagreed with its own file and with `SOP-SIGPRES-01`; and the
+granular Phase-3 auto-fail codes that the compact summary had collapsed into one umbrella row.
+
+Token sets are byte-identical to baseline in all 16 files -- no new `{{TOKEN}}` name was
+introduced, so no unsubstitutable token can zero a file at build time.
+
+Why this could not be fixed on a box: PRD 2.12's boundary gate refuses SOP authoring for
+canonical departments (`populate-sops-from-manifest.py` logs `[SOP-BOUNDARY-GATE] REFUSE`) --
+canonical departments are copy-from-template only, so any box-local edit is both a doctrine
+violation and overwritten by the next roll. Upstream content was the only fix.
+
+### 2. The wiring gate failed authored prose, and leaked a real stub
+
+`verify-wiring.sh`'s MATERIALIZED check tested the substring `[PENDING`. That is not a stub
+signature -- it is a substring of authored prose. Nine canonical templates ship `[PENDING` as
+subject matter, most visibly the `qc-specialist` auto-fail battery line *"`[PENDING]` markers in
+live content"*, so fully-instantiated 12-71 KB `how-to.md` files were failed as unfilled stubs.
+
+The same check also **missed a real stub**: a `how-to.md` carrying only the `how-to.md (stub)`
+title contains no `[PENDING` at all and passed materialization -- a fail-open hole shipping
+alongside the false positive.
+
+The gate now tests `STUB_MARKERS`, the two signatures the stub writers actually emit:
+`FILL FROM LIBRARY` -- the dash-free tail shared by all three PENDING headers, so the hyphen
+(`build-workforce.py:5637`), em-dash (`create_role_workspaces.py:259`, `add-role.sh:377`) and
+**OWNER-REQUESTED** (`build-workforce.py:2801`) forms are all caught without enumerating dash
+variants -- and `how-to.md (stub)`. This is the same predicate `build-workforce.py:6541` already
+uses to build `PENDING-SOPS.md`, so the wiring gate and the pending manifest finally agree on
+what a stub is.
+
+Proven in **both** directions in `test-wiring-gate-role-dir-walk.sh` section E, with each case
+first run against the pre-fix gate to confirm it genuinely bites:
+
+- **E1** -- all four real stub forms fail `rc=2`, with the failure attribution asserted so a case
+  cannot pass for the wrong reason. Pre-fix, the stub-title form **leaked**.
+- **E2** -- all four shipped prose forms pass `rc=0`. Pre-fix, all four **failed**.
+- **E3** -- the shipped library carries 9 prose hits and **zero** real stub signatures, so the
+  assertion is grounded in the real library and will fire if a template ever ships a true stub.
+
+The suite is hermetic: `HOME` is redirected into a fixture, it refuses to run if `/data/.openclaw`
+exists, and it asserts the real `~/.openclaw` listing is unchanged afterwards. 47 assertions pass
+(re-run clean after each rebase).
+
+No collision with PR #828: that PR's merged content never touched `verify-wiring.sh` (confirmed
+directly against main as merged, not assumed from the PR diff).
+
+### Known-remaining (not fixed here)
+
+`_index.json` registers **7** roles for `rescue-rangers`, but two of them --
+`CHANGELOG-RESCUE-DEPT` and `RELAY-BRAIN-PATCH` -- are department documents, not roles; the
+department's own changelog says *"Roles (5)"*. They are the only two entries still below the
+embedded-SOP floor. Root cause: `register-library-additions.py`'s `_INFRA_STEMS` set (which
+already excludes `how-to-use-this-department`, `00-START-HERE`, `TOOLS`, `SOUL`, ...) does not
+cover these two stems, so they are discovered and registered as roles. The fix is to add both
+stems to `_INFRA_STEMS` and re-run `--apply`, which would take the department's `expected_roles`
+from 7 to 5. Left out of this change deliberately: it is a roster-classification defect rather
+than a template-content one, and it lands in files another open PR is holding.
+
+## [v21.7.8]  -  2026-08-03  -  A stale UPDATE PENDING flag can no longer swallow the AGENTS.md self-heal (companion fix to v21.7.5)
+
+A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker) proved `update-skills.sh` runs cleanly
+everywhere — exit 0, 17-20 skills updated, version stamp advanced — but **AGENTS.md and MEMORY.md
+came out BYTE-IDENTICAL on 3 of 3 boxes**. The pointer/self-heal pass the fresh UPDATE PENDING flag
+exists to trigger never ran, so the ~24,000-character bootstrap-budget win measured for the AGENTS.md
+pointer-writer (this morning's `fb0f5f4e`) never landed on a single pilot box. This was the ONE fix
+missing from v21.7.5/PR #834's own "roll path actually converges" release.
+
+### Root cause: _RESUME_NEEDED could not see a stale flag's own presence
+
+The Post-update "UPDATE PENDING flag LIFECYCLE" step decides whether to call
+`write_update_pending_flag()` (writes a fresh flag + arms the self-heal resume cron) or
+`clear_update_pending_flag()` (sweeps and writes nothing), based on `_RESUME_NEEDED`:
+
+```
+_RESUME_NEEDED="no"
+[ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"
+[ "${ONBOARDING_GATE_OK:-unknown}" = "unknown" ] && _RESUME_NEEDED="yes"
+[ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"
+```
+
+Both inputs are blind to AGENTS.md's own content: `ONBOARDING_GATE_OK` reads the per-skill
+`.onboarding-state.json` qc gate, and `NEW_SKILLS_CSV` only tracks brand-new skill **folders**
+(`[ ! -d "$SKILLS_DIR/$SKILL_NAME" ]`). An **existing** skill that ships a real content update —
+exactly what skill 38's `05-update-agents-md.sh` rewrite was — keeps its OLD qc sentinel and adds
+no new folder, so on a box where every other skill already reads qc-passed, `_RESUME_NEEDED` came
+out `"no"` even while a `## UPDATE PENDING -- Skill Update to vX` section from a run 2-7 weeks
+earlier (three stacked copies, un-swept, on the VPS) was still sitting in AGENTS.md.
+`clear_update_pending_flag()` ran instead of `write_update_pending_flag()`: a stale block's mere
+**presence** was silently treated as proof its work was already queued or done, so it either sat
+untouched or was swept with nothing fresh written to replace it — either way, no fresh flag, no
+self-heal, no pointer rewrite, no shrink.
+
+### The fix: a new currency probe closes the blind spot, using the mechanism that already exists
+
+`_pending_flag_currency_probe()` (`update-skills.sh`, alongside the other
+`CONTENT-RECHECK-CONVERGENCE-PROBES`) reads every `## ... UPDATE PENDING ...` / `## ...
+ONBOARDING PENDING ...` header currently in AGENTS.md and extracts the version each one names
+(`Skill Update to ${version}`). It reports **stale** the instant any of them names a version other
+than this run's own `ONBOARDING_VERSION`, or is unparsable (covers the pre-lifecycle legacy
+`ONBOARDING PENDING - EXECUTE NOW` wording too). The probe is wired into `_RESUME_NEEDED` in TWO
+places that both fall through to the same, unmodified lifecycle functions:
+
+- The Post-update lifecycle: `_pending_flag_currency_probe || _RESUME_NEEDED="yes"`.
+- The SAME-VERSION fast-recheck's convergence-trigger list, so a box that is already at the
+  current content version but still carries a stale flag from an earlier wave no longer takes the
+  early `exit 0` without sweeping it.
+
+This is deliberately NOT a new write path: the probe only **reports**. Every mutation still goes
+through `_strip_update_pending_sections()` (shared by both `write_update_pending_flag()` and
+`clear_update_pending_flag()`, unchanged), which sweeps every stale/stacked section in one pass and
+lets `write_update_pending_flag()` append exactly one fresh, current-version flag.
+
+### Mutation-proof table (both directions; `tests/unit/update-skills-pending-flag-staleness.test.sh`, 26 checks)
+
+| Scenario | Before this fix | After this fix |
+|---|---|---|
+| Stale PENDING present (older version) | swallowed by clear/no-op | swept, fresh flag written, `_RESUME_NEEDED=yes` |
+| Current-version PENDING present | correct (unchanged) | still correct: not duplicated, not swept spuriously |
+| No PENDING present | correct (unchanged) | still correct: clean write, zero backups |
+| 3 stacked stale blocks (VPS case) | swallowed | all 3 swept, exactly 1 fresh section survives |
+| Re-run immediately after | N/A | byte-identical no-op |
+
+`tests/unit/content-recheck-convergence-probes.test.sh` extends its existing 5-probe aggregation-gate
+proof to 6 probes (60 checks total, was 45), proving the new probe never mutates anything, never
+forces a pass on an absent/unknown/current-version box, and is correctly wired into the fast-exit
+gate. Both suites extract the real code VERBATIM from `update-skills.sh` between markers — they do
+not reimplement the decision logic (the drift trap that already bit
+`tests/unit/update-skills-resume-cron.test.sh`'s hand-copied `decide()`, which separately predates
+and is unaffected by this fix).
+
+Full `tests/unit/*.test.sh` suite (137 files including the new one) run against this change and the
+identical 136-file suite run against an unmodified `origin/main` baseline worktree: same 14
+pre-existing, environment-dependent failures in both (unrelated to this change, needing network/creds
+not present in this sandbox). Two additional failures seen ONLY on a first PARALLEL run
+(`dual-sunday-mutex.test.sh`, `fleet-standing-gate.test.sh` — both exercise file-locking behavior)
+were proven to be contention between the two concurrent worktree runs, not a regression: both pass
+24/24 and 14/14 when re-run in isolation, sequentially, on both worktrees. Zero real regressions.
+
+## [v21.7.7]  -  2026-08-03  -  GHL credential resolvers now SKIP placeholder-shaped values instead of trusting first-non-empty
+
+### Why
+
+`~/.openclaw/openclaw.json` `env.vars` holds COPIES of GoHighLevel credentials that the gateway
+process inherits into its live environment at launch. Those copies rot / get seeded with the
+10-character documentation placeholder `pit-abc123`. `TERMINOLOGY.md` and
+`38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh` already document/enforce
+"skip placeholder-shaped values, prefer `secrets/.env`" for that one runtime monitor — but the
+Python GHL credential resolvers used by Skills 06, 44, and 48 still did plain first-non-empty-wins,
+so the SAME class of bug (a non-empty placeholder silently outranking a live credential, producing a
+false "PIT is DEAD/EXPIRED" alarm) remained live in every other GHL-calling code path.
+
+A box-side audit on 2026-08-03 (full recursive scan of `openclaw.json`, not just the top-level
+`env.vars` block) found the CURRENT instance of that placeholder set had already been cleaned up by
+an earlier pass — zero placeholder-shaped GHL config copies remain. This release closes the
+underlying code defect so the next placeholder seeded there can no longer shadow a live credential
+in any of this repo's own resolvers, rather than relying on a one-time manual cleanup.
+
+### What changed
+
+- **`_is_placeholder()` added to the four Python GHL credential resolvers** that walk the 11-alias
+  Location-PIT chain: `06-ghl-install-pages/tools/ghl_media.py`,
+  `48-facebook-ad-generator/tools/ghl_media.py`,
+  `06-ghl-install-pages/tools/ghl_bulk_workflow_enroll.py`, and
+  `44-convert-and-flow-operator/tools/engine/cli_anything/gohighlevel/utils/ghl_client.py`. Each
+  ports the SAME three placeholder shapes as `check-ghl-pit-liveness.sh`'s proven reference
+  implementation (shorter than 20 characters; `pit-abc`/`changeme`/`xxx`/`your-`/`your_` prefixes;
+  a `_here`/`-here` suffix; an angle-bracket token) rather than inventing new rules.
+- **Placeholder-shaped candidates are skipped, not returned** — resolution keeps scanning remaining
+  aliases in the live environment, then falls through to a direct `secrets/.env` (and other
+  canonical env-store) read, before declaring the credential missing. `06-ghl-install-pages/tools/
+  ghl_media.py`'s `_scan_env_stores()` applies the same skip to store-file hits.
+  `resolve_location_id()` is unchanged (location ids are identifiers, not the credential class this
+  defect targets).
+- **`TERMINOLOGY.md`** gets an additive "Resolver algorithm" section defining the placeholder shapes
+  and naming the four files that now implement them (the doctrine paragraphs about the authoritative
+  store and the three distinct Agency PITs were already correct on `main` as of v21.7.4/v21.7.5 — no
+  change needed there beyond correcting one now-stale "still hold that placeholder" sentence to
+  reflect the current, already-remediated config state).
+- **34 new tests** across `test_ghl_media_cred_resolution.py` (14), `test_ghl_bulk_workflow_enroll.py`
+  (6), and `test_ecosystem_cli.py` (4), plus the existing 06-ghl-install-pages media suite, prove
+  BOTH directions: a placeholder can no longer shadow a live value (including the exact defect shape
+  — placeholder in the live env, real value in `secrets/.env`), and a real value already present
+  resolves exactly as before (no regression). All pre-existing tests in the four touched modules
+  (87 total across the affected suites) still pass unchanged.
+
+### Not touched
+
+No live credential value was read, printed, or modified — this release is resolver-code and
+documentation only. No config deletion was needed on this pass (the placeholder config copies this
+defect class produces were already absent by the time of the audit); the fix targets the resolver
+behavior so a FUTURE placeholder seed cannot repeat the false alarm.
+
+## [v21.7.6]  -  2026-08-03  -  Status-writer resolution defects (A/B/D) + closeout QC predicate aligned to needs-review
+
+`refresh-build-state-from-index.py` is the single writer of department
+`status:"done"` (`23-ai-workforce-blueprint/references/DONE-IS-GATED.md`). Four
+resolution defects, verified on a real client box, made it measure or mutate the
+wrong thing on a custom-company client. `verify-wiring.sh` already had three of
+the four (B/C/D) fixed by a prior merge; this release brings the independent
+implementation in `refresh-build-state-from-index.py` in line and closes one
+closeout-predicate gap in the same family.
+
+### What changed
+
+- **Defect A (wrong collection).** The upsert loop iterated the canonical
+  `_index.json` instead of the client's own department set, so a
+  custom-company client's real departments were never visited while every
+  generic canonical department got silently ADDED to their roster. The loop
+  now drives from the client's own build-state entries; `_index.json` is
+  consulted only to source `rolesPlanned` for a canonical department, and a
+  custom department's `rolesPlanned` is preserved untouched. No department a
+  client does not already have can be added by this script anymore.
+- **Defect B (wrong tree) + Defect C (workspaceRoot unreliable).**
+  `find_departments_dir()` had no `zero-human-company/<companySlug>/departments`
+  candidate, so a stray single-entry legacy directory won by being
+  first-checked and everything measured 0 roles. Replaced with
+  `resolve_departments_tree()`: every candidate is SCORED by how many of the
+  client's own department slugs actually resolve inside it; config-derived
+  resolution (`openclaw.json` `agents.list` `dept-<slug>.workspace` — what the
+  agents actually run from) is preferred outright over every fixed-candidate
+  guess. Resolution never requires `.workspaceRoot` to be present or correct.
+  If two or more distinct trees tie on score, resolution is now AMBIGUOUS and
+  the script exits FATAL with no state write, rather than silently guessing.
+  The resolved tree + method are recorded in
+  `state["departmentsTreeResolution"]`.
+- **Defect D (suffix mismatch).** Department directories on disk sometimes
+  carry a `-dept` suffix the slug does not (`trading-operations-dept` vs
+  `trading-operations`), which a bare path join silently measured as 0 roles.
+  `resolve_dept_dir_in_tree()` adds suffix/case/separator-tolerant matching,
+  mirroring `verify-wiring.sh`'s `resolve_one_dept()`.
+- The DEFECT #5 honesty floor (never `status:"done"` with 0 roles on disk) is
+  unchanged — correct measurement makes it fire less, never because it was
+  relaxed.
+- **Closeout QC predicate.** `resume-workforce-build.sh`,
+  `update-interview-state.sh`, and `build-workforce.py` already treat
+  `interviewQc.status` of `pass` OR `needs-review` as build-eligible.
+  `run-closeout.sh` alone still demanded a strict `pass`, so a `needs-review`
+  box built completely and then blocked forever at
+  `closeoutStatus=blocked-qc-pending` — visible, but never delivered. Added
+  `_qc_closeout_eligible()` (`pass|needs-review`) and wired it into both
+  `interviewQc` gates so all three lanes agree.
+
+Tests: `tests/unit/status-writer-resolution-defects.test.sh` — hermetic, 13
+assertions across 4 scenarios, each shown failing against the pre-fix script
+and passing post-fix (a custom-company fixture, a `-dept` suffix fixture, an
+ambiguous-resolution fixture, and a standard-case non-regression check).
+
+## [v21.7.5]  -  2026-08-03  -  The GHL MCP roll path actually converges a box (and can no longer report a hollow update as a success)
+
+A live 3-box pilot (2 Mac/launchd + 1 Hostinger VPS/Docker/pm2) ran `update-skills.sh` cleanly
+everywhere — exit 0, 17-20 skills updated, version stamp advanced — and converged **no box** to
+the hardened Tier 2 state. All three failed `ghl-mcp-assert-runtime.sh` with 7-10 FATALs. This
+release closes every mechanism that made that possible. Four of them were independent, and each
+one alone was sufficient to produce the observed result.
+
+### B2 — `openclaw mcp remove` is not a command, so Tier 2 was NEVER de-registered
+
+On OpenClaw 2026.7.1-2, `openclaw mcp remove <name>` exits 1 with `Too many arguments for this
+command`. The verb is **`unset`**. The repo carried **8 occurrences of `remove` and 0 of
+`unset`**, and every executable one was swallowed by `|| true`:
+
+- `update-skills.sh` (the fleet-roll de-registration)
+- `scripts/ghl-mcp-autostart.sh` `deregister_tier2()`
+- `36-ghl-mcp-setup/wire.sh` migration M2
+- `scripts/ghl-mcp-assert-runtime.sh` (its own remediation text)
+- `36-ghl-mcp-setup/INSTALL.md`, `ghl-mcp-setup-full.md`, + 2 explanatory comments
+
+So runtime check 10 (*"ghl-community-mcp ABSENT from mcp.servers"*) could never pass on any box —
+the last remaining FATAL on the pilot box. `wire.sh` compounded it by attributing the failure to
+*"the gateway can rewrite openclaw.json from memory"*; that diagnosis was wrong and is corrected,
+because it sent every investigation after a phantom.
+
+All 8 sites now try `unset` first and keep `remove` only as an explicit fallback for an older CLI,
+**return** the outcome instead of swallowing it, re-read `openclaw mcp list` to prove the entry is
+actually gone, and report which verb the installed CLI documents. New CI gate
+`scripts/qc-assert-mcp-unset-verb.sh` fails the build on any remove-only site, with an
+anti-vacuity check so it cannot go green by the de-registration path simply disappearing.
+
+### B3 — the 15-minute liveness probe was dead on arrival, fleet-wide
+
+`update-skills.sh` delivers the canonical `scripts/` tree to `$OC_ROOT/scripts`. The autostart
+resolved `ghl-mcp-probe.sh` from `$SELF_DIR/`, `$HOME/.openclaw/skills/scripts/` and
+`/data/.openclaw/skills/scripts/` — **an extra `skills/` segment that nothing populates**. On the
+fleet path `$SELF_DIR` is the temp extract dir, which the updater `rm -rf`s, so `PROBE` resolved
+**empty on every rolled box** and `install_periodic_probe()` took its *"not co-located — periodic
+liveness probe NOT installed"* branch. It passed in operator-box testing only because that run used a
+persistent checkout. Identical shape on VPS.
+
+The delivered path is now present on both platforms; the legacy `skills/scripts` pair is retained
+as a last-resort fallback (some long-lived boxes still have it) but is no longer the only option.
+`scripts/qc-assert-pin-delivery-paths.sh` is generalised beyond the pin file: for every sibling
+helper a consumer resolves, the **delivered** location must appear in that resolver list. Same bug
+class as the v21.5.0 pin-delivery defect, now covered by one generic assertion.
+
+### DEFECT 2 — the roll ran the wrong copy of the autostart, then measured it before it finished
+
+Two independent faults in `wire_ghl_mcp`:
+
+- **Wrong copy.** It ran `$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh` — the **temp clone**. The
+  autostart's first pin-resolver candidate is `$SELF_DIR/../config/ghl-mcp-pin.env`, which from
+  the temp clone resolves inside a directory the updater deletes. It now prefers the **delivered**
+  copy at `$OC_ROOT/scripts/`, whose `../config` sibling is the pin the roll just delivered.
+- **Backgrounded, then asserted immediately.** `( … & )` returned in milliseconds and the runtime
+  assert on the next line measured the **pre-autostart** state — it could only ever observe the
+  defect it existed to verify was fixed. The autostart is now waited for, bounded
+  (`OPENCLAW_GHL_MCP_AUTOSTART_TIMEOUT`, default 900s, poll-on-PID because macOS has no
+  `timeout(1)` — which is why it was backgrounded in the first place). A run that exceeds the
+  ceiling says so and marks the verdict as measured mid-install.
+
+**And the verdict now counts.** It used to be a bare warning nothing read, so a roll printed the
+FATALs and exited 0. It now latches and makes the run **exit 2** — this script's existing,
+documented *"skills content current, infrastructure needs attention"* code. Deliberately **not**
+exit 1: that means *stamp withheld*, and `wire_ghl_mcp` runs before the stamp, so failing to 1
+would withhold the content stamp on every box carrying a pre-existing Tier 2 defect and brick
+fleet rolls over something unrelated to skills content. It is emphatically not 0.
+
+### DEFECT 3 — a security check that could not answer reported INFO
+
+In the VPS container there is no `lsof`. Check 13 was `if command -v lsof` with **no else branch**,
+so the verdict stayed `unknown` and printed an INFO line reading *"no listener observed (or lsof
+unavailable)"*. That one sentence conflated **"the port is free"** (a real answer) with **"we have
+no way to tell"** (a check that did not run), and reported the second as INFO — indistinguishable
+from a pass. It masked a genuine `0.0.0.0:8765` exposure independently confirmed via
+`/proc/net/tcp` (LISTEN state `0A`).
+
+- Determination now falls back `lsof` → `ss` → `/proc/net/tcp` + `/proc/net/tcp6` parsed directly,
+  so the container case is answerable with no tools at all.
+- **Undeterminable is FATAL**, never INFO. A proven-free port stays INFO, because that is a real
+  answer.
+- All-interfaces is **FATAL by default**. The old WARN existed because *"fixing it needs a
+  server-side change (R2)"* — R2 has landed (the generated bind guard, proven differentially on a
+  live box `*:8791` → `127.0.0.1:8791`), so the exemption is gone.
+- A missing `python3` on the `/proc` path no longer returns "answered, zero listeners" — the same
+  silent downgrade in a new costume.
+
+`tests/unit/ghl-mcp-bind-determination.test.sh` binds **real sockets** for the wildcard and
+loopback cases (tool-independent), and reaches the undeterminable branch with a sanitised PATH plus
+overridable `/proc` paths — the same documented test-hook convention as `GHL_MCP_DIR` /
+`GHL_MCP_PLIST` in that file. Without a hook that fail-path is unreachable on Linux, and an
+untested fail-path is precisely what let the silent downgrade survive.
+
+### DEFECT 4 — the stamp path, written down where it cannot drift again
+
+Verified against the code: the stamp is `<skills dir>/.onboarding-version` — full word, inside the
+**skills** directory (`~/.openclaw/skills/…` on Mac, `/data/.openclaw/skills/…` on VPS), written
+by `update-skills.sh` as the last artifact of a successful run and read by `get_current_version()`.
+**No repo file named a wrong path** — the drift is in briefs and verification commands, not the
+code. `VERSION-ARCHITECTURE.md` now states the exact path per platform, names the three wrong forms
+that keep being used (`~/.openclaw/.onboarding-ver` chief among them — truncated word *and* missing
+the `skills/` segment, so it reports every box as unstamped on every roll), and distinguishes the
+two sibling files that are not the stamp.
+
+### Proof
+
+| gate / test | proves |
+| --- | --- |
+| `scripts/qc-assert-mcp-unset-verb.sh` | remove-only sites fail; 8 FATALs on the pre-fix tree |
+| `scripts/qc-assert-pin-delivery-paths.sh` (extended) | resolver ⊇ delivered path; 2 FATALs on the reverted probe resolver |
+| `tests/unit/ghl-mcp-bind-determination.test.sh` | 4 verdicts on real sockets; 3 failures on the pre-fix gate, including the exact INFO downgrade |
+
+## [v21.7.4]  -  2026-08-03  -  P0: the installer can no longer destroy a working GHL credential pairing
+
+`write_server_env()` in `scripts/ghl-mcp-autostart.sh` rewrote the GHL community MCP's
+server `.env` on every run, taking `GHL_LOCATION_ID` straight from
+`GOHIGHLEVEL_LOCATION_ID` with **no backup and no validation**. On a box where the
+configured location and the MCP token's scope disagree, that is fatal and unrecoverable.
+
+Measured live on the operator box, same token, same machine:
+
+| location id written | HTTP |
+| --- | --- |
+| the value already in `.env` | **200** |
+| the value the installer wrote over it | **403** — *"The token does not have access to this location."* |
+
+`main.js` calls `await ghlClient.testConnection()` at boot and `process.exit(1)`s on failure
+(`src/main.ts:69` + `222-225`), so a wrong location does not degrade quietly: the server goes
+down and **stays** down. Crash-only supervision then correctly refuses to restart it. Because
+this function kept no copy of what it replaced, the working `.env` had to be recovered from a
+Time Machine snapshot. Any box whose `GOHIGHLEVEL_LOCATION_ID` disagrees with its MCP token's
+scope would have been taken down by the next roll, with nothing to restore from.
+
+### The rule now
+
+A credential pairing that is **proven** to work is never replaced by one that is not.
+
+- A byte-identical rewrite is a **no-op** — no write, no backup, no churn on a converged box.
+- Before any change, `.env` is backed up **timestamped at 600**, the copy is **read back and
+  compared**, and a backup that cannot be made or verified **refuses the rewrite outright**.
+  Backups are pruned to the newest 5. "No backup" is exactly what made the incident
+  unrecoverable, so it is fatal to the write, not a warning we proceed past.
+- When the candidate location differs from the one on disk, **both** are validated with a
+  read-only `GET /locations/<id>` using the token that will actually be written, and the one
+  that works wins. A legitimate location change still rolls out (proven, so the fix is not a
+  blanket refusal).
+- An **empty** candidate never overwrites a non-empty existing value.
+- **"Cannot tell" keeps the existing value.** curl absent, network down, 5xx, `000` — an
+  unproven candidate never wins by default.
+
+The decision is made once per run and republished as the global `GHL_LOC`, so
+`write_vps_ecosystem()`'s pm2 `env:` block cannot re-introduce a rejected location one layer
+above the `.env` — including on the D6 fast-path restart, which reaches `start_service_vps()`
+without ever calling `write_server_env()`.
+
+### Proof, not assertion
+
+`tests/unit/ghl-mcp-env-credential-guard.test.sh` extracts the real function verbatim from the
+shipped script (marker-delimited, the `test-updater-traps-1-and-3.sh` pattern) and drives it
+with a stub `curl` on `PATH` — no network, and no test-only seam in production code. Nine
+assertions across seven cases: the live incident, a legitimate change, an undeterminable
+pairing, an empty candidate, backup-on-change, idempotence, and backup-impossible.
+
+Mutation-proved in both directions: it fails closed on the pre-fix script (markers absent),
+and a mutant that restores "candidate always wins" is caught with 3 failures. Wired into
+`.github/workflows/ghl-mcp-supervised-guard.yml`.
+
+## [Unreleased]  -  2026-08-03  -  CI: the role-workspace-root collapse gate now runs on every pull request
+
+The gate that stops `workspace_root` from collapsing onto `company_root` in the role-workspace
+builder was live, self-testing, and reachable only by accident. It sat as one step inside
+`workforce-build-pipeline-guard.yml`, which is `paths:`-filtered to nine pipeline scripts --
+and `23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py`, the file the collapse
+actually lives in, was not one of the nine. So it fired when a pull request happened to touch
+an unrelated resume/watchdog/closeout script, and never fired on the route that actually
+reintroduces the defect: merging a branch that forked before the 2026-08-01 fix. At the time
+of this change **328 of the 387 branches on origin still carried the collapsed line in that
+file**, any one of which would have put it straight back.
+
+### Why the collapse matters
+
+`process_company()` takes a company root (where `departments/` and `master-orchestrator/`
+live) and a workspace root (where the shared `AGENTS.md` / `TOOLS.md` / `USER.md` live, one
+level up). Collapsing the second onto the first makes
+`create_role_workspaces.py::_link_shared_files_only()` build every role symlink pointing at
+`<workspace>/zero-human-company/{USER,AGENTS,TOOLS}.md` -- a path that has never existed.
+Role folders come out with dangling links, role agents lose their shared operating context,
+and they fail silently: nothing errors, the build reports success, the box looks healthy. The
+collapse was on main from 2026-05-17 until it was fixed on 2026-08-01.
+
+### What changed
+
+- **New** `.github/workflows/role-workspace-root-collapse-guard.yml` -- the same repo-wide
+  grep, with **no `paths:` filter at all**: every pull request (any base branch), every push
+  to main, plus `workflow_dispatch`. A hand-curated path allowlist is precisely what failed
+  here and would drift again; the check is one grep over a fresh checkout, so it is cheaper
+  to run it always than to maintain a list of when to skip it. Sixteen guards in this repo
+  already trigger unconditionally. On a `pull_request` event `actions/checkout` resolves
+  `refs/pull/N/merge`, so the assertion is made against the tree main *would become*, which
+  is the property that matters for an un-rebased merge.
+- **Removed** the duplicate step from `workforce-build-pipeline-guard.yml`, replaced by a
+  comment explaining why a path-filtered copy must not be re-added there.
+- **Both-direction anti-vacuity.** Self-test A seeds a defect in a throwaway directory and
+  requires a match, so the gate can never silently degrade into an assertion that always
+  passes. Self-test B seeds *correct* code and requires **no** match, so the pattern can
+  never be broadened into a gate that only ever fails -- the exact failure mode this check
+  shipped with originally, when `set -o pipefail` plus an unguarded `grep` (which exits 1 on
+  no matches, this gate's success case) made a clean head red. Every grep whose empty result
+  means success is `|| true`-guarded or wrapped in an `if`. Both self-tests are
+  mutation-proven: blinding the pattern fails A, broadening it to `.*` fails B.
+
+No version bump. This is a CI-only change -- no file inside any skill directory is touched,
+so guard G3 does not apply, and all ten version markers continue to agree at the current
+`/version`. Precedent: `a41b9bd8` added a whole new guard workflow the same way.
+
+## [v21.7.3]  -  2026-08-03  -  GHL credential names: the "alias" claim was false, and the doc that said so is corrected
+
+`TERMINOLOGY.md` listed four env-var names as interchangeable aliases of one Agency
+Private Integration Token. Live read-only probes on 2026-08-03 disproved that, and the
+error was actively misleading: an agent that believed the alias claim would treat a
+rotation of one name as covering all four, and would treat a dead credential as a
+working fallback.
+
+### Why
+
+Three of those names — `GOHIGHLEVEL_AGENCY_PIT`, `GHL_AGENCY_PIT` and
+`GOHIGHLEVEL_CONVERTANDFLOW_AGENCY_PIT` — each hold a **different, independently live**
+agency token. They authenticate against the same agency, which is exactly why the
+mistake survived: any one of them works, so nothing visibly broke, and the four names
+looked interchangeable. They are not. Rotating one leaves the other two untouched.
+
+The fourth, `GOHIGHLEVEL_AGENCY_API_KEY`, was not an agency PIT at all. It held a legacy
+v1 JWT, and that value was **dead** — it returned `401 Invalid JWT` from both credential
+stores. Documenting a dead credential as a valid alias of a live one is the kind of drift
+that turns a five-minute failure into an hour of chasing a scope problem that does not exist.
+
+### What changed
+
+- **The alias claim is removed and replaced with the verified reality.** Three distinct
+  live agency names, listed as distinct. `GOHIGHLEVEL_AGENCY_API_KEY` is documented as a
+  dead legacy JWT that must not be reintroduced as an agency-PIT name.
+- **Choosing a canonical agency token is called out as an owner decision.** The doc
+  explicitly tells agents not to consolidate, merge, or delete the three live names on
+  their own initiative.
+- **The authoritative store is now stated.** `~/.openclaw/secrets/.env` is authoritative;
+  the `env.vars` block in `~/.openclaw/openclaw.json` holds copies, and the copies are what
+  rot — going stale after a rotation, or carrying a placeholder that silently shadows the
+  live credential.
+- **New rule, stated once and plainly:** resolve GHL credentials from `secrets/.env`;
+  validate with an authed read before trusting any name.
+- **A diagnostic distinction is recorded**, because it is the thing that makes this class
+  of defect readable: a value that is not a real token returns `401 Invalid Private
+  Integration token`, while a real token that merely lacks reach returns `403 Forbidden
+  resource` or `401 The token is not authorized for this scope`. A 403 means the token is
+  genuine and must not be "fixed" by swapping in another name.
+- **A company-id verification trap is documented.**
+  `GET /locations/search?companyId=...` returns 200 even when the companyId is wrong — the
+  token's own agency is used regardless — so it cannot detect a bad id. `GET
+  /companies/{companyId}` can: wrong id 403, right id 200 with the agency name.
+
+### Scope note
+
+This entry documents credential NAMES and their status only. No credential value appears
+in this repo, and none was printed during verification.
+
+---
+## [v21.7.2]  -  2026-08-03  -  Canonical department floor reconciled to 30: master-orchestrator registered as the 24th mandatory dept
+
+### Why
+
+`build-workforce.py`'s `generate_departments_json()` has always unconditionally
+PREPENDED the `dept-ceo` / `departments/master-orchestrator` Command Center board
+column ahead of every client's selected departments — no industry gate, no
+decline path, not derived from `selected_departments` — and
+`templates/role-library/master-orchestrator/how-to-use-this-department.md` has
+always documented it as a real client department folder. Only
+`department-naming-map.json` omitted it, so `department-floor.py`'s on-disk
+floor check never expected, counted, or gated it. Operator ruling: register it.
+
+### What changed
+
+- **`department-naming-map.json`** bumped 2.7.0 -> 2.8.0, registers
+  `mandatory.master-orchestrator` as the 24th mandatory id. The on-disk floor
+  `department-floor.py` enforces moves 28/29 -> **30** (24 mandatory + 6
+  universal-primary); `HARDCODED_MANDATORY` / `HARDCODED_UNIVERSAL_PRIMARY`
+  updated so a corrupt map still fails closed to the same 30.
+- **master-orchestrator is FLOOR-VERIFICATION-ONLY.** It is deliberately
+  excluded from the BUILD-TIME / interview-declinable canonical set:
+  `build-workforce.load_canonical_floor()` and `qc-assert-repo-consistency.
+  floor_dept_ids()` both filter it back out immediately after reading the
+  naming map, because it is never offered as an interview yes/no/later
+  decision and is provisioned outside `selected_departments` — every other
+  call site that touches it already special-cased `dept_id in ("ceo",
+  "master-orchestrator", "dept-ceo")` on that assumption. The buildable/
+  declinable floor `reconcile_canonical_floor()` / `apply_vertical_packs()`
+  actually union in stays **29** (23 mandatory + 6 universal-primary),
+  unchanged by this ruling.
+- **Fixed an inverted CI guard.** `qc-assert-repo-consistency.py`'s Issue #10
+  forbidden-stale-floor-literal scan hardcoded `"currently 29"` / `"primary =
+  29"` as FORBIDDEN — blocking the number that had been correct since v2.6.2
+  (funnels), while the genuinely stale `28` framing went uncaught. Replaced
+  the hand-typed list with `_HISTORICAL_FLOOR_STATES` + a generator that
+  derives forbidden phrasings from every retired state EXCEPT whichever
+  matches the LIVE naming-map count, so the number correct today can never be
+  forbidden today.
+- **Closed the drift hole structurally.** `check-floor-count-consistency.py`'s
+  `DOC_FLOOR_REGISTRY` extended from 4 files / 5 assertions to 17 files / 50
+  assertions (every doc/comment site that quotes a floor count); its
+  `derive_floor()` now derives BOTH the on-disk (30) and buildable (29) tiers
+  so each registered assertion checks whichever tier it actually describes.
+  `check-floor-count-drift.py` Check 3 fixed two structural blind spots
+  (proven via mutation test): it only matched the literal `NN-department`
+  pattern (this file's actual prose is `NN mandatory` / `NN
+  universal-primary` / `A + B = NN` arithmetic) and only scanned
+  `ast.Constant` string literals via `ast.walk()` (Python's `ast` module does
+  not represent `#` comments at all, so this heavily-commented file's
+  comments were structurally invisible regardless of pattern — now scanned
+  via `tokenize`). `anthology-engine/verify-anthology-engine-wiring.py`'s
+  hardcoded `!= 29` assertion replaced with a live derivation.
+- **Client-facing fix:** `INSTRUCTIONS.md`'s OPT-OUT WARNING, read verbatim to
+  owners during their interview, said "any of the 28: the 22 mandatory + the
+  6 universal-primary verticals" — corrected to the 29 actually-declinable
+  floor departments, with a note that master-orchestrator carries no decision
+  path.
+- **`scripts/qc-validate-department-docs.py` (U052)** gained the same
+  master-orchestrator exclusion `DEPARTMENTS.md`'s exact-set-equality check
+  needs (that doc documents the declinable floor) — without it, every run
+  would fail with `MISSING: master-orchestrator` (verified: it did, before
+  this fix).
+- Every stale 28/29/16 doc, comment, and hermetic-test-fixture site this
+  reconciliation found is corrected in
+  `23-ai-workforce-blueprint/CHANGELOG.md`'s matching entry (full file list);
+  `build-state-schema.json`'s `34`/`45` built/full-catalog tier numbers (also
+  already stale before this change) corrected to `36`/`46`, both
+  independently verified rather than taken on faith.
+
+### Ripple
+
+`scripts/bump-version.sh v21.7.2` rolled all 10 tracked repo version markers
+v21.7.1 -> v21.7.2 in lockstep (also rolls `06-ghl-install-pages`'s markers +
+`agent-browser-reaper.sh` / `guard-agent-browser-managed.sh`'s own version
+markers, per the script's own unconditional lockstep — unrelated to this
+skill-content change, kept in sync regardless). No client names, no secret
+values, no Anthropic model added/removed/substituted; client skills/engines
+still run only on the client's own providers.
+
 ## [v21.7.1]  -  2026-08-03  -  GHL API currency: v3 is a first-class generation, the docs match live probes, and qc-static is unbroken
 
 Ships two commits that were finished on `feat/ghl-api-currency-2026-08` and never

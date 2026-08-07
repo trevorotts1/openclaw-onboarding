@@ -6,8 +6,10 @@
 # These are the engine behaviors built into Skill 23 build-workforce.py +
 # department-floor.py:
 #
-#   R2.1  Floor is 23 mandatory + 6 universal-primary = 29, computed live; no
-#         stale 16/19/23/26 strings remain in the three scripts.
+#   R2.1  Floor is 24 mandatory + 6 universal-primary = 30 (list-canonical-
+#         departments.py's raw, on-disk count -- includes the never-declinable
+#         master-orchestrator, registered v2.8.0), computed live; no stale
+#         16/19/23/26 strings remain in the three scripts.
 #   R2.2  Capability 1 MERGE custom+floor still works (custom dept preserved).
 #   R2.3  Capability 2 semantic COMBINE/MERGE: a custom dept that semantically
 #         overlaps a canonical dept under a NON-slug name (Accounting ->
@@ -62,7 +64,7 @@ def _read_state():
     except Exception:
         return {}
 
-print("== R2.1 floor is 29 (23 + 6), computed live; no stale strings ==")
+print("== R2.1 floor is 30 (24 + 6), computed live; no stale strings ==")
 import subprocess
 out = subprocess.run(["python3", os.path.join(SCRIPTS, "list-canonical-departments.py"), "--json"],
                      capture_output=True, text=True)
@@ -70,9 +72,14 @@ d = json.loads(out.stdout)
 # v2.6.1: real-estate `listings` lost its universal_primary flag (industry-gated now)
 # so universal primaries dropped 7 -> 6 and the live floor dropped 29 -> 28.
 # v2.6.2 (2026-07-16, operator ruling): 'funnels' added as the 23rd mandatory
-# dept, raising the floor back to 29.
-check(d["floor"] == 29, f"list-canonical floor == 29 (got {d['floor']})")
-check(d["mandatory_count"] == 23, f"mandatory == 23 (got {d['mandatory_count']})")
+# dept, raising the floor back to 29. v2.8.0 (2026-08-03, operator ruling):
+# 'master-orchestrator' added as the 24th mandatory dept -- floor-verification
+# -only (see build-workforce.load_canonical_floor()'s exclusion, exercised by
+# R2.2-R2.6 below via reconcile_canonical_floor(), which still union in only
+# the 23 buildable/declinable mandatory ids) -- raising list-canonical-
+# departments.py's raw on-disk count to 30.
+check(d["floor"] == 30, f"list-canonical floor == 30 (got {d['floor']})")
+check(d["mandatory_count"] == 24, f"mandatory == 24 (got {d['mandatory_count']})")
 check(d["universal_primary_count"] == 6, f"universal-primary == 6 (got {d['universal_primary_count']})")
 
 # Stale-number scan across the three reconciliation scripts (defended strings only:

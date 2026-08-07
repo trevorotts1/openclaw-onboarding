@@ -1,5 +1,18 @@
 # Changelog — 32-command-center-setup
 
+## v12.9.52 — 2026-08-04 — qc-command-center-setup.sh's unbounded `find $HOME` no longer hangs a routine roll
+
+Two unconditional `find $HOME /data -maxdepth 4 ...` scans (checkout dir + package.json)
+ran on every QC pass. On a real, in-use Mac (`~/Library`, sync-mirror trees,
+node_modules-heavy dev folders) `maxdepth 4` alone did not bound the cost — measured
+20+ minutes PER find (40+ minutes for the pair), reading as a hang. Fixed: check the
+same known/candidate CC locations `update-skills.sh`'s `cc_resolve_existing_dir()`
+uses first (the common case never touches `find`), fall back to a depth- and
+time-bounded, heavy-dir-pruned `find` only when nothing is found at a known location.
+Also fixed a pre-existing `CC_PORT: unbound variable` crash (found while testing the
+above) — the real `lib-shared.sh` `resolve_platform_paths()` never exported `CC_PORT`;
+defaulted it to 4000 to match this script's own fallback stub.
+
 ## v12.9.46 — 2026-07-21 — phase=3b now REPORTS the pre-reclassification residue it stops failing on
 
 `vertical-derivation-guard.py` gained evidence-based grandfathering for

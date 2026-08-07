@@ -300,21 +300,48 @@ deep_merge(cfg, CANONICAL)
 _plugins_enum_ok = os.environ.get("FLEET_PLUGINS_ENUM_OK", "0") == "1"
 _plugins_json_file = os.environ.get("FLEET_PLUGINS_JSON_FILE", "")
 if _plugins_enum_ok and _plugins_json_file:
+    # UNION, NEVER WHOLESALE REPLACEMENT — fleet-roll blocker fixed 2026-08-05.
+    #
+    # This block used to keep ONLY origin=="bundled" ids and then ASSIGN that list
+    # over cfg["plugins"]["allow"], deleting every non-bundled plugin from the
+    # allowlist. Measured on a live box via `openclaw plugins list --json`:
+    #   82 plugins total — origin bundled=67, global=12, config=3
+    # so the old filter silently dropped 15 currently-installed, currently-loadable
+    # plugins on every roll. One of them is ceo-routing-doctrine (origin=="config",
+    # NOT "bundled"), the prompt-injection layer that REPLACED the retired CEO gate.
+    # Because this stamper runs EARLIER in a roll (~6440) than the plugin installer
+    # (~7281), the drop was not even repaired later in the same roll. Net effect per
+    # box: allowlist stripped -> plugin installed -> plugin not allowed -> never
+    # loads -> the router gets NEITHER the CEO gate NOR the routing doctrine, which
+    # is strictly worse than before the gate was removed.
+    #
+    # Fixed as a CLASS, not by name: special-casing "ceo-routing-doctrine" would
+    # leave the identical trap for every future path-loaded or globally-installed
+    # plugin. The allowlist is now the enumerated BUNDLED ids UNION the ids of all
+    # currently-present non-bundled plugins. A roll therefore still ADDS newly
+    # bundled plugins and still PRUNES genuinely-vanished ones (anything absent from
+    # the live enumeration is absent from the union), but never removes a plugin
+    # that is installed and loadable right now.
     try:
         _plugins_data = json.loads(Path(_plugins_json_file).read_text())
-        _bundled_ids = sorted({
-            p["id"] for p in _plugins_data.get("plugins", [])
-            if isinstance(p, dict)
-            and p.get("origin") == "bundled"
-            and isinstance(p.get("id"), str)
-            and p["id"]
-        })
+        _all_entries = [
+            p for p in _plugins_data.get("plugins", [])
+            if isinstance(p, dict) and isinstance(p.get("id"), str) and p["id"]
+        ]
+        _bundled_only = {p["id"] for p in _all_entries if p.get("origin") == "bundled"}
+        _non_bundled = {p["id"] for p in _all_entries if p.get("origin") != "bundled"}
+        _bundled_ids = sorted(_bundled_only | _non_bundled)
     except Exception as _e:
         print(f"WARNING: [apply-fleet-standards] failed to parse 'openclaw plugins list --json' output ({_e}) — SKIPPING plugins.allow this run (fail-open; existing config left untouched)", file=sys.stderr)
         _bundled_ids = []
-    if _bundled_ids:
+        _bundled_only = set()
+        _non_bundled = set()
+    # FAIL-OPEN posture UNCHANGED: an empty enumeration still writes nothing. The
+    # guard is keyed on the BUNDLED count specifically — a run that somehow saw only
+    # non-bundled plugins is not a trustworthy enumeration either.
+    if _bundled_ids and _bundled_only:
         cfg.setdefault("plugins", {})["allow"] = _bundled_ids
-        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-bundled plugin id(s) — non-bundled/third-party plugins will no longer auto-load")
+        print(f"[apply-fleet-standards] plugins.allow set to {len(_bundled_ids)} currently-present plugin id(s) = {len(_bundled_only)} bundled + {len(_non_bundled)} non-bundled (path/global-loaded plugins are PRESERVED, not dropped); a plugin absent from the live enumeration is pruned")
     else:
         print("WARNING: [apply-fleet-standards] enumerated ZERO bundled plugin ids from 'openclaw plugins list --json' — SKIPPING plugins.allow this run (fail-open; existing config left untouched; an empty allowlist would disable every plugin)", file=sys.stderr)
 else:
@@ -368,7 +395,7 @@ if "agents" in cfg and "list" in cfg["agents"]:
 # KEEP IN SYNC with build-workforce.py (CEO_TOOL_*) and apply-routing-fix.sh L5
 # and hooks/lib-ceo-tool-gate.sh. test-ceo-tool-gate.sh asserts they match.
 _CEO_TOOL_DENY = [
-        "ghl-community-mcp__*", "ghl-mcp__*",
+    "ghl-community-mcp__*", "ghl-mcp__*",
 ]
 _CEO_TOOL_ALLOW = [
     "read", "web_fetch", "web_search",
@@ -376,10 +403,16 @@ _CEO_TOOL_ALLOW = [
     "sessions_send", "sessions_list", "sessions_history",
     # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
     # the CEO routes by CALLING it (structured tool call, no shell) — that presence
-    # is what clears verify-routing.sh G7. exec is RETAINED (per G1's decision in
-    # hooks/lib-ceo-tool-gate.sh), NOT removed: it stays ONLY as the exec channel for
-    # the two anchored helpers (route-presentation.sh + mc-route.sh); the intent-gate
-    # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+    # is what clears verify-routing.sh G7. exec is RETAINED, NOT removed: it is the
+    # exec channel for the two anchored helpers (route-presentation.sh + mc-route.sh).
+    #
+    # ⚠ CORRECTION 2026-08-05: an earlier version of this comment claimed "the
+    # intent-gate default-denies every other exec". THAT IS NO LONGER TRUE and must
+    # not be relied on. The PreToolUse intent-gate (hooks/ceo-intent-gate.sh) was
+    # DELETED from the repo and un-wired fleet-wide with the rest of the CEO gate,
+    # so there is currently NO command-level exec restriction — only the
+    # {security,ask} config-layer exec policy, which cannot allowlist by command.
+    # KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "mc-route__route_task",
     "exec",
     # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow is
@@ -391,6 +424,24 @@ _CEO_TOOL_ALLOW = [
     # Additive — G7 still passes. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
     "memory_search", "memory_get",
     "cron", "gateway", "nodes",
+    # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ─────────────────
+    # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+    # exactly as effectively as one named in tools.deny. The CEO gate that justified
+    # omitting them is GONE (deny set retired, PreToolUse intent-gate deleted, hooks
+    # un-wired) — so the omission is now a vestigial gate that still produces the
+    # original failure.
+    #
+    # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+    # compaction. With no write tool, the agent cannot comply and cannot stop trying —
+    # it re-reads an empty file and retries, looping for up to 163 minutes per turn
+    # and swallowing the owner's Telegram messages. Two weeks of outage. Removing the
+    # deny alone did NOT fix it; the allowlist omission reproduced it verbatim.
+    #
+    # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+    # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+    # prompt-injection plugin), NEVER a tool removal. Taking write away does not make
+    # the CEO route — it makes it hang.
+    "write", "edit",
 ]
 _CEO_MCP_DENY = {
     "ghl-community-mcp": {"deny": ["*"]},
@@ -399,8 +450,11 @@ _CEO_MCP_DENY = {
 
 # Owner-consent carve-out guard: if an owner-consent grant is ACTIVE, the gate
 # is intentionally lifted — re-asserting it here would silently revoke the
-# owner's grant. Skip the re-gate while consent is present (the same single
-# shared sidecar read by src/lib/consent.ts and hooks/lib-ceo-consent.sh).
+# owner's grant. Skip the re-gate while consent is present. The sidecar is the
+# same one src/lib/consent.ts reads and scripts/grant-ceo-consent.sh writes.
+# (hooks/lib-ceo-consent.sh used to be the third reader; it was deleted
+# 2026-08-05 with the intent-gate removal, and grant-ceo-consent.sh now inlines
+# the same path resolver as a fallback.)
 import os as _os
 def _ceo_consent_active():
     cands = []
@@ -2316,6 +2370,60 @@ All agents report back to the owner according to these rules:
 
 OREOF
   echo "[apply-fleet-standards] OWNER_REPORTING_V1 injected into $AGENTS_FILE"
+fi
+
+if [ "$OC_ROOT" = "/data/.openclaw" ]; then
+  chown "$OC_USER:$OC_USER" "$AGENTS_FILE" 2>/dev/null || true
+fi
+
+# ─── 5e. Inject EXEC_CHAIN_DISCIPLINE_V1 into workspace/AGENTS.md ────────────
+# THE LOOP FIX (2026-08-05). Root cause of the 163-minute turns: the agent batched
+# 30-40 verification probes into ONE `&&`-joined command. A probe that legitimately
+# found nothing returned exit 1, `&&` aborted the chain, and the runtime surfaced a
+# single atomic "Exec failed" with no indication of WHICH link failed. Unable to
+# isolate it, the agent's only recovery was to re-run the whole chain — identical
+# command, identical result, 425 times. A missing file was the AUDIT'S FINDING and
+# it was being reported as a TOOL FAILURE.
+#
+# This is the same defect class as the write-deny loop: an exit code misread as a
+# fact. It belongs in AGENTS.md rather than universal-sops/ because the gateway
+# injects AGENTS.md into the system prompt every turn, whereas a universal SOP is
+# only read when an agent is already told to go read it — and an agent mid-loop
+# never gets told anything.
+# Idempotent: guarded by <!-- EXEC_CHAIN_DISCIPLINE_V1 -->.
+EXEC_CHAIN_MARKER="<!-- EXEC_CHAIN_DISCIPLINE_V1 -->"
+
+if grep -qF "$EXEC_CHAIN_MARKER" "$AGENTS_FILE"; then
+  echo "[apply-fleet-standards] EXEC_CHAIN_DISCIPLINE_V1 already present in $AGENTS_FILE — no-op"
+else
+  cat >> "$AGENTS_FILE" <<'ECDEOF'
+
+<!-- EXEC_CHAIN_DISCIPLINE_V1 -->
+## Exec Chain Discipline — a negative result is DATA, not a failure (stamped by apply-fleet-standards.sh — do NOT edit manually)
+
+> Marker: `EXEC_CHAIN_DISCIPLINE_V1`. Idempotent — re-stamped on every install/update.
+
+This is the rule that stops verification loops. Real incident (2026-08-05): an agent ran one 40-probe chain **425 times**. A single `ls` hit a genuinely missing file, returned exit 1, `&&` aborted the chain, and the runtime reported one atomic `Exec failed` with no indication of which link failed — so the only recovery left was to re-run the whole chain. The absence the agent was sent to discover is what broke the tool it was discovering with.
+
+1. **Never join independent probes with `&&`.** `&&` means "abort if this is non-zero", which is wrong for a probe whose job is to report either outcome. Use `;` between independent probes, or send them as separate calls.
+2. **Turn absence into OUTPUT, never into exit status.** The highest-value habit on this page:
+   - `ls -la "$P" 2>&1 || echo "ABSENT: $P"`
+   - `grep -n "$PAT" "$F" || echo "NO MATCH: $PAT"`
+   A probe written this way reports its own negative, so the chain cannot fail.
+3. **Read exit codes correctly.** `grep`/`ls`/`test` exit 1 = NOT FOUND — a RESULT, not an error. `grep` exit >=2 = a REAL error (file missing or unreadable). Exit 127 = the shell could not resolve the command or its interpreter — a fact about your command line, never a fact about the system you are probing.
+4. **Never re-run a compound command that "failed."** Isolate which link failed first. Re-running an identical chain IS the loop: same input, same output, duplicate-call guard trips, turn burned.
+5. **Cap a verification chain at 5 probes.** Small enough that each output line maps to its probe by eye, so an unexpected result is attributable without a re-run.
+
+Worked example — the same audit, written so it cannot false-fail:
+
+```bash
+echo "=== CHECK 1: route-presentation.sh ==="; ls -la "$P1" 2>&1 || echo "ABSENT: $P1"
+echo "=== CHECK 2: onboarding-state.sh ===";   ls -la "$P2" 2>&1 || echo "ABSENT: $P2"
+```
+
+Every probe reports. Nothing aborts. `Exec failed` never fires, so there is nothing to retry.
+ECDEOF
+  echo "[apply-fleet-standards] EXEC_CHAIN_DISCIPLINE_V1 injected into $AGENTS_FILE"
 fi
 
 if [ "$OC_ROOT" = "/data/.openclaw" ]; then

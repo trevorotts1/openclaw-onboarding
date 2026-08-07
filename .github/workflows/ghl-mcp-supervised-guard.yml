@@ -198,6 +198,7 @@ jobs:
             scripts/ghl-mcp-assert-runtime.sh \
             scripts/qc-assert-ghl-mcp-supervised.sh \
             scripts/qc-assert-pin-delivery-paths.sh \
+            scripts/qc-assert-mcp-unset-verb.sh \
             platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh \
             install.sh \
             update-skills.sh; do
@@ -260,6 +261,40 @@ jobs:
         run: |
           chmod +x tests/unit/ghl-mcp-bind-guard.test.sh
           bash tests/unit/ghl-mcp-bind-guard.test.sh
+      # v21.7.4 / B2. `openclaw mcp remove` IS NOT A COMMAND on OpenClaw
+      # 2026.7.1-2 — it exits 1 with "Too many arguments for this command."
+      # The correct call is `openclaw mcp unset <name>`. The repo carried 8
+      # occurrences of the wrong verb and 0 of the right one, every executable
+      # site swallowed by `|| true`, so Tier 2 was never de-registered on any
+      # box and runtime check 10 could never pass anywhere.
+      - name: No MCP de-registration may use 'mcp remove' alone (the verb is 'unset')
+        run: |
+          chmod +x scripts/qc-assert-mcp-unset-verb.sh
+          bash scripts/qc-assert-mcp-unset-verb.sh
+
+      # v21.7.3 / DEFECT 3. Check 13 used to degrade to INFO when lsof was
+      # absent (every slim container), conflating "the port is free" with "I
+      # cannot tell" — and it masked a real 0.0.0.0 exposure confirmed via
+      # /proc/net/tcp. This binds REAL sockets, so the verdicts are proven, not
+      # fixture-matched.
+      - name: Run GHL MCP bind-determination test (undeterminable is FATAL, never INFO)
+        run: |
+          chmod +x tests/unit/ghl-mcp-bind-determination.test.sh
+          bash tests/unit/ghl-mcp-bind-determination.test.sh
+
+      # v21.7.2 / B1 (P0). The installer used to overwrite the server .env's
+      # GHL_LOCATION_ID with no backup and no validation. Proven live: same
+      # token, on-disk location -> HTTP 200, installer-written location -> HTTP
+      # 403; main.js testConnection()s at boot and exit(1)s, so the server went
+      # down and stayed down, and the working file had to come back from a Time
+      # Machine snapshot. This is a MUTATION PROOF driven through the REAL
+      # function with a stub curl — a grep for the word "backup" would go green
+      # on a fix that still clobbers.
+      - name: Run GHL MCP .env credential-clobber guard test (working pairing must survive)
+        run: |
+          chmod +x tests/unit/ghl-mcp-env-credential-guard.test.sh
+          bash tests/unit/ghl-mcp-env-credential-guard.test.sh
+
       # v21.6.0 / R1 + R9. Runs against a SIMULATED BOX LAYOUT, never the repo
       # layout — the repo layout is where the delivery bug was invisible.
       - name: Run pin-delivery + fail-closed unit test (BOX layout, not repo layout)

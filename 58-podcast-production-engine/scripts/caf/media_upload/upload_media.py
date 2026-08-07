@@ -79,6 +79,10 @@ FOLDER_NAMES = (PARENT_FOLDER, IMAGES_FOLDER, EPISODES_FOLDER)
 # resolve at runtime without importing a sibling slice, and kept in the same
 # order so behavior matches the shared resolver once it lands.
 PIT_ALIASES: Tuple[str, ...] = (
+    # The Podcast Engine's OWN Location PIT (pit- prefix, engine tenant
+    # CjxATjhv9Gt21qSqURIt). Checked FIRST so the engine's tenant always wins
+    # over any generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+    "PODCAST_ENGINE_GHL_PIT",
     "GOHIGHLEVEL_API_KEY",
     "GHL_API_KEY",
     "GHL_PIT",
@@ -98,6 +102,9 @@ PIT_ALIASES: Tuple[str, ...] = (
 )
 
 LOCATION_ALIASES: Tuple[str, ...] = (
+    # The Podcast Engine's OWN GHL subaccount location id (engine tenant).
+    # Checked FIRST so the engine tenant always wins over generic ids.
+    "PODCAST_ENGINE_GHL_LOCATION_ID",
     "GHL_LOCATION_ID",
     "GOHIGHLEVEL_LOCATION_ID",
     "LOCATION_ID",
@@ -658,6 +665,28 @@ def _pick_parent(folders: Dict[str, Any], preferred: str) -> Optional[str]:
     return folders.get(preferred) or folders.get(PARENT_FOLDER)
 
 
+def _default_required(job: Dict[str, Any]) -> Tuple[str, ...]:
+    """Asset keys the job's preset requires for a publishing run.
+
+    A publishing preset (podcast_state.BUILTIN_PRESET_FLAGS: store_media True)
+    always requires cover + mp3; the teaser is required only when the preset's
+    book_teaser flag is on (Interview mode is the only mode that carries it).
+    Document-only presets (season_strategy) never call store_media. Mirrors the
+    state writer's preset flags so this module stays hermetic (no import of
+    podcast_state.py) while the plan gate stays preset/mode aware.
+
+    The job may carry an explicit `preset`; when it does, the teaser requirement
+    is decided by that preset's book_teaser flag rather than the mode alone.
+    """
+    required = ["cover", "mp3"]
+    preset = job.get("preset")
+    if preset == "interview":
+        required.append("teaser")
+    elif preset is None and job.get("mode") == INTERVIEW_MODE:
+        required.append("teaser")
+    return tuple(required)
+
+
 def store_media(
     job: Dict[str, Any],
     cred: Credential,
@@ -665,14 +694,32 @@ def store_media(
     *,
     state: Optional[Dict[str, Any]] = None,
     transport: Transport = http_request,
+    required: Optional[Tuple[str, ...]] = None,
 ) -> Dict[str, Any]:
     """Upload cover + MP3 (+ teaser in Interview mode) and verify every URL.
 
     Raises on any terminal upload or reachability failure so the run stops
     BEFORE Podbean; a half-uploaded episode is never partially published.
+
+    `required` is the set of asset keys that MUST be present in the upload plan
+    for this run; it defaults to the job's preset-derived set (`_default_required`).
+    A required asset that the upstream steps never produced is a fail-loud
+    MediaError, never an exit 0 with an empty asset map.
     """
     if not cred.present:
         raise CredentialError("Location PIT is NOT SET; cannot upload media.")
+    if required is None:
+        required = _default_required(job)
+    # An explicit empty requirement set would bypass the plan gate and let the
+    # run exit 0 with an empty asset map -- the exact fail-open this unit closes.
+    # Treat it as a defect: the caller must either omit --required (preset
+    # default applies) or name at least one asset key.
+    if not required:
+        raise MediaError(
+            "store_media refuses to run: the required asset set is empty. "
+            "Omit --required to use the preset-derived default, or name at "
+            "least one asset key ('cover', 'mp3', 'teaser')."
+        )
 
     mode = job.get("mode", "")
     client = job.get("client_name", "")
@@ -729,6 +776,19 @@ def store_media(
                 "teaser_path supplied but mode is not Interview; teaser skipped."
             )
 
+    # Fail-loud plan gate (PRD Step 14 / master-plan 1.5): a required asset that
+    # the upstream steps did not produce is a hard refusal, never an exit 0 with
+    # an empty asset map. A publishing preset's store_media gate requires cover
+    # and mp3; Interview mode additionally requires the teaser when the preset's
+    # book_teaser flag is on.
+    plan_keys = {key for (key, *_rest) in plan}
+    missing_required = [key for key in required if key not in plan_keys]
+    if missing_required:
+        raise MediaError(
+            "store_media refuses to run: cover and/or mp3 missing from the job "
+            "— upstream steps did not produce assets"
+        )
+
     content_types = {
         "cover": "image/jpeg",
         "mp3": "audio/mpeg",
@@ -775,6 +835,25 @@ def store_media(
 # --------------------------------------------------------------------------- #
 
 def _cmd_store(args: argparse.Namespace) -> int:
+    # Fail-fast degenerate --required: a present flag that parses to an EMPTY
+    # set (e.g. "--required ," or "--required  , ") is truthy but would be
+    # treated by store_media as an explicit requirement set, bypassing the plan
+    # gate and letting the run exit 0 with an empty asset map. Reject it as a
+    # usage error BEFORE touching credentials or the job file.
+    required: Optional[Tuple[str, ...]] = None
+    if args.required:
+        required = tuple(
+            part.strip() for part in args.required.split(",") if part.strip()
+        )
+        if not required:
+            print(json.dumps({
+                "error": "usage",
+                "detail": "--required must name at least one asset key "
+                          "('cover', 'mp3', 'teaser'); got an empty set. "
+                          "Omit --required to use the preset-derived default.",
+            }))
+            return 3
+
     with open(args.job, "r", encoding="utf-8") as handle:
         job = json.load(handle)
     state = None
@@ -789,7 +868,7 @@ def _cmd_store(args: argparse.Namespace) -> int:
         payload_location_id=job.get("location_id")
     )
     try:
-        result = store_media(job, cred, location_id, state=state)
+        result = store_media(job, cred, location_id, state=state, required=required)
     except RateLimited as exc:
         print(json.dumps({"error": "rate_limited", "retry_after": exc.retry_after}))
         return 5
@@ -799,6 +878,9 @@ def _cmd_store(args: argparse.Namespace) -> int:
     except CredentialError as exc:
         print(json.dumps({"error": "credential", "detail": str(exc)}))
         return 2
+    except MediaError as exc:
+        print(json.dumps({"error": "media", "detail": str(exc)}))
+        return 1
     print(redact(json.dumps(result, indent=2), cred.value))
     return 0
 
@@ -957,6 +1039,14 @@ def build_parser() -> argparse.ArgumentParser:
     store = sub.add_parser("store", help="Upload and verify episode media.")
     store.add_argument("--job", required=True, help="Path to the job JSON file.")
     store.add_argument("--state", help="Path to the per-client ghl-state.json.")
+    store.add_argument(
+        "--required",
+        default=None,
+        metavar="cover,mp3[,teaser]",
+        help="Comma-separated asset keys the run MUST produce (default: derived "
+             "from the job's preset flags). Missing any required asset is a "
+             "fail-loud refusal, never an empty asset map.",
+    )
     store.set_defaults(func=_cmd_store)
 
     verify = sub.add_parser("verify", help="HEAD-verify one public URL.")
@@ -983,6 +1073,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     except RateLimited as exc:
         print(json.dumps({"error": "rate_limited", "retry_after": exc.retry_after}))
         return 5
+    except MediaError as exc:
+        print(json.dumps({"error": "media", "detail": str(exc)}))
+        return 1
 
 
 if __name__ == "__main__":

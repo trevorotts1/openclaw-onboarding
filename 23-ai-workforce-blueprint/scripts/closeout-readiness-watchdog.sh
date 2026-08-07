@@ -109,7 +109,29 @@ ZHC_STUCK_FLAG_MISSING_HOURS="${ZHC_STUCK_FLAG_MISSING_HOURS:-6}"
 # CO-MINGLING GUARD (v12.4.0): operator escalation destination is OPT-IN and
 # CONFIGURABLE. NO hardcoded personal chat. Empty => the Telegram escalation
 # below is SKIPPED (the state blocker is still written; Rescue Rangers still fires).
-OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-}}"
+#
+# UNIFIED RESOLUTION (circular-alerting-dependency fix): this used to be a PURE
+# process-environment read with NO config-file/CLI resolution at all — dispatched
+# by `openclaw cron` as a child of the running gateway, it only ever saw the
+# environment the gateway had at ITS OWN start, so an `openclaw config set` was
+# invisible here until the gateway restarted (the CLI's own message: "Restart
+# the gateway to apply"). It also never checked OPERATOR_HELP_CHAT_ID, the
+# back-compat key scripts/configure-operator-telegram.sh writes. Both defects
+# are fixed by routing through the one shared resolver every other operator-
+# alerting caller uses, so there is a single answer to "where does an operator
+# alert go" — see shared-utils/operator-chat-id.sh for the full writeup
+# (including how it now survives a dead gateway, the exact failure this
+# watchdog exists to report).
+_OC_OPERATOR_CHAT_RESOLVER="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)/../../shared-utils/operator-chat-id.sh"
+if [[ -f "$_OC_OPERATOR_CHAT_RESOLVER" ]]; then
+  # shellcheck source=/dev/null
+  source "$_OC_OPERATOR_CHAT_RESOLVER" 2>/dev/null || true
+  OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_CHAT_ID:-}"
+else
+  # Fallback: the pre-fix inline chain (now also covering OPERATOR_HELP_CHAT_ID),
+  # only reached if the shared resolver file is somehow absent from this checkout.
+  OPERATOR_TELEGRAM_CHAT_ID="${OPERATOR_ESCALATION_CHAT_ID:-${OPERATOR_TELEGRAM_CHAT_ID:-${OPERATOR_HELP_CHAT_ID:-}}}"
+fi
 RESCUE_RANGERS_WEBHOOK_URL="${RESCUE_RANGERS_WEBHOOK_URL:-https://main.blackceoautomations.com/webhook/rescue-rangers}"
 
 # Flag: --from-nudge signals the nudge cron invoked us after its final pass

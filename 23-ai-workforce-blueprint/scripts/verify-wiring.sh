@@ -1,5 +1,18 @@
 #!/usr/bin/env bash
-# verify-wiring.sh — v1.0.6 (WIRING GATE: materialized + registered[+runtime-dir] + reachable + connected)
+# verify-wiring.sh — v1.0.7 (WIRING GATE: materialized + registered[+runtime-dir] + reachable + connected)
+# v1.0.7  2026-08-03  fix(stub-marker false positive + fail-open hole): the MATERIALIZED
+#                     check tested the bare substring "[PENDING", which is not a stub
+#                     signature — it is a substring of AUTHORED PROSE. Nine canonical
+#                     role-library templates ship that prose (the qc-specialist auto-fail
+#                     battery line "`[PENDING]` markers in live content", the presentations
+#                     slide-copy failure mode, the graphics pricing-gap action), so
+#                     fully-instantiated 12-71 KB how-to.md files were failed as unfilled
+#                     stubs and the gate blocked completed builds. It ALSO missed a real
+#                     stub: a how-to.md carrying only the "how-to.md (stub)" title has no
+#                     "[PENDING" at all and passed. Now tests STUB_MARKERS — the two
+#                     signatures the stub writers emit — which is the same predicate
+#                     build-workforce.py:6541 uses for PENDING-SOPS.md. Both directions
+#                     are proven in test-wiring-gate-role-dir-walk.sh section E.
 # v1.0.6  2026-08-03  fix(two unpassable assertions): (1) MATERIALIZED counted every
 #                     department subdirectory as a role, including the runtime dirs our
 #                     OWN builder creates for EVERY department — memory/ and
@@ -64,7 +77,7 @@
 #   A department is NOT done until ALL of the following are true for every
 #   materialized role inside it:
 #     (a) MATERIALIZED  — the role folder exists with a real how-to.md
-#                          (>= 3KB, no [PENDING] marker, library-filled flag set)
+#                          (>= 3KB, no unfilled-stub marker, library-filled flag set)
 #     (b) REGISTERED    — the department agent is present in openclaw.json
 #                          agents.list AND its workspace path resolves on disk
 #                          AND its RUNTIME agent dir $OC_ROOT/agents/dept-<slug>/
@@ -345,8 +358,41 @@ echo ""
 
 # ---- Constants ---------------------------------------------------------------
 HOW_TO_MIN_BYTES=3072        # 3 KB minimum for a non-stub how-to.md
-PENDING_MARKER="[PENDING"    # substring that signals an unfilled stub
 DIRECTOR_SLUGS=("director" "head" "lead" "architect" "chief")
+
+# ---- Unfilled-stub signatures (v1.0.7) ---------------------------------------
+# WHY THIS CHANGED: the old marker was the bare substring "[PENDING", which is not a
+# stub signature at all — it is a substring of AUTHORED PROSE. Canonical role-library
+# templates legitimately discuss PENDING markers as subject matter:
+#   * qc-specialist templates ship the auto-fail battery line
+#     "... missing required fields, broken integrations, `[PENDING]` markers in live
+#     content, unresolved errors in outputs."
+#   * presentations templates ship "has [PENDING] placeholders in more than 10% of
+#     slides" and "Document the gap in PRICING.md as a `[PENDING]` entry".
+# Nine shipped templates carry that prose, so fully-instantiated 12–71 KB how-to.md
+# files were failed as "stubs" and the wiring gate blocked completed builds.
+#
+# The stub WRITERS in this repo emit exactly two signatures; every real unfilled stub
+# carries at least one of them:
+#
+#   "FILL FROM LIBRARY" — the dash-free tail shared by all three PENDING headers:
+#       build-workforce.py:5637        "[PENDING - FILL FROM LIBRARY]"      (hyphen)
+#       create_role_workspaces.py:259  "[PENDING — FILL FROM LIBRARY]"      (em dash)
+#       add-role.sh:198,377            "[PENDING — FILL FROM LIBRARY]"      (em dash)
+#       build-workforce.py:2801        "[PENDING - OWNER-REQUESTED CUSTOM ROLE
+#                                       - FILL FROM LIBRARY]"       (owner-requested)
+#     Matching the tail catches all three WITHOUT enumerating dash variants — which is
+#     what a dash-specific patch misses on the OWNER-REQUESTED form.
+#   "how-to.md (stub)" — shared-utils/create-role-workspaces.py:145,
+#       23-ai-workforce-blueprint/scripts/create_role_workspaces.py:259,
+#       add-role.sh:198,377
+#
+# This is the SAME predicate build-workforce.py:6541 already uses to build
+# PENDING-SOPS.md, so the wiring gate and the pending manifest now agree on what a
+# stub is. NO WEAKENING: every stub form this repo can write still FAILS below; only
+# authored prose stops false-failing. Matched with grep -F (literal), so the
+# unbalanced-bracket class of bug cannot return.
+STUB_MARKERS=("FILL FROM LIBRARY" "how-to.md (stub)")
 
 # ---- NON-ROLE department subdirectories (v1.0.6) ------------------------------
 # A department directory contains RUNTIME and ARTIFACT subdirectories alongside
@@ -375,7 +421,7 @@ DIRECTOR_SLUGS=("director" "head" "lead" "architect" "chief")
 # passing wiring gate may mark a department (or the build) done. Counting a
 # runtime directory as an unmaterialized role is a false FAILURE, and a gate that
 # cannot pass protects nothing. Real role folders are unaffected: a genuine role
-# whose how-to.md is missing, thin, or [PENDING] still FAILS exactly as before.
+# whose how-to.md is missing, thin, or stub-marked still FAILS exactly as before.
 #
 # The list is an EXACT (case-insensitive) basename match, so real roster roles
 # whose folder name merely CONTAINS one of these words are untouched — e.g.
@@ -498,7 +544,7 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
   # --------------------------------------------------------------------------
   # (a) MATERIALIZATION CHECK
   # Every role folder under the dept must have a real how-to.md.
-  # "Real" = exists + >= HOW_TO_MIN_BYTES + no [PENDING] marker.
+  # "Real" = exists + >= HOW_TO_MIN_BYTES + no unfilled-stub marker (STUB_MARKERS).
   # --------------------------------------------------------------------------
   MAT_PASS=1
   MAT_GAPS=()
@@ -556,13 +602,18 @@ for DEPT_SLUG in "${DEPTS_TO_CHECK[@]}"; do
         FAIL_MATERIALIZED+=("$DEPT_SLUG/$ROLE_SLUG:stub-${FILE_SIZE}B")
         continue
       fi
-      # v1.0.6 fix: PENDING_MARKER is the LITERAL string "[PENDING". As a basic
-      # regex "[PENDING" is an UNBALANCED bracket expression, so `grep -q` errored
-      # (rc=2) instead of matching, the `if` read that as false, and this assertion
-      # NEVER fired — a fail-OPEN hole that let any >=3KB [PENDING - FILL FROM
-      # LIBRARY] stub pass materialization. -F makes it a literal-string match.
-      if grep -qF -- "$PENDING_MARKER" "$HOW_TO" 2>/dev/null; then
-        echo "  [MATERIALIZED] FAIL: $ROLE_SLUG — how-to.md contains $PENDING_MARKER placeholder" >&2
+      # v1.0.6 fix (kept): match with grep -F. As a basic regex a leading "[" opens an
+      # UNBALANCED bracket expression, so `grep -q` errored (rc=2) instead of matching,
+      # the `if` read that as false, and this assertion NEVER fired — a fail-OPEN hole.
+      # -F makes every marker a literal-string match.
+      # v1.0.7 fix: test the REAL stub signatures (STUB_MARKERS) instead of the bare
+      # "[PENDING" substring, which also matched authored prose. See STUB_MARKERS above.
+      _STUB_HIT=""
+      for _SM in "${STUB_MARKERS[@]}"; do
+        if grep -qF -- "$_SM" "$HOW_TO" 2>/dev/null; then _STUB_HIT="$_SM"; break; fi
+      done
+      if [[ -n "$_STUB_HIT" ]]; then
+        echo "  [MATERIALIZED] FAIL: $ROLE_SLUG — how-to.md carries the unfilled-stub marker \"$_STUB_HIT\"" >&2
         MAT_PASS=0
         MAT_GAPS+=("$ROLE_SLUG:pending-placeholder")
         FAIL_MATERIALIZED+=("$DEPT_SLUG/$ROLE_SLUG:pending-placeholder")

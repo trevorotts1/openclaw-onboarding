@@ -16,7 +16,7 @@ triggers:
   - "create my AI company structure"
   - "set up my departments"
   - "hire my AI team"
-version: 21.7.1
+version: 21.7.38
 ---
 
 ## MANDATORY - Teach Yourself Protocol (TYP)
@@ -65,7 +65,7 @@ This skill serves new entrepreneurs and business owners who have never successfu
 This is the SINGLE skill that builds a client's entire AI company. It replaces what used to be three separate skills (Skills 23, 33, and 34) with one unified flow:
 
 1. **Ingests existing client context first** (Phase 0.5: `scripts/context-ingest.py` reads all 6 core workspace files + prior answers + Phase 0 research → `interview-context-map.json`), then **interviews the client** with dynamic, plain-English questions (3-7 per department, skipping known facts, deepening partial ones, asking fresh only for unknowns)
-2. **Creates departments** based on interview answers, on top of a CANONICAL FLOOR. The canonical floor (run `scripts/list-canonical-departments.py` to see the current list) of mandatory departments (from department-naming-map.json) is built for every company unless the client explicitly declined one in build-state (canonicalReconciliation.decisions), UNION any client custom departments. reconcile_canonical_floor() in build-workforce.py enforces this in code (standard-unless-declined) and writes an auditable canonicalReconciliation record. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner with the client's industry context. The reconciliation ENGINE (Phase 5.5) then: COMBINES a custom dept that semantically overlaps a canonical dept under a non-slug name into ONE department on an owner `merge` decision (apply_semantic_merges, never a duplicate); honors symmetric opt-in/opt-out for the mandatory floor AND the 6 universal-primary verticals (naming-map v2.6.1: listings reclassified to real-estate-only, so 6 not 7; floor = 28) AND custom depts (a `no` skips it); materializes the per-dept extra roles the owner asked for as a build decision (materialize_custom_roles, not the post-build add-role path); and captures per-dept owner procedures (capture_custom_sops) respecting the canonical/custom SOP boundary gate (canonical = overlay; custom = authoring source).
+2. **Creates departments** based on interview answers, on top of a CANONICAL FLOOR. The canonical floor (run `scripts/list-canonical-departments.py` to see the current list) of mandatory departments (from department-naming-map.json) is built for every company unless the client explicitly declined one in build-state (canonicalReconciliation.decisions), UNION any client custom departments. reconcile_canonical_floor() in build-workforce.py enforces this in code (standard-unless-declined) and writes an auditable canonicalReconciliation record. Client-named canonical depts keep their real description; the rest inherit the naming-map one-liner with the client's industry context. The reconciliation ENGINE (Phase 5.5) then: COMBINES a custom dept that semantically overlaps a canonical dept under a non-slug name into ONE department on an owner `merge` decision (apply_semantic_merges, never a duplicate); honors symmetric opt-in/opt-out for the mandatory floor AND the 6 universal-primary verticals (naming-map v2.6.1: listings reclassified to real-estate-only, so 6 not 7; declinable floor = 29 [23 mandatory + 6 universal-primary]; department-floor.py's on-disk floor is 30 — it additionally counts the never-declinable Master Orchestrator, v2.8.0) AND custom depts (a `no` skips it); materializes the per-dept extra roles the owner asked for as a build decision (materialize_custom_roles, not the post-build add-role path); and captures per-dept owner procedures (capture_custom_sops) respecting the canonical/custom SOP boundary gate (canonical = overlay; custom = authoring source).
 3. **Hires department heads** as permanent agents with full workspaces and core files
 4. **Determines specialists** - the AI silently decides which roles are full-time team members (permanent agents) vs on-call specialists (spawned when needed). The client never hears these technical terms.
 5. **Assigns coaching personas** using the Act As If Protocol and 5-layer alignment check
@@ -141,12 +141,12 @@ The install agent shows the owner a plain-English prompt asking which model to u
 When this skill triggers, it ALWAYS presents three options. Never skip this. Never auto-select.
 
 **Option A - Full Interview (recommended)**
-The AI interviews you about your business. Asks 3-7 questions per department based on complexity and what it already knows. Builds everything from your answers. Most personalized.
+The AI interviews you about your business. Asks 3-7 questions per department based on complexity and what it already knows. Builds everything from your answers. Most personalized. **Standard-first framing:** on a `buildType == "standard-first"` box the company's standard department foundation is ALREADY built before the interview begins (the operator-triggered prebuild from the canonical library), so the full interview REVIEWS and TAILORS the built set - walk each prebuilt department and KEEP, TUNE, or REMOVE it - instead of building from scratch. At the end, the build applies your edits.
 
 **Option B - Quick Setup (fastest)**
 **CONSENT GATE:** Option B requires EXPLICIT, in-conversation owner consent in the CURRENT session. No autonomous path, cron, nudge response, or prior authorization unlocks it. Owner must be present and actively choosing this path right now. If not, mark INTERVIEW_PENDING and stop - never fabricate.
 
-No interview. The AI reads what it already knows from your workspace files plus industry best practices. Proposes a structure. You approve or adjust. Then it builds.
+No interview. The AI reads what it already knows from your workspace files plus industry best practices. Proposes a structure. You approve or adjust. Then it builds. **Standard-first framing:** on a standard-first box the quick setup becomes a fast REVIEW of the already-built set - the AI proposes KEEP / TUNE / REMOVE per prebuilt department from what it already knows, and you confirm or adjust every proposal live (the consent gate above is unchanged - a prebuilt foundation is NOT consent to skip the review).
 
 **Option C - Audit / Resume Mode**
 For people who already have a workforce set up. Scans what exists, finds gaps, fills them without overwriting anything. Also resumes an interrupted interview.
@@ -202,7 +202,7 @@ Each department head gets an agents.list entry:
 The interview exists ONLY to gather what is needed to BUILD the owner's departments, roles (team members), and step-by-step instructions, then drive the build to closeout. Every question serves the build. Hold these four rules (the authoritative copy lives in INSTRUCTIONS.md "Interview Single-Job Anchor" + "No-Work-During-Interview Gate"):
 
 1. **Intake interviewer, not a worker.** NEVER perform, produce, demo, or OFFER any client work during the interview: no presentations, decks, copy, funnels, names, logos, graphics, videos, or sample/showcase deliverables. Those are post-build deliverables, gated behind an explicit owner request AFTER closeout. (This is the direct fix for the signature-presentation drift.)
-2. **No-Work-During-Interview Gate.** Until `interviewComplete: true` is written to `.workforce-build-state.json`, create NO departments / roles / step-by-step instructions / files / folders and produce NO deliverables. The ONLY permitted in-interview side-action is SILENT capability lookup (tool/API research, best-practice research) that yields NO owner-facing artifact.
+2. **No-Work-During-Interview Gate.** Until `interviewComplete: true` is written to `.workforce-build-state.json`, create NO departments / roles / step-by-step instructions / files / folders and produce NO deliverables. The ONLY permitted in-interview side-actions are (a) SILENT capability lookup (tool/API research, best-practice research) that yields NO owner-facing artifact, and (b) on standard-first boxes ONLY — the operator-triggered standard prebuild from the canonical library (`scripts/prebuild-standard-workforce.sh`), which writes no owner-facing deliverable and no interview answer, requires an explicit provenanced OPERATOR consent record, and defers all agent registration to `interviewComplete`. Every other creation stays forbidden; the legacy lane has ONLY exemption (a).
 3. **No chat-log analysis as a content source.** Context ingestion is a bounded ONE-SHOT pre-pass over the named core files; after it, BUILD. Never re-mine the owner's conversation history to decide content.
 4. **Always proceeds to reconciliation.** When intake is gathered, ALWAYS run Phase 5.5 (Canonical Departments Reconciliation), then the build. Never drift into client work or open-ended analysis.
 
@@ -252,8 +252,20 @@ materialize remediation scripts are GATED on `interviewComplete: true` in
 `.workforce-build-state.json`. Until then they REPORT "interview not completed yet" and refuse to
 scaffold — they never auto-create the default department floor under company `default`. This skill's
 `build-workforce.py` already fail-closes the same way via `_enforce_consent_or_refuse` (exit code 87,
-`status: INTERVIEW_PENDING`), corroborated by `_genuine_interview_complete_signal` (a bare flag is
-never trusted). One rule, enforced at every layer.
+`status: INTERVIEW_PENDING`), corroborated by `_genuine_interview_answers_file()` and
+`verify_interview_complete()` inside `build-workforce.py` (a bare `interviewComplete` flag is
+never trusted — it must be backed by a genuine conversational transcript or a valid
+owner-consent record). One rule, enforced at every layer.
+
+**Standard-first carve-out (PHASE 7):** the ONE creation allowed before `interviewComplete`
+is the operator-triggered standard prebuild (`scripts/prebuild-standard-workforce.sh`) — the
+No-Work-During-Interview Gate's exemption 2 (INSTRUCTIONS.md). It materializes the canonical
+floor EXCLUSIVELY from `templates/role-library/` under an explicit provenanced OPERATOR
+consent record, writes no owner-facing deliverable and no interview answer, and defers ALL
+`agents.list` registration to `interviewComplete` (files prebuilt; agent rows only for
+confirmed keeps). Everything else — Skill 32's real-workforce seeding, the apply-diff build,
+personalization, closeout — stays gated on `interviewComplete: true` exactly as above. Legacy
+boxes (absent `buildType`) have no prebuild and keep today's behavior byte-identical.
 
 ### "I Don't Know" Research Protocol
 

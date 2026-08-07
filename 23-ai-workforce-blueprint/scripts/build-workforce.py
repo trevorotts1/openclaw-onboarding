@@ -174,7 +174,15 @@ except Exception as _e:  # pragma: no cover - defensive
 
 # PRD-2.15: helper to resolve the build state file path (no tildes; mirrors detect_platform.py).
 def _resolve_build_state_path():
-    """Return Path to .workforce-build-state.json or None if workspace not found."""
+    """Return Path to .workforce-build-state.json or None if workspace not found.
+
+    SCRATCH ISOLATION (standard-first redesign): $WORKFORCE_BUILD_STATE_FILE
+    overrides resolution (mirrors _build_state_path) so scratch/prebuild runs
+    never read the live box state.
+    """
+    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
+    if _env_state:
+        return Path(_env_state)
     vps = Path("/data/.openclaw/workspace")
     if vps.is_dir():
         return vps / ".workforce-build-state.json"
@@ -275,6 +283,24 @@ def parse_args():
             'and writes <COMPANY_DIR>/ORG-CHART.md then exits 0.'
         )
     )
+    parser.add_argument(
+        '--apply-standard-edits',
+        action='store_true',
+        help=(
+            'AI Workforce standard-first redesign (PHASE 3): run the APPLY-DIFF '
+            'build instead of the build-from-scratch lane. Requires '
+            'buildType=standard-first + standardPrebuild.status=done + a VERIFIED '
+            'interviewComplete (genuine transcript of >=3 Q/A blocks or a valid '
+            'ownerConsent record — a bare flag is never trusted). Retires '
+            'provenanced declines (archive, never delete), materializes customs + '
+            'vertical additions from the canonical library, personalizes kept '
+            'prebuilt departments with no-clobber, registers the deferred '
+            'Moment-3.5 agents.list rows, writes confirmationsComplete=true + '
+            'buildCompletedAt, and runs the preserved gates '
+            '(post-build-role-workspaces / verify-library-gate / qc-completeness). '
+            'Use together with --non-interactive --config-file <config>.'
+        )
+    )
     return parser.parse_args()
 
 
@@ -333,61 +359,91 @@ def load_non_interactive_config(config_file):
     # ONLY with a genuine interview transcript OR an explicit ownerConsent self-setup/
     # fast opt-in. Without proof this exits non-zero and writes INTERVIEW_PENDING —
     # the build never reaches build_from_config() to stamp interviewComplete=true.
-    _enforce_consent_or_refuse(config)
+    #
+    # STANDARD-FIRST EXCEPTION (AI Workforce standard-first redesign PHASE 3,
+    # 2026-08-04): the apply-diff lane runs AFTER a genuine interview that the
+    # Command Center recorded (the transcript lives in the CC's store, not this
+    # box's discovery dir), so its gate is interviewComplete VERIFIED via
+    # verify_interview_complete() inside apply_standard_edits() — the consent
+    # gate here would refuse it on the transcript-discovery mismatch alone.
+    # apply_standard_edits() enforces the equivalent anti-fabrication bar
+    # (exit 87) before any mutation; skipping THIS gate for that lane is the
+    # same shape of exemption ownerConsent builds already get.
+    if not _standard_first_mode():
+        _enforce_consent_or_refuse(config)
 
     # PRD-2.15: assert industryPack.slug is present in build state before building.
     # This enforces that the interview ran with industry customization - an interview
     # with no recorded pack is not industry-custom and must not proceed blindly.
     # Edge case: slug="unknown" is allowed with a loud warning (unclassifiable business
     # should not be un-buildable). Absent slug entirely = hard fail.
-    _state_path = _resolve_build_state_path()
-    if _state_path is not None and _state_path.exists():
-        try:
-            _state = json.loads(_state_path.read_text(encoding="utf-8"))
-            _pack = _state.get("industryPack") or {}
-            _slug = _pack.get("slug")
-            if not _slug:
-                print(
-                    "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
-                    "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
-                    "  Or confirm the vertical in Phase 5 before building.\n"
-                    "  State file: " + str(_state_path),
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-            elif _slug == "unknown":
-                print(
-                    "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
-                    "was detected or confirmed. Building will proceed but industry customization may be generic. "
-                    "Phase 5 confirmation was expected to set the slug.",
-                    file=sys.stderr,
-                )
-        except Exception as _e:
-            print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
-            # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
-    else:
-        print(
-            "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
-            "Proceeding without industry-pack verification.",
-            file=sys.stderr,
-        )
+    # STANDARD-FIRST LANE: the prebuild deliberately records NO industryPack (the
+    # industry is unknown until the interview), so this hard-gate would strand every
+    # web-completed standard-first box. Skip the gate in that lane (the interview's
+    # industry confirmation happens during apply-diff, and _standard_first_mode()
+    # already exempts the consent gate on the same basis).
+    if not _standard_first_mode():
+        _state_path = _resolve_build_state_path()
+        if _state_path is not None and _state_path.exists():
+            try:
+                _state = json.loads(_state_path.read_text(encoding="utf-8"))
+                _pack = _state.get("industryPack") or {}
+                _slug = _pack.get("slug")
+                if not _slug:
+                    print(
+                        "[NON-INTERACTIVE ERROR] PRD-2.15: industryPack not recorded in build state.\n"
+                        "  Run: 23-ai-workforce-blueprint/scripts/record-industry-pack.sh --blob-file <research-blob>\n"
+                        "  Or confirm the vertical in Phase 5 before building.\n"
+                        "  State file: " + str(_state_path),
+                        file=sys.stderr,
+                    )
+                    sys.exit(1)
+                elif _slug == "unknown":
+                    print(
+                        "[NON-INTERACTIVE WARNING] PRD-2.15: industryPack.slug='unknown' - no industry vertical "
+                        "was detected or confirmed. Building will proceed but industry customization may be generic. "
+                        "Phase 5 confirmation was expected to set the slug.",
+                        file=sys.stderr,
+                    )
+            except Exception as _e:
+                print(f"[NON-INTERACTIVE WARNING] PRD-2.15: could not read build state for industryPack check: {_e}", file=sys.stderr)
+                # Non-fatal: the build state may not exist in legacy flows; don't block on read errors.
+        else:
+            print(
+                "[NON-INTERACTIVE WARNING] PRD-2.15: build state not found; cannot assert industryPack.slug. "
+                "Proceeding without industry-pack verification.",
+                file=sys.stderr,
+            )
 
     return config
 
 
 # ============================================================
-# CANONICAL DEPARTMENT FLOOR (standard: 23 mandatory + 6 universal-primary-vertical = 29)
+# CANONICAL DEPARTMENT FLOOR (standard: 24 mandatory + 6 universal-primary-vertical = 30)
 # ============================================================
 # Every Zero Human Company is built with the mandatory canonical departments
-# (21 in department-naming-map.json v2.5.0) PLUS the 7 universal primary
+# (24 in department-naming-map.json v2.8.0) PLUS the 6 universal primary
 # vertical-pack departments (one primary per pack, always added regardless of
-# industry) = 28 departments minimum. The floor is computed at runtime from the
+# industry) = 30 departments minimum. The floor is computed at runtime from the
 # live naming map (len(mandatory) + count of universal-primary pack depts); the
 # numbers in these comments describe the live data and are never a hardcoded
 # gate. The canonical floor is further expanded by keyword-matched industry
 # extras (flavor/additive, never reducing). Explicit client declines (a
 # mandatory dept, a universal-primary vertical, or a custom dept) are the ONLY
 # way to go below the floor.
+#
+# EXCEPTION — master-orchestrator: v2.8.0 registered "master-orchestrator" as
+# the naming map's 24th mandatory id so department-floor.py counts it on disk
+# (build-workforce.generate_departments_json() has always unconditionally
+# prepended its board column, with no decline path and no dependence on
+# selected_departments). load_canonical_floor() below deliberately FILTERS IT
+# BACK OUT of the set this file treats as "canonical" — it is never offered as
+# an interview decision, never auto-included by reconcile_canonical_floor(),
+# and never required by the decision-coverage gate. So everywhere else in THIS
+# file, "the 24 mandatory" and "the floor" mean the 23 ids load_canonical_floor()
+# actually returns, plus the 6 universal-primary verticals = 29 buildable/
+# declinable departments; the 30th (master-orchestrator) is floor-verification-
+# only. See department-naming-map.json's mandatory.master-orchestrator entry.
 # Canonical IDs live in department-naming-map.json (the source of truth). Legacy
 # RECOMMENDED_DEPARTMENTS keys differ from canonical IDs (e.g. "billing" vs
 # "billing-finance"); CANONICAL_ID_ALIASES maps canonical -> legacy so we
@@ -695,7 +751,8 @@ def apply_semantic_merges(selected_departments, core_answers):
 def load_canonical_floor():
     """
     Read the mandatory canonical departments from department-naming-map.json
-    (23 in v2.6.2; the count is read live from the map, never hardcoded).
+    (24 in v2.8.0 — 23 of which are returned here; the count is read live from
+    the map, never hardcoded).
 
     Returns an ordered dict mapping canonical-id -> dept-info dict in the
     RECOMMENDED_DEPARTMENTS shape ({name, emoji, head, description}). Each
@@ -704,6 +761,25 @@ def load_canonical_floor():
 
     Falls back to a hardcoded list if the map file cannot be read so the floor
     is still enforced on a broken install.
+
+    MASTER-ORCHESTRATOR EXCLUSION (v2.8.0): department-naming-map.json's
+    `mandatory` block carries 24 ids so department-floor.py's on-disk floor
+    check counts master-orchestrator (build-workforce.generate_departments_json()
+    has always unconditionally prepended its board column, independent of
+    selected_departments, with no decline path). But THIS function feeds
+    reconcile_canonical_floor()'s standard-unless-declined union,
+    _enforce_decision_coverage_or_refuse()'s fail-closed decision gate, and the
+    provisioning-receipt EXPECTED==BUILT equality check — all of which assume
+    every id returned here is a real interview yes/no/later decision that can
+    land in selected_departments. master-orchestrator is never such a decision
+    (it is provisioned once, outside the interview, and every other call site
+    in this file that touches it — create_department_workspace, add_agent_to_
+    config, _resolve_prior_chosen_entries, generate_departments_json — already
+    special-cases dept_id in ("ceo", "master-orchestrator", "dept-ceo") on the
+    assumption it never reaches selected_departments through this function).
+    So it is filtered back out immediately below, keeping this function's
+    live-derived + hardcoded-fallback paths both at 23 mandatory ids — the
+    ones the interview flow can actually decline.
     """
     map_path = os.path.join(
         os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
@@ -718,16 +794,21 @@ def load_canonical_floor():
         print(f"[CANONICAL] Could not read {map_path}: {e}. Using hardcoded floor.", file=sys.stderr)
 
     # Fallback MUST stay in lockstep with department-floor.HARDCODED_MANDATORY
-    # (23 mandatory ids, v2.6.2) so a broken install that lost the naming map
-    # still enforces the full MANDATORY floor. The 6 universal-primary verticals
-    # are NOT in this list - they carry their OWN broken-install fallback in
-    # _universal_primary_ids() (_HARDCODED_UNIVERSAL_PRIMARY), so the combined floor
-    # still degrades to the full 23 + 6 = 29, never to 23 (and never to the older
+    # MINUS master-orchestrator (23 mandatory ids, v2.8.0) so a broken install
+    # that lost the naming map still enforces the full BUILDABLE MANDATORY
+    # floor. The 6 universal-primary verticals are NOT in this list - they
+    # carry their OWN broken-install fallback in _universal_primary_ids()
+    # (_HARDCODED_UNIVERSAL_PRIMARY), so the combined buildable floor still
+    # degrades to the full 23 + 6 = 29, never to 23 (and never to the older
     # stale 16). The full shipped role catalog is tracked separately in
-    # templates/role-library/_index.json - do not confuse it with the 29 floor.
-    # v2.6.2 (2026-07-16, operator ruling) added "funnels" as the 23rd mandatory
-    # id — see department-floor.py's HARDCODED_MANDATORY header for why it must
-    # be mandatory rather than vertical-gated.
+    # templates/role-library/_index.json - do not confuse it with either the
+    # 29 buildable floor or department-floor.py's 30 on-disk floor (which
+    # additionally counts master-orchestrator). v2.6.2 (2026-07-16, operator
+    # ruling) added "funnels" as the 23rd mandatory id — see department-floor.
+    # py's HARDCODED_MANDATORY header for why it must be mandatory rather than
+    # vertical-gated. v2.8.0 (2026-08-03, operator ruling) added
+    # "master-orchestrator" to the naming map as a FLOOR-ONLY 24th mandatory
+    # id; see the master-orchestrator exclusion filter immediately below.
     canonical_ids = list(mandatory.keys()) or [
         "marketing", "sales", "billing-finance", "customer-support",
         "web-development", "app-development", "graphics", "video", "audio",
@@ -735,6 +816,12 @@ def load_canonical_floor():
         "social-media", "paid-advertisement", "personal-assistant",
         "general-task", "project-architecture-office", "bugs", "healer",
         "quality-control", "funnels",
+    ]
+    # MASTER-ORCHESTRATOR EXCLUSION (v2.8.0) — see docstring above. Applies to
+    # BOTH the live-derived list and the hardcoded fallback so a corrupt map
+    # can never accidentally admit it either.
+    canonical_ids = [
+        c for c in canonical_ids if c not in ("ceo", "master-orchestrator", "dept-ceo")
     ]
 
     floor = {}
@@ -797,7 +884,19 @@ def _canonical_decline_set(build_state):
 
 
 def _build_state_path():
-    """Resolve the build-state JSON path (VPS first, Mac fallback)."""
+    """Resolve the build-state JSON path (VPS first, Mac fallback).
+
+    SCRATCH ISOLATION (AI Workforce standard-first redesign, 2026-08-04):
+    $WORKFORCE_BUILD_STATE_FILE overrides the resolution entirely. The apply-
+    diff build + its tests + the prebuild driver redirect all run against a
+    SCRATCH state file so the box's live state is never touched by a scratch
+    run (the same explicit-signal-only discipline materialize-missing-
+    departments.py was built under). Absent the env var, behavior is byte-
+    identical to before.
+    """
+    _env_state = os.environ.get("WORKFORCE_BUILD_STATE_FILE", "").strip()
+    if _env_state:
+        return _env_state
     candidates = [
         "/data/.openclaw/workspace/.workforce-build-state.json",
         os.path.join(HOME, ".openclaw", "workspace", ".workforce-build-state.json"),
@@ -819,6 +918,53 @@ def _load_build_state():
             return json.load(f)
     except (OSError, json.JSONDecodeError):
         return {}
+
+
+# ============================================================
+# STANDARD-FIRST MODE READER (AI Workforce standard-first redesign, 2026-08-04)
+# ============================================================
+# PHASE 1 of the standard-first master plan. The build lane is carried by the
+# build-state `buildType` field (schema: build-state-schema.json):
+#   ABSENT or "legacy"      -> the build-from-scratch lane (today's behavior,
+#                              byte-identical; every box onboarded before the
+#                              cutover simply carries no buildType field — no
+#                              backfill write is ever performed).
+#   "standard-first"        -> the standard-prebuild lane (canonical library
+#                              prebuild at onboarding, interview edits the
+#                              prebuilt set, build at interviewComplete is an
+#                              apply-diff event).
+# This reader is the SINGLE branch point every standard-first gate keys on.
+# Rollback property 1 (master plan section 5.3): the rollout only ADDS code
+# paths gated on this function returning True; it never edits the legacy paths.
+# Stop setting buildType=standard-first on new boxes and every new box reverts
+# to today's flow with zero per-box undo.
+#
+# FAIL-SAFE POSTURE: anything ambiguous — absent field, unreadable state,
+# malformed value, non-dict state — resolves to False (the legacy lane). A
+# misread must never route a box onto the new lane, because blocking/misrouting
+# a standard-first build is always preferable to silently re-reading a legacy
+# box as standard-first. Mirrors the decline reader's fail-safe-to-the-larger-
+# floor posture (see _canonical_decline_set above).
+def _standard_first_mode(build_state=None):
+    """
+    Return True only when the build-state declares buildType == "standard-first".
+
+    `build_state` may be passed when the caller has ALREADY loaded the state
+    (avoids a redundant disk read); when omitted it is loaded via
+    _load_build_state(). ABSENT buildType is treated as "legacy" (the frozen
+    in-flight client rule: buildType absent = legacy, no backfill). Never
+    raises; never writes.
+    """
+    try:
+        state = build_state if isinstance(build_state, dict) else _load_build_state()
+        if not isinstance(state, dict):
+            return False
+        raw = state.get("buildType")
+        if not isinstance(raw, str):
+            return False
+        return raw.strip().lower() == "standard-first"
+    except Exception:  # noqa: BLE001 — fail-safe to the legacy lane, never raise
+        return False
 
 
 # ============================================================
@@ -1035,9 +1181,9 @@ def _refuse_interview_pending(reason, option):
 # department ids (one per pack flagged universal_primary=true in
 # department-naming-map.json v2.6.1). SAFETY NET ONLY: consulted solely when the
 # live map yields NO universal primaries (map missing / unreadable / corrupt) so a
-# broken install still expects the FULL 22 + 6 = 28 floor instead of silently
-# degrading to 22 and dropping every universal-primary vertical. MUST stay in
-# lockstep with department-naming-map.json and
+# broken install still expects the FULL 23 + 6 = 29 buildable floor instead of
+# silently degrading to 23 and dropping every universal-primary vertical. MUST
+# stay in lockstep with department-naming-map.json and
 # department-floor.HARDCODED_UNIVERSAL_PRIMARY. On a healthy install the live
 # derivation in _universal_primary_ids() returns the 6 real ids and this is never used.
 _HARDCODED_UNIVERSAL_PRIMARY = [
@@ -1056,8 +1202,8 @@ def _universal_primary_ids():
 
     BROKEN-INSTALL SAFETY NET: if the live map is unreadable and this derivation
     comes back EMPTY, the result falls back to _HARDCODED_UNIVERSAL_PRIMARY (the 6
-    ids) so the expected floor stays 22 + 6 = 28, never silently 22. This mirrors
-    load_canonical_floor()'s hardcoded-mandatory fallback and department-floor's
+    ids) so the expected buildable floor stays 23 + 6 = 29, never silently 23.
+    This mirrors load_canonical_floor()'s hardcoded-mandatory fallback and department-floor's
     HARDCODED_UNIVERSAL_PRIMARY. Distinct from the removed depts[0] auto-promotion:
     it triggers ONLY on a broken/missing map, never on a healthy install.
     """
@@ -1212,6 +1358,22 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
     yes/no/later decision for EVERY expected department id before the floor is
     unioned in. On any gap, REFUSE fail-closed. Fast-mode / self-setup builds are
     exempt (the owner opted out of the interview). Also ledgers rejected declines.
+
+    STANDARD-FIRST RELAXATION (AI Workforce standard-first redesign PHASE 3,
+    2026-08-04): under buildType=standard-first the interview EDITS an already
+    prebuilt company, so a KEEP needs NO decision record (keep is the implicit,
+    safe default). Expected decisions shrink to:
+        (a) prebuilt departments carrying a RECORDED decision (honored declines,
+            laters, and any recorded yes) — every RECORDED decision must carry
+            provenance, enforced by the shared reader's rejections list;
+        (b) net-new customs the owner placed in departments_config (the config
+            entry itself is the recorded add — implicit yes);
+        (c) vertical additions declared via verticalPacks (recorded adds).
+    Exit 88 STILL fires for un-provenanced recorded declines/adds (the shared
+    reader's rejections are non-empty) — the anti-fabrication bar is unchanged;
+    only the implicit-KEEP universe stops demanding records. Legacy boxes never
+    enter this branch (rollback property 1: this code path is gated entirely on
+    _standard_first_mode()).
     """
     build_state = _load_build_state()
     # Fast-mode / self-setup: owner explicitly opted out of the per-dept interview.
@@ -1219,6 +1381,64 @@ def _enforce_decision_coverage_or_refuse(config, departments_config):
     if consent_ok:
         print("[DECISION-COVERAGE] ownerConsent self-setup/fast build — per-dept "
               "decision-coverage gate SKIPPED (owner opted out of the interview).",
+              file=sys.stderr)
+        return
+    if _standard_first_mode(build_state):
+        view = _decline_analyze(build_state, quiet=True)
+        decided = view["decided"]                 # provenanced decisions only
+        rejections = view["rejections"]           # un-provenanced recorded decisions
+        # (b) net-new customs: enabled departments_config entries not on the floor.
+        customs = _expected_decision_ids(departments_config)
+        floor_norm = set()
+        for c in load_canonical_floor().keys():
+            floor_norm.add(_decline_norm(c))
+            floor_norm.add(_decline_norm(CANONICAL_ID_ALIASES.get(c, c)))
+            for v in CANONICAL_VARIANT_SLUGS.get(c, []):
+                floor_norm.add(_decline_norm(v))
+        for u in _universal_primary_ids():
+            floor_norm.add(_decline_norm(u))
+        expected = [did for did in customs if _decline_norm(did) not in floor_norm]
+        # (c) vertical additions declared via verticalPacks (the interview's
+        # industry declaration — recorded adds).
+        vpacks = build_state.get("verticalPacks", {}) or {}
+        if isinstance(vpacks, dict):
+            for d in (vpacks.get("addedDepartments") or []):
+                if isinstance(d, dict) and d.get("id"):
+                    expected.append(d["id"])
+        # (a) prebuilt departments carrying a RECORDED decision (decline/later/yes).
+        decided_norm = {_decline_norm(did) for did in decided}
+        prebuilt = build_state.get("standardPrebuild", {}).get("prebuiltDepartments") or []
+        for did in prebuilt:
+            if _decline_norm(did) in decided_norm:
+                expected.append(did)
+        missing, _covered = _shared_decision_coverage(build_state, expected)
+        _configured = {_decline_norm(d) for d in (departments_config or {})}
+        missing = [m for m in missing if _decline_norm(m) not in _configured]
+        if missing or rejections:
+            _refuse_reconciliation_pending(missing, rejections=rejections)
+        try:
+            path = _build_state_path()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            state = _load_build_state()
+            state["decisionCoverage"] = {
+                "complete": True,
+                "missing": [],
+                "checkedAt": datetime.now().isoformat(),
+                "expectedCount": len(expected),
+                "mode": "standard-first",
+                "note": ("KEEPS are implicit under standard-first (prebuilt depts with "
+                         "no recorded decision are kept); only recorded declines/adds "
+                         "+ net-new customs + vertical additions require decisions."),
+            }
+            with open(path, "w") as f:
+                json.dump(state, f, indent=2)
+        except OSError as e:
+            print(f"[DECISION-COVERAGE] Could not record clean decisionCoverage: {e}",
+                  file=sys.stderr)
+        print(f"[DECISION-COVERAGE] PASS (standard-first) — KEEPs implicit; "
+              f"{len(expected)} recorded decisions/adds verified provenanced "
+              f"({len(decided_norm)} recorded floor decisions, "
+              f"{len(rejections)} rejected un-provenanced).",
               file=sys.stderr)
         return
     expected = _expected_decision_ids(departments_config)
@@ -1664,9 +1884,54 @@ def _read_prior_chosen_entries(company_dir):
             data = json.load(f)
     except (OSError, json.JSONDecodeError):
         return [], "corrupt"
+    if isinstance(data, dict):
+        # The retire-confirmed-decline.sh writes a {removedWithProvenance, departments}
+        # dict shape. Extract the departments list — it is NOT a corrupt artifact.
+        depts = data.get("departments")
+        if isinstance(depts, list):
+            return depts, "ok"
+        return [], "corrupt"
     if not isinstance(data, list):
         return [], "corrupt"
     return data, "ok"
+
+
+def _read_prior_removed_with_provenance(cdir):
+    """A7: read any existing removedWithProvenance records from the prior artifact.
+
+    The retire-confirmed-decline.sh writes departments.json as
+    {removedWithProvenance:[{slug,retiredAt,source,...}], departments:[...]}.
+    When a subsequent apply-diff build overwrites the artifact it must preserve
+    these provenance records so the audit trail is not silently discarded.
+    Returns a (possibly empty) list of provenance dicts.
+    """
+    if not cdir:
+        return []
+    path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
+    if not os.path.isfile(path):
+        return []
+    try:
+        with open(path) as f:
+            data = json.load(f)
+    except (OSError, json.JSONDecodeError):
+        return []
+    if isinstance(data, dict):
+        prov = data.get("removedWithProvenance")
+        if isinstance(prov, list):
+            return prov
+    return []
+
+
+def _make_artifact_payload(departments, provenance):
+    """A7: produce the artifact payload, preferring the retire-script dict shape
+    when there are provenance records to preserve.
+
+    With provenance records present:  {removedWithProvenance:[...], departments:[...]}
+    Without (first-ever write):       [ ... ]  (bare CC-schema list)
+    """
+    if provenance:
+        return {"removedWithProvenance": provenance, "departments": departments}
+    return departments
 
 
 def _bare_norm_slug(raw):
@@ -1976,11 +2241,25 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
             slugs.append(s)
     written = []
     artifact_path = None
+
+    # ── A7: preserve removedWithProvenance dict shape (retire-script audit trail) ──
+    # The retire-confirmed-decline.sh writes departments.json as
+    # {removedWithProvenance:[...], departments:[...]}.  A subsequent apply-diff
+    # build must NOT clobber this dict shape with a bare list — that silently
+    # discards the provenance records that gate-A7 requires.
+    prior_provenance = _read_prior_removed_with_provenance(cdir)
+
+    # Build the payload: always prefer the retire-script dict shape when there
+    # are existing provenance records to preserve.  (A first-ever write with
+    # zero provenance still emits the bare CC-schema list — the retire script
+    # itself introduces the dict shape.)
+    payload = _make_artifact_payload(dept_json, prior_provenance)
+
     if cdir:
         try:
             os.makedirs(cdir, exist_ok=True)
             artifact_path = os.path.join(cdir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(artifact_path, dept_json)
+            _atomic_write_json(artifact_path, payload)
             written.append(artifact_path)
             print(f"[CHOSEN-LIST] Wrote durable departments.json "
                   f"({len(slugs)} departments) to {artifact_path}", file=sys.stderr)
@@ -1991,7 +2270,7 @@ def write_chosen_departments_artifact(selected_departments, *, company_dir=None,
     if discovery_dir:
         try:
             legacy_path = os.path.join(discovery_dir, CHOSEN_DEPARTMENTS_ARTIFACT)
-            _atomic_write_json(legacy_path, dept_json)
+            _atomic_write_json(legacy_path, payload)
             written.append(legacy_path)
         except OSError as e:
             print(f"[CHOSEN-LIST WARNING] Could not write legacy mirror to {discovery_dir}: {e}",
@@ -2285,7 +2564,9 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
 
     Logic (standard-unless-declined):
       final = (all canonical MINUS explicit "no" in build-state) UNION client customs
-      (canonical = the 22 mandatory in department-naming-map.json v2.6.0)
+      (canonical = the 23 buildable/declinable mandatory ids load_canonical_floor()
+      returns from department-naming-map.json v2.8.0's 24 mandatory ids —
+      master-orchestrator is excluded there; it is never an interview decision)
 
     - If a canonicalReconciliation.decisions block exists in build-state, honor
       each explicit "no" (drop that canonical dept) and keep everything else.
@@ -2305,6 +2586,39 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
     declined = _canonical_decline_set(build_state)
     had_reconciliation = isinstance(build_state.get("canonicalReconciliation"), dict) \
         and bool(build_state.get("canonicalReconciliation", {}).get("decisions"))
+
+    # ── STANDARD-FIRST MODE (AI Workforce standard-first redesign PHASE 3, ──
+    # 2026-08-04): the prebuild driver ALREADY materialized the full canonical
+    # floor on disk + the chosen artifact + the Command Center lanes at
+    # onboarding. Under buildType=standard-first this function must NOT re-add
+    # anything (all floor depts are present) and must HONOR provenanced declines
+    # by calling the retire path instead of skipping-at-creation: each declined
+    # prebuilt department is handed to retire-confirmed-decline.sh, which
+    # archives the tree (never deletes — APFS snapshot doctrine), deregisters
+    # the agents.list row if one was lazily registered, soft-archives the CC
+    # lane, and appends the removed-with-provenance record to the chosen
+    # artifact. Returns selected_departments unchanged (KEEPS + customs +
+    # verticals are carried through by the caller). Legacy boxes never enter
+    # this branch (rollback property 1).
+    if _standard_first_mode(build_state):
+        print("[CANONICAL] Standard-first mode: floor already prebuilt on disk — "
+              "reconcile adds NOTHING and honors provenanced declines via the "
+              "retire path (archive, never delete).", file=sys.stderr)
+        _retire_standard_first_declines(build_state, declined, selected_departments)
+        client_customs = list(selected_departments.keys())
+        _write_canonical_reconciliation({
+            "autoIncluded": [],
+            "clientCustoms": client_customs,
+            "floorSize": len(floor),
+            "decisions": build_state.get("canonicalReconciliation", {}).get("decisions", {}) or {},
+            "source": ("build-workforce.py reconcile_canonical_floor "
+                       "(standard-first: no re-add; declines retired)"),
+        })
+        print(f"[CANONICAL] Standard-first reconcile complete: "
+              f"{len(selected_departments)} departments carried forward, "
+              f"{len(declined)} provenanced decline(s) retired, "
+              f"0 re-added.", file=sys.stderr)
+        return selected_departments
 
     industry = core_answers.get("industry", "") or ""
     company_name = core_answers.get("company_name", "") or ""
@@ -2372,6 +2686,95 @@ def reconcile_canonical_floor(selected_departments, core_answers, departments_co
           f"({len(auto_included)} auto-included, {len(client_customs)} client customs, "
           f"{len(declined)} declined).", file=sys.stderr)
     return selected_departments
+
+
+# ============================================================
+# STANDARD-FIRST RETIRE PATH DRIVER (AI Workforce standard-first redesign,
+# PHASE 3, 2026-08-04)
+# ============================================================
+# A confirmed decline under standard-first must UNBUILD (the deprovision path
+# master plan section 2.3): the declined department already EXISTS on disk
+# (the prebuild materialized it), so honoring the decline means archive +
+# deregister + lane removal, not skip-at-creation. The four steps live in
+# scripts/retire-confirmed-decline.sh (CO-LOCATED in this skill's scripts dir,
+# so it ships with the skill), which gates EVERY decline through canonical_decline.py's shared
+# reader (the same provenance gate this module enforces) and NEVER deletes —
+# archive only (APFS snapshot doctrine). This helper is the glue the
+# apply-diff build uses to drive it.
+#
+# SAFETY POSTURE (mirrors _write_provisioning_receipt): a retire failure must
+# never silently shrink the floor AND never crash the build. On a NON-ZERO
+# retire rc (provenance gate refused, archive failed) the declined department
+# STAYS BUILT: this function ADDS the slug back to selected_departments (from
+# the canonical floor metadata) so the apply-diff build keeps it and the box
+# is visibly over-provisioned rather than silently under-provisioned — the
+# fail-safe-to-the-LARGER-floor posture, identical to the decline reader's.
+_RETIRE_SCRIPT = os.path.normpath(os.path.join(
+    os.path.dirname(os.path.abspath(__file__)),
+    "retire-confirmed-decline.sh",
+))
+
+
+def _retire_standard_first_declines(build_state, declined_norm_set, selected_departments):
+    """
+    Retire every provenanced decline via scripts/retire-confirmed-decline.sh.
+
+    `declined_norm_set` is the NORMALIZED decline set from
+    _canonical_decline_set(build_state). The retire script re-derives the raw
+    declined ids itself from the SAME shared build-state, so nothing is passed
+    but the state-file path (and the explicit isolation overrides under a
+    sandboxed state path). Best-effort + fail-safe: never raises; a non-zero
+    rc keeps every declined department in the build by RE-ADDING it to
+    `selected_departments` from the canonical floor metadata (fail-safe to the
+    LARGER floor — identical posture to the decline reader).
+    """
+    def _keep_declined_built(reason):
+        floor = load_canonical_floor()
+        for cid, info in floor.items():
+            if _decline_norm(cid) in declined_norm_set and not _canonical_present(cid, selected_departments):
+                selected_departments[cid] = dict(info)
+        print(f"[RETIRE] {reason} — declined departments {sorted(declined_norm_set)} "
+              f"STAY BUILT (fail-safe to the larger floor).", file=sys.stderr)
+
+    if not declined_norm_set:
+        return
+    if not os.path.isfile(_RETIRE_SCRIPT):
+        _keep_declined_built(f"retire-confirmed-decline.sh not found at {_RETIRE_SCRIPT}")
+        return
+    cmd = ["bash", _RETIRE_SCRIPT, "--dept", "__declined__"]
+    # Scratch isolation: when the state path is not one of the box's two live
+    # locations, pass the explicit overrides so the retire script can never
+    # touch the live state / company tree / Command Center database of a real
+    # box (the same explicit-signal-only discipline test-prebuild-standard.sh
+    # pins for the prebuild driver).
+    state_path = _build_state_path()
+    _LIVE_STATE_PATHS = {
+        "/data/.openclaw/workspace/.workforce-build-state.json",
+        os.path.join(HOME, ".openclaw", "workspace", ".workforce-build-state.json"),
+    }
+    _retire_env = dict(os.environ)
+    if os.path.normpath(str(state_path)) not in _LIVE_STATE_PATHS:
+        cmd += ["--build-state-file", str(state_path)]
+        _retire_env["WORKFORCE_BUILD_STATE_FILE"] = str(state_path)
+        if COMPANY_DIR:
+            cmd += ["--company-dir", str(COMPANY_DIR)]
+    try:
+        import subprocess as _retire_sp
+        _retire_proc = _retire_sp.run(cmd, timeout=600, env=_retire_env,
+                                      capture_output=True, text=True)
+        rc = _retire_proc.returncode
+        if rc == 0:
+            print(f"[RETIRE] retire-confirmed-decline.sh retired "
+                  f"{sorted(declined_norm_set)} (archive-only; lanes dropped; "
+                  f"chosen artifact annotated).", file=sys.stderr)
+            for _line in (_retire_proc.stderr or "").strip().splitlines():
+                print(f"[RETIRE]   {_line}", file=sys.stderr)
+        else:
+            for _line in (_retire_proc.stderr or _retire_proc.stdout or "").strip().splitlines():
+                print(f"[RETIRE-ERR]   {_line}", file=sys.stderr)
+            _keep_declined_built(f"retire-confirmed-decline.sh exited {rc}")
+    except Exception as _retire_e:  # noqa: BLE001 — a retire failure must never crash the build
+        _keep_declined_built(f"retire-confirmed-decline.sh invocation failed: {_retire_e}")
 
 
 def _load_vertical_packs():
@@ -2536,7 +2939,8 @@ def apply_vertical_packs(selected_departments, core_answers):
     """
     WS-4 (CANONICAL FLOOR STANDARD): auto-add vertical-pack departments.
 
-    Standard set (the mandatory canonical floor, 22) is already applied
+    Standard set (the buildable mandatory canonical floor, 23 — see
+    load_canonical_floor()'s master-orchestrator exclusion) is already applied
     by reconcile_canonical_floor(). This sibling step adds the universal primary
     vertical departments (one per pack that flags one) PLUS keyword-matched extras:
 
@@ -2546,17 +2950,19 @@ def apply_vertical_packs(selected_departments, core_answers):
         department-naming-map.json. There is NO depts[0] fallback (v2.6.1) - a pack
         with no flagged dept (e.g. real-estate, whose listings flag was removed)
         contributes NOTHING here. The 6 flagged primaries are added to EVERY client
-        regardless of industry - giving 22+6=28 as the minimum floor (v2.6.1).
+        regardless of industry - giving 23+6=29 as the minimum buildable floor
+        (v2.8.0; department-floor.py's separate on-disk floor is 30 — it also
+        counts master-orchestrator, which this build-time step never touches).
         Industry matching does NOT gate these. A universal primary the owner
         explicitly declined in Phase 5.5 (canonicalReconciliation.decisions[id]
         == "no" or declinedDepartments[]) is SKIPPED here so the opt-out is honored
         symmetrically with the mandatory floor.
 
-      PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 28 floor):
+      PHASE 2 - KEYWORD-MATCHED EXTRAS (flavor on top of the 29 floor):
         Detect which packs match the client's industry/business context via
         auto_add_keywords. For each matching pack, add remaining (non-universal-
         primary) departments to selected_departments. These extras are ADDITIVE
-        and do NOT reduce the floor - they push the final count to 28+.
+        and do NOT reduce the floor - they push the final count to 29+.
 
       DE-DUP: all adds are de-duped against (a) the canonical floor under any
         canonical id/alias/variant, (b) a prior universal-primary already added,
@@ -3024,6 +3430,497 @@ def write_build_progress(stage, message, departments=None, documents_total=None,
               file=sys.stderr)
 
 
+# ============================================================
+# STANDARD-FIRST APPLY-DIFF BUILD (AI Workforce standard-first redesign,
+# PHASE 3, 2026-08-04 — master plan section 2.1)
+# ============================================================
+def apply_standard_edits(config):
+    """
+    The standard-first APPLY-DIFF build: the interview EDITS the prebuilt
+    company, and THIS function applies that diff at interviewComplete.
+
+    Lane gates (all fail-closed, before ANY mutation):
+      1. buildType == "standard-first" (_standard_first_mode) — a legacy box
+         can never enter this path (rollback property 1);
+      2. standardPrebuild.status == "done" — the prebuild must have completed;
+      3. interviewComplete verified via verify_interview_complete() (NEVER the
+         bare flag — >=3 real Q/A blocks or a valid ownerConsent record).
+
+    The DIFF applied (master plan PHASE 3 contract):
+      - RETIRE: every provenanced decline is un-built by
+        retire-confirmed-decline.sh (archive the tree to
+        company_dir/.retired/<slug>-<ts>/ — NEVER delete; deregister the
+        agents.list row if lazily registered; soft-archive the CC lane;
+        append the removed-with-provenance record to the chosen artifact).
+      - KEEP: the prebuilt floor departments with NO recorded decision stay
+        exactly as prebuilt (personalization happens over existing files with
+        NO-CLOBBER for client-edited content — the idempotency contract
+        SKILL.md:298-299). Their departments[] status flips prebuilt -> done.
+      - ADD: net-new customs (departments_config) + vertical additions
+        (apply_vertical_packs) + semantic merges (apply_semantic_merges) are
+        built by the SAME legacy materialization pipeline — sourcing stays
+        EXCLUSIVELY in templates/role-library/ via the shipped materializers
+        (NO-CO-MINGLING).
+      - AGENT REGISTRATION (the deferred Moment 3.5): every confirmed-kept
+        department's dept-<slug> row is registered in openclaw.json
+        agents.list (backup first — config safety protocol). The prebuild
+        created FILES only; this is where the rows are materialized, for
+        confirmed-kept departments ONLY.
+      - STATE: confirmationsComplete=true (the resume cron HOP-4 contract),
+        buildCompletedAt, departments[] statuses settled, the durable chosen
+        artifact rewritten (declines excluded by the decline set).
+      - GATES PRESERVED: post-build-role-workspaces.py (personalization
+        augmentation, no-clobber), verify-library-gate.sh, qc-completeness.sh
+        all run AFTER the diff apply — unchanged, because the prebuilt
+        library content already satisfies the library gate by construction.
+
+    NO-CO-MINGLING (binding): additions source EXCLUSIVELY from
+    templates/role-library/ via the shipped materializers; this function
+    never reads another client's tree.
+    """
+    global MASTER_FILES, COMPANY_DISCOVERY_DIR
+    import subprocess as _ase_subprocess
+
+    build_state = _load_build_state()
+    company_name = config["company_name"]
+
+    # ── LANE GATES (fail-closed, before any mutation) ───────────────────────
+    if not _standard_first_mode(build_state):
+        print("[STANDARD-FIRST] REFUSING apply-diff build: buildType is not "
+              "'standard-first'. This entry point is the standard-first lane ONLY; "
+              "legacy boxes build via build_from_config().", file=sys.stderr)
+        print("APPLY_DIFF_REFUSED: buildType is not standard-first.", file=sys.stderr)
+        sys.exit(EXIT_RECONCILIATION_PENDING)
+    prebuild = build_state.get("standardPrebuild") or {}
+    if prebuild.get("status") != "done":
+        print(f"[STANDARD-FIRST] REFUSING apply-diff build: standardPrebuild.status="
+              f"{prebuild.get('status')!r} (need 'done'). Run the standard prebuild "
+              f"(scripts/prebuild-standard-workforce.sh) first.", file=sys.stderr)
+        print("APPLY_DIFF_REFUSED: standard prebuild not complete.", file=sys.stderr)
+        sys.exit(EXIT_RECONCILIATION_PENDING)
+    completion = verify_interview_complete()
+    if not completion.get("complete"):
+        print("[STANDARD-FIRST] REFUSING apply-diff build: interviewComplete is not "
+              "verified (no genuine transcript of >=3 Q/A blocks and no valid "
+              "owner consent). A bare interviewComplete flag is never trusted.",
+              file=sys.stderr)
+        print("INTERVIEW_NOT_COMPLETE: apply-diff build refused — verified "
+              "interview completion required.", file=sys.stderr)
+        sys.exit(EXIT_INTERVIEW_PENDING)
+
+    # Resolve paths exactly like the legacy lane (config safety + discovery dir).
+    if not MASTER_FILES:
+        MASTER_FILES = find_master_files_folder()
+    COMPANY_DISCOVERY_DIR = os.path.join(MASTER_FILES, "company-discovery")
+    resolve_company_paths(company_name)
+    print(f"[STANDARD-FIRST] APPLY-DIFF build for: {company_name}", file=sys.stderr)
+    print(f"[STANDARD-FIRST] Company folder: {COMPANY_DIR}", file=sys.stderr)
+    print(f"[STANDARD-FIRST] Departments folder: {DEPARTMENTS_DIR}", file=sys.stderr)
+
+    industry = config.get("industry", "")
+    company_description = config.get("company_description", "")
+    tools = config.get("tools", "")
+    biggest_challenge = config.get("biggest_challenge", "")
+    core_answers = {
+        "company_name": company_name,
+        "industry": industry,
+        "company_description": company_description,
+        "tools": tools,
+        "biggest_challenge": biggest_challenge,
+    }
+
+    _build_started_at = datetime.now().isoformat()
+    write_build_progress(
+        "apply-diff-start", "Applying your interview edits to the pre-built company...",
+        eta_minutes=8, started_at=_build_started_at,
+    )
+
+    departments_config = config.get("departments", {}) or {}
+
+    # ── DECISION-COVERAGE GATE (relaxed branch: KEEPs implicit; exit 88 still
+    # fires for un-provenanced recorded declines/adds) ───────────────────────
+    _enforce_decision_coverage_or_refuse(config, departments_config)
+
+    # ── ASSEMBLE THE DIFF: net-new customs from departments_config ──────────
+    selected_departments = {}
+    for dept_id, dept_config in departments_config.items():
+        if dept_config.get("enabled", True):
+            if dept_id in RECOMMENDED_DEPARTMENTS:
+                selected_departments[dept_id] = RECOMMENDED_DEPARTMENTS[dept_id].copy()
+            else:
+                selected_departments[dept_id] = {
+                    "name": dept_config.get("name", dept_id.replace("-", " ").title()),
+                    "emoji": dept_config.get("emoji", "\U0001f4c1"),
+                    "head": dept_config.get("head", f"Chief {dept_id.replace('-', ' ').title()} Officer"),
+                    "description": dept_config.get("activities", ""),
+                }
+    # Declined customs are dropped pre-reconcile (the standard-first decline
+    # reader is provenance-gated; a bare decline is ignored — fail-safe).
+    _declined_norm = _shared_canonical_decline_set(_load_build_state())
+    if _declined_norm:
+        for _did in [d for d in list(selected_departments) if _decline_norm(d) in _declined_norm]:
+            selected_departments.pop(_did, None)
+            print(f"[STANDARD-FIRST] Dropped provenance-declined custom department "
+                  f"'{_did}'.", file=sys.stderr)
+
+    # ── RETIRE PASS (reconcile's standard-first branch honors provenanced
+    # declines by calling retire-confirmed-decline.sh — archive, never delete;
+    # it re-adds NOTHING; keeps flow through below) ──────────────────────────
+    selected_departments = reconcile_canonical_floor(
+        selected_departments, core_answers, departments_config
+    )
+
+    # ── VERTICAL ADDITIONS + SEMANTIC MERGES (recorded adds) ────────────────
+    selected_departments = apply_vertical_packs(selected_departments, core_answers)
+    selected_departments = apply_semantic_merges(selected_departments, core_answers)
+
+    # ── KEEP PASS: every prebuilt floor department NOT retired is carried
+    # forward (its tree already exists on disk; the materializers below are
+    # additive + no-clobber over it). A RETIRED decline is never re-added —
+    # the keep pass honors the SAME normalized decline set the retire script
+    # gated on, so a confirmed decline can never come back through the keep
+    # pass (fail-safe: the decline set is the one source of truth). ─────────
+    floor = load_canonical_floor()
+    kept = []
+    for cid, info in floor.items():
+        if _canonical_present(cid, selected_departments):
+            continue
+        if _decline_norm(cid) in _declined_norm:
+            continue  # provenanced decline — retired above, never re-added
+        selected_departments[cid] = info.copy()
+        kept.append(cid)
+    # Universal-primary verticals are floor too (kept unless retired above).
+    packs = _load_vertical_packs()
+    for uid in _universal_primary_ids():
+        if uid in selected_departments:
+            continue
+        if _decline_norm(uid) in _declined_norm:
+            continue  # provenanced decline — retired above, never re-added
+        if uid in floor:
+            selected_departments[uid] = floor[uid].copy()
+        else:
+            up_info = None
+            for _pack in (packs or {}).values():
+                if not isinstance(_pack, dict):
+                    continue
+                for _d in (_pack or {}).get("auto_add_departments", []) or []:
+                    if isinstance(_d, dict) and _d.get("id") == uid:
+                        up_info = _d
+                        break
+                if up_info:
+                    break
+            selected_departments[uid] = {
+                "name": (up_info or {}).get("name", uid.replace("-", " ").title()),
+                "emoji": (up_info or {}).get("emoji", "\U0001f4c1"),
+                "head": (up_info or {}).get("head", f"Director of {uid}"),
+                "description": (up_info or {}).get("description", ""),
+            }
+        kept.append(uid)
+    print(f"[STANDARD-FIRST] Diff assembled: {len(selected_departments)} departments "
+          f"({len(kept)} kept prebuilt, customs/verticals added, "
+          f"{len(_declined_norm)} retired).", file=sys.stderr)
+
+    # Every dept must resolve to a suggested-roles file (zero-role guard).
+    assert_dept_map_resolves(list(selected_departments.keys()))
+
+    # ── DURABLE CHOSEN ARTIFACT (declines excluded by the decline set) ──────
+    try:
+        write_chosen_departments_artifact(selected_departments,
+                                          source="apply-standard-edits")
+    except Exception as _chosen_e:  # noqa: BLE001 — durable-write must never abort
+        print(f"[CHOSEN-LIST WARNING] apply-diff chosen-list write skipped: {_chosen_e}",
+              file=sys.stderr)
+
+    # ── PERSONALIZATION PASS (master plan item 6): run the existing generation
+    # orchestration OVER the prebuilt files with NO-CLOBBER for client-edited
+    # content (every core-file writer in create_department_workspace /
+    # create_role_workspace checks os.path.isfile first — idempotency contract
+    # SKILL.md:298-299) ──────────────────────────────────────────────────────
+    write_build_progress(
+        "apply-diff-materialize", "Materializing additions and personalizing kept departments...",
+        eta_minutes=6, started_at=_build_started_at,
+    )
+    specialists_by_dept = {}
+    persona_categories = load_persona_categories()
+    for dept_id, dept_info in selected_departments.items():
+        dept_config = departments_config.get(dept_id, {})
+        dept_answers = {
+            **core_answers,
+            "department_activities": dept_config.get("activities", dept_info.get("description", "")),
+            "department_kpis": dept_config.get("kpis", ""),
+            "department_tools": dept_config.get("tools", tools),
+            "department_challenges": dept_config.get("challenges", ""),
+        }
+        create_department_workspace(dept_id, dept_info, dept_answers)
+        role_folders = create_role_workspace(dept_id, dept_info, dept_answers)
+        custom_role_folders = materialize_custom_roles(dept_id, dept_info, dept_config, dept_answers)
+        if custom_role_folders:
+            role_folders = list(role_folders) + custom_role_folders
+        capture_custom_sops(dept_id, dept_info, dept_config, dept_answers)
+        specialists, _decision_ctx = determine_specialists(dept_id, dept_info, dept_answers)
+        specialists_by_dept[dept_id] = specialists
+        personas_md = create_governing_personas_md(dept_id, dept_info, persona_categories)
+        personas_path = os.path.join(DEPARTMENTS_DIR, dept_id, "governing-personas.md")
+        if personas_md:
+            try:
+                with open(personas_path, 'w') as f:
+                    f.write(personas_md)
+            except OSError as _pe:
+                print(f"[STANDARD-FIRST WARN] governing-personas write failed for "
+                      f"{dept_id}: {_pe}", file=sys.stderr)
+    _inst = _LIBRARY_FILL_STATS["instantiated_from_library"]
+    _llm = _LIBRARY_FILL_STATS["llm_generated"]
+    _tot = _inst + _llm
+    _pct = (100 * _inst // _tot) if _tot else 0
+    print(f"[STANDARD-FIRST ROLE-LIBRARY SUMMARY] Roles touched: {_tot} | "
+          f"instantiated-from-library: {_inst} ({_pct}%) | "
+          f"LLM-generated (no template): {_llm} ({100 - _pct if _tot else 0}%)",
+          file=sys.stderr)
+
+    # ── ASSEMBLY (org chart, rosters, routing map, manifests) — mirrors the
+    # legacy lane exactly ────────────────────────────────────────────────────
+    org_chart = generate_org_chart(selected_departments, specialists_by_dept)
+    org_chart_path = os.path.join(COMPANY_DIR or WORKSPACE_ROOT, "ORG-CHART.md")
+    with open(org_chart_path, 'w') as f:
+        f.write(org_chart)
+    for dept_id, dept_info in selected_departments.items():
+        write_department_roster(dept_id, dept_info)
+        write_department_how_to_use(dept_id, dept_info, company_name)
+    write_universal_routing_map(selected_departments)
+    write_pending_sops_manifest(selected_departments)
+    manifest_path = write_sop_research_manifest(
+        company_name=company_name,
+        industry=industry,
+        departments=selected_departments,
+        interview_answers={did: dcfg for did, dcfg in departments_config.items()},
+    )
+    if manifest_path:
+        populate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                       "populate-sops-from-manifest.py")
+        if os.path.isfile(populate_script):
+            try:
+                _sop_rc = _ase_subprocess.run(
+                    ["python3", populate_script, "--manifest", manifest_path,
+                     "--max-parallel", "10", "--timeout", "1800"],
+                    timeout=3600 + 60,
+                ).returncode
+                globals()["_BUILD_SOP_POPULATE_RC"] = _sop_rc
+                print(f"[STANDARD-FIRST] SOP populate rc={_sop_rc}", file=sys.stderr)
+            except Exception as _sp_e:  # noqa: BLE001
+                print(f"[STANDARD-FIRST WARN] SOP populate failed: {_sp_e}", file=sys.stderr)
+    brand_colors = config.get("brand_colors", {}) if isinstance(config.get("brand_colors"), dict) else {}
+    write_company_config_json(
+        company_name, industry, brand_colors,
+        full_config=config, selected_departments=selected_departments,
+    )
+    departments_json = generate_departments_json(selected_departments)
+    write_chosen_departments_artifact(
+        selected_departments,
+        discovery_dir=COMPANY_DISCOVERY_DIR if os.path.isdir(COMPANY_DISCOVERY_DIR or "") else None,
+        source="apply-standard-edits-final",
+    )
+    copy_departments_to_command_center(departments_json)
+
+    # ── AGENT REGISTRATION — the deferred Moment 3.5 (master plan PHASE 3
+    # item 5): register dept-<slug> rows for every CONFIRMED-KEPT department.
+    # The prebuild created files only (agentRegistration=deferred); the rows
+    # land now, at interviewComplete, exactly as the legacy lane registers
+    # them. Backup first (config safety protocol); the post-build wiring
+    # assert + materialize-dept-agents.sh repair from the legacy lane apply.
+    # SELF-DISABLING CRON DOCTRINE (ZHC-BUILDOUT-EXPERIENCE.md:122-126): the
+    # apply-diff build registers ZERO crons / heartbeat loops for the newly
+    # registered departments — any per-department cadence is the operator's
+    # to arm after handover, never something this build fires forever. ──────
+    registration_failures = []
+    _expected_dept_agent_ids = {f"dept-{d}" for d in selected_departments
+                                if d not in ("ceo", "dept-ceo")}
+    if os.path.isfile(OPENCLAW_CONFIG):
+        try:
+            backup_path = backup_config()
+            print(f"[STANDARD-FIRST] openclaw.json backed up to: {backup_path}",
+                  file=sys.stderr)
+            config_data = load_openclaw_config()
+            for dept_id, dept_info in selected_departments.items():
+                try:
+                    add_agent_to_config(config_data, dept_id, dept_info)
+                except Exception as _add_e:  # noqa: BLE001
+                    registration_failures.append(f"{dept_id}:{_add_e}")
+            if not registration_failures:
+                save_openclaw_config(config_data)
+                print(f"[STANDARD-FIRST] Registered {len(selected_departments)} "
+                      f"department agent(s) in agents.list (deferred Moment 3.5).",
+                      file=sys.stderr)
+            else:
+                print(f"[STANDARD-FIRST] agent registration FAILED for "
+                      f"{registration_failures} — config NOT saved (all-or-nothing).",
+                      file=sys.stderr)
+        except Exception as _reg_e:  # noqa: BLE001
+            registration_failures = [f"config_block:{_reg_e}"]
+    else:
+        registration_failures = ["all:openclaw_json_absent"]
+        print(f"[STANDARD-FIRST] openclaw.json not found at {OPENCLAW_CONFIG} — "
+              f"agent registration deferred to the resume cron.", file=sys.stderr)
+
+    # Wiring assert + materialize repair (verbatim semantics of the legacy
+    # lane's POST-BUILD WIRING ASSERTION).
+    if _expected_dept_agent_ids and os.path.isfile(OPENCLAW_CONFIG):
+        try:
+            _cfg_chk = load_openclaw_config()
+            _actual_ids_chk = {a.get("id") for a in _cfg_chk.get("agents", {}).get("list", [])
+                               if isinstance(a, dict)}
+            _wiring_missing = _expected_dept_agent_ids - _actual_ids_chk
+            if not _wiring_missing:
+                print(f"[STANDARD-FIRST WIRING-ASSERT] PASS — all "
+                      f"{len(_expected_dept_agent_ids)} dept agents confirmed in "
+                      f"agents.list", file=sys.stderr)
+            else:
+                print(f"[STANDARD-FIRST WIRING-ASSERT] {len(_wiring_missing)} dept "
+                      f"agent(s) missing — invoking materialize-dept-agents.sh to "
+                      f"repair", file=sys.stderr)
+                _mat_script = os.path.normpath(os.path.join(
+                    os.path.dirname(os.path.abspath(__file__)),
+                    "..", "..", "32-command-center-setup", "scripts",
+                    "materialize-dept-agents.sh"))
+                if os.path.isfile(_mat_script):
+                    try:
+                        _mat_env = dict(os.environ)
+                        if COMPANY_SLUG:
+                            _mat_env["COMPANY_SLUG"] = COMPANY_SLUG
+                        _mat_rc = _ase_subprocess.run(
+                            ["bash", _mat_script], timeout=120, env=_mat_env
+                        ).returncode
+                        if _mat_rc == 0:
+                            _cfg_chk2 = load_openclaw_config()
+                            _actual_ids2 = {a.get("id") for a in
+                                            _cfg_chk2.get("agents", {}).get("list", [])
+                                            if isinstance(a, dict)}
+                            _still_missing = _expected_dept_agent_ids - _actual_ids2
+                            if not _still_missing:
+                                print("[STANDARD-FIRST WIRING-ASSERT] PASS (after "
+                                      "materialize repair)", file=sys.stderr)
+                                registration_failures.clear()
+                            else:
+                                registration_failures.append("wiring:not-materialized")
+                        else:
+                            registration_failures.append("wiring:materialize-failed")
+                    except Exception as _mat_e:  # noqa: BLE001
+                        print(f"[STANDARD-FIRST WIRING-ASSERT] materialize error: "
+                              f"{_mat_e}", file=sys.stderr)
+                else:
+                    registration_failures.append("wiring:not-materialized")
+        except Exception as _wa_e:  # noqa: BLE001
+            print(f"[STANDARD-FIRST WIRING-ASSERT] WARN: wiring check failed: {_wa_e}",
+                  file=sys.stderr)
+
+    # ── STATE WRITE: confirmationsComplete (the resume cron HOP-4 contract)
+    # + departments[] status settlement + buildCompletedAt ──────────────────
+    try:
+        path = _build_state_path()
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        state = _load_build_state()
+        state["confirmationsComplete"] = True
+        state["confirmationsCompletedAt"] = datetime.now().isoformat()
+        _declined_now = _shared_canonical_decline_set(_load_build_state())
+        depts = state.get("departments")
+        if isinstance(depts, list):
+            _now = datetime.now().isoformat()
+            _by_norm = {}
+            for e in depts:
+                if isinstance(e, dict) and e.get("slug"):
+                    _by_norm[_decline_norm(e["slug"])] = e
+            for did in selected_departments:
+                e = _by_norm.get(_decline_norm(did))
+                if e is not None:
+                    e["status"] = "done"
+                    e.setdefault("completedAt", _now)
+            # Departments the diff dropped (declined customs never in
+            # departments[]): mark done too if they were prebuilt-kept? No —
+            # they were retired by the retire script; leave their entry alone.
+            state["departments"] = depts
+        if not registration_failures:
+            state["buildCompletedAt"] = datetime.now().isoformat()
+            state["buildType"] = "standard-first"
+        state["applyStandardEdits"] = {
+            "appliedAt": datetime.now().isoformat(),
+            "keptDepartments": sorted(kept),
+            "retiredDepartments": sorted(_declined_now),
+            "registrationFailures": registration_failures,
+            "source": "build-workforce.py apply_standard_edits",
+        }
+        with open(path, "w") as f:
+            json.dump(state, f, indent=2)
+        print(f"[STANDARD-FIRST] State written: confirmationsComplete=true, "
+              f"{len(kept)} kept settled to done, "
+              f"buildCompletedAt={'set' if not registration_failures else 'DEFERRED (registration failures)'}.",
+              file=sys.stderr)
+    except OSError as _st_e:
+        print(f"[STANDARD-FIRST WARN] could not write apply-diff state: {_st_e}",
+              file=sys.stderr)
+
+    # ── GATES PRESERVED (master plan PHASE 3 item 7): post-build augmentation
+    # + library gate + qc-completeness — UNCHANGED, run AFTER the apply ──────
+    _post_build_rc = -1
+    _script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "post-build-role-workspaces.py")
+    if os.path.isfile(_script):
+        try:
+            _result = _ase_subprocess.run(
+                ["python3", _script, "--company-slug", COMPANY_SLUG or ""],
+                timeout=300)
+            _post_build_rc = _result.returncode
+        except Exception as _pb_e:  # noqa: BLE001
+            print(f"[STANDARD-FIRST WARN] post-build-role-workspaces failed: {_pb_e}",
+                  file=sys.stderr)
+    _flush_artifact_provenance_to_state()
+    _write_provisioning_receipt(company_name, selected_departments, config, core_answers)
+
+    create_handoff(
+        option=config.get("option", "A"),
+        departments_done=list(selected_departments.keys()),
+        departments_remaining=[],
+        progress_pct=100 if not registration_failures else 90,
+    )
+    generate_persona_matrix(selected_departments, persona_categories, company_name)
+
+    _qc_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "qc-completeness.sh")
+    if os.path.isfile(_qc_script):
+        try:
+            _qc_args = ["bash", _qc_script]
+            if _post_build_rc == 0:
+                _qc_args.append("--quiet")
+            _ase_subprocess.run(_qc_args, timeout=180)
+        except Exception as _qc_e:  # noqa: BLE001
+            print(f"[STANDARD-FIRST WARN] qc-completeness.sh invocation failed: {_qc_e}",
+                  file=sys.stderr)
+
+    _gate_script = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "verify-library-gate.sh")
+    if os.path.isfile(_gate_script):
+        try:
+            _library_gate_rc = _ase_subprocess.run(["bash", _gate_script],
+                                                   timeout=240).returncode
+            print(f"[STANDARD-FIRST] LIBRARY GATE rc={_library_gate_rc} "
+                  f"(0 = role + SOP libraries done; non-zero = the resume cron "
+                  f"keeps the box out of closeout until it passes).",
+                  file=sys.stderr)
+        except Exception as _lg_e:  # noqa: BLE001
+            print(f"[STANDARD-FIRST WARN] verify-library-gate.sh invocation failed: "
+                  f"{_lg_e}", file=sys.stderr)
+
+    write_build_progress(
+        "complete" if not registration_failures else "qc",
+        "Your tailored company is live." if not registration_failures
+        else "Apply-diff build finished with registration failures — see build-state.",
+        eta_minutes=0, started_at=_build_started_at,
+        completed_at=datetime.now().isoformat(),
+    )
+    print(f"\n[STANDARD-FIRST] APPLY-DIFF BUILD COMPLETE: {company_name}",
+          file=sys.stderr)
+    print(f"[STANDARD-FIRST] Departments: {len(selected_departments)} "
+          f"(retired: {len(_declined_norm)})", file=sys.stderr)
+
+
 def build_from_config(config):
     """
     Build the full workforce from a non-interactive config JSON.
@@ -3031,8 +3928,27 @@ def build_from_config(config):
     This replaces the conversational interview flow with a direct build
     from the provided configuration. All department workspaces, specialists,
     and supporting files are created without any interactive prompts.
+
+    STANDARD-FIRST LANE GUARD (AI Workforce standard-first redesign PHASE 3,
+    2026-08-04): a buildType=standard-first box builds via the APPLY-DIFF
+    entry (--apply-standard-edits -> apply_standard_edits), never via the
+    build-from-scratch lane — its floor is already prebuilt on disk and the
+    interview only edits it. Refusing here (fail-closed) keeps the two lanes
+    symmetric: a legacy box can never enter the apply path (guarded there)
+    and a standard-first box can never re-run the from-scratch build (guarded
+    here). Rollback property 1 holds both ways: absent/legacy buildType means
+    this guard never fires and the legacy lane is byte-identical.
     """
     global MASTER_FILES, COMPANY_DISCOVERY_DIR
+
+    if _standard_first_mode():
+        print("[STANDARD-FIRST] REFUSING build-from-scratch on a standard-first box: "
+              "the floor is already prebuilt on disk and the interview EDITS it. "
+              "Run the apply-diff build instead: build-workforce.py --non-interactive "
+              "--config-file <config> --apply-standard-edits", file=sys.stderr)
+        print("APPLY_DIFF_REQUIRED: standard-first box — use --apply-standard-edits.",
+              file=sys.stderr)
+        sys.exit(EXIT_RECONCILIATION_PENDING)
 
     # BUG-FIX v11.6.0 (PRD 1.9): use the module-level MASTER_FILES already resolved
     # by get_openclaw_paths() (which honours MASTER_FILES_DIR env override) instead
@@ -7123,7 +8039,9 @@ def add_agent_to_config(config, dept_id, dept_info):
         "tts",
         "exec",
         "read",
-                        "web_fetch",
+        "write",
+        "edit",
+        "web_fetch",
         "web_search",
     ]
 
@@ -7151,7 +8069,7 @@ def add_agent_to_config(config, dept_id, dept_info):
     # state so a box is never falsely marked clean. When the route-task MCP tool
     # is present, move `exec` from CEO_TOOL_ALLOW into CEO_TOOL_DENY.
     CEO_TOOL_DENY = [
-                                                                # Belt-and-suspenders MCP deny by name-glob, in case a gateway version
+        # Belt-and-suspenders MCP deny by name-glob, in case a gateway version
         # does not honor tools.byProvider. Denies always win and are restrict-only.
         "ghl-community-mcp__*",
         "ghl-mcp__*",
@@ -7171,10 +8089,16 @@ def add_agent_to_config(config, dept_id, dept_info):
         "sessions_history",
         # mc-route__route_task = the SHIPPED signed routing tool (scripts/mc-route.sh);
         # the CEO routes by CALLING it (structured tool call, no shell) — that presence
-        # is what clears verify-routing.sh G7. exec is RETAINED (per G1's decision in
-        # hooks/lib-ceo-tool-gate.sh), NOT removed: it stays ONLY as the exec channel for
-        # the two anchored helpers (route-presentation.sh + mc-route.sh); the intent-gate
-        # default-denies every other exec. KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
+        # is what clears verify-routing.sh G7. exec is RETAINED, NOT removed: it is the
+        # exec channel for the two anchored helpers (route-presentation.sh + mc-route.sh).
+        #
+        # ⚠ CORRECTION 2026-08-05: an earlier version of this comment claimed "the
+        # intent-gate default-denies every other exec". THAT IS NO LONGER TRUE and must
+        # not be relied on. The PreToolUse intent-gate (hooks/ceo-intent-gate.sh) was
+        # DELETED from the repo and un-wired fleet-wide with the rest of the CEO gate,
+        # so there is currently NO command-level exec restriction — only the
+        # {security,ask} config-layer exec policy, which cannot allowlist by command.
+        # KEEP IN SYNC with hooks/lib-ceo-tool-gate.sh.
         "mc-route__route_task",
         "exec",
         # FABLE-5 FIX — plugin/operational tools. An explicit per-agent tools.allow
@@ -7191,6 +8115,26 @@ def add_agent_to_config(config, dept_id, dept_info):
         "cron",
         "gateway",
         "nodes",
+        # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ─────────────
+        # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+        # exactly as effectively as one named in tools.deny. The CEO gate that
+        # justified omitting them is GONE (deny set retired, PreToolUse intent-gate
+        # deleted, hooks un-wired) — so the omission is now a vestigial gate that
+        # still produces the original failure.
+        #
+        # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+        # compaction. With no write tool, the agent cannot comply and cannot stop
+        # trying — it re-reads an empty file and retries, looping for up to 163
+        # minutes per turn and swallowing the owner's Telegram messages. Two weeks of
+        # outage. Removing the deny alone did NOT fix it; the allowlist omission
+        # reproduced it verbatim.
+        #
+        # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+        # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+        # prompt-injection plugin), NEVER a tool removal. Taking write away does not
+        # make the CEO route — it makes it hang.
+        "write",
+        "edit",
     ]
     # GHL MCP is registered under BOTH ids on live boxes: ghl-community-mcp AND
     # the legacy alias ghl-mcp. Deny ALL tools from both, by provider. The glob
@@ -8018,6 +8962,14 @@ if __name__ == "__main__":
     args = parse_args()
     if getattr(args, 'regenerate_org_chart_only', False):
         regenerate_org_chart_only()
+    elif getattr(args, 'apply_standard_edits', False):
+        if not args.non_interactive:
+            print("[STANDARD-FIRST] --apply-standard-edits requires --non-interactive "
+                  "--config-file <config> (the interview edits ride in the config).",
+                  file=sys.stderr)
+            sys.exit(1)
+        config = load_non_interactive_config(args.config_file)
+        apply_standard_edits(config)
     elif args.non_interactive:
         config = load_non_interactive_config(args.config_file)
         build_from_config(config)

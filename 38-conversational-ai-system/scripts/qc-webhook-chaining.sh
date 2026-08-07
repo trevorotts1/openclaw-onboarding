@@ -165,11 +165,25 @@ fi
 
 echo ""
 
-# 2. AGENTS.md Step 2.9 block.
+# 2. AGENTS.md Step 2.9 block — SHIPPED SOURCE sanity (the writer CAN produce it).
 if [ -f "$AG_SCRIPT" ] && grep -qF 'STEP_2_9_WEBHOOK_CHAINING' "$AG_SCRIPT"; then
-  pass "05-update-agents-md.sh inserts the STEP_2_9_WEBHOOK_CHAINING post-action block"
+  pass "05-update-agents-md.sh SOURCE carries the STEP_2_9_WEBHOOK_CHAINING marker text"
 else
-  fail "05-update-agents-md.sh must insert the STEP_2_9_WEBHOOK_CHAINING post-action block"
+  fail "05-update-agents-md.sh SOURCE is missing the STEP_2_9_WEBHOOK_CHAINING marker text"
+fi
+
+# 2b. AGENTS.md Step 2.9 block — LIVE FILE assertion (content-version-aware).
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
+if [ -f "$AGENTS_MD" ]; then
+  if grep -qF 'STEP_2_9_WEBHOOK_CHAINING' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the STEP_2_9_WEBHOOK_CHAINING marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the STEP_2_9_WEBHOOK_CHAINING marker — the pointer-stanza writer has not run on this box; a shipped-source check alone cannot prove this"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the marker (set AGENTS_MD to override)"
 fi
 
 # 3. MEMORY Rule 31.

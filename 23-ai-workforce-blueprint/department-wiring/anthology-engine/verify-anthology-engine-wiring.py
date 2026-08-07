@@ -13,11 +13,14 @@ Proves, structurally (no scores grepped), that:
      if the branch's git history is available, the file is byte-identical to
      its state on the merge-base with origin/main (best-effort; skipped, not
      failed, if git or the ref is unavailable).
-  3. department-floor.py --json still reports expected_floor_count 29 with the
-     SAME composition (23 mandatory + 6 universal-primary-vertical) declared in
-     this folder's wiring.json, and returns rc 0 or 7 (7 only means "no
-     workforce on this box to evaluate against", never a wiring defect; rc 3
-     would mean the floor itself is broken and IS a failure here).
+  3. department-floor.py --json still reports expected_floor_count matching the
+     LIVE count derived from department-naming-map.json (mandatory keys +
+     universal-primary vertical depts -- never a hardcoded integer here, so
+     this check cannot fall behind the next floor move) with the SAME
+     composition declared in this folder's wiring.json, and returns rc 0 or 7
+     (7 only means "no workforce on this box to evaluate against", never a
+     wiring defect; rc 3 would mean the floor itself is broken and IS a
+     failure here).
   4. The skill 59 folder and its sanctioned entry script exist on disk, matching
      wiring.json's self_invocation.entry_script pointer.
   5. HOW-TO-USE-THE-ANTHOLOGY-DEPARTMENT.md exists in this folder and names
@@ -38,6 +41,7 @@ Exit codes:
 Read-only. Never writes. Idempotent. No em dashes in output. No triple-backtick
 fences.
 """
+import importlib.util
 import json
 import os
 import subprocess
@@ -52,6 +56,20 @@ INDEX_PATH = os.path.join(REPO, "23-ai-workforce-blueprint", "templates", "role-
 NAMING_MAP = os.path.join(REPO, "23-ai-workforce-blueprint", "department-naming-map.json")
 FLOOR_SCRIPT = os.path.join(REPO, "23-ai-workforce-blueprint", "scripts", "department-floor.py")
 SKILL_DIR = os.path.join(REPO, "59-anthology-engine")
+
+
+def _load_floor_module():
+    """Import department-floor.py as a module (never as __main__, so its
+    `if __name__ == "__main__"` guard never fires and main()/resolve_departments_
+    dir() -- which touch real box paths -- are never invoked). Gives access to
+    the SAME universal_primary_vertical_departments() the live --json verdict
+    above was computed from, for the live expected_floor_count derivation in
+    check_floor()."""
+    spec = importlib.util.spec_from_file_location(
+        "anthology_wiring_floor_mod", FLOOR_SCRIPT)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
 
 EXPECTED_DEPARTMENTS = ["marketing"]
 EXPECTED_PRIMARY_ROLE = "content-marketing-strategist"
@@ -167,8 +185,27 @@ def check_floor(errors, w):
             f"[floor] department-floor.py reports expected_floor_count={verdict.get('expected_floor_count')}, "
             f"wiring.json declares {expected}"
         )
-    if verdict.get("expected_floor_count") != 29:
-        errors.append(f"[floor] expected_floor_count = {verdict.get('expected_floor_count')}, expected 29 (23 mandatory + 6 universal-primary-vertical)")
+    # LIVE DERIVATION, never a hardcoded integer (this used to hardcode "!= 29",
+    # which meant every future floor move required someone to remember to bump
+    # this literal too -- exactly the class of bug the department-naming-map.json
+    # v2.8.0 reconciliation exists to close). Compute the CURRENT expected count
+    # straight from the same naming map + department-floor.py module the
+    # verdict itself was produced by, so this check can never fall behind.
+    try:
+        nm = json.loads(open(NAMING_MAP, encoding="utf-8").read())
+        floor_mod = _load_floor_module()
+        live_mandatory = len(nm.get("mandatory") or {})
+        live_universal = len(floor_mod.universal_primary_vertical_departments(nm))
+        live_expected = live_mandatory + live_universal
+    except Exception as exc:
+        errors.append(f"[floor] could not derive the live expected_floor_count: {exc}")
+        return
+    if verdict.get("expected_floor_count") != live_expected:
+        errors.append(
+            f"[floor] expected_floor_count = {verdict.get('expected_floor_count')}, "
+            f"expected {live_expected} ({live_mandatory} mandatory + {live_universal} "
+            f"universal-primary-vertical, derived live from department-naming-map.json)"
+        )
 
 
 def check_disk(errors, w):

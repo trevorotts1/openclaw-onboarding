@@ -33,6 +33,22 @@ What you must come out of Stage 1 with: company name, industry, mission, the
 owner's values + communication style, the connected systems, and per-department
 activities / KPIs / tools / challenges for each department the client confirms.
 
+**Standard-first variant (standard-first redesign).** On a box with
+`buildType == "standard-first"` in `.workforce-build-state.json`, the company's
+standard department foundation is ALREADY built before this stage begins — the
+operator-triggered prebuild (`scripts/prebuild-standard-workforce.sh`, sourced
+exclusively from `templates/role-library/`) materialized the canonical floor at
+onboarding, under an explicit provenanced operator-consent record and deferred
+agent registration (the No-Work-During-Interview Gate's exemption 2,
+INSTRUCTIONS.md). Stage 1 then becomes an EDIT pass over the built set — the
+interview walks the prebuilt departments (KEEP / TUNE / REMOVE, INSTRUCTIONS.md
+Phase 5.5 standard-first lane) and collects the same business knowledge, which
+the apply-diff build at `interviewComplete` uses to personalize kept
+departments, materialize adds, and archive confirmed declines. The ONE-question
+discipline, the flush protocol, and the Stage-1 exit criteria are unchanged.
+Legacy boxes (absent `buildType`) run the original build-from-scratch flow
+byte-identical.
+
 ---
 
 ## Stage 2 — Build (the floor is mandatory, the library does the writing)
@@ -44,14 +60,19 @@ reduced workforce.
   of mandatory departments PLUS the 6 universal-primary vertical-pack departments
   (one from each pack whose primary dept is flagged `universal_primary` — fires for
   EVERY client regardless of industry; naming-map v2.6.1 reclassified the real-estate
-  pack's `listings` dept to real-estate-only, so the universal layer is 6 not 7 and
-  the floor is 28),
+  pack's `listings` dept to real-estate-only, so the universal layer is 6 not 7),
   MINUS only departments the client explicitly declined. Industry keyword matching
   adds additional vertical extras on top of the floor but never reduces it.
-  The floor is enforced on DISK by `department-floor.py` (build-state JSON is
-  never trusted as proof). A 3-dept, 6-dept, or reduced-dept ship is a bug, not a
-  "lean build." See `department-naming-map.json` vertical_packs for the 7 packs
-  and their universal_primary departments.
+  The floor is enforced on DISK by `department-floor.py`, which counts 30
+  departments (24 mandatory + 6 universal-primary — v2.8.0 registered the
+  never-declinable Master Orchestrator as the 24th mandatory dept); the
+  interview-declinable floor build-workforce.py's reconciliation engine
+  actually unions in is 29 (23 mandatory + 6 universal-primary), since Master
+  Orchestrator is provisioned outside the interview and carries no decline
+  path (build-state JSON is never trusted as proof either way). A 3-dept,
+  6-dept, or reduced-dept ship is a bug, not a "lean build." See
+  `department-naming-map.json` vertical_packs for the 7 packs and their
+  universal_primary departments.
 - **Directors are real agents.** Each department gets a first-class OpenClaw agent
   registered in `openclaw.json` `agents.list[]` (id `dept-<id>`, own workspace,
   own `agentDir`, model, and a `subagents` block so it can spawn at runtime).

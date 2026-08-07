@@ -11,6 +11,22 @@
 #
 # Idempotent. Safe to run every N minutes. Holds a 10-minute lockfile so it
 # never double-fires while a build is actively running.
+#
+# AI WORKFORCE STANDARD-FIRST (2026-08-04) AWARENESS:
+#   • Departments with status "prebuilt" (written by the standard prebuild
+#     driver, buildType=standard-first) are NOT counted as pending-build and
+#     never appear in a [WORKFORCE-RESUME] dispatch (build-dirtiness counts
+#     only non-prebuilt pending/failed/stale-building departments).
+#   • HOP-4 (the buildCompletedAt writer) gains one standard-first conjunct:
+#     confirmationsComplete must be true (every prebuilt department
+#     confirmed-or-declined). The legacy contract is unchanged.
+#   • A PARTIAL prebuild (standardPrebuild.status pending|failed, interview
+#     not complete) gets a [STANDARD-PREBUILD-RESUME] self-ping lane with the
+#     same anti-overlap discipline as the resume dispatch.
+#   • HOP-1 recovery is unchanged by construction: the prebuild writes no
+#     interviewProgress.lastQuestionAt, so it can never be read as interview
+#     content.
+#   • Legacy lane (buildType absent) is byte-identical to pre-change behavior.
 
 set -u
 
@@ -534,9 +550,89 @@ fi
 echo $$ > "$LOCK_FILE"
 trap 'rm -f "$LOCK_FILE"' EXIT
 
+# ---- AI Workforce standard-first (2026-08-04): PARTIAL-PREBUILD repair lane ----
+# Under buildType=standard-first the operator-triggered prebuild driver
+# (prebuild-standard-workforce.sh) materializes the canonical department floor
+# from templates/role-library/ BEFORE the interview. If that prebuild session
+# dies MID-materialization (e.g. 15 departments materialized, 14 pending), the
+# state carries standardPrebuild.status == "pending" (or "failed") — a
+# condition no other lane can see: the interview is not complete, so the normal
+# build lanes below never run, and without this lane the partial prebuild would
+# sit forever (a new flavor of the exact silent-strand failure mode this script
+# exists to prevent). This is the partial-prebuild resume mechanism: it fires a
+# [STANDARD-PREBUILD-RESUME] self-ping so the prebuild driver re-runs. The
+# driver itself is idempotent (additive-only, skip-existing, no-clobber — the
+# materialize-missing-departments.py safety contract), so a re-run completes
+# only the missing departments.
+#
+# PLACEMENT: runs AFTER the park gate + preconditions + lock and BEFORE the
+# read-state / HOP-1 recovery block, so a PARKED box never dispatches and this
+# lane is serialized against the normal resume dispatch by the same lockfile.
+# It exits here: a partial prebuild is NOT a post-interview build (no pending
+# departments for the agent to build, no closeout to drive), and the standard
+# lanes below assume an interview-complete build and must never misfire on
+# pre-interview state.
+#
+# LEGACY LANES UNTOUCHED: the lane is gated on buildType == "standard-first".
+# Every existing box has buildType absent (= legacy) and falls straight through
+# with ZERO other behavior changed (rollback property 1: the legacy lane stays
+# byte-identical). The prebuild writes NO interviewProgress.lastQuestionAt, so
+# this lane can never be mistaken for interview progress, and the HOP-1
+# recovery path below cannot misfire on a prebuilt-but-uninterviewed box.
+_build_type_sf=$(jq -r '.buildType // empty' "$STATE_FILE" 2>/dev/null || echo "")
+if [[ "$_build_type_sf" == "standard-first" ]]; then
+  _prebuild_status=$(jq -r '.standardPrebuild.status // empty' "$STATE_FILE" 2>/dev/null || echo "")
+  _pb_ic=$(jq -r '.interviewComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
+  # A PARTIAL prebuild (status "done" is handled by the prebuilt-aware
+  # counting further down; an interview that is already complete means the
+  # apply-diff build owns the state from here on).
+  if { [[ "$_prebuild_status" == "pending" || "$_prebuild_status" == "failed" ]]; } \
+     && [[ "$_pb_ic" != "true" ]]; then
+    _pb_marker="$OC_ROOT/workspace/.standard-prebuild-resume.inflight"
+    _pb_dispatch_ok=1
+    if [[ -f "$_pb_marker" ]]; then
+      _pb_mtime=$(stat -c %Y "$_pb_marker" 2>/dev/null || stat -f %m "$_pb_marker" 2>/dev/null || echo 0)
+      _pb_age=$(( $(date +%s) - _pb_mtime ))
+      # Same 20-minute overlap window the resume dispatch uses
+      # (RESUME_INFLIGHT_TTL_MINUTES): a prebuild re-run can take minutes, and
+      # a */15 fire must not stack a second overlapping re-run.
+      _pb_ttl=$(( RESUME_INFLIGHT_TTL_MINUTES * 60 ))
+      if (( _pb_age < _pb_ttl )); then
+        _pb_dispatch_ok=0
+        log "STANDARD-PREBUILD-RESUME: in-flight marker is ${_pb_age}s old (< ${_pb_ttl}s TTL) - a prebuild re-run is likely still running; SKIPPING this fire."
+      fi
+    fi
+    if (( _pb_dispatch_ok == 1 )); then
+      _pb_total=$(jq -r '(.standardPrebuild.prebuiltDepartments // .departments // []) | length' "$STATE_FILE" 2>/dev/null || echo "?")
+      _pb_done=$(jq -r '[.departments[]? | select(.status == "prebuilt")] | length' "$STATE_FILE" 2>/dev/null || echo "?")
+      log "STANDARD-PREBUILD-RESUME: buildType=standard-first, standardPrebuild.status=${_prebuild_status} (partial prebuild: ${_pb_done:-?}/${_pb_total:-?} departments materialized) - dispatching a [STANDARD-PREBUILD-RESUME] self-ping to re-run the idempotent prebuild driver."
+      _pb_chat="$(resolve_operator_chat_id)"
+      if [[ -n "$_pb_chat" ]] && command -v openclaw >/dev/null 2>&1; then
+        _pb_msg="[STANDARD-PREBUILD-RESUME] the standard prebuild on $(hostname) is INCOMPLETE (standardPrebuild.status=${_prebuild_status}, ${_pb_done:-?}/${_pb_total:-?} departments materialized). Re-run scripts/prebuild-standard-workforce.sh (idempotent: additive-only, skip-existing, no-clobber per the materialize-missing-departments.py safety contract) to finish materializing the remaining departments from templates/role-library/. Do NOT message the owner about this - the prebuild is internal."
+        if openclaw message send --channel telegram -t "$_pb_chat" -m "$_pb_msg" >>"$LOG_FILE" 2>&1; then
+          date -u +%Y-%m-%dT%H:%M:%SZ > "$_pb_marker" 2>/dev/null || true
+          log "STANDARD-PREBUILD-RESUME: dispatched (in-flight marker set, TTL ${RESUME_INFLIGHT_TTL_MINUTES}m)."
+        else
+          log "STANDARD-PREBUILD-RESUME: dispatch FAILED (non-fatal; will retry on the next fire)."
+        fi
+      else
+        log "STANDARD-PREBUILD-RESUME: no operator escalation chat configured or openclaw CLI missing - logged only; will retry on the next fire. Configure env.vars.OPERATOR_ESCALATION_CHAT_ID (scripts/configure-operator-telegram.sh)."
+      fi
+    fi
+    exit 0
+  fi
+fi
+
 # ---- read state ----
 interview_complete=$(jq -r '.interviewComplete // false' "$STATE_FILE")
 if [[ "$interview_complete" != "true" ]]; then
+  # STANDARD-FIRST NOTE (2026-08-04): this HOP-1 recovery is UNCHANGED by
+  # design. The standard prebuild writes NO interviewProgress.lastQuestionAt
+  # (it writes only its own namespaced standardPrebuild state block), so a
+  # prebuilt-but-uninterviewed box still takes the "no lastQuestionAt -
+  # interview not started" branch below and this recovery path can never
+  # misfire on prebuild state. tests/unit/standard-first-cron-awareness.test.sh
+  # (HOP1_NO_MISFIRE) pins that behavior.
   # PRD-3.3 R3.2 (auto-closeout): RECOVER a finished-but-unflagged interview.
   # Prior behavior: this hard-exited the moment interviewComplete != true, which
   # made the ONLY recovery cron blind to an interview the owner genuinely finished
@@ -556,7 +652,14 @@ if [[ "$interview_complete" != "true" ]]; then
   last_q_at_unflagged=$(jq -r '.interviewProgress.lastQuestionAt // empty' "$STATE_FILE" 2>/dev/null || true)
   if [[ -z "$last_q_at_unflagged" || "$last_q_at_unflagged" == "null" ]]; then
     log "interview not yet complete and no lastQuestionAt - interview not started; nothing to recover"
-    report_interview_not_complete "not started"   # throttled operator-facing report
+    # Standard-first accuracy: on a prebuilt box the foundation already EXISTS,
+    # so the operator report must not claim "no departments are being built".
+    _ns_detail="not started"
+    if [[ "$(jq -r '.buildType // empty' "$STATE_FILE" 2>/dev/null)" == "standard-first" ]] \
+       && [[ "$(jq -r '.standardPrebuild.status // empty' "$STATE_FILE" 2>/dev/null)" == "done" ]]; then
+      _ns_detail="not started (standard-first: foundation pre-built, awaiting the owner's interview review)"
+    fi
+    report_interview_not_complete "$_ns_detail"   # throttled operator-facing report
     exit 0
   fi
   log "RECOVERY: interviewComplete!=true but interview content exists (lastQuestionAt=$last_q_at_unflagged) - running QC to decide if the owner actually finished (HOP-1 recovery)."
@@ -694,6 +797,15 @@ for dept in departments:
     role_lib = dept.get("roleLibraryFilled", False)
     sop_lib  = dept.get("sopLibraryFilled", False)
 
+    # AI WORKFORCE STANDARD-FIRST (2026-08-04): a department at status
+    # "prebuilt" is a legitimate prebuild deliverable, NOT a stale claim.
+    # Auditing it here could demote it to "pending" (its how-to.md is a
+    # library-sourced token-fill that may legitimately read small/stub), which
+    # would then count it as pending-build and violate the "prebuilt is never
+    # pending" guarantee. Skip it.
+    if status == "prebuilt":
+        continue
+
     # Only audit departments that claim done or library-filled
     claims_done = (status == "done") or role_lib or sop_lib
     if not claims_done:
@@ -770,12 +882,71 @@ STALE_PY
   fi
 fi
 
-pending_count=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed")] | length' "$STATE_FILE")
+# NO-LASTATTEMPTAT VISIBILITY GAP FIX: a department can end up at
+# status=="building" with NO lastAttemptAt at all (e.g. the DEFECT #5 honesty
+# floor in refresh-build-state-from-index.py demotes a false "done" back to
+# "building" but only ever touches rolesPlanned/rolesDone/status/updatedAt --
+# it never stamps lastAttemptAt, because as far as that script knows no real
+# attempt has started). Such an entry used to be invisible to BOTH checks
+# below: not "pending"/"failed" (so absent from pending_count/pending_list),
+# and excluded from stale_building_count by its own `lastAttemptAt != null`
+# filter (nothing to compare "older than N minutes" against). With every
+# OTHER department done, pending_count==0 AND stale_building_count==0 made
+# total_attention==0 further down, so the cron logged "nothing to do" and
+# exited clean every 15 minutes forever -- the exact silent-strand failure
+# mode this file exists to prevent (see the Rule-8 NEVER-STOP comments
+# throughout). Fail toward VISIBILITY: a "building" dept with a missing
+# timestamp was never actually attempted (there is nothing to time out), so
+# it belongs in the PENDING lane, not the stale-timeout lane -- it is picked
+# up, named in the [WORKFORCE-RESUME] ping, and (re)started exactly like any
+# other pending department, per resume-prompt.txt/INSTRUCTIONS.md's own build
+# step ("flip status to building and set lastAttemptAt to now" before work
+# begins). This never double-counts: stale_building_count still requires
+# lastAttemptAt to exist, so a genuinely timed-out attempt is never claimed by
+# both lanes at once.
+#
+# AI WORKFORCE STANDARD-FIRST (2026-08-04): departments with status "prebuilt"
+# are NOT counted as pending-build, by construction: these selectors match ONLY
+# the statuses pending/failed/building, and the vocabulary normalizer above
+# never rewrites "prebuilt" into any of them. A prebuilt department (its files
+# materialized from the canonical library by the prebuild driver, awaiting the
+# owner's interview review) therefore never enters pending_count,
+# stale_building_count, or either dispatch list below — build-dirtiness counts
+# ONLY non-prebuilt pending/failed/stale-building departments.
+# tests/unit/standard-first-cron-awareness.test.sh pins this. The completion-
+# contract change that actually moves the needle for standard-first boxes is
+# the HOP-4 amendment further down: the legacy "every department done"
+# contract can never be satisfied while departments legitimately sit at
+# "prebuilt", so HOP-4 gains a standard-first disjunct (all non-prebuilt depts
+# done + prebuilt depts confirmed-or-declined).
+pending_count=$(jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+  ] | length
+' "$STATE_FILE")
 stale_building_count=$(jq --arg min "$STALE_BUILDING_MINUTES" -r '
   [.departments[]
     | select(.status == "building")
     | select(.lastAttemptAt != null)
     | select(((now - (.lastAttemptAt | fromdateiso8601)) / 60) > ($min | tonumber))
+  ] | length
+' "$STATE_FILE" 2>/dev/null || echo 0)
+
+# Standard-first prebuilt counters (always 0 on legacy boxes).
+prebuilt_count=$(jq -r '[.departments[]? | select(.status == "prebuilt")] | length' "$STATE_FILE" 2>/dev/null || echo 0)
+# "Confirmed or declined" decisions for prebuilt departments are recorded by
+# the interview review board (record-dept-decision.sh) as provenanced decline
+# records; KEEP is implicit (no record). prebuilt_decided_count therefore
+# counts ONLY the prebuilt departments carrying a provenanced decline — the
+# ones the apply-diff build will archive. A confirmationsComplete=true state
+# flag is the authoritative "every prebuilt dept was reviewed" signal (see the
+# HOP-4 standard-first completion contract below); this count is diagnostic.
+prebuilt_decided_count=$(jq -r '
+  [((.standardPrebuild.prebuiltDepartments // [])[]) as $p
+    | (($p.decision // "") | ascii_downcase) as $d
+    | select(($d == "decline" or $d == "declined" or $d == "remove")
+             and (($p.provenance // "") != ""))
   ] | length
 ' "$STATE_FILE" 2>/dev/null || echo 0)
 
@@ -798,11 +969,35 @@ fi
 # before the closeout gate. Last-night incident (multiple clients).
 role_library_status=$(jq -r '.roleLibraryStatus // empty' "$STATE_FILE")
 sop_library_status=$(jq -r '.sopLibraryStatus // empty' "$STATE_FILE")
+confirmations_complete=$(jq -r '.confirmationsComplete // false' "$STATE_FILE" 2>/dev/null || echo false)
+build_type=$(jq -r '.buildType // empty' "$STATE_FILE" 2>/dev/null || echo "")
 done_count_now=$(jq -r '[.departments[] | select(.status == "done")] | length' "$STATE_FILE")
 total_count_now=$(jq -r '.departments | length' "$STATE_FILE")
+# Standard-first completion helper: every non-prebuilt department done AND
+# every prebuilt department confirmed-or-declined. On legacy boxes the right
+# conjunct is trivially true (prebuilt_count is 0), so callers stay
+# byte-identical for legacy state. The confirmationsComplete flag is written by
+# the apply-diff build once the owner's review of the prebuilt set is recorded
+# (KEEP is implicit; only provenanced declines carry a record).
+_sf_depts_settled=0
+if (( prebuilt_count > 0 )); then
+  if [[ "$confirmations_complete" == "true" ]]; then
+    _sf_depts_settled=1
+  fi
+else
+  _sf_depts_settled=1
+fi
+_sf_all_nonprebuilt_done=0
+if (( total_count_now > 0 )) \
+   && (( done_count_now + prebuilt_count == total_count_now )); then
+  _sf_all_nonprebuilt_done=1
+fi
 library_dirty=0
 if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
-   && (( total_count_now > 0 )) && (( done_count_now == total_count_now )); then
+   && (( total_count_now > 0 )) \
+   && { (( done_count_now == total_count_now )) \
+        || { [[ "$build_type" == "standard-first" ]] \
+             && (( _sf_all_nonprebuilt_done == 1 )) && (( _sf_depts_settled == 1 )); }; }; then
   case "$role_library_status" in done) : ;; *) library_dirty=1 ;; esac
   case "$sop_library_status"  in done) : ;; *) library_dirty=1 ;; esac
 fi
@@ -818,7 +1013,10 @@ fi
 comms_automation_status=$(jq -r '.commsAutomationStatus // "pending"' "$STATE_FILE")
 comms_automation_dirty=0
 if (( pending_count == 0 )) && (( stale_building_count == 0 )) && (( library_dirty == 0 )) \
-   && (( total_count_now > 0 )) && (( done_count_now == total_count_now )); then
+   && (( total_count_now > 0 )) \
+   && { (( done_count_now == total_count_now )) \
+        || { [[ "$build_type" == "standard-first" ]] \
+             && (( _sf_all_nonprebuilt_done == 1 )) && (( _sf_depts_settled == 1 )); }; }; then
   case "$comms_automation_status" in
     done|not-applicable) comms_automation_dirty=0 ;;
     *) comms_automation_dirty=1 ;;
@@ -840,11 +1038,25 @@ fi
 # the [CLOSEOUT-RESUME] self-ping. The agent inline-write path still works and is
 # idempotent (we only write when buildCompletedAt is empty), so this never
 # double-writes or races an agent that got there first.
+#
+# AI WORKFORCE STANDARD-FIRST (2026-08-04): the completion contract gains ONE
+# extra conjunct in standard-first mode - confirmationsComplete must be true,
+# i.e. every prebuilt department is confirmed-or-declined (a
+# confirmationsComplete flag written by the apply-diff build once the owner's
+# review decisions are recorded; KEEP is implicit, provenanced declines carry
+# the record). The full standard-first contract is therefore: all NON-prebuilt
+# departments done + prebuilt departments confirmed-or-declined + libraries
+# done + comms terminal. The legacy contract (every department done) is
+# UNCHANGED - it is the first disjunct below, and on legacy boxes buildType is
+# never "standard-first".
 if (( pending_count == 0 )) && (( stale_building_count == 0 )) \
    && (( library_dirty == 0 )) && (( comms_automation_dirty == 0 )) \
-   && (( total_count_now > 0 )) && (( done_count_now == total_count_now )) \
+   && (( total_count_now > 0 )) \
+   && { (( done_count_now == total_count_now )) \
+        || { [[ "$build_type" == "standard-first" ]] \
+             && (( _sf_all_nonprebuilt_done == 1 )) && (( _sf_depts_settled == 1 )); }; } \
    && [[ -z "$build_completed_at" ]]; then
-  log "AUTO-COMPLETE (HOP-4): all ${total_count_now} departments done + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal ($comms_automation_status) but buildCompletedAt was unset - writing buildCompletedAt + closeoutStatus=pending so the closeout fires automatically (no agent hand-write required)."
+  log "AUTO-COMPLETE (HOP-4): all ${total_count_now} departments done (standard-first: ${prebuilt_count} prebuilt confirmed-or-declined, confirmationsComplete=$confirmations_complete) + libraries done (role=$role_library_status sop=$sop_library_status) + comms-automations terminal ($comms_automation_status) but buildCompletedAt was unset - writing buildCompletedAt + closeoutStatus=pending so the closeout fires automatically (no agent hand-write required)."
   _now_bc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
   _tmp_bc=$(mktemp)
   # Set buildCompletedAt; only set closeoutStatus=pending if it is not already a
@@ -1043,7 +1255,20 @@ agent_name=$(jq -r '.agentName // "the master orchestrator"' "$STATE_FILE")
 # Read for diagnostics ONLY. NEVER a dispatch target: everything composed below is
 # internal traffic and must not reach the client. See the routing block below.
 owner_chat=$(jq -r '.ownerChat // empty' "$STATE_FILE")
-pending_list=$(jq -r '[.departments[] | select(.status == "pending" or .status == "failed") | .slug] | join(", ")' "$STATE_FILE")
+# Mirrors the pending_count selection above (see the NO-LASTATTEMPTAT
+# VISIBILITY GAP FIX comment there): a "building" dept with no lastAttemptAt
+# is named here too, so the [WORKFORCE-RESUME] ping actually tells the agent
+# which department to (re)start instead of silently omitting it.
+# Standard-first note: "prebuilt" departments are excluded from both dispatch
+# lists by construction (see the pending_count/stale_building_count comment) -
+# these selectors match ONLY the pending/failed/building vocabulary, which a
+# prebuilt department never carries.
+pending_list=$(jq -r '
+  [.departments[]
+    | select((.status == "pending" or .status == "failed")
+             or (.status == "building" and .lastAttemptAt == null))
+    | .slug] | join(", ")
+' "$STATE_FILE")
 stale_list=$(jq -r --arg min "$STALE_BUILDING_MINUTES" '
   [.departments[]
     | select(.status == "building")

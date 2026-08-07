@@ -1,7 +1,80 @@
-<!-- canonical-floor: 29 -->
-<!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (23 mandatory + 6 universal-primary = 29). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
+<!-- canonical-floor: 30 -->
+<!-- ^ Standing current-floor sentinel enforced by scripts/check-floor-count-consistency.py (OQ-7 drift-guard): this number MUST equal the floor derived live from department-naming-map.json (24 mandatory + 6 universal-primary = 30). Historical, version-scoped floor entries below are FROZEN and intentionally NOT rewritten. -->
 
 <!-- U14 (A-U14, master-spec v2 §A.1.8) — RETROACTIVE BACKFILL, added 2026-07-15. Before this backfill this CHANGELOG's newest entry was v17.0.38 (2026-07-05) and a search for "persona_blend" returned ZERO hits: the blend engine's own skill changelog never mentioned persona_blend.py, W7, P4-01, or P4-02, even though the work had already shipped to `main` and skill-version.txt had moved on to v19.1.0 / v19.66.0 / v19.67.0 (and, by the time of this backfill, v20.0.49) — the CHANGELOG had gone stale relative to skill-version.txt while real feature work kept landing. The three entries immediately below are added out of chronological order (v19.x precedes the existing v17.0.38 entry) because they document work that shipped to `main` AFTER v17.0.38 but was never recorded here; each entry's version, date, and commit hash is git truth (`git log`/`git show` on this repo's history), not reconstructed from memory. No historical entry below this backfill block is altered. -->
+
+## [v21.7.2] - 2026-08-03 - feat(dept-floor): register master-orchestrator as the 24th mandatory department, floor 29 -> 30
+
+Operator ruling: department-naming-map.json's `mandatory` block gains
+`master-orchestrator`, the 24th mandatory id. build-workforce.py's
+`generate_departments_json()` has always unconditionally PREPENDED the
+`dept-ceo` / `departments/master-orchestrator` Command Center board column
+ahead of every client's selected departments — no industry gate, no decline
+path, not derived from `selected_departments` — and
+`templates/role-library/master-orchestrator/how-to-use-this-department.md`
+has always documented it as a real client department folder. Only
+department-naming-map.json omitted it, so department-floor.py's on-disk floor
+check never expected or counted it. Registering it closes that gap: the
+on-disk floor department-floor.py enforces moves from 28 mandatory + 6
+universal-primary = 29 to 24 mandatory + 6 universal-primary = 30.
+
+master-orchestrator is FLOOR-VERIFICATION-ONLY. It is deliberately excluded
+from the BUILD-TIME / interview-declinable canonical set:
+build-workforce.py's `load_canonical_floor()` and
+`scripts/qc-assert-repo-consistency.py`'s `floor_dept_ids()` both filter it
+back out of the naming map's 24 mandatory ids immediately after reading them,
+because it is never offered as an interview yes/no/later decision and is
+provisioned outside `selected_departments` — every other call site in
+build-workforce.py that touches it (`create_department_workspace`,
+`add_agent_to_config`, `_resolve_prior_chosen_entries`,
+`generate_departments_json`) already special-cases
+`dept_id in ("ceo", "master-orchestrator", "dept-ceo")` on that assumption.
+So the buildable/declinable floor `reconcile_canonical_floor()` /
+`apply_vertical_packs()` actually union in stays 23 mandatory + 6
+universal-primary = 29, unchanged by this ruling.
+
+Also fixed as part of this reconciliation: the Issue #10 forbidden-stale-
+floor-literal CI guard in `qc-assert-repo-consistency.py` had inverted itself
+— it hardcoded `"currently 29"` / `"primary = 29"` as FORBIDDEN, blocking the
+number that had been correct since v2.6.2 (funnels), while the genuinely
+stale `28` framing went uncaught. Replaced the hand-typed forbidden list with
+`_HISTORICAL_FLOOR_STATES` + a generator that derives forbidden phrasings
+from every retired state EXCEPT whichever matches the LIVE naming-map count,
+so the number that is correct today can never be forbidden today, and the
+next floor move only requires appending the state being retired.
+`scripts/check-floor-count-consistency.py`'s `DOC_FLOOR_REGISTRY` is extended
+from 4 files to cover every doc/comment site that quotes a floor count, and
+`scripts/check-floor-count-drift.py` Check 3's `-department` (hyphen-
+required) regex and `ast.Constant`-only AST scan — which made `#` comments
+and `"22 + 6 = 28"`-style docstrings invisible to it — are both fixed.
+
+Client-facing fix: `INSTRUCTIONS.md`'s OPT-OUT WARNING, read verbatim to
+owners during their interview, said "any of the 28: the 22 mandatory + the 6
+universal-primary verticals" — corrected to the 29 actually-declinable floor
+departments (23 mandatory + 6 universal-primary), with a note that
+master-orchestrator is the naming map's 24th mandatory id but carries no
+decision path.
+
+Every stale doc/comment/fixture site this reconciliation touched: `SKILL.md`,
+`department-floor.py`, `build-workforce.py`, `ZHC-BUILDOUT-EXPERIENCE.md`,
+`qc-assert-repo-consistency.py`, `department-wiring/podcast-engine/`
+(README.md + wiring.json), `department-wiring/anthology-engine/` (README.md +
+wiring.json + verify-anthology-engine-wiring.py, which now derives its
+expected floor count live instead of hardcoding `!= 29`),
+`skill-department-map.json`, `qc-completeness.sh`, `verify-zhc-standard.sh`,
+`verify-role-library.sh` (its `>=180` role-doc threshold, load-bearing and
+meaningless against a ~440-role library, now derives its minimum from
+`_index.json`'s own `total_roles`), `list-canonical-departments.py`, and
+`build-state-schema.json` (whose `34`/`45` built/union tier numbers were
+already stale before this change — corrected to `36`/`46`, both independently
+verified: `36` against `templates/role-library/_index.json`'s own declared
+`total_departments`, `46` as the 23 buildable-mandatory + 23 unique
+vertical-pack ids a client's selection can actually reach, since
+master-orchestrator is excluded from that tier for the same reason it is
+excluded from the 29 buildable floor).
+
+No client names. No secret values. No Anthropic model added, removed, or
+substituted.
 
 ## [v20.0.93] - 2026-07-21 - fix(floor-fill): the UPDATE path re-created industry-gated departments on every box, on every update
 

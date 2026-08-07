@@ -15,6 +15,37 @@ There are TWO sides to version tracking:
 - Written by install.sh after a successful install or update
 - This is what the update script checks against GitHub
 
+#### THE STAMP PATH — exact, and the wrong ones people keep using
+
+The onboarding stamp is `<skills dir>/.onboarding-version` — **full word
+`version`, inside the SKILLS directory**:
+
+| platform | stamp |
+| --- | --- |
+| Mac | `~/.openclaw/skills/.onboarding-version` |
+| VPS / Docker | `/data/.openclaw/skills/.onboarding-version` |
+
+Authoritative in code: `update-skills.sh` WRITES it as
+`"$SKILLS_DIR/.onboarding-version"` (the last artifact of a successful run,
+after the content manifest) and READS it in `get_current_version()`, whose
+candidate list is `$SKILLS_DIR` first, then `$HOME/.openclaw/skills`, then the
+legacy `$HOME/Downloads/openclaw-master-files` and `$HOME/.openclaw/onboarding`
+copies. `SKILLS_DIR` comes from `discover_skills_dir()` — `/data/.openclaw/skills`
+when `/data` exists, otherwise `~/.openclaw/skills`.
+
+**These paths do not exist on any box. Do not verify a roll against them:**
+
+- `~/.openclaw/.onboarding-ver` — truncated word AND missing the `skills/`
+  segment. Checking it reports every box as unstamped, on every roll.
+- `~/.openclaw/.onboarding-version` — right word, missing `skills/`.
+- `~/.openclaw/skills/.onboarding-ver` — right directory, truncated word.
+
+Two other files live in the same directory and are NOT the stamp:
+`.onboarding-content-manifest.json` (the content-hashed drift record — written
+*before* the stamp, and the stamp is withheld if it cannot be written) and
+`.last-update-check` (a timestamp for the catch-up notice). `.skill-manifest.json`
+is a dead artifact that `reap_dead_skill_manifest()` deletes on sight.
+
 ### Update Check Flow
 1. Update script downloads GitHub version file
 2. Compares GitHub version vs ~/.openclaw/skills/.onboarding-version

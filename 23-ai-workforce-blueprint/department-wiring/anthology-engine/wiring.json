@@ -1,7 +1,7 @@
 {
   "$schema_version": "1.0.0",
   "artifact": "anthology-engine-department-wiring",
-  "purpose": "Machine-readable department wiring for the Anthology Engine (skill 59), unit W4.1. Binding on PRD Section 13. Unlike the Podcast Production Engine (skill 58), Anthology is NOT one of the 22 mandatory or 6 universal-primary departments on the fleet's 28-department universal floor. It is a NEW, client-optional department that Skill 32's add-department.sh seeds directly inside a client's own Command Center at provisioning time (already wired at W2.6 STEP 3.5 and W3.1). This document records the two-layer split PRD Section 13 requires: on the FLEET side the skill registers under the books/publishing floor grouping (the existing marketing department, reusing Skill 54's content-marketing-strategist binding); on the CLIENT side the board identity is the seeded Anthology department. Neither layer edits department-naming-map.json's mandatory or vertical_packs lists, so the 28-department floor invariant is provably unchanged. The enforcement pointer is verify-anthology-engine-wiring.py in this folder.",
+  "purpose": "Machine-readable department wiring for the Anthology Engine (skill 59), unit W4.1. Binding on PRD Section 13. Unlike the Podcast Production Engine (skill 58), Anthology is NOT one of the 24 mandatory or 6 universal-primary departments on the fleet's 30-department universal floor. It is a NEW, client-optional department that Skill 32's add-department.sh seeds directly inside a client's own Command Center at provisioning time (already wired at W2.6 STEP 3.5 and W3.1). This document records the two-layer split PRD Section 13 requires: on the FLEET side the skill registers under the books/publishing floor grouping (the existing marketing department, reusing Skill 54's content-marketing-strategist binding); on the CLIENT side the board identity is the seeded Anthology department. Neither layer edits department-naming-map.json's mandatory or vertical_packs lists, so the 30-department floor invariant is provably unchanged. The enforcement pointer is verify-anthology-engine-wiring.py in this folder.",
   "authored_by": "wave-4 department-wiring slice (W4.1)",
   "authored_at": "2026-07-07",
   "prd_sections": ["13"],
@@ -32,18 +32,18 @@
     "is_mandatory": false,
     "is_universal_primary": false,
     "in_department_naming_map": false,
-    "no_duplicate_reason": "Anthology is NEW and client-optional, never one of the 22 mandatory or 6 universal-primary departments. department-naming-map.json's mandatory and vertical_packs blocks are not touched by this slice, and Skill 32 seeds the department directly in the client's own Command Center database at runtime, entirely outside department-floor.py's build-time floor computation. This is the corrective PRD Section 13 calls out by name: Skill 53 (book-writer) cards to a books department that was never seeded, so its cards fall to the CEO catch-all; the Anthology Engine always seeds its own department, but per client at provisioning, never as a static floor member.",
+    "no_duplicate_reason": "Anthology is NEW and client-optional, never one of the 24 mandatory or 6 universal-primary departments. department-naming-map.json's mandatory and vertical_packs blocks are not touched by this slice, and Skill 32 seeds the department directly in the client's own Command Center database at runtime, entirely outside department-floor.py's build-time floor computation. This is the corrective PRD Section 13 calls out by name: Skill 53 (book-writer) cards to a books department that was never seeded, so its cards fall to the CEO catch-all; the Anthology Engine always seeds its own department, but per client at provisioning, never as a static floor member.",
     "hard_lesson_reference": "PRD Section 2 item 14 and Section 13 ('the Anthology Engine does not repeat that defect')."
   },
 
   "floor_invariant": {
-    "expected_floor_count": 29,
-    "composition": "23 mandatory + 6 universal-primary-vertical",
+    "expected_floor_count": 30,
+    "composition": "24 mandatory + 6 universal-primary-vertical",
     "anthology_is_mandatory": false,
     "anthology_is_universal_primary": false,
     "floor_count_change": 0,
     "department_naming_map_touched": false,
-    "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; expected_floor_count stays 29, computed live from len(HARDCODED_MANDATORY-equivalent mandatory keys) + len(universal-primary vertical packs), never a hardcoded integer. A raw-text scan of department-naming-map.json for the string 'anthology' returns zero hits in both the mandatory and vertical_packs blocks."
+    "proof": "python3 23-ai-workforce-blueprint/scripts/department-floor.py --json ; expected_floor_count stays 30, computed live from len(HARDCODED_MANDATORY-equivalent mandatory keys) + len(universal-primary vertical packs), never a hardcoded integer. A raw-text scan of department-naming-map.json for the string 'anthology' returns zero hits in both the mandatory and vertical_packs blocks."
   },
 
   "self_invocation": {

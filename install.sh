@@ -26,7 +26,7 @@
 #  because VPS container re-exec uses conditional commands that may fail.
 # ============================================================
 
-ONBOARDING_VERSION="v21.7.1"
+ONBOARDING_VERSION="v21.7.38"
 
 # ----------------------------------------------------------
 # Platform detection + bootstrap (MUST run before set -euo pipefail)
@@ -5383,7 +5383,7 @@ if [ "${OPENCLAW_LIB_ONBOARDING_STATE_SOURCED:-0}" = "1" ] && command -v oc_stat
     # obs_* seed + resume cron then had to do all the work). Correct order below.
     SKILLS_DIR="$SKILLS_DIR" oc_state_seed "$SKILLS_DIR" "$ONBOARDING_VERSION" \
         && success "Onboarding state seeded → (every skill pending; gate drives to qc-passed)" \
-        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run scripts/update-skills.sh after fixing."
+        || warn "oc_state_seed FAILED — .onboarding-state.json was NOT written; the honesty state machine is not seeded (reason on stderr above). Install continues; re-run the repo-root update-skills.sh after fixing (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
 elif [ -f "$ONBOARDING_DIR/scripts/onboarding-state.sh" ]; then
     # Fallback for older bundles without lib-onboarding-state.sh at root.
     # shellcheck disable=SC1091
@@ -6364,7 +6364,7 @@ if [ "${OPENCLAW_LIB_RESUME_CRON_SOURCED:-0}" = "1" ]; then
 else
     warn "lib-onboarding-resume-cron.sh NOT FOUND — the onboarding-resume cron was NOT installed."
     warn "  This box will NOT auto-resume onboarding; skills can stall at pending with nothing to drive them."
-    warn "  Fix: re-run the installer from a complete bundle, or run scripts/update-skills.sh once the lib is present."
+    warn "  Fix: re-run the installer from a complete bundle, or run the repo-root update-skills.sh once the lib is present (never scripts/update-skills.sh — that path is a retired, loud-failing shim)."
 fi
 
 # ----------------------------------------------------------
@@ -6874,6 +6874,14 @@ start_ghl_mcp_autostart() {
         *"=DEAF"*)                      warn "GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) — every agent init will burn the full connectionTimeoutMs until fixed. ${STATUS_LINE}" ;;
         *TOKEN_REJECTED*)               warn "GHL rejected the PIT — the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${STATUS_LINE}" ;;
         *PIN_MISMATCH*|*PIN_INVALID*)   warn "GHL MCP refused to start: the vetted commit pin could not be honoured — an UNPINNED third-party MCP is never started. Re-vet upstream and update config/ghl-mcp-pin.env. ${STATUS_LINE}" ;;
+        # DEFECT 1 (proven live 2026-08-04): this refusal used to be
+        # INDISTINGUISHABLE from PIN_MISMATCH above — the ownership guard did
+        # not exist, so every git command silently failed and the ONLY signal
+        # that ever reached this installer was the innocent-looking
+        # PIN_MISMATCH. The dedicated STATUS below fires BEFORE that generic
+        # one and names the real remedy directly, instead of sending the
+        # operator to re-vet a pin that was never the problem.
+        *ROOT_OWNERSHIP_MISMATCH*)      warn "GHL MCP refused to start: this installer is running as ROOT against a checkout owned by a different uid — every git command inside ghl-mcp-autostart.sh would be silently refused by git's dubious-ownership guard. FIX: re-run as the box user, never root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${STATUS_LINE}" ;;
         # v21.6.0 / R9 fail-closed states. These are REFUSALS, not errors: the
         # box deliberately did not build or start third-party code it could not
         # verify. Both are actionable in one step, so say which step.
@@ -8691,26 +8699,65 @@ note "Installing CEO Routing Doctrine pre-injection plugin..."
 _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
 _RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
 if [ -d "$_RD_SRC" ]; then
-    mkdir -p "$HOME/.openclaw/extensions"
-    cp -r "$_RD_SRC" "$_RD_DST" 2>/dev/null || true
-    python3 - "$_RD_DST" <<'PY'
-import json, os, sys
-dst = sys.argv[1]
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    # KEEP THE PYTHON BLOCK BELOW BYTE-IDENTICAL TO update-skills.sh.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+        warn "FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+        python3 - <<'PY'
+import json, os, shutil, time
 cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
 if os.path.isfile(cfg_path):
-    cfg = json.load(open(cfg_path))
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
     cfg.setdefault("plugins", {}).setdefault("entries", {})
     cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
-        "enabled": True
+        "enabled": True,
     }
     cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
-    p = "/Users/%s/.openclaw/extensions" % (os.environ.get("USER") or "blackceomacmini")
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
     if p not in cfg["plugins"]["load"]["paths"]:
         cfg["plugins"]["load"]["paths"].append(p)
-    json.dump(cfg, open(cfg_path, "w"), indent=2)
-    print("ceo-routing-doctrine enabled + load.paths set")
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
 PY
-    success "CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+        success "CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
 else
     warn "ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
 fi

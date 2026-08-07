@@ -64,7 +64,42 @@ very wedges it treats (LP-B5 freezes the cron engine), on Mac prefer a host cron
 launchd agent under the login user; on VPS a host-side cron that enters via
 `docker exec -u node`, plus an in-container fallback timer.
 
-## 8. Reading Skill 60's ledger fails
+## 8. Loop protection stopped working right after an `openclaw update`
+
+Expected, and it is not this skill's watchdog that broke. `openclaw update` reinstalls
+node_modules, which silently reverts the **dist patch** that makes a runaway tool loop
+actually ABORT, and it can regenerate the gateway service-env file (dropping the Telegram
+spooled-handler turn timeout, after which any turn over 5 minutes is killed and its text
+nulled). Nothing warns you; loop protection simply stops aborting.
+
+Run the restore-verify script — read-only, safe any time:
+
+```bash
+bash 61-loop-protection-system/scripts/openclaw-loop-protection-restore.sh
+```
+
+It checks all nine pieces of the stack and prints a per-item OK / DRIFT / FAIL. Exit 0 =
+clean, 3 = drift found, 4 = hard fail, 2 = usage/prerequisite. Then repair what is
+repairable:
+
+```bash
+bash 61-loop-protection-system/scripts/openclaw-loop-protection-restore.sh --apply
+```
+
+Notes that matter:
+- It **never restarts the gateway.** A dist or service-env change does not take effect
+  until you restart it yourself, when the box is idle. The script says so and stops.
+- It is **fail-loud**: if a dist anchor is neither found nor already-applied, upstream
+  changed — it reports `UPSTREAM_CHANGED`, refuses to patch, and exits 4. Re-derive the
+  patch against that build rather than forcing it.
+- It **never prints a secret.** The service-env file and openclaw.json are compared by
+  key name and boolean/numeric value only; there is no flag that disables redaction.
+- Some items are deliberately NOT auto-fixed because they are the operator's call —
+  notably a `tools.allow` list on the main agent that omits `write` (the shape that
+  caused the two-week outage: the flush prompt orders a write the agent has no tool for,
+  so the turn loops). It reports and tells you what to add.
+
+## 9. Reading Skill 60's ledger fails
 
 Non-fatal by design: Loop Protection consumes Skill 60's events read-only and
 best-effort. A missing Skill 60 ledger contributes no cross-signal but never crashes

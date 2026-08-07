@@ -4,9 +4,14 @@
 #
 # THE single source of truth for the two CEO tool-policy postures:
 #
-#   GATED      (default): the orchestrator is a pure router. Production tools
-#              (write/edit/apply_patch/browser/canvas/image/process + ALL GHL MCP
-#              tools) are DENIED. Only routing/conversation tools are allowed.
+#   GATED      (default): ⚠ NO LONGER A PRODUCTION-TOOL GATE (2026-08-05). This
+#              posture once DENIED write/edit/apply_patch/browser/canvas/image/
+#              process. That deny is RETIRED — it caused the write-deny/memoryFlush
+#              loop. What survives under this name is ONLY the GHL MCP deny
+#              (CEO_GATE_MCP_PROVIDERS, keeping the router out of client CRM) plus
+#              the CEO_GATE_ALLOW_TOOLS grant list below. Routing-to-departments is
+#              now behavioral DOCTRINE (the ceo-routing-doctrine prompt-injection
+#              plugin), not a tool removal.
 #
 #   CONSENTED  (owner carve-out): the production denies are LIFTED so the owner
 #              can tell the CEO to do the work directly. Because OpenClaw tool
@@ -24,26 +29,37 @@
 #     origin; keep the two in sync (one test asserts they match — see
 #     scripts/test-ceo-tool-gate.sh).
 #
-#   SYNC NOTE (mc-route ship): CEO_GATE_ALLOW_TOOLS now carries the shipped
-#   `mc-route__route_task` routing tool (below). This canonical source LEADS; the
-#   write-sites that actually stamp the config onto boxes — build-workforce.py and
-#   scripts/apply-routing-fix.sh / scripts/apply-fleet-standards.sh (whose inline
-#   allow lists still read `"exec"  # INTERIM — replace with mc-route__route_task
-#   once that MCP tool ships`) — must be re-synced by their owners to add
-#   mc-route__route_task so a real box's G7 clears. Until then boxes stay in the
-#   PRE-EXISTING INTERIM state (no regression). See docs/MC-ROUTE.md.
+#   SYNC NOTE: CEO_GATE_ALLOW_TOOLS carries the shipped `mc-route__route_task`
+#   routing tool (below). This canonical source LEADS; the three write-sites that
+#   actually stamp the config onto boxes — 23-ai-workforce-blueprint/scripts/
+#   build-workforce.py, scripts/apply-routing-fix.sh and
+#   scripts/apply-fleet-standards.sh — carry byte-identical copies of this list and
+#   are RE-SYNCED as of 2026-08-05 (mc-route__route_task present; write + edit
+#   granted). scripts/test-ceo-tool-gate.sh asserts all four match, so a drift in
+#   any one of them fails CI. See docs/MC-ROUTE.md.
 #
 # The HARD CONSTRAINT this satisfies: never strip the CEO's abilities outright.
 # GATED is a gate, not a removal — CONSENTED restores everything.
 
 # ─── Canonical tool lists (KEEP IN SYNC WITH build-workforce.py) ───────────────
 
-# Production tools denied on the CEO in the GATED posture. Real built-in tool
-# names from docs.openclaw.ai/gateway/security, plus GHL-MCP name-globs as a
-# belt-and-suspenders fallback for any gateway version that does not honor
-# tools.byProvider (denies always win and are restrict-only, so the extra glob
-# is harmless where byProvider IS honored).
-# CEO gate removed 2026-08-05 per Trevor — was creating loops; see openclaw-telegram-master-plan.md
+# CEO production-tool deny — RETIRED 2026-08-05 per Trevor.
+#
+# This list used to deny write/edit/apply_patch/browser/canvas/image/process on
+# the CEO/orchestrator agent. It was removed because denying `write` while
+# memoryFlush demanded a memory write created a self-blocking loop that ate
+# Telegram messages for two weeks. See openclaw-telegram-master-plan.md.
+#
+# It is now INTENTIONALLY EMPTY, and empty is the correct, asserted state:
+# scripts/test-ceo-tool-gate.sh pins EXPECT_DENY="" so re-adding a token here
+# fails CI rather than silently re-creating the outage.
+#
+# ⛔ An empty bash array is a TRAP on macOS /bin/bash 3.2 under `set -u` — see
+# the BASH 3.2 SAFETY note on ceo_gate_tools() below before touching any
+# "${CEO_GATE_*[@]}" / "${CEO_GATE_*[*]}" expansion.
+#
+# GHL MCP is still denied, but via CEO_GATE_MCP_PROVIDERS (byProvider) and the
+# name-glob fallback in the apply-* stampers — NOT from this list.
 CEO_GATE_DENY_TOOLS=()
 
 # Tools the CEO keeps in BOTH postures so it can route + converse.
@@ -59,10 +75,13 @@ CEO_GATE_DENY_TOOLS=()
 # `exec` is RETAINED (not removed) ONLY as the execution channel for the two
 # ANCHORED, intent-gate-carved sanctioned shell helpers — route-presentation.sh
 # (REFLEX V2 STEP 1) and mc-route.sh — NOT as a general routing path. OpenClaw's
-# config-layer exec policy is {security,ask} and CANNOT command-allowlist, so the
-# command-level "only the sanctioned helpers" restriction is enforced by the
-# PreToolUse intent-gate (hooks/ceo-intent-gate.sh), which default-DENIES every
-# other exec. Dropping exec HERE would deny the CEO the route-presentation.sh
+# config-layer exec policy is {security,ask} and CANNOT command-allowlist. NOTE
+# (2026-08-05): that command-level restriction USED to be enforced by the
+# PreToolUse intent-gate (hooks/ceo-intent-gate.sh), which default-DENIED every
+# other exec. That hook has been DELETED from the repo and unwired fleet-wide
+# (same loop-removal directive), so there is currently NO command-level exec
+# restriction — only the {security,ask} config policy. Dropping exec HERE would
+# still deny the CEO the route-presentation.sh
 # helper the reflex mandates (a documented flow), because a config-layer deny is
 # restrict-only and cannot be un-denied by the hook. exec is retired outright ONLY
 # once the reflex migrates route-presentation.sh onto mc-route__route_task
@@ -92,6 +111,22 @@ CEO_GATE_ALLOW_TOOLS=(
   # Operational tools the orchestrator needs to run itself (schedule heartbeats,
   # introspect the gateway/nodes) — NOT production content tools.
   "cron" "gateway" "nodes"
+  # ── LOOP FIX 2026-08-05 — `write` and `edit` MUST be granted. ────────────────
+  # An explicit tools.allow is a HARD allowlist: a tool omitted here is denied
+  # exactly as effectively as one named in tools.deny. Emptying CEO_GATE_DENY_TOOLS
+  # above was therefore NOT sufficient — this list still withheld `write`, which
+  # reproduced the outage verbatim after the deny was retired.
+  #
+  # THE FAILURE: memoryFlush orders the agent to write its memory file on every
+  # compaction. With no write tool, the agent cannot comply and cannot stop trying —
+  # it re-reads an empty file and retries, looping for up to 163 minutes per turn
+  # and swallowing the owner's Telegram messages. Two weeks of outage.
+  #
+  # ⛔ Do not remove these to "re-tighten" the router. Routing-to-departments is
+  # behavioral DOCTRINE (AGENTS.md / SOUL.md + the ceo-routing-doctrine
+  # prompt-injection plugin), NEVER a tool removal. Taking write away does not make
+  # the CEO route — it makes it hang.
+  "write" "edit"
 )
 
 # GHL MCP servers to deny by provider in the GATED posture (both live ids).
@@ -188,9 +223,18 @@ PYEOF
 }
 
 # Convenience wrapper that exports the arrays into the env the python above reads.
+#
+# BASH 3.2 SAFETY (load-bearing — do not "simplify" these expansions):
+# macOS ships /bin/bash 3.2.57, and on 3.2 an EMPTY array expanded as
+# "${arr[*]}" under `set -u` is an UNBOUND VARIABLE and aborts the shell.
+# CEO_GATE_DENY_TOOLS is now legitimately EMPTY (the CEO production-tool deny
+# was retired 2026-08-05), and scripts/grant-ceo-consent.sh calls ceo_gate_tools
+# under `set -euo pipefail` — so the bare form killed that script outright on
+# every macOS box. The `:-` fallback makes an empty array expand to "".
+# bash 4+/5.x do not exhibit this, which is why it hid from PATH-bash testing.
 ceo_gate_tools() {
-  CEO_GATE_DENY="${CEO_GATE_DENY_TOOLS[*]}" \
-  CEO_GATE_ALLOW="${CEO_GATE_ALLOW_TOOLS[*]}" \
-  CEO_GATE_MCP="${CEO_GATE_MCP_PROVIDERS[*]}" \
+  CEO_GATE_DENY="${CEO_GATE_DENY_TOOLS[*]:-}" \
+  CEO_GATE_ALLOW="${CEO_GATE_ALLOW_TOOLS[*]:-}" \
+  CEO_GATE_MCP="${CEO_GATE_MCP_PROVIDERS[*]:-}" \
   ceo_gate_tools_json
 }

@@ -187,9 +187,64 @@ else
   FAILURES=$((FAILURES+1))
 fi
 
+# ─────────────────────────────────────────────────────────────────────────────
+# 6. THE SAME INVARIANT, GENERALISED TO SIBLING HELPER SCRIPTS (B3).
+#
+# The pin file was not the only thing whose resolver list disagreed with where
+# an installer puts it. ghl-mcp-autostart.sh resolved ghl-mcp-probe.sh from
+#     $SELF_DIR/  |  $HOME/.openclaw/skills/scripts/  |  /data/.openclaw/skills/scripts/
+# while update-skills.sh delivers the canonical scripts/ tree to
+#     $OC_ROOT/scripts        (deliver_canonical_scripts_tree -> _OC_SCRIPTS_DEST)
+# — an extra `skills/` segment that matched nothing on a real box. On the fleet
+# path $SELF_DIR is the temp extract dir, which the updater `rm -rf`s, so the
+# probe resolved EMPTY on every rolled box and install_periodic_probe() took its
+# "not co-located — periodic liveness probe NOT installed" branch. The 15-minute
+# liveness probe was dead on arrival fleet-wide. It passed in operator-box testing only
+# because that run used a persistent checkout. Sections 1-5 above could not see
+# it: they only ever looked at ghl-mcp-pin.env.
+#
+# THE INVARIANT, stated generically: for every helper script a consumer resolves
+# from a list of candidates, the DELIVERED location ($OC_ROOT/scripts, both
+# platforms) must appear in that list. Legacy candidates (the historical
+# $OC_ROOT/skills/scripts layout) are allowed to remain as fallbacks — some
+# long-lived boxes still have them — they simply may not be the ONLY option.
+# ─────────────────────────────────────────────────────────────────────────────
+_SIBLING_CONSUMERS="
+scripts/ghl-mcp-autostart.sh
+platform/vps/36-ghl-mcp-setup-scripts/start-ghl-mcp-server.sh
+"
+# The helper scripts whose resolution actually gates behaviour on a box.
+_SIBLING_HELPERS="ghl-mcp-probe.sh ghl-mcp-pin-digest.sh"
+
+for rel in $_SIBLING_CONSUMERS; do
+  f="$REPO_ROOT/$rel"
+  [ -f "$f" ] || continue          # section 1 already fails on a missing consumer
+  body="$(sed 's/#.*$//' "$f" 2>/dev/null)"
+  for helper in $_SIBLING_HELPERS; do
+    # Only assert on helpers this consumer actually resolves.
+    grep -qF "$helper" <<< "$body" || continue
+    for want in "\$HOME/.openclaw/scripts/$helper" "/data/.openclaw/scripts/$helper"; do
+      if grep -qF "$want" <<< "$body"; then
+        _pass "$rel resolves $helper from the DELIVERED path $want"
+      else
+        _fail "$rel resolves $helper but NEVER from '$want' — the path update-skills.sh actually delivers the canonical scripts/ tree to. On the fleet path \$SELF_DIR is the temp extract dir, which is rm -rf'd, so this resolver returns EMPTY on every rolled box. That is exactly the dead-on-arrival liveness probe (B3)."
+        FAILURES=$((FAILURES+1))
+      fi
+    done
+  done
+done
+
+# The delivery side of THAT invariant must also still exist.
+if grep -qF '_OC_SCRIPTS_DEST' "$REPO_ROOT/update-skills.sh" 2>/dev/null; then
+  _pass "update-skills.sh still declares the canonical scripts/ delivery destination (_OC_SCRIPTS_DEST)"
+else
+  _fail "update-skills.sh no longer declares _OC_SCRIPTS_DEST — the canonical scripts/ tree would stop being delivered and every sibling-helper resolver above would go dead."
+  FAILURES=$((FAILURES+1))
+fi
+
 if [ "$FAILURES" -gt 0 ]; then
-  _fail "$FAILURES pin-delivery cross-reference violation(s) — a resolver searches where nothing delivers, or a delivery step was removed."
+  _fail "$FAILURES delivery cross-reference violation(s) — a resolver searches where nothing delivers, or a delivery step was removed."
   exit 1
 fi
-_info "resolver lists and installer delivery destinations agree."
+_info "resolver lists and installer delivery destinations agree (pin file + sibling helper scripts)."
 exit 0

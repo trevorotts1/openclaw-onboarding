@@ -1,0 +1,76 @@
+name: refresh-stale-roles retirement guard
+
+# Fails the build if the STALE-role/sop/dept-drain consumer regresses on the
+# retired-department discrimination fix (2026-08-04).
+#
+# THE DEFECT: refresh-stale-roles.py (P2-08 step 2 / D2's sop+dept extension)
+# treated EVERY unresolvable department directory as an unconditional failure
+# (exit 3), even when the box owner had explicitly, provenance-gated DECLINED
+# that department — its absence on disk is then the box's recorded INTENT,
+# not a gap, and the box could never pass this gate again. Live: 5 missing
+# department directories (billing/legal-compliance family) blocked a box in
+# one wave. The fix discriminates using canonical_decline.py's
+# provenance-gated decline set (the SAME single source of truth
+# build-workforce.py and department-floor.py's own floor gate already read),
+# cross-referenced through department-floor.py's CANONICAL_VARIANT_SLUGS
+# alias table. A genuinely-missing (unprovenanced / not declined) department,
+# and a role/SOP missing from an otherwise-EXISTING department, are UNCHANGED
+# and still FAIL LOUDLY — the fix only ADDS the retired outcome, it never
+# weakens the pre-existing fail-closed contract.
+#
+# Hermetic: temp workspaces only, real (never fabricated) role-library
+# content for the refill assertions. No network, no live box.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/scripts/refresh-stale-roles.py
+      - 23-ai-workforce-blueprint/scripts/canonical_decline.py
+      - 23-ai-workforce-blueprint/scripts/department-floor.py
+      - 23-ai-workforce-blueprint/scripts/create_role_workspaces.py
+      - 23-ai-workforce-blueprint/templates/role-library/_index.json
+      - tests/unit/refresh-stale-roles.test.sh
+      - .github/workflows/refresh-stale-roles-retirement-guard.yml
+  pull_request:
+    branches: [main]
+    paths:
+      - 23-ai-workforce-blueprint/scripts/refresh-stale-roles.py
+      - 23-ai-workforce-blueprint/scripts/canonical_decline.py
+      - 23-ai-workforce-blueprint/scripts/department-floor.py
+      - 23-ai-workforce-blueprint/scripts/create_role_workspaces.py
+      - 23-ai-workforce-blueprint/templates/role-library/_index.json
+      - tests/unit/refresh-stale-roles.test.sh
+      - .github/workflows/refresh-stale-roles-retirement-guard.yml
+
+jobs:
+  refresh-stale-roles-guard:
+    name: STALE-role/sop/dept drain — retirement vs genuinely-missing discrimination
+    runs-on: ubuntu-latest
+    env:
+      # try_library_fill() (create_role_workspaces.py, via refresh_one())
+      # resolves platform-appropriate paths through detect_platform, which
+      # aborts with "Cannot detect OpenClaw platform" when neither
+      # /data/.openclaw nor ~/.openclaw exists -- true of every GitHub
+      # Actions runner. This is the documented override ("Set
+      # OPENCLAW_PLATFORM=mac|vps to override (e.g. CI static checks)") this
+      # repo's other Skill-23 CI guards (qc-departments-tree-guard.yml,
+      # skill23-provisioning-tests.yml, floor-wipe-fix-guard.yml, ...)
+      # already set the same way. Every scenario in this suite builds its own
+      # sandboxed temp workspace and always passes --workspace explicitly, so
+      # this only satisfies the platform probe -- it never points a fixture
+      # at a real box.
+      OPENCLAW_PLATFORM: mac
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Syntax checks
+        run: |
+          set -euo pipefail
+          bash -n tests/unit/refresh-stale-roles.test.sh
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/refresh-stale-roles.py
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/canonical_decline.py
+          python3 -m py_compile 23-ai-workforce-blueprint/scripts/department-floor.py
+
+      - name: Fixture regression suite (10 pre-existing scenarios + 6 retirement-discrimination scenarios)
+        run: bash tests/unit/refresh-stale-roles.test.sh

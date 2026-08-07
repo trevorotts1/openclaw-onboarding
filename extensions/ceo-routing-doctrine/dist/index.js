@@ -8,6 +8,8 @@
 // Wiring precedent: ~/.openclaw/extensions/openclaw-mem0/dist/index.js uses
 // api.on("before_prompt_build", ...) returning { prependSystemContext }.
 //
+// gated by: plugins.entries.<id>.hooks.allowPromptInjection (OpenClaw 2026.7.1-2).
+//
 // Gateway permission gate: on some OpenClaw versions this before_prompt_build
 // injection is claimed to require plugins.entries.<id>.hooks.allowPromptInjection
 // (reportedly OpenClaw 2026.7.1-2+). DO NOT write that key from install.sh /

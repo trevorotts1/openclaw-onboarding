@@ -83,40 +83,13 @@ jobs:
           chmod +x tests/unit/closeout-resume-cron-routing.test.sh
           bash tests/unit/closeout-resume-cron-routing.test.sh
 
-      - name: Role-workspace root must never collapse onto the company root
-        # A stale branch merged un-rebased re-introduces `workspace_root = company_root`
-        # in the role-workspace builder, which lands dangling role symlinks on every
-        # box the next roll touches. Assert the defect is absent on THIS head, so an
-        # un-rebased merge cannot carry it back in fleet-wide.
-        #
-        # NOTE: grep exits 1 when it finds nothing, which is this gate's SUCCESS case,
-        # so every grep here is `|| true`-guarded. Without that, `set -o pipefail`
-        # turns a clean head into a failing step (and, worse, a gate that can only
-        # ever fail is a gate nobody can read the result of).
-        run: |
-          set -euo pipefail
-          PATTERN='workspace_root[[:space:]]*=[[:space:]]*company_root'
-
-          # Non-vacuity self-test FIRST: prove the pattern can still match at all, so
-          # this gate can never silently degrade into an assertion that always passes.
-          probe="$(mktemp -d)"
-          printf 'workspace_root = company_root\n' > "$probe/probe.py"
-          if ! grep -rqn "$PATTERN" --include='*.py' "$probe"; then
-            echo "FAIL: the guard pattern no longer matches a seeded defect - this gate is BLIND."
-            rm -rf "$probe"
-            exit 1
-          fi
-          rm -rf "$probe"
-          echo "self-test: pattern detects a seeded defect (gate is live)"
-
-          hits="$(grep -rn "$PATTERN" --include='*.py' --include='*.sh' . || true)"
-          if [ -n "$hits" ]; then
-            echo "FAIL: 'workspace_root = company_root' present on this head:"
-            printf '%s\n' "$hits"
-            echo ""
-            echo "This collapses each role workspace onto the company root and lands"
-            echo "dangling role symlinks fleet-wide on the next roll. Rebase this branch"
-            echo "on origin/main instead of merging it as-is."
-            exit 1
-          fi
-          echo "PASS: no 'workspace_root = company_root' on this head"
+      # NOTE — the role-workspace-root collapse check used to be a step HERE, and that was
+      # the bug. This workflow is `paths:`-filtered to 9 pipeline scripts, and the file the
+      # collapse actually lives in (23-ai-workforce-blueprint/scripts/post-build-role-workspaces.py)
+      # was not one of them, so the gate only fired when a PR happened to touch something
+      # unrelated. Its real reintroduction route -- merging one of the hundreds of stale
+      # branches that forked before the fix -- was never covered.
+      #
+      # It now lives in .github/workflows/role-workspace-root-collapse-guard.yml with NO
+      # `paths:` filter, so it runs on every pull request. Do not re-add it here: a
+      # path-filtered copy would give a false sense that the route is covered.

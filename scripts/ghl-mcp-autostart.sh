@@ -248,6 +248,11 @@ fi
 #     scripts/ghl-mcp-vet-pin.sh is still being built) — require the explicit
 #     CLEAN verdict. Weaker (one word defeats it) but strictly better than
 #     v21.5.0, where the verdict was sourced by three scripts and read by none.
+# B3 reference shape: this list was ALREADY correct — it carries the delivered
+# $OC_ROOT/scripts path on both platforms, with the legacy skills/scripts pair
+# after it. That is why the digest tool resolved on the fleet while the probe
+# (which listed ONLY the legacy pair) did not. Kept as-is, and the CI gate now
+# holds every sibling-resolver list to this same shape.
 _PIN_DIGEST_TOOL=""
 for _c in "$SELF_DIR/ghl-mcp-pin-digest.sh" \
           "$HOME/.openclaw/scripts/ghl-mcp-pin-digest.sh" \
@@ -426,9 +431,67 @@ EOF
   return 0
 }
 
+# >>> GHL-MCP-ROOT-OWNERSHIP-GUARD-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-root-ownership-guard.test.sh)
+# ── 0. Root/ownership mismatch guard (P0, proven live 2026-08-04) ────────────
+# DEFECT (worst of the three found tonight): every git command below used to
+# carry a blanket `2>/dev/null`. When this script runs as ROOT against an
+# EXISTING $MCP_DIR checkout owned by a different uid — the fleet-standard VPS
+# shape, where the box user is uid 1000/node — every single git command in
+# this function hits git's "detected dubious ownership in repository at ..."
+# fatal, and that `2>/dev/null` swallowed it with NO WARN, NO FATAL, NO trace.
+# The MIRROR MIGRATION repoint below then silently no-op'd (an empty
+# $_origin_url reads as "no origin to repoint"), the pin-verify fetch/cat-file
+# calls below it failed for the identical swallowed reason, and the operator
+# saw only the downstream "PIN_MISMATCH — cannot check out vetted commit" and
+# reasonably blamed the pin gate, which was innocent. This is the SAME disease
+# as the root-cron bug fixed earlier the same night: a privilege mismatch that
+# a swallowed stderr turns into an unrelated-looking symptom two layers away.
+#
+# FIX: detect the mismatch EXPLICITLY, before any git command touches an
+# existing checkout, rather than trying to pattern-match git's (locale-
+# dependent) stderr text. FAIL LOUD through the same report()/STATUS contract
+# every other refusal in this script uses, naming the exact remedy — the
+# convention already documented at scripts/activate-loop-protection.sh:118:
+# run this script as the box user, never as root (`docker exec -u node <ctr>
+# bash ...` on VPS/Docker).
+_ghl_owner_uid() {  # <path> -> numeric uid, or empty if it cannot be read
+  local p="$1" u=""
+  command -v stat >/dev/null 2>&1 || { printf ''; return 0; }
+  # GNU stat: -c %u   BSD/macOS stat: -f %u — try both; first one that answers wins.
+  u="$(stat -c %u "$p" 2>/dev/null || true)"
+  [ -n "$u" ] || u="$(stat -f %u "$p" 2>/dev/null || true)"
+  printf '%s' "$u"
+}
+
+assert_ownership_matches_runtime_user() {
+  [ -d "$MCP_DIR/.git" ] || return 0              # nothing checked out yet — a fresh clone as root is not this failure mode
+  [ "$(id -u 2>/dev/null || echo '')" = "0" ] || return 0   # not root — this disease cannot occur
+  [ "${GHL_MCP_ALLOW_ROOT:-}" = "1" ] && return 0  # explicit escape hatch (tests / a deliberate root-owned box)
+  local _owner_uid; _owner_uid="$(_ghl_owner_uid "$MCP_DIR")"
+  [ -n "$_owner_uid" ] || return 0                 # cannot determine — do not block on a guess
+  [ "$_owner_uid" = "0" ] && return 0               # already root-owned — no ownership mismatch, git will not refuse
+
+  log "############################################################"
+  log "## FATAL: running as root (uid 0) against $MCP_DIR, which is owned by uid $_owner_uid."
+  log "## Every git command below would hit git's dubious-ownership refusal, and"
+  log "## this script used to swallow that with 2>/dev/null -- surfacing only as an"
+  log "## unrelated downstream PIN_MISMATCH. Refusing to proceed rather than repeat that."
+  log "## REMEDY (VPS/Docker): run this script as the box user, not root:"
+  log "##   docker exec -u node <ctr> bash $SELF_DIR/$(basename "${BASH_SOURCE[0]:-$0}")"
+  log "## (the sanctioned convention documented at scripts/activate-loop-protection.sh:118)."
+  log "## Mac: this script should never be invoked with sudo."
+  log "############################################################"
+  report "ROOT_OWNERSHIP_MISMATCH" \
+    "(running as root (uid 0) against $MCP_DIR, owned by uid $_owner_uid -- every git command would be silently refused by git's dubious-ownership guard. Re-run as the box user: docker exec -u node <ctr> bash <this script> on VPS/Docker (see scripts/activate-loop-protection.sh:118); never with sudo on Mac.)"
+  return 1
+}
+# <<< GHL-MCP-ROOT-OWNERSHIP-GUARD-END
+
 # ── 1. Clone + PIN the community MCP working tree (idempotent) ───────────────
 ensure_repo_at_pin() {
   command -v git >/dev/null 2>&1 || { log "git not on PATH — cannot pin/build GHL MCP"; return 1; }
+  assert_ownership_matches_runtime_user || return 3
   mkdir -p "$(dirname "$MCP_DIR")" 2>/dev/null || true
 
   if [ ! -d "$MCP_DIR/.git" ]; then
@@ -446,13 +509,26 @@ ensure_repo_at_pin() {
   # its history and would break the day the pin is garbage-collected there —
   # the exact failure the mirror exists to prevent. Repoint it here, on the next
   # run of this script, before anything is fetched.
-  local _origin_url
-  _origin_url="$(git -C "$MCP_DIR" remote get-url origin 2>/dev/null || echo '')"
+  #
+  # FIX (a): the git errors below used to be swallowed unconditionally
+  # (`2>/dev/null`). They are now CAPTURED and, on a failure this function did
+  # not already anticipate (the ownership guard above handles the specific
+  # root-vs-owner case), surfaced as a WARN rather than silently discarded —
+  # so any future "git just failed here for some other reason" is never
+  # invisible again.
+  local _origin_url _origin_out _origin_rc=0 _seturl_out
+  _origin_out="$(git -C "$MCP_DIR" remote get-url origin 2>&1)" || _origin_rc=$?
+  if [ "$_origin_rc" = "0" ]; then
+    _origin_url="$_origin_out"
+  else
+    _origin_url=""
+    [ -n "$_origin_out" ] && log "WARN: 'git remote get-url origin' in $MCP_DIR failed (rc=$_origin_rc): $_origin_out"
+  fi
   if [ -n "$_origin_url" ] && [ "$_origin_url" != "$GHL_MCP_REPO_URL" ]; then
-    if git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>/dev/null; then
+    if _seturl_out="$(git -C "$MCP_DIR" remote set-url origin "$GHL_MCP_REPO_URL" 2>&1)"; then
       log "origin repointed: $_origin_url -> $GHL_MCP_REPO_URL"
     else
-      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL"
+      log "WARN: could not repoint origin from $_origin_url to $GHL_MCP_REPO_URL: ${_seturl_out:-<no output>}"
     fi
   fi
 
@@ -644,10 +720,165 @@ EOF
   return 0
 }
 
-# ── 3. The server .env (idempotent rewrite — chmod 600) ─────────────────────
+# >>> GHL-MCP-ENV-CREDENTIAL-GUARD-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-env-credential-guard.test.sh)
+# ── 3. The server .env — NEVER clobber a WORKING credential pairing ──────────
+#
+# B1 (P0, proven live on the operator box 2026-08-03). This function used to
+# rewrite $MCP_DIR/.env unconditionally, taking GHL_LOCATION_ID straight from
+# GOHIGHLEVEL_LOCATION_ID with NO BACKUP and NO VALIDATION. On a box where the
+# configured location and the MCP token's scope disagree, the result is fatal
+# AND unrecoverable. Measured, same token, same box:
+#
+#   .env value already on disk      -> HTTP 200
+#   value the installer wrote over it -> HTTP 403
+#                                        "The token does not have access to this location."
+#
+# main.js calls `await ghlClient.testConnection()` at boot and process.exit(1)s
+# on failure (src/main.ts:69 + 222-225), so a wrong location does not degrade
+# quietly — the server goes DOWN and STAYS down. Crash-only supervision then
+# does exactly the right thing and keeps it down. And because this function kept
+# no copy of what it replaced, the working .env had to be recovered from a Time
+# Machine snapshot. That is the whole defect: a destructive write, of an
+# unvalidated value, over a proven-good one, with no way back.
+#
+# THE RULE NOW — a credential pairing PROVEN to work is never replaced by one
+# that is not proven to work:
+#   * a byte-identical rewrite is a NO-OP: no write, no backup, no churn
+#   * before ANY change, .env is backed up timestamped at 600, the copy is READ
+#     BACK and compared, and a backup that cannot be made or verified REFUSES
+#     the rewrite outright (backups pruned to the newest 5)
+#   * when the candidate location differs from the one already on disk, BOTH are
+#     validated with a read-only GET against the live API, using the token that
+#     will actually be written, and the one that WORKS wins
+#   * an EMPTY candidate never overwrites a non-empty existing value
+#   * "cannot tell" (curl absent, network down, 5xx, 000) KEEPS the existing
+#     value. An unproven candidate never wins by default.
+#
+# The decision is made ONCE per run and reassigns the global GHL_LOC, so every
+# downstream launch surface (the pm2 ecosystem's env block, the systemd unit's
+# EnvironmentFile) agrees with the .env rather than re-introducing the rejected
+# value one layer up.
+
+# _ghl_location_http_code <token> <location_id> — read-only probe of the
+# location record. Prints ONLY the HTTP status code (000 when the call could not
+# be made at all). NEVER prints the token, the location, or the response body.
+_ghl_location_http_code() {
+  local _tok="${1:-}" _loc="${2:-}"
+  [ -n "$_tok" ] && [ -n "$_loc" ] || { printf '000'; return 0; }
+  command -v curl >/dev/null 2>&1 || { printf '000'; return 0; }
+  curl -s -o /dev/null -w '%{http_code}' -m 10 \
+    "https://services.leadconnectorhq.com/locations/${_loc}" \
+    -H "Authorization: Bearer ${_tok}" \
+    -H "Version: 2021-07-28" 2>/dev/null || printf '000'
+}
+
+# _ghl_location_verdict <http_code> -> ok | rejected | unknown
+# 404 counts as REJECTED: a location this token cannot see is a broken pairing,
+# not an ambiguous one. Everything else (000 offline, 5xx, 429) is UNKNOWN and
+# must never be treated as either a pass or a fail.
+_ghl_location_verdict() {
+  case "${1:-}" in
+    200|201)     printf 'ok' ;;
+    401|403|404) printf 'rejected' ;;
+    *)           printf 'unknown' ;;
+  esac
+}
+
+# Last 4 characters only — enough to tell two ids apart in a log, without
+# printing a full credential-adjacent identifier into a shared log file.
+_ghl_mask() { printf '…%s' "$(printf '%s' "${1:-}" | tail -c 4)"; }
+
+_env_file_value() {  # <file> <KEY>
+  local f="${1:-}" k="${2:-}"
+  [ -f "$f" ] || return 0
+  sed -n "s/^[[:space:]]*${k}=//p" "$f" 2>/dev/null | tail -1 | tr -d '"' | tr -d "'"
+}
+
+# Timestamped, verified, pruned backup. Returns non-zero when a backup could NOT
+# be produced — the caller must then leave the file alone. "No backup" is exactly
+# the condition that made the live incident unrecoverable, so it is fatal to the
+# write, never a warning we proceed past.
+_backup_server_env() {
+  local f="${1:-}" ts bak n=0
+  [ -f "$f" ] || return 0     # nothing to protect yet
+  ts="$(date -u +%Y%m%dT%H%M%SZ 2>/dev/null || echo unknown)"
+  bak="${f}.bak-${ts}"
+  if ! ( umask 077; cp -p "$f" "$bak" ) 2>/dev/null; then
+    log "REFUSING to rewrite $f — could not write the backup $bak"
+    return 1
+  fi
+  chmod 600 "$bak" 2>/dev/null || true
+  if ! cmp -s "$f" "$bak" 2>/dev/null; then
+    log "REFUSING to rewrite $f — the backup $bak does not match what is on disk"
+    rm -f "$bak" 2>/dev/null || true
+    return 1
+  fi
+  log "server .env backed up (verified, 600) -> $bak"
+  while IFS= read -r _old; do
+    [ -n "$_old" ] || continue
+    n=$((n+1))
+    [ "$n" -le 5 ] && continue
+    rm -f "$_old" 2>/dev/null || true
+  done <<EOF
+$(ls -1 "${f}".bak-* 2>/dev/null | LC_ALL=C sort -r)
+EOF
+  return 0
+}
+
+# Decide the location id ONCE per run and publish it as the global GHL_LOC.
+_GHL_LOC_RESOLVED=0
+resolve_location_id() {
+  [ "$_GHL_LOC_RESOLVED" = "1" ] && return 0
+  _GHL_LOC_RESOLVED=1
+  local ENVF="$MCP_DIR/.env" _existing="" _cand_code _exist_code _cand_v _exist_v
+  _existing="$(_env_file_value "$ENVF" GHL_LOCATION_ID)"
+
+  if [ -z "${GHL_LOC:-}" ]; then
+    if [ -n "$_existing" ]; then
+      GHL_LOC="$_existing"
+      log "location id: no GOHIGHLEVEL_LOCATION_ID/GHL_LOCATION_ID resolvable here — keeping the value already on disk $(_ghl_mask "$_existing") (an EMPTY candidate never overwrites a working one)"
+    fi
+    return 0
+  fi
+  if [ -z "$_existing" ] || [ "$_existing" = "$GHL_LOC" ]; then
+    return 0    # nothing on disk yet, or no change at all — nothing to prove
+  fi
+
+  # A REAL disagreement — the fatal case. Prove both before choosing either.
+  _cand_code="$(_ghl_location_http_code "$GHL_TOKEN" "$GHL_LOC")"
+  _exist_code="$(_ghl_location_http_code "$GHL_TOKEN" "$_existing")"
+  _cand_v="$(_ghl_location_verdict "$_cand_code")"
+  _exist_v="$(_ghl_location_verdict "$_exist_code")"
+  log "location id DISAGREEMENT: on-disk $(_ghl_mask "$_existing") -> HTTP ${_exist_code} (${_exist_v}); configured $(_ghl_mask "$GHL_LOC") -> HTTP ${_cand_code} (${_cand_v})"
+
+  if [ "$_cand_v" = "ok" ]; then
+    log "location id: configured value VALIDATED against this token (HTTP ${_cand_code}) — adopting it"
+    return 0
+  fi
+  if [ "$_exist_v" = "ok" ]; then
+    log "############################################################"
+    log "## GHL_LOCATION_ID NOT OVERWRITTEN — the configured value would TAKE THIS SERVER DOWN."
+    log "##   configured $(_ghl_mask "$GHL_LOC") -> HTTP ${_cand_code} (rejected by this token)"
+    log "##   on disk    $(_ghl_mask "$_existing") -> HTTP ${_exist_code} (works)"
+    log "## main.js testConnection()s at boot and exit(1)s on failure, so writing the"
+    log "## rejected value is a hard outage, not a degradation. KEEPING the working pairing."
+    log "## ACTION: fix GOHIGHLEVEL_LOCATION_ID in this box's secrets/openclaw.json to"
+    log "## match the MCP token's scope, or rotate the token to one scoped to that location."
+    log "############################################################"
+    GHL_LOC="$_existing"
+    return 0
+  fi
+  GHL_LOC="$_existing"
+  log "location id: NEITHER value could be proven (configured HTTP ${_cand_code}, on-disk HTTP ${_exist_code}) — keeping the on-disk value. An unproven candidate never wins by default."
+  return 0
+}
+
 write_server_env() {
   [ -n "$GHL_TOKEN" ] || return 0
-  ( umask 077; cat > "$MCP_DIR/.env" <<EOF
+  resolve_location_id
+  local ENVF="$MCP_DIR/.env" _new
+  _new="$(cat <<EOF
 GHL_API_KEY=${GHL_TOKEN}
 GHL_BASE_URL=https://services.leadconnectorhq.com
 GHL_LOCATION_ID=${GHL_LOC}
@@ -661,9 +892,19 @@ GHL_TOOL_PROFILE=${GHL_MCP_TOOL_PROFILE}
 GHL_MCP_BIND_HOST=${GHL_MCP_BIND_HOST}
 NODE_ENV=production
 EOF
-  )
-  chmod 600 "$MCP_DIR/.env" 2>/dev/null || true
+)"
+  if [ -f "$ENVF" ] && [ "$(cat "$ENVF" 2>/dev/null)" = "$_new" ]; then
+    log "server .env already byte-identical — no write, no backup (idempotent no-op)"
+    return 0
+  fi
+  _backup_server_env "$ENVF" || return 1
+  ( umask 077; printf '%s\n' "$_new" > "$ENVF" ) || {
+    log "FATAL: could not write $ENVF"; return 1; }
+  chmod 600 "$ENVF" 2>/dev/null || true
+  log "server .env written (GHL_LOCATION_ID=$(_ghl_mask "$GHL_LOC"))"
+  return 0
 }
+# <<< GHL-MCP-ENV-CREDENTIAL-GUARD-END
 
 # ── 3b. D6: the BIND GUARD — force the listener onto loopback ────────────────
 # The pinned upstream binds 0.0.0.0 from a hardcoded literal (src/main.ts:
@@ -891,8 +1132,30 @@ listener_is_loopback() {
 # The REAL test: does a JSON-RPC request get an ANSWER? /health is served by
 # express before the MCP transport is wired, so a stale/deaf dist still returns
 # {"status":"healthy"} while every agent init hangs the full 30s (D1/D5).
+# B3 (DEAD ON ARRIVAL FLEET-WIDE): this resolver listed
+# $HOME/.openclaw/skills/scripts/ and /data/.openclaw/skills/scripts/ — an extra
+# `skills/` segment that NOTHING delivers to. update-skills.sh delivers the
+# canonical scripts/ tree to $OC_ROOT/scripts (deliver_canonical_scripts_tree ->
+# _OC_SCRIPTS_DEST), so neither candidate could ever match on a real box. The
+# only candidate that ever hit was $SELF_DIR — and on the FLEET path $SELF_DIR is
+# the temp extract dir, which the updater `rm -rf`s. Net effect: PROBE resolved
+# empty on every rolled box, so install_periodic_probe() took its
+# "not co-located — periodic liveness probe NOT installed" branch and the
+# 15-minute liveness probe was never installed anywhere. It passed in operator-box testing
+# only because that run used a persistent checkout.
+#
+# The DELIVERED path is now present, on both platforms, ahead of the legacy one.
+# $SELF_DIR stays first (it is how a developer checkout and CI resolve). The
+# `skills/scripts` pair is KEPT, last, as a legacy fallback: some long-lived
+# boxes were provisioned when install.sh copied the whole repo under skills/, and
+# dropping it could strand one of them. It is no longer the ONLY option, which is
+# what made this dead on arrival.
+# scripts/qc-assert-pin-delivery-paths.sh now fails CI if any resolver here omits
+# the delivered path.
 PROBE="$(
   for c in "$SELF_DIR/ghl-mcp-probe.sh" \
+           "$HOME/.openclaw/scripts/ghl-mcp-probe.sh" \
+           "/data/.openclaw/scripts/ghl-mcp-probe.sh" \
            "$HOME/.openclaw/skills/scripts/ghl-mcp-probe.sh" \
            "/data/.openclaw/skills/scripts/ghl-mcp-probe.sh"; do
     [ -f "$c" ] && { printf '%s' "$c"; break; }
@@ -988,6 +1251,13 @@ EOF
 # SK1-70: the GHL PIT is NOT inlined here (world-readable) — it is loaded at
 # launch from the 600-perm .ghl-mcp.env sitting next to this config.
 write_vps_ecosystem() {
+  # B1: the pm2 `env:` block below sets GHL_LOCATION_ID and therefore OVERRIDES
+  # whatever .env holds. Resolving here as well means the ecosystem can never
+  # re-introduce a location id that resolve_location_id() just proved this
+  # token rejects — including on the D6 fast-path restart, which reaches
+  # start_service_vps() without ever calling write_server_env(). The resolver is
+  # cached, so this is a no-op when the main flow already ran it.
+  resolve_location_id
   # NEVER clobber a good secret file with an empty one. The main flow reaches
   # here only after the GHL_TOKEN check, but the D6 fast-path restart above can
   # also land here on an already-healthy box, where the token is not re-proven.
@@ -1049,6 +1319,79 @@ module.exports = {
 EOF
 }
 
+# >>> GHL-MCP-PM2-REGISTRATION-MISMATCH-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-pm2-registration-mismatch.test.sh)
+#
+# DEFECT 2 (proven live 2026-08-04): `pm2 startOrReload` MERGES a regenerated
+# ecosystem.config.js onto an app's EXISTING pm2 registration. When the new
+# file changes `script:`/`interpreter:` — e.g. a box registered under the old
+# `node dist/main.js` shape (no interpreter override) and this run writes the
+# crash-only launcher (`script: ".ghl-mcp-launch.sh"`, `interpreter: "bash"`)
+# — pm2 keeps the STALE `script: dist/main.js` and pairs it with the NEW
+# `interpreter: bash`. bash then tries to execute compiled JavaScript as a
+# shell script and crash-loops. `pm2 delete` + `pm2 start` always registers
+# clean, at the cost of resetting the app's uptime/restart-count history, so
+# it is used ONLY when a live registration actually disagrees with what this
+# run is about to write — never unconditionally (an unconditional delete
+# would lose that history on every ordinary, matching restart, for no
+# reason). Detect, don't assume.
+
+# _pm2_live_registration <app_name> — prints "script|interpreter" for the
+# LIVE pm2 registration of <app_name>, or nothing if it does not exist or
+# cannot be determined (missing pm2/python3). Non-secret fields only (a
+# script path and an interpreter name are not credentials) — this does NOT
+# need the pm2_env secret-filtering discipline scripts/ghl-mcp-assert-
+# runtime.sh uses for the fuller record, but stays scoped to exactly the two
+# fields this comparison needs regardless.
+_pm2_live_registration() {
+  local _name="$1"
+  command -v pm2 >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  # `python3 -c "$snippet"` (an ARGUMENT), never `python3 - <<EOF` — a heredoc
+  # attached to `python3 -` is consumed as the SCRIPT SOURCE, which leaves
+  # nothing on stdin for json.load(sys.stdin) to read from the piped `pm2
+  # jlist` output (an immediate EOF, silently caught by the except below, so
+  # this would print nothing for every box, every time). Same discipline as
+  # _GHL_FILTER_PM2_RECORD in scripts/ghl-mcp-assert-runtime.sh.
+  local _snippet='
+import json, os, sys
+name = os.environ.get("NAME", "")
+try:
+    apps = json.load(sys.stdin)
+except Exception:
+    raise SystemExit(0)
+for a in apps:
+    if a.get("name") != name:
+        continue
+    env = a.get("pm2_env") if isinstance(a.get("pm2_env"), dict) else {}
+    script = env.get("pm_exec_path") or a.get("pm_exec_path") or ""
+    interp = env.get("exec_interpreter") or ""
+    print("%s|%s" % (script, interp))
+    break
+'
+  pm2 jlist 2>/dev/null | NAME="$_name" python3 -c "$_snippet" 2>/dev/null
+}
+
+# _pm2_registration_mismatch <app_name> <want_script_basename> <want_interpreter>
+# Returns 0 (MISMATCH -> caller must force `pm2 delete` + `pm2 start`) or
+# 1 (no live app, or it already matches -> `pm2 startOrReload` is safe).
+# No live app at all is NOT a mismatch: a fresh install has nothing stale to
+# collide with, and `startOrReload` already falls through to `pm2 start` on a
+# name pm2 has never seen.
+_pm2_registration_mismatch() {
+  local _name="$1" _want_script="$2" _want_interp="$3"
+  local _live_reg _live_script _live_interp
+  _live_reg="$(_pm2_live_registration "$_name" || true)"
+  [ -n "$_live_reg" ] || return 1
+  _live_script="${_live_reg%%|*}"
+  _live_interp="${_live_reg#*|}"
+  if [ "${_live_script##*/}" != "$_want_script" ] || [ "$_live_interp" != "$_want_interp" ]; then
+    return 0
+  fi
+  return 1
+}
+# <<< GHL-MCP-PM2-REGISTRATION-MISMATCH-END
+
 start_service_vps() {
   local NODE_PATH; NODE_PATH="$(command -v node)"
   mkdir -p /data/logs 2>/dev/null || true
@@ -1058,8 +1401,17 @@ start_service_vps() {
   #    `pm2 save` + a reboot-resurrect hook). NEVER a bare nohup. ──────────────
   if command -v pm2 >/dev/null 2>&1; then
     log "starting GHL MCP under pm2 (ecosystem.config.js, PORT=${GHL_MCP_PORT}, profile=${GHL_MCP_TOOL_PROFILE})"
-    ( cd "$MCP_DIR" && pm2 startOrReload ecosystem.config.js >/dev/null 2>&1 \
-        || pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+
+    # D2 (see the GHL-MCP-PM2-REGISTRATION-MISMATCH block above for the full
+    # defect writeup): detect before assuming startOrReload is safe.
+    if _pm2_registration_mismatch ghl-community-mcp ".ghl-mcp-launch.sh" "bash"; then
+      log "pm2 registration MISMATCH detected for ghl-community-mcp — startOrReload would pair a NEW interpreter with a STALE script and crash-loop (D2). Forcing 'pm2 delete' + 'pm2 start' (this app's uptime/restart history resets; there is no way to change script/interpreter on a live pm2 process without one)."
+      ( cd "$MCP_DIR" && pm2 delete ghl-community-mcp >/dev/null 2>&1
+        pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+    else
+      ( cd "$MCP_DIR" && pm2 startOrReload ecosystem.config.js >/dev/null 2>&1 \
+          || pm2 start ecosystem.config.js >/dev/null 2>&1 ) || true
+    fi
     pm2 save >/dev/null 2>&1 || true
     install_vps_reboot_resurrect
     return 0
@@ -1270,14 +1622,62 @@ EOF
 # This script used to re-register it right after wire.sh removed it. It no
 # longer does; it removes a legacy registration instead and only publishes the
 # canonical URL env var that the on-demand curl path reads.
+# >>> OC-MCP-UNSET-VERB-BEGIN
+#     (extracted verbatim by tests/unit/ghl-mcp-unset-verb.test.sh)
+# B2 (proven live on OpenClaw 2026.7.1-2): `openclaw mcp remove <name>` IS NOT A
+# COMMAND. It exits 1 with "Too many arguments for this command." The verb is
+# `unset`. Every de-registration call site in this repo used `remove`, and every
+# one of them was swallowed by `|| true` — so Tier 2 was NEVER de-registered on
+# ANY box, and check 10 of ghl-mcp-assert-runtime.sh ("ghl-community-mcp ABSENT
+# from mcp.servers") could never pass anywhere. That was the last remaining FATAL
+# on the pilot box.
+#
+# oc_mcp_unset tries `unset` first and falls back to `remove` for any older CLI
+# that genuinely used it, then RETURNS THE OUTCOME. Callers must not `|| true`
+# it: a swallowed failure is precisely how this stayed invisible for so long.
+#   0 = the CLI accepted one of the verbs
+#   1 = neither verb was accepted (or openclaw is absent)
+oc_mcp_unset() {
+  local _name="${1:-}"
+  [ -n "$_name" ] || return 1
+  command -v openclaw >/dev/null 2>&1 || return 1
+  openclaw mcp unset "$_name" >/dev/null 2>&1 && return 0
+  openclaw mcp remove "$_name" >/dev/null 2>&1 && return 0
+  return 1
+}
+
+# Which verb does the INSTALLED CLI actually document? Reported (never guessed)
+# so an operator reading the log can see whether the repo and the runtime agree.
+oc_mcp_unset_verb_supported() {
+  command -v openclaw >/dev/null 2>&1 || { printf 'no-cli'; return 0; }
+  local _h
+  _h="$(openclaw mcp --help 2>&1 || true)"
+  case "$_h" in
+    *' unset'*|*'unset '*) printf 'unset' ;;
+    *' remove'*|*'remove '*) printf 'remove' ;;
+    *) printf 'unknown' ;;
+  esac
+}
+
 deregister_tier2() {
   command -v openclaw >/dev/null 2>&1 || return 0
   openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >/dev/null 2>&1 || true
   if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-    log "removing legacy ghl-community-mcp registration (Tier 2 is on-demand curl)"
-    openclaw mcp remove ghl-community-mcp >/dev/null 2>&1 || true
+    log "de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl); installed CLI documents the verb: $(oc_mcp_unset_verb_supported)"
+    if ! oc_mcp_unset ghl-community-mcp; then
+      log "WARN: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted — ghl-community-mcp is STILL registered. Every agent init will keep paying its tool-catalogue/connection cost. Check 'openclaw mcp --help'."
+      return 0
+    fi
+    # RE-READ. The gateway can rewrite openclaw.json from memory, so a command
+    # that exited 0 is not proof the entry is gone.
+    if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+      log "WARN: de-registration command succeeded but ghl-community-mcp is STILL listed — the gateway may have rewritten the config. It will be retried on the next run."
+    else
+      log "ghl-community-mcp de-registered and verified absent from mcp.servers"
+    fi
   fi
 }
+# <<< OC-MCP-UNSET-VERB-END
 
 # ── Main flow ────────────────────────────────────────────────────────────────
 
@@ -1322,7 +1722,13 @@ fi
 
 ensure_repo_at_pin
 _PIN_RC=$?
-if [ "$_PIN_RC" = "2" ]; then
+if [ "$_PIN_RC" = "3" ]; then
+  # ROOT_OWNERSHIP_MISMATCH was already reported (loud, with the exact remedy)
+  # inside assert_ownership_matches_runtime_user() — never re-report it as the
+  # generic PIN_MISMATCH/BUILD_FAILED below, which is exactly the innocent-
+  # looking symptom that hid this root cause in the first place.
+  exit 0
+elif [ "$_PIN_RC" = "2" ]; then
   report "PIN_MISMATCH" "(cannot check out vetted commit ${GHL_MCP_VETTED_COMMIT:0:12} at $MCP_DIR — refusing to build/start an unpinned third-party MCP. Re-vet upstream and update config/ghl-mcp-pin.env.)"
   exit 0
 elif [ "$_PIN_RC" != "0" ]; then

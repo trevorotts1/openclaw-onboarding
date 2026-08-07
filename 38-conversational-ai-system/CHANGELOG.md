@@ -1,3 +1,26 @@
+## [1.11.1] - 2026-08-04 - fix: the pointer-stanza rewriter (v1.11.0) is now WIRED IN, and 9 qc gates check the LIVE box instead of the shipped source
+
+v1.11.0 shipped `05-update-agents-md.sh` (the writer) but nothing in the
+automated pipeline ever CALLED it — it was a MANUAL INSTALL.md step-5 only.
+`update-skills.sh`'s per-skill wiring loop now invokes it for
+`38-conversational-ai-system`, scoped and not sentinel-gated (needs to run
+every pass for the corefile-watcher staged-descent convergence to work).
+
+Separately, `qc-segmentation.sh`, `qc-multi-tenant.sh`, `qc-tool-gating.sh`,
+`qc-workflow-exits.sh`, `qc-client-test-mode.sh`, `qc-zhc-tag-prefix.sh`,
+`qc-ab-testing.sh`, `qc-zhc-pixel.sh`, and `qc-webhook-chaining.sh` all
+checked the SHIPPED SOURCE script for their marker text instead of the box's
+LIVE AGENTS.md — proof the writer could produce the marker, never that it had
+run. Every one of the 9 now ALSO asserts against the live file (env-override
+`AGENTS_MD`, else the writer's own platform default; no live file = SKIP, not
+a false FAIL). `11-run-qc-checklist.sh` exports its own resolved `AGENTS_MD`
+to every sub-gate so one checklist run checks one file throughout.
+
+New mutation-proof suites: `tests/unit/skill38-agents-md-wiring.test.sh`
+(14 assertions) and `tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh`
+(31 assertions, every gate/marker pair proven both directions). All 8
+pre-existing per-gate `.test.sh` negative fixtures still pass unchanged.
+
 ## [1.11.0] - 2026-08-03 - fix: AGENTS.md gets POINTER STANZAS, not a 52,444-character corpus; the GHL PIT monitor can finally pass
 
 ### Why

@@ -64,6 +64,12 @@ DOCUMENTS
 - [ ] Speech Script created as clean text only.
 - [ ] Google sharing set to anyone-with-the-link-can-edit where Google is the destination.
 
+SHOW NOTES (Step 12.5, the ONE source of the Podbean description)
+- [ ] Show notes drafted (800 to 2500 chars) from the frozen research package and the blueprint via `model_router.py route` on the content tier; never an Anthropic model.
+- [ ] Writing rules honored: zero em dashes, no triple backticks or code-fence markers.
+- [ ] At least 200 characters (the publish floor); a shorter value is a defect, never publishable.
+- [ ] Persisted via `podcast_state.py output --field episode_description`; Step 15 resolves it from the ledger.
+
 BOOK TEASER (Interview mode only; skipped entirely for Personal mode)
 - [ ] Teaser written (at most three pages) from answers, improved answers, and verified research, in the person's voice, ending on a cliffhanger, on Kimi 2.6 or GLM 5.2.
 - [ ] Rendered as a book-typeset PDF, no font below 14 point, uploaded to Convert and Flow media storage, URL captured.

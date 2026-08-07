@@ -162,11 +162,25 @@ fi
 
 echo ""
 
-# 2. AGENTS.md marker block.
+# 2. AGENTS.md marker block — SHIPPED SOURCE sanity (the writer CAN produce it).
 if [ -f "$AG_SCRIPT" ] && grep -q 'STEP_1_87_AB_TESTING' "$AG_SCRIPT"; then
-  pass "05-update-agents-md.sh inserts the STEP_1_87_AB_TESTING block"
+  pass "05-update-agents-md.sh SOURCE carries the STEP_1_87_AB_TESTING marker text"
 else
-  fail "05-update-agents-md.sh is missing the STEP_1_87_AB_TESTING block"
+  fail "05-update-agents-md.sh SOURCE is missing the STEP_1_87_AB_TESTING marker text"
+fi
+
+# 2b. AGENTS.md marker block — LIVE FILE assertion (content-version-aware).
+if [ -z "${AGENTS_MD:-}" ]; then
+  if [ "$(uname -s)" = "Darwin" ]; then AGENTS_MD="$HOME/clawd/AGENTS.md"; else AGENTS_MD="/data/clawd/AGENTS.md"; fi
+fi
+if [ -f "$AGENTS_MD" ]; then
+  if grep -q 'STEP_1_87_AB_TESTING' "$AGENTS_MD"; then
+    pass "LIVE AGENTS.md ($AGENTS_MD) carries the STEP_1_87_AB_TESTING marker — 05-update-agents-md.sh has actually run on this box"
+  else
+    fail "LIVE AGENTS.md ($AGENTS_MD) is MISSING the STEP_1_87_AB_TESTING marker — the pointer-stanza writer has not run on this box; a shipped-source check alone cannot prove this"
+  fi
+else
+  echo "  [SKIP] no live AGENTS.md found at $AGENTS_MD — cannot verify the box actually received the marker (set AGENTS_MD to override)"
 fi
 
 # 3. MEMORY Rule 29.

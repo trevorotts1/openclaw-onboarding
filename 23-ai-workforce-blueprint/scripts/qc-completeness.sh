@@ -819,7 +819,8 @@ for candidate in [
 # Before this, qc-completeness measured per-dept STAFFING of whatever was on
 # disk but had NO floor concept: a 3-dept workforce where those 3 were fully
 # staffed returned PASS (the 3-dept / 6-dept reduced-workforce bug). Now we compute
-# the expected floor = 16 mandatory + the industry vertical-pack departments
+# the expected floor = 24 mandatory (department-naming-map.json v2.8.0) + the
+# industry vertical-pack departments
 # matched to the client, MINUS any explicitly declined dept, and FAIL the whole
 # QC if disk is below that floor. department-floor.py is the single source of
 # truth (same naming-map + matched-vertical logic as build-workforce.py); we

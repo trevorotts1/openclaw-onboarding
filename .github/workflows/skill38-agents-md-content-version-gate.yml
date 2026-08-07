@@ -1,0 +1,138 @@
+name: Skill 38 AGENTS.md wiring + content-version-aware QC gates
+
+# Fails the build if either half of a two-part defect regresses:
+#
+#   (i)  05-update-agents-md.sh (the AGENTS.md pointer-stanza rewriter — the
+#        source of the ~24k-char win over the old 52KB full-corpus paste) was
+#        invoked NOWHERE in the automated update pipeline: not by the wiring
+#        phase, not by wire_core_updates(), not by obs_verify_skill. Only a
+#        MANUAL INSTALL.md step-5. Evidence it had not run in months: a real
+#        box's newest AGENTS.md.bak-skill38-* was ~7 version bumps stale
+#        while sibling skills wrote fresh backups on every roll.
+#
+#   (ii) 9 of skill 38's qc-*.sh gates (F17 segmentation, F21 multi-tenant,
+#        U-1 tool-gating, U-2 workflow-exits, U-6 client-test-mode, ZHC
+#        tag-prefix, F16 A/B testing, F49 ZHC pixel, F18 webhook-chaining)
+#        asserted their AGENTS marker was present by grepping the SHIPPED
+#        SOURCE script for its own marker text — proof the writer CAN
+#        produce the marker, never that it EVER RAN on this box. A box whose
+#        AGENTS.md was never rewritten still reported qc-passed forever, so
+#        the "reprocess skills not yet qc-passed" loop could never re-trigger
+#        the fix in (i).
+#
+# tests/unit/skill38-agents-md-wiring.test.sh proves (i): the wiring call
+# exists, sits before the per-version sentinel, and the exact invocation
+# contract update-skills.sh now uses actually rewrites a stale live
+# AGENTS.md.
+#
+# tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh mutation-proves
+# (ii) for every gate/marker pair, in both directions: a live AGENTS.md that
+# was never rewritten FAILS (citing the live file, not the source script); a
+# live AGENTS.md produced by actually running the real writer PASSES; and no
+# live file at all (a bare CI checkout) SKIPs rather than false-failing.
+#
+# Security note: consumes only repo file content (no untrusted GitHub event
+# fields), so there is no injection surface.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/onboarding-state.sh"
+      - "lib-onboarding-state.sh"
+      - "38-conversational-ai-system/scripts/05-update-agents-md.sh"
+      - "38-conversational-ai-system/scripts/11-run-qc-checklist.sh"
+      - "38-conversational-ai-system/scripts/qc-segmentation.sh"
+      - "38-conversational-ai-system/scripts/qc-multi-tenant.sh"
+      - "38-conversational-ai-system/scripts/qc-client-test-mode.sh"
+      - "38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh"
+      - "38-conversational-ai-system/scripts/qc-ab-testing.sh"
+      - "38-conversational-ai-system/scripts/qc-zhc-pixel.sh"
+      - "38-conversational-ai-system/scripts/qc-webhook-chaining.sh"
+      - "38-conversational-ai-system/scripts/qc-workflow-exits.sh"
+      - "38-conversational-ai-system/scripts/qc-tool-gating.sh"
+      - "tests/unit/skill38-agents-md-wiring.test.sh"
+      - "tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh"
+      - ".github/workflows/skill38-agents-md-content-version-gate.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "update-skills.sh"
+      - "scripts/onboarding-state.sh"
+      - "lib-onboarding-state.sh"
+      - "38-conversational-ai-system/scripts/05-update-agents-md.sh"
+      - "38-conversational-ai-system/scripts/11-run-qc-checklist.sh"
+      - "38-conversational-ai-system/scripts/qc-segmentation.sh"
+      - "38-conversational-ai-system/scripts/qc-multi-tenant.sh"
+      - "38-conversational-ai-system/scripts/qc-client-test-mode.sh"
+      - "38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh"
+      - "38-conversational-ai-system/scripts/qc-ab-testing.sh"
+      - "38-conversational-ai-system/scripts/qc-zhc-pixel.sh"
+      - "38-conversational-ai-system/scripts/qc-webhook-chaining.sh"
+      - "38-conversational-ai-system/scripts/qc-workflow-exits.sh"
+      - "38-conversational-ai-system/scripts/qc-tool-gating.sh"
+      - "tests/unit/skill38-agents-md-wiring.test.sh"
+      - "tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh"
+      - ".github/workflows/skill38-agents-md-content-version-gate.yml"
+
+jobs:
+  skill38-agents-md-content-version-gate:
+    name: 05-update-agents-md.sh is wired in; the 9 qc gates check the LIVE box, not the shipped source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Syntax-check every touched script
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in update-skills.sh scripts/onboarding-state.sh lib-onboarding-state.sh \
+                   38-conversational-ai-system/scripts/05-update-agents-md.sh \
+                   38-conversational-ai-system/scripts/11-run-qc-checklist.sh \
+                   38-conversational-ai-system/scripts/qc-segmentation.sh \
+                   38-conversational-ai-system/scripts/qc-multi-tenant.sh \
+                   38-conversational-ai-system/scripts/qc-client-test-mode.sh \
+                   38-conversational-ai-system/scripts/qc-zhc-tag-prefix.sh \
+                   38-conversational-ai-system/scripts/qc-ab-testing.sh \
+                   38-conversational-ai-system/scripts/qc-zhc-pixel.sh \
+                   38-conversational-ai-system/scripts/qc-webhook-chaining.sh \
+                   38-conversational-ai-system/scripts/qc-workflow-exits.sh \
+                   38-conversational-ai-system/scripts/qc-tool-gating.sh; do
+            bash -n "$f"
+          done
+          echo "all touched scripts parse clean"
+
+      - name: (i) 05-update-agents-md.sh is wired into the automated pipeline
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/skill38-agents-md-wiring.test.sh
+          echo "skill38-agents-md-wiring.test.sh: PASS"
+
+      - name: (ii) the 9 qc gates are content-version-aware (mutation-proven both directions)
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/skill38-qc-gates-live-agentsmd-awareness.test.sh
+          echo "skill38-qc-gates-live-agentsmd-awareness.test.sh: PASS"
+
+      - name: Existing per-gate negative-fixture tests still pass (no regression)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd 38-conversational-ai-system/scripts
+          for t in qc-segmentation.test.sh qc-multi-tenant.test.sh qc-client-test-mode.test.sh \
+                   qc-ab-testing.test.sh qc-zhc-pixel.test.sh qc-webhook-chaining.test.sh \
+                   qc-workflow-exits.test.sh qc-tool-gating.test.sh; do
+            echo "--- $t ---"
+            bash "$t"
+          done
+
+      - name: obs_verify_skill / oc_gate_skill regression suites still pass
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash tests/unit/onboarding-state-obs-api.test.sh
+          bash tests/unit/install-state-fail-open.test.sh

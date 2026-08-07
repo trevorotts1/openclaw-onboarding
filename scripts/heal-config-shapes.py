@@ -1,13 +1,11 @@
 #!/usr/bin/env python3
-"""heal-config-shapes.py (v16.1.4 + 2026-08-06 hooks.allowPromptInjection fix)
-— idempotent self-heal for schema-invalid openclaw.json shapes the onboarding
-updater historically injected. Repairs an already-broken config IN PLACE so
-re-rolling fixes boxes corrupted by earlier versions. Running twice never
-re-breaks (idempotent).
+"""heal-config-shapes.py (v16.1.4) — idempotent self-heal for the three
+schema-invalid openclaw.json shapes the onboarding updater historically
+injected. Repairs an already-broken config IN PLACE so re-rolling v16.1.4 fixes
+boxes corrupted by earlier versions. Running twice never re-breaks (idempotent).
 
-Shapes 1-3 were proven against the LIVE `openclaw config schema` on
-gateway 2026.5.28 AND 2026.6.8 (identical in both). Shape 4 was proven live
-on OpenClaw 2026.6.11 (2026-08-06 fleet-kill defect investigation):
+All three shapes were proven against the LIVE `openclaw config schema` on
+gateway 2026.5.28 AND 2026.6.8 (identical in both):
 
   1. plugins.entries.<id> is additionalProperties:false — it allows ONLY
      {enabled, hooks, subagent, llm, config}. Earlier installs wrote
@@ -39,27 +37,6 @@ on OpenClaw 2026.6.11 (2026-08-06 fleet-kill defect investigation):
        FIX: relocate channels.bindings to the top-level `bindings`, convert any
             flat entry to {agentId, match:{...}}, drop an inert token-less
             operator route, dedupe, and remove channels.bindings.
-
-  4. plugins.entries.<id>.hooks.allowPromptInjection — install.sh /
-     update-skills.sh's CEO Routing Doctrine plugin block (added 2026-08-05)
-     wrote plugins.entries.ceo-routing-doctrine.hooks = {allowPromptInjection:
-     true}. That property is REJECTED by the plugins.entries.<id>.hooks
-     sub-schema on OpenClaw <=2026.6.11 (reportedly valid only as of
-     2026.7.1-2, a schema version not yet uniformly on the fleet). Unlike
-     shapes 1-3, this one is FATAL, not just invalid: `openclaw config
-     validate` fails at gateway STARTUP, so the gateway process never comes
-     up, the cron scheduler never initializes, and no cron on the box ever
-     fires again after the next restart — silently, because the
-     ALREADY-RUNNING gateway keeps working until that restart.
-       validator: "hooks: Invalid input"
-       FIX: strip `allowPromptInjection` from every plugins.entries.<id>.hooks
-            object; drop the now-empty `hooks` key entirely (never touches
-            `enabled`/`subagent`/`llm`/`config`, and never deletes the entry
-            itself — the plugin stays installed and enabled).
-       NOTE: install.sh / update-skills.sh were fixed at the source (2026-08-06)
-            to stop writing this key going forward. This heal function is for
-            boxes ALREADY poisoned by an onboarding run/fleet roll that predates
-            that fix — it does not, by itself, reach or modify any live box.
 
 Usage:
   heal-config-shapes.py <openclaw.json>            # heal in place (idempotent)
@@ -217,35 +194,8 @@ def heal_bindings(cfg, notes):
     # else: never existed at the top level and nothing to keep — leave it unset
 
 
-def heal_plugin_hooks_allow_prompt_injection(cfg, notes):
-    """Strip the schema-invalid `allowPromptInjection` property from every
-    plugins.entries.<id>.hooks object (2026-08-06 fleet-kill defect: this key
-    is FATAL — it fails `openclaw config validate` at gateway STARTUP on
-    OpenClaw <=2026.6.11, so the gateway never comes up and no cron on the
-    box fires again after the next restart). Drops the now-empty `hooks` key
-    entirely; never touches `enabled`/`subagent`/`llm`/`config` and never
-    deletes the entry itself — the plugin stays installed and enabled."""
-    entries = (cfg.get("plugins") or {}).get("entries")
-    if not isinstance(entries, dict):
-        return
-    for pid, entry in entries.items():
-        if not isinstance(entry, dict):
-            continue
-        hooks = entry.get("hooks")
-        if not isinstance(hooks, dict) or "allowPromptInjection" not in hooks:
-            continue
-        hooks.pop("allowPromptInjection", None)
-        if hooks:
-            entry["hooks"] = hooks
-        else:
-            entry.pop("hooks", None)
-        notes.append(
-            "plugins.entries.%s.hooks: removed invalid allowPromptInjection" % pid
-        )
-
-
 def is_bad_shape(cfg):
-    """True if the config still carries any of the four invalid shapes."""
+    """True if the config still carries any of the three invalid shapes."""
     entries = (cfg.get("plugins") or {}).get("entries")
     if isinstance(entries, dict):
         for entry in entries.values():
@@ -253,9 +203,6 @@ def is_bad_shape(cfg):
                 k not in ENTRY_TOP_KEYS for k in entry
             ):
                 return True
-            if isinstance(entry, dict) and isinstance(entry.get("hooks"), dict):
-                if "allowPromptInjection" in entry["hooks"]:
-                    return True
     tg = (cfg.get("channels") or {}).get("telegram")
     if isinstance(tg, dict):
         if "helpChatId" in tg:
@@ -308,7 +255,6 @@ def main(argv):
     heal_plugin_entries(cfg, notes)
     heal_help_chat_id(cfg, notes)
     heal_bindings(cfg, notes)
-    heal_plugin_hooks_allow_prompt_injection(cfg, notes)
     after = json.dumps(cfg, sort_keys=True)
 
     if before == after:

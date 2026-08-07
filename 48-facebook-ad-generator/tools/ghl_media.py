@@ -112,6 +112,32 @@ _PIT_ENV_NAMES = (
 _LOCATION_ENV_NAMES = ("GOHIGHLEVEL_LOCATION_ID", "GHL_LOCATION_ID")
 
 
+def _is_placeholder(value: str) -> bool:
+    """True when ``value`` is a documentation placeholder, not a real credential.
+
+    Mirrors ``38-conversational-ai-system/scripts/check-ghl-pit-liveness.sh``'s
+    ``_is_placeholder()`` (the proven, already-fixed reference implementation —
+    root-caused a false "PIT is DEAD/EXPIRED" alarm on 2026-08-03: the 10-char doc
+    placeholder ``pit-abc123`` is non-empty, so a naive first-non-empty-wins
+    resolver picks it up over the real credential). Same three shapes, ported to
+    Python: shorter than 20 characters, a known dummy literal (``pit-abc...``,
+    ``changeme...``, ``xxx...``, ``your-...``/``your_...``, a ``*_here``/``*-here``
+    suffix), or an angle-bracket placeholder token (``<...>``). Never logs or
+    returns the value — shape only.
+    """
+    if not value:
+        return True
+    if len(value) < 20:
+        return True
+    low = value.lower()
+    if low.startswith("pit-abc") or low.startswith("changeme") or low.startswith("xxx") \
+       or low.startswith("your-") or low.startswith("your_") \
+       or low.endswith("_here") or low.endswith("-here") \
+       or (value.startswith("<") and value.endswith(">")):
+        return True
+    return False
+
+
 # ── small helpers ─────────────────────────────────────────────────────────────
 
 def _require(value: Any, name: str) -> None:
@@ -164,18 +190,32 @@ def resolve_location_pit(env: dict | None = None) -> str:
     """Resolve the client's GHL LOCATION PIT from the canonical env names.
 
     Iterates the full 11-alias ``_PIT_ENV_NAMES`` set (priority order: ``GOHIGHLEVEL_API_KEY``
-    first, ``GHL_LOCATION_PIT`` last). Strips surrounding quotes. Raises if none is set —
-    media upload cannot proceed without the LOCATION PIT, and we never fabricate a public
-    URL, so a missing key is a hard, honest FAIL."""
+    first, ``GHL_LOCATION_PIT`` last). Strips surrounding quotes. A placeholder-shaped
+    value (see ``_is_placeholder``) is SKIPPED, not returned — the live process env is
+    seeded from openclaw.json ``env.vars`` at gateway launch, and those config copies are
+    placeholders BY DESIGN (see TERMINOLOGY.md). Raises if every alias is absent or
+    placeholder-shaped — media upload cannot proceed without a real LOCATION PIT, and we
+    never fabricate a public URL, so this is a hard, honest FAIL."""
     env = env if env is not None else os.environ
+    saw_placeholder = False
     for name in _PIT_ENV_NAMES:
         val = str(env.get(name, "")).strip().strip("'\"")
-        if val:
-            return val
+        if not val:
+            continue
+        if _is_placeholder(val):
+            saw_placeholder = True
+            continue
+        return val
+    placeholder_note = (
+        " Note: at least one candidate was a documentation PLACEHOLDER (short / "
+        "dummy-shaped) and was SKIPPED rather than used — put the real value in "
+        "~/.openclaw/secrets/.env, not just openclaw.json."
+        if saw_placeholder else ""
+    )
     raise RuntimeError(
         "GHL LOCATION PIT not found — set one of "
         f"{', '.join(_PIT_ENV_NAMES)} (the LOCATION Private Integration Token). "
-        "Media uploads require the LOCATION PIT (the Agency PIT 401s for media)."
+        f"Media uploads require the LOCATION PIT (the Agency PIT 401s for media).{placeholder_note}"
     )
 
 

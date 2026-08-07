@@ -187,7 +187,11 @@ Common options:
   --image-url <url>       HTTPS URL to the cover (Step 14 output). REQUIRED in
                           proxy mode only; ignored in broker/local mode.
   --speaker <name>        speaker or guest name; appends "Inspired by <name>" to the title
-  --description <text>    show notes (plain text or html, kept under 3000 chars)
+  --description <text>    show notes (plain text or html, kept under 3000 chars).
+                          REQUIRED for a real publish (>= PODBEAN_MIN_DESCRIPTION_LEN,
+                          default 200 chars); Step 12.5 drafts it and records it in
+                          the ledger. --status draft / --draft / --test fall back to
+                          the title stub for verification only.
   --release-date <when>   contact.date_for_release (ISO 8601 or unix seconds);
                           a future value schedules the episode instead of publishing now
   --status <value>        force publish | draft | future (default derives from --release-date)
@@ -261,22 +265,37 @@ content_type_for() {
 # documented "kept under 3000 chars" contract (usage text, line ~150); the
 # episode-type set is the Podbean episode type vocabulary.
 readonly PODBEAN_MAX_DESCRIPTION_LEN="${PODBEAN_MAX_DESCRIPTION_LEN:-3000}"
+# U048: minimum description floor. Step 12.5 (SHOW NOTES) drafts thorough show
+# notes (800-2500 chars); a description shorter than this floor is a stub (the
+# old silent title-substitution produced exactly a one-line description). A
+# publish-proxy run must never send a stub to Podbean. Mirrors the >= 200-char
+# rule in podcast_state.py MIN_EPISODE_DESCRIPTION_LEN so the state gate and the
+# publish script enforce the same floor.
+readonly PODBEAN_MIN_DESCRIPTION_LEN="${PODBEAN_MIN_DESCRIPTION_LEN:-200}"
 readonly PODBEAN_MAX_TITLE_LEN="${PODBEAN_MAX_TITLE_LEN:-200}"
 readonly PODBEAN_EPISODE_TYPES="full trailer bonus"
 
-# validate_episode_metadata <title> <description> <episode_type>
+# validate_episode_metadata <title> <description> <episode_type> [stub_ok]
 #   Pre-flight bounds/content checks run BEFORE any Podbean API call. Dies with
 #   a clear message on:
+#     - show notes (description) shorter than PODBEAN_MIN_DESCRIPTION_LEN when
+#       stub_ok is not 1 (a stub description -- Step 12.5 produced the real show
+#       notes, so a short one is an upstream defect, not a publishable input);
 #     - show notes (description) longer than PODBEAN_MAX_DESCRIPTION_LEN;
 #     - title longer than PODBEAN_MAX_TITLE_LEN;
 #     - an episode type outside PODBEAN_EPISODE_TYPES (full/trailer/bonus).
+#   stub_ok=1 (draft / --test / --status draft verification runs) permits a
+#   short stub description; a real publish always enforces the minimum floor.
 #   Returns 0 (proceeds) when every field is within bounds. Never makes a network
 #   call. Lengths are counted in characters (wc -m), matching the "chars" contract.
 validate_episode_metadata() {
-  local title="$1" description="$2" episode_type="${3:-full}"
+  local title="$1" description="$2" episode_type="${3:-full}" stub_ok="${4:-0}"
   local desc_len title_len
 
   desc_len="$(printf '%s' "$description" | wc -m | tr -d ' ')"
+  if [ "$stub_ok" != "1" ] && [ "$desc_len" -lt "$PODBEAN_MIN_DESCRIPTION_LEN" ]; then
+    die "pre-flight: show notes are only ${desc_len} chars, below the minimum of ${PODBEAN_MIN_DESCRIPTION_LEN}; Step 12.5 produced a real description -- a stub (or the title fallback) must never be published"
+  fi
   if [ "$desc_len" -gt "$PODBEAN_MAX_DESCRIPTION_LEN" ]; then
     die "pre-flight: show notes are ${desc_len} chars, over the Podbean limit of ${PODBEAN_MAX_DESCRIPTION_LEN}; shorten the --description before publishing (the API would reject this)"
   fi
@@ -317,6 +336,45 @@ ledger_field() {
   local file="$1" key="$2"
   [ -f "$file" ] || { printf ''; return 0; }
   json_field "$key" < "$file"
+}
+
+# U2.4 (2026-08-04, master plan unit 2.4): a job that was advanced with
+# --force-waiver must NEVER trigger a publish webhook. The waiver is recorded as
+# a podcast_job_events row with a note of the form
+#   "required-outputs WAIVED via --force-waiver [reason: ...]"
+# which podcast_state.py `get --job-id` returns (JSON, force_json=true). Returns 0
+# (true) when ANY event carries a --force-waiver marker, 1 (false) otherwise.
+# Fails LOUD on an unreadable state writer or an unresolvable job: an unverifiable
+# waiver state must fail closed, never silently proceed.
+job_was_waived() {
+  local job_id="$1" sw="$2" out
+  [ -n "$job_id" ] || return 1
+  if [ ! -f "$sw" ]; then
+    log "job_was_waived: state writer not found: $sw; FAILING CLOSED (waiver state unverifiable)"
+    return 0
+  fi
+  out="$(python3 "$sw" get --job-id "$job_id" 2>/dev/null || true)"
+  if [ -z "$out" ]; then
+    log "job_was_waived: no job data for ${job_id}; FAILING CLOSED (waiver state unverifiable)"
+    return 0
+  fi
+  # The `get` output is JSON with an events array. Look for a --force-waiver marker
+  # in any event's note.
+  printf '%s' "$out" | grep -q -- '--force-waiver' && return 0
+  printf '%s' "$out" | grep -qi 'waived via' && return 0
+  return 1
+}
+
+# U2.4 hard gate: refuse to assemble or send a publish payload when the job's
+# ledger/state shows a --force-waiver was used. Waived jobs must never publish.
+# Accepts --job-id, the state writer path, and a caller label for the error message.
+assert_not_waived() {
+  local job_id="$1" sw="$2" label="$3" waived
+  [ -n "$job_id" ] || return 0   # no job id => nothing to check (test/dry-run callers)
+  if job_was_waived "$job_id" "$sw"; then
+    die "refusing to publish: job ${job_id} was advanced with --force-waiver (${label}). A waived job must never trigger a publish webhook. Re-run the pipeline without the waiver, or fix the required outputs before publishing."
+  fi
+  return 0
 }
 
 # U035: verify the integrity checksum embedded in a roster/ledger JSON record.
@@ -544,14 +602,16 @@ else:
 # temp file and validate it with ffprobe before the publish payload is built.
 # KIND is "audio" (expects decodable MP3 with duration >= min_duration) or
 # "image" (expects JPEG/PNG with width and height both >= min_side).
-# PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe entirely (escape hatch).
-# If ffprobe is absent, degrades to a HEAD-reachability check + warning.
+# PODBEAN_SKIP_MEDIA_PROBE=1 skips the probe entirely, but ONLY with the
+# operator flag PODBEAN_OPERATOR_FORCE=1 (the skip gate lives at the caller).
+# ffprobe ABSENCE is a HARD FAIL in publish-proxy mode: the box that runs the
+# publish pipeline must have ffmpeg/ffprobe. There is no HEAD-only degrade.
 proxy_media_probe() {
   local url="$1" kind="$2" tmpdir="$3" probe_file max_bytes min_duration min_side
 
   max_bytes="${PODCAST_MEDIA_MAX_BYTES:-524288000}"      # 500 MiB default
   min_duration="${PODCAST_MEDIA_MIN_DURATION:-30}"       # seconds
-  min_side="${PODCAST_MEDIA_MIN_SIDE:-1400}"             # pixels
+  min_side="${PODCAST_MEDIA_MIN_SIDE:-1500}"             # pixels (Podbean safe higher bound)
 
   probe_file="$tmpdir/probe"
   log "media-probe: fetching ${kind} url head bytes (max ${max_bytes})"
@@ -598,13 +658,7 @@ proxy_media_probe() {
         ;;
     esac
   else
-    local head_ok
-    head_ok="$(curl -sS -o /dev/null -w '%{http_code}' --head -L --max-time 30 --connect-timeout 15 "$url" || true)"
-    if [ "$head_ok" = "200" ] || [ "$head_ok" = "302" ] || [ "$head_ok" = "301" ]; then
-      log "WARNING media-probe ${kind}: ffprobe not available; HEAD reachable (HTTP ${head_ok}) but no content validation performed"
-    else
-      die "media-probe ${kind}: ffprobe absent and HEAD check failed (HTTP ${head_ok:-000}) for ${url}"
-    fi
+    die "ffprobe required for media-probe in publish-proxy mode: ffprobe not available for ${kind} ${url}"
   fi
   rm -f "$probe_file"
 }
@@ -824,9 +878,41 @@ if [ -n "$SPEAKER" ] && [[ "$FINAL_TITLE" != *"Inspired by ${SPEAKER}"* ]]; then
   FINAL_TITLE="${TITLE} Inspired by ${SPEAKER}"
 fi
 
-# Description defaults to the final title when show notes are absent (Podbean
-# requires episode content). Never inject an em dash or a code fence.
-[ -n "$DESCRIPTION" ] || DESCRIPTION="$FINAL_TITLE"
+# Description is a hard publish input produced by Step 12.5 (SHOW NOTES). The
+# OLD silent substitution of the episode title for missing show notes is what
+# shipped the one-line "piss-poor" description -- it must never run in a real
+# publish. Only explicit --status draft / --draft / test runs may fall back to
+# the title stub, where a stub is intended for verification. Never inject an
+# em dash or a code fence.
+# 1.1.5: resolve the description from the Step 12.5 ledger BEFORE the hard
+# refusal below. The ledger handoff in the publish-proxy branch resolves the
+# media URLs; the description must be resolved here so a real publish with no
+# --description but a valid ledger episode_description uses the ledger value by
+# default. The old ordering died at the refusal before ever reaching the
+# handoff, contradicting every doc's "Step 15 resolves it from the ledger by
+# default" promise. Mirrors how AUDIO_URL/IMAGE_URL are resolved before their
+# required-checks. Scoped to publish-proxy mode, matching the handoff block.
+if [ "$PROXY_MODE" = "1" ] && [ -n "$LEDGER" ] && [ -n "$JOB_ID" ]; then
+  ledger_description="$(ledger_field "$LEDGER" episode_description || true)"
+  # CLI-vs-ledger conflict: the publish must use the show notes that Step 12.5
+  # drafted and recorded. Die when both are present and differ.
+  if [ -n "$DESCRIPTION" ] && [ -n "$ledger_description" ] && [ "$DESCRIPTION" != "$ledger_description" ]; then
+    die "DESCRIPTION conflict: CLI flag (--description=...) differs from Step 12.5 ledger episode_description. Remove --description to use the ledger value, or fix the ledger if it is stale."
+  fi
+  # Default resolution: when --description is absent, use the ledger value.
+  if [ -z "$DESCRIPTION" ] && [ -n "$ledger_description" ]; then
+    DESCRIPTION="$ledger_description"
+    log "DESCRIPTION resolved from Step 12.5 ledger (episode_description)"
+  fi
+fi
+
+if [ -z "$DESCRIPTION" ]; then
+  if [ "$DRAFT_MODE" = "1" ] || [ "$TEST_RUN" = "1" ] || [ "$DRY_RUN" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then
+    DESCRIPTION="$FINAL_TITLE"
+  else
+    die "--description is required in publish-proxy mode (Step 12.5 produced it; the empty title fallback silently degrades the episode)"
+  fi
+fi
 
 # Status: publish now, or schedule for a future release date. A future date maps
 # to Podbean status "future" plus a unix publish_timestamp.
@@ -870,7 +956,13 @@ log "plan: status=${PUBLISH_STATUS} type=${EP_TYPE} title=$(jstr "$FINAL_TITLE")
 # over-length show-notes/title or an invalid episode type is rejected HERE with a
 # clear message instead of a cryptic API rejection after the upload. Dies on a
 # violation; proceeds silently when every field is within bounds.
-validate_episode_metadata "$FINAL_TITLE" "$DESCRIPTION" "$EPISODE_TYPE"
+# stub_ok=1 for explicit --status draft / --draft / test verification runs where
+# a short title stub is intended; a real publish enforces the minimum floor.
+STUB_OK=0
+if [ "$DRAFT_MODE" = "1" ] || [ "$TEST_RUN" = "1" ] || [ "$DRY_RUN" = "1" ] || [ "$STATUS_OVERRIDE" = "draft" ]; then
+  STUB_OK=1
+fi
+validate_episode_metadata "$FINAL_TITLE" "$DESCRIPTION" "$EPISODE_TYPE" "$STUB_OK"
 
 if [ "$TEST_RUN" = "1" ]; then
   emit_result "{\"status\":\"test-skipped\",\"reason\":\"test_flag\",\"idempotent_skip\":false,\"episode_title\":$(jstr "$FINAL_TITLE"),\"publish_status\":$(jstr "$PUBLISH_STATUS")}"
@@ -939,6 +1031,12 @@ print(json.dumps(d))
   if [ -n "$LEDGER" ] && [ -n "$JOB_ID" ]; then
     ledger_audio="$(ledger_field "$LEDGER" mp3_media_url)"
     ledger_image="$(ledger_field "$LEDGER" cover_image_url)"
+    # Step 12.5 (SHOW NOTES) recorded episode_description via
+    # `podcast_state.py output --field episode_description`; the default
+    # resolution and CLI-vs-ledger conflict check now run in the SHARED
+    # section BEFORE the hard description refusal (see the block above), so a
+    # real publish with no --description but a valid ledger value uses the
+    # ledger by default. Nothing to do for DESCRIPTION here.
 
     # Resolve AUDIO_URL from ledger when CLI flag was NOT passed.
     if [ -z "$AUDIO_URL" ] && [ -n "$ledger_audio" ]; then
@@ -962,22 +1060,33 @@ print(json.dumps(d))
     if [ -n "$IMAGE_URL" ] && [ -n "$ledger_image" ] && [ "$IMAGE_URL" != "$ledger_image" ]; then
       die "IMAGE_URL conflict: CLI flag (--image-url=$IMAGE_URL) differs from Step 14 ledger cover_image_url ($ledger_image). Remove --image-url to use the ledger value, or fix the ledger if it is stale."
     fi
+    # DESCRIPTION conflict already handled in the shared section above.
   fi
 
   [ -n "$AUDIO_URL" ] || die "--audio-url is required in publish-proxy mode (n8n downloads the audio from this URL; Step 14 already produced it and recorded mp3_media_url in the ledger)"
   [ -n "$IMAGE_URL" ] || die "--image-url is required in publish-proxy mode (n8n downloads the cover from this URL; Step 14 already produced it and recorded cover_image_url in the ledger)"
   [ -n "$JOB_ID" ]    || die "--job-id is required in publish-proxy mode (its value becomes the required idempotency_key)"
 
+  # U2.4 (2026-08-04): a job advanced with --force-waiver must never reach the
+  # publish webhook. Refuse to assemble or send the payload when the job's ledger/
+  # state carries a waiver event. Runs BEFORE the media probe and payload build.
+  assert_not_waived "$JOB_ID" "${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}" "publish-proxy"
+
   # Media content probe: validate audio + image before building the v2 payload.
-  # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch (e.g. air-gapped boxes
-  # without ffprobe, or known-good pre-validated URLs).
-  if [ "${PODBEAN_SKIP_MEDIA_PROBE:-0}" != "1" ]; then
+  # PODBEAN_SKIP_MEDIA_PROBE=1 is the escape hatch -- but only for the OPERATOR.
+  # A client-box env var must NEVER defeat all content validation, so the skip
+  # is refused in publish-proxy mode unless PODBEAN_OPERATOR_FORCE=1 is ALSO
+  # set (master-plan 1.8). The box that runs the publish must have ffprobe.
+  if [ "${PODBEAN_SKIP_MEDIA_PROBE:-0}" = "1" ]; then
+    if [ "${PODBEAN_OPERATOR_FORCE:-0}" != "1" ]; then
+      die "PODBEAN_SKIP_MEDIA_PROBE=1 refuses to run in publish-proxy mode unless the operator flag PODBEAN_OPERATOR_FORCE=1 is also set (a client-box env var must not defeat media content validation)"
+    fi
+    log "media-probe: PODBEAN_SKIP_MEDIA_PROBE=1 + PODBEAN_OPERATOR_FORCE=1 - operator-sanctioned skip of content validation"
+  else
     MEDIA_TMP="$(mktemp -d "${TMPDIR:-/tmp}/podbean-media-probe-XXXXXX")" || die "media-probe: cannot create temp dir"
     proxy_media_probe "$AUDIO_URL" audio "$MEDIA_TMP"
     proxy_media_probe "$IMAGE_URL" image "$MEDIA_TMP"
     rm -rf "$MEDIA_TMP"
-  else
-    log "media-probe: PODBEAN_SKIP_MEDIA_PROBE=1 - skipping content validation"
   fi
 
   if [ -n "$RELEASE_DATE" ]; then
@@ -1256,12 +1365,16 @@ log "authorizing and uploading audio (${AUDIO_CT})"
 MEDIA_KEY="$(upload_file "$AUDIO" "$AUDIO_CT")" || die "audio upload to Podbean failed"
 [ -n "$MEDIA_KEY" ] || die "audio upload returned no media_key"
 
+# Cover is REQUIRED in broker/local mode: a cover-less publish is a fail-open
+# that violates the fail-closed doctrine (incomplete payloads must never publish).
+# Proxy mode enforces the cover earlier via --image-url; this matches that.
+[ -n "$COVER" ] || die "--cover is required in broker/local mode (the finalized cover image; Step 10 produced it - a cover-less publish would ship an episode with no artwork)"
+[ -f "$COVER" ] || die "cover file not found: $COVER"
 LOGO_KEY=""
-if [ -n "$COVER" ]; then
-  COVER_CT="$(content_type_for "$COVER")"
-  log "authorizing and uploading cover (${COVER_CT})"
-  LOGO_KEY="$(upload_file "$COVER" "$COVER_CT")" || die "cover upload to Podbean failed"
-fi
+COVER_CT="$(content_type_for "$COVER")"
+log "authorizing and uploading cover (${COVER_CT})"
+LOGO_KEY="$(upload_file "$COVER" "$COVER_CT")" || die "cover upload to Podbean failed"
+[ -n "$LOGO_KEY" ] || die "cover upload returned no logo_key"
 
 # ---------------------------------------------------------- create episode ----
 # T0-19: refuse to create an episode on a token whose channel scope was never
@@ -1269,6 +1382,11 @@ fi
 # a future token path fail closed instead of publishing account-wide.
 [ "${CHANNEL_SCOPE_PROVEN:-0}" = "1" ] \
   || die "channel scope was never proven for this token; refusing to create an episode (isolation guard)"
+
+# U2.4 (2026-08-04): a job advanced with --force-waiver must never publish.
+# Refuse to assemble the create payload when the job's state carries a waiver event.
+assert_not_waived "$JOB_ID" "${STATE_WRITER:-$SCRIPT_DIR/podcast_state.py}" "broker/local publish"
+
 log "creating episode ${EPISODE_NUMBER} on the client's channel (Channel ID ${PODBEAN_PODCAST_ID})"
 create_args=(
   --data-urlencode "podcast_id=${PODBEAN_PODCAST_ID}"

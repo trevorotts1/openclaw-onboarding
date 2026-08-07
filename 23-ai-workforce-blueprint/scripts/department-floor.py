@@ -2,8 +2,8 @@
 """
 department-floor.py - the ONE source of truth for the HARD department floor.
 
-FLOOR (computed live from department-naming-map.json v2.6.2): 29 departments =
-23 mandatory canonical + 6 universal-primary vertical-pack (one per pack that
+FLOOR (computed live from department-naming-map.json v2.8.0): 30 departments =
+24 mandatory canonical + 6 universal-primary vertical-pack (one per pack that
 EXPLICITLY flags universal_primary=true; the real-estate pack flags none as of
 v2.6.1 so its listings dept is industry-gated, not universal). v2.6.2
 (2026-07-16, operator ruling) added Funnels as the 23rd mandatory dept: Skill
@@ -12,7 +12,18 @@ job_type='funnel' card regardless of a client's declared vertical, so only a
 mandatory (non-vertical-gated) registration actually closes the live misroute
 to the general-task catch-all on a standard-floor box — see
 funnels-suggested-roles.md and department-naming-map.json's mandatory.funnels
-entry for the full reasoning. The count is
+entry for the full reasoning. v2.8.0 (2026-08-03, operator ruling) added Master
+Orchestrator as the 24th mandatory dept: build-workforce.py's
+generate_departments_json() has always unconditionally PREPENDED the
+`dept-ceo` / `departments/master-orchestrator` board column ahead of every
+client's selected departments (no industry gate, no decline path, not derived
+from selected_departments) — only this floor checker never expected or counted
+it on disk. Registering it here closes that gap. It is a FLOOR-VERIFICATION
+mandatory dept only: build-workforce.py's load_canonical_floor() and
+qc-assert-repo-consistency.py's floor_dept_ids() both deliberately EXCLUDE it
+from the BUILD-TIME / interview-declinable canonical set (it is never offered
+as a yes/no/later decision) — see department-naming-map.json's mandatory.
+master-orchestrator entry for the full reasoning. The count is
 ALWAYS derived at runtime from len(HARDCODED_MANDATORY) + the count of
 universal-primary pack depts, so no integer is hardcoded as a gate. Below the
 floor is only ever reached by an EXPLICIT recorded decline (a mandatory dept, a
@@ -109,33 +120,40 @@ from canonical_decline import (  # noqa: E402
     canonical_decline_set as _shared_canonical_decline_set,
 )
 
-# Hardcoded MANDATORY fallback - IDENTICAL to build-workforce.load_canonical_floor()
-# so the floor is still enforced on a broken install that lost the naming map.
-# CANONICAL FRAMING: the department floor is 23 mandatory + 6 universal-primary
-# = 29, all derived LIVE from department-naming-map.json (v2.6.2). This list is
-# ONLY the 23 mandatory ids; the 6 universal-primary ids live in
+# Hardcoded MANDATORY fallback - a FLOOR-VERIFICATION list only. NOT identical
+# to build-workforce.load_canonical_floor()'s own hardcoded fallback as of
+# v2.8.0: that list deliberately EXCLUDES master-orchestrator (it is never
+# interview-declinable and is provisioned outside selected_departments), while
+# THIS list exists so the floor is still enforced ON DISK on a broken install
+# that lost the naming map.
+# CANONICAL FRAMING: the department floor is 24 mandatory + 6 universal-primary
+# = 30, all derived LIVE from department-naming-map.json (v2.8.0). This list is
+# ONLY the 24 mandatory ids; the 6 universal-primary ids live in
 # HARDCODED_UNIVERSAL_PRIMARY below. The full shipped role catalog (every role
-# template, far larger than the 29-department floor) is tracked separately in
+# template, far larger than the 30-department floor) is tracked separately in
 # templates/role-library/_index.json - do NOT conflate that catalog size with the
 # floor. (Historical note: earlier revisions carried stale floor arithmetic such
 # as 24/26/28/29(7-universal-era) that mixed the mandatory count with the total;
-# the ONLY authoritative numbers now are 23 + 6 = 29 — v2.6.2 added "funnels" as
-# the 23rd mandatory dept, 2026-07-16, operator ruling.)
+# the ONLY authoritative numbers now are 24 + 6 = 30 — v2.6.2 added "funnels" as
+# the 23rd mandatory dept (2026-07-16, operator ruling); v2.8.0 added
+# "master-orchestrator" as the 24th (2026-08-03, operator ruling) — see this
+# file's module docstring and department-naming-map.json's mandatory.
+# master-orchestrator entry for the full reasoning.)
 HARDCODED_MANDATORY = [
     "marketing", "sales", "billing-finance", "customer-support",
     "web-development", "app-development", "graphics", "video", "audio",
     "research", "communications", "crm", "openclaw-maintenance", "legal",
     "social-media", "paid-advertisement", "personal-assistant",
     "general-task", "project-architecture-office",
-    "bugs", "healer", "quality-control", "funnels",
+    "bugs", "healer", "quality-control", "funnels", "master-orchestrator",
 ]
 
 # Hardcoded UNIVERSAL-PRIMARY fallback - the 6 universal-primary vertical-pack
 # department ids (one per pack that flags universal_primary=true in
 # department-naming-map.json v2.6.1). BROKEN-INSTALL SAFETY NET ONLY: consulted
 # solely when the live map yields NO universal primaries (map missing / unreadable
-# / corrupt) so a broken install still enforces the FULL 22 + 6 = 28 floor instead
-# of silently degrading to 22 and dropping every universal-primary vertical. MUST
+# / corrupt) so a broken install still enforces the FULL 24 + 6 = 30 floor instead
+# of silently degrading to 24 and dropping every universal-primary vertical. MUST
 # stay in lockstep with the universal_primary=true depts in
 # department-naming-map.json and with build-workforce._HARDCODED_UNIVERSAL_PRIMARY.
 # On a healthy install the live derivation in universal_primary_vertical_departments()
@@ -205,7 +223,7 @@ def universal_primary_vertical_departments(nm):
 
     BROKEN-INSTALL SAFETY NET: if the map is unreadable and this live derivation
     comes back EMPTY, the return falls back to HARDCODED_UNIVERSAL_PRIMARY (the 6
-    ids) so the enforced floor stays 22 + 6 = 28, never silently 22. This is
+    ids) so the enforced floor stays 24 + 6 = 30, never silently 24. This is
     distinct from the removed depts[0] auto-promotion above - it fires ONLY on a
     broken/missing map, never on a healthy install.
     """
@@ -232,7 +250,7 @@ def universal_primary_vertical_departments(nm):
                 primary_ids.append(did)
     # BROKEN-INSTALL SAFETY NET: if the live map yielded NO universal primaries
     # (map missing / unreadable / corrupt), fall back to the hardcoded 6 so the
-    # floor degrades to the FULL 28 (22 + 6), NOT 22. Mirrors mandatory_ids()'s
+    # floor degrades to the FULL 30 (24 + 6), NOT 24. Mirrors mandatory_ids()'s
     # `m or list(HARDCODED_MANDATORY)` fail-safe-to-the-larger-floor pattern. A
     # healthy map always populates primary_ids with the 6 real ids above, so this
     # fallback never fires on a good install (no healthy-path behavior change).

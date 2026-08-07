@@ -100,6 +100,35 @@ actionable items), so re-running this script when the queue is already
 drained is a no-op that prints "0 artifact(s) refreshed".
 
 ────────────────────────────────────────────────────────────────────────────
+RETIRED-DEPARTMENT RECONCILIATION (2026-08-04 fix)
+────────────────────────────────────────────────────────────────────────────
+"The department directory is not on disk" was, until this fix, ALWAYS a
+failure — an UNRESOLVABLE department for an in-scope STALE role/sop/dept row
+counted against failed_inscope with no path forward. That is correct when the
+department genuinely should exist and is unexpectedly gone (a real gap), but
+it is WRONG when the box owner explicitly, provenance-gated DECLINED that
+department (Phase 5.5 of the interview, or a later opt-out): the department's
+absence is then the box's recorded INTENT, and the box could never pass this
+gate again — a real defect blocked 2 boxes fleet-wide on 2026-08-03/04.
+
+The fix distinguishes the two using the ONE piece of evidence this repo
+already treats as authoritative for "the owner does not want this
+department": canonical_decline.py's provenance-gated decline set, read from
+THIS box's own .workforce-build-state.json (the exact source build-workforce.py
+and department-floor.py's floor gate already use — see _dept_is_declined()).
+A decline is honored ONLY when it carries the required provenance; absence of
+provenance (missing state file, malformed JSON, an unprovenanced bare "no")
+is NEVER read as a decline, so an unprovable case keeps FAILING LOUDLY exactly
+as before this fix — the discrimination adds a new "RETIRED, drop it" outcome,
+it never weakens the existing "FAILED, still blocks" outcome.
+
+This applies ONLY to the department-level "cannot resolve the department at
+all" failure. A role or SOP whose OWN folder/file is missing while its
+department still exists on disk (no owner-decline evidence can explain that —
+this repo has no per-role/per-SOP decline concept) is UNCHANGED: still FAILS
+LOUDLY, exactly as before this fix.
+
+────────────────────────────────────────────────────────────────────────────
 CLI
 ────────────────────────────────────────────────────────────────────────────
   --workspace <dir>    client workspace root (default: platform-appropriate
@@ -129,6 +158,7 @@ EXIT CODES
   1   only on a usage error (bad CLI args).
 """
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -163,6 +193,90 @@ SCRIPTS = SKILL_DIR / "scripts"
 LIBRARY = SKILL_DIR / "templates" / "role-library"
 sys.path.insert(0, str(SCRIPTS))
 import create_role_workspaces as crw  # type: ignore  # noqa: E402
+
+# ── RETIREMENT EVIDENCE (2026-08-04 fix) ──────────────────────────────────────
+# A STALE role/sop/dept row whose department cannot be resolved on disk used to
+# be an unconditional FAILING gap. But an unresolvable department is not always
+# a gap: the box owner may have explicitly, provenance-gated DECLINED that
+# department (Phase 5.5 of the interview, or a later opt-out) — its absence is
+# then the box's recorded INTENT, not something this drain failed to fill.
+# canonical_decline.py is this repo's SINGLE SOURCE OF TRUTH for that decision
+# (build-workforce.py and department-floor.py's own floor gate both read it,
+# so they and this drain can never disagree about what counts as "declined").
+# A decline is honored ONLY when it carries the required provenance
+# (decision/source/decidedAt/decidedBy, or the owner-confirmed block gate) —
+# absence of provenance is NEVER read as a decline (fail-safe to the larger
+# floor / still-fails-loudly default, unchanged from before this fix).
+#
+# department-floor.py also owns CANONICAL_VARIANT_SLUGS (the alias table:
+# "billing" <-> "billing-finance", "legal-compliance" <-> "legal", ...). A
+# decline may be recorded under either the canonical id or an alias, and a
+# queue key may carry either too (Issue #2's decline-normalization mismatch
+# class of bug) — so a dept slug is resolved to its canonical id before the
+# decline-set membership check, checking BOTH forms.
+#
+# Both imports degrade to "cannot prove a decline" (None / False) on any
+# import failure, never to "assume retired" — an unprovable decline must still
+# fail loudly, exactly like today, never silently swallow a genuine gap.
+try:
+    import canonical_decline  # type: ignore  # dependency-free (stdlib re/sys only)
+except Exception:
+    canonical_decline = None  # type: ignore
+
+
+def _load_department_floor():
+    """Import the sibling department-floor.py for CANONICAL_VARIANT_SLUGS /
+    canonical_slug_for(), using the same importlib pattern net-new-department.py
+    and materialize-missing-departments.py already use for this hyphenated
+    module (a plain `import department-floor` is not valid Python). Declared
+    import-safe by department-floor.py's own module docstring: read-only,
+    never writes, no module-level I/O."""
+    fp = SCRIPTS / "department-floor.py"
+    if not fp.is_file():
+        return None
+    try:
+        spec = importlib.util.spec_from_file_location("department_floor", str(fp))
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
+_DEPARTMENT_FLOOR = _load_department_floor()
+
+
+def _dept_is_declined(dept_slug: str, workspace: Path) -> bool:
+    """True iff `dept_slug` (or its canonical-variant alias) carries an
+    EXPLICIT, PROVENANCE-GATED owner decline in this box's OWN
+    .workforce-build-state.json. This is the ONLY evidence this drain accepts
+    as "legitimately retired from this box" — anything else (missing state
+    file, malformed JSON, an un-provenanced bare 'no', an import failure)
+    returns False, so the caller keeps failing loudly exactly as before this
+    fix. Never guesses; never treats absence-of-evidence as retirement."""
+    if canonical_decline is None:
+        return False
+    state_path = workspace / ".workforce-build-state.json"
+    try:
+        state = json.loads(state_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(state, dict):
+        return False
+    try:
+        declined = canonical_decline.canonical_decline_set(state, quiet=True)
+    except Exception:
+        return False
+    candidates = {dept_slug}
+    if _DEPARTMENT_FLOOR is not None:
+        try:
+            canon = _DEPARTMENT_FLOOR.canonical_slug_for(dept_slug)
+        except Exception:
+            canon = None
+        if canon:
+            candidates.add(canon)
+    return any(canonical_decline.norm(c) in declined for c in candidates)
+
 
 HOME = os.path.expanduser("~")
 
@@ -275,20 +389,36 @@ def find_role_dir(dept_dir: Path, role_slug: str):
 
 
 def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: bool):
-    """Attempt to refresh one STALE role artifact. Returns (ok, detail).
+    """Attempt to refresh one STALE role artifact. Returns (ok, detail, retired).
 
-    ok=False is ALWAYS a genuine failure of this drain's completeness contract,
-    never a benign skip: a STALE role row is detect-stale-artifacts.py asserting
-    that this box HAS this role and its content is out of date, so any inability
-    to complete it is a DETECTED gap left UNFILLED. The caller counts every
-    ok=False toward failed_inscope, which drives exit code 3."""
+    ok=False, retired=False is ALWAYS a genuine failure of this drain's
+    completeness contract, never a benign skip: a STALE role row is
+    detect-stale-artifacts.py asserting that this box HAS this role and its
+    content is out of date, so any inability to complete it is a DETECTED gap
+    left UNFILLED. The caller counts every (ok=False, retired=False) toward
+    failed_inscope, which drives exit code 3.
+
+    ok=False, retired=True is a DIFFERENT outcome (2026-08-04 fix): the row's
+    department could not be resolved on disk, but the box's OWN
+    .workforce-build-state.json carries an explicit, provenance-gated owner
+    decline for it (see _dept_is_declined) — the absence is the box's recorded
+    INTENT, not a gap. The caller drops the row and never counts it against
+    the completeness contract."""
     dept_dir = resolve_dept_dir(workspace, dept_slug)
     if dept_dir is None:
+        if _dept_is_declined(dept_slug, workspace):
+            return False, (
+                f"RETIRED: '{dept_slug}/{role_slug}' — department '{dept_slug}' carries an "
+                f"explicit, provenance-gated owner decline in .workforce-build-state.json "
+                f"(canonical_decline.py); its absence on disk is the box's recorded intent, "
+                f"not a gap. Dropping the stale queue entry."
+            ), True
         return False, (f"UNRESOLVABLE department directory for '{dept_slug}/{role_slug}' — "
                         f"looked for '{dept_slug}', '{dept_slug}-dept', and any normalized "
                         f"match under {workspace / 'departments'}; the queue says this role "
-                        f"is STALE on this box but its department is not on disk, so a "
-                        f"DETECTED gap cannot be filled — FAILING loudly, nothing written")
+                        f"is STALE on this box but its department is not on disk, and no "
+                        f"provenance-gated owner-decline record explains the absence, so a "
+                        f"DETECTED gap cannot be filled — FAILING loudly, nothing written"), False
 
     role_dir = find_role_dir(dept_dir, role_slug)
     if role_dir is None:
@@ -296,7 +426,7 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
                         f"{dept_dir} — the queue says this role is STALE on this box "
                         f"(so it was tracked as present), but its folder is gone; this "
                         f"drain never fabricates a role folder (that is floor-fill's "
-                        f"MISSING job) — FAILING loudly so the roll can act on it")
+                        f"MISSING job) — FAILING loudly so the roll can act on it"), False
 
     is_ceo = (norm(role_slug) == "master-orchestrator")
     role_name = label or role_slug.replace("-", " ").title()
@@ -316,12 +446,13 @@ def refresh_one(workspace: Path, dept_slug: str, role_slug: str, label, apply_: 
         return False, (f"library_fill produced no usable content for "
                         f"'{dept_slug}/{role_slug}' (no library match, or fill below "
                         f"the 3072B floor) — the role is queued STALE but cannot be "
-                        f"refilled — FAILING loudly, existing how-to.md left untouched")
+                        f"refilled — FAILING loudly, existing how-to.md left untouched"), False
 
     how_to = role_dir / "how-to.md"
     if apply_:
         how_to.write_text(filled, encoding="utf-8")
-    return True, f"{dept_slug}/{role_slug} -> {dept_dir.name}/{role_dir.name}/how-to.md ({len(filled.encode('utf-8'))}B)"
+    return True, (f"{dept_slug}/{role_slug} -> {dept_dir.name}/{role_dir.name}/how-to.md "
+                  f"({len(filled.encode('utf-8'))}B)"), False
 
 
 def find_dept_dir(workspace: Path, dept_slug: str):
@@ -337,17 +468,25 @@ def find_dept_dir(workspace: Path, dept_slug: str):
 def refresh_sop(workspace: Path, dept_slug: str, sop_slug: str, apply_: bool):
     """Attempt to refresh one STALE dept-level SOP artifact (D2) by
     re-copying the canonical file bytes from the role library over the
-    client's EXISTING copy. Returns (ok, detail, hard_fail).
+    client's EXISTING copy. Returns (ok, detail, hard_fail, retired).
 
-    hard_fail distinguishes the two not-ok cases:
+    hard_fail distinguishes the two not-ok, non-retired cases:
       * hard_fail=True  — the department directory could not be RESOLVED at
-        all. The queue says this box has a STALE SOP in that department and
-        the department is not on disk: a detected gap that cannot be filled,
-        so it counts against the completeness contract (exit 3).
+        all, and no owner-decline record explains the absence (retired=False
+        below). The queue says this box has a STALE SOP in that department
+        and the department is not on disk: a detected gap that cannot be
+        filled, so it counts against the completeness contract (exit 3).
       * hard_fail=False — a missing library SOP source, or a department that
         resolves but does not yet carry this SOP file. Those remain
         floor-fill-driver.py's MISSING job, reported loudly and left queued
         (pre-existing, deliberate contract — unchanged here).
+
+    retired=True (2026-08-04 fix) is a THIRD, DIFFERENT outcome: the
+    department could not be resolved, but the box's OWN
+    .workforce-build-state.json carries an explicit, provenance-gated owner
+    decline for it (see _dept_is_declined) — the absence is the box's
+    recorded INTENT, not a gap. Always paired with hard_fail=False; the
+    caller drops the row and never counts it against the contract.
 
     An OSError raised during the actual read/write is left to PROPAGATE to the
     caller in main(), which treats that as a genuine in-scope failure."""
@@ -356,26 +495,34 @@ def refresh_sop(workspace: Path, dept_slug: str, sop_slug: str, apply_: bool):
     src = LIBRARY / dept_key / "sops" / fname
     if not src.is_file():
         return False, (f"no library SOP source at {src} for '{dept_slug}/{sop_slug}' "
-                        f"— skipped, nothing written"), False
+                        f"— skipped, nothing written"), False, False
 
     dept_dir = resolve_dept_dir(workspace, dept_slug)
     if dept_dir is None:
+        if _dept_is_declined(dept_slug, workspace):
+            return False, (
+                f"RETIRED: '{dept_slug}/{sop_slug}' — department '{dept_slug}' carries an "
+                f"explicit, provenance-gated owner decline in .workforce-build-state.json "
+                f"(canonical_decline.py); its absence on disk is the box's recorded intent, "
+                f"not a gap. Dropping the stale queue entry."
+            ), False, True
         return False, (f"UNRESOLVABLE department directory for '{dept_slug}/{sop_slug}' — "
                         f"looked for '{dept_slug}', '{dept_slug}-dept', and any normalized "
-                        f"match under {workspace / 'departments'} — FAILING loudly, "
-                        f"nothing written"), True
+                        f"match under {workspace / 'departments'}, and no provenance-gated "
+                        f"owner-decline record explains the absence — FAILING loudly, "
+                        f"nothing written"), True, False
 
     dest = dept_dir / "sops" / fname
     if not dest.is_file():
         return False, (f"no EXISTING SOP file for '{dept_slug}/{sop_slug}' at {dest} — "
                         f"not a stale-refresh case on this box (that would be "
-                        f"floor-fill's MISSING job); skipped, nothing written"), False
+                        f"floor-fill's MISSING job); skipped, nothing written"), False, False
 
     content = src.read_text(encoding="utf-8")
     if apply_:
         dest.write_text(content, encoding="utf-8")
     return True, (f"{dept_slug}/{sop_slug} -> {dept_dir.name}/sops/{fname} "
-                  f"({len(content.encode('utf-8'))}B)"), False
+                  f"({len(content.encode('utf-8'))}B)"), False, False
 
 
 def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: dict) -> bool:
@@ -420,7 +567,7 @@ def _apply_state_restamps(workspace: Path, sop_restamps: dict, dept_restamps: di
         return False
 
 
-def _write_receipt(workspace: Path, ok: bool, refreshed: int, skipped: int,
+def _write_receipt(workspace: Path, ok: bool, refreshed: int, retired: int, skipped: int,
                     failed_inscope: int, remaining_inscope_stale: int, apply_: bool) -> None:
     """Write <workspace>/.artifact-refresh-receipt.json — a pipe-immune
     backup of the drain outcome (D2) so a caller whose stdout got swallowed
@@ -433,6 +580,7 @@ def _write_receipt(workspace: Path, ok: bool, refreshed: int, skipped: int,
         "ok": bool(ok),
         "apply": bool(apply_),
         "refreshed": refreshed,
+        "retired": retired,
         "skipped": skipped,
         "failed_inscope": failed_inscope,
         "remaining_inscope_stale": remaining_inscope_stale,
@@ -482,6 +630,7 @@ def main(argv=None):
         items = []
 
     refreshed = 0
+    retired_count = 0
     skipped = 0
     failed_inscope = 0
     remaining_items = []
@@ -510,13 +659,20 @@ def main(argv=None):
 
             dept_slug, role_slug = key.split("/", 1)
             try:
-                ok, detail = refresh_one(workspace, dept_slug, role_slug, it.get("label"), args.apply)
+                ok, detail, retired = refresh_one(workspace, dept_slug, role_slug, it.get("label"), args.apply)
             except Exception as e:  # a poisoned entry must NEVER abort the drain
-                ok, detail = False, f"EXCEPTION refreshing '{key}': {e}"
+                ok, detail, retired = False, f"EXCEPTION refreshing '{key}': {e}", False
 
             if ok:
                 refreshed += 1
                 print(f"  refresh-stale-roles: REFRESHED {detail}")
+            elif retired:
+                # The department carries a provenance-gated owner decline
+                # (2026-08-04 fix): its absence is the box's recorded intent,
+                # not a gap. Drop the row -- never appended to remaining_items,
+                # never counted against the completeness contract.
+                retired_count += 1
+                print(f"  refresh-stale-roles: {detail}")
             else:
                 # A STALE role row this drain could not complete is a DETECTED
                 # gap left UNFILLED, never a benign skip. It counts against the
@@ -541,13 +697,14 @@ def main(argv=None):
 
             dept_slug, sop_slug = key.split("/", 1)
             hard_fail = False
+            retired = False
             try:
-                ok, detail, hard_fail = refresh_sop(workspace, dept_slug, sop_slug, args.apply)
+                ok, detail, hard_fail, retired = refresh_sop(workspace, dept_slug, sop_slug, args.apply)
             except OSError as e:  # genuine in-scope IO failure -- counts against the contract
-                ok, detail, hard_fail = False, f"OSError refreshing SOP '{key}': {e}", True
+                ok, detail, hard_fail, retired = False, f"OSError refreshing SOP '{key}': {e}", True, False
                 failed_inscope += 1
             except Exception as e:  # a poisoned entry must NEVER abort the drain
-                ok, detail, hard_fail = False, f"EXCEPTION refreshing SOP '{key}': {e}", True
+                ok, detail, hard_fail, retired = False, f"EXCEPTION refreshing SOP '{key}': {e}", True, False
                 failed_inscope += 1
             else:
                 if hard_fail:
@@ -565,6 +722,11 @@ def main(argv=None):
                         "restamped_at": datetime.now(timezone.utc).isoformat(),
                         "generator": "refresh-stale-roles.py",
                     }
+            elif retired:
+                # Provenance-gated owner decline (2026-08-04 fix): drop the
+                # row, never counted against the completeness contract.
+                retired_count += 1
+                print(f"  refresh-stale-roles: {detail}")
             else:
                 skipped += 1
                 _tag = "FAILED" if hard_fail else "WARN SKIPPED"
@@ -585,15 +747,28 @@ def main(argv=None):
 
             dept_dir = resolve_dept_dir(workspace, key)
             if dept_dir is None:
+                if _dept_is_declined(key, workspace):
+                    # Provenance-gated owner decline (2026-08-04 fix): the
+                    # whole department's absence is the box's recorded
+                    # intent, not a gap. Drop the row.
+                    retired_count += 1
+                    print(f"  refresh-stale-roles: RETIRED {key} — department carries an "
+                          f"explicit, provenance-gated owner decline in "
+                          f".workforce-build-state.json (canonical_decline.py); its absence "
+                          f"on disk is the box's recorded intent, not a gap. Dropping the "
+                          f"stale queue entry.")
+                    continue
                 # The queue says this department is STALE on this box, so it was
-                # tracked as present. An UNRESOLVABLE department directory is a
-                # DETECTED gap that cannot be filled -- fail loudly, never a
-                # silent skip that still reports success.
+                # tracked as present. An UNRESOLVABLE department directory with
+                # no owner-decline record is a DETECTED gap that cannot be
+                # filled -- fail loudly, never a silent skip that still
+                # reports success.
                 skipped += 1
                 failed_inscope += 1
                 print(f"  refresh-stale-roles: FAILED UNRESOLVABLE department directory for "
                       f"'{key}' — looked for '{key}', '{key}-dept', and any normalized match "
-                      f"under {workspace / 'departments'}; nothing written",
+                      f"under {workspace / 'departments'}, and no provenance-gated "
+                      f"owner-decline record explains the absence; nothing written",
                       file=sys.stderr)
                 remaining_items.append(it)
                 continue
@@ -621,13 +796,17 @@ def main(argv=None):
     if args.apply:
         new_summary = dict(data.get("summary", {})) if isinstance(data.get("summary"), dict) else {}
         if "stale" in new_summary:
-            new_summary["stale"] = max(0, new_summary["stale"] - refreshed)
+            # Both a successful refresh AND a retired (owner-declined) row are
+            # dropped from remaining_items -- both must shrink the reported
+            # stale count, or a re-run would look like it still has work to do.
+            new_summary["stale"] = max(0, new_summary["stale"] - refreshed - retired_count)
         new_data = dict(data)
         new_data["items"] = remaining_items
         new_data["summary"] = new_summary
         new_data["last_drain"] = {
             "at": datetime.now(timezone.utc).isoformat(),
             "refreshed": refreshed,
+            "retired": retired_count,
             "skipped": skipped,
             "failed_inscope": failed_inscope,
             "generator": "refresh-stale-roles.py",
@@ -654,11 +833,12 @@ def main(argv=None):
     )
 
     mode = "" if args.apply else " (DRY-RUN -- pass --apply to write)"
-    print(f"  refresh-stale-roles: {refreshed} artifact(s) refreshed, {skipped} skipped, "
+    print(f"  refresh-stale-roles: {refreshed} artifact(s) refreshed, {retired_count} retired "
+          f"(owner-declined, dropped), {skipped} skipped, "
           f"{len(remaining_items)} item(s) remain queued{mode}")
 
     ok_contract = (failed_inscope == 0)
-    _write_receipt(workspace, ok_contract, refreshed, skipped, failed_inscope,
+    _write_receipt(workspace, ok_contract, refreshed, retired_count, skipped, failed_inscope,
                    remaining_inscope_stale, args.apply)
     print(f"  refresh-stale-roles: DRAIN_STATUS ok={1 if ok_contract else 0} "
           f"failed_inscope={failed_inscope} remaining_inscope_stale={remaining_inscope_stale}")

@@ -4,14 +4,21 @@
 #
 # PART A — SUB-FLOOR JOIN (a build with 3 declined floor departments):
 #   * department-floor.evaluate_floor honors the 3 provenanced declines: rc=0
-#     (floor MET), declined=3, expected_floor_count = 29 − 3 = 26.
+#     (floor MET), declined=3, expected_floor_count = 30 − 3 = 27. (department-
+#     floor.py's evaluate_floor() checks the ON-DISK floor, mandatory_ids()'s
+#     raw 24 -- including the never-declinable master-orchestrator, which this
+#     fixture provisions on disk like a real build always does -- so 3
+#     declines against a 30 on-disk floor land on 27, not the 26 you would get
+#     against the 29-department buildable/declinable floor.)
 #   * the durable chosen artifact <company>/departments.json == the chosen 26.
 #   * chosen == provisioned == displayed: prove-board-join.py rc=0 on a company
 #     whose tree + board carry exactly those 26 (+ the CEO column).
 #
-# PART B — FAIL-CLOSED (OQ-7): an UNREADABLE naming map degrades to the FULL 29
-#   floor (23 mandatory + 6 universal-primary), NEVER fewer. A declines file can
-#   shrink the floor; a broken map can NOT.
+# PART B — FAIL-CLOSED (OQ-7): an UNREADABLE naming map degrades to the FULL 30
+#   on-disk floor (24 mandatory, including the never-declinable master-
+#   orchestrator, + 6 universal-primary), NEVER fewer. A declines file can
+#   shrink the (buildable, 29) floor; a broken map can NOT shrink the on-disk
+#   30 department-floor.py itself enforces.
 #
 # Both parts exercise the REAL modules (department-floor.py, canonical_decline.py,
 # prove-board-join.py). No mocks of the logic under test.
@@ -41,7 +48,14 @@ def load(mod, fn):
 
 lc = load("lc", "list-canonical-departments.py")
 nm = lc.load_naming_map()
-mandatory = [d["id"] for d in lc.get_mandatory(nm)]           # 23
+# EXCLUDE master-orchestrator: list-canonical-departments.get_mandatory() now
+# returns all 24 naming-map mandatory ids (v2.8.0's ON-DISK floor), but this
+# fixture models the INTERVIEW-DECLINABLE floor (a client can decline any of
+# these 29, then have the 3 declines join-proved below) -- master-orchestrator
+# has no decline path and is separately, unconditionally provisioned below
+# (LAYER 2's explicit master-orchestrator mkdir), exactly like a real build.
+mandatory = [d["id"] for d in lc.get_mandatory(nm)
+             if d["id"] not in ("ceo", "master-orchestrator", "dept-ceo")]  # 23
 universal = [d["id"] for d in lc.get_universal_primaries(nm)] # 6
 floor = mandatory + universal
 assert len(floor) == 29, f"expected 29 floor slugs, got {len(floor)}"
@@ -117,7 +131,7 @@ get() { echo "$FIXTURE_JSON" | python3 -c "import json,sys;print(json.load(sys.s
 # ── PART A ───────────────────────────────────────────────────────────────────
 [ "$(get floor_rc)" = "0" ] && ok "sub-floor build: department-floor rc=0 (floor MET with 3 declines)" || bad "floor rc != 0 (got $(get floor_rc))"
 [ "$(get declined_count)" = "3" ] && ok "exactly 3 declines honored" || bad "declined_count != 3 (got $(get declined_count))"
-[ "$(get expected_floor_count)" = "26" ] && ok "expected_floor_count == 26 (29 − 3)" || bad "expected_floor_count != 26 (got $(get expected_floor_count))"
+[ "$(get expected_floor_count)" = "27" ] && ok "expected_floor_count == 27 (30 on-disk − 3 declines)" || bad "expected_floor_count != 27 (got $(get expected_floor_count))"
 [ "$(get chosen_source)" = "artifact" ] && ok "chosen list read from the durable departments.json artifact" || bad "chosen_source != artifact (got $(get chosen_source))"
 
 cf="$(get chosen_from_floor)"; ec="$(get expected_chosen)"
@@ -143,11 +157,11 @@ print(d["counts"]["chosen"],d["counts"]["provisioned"],d["counts"]["displayed"])
 ' 2>/dev/null || echo "err")"
 [ "$jc" = "27 27 27" ] && ok "chosen==provisioned==displayed count = 27 (26 depts + CEO)" || bad "layer counts != 27/27/27 (got '$jc')"
 
-# ── PART B: fail-closed to full 29 ───────────────────────────────────────────
-[ "$(get failclosed_mandatory)" = "23" ] && ok "OQ-7 fail-closed: unreadable map => 23 mandatory (never fewer)" || bad "failclosed_mandatory != 23 (got $(get failclosed_mandatory))"
+# ── PART B: fail-closed to full 30 (on-disk, department-floor.py's own count) ─
+[ "$(get failclosed_mandatory)" = "24" ] && ok "OQ-7 fail-closed: unreadable map => 24 mandatory (never fewer)" || bad "failclosed_mandatory != 24 (got $(get failclosed_mandatory))"
 [ "$(get failclosed_universal)" = "6" ] && ok "OQ-7 fail-closed: unreadable map => 6 universal-primary (never fewer)" || bad "failclosed_universal != 6 (got $(get failclosed_universal))"
 fm="$(get failclosed_mandatory)"; fu="$(get failclosed_universal)"
-[ "$((fm + fu))" = "29" ] && ok "OQ-7 fail-closed: broken map degrades to the FULL 29 floor" || bad "fail-closed floor != 29"
+[ "$((fm + fu))" = "30" ] && ok "OQ-7 fail-closed: broken map degrades to the FULL 30 on-disk floor" || bad "fail-closed floor != 30"
 
 echo ""
 echo "── test-sub-floor-build: $PASS passed, $FAIL failed ──"

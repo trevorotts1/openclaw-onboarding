@@ -3,22 +3,26 @@
 list-canonical-departments.py - single-source-of-truth department floor printer.
 
 Reads department-naming-map.json and prints:
-  1. The 23 mandatory departments (every client gets these unless explicitly declined).
+  1. The 24 mandatory departments (23 of which every client gets unless
+     explicitly declined; the 24th, master-orchestrator, has NO decline path -
+     it is provisioned unconditionally for every client, outside the interview,
+     by build-workforce.py's generate_departments_json() - see department-
+     naming-map.json's mandatory.master-orchestrator entry).
   2. The 6 universal-primary vertical-pack departments (one per pack that
      EXPLICITLY marks universal_primary=true - added for every client regardless
      of industry; v2.6.1 dropped real-estate `listings`, which is now industry-gated).
-  3. The computed floor = mandatory count + universal-primary count = 28.
+  3. The computed floor = mandatory count + universal-primary count = 30.
 
-The 28-department FLOOR is the minimum every client gets; it is NOT the full
-shipped catalog. The full role-template catalog (far more roles than the 28-floor
+The 30-department FLOOR is the minimum every client gets; it is NOT the full
+shipped catalog. The full role-template catalog (far more roles than the 30-floor
 requires) is tracked separately in templates/role-library/_index.json - do not
-conflate its size with the 28 floor.
+conflate its size with the 30 floor.
 
 This script IS the canonical count. The floor is computed at runtime from the
-live naming map (22 + 6 = 28 for naming map v2.6.1); the numbers in this
+live naming map (24 + 6 = 30 for naming map v2.8.0); the numbers in this
 docstring are descriptive of the live data, never a hardcoded gate. All docs
-and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, 29, or
-any other stale number.
+and CI reference this script instead of hardcoding 16, 17, 19, 23, 24, 26, 28,
+29, or any other stale number.
 
 USAGE
   python3 list-canonical-departments.py           # human-readable to stdout
@@ -122,7 +126,9 @@ def main(argv):
         print(f"Naming map version: {nm.get('version', 'unknown')}")
         print("=" * 64)
         print(f"\n--- MANDATORY ({len(mandatory)}) ---")
-        print("  These are built for EVERY client unless explicitly declined.\n")
+        print("  These are built for EVERY client unless explicitly declined,")
+        print("  EXCEPT master-orchestrator: it has no decline path at all -")
+        print("  every client gets it, provisioned outside the interview.\n")
         for i, dept in enumerate(mandatory, 1):
             print(f"  {i:2d}. {dept['display_name']:<30}  ({dept['id']})")
 

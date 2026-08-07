@@ -75,6 +75,14 @@ def fake_stores(tmp_path, monkeypatch):
 # ── LOCATION PIT — env-only resolution (search_stores=False) ──────────────────
 
 class TestPitEnvResolution:
+    def test_engine_alias_wins_when_present(self):
+        # The Podcast Engine's OWN PIT is checked FIRST over any generic
+        # GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+        FAKE_ENGINE_PIT = "pit-FAKE-engine-000000000000"
+        env = {"PODCAST_ENGINE_GHL_PIT": FAKE_ENGINE_PIT,
+               "GOHIGHLEVEL_API_KEY": FAKE_LOC_PIT}
+        assert m.resolve_location_pit(env, search_stores=False) == FAKE_ENGINE_PIT
+
     def test_preferred_alias_wins(self):
         env = {"GOHIGHLEVEL_API_KEY": FAKE_LOC_PIT, "GHL_API_KEY": FAKE_LEGACY_PIT}
         assert m.resolve_location_pit(env, search_stores=False) == FAKE_LOC_PIT
@@ -156,6 +164,13 @@ class TestPitStoreFallback:
 # ── LOCATION ID — env + store + allowlist ─────────────────────────────────────
 
 class TestLocationIdResolution:
+    def test_engine_alias_wins_when_present(self):
+        # The Podcast Engine's OWN location id is checked FIRST over generic ids.
+        FAKE_ENGINE_LOC = "LOCFAKEENGINE0000000001"
+        env = {"PODCAST_ENGINE_GHL_LOCATION_ID": FAKE_ENGINE_LOC,
+               "GOHIGHLEVEL_LOCATION_ID": FAKE_LOC_ID}
+        assert m.resolve_location_id(env, search_stores=False) == FAKE_ENGINE_LOC
+
     def test_preferred_alias_wins(self):
         env = {"GOHIGHLEVEL_LOCATION_ID": FAKE_LOC_ID, "GHL_LOCATION_ID": FAKE_LOC_ID_2}
         assert m.resolve_location_id(env, search_stores=False) == FAKE_LOC_ID
@@ -187,11 +202,120 @@ class TestAliasSetInvariants:
             assert agency not in m._PIT_ENV_NAMES, \
                 f"{agency} is agency-class and must NEVER be a LOCATION-PIT alias"
 
-    def test_preferred_pit_alias_is_gohighlevel_api_key(self):
-        assert m._PIT_ENV_NAMES[0] == "GOHIGHLEVEL_API_KEY"
+    def test_preferred_pit_alias_is_podcast_engine_pit(self):
+        # The Podcast Engine's own PIT is checked FIRST so the engine tenant
+        # always wins over a generic GOHIGHLEVEL_API_KEY (wrong-tenant 403 guard).
+        assert m._PIT_ENV_NAMES[0] == "PODCAST_ENGINE_GHL_PIT"
+        assert m._PIT_ENV_NAMES[1] == "GOHIGHLEVEL_API_KEY"
 
-    def test_preferred_location_alias_is_gohighlevel_location_id(self):
-        assert m._LOCATION_ENV_NAMES[0] == "GOHIGHLEVEL_LOCATION_ID"
+    def test_preferred_location_alias_is_podcast_engine_location_id(self):
+        assert m._LOCATION_ENV_NAMES[0] == "PODCAST_ENGINE_GHL_LOCATION_ID"
+        assert m._LOCATION_ENV_NAMES[1] == "GOHIGHLEVEL_LOCATION_ID"
 
     def test_secrets_env_is_first_store(self):
         assert m._GHL_ENV_STORES[0] == "~/.openclaw/secrets/.env"
+
+
+# ── PLACEHOLDER-SHADOW FIX (2026-08-03) ────────────────────────────────────────
+# A config-seeded placeholder (openclaw.json env.vars — placeholders by design)
+# is inherited into the live process env at gateway launch. The OLD resolver
+# treated "first non-empty" as "first real", so a 10-char doc placeholder
+# (pit-abc123) in the live env silently outranked the real credential sitting in
+# ~/.openclaw/secrets/.env — producing a false "PIT is DEAD/EXPIRED" alarm the
+# operator had to personally disprove. These tests lock BOTH directions of the
+# fix: a placeholder can no longer shadow a live value, and a real value already
+# in the live env is still selected exactly as before (no regression).
+
+PLACEHOLDER_SHORT = "pit-abc123"                       # the literal doc example, 10 chars
+PLACEHOLDER_CHANGEME = "changeme-not-a-real-token-value"  # dummy literal, long enough to
+                                                            # only be caught by the word check
+REAL_LOOKING_PIT = "pit-real1234567890REALTOKEN"        # 28 chars, not placeholder-shaped
+
+
+class TestIsPlaceholderShape:
+    def test_short_value_is_placeholder(self):
+        assert m._is_placeholder("pit-abc123") is True  # exactly the doc example
+
+    def test_pit_abc_prefix_is_placeholder_even_if_long(self):
+        assert m._is_placeholder("pit-abc-this-is-padded-out-past-20-chars") is True
+
+    def test_changeme_prefix_is_placeholder(self):
+        assert m._is_placeholder(PLACEHOLDER_CHANGEME) is True
+
+    def test_angle_bracket_token_is_placeholder(self):
+        assert m._is_placeholder("<YOUR-GHL-LOCATION-PIT-HERE>") is True
+
+    def test_empty_is_placeholder(self):
+        assert m._is_placeholder("") is True
+
+    def test_real_looking_value_is_not_placeholder(self):
+        assert m._is_placeholder(REAL_LOOKING_PIT) is False
+        assert m._is_placeholder(FAKE_LOC_PIT) is False
+
+
+class TestPlaceholderCannotShadowLiveValue:
+    """Direction 1: a placeholder-shaped value (however it got into the live
+    process env — e.g. inherited from openclaw.json env.vars at gateway launch)
+    must NEVER be returned, and must never prevent a real value in the secrets
+    store from being found."""
+
+    def test_placeholder_in_live_env_is_skipped_not_returned(self):
+        """A lone placeholder in the live env must not resolve — it must fail
+        loud (nothing else configured), never be silently accepted."""
+        env = {"GOHIGHLEVEL_API_KEY": PLACEHOLDER_SHORT}
+        with pytest.raises(RuntimeError) as ei:
+            m.resolve_location_pit(env, search_stores=False)
+        assert PLACEHOLDER_SHORT not in str(ei.value)  # never echoes the value
+
+    def test_placeholder_in_preferred_alias_falls_through_to_real_legacy_alias(self):
+        """A placeholder under the PREFERRED alias name must not block a REAL
+        value sitting under a lower-priority alias in the same env."""
+        env = {
+            "GOHIGHLEVEL_API_KEY": PLACEHOLDER_SHORT,   # placeholder, preferred name
+            "GHL_API_KEY": FAKE_LEGACY_PIT,             # real value, legacy name
+        }
+        assert m.resolve_location_pit(env, search_stores=False) == FAKE_LEGACY_PIT
+
+    def test_placeholder_in_live_env_falls_through_to_secrets_store(self, fake_stores):
+        """THE EXACT DEFECT: openclaw.json env.vars (inherited into the live
+        process env) holds a placeholder under the preferred alias, while the
+        REAL credential sits in the secrets store. The store value must win —
+        this is the 2026-08-03 false-alarm scenario, now fixed."""
+        fake_stores(GOHIGHLEVEL_API_KEY=FAKE_LOC_PIT)
+        env = {"GOHIGHLEVEL_API_KEY": PLACEHOLDER_SHORT}
+        assert m.resolve_location_pit(env, search_stores=True) == FAKE_LOC_PIT
+
+    def test_placeholder_in_store_is_also_skipped(self, fake_stores):
+        """Defense in depth: even a placeholder-shaped value physically written
+        into the secrets store file must not be returned as if it were real."""
+        fake_stores(GOHIGHLEVEL_API_KEY=PLACEHOLDER_SHORT)
+        with pytest.raises(RuntimeError):
+            m.resolve_location_pit({}, search_stores=True)
+
+    def test_all_placeholder_candidates_still_fails_loud_with_note(self):
+        env = {n: PLACEHOLDER_SHORT for n in m._PIT_ENV_NAMES}
+        with pytest.raises(RuntimeError) as ei:
+            m.resolve_location_pit(env, search_stores=False)
+        msg = str(ei.value)
+        assert "PLACEHOLDER" in msg.upper()
+        assert PLACEHOLDER_SHORT not in msg
+
+
+class TestRealValueStillWinsNormally:
+    """Direction 2 (no-regression guard): when a real, non-placeholder value is
+    present, resolution behaves exactly as before the fix — preferred alias in
+    the live env wins immediately, with no unnecessary store read."""
+
+    def test_real_value_in_preferred_alias_resolves_immediately(self):
+        env = {"GOHIGHLEVEL_API_KEY": REAL_LOOKING_PIT}
+        assert m.resolve_location_pit(env, search_stores=False) == REAL_LOOKING_PIT
+
+    def test_real_live_env_value_beats_a_different_store_value(self, fake_stores):
+        fake_stores(GOHIGHLEVEL_API_KEY=FAKE_LOC_PIT)
+        env = {"GOHIGHLEVEL_API_KEY": REAL_LOOKING_PIT}
+        assert m.resolve_location_pit(env, search_stores=True) == REAL_LOOKING_PIT
+
+    def test_real_value_under_any_single_alias_resolves(self):
+        for name in m._PIT_ENV_NAMES:
+            assert m.resolve_location_pit({name: REAL_LOOKING_PIT}, search_stores=False) \
+                == REAL_LOOKING_PIT

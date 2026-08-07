@@ -127,7 +127,7 @@ fi
 
 set -euo pipefail
 
-ONBOARDING_VERSION="v21.7.1"
+ONBOARDING_VERSION="v21.7.38"
 
 LOG_FILE="/tmp/openclaw-update-$(date +%Y%m%d-%H%M%S).log"
 
@@ -1366,7 +1366,7 @@ reap_dead_skill_manifest() {
 # --- END REAP-DEAD-SKILL-MANIFEST ---
 
 # ----------------------------------------------------------
-# v21.7.1 - safe_json_edit
+# v21.7.38 - safe_json_edit
 # Harden any direct write to openclaw.json: back up, apply the
 # python3 transform, validate with `openclaw config validate`,
 # and ROLL BACK from the backup on failure so one bad key can
@@ -2148,16 +2148,27 @@ preclear_2026_7_1() {
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
-# Two updaters live in this repo. THIS one (repo root update-skills.sh) is the
-# canonical one: it carries the wiring, state-machine, A3 content-gate and
-# manifest/stamp pipeline. scripts/update-skills.sh is a much smaller legacy
-# script that only copies skills.
+# Two updaters used to live in this repo under the same filename. THIS one
+# (repo root update-skills.sh) is the canonical one: it carries the wiring,
+# state-machine, A3 content-gate and manifest/stamp pipeline.
+# scripts/update-skills.sh was a much smaller, independently-maintained
+# script that only copied skills and never received any of the fixes below
+# it -- a real 3-box pilot ran it (via a stale cron/doc reference) and
+# produced a byte-identical AGENTS.md every week while its own version stamp
+# climbed: a hollow update reported as a success. It is now RETIRED to a
+# loud-failing shim (see scripts/update-skills.sh's own header) that exits
+# non-zero unconditionally, so a wrong invocation can never again silently
+# "succeed". This self-heal still exists to repoint any box whose weekly
+# cron script still names that path -- pointing at the shim is loudly wrong
+# in its own right now, but repointing it to the real URL is strictly better
+# than leaving a box's cron broken.
 #
 # Every box runs $HOME/.openclaw/skills/.update-restart-if-needed from a Sunday
 # 03:00 cron. scripts/setup-weekly-update.sh was corrected on 2026-06-27
 # (6a881c8a) to install the ROOT url, but NOTHING rewrote the copy already on
-# disk -- so every box provisioned BEFORE that date runs the LEGACY updater
-# every week, forever. This function repoints those boxes.
+# disk -- so every box provisioned BEFORE that date runs the LEGACY path
+# every week, forever (and now gets a loud failure instead of a hollow
+# success). This function repoints those boxes.
 #
 # HISTORY -- READ THIS BEFORE DELETING THE SELF-HEAL (updated at the PR #670 /
 # PR #671 merge, so the comment does not outlive the facts it describes)
@@ -2170,18 +2181,22 @@ preclear_2026_7_1() {
 # anything -- a fleet roll read a matching stamp and silently no-oped while
 # reporting success.
 #
-# BOTH halves of that are now fixed, in the same merge as this comment:
-#   * scripts/update-skills.sh now decides per skill on CONTENT, delivers
-#     shared-utils/ and universal-sops/, and WITHHOLDS the stamp (exit 1) when
-#     a source file is still absent after the copy.
+# BOTH halves of that were fixed in the same merge as this comment originally
+# landed:
+#   * scripts/update-skills.sh (at the time) started deciding per skill on
+#     CONTENT, delivering shared-utils/ and universal-sops/, and WITHHOLDING
+#     the stamp (exit 1) when a source file was still absent after the copy.
 #   * this script's same-version non-interactive branch no longer blind-exits;
 #     it runs a CONTENT RECHECK before deciding (see _SAME_VERSION_RECHECK).
 # So a poisoned stamp is no longer produced, and an existing one no longer
-# blinds this script. The self-heal is still correct and still wanted -- the
-# fleet should converge on ONE updater, the one with the gates -- but it is now
-# a convergence measure, not a rescue from an active time bomb. Boxes still on
-# the legacy URL re-fetch that file from main on every run, so they pick up the
-# content-based behaviour immediately regardless of whether this heal fires.
+# blinds this script. scripts/update-skills.sh has since been retired
+# entirely (see above) -- the fleet-wide fix is no longer "make the legacy
+# script safer", it is "there is only one updater, and the other name fails
+# loudly". The self-heal below is still correct and still wanted -- it
+# repoints a box's weekly cron to the URL that is actually canonical. Boxes
+# still on the legacy URL re-fetch that file from main on every run, so they
+# hit the loud shim failure immediately regardless of whether this heal fires
+# -- the heal just gets them back to a WORKING weekly update sooner.
 #
 # PLACEMENT IS LOAD-BEARING
 # The call site sits BEFORE the UPDATE-PENDING prompt and BEFORE the version
@@ -3039,10 +3054,24 @@ u004_assert_doctrine_provenance() {
     echo "  [U004] assert-dept-doctrine-provenance.py not found at $_assert - skipping (older onboarding bundle?)" >&2
     return 0
   fi
+  # SIBLING-AUDIT FIX (found while investigating the U6c set -e abort above):
+  # this block is documented "warn-mode" -- meant to log and never abort -- but
+  # the bare `python3 "$_assert" ... 2>&1` below is a plain mid-sequence
+  # statement, not the tested condition of an if/&&/||. Under `set -euo
+  # pipefail` (active at L128; this function is called UNGUARDED at L5753 --
+  # `u004_assert_doctrine_provenance` with no `if`/`||` around it) a non-zero
+  # exit from assert-dept-doctrine-provenance.py (it can and does `sys.exit(3)`
+  # on a real provenance problem) would abort the ENTIRE updater right here,
+  # never reaching the "assertion completed" line, "warn-mode" or not -- the
+  # exact set -e disease class as the U6c bug just above, just without a
+  # command-substitution assignment. `|| true` on the tested command keeps this
+  # step genuinely non-fatal, matching what "warn-mode" already claimed.
+  local _u004_assert_rc=0
   {
     echo "  [U004] doctrine-provenance assertion (warn-mode) - dept at $_dept_dir"
-    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1
-    echo "  [U004] assertion completed (exit $?)"
+    _u004_assert_rc=0
+    python3 "$_assert" --dept-dir "$_dept_dir" --source-root "$SKILLS_DIR" 2>&1 || _u004_assert_rc=$?
+    echo "  [U004] assertion completed (exit $_u004_assert_rc)"
   } >> "${LOG_FILE:-/dev/null}" 2>&1
   echo "  [U004] doctrine-provenance assertion logged (warn-mode)"
 }
@@ -3544,6 +3573,110 @@ print(f"{dup_markers} {orphan_pairs}")
     echo "  ✓ [AGENTS.MD HYGIENE] state=clean file=$_amh_file"
     return 0
   }
+
+  # ── UPDATE PENDING FLAG CURRENCY PROBE ──────────────────────────────────
+  # WHY THIS EXISTS. write_update_pending_flag() / clear_update_pending_flag()
+  # (defined far above, the shared PENDING-lifecycle pair) are dispatched from
+  # the Post-update "UPDATE PENDING flag LIFECYCLE" step near the end of this
+  # function, gated on _RESUME_NEEDED -- which was computed SOLELY from
+  # ONBOARDING_GATE_OK (the per-skill qc gate) and NEW_SKILLS_CSV (brand-new
+  # skill FOLDERS). Neither signal knows whether a "## UPDATE PENDING --
+  # Skill Update to vX" section from a PRIOR run is still sitting in
+  # AGENTS.md: an EXISTING skill can receive a genuine CONTENT update (a
+  # script rewrite inside its own folder, not a new folder) while its qc
+  # sentinel stays stamped from the PREVIOUS pass, so the gate reads "yes",
+  # NEW_SKILLS_CSV stays empty, and clear_update_pending_flag() runs instead
+  # of write_update_pending_flag() -- sweeping the stale block (if it even
+  # matches) without ever re-announcing the work or arming the resume cron
+  # that would drive an agent to re-process it. A live 3-box pilot reproduced
+  # this on 3 of 3 boxes: exit 0, stamp advanced, skills genuinely updated on
+  # disk, and AGENTS.md/MEMORY.md came out byte-identical -- the pointer/
+  # self-heal pass the fresh flag exists to trigger never ran.
+  #
+  # THE FIX: a PENDING block's mere PRESENCE proves nothing about whether it
+  # was handled -- only its VERSION does. This reads every "## ... UPDATE
+  # PENDING ..." / "## ... ONBOARDING PENDING ..." header line currently in
+  # AGENTS.md and extracts the version each one names ("Skill Update to
+  # ${version}"). If ANY of them names a version other than the CURRENT
+  # ONBOARDING_VERSION -- or a version this cannot parse at all (covers the
+  # older "ONBOARDING PENDING" / "UPDATE PENDING - EXECUTE IMMEDIATELY"
+  # wordings predating this lifecycle, per Start Here.md) -- the block is
+  # STALE: outstanding work exists that the standard qc gate cannot see,
+  # because that gate tracks per-skill activation state, not "did THIS
+  # specific flag's work happen". Multiple stacked stale copies (measured on
+  # a real box: three) all count as ONE outstanding finding here;
+  # _strip_update_pending_sections (the shared remover both
+  # write_update_pending_flag and clear_update_pending_flag already call, and
+  # the ONLY mechanism that ever mutates the file) sweeps every one of them in
+  # a single pass regardless of how many this probe reports.
+  #
+  # CONTRACT, identical to every sibling probe above: returns 1 ONLY when a
+  # full pass would ACTUALLY repair something (a stale/unparsable block is
+  # present). Absent workspace, absent AGENTS.md, absent python3, or a block
+  # whose EVERY header already names the current version -> 0 (advisory,
+  # never forces a pass on a box that genuinely has nothing to do). READ-ONLY:
+  # opens AGENTS.md for reading only; never writes and never calls
+  # write_update_pending_flag/clear_update_pending_flag itself -- it only
+  # REPORTS, the existing lifecycle functions still own every write.
+  _pending_flag_currency_probe() {
+    if ! command -v python3 >/dev/null 2>&1; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — python3 missing — not forcing a pass."
+      return 0
+    fi
+    if ! oc_resolve_workspace_announced "UPDATE PENDING flag currency probe" >/dev/null 2>&1; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — workspace not resolvable — not forcing a pass."
+      return 0
+    fi
+    local _pfc_file="$OC_WS_RESOLVED/AGENTS.md"
+    if [ ! -f "$_pfc_file" ]; then
+      echo "  — [UPDATE PENDING FLAG] state=absent — no AGENTS.md at $_pfc_file — not forcing a pass."
+      return 0
+    fi
+
+    local _pfc_report="" _pfc_rc=0
+    if _pfc_report="$(python3 -c '
+import re, sys
+path, current = sys.argv[1], sys.argv[2]
+try:
+    text = open(path, encoding="utf-8", errors="replace").read()
+except Exception:
+    print("error")
+    sys.exit(0)
+header_re = re.compile(r"(?m)^##[^\n]*(?:UPDATE PENDING|ONBOARDING PENDING)[^\n]*$")
+version_re = re.compile(r"Skill Update to\s+(\S+)")
+headers = header_re.findall(text)
+if not headers:
+    print("clean 0")
+    sys.exit(0)
+stale = 0
+for h in headers:
+    m = version_re.search(h)
+    if not m or not current or m.group(1).rstrip(".,:;)") != current:
+        stale += 1
+state = "stale" if stale else "current"
+print(state + " " + str(len(headers)))
+' "$_pfc_file" "${ONBOARDING_VERSION:-}" 2>/dev/null)"; then
+      :
+    else
+      _pfc_rc=$?
+    fi
+
+    if [ "$_pfc_rc" -ne 0 ] || [ -z "$_pfc_report" ] || [ "$_pfc_report" = "error" ]; then
+      echo "  — [UPDATE PENDING FLAG] state=unknown — could not parse $_pfc_file — not forcing a pass."
+      return 0
+    fi
+
+    local _pfc_state _pfc_count
+    _pfc_state="$(printf '%s' "$_pfc_report" | awk '{print $1}')"
+    _pfc_count="$(printf '%s' "$_pfc_report" | awk '{print $2}')"
+
+    if [ "$_pfc_state" = "stale" ]; then
+      echo "  ✗ [UPDATE PENDING FLAG] state=stale sections=${_pfc_count} current-version=${ONBOARDING_VERSION:-<unset>} file=$_pfc_file — a PRIOR-VERSION (or unparsable) UPDATE PENDING section is still sitting in AGENTS.md; its presence is not proof the work was done."
+      return 1
+    fi
+    echo "  ✓ [UPDATE PENDING FLAG] state=${_pfc_state} sections=${_pfc_count} file=$_pfc_file"
+    return 0
+  }
   # <<< CONTENT-RECHECK-CONVERGENCE-PROBES-END
 
   # ── CONTENT RECHECK (stamp already current, non-interactive run) ─────────
@@ -3599,6 +3732,7 @@ print(f"{dup_markers} {orphan_pairs}")
       _persona_index_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }persona-index sentinel"
       _weekly_cron_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }weekly-onboarding-update cron registration"
       _agents_md_hygiene_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }AGENTS.md dedup/orphan hygiene"
+      _pending_flag_currency_probe || _CONVERGENCE_TRIGGERS="${_CONVERGENCE_TRIGGERS}${_CONVERGENCE_TRIGGERS:+; }UPDATE PENDING flag currency"
 
       if [ -z "$_CONVERGENCE_TRIGGERS" ]; then
         echo "  ✓ [CONTENT RECHECK] stamp current AND installed content matches source — nothing to do."
@@ -3994,6 +4128,30 @@ print(f"{dup_markers} {orphan_pairs}")
   _D5_DEPT_STATE="skipped"
   _STEP_GATE_FAILS=""
   _WORKFORCE_INCOMPLETE_NOTES=""  # workforce-provisioning advisories -- surfaced, NEVER stamp-gating
+  # GHL MCP Tier-2 RUNTIME conformance latch (DEFECT 2). Declared here, with the
+  # other latches, so it is `set -u` safe on every path — including the ones that
+  # never reach the wiring loop. It is INFRASTRUCTURE, not skills content: it
+  # never withholds the version stamp, but it DOES make this run exit 2 instead
+  # of 0, because a roll that leaves the MCP misconfigured is not a success.
+  GHL_MCP_RUNTIME_FATAL="no"
+  GHL_MCP_RUNTIME_DETAIL=""
+  GHL_MCP_AUTOSTART_RAN="not-run"
+  # Command Center runtime-config (U6d) FINAL-VERDICT latch (U6D-CC-RUNTIME
+  # fix, 2026-08-04 -- NOT the "DEFECT 2" GHL-MCP-runtime latch just above;
+  # a separate fix, same pattern). Declared here alongside GHL_MCP_RUNTIME_FATAL, which it
+  # mirrors exactly: a genuine reconcile_command_center_runtime.py failure
+  # (invalid/corrupt existing CC runtime data the reconciler correctly
+  # refuses to clobber, or an I/O error) is CC-side runtime configuration,
+  # not skills content -- it must never withhold the version stamp, but a
+  # roll that leaves it unreconciled is not a clean success either, so it
+  # makes this run's FINAL exit code 2 instead of 0 (see the U6D-CC-RUNTIME
+  # final verdict block near the end of main()). The genuinely-unprovisioned case
+  # (this box's workforce interview hasn't completed yet) is a SEPARATE,
+  # fully benign outcome -- see the interview-completion-aware WARNING
+  # appended to _WORKFORCE_INCOMPLETE_NOTES at the U6d call site itself; it
+  # never touches this latch.
+  _U6D_CC_RUNTIME_FATAL="no"
+  _U6D_CC_RUNTIME_DETAIL=""
 
   # ----------------------------------------------------------
   # U008: PRE-FLIGHT SPEND CHECK. Runs BEFORE the first paid-API step (U6b
@@ -4180,6 +4338,7 @@ except Exception:
   fi
 
   # ----------------------------------------------------------
+  # >>> U6C-SOP-LIBRARY-BEGIN  (extracted verbatim by tests/unit/update-skills-u6c-set-e-continuation.test.sh)
   # Step U6c: SOP V2 LIBRARY INGESTION (v20.1.0).
   #
   # THE DEFECT THIS CLOSES. The updater synced FILES but never populated the
@@ -4236,6 +4395,53 @@ except Exception:
   _U6C_MANIFEST="$SKILLS_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
   [ -f "$_U6C_MANIFEST" ] || _U6C_MANIFEST="$EXTRACTED_DIR/shared-utils/sop-library/SOP-LIBRARY-MANIFEST.json"
 
+  # ----------------------------------------------------------------------
+  # SQLITE ACCESS (DEFECT FIX, sibling of ingest-sop-library.sh's own fix,
+  # same live 2026-08 Hostinger VPS finding). U6c and U6c2 below re-read
+  # `sops` / `sop_embeddings` row counts via a raw `sqlite3` CLI call with a
+  # `2>/dev/null || echo 0` fallback -- on the shared Hostinger base image
+  # (which ships libsqlite3-0 but NOT the sqlite3 CLI binary) that silently
+  # turns "the CLI does not exist" into a FALSE ZERO. That false zero then
+  # trips `_U6C_AFTER < _U6C_CANON` at the post-ingest re-check below EVEN
+  # WHEN ingest-sop-library.sh (fixed the same night, now python3-stdlib
+  # primary) just correctly reported success with the TRUE row count -- i.e.
+  # fixing ingest-sop-library.sh alone is not sufficient; this updater's own
+  # redundant re-verification carried the identical false-0 trap one layer
+  # up. python3's stdlib sqlite3 (already a hard dependency of this exact
+  # block's own DB resolution just below) is the primary path; the CLI is
+  # kept only as a fallback. True "neither tool available" prints the
+  # distinguishable, non-numeric sentinel SQLITE_UNAVAILABLE -- NEVER a
+  # number -- so a caller that forgets to check it fails a `-lt`/`-ge`
+  # integer test loudly instead of silently comparing against 0.
+  # ----------------------------------------------------------------------
+  _U6C_HAVE_PY3_SQLITE=0
+  if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlite3' >/dev/null 2>&1; then
+    _U6C_HAVE_PY3_SQLITE=1
+  fi
+  _U6C_HAVE_SQLITE3_CLI=0
+  command -v sqlite3 >/dev/null 2>&1 && _U6C_HAVE_SQLITE3_CLI=1
+  _sqlite_count() {  # _sqlite_count <db> <sql>
+    local _scdb="$1" _scsql="$2"
+    if [ "$_U6C_HAVE_PY3_SQLITE" = "1" ]; then
+      SQLITE_COUNT_DB="$_scdb" SQLITE_COUNT_SQL="$_scsql" python3 -c '
+import os, sqlite3
+db = os.environ["SQLITE_COUNT_DB"]
+sql = os.environ["SQLITE_COUNT_SQL"]
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    row = conn.execute(sql).fetchone()
+    conn.close()
+    print(int(row[0]) if row and row[0] is not None else 0)
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0
+    elif [ "$_U6C_HAVE_SQLITE3_CLI" = "1" ]; then
+      sqlite3 "file:${_scdb}?mode=ro" "$_scsql" 2>/dev/null || echo 0
+    else
+      echo "SQLITE_UNAVAILABLE"
+    fi
+  }
+
   # Canonical population from the manifest (single source of truth shared with
   # the ingester and embedding_health.py's coverage leg).
   _U6C_CANON=2555
@@ -4273,8 +4479,16 @@ except Exception:
   elif [ -z "$_U6C_DB" ] || [ ! -f "$_U6C_DB" ]; then
     # No Command Center on this box: legitimately nothing to populate.
     echo "  — SOP library: no mission-control.db resolved on this box (Command Center not installed) — SKIP (informational, not a failure)."
+  elif [ "$_U6C_HAVE_PY3_SQLITE" != "1" ] && [ "$_U6C_HAVE_SQLITE3_CLI" != "1" ]; then
+    # Neither reader is available -- an honest, distinguishable FAIL, never a
+    # false "0 rows". Latches like any other genuine U6c failure (see the
+    # FAILS LOUD contract above) rather than guessing at a population number
+    # that was never actually read.
+    _U6C_SOPLIB_FAIL=1
+    _U6C_SOPLIB_NOTE="cannot verify SOP library population -- neither python3's stdlib sqlite3 module nor a sqlite3 CLI binary is available on this box"
+    echo "  ✗ SOP library: cannot verify population (neither python3's stdlib sqlite3 module nor a sqlite3 CLI binary is available) — refusing to guess."
   else
-    _U6C_BEFORE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+    _U6C_BEFORE="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops;")"
     echo "  → SOP library: db=$_U6C_DB  rows=$_U6C_BEFORE  canonical=$_U6C_CANON"
     if [ "${_U6C_BEFORE:-0}" -ge "${_U6C_CANON:-2555}" ] 2>/dev/null; then
       # Healthy box (e.g. an already-rolled client at 2578). Touch NOTHING.
@@ -4289,7 +4503,25 @@ except Exception:
       fi
       [ -n "$_U6C_SLUG" ] || _U6C_SLUG="default"
       echo "  → Ingesting SOP V2 library (box is under-populated: $_U6C_BEFORE < $_U6C_CANON)..."
-      _U6C_OUT="$(MISSION_CONTROL_DB="$_U6C_DB" bash "$_U6C_INGEST_SH" "$_U6C_SLUG" 2>&1)"; _U6C_RC=$?
+      # DEFECT FIX (live 2026-08 Hostinger VPS finding): the previous form,
+      # `_U6C_OUT="$(...)"; _U6C_RC=$?`, is a command-substitution ASSIGNMENT
+      # followed by a SEPARATE statement (`;`). Under `set -euo pipefail`
+      # (active at L128) a failing assignment aborts the script the instant
+      # the substitution returns non-zero -- `_U6C_RC=$?` is never even
+      # reached, so a genuine ingest-sop-library.sh failure killed the WHOLE
+      # updater before Step U6c's own "FAILS LOUD... latches _U6C_SOPLIB_FAIL,
+      # continues to the end" design (see the comment block above) ever got a
+      # chance to run, and every phase after U6c (skill-38, MCP, pm2, the
+      # stamp write) never executed. The `if VAR="$(...)"; then RC=0; else
+      # RC=$?; fi` idiom below is set -e SAFE (the assignment is the tested
+      # condition of an `if`, which `set -e` never aborts on) and is the exact
+      # pattern this file already ships for the sibling U6c2 capture just
+      # below and the R4 runtime-conformance verdict (~L5340).
+      if _U6C_OUT="$(MISSION_CONTROL_DB="$_U6C_DB" bash "$_U6C_INGEST_SH" "$_U6C_SLUG" 2>&1)"; then
+        _U6C_RC=0
+      else
+        _U6C_RC=$?
+      fi
       printf '%s\n' "$_U6C_OUT" >> "$LOG_FILE"
       _U6C_TAIL="$(printf '%s' "$_U6C_OUT" | tail -n 3 | tr '\n' ' ')"
       if [ "$_U6C_RC" -ne 0 ]; then
@@ -4297,7 +4529,7 @@ except Exception:
         _U6C_SOPLIB_NOTE="ingest-sop-library.sh FAILED (rc=$_U6C_RC) — SOP library NOT populated (was $_U6C_BEFORE rows, canonical $_U6C_CANON). Last output: ${_U6C_TAIL}"
         echo "  ✗ SOP library ingest FAILED (rc=$_U6C_RC) — see $LOG_FILE"
       else
-        _U6C_AFTER="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sops;" 2>/dev/null || echo 0)"
+        _U6C_AFTER="$(_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sops;")"
         # Independent re-assert with the fail-CLOSED row-count gate (the same
         # one run-full-install.sh phase 6i uses). rc 0 from the ingester is not
         # accepted as proof on its own.
@@ -4316,6 +4548,7 @@ except Exception:
       fi
     fi
   fi
+  # <<< U6C-SOP-LIBRARY-END
 
   # ----------------------------------------------------------
   # >>> U6C2-SOP-EMBEDDINGS-BEGIN  (extracted verbatim by tests/unit/sop-embeddings-independent-gate.test.sh)
@@ -4339,7 +4572,39 @@ except Exception:
   # never latches _U6C_SOPLIB_FAIL or any other stamp-gating flag. No client
   # key is ever billed -- this is a sha256-verified download + sqlite
   # ATTACH/INSERT, never an embedding API call.
+  #
+  # SELF-CONTAINED sqlite reader (DEFECT FIX, same live 2026-08 Hostinger VPS
+  # finding as U6c above): this block is INDEPENDENT of U6c by design (see
+  # test (4) below) and tests/unit/sop-embeddings-independent-gate.test.sh
+  # extracts and sources it IN ISOLATION -- it must never depend on a helper
+  # function U6c happens to define. python3's stdlib sqlite3 is the primary
+  # path (a sqlite3 CLI is not guaranteed on every box, see U6c's comment);
+  # the CLI is a fallback. Deliberately does NOT introduce a hard-fail branch
+  # here (unlike U6c's gate) -- this step is advisory-only by contract, so
+  # "cannot verify" degrades to the existing "under-populated" provisioning
+  # attempt rather than a new failure mode.
   # ----------------------------------------------------------
+  _u6c2_sqlite_count() {  # _u6c2_sqlite_count <db> <sql>
+    local _u6c2scdb="$1" _u6c2scsql="$2"
+    if command -v python3 >/dev/null 2>&1 && python3 -c 'import sqlite3' >/dev/null 2>&1; then
+      SQLITE_COUNT_DB="$_u6c2scdb" SQLITE_COUNT_SQL="$_u6c2scsql" python3 -c '
+import os, sqlite3
+db = os.environ["SQLITE_COUNT_DB"]
+sql = os.environ["SQLITE_COUNT_SQL"]
+try:
+    conn = sqlite3.connect(f"file:{db}?mode=ro", uri=True, timeout=10)
+    row = conn.execute(sql).fetchone()
+    conn.close()
+    print(int(row[0]) if row and row[0] is not None else 0)
+except Exception:
+    print(0)
+' 2>/dev/null || echo 0
+    elif command -v sqlite3 >/dev/null 2>&1; then
+      sqlite3 "file:${_u6c2scdb}?mode=ro" "$_u6c2scsql" 2>/dev/null || echo 0
+    else
+      echo 0
+    fi
+  }
   _U6C2_EMBED_DIR="$SKILLS_DIR/shared-utils/sop-embed-once"
   [ -d "$_U6C2_EMBED_DIR" ] || _U6C2_EMBED_DIR="$EXTRACTED_DIR/shared-utils/sop-embed-once"
   _U6C2_MANIFEST="$_U6C2_EMBED_DIR/SOP-EMBEDDINGS-MANIFEST.json"
@@ -4362,10 +4627,10 @@ except Exception:
     print(0)' "$_U6C2_MANIFEST" 2>/dev/null)"; then
       _U6C2_SOP_COUNT="$_U6C2_SOP_COUNT_RAW"
     fi
-    _U6C2_EMB_TABLE="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';" 2>/dev/null || echo 0)"
+    _U6C2_EMB_TABLE="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name='sop_embeddings';")"
     _U6C2_EMB_ROWS=0
     if [ "${_U6C2_EMB_TABLE:-0}" = "1" ]; then
-      _U6C2_EMB_ROWS="$(sqlite3 "file:${_U6C_DB}?mode=ro" "SELECT COUNT(*) FROM sop_embeddings;" 2>/dev/null || echo 0)"
+      _U6C2_EMB_ROWS="$(_u6c2_sqlite_count "$_U6C_DB" "SELECT COUNT(*) FROM sop_embeddings;")"
     fi
     echo "  → SOP embeddings: db=$_U6C_DB  rows=$_U6C2_EMB_ROWS  manifest sop_count=$_U6C2_SOP_COUNT"
     if [ "${_U6C2_SOP_COUNT:-0}" -le 0 ] 2>/dev/null; then
@@ -4409,9 +4674,35 @@ except Exception:
   #   - replace ONLY the exact shipped companyName "Your Company", populate
   #     ONLY an empty departments array / empty logo URL, and preserve every
   #     already-correct value byte-for-byte;
-  #   - independently re-assert all three files after the helper returns; any
-  #     unresolved identity/source or failed assertion withholds the version
-  #     stamp through _U6D_CC_CONFIG_FAIL below.
+  #   - independently re-assert all three files after the helper returns; a
+  #     failed post-reconcile assertion, a missing python3, or a missing
+  #     reconciler script withholds the version stamp through
+  #     _U6D_CC_CONFIG_FAIL below (unchanged from before this fix).
+  #
+  # U6D-CC-RUNTIME FIX (2026-08-04 -- NOT the "DEFECT 2" GHL-MCP-runtime fix
+  # elsewhere in this file; a separate fix, same pattern): the reconciler's
+  # own non-zero exit used to be ONE undifferentiated "_U6D_CC_CONFIG_FAIL=1"
+  # outcome regardless of WHY it failed, withholding the skills-content stamp
+  # for a CC-side runtime-config
+  # gap that has nothing to do with skills content — SKILL38 and the GHL MCP
+  # converged perfectly on the boxes this blocked; only the stamp was
+  # withheld, with no path back to green. reconcile_command_center_runtime.py
+  # now distinguishes (see its own module docstring / main() contract):
+  #   rc=2  UNPROVISIONED — this box's workforce interview has not completed,
+  #         so no ZHC department/identity artifact exists yet. A KNOWN, VALID
+  #         state: degrades to a plain advisory (_WORKFORCE_INCOMPLETE_NOTES,
+  #         same bucket _D2_MIGRATE_STATUS already uses) — never touches
+  #         _U6D_CC_CONFIG_FAIL, never withholds the stamp.
+  #   rc=1  a genuine reconciliation failure (invalid/corrupt existing CC
+  #         runtime data it correctly refuses to clobber — its own FATAL
+  #         message states the exact remediation command — or an I/O error).
+  #         Real, but CC-side, not skills-content: latches
+  #         _U6D_CC_RUNTIME_FATAL (mirrors GHL_MCP_RUNTIME_FATAL) instead of
+  #         _U6D_CC_CONFIG_FAIL, so the roll CONTINUES, the stamp still WRITES,
+  #         and this run's FINAL exit code is 2 (not 0) — latch, continue,
+  #         report, exit non-zero, the same pattern this file already ships
+  #         for the GHL MCP runtime-conformance verdict and the dirty-Command-
+  #         Center-checkout skip.
   # ----------------------------------------------------------
   _U6D_CC_CONFIG_FAIL=0
   _U6D_CC_CONFIG_NOTE=""
@@ -4476,11 +4767,34 @@ except Exception:
       _U6D_RC=$?
       printf '%s\n' "$_U6D_OUT" >> "$LOG_FILE"
     fi
-    if [ "$_U6D_RC" -ne 0 ]; then
-      _U6D_CC_CONFIG_FAIL=1
+    if [ "$_U6D_RC" -eq 2 ]; then
+      # UNPROVISIONED (case a): a KNOWN, VALID state -- this box's workforce
+      # interview has not completed, so there is no legitimate ZHC artifact
+      # to source departments/identity from yet. Route to the SAME advisory
+      # bucket _D2_MIGRATE_STATUS already uses below, worded the same
+      # interview-completion-aware way (never implying an interview is
+      # unfinished when the box's own state records it complete). Does NOT
+      # touch _U6D_CC_CONFIG_FAIL and does NOT withhold the stamp.
       _U6D_TAIL="$(printf '%s' "$_U6D_OUT" | tail -n 3 | tr '\n' ' ')"
-      _U6D_CC_CONFIG_NOTE="runtime reconciler FAILED (rc=$_U6D_RC): ${_U6D_TAIL}"
+      _U6D_IV_STATE_FILE="$OC_WORKSPACE_DEFAULT/.workforce-build-state.json"
+      _U6D_IV_DONE="$(jq -r '.interviewComplete // false' "$_U6D_IV_STATE_FILE" 2>/dev/null || echo false)"
+      if [ "$_U6D_IV_DONE" = "true" ]; then
+        _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - Command Center runtime config (U6d, reconcile_command_center_runtime.py): interview COMPLETE (respected) — no ZHC department/identity artifact resolved yet for this client; advisory only, does NOT withhold the stamp — ${_U6D_TAIL}\n"
+      else
+        _WORKFORCE_INCOMPLETE_NOTES="${_WORKFORCE_INCOMPLETE_NOTES}  - Command Center runtime config (U6d, reconcile_command_center_runtime.py): workforce interview not yet complete for this box — dashboard departments/branding stay unpopulated until it is; advisory only, does NOT withhold the stamp — ${_U6D_TAIL}\n"
+      fi
+      echo "  ⚠ Command Center runtime config: box not yet provisioned (workforce interview incomplete) — ADVISORY, NOT blocking the version stamp."
+    elif [ "$_U6D_RC" -ne 0 ]; then
+      # Genuine reconciliation failure (case b): CC-side runtime-config data
+      # problem, not skills content. Latch the FINAL-verdict flag (mirrors
+      # GHL_MCP_RUNTIME_FATAL) instead of the stamp-gating _U6D_CC_CONFIG_FAIL
+      # -- the roll continues and the stamp still writes; this run's exit
+      # code becomes 2 at the very end (see the U6D-CC-RUNTIME final verdict block).
+      _U6D_CC_RUNTIME_FATAL="yes"
+      _U6D_TAIL="$(printf '%s' "$_U6D_OUT" | tail -n 6 | tr '\n' ' ')"
+      _U6D_CC_RUNTIME_DETAIL="reconcile_command_center_runtime.py FAILED (rc=$_U6D_RC): ${_U6D_TAIL}"
       echo "  ✗ Command Center departments/branding reconciliation FAILED (rc=$_U6D_RC) — see $LOG_FILE"
+      echo "    (skills content stays current and the version stamp still writes; this run will exit 2 — see the final summary for the exact remediation)"
     elif ! python3 -c 'import json,sys
 cc=sys.argv[1]
 deps=json.load(open(cc+"/config/departments.json"))
@@ -5094,8 +5408,23 @@ PYEOF
     # path reads, and remove a legacy registration if one is present.
     openclaw config set env.vars.GHL_COMMUNITY_MCP_URL "http://localhost:${GHL_MCP_PORT}" >> "$LOG_FILE" 2>&1 || true
     if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
-      echo "    GHL MCP: removing legacy ghl-community-mcp registration (Tier 2 is on-demand curl)"
-      openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1 || true
+      # B2: `openclaw mcp remove` IS NOT A COMMAND on OpenClaw 2026.7.1-2 — it
+      # exits 1 with "Too many arguments for this command." The verb is `unset`.
+      # This line used `remove`, swallowed by `|| true`, so a roll NEVER
+      # de-registered Tier 2 on any box and ghl-mcp-assert-runtime.sh check 10
+      # could never pass. Try the real verb, keep `remove` for an older CLI, and
+      # re-read rather than assuming the write stuck.
+      echo "    GHL MCP: de-registering legacy ghl-community-mcp (Tier 2 is on-demand curl)"
+      if openclaw mcp unset ghl-community-mcp >> "$LOG_FILE" 2>&1 \
+         || openclaw mcp remove ghl-community-mcp >> "$LOG_FILE" 2>&1; then
+        if openclaw mcp list 2>/dev/null | grep -q 'ghl-community-mcp'; then
+          echo "    ⚠ GHL MCP: de-registration ran but ghl-community-mcp is STILL listed — the gateway may have rewritten openclaw.json from memory. Will retry next roll."
+        else
+          echo "    ✓ GHL MCP: Tier 2 de-registered and verified absent from mcp.servers"
+        fi
+      else
+        echo "    ⚠ GHL MCP: neither 'openclaw mcp unset' nor 'openclaw mcp remove' was accepted by this CLI — Tier 2 is STILL registered and every agent init keeps paying its connection cost. Check 'openclaw mcp --help'." >&2
+      fi
     else
       echo "    GHL MCP: Tier 2 correctly unregistered (on-demand curl at localhost:${GHL_MCP_PORT})"
     fi
@@ -5107,12 +5436,71 @@ PYEOF
     # BUG FIX (v10.15.49): run NON-BLOCKING so the wiring loop + .onboarding-version
     # stamp always complete. macOS has no `timeout`, so backgrounding is the safe
     # cross-platform fix. The MCP still starts; the updater no longer waits on it.
-    local AUTOSTART="$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"
-    if [ -x "$AUTOSTART" ]; then
-      echo "    Starting GHL MCP server in background (launchd :${GHL_MCP_PORT}) -- log: /tmp/ghl-mcp-autostart.log"
-      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 & )
+    # ── WHICH COPY OF THE AUTOSTART RUNS, AND FROM WHERE ────────────────────
+    # DEFECT 2 (3-box pilot): a roll ran cleanly everywhere and converged NO box
+    # to the hardened state. Two reasons, both here.
+    #
+    # (a) WRONG COPY. $ONBOARDING_DIR is the TEMP CLONE (/tmp/openclaw-onboarding-
+    #     update). ghl-mcp-autostart.sh's FIRST pin-resolver candidate is
+    #     "$SELF_DIR/../config/ghl-mcp-pin.env" — from the temp clone that
+    #     resolves inside the clone, which the updater `rm -rf`s at its Cleanup
+    #     step. The DELIVERED copy at $OC_ROOT/scripts/ is the one whose
+    #     ../config sibling is the delivered $OC_ROOT/config/. Prefer it, so the
+    #     pin the roll just delivered is the pin the autostart reads.
+    # (b) BACKGROUNDED, THEN ASSERTED IMMEDIATELY. `( … & )` returned in
+    #     milliseconds and the runtime assert below ran against the PRE-autostart
+    #     state — it could only ever measure the defect it was meant to verify was
+    #     fixed. Worse, the temp clone was deleted out from under the still-running
+    #     child.
+    #
+    # FIX: run the DELIVERED copy, and WAIT for it, bounded. macOS has no
+    # `timeout(1)`, which is why this was backgrounded in the first place
+    # (v10.15.49) — so we background it and poll its PID with a hard ceiling,
+    # which keeps the "a hung autostart can never stall a roll" property AND
+    # makes the assert below measure the post-autostart state. The ceiling is
+    # generous because a cold box does a real `npm ci` + build.
+    local AUTOSTART=""
+    local _AS_SRC=""
+    for _as_cand in \
+        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-autostart.sh" \
+        "$HOME/.openclaw/scripts/ghl-mcp-autostart.sh" \
+        "/data/.openclaw/scripts/ghl-mcp-autostart.sh" \
+        "$ONBOARDING_DIR/scripts/ghl-mcp-autostart.sh"; do
+      case "$_as_cand" in "/ghl-mcp-autostart.sh"|"") continue ;; esac
+      if [ -f "$_as_cand" ]; then
+        AUTOSTART="$_as_cand"
+        case "$_as_cand" in
+          "$ONBOARDING_DIR"/*) _AS_SRC="TEMP CLONE (delivered copy not found — its ../config sibling will not resolve; expect PIN_UNVERIFIED)" ;;
+          *)                   _AS_SRC="delivered copy (its ../config sibling is the delivered pin)" ;;
+        esac
+        break
+      fi
+    done
+    unset _as_cand
+
+    GHL_MCP_AUTOSTART_RAN="no"
+    if [ -n "$AUTOSTART" ]; then
+      local _AS_MAX="${OPENCLAW_GHL_MCP_AUTOSTART_TIMEOUT:-900}"
+      echo "    Running GHL MCP autostart and WAITING for it (max ${_AS_MAX}s) -- $_AS_SRC"
+      echo "      $AUTOSTART  -- log: /tmp/ghl-mcp-autostart.log"
+      ( GHL_MCP_PORT="$GHL_MCP_PORT" bash "$AUTOSTART" >/tmp/ghl-mcp-autostart.log 2>&1 ) &
+      local _AS_PID=$! _AS_WAITED=0
+      while kill -0 "$_AS_PID" 2>/dev/null; do
+        [ "$_AS_WAITED" -ge "$_AS_MAX" ] && break
+        sleep 2
+        _AS_WAITED=$(( _AS_WAITED + 2 ))
+      done
+      if kill -0 "$_AS_PID" 2>/dev/null; then
+        echo "    ⚠ GHL MCP autostart still running after ${_AS_MAX}s -- leaving it to finish in the background and NOT waiting further (a slow build must never stall a fleet roll)." >&2
+        echo "    ⚠ The runtime conformance verdict below is therefore measured MID-INSTALL and may report FATALs that resolve once the build completes. Re-run scripts/ghl-mcp-assert-runtime.sh afterwards." >&2
+        GHL_MCP_AUTOSTART_RAN="timeout"
+      else
+        wait "$_AS_PID" 2>/dev/null || true
+        echo "    ✓ GHL MCP autostart completed in ~${_AS_WAITED}s"
+        GHL_MCP_AUTOSTART_RAN="yes"
+      fi
     else
-      echo "    (ghl-mcp-autostart.sh not found at $AUTOSTART -- server NOT started; GHL tools will not resolve until it is run)"
+      echo "    ⚠ ghl-mcp-autostart.sh not found in the delivered scripts dir OR the pulled bundle -- server NOT started; GHL tools will not resolve until it is run." >&2
     fi
 
     # v21.6.0 / R4: RUNTIME conformance verdict on the update path.
@@ -5123,18 +5511,58 @@ PYEOF
     # This asserts what the box IS running. Non-fatal by design (the update must
     # not abort on a pre-existing runtime defect) but LOUD, and it names the one
     # command that fixes it.
-    local RUNTIME_ASSERT="$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"
-    if [ -f "$RUNTIME_ASSERT" ]; then
+    local RUNTIME_ASSERT=""
+    for _rt_cand in \
+        "${OC_PERSISTENT_SCRIPTS_DIR:-}/ghl-mcp-assert-runtime.sh" \
+        "$HOME/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+        "/data/.openclaw/scripts/ghl-mcp-assert-runtime.sh" \
+        "$ONBOARDING_DIR/scripts/ghl-mcp-assert-runtime.sh"; do
+      case "$_rt_cand" in "/ghl-mcp-assert-runtime.sh"|"") continue ;; esac
+      [ -f "$_rt_cand" ] && { RUNTIME_ASSERT="$_rt_cand"; break; }
+    done
+    unset _rt_cand
+    if [ -n "$RUNTIME_ASSERT" ]; then
       local _RT_OUT _RT_RC=0
       _RT_OUT="$(bash "$RUNTIME_ASSERT" 2>&1)" || _RT_RC=$?
       printf '%s\n' "$_RT_OUT" >> "$LOG_FILE" 2>/dev/null || true
       case "$_RT_RC" in
-        0) echo "    GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
+        0) echo "    ✓ GHL MCP runtime conformance: OK (the INSTALLED service matches the pin)" ;;
         2) echo "    GHL MCP runtime conformance: not installed on this box -- nothing to assert" ;;
-        *) echo "    ⚠ GHL MCP runtime conformance FAILED -- the INSTALLED service does not match the shipped standard:" >&2
-           printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' | sed 's/^/      /' >&2 || true
-           echo "      FIX: bash $AUTOSTART   (it regenerates the service definition from the pin)" >&2 ;;
+        *)
+           # DEFECT 2, second half: this verdict used to be a bare warning that
+           # nothing read, so a roll printed the FATALs and then exited 0 — a
+           # HOLLOW UPDATE reported as a success. The verdict now LATCHES and is
+           # surfaced in the end-of-run summary and in this run's EXIT CODE.
+           #
+           # WHY exit 2 AND NOT exit 1. The stamp gates in this script are
+           # deliberately split (see the CONTENT-COMPLETENESS GATE): exit 1 means
+           # "skills CONTENT is not verifiably current, stamp WITHHELD", and
+           # wire_ghl_mcp runs BEFORE the stamp. Failing this to 1 would withhold
+           # the content stamp on every box carrying a PRE-EXISTING Tier 2 defect
+           # — bricking fleet rolls over an infrastructure fault that has nothing
+           # to do with skills content. exit 2 is this script's existing,
+           # documented "content current, infrastructure needs attention" code,
+           # which fleet drivers already distinguish. That is exactly this state,
+           # and it is emphatically NOT exit 0.
+           GHL_MCP_RUNTIME_FATAL="yes"
+           GHL_MCP_RUNTIME_DETAIL="$(printf '%s\n' "$_RT_OUT" | grep -F '[ghl-mcp-runtime] FAIL' || true)"
+           {
+             echo ""
+             echo "  ############################################################"
+             echo "  ## GHL MCP RUNTIME CONFORMANCE FAILED (rc=$_RT_RC)"
+             echo "  ## The INSTALLED service on this box does NOT match the shipped standard."
+             echo "  ## This run will exit 2 (content current, infrastructure needs attention)"
+             echo "  ## rather than 0 — a roll that leaves the MCP misconfigured is not a success."
+             printf '%s\n' "$GHL_MCP_RUNTIME_DETAIL" | sed 's/^/  ##   /'
+             echo "  ## FIX: bash ${AUTOSTART:-<autostart not found on this box>}"
+             echo "  ##      (it regenerates the service definition from the delivered pin)"
+             echo "  ############################################################"
+             echo ""
+           } >&2
+           ;;
       esac
+    else
+      echo "    ⚠ ghl-mcp-assert-runtime.sh not found on this box -- the RUNTIME conformance verdict did NOT run. The static gate cannot see a hand-edited plist, a 859-tool /health, or a still-registered Tier 2." >&2
     fi
   }
 
@@ -5185,6 +5613,30 @@ PYEOF
     # mcp.servers entry and backgrounds ghl-mcp-autostart.sh, which fast-paths to
     # a no-op when the server is already healthy, pinned and answering JSON-RPC).
     wire_ghl_mcp "$SKILL_NAME"
+
+    # DEFECT FIX: the Skill 38 AGENTS.md pointer-stanza rewriter
+    # (05-update-agents-md.sh -- the source of the ~24k-char AGENTS.md size
+    # win) was invoked NOWHERE in the automated pipeline: not by wiring, not
+    # by wire_core_updates(), not by obs_verify_skill. It was documented only
+    # as a MANUAL INSTALL.md step-5. Evidence it had not run in months: one
+    # box's newest AGENTS.md.bak-skill38-* was ~7 version bumps stale while
+    # every sibling skill wrote fresh backups on every roll. Wired here, NOT
+    # sentinel-gated -- same reasoning as wire_ghl_mcp just above: the script
+    # is idempotent/self-healing by design (a true no-op when the live file
+    # already carries the current stanzas, per its own header) and its
+    # "staged descent" design for a box running a core-file watcher NEEDS
+    # MULTIPLE passes to converge past the watcher's shrink-floor -- gating
+    # this to once-per-version-bump would break that convergence on any
+    # watched box, the same "shipped but never delivered" failure class this
+    # release exists to end.
+    if [ "$SKILL_NAME" = "38-conversational-ai-system" ] \
+       && [ -x "$SKILL_DIR/scripts/05-update-agents-md.sh" ]; then
+      if AGENTS_MD="$WIRE_WORKSPACE_DIR/AGENTS.md" bash "$SKILL_DIR/scripts/05-update-agents-md.sh" >>"$LOG_FILE" 2>&1; then
+        echo "    ✓ AGENTS.md pointer stanzas verified/refreshed (05-update-agents-md.sh)"
+      else
+        echo "    ⚠ 05-update-agents-md.sh reported an error for $SKILL_NAME (see $LOG_FILE) -- continuing"
+      fi
+    fi
 
     # Per-skill idempotency sentinel
     WIRED_SENTINEL="$SKILL_DIR/.wired-${ONBOARDING_VERSION}"
@@ -5573,7 +6025,7 @@ else:
   # fail. A genuine non-zero exit always flips _D5_ACTIVATION_PASS. For an
   # interview-complete run, agents.list[] is compared against THIS box's real
   # expected department count (department-floor.py's expected_floor_count --
-  # the 22-mandatory + 6-universal-primary 28-department floor from
+  # the 24-mandatory + 6-universal-primary 30-department floor from
   # department-naming-map.json, net of any owner-declined department) rather
   # than a fixed "under 2" magic number -- a box whose activation genuinely
   # failed for most departments but still kept >=2 agents no longer sails
@@ -5602,8 +6054,8 @@ else:
       fi
       # D5[F2]: gate on THIS box's real expected department count instead of a
       # fixed "-lt 2" magic number. A genuine interview-complete box carries the
-      # 28-department universal floor (department-naming-map.json: 22 mandatory
-      # + 6 universal-primary, net of any owner-declined dept) -- "-lt 2" let a
+      # 30-department universal floor (department-naming-map.json v2.8.0: 24
+      # mandatory + 6 universal-primary, net of any owner-declined dept) -- "-lt 2" let a
       # box whose activation genuinely failed for MOST departments but still
       # kept >=2 agents.list[] entries false-PASS. department-floor.py is the
       # single source of truth qc-completeness.sh's own floor gate already
@@ -5753,8 +6205,13 @@ if isinstance(n, int) and n > 0:
   #     canonical population. A box whose SOP database is a demo fixture must
   #     never be stamped as current: that is the 24-of-2578 defect this closes.
   #   - _U6D_CC_CONFIG_FAIL: Command Center runtime departments + branding (U6d)
-  #     could not be sourced from this box's legitimate Skill-23 identity, failed
-  #     to write, or independently re-asserted as empty/placeholder afterward.
+  #     tooling was unavailable (python3 missing / reconciler script missing), or
+  #     the reconciler returned success but independent re-assertion still found
+  #     empty departments or the exact placeholder companyName. (U6D-CC-RUNTIME
+  #     fix, 2026-08-04: a genuine reconciler FAILURE (rc!=0, invalid/corrupt existing
+  #     CC data, or an unprovisioned box) is CC-side runtime config, not skills
+  #     content -- it no longer lands here; see _U6D_CC_RUNTIME_FATAL and
+  #     _WORKFORCE_INCOMPLETE_NOTES at the U6d call site instead.)
   #   - _SHAREDCORE_STATUS: link_shared_core_files wiring step errored.
   #   - _SHAREDUTILS_STATUS: shared-utils/ refresh landed incomplete (a source
   #     top-level entry — e.g. sop-embed-once/ — is missing from the box). This tree
@@ -5990,10 +6447,14 @@ with open('${_MANIFEST_TMP}', 'w') as f:
   fi
 
   # v14.24.0: Persist hooks/ library before temp-clone is removed.
-  # grant-ceo-consent.sh + lib-ceo-tool-gate.sh look for lib-ceo-consent.sh at
-  # ~/.openclaw/hooks/ (or /data/.openclaw/hooks/ on VPS) as a fallback after
-  # the temp clone is gone.  Without this, update-only boxes keep the pre-#398/#403
-  # gate library until the next full install.
+  # lib-ceo-tool-gate.sh is resolved from ~/.openclaw/hooks/ (or
+  # /data/.openclaw/hooks/ on VPS) after the temp clone is gone. Without this,
+  # update-only boxes keep the pre-#398/#403 gate library until the next full
+  # install.
+  # NOTE 2026-08-05: lib-ceo-consent.sh used to be the other consumer named here.
+  # It and ceo-intent-gate.sh were DELETED with the intent-gate removal, and the
+  # copy below never prunes — see the UN-WIRE block right after it, which deletes
+  # those two stale files from already-wired boxes.
   _OC_HOOKS_DEST="$HOME/.openclaw/hooks"
   [ -d "/data/.openclaw" ] && _OC_HOOKS_DEST="/data/.openclaw/hooks"
   mkdir -p "$_OC_HOOKS_DEST" 2>/dev/null || true
@@ -6010,6 +6471,184 @@ with open('${_MANIFEST_TMP}', 'w') as f:
     else
       echo "  ✗ hooks/ library copy FAILED (source: $EXTRACTED_DIR/hooks, dest: $_OC_HOOKS_DEST) — advisory, does not fail the roll"
     fi
+  fi
+
+  # ----------------------------------------------------------
+  # UN-WIRE the removed CEO intent-gate (2026-08-05, Trevor).
+  #
+  # The hook staging above is COPY-ONLY: `cp -Rf .../hooks/. "$_OC_HOOKS_DEST/"`
+  # never prunes. So deleting hooks/ceo-intent-gate.sh and hooks/lib-ceo-consent.sh
+  # from the REPO uninstalls NOTHING from a box that is already wired — the stale
+  # files keep sitting in ~/.openclaw/hooks/ and, worse, the PreToolUse entry in
+  # ~/.claude/settings.json keeps INVOKING them. That is precisely the write-deny
+  # loop that ate two weeks of Telegram messages. Removing the installer is not
+  # the same as uninstalling; a box has to be actively un-wired.
+  #
+  # Idempotent (a clean box changes nothing and prints nothing actionable) and
+  # strictly NON-FATAL — an un-wire failure must never fail a roll.
+  # ----------------------------------------------------------
+  for _stale in ceo-intent-gate.sh lib-ceo-consent.sh; do
+    for _stale_path in "$_OC_HOOKS_DEST/$_stale" "$_OC_HOOKS_DEST/$_stale".bak-*; do
+      if [ -e "$_stale_path" ]; then
+        if rm -f "$_stale_path"; then
+          echo "  ✓ un-wired: removed stale $(basename "$_stale_path") from $_OC_HOOKS_DEST"
+        else
+          echo "  ⚠ could not remove $_stale_path — advisory, does not fail the roll"
+        fi
+      fi
+    done
+  done
+  # NOTE on hooks/lib-ceo-tool-gate.sh — deliberately KEPT, not deleted.
+  # It is NOT the loop: the loop was the PreToolUse hook (ceo-intent-gate.sh)
+  # plus a non-empty production deny. The lib is now an EMPTY-DENY SHIM
+  # (CEO_GATE_DENY_TOOLS=()) that still supplies two things nobody asked to
+  # remove: CEO_GATE_ALLOW_TOOLS (a GRANT list, the opposite of a gate) and
+  # CEO_GATE_MCP_PROVIDERS (the GHL MCP deny-by-provider, a separate brake that
+  # keeps the router out of client CRM). scripts/grant-ceo-consent.sh sources it,
+  # so deleting it would break that script for the second time in one change.
+  # Its empty array is `set -u`-safe via the "${arr[*]:-}" guards in
+  # ceo_gate_tools() — proven under /bin/bash 3.2.57, which is what the fleet runs.
+  #
+  # Residual production deny on the router: a box rolled BEFORE the retirement can
+  # still carry write/edit/apply_patch in agents.list[].tools.deny. Nothing else
+  # in this roll removes it (the stampers only ADD), so it is cleared here.
+  # Claude settings: BOTH settings.json and settings.local.json are checked.
+  for _cs in "${CLAUDE_SETTINGS_FILE:-$HOME/.claude/settings.json}" \
+             "$HOME/.claude/settings.local.json"; do
+    [ -f "$_cs" ] || continue
+    CEO_UNWIRE_SETTINGS="$_cs" python3 <<'PY' || echo "  ⚠ ceo-intent-gate un-wire from $(basename "$_cs") FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_SETTINGS"]
+TARGET = "ceo-intent-gate.sh"
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ settings.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+hooks = cfg.get("hooks")
+if not isinstance(hooks, dict):
+    sys.exit(0)
+pre = hooks.get("PreToolUse")
+if not isinstance(pre, list):
+    sys.exit(0)
+
+removed = 0
+new_pre = []
+for group in pre:
+    if not isinstance(group, dict):
+        new_pre.append(group)
+        continue
+    # Flat form: the entry itself is the command hook.
+    if TARGET in str(group.get("command", "")):
+        removed += 1
+        continue
+    # Nested/matcher form: {"matcher": ..., "hooks": [{"command": ...}, ...]}
+    inner = group.get("hooks")
+    if isinstance(inner, list):
+        kept = [h for h in inner
+                if TARGET not in str(h.get("command", "") if isinstance(h, dict) else h)]
+        dropped = len(inner) - len(kept)
+        if dropped:
+            removed += dropped
+            if not kept:
+                # the matcher group existed only to run the removed hook
+                continue
+            group = dict(group)
+            group["hooks"] = kept
+    new_pre.append(group)
+
+if not removed:
+    sys.exit(0)
+
+if new_pre:
+    hooks["PreToolUse"] = new_pre
+else:
+    hooks.pop("PreToolUse", None)
+if not hooks:
+    cfg.pop("hooks", None)
+
+# Atomic write + timestamped backup: this is the user's live Claude settings.
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: removed %d ceo-intent-gate PreToolUse entr%s from %s (backup: %s)"
+      % (removed, "y" if removed == 1 else "ies", path, os.path.basename(_bak)))
+PY
+  done
+
+  # Clear any RESIDUAL production deny left on the router by a pre-retirement roll.
+  if [ -f "$OC_JSON" ]; then
+    CEO_UNWIRE_OC_JSON="$OC_JSON" python3 <<'PY' || echo "  ⚠ residual CEO production-deny sweep FAILED — advisory, does not fail the roll"
+import json, os, shutil, sys, time
+
+path = os.environ["CEO_UNWIRE_OC_JSON"]
+# The retired gate's production tools. GHL MCP globs are NOT in this set — that
+# deny is a separate, still-wanted brake and must survive untouched.
+RETIRED = {"write", "edit", "apply_patch", "browser", "canvas", "image", "process"}
+ROUTER_IDS = {"main", "dept-ceo", "ceo", "master-orchestrator",
+              "dept-master-orchestrator", "dept-executive-office"}
+
+try:
+    with open(path) as _f:
+        cfg = json.load(_f)
+except Exception as _e:
+    print("  ⚠ openclaw.json unreadable or not JSON (%s) — left untouched" % _e)
+    sys.exit(0)
+
+def _is_router(ag):
+    if not isinstance(ag, dict):
+        return False
+    if ag.get("is_master") is True:
+        return True
+    if isinstance(ag.get("role"), str) and ag["role"].strip().lower() == "router":
+        return True
+    return ag.get("id") in ROUTER_IDS
+
+cleared = []
+agents = (cfg.get("agents") or {}).get("list") or []
+targets = [a for a in agents if _is_router(a)]
+# agents.defaults can carry the same poison.
+_defaults = (cfg.get("agents") or {}).get("defaults")
+if isinstance(_defaults, dict):
+    targets.append(_defaults)
+
+for ag in targets:
+    t = ag.get("tools")
+    if not isinstance(t, dict) or not isinstance(t.get("deny"), list):
+        continue
+    keep = [x for x in t["deny"] if x not in RETIRED]
+    if len(keep) != len(t["deny"]):
+        gone = sorted(set(t["deny"]) - set(keep))
+        if keep:
+            t["deny"] = keep
+        else:
+            t.pop("deny", None)
+        cleared.append("%s:[%s]" % (ag.get("id", "agents.defaults"), ",".join(gone)))
+
+if not cleared:
+    sys.exit(0)
+
+_bak = "%s.bak.ceo-unwire-%s" % (path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+shutil.copy2(path, _bak)
+_tmp = path + ".tmp.ceo-unwire"
+with open(_tmp, "w") as _f:
+    json.dump(cfg, _f, indent=2)
+    _f.write("\n")
+    _f.flush()
+    os.fsync(_f.fileno())
+os.replace(_tmp, path)
+print("  ✓ un-wired: cleared the retired CEO production deny from %s (backup: %s)"
+      % ("; ".join(cleared), os.path.basename(_bak)))
+PY
   fi
 
   # Cleanup
@@ -6841,25 +7480,64 @@ PYEOF
   _RD_SRC="$ONBOARDING_DIR/extensions/ceo-routing-doctrine"
   _RD_DST="$HOME/.openclaw/extensions/ceo-routing-doctrine"
   if [ -d "$_RD_SRC" ]; then
-    mkdir -p "$HOME/.openclaw/extensions"
-    cp -r "$_RD_SRC" "$_RD_DST" 2>/dev/null || true
-    python3 - "$_RD_DST" <<'PY'
-import json, os, sys
+    mkdir -p "$_RD_DST"
+    # "$_RD_SRC/." -> "$_RD_DST/" copies CONTENTS INTO the dir. The previous form
+    # (cp -r "$_RD_SRC" "$_RD_DST") NESTS once $_RD_DST exists: run 2 produces
+    # ceo-routing-doctrine/ceo-routing-doctrine/, so every weekly roll added
+    # another nested copy despite the "Idempotent" claim above. Verified by
+    # repro: run1 clean, run2 nested; the "/." form is stable across 3+ runs.
+    # Errors are NOT swallowed (no 2>/dev/null || true) — a real copy failure
+    # must be visible instead of silently shipping a box with no doctrine.
+    if ! cp -R "$_RD_SRC/." "$_RD_DST/"; then
+      echo "  ⚠ FAILED to copy ceo-routing-doctrine into $_RD_DST — plugin NOT installed"
+    else
+      python3 - <<'PY'
+import json, os, shutil, time
 cfg_path = os.path.expanduser("~/.openclaw/openclaw.json")
 if os.path.isfile(cfg_path):
-    cfg = json.load(open(cfg_path))
+    with open(cfg_path) as _f:
+        cfg = json.load(_f)
     cfg.setdefault("plugins", {}).setdefault("entries", {})
     cfg["plugins"]["entries"]["ceo-routing-doctrine"] = {
-        "enabled": True
+        "enabled": True,
     }
     cfg.setdefault("plugins", {}).setdefault("load", {}).setdefault("paths", [])
-    p = "/Users/%s/.openclaw/extensions" % (os.environ.get("USER") or "blackceomacmini")
+    # PORTABILITY: expanduser, never "/Users/%s" % USER. The hardcoded /Users
+    # prefix is macOS-only and breaks every Linux box in the fleet (10 VPS +
+    # 2 Contabo, where $HOME is /root or /home/<user>) — load.paths would point
+    # at a directory that does not exist, so the doctrine would never load. It
+    # also planted an operator username in a repo that must stay client-neutral.
+    p = os.path.expanduser("~/.openclaw/extensions")
     if p not in cfg["plugins"]["load"]["paths"]:
         cfg["plugins"]["load"]["paths"].append(p)
-    json.dump(cfg, open(cfg_path, "w"), indent=2)
-    print("ceo-routing-doctrine enabled + load.paths set")
+    # plugins.allow, WHEN PRESENT, is an allowlist. apply-fleet-standards.sh
+    # rewrites it to the currently-BUNDLED plugin ids, and this extension reports
+    # origin:"config" (path-loaded), NOT "bundled" — confirmed against a live
+    # `openclaw plugins list --json`. apply-fleet-standards.sh also runs EARLIER
+    # in a roll than this installer, so without this the doctrine is silently
+    # dropped from the allowlist on a later roll, leaving neither the CEO gate
+    # nor the doctrine. Only EXTEND an allowlist that already exists — never
+    # create one, since an allowlist where none existed disables every other
+    # plugin on the box.
+    _allow = cfg["plugins"].get("allow")
+    if isinstance(_allow, list) and "ceo-routing-doctrine" not in _allow:
+        _allow.append("ceo-routing-doctrine")
+    # ATOMIC WRITE + timestamped backup. The previous form was
+    # json.dump(cfg, open(cfg_path, "w")) — an exception, signal, or full disk
+    # mid-write TRUNCATES the box's openclaw.json and the gateway will not start.
+    _bak = "%s.bak.ceo-doctrine-%s" % (cfg_path, time.strftime("%Y%m%dT%H%M%SZ", time.gmtime()))
+    shutil.copy2(cfg_path, _bak)
+    _tmp = cfg_path + ".tmp.ceo-doctrine"
+    with open(_tmp, "w") as _f:
+        json.dump(cfg, _f, indent=2)
+        _f.write("\n")
+        _f.flush()
+        os.fsync(_f.fileno())
+    os.replace(_tmp, cfg_path)
+    print("ceo-routing-doctrine enabled + load.paths set (config backup: %s)" % os.path.basename(_bak))
 PY
-    echo "  ✓ CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+      echo "  ✓ CEO Routing Doctrine plugin installed + enabled (prompt-injection replacement for CEO gate)"
+    fi
   else
     echo "  ⚠ ceo-routing-doctrine extension not found in repo ($_RD_SRC) — skipping install"
   fi
@@ -7151,28 +7829,56 @@ sys.exit(0 if any(a.get("name") == want for a in apps) else 1)' 2>/dev/null; the
   fi
   if cc_is_valid_checkout "$_CC_DIR" && [ -f "$_CC_RUN_INSTALL" ]; then
     echo ""
-    echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
-    # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
-    # layouts silently refreshed $HOME/projects/command-center instead (or did
-    # nothing). The installer also proves it is on the origin default branch,
-    # contains latest origin/main, and ends on a freshly-built GREEN deployment.
-    if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
-        "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
-      _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
-      _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
-      [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
-      if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
-         || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
-        echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
-        echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
+    # DIRTY-CHECKOUT GUARD (defect fix): `run-full-install.sh --update-only` does
+    # a `git pull`, which is unsafe (and unpredictable) against a checkout that
+    # carries uncommitted local changes. On 2 of 3 pilot boxes THIS is what made
+    # the CC refresh fail below, which used to `exit 2` and abort the ENTIRE
+    # updater before the PENDING-flag lifecycle (further down this script) ever
+    # ran -- a dirty client checkout must never take down the whole update. Fix:
+    # detect dirty BEFORE attempting the pull, skip ONLY the CC refresh, report
+    # it as a WARNING with the exact remediation, and fall through so every
+    # unrelated step below (including the PENDING-flag lifecycle) still runs.
+    # Nothing is stashed, reset, or discarded here -- uncommitted work on a
+    # client box is load-bearing (same rule _cc_currency_probe's own dirty-state
+    # marker already follows). This is intentionally NOT the same code path as
+    # the genuine installer-failure / not-on-origin-main cases below (U005
+    # exit-2 advisory, unchanged) -- those remain fatal-to-this-section by
+    # design; a dirty tree is a different, recoverable, expected condition.
+    _CC_DIRTY_STATUS="$(git -C "$_CC_DIR" status --porcelain 2>/dev/null || true)"
+    if [ -n "$_CC_DIRTY_STATUS" ]; then
+      echo "  ⚠ Command Center checkout at $_CC_DIR has UNCOMMITTED local changes — refresh SKIPPED." >&2
+      echo "    A git pull against a dirty tree is unsafe, so nothing was pulled, reset, or discarded." >&2
+      printf '%s\n' "$_CC_DIRTY_STATUS" | head -n 10 | sed 's/^/      /' >&2
+      echo "    REMEDIATION: on this box, run:" >&2
+      echo "      cd \"$_CC_DIR\" && git status --short" >&2
+      echo "      git stash                    # to park the changes, OR" >&2
+      echo "      git add -A && git commit      # to keep them" >&2
+      echo "    then re-run the updater to pick up the Command Center refresh." >&2
+      echo "    Skills content is current; the rest of this update continues normally." >&2
+    else
+      echo "  Refreshing Command Center web app (CC #108/#109/#112 — git pull + db:push + workspace seed + sync-departments)..."
+      # Pin the exact validated checkout. Without --app-dir, non-canonical fleet
+      # layouts silently refreshed $HOME/projects/command-center instead (or did
+      # nothing). The installer also proves it is on the origin default branch,
+      # contains latest origin/main, and ends on a freshly-built GREEN deployment.
+      if bash "$_CC_RUN_INSTALL" --update-only --app-dir "$_CC_DIR" \
+          "${_CC_SLUG:-}" "${_CC_COMPANY:-}" "${_CC_EMAIL:-}" >>"$LOG_FILE" 2>&1; then
+        _CC_BRANCH="$(git -C "$_CC_DIR" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+        _CC_DEFAULT="$(git -C "$_CC_DIR" symbolic-ref --quiet --short refs/remotes/origin/HEAD 2>/dev/null | sed 's|^origin/||')"
+        [ -n "$_CC_DEFAULT" ] || _CC_DEFAULT="main"
+        if [ "$_CC_BRANCH" != "$_CC_DEFAULT" ] \
+           || ! git -C "$_CC_DIR" merge-base --is-ancestor "origin/$_CC_DEFAULT" HEAD 2>/dev/null; then
+          echo "FATAL: Command Center installer returned success but checkout is not current on origin/$_CC_DEFAULT" >&2
+          echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC checkout not on origin/$_CC_DEFAULT." >&2
+          exit 2
+        fi
+        echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
+      else
+        echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
+        echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
+        echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
         exit 2
       fi
-      echo "  ✓ Command Center app refreshed, current on origin/$_CC_DEFAULT, rebuilt, and health-verified"
-    else
-      echo "FATAL: Command Center refresh failed or rolled back; skills content is current but CC web-app is NOT fully refreshed." >&2
-      echo "       Check $OC_WORKSPACE_DEFAULT/.command-center-install.log and re-run the updater." >&2
-      echo "       ADVISORY: skills CONTENT is current (.onboarding-version stamp written); CC web-app refresh FAILED — check install log." >&2
-      exit 2
     fi
   elif [ -f "$_CC_RUN_INSTALL" ]; then
     # F10 — CC bootstrap on update. The refresh branch above is the path for a
@@ -7436,6 +8142,13 @@ PYEOF
     *"=DEAF"*)                      echo "  ⚠ GHL MCP is listening but ANSWERING NOTHING (stale-dist deafness) -- every agent init will burn the full connectionTimeoutMs until fixed. ${GHL_MCP_STATUS_LINE}" ;;
     *TOKEN_REJECTED*)               echo "  ⚠ GHL rejected the PIT -- the MCP is deliberately NOT running (no restart loop). Rotate/repair GOHIGHLEVEL_API_KEY then re-run scripts/ghl-mcp-autostart.sh. ${GHL_MCP_STATUS_LINE}" ;;
     *PIN_MISMATCH*|*PIN_INVALID*)   echo "  ⚠ GHL MCP refused to start: the vetted commit pin could not be honoured -- an UNPINNED third-party MCP is never started. ${GHL_MCP_STATUS_LINE}" ;;
+    # DEFECT 1 (proven live 2026-08-04): before this STATUS existed, running
+    # ghl-mcp-autostart.sh as root against a checkout owned by a different uid
+    # silently swallowed every git error and surfaced ONLY as the generic
+    # PIN_MISMATCH above -- which sent the operator to re-vet an innocent pin.
+    # This dedicated line names the real remedy so a fleet roll never repeats
+    # that misdiagnosis.
+    *ROOT_OWNERSHIP_MISMATCH*)      echo "  ⚠ GHL MCP refused to start: this roll invoked ghl-mcp-autostart.sh as ROOT against a checkout owned by a different uid -- every git command was refused by git's dubious-ownership guard. FIX: never invoke it as root (VPS/Docker: docker exec -u node <ctr> bash ...; see scripts/activate-loop-protection.sh for the convention). ${GHL_MCP_STATUS_LINE}" ;;
     *STARTED_UNHEALTHY*)            echo "  ⚠ GHL MCP service installed but /health not green yet -- crash-only restart will retry. ${GHL_MCP_STATUS_LINE}" ;;
     *BUILD_FAILED*)                 echo "  ⚠ GHL MCP build failed -- the PREVIOUS dist was left intact. ${GHL_MCP_STATUS_LINE}" ;;
     *)                              echo "  GHL MCP autostart ran. ${GHL_MCP_STATUS_LINE}" ;;
@@ -7488,11 +8201,27 @@ PYEOF
   #   gate == "unknown"        -> the gate could not run; we do NOT know the box
   #                               is clean, so keep the flag (fail toward telling
   #                               the agent there is work, never toward silence)
+  #   _pending_flag_currency_probe fails -> AGENTS.md still carries a PENDING
+  #                               section from a DIFFERENT (or unparsable)
+  #                               version. Neither ONBOARDING_GATE_OK nor
+  #                               NEW_SKILLS_CSV can see this: a box whose
+  #                               EXISTING skills all read qc-passed and grew
+  #                               no new folders can still be sitting on a
+  #                               stale, never-processed flag from a run weeks
+  #                               ago. Its presence is not proof the work
+  #                               happened -- see the probe's own header
+  #                               comment (CONTENT-RECHECK-CONVERGENCE-PROBES,
+  #                               above) for the 3-box pilot that reproduced
+  #                               this: exit 0, stamp advanced, AGENTS.md and
+  #                               MEMORY.md byte-identical, self-heal never ran.
   # ----------------------------------------------------------
+  # >>> UPDATE-PENDING-FLAG-LIFECYCLE-BEGIN (extracted verbatim by
+  #     tests/unit/update-skills-pending-flag-staleness.test.sh)
   _RESUME_NEEDED="no"
   [ "${ONBOARDING_GATE_OK:-unknown}" = "no" ] && _RESUME_NEEDED="yes"       # gate proved unverified skills remain
   [ "${ONBOARDING_GATE_OK:-unknown}" = "unknown" ] && _RESUME_NEEDED="yes"  # gate did not run -- do not claim clean
   [ -n "${NEW_SKILLS_CSV:-}" ] && _RESUME_NEEDED="yes"                      # new numbered skills need activation
+  _pending_flag_currency_probe || _RESUME_NEEDED="yes"                     # a stale/unparsable PENDING section is outstanding
 
   echo ""
   if [ "$_RESUME_NEEDED" = "yes" ]; then
@@ -7502,6 +8231,7 @@ PYEOF
     echo "  Verification gate GREEN and no new skills — removing the UPDATE PENDING flag (and sweeping any stale one)..."
     clear_update_pending_flag
   fi
+  # <<< UPDATE-PENDING-FLAG-LIFECYCLE-END
 
   # ----------------------------------------------------------
   # v17.0.21: make roll-time activation SELF-HEALING. When this roll left work
@@ -7596,6 +8326,93 @@ Paste this to your agent:
 ╚════════════════════════════════════════════════════════════════════╝
 
 BACKUP_BLOCK
+
+  # ----------------------------------------------------------
+  # DEFECT 2 — FINAL VERDICT ON THE GHL MCP TIER-2 RUNTIME.
+  #
+  # Before this, wire_ghl_mcp printed the runtime FATALs and the run exited 0.
+  # A 3-box pilot therefore reported "exit 0, 17-20 skills updated, stamp
+  # advanced" on three boxes that were each carrying 7-10 runtime FATALs. That
+  # is a HOLLOW UPDATE reported as a success, and it is the reason the hardening
+  # "shipped" for a full release without landing anywhere.
+  #
+  # The exit code is 2, not 1, on purpose — see the long note at the latch in
+  # wire_ghl_mcp. 2 is this script's documented "skills content is current, the
+  # box's infrastructure needs attention" code, which fleet drivers already
+  # distinguish from "stamp withheld" (1). Withholding the content stamp over a
+  # pre-existing Tier-2 defect would brick rolls on boxes whose skills are
+  # perfectly current.
+  # ----------------------------------------------------------
+  # ----------------------------------------------------------
+  # U6D-CC-RUNTIME — FINAL VERDICT ON THE COMMAND CENTER RUNTIME-CONFIG
+  # RECONCILER (2026-08-04 fix; NOT the "DEFECT 2" GHL-MCP block above — a
+  # separate defect, same latch/continue/report/exit-non-zero pattern).
+  #
+  # Before this fix, ANY non-zero exit from reconcile_command_center_runtime.py
+  # — including an UNPROVISIONED box (no ZHC identity yet, a KNOWN valid state)
+  # and a genuine "refusing to clobber invalid existing data" case with no
+  # remediation path — set _U6D_CC_CONFIG_FAIL, which withheld the
+  # skills-content stamp entirely (exit 1) on boxes where SKILL38 and the GHL
+  # MCP had both converged perfectly. The unprovisioned case is now a plain
+  # advisory (see _WORKFORCE_INCOMPLETE_NOTES above) and never reaches here.
+  # A genuine reconciliation failure (rc=1: invalid/corrupt existing CC
+  # runtime data, or an I/O error) now latches _U6D_CC_RUNTIME_FATAL instead:
+  # the stamp still writes, and this run's exit code becomes 2 — the SAME
+  # "content current, infrastructure needs attention" code the GHL MCP block
+  # above already uses, so fleet drivers do not need a new code to recognize
+  # it.
+  # ----------------------------------------------------------
+  if [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
+    {
+      echo ""
+      echo "  ============================================================"
+      echo "  UPDATE COMPLETED, BUT THE COMMAND CENTER RUNTIME CONFIG (U6d)"
+      echo "  COULD NOT BE RECONCILED."
+      echo "  Skills content IS current and the version stamp WAS written."
+      printf '%s\n' "${_U6D_CC_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
+      echo ""
+      echo "  The reconciler's own FATAL message above states the exact"
+      echo "  remediation command for this box's specific data problem."
+      echo "  Fix it, then re-run:"
+      echo "    python3 \"\$OC_ROOT\"/skills/23-ai-workforce-blueprint/../shared-utils/reconcile_command_center_runtime.py \\"
+      echo "      --workspace \$OC_WORKSPACE --command-center-dir <your Command Center checkout>"
+      echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
+      echo ""
+      echo "  Exiting 2 = content current, infrastructure needs attention."
+      echo "  This is deliberately NOT 0: a roll that leaves the Command"
+      echo "  Center departments/branding unreconciled has not fully succeeded."
+      echo "  ============================================================"
+      echo ""
+    } >&2
+  fi
+
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ]; then
+    {
+      echo ""
+      echo "  ============================================================"
+      echo "  UPDATE COMPLETED, BUT THE GHL MCP (Tier 2) IS MISCONFIGURED."
+      echo "  Skills content IS current and the version stamp WAS written."
+      echo "  The INSTALLED MCP service does not match the shipped standard:"
+      printf '%s\n' "${GHL_MCP_RUNTIME_DETAIL:-  (no detail captured)}" | sed 's/^/    /'
+      echo ""
+      echo "  autostart on this run: ${GHL_MCP_AUTOSTART_RAN:-unknown}"
+      echo "  Re-run the autostart, then re-assert:"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-autostart.sh"
+      echo "    bash \"\$OC_ROOT\"/scripts/ghl-mcp-assert-runtime.sh"
+      echo "  (\$OC_ROOT is ~/.openclaw on Mac, /data/.openclaw on VPS)"
+      echo ""
+      echo "  Exiting 2 = content current, infrastructure needs attention."
+      echo "  This is deliberately NOT 0: a roll that leaves the MCP"
+      echo "  misconfigured has not succeeded."
+      echo "  ============================================================"
+      echo ""
+    } >&2
+  fi
+
+  if [ "${GHL_MCP_RUNTIME_FATAL:-no}" = "yes" ] || [ "${_U6D_CC_RUNTIME_FATAL:-no}" = "yes" ]; then
+    return 2
+  fi
+  return 0
 }
 
 main "$@"
