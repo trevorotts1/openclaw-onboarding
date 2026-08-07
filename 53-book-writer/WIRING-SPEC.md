@@ -29,12 +29,12 @@ using ONLY these strings. Fleet law: no client names; no Anthropic/`claude-*` id
 
 ## 2. universal-sops craft dir (create)
 
-- **Chosen craft dir name:** `universal-sops/book-craft/`
+- **Chosen craft dir name:** `universal-sops/book-writer-craft/`
   (parallel to the existing `universal-sops/product-bio-craft/`, `email-craft/`, `funnel-craft/`,
   `avatar-craft/`). Seed with a `README.md` + one pipeline SOP file
   `SOP-BOOK-01-TWELVE-CHAPTER-BOOK.md` documenting the gate order + certificate contract (enforcement
   lives in the Python provers; the SOP documents it — enforcement, not description).
-- The SKILL.md and role files reference the shared procedure as `universal-sops/book-craft/`.
+- The SKILL.md and role files reference the shared procedure as `universal-sops/book-writer-craft/`.
 
 ---
 
