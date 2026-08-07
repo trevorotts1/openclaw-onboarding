@@ -361,6 +361,16 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
     _talk_minutes = 30
     _floor_slides = int(__import__("math").ceil(_talk_minutes * 1.3))  # 39
     if with_artifacts:
+        # WORKSTREAM FIX (AF-RESEARCH-REACHES-RENDER): the research anchors that the
+        # weave gate validates in slides_copy.md MUST also reach the RENDER COPY
+        # (slides.json copy[]) — the file build_deck.py bakes into the slides. The
+        # research map below assigns anchor "stat-01".."stat-10" to slides 2..11; those
+        # anchors are woven into the copy[] here (as body copy) so the renderer's
+        # preflight (_chk_research_reaches_render) sees the validated research reach the
+        # deck, exactly as a compliant builder must. Without this the deck renders with
+        # NO research even though the markdown gate passed — the divergence this gate
+        # exists to close.
+        _anchors = {i + 1: f"stat-{i:02d}" for i in range(1, 11)}
         deck_slides = [
             {"slide": i,
              "scene": f"Editorial office scene {i}, documentary photography.",
@@ -368,7 +378,11 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
              # 12 chars (exactly the 12-char floor); the subhead is sized to clear
              # the 20-110 char subhead band and keep the 40-180 char slide-total
              # band in range for every i in this fixture's range.
-             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]}
+             # Research-woven slides (2..11) carry their mapped anchor as a short body
+             # line so AF-RESEARCH-REACHES-RENDER sees the validated research reach the
+             # render copy.
+             "copy": [f"Northwind Co", f"Converting beat {i} into repeatable revenue"]
+                     + ([f"stat-{i-1:02d}"] if i in _anchors else [])}
             for i in range(1, _floor_slides + 1)
         ]
         (root / "slides.json").write_text(json.dumps(deck_slides))
@@ -576,14 +590,29 @@ def make_workdir(with_artifacts: bool, *, rich_prompts: bool = True,
         # subhead copy block so the verbatim-words-baked check (AF-P-VERBATIM)
         # passes for every slide when the CLI threads slides.json into _collect_prompt_problems.
         if rich_prompts:
+            _anchor_for = {i + 1: f"stat-{i:02d}" for i in range(1, 11)}
             for i in range(1, _floor_slides + 1):
                 if short_prompt:
                     text = "short prompt"
                 else:
+                    # WORKSTREAM FIX: the research anchor must ALSO be baked verbatim
+                    # into the rich prompt (AF-P-VERBATIM requires every slide's exact
+                    # copy[] string to appear in the prompt body). Slides 2..11 carry
+                    # their mapped anchor in copy[]; the prompt quotes it too so the
+                    # research actually renders INTO the baked slide.
+                    anchor_block = ""
+                    if i in _anchor_for:
+                        anchor_block = (
+                            f"\nSUPPORTING LINE VERBATIM SLIDE {i}: The slide carries a "
+                            f"research line that reads exactly: '{_anchor_for[i]}'. Render "
+                            f"this exact string letter-for-letter with zero modification, "
+                            f"spelled correctly.\n"
+                        )
                     copy_block = (
                         f"\nHEADLINE VERBATIM SLIDE {i}: The slide subhead reads exactly: "
                         f"'Converting beat {i} into repeatable revenue'. Render this exact "
                         f"string letter-for-letter with zero modification, spelled correctly.\n"
+                        + anchor_block
                     )
                     text = RICH_PROMPT + copy_block
                 (root / "working" / "prompts" / f"slide-{i:02d}.txt").write_text(text)
@@ -4719,7 +4748,7 @@ def test_chk_research_map() -> list:
     """
     failures = []
 
-    def _root(copy_text=None, mapping=None):
+    def _root(copy_text=None, mapping=None, render_slides=None):
         root = Path(tempfile.mkdtemp(prefix="rw_"))
         (root / "working" / "copy").mkdir(parents=True, exist_ok=True)
         (root / "working" / "research").mkdir(parents=True, exist_ok=True)
@@ -4728,6 +4757,9 @@ def test_chk_research_map() -> list:
         if mapping is not None:
             (root / "working" / "research" / "research_map.json").write_text(
                 json.dumps(mapping))
+        if render_slides is not None:
+            (root / "working" / "copy" / "slides.json").write_text(
+                json.dumps(render_slides))
         return root
 
     # pre-copy -> DEFER
@@ -4763,7 +4795,124 @@ def test_chk_research_map() -> list:
     r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=full_map))
     if r != "":
         failures.append(f"RW-F: fully-woven map must PASS, got {r!r}")
+
+    # LOOP2B-1 (AF-RESEARCH-WEAVE condition 3) — the RENDER COPY (slides.json copy[])
+    # must carry the mapped anchors, not just slides_copy.md. slides_copy.md is the
+    # writer's working document; the renderer bakes slides.json copy[] VERBATIM, so a
+    # deck that wove the anchors into slides_copy.md but dropped them from slides.json
+    # would render pixels with NO research while the old gate passed.
+    def _render_slides(anchors_present=True):
+        # Mirror the research map: 10 non-exempt content slides (2..11), each assigned
+        # anchor "{40+i}%" (same as full_map). When anchors_present, weave the anchor
+        # into that slide's copy[]; otherwise leave the copy research-free.
+        out = []
+        for i in range(1, 12):
+            copy = [f"Headline {i}", f"Subhead {i}"]
+            if anchors_present and 2 <= i <= 11:
+                copy.append(f"{40 + i}%")
+            out.append({"slide": i, "scene": f"scene {i}", "copy": copy})
+        return out
+
+    # slides_copy.md weaves every anchor, but slides.json copy[] dropped them -> FAIL
+    # on the render copy (condition 3), even though the old slides_copy.md check passes.
+    r = build_deck._chk_research_map(_root(
+        copy_text=copy_all, mapping=full_map,
+        render_slides=_render_slides(anchors_present=False)))
+    if "AF-RESEARCH-WEAVE" not in r or "RENDER copy" not in r:
+        failures.append(
+            f"RW-G: anchors absent from RENDER copy must FAIL, got {r!r}")
+    # slides_copy.md AND slides.json copy[] both carry the anchors -> PASS
+    r = build_deck._chk_research_map(_root(
+        copy_text=copy_all, mapping=full_map,
+        render_slides=_render_slides(anchors_present=True)))
+    if r != "":
+        failures.append(
+            f"RW-H: anchors present in RENDER copy must PASS, got {r!r}")
+    # no slides.json readable yet -> condition 3 DEFERS (still passes); the absence is
+    # owned upstream by the schema / AF-P1 / slide-count gates.
+    r = build_deck._chk_research_map(_root(copy_text=copy_all, mapping=full_map))
+    if r != "":
+        failures.append(
+            f"RW-I: no render copy yet must DEFER (pass), got {r!r}")
+
     print(f"RESEARCH-WEAVE (Fix #7)      -> {'PASS' if not failures else 'FAIL'}")
+    return failures
+
+
+def test_chk_research_reaches_render() -> list:
+    """LOOP2B-1 (AF-RESEARCH-REACHES-RENDER): the STRICT per-slide gate on the RENDER
+    COPY. The weave gate's condition 3 enforces a 60% DECK-LEVEL floor on the render
+    copy; this gate is the harder guarantee the workstream asked for — FAILS if ANY
+    research-mapped non-exempt slide's anchor token is absent from its slide's render
+    copy[] (slides.json), so research cannot silently fail to reach the baked pixels
+    even on a single mapped slide.
+    - no research map -> DEFER (upstream owns that).
+    - map + no slides.json -> DEFER.
+    - map + slide copy[] missing the anchor -> FAIL (AF-RESEARCH-REACHES-RENDER).
+    - anchor present in the RENDER copy -> PASS.
+    - exempt slide missing the anchor -> PASS (excluded, mirrors the weave gate).
+    - multi-slide partial -> FAIL naming only the offending slide.
+    """
+    failures = []
+
+    def _root(mapping=None, slides=None):
+        root = Path(tempfile.mkdtemp(prefix="rrr_"))
+        (root / "working" / "copy").mkdir(parents=True)
+        (root / "working" / "research").mkdir(parents=True)
+        if mapping is not None:
+            (root / "working" / "research" / "research_map.json").write_text(
+                json.dumps(mapping))
+        sp = None
+        if slides is not None:
+            sp = root / "slides.json"
+            sp.write_text(json.dumps(slides))
+        return root, sp
+
+    mapping = {"slides": [
+        {"slide": 1, "assigned": [{"item_id": "C-01", "anchor": "35%"}]}],
+        "distinct_items_used": 1}
+
+    # no map -> DEFER
+    r, sp = _root()
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-A: no map must DEFER")
+    # map + no slides.json -> DEFER
+    r, sp = _root(mapping=mapping)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-B: map without slides.json must DEFER")
+    # map + slide copy[] missing the anchor -> FAIL
+    sl_no = [{"slide": 1, "scene": "x", "copy": ["Headline", "No research here"]}]
+    r, sp = _root(mapping=mapping, slides=sl_no)
+    res = build_deck._chk_research_reaches_render(r, sp)
+    if "AF-RESEARCH-REACHES-RENDER" not in res:
+        failures.append(f"RRR-C: anchor-absent render copy must FAIL, got {res!r}")
+    # anchor present in render copy -> PASS
+    sl_yes = [{"slide": 1, "scene": "x", "copy": ["Headline", "35% faster growth"]}]
+    r, sp = _root(mapping=mapping, slides=sl_yes)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-D: anchor-in-render-copy must PASS")
+    # exempt slide -> PASS
+    mapping_ex = {"slides": [
+        {"slide": 1, "exempt": "hook", "assigned": [
+            {"item_id": "C-01", "anchor": "35%"}]}], "distinct_items_used": 1}
+    sl_hook = [{"slide": 1, "scene": "x", "copy": ["Hook only"]}]
+    r, sp = _root(mapping=mapping_ex, slides=sl_hook)
+    if build_deck._chk_research_reaches_render(r, sp) != "":
+        failures.append("RRR-E: exempt slide must PASS")
+    # multi-slide partial -> FAIL naming only slide 2
+    mapping_m = {"slides": [
+        {"slide": 1, "assigned": [{"item_id": "C-01", "anchor": "41%"}]},
+        {"slide": 2, "assigned": [{"item_id": "C-02", "anchor": "42%"}]}],
+        "distinct_items_used": 2}
+    sl_m = [{"slide": 1, "scene": "x", "copy": ["41% growth"]},
+            {"slide": 2, "scene": "x", "copy": ["No anchor"]}]
+    r, sp = _root(mapping=mapping_m, slides=sl_m)
+    res = build_deck._chk_research_reaches_render(r, sp)
+    if "AF-RESEARCH-REACHES-RENDER" not in res or "slide 2" not in res:
+        failures.append(f"RRR-F: partial weave must FAIL naming slide 2, got {res!r}")
+    if "slide 1" in res:
+        failures.append("RRR-F2: slide 1 wove its anchor and must NOT be named")
+    print(f"RESEARCH-REACHES-RENDER      -> {'PASS' if not failures else 'FAIL'}")
     return failures
 
 
@@ -4884,6 +5033,8 @@ def main():
     failures += test_chk_font_floor()
     # Fix #7 — research woven across the deck (breadth gate).
     failures += test_chk_research_map()
+    # LOOP2B-1 — research must ALSO reach the RENDER copy (strict per-slide gate).
+    failures += test_chk_research_reaches_render()
     # Fix #11 — pitch-engine + intelligence-engine checks actually bite.
     failures += test_engine_checks()
 
