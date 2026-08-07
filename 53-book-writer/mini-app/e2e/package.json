@@ -1,0 +1,19 @@
+{
+  "name": "book-writer-mini-app-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Book Writer mini-app U18 — Playwright e2e suite (T1-T10). Headless + offline: a local stub Worker serves the real SPA (U05 pages/index.html + app.js) and a stub GHL endpoint records writes per client for the browser-level isolation proof (T10). NO real creds/hosts; NO Anthropic ids; NO {{...}} placeholders.",
+  "scripts": {
+    "test": "playwright test",
+    "test:headed": "playwright test --headed",
+    "test:install": "playwright install chromium",
+    "selftest": "node harness/server.mjs --selftest"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0"
+  }
+}
