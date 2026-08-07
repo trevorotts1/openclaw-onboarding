@@ -73,6 +73,15 @@ GHL_MEDIA_FOLDER_PATH = "/medias/folder"   # Skill 48 addition: per-run media fo
 GHL_MEDIA_LIST_PATH = "/medias/files"      # read-only media-library list (QC list-back)
 GHL_MEDIA_VERSION = "2021-07-28"
 
+# v3 media tier — VIDEO uploads. GHL's v3 media API grants a larger quota for VIDEO
+# files (500MB) than the regular "2021-07-28" tier (25MB). The tier is selected by the
+# ``Version`` request header: ``v3`` for the video tier (with the file part declared
+# ``Content-Type: video/mp4``), ``2021-07-28`` for the regular tier. NOT the operator's
+# numbers — these are GHL's published per-tier caps (25MB image/regular, 500MB video).
+GHL_MEDIA_VERSION_V3 = "v3"
+GHL_VIDEO_MAX_BYTES = 500 * 1024 * 1024  # 500MB — GHL v3 video tier ceiling
+GHL_VIDEO_MIME = "video/mp4"
+
 # PNG magic bytes — a real raster starts with these. A non-PNG upload is a hard FAIL
 # (never stubbed).
 PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
@@ -249,13 +258,22 @@ def verify_png(path: str) -> bool:
 
 # ── upload_media — PROVEN services.* Bearer-PIT media upload (bare Python) ─────
 
-def _multipart_encode(fields: dict[str, str], file_field: str, file_path: str) -> tuple[bytes, str]:
+def _multipart_encode(
+    fields: dict[str, str],
+    file_field: str,
+    file_path: str,
+    file_content_type: str | None = None,
+) -> tuple[bytes, str]:
     """Encode ``multipart/form-data`` for the media upload (one file + text fields).
 
     Returns ``(body_bytes, content_type)``. Mirrors the curl ``-F`` form the proven
     shell script sends: ``file=@<path>``, ``locationId``, ``name``, ``hosted`` (and
     optional ``parentId``). A small, dependency-free encoder so the upload runs on
-    stock Python (no ``requests``)."""
+    stock Python (no ``requests``).
+
+    ``file_content_type`` optionally FORCES the file part's ``Content-Type`` (used by
+    the v3 video path so an MP4 is declared ``video/mp4`` even when the extension is
+    ambiguous); when omitted the type is guessed from the filename as before."""
     boundary = f"----ghlmedia{uuid.uuid4().hex}"
     crlf = b"\r\n"
     out: list[bytes] = []
@@ -266,7 +284,7 @@ def _multipart_encode(fields: dict[str, str], file_field: str, file_path: str) -
         out.append(str(val).encode("utf-8"))
     # The file part.
     fname = os.path.basename(file_path)
-    ctype = mimetypes.guess_type(fname)[0] or "application/octet-stream"
+    ctype = file_content_type or (mimetypes.guess_type(fname)[0] or "application/octet-stream")
     with open(file_path, "rb") as f:
         file_bytes = f.read()
     out.append(b"--" + boundary.encode())
@@ -291,6 +309,8 @@ def upload_media(
     timeout: int = 300,
     opener: Callable[[urllib.request.Request, int], Any] | None = None,
     require_png: bool = True,
+    file_content_type: str | None = None,
+    version: str | None = None,
 ) -> dict:
     """Upload one media file to the GHL media library and return ``{fileId, url}``.
 
@@ -328,6 +348,15 @@ def upload_media(
             keeps every existing caller's behavior byte-for-byte; ONLY a caller that has
             already proven the artifact is a legitimate non-image deliverable passes
             ``require_png=False`` behind its own fail-closed delivery gate.
+        file_content_type: OPTIONAL override for the multipart file part's
+            ``Content-Type`` (e.g. ``video/mp4`` for a v3 video upload so the API treats
+            the file as video regardless of extension). When omitted the type is guessed
+            from the filename — the pre-existing behavior is unchanged.
+        version: OPTIONAL ``Version`` request-header override. The media-library
+            "regular" tier is ``2021-07-28`` (the default — unchanged); a v3 video
+            upload passes ``"v3"`` so the API grants the larger v3 video quota (500MB)
+            instead of the 25MB regular-media cap. When omitted the pre-existing
+            ``Version: 2021-07-28`` header is sent.
 
     Returns:
         ``{fileId, url, name, local_path, http}`` — ``url`` is the public GCS URL.
@@ -363,11 +392,12 @@ def upload_media(
     if parent_id:
         fields["parentId"] = parent_id  # documented folder field is parentId
 
-    body, content_type = _multipart_encode(fields, "file", png_path)
+    body, content_type = _multipart_encode(fields, "file", png_path,
+                                           file_content_type=file_content_type)
     url = GHL_SERVICES_ORIGIN.rstrip("/") + GHL_MEDIA_UPLOAD_PATH
     req = urllib.request.Request(url, data=body, method="POST")
     req.add_header("Authorization", f"Bearer {pit}")
-    req.add_header("Version", GHL_MEDIA_VERSION)
+    req.add_header("Version", version or GHL_MEDIA_VERSION)
     req.add_header("User-Agent", _GHL_UA)  # Cloudflare 1010 bot-block fix
     req.add_header("Content-Type", content_type)
 
@@ -601,6 +631,9 @@ __all__ = [
     "GHL_MEDIA_FOLDER_PATH",
     "GHL_MEDIA_LIST_PATH",
     "GHL_MEDIA_VERSION",
+    "GHL_MEDIA_VERSION_V3",
+    "GHL_VIDEO_MAX_BYTES",
+    "GHL_VIDEO_MIME",
     "PNG_MAGIC",
     "resolve_location_pit",
     "resolve_location_id",

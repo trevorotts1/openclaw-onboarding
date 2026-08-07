@@ -563,21 +563,34 @@ def main():
         sys.exit("FAIL: chunking dropped text (coverage < 95%). Aborting before synthesis.")
 
     # Assemble ordered render plan: interleave speech chunk paths and silence paths.
+    # FIX (chunk-drop): a single speech SEGMENT can chunk into MULTIPLE pieces
+    # (chunk_text splits on sentence/paragraph boundaries up to --chunk-chars).
+    # The old loop consumed ONE chunk per speech segment via next(speech_iter),
+    # silently DROPPING every chunk after the first in each segment — the concat
+    # was far shorter than the speech and the duration gate tripped. We now
+    # expand each segment into its list of chunks and render EVERY chunk in order.
     render_items: list = []      # ("file", path) for concat
-    speech_iter = iter(speech_chunks)
-    chunk_index = 0
+    ordered_speech: list = []    # one entry per speech chunk, in original order
     for kind, payload in items:
-        if kind == "silence":
+        if kind == "speech":
+            ordered_speech.extend(chunk_text(payload, args.chunk_chars))
+        else:
+            ordered_speech.append(("silence", payload))
+    chunk_index = 0
+    n_speech_rendered = 0
+    for entry in ordered_speech:
+        if isinstance(entry, tuple) and entry[0] == "silence":
+            seconds = entry[1]
             sp = os.path.join(workdir, f"silence_{chunk_index:03d}.mp3")
-            make_silence_mp3(payload, sp, args.bitrate)
+            make_silence_mp3(seconds, sp, args.bitrate)
             _sp_reason = verify_mp3(sp)
             if _sp_reason:
                 sys.exit(f"FAIL (MP3 PROBE): silence segment is not a valid MP3 ({_sp_reason}).")
             render_items.append(("file", sp))
             print(f"  [silence {len([r for r in render_items if r[1].startswith('silence_')]):02d}] "
-                  f"{payload:.1f}s -> {os.path.basename(sp)}", flush=True)
+                  f"{seconds:.1f}s -> {os.path.basename(sp)}", flush=True)
         else:
-            c = next(speech_iter)
+            c = entry
             cp = os.path.join(workdir, f"chunk_{chunk_index:03d}.mp3")
             chunk_index += 1
             n = synth_chunk(c, args.api_key, args.voice_id, args.model, args.bitrate, cp,
@@ -594,7 +607,8 @@ def main():
                 sys.exit(f"FAIL (MP3 PROBE): chunk {chunk_index} is not a valid MP3 ({_mp3_reason}). "
                          f"Aborting before concat — a corrupt chunk must never reach the deliverable.")
             render_items.append(("file", cp))
-            print(f"  [{chunk_index}/{len(speech_chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
+            n_speech_rendered += 1
+            print(f"  [{n_speech_rendered}/{len(speech_chunks)}] {len(c)} chars -> {os.path.basename(cp)} ({n:,} bytes)", flush=True)
 
     chunk_paths = [p for _, p in render_items]
     raw_out = os.path.join(workdir, "concat_raw_full.mp3")

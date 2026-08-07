@@ -211,6 +211,16 @@ def parse_build_deck():
 def _extract_deliverable_keys_ast(tree):
     """Walk the module-level AST to find DELIVERABLES_REQUIRED = [...] and
     extract the string values of every 'key' keyword in the list of dicts.
+
+    Mirrors the manifest-side D1/D2 filter: a deliverable dict carrying
+    `produced_later: True` (Feature L2-G — e.g. webinar_mp4 at P9.6-WEBINAR-VIDEO,
+    order 8.92) is produced AFTER build_deck's P8 assembly postflight gate and is
+    skipped by that gate, so it is intentionally NOT part of the D1/D2 lockstep set
+    on EITHER side. build_deck.py still declares it in DELIVERABLES_REQUIRED (with
+    produced_later: True) so the postflight skips it explicitly rather than treating
+    it as missing; sync_check therefore excludes it from the cross-checked key set
+    exactly as the manifest-side code does, so the two sides cannot drift.
+
     Returns a set of key strings, or None if the constant is not found."""
     for node in tree.body:
         if not isinstance(node, ast.Assign):
@@ -224,10 +234,15 @@ def _extract_deliverable_keys_ast(tree):
                 for elt in val.elts:
                     if not isinstance(elt, ast.Dict):
                         continue
+                    # Collect the key/value pairs once, then decide membership:
+                    # a produced_later:True entry is excluded from the lockstep set.
+                    kv = {}
                     for k, v in zip(elt.keys, elt.values):
-                        if (isinstance(k, ast.Constant) and k.value == "key"
-                                and isinstance(v, ast.Constant)):
-                            keys.add(v.value)
+                        if isinstance(k, ast.Constant) and isinstance(v, ast.Constant):
+                            kv[k.value] = v.value
+                    key = kv.get("key")
+                    if key and not kv.get("produced_later"):
+                        keys.add(key)
                 return keys if keys else None
     return None
 
@@ -741,9 +756,16 @@ def run_checks(manifest, bd, ruleset_codes, role_stems, sop_files):
     # the key set in build_deck.py's DELIVERABLES_REQUIRED list.
     # This is a bidirectional lockstep on the output artifact set so a deliverable
     # added to the manifest but missing from the gate (or vice versa) auto-fails.
+    # EXCEPTION (Feature L2-G): a deliverable marked `produced_later: true` is produced
+    # by a phase that runs AFTER build_deck's P8 assembly postflight (e.g. webinar_mp4
+    # at P9.6-WEBINAR-VIDEO, order 8.92). build_deck's postflight gate MUST NOT require
+    # it (that gate runs at assembly, before the later phase), so it is intentionally
+    # absent from build_deck.DELIVERABLES_REQUIRED and is NOT subject to D1. It is still
+    # wired into build_bundle_files / client_package_files and gated by
+    # fix_bundle_complete.py + delivery_gate.py, which run at closeout.
     manifest_deliverable_keys = set()
     for d in manifest.get("deliverables_required", []):
-        if isinstance(d, dict) and "key" in d:
+        if isinstance(d, dict) and "key" in d and not d.get("produced_later"):
             manifest_deliverable_keys.add(d["key"])
 
     bd_deliverable_keys = bd.get("deliverable_keys") or set()
