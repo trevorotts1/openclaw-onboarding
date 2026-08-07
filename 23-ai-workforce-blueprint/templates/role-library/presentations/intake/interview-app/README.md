@@ -49,8 +49,9 @@ On Submit the app builds a dept-format intake record and:
 1. **stores the answers** — POST to the Worker `/api/intake` (or a client-side
    `intake-<session>.json` download when no sink is wired);
 2. **triggers the department** — `bridge/intake_bridge.py ingest` stamps the run
-   dir (`working/copy/intake.json` + `working/interview/intake_ledger.json`) and
-   calls `cc_board.ingest_deck_task` → Command Center kanban card
+   dir (`working/copy/intake.json` + `working/interview/intake_ledger.json` +
+   `working/interview/intake_transcript.json` — the GATE 0b conversation trace)
+   and calls `cc_board.ingest_deck_task` → Command Center kanban card
    (`department_slug: presentations`), OR the Worker `/api/dept-start` POSTs
    `/api/tasks/ingest` directly.
 

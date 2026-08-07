@@ -54,6 +54,31 @@ class TestIntakeWriter(unittest.TestCase):
             self.assertEqual(ledger["status"], "complete")
             self.assertEqual(ledger["entries"]["offer_name"]["value"], "X")
 
+    def test_writes_transcript_gate_0b(self):
+        """GATE 0b requires a real, non-trivial conversation trace."""
+        raw = {"answers": {
+            "offer_name": "The Momentum Method",
+            "transformation_promise": "stuck -> unstoppable",
+            "audience": "women entrepreneurs",
+            "cta_action": "book a call",
+            "tone": "Inspirational",
+            "final_price": "$497",
+            "want_sales_checkout": "yes",
+        }}
+        intake = iw.assemble_intake(raw, run_id="R3")
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = pathlib.Path(tmp) / "runs" / "R3"
+            tpath = iw.write_transcript(run_dir, intake)
+            self.assertTrue(tpath.exists())
+            raw_bytes = tpath.read_bytes()
+            self.assertGreaterEqual(len(raw_bytes), 200,
+                                    "GATE 0b requires intake_transcript.json >= 200 bytes")
+            tr = json.loads(raw_bytes.decode("utf-8"))
+            self.assertTrue(tr["completed"])
+            self.assertGreaterEqual(tr["turn_count"], 1)
+            self.assertEqual(tr["turns"][0]["question_id"], "offer_name")
+            self.assertEqual(tr["turns"][0]["answer"], "The Momentum Method")
+
     def test_passthrough_intake_shape_wins(self):
         shaped = {
             "intake": {
