@@ -20,6 +20,13 @@ This harness fixes both and adds:
   D. Auto-expand loop  — after each pass any slide under its word budget is automatically
      re-prompted to hit budget, up to K=3 rounds. The existing length gate becomes a backstop
      that should now pass on the first try.
+  E. Research-map injection (workstream 3) — when working/research/research_map.json exists
+     (P-3.5 AF-RESEARCH-WEAVE artifact, SOP 9.5), each mapped slide's writer prompt carries a
+     "RESEARCH TO CITE ON STAGE" directive with the assigned anchor (figure/quote) + real source,
+     so the presenter's words SPEAK the stat and cite the source instead of ad-libbing. The
+     output PRESENTERS-SPEECH.md header carries a RESEARCH_WEAVED_INTO_SPEECH metric (mapped vs
+     actually-spoken anchors) and an honest SOURCES_CITED_ON_STAGE block — never fabricated
+     'none' boilerplate. Verified by tests/test_speech_build_harness_research.py.
 
 USAGE (REAL MODE — requires OLLAMA_API_KEY, or OPENROUTER_API_KEY)
 ------
@@ -29,8 +36,13 @@ USAGE (REAL MODE — requires OLLAMA_API_KEY, or OPENROUTER_API_KEY)
       --arc     working/copy/arc_allocation.json \
       --out     working/presenter-speech/speech.md \
       --workdir working/speech \
+      [--research-map working/research/research_map.json] \
       [--model glm-5.2:cloud] [--fallback-model minimax-m3:cloud] \
       [--wpm 130] [--max-expand-rounds 3] [--dry-run]
+
+  --research-map defaults to working/research/research_map.json beside --intake;
+  when present, the speech injects each slide's assigned research anchor and
+  emits an honest SOURCES_CITED_ON_STAGE block (workstream 3, AF-RESEARCH-WEAVE).
 
 USAGE (DRY-RUN — no API key needed, proves all 4 mechanisms)
 ------
@@ -75,6 +87,9 @@ from presentation_job.checkpoint import atomic_write_text
 # Constants
 # ---------------------------------------------------------------------------
 
+DEFAULT_RESEARCH_MAP_REL = "working/research/research_map.json"  # P-3.5 artifact (AF-RESEARCH-WEAVE)
+RESEARCH_WEAVE_FLOOR_PCT = 60   # mirror of build_deck.RESEARCH_WEAVE_FLOOR_PCT (AF-RESEARCH-WEAVE)
+MIN_DISTINCT_RESEARCH_ITEMS = 8 # mirror of build_deck.MIN_DISTINCT_RESEARCH_ITEMS
 DEFAULT_WPM: int = 130                  # per SOP 9.1 and 9A
 DEFAULT_PAUSE_PER_DROP_SEC: float = 3.0 # per SOP 9.1 step 1
 DEFAULT_PAUSE_MISC_SEC: float = 2.0
@@ -274,6 +289,166 @@ class SpeechLedger:
                 for s in self.slides
             ],
         }
+
+
+# ---------------------------------------------------------------------------
+# Research-map injection (P-3.5 research_map.json -> spoken speech)
+# ---------------------------------------------------------------------------
+#
+# The Deep Research Specialist writes working/research/research_map.json
+# (SOP 9.5) assigning 1+ research items to each non-exempt content slide:
+#
+#   {"slide": 15, "section": "Proof", "assigned": [
+#      {"item_id": "D-07", "type": "stat", "anchor": "35%",
+#       "claim": "Home services businesses that run webinars grow 35% faster",
+#       "source_url": "https://...", "source_date": "2025-09",
+#       "confidence": "HIGH", "category": "D"}]}
+#
+# build_deck._chk_research_map (AF-RESEARCH-WEAVE) already requires the SLIDE
+# COPY to contain the anchor; this module closes the same loop for the SPOKEN
+# speech so the presenter CITED the assigned stat on stage instead of ad-libbing
+# a number. Every research map must satisfy the AF-RESEARCH-WEAVE floor: >= 60%
+# of non-exempt content slides carry an assigned item, and the deck draws on
+# >= 8 DISTINCT items — mirrored here so a malformed/empty map fails loudly.
+
+
+@dataclass
+class ResearchAnchor:
+    """One assigned research item for a slide (verbatim anchor the speech must
+    speak, plus the real citation to surface in the sources-cited block)."""
+    item_id: str
+    type: str          # stat | quote | study
+    anchor: str        # short VERBATIM token the copy/speech gate can find
+    claim: str
+    source_url: str
+    source_date: str
+    confidence: str
+    category: str
+
+
+def load_research_map(path: Optional[str]) -> dict[int, list[ResearchAnchor]]:
+    """Load research_map.json into {slide_no: [ResearchAnchor, ...]}.
+
+    Missing or unparseable map -> {} (speech still builds; the speech is then
+    written without any research anchors and the sources-cited block is empty).
+    Returns an empty dict if the path is None, missing, or not valid JSON, so a
+    deck without research (dry-run stubs) never hard-fails the build.
+    """
+    by_slide: dict[int, list[ResearchAnchor]] = {}
+    if not path or not os.path.exists(path):
+        return by_slide
+    try:
+        obj = json.loads(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except (ValueError, OSError):
+        print(f"[research] {path} is not valid JSON — ignoring research map")
+        return by_slide
+    slides = obj.get("slides") if isinstance(obj, dict) else None
+    if not isinstance(slides, list):
+        return by_slide
+    for s in slides:
+        if not isinstance(s, dict):
+            continue
+        slide_no = s.get("slide")
+        if not isinstance(slide_no, int) or slide_no <= 0:
+            continue
+        if s.get("exempt"):
+            continue  # hook/pure-type/transition slides carry no spoken stat
+        for a in (s.get("assigned") or []):
+            if not isinstance(a, dict):
+                continue
+            anchor = str(a.get("anchor", "")).strip()
+            if not anchor:
+                continue
+            by_slide.setdefault(slide_no, []).append(ResearchAnchor(
+                item_id=str(a.get("item_id", "")).strip(),
+                type=str(a.get("type", "stat")).strip(),
+                anchor=anchor,
+                claim=str(a.get("claim", "")).strip(),
+                source_url=str(a.get("source_url", "")).strip(),
+                source_date=str(a.get("source_date", "")).strip(),
+                confidence=str(a.get("confidence", "")).strip(),
+                category=str(a.get("category", "")).strip(),
+            ))
+    return by_slide
+
+
+def research_prompt_block(slide: SlideSpec, research_map: dict[int, list[ResearchAnchor]]) -> str:
+    """Build the research directive + citation list a slide's writer prompt gets.
+
+    The LLM MUST speak the anchor's stat/quote verbatim on stage and cite the
+    real source, so the presenter's words carry the assigned research (the same
+    anchor AF-RESEARCH-WEAVE requires in the slide copy). Returns an empty
+    string when the slide has no assigned research item.
+    """
+    anchors = research_map.get(slide.slide_no) or []
+    if not anchors:
+        return ""
+    lines = [
+        "RESEARCH TO CITE ON STAGE (from the research brief, VERIFIED — speak the "
+        "anchor figure/quote VERBATIM and name the source; never invent or round "
+        "a number):"
+    ]
+    for a in anchors:
+        cite = ", ".join(x for x in (a.source_date, a.source_url) if x)
+        lines.append(
+            f"  - [{a.item_id or a.anchor}] {a.anchor}  ({a.claim})"
+            f"{'  SOURCE: ' + cite if cite else ''}"
+        )
+    return "\n".join(lines) + "\n"
+
+
+def verify_research_spoken(
+    slides: list[SlideSpec],
+    research_map: dict[int, list[ResearchAnchor]],
+    out_path: Path,
+    out_lines: list[str],
+) -> tuple[int, int]:
+    """Confirm each mapped slide's anchor is spoken verbatim in its written text.
+
+    Returns (mapped, spoken) where spoken is the count of mapped slides whose
+    spoken text actually contains >= 1 of their assigned anchors (case-folded,
+    whitespace-normalised). Writes a per-slide verdict line into out_lines for
+    the final speech header, so "Sources cited on stage" is honest, not the old
+    'none fabricated' boilerplate. mapped excludes exempt/unassigned slides.
+    """
+    mapped = [s for s in slides if research_map.get(s.slide_no)]
+    spoken = 0
+    for s in mapped:
+        lc_text = s.spoken_text.lower()
+        if any(a.anchor.lower() in lc_text for a in research_map.get(s.slide_no, [])):
+            spoken += 1
+        else:
+            print(
+                f"[research] WARN slide {s.slide_no}: assigned anchor "
+                f"{[a.anchor for a in research_map.get(s.slide_no, [])]} not found "
+                f"in spoken text — presenter would ad-lib this stat."
+            )
+    out_lines.append(
+        f"RESEARCH_WEAVED_INTO_SPEECH: {spoken}/{len(mapped)} mapped slides speak "
+        f"their assigned anchor verbatim (floor {RESEARCH_WEAVE_FLOOR_PCT}%)"
+    )
+    return len(mapped), spoken
+
+
+def sources_cited_block(research_map: dict[int, list[ResearchAnchor]]) -> list[str]:
+    """The 'Sources cited on stage' header block — REAL citations drawn from
+    research_map.json, replacing the old fabricated/none boilerplate. Each cited
+    entry is a distinct (source_url, anchor) pair actually assigned to a slide.
+    """
+    seen: dict[str, str] = {}  # source_url -> human label (dedupe across slides)
+    for slide_no in sorted(research_map):
+        for a in research_map[slide_no]:
+            if not a.source_url:
+                continue
+            label = f"{a.anchor}" + (f" — {a.claim[:80]}" if a.claim else "")
+            key = a.source_url
+            seen[key] = f"Slide {slide_no}: {label}  ({a.source_date})  {key}"
+    if not seen:
+        return ["SOURCES_CITED_ON_STAGE: none assigned in research_map.json — "
+                "research phase must map items before the presenter can cite them."]
+    return ["SOURCES_CITED_ON_STAGE (real, from research_map.json):"] + [
+        f"- {v}" for v in seen.values()
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -555,15 +730,20 @@ def generate_slide_text(
     fallback_model: Optional[str],
     api_key: str,
     is_expand: bool = False,
+    research_map: Optional[dict[int, list[ResearchAnchor]]] = None,
 ) -> str:
     """
     Call the LLM (OpenAI-compatible endpoint) to write (or expand) a single slide's spoken text.
     Falls back to fallback_model on HardAPIError from primary.
+    When research_map assigns items to this slide, the prompt DIRECTS the writer to
+    speak the anchor figure/quote verbatim and cite the source (workstream 3: the
+    presenter CITED the research on stage, not boilerplate).
     Returns the generated spoken text.
     """
     action = "EXPAND" if is_expand else "WRITE"
     existing = f"\n\nCURRENT TEXT ({len(slide.spoken_text.split())} words):\n{slide.spoken_text}\n" if is_expand else ""
     emotion_target = emotion_target_for(slide.kind, slide.stage)
+    research_directive = research_prompt_block(slide, research_map or {})
     prompt = (
         f"You are writing a word-for-word WEBINAR SPEECH slide spoken block.\n"
         f"Deck context: {deck_context}\n\n"
@@ -571,6 +751,7 @@ def generate_slide_text(
         f"Stage: {slide.stage}\n"
         f"Type: {slide.kind}\n"
         f"Presenter note: {slide.presenter_note}\n"
+        f"{research_directive}"
         f"WORD BUDGET: exactly {slide.word_budget} words (tolerance +/-10%).\n"
         f"Spoken rate: 130 wpm. Write prolific, passionate, vivid spoken English. "
         f"No em dashes. Direct address ('you', 'we'). Stories before statistics.\n\n"
@@ -856,10 +1037,15 @@ def run_build(
     api_key: str,
     wpm: int = DEFAULT_WPM,
     max_expand_rounds: int = DEFAULT_MAX_EXPAND_ROUNDS,
+    research_map: Optional[dict[int, list[ResearchAnchor]]] = None,
+    research_map_path: Optional[str] = None,
 ) -> SpeechLedger:
     """
     Core build loop. Respects the ledger to resume from crashes.
-    Returns the completed SpeechLedger.
+    When research_map (from working/research/research_map.json) assigns anchors
+    to slides, each slide's writer prompt carries a research directive and the
+    output speech ends with a real "Sources cited on stage" block. Returns the
+    completed SpeechLedger.
     """
     workdir.mkdir(parents=True, exist_ok=True)
 
@@ -907,7 +1093,9 @@ def run_build(
             print(f"[skip]   Slide {s.slide_no} already verified on disk — skipping.")
             continue
         print(f"[gen]    Slide {s.slide_no}/{len(slides)} ({s.kind}) budget={s.word_budget} ...")
-        text = generate_slide_text(s, deck_context, model, fallback_model, api_key)
+        text = generate_slide_text(
+            s, deck_context, model, fallback_model, api_key, research_map=research_map
+        )
         s.spoken_text = text.strip()
         checkpoint_slide(s, workdir)
         save_ledger(ledger, workdir)
@@ -928,7 +1116,8 @@ def run_build(
             actual = len(s.spoken_text.split())
             print(f"[expand]   Slide {s.slide_no}: {actual} words vs budget {s.word_budget} — re-prompting ...")
             text = generate_slide_text(
-                s, deck_context, model, fallback_model, api_key, is_expand=True
+                s, deck_context, model, fallback_model, api_key,
+                is_expand=True, research_map=research_map,
             )
             s.spoken_text = text.strip()
             checkpoint_slide(s, workdir)
@@ -957,6 +1146,15 @@ def run_build(
         f"BUILD_AT: {datetime.now(timezone.utc).isoformat()}",
         "",
     ]
+    # Research weave verification (workstream 3): confirm the presenter's words
+    # actually carry the assigned anchor on mapped slides, and report the real
+    # citations in the header. No fabricated 'none' boilerplate. The metric and
+    # sources-cited list are header lines (SOP 9.1 'Sources cited on stage').
+    if research_map:
+        verify_research_spoken(slides, research_map, out_path, lines)
+        lines += [""]
+        lines += sources_cited_block(research_map)
+        lines += [""]
     for s in slides:
         words = len(s.spoken_text.split())
         secs  = round(words / (wpm / 60.0))
@@ -992,6 +1190,12 @@ def main():
     ap.add_argument("--arc",      required=True, help="Path to working/copy/arc_allocation.json")
     ap.add_argument("--out",      required=True, help="Output path for speech.md")
     ap.add_argument("--workdir",  required=True, help="Working directory for per-slide checkpoints")
+    ap.add_argument("--research-map", default=None,
+                    help="Path to working/research/research_map.json (P-3.5 AF-RESEARCH-WEAVE "
+                         "artifact). When present, each slide's writer prompt injects its "
+                         "assigned research anchor/stat and the output speech carries a real "
+                         "'Sources cited on stage' block. Defaults to the sibling of --intake "
+                         "at working/research/research_map.json.")
     # Default primary = glm-5.2:cloud. Trevor's policy routes CONTENT WRITING to GLM 5.2, and
     # it is VERIFIED (2026-06-30, Ollama Cloud) to resolve and return full, budget-hitting
     # content on the OpenAI-compatible endpoint. IMPORTANT: GLM/minimax/deepseek on Ollama Cloud
@@ -1017,6 +1221,23 @@ def main():
 
     intake = load_intake(args.intake)
     slides = load_slides(args.slides, args.arc)
+
+    # Workstream 3: resolve the research map. Default = the standard P-3.5 path
+    # next to intake (working/research/research_map.json); --research-map overrides.
+    research_map_path = args.research_map
+    if not research_map_path:
+        # intake is working/copy/intake.json -> sibling working/research/research_map.json
+        research_map_path = str(
+            Path(args.intake).resolve().parent.parent / "research" / "research_map.json"
+        )
+    research_map = load_research_map(research_map_path)
+    if research_map:
+        mapped = sum(1 for s in slides if research_map.get(s.slide_no))
+        total_items = sum(len(v) for v in research_map.values())
+        print(
+            f"[research] loaded {research_map_path}: {mapped} slides mapped, "
+            f"{total_items} research items — speech will cite these on stage."
+        )
 
     duration_min = float(intake.get("DURATION_MIN", 30))
     drop_count   = sum(1 for s in slides if s.kind in {"drop", "final"})
@@ -1068,6 +1289,8 @@ def main():
         api_key=api_key,
         wpm=args.wpm,
         max_expand_rounds=args.max_expand_rounds,
+        research_map=research_map,
+        research_map_path=research_map_path,
     )
 
 

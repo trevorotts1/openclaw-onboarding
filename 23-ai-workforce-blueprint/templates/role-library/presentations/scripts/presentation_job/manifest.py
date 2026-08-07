@@ -254,10 +254,12 @@ def _as_list(v: Any) -> List[str]:
 # webinar video phase (ffmpeg Ken Burns + xfade slideshow + GHL v3 500MB video upload,
 # scripts/build_webinar_video.py) + AF-WEBINAR-SIZE autofail — raising manifest_version
 # to 40 in the same commit.
-MIN_MANIFEST_VERSION = 43  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
+MIN_MANIFEST_VERSION = 44  # MUST EQUAL PIPELINE-MANIFEST.json's manifest_version. U019 step 8
     # (42 = WORKBOOK REDESIGN 2026-08-07: AF-WORKBOOK-PROMPT-NO-CONTENT / AF-WORKBOOK-EMPTY /
     #  AF-WORKBOOK-BOTH autofails + the P8.25-WORKBOOK phase rework)
     # (43 = F-H WEBINARIZED SPEECH 2026-08-07: P9-SPEECH-WEBINAR-INTRO phase + AF-WEBINAR-INTRO)
+    # (44 = LOOP2B-1 2026-08-07: AF-RESEARCH-REACHES-RENDER autofail + _chk_research_reaches_render
+    #  — research validated in slides_copy.md must reach the RENDER copy slides.json copy[])
 MIN_MANIFEST_PHASES = 26
 
 def _assert_manifest_current(path: Path) -> None:

@@ -6229,12 +6229,12 @@ def check_font_floor(run_dir: Path) -> str:
     return ""
 
 
-def _chk_research_map(run_dir: Path) -> str:
+def _chk_research_map(run_dir: Path, slides_path: Optional[Path] = None) -> str:
     """AF-RESEARCH-WEAVE — research woven ACROSS the deck, not funnelled to one slide.
 
     The R3 breadth gate. CONDITIONAL: defers (returns "") until copy exists
     (working/copy/slides_copy.md). Once copy exists it requires
-    working/research/research_map.json and enforces THREE independent conditions:
+    working/research/research_map.json and enforces FOUR independent conditions:
 
       1. MAP EXISTS + BREADTH — the map assigns >= 1 real research item (with a
          verbatim `anchor` token) to at least RESEARCH_WEAVE_FLOOR_PCT (60%) of
@@ -6245,7 +6245,16 @@ def _chk_research_map(run_dir: Path) -> str:
          anchor token actually appears in slides_copy.md (the slide block or a
          RESEARCH_USED tag). Mechanical, not semantic; the anchor is a verbatim
          figure / dollar / short quote fragment / source domain.
-      3. WHOLE-BRIEF BREADTH — the deck draws on >= MIN_DISTINCT_RESEARCH_ITEMS (8)
+      3. RENDER COPY CARRIES IT — for >= that same floor of mapped non-exempt slides,
+         the anchor token ALSO appears in the ACTUAL file the renderer consumes:
+         slides.json's copy[] (H3 — the positional slides_path when threaded in, else
+         the canonical working/copy/slides.json / slides.json / working/slides.json
+         spots). slides_copy.md is a working document; the pixels are baked VERBATIM
+         from slides.json's copy[], so a deck whose slides_copy.md weaves the anchors
+         but whose slides.json dropped them passes the old gate while the rendered
+         pixels carry NO research. Defers (passes) when no slides.json can be read yet
+         (its absence is owned by the schema / AF-P1 / slide-count gates).
+      4. WHOLE-BRIEF BREADTH — the deck draws on >= MIN_DISTINCT_RESEARCH_ITEMS (8)
          DISTINCT items, so breadth cannot be faked by repeating one stat.
 
     Replaces the toothless "a pack exists" logic of _chk_claims_without_citation with
@@ -6272,6 +6281,19 @@ def _chk_research_map(run_dir: Path) -> str:
 
     copy_text = copy_path.read_text(encoding="utf-8", errors="replace")
     copy_lc = copy_text.lower()
+
+    # The ACTUAL render copy — slides.json copy[] is what the renderer bakes into the
+    # pixels VERBATIM (slides_copy.md is only the writer's working document). Reuse the
+    # shared loader so this gate counts the exact file that gets rendered (H3: the
+    # positional slides_path when threaded in, else canonical spots). None = no render
+    # copy readable yet; condition 3 defers and the upstream schema / AF-P1 / slide-count
+    # gates own the absence.
+    render_copy_map = _load_slide_copy_map(run_dir, slides_path) or {}
+    render_copy_lc = " ".join(
+        str(c) if c is not None else ""
+        for vals in render_copy_map.values()
+        for c in (vals if isinstance(vals, list) else [vals])
+    ).lower()
 
     non_exempt = [s for s in slides if isinstance(s, dict) and not s.get("exempt")]
     if not non_exempt:
@@ -6307,6 +6329,25 @@ def _chk_research_map(run_dir: Path) -> str:
                 f"below the {RESEARCH_WEAVE_FLOOR_PCT}% floor. The writer must USE the "
                 "mapped item (anchor verbatim in the slide block or a RESEARCH_USED tag).")
 
+    # Condition 3 — RENDER COPY CARRIES IT. slides_copy.md passing is NOT enough: the
+    # renderer bakes words VERBATIM from slides.json copy[], so a deck that wove the
+    # anchors into slides_copy.md but dropped them from slides.json would render pixels
+    # with NO research while the old gate passed. Require the anchor in the render copy
+    # on >= the same floor of mapped slides. Defer (skip) when no render copy is readable.
+    if render_copy_lc.strip():
+        rendered = 0
+        for s in mapped:
+            if any(anc.lower() in render_copy_lc for _id, anc in _anchors(s)):
+                rendered += 1
+        rendered_pct = (rendered / len(mapped)) * 100.0 if mapped else 0.0
+        if rendered_pct < RESEARCH_WEAVE_FLOOR_PCT:
+            return (f"AF-RESEARCH-WEAVE: only {rendered}/{len(mapped)} ({rendered_pct:.0f}%) "
+                    f"of mapped slides carry their assigned anchor in the RENDER copy "
+                    f"(slides.json copy[]), below the {RESEARCH_WEAVE_FLOOR_PCT}% floor. "
+                    "slides_copy.md alone is not enough — the renderer bakes words VERBATIM "
+                    "from slides.json, so the mapped anchor must be present there too "
+                    "(the research is woven into the pixels, not just the working doc).")
+
     distinct = obj.get("distinct_items_used")
     if not isinstance(distinct, int):
         ids = set()
@@ -6319,6 +6360,84 @@ def _chk_research_map(run_dir: Path) -> str:
         return (f"AF-RESEARCH-WEAVE: the deck draws on only {distinct} distinct research "
                 f"items, below the floor of {MIN_DISTINCT_RESEARCH_ITEMS}. Breadth cannot "
                 "be satisfied by repeating one stat — draw on the whole brief.")
+    return ""
+
+
+def _chk_research_reaches_render(run_dir: Path, slides_path: Optional[Path] = None) -> str:
+    """AF-RESEARCH-REACHES-RENDER — research must reach the RENDER COPY, not just
+    slides_copy.md.
+
+    WORKSTREAM FIX: the AF-RESEARCH-WEAVE gate (_chk_research_map) validates that the
+    research anchors live in working/copy/slides_copy.md, but the renderer consumes
+    working/copy/slides.json (the positional slides.json). If the slide-copy JSON is
+    authored without the mapped anchors (or a hand-fed slides.json is substituted), the
+    deck renders with NO research even though the markdown copy passed the weave gate.
+    This gate closes that exact divergence: it reads the ACTUAL render copy (the same
+    file _load_slide_copy_map feeds the verbatim/prompt gates, i.e. the H3 positional
+    slides.json) and FAILS when a research-mapped non-exempt slide's anchor token is
+    missing from that slide's render copy[]. So research cannot silently fail to reach
+    the rendered deck.
+
+    CONDITIONAL (defer, returns ""): pre-copy / pre-map states. The absences are owned
+    by _chk_slides_copy / _chk_arc / _chk_research_map / _chk_research_cited. Run-dir-
+    scoped (None sentinel) so it reads the ACTUAL rendered slides.json (H3) — a gate
+    that counted a different canonical slides.json than the one rendered would be the
+    exact bypass this gate exists to close.
+    """
+    # Defer until both the research map AND the render copy exist (upstream gates own
+    # their absences — mirror _chk_research_map's pre-copy defer so a bare render that
+    # has not run research yet is not double-reported).
+    if not (run_dir / RESEARCH_MAP_REL).exists():
+        return ""
+    copy_map = _load_slide_copy_map(run_dir, slides_path)
+    if not copy_map:
+        return ""  # no slides.json yet — schema validation / _chk_rich_prompts own that.
+
+    obj = _read_json(run_dir / RESEARCH_MAP_REL)
+    if not isinstance(obj, dict) or "__parse_error__" in obj:
+        return ""  # malformed map — _chk_research_map owns that failure.
+    slides_map = obj.get("slides")
+    if not isinstance(slides_map, list) or not slides_map:
+        return ""  # empty/missing slides[] — _chk_research_map owns that failure.
+
+    def _anchors(s):
+        out = []
+        for a in (s.get("assigned") or []):
+            if isinstance(a, dict):
+                anc = str(a.get("anchor", "")).strip()
+                if anc:
+                    out.append(anc)
+        return out
+
+    missing = []
+    for s in slides_map:
+        if not isinstance(s, dict) or s.get("exempt"):
+            continue
+        if not _anchors(s):
+            continue
+        ordinal = s.get("slide")
+        copy_val = copy_map.get(ordinal)
+        lines = [str(c) for c in copy_val] if isinstance(copy_val, list) else (
+            [str(copy_val)] if copy_val else [])
+        render_lc = " ".join(lines).lower()
+        if not render_lc:
+            missing.append((ordinal, _anchors(s), "no render copy"))
+            continue
+        absent = [a for a in _anchors(s) if a.lower() not in render_lc]
+        if absent:
+            missing.append((ordinal, absent, "anchor(s) absent from render copy"))
+
+    if missing:
+        detail = "; ".join(
+            f"slide {o}: {', '.join(a)} ({why})" for o, a, why in missing)
+        return (f"AF-RESEARCH-REACHES-RENDER: research mapped to these slides but its "
+                f"anchor token(s) are NOT in the RENDER copy (slides.json copy[] — the "
+                f"file the renderer bakes into the slides): {detail}. The anchors were "
+                f"validated in slides_copy.md by AF-RESEARCH-WEAVE, but they never "
+                f"reached the render copy, so the deck would ship WITHOUT the research "
+                f"the gate approved. The Slide Copywriter / builder MUST weave the "
+                f"mapped anchor verbatim into the slide's copy[] in slides.json (or the "
+                f"renderer reads the research-backed copy) before render.")
     return ""
 
 
@@ -8025,14 +8144,30 @@ PREFLIGHT_REQUIRED = [
     # the deck, not funnelled to one proof slide. CONDITIONAL: defers until copy exists,
     # then requires working/research/research_map.json mapping research items to >=60%
     # of non-exempt content slides, the writer actually using the anchors in
-    # slides_copy.md, and >=8 distinct items deck-wide. Run-dir-scoped (None sentinel).
+    # slides_copy.md AND in the RENDER copy (slides.json copy[] — the pixels are baked
+    # verbatim from it), and >=8 distinct items deck-wide. Run-dir-scoped (None sentinel);
+    # threads slides_path (H3) so it judges the actual rendered slides.json.
     (None,
      "research woven across the deck — research_map.json maps facts/quotes/stats to "
-     ">=60% of non-exempt content slides, the copy uses the anchors, and the deck draws "
-     "on >=8 distinct items (AF-RESEARCH-WEAVE)",
+     ">=60% of non-exempt content slides, the copy uses the anchors (slides_copy.md AND "
+     "the render copy slides.json copy[]), and the deck draws on >=8 distinct items "
+     "(AF-RESEARCH-WEAVE)",
      "Phase 3.5 — Deep Research Specialist SOP 9.5 (research-to-slide map) + Slide "
      "Copywriter (RESEARCH_USED) (AF-RESEARCH-WEAVE)",
      _chk_research_map),
+    # RESEARCH-REACHES-RENDER (AF-RESEARCH-REACHES-RENDER) — the renderer consumes the
+    # positional slides.json copy[], NOT slides_copy.md. AF-RESEARCH-WEAVE validates the
+    # markdown; this gate proves the SAME mapped research anchors actually reached the
+    # RENDER COPY (slides.json copy[]) so research cannot silently fail to reach the
+    # baked slides. Run-dir-scoped (None sentinel); H3 threads the ACTUAL rendered
+    # slides.json. CONDITIONAL: defers pre-map/pre-copy (owned upstream).
+    (None,
+     "research reaches the RENDER copy — every research-mapped non-exempt slide's "
+     "anchor token is present in slides.json copy[] (the file the renderer bakes into "
+     "the slides), not only in slides_copy.md (AF-RESEARCH-REACHES-RENDER)",
+     "Phase 4 — Slide Copywriter / builder must weave the validated anchors into the "
+     "render copy (AF-RESEARCH-REACHES-RENDER)",
+     _chk_research_reaches_render),
     ("working/qc/copy_qc_report.json",
      "copy QC report (gate Phase 1Q, average >= 8.5, no AF-* triggered)",
      "Phase 1Q — QC Specialist SOP 9.1 / SOP-SLIDE-00",
