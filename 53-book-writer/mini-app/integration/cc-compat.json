@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "subject": "book-writer-mini-app",
+  "skill": "book-writer",
+  "scope": "What the Book Writer mini-app (U01-U18) adds to the Command Center, and the proof that it adds NO new Command Center endpoint and NO mission-control.db schema change.",
+  "truth_statement": "The mini-app's ONLY Command Center touch is the U16 mc_board seam (mini-app/board/mc_seam.py), a thin, guaranteed non-raising wrapper over the skill's pre-existing vendored mc_board.py helper (53-book-writer/scripts/mc_board.py, a byte-for-byte vendored copy of 50-email-engine/mc_board.py). The seam opens a card on the existing marketing Kanban lane (department_slug=marketing, the RESOLVED real seeded slug from 23-ai-workforce-blueprint/skill-department-map.json) and moves that card through the existing task lifecycle. It adds nothing to the Command Center itself: no new route, no new handler, no schema migration.",
+  "command_center_touch": {
+    "seam_file": "mini-app/board/mc_seam.py",
+    "vendored_helper": "53-book-writer/scripts/mc_board.py",
+    "department_slug": "marketing",
+    "card_slug": "book-writer-mini-app",
+    "card_source": "book-writer-mini-app",
+    "lifecycle": {
+      "begin_run": "open ONE card on the marketing tasks lane (backlog -> in_progress). Per-run AND per-client: the mc_board idempotency key is derived from slug+title and the title carries the client_id, so no two clients collide.",
+      "card_advance": "per-answer heartbeat: phase_id=intake-<qid>, status=in_progress. Review-NOT-done by construction.",
+      "complete_run": "terminal producer move: card goes to `review`, NEVER `done`. review -> done is the independent QC scorer's exclusive move (THE BOARD CONTRACT).",
+      "block_run": "gate-failure dead-end: card to `blocked` (visible on the board, never stranded at in_progress). reachable from any status in one hop; NEVER done."
+    },
+    "fail_soft": "BINDING. A board outage / missing COMMAND_CENTER_URL / HTTP error is CAUGHT, logged to stderr, and the run CONTINUES. The board is a VIEW, never a gate. Every public seam function returns a value and NEVER raises. A board outage never loses the run's staging: the seam records a LOCAL phase -> board-receipt mapping (run/checkpoints/mc-board-seam.json) on EVERY call regardless of the board's answer, so a later reconcile can distinguish 'card landed' from 'board was down'.",
+    "gate_receipts": "The seam ALSO writes the assembler's gate-receipts file (run/checkpoints/gate-receipts.json, the run_book_writer.load_gate_receipts authority) in the EXACT shape {gate_id, approved, approved_by, approved_at}. APPEND-only; a human approval can never be self-attested."
+  },
+  "no_new_cc_endpoint_proof": {
+    "claim": "The mini-app introduces NO new Command Center endpoint and NO mission-control.db schema change.",
+    "how": "The seam ONLY calls mc_board's pre-existing routes. Enumerated by source inspection (mini-app/board/mc_seam.py lines 259-362 + 53-book-writer/scripts/mc_board.py):",
+    "existing_routes_used": [
+      "POST /api/tasks/ingest        (card_open: create the card, idempotent on idempotency_key)",
+      "GET/PATCH /api/tasks/{id}     (current_status + _move_once status writes; CC_STATUS_METHOD default PATCH; CC_STATUS_PATH_TEMPLATE default /api/tasks/{id})"
+    ],
+    "route_inventory_audit": {
+      "mc_board_py_routes": [
+        "POST /api/tasks/ingest",
+        "GET /api/tasks/{id}",
+        "PATCH /api/tasks/{id}"
+      ],
+      "mc_seam_py_calls_only_these": true,
+      "any_new_route_defined": "none — mc_seam.py defines no HTTP route; it wraps mc_board.py's public functions (begin_run/card_advance/complete_run/block_run/record_gate_approval).",
+      "any_schema_migration": "none — the seam writes JSON receipt files under the run dir only; no mission-control.db table is touched."
+    },
+    "grep_proof": "Run: /usr/bin/grep -n \"api/\" 53-book-writer/scripts/mc_board.py  -> every hit is one of the three existing routes above. Run: /usr/bin/grep -n \"api/\" 53-book-writer/mini-app/board/mc_seam.py  -> no api/ route is defined or called directly (the seam delegates to mc_board). Run: /usr/bin/grep -rn \"mission-control.db\" 53-book-writer/mini-app  -> zero hits (the mini-app's OWN KV key-shape contract, mini-app/worker/schema.sql, is the Cloudflare Workers \"bw_bindings\" namespace of the edge Worker — it is NOT the Command Center's mission-control.db and touches nothing on the Command Center side).",
+    "endpoint_contract": "Because the mini-app adds no endpoint and no schema, the root cc-compat.json contract is UNCHANGED: the skill rides the existing tasks/marketing Kanban lane (fail-soft). minVersion + pinnedTag require no bump for the mini-app."
+  },
+  "no_anthropic_scan": "mini-app contains no provider ids, no operator credentials, and no unresolved template tokens (the double-brace or dollar-paren shapes the write-back's placeholder lint refuses). prove_mini_app_isolation.py --self-test LINT case enforces the prover source; verify.sh section 7 runs the whole-tree anti-pattern scan. FICTIONAL fixtures only (FictitiousClientAlpha/Beta, loc_*_fake).",
+  "references": [
+    "U16 seam: mini-app/board/mc_seam.py (self-test: python3 mc_seam.py --self-test)",
+    "U17 isolation prover: mini-app/prove/prove_mini_app_isolation.py (hard gate)",
+    "U18 e2e: mini-app/e2e/ (Playwright T1-T10, incl. T10 browser-level isolation)",
+    "U15 write-back: mini-app/box/ghl_writeback.py (Skill 44 rails, isolation locks)",
+    "vendored board helper: 53-book-writer/scripts/mc_board.py",
+    "department slug resolution: WIRING-SPEC.md section 8 (marketing)"
+  ]
+}
