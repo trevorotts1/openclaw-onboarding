@@ -105,12 +105,15 @@ def cmd_ingest(args) -> int:
     intake = intake_payload.get("intake") or intake_payload
     intake.setdefault("intake_session_id", args.session_id)
 
-    # 1) Write the run-dir record (dept-format intake.json + completed ledger).
+    # 1) Write the run-dir record (dept-format intake.json + completed ledger
+    #    + the GATE 0b conversation transcript).
     if intake_writer is not None:
         run_dir = pathlib.Path(args.run_dir).expanduser().resolve()
         run_dir.mkdir(parents=True, exist_ok=True)
         intake_writer.write_intake_file(run_dir, intake)
         intake_writer.write_ledger(run_dir, intake)
+        if hasattr(intake_writer, "write_transcript"):
+            intake_writer.write_transcript(run_dir, intake)
         if args.verbose:
             print(f"wrote run-dir record under {run_dir}/working/")
     else:
