@@ -227,6 +227,8 @@ run "roles/_index.json complete + not stale" "$PY" "$SCRIPTS/hash_role_index.py"
 # and every card is silently dropped/misrouted).
 echo "-- 10) Command Center department-slug regression --"
 run "test_department_slug.py" "$PY" "$SCRIPTS/test_department_slug.py"
+run "test_cc_contract.py" "$PY" "$SCRIPTS/test_cc_contract.py"
+run "test_mc_board_reconcile.py" "$PY" "$SCRIPTS/test_mc_board_reconcile.py"
 
 echo "=================================================="
 if [ "$fails" -eq 0 ]; then
