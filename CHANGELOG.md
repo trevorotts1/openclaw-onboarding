@@ -1,3 +1,22 @@
+## [v22.0.2]  -  2026-08-07  -  Presentation Interview app: box-side intake poll cron + worker list endpoint + key fix
+
+Complete the interview-app → presentation-department wiring.
+
+- **Worker:** add `GET /api/intake/list` (admin-auth) so the box can discover
+  finished intakes. Fix pre-existing bug: `intakeKey()` was async but never
+  awaited → every intake stored under the literal `[object Promise]` R2 key,
+  overwriting each other. Made it sync.
+- **intake_bridge.py:** add `poll` command — list finished intakes, ingest each
+  once (write `working/copy/intake.json` + `intake_ledger.json` via
+  `intake_writer.py`, then `cc_board.ingest_deck_task` → CC kanban card), track
+  processed ids in a poll ledger for idempotency; failed ingests retried. Browser
+  UA so Cloudflare 1010 does not block the bridge.
+- **Box cron:** `~/clawd/presentation-intake-bridge/poll.sh` every 5 min (sources
+  `~/.openclaw/secrets/.env` for `INTAKE_ADMIN_TOKEN` + CC board).
+- **Tests:** R2 worker test covers store+list; all offline gates pass.
+- Version rolled v22.0.1 → v22.0.2 in lockstep (10 markers).
+
+
 ## [v22.0.1]  -  2026-08-07  -  fix(ci): close AF-RESEARCH-REACHES-RENDER Guard A gap + lockstep v22.0.1 version roll
 
 **Patch release on the `merge/apicur-train` train (PR #873).** Two CI blockers on PR #873

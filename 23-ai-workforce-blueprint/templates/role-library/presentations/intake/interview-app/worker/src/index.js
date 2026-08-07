@@ -47,6 +47,7 @@ async function route(request, env) {
     return jsonResponse({ status: "ok", service: "presentation-interview", ttl_days: DEFAULT_TTL_DAYS });
   }
   if (parts[0] !== "api") return errorResponse("not found", 404);
+  if (parts.length === 2 && parts[0] === "intake" && parts[1] === "list" && method === "GET") return listIntakes(request, env);
   if (parts.length === 1 && parts[0] === "intake" && method === "POST") return storeIntake(request, env);
   if (parts.length === 1 && parts[0] === "dept-start" && method === "POST") return triggerDeptStart(request, env);
   if (parts[0] === "sessions") return routeSessions(request, env, parts, method, url);
@@ -173,6 +174,24 @@ async function storeIntake(request, env) {
     await env.DB.prepare("INSERT INTO intakes (session_id, file_name, intake_json, created_at) VALUES (?, ?, ?, ?) ON CONFLICT (session_id) DO UPDATE SET intake_json = excluded.intake_json, created_at = excluded.created_at").bind(session_id, file_name, JSON.stringify(intake), created).run();
   }
   return jsonResponse({ status: "stored", session_id, file_name, stored_at: created }, 201);
+}
+
+/**
+ * GET /api/intake/list — enumerate stored finished intakes so the box-side
+ * intake_bridge poll cron can discover which sessions to ingest.
+ * Returns { intakes: [{ session_id, file_name, stored_at }] } (metadata only).
+ */
+async function listIntakes(request, env) {
+  if (!requireAdmin(request, env)) return errorResponse("unauthorized", 401);
+  if (!env.DB) return jsonResponse({ intakes: [] }, 200);
+  const rows = await env.DB.prepare(
+    "SELECT session_id, file_name, created_at FROM intakes ORDER BY created_at DESC"
+  ).all();
+  const intakes = (rows && rows.results || []).map((r) => ({
+    session_id: r.session_id, file_name: r.file_name,
+    stored_at: r.created_at != null ? Number(r.created_at) : null,
+  }));
+  return jsonResponse({ intakes }, 200);
 }
 
 /**

@@ -34,7 +34,7 @@ app's `questions.json` is a snapshot of that projection.
 |---|---|
 | `pages/index.html` | The one-question-per-screen UI (single static file, brand-locked) |
 | `pages/questions.json` | The curated question set snapshot |
-| `worker/src/index.js` | Cloudflare Worker — session API + `/api/intake` + `/api/dept-start` |
+| `worker/src/index.js` | Cloudflare Worker — session API + `/api/intake` (+ `/api/intake/list`) + `/api/dept-start` |
 | `worker/src/lib.js` | Pure, unit-tested logic (ordering, validation, progress) |
 | `worker/schema.sql` | D1 schema (`sessions`, `answers`, `intakes`) |
 | `worker/wrangler.toml` | Worker + D1 + route config — **domain placeholders** |
@@ -57,6 +57,41 @@ On Submit the app builds a dept-format intake record and:
 No shortcuts: the deck can only build through
 `presentation-canonical-entry.sh`'s governed gates (GATE 0 intake ledger, GATE 0b
 intake trace, GATE 1 deps, GATE 2 bypass-scan, GATE 3 version/hash pin).
+
+## Box-side intake poll cron
+
+The box discovers finished intakes by polling the Worker's
+`GET /api/intake/list` (admin-auth; returns stored session metadata), then
+ingests each session once via `bridge/intake_bridge.py poll`:
+
+```bash
+python3 bridge/intake_bridge.py poll \
+  --worker-url "https://presentation-interview.<FLEET_DOMAIN>" \
+  --run-dir "<presentations-runs-dir>" \
+  --poll-ledger "<ledger-path>/processed.txt" \
+  --per-session-dirs
+```
+
+`poll` fetches the list, ingests each not-yet-processed session (writes
+`working/copy/intake.json` + `working/interview/intake_ledger.json` via
+`intake_writer.py`, then calls `cc_board.ingest_deck_task` → Command Center
+kanban card), and records the session id in the ledger so the next poll skips
+it (idempotent). A failed ingest is NOT marked processed and is retried on the
+next poll.
+
+Box env requirements (sourced from `~/.openclaw/secrets/.env`):
+- `INTAKE_ADMIN_TOKEN` — box→worker auth; MUST match the Worker secret.
+- `MISSION_CONTROL_URL` / `COMMAND_CENTER_URL` — CC board base URL (cc_board).
+- `WEBHOOK_SECRET` / `CC_WEBHOOK_SECRET` — HMAC signing for cc_board.
+
+Suggested cron (every 5 min):
+```
+*/5 * * * * /bin/bash $HOME/<bridge-dir>/poll.sh >> $HOME/<bridge-dir>/logs/poll.log 2>&1
+```
+
+The Worker's `/api/dept-start` fallback is only used when the box is not in
+the loop — the box-side `poll` is the primary path (it reaches the local CC
+board directly).
 
 ## Tests (offline)
 
