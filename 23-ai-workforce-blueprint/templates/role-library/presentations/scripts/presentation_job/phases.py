@@ -16,6 +16,7 @@ from .manifest import Manifest, Phase
 from .report import Reporter
 from .gates import Gates, ALL_GATE_KEYS, NON_WAIVABLE_GATES, WARN_ONLY_GATES
 from .waivers import WaiverError, load_waivers, validate_waiver
+from .defers import load_intake, phase_is_deferred
 from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
@@ -407,6 +408,33 @@ class Engine:
         elif until:
             stop = self.manifest.phase(until)
             phases = [p for p in phases if p.order <= stop.order]
+
+        # DESIGN-OPUS.md §4.2 — defers_unless gating. A phase whose gate evaluates
+        # false is DEFERRED for this run: never surfaced, never attested, but
+        # recorded with a skip_attestation so the attestation chain stays complete
+        # and downstream phases never fail on a missing optional phase.
+        # Intake answers come from state["intake"] (the record passed to --new);
+        # falls back to working/copy/intake.json written by deck-intake-driver.py.
+        intake = self.state.get("intake")
+        if not isinstance(intake, dict):
+            intake = load_intake(self.run_dir)
+        deferred_ids = {p.id for p in phases if phase_is_deferred(p, intake)}
+        if deferred_ids:
+            for p in phases:
+                if p.id not in deferred_ids:
+                    continue
+                ps = self._phase_state(p.id)
+                if ps.get("status") in ("done", "deferred"):
+                    continue
+                self._checkpoint(
+                    p.id, status="deferred", deferred_reason=f"defers_unless: {p.defers_unless or ''}")
+                self.report.event(
+                    "phase.deferred",
+                    f"{p.id} deferred — defers_unless ({p.defers_unless or ''}) "
+                    "not satisfied by intake answers.")
+                print(f"DEFER {p.id}: defers_unless ({p.defers_unless or ''}) "
+                      "not satisfied — skipped for this run.", flush=True)
+            phases = [p for p in phases if p.id not in deferred_ids]
 
         if not self.state.get("sent", {}).get("ack"):
             n = len(phases)

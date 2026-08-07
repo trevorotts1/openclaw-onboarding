@@ -109,6 +109,7 @@ class Phase:
     client_report: Dict[str, Any] = field(default_factory=dict)
     heartbeat_minutes: Optional[int] = None
     long_running: bool = False
+    defers_unless: Optional[str] = None   # DESIGN-OPUS.md §4 — optional-phase gate
 
     @property
     def budget_minutes(self) -> int:
@@ -176,6 +177,7 @@ class Manifest:
                 client_report=p.get("client_report") or {},
                 heartbeat_minutes=p.get("heartbeat_minutes"),
                 long_running=bool(p.get("long_running")),
+                defers_unless=p.get("defers_unless"),
             ))
         out.sort(key=lambda x: x.order)
         return out
