@@ -1,3 +1,29 @@
+## [v22.0.0]  -  2026-08-07  -  CAPSTONE: Presentation Department Gauntlet Loop + BAR-MET closure — the 10-fix E2E train lands on the v21.7.38 Loop completion (v21.7.38 -> v22.0.0)
+
+**Capstone MAJOR release.** This closes the Presentation-Department Gauntlet Loop and the BAR-MET loop. The previous release (`v21.7.38`) merged the 25 Fix units + 8 live-E2E defects found by the Kofi run into `main`. This capstone adds the **10 E2E-found defects** from the same Kofi live run — the batch that travelled on the `merge/apicur-train` merge train and landed here on top of the full Loop — and marks the whole Gauntlet Loop + BAR-MET loop as complete. The MAJOR bump is the campaign boundary: the presentation build pipeline is now a single coherent, gated, fully-attesting system from intake through deliverable, rather than a set of independently drifting scripts.
+
+All 10 version markers rolled `v21.7.38` -> **v22.0.0** in lockstep via `scripts/bump-version.sh` (plus the script-embedded browser-manager sub-markers and the two skill dirs those markers live in, `06-ghl-install-pages` and `23-ai-workforce-blueprint`, so CI guard G3 stays green). Annotated tag `v22.0.0` cut on this release commit.
+
+### The 10 E2E-found fixes (from the Kofi live run)
+
+1. **presenter_guide.py `_SLIDE_SPLIT_RE`:** accept both `## Slide N` and plain `SLIDE N` headings (the plain form was being missed).
+2. **presenter_guide.py byte floor:** scale the guide floor by deck size (was a fixed 51,200 bytes, which rejected a legitimate 20-slide guide).
+3. **phase_verifiers.py:** scale the P8.2-GUIDE floor by deck size to match the presenter-guide scaling.
+4. **speech_build_harness.py `load_slides`:** accept plain `SLIDE N` (was writing an empty stub when it did not match the strict heading).
+5. **speech_build_harness.py `REASONING_HEADROOM_TOKENS` 4096 -> 8192:** raise the headroom so GLM/minimax never trap on an empty-content budget.
+6. **run_signature_deck.py:** P4-RENDER attest-existing path + a genuine render-record write (no more fabricated render records).
+7. **build_deck.py `discover_speech_chunks`:** search `working/deliverables/` where the speech actually lands.
+8. **run_signature_deck.py:** the render record now carries real KIE task IDs (`AF-NOT-KIE-RENDERED` no longer false-fires).
+9. **ghl_media_push.py:** deck-PDF fallback when the pptx exceeds the GHL 25 MB cap.
+10. **prove-deck.py:** exclude the in-flight delivery phase from attestation checks (the circular-certification bug).
+
+Verified on the train: 33/33 phases attest, `bundle_complete.json` complete, `PROCESS-CERTIFICATE` `all_steps_pass`, `P9-DELIVER` exits 0.
+
+### What the previous release (v21.7.38) already closed
+
+The full Gauntlet Loop merged to main under `v21.7.38`: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth — plus 8 defects found live by the Kofi E2E (intake-driver qdata NameError, read_slice `--index` KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume on both build_deck and runner, and engine false-positives).
+
+
 ## [v21.7.38]  -  2026-08-07  -  merge(gauntlet): 25 Presentation-Department fix units + 8 live-E2E defects into main (Gauntlet Loop completion)
 
 The full Gauntlet Loop merged to main: FIX-1..FIX-24 (skill + CC sides) covering authentic skip approvals, QC unskippable + report floor, intake trace gate, auth'd image download, batch render, fail-fast auth, poll-cap, 9-deliverable bundle gate, audio MP3, teleprompter, GHL upload, deliverable registration, owner link, MC token wiring, CC model truth, SOP firewall, OWNER-KILLED dispatch guard, tool-schema hardening, sliced reads, compaction reduction, stray-process cleanup, duplicate-prompt detection, canonical-door reliability, and model-catalog truth. Plus 8 defects found live by the Kofi E2E: intake-driver qdata NameError, read_slice --index KeyError, structure-prover proportional floor scaling, FIX-3 checker sync, research-verifier path bug, kie-balance incremental-resume (build_deck + runner), and engine false-positives.
