@@ -1,0 +1,16 @@
+{
+  "name": "book-writer-mini-app-worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Book Writer Mini-App Cloudflare Worker — answers POST (U03). Dumb relay: no client GHL credentials, the KV binding row is the SOLE destination authority.",
+  "main": "src/answers.js",
+  "scripts": {
+    "test": "node --test src/answers.test.mjs",
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy"
+  },
+  "devDependencies": {
+    "wrangler": ">=3.60.0"
+  }
+}

@@ -1,0 +1,51 @@
+# Book Writer Mini-App — Cloudflare Worker (answers POST, U03)
+#
+# ┌─────────────────────────────────────────────────────────────────────────┐
+# │ DOMAIN CHOICE IS FLAGGED, NOT GUESSED.                                    │
+# │ The production hosting domain is the OPERATOR's Cloudflare zone           │
+# │ (zerohumanworkforce.com). Every placeholder below is written as           │
+# │ <PLACEHOLDER> on purpose — fill them in at deploy time (U19). Do NOT      │
+# │ commit a real zone/account id to the repo. ZONE LANDMINE: the             │
+# │ zerohumanworkforce.com zone id is a DIFFERENT zone than                   │
+# │ businessaftersixty.com — never reuse CLOUDFLARE_ZONE_ID for a             │
+# │ *.zerohumanworkforce.com binding.                                         │
+# └─────────────────────────────────────────────────────────────────────────┘
+#
+# The edge Worker is a DUMB RELAY: it holds ZERO client GHL credentials. The
+# KV binding row (BW_BINDINGS) is the SOLE authority for where an answer lands
+# (per-client isolation BY CONSTRUCTION — master plan section 3).
+#
+# Deploy (once, by U19 deploy.sh via npx wrangler):
+#   1. Create the KV namespace:
+#        npx wrangler kv namespace create BW_BINDINGS --account-id <PLACEHOLDER_CF_ACCOUNT_ID>
+#      Copy the returned id into kv_namespaces[0].id and preview_id below.
+#   2. Deploy:
+#        npx wrangler deploy
+#   3. Verify:
+#        curl https://bookwriter.zerohumanworkforce.com/api/answers -X POST (expect 400 bad token)
+#
+# Routes: bookwriter.<PLACEHOLDER_FLEET_DOMAIN>/api/answers — the DNS CNAME for
+# bookwriter.zerohumanworkforce.com points to the Worker (wrangler adds the
+# route automatically when routes[] is set and the zone is in the account).
+
+name               = "book-writer-mini-app"
+main               = "src/answers.js"
+compatibility_date = "2024-09-23"
+account_id         = "<PLACEHOLDER_CF_ACCOUNT_ID>"
+
+routes = [
+  { pattern = "bookwriter.<PLACEHOLDER_FLEET_DOMAIN>/api/*", zone_name = "<PLACEHOLDER_FLEET_DOMAIN>" }
+]
+
+# KV binding — token bindings + per-step consumed counters + staged answers.
+# Fill id/preview_id from `npx wrangler kv namespace create BW_BINDINGS`.
+[[kv_namespaces]]
+binding    = "BW_BINDINGS"
+id         = "<PLACEHOLDER_BW_BINDINGS_KV_NAMESPACE_ID>"
+preview_id = "<PLACEHOLDER_BW_BINDINGS_KV_PREVIEW_NAMESPACE_ID>"
+
+[observability]
+enabled = true
+
+# Secrets: NONE at this layer. No PITs, no client GHL keys — the box ingest
+# poller (U12) owns the GHL write via Skill 44 rails on the run box.
