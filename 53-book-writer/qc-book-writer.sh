@@ -21,7 +21,7 @@ command -v "$PY" >/dev/null 2>&1 || { echo "qc: python3 required" >&2; exit 6; }
 if [ "$MODE" = "--repin" ]; then
     echo "== qc --repin :: recomputing source_prompt_pins (non-tone triplets) =="
     SELF_DIR="$SELF_DIR" "$PY" - <<'PY'
-import hashlib, json, os
+import hashlib, json, os, sys
 skill = os.environ["SELF_DIR"]
 man_path = os.path.join(skill, "BOOK-WRITER-MANIFEST.json")
 man = json.load(open(man_path))
@@ -38,8 +38,10 @@ if os.path.isdir(pdir):
                 rel = os.path.relpath(fp, skill)
                 pins[rel] = hashlib.sha256(open(fp,"rb").read()).hexdigest()
 man["source_prompt_pins"] = pins
-json.dump(man, open(man_path,"w"), indent=2)
+json.dump(man, open(man_path,"w"), indent=2, ensure_ascii=False)
 print("repinned %d non-tone prompt file(s)." % len(pins))
+if not pins:
+    print("WARN: 0 non-tone prompt files pinned — declared prompt dirs under 'prompts/' are absent; repin was a no-op, not a completed pin.", file=sys.stderr)
 PY
     exit 0
 fi
