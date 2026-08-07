@@ -1,0 +1,99 @@
+{
+ "$schema": "https://openclaw.ai/schemas/interview-section/v1",
+ "section": "deck-intake-upsell",
+ "version": "1.0.0",
+ "description": "The Presentation Upsell intake questions -- Q1 sales page + checkout page, Q2 VSL (video sales letter) page, plus the two conditional declined-reason follow-ups. Loaded by deck-intake-driver.py in signature mode and appended to the standard deck-intake question bank. These questions mirror the want_teleprompter / teleprompter_declined_reason waiver pattern EXACTLY: required, block_gate, conditional_on for the declined-reason follow-ups, storeOn under pre_presentation_capture.*, flowing into working/copy/intake.json at --complete. The SAME definitions live in deck-intake-questions.json (orders 7.6, 7.61, 7.7, 7.71); this file is the standalone upsell-questions.json the design's §10.3 specifies for signature-mode loading.",
+ "storeTarget": {
+  "WANT_SALES_CHECKOUT": "pre_presentation_capture.WANT_SALES_CHECKOUT",
+  "SALES_CHECKOUT_DECLINED_REASON": "pre_presentation_capture.SALES_CHECKOUT_DECLINED_REASON",
+  "WANT_VSL_PAGE": "pre_presentation_capture.WANT_VSL_PAGE",
+  "VSL_PAGE_DECLINED_REASON": "pre_presentation_capture.VSL_PAGE_DECLINED_REASON"
+ },
+ "questions": [
+  {
+   "id": "want_sales_checkout",
+   "section": "deck-intake-upsell",
+   "order": 7.6,
+   "prompt": "Do you need me to create a sales page and a checkout page to go along with your presentation? (yes / no)",
+   "help": "Default YES. The sales page + checkout page is a standard upsell deliverable and one of the engine's fail-closed gates. A 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the sales+checkout branch entirely.",
+   "kind": "text",
+   "allowed_values": [
+    "yes",
+    "no"
+   ],
+   "value_labels": {
+    "yes": "Yes, build the sales page and checkout page",
+    "no": "No thank you"
+   },
+   "default": "yes",
+   "storeOn": "WANT_SALES_CHECKOUT",
+   "required": true,
+   "block_gate": true,
+   "resolverHint": "Default 'yes' when the owner says 'whatever you recommend' or does not answer. Only an explicit 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'no' gates OUT the sales+checkout branch (deck-only or VSL-only run); a 'yes' enables the P-U-SALES-* / P-U-CHECKOUT-* / P-U-FORM-CHECKOUT phases."
+  },
+  {
+   "id": "sales_checkout_declined_reason",
+   "section": "deck-intake-upsell",
+   "order": 7.61,
+   "prompt": "Understood -- no sales page or checkout page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+   "help": "Asked ONLY when want_sales_checkout is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "kind": "text",
+   "storeOn": "SALES_CHECKOUT_DECLINED_REASON",
+   "required": true,
+   "block_gate": true,
+   "conditional_on": {
+    "id": "want_sales_checkout",
+    "equals": "no"
+   },
+   "resolverHint": "Auto-skipped whenever want_sales_checkout is 'yes' (the overwhelmingly common path), so the standard interview does not grow. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+  },
+  {
+   "id": "want_vsl_page",
+   "section": "deck-intake-upsell",
+   "order": 7.7,
+   "prompt": "Would you like a VSL page, a video sales letter page, to go along with this? (yes / no)",
+   "help": "Default NO -- a VSL page requires the video to exist (see the VSL video dependency: the VSL page references the hosted webinar/video, so a video must be produced before the page build). Default stays 'no' unless the owner explicitly opts in. A 'yes' is a fail-closed gate; a 'no' is recorded as a CLIENT WAIVER with the client's own words -- it is never inferred from silence and never written by the assistant. A 'no' gates OUT the VSL branch entirely.",
+   "kind": "text",
+   "allowed_values": [
+    "yes",
+    "no"
+   ],
+   "value_labels": {
+    "yes": "Yes, build the VSL page",
+    "no": "No thank you"
+   },
+   "default": "no",
+   "storeOn": "WANT_VSL_PAGE",
+   "required": true,
+   "block_gate": true,
+   "resolverHint": "Default 'no' (video must exist for a VSL page). Only an explicit 'yes' opens the VSL branch; a 'no' opens the follow-up. Never mark 'no' on the client's behalf; never summarise their reason -- the follow-up answer is stored VERBATIM as the waiver's client_request_quote. A 'yes' enables the P-U-VSL-* phases which wait on the video (V1) before the page build."
+  },
+  {
+   "id": "vsl_page_declined_reason",
+   "section": "deck-intake-upsell",
+   "order": 7.71,
+   "prompt": "Understood -- no VSL page. In your own words, why don't you want it? (I record this verbatim so nobody later has to guess.)",
+   "help": "Asked ONLY when want_vsl_page is 'no'. The answer is stored word-for-word as the waiver's client_request_quote. There is no default and no assistant-authored fallback: an empty answer must be re-asked.",
+   "kind": "text",
+   "storeOn": "VSL_PAGE_DECLINED_REASON",
+   "required": true,
+   "block_gate": true,
+   "conditional_on": {
+    "id": "want_vsl_page",
+    "equals": "no"
+   },
+   "resolverHint": "Auto-skipped whenever want_vsl_page is 'yes'. When asked, it BLOCKS --complete: a declined gate with no recorded reason is exactly the self-authored waiver this mechanism exists to prevent."
+  }
+ ],
+ "waiver_field_mapping": {
+  "_comment": "U026 -- the CONSENT record for the upsell gates. Mirrors the deck-intake waiver_field_mapping. Each gate may be waived ONLY by a record carrying a non-empty client_request_quote. Silence is NOT consent.",
+  "sales_checkout": {
+   "toggle": "want_sales_checkout",
+   "reason": "sales_checkout_declined_reason"
+  },
+  "vsl_page": {
+   "toggle": "want_vsl_page",
+   "reason": "vsl_page_declined_reason"
+  }
+ }
+}

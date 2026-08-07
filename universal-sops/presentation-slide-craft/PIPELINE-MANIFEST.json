@@ -1,5 +1,5 @@
 {
-  "manifest_version": 43,
+  "manifest_version": 44,
   "$schema_note": "SINGLE SOURCE OF TRUTH for the Presentations department pipeline. Build-time lockstep (scripts/sync_check.py) validates build_deck.py + the MASTER-QC-AUTOFAIL-RULESET.md Section-5 table + the role-library/sops dirs against THIS file, in BOTH directions. Editing this file is step (i) of SOP-SLIDE-06-EXTENSION-AND-SYNC; every other lockstep artifact is validated against it. SOP-LOCKED: any added/changed SOP, role, or gate MUST update this manifest (and bump manifest_version), add a build_deck.py preflight entry/checker, add the AF code to the MASTER ruleset, and add a test. sync_check.py FAILS the QC gate / commit / onboarding update if any of those four is skipped.",
   "deliverables_required": [
     {
@@ -576,6 +576,11 @@
           "required": true,
           "checker": "_chk_copy_density",
           "label": "copy character-count band per slides.json copy[] field (HEADLINE 12-60, SUBHEAD 20-110 if present, KICKER <=40 if present, BULLETS <=3 each 8-30, SLIDE TOTAL 40-180 / 12-180 hook-exempt; AF-COPY-BAND). Reconciles the historical 3-way bullet-count conflict and adds the previously-missing floor."
+        },
+        {
+          "required": true,
+          "checker": "_chk_research_reaches_render",
+          "label": "research reaches the RENDER copy — every research-mapped non-exempt slide's anchor token is present in slides.json copy[] (the file the renderer bakes into the slides), not only in slides_copy.md (AF-RESEARCH-REACHES-RENDER; defers pre-map/pre-copy)"
         }
       ],
       "client_report": {
@@ -2217,6 +2222,18 @@
       "secondary_py_symbols": [
         "RESEARCH_WEAVE_FLOOR_PCT",
         "MIN_DISTINCT_RESEARCH_ITEMS"
+      ]
+    },
+    {
+      "code": "AF-RESEARCH-REACHES-RENDER",
+      "stage": "4/Render",
+      "level": "DECK",
+      "in_ruleset": true,
+      "trigger": "research that the weave gate (AF-RESEARCH-WEAVE) validated in slides_copy.md never reached the RENDER COPY. The renderer consumes slides.json copy[], NOT slides_copy.md — so a deck whose slides.json was authored without the mapped anchors (or had a hand-fed slides.json substituted) renders with NO research even though the markdown passed. _chk_research_reaches_render reads the ACTUAL positional slides.json (H3) and FAILS when a research-mapped non-exempt slide's anchor token is absent from that slide's render copy[]. Defers pre-map/pre-copy (owned upstream); hook/pure-type/transition exempt slides excluded.",
+      "enforced_by": "build_deck",
+      "py_symbol": "_chk_research_reaches_render",
+      "secondary_py_symbols": [
+        "RESEARCH_MAP_REL"
       ]
     },
     {
