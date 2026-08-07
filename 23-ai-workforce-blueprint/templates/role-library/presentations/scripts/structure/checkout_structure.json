@@ -1,0 +1,49 @@
+{
+  "$schema": "https://openclaw.ai/schemas/presentations-checkout-structure/v1",
+  "structure": "lean-checkout-page",
+  "structure_version": "1.0.0",
+  "skill": "23-ai-workforce-blueprint (presentations upsell)",
+  "note": "The SACRED lean checkout structure for the presentations sales+checkout upsell (GAUNTLET-LOOP DESIGN-OPUS §10.3 / §6.3-6.4 / F6). The checkout page is deliberately LEAN: it is the transactional step that follows the sales page, so it must not re-sell. Sections are named by id, checked IN ORDER, and the prover MEASURES the declared HTML element ledger (form fields, price, guarantee, trust, CTA) ignoring any self-report. Stripe-optional: when Stripe is NOT configured the checkout degrades to an order-form lead capture (F6) — the order-form fields remain REQUIRED, live payment becomes 'not_configured'. Method attribution and design patterns: proven direct-response checkout conventions (offer summary, price anchored, guarantee, trust badges, single CTA) as specified by Trevor's design.",
+  "stage": "checkout",
+
+  "variants_required": ["a", "b"],
+  "section_count": 8,
+  "requires_order_form": true,
+  "requires_payment_fields": true,
+  "requires_price": true,
+  "requires_cta": true,
+  "requires_trust": true,
+
+  "section_band_note": "word_min is the SACRED per-section stripped-word floor (FIX-XC-04c pattern). The prover MEASURES stripped section copy and IGNORES any self-report; under-band = HARD MISS (AF-PRES-CHECKOUT-SECTION-BAND). Header/footer carry lighter floors (chrome/legal), body sections carry substance floors.",
+
+  "sections": [
+    {"order": 1, "id": "header",            "word_min": 10, "aliases": ["checkout header", "secure checkout header", "header", "trust bar", "nav"]},
+    {"order": 2, "id": "offer-summary",     "word_min": 25, "aliases": ["offer summary", "order summary", "summary", "what you get", "order recap"]},
+    {"order": 3, "id": "price",             "word_min": 8,  "aliases": ["price", "order total", "total", "one-time price", "investment"]},
+    {"order": 4, "id": "order-form",        "word_min": 15, "aliases": ["order form", "checkout form", "billing form", "form", "secure form"]},
+    {"order": 5, "id": "payment-fields",    "word_min": 8,  "aliases": ["payment fields", "payment details", "card fields", "billing info", "payment method"]},
+    {"order": 6, "id": "guarantee",         "word_min": 20, "aliases": ["guarantee", "money-back guarantee", "risk reversal", "warranty", "30-day guarantee"]},
+    {"order": 7, "id": "trust",             "word_min": 15, "aliases": ["trust badges", "secure checkout", "ssl", "privacy", "trust signals", "badges", "lock icon"]},
+    {"order": 8, "id": "submit-cta",        "word_min": 10, "aliases": ["submit", "order now", "complete order", "place order", "checkout button", "cta", "pay now"]}
+  ],
+
+  "order_form_fields": {
+    "note": "Fields the order form MUST declare. Email + full-name are the contact/identity core; payment fields are required when a real payment path exists, but in the F6 degraded (lead-capture) mode the checkout still collects order intent — never a fake 'live payment' claim.",
+    "required": [
+      {"id": "email",      "aliases": ["email", "e-mail", "email address"]},
+      {"id": "full_name",  "aliases": ["full name", "name", "first and last name"]}
+    ],
+    "payment_required_when_live": [
+      {"id": "card_number",  "aliases": ["card number", "card", "cc number"]},
+      {"id": "expiry",       "aliases": ["expiry", "expiration", "expiry date", "card expiry"]},
+      {"id": "cvv",          "aliases": ["cvv", "cvc", "security code"]}
+    ]
+  },
+
+  "trust_badge_min": 2,
+  "guarantee_required": true,
+  "privacy_line_required": true,
+
+  "cta_note": "A single dominant 'complete order / order now' CTA. Distracting secondary CTAs are a structural violation of the lean principle.",
+  "single_dominant_cta": true
+}
