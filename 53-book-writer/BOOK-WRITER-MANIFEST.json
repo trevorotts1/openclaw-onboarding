@@ -16,7 +16,64 @@
     "prompts/02-avatar-questions-31-32/user.md": "1f8ee86782eff40cd9c493a175e7ecc22dd5c3b969f7ff48863d60b04f6ae93b",
     "prompts/03-rewrite-avatar/system.md": "c07b2b4d77a9277e0fdd8f5bd62a1d179aa023cf39d2daeb734f196d48366f59",
     "prompts/03-rewrite-avatar/methodology.md": "df82fe5b41cf3e40331a216002ba644e108faaaad1a40ec668b7747370b9d43d",
-    "prompts/03-rewrite-avatar/user.md": "9d1ffc0c4f683908101d8de088ebd36c40ad4b8e67321775f39207c7c3cb7493"
+    "prompts/03-rewrite-avatar/user.md": "9d1ffc0c4f683908101d8de088ebd36c40ad4b8e67321775f39207c7c3cb7493",
+    "prompts/10-suggested-titles/system.md": "88a011cca2d286d94d1a3f189da4f78c28c70389d06c2a5c7bd3101231a97b1a",
+    "prompts/10-suggested-titles/methodology.md": "7441c9b2954827307355fa7fa35bd51a67968c3210e541ad75e3fc45fcb78568",
+    "prompts/10-suggested-titles/user.md": "bb7c934b5a12126cd89ccee53ec121d3576919cd6587ae28581b20e3b8101f99",
+    "prompts/11-book-blurb/system.md": "fd499c350778295f8a8e2e0d69147e635e74b189a8f427a8e50b1d5afb7fd60c",
+    "prompts/11-book-blurb/methodology.md": "f36c12edd7eacdb6b58dc75dc84772f0e866551fbb0d991b5f6ff13c9b30ba19",
+    "prompts/11-book-blurb/user.md": "ea950eae3d77ee29fd6736f042add8aa632efbe51ddaf8ac11dea84094d0d1e7",
+    "prompts/12-chapter-titles/system.md": "e5f2f1853998133477a6f9302c70ff1d05bf15ef7cfc466bac73ced90f70c17e",
+    "prompts/12-chapter-titles/methodology.md": "25efeb6ea69c48c1b625116363d92d9c964db9161843eddf013e011e48cd73ae",
+    "prompts/12-chapter-titles/user.md": "222f241aa5bea2c4bbc9c36eb8bc968b125e8c941c375ef51d5e4cd285cf5edf",
+    "prompts/13-create-outline/system.md": "acdd9b1f839d32759656b2f27a32117d6ccfad8c59fd9f1e1abcde402af342cd",
+    "prompts/13-create-outline/methodology.md": "16b2d6089277efa34b37dcf9c8da0bd65b2fad63c84b610975539e9a9df592d6",
+    "prompts/13-create-outline/user.md": "20fc7ac167c01d503dcfb2252c48bb5673d60848e5567055a34844bcc1f6c89d",
+    "prompts/14-rewrite-titles-extract/system.md": "55c14a08644c449fe50f59dcba90deef49b9f541788815f9af73828eb36e680e",
+    "prompts/14-rewrite-titles-extract/methodology.md": "e6a3aaa0386e9b9461b4af88d48e53f9363955a6c411be3c65448f82ac339b9d",
+    "prompts/14-rewrite-titles-extract/user.md": "c54fab8d9ac58a79670898a3556ef2fdeb20ba407026d700adcebb13b3ec6176",
+    "prompts/15-write-chapters-b1/system.md": "50c8043fc7124dfe6a41a676072e33006db3815b9141092e94b897ff24419679",
+    "prompts/15-write-chapters-b1/methodology.md": "7ba148a1355b1dd4b8475e724dc09d2b9c2409f6d79208a19760c0720250f184",
+    "prompts/15-write-chapters-b1/user.md": "43e684c6ff896ff72759703530e375c02d70439e7a2135884fefcf4ae20554e0",
+    "prompts/16-write-chapters-b2/system.md": "c86dfa378c0765b79e6d80dcb94675e19cea82abf29e2c27061099a77a4f598f",
+    "prompts/16-write-chapters-b2/methodology.md": "4c4bd12f98dbeae38d0be8b5bd0bb14f5b13a3847ddbd8db9b43ae7020ef5905",
+    "prompts/16-write-chapters-b2/user.md": "82ed4077f913a2cbad27bb96761fa7fc3f40dcde9a059d42472d6a2f77747875",
+    "prompts/17-write-chapters-b3/system.md": "00e7fdc8046288e8ace946f5d02559f1a6b3a443af6e12f5d28c9cb601b049ce",
+    "prompts/17-write-chapters-b3/methodology.md": "c61f498ead84105af4d360e566883846eb50d093d376233b6c7c794559902174",
+    "prompts/17-write-chapters-b3/user.md": "3bae10671d7638f52ae4e957c88c74655bd6a91768f5022c45e26fbc3d76f889",
+    "prompts/18-write-chapters-b4/system.md": "9b6bb96d04f5922b44722d728227c2f786b8a7aaf52d2bc5121848cc755ecd93",
+    "prompts/18-write-chapters-b4/methodology.md": "3dc11d54ace41f2ff8de0ba66a1947772a60ae59b13fd43f19d96cc9d0acb45c",
+    "prompts/18-write-chapters-b4/user.md": "d9d747e042f14afc3f03ff59913970f0de5d77be1084030400ac8463cb88bbca",
+    "prompts/19-book-rewrite-1/system.md": "dbb5f9924a2ad5e832648991c41bf0c6d11787678aeee76d3a3e4a7ae0a87ddf",
+    "prompts/19-book-rewrite-1/methodology.md": "3e218289a8def232a2088472444b5fe2667ba576f5792acbe12e7352788fc5a7",
+    "prompts/19-book-rewrite-1/user.md": "4fa06ca1b44f8f44a1644add09dd58983f3873fdceb4654e93f171d8cd97d79f",
+    "prompts/20-book-rewrite-2/system.md": "1314494beefc07316574f39adb583bbb7e3c5165e3bbe9ea4199567addbbc844",
+    "prompts/20-book-rewrite-2/methodology.md": "54ba59b8a6395290e999edee739e7b2ad8fe41f35eab47889f4da5ed01afca5b",
+    "prompts/20-book-rewrite-2/user.md": "8144239943d38b98e00e18ec7de1a09445dc1f2a8e96412128c3a87ffb6c1f8c",
+    "prompts/21-30day-challenge/system.md": "b62b1144a80c15825eb6741325046ebaec105c2dcb210e50d1bd2efcbeedca54",
+    "prompts/21-30day-challenge/methodology.md": "d6eeaa69023ead905f1d642b8c62f32d4132547b6e71d353e8763f62e15ee615",
+    "prompts/21-30day-challenge/user.md": "2556dfd7448628cb0c0fd2db731b0d61516187b9381f3e2e0e4bc22a37d2f7ba",
+    "prompts/22-cover-prompt/system.md": "26925bc5ecf136881e3f373e4bbfb456f3f60a5672dc54da8e4b944a7a15a1d2",
+    "prompts/22-cover-prompt/methodology.md": "3bc61a7604d5a472ab7ee0d7226bd4a1b855930ef4b97f28535f792bca21c066",
+    "prompts/22-cover-prompt/user.md": "6455654d117bf0ba15f4f7612499d84b04920ce1faed5759061967d76ece4d90",
+    "prompts/23-cover-image/system.md": "d1abfd3fbd714286865c0e301ff9847b75b6c4c31b702f7b63cb85956d431c18",
+    "prompts/23-cover-image/methodology.md": "009c97093d4a5c878571620dfedec58d967119ec361c17e06201104bb733572a",
+    "prompts/23-cover-image/user.md": "b04d09e4537573f78d5f6fbcf89cc8bd21b788f45067be09179d0b8ea7591536",
+    "prompts/41-433-30-titles/system.md": "8b99b3ee9d97b1feb456c64e2d8a0f8993f6dbe50903931bbcf17a8054d342c8",
+    "prompts/41-433-30-titles/methodology.md": "73a194b55c9e74645624034bd725c9d1ede2bc159e66977e3cc37bd3e79a4079",
+    "prompts/41-433-30-titles/user.md": "860a98c3b05cec2f91126a9aba7a660cd797b9353fac4ee7cbe3d787fdcd16f8",
+    "prompts/42-433-outcomes/system.md": "25ec04a8db0e91b30adb91bfe9bbb2c62ac47bd3978abd4f5d287fb3a665c406",
+    "prompts/42-433-outcomes/methodology.md": "0b275109e51a524a07732a5682bda9aab078779ae3d05567578818ba7b392ef2",
+    "prompts/42-433-outcomes/user.md": "46293c72591d45ae2ee7fc3f29de1f36e0c4ba774574e04b99f2df64aeb63884",
+    "prompts/43-433-kp-doc/system.md": "1b30c91694bb3791edf4516e7271b6ea2903e489678976ae30da82d1deeafbdb",
+    "prompts/43-433-kp-doc/methodology.md": "7e183f3361162afc2ff2ecbcee183d98fd389969f90d27a557d7e1d782751f7b",
+    "prompts/43-433-kp-doc/user.md": "f24a968d67272aae5583de4567207f9f10b58dde553ce9fd0a235086901f3dfb",
+    "prompts/44-433-slides-extract/system.md": "723de16cee9a5d5c3bb72d6bf19d4a857776fb67cdeb0892cd134a45b2871af5",
+    "prompts/44-433-slides-extract/methodology.md": "baf7e9eadc2bd9104047b356f97cd21e6009888b14c1a889626b3dda291410bb",
+    "prompts/44-433-slides-extract/user.md": "1b93a582989111b0b069aeb9c4856dad74815d6924aa5c3f1ad08f9fdfd29208",
+    "prompts/45-433-image-instructions/system.md": "2435061fd97ecbdfa07ae0c971688a21374fcae3cfad2d1b3cfce7c26777da30",
+    "prompts/45-433-image-instructions/methodology.md": "9f93beb62c64339703b4c3e3ad4a1b57c76756fff1ea92f6ff2516f1aba65c8f",
+    "prompts/45-433-image-instructions/user.md": "5546557e7ad31fa1d21e17e6d18d3ecdabd71ab76ca395b94490225180b5527b"
   },
   "source_prompt_pins_note": "sha256 of each baked NON-tone prompt asset (prompts/<stage>/{system,methodology,user}.md for stages 01-03, 10-14, 19-23, 41-45); populated by `qc-book-writer.sh --repin` after Wave-1 authors the triplets, then enforced by prove_bw_process (AF-BK-HASH-PIN) + book-writer-entry.sh. The five tone stages 04-08 are pinned separately and byte-exactly against shared-utils/tone-writing-core via verify_tone_core_sync.py (NOT listed here).",
   "modes": {
@@ -25,8 +82,18 @@
   },
   "modes_note": "Anthology is the SEPARATE future sibling Skill 54 (anthology-writer); it is referenced only as a sibling and is NOT a mode here.",
   "gates_order": {
-    "full": ["GATE-1-title", "GATE-2-outline", "GATE-3-approval", "GATE-4-approval-r2"],
-    "4x3x3": ["GATE-433", "GATE-1-title", "GATE-2-outline", "GATE-3-approval"]
+    "full": [
+      "GATE-1-title",
+      "GATE-2-outline",
+      "GATE-3-approval",
+      "GATE-4-approval-r2"
+    ],
+    "4x3x3": [
+      "GATE-433",
+      "GATE-1-title",
+      "GATE-2-outline",
+      "GATE-3-approval"
+    ]
   },
   "gates_order_note": "In-chat human checkpoints replacing the source Gmail sendAndWait forms, exact order preserved: titles -> outline -> final approval -> (optional) second revision. Each gate receipt records the human's actual reply text + timestamp; downstream stage receipts reference the gate-receipt hash they depended on (approvals cannot be back-filled).",
   "tiers": {
@@ -44,69 +111,138 @@
       "name": "Intake + Book/Brand version selector (fail-closed, turn-gated)",
       "produces_artifact": "run/intake.json",
       "stages": [],
-      "preflight": {"required": true, "checker": "_chk_intake",
-        "label": "run/intake.json present and prove_bw_intake.py PASS — version=book explicit, mode in {full,4x3x3}, all required fields non-boilerplate, book_stories present (N/A allowed). version=brand hands off to Skill 52, never runs here."},
-      "gate_codes": ["AF-BK-INTAKE-MISSING", "AF-BK-VERSION"]
+      "preflight": {
+        "required": true,
+        "checker": "_chk_intake",
+        "label": "run/intake.json present and prove_bw_intake.py PASS — version=book explicit, mode in {full,4x3x3}, all required fields non-boilerplate, book_stories present (N/A allowed). version=brand hands off to Skill 52, never runs here."
+      },
+      "gate_codes": [
+        "AF-BK-INTAKE-MISSING",
+        "AF-BK-VERSION"
+      ]
     },
     {
       "id": "P1-AVATAR",
       "order": 1,
       "name": "Avatar dossier (reconstructed Phase B)",
       "produces_artifact": "run/artifacts/01-avatar.md",
-      "stages": ["01-avatar-questions-1-30", "02-avatar-questions-31-32", "03-rewrite-avatar"],
-      "preflight": {"required": true, "checker": "_chk_avatar",
-        "label": "avatar dossier authored (stages 01-03); primary goal echoed."},
-      "gate_codes": ["AF-BK-AVATAR-MISSING"]
+      "stages": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32",
+        "03-rewrite-avatar"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_avatar",
+        "label": "avatar dossier authored (stages 01-03); primary goal echoed."
+      },
+      "gate_codes": [
+        "AF-BK-AVATAR-MISSING"
+      ]
     },
     {
       "id": "P2-TONE",
       "order": 2,
       "name": "Tone: 4 style analyses + the blended 'The {First} {Last} Tone' (shared tone core)",
       "produces_artifact": "run/artifacts/08-blended-tone.md",
-      "stages": ["04-tone-style-1", "05-tone-style-2", "06-tone-style-3", "07-tone-style-4", "08-blended-tone"],
-      "preflight": {"required": true, "checker": "_chk_tone",
-        "label": "prove_bw_tone.py PASS — blended tone >= 3000 stripped words; tone stages 04-08 in lockstep with shared-utils/tone-writing-core (verify_tone_core_sync.py)."},
-      "gate_codes": ["AF-BK-TONE-LEN"]
+      "stages": [
+        "04-tone-style-1",
+        "05-tone-style-2",
+        "06-tone-style-3",
+        "07-tone-style-4",
+        "08-blended-tone"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_tone",
+        "label": "prove_bw_tone.py PASS — blended tone >= 3000 stripped words; tone stages 04-08 in lockstep with shared-utils/tone-writing-core (verify_tone_core_sync.py)."
+      },
+      "gate_codes": [
+        "AF-BK-TONE-LEN"
+      ]
     },
     {
       "id": "P3-TITLES-GATE",
       "order": 3,
       "name": "Suggested titles -> GATE-1 (client locks title + subtitle)",
       "produces_artifact": "run/artifacts/APPROVED-TITLE.txt",
-      "stages": ["10-suggested-titles"],
-      "preflight": {"required": true, "checker": "_chk_title_lock",
-        "label": "prove_bw_titlelock.py PASS — the GATE-1 locked title + subtitle appear byte-exact in every required downstream artifact."},
-      "gate_codes": ["AF-BK-TITLE-LOCK"]
+      "stages": [
+        "10-suggested-titles"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_title_lock",
+        "label": "prove_bw_titlelock.py PASS — the GATE-1 locked title + subtitle appear byte-exact in every required downstream artifact."
+      },
+      "gate_codes": [
+        "AF-BK-TITLE-LOCK"
+      ]
     },
     {
       "id": "P4-OUTLINE-GATE",
       "order": 4,
       "name": "Blurb -> chapter titles -> outline -> GATE-2 (client approves outline)",
       "produces_artifact": "run/artifacts/13-outline.md",
-      "stages": ["11-book-blurb", "12-chapter-titles", "13-create-outline", "14-rewrite-titles-extract"],
-      "preflight": {"required": true, "checker": "_chk_outline",
-        "label": "prove_bw_stories.py PASS — each non-N/A personal story key phrase present in the approved outline; 12-title extraction schema-valid."},
-      "gate_codes": ["AF-BK-STORIES"]
+      "stages": [
+        "11-book-blurb",
+        "12-chapter-titles",
+        "13-create-outline",
+        "14-rewrite-titles-extract"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_outline",
+        "label": "prove_bw_stories.py PASS — each non-N/A personal story key phrase present in the approved outline; 12-title extraction schema-valid."
+      },
+      "gate_codes": [
+        "AF-BK-STORIES"
+      ]
     },
     {
       "id": "P5-CHAPTERS",
       "order": 5,
       "name": "Four STRICTLY-SEQUENTIAL chapter batches (continuity by design)",
       "produces_artifact": "run/chapters/ch01..ch12.md",
-      "stages": ["15-write-chapters-b1", "16-write-chapters-b2", "17-write-chapters-b3", "18-write-chapters-b4"],
-      "preflight": {"required": true, "checker": "_chk_chapters",
-        "label": "prove_bw_chapters.py PASS (exactly 12 chapters, each 2000-3500 stripped words) + prove_bw_continuity.py PASS (batch N receipt records sha256 of every prior chapter embedded) + prove_bw_stories.py PASS over the manuscript."},
-      "gate_codes": ["AF-BK-CHAP-COUNT", "AF-BK-CHAP-LEN", "AF-BK-CONTINUITY", "AF-BK-STORIES"]
+      "stages": [
+        "15-write-chapters-b1",
+        "16-write-chapters-b2",
+        "17-write-chapters-b3",
+        "18-write-chapters-b4"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "_chk_chapters",
+        "label": "prove_bw_chapters.py PASS (exactly 12 chapters, each 2000-3500 stripped words) + prove_bw_continuity.py PASS (batch N receipt records sha256 of every prior chapter embedded) + prove_bw_stories.py PASS over the manuscript."
+      },
+      "gate_codes": [
+        "AF-BK-CHAP-COUNT",
+        "AF-BK-CHAP-LEN",
+        "AF-BK-CONTINUITY",
+        "AF-BK-STORIES"
+      ]
     },
     {
       "id": "P6-PACKAGE",
       "order": 6,
       "name": "Assemble manuscript + 30-Day Challenge + cover prompt (+ optional revision rounds)",
       "produces_artifact": "delivery/<First>_<Last>-Book/",
-      "stages": ["21-30day-challenge", "22-cover-prompt", "23-cover-image", "19-book-rewrite-1", "20-book-rewrite-2"],
-      "preflight": {"required": true, "checker": "check_package",
-        "label": "prove_bw_challenge.py PASS (exactly 30 day-sections) + prove_bw_placeholder.py PASS (no unresolved {{..}}/$('..') tokens) + prove_bw_anon.py PASS (no configured client-name token, run over the assembled staging bundle) + the conditional GATE-3/GATE-4 revision-round approval receipts (required only when the corresponding rewrite round ran). Cover prompt always delivered; cover image may park degraded:image."},
-      "gate_codes": ["AF-BK-CHALLENGE", "AF-BK-PLACEHOLDER", "AF-BK-ANON"]
+      "stages": [
+        "21-30day-challenge",
+        "22-cover-prompt",
+        "23-cover-image",
+        "19-book-rewrite-1",
+        "20-book-rewrite-2"
+      ],
+      "preflight": {
+        "required": true,
+        "checker": "check_package",
+        "label": "prove_bw_challenge.py PASS (exactly 30 day-sections) + prove_bw_placeholder.py PASS (no unresolved {{..}}/$('..') tokens) + prove_bw_anon.py PASS (no configured client-name token, run over the assembled staging bundle) + the conditional GATE-3/GATE-4 revision-round approval receipts (required only when the corresponding rewrite round ran). Cover prompt always delivered; cover image may park degraded:image."
+      },
+      "gate_codes": [
+        "AF-BK-CHALLENGE",
+        "AF-BK-PLACEHOLDER",
+        "AF-BK-ANON"
+      ]
     },
     {
       "id": "P7-QC",
@@ -114,9 +250,16 @@
       "name": "QC battery (no-Anthropic + anonymization + 4x3x3 when applicable)",
       "produces_artifact": "run/qc/book_qc_report.json",
       "stages": [],
-      "preflight": {"required": true, "checker": "check_qc",
-        "label": "prove_bw_noanthropic.py PASS — RUN-LEDGER.json is PRESENT and records at least one model id (fail-closed when absent or empty), no /anthropic|claude/i model id, and no operator credential name in the LIVE run env (scanned by NAME only) + prove_bw_433.py PASS when mode=4x3x3. Anonymization (AF-BK-ANON) is enforced at P6-PACKAGE over the assembled bundle."},
-      "gate_codes": ["AF-BK-ANTHROPIC", "AF-BK-433-COUNTS", "AF-BK-433-MAP"]
+      "preflight": {
+        "required": true,
+        "checker": "check_qc",
+        "label": "prove_bw_noanthropic.py PASS — RUN-LEDGER.json is PRESENT and records at least one model id (fail-closed when absent or empty), no /anthropic|claude/i model id, and no operator credential name in the LIVE run env (scanned by NAME only) + prove_bw_433.py PASS when mode=4x3x3. Anonymization (AF-BK-ANON) is enforced at P6-PACKAGE over the assembled bundle."
+      },
+      "gate_codes": [
+        "AF-BK-ANTHROPIC",
+        "AF-BK-433-COUNTS",
+        "AF-BK-433-MAP"
+      ]
     },
     {
       "id": "P8-DELIVER",
@@ -124,59 +267,545 @@
       "name": "Deliver (labeled local bundle + signed process certificate)",
       "produces_artifact": "delivery/<First>_<Last>-Book/PROCESS-CERTIFICATE.json",
       "stages": [],
-      "preflight": {"required": true, "checker": "check_deliver",
-        "label": "the certified staging bundle is promoted to delivery/ and copied to a labeled, timestamped ~/Downloads/<First>_<Last>-Book/Book_Writer_<timestamp>/ folder (root overridable via BOOK_WRITER_DELIVERY_ROOT), then EVERY file's sha256 is re-verified against MANIFEST.json (fail-closed on any missing/mismatched file); NO n8n / Airtable / Google / Gmail / Slack / GHL. An uncertified bundle is quarantined and never sits in delivery/. A signed process certificate is issued only after a full P0->P8 pass. 'Done' may only be claimed with the certificate path."},
-      "gate_codes": ["AF-BK-STAGE-SKIPPED", "AF-BK-PROCESS-INTEGRITY"]
+      "preflight": {
+        "required": true,
+        "checker": "check_deliver",
+        "label": "the certified staging bundle is promoted to delivery/ and copied to a labeled, timestamped ~/Downloads/<First>_<Last>-Book/Book_Writer_<timestamp>/ folder (root overridable via BOOK_WRITER_DELIVERY_ROOT), then EVERY file's sha256 is re-verified against MANIFEST.json (fail-closed on any missing/mismatched file); NO n8n / Airtable / Google / Gmail / Slack / GHL. An uncertified bundle is quarantined and never sits in delivery/. A signed process certificate is issued only after a full P0->P8 pass. 'Done' may only be claimed with the certificate path."
+      },
+      "gate_codes": [
+        "AF-BK-STAGE-SKIPPED",
+        "AF-BK-PROCESS-INTEGRITY"
+      ]
     }
   ],
   "autofails": [
-    {"code": "AF-BK-INTAKE-MISSING", "stage": "P0-INTAKE", "level": "intake", "trigger": "a required intake field (version, mode, first_name, last_name, ideal_avatar, niche, primary_goal, tone_style_1, tone_style_2, book_about, book_stories, cover_description) is missing, empty, or template boilerplate", "enforced_by": "prove_bw_intake", "py_symbol": "evaluate"},
-    {"code": "AF-BK-VERSION", "stage": "P0-INTAKE", "level": "intake", "trigger": "version unset or not in {book,brand}; the answered question set does not match the version; version=brand is not handed off to Skill 52 (never run here); or mode not in {full,4x3x3}", "enforced_by": "prove_bw_intake", "py_symbol": "evaluate"},
-    {"code": "AF-BK-TITLE-LOCK", "stage": "P3-TITLES-GATE", "level": "manuscript", "trigger": "the GATE-1 locked title and/or subtitle is not present BYTE-EXACT in the blurb, outline, any chapter payload/title page, the manuscript title page, or the cover prompt (the source 'DO NOT CHANGE ABOVE TITLES' as code)", "enforced_by": "prove_bw_titlelock", "py_symbol": "evaluate"},
-    {"code": "AF-BK-STORIES", "stage": "P4-OUTLINE-GATE", "level": "manuscript", "trigger": "a non-N/A personal story's normalized key phrase is absent from the approved outline AND/OR the manuscript (the outline prompt's verbatim-placement mandate as code)", "enforced_by": "prove_bw_stories", "py_symbol": "evaluate"},
-    {"code": "AF-BK-CHAP-COUNT", "stage": "P5-CHAPTERS", "level": "manuscript", "trigger": "the manuscript does not contain exactly 12 chapters (headings must match the stage-14 extraction)", "enforced_by": "prove_bw_chapters", "py_symbol": "evaluate"},
-    {"code": "AF-BK-CHAP-LEN", "stage": "P5-CHAPTERS", "level": "manuscript", "trigger": "any chapter's MEASURED stripped word count is outside [2000,3500] (self-reported count ignored; whitespace padding is inert)", "enforced_by": "prove_bw_chapters", "py_symbol": "evaluate"},
-    {"code": "AF-BK-CONTINUITY", "stage": "P5-CHAPTERS", "level": "run", "trigger": "a chapter-batch receipt does not record the sha256 of every prior chapter actually embedded in its dispatched payload (a batch written without its predecessors)", "enforced_by": "prove_bw_continuity", "py_symbol": "evaluate"},
-    {"code": "AF-BK-TONE-LEN", "stage": "P2-TONE", "level": "tone", "trigger": "the blended tone document is below 3000 stripped words (per shared-utils/tone-writing-core)", "enforced_by": "prove_bw_tone", "py_symbol": "evaluate"},
-    {"code": "AF-BK-CHALLENGE", "stage": "P6-PACKAGE", "level": "challenge", "trigger": "the 30-Day Challenge does not have exactly 30 day-sections (heading pattern 'Day <n> —')", "enforced_by": "prove_bw_challenge", "py_symbol": "evaluate"},
-    {"code": "AF-BK-433-COUNTS", "stage": "P7-QC", "level": "4x3x3", "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes AND not exactly 30 program titles", "enforced_by": "prove_bw_433", "py_symbol": "evaluate"},
-    {"code": "AF-BK-433-MAP", "stage": "P7-QC", "level": "4x3x3", "trigger": "4x3x3 mode: the 12 chapters do not map into 4 phases x 3 chapters, or 433_Deck_Data.json is schema-invalid", "enforced_by": "prove_bw_433", "py_symbol": "evaluate"},
-    {"code": "AF-BK-PLACEHOLDER", "stage": "P6-PACKAGE", "level": "run", "trigger": "an unresolved {{...}} or $('...') token remains in any artifact or deliverable", "enforced_by": "prove_bw_placeholder", "py_symbol": "evaluate"},
-    {"code": "AF-BK-ANTHROPIC", "stage": "P7-QC", "level": "run", "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name appears in the run env", "enforced_by": "prove_bw_noanthropic", "py_symbol": "evaluate"},
-    {"code": "AF-BK-ANON", "stage": "P6-PACKAGE", "level": "skill", "trigger": "a configured client-name token appears in the assembled deliverable bundle (or a shipped skill file); fixtures use fictional names only. Enforced at P6 over the staging bundle and by the verify.sh CI belt over the shipped tree.", "enforced_by": "prove_bw_anon", "py_symbol": "evaluate"},
-    {"code": "AF-BK-STAGE-SKIPPED", "stage": "P8-DELIVER", "level": "run", "trigger": "a phase was attempted out of order or the certificate chain is broken", "enforced_by": "run_book_writer", "py_symbol": "run"},
-    {"code": "AF-BK-PROCESS-INTEGRITY", "stage": "P8-DELIVER", "level": "run", "trigger": "a certificate was requested without a full P0->P7 pass", "enforced_by": "run_book_writer", "py_symbol": "_write_certificate"},
-    {"code": "AF-BK-HASH-PIN", "stage": "entry", "level": "enforcement", "trigger": "the enforcement-set hash (orchestrator + provers + _bw_common) does not match the pinned head (ENGINE-PIN.sha256)", "enforced_by": "book-writer-entry", "py_symbol": "version_hash_pin"},
-    {"code": "AF-BK-ENTRY-BYPASS", "stage": "entry", "level": "run-dir", "trigger": "a hand-rolled external uploader/notifier (Google Drive / Slack / Gmail / n8n / Airtable / GHL) is present in the run directory, bypassing the local-labeled-deliverable handoff", "enforced_by": "book-writer-entry", "py_symbol": "bypass_scan"}
+    {
+      "code": "AF-BK-INTAKE-MISSING",
+      "stage": "P0-INTAKE",
+      "level": "intake",
+      "trigger": "a required intake field (version, mode, first_name, last_name, ideal_avatar, niche, primary_goal, tone_style_1, tone_style_2, book_about, book_stories, cover_description) is missing, empty, or template boilerplate",
+      "enforced_by": "prove_bw_intake",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-VERSION",
+      "stage": "P0-INTAKE",
+      "level": "intake",
+      "trigger": "version unset or not in {book,brand}; the answered question set does not match the version; version=brand is not handed off to Skill 52 (never run here); or mode not in {full,4x3x3}",
+      "enforced_by": "prove_bw_intake",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-TITLE-LOCK",
+      "stage": "P3-TITLES-GATE",
+      "level": "manuscript",
+      "trigger": "the GATE-1 locked title and/or subtitle is not present BYTE-EXACT in the blurb, outline, any chapter payload/title page, the manuscript title page, or the cover prompt (the source 'DO NOT CHANGE ABOVE TITLES' as code)",
+      "enforced_by": "prove_bw_titlelock",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-STORIES",
+      "stage": "P4-OUTLINE-GATE",
+      "level": "manuscript",
+      "trigger": "a non-N/A personal story's normalized key phrase is absent from the approved outline AND/OR the manuscript (the outline prompt's verbatim-placement mandate as code)",
+      "enforced_by": "prove_bw_stories",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-CHAP-COUNT",
+      "stage": "P5-CHAPTERS",
+      "level": "manuscript",
+      "trigger": "the manuscript does not contain exactly 12 chapters (headings must match the stage-14 extraction)",
+      "enforced_by": "prove_bw_chapters",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-CHAP-LEN",
+      "stage": "P5-CHAPTERS",
+      "level": "manuscript",
+      "trigger": "any chapter's MEASURED stripped word count is outside [2000,3500] (self-reported count ignored; whitespace padding is inert)",
+      "enforced_by": "prove_bw_chapters",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-CONTINUITY",
+      "stage": "P5-CHAPTERS",
+      "level": "run",
+      "trigger": "a chapter-batch receipt does not record the sha256 of every prior chapter actually embedded in its dispatched payload (a batch written without its predecessors)",
+      "enforced_by": "prove_bw_continuity",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-TONE-LEN",
+      "stage": "P2-TONE",
+      "level": "tone",
+      "trigger": "the blended tone document is below 3000 stripped words (per shared-utils/tone-writing-core)",
+      "enforced_by": "prove_bw_tone",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-CHALLENGE",
+      "stage": "P6-PACKAGE",
+      "level": "challenge",
+      "trigger": "the 30-Day Challenge does not have exactly 30 day-sections (heading pattern 'Day <n> —')",
+      "enforced_by": "prove_bw_challenge",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-433-COUNTS",
+      "stage": "P7-QC",
+      "level": "4x3x3",
+      "trigger": "4x3x3 mode: not exactly 4 Transformational Outcomes AND not exactly 30 program titles",
+      "enforced_by": "prove_bw_433",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-433-MAP",
+      "stage": "P7-QC",
+      "level": "4x3x3",
+      "trigger": "4x3x3 mode: the 12 chapters do not map into 4 phases x 3 chapters, or 433_Deck_Data.json is schema-invalid",
+      "enforced_by": "prove_bw_433",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-PLACEHOLDER",
+      "stage": "P6-PACKAGE",
+      "level": "run",
+      "trigger": "an unresolved {{...}} or $('...') token remains in any artifact or deliverable",
+      "enforced_by": "prove_bw_placeholder",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-ANTHROPIC",
+      "stage": "P7-QC",
+      "level": "run",
+      "trigger": "a model id in RUN-LEDGER.json matches /anthropic|claude/i, or an operator credential name appears in the run env",
+      "enforced_by": "prove_bw_noanthropic",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-ANON",
+      "stage": "P6-PACKAGE",
+      "level": "skill",
+      "trigger": "a configured client-name token appears in the assembled deliverable bundle (or a shipped skill file); fixtures use fictional names only. Enforced at P6 over the staging bundle and by the verify.sh CI belt over the shipped tree.",
+      "enforced_by": "prove_bw_anon",
+      "py_symbol": "evaluate"
+    },
+    {
+      "code": "AF-BK-STAGE-SKIPPED",
+      "stage": "P8-DELIVER",
+      "level": "run",
+      "trigger": "a phase was attempted out of order or the certificate chain is broken",
+      "enforced_by": "run_book_writer",
+      "py_symbol": "run"
+    },
+    {
+      "code": "AF-BK-PROCESS-INTEGRITY",
+      "stage": "P8-DELIVER",
+      "level": "run",
+      "trigger": "a certificate was requested without a full P0->P7 pass",
+      "enforced_by": "run_book_writer",
+      "py_symbol": "_write_certificate"
+    },
+    {
+      "code": "AF-BK-HASH-PIN",
+      "stage": "entry",
+      "level": "enforcement",
+      "trigger": "the enforcement-set hash (orchestrator + provers + _bw_common) does not match the pinned head (ENGINE-PIN.sha256)",
+      "enforced_by": "book-writer-entry",
+      "py_symbol": "version_hash_pin"
+    },
+    {
+      "code": "AF-BK-ENTRY-BYPASS",
+      "stage": "entry",
+      "level": "run-dir",
+      "trigger": "a hand-rolled external uploader/notifier (Google Drive / Slack / Gmail / n8n / Airtable / GHL) is present in the run directory, bypassing the local-labeled-deliverable handoff",
+      "enforced_by": "book-writer-entry",
+      "py_symbol": "bypass_scan"
+    }
   ],
   "stages": [
-    {"stage_id": "01-avatar-questions-1-30", "prompt_dir": "prompts/01-avatar-questions-1-30", "phase": "P1-AVATAR", "depends_on": [], "tier": "MID-WRITER", "floors": {}},
-    {"stage_id": "02-avatar-questions-31-32", "prompt_dir": "prompts/02-avatar-questions-31-32", "phase": "P1-AVATAR", "depends_on": ["01-avatar-questions-1-30"], "tier": "RESEARCHER", "floors": {"links_verify": true}},
-    {"stage_id": "03-rewrite-avatar", "prompt_dir": "prompts/03-rewrite-avatar", "phase": "P1-AVATAR", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "tier": "MID-WRITER", "floors": {}},
-    {"stage_id": "04-tone-style-1", "prompt_dir": "prompts/04-tone-style-1", "phase": "P2-TONE", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "tier": "MID-WRITER", "floors": {}, "shared_core": true, "na_autopick": true},
-    {"stage_id": "05-tone-style-2", "prompt_dir": "prompts/05-tone-style-2", "phase": "P2-TONE", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "tier": "MID-WRITER", "floors": {}, "shared_core": true, "na_autopick": true},
-    {"stage_id": "06-tone-style-3", "prompt_dir": "prompts/06-tone-style-3", "phase": "P2-TONE", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "tier": "MID-WRITER", "floors": {}, "shared_core": true, "na_autopick": true},
-    {"stage_id": "07-tone-style-4", "prompt_dir": "prompts/07-tone-style-4", "phase": "P2-TONE", "depends_on": ["01-avatar-questions-1-30", "02-avatar-questions-31-32"], "tier": "MID-WRITER", "floors": {}, "shared_core": true, "na_autopick": true},
-    {"stage_id": "08-blended-tone", "prompt_dir": "prompts/08-blended-tone", "phase": "P2-TONE", "depends_on": ["04-tone-style-1", "05-tone-style-2", "06-tone-style-3", "07-tone-style-4"], "tier": "MID-WRITER", "floors": {"word_floor": 3000}, "shared_core": true, "produces": "The {First} {Last} Tone"},
-    {"stage_id": "10-suggested-titles", "prompt_dir": "prompts/10-suggested-titles", "phase": "P3-TITLES-GATE", "depends_on": ["03-rewrite-avatar", "08-blended-tone"], "tier": "MID-WRITER", "floors": {}, "gate": "GATE-1-title"},
-    {"stage_id": "11-book-blurb", "prompt_dir": "prompts/11-book-blurb", "phase": "P4-OUTLINE-GATE", "depends_on": ["10-suggested-titles"], "tier": "MID-WRITER", "floors": {"title_lock": true}},
-    {"stage_id": "12-chapter-titles", "prompt_dir": "prompts/12-chapter-titles", "phase": "P4-OUTLINE-GATE", "depends_on": ["11-book-blurb"], "tier": "MID-WRITER", "floors": {"chapter_count": 12}},
-    {"stage_id": "13-create-outline", "prompt_dir": "prompts/13-create-outline", "phase": "P4-OUTLINE-GATE", "depends_on": ["12-chapter-titles"], "tier": "HEAVY-WRITER", "floors": {"stories_placed": true, "title_lock": true}, "gate": "GATE-2-outline"},
-    {"stage_id": "14-rewrite-titles-extract", "prompt_dir": "prompts/14-rewrite-titles-extract", "phase": "P4-OUTLINE-GATE", "depends_on": ["13-create-outline"], "tier": "FORMATTER", "floors": {"structured_12_titles": true}},
-    {"stage_id": "15-write-chapters-b1", "prompt_dir": "prompts/15-write-chapters-b1", "phase": "P5-CHAPTERS", "depends_on": ["14-rewrite-titles-extract"], "tier": "HEAVY-WRITER", "chapters": [1, 2, 3], "floors": {"chapter_len": [2000, 3500], "title_lock": true}},
-    {"stage_id": "16-write-chapters-b2", "prompt_dir": "prompts/16-write-chapters-b2", "phase": "P5-CHAPTERS", "depends_on": ["15-write-chapters-b1"], "tier": "HEAVY-WRITER", "chapters": [4, 5, 6], "floors": {"chapter_len": [2000, 3500], "continuity": true, "title_lock": true}},
-    {"stage_id": "17-write-chapters-b3", "prompt_dir": "prompts/17-write-chapters-b3", "phase": "P5-CHAPTERS", "depends_on": ["16-write-chapters-b2"], "tier": "HEAVY-WRITER", "chapters": [7, 8, 9], "floors": {"chapter_len": [2000, 3500], "continuity": true, "title_lock": true}},
-    {"stage_id": "18-write-chapters-b4", "prompt_dir": "prompts/18-write-chapters-b4", "phase": "P5-CHAPTERS", "depends_on": ["17-write-chapters-b3"], "tier": "HEAVY-WRITER", "chapters": [10, 11, 12], "floors": {"chapter_len": [2000, 3500], "continuity": true, "title_lock": true}},
-    {"stage_id": "19-book-rewrite-1", "prompt_dir": "prompts/19-book-rewrite-1", "phase": "P6-PACKAGE", "depends_on": ["18-write-chapters-b4"], "tier": "HEAVY-WRITER", "floors": {"title_lock": true}, "gate": "GATE-3-approval", "optional": true},
-    {"stage_id": "20-book-rewrite-2", "prompt_dir": "prompts/20-book-rewrite-2", "phase": "P6-PACKAGE", "depends_on": ["19-book-rewrite-1"], "tier": "HEAVY-WRITER", "floors": {"title_lock": true}, "gate": "GATE-4-approval-r2", "optional": true},
-    {"stage_id": "21-30day-challenge", "prompt_dir": "prompts/21-30day-challenge", "phase": "P6-PACKAGE", "depends_on": ["18-write-chapters-b4"], "tier": "MID-WRITER", "floors": {"day_sections": 30}},
-    {"stage_id": "22-cover-prompt", "prompt_dir": "prompts/22-cover-prompt", "phase": "P6-PACKAGE", "depends_on": ["10-suggested-titles"], "tier": "FORMATTER", "floors": {"title_lock": true}},
-    {"stage_id": "23-cover-image", "prompt_dir": "prompts/23-cover-image", "phase": "P6-PACKAGE", "depends_on": ["22-cover-prompt"], "tier": "IMAGE", "floors": {}, "degrade": "degraded:image"},
-    {"stage_id": "41-433-30-titles", "prompt_dir": "prompts/41-433-30-titles", "phase": "P4-OUTLINE-GATE", "depends_on": ["03-rewrite-avatar"], "tier": "MID-WRITER", "mode": "4x3x3", "floors": {"title_count": 30}, "gate": "GATE-433"},
-    {"stage_id": "42-433-outcomes", "prompt_dir": "prompts/42-433-outcomes", "phase": "P4-OUTLINE-GATE", "depends_on": ["03-rewrite-avatar"], "tier": "MID-WRITER", "mode": "4x3x3", "floors": {"outcome_count": 4}, "gate": "GATE-433"},
-    {"stage_id": "43-433-kp-doc", "prompt_dir": "prompts/43-433-kp-doc", "phase": "P4-OUTLINE-GATE", "depends_on": ["42-433-outcomes"], "tier": "MID-WRITER", "mode": "4x3x3", "floors": {}},
-    {"stage_id": "44-433-slides-extract", "prompt_dir": "prompts/44-433-slides-extract", "phase": "P7-QC", "depends_on": ["42-433-outcomes", "12-chapter-titles"], "tier": "FORMATTER", "mode": "4x3x3", "floors": {"deck_schema": true, "phase_map": [4, 3]}, "produces": "433_Deck_Data.json"},
-    {"stage_id": "45-433-image-instructions", "prompt_dir": "prompts/45-433-image-instructions", "phase": "P6-PACKAGE", "depends_on": ["43-433-kp-doc"], "tier": "FORMATTER", "mode": "4x3x3", "floors": {}}
+    {
+      "stage_id": "01-avatar-questions-1-30",
+      "prompt_dir": "prompts/01-avatar-questions-1-30",
+      "phase": "P1-AVATAR",
+      "depends_on": [],
+      "tier": "MID-WRITER",
+      "floors": {}
+    },
+    {
+      "stage_id": "02-avatar-questions-31-32",
+      "prompt_dir": "prompts/02-avatar-questions-31-32",
+      "phase": "P1-AVATAR",
+      "depends_on": [
+        "01-avatar-questions-1-30"
+      ],
+      "tier": "RESEARCHER",
+      "floors": {
+        "links_verify": true
+      }
+    },
+    {
+      "stage_id": "03-rewrite-avatar",
+      "prompt_dir": "prompts/03-rewrite-avatar",
+      "phase": "P1-AVATAR",
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {}
+    },
+    {
+      "stage_id": "04-tone-style-1",
+      "prompt_dir": "prompts/04-tone-style-1",
+      "phase": "P2-TONE",
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {},
+      "shared_core": true,
+      "na_autopick": true
+    },
+    {
+      "stage_id": "05-tone-style-2",
+      "prompt_dir": "prompts/05-tone-style-2",
+      "phase": "P2-TONE",
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {},
+      "shared_core": true,
+      "na_autopick": true
+    },
+    {
+      "stage_id": "06-tone-style-3",
+      "prompt_dir": "prompts/06-tone-style-3",
+      "phase": "P2-TONE",
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {},
+      "shared_core": true,
+      "na_autopick": true
+    },
+    {
+      "stage_id": "07-tone-style-4",
+      "prompt_dir": "prompts/07-tone-style-4",
+      "phase": "P2-TONE",
+      "depends_on": [
+        "01-avatar-questions-1-30",
+        "02-avatar-questions-31-32"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {},
+      "shared_core": true,
+      "na_autopick": true
+    },
+    {
+      "stage_id": "08-blended-tone",
+      "prompt_dir": "prompts/08-blended-tone",
+      "phase": "P2-TONE",
+      "depends_on": [
+        "04-tone-style-1",
+        "05-tone-style-2",
+        "06-tone-style-3",
+        "07-tone-style-4"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {
+        "word_floor": 3000
+      },
+      "shared_core": true,
+      "produces": "The {First} {Last} Tone"
+    },
+    {
+      "stage_id": "10-suggested-titles",
+      "prompt_dir": "prompts/10-suggested-titles",
+      "phase": "P3-TITLES-GATE",
+      "depends_on": [
+        "03-rewrite-avatar",
+        "08-blended-tone"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {},
+      "gate": "GATE-1-title"
+    },
+    {
+      "stage_id": "11-book-blurb",
+      "prompt_dir": "prompts/11-book-blurb",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "10-suggested-titles"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "12-chapter-titles",
+      "prompt_dir": "prompts/12-chapter-titles",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "11-book-blurb"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {
+        "chapter_count": 12
+      }
+    },
+    {
+      "stage_id": "13-create-outline",
+      "prompt_dir": "prompts/13-create-outline",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "12-chapter-titles"
+      ],
+      "tier": "HEAVY-WRITER",
+      "floors": {
+        "stories_placed": true,
+        "title_lock": true
+      },
+      "gate": "GATE-2-outline"
+    },
+    {
+      "stage_id": "14-rewrite-titles-extract",
+      "prompt_dir": "prompts/14-rewrite-titles-extract",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "13-create-outline"
+      ],
+      "tier": "FORMATTER",
+      "floors": {
+        "structured_12_titles": true
+      }
+    },
+    {
+      "stage_id": "15-write-chapters-b1",
+      "prompt_dir": "prompts/15-write-chapters-b1",
+      "phase": "P5-CHAPTERS",
+      "depends_on": [
+        "14-rewrite-titles-extract"
+      ],
+      "tier": "HEAVY-WRITER",
+      "chapters": [
+        1,
+        2,
+        3
+      ],
+      "floors": {
+        "chapter_len": [
+          2000,
+          3500
+        ],
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "16-write-chapters-b2",
+      "prompt_dir": "prompts/16-write-chapters-b2",
+      "phase": "P5-CHAPTERS",
+      "depends_on": [
+        "15-write-chapters-b1"
+      ],
+      "tier": "HEAVY-WRITER",
+      "chapters": [
+        4,
+        5,
+        6
+      ],
+      "floors": {
+        "chapter_len": [
+          2000,
+          3500
+        ],
+        "continuity": true,
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "17-write-chapters-b3",
+      "prompt_dir": "prompts/17-write-chapters-b3",
+      "phase": "P5-CHAPTERS",
+      "depends_on": [
+        "16-write-chapters-b2"
+      ],
+      "tier": "HEAVY-WRITER",
+      "chapters": [
+        7,
+        8,
+        9
+      ],
+      "floors": {
+        "chapter_len": [
+          2000,
+          3500
+        ],
+        "continuity": true,
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "18-write-chapters-b4",
+      "prompt_dir": "prompts/18-write-chapters-b4",
+      "phase": "P5-CHAPTERS",
+      "depends_on": [
+        "17-write-chapters-b3"
+      ],
+      "tier": "HEAVY-WRITER",
+      "chapters": [
+        10,
+        11,
+        12
+      ],
+      "floors": {
+        "chapter_len": [
+          2000,
+          3500
+        ],
+        "continuity": true,
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "19-book-rewrite-1",
+      "prompt_dir": "prompts/19-book-rewrite-1",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "18-write-chapters-b4"
+      ],
+      "tier": "HEAVY-WRITER",
+      "floors": {
+        "title_lock": true
+      },
+      "gate": "GATE-3-approval",
+      "optional": true
+    },
+    {
+      "stage_id": "20-book-rewrite-2",
+      "prompt_dir": "prompts/20-book-rewrite-2",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "19-book-rewrite-1"
+      ],
+      "tier": "HEAVY-WRITER",
+      "floors": {
+        "title_lock": true
+      },
+      "gate": "GATE-4-approval-r2",
+      "optional": true
+    },
+    {
+      "stage_id": "21-30day-challenge",
+      "prompt_dir": "prompts/21-30day-challenge",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "18-write-chapters-b4"
+      ],
+      "tier": "MID-WRITER",
+      "floors": {
+        "day_sections": 30
+      }
+    },
+    {
+      "stage_id": "22-cover-prompt",
+      "prompt_dir": "prompts/22-cover-prompt",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "10-suggested-titles"
+      ],
+      "tier": "FORMATTER",
+      "floors": {
+        "title_lock": true
+      }
+    },
+    {
+      "stage_id": "23-cover-image",
+      "prompt_dir": "prompts/23-cover-image",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "22-cover-prompt"
+      ],
+      "tier": "IMAGE",
+      "floors": {},
+      "degrade": "degraded:image"
+    },
+    {
+      "stage_id": "41-433-30-titles",
+      "prompt_dir": "prompts/41-433-30-titles",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "03-rewrite-avatar"
+      ],
+      "tier": "MID-WRITER",
+      "mode": "4x3x3",
+      "floors": {
+        "title_count": 30
+      },
+      "gate": "GATE-433"
+    },
+    {
+      "stage_id": "42-433-outcomes",
+      "prompt_dir": "prompts/42-433-outcomes",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "03-rewrite-avatar"
+      ],
+      "tier": "MID-WRITER",
+      "mode": "4x3x3",
+      "floors": {
+        "outcome_count": 4
+      },
+      "gate": "GATE-433"
+    },
+    {
+      "stage_id": "43-433-kp-doc",
+      "prompt_dir": "prompts/43-433-kp-doc",
+      "phase": "P4-OUTLINE-GATE",
+      "depends_on": [
+        "42-433-outcomes"
+      ],
+      "tier": "MID-WRITER",
+      "mode": "4x3x3",
+      "floors": {}
+    },
+    {
+      "stage_id": "44-433-slides-extract",
+      "prompt_dir": "prompts/44-433-slides-extract",
+      "phase": "P7-QC",
+      "depends_on": [
+        "42-433-outcomes",
+        "12-chapter-titles"
+      ],
+      "tier": "FORMATTER",
+      "mode": "4x3x3",
+      "floors": {
+        "deck_schema": true,
+        "phase_map": [
+          4,
+          3
+        ]
+      },
+      "produces": "433_Deck_Data.json"
+    },
+    {
+      "stage_id": "45-433-image-instructions",
+      "prompt_dir": "prompts/45-433-image-instructions",
+      "phase": "P6-PACKAGE",
+      "depends_on": [
+        "43-433-kp-doc"
+      ],
+      "tier": "FORMATTER",
+      "mode": "4x3x3",
+      "floors": {}
+    }
   ],
   "stages_note": "Tone stages 04-08 are the shared tone core (byte-identical to shared-utils/tone-writing-core, proved by verify_tone_core_sync.py). Stage 09 is intentionally unused (the source primary-goal extract is folded into the avatar phase). Stages 41-45 run only in mode 4x3x3. Stage 23 (cover image) and 19/20 (revision rounds) are optional/degradable; the cover-prompt .md and the manuscript always deliver."
 }
