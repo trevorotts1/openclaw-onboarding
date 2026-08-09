@@ -382,14 +382,51 @@ cc_reconcile_pm2_names() {
   done
 }
 
-# cc_pm2_start_canonical — start the board under the canonical name. An explicit
-# --name guarantees the canonical regardless of the cloned CC checkout's
-# ecosystem.config.cjs (an older pinned CC tag may still name the app
-# differently until the CC version is rolled fleet-wide). CC_PORT is pinned so
-# cc-start.sh (npm start -> bash scripts/cc-start.sh) strips any ambient PORT and
-# binds :4000. Returns the launcher's exit status.
+# cc_pm2_start_canonical — start the board under the canonical name THROUGH the
+# canonical launch path (ecosystem.config.cjs), never `pm2 start npm -- start`.
+#
+# PORT-FIX-1 (port-4000 permanent fix): the legacy launch path
+#   CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start
+# bypassed ecosystem.config.cjs entirely — so it carried NONE of that config's
+# guarantees (CC_PORT-only pin, env-bleed strip, circuit-breaker, canonical app
+# name). It relied on npm start -> scripts/cc-start.sh for the port guard and
+# named the app explicitly, but the pm2 dump stored THAT ad-hoc shape, and a
+# `pm2 resurrect` (or an installer/dump that read ambient PORT) could relaunch
+# off :4000. Every relaunch now goes through `pm2 start ecosystem.config.cjs` —
+# the ONE config that reads only CC_PORT, pins 4000, uses the canonical app name
+# blackceo-command-center, and carries the circuit-breaker.
+#
+# DB-PARITY (DATA-08): ecosystem.config.cjs resolves its DATABASE_PATH from the
+# `DATABASE_PATH` env var at require-time, falling back to
+# <INSTALL_DIR>/../data/mission-control.db. On boxes whose real DB lives
+# elsewhere (e.g. the operator Mac: /Users/<you>/command-center/data/... while
+# the checkout is .../command-center/app), that fallback would open a DECOY DB.
+# So we forward the box's OWN DATABASE_PATH (from the .env.local that
+# cc_write_env_local already provisioned) into the start environment, and the
+# ecosystem passes it through verbatim. CC_INSTALL_DIR pins the cwd so the
+# config's `cwd:` and relative `scripts/cc-start.sh` args resolve to THIS checkout.
+# Returns the launcher's exit status.
 cc_pm2_start_canonical() {
-  ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+  # PREFERRED: launch through the canonical ecosystem.config.cjs. The committed
+  # CC repo always ships it, so every box on the current CC tag takes this path.
+  # FALLBACK: if the checkout predates it (the installer's own tier-3 comment at
+  # CC_REQUIRED_MARKERS says ecosystem.config.cjs is NOT a hard marker), fall
+  # back to the legacy `pm2 start npm --name ... -- start` — which still routes
+  # through npm start -> scripts/cc-start.sh, so the env-bleed strip + port pin
+  # still apply; only the ecosystem circuit-breaker is absent on such a box.
+  local cc_db=""
+  if [[ -f "$DASHBOARD_DIR/.env.local" ]]; then
+    cc_db="$(sed -nE 's/^DATABASE_PATH=(.*)$/\1/p' "$DASHBOARD_DIR/.env.local" 2>/dev/null | head -1)"
+  fi
+  if [[ -f "$DASHBOARD_DIR/ecosystem.config.cjs" ]]; then
+    ( cd "$DASHBOARD_DIR" \
+        && CC_PORT="$DASHBOARD_PORT" \
+           DATABASE_PATH="${cc_db:-}" \
+           CC_INSTALL_DIR="$DASHBOARD_DIR" \
+           pm2 start "$DASHBOARD_DIR/ecosystem.config.cjs" >>"$LOG_FILE" 2>&1 )
+  else
+    ( cd "$DASHBOARD_DIR" && CC_PORT="$DASHBOARD_PORT" pm2 start npm --name "$CC_PM2_NAME" -- start >>"$LOG_FILE" 2>&1 )
+  fi
 }
 
 # ======================================================================
