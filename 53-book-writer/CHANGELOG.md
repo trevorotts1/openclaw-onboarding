@@ -2,6 +2,8 @@
 
 ## 1.2.0 — BUG-3: the 22 non-tone authoring-stage prompt triplets now ship; the authoring layer is complete
 
+- Version pins in `WIRING-SPEC.md` corrected from 1.1.6 to 1.2.0 (version-pin table row and README
+  catalog row template).
 - The 22 non-tone prompt triplets referenced by `BOOK-WRITER-MANIFEST.json` `stages[]` — avatar
   (`01`–`03`), titles/blurb/chapter-titles (`10`–`12`), outline/extract (`13`–`14`), the four chapter
   batches (`15`–`18`), the two book rewrites (`19`–`20`), the 30-Day Challenge (`21`), cover prompt/image
