@@ -4051,20 +4051,66 @@ print(state + " " + str(len(headers)))
   # find the installed copy FIRST (provenance "installed"), before falling back to
   # the cluster walk-up or legacy paths.  Also write MANIFEST-SOURCE.txt with the
   # content_sha256 so the checker can refuse on mismatch instead of silently
-  # reading a stale manifest.  Guarded on the department existing; non-fatal;
-  # resolves the workspace through the same helper the surrounding blocks use
-  # (oc_resolve_workspace_announced, fallback $HOME/.openclaw/workspace).
+  # reading a stale manifest.  Guarded on the department existing; non-fatal.
+  #
+  # WORKSPACE-RESOLUTION FIX (WI-01, 2026-08-10): the prior shape resolved the
+  # department dir ONLY as "$OC_WS_RESOLVED/departments/Presentations", where
+  # OC_WS_RESOLVED comes from agents.list[id=main].workspace /
+  # agents.defaults.workspace. On a box whose main agent's workspace is
+  # $HOME/clawd (the operator box is exactly this), U001 targeted
+  # ~/clawd/departments/Presentations and SKIPPED because the materialized
+  # department lives at <oc-root>/workspace/departments/Presentations (the
+  # dept-Presentations agent's own declared workspace) — so future fleet rolls
+  # never landed the canonical manifest on the live department. The fix
+  # enumerates candidate department homes in priority order — (1) this box's
+  # openclaw.json dept-Presentations agent's OWN workspace, (2) the announced
+  # workspace, (3) the canonical <oc-root>/workspace — and picks the first one
+  # that EXISTS and is materialized (sops/ + scripts/build_deck.py present).
+  # Announced loud; a miss names every candidate probed, never a bare skip.
   # ----------------------------------------------------------
   _u001_presentations_manifest_placement() {
-    if ! oc_resolve_workspace_announced "U001 presentations manifest placement" 2>/dev/null; then
-      echo "  [U001] presentations manifest placement SKIPPED (workspace not resolvable)" >&2
+    # Announced resolution of the GENERAL workspace stays (candidate 2 below),
+    # but it is never the only candidate: the main agent's workspace can point
+    # at $HOME/clawd on this box while the materialized department lives under
+    # <oc-root>/workspace.
+    oc_resolve_workspace_announced "U001 presentations manifest placement" 2>/dev/null || true
+    local _oc_root="$HOME/.openclaw"
+    [ -d "/data/.openclaw" ] && _oc_root="/data/.openclaw"
+    local _oc_json="$_oc_root/openclaw.json"
+    local _dept_ws_from_config=""
+    if [ -f "$_oc_json" ] && command -v python3 >/dev/null 2>&1; then
+      _dept_ws_from_config="$(OC_JSON="$_oc_json" python3 - <<'PYEOF' 2>/dev/null || true
+import json, os
+try:
+    cfg = json.load(open(os.environ["OC_JSON"]))
+    for ag in cfg.get("agents", {}).get("list", []) or []:
+        if isinstance(ag, dict) and str(ag.get("id", "")).lower() == "dept-presentations" and ag.get("workspace"):
+            print(os.path.expanduser(ag["workspace"]))
+            break
+except Exception:
+    pass
+PYEOF
+)"
+    fi
+    local _dept_dir=""
+    local _probed=""
+    local _c
+    for _c in \
+      ${_dept_ws_from_config:+"$_dept_ws_from_config"} \
+      ${OC_WS_RESOLVED:+"$OC_WS_RESOLVED/departments/Presentations"} \
+      "$_oc_root/workspace/departments/Presentations"; do
+      _probed="${_probed:+$_probed | }$_c"
+      if [ -n "$_c" ] && [ -d "$_c" ] && [ -d "$_c/sops" ] && [ -f "$_c/scripts/build_deck.py" ]; then
+        _dept_dir="$_c"
+        break
+      fi
+    done
+    if [ -z "$_dept_dir" ]; then
+      echo "  [U001] presentations manifest placement SKIPPED (no materialized Presentations department; probed: $_probed)" >&2
       return 0
     fi
-    local _dept_dir="$OC_WS_RESOLVED/departments/Presentations"
-    if [ ! -d "$_dept_dir" ]; then
-      echo "  [U001] presentations manifest placement SKIPPED (department not materialized at $_dept_dir)" >&2
-      return 0
-    fi
+    echo "  [U001] presentations workspace -> $_dept_dir"
+    echo "  [U001] resolved via: candidates probed in order [dept-Presentations agent workspace from $_oc_json, announced workspace, canonical $_oc_root/workspace]; first EXISTING materialized directory (sops/ + scripts/build_deck.py) wins"
     local _sops_dir="$_dept_dir/sops"
     mkdir -p "$_sops_dir" 2>/dev/null
     local _manifest_src="$SKILLS_DIR/universal-sops/presentation-slide-craft/PIPELINE-MANIFEST.json"

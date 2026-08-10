@@ -26,7 +26,7 @@ roles). `sync_check.py` reconciles FOUR inputs against it in BOTH directions and
 | `PIPELINE-MANIFEST.json` | the declared truth: `phases[]`, `autofails[]`, `roles[]`, `manifest_version` |
 | `scripts/build_deck.py` | AST: defined `def _chk_*` + module constants; regex: every `AF-...` string it cites |
 | `MASTER-QC-AUTOFAIL-RULESET.md` | Section 5 (the machine-checkable summary table) → canonical AF-code set |
-| `role-library/presentations/*.md` + `sops/*.md` | the deployed role roster + SOP file set |
+| `role-library/presentations/*.md` + `sops/*.md` | the deployed role roster + SOP file set (NOTE: the scanner resolves these paths via manifest_source.py which walks up from scripts/ to the repo root; the paths in this table are illustrative of the canonical repo layout. On a deployed client box, roles live under `departments/Presentations/<role-name>/how-to.md` and SOPs live under `departments/Presentations/sops/`.) |
 
 **Doctrine:** a rule not auto-failed at a gate does not exist. Lockstep is itself a gate
 (`AF-SYNC`), not a convention.
