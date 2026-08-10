@@ -15,7 +15,7 @@ using ONLY these strings. Fleet law: no client names; no Anthropic/`claude-*` id
 | Skill directory | `53-book-writer/` (repo root) |
 | Frontmatter `name` | `book-writer` |
 | Human name | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version)** |
-| `skill-version.txt` / frontmatter `version` | `1.1.6` |
+| `skill-version.txt` / frontmatter `version` | `1.2.0` |
 | Canonical entry filename | `book-writer-entry.sh` |
 | Orchestrator | `run_book_writer.py` (repo-root of the skill dir, mirrors 55's `run_product_bio.py`) |
 | Manifest (single source of truth) | `BOOK-WRITER-MANIFEST.json` |
@@ -41,7 +41,7 @@ using ONLY these strings. Fleet law: no client names; no Anthropic/`claude-*` id
 ## 3. README catalog row (one row; insert after the `52-avatar-alchemist` row)
 
 ```
-| 53-book-writer | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (v1.1.6)** — a governed skill that turns ONE completed **book-intake interview** into a tone-matched **12-chapter nonfiction book** plus companion assets (avatar dossier, the blended **"The {First} {Last} Tone"**, locked title/subtitle + approved outline, print-ready manuscript, a **30-Day Challenge**, and an AI cover prompt) as a LOCAL-ONLY labeled `~/Downloads` bundle with a signed process certificate, on the CLIENT's own model providers — never Anthropic, never operator keys. A **Book/Brand version selector runs FIRST** (`version=book` targets this skill; `version=brand` hands off to Skill 52). Modes: **full** (flagship 12-chapter book) and **4x3x3** (offer book: 30 titles / 4 Transformational Outcomes / KP doc / `433_Deck_Data.json` → Skill 51). Fail-closed **model-free** provers MEASURE the stripped text and ignore self-reported counts — exactly 12 chapters, 2000–3500 words each, ≥3000-word blended tone, exactly 30 challenge days, byte-exact locked title/subtitle, verbatim personal-story placement, sequential chapter-batch continuity (`scripts/prove_bw_*.py`); the orchestrator (`run_book_writer.py`) runs through ONE canonical entry (`book-writer-entry.sh`, deps / bypass-scan / hash-pin) and issues a `PROCESS-CERTIFICATE` only on a full pass (no certificate = not done). The tone subsystem is a lockstep copy of the shared **`shared-utils/tone-writing-core/`** (proved by `verify_tone_core_sync.py`), shared with Skills 52 (Brand) + 54 (Anthology). Cross-linked with (never merged into) Skill 52 Avatar Alchemist; anthology is the separate sibling Skill 54. No n8n / Airtable / Google / Gmail / Slack / GHL at runtime. Standalone — no prerequisite skill. |
+| 53-book-writer | **Book Writer — Ghostwriting Engine (Avatar Alchemist, BOOK version) (v1.2.0)** — a governed skill that turns ONE completed **book-intake interview** into a tone-matched **12-chapter nonfiction book** plus companion assets (avatar dossier, the blended **"The {First} {Last} Tone"**, locked title/subtitle + approved outline, print-ready manuscript, a **30-Day Challenge**, and an AI cover prompt) as a LOCAL-ONLY labeled `~/Downloads` bundle with a signed process certificate, on the CLIENT's own model providers — never Anthropic, never operator keys. A **Book/Brand version selector runs FIRST** (`version=book` targets this skill; `version=brand` hands off to Skill 52). Modes: **full** (flagship 12-chapter book) and **4x3x3** (offer book: 30 titles / 4 Transformational Outcomes / KP doc / `433_Deck_Data.json` → Skill 51). Fail-closed **model-free** provers MEASURE the stripped text and ignore self-reported counts — exactly 12 chapters, 2000–3500 words each, ≥3000-word blended tone, exactly 30 challenge days, byte-exact locked title/subtitle, verbatim personal-story placement, sequential chapter-batch continuity (`scripts/prove_bw_*.py`); the orchestrator (`run_book_writer.py`) runs through ONE canonical entry (`book-writer-entry.sh`, deps / bypass-scan / hash-pin) and issues a `PROCESS-CERTIFICATE` only on a full pass (no certificate = not done). The tone subsystem is a lockstep copy of the shared **`shared-utils/tone-writing-core/`** (proved by `verify_tone_core_sync.py`), shared with Skills 52 (Brand) + 54 (Anthology). Cross-linked with (never merged into) Skill 52 Avatar Alchemist; anthology is the separate sibling Skill 54. No n8n / Airtable / Google / Gmail / Slack / GHL at runtime. Standalone — no prerequisite skill. |
 ```
 
 ---
@@ -136,6 +136,7 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 |---|---|---|
 | `AF-BK-INTAKE-MISSING` | `prove_bw_intake.py` | required intake field missing / boilerplate |
 | `AF-BK-VERSION` | `prove_bw_intake.py` | `version` unset or not in `{book,brand}`; brand must hand off to Skill 52 |
+| `AF-BK-AVATAR-MISSING` | `prove_bw_avatar.py` | avatar dossier missing / under 500 stripped words (`run/artifacts/01-avatar.md`) |
 | `AF-BK-TITLE-LOCK` | `prove_bw_titlelock.py` | locked title+subtitle not byte-exact in a required artifact |
 | `AF-BK-STORIES` | `prove_bw_stories.py` | a non-N/A story key phrase missing from outline AND/OR manuscript |
 | `AF-BK-CHAP-COUNT` | `prove_bw_chapters.py` | chapter count ≠ 12 |
@@ -143,7 +144,7 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 | `AF-BK-CONTINUITY` | `prove_bw_continuity.py` | a chapter-batch receipt missing a prior chapter's sha256 |
 | `AF-BK-TONE-LEN` | `prove_bw_tone.py` | blended tone < 3000 stripped words |
 | `AF-BK-CHALLENGE` | `prove_bw_challenge.py` | 30-Day Challenge ≠ exactly 30 day-sections |
-| `AF-BK-433-COUNTS` | `prove_bw_433.py` | 4x3x3: not exactly 4 outcomes AND 30 titles |
+| `AF-BK-433-COUNTS` | `prove_bw_433.py` | 4x3x3: not exactly 4 outcomes OR 30 titles |
 | `AF-BK-433-MAP` | `prove_bw_433.py` | 4x3x3: 12 chapters not mapped 4 phases × 3, or deck-data schema-invalid |
 | `AF-BK-PLACEHOLDER` | `prove_bw_placeholder.py` | unresolved `{{…}}` / `$('…')` token in any artifact/deliverable |
 | `AF-BK-ANTHROPIC` | `prove_bw_noanthropic.py` | a RUN-LEDGER model id matches `/anthropic\|claude/i` (or operator cred name in env) |
@@ -152,8 +153,11 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 | `AF-BK-PROCESS-INTEGRITY` | `prove_bw_process.py` / `run_book_writer.py` | certificate requested without a full pass |
 | `AF-BK-HASH-PIN` | `prove_bw_process.py` / `book-writer-entry.sh` | enforcement-set hash ≠ pinned head (ENGINE-PIN.sha256) |
 | `AF-BK-ENTRY-BYPASS` | `book-writer-entry.sh` | hand-rolled external uploader/notifier in the run dir (must run through the entry) |
+| `AF-BK-ACCEPT-UNREADABLE` | `bw_intake_accept.py` | the forwarded intake cannot be read or parsed (invalid UTF-8, malformed JSON, or not a JSON object) |
+| `AF-BK-ACCEPT-WRONG-VERSION` | `bw_intake_accept.py` | the forwarded intake is not version=book; a brand intake belongs to Skill 52 and is refused by the book pipeline |
+| `AF-BK-ACCEPT-REJECTED` | `bw_intake_accept.py` | this skill's own intake gate (prove_bw_intake, handoff mode) refused the forwarded payload; the underlying AF-BK-* codes are carried through |
 
-18 codes across 12 provers + the entry + the orchestrator. The `verify.sh` `no-Anthropic` /
+21 codes across 12 provers + the entry + the orchestrator + the intake-accept receipt. The `verify.sh` `no-Anthropic` /
 `no-client-name` / `no-absolute-path` scans over shipped files are additional CI belts (not AF codes).
 
 ---
@@ -163,14 +167,18 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 - Owning department: the Content / Publishing lineage (same owner as Skills 50/51). One Kanban `sops`
   row ("Book Writer build"); one card per book run, lane advances at gate boundaries; Review/QC → Done
   is BLOCKED without the `PROCESS-CERTIFICATE`. No new endpoint, no schema change.
-  **Resolved concrete slug (FIX-BK-DEPT-01):** the real, mandatory, always-seeded department this
-  lineage resolves to is `marketing` — see `23-ai-workforce-blueprint/skill-department-map.json`'s
-  skill-53 entry (`"departments": ["marketing"]`, matching siblings 52/54/55/56) and
-  `23-ai-workforce-blueprint/department-naming-map.json`'s `.mandatory` list. `run_book_writer.py`'s
-  `mc_board.begin_run(..., department=...)` call MUST use this exact slug — a standalone `"books"`
-  slug was shipped instead and was never actually seeded anywhere, so every card silently
-  dropped/misrouted (`mc_board.py` fails soft on an unrecognized `department_slug`). See
-  `scripts/test_department_slug.py` for the regression guard.
+  **Resolved (v1.1.3, FIX-BK-DEPT-01 — see CHANGELOG.md):** the department wiring ships as
+  `marketing`, the real, mandatory, always-seeded department this lineage resolves to —
+  `23-ai-workforce-blueprint/skill-department-map.json`'s skill-53 entry declares
+  `"departments": ["marketing"]` (matching siblings 52/54/55/56), and
+  `23-ai-workforce-blueprint/department-naming-map.json` lists it in `.mandatory`.
+  `run_book_writer.py:893` (`_mc_board_begin` → `mc_board.begin_run(..., department="marketing")`)
+  uses this exact slug. The regression guard `scripts/test_department_slug.py` statically extracts
+  the `department=` literal and asserts it is canonical, matches the skill-department map, and is
+  never the historic fabricated slug; it runs as `verify.sh` section 10. Historical context: the
+  originally shipped code hardcoded a standalone `"books"` slug that was never actually seeded
+  anywhere, so every card silently dropped/misrouted (`mc_board.py` fails soft on an unrecognized
+  `department_slug`); that defect is what v1.1.3 corrected.
 - Add a bullet to the owning department's `how-to-use-this-department.md`: *"Write my 12-chapter book /
   4x3x3 offer book — the Book version of the Avatar Alchemist."*
 - Section-8 "Tools You Use" bullet in relevant role files points to `53-book-writer/SKILL.md` +
