@@ -7,14 +7,15 @@
 # on ANY failure, so it can gate a merge / CI / a post-install check. Mirrors
 # 55-product-bio/verify.sh + 52-avatar-alchemist/verify.sh.
 #
-#   1. the twelve provers --self-test        (built-in in-memory fixtures)
+#   1. the thirteen provers --self-test      (built-in in-memory fixtures)
 #   2. golden bundle PASS                     (each prover PASSes the golden bundle)   [prose-gated]
 #   3. broken-variants reject                 (make_broken.py: each fixture trips its AF)
-#   4. idempotency                            (re-run entry -> reproduce certificate_sha) [prose-gated]
-#   5. tone-core lockstep                     (verify_tone_core_sync.py PASS)
-#   6. shared_tone_core manifest key present
-#   7. no-Anthropic + no-client-name + no-absolute-path scans over shipped files
-#   8. version routing                        (version=book accepted; version=brand parks/handoff)
+#   4. golden avatar dossier gate             (prove_bw_avatar.py PASSes the golden run dir)
+#   5. idempotency                            (re-run entry -> reproduce certificate_sha) [prose-gated]
+#   6. tone-core lockstep                     (verify_tone_core_sync.py PASS)
+#   7. shared_tone_core manifest key present
+#   8. no-Anthropic + no-client-name + no-absolute-path scans over shipped files
+#   9. version routing                        (version=book accepted; version=brand parks/handoff)
 #
 # Sections 2 + 4 are GATED on the presence of the Wave-2 golden prose + Agent D's
 # assembled certificate; until then they print a TODO and do not fail the gate.
@@ -58,8 +59,8 @@ run() {
 echo "== Skill 53 (Book Writer Engine) :: verify.sh =="
 
 # An explicit array (not a space-joined string) so iteration never depends on
-# word-splitting — bash and zsh both expand "${PROVERS[@]}" to the 12 elements.
-PROVERS=(prove_bw_intake prove_bw_titlelock prove_bw_stories prove_bw_chapters
+# word-splitting — bash and zsh both expand "${PROVERS[@]}" to the 13 elements.
+PROVERS=(prove_bw_intake prove_bw_avatar prove_bw_titlelock prove_bw_stories prove_bw_chapters
 prove_bw_continuity prove_bw_tone prove_bw_challenge prove_bw_433
 prove_bw_placeholder prove_bw_noanthropic prove_bw_anon prove_bw_process)
 
@@ -99,6 +100,14 @@ if [ -f "$EBV/make_broken.py" ]; then
     rm -f "$RESULTS_TMP"
 else
     printf '  [WARN] make_broken.py missing — skipping\n'
+fi
+
+# 4) golden bundle avatar gate — prove_bw_avatar.py PASSes the golden run dir.
+echo "-- 4) golden avatar dossier gate --"
+if [ -f "$EX/run/artifacts/01-avatar.md" ]; then
+    run "prove_bw_avatar.py --run-dir golden run" "$PY" "$SCRIPTS/prove_bw_avatar.py" --run-dir "$EX/run"
+else
+    printf '  [FAIL] golden avatar artifact 01-avatar.md missing at %s\n' "$EX/run/artifacts"; fails=$((fails + 1))
 fi
 
 # 7) no-Anthropic / no-client-name / no-absolute-path scans over shipped files.
@@ -180,8 +189,8 @@ PY
     rm -f "$BRAND"
 fi
 
-# 2) golden bundle PASS + 4) idempotency — GATED on Wave-2 prose + Agent D's assembled cert.
-echo "-- 2/4) golden bundle + idempotency (prose-gated) --"
+# 2) golden bundle PASS + 5) idempotency — GATED on Wave-2 prose + Agent D's assembled cert.
+echo "-- 2/5) golden bundle + idempotency (prose-gated) --"
 # find(1) does its own matching (no shell glob), so an absent delivery/ never aborts
 # under zsh's nomatch and never leaks a literal glob under bash.
 SHIP_CERT="$(find "$EX/delivery" -maxdepth 2 -name PROCESS-CERTIFICATE.json 2>/dev/null | head -1)"
@@ -214,18 +223,18 @@ else
     printf '         section lights up (golden-bundle PASS + certificate_sha idempotency).\n'
 fi
 
-# 9) role-SOP registry (content_sha re-stamp gate) — the 7 role SOPs are registered
+# 10) role-SOP registry (content_sha re-stamp gate) — the 7 role SOPs are registered
 # in roles/_index.json with a canonical content_sha, the dispatcher is named, and no
 # stored sha is stale vs the file on disk.
-echo "-- 9) role-SOP registry (content_sha) --"
+echo "-- 10) role-SOP registry (content_sha) --"
 run "roles/_index.json complete + not stale" "$PY" "$SCRIPTS/hash_role_index.py" --check
 
-# 10) Command Center department-slug regression (FIX-BK-DEPT-01) — the mc_board
+# 11) Command Center department-slug regression (FIX-BK-DEPT-01) — the mc_board
 # department= wired in run_book_writer.py must be a REAL, already-seeded canonical
 # department (never a fabricated slug like the historic "books" bug: mc_board.py
 # fails SOFT on an unrecognized department_slug, so a fabricated value never throws
 # and every card is silently dropped/misrouted).
-echo "-- 10) Command Center department-slug regression --"
+echo "-- 11) Command Center department-slug regression --"
 run "test_department_slug.py" "$PY" "$SCRIPTS/test_department_slug.py"
 run "test_cc_contract.py" "$PY" "$SCRIPTS/test_cc_contract.py"
 run "test_mc_board_reconcile.py" "$PY" "$SCRIPTS/test_mc_board_reconcile.py"

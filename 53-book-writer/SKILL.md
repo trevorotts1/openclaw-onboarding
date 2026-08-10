@@ -78,6 +78,7 @@ Avatar dossier · Tone doc ("The {First} {Last} Tone") · locked title/subtitle 
 |---|---|---|
 | Version selector | `version` ∈ {book,brand} explicit; brand hands off to Skill 52, never runs here | `AF-BK-VERSION` |
 | Complete intake | every required field present, non-boilerplate | `AF-BK-INTAKE-MISSING` |
+| Avatar dossier | non-empty avatar dossier with minimum word count (`run/artifacts/01-avatar.md` ≥ 500 **stripped** words) | `AF-BK-AVATAR-MISSING` |
 | Locked title | title + subtitle byte-exact in blurb, outline, every chapter, cover prompt, manuscript | `AF-BK-TITLE-LOCK` |
 | Story placement | each non-N/A personal story's key phrase in the outline AND manuscript | `AF-BK-STORIES` |
 | 12 chapters | exactly 12, numbered 1..12 | `AF-BK-CHAP-COUNT` |

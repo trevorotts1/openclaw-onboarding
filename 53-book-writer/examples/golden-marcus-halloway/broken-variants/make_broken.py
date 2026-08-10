@@ -37,6 +37,7 @@ RUN = GOLDEN / "run"
 SKILL_ROOT = GOLDEN.parents[1]               # 53-book-writer/
 sys.path.insert(0, str(SKILL_ROOT / "scripts"))
 import _bw_common as c                        # noqa: E402
+import prove_bw_avatar as p_avatar            # noqa: E402
 import prove_bw_intake as p_intake            # noqa: E402
 import prove_bw_titlelock as p_title          # noqa: E402
 import prove_bw_stories as p_story            # noqa: E402
@@ -116,6 +117,14 @@ def v_433_map():
     deck = copy.deepcopy(_json("433/433_Deck_Data.json"))
     deck["phases"][0]["chapters"] = deck["phases"][0]["chapters"][:2]  # 2 chapters
     return _res(p_433.evaluate(titles, outcomes, deck).violations)
+
+
+def v_avatar():
+    av = _text("artifacts/01-avatar.md")
+    if av is None:
+        return BLOCKED
+    bad = "# Avatar Dossier\n" + " ".join(av.split()[:400])   # truncate under floor
+    return _res(p_avatar.evaluate(bad).violations)
 
 
 def v_anthropic():
@@ -249,6 +258,7 @@ def v_placeholder():
 VARIANTS: List[Tuple[str, str, str, Any]] = [
     ("01_intake_missing", "AF-BK-INTAKE-MISSING", "prove_bw_intake.py", v_intake_missing),
     ("02_version_unset", "AF-BK-VERSION", "prove_bw_intake.py", v_version),
+    ("02b_avatar_under_floor", "AF-BK-AVATAR-MISSING", "prove_bw_avatar.py", v_avatar),
     ("03_title_lock", "AF-BK-TITLE-LOCK", "prove_bw_titlelock.py", v_title_lock),
     ("04_stories_dropped", "AF-BK-STORIES", "prove_bw_stories.py", v_stories),
     ("05_chap_count", "AF-BK-CHAP-COUNT", "prove_bw_chapters.py", v_chap_count),

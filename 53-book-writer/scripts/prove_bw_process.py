@@ -43,8 +43,8 @@ PHASE_ORDER = ["P0-INTAKE", "P1-AVATAR", "P2-TONE", "P3-TITLES-GATE", "P4-OUTLIN
 # the enforcement set whose combined sha256 is pinned in ENGINE-PIN.sha256
 ENFORCE_FILES = [
     "run_book_writer.py", "scripts/_bw_common.py",
-    "scripts/prove_bw_intake.py", "scripts/prove_bw_titlelock.py",
-    "scripts/prove_bw_stories.py", "scripts/prove_bw_chapters.py",
+    "scripts/prove_bw_intake.py", "scripts/prove_bw_avatar.py",
+    "scripts/prove_bw_titlelock.py", "scripts/prove_bw_stories.py", "scripts/prove_bw_chapters.py",
     "scripts/prove_bw_continuity.py", "scripts/prove_bw_tone.py",
     "scripts/prove_bw_challenge.py", "scripts/prove_bw_433.py",
     "scripts/prove_bw_placeholder.py", "scripts/prove_bw_noanthropic.py",
