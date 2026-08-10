@@ -40,9 +40,10 @@
   from the current file bytes — `00-INDEX.md`, `30_Day_Challenge-Marcus_Halloway.md`,
   `Avatar_Document-Marcus_Halloway.md`, `MANIFEST.json`, `PROCESS-CERTIFICATE.json`,
   `PROCESS-CERTIFICATE.md` — and every row now matches its file's sha256. Invariant note: the
-  manifest's OWN row stores the sha256 of the manifest as fixed in this commit; because the
-  value is part of the file it hashes, that row can never re-verify against the live file
-  (a self-hash fixed point does not exist) — re-hash it any time the manifest is amended.
+  manifest's OWN row stores the sha256 of the manifest as fixed in this commit (i.e. the
+  hash of the manifest as of the final edit); because the value is part of the file it
+  hashes, that row can never re-verify against the live file (a self-hash fixed point
+  does not exist) — re-hash it any time the manifest is amended.
 - **UNIT 5 — 52→53 route manifest fixed.** `52-avatar-alchemist/AA-PIPELINE-MANIFEST.json`
   now routes the book intake to `53-book-writer` with a matching `handoff` field, and
   `AA-GATE-HASHES.json` re-pins the manifest so Skill 52's verify.sh routing test passes.
@@ -58,6 +59,33 @@
   shipped `prove_bw_433.py` implementation.
 - **UNIT 15 — REPAIRS.md reference corrected.** Row 7's Skill 44 hook reference is now a
   generic integration hook, and the row names the real sibling Skill 54.
+- **UNIT 1 — version pins corrected.** `WIRING-SPEC.md` version-pin table row and the README
+  catalog row template were still 1.1.6; both now pin `1.2.0`, matching
+  `53-book-writer/skill-version.txt` and the SKILL.md frontmatter.
+- **UNIT 2 — avatar prover shipped.** `scripts/prove_bw_avatar.py` now enforces the avatar
+  phase (previously declared but never enforced): the avatar dossier must exist, be
+  non-empty, and reach 500 stripped words at `run/artifacts/01-avatar.md`, else the run
+  fails closed with `AF-BK-AVATAR-MISSING` (exit 2). Wired into the manifest autofail map
+  and the WIRING-SPEC §7 code list; `verify.sh` now runs 13 prover self-tests. Engine pin
+  re-minted to cover the new prover.
+- **UNIT 3 — AF-BK-ACCEPT-* codes added to the manifest.** The three intake-accept codes
+  (`AF-BK-ACCEPT-UNREADABLE`, `AF-BK-ACCEPT-WRONG-VERSION`, `AF-BK-ACCEPT-REJECTED`) were
+  documented in WIRING-SPEC §7 but missing from `BOOK-WRITER-MANIFEST.json` `autofails`;
+  all three are now declared in the manifest (22 autofail rows, including the UNIT 2
+  `AF-BK-AVATAR-MISSING` row).
+- **UNIT 6 — intake-accept documented.** The `bw_intake_accept.py` receipt contract (sha256
+  over the exact forwarded bytes, exit 0 accepted / 2 rejected / 3 usage-io, the three
+  refuse codes) is now documented in `SKILL.md` and `INSTRUCTIONS.md` (Skill 52 selector
+  row), matching the shipped script.
+- **UNIT 8 — department wiring resolved in §8.** `WIRING-SPEC.md` §8 now records the
+  department wiring as resolved (marketing, always-seeded; declared in
+  `23-ai-workforce-blueprint/skill-department-map.json` skill-53 entry), with past-tense
+  record keeping instead of open instruction.
+- **UNIT 9 — reciprocal references added.** `52-avatar-alchemist/SKILL.md` now links back to
+  the Book Writer (Skill 53) route, and `51-signature-presentation/SKILL.md` references
+  the Book Writer handoff — both directions of the cross-skill graph now point both ways.
+- **UNIT 10 — mini-app removed.** The stale `mini-app/` directory is gone from the skill
+  tree (untracked or tracked content fully removed); nothing in the skill references it.
 
 ## 1.1.6 — 2026-07-21 — T0-28: this skill can now ACKNOWLEDGE a routed intake
 

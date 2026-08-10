@@ -157,8 +157,9 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
 | `AF-BK-ACCEPT-WRONG-VERSION` | `bw_intake_accept.py` | the forwarded intake is not version=book; a brand intake belongs to Skill 52 and is refused by the book pipeline |
 | `AF-BK-ACCEPT-REJECTED` | `bw_intake_accept.py` | this skill's own intake gate (prove_bw_intake, handoff mode) refused the forwarded payload; the underlying AF-BK-* codes are carried through |
 
-21 codes across 12 provers + the entry + the orchestrator + the intake-accept receipt. The `verify.sh` `no-Anthropic` /
+21 codes across 13 provers + the entry + the orchestrator + the intake-accept receipt. The `verify.sh` `no-Anthropic` /
 `no-client-name` / `no-absolute-path` scans over shipped files are additional CI belts (not AF codes).
+21 = 19 base + 3 AF-BK-ACCEPT-*; the table shows 22 rows including the AF-BK-AVATAR-MISSING row (UNIT 2).
 
 ---
 

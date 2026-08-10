@@ -1,3 +1,24 @@
+## [v22.0.5]  -  2026-08-10  -  Book Writer Skill 53 repair campaign: 18-unit batch + avatar prover
+
+Atomic batch merge of the 18-unit Book Writer (Skill 53) repair campaign
+(branch `fix/book-writer-skill53-repair-2026-08-10`, merge record in the
+book-writer-skill-53 project CONTROL). Version markers rolled v22.0.4 -> v22.0.5
+in lockstep (`version`, `install.sh`, `update-skills.sh`, README).
+
+- **UNIT 1 + 4:** version pins corrected (WIRING-SPEC + README catalog row 1.1.6 -> 1.2.0).
+- **UNIT 2:** avatar phase now enforced — `scripts/prove_bw_avatar.py` closes the
+  AF-BK-AVATAR-MISSING gap (13 prover self-tests); ENGINE-PIN.sha256 re-minted.
+- **UNIT 3:** AF-BK-ACCEPT-* codes added to `BOOK-WRITER-MANIFEST.json` autofails (18 -> 21).
+- **UNIT 5:** 52 -> 53 route manifest corrected + AA-GATE-HASHES re-pinned.
+- **UNIT 6 / 7 / 8 / 9:** intake-accept documented, 4x3x3 OR semantics, department
+  record resolved, reciprocal refs to Skills 51/52.
+- **UNIT 10 / 11 / 12:** stale mini-app/ removed; golden title-lock + self-hashes fixed.
+- **UNIT 13 / 15 / 16 / 17 / 38:** counting claims, REPAIRS ref, _bw_common
+  UnicodeDecodeError (verified no-change), golden intake, aw_build_check phantom
+  (verified no-change).
+- **UNIT 18:** engine pin re-minted (fcad2ed8...) and verified against ENFORCE_FILES.
+- Skill 53 verify.sh + qc-book-writer.sh PASS post-merge; tag `v1.2.1` cut.
+
 ## [v22.0.4] -- 2026-08-10 -- Wave 1 batch: manifest v44, 14 SOP fixes, capacity probe
 
 Atomic batch merge of 3 QC-PASSED Pres Dept Wave 1 work items (merge record:

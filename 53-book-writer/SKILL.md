@@ -29,7 +29,7 @@ the client's own model providers (never Anthropic).**
 > the baked authoring prompts.
 
 - **Shipped now:** the intake + Book/Brand selector, `BOOK-WRITER-MANIFEST.json`, the deterministic
-  assembler/certifier (`run_book_writer.py`), all fourteen fail-closed provers and verifiers
+  assembler/certifier (`run_book_writer.py`), all fifteen fail-closed provers and verifiers
   (`verify_tone_core_sync.py`, `bw_intake_accept.py` included),
   the seven role SOPs under `roles/` (registered in `roles/_index.json`), and **all 27 baked prompt
   triplets** — the five tone-core stages (04–08, byte-identical to `shared-utils/tone-writing-core`) plus
@@ -56,7 +56,7 @@ the client's own model providers (never Anthropic).**
   (`AF-BK-ACCEPT-UNREADABLE`), anything not `version=book`
   (`AF-BK-ACCEPT-WRONG-VERSION`), and anything this skill's own intake gate rejects in handoff
   mode (`AF-BK-ACCEPT-REJECTED`, underlying `AF-BK-*` codes carried through).
-- `scripts/` — the fourteen fail-closed provers and verifiers, `verify_tone_core_sync.py` included.
+- `scripts/` — the fifteen fail-closed provers and verifiers, `verify_tone_core_sync.py` included.
 - `run_book_writer.py` — the deterministic assembler/certifier.
 - `book-writer-entry.sh` — the ONE sanctioned front door (deps → bypass-scan → hash-pin → nonce).
 - `roles/` — the 7 dispatchable role SOPs (AVATAR-ANALYST · TONE-ANALYST · TITLE-STRATEGIST ·
@@ -121,7 +121,7 @@ python3 53-book-writer/run_book_writer.py --run-dir <RUN_DIR>  # deterministic a
    round ran). P8-DELIVER promotes the certified bundle to `delivery/`, copies it to a labeled,
    timestamped `~/Downloads` folder, and re-verifies every file's sha256 against `MANIFEST.json`; an
    uncertified bundle is quarantined and never sits in `delivery/`.
-3. **Provers** — the fourteen fail-closed provers and verifiers MEASURE the stripped text and ignore self-reported
+3. **Provers** — the fifteen fail-closed provers and verifiers MEASURE the stripped text and ignore self-reported
    counts; any `AF-BK-*` violation blocks the run.
 4. **Certificate** — a full P0→P8 pass mints `PROCESS-CERTIFICATE.{json,md}` with a deterministic
    `certificate_sha`. **"Done" is claimed only with the certificate path (no-false-done).**

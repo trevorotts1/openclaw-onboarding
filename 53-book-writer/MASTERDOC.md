@@ -4,7 +4,7 @@ The **BOOK version of the Avatar Alchemist**. It replaces an 8-workflow n8n ghos
 (flagship 153-node "Book Writer" + 121-node "4x3x3 w Book Writer" + five factored sub-agents) with a
 self-contained skill. Everything that is not an LLM call — Airtable prompt fetches, Drive folder
 scaffolding, HTML→Google-Doc chains, base64 nodes, Gmail forms, Slack posts, GHL stage updates — is
-replaced by skill infrastructure. The engine is ~45 distinct LLM calls plus plumbing; the plumbing dies.
+replaced by skill infrastructure. The engine is 27 authoring stages plus plumbing; the plumbing dies.
 
 ## The method (SACRED — machine-enforced, never advisory)
 
