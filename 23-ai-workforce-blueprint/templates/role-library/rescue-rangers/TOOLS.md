@@ -53,3 +53,32 @@ department adds on top of the existing transports.
 `RESCUE_RANGERS_WEBHOOK_URL`, `RESCUE_RANGERS_WEBHOOK_SECRET` (fleet-wide, seeded at
 onboarding), `RESCUE_PUSH_SECRET` (operator box only). Never print a secret value;
 confirm SET, never echo. The ledger stores ticket TEXT + status, never a credential.
+
+## Access inventory (the three-tier rescue order's tooling — names only, never values)
+
+The rescue AI self-fixes reachable boxes with the operator's access. Everything here
+is referenced by NAME ONLY — the values live in the operator secrets env, never in
+any doc, ticket, or transcript:
+
+- **Box access:** the operator's `~/.ssh/config` provides a `rescue-<firstname>-
+  <lastname>` alias for every fleet box (Mac-via-Cloudflare-tunnel), plus
+  `contabo-host` for Contabo VPS. `ssh <alias> 'command'` is the reachability check;
+  `ssh <alias> 'bash -lc "…"'` is the login-shell form. Headless only — never a
+  command that opens a browser (Cloudflare Access would hang on a login prompt).
+- **Provider credentials (env var NAMES in `~/.openclaw/secrets/.env`):**
+  `HOSTINGER_API_KEY` / `HOSTINGER_EMAIL` / `HOSTINGER_PASSWORD`,
+  `CONTABO_CLIENT_ID` / `CONTABO_CLIENT_SECRET` / `CONTABO_API_USERNAME` /
+  `CONTABO_API_PASSWORD`, `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` /
+  `CLOUDFLARE_ZONE_ID` / `CLOUDFLARE_TUNNEL_TOKEN`, `GOHIGHLEVEL_API_KEY` /
+  `GHL_AGENCY_PIT` / `GOHIGHLEVEL_LOCATION_ID`, `OPENROUTER_API_KEY`, and the
+  per-client `CF_ACCESS_<CLIENT>_SVC_*` tokens (sourced automatically by the
+  `rescue-*` ProxyCommand). Source the env to use them; confirm SET, never echo a
+  value. Check the credential EXISTS before escalating — a missing credential is a
+  finding, not a page.
+- **Canonical doctrine refs:** `~/.openclaw/AGENTS.md` (fleet agent doctrine) and
+  `~/.openclaw/workspace/TOOLS.md` (operator tooling). Three-tier order: (1)
+  instruct the client's agent (outcome b), (2) rescue-AI self-fix via this access,
+  (3) page the Operator only after 1-2 ran — with what was tried and why.
+- **Never-auto (pages on the class alone):** credential-ACTION
+  (rotate/regenerate/revoke), DNS/Cloudflare changes, data/file deletion, model or
+  provider swap. One-way doors are the Operator's.

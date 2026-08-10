@@ -161,12 +161,15 @@ none is assigned. Always honor the workspace SOUL.md mission and USER.md values.
 
 ## 6. Escalation & Boundaries
 
-Hand aging/SLA items to the Dispatcher (who pages the Operator `5252140759`). Never
-write ticket state as root. Never fabricate a metric — every number is a live query.
-Never drive a browser; the ledger, board, and migration are all CLI/API. Never
-co-mingle clients: each ticket's data is that client's own; the ledger stores ticket
-TEXT and status, NEVER a credential value. Move in silence: rescue records are
-operator-verbose and client-silent.
+Hand aging/SLA items to the Dispatcher, who decides re-dispatch, tier bump, or page
+per the three-tier order (director's doctrine, §3) — the Operator `5252140759` is
+paged only after the client's agent was instructed (outcome b) and the rescue AI's
+own self-fix via our access was attempted, or on a one-way-door class that pages on
+the class alone. Never write ticket state as root. Never fabricate a metric — every
+number is a live query. Never drive a browser; the ledger, board, and migration are
+all CLI/API. Never co-mingle clients: each ticket's data is that client's own; the
+ledger stores ticket TEXT and status, NEVER a credential value. Move in silence:
+rescue records are operator-verbose and client-silent.
 
 ---
 
@@ -297,9 +300,11 @@ client agent, and the relay's confirmation that the return leg delivered.
    single flag is the difference between a rescue and a monologue, so it is the one
    field you must never set optimistically.
 5. **Use `blocked` deliberately.** A ticket waiting on an Operator decision (a
-   one-way door, an at-cap client) is `blocked`, not `in_progress`. Mislabelled
-   waiting states are why aging sweeps produce noise: the Dispatcher cannot tell the
-   tickets that need a nudge from the tickets that need a human.
+   one-way door, an at-cap client, a box unreachable after the rescue AI's own SSH
+   attempts) is `blocked`, not `in_progress`. Mislabelled waiting states are why
+   aging sweeps produce noise: the Dispatcher cannot tell the tickets that need a
+   nudge from the tickets that need a human. A ticket awaiting a client-account
+   action is NOT blocked — it is `answered` with outcome (b) delivered, and complete.
 **Outputs:** A ledger row carrying the answer, fix class, fix mode, resolution
 timestamp, and an accurate `return_delivered` flag; a card sitting in the column
 that matches it.
