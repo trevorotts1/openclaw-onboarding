@@ -64,6 +64,20 @@ while [ $# -gt 0 ]; do
 done
 command -v python3 >/dev/null 2>&1 || { echo "FATAL: python3 required" >&2; exit 3; }
 
+# Source the box's canonical secrets file so credential gates (KIE_API_KEY,
+# N8N_DRIVE_*, etc.) resolve regardless of how this script is invoked --
+# e.g. a fleet-roll SSH that does not export the box's own secrets. The
+# canonical path mirrors update-skills.sh: ~/.openclaw/secrets/.env on Mac,
+# /data/.openclaw/secrets/.env on VPS. Never overwrite an already-set value.
+_OC_SECRETS_ENV="$HOME/.openclaw/secrets/.env"
+[ -d "/data/.openclaw" ] && _OC_SECRETS_ENV="/data/.openclaw/secrets/.env"
+if [ -f "$_OC_SECRETS_ENV" ]; then
+    set -a; # shellcheck disable=SC1090
+    source "$_OC_SECRETS_ENV" 2>/dev/null || true
+    set +a
+fi
+unset _OC_SECRETS_ENV
+
 if [ "$MODE" = "gate_credential" ]; then
     CAF_CRED="$SELF_DIR/scripts/caf_credential_gate.py"
     [ -f "$CAF_CRED" ] || { echo "FATAL: caf_credential_gate.py not found: $CAF_CRED" >&2; exit 3; }
