@@ -15,7 +15,7 @@ All handoffs are LOCAL artifacts or in-conversation; the skill never calls an ex
 
 | From | Artifact | Use |
 |---|---|---|
-| **Skill 52** selector | a `version=book` intake (its `test-fixtures/intake-book.json` shape) | validated by `prove_bw_intake.py --handoff`; the book run completes the gap (mode + book_about + cover_description) in one intake. |
+| **Skill 52** selector | a `version=book` intake (its `test-fixtures/intake-book.json` shape) | receipted by `scripts/bw_intake_accept.py` — it mints a sha256 receipt over the exact forwarded bytes (exit 0 accepted / 2 rejected / 3 usage-io) — then validated by `prove_bw_intake.py --handoff` (the gate the accept path runs); the book run completes the gap (mode + book_about + cover_description) in one intake. |
 | **Skill 52** | an existing avatar dossier + tone doc | consumed directly in `mode=4x3x3` (skips the avatar/tone phases, faithful to the source). |
 
 ## Version routing (binding)

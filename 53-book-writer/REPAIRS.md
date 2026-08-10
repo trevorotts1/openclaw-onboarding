@@ -12,7 +12,7 @@ divergence at runtime.
 | 4 | Gmail `sendAndWait` gates — titles/outline/approve/updates ×2 (ANALYSIS §1.4) | REPLACE with in-chat checkpoints (GATE-1/2/3/4), exact order preserved + gate receipts. |
 | 5 | Sequential chapter batches with prior-chapter injection (§5.4) | PRESERVE exactly (no parallel flag) + `AF-BK-CONTINUITY` proves the injection happened. |
 | 6 | Personal-stories verbatim placement mandate ("we must use it for sure") | PRESERVE + `AF-BK-STORIES` enforces intake → outline → manuscript. |
-| 7 | Anthology GHL opportunity pipeline | OUT OF SCOPE here — anthology is the SEPARATE sibling **Skill 54**; ids preserved inert for a future Skill 44 hook; this skill never calls GHL. |
+| 7 | Anthology GHL opportunity pipeline | OUT OF SCOPE here — anthology is the SEPARATE sibling **Skill 54**; ids preserved inert for a future integration hook; this skill never calls GHL. |
 | 8 | Missing companion exports ("Avatar Agent", "Single Chapter Cover Image Gen") (ANALYSIS §4) | RECONSTRUCT: the AVATAR-ANALYST role IS the monolith's Phase B; the cover is stages 22–23. Source exports requested P2. |
 | 9 | Google Slides template population (4x3x3) (ANALYSIS §3.4) | REPLACE with schema-valid `433_Deck_Data.json` + deck outline → **Skill 51**. |
 | 10 | `gpt-4o-search-preview` web research (stage 02) | REPLACE with the client's search path + a `degraded:search` receipt if the box has no search (never silent fabrication). |

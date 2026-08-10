@@ -144,6 +144,18 @@ closed rather than authoring from stale IP. This is a per-contributor subset of 
 own generator set (three of the 40 stages), not the full brand-intelligence package, and it
 never runs the version=book route.
 
+## Relationship to Book Writer (Skill 53) — cross-linked, NEVER merged
+
+This skill (52, Avatar Alchemist) is the **BRAND** version of the Avatar Alchemist; Skill 53 (Book
+Writer) is the **BOOK** version. The shared **Book/Brand selector (Q0)** routes `version=book` to
+Skill 53 and `version=brand` here — an explicit, receipted hand-off, **never a silent cross-version
+fallback** in either direction. Both skills bake a lockstep copy of the shared avatar/tone IP at
+`shared-utils/tone-writing-core/` and prove it with `verify_tone_core_sync.py`, so the blended tone
+stays consistent across brand and book output; **a change to those shared prompts in either skill
+MUST flag the sibling for review.** On the `version=book` route, Skill 53's intake-accept
+(`scripts/bw_intake_accept.py`) issues the `book-intake-accept/v1` receipt that proves the accepted
+handoff — fail-closed, no receipt means no book run. Do not merge the two skills.
+
 ## Relationship to Product Bio (Skill 55) — cross-linked, NEVER merged
 
 This skill (52, Avatar Alchemist) carries its OWN "Product Bio" prompt — a strategic product-messaging

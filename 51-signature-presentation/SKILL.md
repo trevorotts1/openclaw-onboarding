@@ -10,7 +10,8 @@ The methodology layer for the Trevor Otts **"How To Create A Signature Presentat
 4-phase, minimum-100-slide signature talk — added to the Presentations department as a new
 governed **deck type** (`deck_type: signature_presentation`). This skill owns the *IP and the
 gates*; the department engine owns *execution*. It never builds a deck itself and never forks
-`build_deck.py`.
+`build_deck.py`. `433_Deck_Data.json` — the 4x3x3 offer-book deck-data artifact — is produced by
+Skill 53 (Book Writer) and consumed here as the offer-deck data source.
 
 > The method captured in `MASTERDOC.md` is **SACRED** — never floored, reordered, or
 > reinterpreted. Every rule below is machine-enforced by a fail-closed prover, never advisory.

@@ -1360,6 +1360,19 @@ jobs:
           bash 41-build-with-ai-playbook/scripts/11-run-qc-checklist.sh
           echo "✓ Skill 41 L0 static checklist green (incl. browser-harness gate auto-swept by qc-*.sh)"
 
+      - name: Skill 53 book-writer verify + QC battery (verify.sh + qc-book-writer.sh)
+        shell: bash
+        run: |
+          set -uo pipefail
+          # Book Writer engine self-verification (prover self-tests, tone-core
+          # lockstep, broken-variants reject, anti-pattern scans, version routing)
+          # plus the composite QC battery (manifest sync, verify.sh, verify-deps).
+          # Both scripts are read-only and idempotent; invoked repo-root-relative,
+          # the same pattern as the Skill 41 L0 checklist step above.
+          bash 53-book-writer/verify.sh
+          bash 53-book-writer/qc-book-writer.sh
+          echo "✓ Skill 53 book-writer: verify.sh + QC battery green"
+
       - name: Skill 41 browser-harness static gate (L0) + negative self-test
         shell: bash
         run: |

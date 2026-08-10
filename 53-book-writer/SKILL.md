@@ -29,7 +29,8 @@ the client's own model providers (never Anthropic).**
 > the baked authoring prompts.
 
 - **Shipped now:** the intake + Book/Brand selector, `BOOK-WRITER-MANIFEST.json`, the deterministic
-  assembler/certifier (`run_book_writer.py`), all twelve fail-closed provers + `verify_tone_core_sync.py`,
+  assembler/certifier (`run_book_writer.py`), all fourteen fail-closed provers and verifiers
+  (`verify_tone_core_sync.py`, `bw_intake_accept.py` included),
   the seven role SOPs under `roles/` (registered in `roles/_index.json`), and **all 27 baked prompt
   triplets** — the five tone-core stages (04–08, byte-identical to `shared-utils/tone-writing-core`) plus
   the 22 non-tone authoring stages (01–03, 10–23, 41–45).
@@ -50,7 +51,12 @@ the client's own model providers (never Anthropic).**
   `shared-utils/tone-writing-core`) and the 22 non-tone authoring stages (01–03, 10–23, 41–45) — see
   "Authoring layer — SHIPPED" above.
 - `intake/{intake-schema.json, INTAKE-TEMPLATE.md}` — the Book/Brand selector (Q0) + the book intake.
-- `scripts/` — the twelve fail-closed provers, `verify_tone_core_sync.py`, and the process guard.
+- `scripts/bw_intake_accept.py` — the intake-accept receipt: the target side of the 52 → 53 route.
+  It sha256-binds the exact forwarded bytes, refuses anything unparseable
+  (`AF-BK-ACCEPT-UNREADABLE`), anything not `version=book`
+  (`AF-BK-ACCEPT-WRONG-VERSION`), and anything this skill's own intake gate rejects in handoff
+  mode (`AF-BK-ACCEPT-REJECTED`, underlying `AF-BK-*` codes carried through).
+- `scripts/` — the fourteen fail-closed provers and verifiers, `verify_tone_core_sync.py` included.
 - `run_book_writer.py` — the deterministic assembler/certifier.
 - `book-writer-entry.sh` — the ONE sanctioned front door (deps → bypass-scan → hash-pin → nonce).
 - `roles/` — the 7 dispatchable role SOPs (AVATAR-ANALYST · TONE-ANALYST · TITLE-STRATEGIST ·
@@ -79,7 +85,7 @@ Avatar dossier · Tone doc ("The {First} {Last} Tone") · locked title/subtitle 
 | Batch continuity | batch N's receipt records the sha256 of every prior chapter embedded | `AF-BK-CONTINUITY` |
 | Blended tone | ≥ 3000 stripped words (shared tone core) | `AF-BK-TONE-LEN` |
 | 30-Day Challenge | exactly 30 day-sections | `AF-BK-CHALLENGE` |
-| 4x3x3 counts | exactly 4 outcomes AND 30 titles | `AF-BK-433-COUNTS` |
+| 4x3x3 counts | exactly 4 outcomes and exactly 30 titles, independently enforced | `AF-BK-433-COUNTS` |
 | 4x3x3 map | 12 chapters = 4 phases × 3; deck-data schema-valid | `AF-BK-433-MAP` |
 | No placeholders | no unresolved `{{…}}` / `$('…')` tokens | `AF-BK-PLACEHOLDER` |
 | No Anthropic | no `/anthropic\|claude/i` model id in `RUN-LEDGER.json`; no operator creds in env | `AF-BK-ANTHROPIC` |
@@ -95,6 +101,16 @@ python3 53-book-writer/run_book_writer.py --run-dir <RUN_DIR>  # deterministic a
 
 1. **Gate 0** — `prove_bw_intake.py` proves the intake + Book/Brand selector. `version=brand` hands
    off to Skill 52 (or parks); `version=book` runs. `mode` ∈ {full, 4x3x3}.
+   **The receipted 52 → 53 route (T0-28):** when Skill 52 forwards a `version=book` intake, the
+   target side is `scripts/bw_intake_accept.py`. It computes the sha256 over the EXACT forwarded
+   bytes (before parsing), decides acceptance through this skill's OWN fail-closed gate
+   (`prove_bw_intake.evaluate`, handoff mode), and prints a machine-readable receipt on STDOUT
+   (never a pre-planted file) carrying that digest — with `--receipt-out` the same receipt is also
+   persisted, and a failed persist is a hard error (exit 3), never a quiet acceptance. It exits
+   `0` ACCEPTED, `2` REJECTED (a real, reasoned refusal), `3` USAGE/IO, and emits
+   `AF-BK-ACCEPT-UNREADABLE` / `AF-BK-ACCEPT-WRONG-VERSION` / `AF-BK-ACCEPT-REJECTED` (the
+   underlying `AF-BK-*` violations are carried through on a reject). A directory existing is NOT
+   an acknowledgement — `book-routed` requires this receipt.
 2. **Phases P0→P8** — the assembler walks phases IN ORDER with NO skips: intake → avatar → tone →
    titles-gate → outline-gate → chapters (four STRICTLY-SEQUENTIAL batches, continuity proven) →
    package → QC → deliver. Human checkpoints (GATE-1 titles / GATE-2 outline / GATE-3 approval /
@@ -104,7 +120,7 @@ python3 53-book-writer/run_book_writer.py --run-dir <RUN_DIR>  # deterministic a
    round ran). P8-DELIVER promotes the certified bundle to `delivery/`, copies it to a labeled,
    timestamped `~/Downloads` folder, and re-verifies every file's sha256 against `MANIFEST.json`; an
    uncertified bundle is quarantined and never sits in `delivery/`.
-3. **Provers** — the twelve fail-closed provers MEASURE the stripped text and ignore self-reported
+3. **Provers** — the fourteen fail-closed provers and verifiers MEASURE the stripped text and ignore self-reported
    counts; any `AF-BK-*` violation blocks the run.
 4. **Certificate** — a full P0→P8 pass mints `PROCESS-CERTIFICATE.{json,md}` with a deterministic
    `certificate_sha`. **"Done" is claimed only with the certificate path (no-false-done).**

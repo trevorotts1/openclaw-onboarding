@@ -1,5 +1,7 @@
 # Avatar Dossier — The Newly-Promoted First-Time Engineering Manager
 
+**The Quiet Authority: How the Best New Leaders Trade Control for Trust** — the locked GATE-1 title and subtitle for this book, byte-exact.
+
 Meet the reader this book was written for: the newly-promoted first-time engineering manager who was, until a few months ago, the top individual contributor on the team. She is somewhere between 28 and 38 years old. She was promoted in the last year — often in the last six months — to lead four to eight people she used to sit beside and code with. She earned the role the way most technical people earn things: by being the person with the answers. And now, for the first time in her career, being the person with the answers is quietly making everything worse.
 
 This is the person we are talking to on every page. Not a theoretical "leader." A specific human, tired, opening this book at ten at night after the standup, the reviews, the escalations, and a dinner she half-ate at her desk.
