@@ -49,6 +49,38 @@ when it has genuinely exhausted its own competence:
 It is NOT used for routine work a competent agent handles itself (silence is the
 correct signal for a healthy box).
 
+### The three-tier rescue order (the doctrine this department works by)
+
+Every ticket that lands here is worked in this exact order - never silent, Operator
+as the LAST resort:
+
+1. **Instruct the client's agent (outcome b).** Tell the client's OWN agent how to
+   fix it - the actionable steps its owner can complete. This is the PRIMARY outcome
+   for coaching/how-to classes and for client-account actions (OAuth dashboard
+   steps, billing top-up, owner confirmation). The client's agent relays outcome
+   (b) to its owner.
+2. **The rescue AI fixes it using our access.** If the client's agent cannot or did
+   not fix it, the rescue AI steps in and fixes it itself - it does NOT page the
+   Operator for infrastructure it can reach. Access inventory: the operator's
+   `~/.ssh/config` provides a `rescue-*` alias for EVERY fleet box (Mac-via-
+   Cloudflare-tunnel, Hostinger VPS, Contabo); provider credentials for Hostinger,
+   Contabo, Cloudflare, GoHighLevel and OpenRouter live in the operator secrets env
+   (`~/.openclaw/secrets/.env`) - referenced by ENV VAR NAME ONLY, sourced to use,
+   NEVER a value printed into any doc, ticket, or transcript. Check the credential
+   exists BEFORE escalating; a missing credential is itself a finding to report.
+3. **Escalate to the Operator - ONLY if the AI cannot fix it - WITH what was tried
+   and why.** The page carries what is broken, the evidence, the exact command plus
+   its one-line revert, what was already tried, why it failed, and the
+   recommendation. A page without the tried-list is an incomplete dispatch.
+
+**Routing table:** credential-ACTION (rotate/regenerate/revoke) -> Operator (one-way
+door, pages on the class alone); client-account-action (OAuth dashboard, billing
+top-up, owner confirmation) -> client-instruction, outcome (b), never a page;
+infrastructure failure on a REACHABLE box -> self-fix by the rescue AI (step 2);
+everything else -> coach the client's agent first (step 1), then self-fix (step 2);
+box genuinely UNREACHABLE after the rescue AI's own SSH attempts -> Operator, with
+the attempts and evidence.
+
 ---
 
 ## 3. How the Escalation Path Works (end-to-end)
@@ -69,9 +101,13 @@ correct signal for a healthy box).
    receiver** (over a dedicated Cloudflare tunnel) that runs ONE turn of the rescue
    agent per ticket, and a **pull poller** (cron) that drains pending tickets. A
    watchdog keeps the receiver alive with a bounded restart cap (anti-crash-loop).
-4. **The department does its work** (see Section 4): triage → diagnose → structured
-   fix (DRY-RUN then live, within a fix budget) → answer posted back through the
-   relay → the client's own agent tells its owner the outcome (a/b/c).
+4. **The department does its work** (see Section 4) in the three-tier order
+   (Section 2): triage → instruct the client's agent (outcome b) → diagnose →
+   rescue-AI self-fix via our access (the box's `rescue-*` SSH alias + provider env
+   var NAMES from the operator secrets env - never values) → answer posted back
+   through the relay → the client's own agent tells its owner the outcome (a/b/c).
+   The Operator is paged only after the first two tiers have run and can document
+   why neither worked.
 5. **Durable record + board.** Every ticket is written to the SQLite ledger (system
    of record) and boarded on the Command Center Kanban, so the open-ticket, aging,
    and SLA views exist.
@@ -85,9 +121,9 @@ hands-on work under dispatch.
 
 | Role | What it is for |
 | --- | --- |
-| **Director of Rescue Rangers (Dispatcher)** | Triage, tier assignment, SLA ownership, the 25/day cap policy, and the when-to-page-a-human call. Owns the policy; drops no ticket. |
-| **Diagnostician** | Evidence-first root-cause analysis. Names the failure class with proof (log line / config value / doc citation). Never guesses; cheap checks first. |
-| **Structured-Fix Operator** | Applies the sanctioned `remediate.sh` fix for the diagnosed class, DRY-RUN first, live only on explicit opt-in, within the tier's fix budget. Refuses never-auto classes (credentials/DNS/deletion/model-sovereignty). |
+| **Director of Rescue Rangers (Dispatcher)** | Triage, tier assignment, SLA ownership, the 25/day cap policy, and the when-to-page-a-human call. Enforces the three-tier rescue order: instruct the client's agent (outcome b), then rescue-AI self-fix via our access (SSH alias + secrets env), and only then page the Operator with what was tried and why. Owns the policy; drops no ticket. |
+| **Diagnostician** | Evidence-first root-cause analysis. Names the failure class with proof (log line / config value / doc citation). Never guesses; cheap checks first. Tries the box's own `rescue-*` SSH alias before an unreachable-box page. |
+| **Structured-Fix Operator** | Applies the sanctioned `remediate.sh` fix for the diagnosed class, DRY-RUN first, live only on explicit opt-in, within the tier's fix budget. Refuses never-auto classes (credentials/DNS/deletion/model-sovereignty - pages on the class alone); self-fixes reachable-box infrastructure with our access. |
 | **Ticket Clerk** | Owns the durable ledger, the Command Center board sync, the aging/SLA sweep, and the weekly digest. Every ticket leaves a durable trace. |
 | **QC / Postmortem Specialist** | Turns every P1 and 3-strike ticket into fleet prevention - a Skill-61 fix-class proposal or a repo issue - and audits that answers were correct and actually delivered. |
 

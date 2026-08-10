@@ -1,3 +1,38 @@
+## [v22.0.7] -- 2026-08-10 -- Rescue Rangers three-tier rescue order + access inventory (v1.2)
+
+Doctrine rewrite across all 10 rescue-rangers department docs (repo-side; no
+live n8n / VPS / client / GHL touched). The Operator is now the LAST resort,
+never the first: every ticket is worked in a BINDING three-tier order —
+
+1. **Instruct the client's agent (outcome b)** — the PRIMARY route for
+   coaching/how-to classes and client-account actions (OAuth dashboard steps,
+   billing top-up, owner confirmation); never a page.
+2. **The rescue AI self-fixes infrastructure on a REACHABLE box using our
+   access** — the operator's `~/.ssh/config` `rescue-*` alias for every fleet
+   box plus the provider env var NAMES from `~/.openclaw/secrets/.env`
+   (Hostinger, Contabo, Cloudflare, GoHighLevel, OpenRouter, per-client
+   `CF_ACCESS_<CLIENT>_SVC_*`); referenced by NAME ONLY, values live in the
+   secrets env, never printed into a doc/ticket/transcript; credential
+   existence checked BEFORE escalating.
+3. **Page the Operator ONLY after tiers 1-2 ran** — WITH what was tried and why
+   — or on a one-way-door class (credential-ACTION/DNS/deletion/model
+   sovereignty) that pages on the class alone.
+
+Routing table: credential-ACTION -> Operator; client-account-action -> outcome
+(b); infra failure on reachable box -> self-fix; everything else -> coach then
+self-fix; box genuinely UNREACHABLE after the rescue AI's own SSH attempts ->
+Operator, with the attempts and evidence.
+
+Outcome contract made explicit everywhere: every rescue ends as (a) solved,
+(b) here is what you should do, or (c) here is the answer — delivered by the
+client's own agent; outcome (b) is a complete dispatch, never a silent drop.
+
+Files: director, diagnostician, structured-fix-operator, ticket-clerk,
+qc-postmortem-specialist, how-to-use-this-department, TOOLS.md,
+sops/SOP-RR-01/03/04, CHANGELOG-RESCUE-DEPT.md (v1.2), _index.json
+content-manifest re-stamped via the canonical hash-content-manifest.py
+pipeline. Version rolled v22.0.6 -> v22.0.7 in lockstep (10 markers).
+
 ## [v22.0.6] -- 2026-08-10 -- Final batch merge: Waves 1+2 + engine launcher + cert + reporter
 
 Atomic batch merge of ALL 11 QC-PASSED Pres Dept work items into one stamp

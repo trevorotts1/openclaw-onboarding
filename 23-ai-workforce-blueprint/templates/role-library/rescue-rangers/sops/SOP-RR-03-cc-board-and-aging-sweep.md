@@ -46,7 +46,10 @@ movement receipt so a failed advance is VISIBLE on disk, never silent.
    `rescue_cc_board.aging_sweep(ledger, N)`) reads the durable ledger for
    open/in-progress/answered/blocked tickets past the cutoff.
 2. Hand the aged list to the Dispatcher (who decides re-dispatch, tier bump, or an
-   Operator page).
+   Operator page per the three-tier order of SOP-RR-01 — page only after the
+   client's agent was instructed (outcome b) and the rescue AI's own self-fix via
+   our access was attempted, or on a one-way-door class that pages on the class
+   alone).
 3. Page the Fixer topic **ONCE per aged ticket (deduped)** — the aging alarm must
    never become its own furnace.
 
