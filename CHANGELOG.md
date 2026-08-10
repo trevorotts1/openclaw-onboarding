@@ -1,3 +1,26 @@
+## [v22.0.4] -- 2026-08-10 -- Wave 1 batch: manifest v44, 14 SOP fixes, capacity probe
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 1 work items (merge record:
+`CONTROL/merge-wave1.md` in the pres-dept-fix project).
+
+- **WI-01 (manifest v44):** update-skills.sh U001 workspace-resolution fix --
+  three-candidate fallback (dept agent workspace -> OC_WS_RESOLVED -> canonical
+  <oc-root>/workspace) to prevent silent manifest deployment skips on boxes whose
+  main-agent workspace diverges from the canonical path.
+- **WI-11 (14 SOP fixes):** 11 edits across the Presentations SOP fleet: stale
+  path fix (SOP-IMG-01), DEN-1 doctrinal downgrade (SOP-SLIDE-04), I2I mode
+  (CLIENT-WEBINAR-DECK-SOP), 6 North-Star SOPs PENDING W3 -> DOCTRINE-ONLY,
+  version bumps (IMG-00, DESIGN-00), path notes (SLIDE-06, SIGPRES-00),
+  harmony line-number removal. 3 new SOPs: MECHANICAL-ENFORCEMENT-REGISTRY,
+  CROSS-REFERENCE-MAP, SLIDE-07-PRICE-LADDER-RECONCILIATION -- deployed to
+  both universal-sops and onboarding role-library.
+- **WI-12 (capacity probe):** `51-signature-presentation/scripts/presentation_job/
+  capacity.py` -- read-only measurement of harness + provider capacity from
+  settings.json. dispatchable = min(harness, provider_ceiling, doctrine_width).
+  probe_mode "live" (never SIMULATED). Exits 2 on missing settings, never guesses.
+- sync_check --strict exits 0 (v44, 36 phases, 173 autofails, 34 roles).
+- universal-sops/_content-manifest.json re-stamped (111 files, drift-free).
+
 ## [v22.0.3]  -  2026-08-07  -  Presentation Interview app: write GATE 0b intake_transcript.json
 
 Fixes the GATE 0b blocker on app-captured runs. `presentation-canonical-entry.sh`
