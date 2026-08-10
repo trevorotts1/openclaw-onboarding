@@ -13,6 +13,20 @@
   instead of the stale "authoring stage deferred to a scoped follow-up campaign" text. Fail-closed
   behavior is unchanged.
 
+### Verified (2026-08-10, D-1/D-17 repair campaign — documentation only, no code change)
+
+- **D-17 — non-UTF-8 JSON already fail-closes.** `scripts/_bw_common.py` `read_json()` catches
+  `(OSError, ValueError)`; `UnicodeDecodeError` is a `ValueError` subclass, so a non-UTF-8 JSON file
+  exits 3 (USAGE/IO) with a clean stderr message, never a traceback. Proven live with a Latin-1 file:
+  `printf '\xff\xfe{"a":1}' > /tmp/latin1.json` then `read_json('/tmp/latin1.json')` →
+  `USAGE/IO: cannot read/parse JSON … 'utf-8' codec can't decode byte 0xff …`, exit code 3.
+  No redundant `UnicodeDecodeError` except clause was added — the proof decides, and it passed.
+- **D-1 — `CHAP_WORD_MAX = 3500` is consistent.** The constant (`scripts/_bw_common.py`) matches the
+  autofail trigger (`prove_bw_chapters.py` line 44: `wc < CHAP_WORD_MIN or wc > CHAP_WORD_MAX`), the
+  manifest autofail trigger (AF-BK-CHAP-LEN: "any chapter's MEASURED stripped word count is outside
+  [2000,3500]"), and the SACRED floor 2000–3500. No change. The golden example's largest chapter
+  (`ch09.md`, 2512 stripped words) does not exercise the ceiling — expected, not a defect.
+
 ## 1.1.6 — 2026-07-21 — T0-28: this skill can now ACKNOWLEDGE a routed intake
 
 ### Added
