@@ -175,7 +175,7 @@ instead of parks. This edit is Agent E's; Agent A does not touch Skill 52 files.
   `run_book_writer.py:893` (`_mc_board_begin` → `mc_board.begin_run(..., department="marketing")`)
   uses this exact slug. The regression guard `scripts/test_department_slug.py` statically extracts
   the `department=` literal and asserts it is canonical, matches the skill-department map, and is
-  never the historic fabricated slug; it runs as `verify.sh` section 10. Historical context: the
+  never the historic fabricated slug; it runs as `verify.sh` section 11. Historical context: the
   originally shipped code hardcoded a standalone `"books"` slug that was never actually seeded
   anywhere, so every card silently dropped/misrouted (`mc_board.py` fails soft on an unrecognized
   `department_slug`); that defect is what v1.1.3 corrected.

@@ -27,11 +27,11 @@
   "files": [
     {
       "file": "00-INDEX.md",
-      "sha256": "5756ca93d438f59170818a6f9c9032ef91692c7ab515a2fcd6955646c5796fad"
+      "sha256": "f7956c2e59404cc00872bd4b5f1bb648594225f9e6610cbd8ed89ba6be81b705"
     },
     {
       "file": "30_Day_Challenge-Marcus_Halloway.md",
-      "sha256": "ced960025d15bde267f3c28b17cc18d3d2807c9b61304861a0983bb9686371e2"
+      "sha256": "8581fdf73423157f398110a317a510722b9c07eef31054f6ddf81c9ffe810203"
     },
     {
       "file": "APPROVED-OUTLINE.md",
@@ -43,7 +43,7 @@
     },
     {
       "file": "Avatar_Document-Marcus_Halloway.md",
-      "sha256": "6842a2e1d6364bd039065e8248cf18c016dd3182f24ac99cdb8617c5dd6b45f0"
+      "sha256": "84707596a0e28187bd64e0a818c57fe759901f25d2b472c443848c660c618949"
     },
     {
       "file": "Book_Blurb_and_Chapter_Titles-Marcus_Halloway.md",
@@ -55,15 +55,15 @@
     },
     {
       "file": "MANIFEST.json",
-      "sha256": "ab3a6609320dcff5af873d51a0d9f4dd5459ff4cc269976a7a0edca19b3d2f18"
+      "sha256": "5d666588f36c580386ecc77572da28d56f439457a47083015c50db8a75753a70"
     },
     {
       "file": "PROCESS-CERTIFICATE.json",
-      "sha256": "b7de7cfabe502022d29a66b8a423b95098986fda12ca4d034cb2ec2830430d5f"
+      "sha256": "c92dfeb09920763f2ffe94f9fc7a9e14027c6139f03cda1bba05ff7f0470e30a"
     },
     {
       "file": "PROCESS-CERTIFICATE.md",
-      "sha256": "6d08e31b3785f8d4e0c4d95622a98f91003953b23e072d7992bf2556a8d65b64"
+      "sha256": "cc38191aa3df173192ae03a763853335e5478f5e5b1a8a91a032e6e6c2e8e611"
     },
     {
       "file": "Suggested_Titles-Marcus_Halloway.md",

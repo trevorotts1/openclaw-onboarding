@@ -1,6 +1,8 @@
 # The Quiet Authority — 30-Day Challenge
 ## How the Best New Leaders Trade Control for Trust
 
+**The Quiet Authority: How the Best New Leaders Trade Control for Trust** — the locked GATE-1 title and subtitle for this book, byte-exact.
+
 One small move a day. That is the whole design. Each step below takes less than an hour, and every one is a rep in trading control for trust. Do them in order. When you slip back into the old habit, and you will, just start the next step. Progress here is not a straight line; it is thirty small choices that add up.
 
 Work one step at a time. Read the challenge for that morning, do the one thing, and let it go by night.
