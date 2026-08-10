@@ -146,7 +146,7 @@ AF_BUNDLE_COMPLETE = "AF-BUNDLE-COMPLETE"
 #            delivery. Exit criterion: U012 an ancestor of main, plus a zero warn count
 #            across the golden corpus.
 # ---------------------------------------------------------------------------
-UPLOAD_GATE_WARN_ONLY = True
+UPLOAD_GATE_WARN_ONLY = False
 
 # sync_check.py LOCKSTEP — HOLE B / C1 emission registry. sync_check scans every
 # script named in an autofails[].check_script for `"code": "AF-..."` emission dicts
@@ -190,7 +190,7 @@ _BAD_TASK_IDS = frozenset({None, "", "native", "placeholder", "none", "null", "n
 # reject every historical package dir on sight. Drive the warning count to zero
 # across the corpus, then promote to frozenset() in a separate change.
 # ---------------------------------------------------------------------------
-CLIENT_PACKAGE_WARN_ONLY = frozenset({"teleprompter_html", "webinar_mp4"})
+CLIENT_PACKAGE_WARN_ONLY = frozenset()
 
 
 def _categorize(name: str) -> str:

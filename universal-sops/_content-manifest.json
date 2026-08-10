@@ -1,8 +1,8 @@
 {
   "algo": "sha256(CRLF->LF normalized bytes)",
   "generator": "scripts/hash-universal-sops-manifest.py",
-  "generated_at": "2026-08-07T17:57:24Z",
-  "file_count": 108,
+  "generated_at": "2026-08-10T17:55:01Z",
+  "file_count": 111,
   "files": {
     "CLIENT-WEBINAR-DECK-SOP.md": {
       "sha256": "ab426f2c7ba20b8083605fd1b94dc154981d9b97a94388240ea4e4c805604dfb",
@@ -297,12 +297,20 @@
       "bytes": 112996
     },
     "presentation-slide-craft/PIPELINE-MANIFEST.json": {
-      "sha256": "4cb5fb68706cf1f3dc2c8928c3a1334ae14e12e0882dedb4c301c7c7e7eb0ddf",
-      "bytes": 147897
+      "sha256": "695bd8547d0520c778943e0fa1d49bcbce1d324d3feab11a79cf7091f8ad47ac",
+      "bytes": 149640
     },
     "presentation-slide-craft/README.md": {
       "sha256": "90b23b7d9263831fc5267852d7f804f9a549d995c187a16f822b5a660264f982",
       "bytes": 1383
+    },
+    "presentation-slide-craft/SOP-CROSS-REFERENCE-MAP.md": {
+      "sha256": "c2acd851002f25fdd9d4624ebd389da29a80102d0ea29f1a658e6a4174584e76",
+      "bytes": 5940
+    },
+    "presentation-slide-craft/SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md": {
+      "sha256": "282cfb078b937cc4ff83133b3550df66cab0b99adddc73b2769a26a0243c1427",
+      "bytes": 6076
     },
     "presentation-slide-craft/SOP-SLIDE-01-ONE-BIG-IDEA-PER-SLIDE.md": {
       "sha256": "dd78c4ac60982523e4f1f219c3219627b2ec38036174fb056e31d79c68f56771",
@@ -317,16 +325,20 @@
       "bytes": 13408
     },
     "presentation-slide-craft/SOP-SLIDE-04-DECK-DENSITY-AND-PACING.md": {
-      "sha256": "5ff0ef0146b2a0e342e2fb9b62ef4be10381a160f0e34896b7ab1457a9ce371c",
-      "bytes": 11162
+      "sha256": "ee02be9848acb55d809077972aed50355a2c41c086b84b9b8ff90cbac8c97d7d",
+      "bytes": 11397
     },
     "presentation-slide-craft/SOP-SLIDE-05-PROCESS-MANIFEST.md": {
       "sha256": "f73b0dc1b88262d9f102a0aa60c90636e0b0ce5f6d5a967fde6ec6ae7873eab2",
       "bytes": 11688
     },
     "presentation-slide-craft/SOP-SLIDE-06-EXTENSION-AND-SYNC.md": {
-      "sha256": "a7a350115ded486b946bfbc45b5a3c28931d7818988273b09826e36c91a36ac5",
-      "bytes": 7243
+      "sha256": "4281eadf8a79415cd266a63261d4eb810d8cfa5bf33a1fda69e76bf1b9ee0589",
+      "bytes": 7573
+    },
+    "presentation-slide-craft/SOP-SLIDE-07-PRICE-LADDER-RECONCILIATION.md": {
+      "sha256": "f44f538ea51ec1a58b58ba302bad3b47d32f01b3e8e5129853ddd3a2edd86448",
+      "bytes": 4819
     },
     "product-bio-craft/README.md": {
       "sha256": "e9776de5172089bb334c97c62f5fa49ed33956d4449f546227390ef138691943",

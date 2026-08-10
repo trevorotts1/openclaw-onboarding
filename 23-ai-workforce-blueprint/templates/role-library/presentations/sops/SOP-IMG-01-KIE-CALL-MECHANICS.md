@@ -30,7 +30,7 @@ Give every agent the EXACT call structure (HTTP verb, endpoint, headers, JSON bo
 
 ## 1A. THE DETERMINISTIC RENDER PATH IS MANDATORY (no self-generate, no native image tool)
 
-Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/presentation-render/` (installed into the client's Presentations scripts directory on a materialized box):
+Every Kie.ai call described in this SOP is made by a SHIPPED SCRIPT, never by an agent typing an HTTP call from memory. There are exactly two renderers, both in `23-ai-workforce-blueprint/templates/role-library/presentations/scripts/` (installed into the client's Presentations scripts directory on a materialized box):
 
 - **`build_deck.py`** — the single-command deterministic path. The builder writes `slides.json` (its only creative output) and runs the script; the script composes each prompt MECHANICALLY (scene + the agent's EXACT copy verbatim + optional logo wordmark + layout hint + the mandatory English/Latin-only pin), submits `gpt-image-2-text-to-image`, polls, downloads + verifies each PNG, and assembles the `.pptx`. No model decides wording at runtime.
 - **`kie_generate.py`** — the image-to-image / text-to-image submit+poll+download helper for slides that must pass references (Mode B below).

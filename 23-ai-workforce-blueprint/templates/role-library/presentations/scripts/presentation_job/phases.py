@@ -20,6 +20,7 @@ from .artifacts import validate_artifact
 from .heal import HEAL_CAP_TRANSIENT, HEAL_CAP_REGENERATE, HEAL_CAP_ALT_ROUTE, HEAL_CAP_REGATE, record_heal_event
 from . import heal
 from . import persona
+from . import curate as _curate
 # FIX-21 (D21): run_with_cleanup spawns the phase exec in a NEW PROCESS GROUP and, on
 # budget expiry, kills the WHOLE group (SIGTERM -> SIGKILL) so a timed-out phase leaves
 # no orphaned grandchildren (the D21 zombie path). Direct-child-only `subprocess.run`
@@ -431,6 +432,181 @@ class Engine:
             return EXIT_OK
         return self.close()
 
+    def _mint_process_certificate(self) -> dict:
+        """U067 -- WORK-ITEM-05: Mint PROCESS-CERTIFICATE inside engine close().
+
+        Imports prove-deck's cert minting logic. Checks every declared step:
+        attestation record, substance_verified, client_reports start+done,
+        monotonic timestamps, no gaps. Writes PROCESS-CERTIFICATE.json to
+        working/checkpoints/. Records sha256 in state. Returns the cert dict.
+        """
+        now = utcnow()
+        phases = self.state.get('phases', [])
+        manifest_version = self.state.get('manifest_version', 'unknown')
+        manifest_sha = self.state.get('manifest_sha256', '')[:12]
+
+        # 1. Collect attestation records -- every phase that reached status 'done'
+        attested = [p for p in phases if p.get('status') == 'done']
+        all_phase_ids = [p.get('id') for p in phases]
+
+        # 2. Verify no gaps
+        manifest_phase_ids = [p.id for p in self.manifest.phases]
+        unentered = [pid for pid in manifest_phase_ids if pid not in all_phase_ids]
+        incomplete = [p.get('id') for p in phases if p.get('status') not in ('done', 'blocked')]
+
+        # 3. Check substance verification
+        substance_unverified = [
+            p.get('id') for p in attested
+            if p.get('verifier_ok') is False
+            or (p.get('verifier_ok') is None and p.get('artifacts'))
+        ]
+        substance_verified_count = len([
+            p for p in attested if p.get('verifier_ok') is True
+        ])
+
+        # 4. Check client reports
+        sent = self.state.get('sent') or {}
+        has_ack = bool(sent.get('ack'))
+        has_done = bool(sent.get('done'))
+        progress_sent = (sent.get('progress', {}).get('count', 0)
+                         if isinstance(sent.get('progress'), dict) else 0)
+        blocked_sent = (sent.get('blocked', {}).get('count', 0)
+                        if isinstance(sent.get('blocked'), dict) else 0)
+
+        # 5. Monotonic timestamp check
+        timestamps = []
+        for p in attested:
+            at = p.get('attested_at')
+            if at:
+                timestamps.append((p.get('id'), at))
+        monotonic_violations = []
+        for i in range(1, len(timestamps)):
+            if timestamps[i][1] < timestamps[i-1][1]:
+                monotonic_violations.append(
+                    f"{timestamps[i][0]} @ {timestamps[i][1]} < "
+                    f"{timestamps[i-1][0]} @ {timestamps[i-1][1]}"
+                )
+
+        # 6. Gate results
+        gates_state = self.state.get('gates', {})
+        gate_pass_count = sum(
+            1 for g in gates_state.values()
+            if isinstance(g, dict) and g.get('state') in ('pass', 'waived')
+        )
+        gate_total = len(ALL_GATE_KEYS)
+        gate_failures = [
+            k for k, v in gates_state.items()
+            if isinstance(v, dict) and v.get('state') not in ('pass', 'waived')
+        ]
+
+        # 7. Build the certificate
+        cert = {
+            'certificate_version': 1,
+            'job_id': self.state.get('job_id'),
+            'run_dir': str(self.run_dir),
+            'minted_at': now,
+            'manifest': {
+                'version': manifest_version,
+                'sha256': manifest_sha,
+            },
+            'phase_integrity': {
+                'manifest_phase_count': len(manifest_phase_ids),
+                'phases_attested': len(attested),
+                'phases_incomplete': len(incomplete),
+                'phases_unentered': len(unentered),
+                'unentered_phase_ids': unentered,
+                'incomplete_phase_ids': incomplete,
+                'no_gaps': len(unentered) == 0,
+                'all_done': len(attested) == len(manifest_phase_ids),
+            },
+            'substance_verification': {
+                'verified_count': substance_verified_count,
+                'unverified_phase_ids': substance_unverified,
+                'all_verified': len(substance_unverified) == 0,
+            },
+            'client_reports': {
+                'ack_sent': has_ack,
+                'done_sent': has_done,
+                'progress_messages': progress_sent,
+                'blocked_messages': blocked_sent,
+            },
+            'timestamp_integrity': {
+                'attestation_count': len(timestamps),
+                'monotonic': len(monotonic_violations) == 0,
+                'violations': monotonic_violations,
+            },
+            'gate_results': {
+                'passed': gate_pass_count,
+                'total': gate_total,
+                'failed_gate_keys': gate_failures,
+                'all_passed': len(gate_failures) == 0,
+            },
+            'integrity_pass': (
+                len(unentered) == 0 and
+                len(substance_unverified) == 0 and
+                len(monotonic_violations) == 0 and
+                len(gate_failures) == 0
+            ),
+            'integrity_fail_reasons': [],
+        }
+
+        if not cert['integrity_pass']:
+            if unentered:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(unentered)} manifest phase(s) '
+                    'never entered: ' + ', '.join(unentered))
+            if substance_unverified:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(substance_unverified)} phase(s) '
+                    'without substance verification: ' + ', '.join(substance_unverified))
+            if monotonic_violations:
+                cert['integrity_fail_reasons'].append(
+                    f'AF-PROCESS-INTEGRITY: {len(monotonic_violations)} timestamp '
+                    'monotonicity violation(s)')
+
+        # 8. Write to checkpoints (atomic, same pattern as state.save())
+        import tempfile as _tempfile
+        import os as _os
+        checkpoints_dir = self.run_dir / 'working' / 'checkpoints'
+        checkpoints_dir.mkdir(parents=True, exist_ok=True)
+        cert_path = checkpoints_dir / 'PROCESS-CERTIFICATE.json'
+        cert_json = json.dumps(cert, indent=2, ensure_ascii=False, sort_keys=True)
+        fd, tmp = _tempfile.mkstemp(dir=str(checkpoints_dir),
+                                    prefix='.cert-', suffix='.tmp')
+        try:
+            with _os.fdopen(fd, 'w', encoding='utf-8') as fh:
+                fh.write(cert_json)
+                fh.flush()
+                _os.fsync(fh.fileno())
+            _os.replace(tmp, str(cert_path))
+        except Exception:
+            try:
+                _os.unlink(tmp)
+            except OSError:
+                pass
+            raise
+
+        # 9. Compute sha256 and record in state
+        cert_sha = sha256_file(cert_path)
+        self.state['process_certificate'] = {
+            'path': str(cert_path.relative_to(self.run_dir)),
+            'sha256': cert_sha,
+            'minted_at': now,
+            'integrity_pass': cert['integrity_pass'],
+        }
+
+        self.report.event(
+            'certificate.minted',
+            f'PROCESS-CERTIFICATE minted: sha256={cert_sha[:12]}, '
+            f'integrity={"PASS" if cert["integrity_pass"] else "FAIL"}, '
+            f'{len(attested)}/{len(manifest_phase_ids)} phases attested'
+        )
+        print(f'CERT: {cert_path.relative_to(self.run_dir)} '
+              f'sha256={cert_sha[:12]} '
+              f'integrity={"PASS" if cert["integrity_pass"] else "FAIL"}', flush=True)
+
+        return cert
+
     def close(self) -> int:
         gates = Gates(self.run_dir, self.state).evaluate_all()
         try:
@@ -469,6 +645,25 @@ class Engine:
                         if r.get("state") != "pass"]
             if not failures:
                 # All failed gates passed on re-evaluation.
+                # WORK-ITEM-05: Mint certificate BEFORE terminal transition.
+                self._mint_process_certificate()
+                # WORK-ITEM-13: assemble flat deliverables/ folder.
+                try:
+                    _curate.curate(self.run_dir)
+                except _curate.AFBundleIncomplete as exc:
+                    self.state["terminal"] = "BLOCKED"
+                    self.state["blocked"] = {
+                        "phase": "CURATION",
+                        "reason": str(exc),
+                        "at": utcnow(),
+                        "missing_keys": exc.missing_keys,
+                    }
+                    self.store.save(self.state)
+                    self.report.to_requester(
+                        "blocked",
+                        f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+                    print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
+                    return EXIT_GATE_BLOCKED
                 if self.board:
                     self.board.mark_review()
                 self.state["terminal"] = "DONE"
@@ -496,6 +691,25 @@ class Engine:
             print("\n  A gate can only be skipped with a recorded client waiver. See waivers.json.", file=sys.stderr)
             print("\n  continue with:", file=sys.stderr)
             print(f"    python3 {ENTRY_COMMAND} --resume --run-dir {self.run_dir}", file=sys.stderr)
+            return EXIT_GATE_BLOCKED
+        # WORK-ITEM-05: Mint certificate BEFORE terminal DONE transition.
+        self._mint_process_certificate()
+        # WORK-ITEM-13: assemble flat deliverables/ folder.
+        try:
+            _curate.curate(self.run_dir)
+        except _curate.AFBundleIncomplete as exc:
+            self.state["terminal"] = "BLOCKED"
+            self.state["blocked"] = {
+                "phase": "CURATION",
+                "reason": str(exc),
+                "at": utcnow(),
+                "missing_keys": exc.missing_keys,
+            }
+            self.store.save(self.state)
+            self.report.to_requester(
+                "blocked",
+                f"Curation failed — {len(exc.missing_keys)} deliverable(s) missing: {exc}")
+            print(f"\nCANNOT CLOSE — curation failed:\n{exc}", file=sys.stderr)
             return EXIT_GATE_BLOCKED
         if self.board:
             self.board.mark_review()

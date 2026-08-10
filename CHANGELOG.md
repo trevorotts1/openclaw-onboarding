@@ -1,3 +1,50 @@
+## [v22.0.6] -- 2026-08-10 -- Final batch merge: Waves 1+2 + engine launcher + cert + reporter
+
+Atomic batch merge of ALL 11 QC-PASSED Pres Dept work items into one stamp
+(merge record: CONTROL/merge-final-onboarding.md in the pres-dept-fix project).
+
+Wave 1 (b94534d6): WI-01 manifest v44, WI-11 14 SOP fixes, WI-12 capacity probe
+Wave 2 (aa46ba4c): WI-06 deck_type un-hardcode, WI-09 warn-mode flips, WI-10 heartbeat minutes
+Remaining: WI-02-r1 engine launcher (launcher.py, canonical-entry, intake-poll, cc_board dispatch), WI-05 cert minting in close() (phases.py), WI-15a reporter wiring (5/5 binary acceptance verified)
+Config-only: WI-07 CC sweeps (applied .env.local), WI-08 owner chat + notify (applied secrets/.env + tools/)
+Separate repo: WI-15b CC Presentations board (blackceo-command-center), WI-16 self_audit.py (pres-dept-fix)
+
+## [v22.0.5] -- 2026-08-10 -- Wave 2 batch: deck_type un-hardcode, warn-mode flips, heartbeat minutes
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 2 work items (merge record:
+CONTROL/merge-wave2.md in the pres-dept-fix project).
+
+- WI-06 (deck_type un-hardcode): new deck-intake-driver.py -- single sanctioned intake
+  bridge writing deck_type via derive_legacy_fields(). New prove_sp_routing.py --
+  P-SP-CLAIM routing/claim gate running unconditionally, fails AF-SP-TYPE-UNDECLARED.
+- WI-09 (warn-mode flips): CLIENT_PACKAGE_WARN_ONLY -> frozenset(),
+  UPLOAD_GATE_WARN_ONLY -> False, DECK_TYPE_GATE_STAGE -> "enforce".
+- WI-10 (heartbeat minutes): all 36 phases carry heartbeat_minutes (13x 15m, 17x 30m,
+  4x 60m, 2x 120m). Manifest v44 -> v45.
+
+## [v22.0.4] -- 2026-08-10 -- Wave 1 batch: manifest v44, 14 SOP fixes, capacity probe
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 1 work items (merge record:
+`CONTROL/merge-wave1.md` in the pres-dept-fix project).
+
+- **WI-01 (manifest v44):** update-skills.sh U001 workspace-resolution fix --
+  three-candidate fallback (dept agent workspace -> OC_WS_RESOLVED -> canonical
+  <oc-root>/workspace) to prevent silent manifest deployment skips on boxes whose
+  main-agent workspace diverges from the canonical path.
+- **WI-11 (14 SOP fixes):** 11 edits across the Presentations SOP fleet: stale
+  path fix (SOP-IMG-01), DEN-1 doctrinal downgrade (SOP-SLIDE-04), I2I mode
+  (CLIENT-WEBINAR-DECK-SOP), 6 North-Star SOPs PENDING W3 -> DOCTRINE-ONLY,
+  version bumps (IMG-00, DESIGN-00), path notes (SLIDE-06, SIGPRES-00),
+  harmony line-number removal. 3 new SOPs: MECHANICAL-ENFORCEMENT-REGISTRY,
+  CROSS-REFERENCE-MAP, SLIDE-07-PRICE-LADDER-RECONCILIATION -- deployed to
+  both universal-sops and onboarding role-library.
+- **WI-12 (capacity probe):** `51-signature-presentation/scripts/presentation_job/
+  capacity.py` -- read-only measurement of harness + provider capacity from
+  settings.json. dispatchable = min(harness, provider_ceiling, doctrine_width).
+  probe_mode "live" (never SIMULATED). Exits 2 on missing settings, never guesses.
+- sync_check --strict exits 0 (v44, 36 phases, 173 autofails, 34 roles).
+- universal-sops/_content-manifest.json re-stamped (111 files, drift-free).
+
 ## [v22.0.3]  -  2026-08-07  -  Presentation Interview app: write GATE 0b intake_transcript.json
 
 Fixes the GATE 0b blocker on app-captured runs. `presentation-canonical-entry.sh`

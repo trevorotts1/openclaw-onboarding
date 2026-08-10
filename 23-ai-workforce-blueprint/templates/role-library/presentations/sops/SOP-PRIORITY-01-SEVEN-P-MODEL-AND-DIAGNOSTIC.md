@@ -3,10 +3,10 @@
 **Cluster:** North Star / Diagnostic architecture. Child of SOP-NORTHSTAR-00 (the true goal); sibling of SOP-PRIORITY-02 (the build sequence that remediates what this SOP diagnoses).
 **Owning role at write time:** Attention Content Strategist (owns the diagnostic at the P0B-PRIORITY seat, order 0.2) + Director of Presentations (runs the diagnostic gates at intake) + content-to-presentation-architect (runs it in repair mode on submitted source).
 **Enforced at the gate by:** QC Specialist - Presentations, via **AF-NO-SHIFT** at COPY-QC (order 4.2) -- the advanced-diagnostic gate that fails a deck which merely informs and offers without engineering a priority re-rank. The primary four-P diagnostic is a *design/repair discipline* (not a single auto-fail); its individual failure modes surface through the existing engine gates (AF-NO-VILLAIN, AF-NO-FELT-STAKES, AF-NO-COST-OF-INACTION, Pricing cadence) and the composite AF-PRIORITY-SHIFT (P-SHIFT-QC 7.5).
-**Detection script:** `scripts/pitch_engines_check.py chk_priority_shift` (8 move-tags monotonic in `slides_copy.md`; `intake.true_goal` + `priority_stack[]` set). REGISTRATION PENDING -- Agent W3 (H->I->J lockstep).
-**Registered:** PENDING Agent W3 lockstep. Until then this is stated diagnostic doctrine the strategist and director run by hand at P0B-PRIORITY.
+**Detection script:** `scripts/pitch_engines_check.py chk_priority_shift` (8 move-tags monotonic in `slides_copy.md`; `intake.true_goal` + `priority_stack[]` set). **REGISTRATION STATUS: DOCTRINE-ONLY.** The gates AF-NO-SHIFT and AF-PRIORITY-SHIFT are declared here; no mechanical `_chk_` callable or PIPELINE-MANIFEST.autofails entry yet exists.
+**Registered:** DOCTRINE-ONLY. Until registration, this is stated diagnostic doctrine the strategist and director run by hand at P0B-PRIORITY. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for the full ledger.
 **Enforcement phase:** Diagnosis runs at INTAKE (0.1) and P0B-PRIORITY (0.2) as a design spec / source diagnosis; the shift it specs is verified mechanically at COPY-QC (4.2, `AF-NO-SHIFT`) and whole at P-SHIFT-QC (7.5).
-**Status:** **DOCTRINE.** The seven-P architecture has no foothold in the department today; this SOP installs it. Enforcement gate `AF-NO-SHIFT` registered in lockstep by Agent W3.
+**Status:** **DOCTRINE.** The seven-P architecture has no foothold in the department today; this SOP installs it. Enforcement gates AF-NO-SHIFT and AF-PRIORITY-SHIFT tracked in SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md.
 
 ---
 

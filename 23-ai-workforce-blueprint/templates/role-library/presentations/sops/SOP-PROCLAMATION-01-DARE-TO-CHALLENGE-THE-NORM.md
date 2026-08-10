@@ -3,10 +3,10 @@
 **Cluster:** North Star / Fuel. Child of SOP-NORTHSTAR-00 (attention is the #1 job) and SOP-PRIORITY-01 (Proclamation is one of the three power P's -- the fuel). The COPY counterpart to the imagery-creativity mandate: image creativity already has a gallery-grade ceiling; this SOP raises the ceiling for the WORDS.
 **Owning role at write time:** Attention Content Strategist (owns the proclamation set -- "content that dares to challenge the norm" -- authored at P0B-PRIORITY, order 0.2) -> Slide Copywriter (executes the declarations on-slide) -> presenters-speech-writer (delivers them aloud, including the objection-as-expectation reframe).
 **Enforced at the gate by:** QC Specialist - Presentations, via **AF-PROCLAMATION-HEDGE** (SLIDE-level) at COPY-QC (order 4.2) -- a hedge-token scan that fails a slide whose key declarations are softened into generic suggestions. Reinforces the existing slide-copywriter specificity rule (AF-C9 / "strengthen your language").
-**Detection script:** `scripts/intelligence_engines_check.py check_copy` (hedge-token scan: "maybe", "kind of", "sort of", "you might want to consider", "perhaps", "we think", "could possibly" on a tagged PROCLAMATION beat). REGISTRATION PENDING -- Agent W3 (H->I->J lockstep).
-**Registered:** PENDING Agent W3 lockstep. Until then this is stated copy doctrine the strategist and copywriter apply to PROCLAMATION-tagged beats.
+**Detection script:** `scripts/intelligence_engines_check.py check_copy` (hedge-token scan: "maybe", "kind of", "sort of", "you might want to consider", "perhaps", "we think", "could possibly" on a tagged PROCLAMATION beat). **REGISTRATION STATUS: DOCTRINE-ONLY.** The gate AF-PROCLAMATION-HEDGE is declared here; no mechanical `_chk_` callable or PIPELINE-MANIFEST.autofails entry yet exists.
+**Registered:** DOCTRINE-ONLY. Until registration, this is stated copy doctrine the strategist and copywriter apply to PROCLAMATION-tagged beats. See SOP-MECHANICAL-ENFORCEMENT-REGISTRY.md for the full ledger.
 **Enforcement phase:** Authored at P0B-PRIORITY (0.2, the proclamation set); written at P4-COPY (4); gated at COPY-QC (4.2, `AF-PROCLAMATION-HEDGE`); delivery-checked at P-SPEECH-QC (8.6, no-hedge).
-**Status:** **DOCTRINE.** Provocative, norm-challenging COPY has no doctrine home today (imagery creativity is mandated; provocative content was only an optional tone). This SOP makes it the stated **ceiling for the words**. Gate `AF-PROCLAMATION-HEDGE` registered in lockstep by Agent W3.
+**Status:** **DOCTRINE.** Provocative, norm-challenging COPY has no doctrine home today (imagery creativity is mandated; provocative content was only an optional tone). This SOP makes it the stated **ceiling for the words**.
 
 ---
 

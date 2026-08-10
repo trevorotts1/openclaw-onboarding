@@ -121,6 +121,50 @@ _DEFAULT_TIMEOUT = 8
 _DEPARTMENT_SLUG = "presentations"
 _PERSONA = "Director of Presentations"
 
+# WORK-ITEM-02 engine dispatch: the single callback that wires the presentation
+# engine into the CC ingest completion path. Called after a CC task card is
+# successfully created (or re-fetched via idempotency). Best-effort, fail-soft
+# -- a failed engine launch never blocks the deck build or the board registration.
+def _dispatch_engine_if_idle(run_dir) -> None:
+    """If the engine is not running for this run_dir, launch it as a background
+    subprocess via presentation_job --run. Fail-soft: never raises."""
+    import subprocess as _subprocess
+    run_path = Path(run_dir) if not isinstance(run_dir, Path) else run_dir
+    state_json = run_path / "state.json"
+    if not state_json.is_file():
+        return  # no state.json -- engine was never created (not an error)
+    try:
+        st = json.loads(state_json.read_text(encoding="utf-8"))
+        terminal = st.get("terminal")
+    except (json.JSONDecodeError, OSError):
+        return
+    # Do not re-launch a job that is already done/blocked, or one whose engine
+    # PID is already alive.
+    if terminal in ("DONE", "BLOCKED"):
+        return
+    pid = st.get("engine_pid")
+    if isinstance(pid, int) and pid > 0:
+        try:
+            os.kill(pid, 0)
+            return  # already running
+        except OSError:
+            pass  # dead PID -- safe to re-launch
+
+    # Resolve the engine entry point from this module's location.
+    here = Path(__file__).resolve().parent  # scripts/
+    engine = here / "presentation_job.py"
+    if not engine.is_file():
+        return
+    try:
+        _subprocess.Popen(
+            [sys.executable or "python3", str(engine), "--run", "--run-dir", str(run_path)],
+            shell=False, cwd=str(here),
+            start_new_session=True, close_fds=True,
+        )
+        _log(f"engine dispatched for {run_path}")
+    except (OSError, _subprocess.SubprocessError) as exc:
+        _log(f"engine dispatch failed for {run_path}: {exc}")
+
 # U030 (audit E1): the statuses whose PATCH payload carries proof the narrower
 # status endpoint cannot accept. POST /api/tasks/{id}/status validates against
 # {status, note} ONLY (StatusTransitionSchema) and is NOT strict, so any other key
@@ -584,6 +628,14 @@ def ingest_deck_task(
             f"task_id={task_id} deck_slug={deck_slug}"
         )
         stamp_task_id(run_dir, task_id)
+
+        # WORK-ITEM-02: after CC card creation, dispatch the engine if it is
+        # not already running. This closes the "CC ingest callback stops short"
+        # gap: the intake completes, the CC card is created, and the engine
+        # starts walking every manifest phase mechanically -- instead of sitting
+        # dead at "Being Prepared" forever.
+        _dispatch_engine_if_idle(run_dir)
+
         return task_id
 
     _log(

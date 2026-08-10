@@ -7262,7 +7262,7 @@ MIGRATION_WINDOW_UNTIL = date(2026, 9, 30)
 # line. Its prerequisite is an installed deck_type producer reachable from the
 # department (deck-intake-driver.py in <dept>/scripts/, U006/A4, or U058).
 # The dated window below REPORTS that the window has closed; it does not enforce.
-DECK_TYPE_GATE_STAGE = "warn"          # "warn" | "enforce"
+DECK_TYPE_GATE_STAGE = "enforce"          # "warn" | "enforce"
 # The eight-move build sequence (P141-P150), in canonical order. The copy must plant
 # these beat tags monotonically so the arc actually engineers the shift.
 EIGHT_MOVE_TAGS = (

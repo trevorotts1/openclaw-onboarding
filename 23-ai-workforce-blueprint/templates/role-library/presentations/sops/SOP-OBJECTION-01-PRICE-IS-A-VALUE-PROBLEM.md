@@ -3,7 +3,7 @@
 **Cluster:** Seven-P Doctrine (the Price cargo + objection-handling)
 **Doctrine parent:** SOP-NORTHSTAR-00 (priority shift) + SOP-VISION-01 (return-to-the-vision) + SOP-PRIORITY-01 (Price as one of the primary four P's)
 **Owning roles at write time:** Offer-Price-Strategist (owns the value-drop and the price construction, SOP 9.1/9.2/9.8); Presenter-Coach (owns the live Q&A objection-handling, SOP 9.2); Attention-Content-Strategist (records the price-is-priority read)
-**Reinforced by existing gates:** promise-before-price (`chk_promise_before_price` → AF-PITCH-ENGINE — value/promise must precede the number); value-stack-at-every-drop (SOP-PITCH-02 §2, AF-CADENCE/AF-C7); offer-price-strategist Gate 6 (never cut price to fix positioning). **No new auto-fail — this SOP is the doctrine behind live price gates; the price-is-value law is enforced by promise-before-price.** [Noted for Agent W3 — §8.]
+**Reinforced by existing gates:** promise-before-price (`chk_promise_before_price` → AF-PITCH-ENGINE — value/promise must precede the number); value-stack-at-every-drop (SOP-PITCH-02 §2, AF-CADENCE/AF-C7); offer-price-strategist Gate 6 (never cut price to fix positioning). **No new auto-fail — this SOP is the doctrine behind live price gates; the price-is-value law is enforced by promise-before-price.** This SOP introduces no new gate and has no registration requirement.
 **Status:** Doctrine SOP. Encodes Powerful-Presentation-Framework Part 5.2 (Price), Part 8.6 (objection reframe), Part 12.1 (priority-not-price), Part 12.3 (pay-to-appointment), and edge case 167a. Faithful source: `Powerful_Presentation_Framework.md` §5.2, §8.6, §12.1, §12.3, §13.
 
 ---
