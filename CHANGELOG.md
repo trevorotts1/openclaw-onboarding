@@ -1,3 +1,16 @@
+## [v22.0.5] -- 2026-08-10 -- Wave 2 batch: deck_type un-hardcode, warn-mode flips, heartbeat minutes
+
+Atomic batch merge of 3 QC-PASSED Pres Dept Wave 2 work items (merge record:
+CONTROL/merge-wave2.md in the pres-dept-fix project).
+
+- WI-06 (deck_type un-hardcode): new deck-intake-driver.py -- single sanctioned intake
+  bridge writing deck_type via derive_legacy_fields(). New prove_sp_routing.py --
+  P-SP-CLAIM routing/claim gate running unconditionally, fails AF-SP-TYPE-UNDECLARED.
+- WI-09 (warn-mode flips): CLIENT_PACKAGE_WARN_ONLY -> frozenset(),
+  UPLOAD_GATE_WARN_ONLY -> False, DECK_TYPE_GATE_STAGE -> "enforce".
+- WI-10 (heartbeat minutes): all 36 phases carry heartbeat_minutes (13x 15m, 17x 30m,
+  4x 60m, 2x 120m). Manifest v44 -> v45.
+
 ## [v22.0.4] -- 2026-08-10 -- Wave 1 batch: manifest v44, 14 SOP fixes, capacity probe
 
 Atomic batch merge of 3 QC-PASSED Pres Dept Wave 1 work items (merge record:
