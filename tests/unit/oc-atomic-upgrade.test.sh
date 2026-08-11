@@ -204,12 +204,33 @@ EOF
   # launchctl: `print` succeeds only while the job is "loaded". With pid_flip
   # set, every print returns a DIFFERENT pid -- the crash-loop signature the
   # script's stability window is built to catch.
+  # ⚠️ THIS STUB IS STRICTER THAN THE REAL TOOL, DELIBERATELY. It validates the
+  # launchd domain target instead of just basename-ing it. The first version
+  # used `basename` alone, which normalises `gui//ai.openclaw.gateway` down to a
+  # valid label -- and so it silently PASSED a real defect in which UIDN was
+  # assigned inside a command substitution and discarded, making every domain
+  # target malformed. On a real Mac that bootout fails, the gateway is never
+  # stopped, and the config gets migrated under a LIVE gateway. A stub that is
+  # more forgiving than the tool it stands in for hides exactly the bug it was
+  # written to catch, so malformed targets are recorded and made fatal here.
   cat > "$dir/launchctl" <<EOF
 #!/bin/bash
 STATE="$state"
 echo "launchctl \$*" >> "\$STATE/events"
+_assert_domain() {
+  case "\$1" in
+    gui/[0-9]*/*)
+      case "\$1" in
+        *//*) echo "MALFORMED-DOMAIN \$1" >> "\$STATE/bad_domains" ;;
+      esac
+      ;;
+    gui/[0-9]*)  : ;;
+    *) echo "MALFORMED-DOMAIN \$1" >> "\$STATE/bad_domains" ;;
+  esac
+}
 case "\${1:-}" in
   print)
+    _assert_domain "\${2:-}"
     LBL="\$(basename "\${2:-}")"
     [ -f "\$STATE/loaded_\$LBL" ] || exit 1
     P="\$(cat "\$STATE/pid" 2>/dev/null)"
@@ -218,12 +239,14 @@ case "\${1:-}" in
     exit 0
     ;;
   bootout)
+    _assert_domain "\${2:-}"
     LBL="\$(basename "\${2:-}")"
     if [ -f "\$STATE/bootout_noop" ]; then exit 0; fi
     rm -f "\$STATE/loaded_\$LBL"
     exit 0
     ;;
   bootstrap)
+    _assert_domain "\${2:-}"
     LBL="\$(basename "\${3:-}" .plist)"
     if [ -f "\$STATE/bootstrap_fail" ]; then exit 1; fi
     touch "\$STATE/loaded_\$LBL"
@@ -617,6 +640,32 @@ python3 "$MIGRATOR" verify "$T/leg.json" "$T/lossy.json" >/dev/null 2>&1
                || fail "9f: the verifier passed a lossy migration — it is not enforcing"
 
 # ═══════════════════════════════════════════════════════════════════════════
+echo ""
+echo "--- (9g) every launchd domain target was well-formed ---"
+# REGRESSION GUARD. UIDN was once assigned inside _detect_supervisor(), which is
+# called as `SUPERVISOR="$(...)"` -- a subshell -- so the assignment was
+# discarded and every target came out as `gui//ai.openclaw.gateway`. On a real
+# Mac that bootout FAILS: the gateway is never stopped, _gateway_pid() returns
+# empty, the quiesce "proof" passes on a live box, and the config is then
+# migrated underneath a RUNNING gateway that reverts it within a minute.
+# The original stub used `basename`, which normalises the double slash, so every
+# case passed. It now records malformed targets and this asserts on them.
+BAD_TOTAL=0
+BAD_DETAIL=""
+for st in "$SANDBOX"/state*; do
+  [ -d "$st" ] || continue
+  if [ -f "$st/bad_domains" ]; then
+    n=$(wc -l < "$st/bad_domains" | tr -d ' ')
+    BAD_TOTAL=$((BAD_TOTAL + n))
+    BAD_DETAIL="$BAD_DETAIL $(basename "$st"):$(head -1 "$st/bad_domains")"
+  fi
+done
+if [ "$BAD_TOTAL" -eq 0 ]; then
+  pass "9g: every launchctl domain target across all cases was a well-formed gui/<uid>/<label>"
+else
+  fail "9g: $BAD_TOTAL malformed launchd domain target(s) -- the gateway would NOT actually be stopped on a real box:$BAD_DETAIL"
+fi
+
 echo ""
 echo "--- (10) --detect is read-only and reports a MEASURED version ---"
 H10="$(make_box b10 legacy)"; S10="$SANDBOX/stubs10"; ST10="$SANDBOX/state10"

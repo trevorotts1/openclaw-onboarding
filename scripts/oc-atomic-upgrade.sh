@@ -147,11 +147,31 @@ _warn() { printf '[oc-atomic-upgrade] WARN  %s\n' "$*" >&2; }
 _err()  { printf '[oc-atomic-upgrade] ERROR %s\n' "$*" >&2; }
 
 # ── Resolve the box's OpenClaw root the same way every other script here does ─
+#
+# ⚠️ UIDN IS SET HERE, IN THE PARENT SHELL, ON PURPOSE. It used to be assigned
+# inside _detect_supervisor(), which is invoked as `SUPERVISOR="$(...)"` -- a
+# COMMAND SUBSTITUTION, i.e. a subshell. The assignment was therefore discarded
+# the moment that subshell exited, leaving UIDN empty and every launchd domain
+# target malformed as `gui//ai.openclaw.gateway`.
+#
+# That is not a cosmetic bug. `launchctl bootout gui//<label>` FAILS, so the
+# gateway is never actually stopped; `launchctl print gui//<label>` also fails,
+# so _gateway_pid() returns empty and the quiesce proof reads "no pid running"
+# and PASSES. The procedure would then migrate the config underneath a LIVE
+# gateway -- which is precisely fact 3, the once-a-minute writer that silently
+# reverts the migration, and exactly the outcome this script exists to prevent.
+#
+# It survived the first round of tests because the launchctl stub resolved its
+# label with `basename`, and basename normalises the double slash. A stub that
+# is more forgiving than the real tool hides the defect it was written to catch;
+# tests/unit/oc-atomic-upgrade.test.sh now asserts the domain target matches
+# gui/<digits>/<label> on every call.
 _resolve_root() {
   OC_ROOT_DIR="$HOME/.openclaw"
   [ -d "/data/.openclaw" ] && OC_ROOT_DIR="/data/.openclaw"
   OC_CONFIG="$OC_ROOT_DIR/openclaw.json"
   LOCK_FILE="$OC_ROOT_DIR/.openclaw-maintenance-lock"
+  UIDN="$(id -u 2>/dev/null || echo 0)"
 }
 
 # ── MEASURED version. Never a recorded one: the fleet record for the box that
@@ -165,8 +185,10 @@ _measured_version() {
 
 # ── Supervisor detection. Reports what would RESPAWN the gateway, because that
 # ── is the thing a quiesce has to defeat — not merely what is running now.
+# NOTE: this runs inside `$( )`. Anything it assigns is discarded when that
+# subshell exits, so it must READ state (UIDN, set by _resolve_root) and never
+# be the only place that sets it. See the warning on _resolve_root above.
 _detect_supervisor() {
-  UIDN="$(id -u 2>/dev/null || echo 0)"
   if command -v launchctl >/dev/null 2>&1 \
      && launchctl print "gui/$UIDN/$GATEWAY_LABEL" >/dev/null 2>&1; then
     printf 'launchd'
