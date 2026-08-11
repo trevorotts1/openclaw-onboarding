@@ -226,9 +226,13 @@ CANONICAL = {
         # visible; only the standing catalog (OpenClaw/plugin/MCP) is compacted.
         # Verified: docs.openclaw.ai/tools/tool-search — tools.toolSearch.mode accepts
         #   "code" (gateway default) | "tools" | "directory"  (or `false` to disable).
-        # Idempotent + override-preserving: deep_merge() recurses into an existing
-        # toolSearch block and enforces ONLY `mode`, leaving any per-box tuning
-        # (codeTimeoutMs / searchDefaultLimit / maxSearchLimit) untouched. The
+        # Idempotent + override-preserving ONLY when the existing value is an object:
+        # deep_merge() recurses into an existing toolSearch BLOCK and enforces just
+        # `mode`, leaving per-box tuning (codeTimeoutMs / searchDefaultLimit /
+        # maxSearchLimit) untouched. If the existing value is a SCALAR (e.g. a bare
+        # `true`, which selects a prompt surface with no hydration path and makes every
+        # tool call return "Tool not found"), deep_merge REPLACES it wholesale -- which
+        # is the desired repair, not a preserved override. The
         # `openclaw config validate` gate below is the backstop + auto-rollback if a
         # gateway version ever rejects the key.
         "toolSearch": {
@@ -288,6 +292,38 @@ def deep_merge(dst, src):
 
 # Apply the canonical block.
 deep_merge(cfg, CANONICAL)
+
+# POST-MERGE ASSERTION. A scalar `tools.toolSearch` (e.g. bare `true`) selects a
+# prompt surface with NO hydration path: every tool call returns "Tool not found",
+# the model starts guessing filenames, and loop-detection blocks the tool without
+# ending the turn -- an unbounded, paid, self-sustaining loop. Fail loudly rather
+# than write a config that silently re-arms it.
+_ts = (cfg.get("tools") or {}).get("toolSearch")
+if not isinstance(_ts, dict) or _ts.get("mode") != "directory":
+    raise SystemExit(
+        "FATAL: post-merge tools.toolSearch is %r; expected an object with "
+        'mode="directory". Refusing to write.' % (_ts,)
+    )
+
+# PROVIDER timeoutSeconds FLOOR. An ABSENT key falls back to a 120s gateway
+# default; against a thinking-model primary that is what produced
+# `LLM idle timeout (120s)`, `FailoverError: LLM request timed out`,
+# `durationMs=122368`, and stuck-session aborts on an affected box. A detector
+# that only compares values across providers misses an absent key entirely, so
+# this walks every configured provider directly. Never creates a provider that
+# doesn't exist; never overwrites an operator's explicit choice (box-dependent:
+# two boxes legitimately run 600 and 300 on the same primary) -- only fills the
+# gap when the key is missing. Fail-open if models.providers isn't a dict.
+_providers = (cfg.get("models") or {}).get("providers")
+if isinstance(_providers, dict):
+    for _prov_name, _prov_cfg in _providers.items():
+        if not isinstance(_prov_cfg, dict):
+            continue
+        if "timeoutSeconds" not in _prov_cfg:
+            _prov_cfg["timeoutSeconds"] = 600
+            print(f"[apply-fleet-standards] provider '{_prov_name}' had no timeoutSeconds — set to 600 (was falling back to the 120s gateway default)")
+        elif _prov_cfg["timeoutSeconds"] < 600:
+            print(f"WARNING: [apply-fleet-standards] provider '{_prov_name}' timeoutSeconds={_prov_cfg['timeoutSeconds']} is below 600 — left unchanged (operator-set value preserved; box-dependent)", file=sys.stderr)
 
 # ─── DYNAMIC plugins.allow — vetted-bundled-only plugin gate (box-specific) ──
 # See "1c" above for the full rationale. This is intentionally NOT part of the
