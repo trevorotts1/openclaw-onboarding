@@ -2864,6 +2864,20 @@ main() {
     echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
     export OC_PIN_DELIVERY_FAILED=1
   fi
+
+  # ASSERT-ON-LAND (plugins-sovereignty-denylist.json). Same invariant as
+  # ghl-mcp-pin.env above: a cp that exited 0 is not a receipt. Deliberately
+  # NOT fatal — scripts/apply-fleet-standards.sh fails open (never crashes a
+  # roll) when this file is missing, so the failure must be surfaced loudly
+  # here or it is invisible.
+  if [ -r "$OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json" ]; then
+    echo "  ✓ config/plugins-sovereignty-denylist.json delivered and readable at $OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json"
+  else
+    echo "  ✗ config/plugins-sovereignty-denylist.json is NOT readable at $OC_CANONICAL_CONFIG_DEST/plugins-sovereignty-denylist.json after delivery." >&2
+    echo "    CONSEQUENCE: scripts/apply-fleet-standards.sh will fail open to the previous behaviour and resume re-adding the denied plugin id to plugins.allow on every roll, which triggers a full gateway restart that kills in-flight agent runs." >&2
+    echo "    ACTION: check ownership/permissions on $OC_CANONICAL_CONFIG_DEST, then re-run this updater." >&2
+    export OC_DENYLIST_DELIVERY_FAILED=1
+  fi
   export OC_PERSISTENT_CONFIG_DIR="$OC_CANONICAL_CONFIG_DEST"
   # <<< CANONICAL-CONFIG-DELIVERY-END
 
