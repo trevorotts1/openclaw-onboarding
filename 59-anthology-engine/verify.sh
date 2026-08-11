@@ -245,6 +245,30 @@ if inventory_missing_from_disk:
             fails.append("Google API key literal found in owned file: %s" % rel)
 
 
+# --- clean-env secrets-source regression guard (2026-08-10) ---
+# preflight.sh must resolve credential gates (KIE_API_KEY etc.) from the box's
+# canonical secrets file even when invoked in a CLEAN environment (no exported
+# vars) -- e.g. a fleet-roll SSH that does not export the box's own secrets.
+# Without this, the IMAGE tier fails closed with "KIE_API_KEY not set" on any
+# box whose key exists only in ~/.openclaw/secrets/.env. This guard re-runs
+# preflight in a scrubbed env and asserts it does NOT report the IMAGE-tier
+# unresolved warning (which is the false-negative signature).
+try:
+    _clean = subprocess.run(
+        ["/usr/bin/env", "-i",
+         "HOME=%s" % os.environ.get("HOME", ""),
+         "PATH=/usr/bin:/bin:/usr/local/bin",
+         os.path.join(root, "preflight.sh"), "--check"],
+        capture_output=True, text=True, timeout=120)
+    _out = (_clean.stdout or "") + (_clean.stderr or "")
+    if "IMAGE tier unresolved" in _out:
+        fails.append("clean-env preflight reports 'IMAGE tier unresolved' -- "
+                     "secrets-source guard missing or KIE_API_KEY absent from "
+                     "the canonical secrets file")
+except Exception as _e:
+    fails.append("clean-env preflight guard could not run: %s" % _e)
+
+
 if fails:
     print("verify: DRIFT (%d issue(s))" % len(fails))
     for m in fails: print("  - " + m)
