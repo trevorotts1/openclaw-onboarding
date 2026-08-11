@@ -147,22 +147,34 @@ ship.
 ## 4. Per-install: IMPORT (operator, manual) then fill + verify (scripted)
 
 Provisioning has two tenancy branches (see Section 6): SAME-AGENCY (a DAD7 sub-account) =
-AUTOMATED push via the n8n Snapshot Provisioner (fired by step 7.5a); CROSS-AGENCY (a
+AUTOMATED import, driven box-side by `provision_snapshot_import.py` (MASTER-SPEC U16,
+invoked from `provision-anthology-client.sh` step 7.5 — the same PUT /locations/{id}
+snapshot.override mechanism the n8n Snapshot Provisioner workflow uses); CROSS-AGENCY (a
 client-owned agency) = share link + the MANUAL operator import below. Either branch, the
 provisioner then finishes the per-client tail (verify → fill → stamp).
 
 1. **Import the snapshot** into the client's OWN Convert and Flow location (Settings →
    Snapshots → Import / Load Snapshot). This is done ONCE per client, by the operator, in
-   the client's own account.
+   the client's own account — OR, for a same-agency (DAD7 sub-account) client, let step 7.5
+   import it automatically via `provision_snapshot_import.py` (the versioned fixture
+   `fixtures/snapshot/anthology-engine-v1.0.0.json`, or `--snapshot-fixture`).
 2. **Run `provision-anthology-client.sh`.** Step 3 finds + binds the imported pipeline; step
-   2 verifies (or backfills) the 28 fields; **step 7.5** (`anthology_snapshot.py`) then:
-   - **verifies** the import landed — the `Anthology Engine` pipeline exists by name with all
+   2 verifies (or backfills) the 28 fields; **step 7.5** then:
+   - **imports** (same-agency) the snapshot fixture via `provision_snapshot_import.py` —
+     idempotent GET-check-by-name, PUT snapshot.override with the agency PIT, bounded
+     snapshot-status poll, resolved field-map + provision_report.json (an already-imported
+     location is verified, never re-pushed; a missing fixture STOPS
+     `AF-AE-SNAPIMPORT-NO-FIXTURE` whenever a push would be required);
+   - **verifies** the import landed (`anthology_snapshot.py verify-imported`) — the
+     `Anthology Engine` pipeline exists by name with all
      nine stages, and all 28 custom fields exist by key (a missing pipeline STOPs with
      `AF-AE-SNAPSHOT-PIPELINE-MISSING`, telling the operator to import the snapshot);
    - **fills** the four REPLACE-ME custom values, idempotently (GET-check then create-only-
      missing / update-in-place): `anthology_webhook_url` from `--public-hostname` + the
      intake route path, `anthology_hook_secret` resolved BY LABEL and never printed,
      `producer` from `--producer`, `producer_email` from `--producer-email`;
+   - **re-verifies every fieldKey** (`anthology_registry.py verify-fields`): the resolved
+     field-map must carry all 28 keys byte-exact — any unresolved-or-mismatched key exits 5;
    - **stamps** the snapshot-version marker `$STATE_DIR/snapshot-version.json` so the box
      records which snapshot it was provisioned from.
 3. **Enable** only the notification automation the client needs (the three LIVE slug triggers
@@ -199,11 +211,14 @@ Authorization-header custom value is left as its placeholder with a note (HELD u
 REJECTED" has been split into two tenancy branches, because BlackCEO now onboards some
 clients as **sub-accounts under its OWN agency** (companyId `DAD7unnJpNUFc36952Xp`):
 
-- **Same-agency (DAD7 sub-account) — AUTOMATED PUSH.** When the client's Convert and Flow
-  location is a sub-account under BlackCEO's agency, the agency PIT (`locations.write`) pushes
-  the snapshot directly: `PUT /locations/{id}` with `{companyId, snapshot:{id, override:true}}`.
-  This is driven by the n8n **Snapshot Provisioner** workflow (`POST /webhook/provision-snapshot`),
-  fired from `provision-anthology-client.sh` step 7.5a. The workflow polls `snapshot-status`
+- **Same-agency (DAD7 sub-account) — AUTOMATED IMPORT (box-side).** When the client's
+  Convert and Flow location is a sub-account under BlackCEO's agency, the agency PIT
+  (`locations.write`) pushes the snapshot directly: `PUT /locations/{id}` with
+  `{companyId, snapshot:{id, override:true}}`. This is performed by
+  `provision_snapshot_import.py` (MASTER-SPEC NEW-2 / U16), invoked from
+  `provision-anthology-client.sh` step 7.5 — idempotent GET-check-by-name, the same push
+  the n8n **Snapshot Provisioner** workflow (`POST /webhook/provision-snapshot`)
+  performs. The import polls `snapshot-status`
   to `completed`, honors a ~15–20 min asset-materialization settle, then notifies the client.
   Genuine per-asset completion is still gated **box-side** by `anthology_snapshot.py
   verify-imported` (the client's OWN PIT — the agency PIT is scope-denied on sub-account reads).
