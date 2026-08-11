@@ -1,799 +1,864 @@
 {
-  "manifest_version": 1,
-  "skill": "anthology-engine",
-  "skill_number": 59,
-  "skill_version": "0.1.17",
-  "schema_version": "1",
-  "ledger_schema_version": 1,
-  "authoring_core": "54-anthology-writer",
-  "shared_tone_core": "shared-utils/tone-writing-core",
-  "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages).",
-  "doctrine": "Move in silence (operator-verbose, client-silent; only the three sanctioned nudge templates ever reach a client). Nothing Anthropic ships in any runtime file (guard-no-anthropic-runtime.py + model_router.py deny patterns). Every credential is referenced by label and location only, never by value. The client-facing platform name is Convert and Flow. Config writes run as the node user, never root. Keying is contact_id, never email. Enforcement, not description: every SACRED floor is a fail-closed prover, never advice.",
-  "layers": {
-    "L2_orchestration": "The ONLY layer that touches the ledger, the model router, and the gates. intake_router.py -> anthology_state.py -> the stage runners.",
-    "L1_authoring_core": "Skill 54, invoked as a LOCAL subprocess through 54-anthology-writer/anthology-entry.sh with a working dir per participant per stage; its certification model (hash gate, nonce, fail-closed provers) is preserved untouched.",
-    "L3_delivery_adapters": "Stateless functions with explicit inputs; every external write is followed by a read-back in the same job (drive_adapter.py, pdf_render.py, caf_delivery.py, cover_render.py).",
-    "L4_surfaces": "The client's OWN Command Center: the seeded Anthology department board (cards via mc_board.py -> POST /api/tasks/ingest, HMAC + Bearer, fail-soft; review column = approval queue; QC scorer >= 8.5 promotes review to done), the home-screen tiles, and the participant token page. The board holds NO base credential; its only write path is shelling anthology_state.py."
+ "manifest_version": 1,
+ "skill": "anthology-engine",
+ "skill_number": 59,
+ "skill_version": "0.1.18",
+ "schema_version": "1",
+ "ledger_schema_version": 1,
+ "authoring_core": "54-anthology-writer",
+ "shared_tone_core": "shared-utils/tone-writing-core",
+ "$schema_note": "SINGLE SOURCE OF TRUTH for the Anthology Engine orchestrator (Skill 59). It declares the S0..S9 stage machine, each stage's produces_artifact and gate, the AF-AE-* autofail table with the sibling script and py_symbol that decides each code, the engine-OWNED prompt pins (ae-01..04), the field-map reference, and the COMPLETE shipped-script inventory with purpose and exit-code contract: the 32 normative runtime rows of SPEC 3.4 (rows 1..32) PLUS 4 CI/merge-gate scanner rows (rows 33..36, authored_by W2.8) that ship in scripts/ and so must be inventoried for inventory-equals-shipped-set to hold. A script missing from this inventory does not ship; a shipped script missing from it fails Gate A. schema_version (string \"1\") matches the SCHEMA_VERSION constant in anthology_state.py so the Gate A build check finds no drift. FINALIZED by the Wave-1 serial integrator from every unit's cross_file_needs: the ae-01..04 sha256 pins are stamped from the W1.18 assets (recomputed and matched); config/route-template.json (W1.6) is in config_refs; caf_delivery.py (row 12, W1.13) exit contract completed to 0/1/2/3/5; the S9 assembly-logic helper stage_s9_assembly_logic.py (W1.18) is inventoried under row 6. The operator delivery-report + signed-process-certificate helper scripts/delivery_report.py (W1.24) ships as the sibling helper imported by caf_delivery.py at S8 and is inventoried under row 12 the same way (no 33rd normative row is added; the four rows 33..36 are CI/merge-gate scanners, not runtime stages).",
+ "doctrine": "Move in silence (operator-verbose, client-silent; only the three sanctioned nudge templates ever reach a client). Nothing Anthropic ships in any runtime file (guard-no-anthropic-runtime.py + model_router.py deny patterns). Every credential is referenced by label and location only, never by value. The client-facing platform name is Convert and Flow. Config writes run as the node user, never root. Keying is contact_id, never email. Enforcement, not description: every SACRED floor is a fail-closed prover, never advice.",
+ "layers": {
+  "L2_orchestration": "The ONLY layer that touches the ledger, the model router, and the gates. intake_router.py -> anthology_state.py -> the stage runners.",
+  "L1_authoring_core": "Skill 54, invoked as a LOCAL subprocess through 54-anthology-writer/anthology-entry.sh with a working dir per participant per stage; its certification model (hash gate, nonce, fail-closed provers) is preserved untouched.",
+  "L3_delivery_adapters": "Stateless functions with explicit inputs; every external write is followed by a read-back in the same job (drive_adapter.py, pdf_render.py, caf_delivery.py, cover_render.py).",
+  "L4_surfaces": "The client's OWN Command Center: the seeded Anthology department board (cards via mc_board.py -> POST /api/tasks/ingest, HMAC + Bearer, fail-soft; review column = approval queue; QC scorer >= 8.5 promotes review to done), the home-screen tiles, and the participant token page. The board holds NO base credential; its only write path is shelling anthology_state.py."
+ },
+ "tiers": {
+  "HEAVY-WRITER": "S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter (client's strongest NON-Anthropic long-form chain; thinking high, temperature 0.3)",
+  "LIGHT": "aw-12 extraction, classification, routing-adjacent chores (Minimax V3 chain)",
+  "JUDGE": "Gate B semantic checks and the Tier 2 rubric; ALWAYS a different resolution than the drafting tier (temperature 0)",
+  "LONGCTX": "optional S9 whole-manuscript compile (about 1M context) ONLY when the client configured a key; else S9 chunks on HEAVY-WRITER",
+  "IMAGE": "S7 cover: the client's own Kie.ai GPT-image-2 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint (never the 16:9 recipe), through Skills 07 and 46"
+ },
+ "stages": [
+  {
+   "id": "S0",
+   "name": "INTAKE AND ROUTING",
+   "runner": "scripts/stage_s0_intake.py",
+   "tier": "none (deterministic)",
+   "produces_artifact": "participant ledger row (composite key contact_id::anthology_id), board card (mirrored BEFORE the holdable Drive step, fail-soft, so a held/dark Drive never suppresses it — A1), Drive path",
+   "gate": "none",
+   "provers": [
+    "intake_router validation"
+   ],
+   "persona": "none (anthology-producer-orchestrator)"
   },
-  "tiers": {
-    "HEAVY-WRITER": "S1 avatar bodies, S2 tone, S3 titles, S4 blurb and outline, S5 chapter, S6 rewrite, S9 introduction and matter (client's strongest NON-Anthropic long-form chain; thinking high, temperature 0.3)",
-    "LIGHT": "aw-12 extraction, classification, routing-adjacent chores (Minimax V3 chain)",
-    "JUDGE": "Gate B semantic checks and the Tier 2 rubric; ALWAYS a different resolution than the drafting tier (temperature 0)",
-    "LONGCTX": "optional S9 whole-manuscript compile (about 1M context) ONLY when the client configured a key; else S9 chunks on HEAVY-WRITER",
-    "IMAGE": "S7 cover: the client's own Kie.ai GPT-image-2 PORTRAIT 1024x1536 via the verified text-to-image portrait endpoint (never the 16:9 recipe), through Skills 07 and 46"
+  {
+   "id": "S1",
+   "name": "AVATAR",
+   "runner": "scripts/stage_s1_avatar.py",
+   "tier": "HEAVY-WRITER + LIGHT (aw-12)",
+   "produces_artifact": "working/avatar.md; Avatar Doc plus PDF",
+   "gate": "s1_producer (board review column)",
+   "provers": [
+    "guard-prompt-pins.py",
+    "qc-tier1-anthology.py"
+   ],
+   "persona": "the Avatar Profiler (Skill 52 aa-01..03)"
   },
-  "stages": [
-    {
-      "id": "S0",
-      "name": "INTAKE AND ROUTING",
-      "runner": "scripts/stage_s0_intake.py",
-      "tier": "none (deterministic)",
-      "produces_artifact": "participant ledger row (composite key contact_id::anthology_id), board card (mirrored BEFORE the holdable Drive step, fail-soft, so a held/dark Drive never suppresses it \u2014 A1), Drive path",
-      "gate": "none",
-      "provers": [
-        "intake_router validation"
-      ],
-      "persona": "none (anthology-producer-orchestrator)"
-    },
-    {
-      "id": "S1",
-      "name": "AVATAR",
-      "runner": "scripts/stage_s1_avatar.py",
-      "tier": "HEAVY-WRITER + LIGHT (aw-12)",
-      "produces_artifact": "working/avatar.md; Avatar Doc plus PDF",
-      "gate": "s1_producer (board review column)",
-      "provers": [
-        "guard-prompt-pins.py",
-        "qc-tier1-anthology.py"
-      ],
-      "persona": "the Avatar Profiler (Skill 52 aa-01..03)"
-    },
-    {
-      "id": "S2",
-      "name": "TONE",
-      "runner": "scripts/stage_s2_tone.py",
-      "tier": "HEAVY-WRITER",
-      "produces_artifact": "working/tone-doc.md; Tone Doc plus PDF",
-      "gate": "s2_producer",
-      "provers": [
-        "verify_tone_core_sync.py",
-        "prove_aw_tone.py",
-        "qc-tier1-anthology.py"
-      ],
-      "persona": "the Tone Analysts and Blender (tone core 04..08)"
-    },
-    {
-      "id": "S3",
-      "name": "TITLE",
-      "runner": "scripts/stage_s3_title.py",
-      "tier": "HEAVY-WRITER",
-      "produces_artifact": "working/titles.md; Titles Doc plus PDF; TITLE LOCK",
-      "gate": "s3_selection (participant token page)",
-      "provers": [
-        "AF-AW-TITLE-LOCK carry"
-      ],
-      "persona": "the Senior Title Strategist (aw-06)"
-    },
-    {
-      "id": "S4",
-      "name": "BLURB AND OUTLINE",
-      "runner": "scripts/stage_s4_outline.py",
-      "tier": "HEAVY-WRITER",
-      "produces_artifact": "working/blurb.md, working/outline.md; both Docs plus PDFs",
-      "gate": "s4_producer then s4_participant (token page)",
-      "provers": [
-        "story-placement prover",
-        "title-lock carry",
-        "qc-tier1-anthology.py"
-      ],
-      "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"
-    },
-    {
-      "id": "S5",
-      "name": "CHAPTER",
-      "runner": "scripts/stage_s5_chapter.py",
-      "tier": "HEAVY-WRITER",
-      "produces_artifact": "working/chapter.md; Chapter Doc plus PDF",
-      "gate": "s5_participant (Approve as-is OR Request rewrite with notes)",
-      "provers": [
-        "prove_aw_chapter.py",
-        "qc-tier1-anthology.py (full)",
-        "judge_harness.py (Tier 2)",
-        "qc-strike-gate.py"
-      ],
-      "persona": "the Anthology Chapter Author (aw-09)"
-    },
-    {
-      "id": "S6",
-      "name": "CHAPTER REWRITE",
-      "runner": "scripts/stage_s6_rewrite.py",
-      "tier": "HEAVY-WRITER",
-      "produces_artifact": "new chapter VERSION; re-enters the S5 gate",
-      "gate": "re-enters s5_participant",
-      "provers": [
-        "prove_aw_chapter.py",
-        "judge_harness.py",
-        "qc-strike-gate.py (rewrite budget 2)"
-      ],
-      "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"
-    },
-    {
-      "id": "S7",
-      "name": "COVER IMAGE",
-      "runner": "scripts/stage_s7_cover.py",
-      "tier": "HEAVY-WRITER (prompt) + IMAGE (render)",
-      "produces_artifact": "cover PNG in the participant Drive folder; both link fields",
-      "gate": "none",
-      "provers": [
-        "cover_render callback verify"
-      ],
-      "persona": "the Senior Book-Cover Design Specialist (aw-11)"
-    },
-    {
-      "id": "S8",
-      "name": "PACKAGE AND DELIVER",
-      "runner": "scripts/stage_s8_deliver.py",
-      "tier": "none (deterministic)",
-      "produces_artifact": "every deliverable as Google Doc + 14pt-floor PDF; Convert and Flow media + exact-key field writes; control fields; signed certificate",
-      "gate": "card to review (QC scorer owns review to done)",
-      "provers": [
-        "guard-font-floor.py",
-        "caf_delivery read-back"
-      ],
-      "persona": "none (anthology-producer-orchestrator)"
-    },
-    {
-      "id": "S9",
-      "name": "ANTHOLOGY ASSEMBLY",
-      "runner": "scripts/stage_s9_assembly.py",
-      "tier": "LONGCTX or HEAVY-WRITER",
-      "produces_artifact": "full manuscript Doc plus PDF (producer-ordered, N-1 inter-chapter transitions plus a brand-new titled Grand Finale); manuscript fields",
-      "gate": "s9_ready (arm and fire, all PRD 3.11 guards) then producer 'Confirm the finalized set & order' (triggers the Grand Finale write) then s9_producer (sign-off)",
-      "provers": [
-        "qc-tier1-anthology.py --mode assembly",
-        "frozen-chapter sha256 byte-identity",
-        "prove_transitions (each seam names the next locked title, zero em dashes, frozen chapters byte-unchanged)",
-        "prove_finale (references every chapter, action-steps section, 14pt floor, zero em dashes)"
-      ],
-      "persona": "the Anthology Editor voice (ae-01..06), subordinate to producer inputs"
-    }
-  ],
-  "gate_table": {
-    "s1_producer": "board review column; nudge deep-link in; Approve or Hold",
-    "s2_producer": "board review column",
-    "s3_selection": "participant token page; title and subtitle pick; TITLE LOCK one-way",
-    "s4_producer": "board review column",
-    "s4_participant": "participant token page; outline approval; no re-upload path exists",
-    "s5_participant": "participant token page; exactly two actions; notes feed chapter_updates verbatim",
-    "s9_ready": "the producer ready-to-assemble trigger (Assembly card or readiness nudge, both doors one endpoint); guards: own-producer, every participant approved or excluded, >= min_chapters frozen approved chapters, typed --confirm-name, one-way",
-    "s9_producer": "final manuscript sign-off on the Assembly card; closes the anthology"
+  {
+   "id": "S2",
+   "name": "TONE",
+   "runner": "scripts/stage_s2_tone.py",
+   "tier": "HEAVY-WRITER",
+   "produces_artifact": "working/tone-doc.md; Tone Doc plus PDF",
+   "gate": "s2_producer",
+   "provers": [
+    "verify_tone_core_sync.py",
+    "prove_aw_tone.py",
+    "qc-tier1-anthology.py"
+   ],
+   "persona": "the Tone Analysts and Blender (tone core 04..08)"
   },
-  "engine_owned_prompt_pins": {
-    "$note": "The engine OWNS only the S9 assembly and routing prompts. Authored by W1.18 (ae-01..04) and U9 (ae-05 inter-chapter transition, ae-06 grand finale); sha256 pins STAMPED from the on-disk asset and matched byte-for-byte. Every authoring prompt (aa-01..03, tone 04..08, aw-06..12) lives in Skill 54 / Skill 52 / the tone core and is proven by guard-prompt-pins.py.",
-    "assets/prompts/ae-01-order-curation.md": "2e12ad8db5bb8563c8fed38442c9fb823140796a707eaccef97d71db4ca1e25b",
-    "assets/prompts/ae-02-editor-introduction.md": "78b65803311f6548a3845d1db4fc63249fa5cc229a55c00ebb9e65c4ec8bfdc6",
-    "assets/prompts/ae-03-contributor-bio.md": "5c0600d75d2db74d25f0f401757fa471adc7d17fdd4b630032411f664b99a6e5",
-    "assets/prompts/ae-04-front-back-matter.md": "46a77c5c86cb5f3a9dedc159e82253dc0171bd576919bd6391af306ff8130b0d",
-    "assets/prompts/ae-05-inter-chapter-transition.md": "df4c3fa04b42dd132671f63ba7f95cf9c40e25f5d8a896178557cced84bdbe6b",
-    "assets/prompts/ae-06-grand-finale.md": "da10e35106c617b4798d834a9dac7507b779706c2663ebf33ad7877acb467306"
+  {
+   "id": "S3",
+   "name": "TITLE",
+   "runner": "scripts/stage_s3_title.py",
+   "tier": "HEAVY-WRITER",
+   "produces_artifact": "working/titles.md; Titles Doc plus PDF; TITLE LOCK",
+   "gate": "s3_selection (participant token page)",
+   "provers": [
+    "AF-AW-TITLE-LOCK carry"
+   ],
+   "persona": "the Senior Title Strategist (aw-06)"
   },
-  "field_map_ref": "config/field-map.json",
-  "model_map_ref": "config/model-map.template.json",
-  "config_refs": [
-    "config/engine-config.template.json",
-    "config/route-template.json",
-    "config/nudge-templates/",
-    "config/pdf-house-style/",
-    "config/anthology-snapshot-contract.json"
-  ],
-  "exit_code_house_convention": {
-    "0": "success (including an idempotent no-op)",
-    "1": "unexpected error",
-    "2": "validation or guard refusal",
-    "3": "dependency unavailable or held",
-    "4": "enforced violation detected",
-    "5": "data or read-back mismatch"
+  {
+   "id": "S4",
+   "name": "BLURB AND OUTLINE",
+   "runner": "scripts/stage_s4_outline.py",
+   "tier": "HEAVY-WRITER",
+   "produces_artifact": "working/blurb.md, working/outline.md; both Docs plus PDFs",
+   "gate": "s4_producer then s4_participant (token page)",
+   "provers": [
+    "story-placement prover",
+    "title-lock carry",
+    "qc-tier1-anthology.py"
+   ],
+   "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"
   },
-  "script_inventory": [
-    {
-      "n": 1,
-      "script": "anthology_state.py",
-      "authored_by": "W1.7",
-      "purpose": "Sole ledger writer: schema bootstrap, transitions, approvals (incl. the s9_ready trigger), readiness report, holds, exceptions, mirror reconcile, export bundle",
-      "exit_codes": "0 verified success; 2 illegal transition; 3 unknown key; 4 base unreachable (mirror-queued); 5 validation or confirm-name mismatch"
-    },
-    {
-      "n": 2,
-      "script": "intake_router.py",
-      "authored_by": "W1.5",
-      "purpose": "S0 deterministic intake: secret check, hidden-field validation, tenant check, dedup no-op, exception capture, under-2-second acknowledge, detached stage spawn",
-      "exit_codes": "0 routed or no-op; 2 route-secret refusal; 3 captured to Exceptions (typed reason); 4 ledger unreachable"
-    },
-    {
-      "n": 3,
-      "script": "anthology_registry.py",
-      "authored_by": "W1.8",
-      "purpose": "Per-anthology bindings: find-and-bind pre-existing pipeline (BY NAME; UI-only, never auto-created) and its resolved stage map, form ids, Drive folder",
-      "exit_codes": "0; 2 unknown anthology or binding; 5 validation"
-    },
-    {
-      "n": 4,
-      "script": "model_router.py",
-      "authored_by": "W1.9",
-      "purpose": "The Section 8 tier chain, one call site, metering hooks, typed error classes, Anthropic-family deny patterns",
-      "exit_codes": "0 completion; 2 deny-pattern refusal; 3 chain exhausted, job held; 4 budget ceiling block"
-    },
-    {
-      "n": 5,
-      "script": "search_detect.py",
-      "authored_by": "W1.10",
-      "purpose": "Web-search detection ladder (prefer Perplexity; degrade plus flag), cached per box",
-      "exit_codes": "0 tool detected and cached; 3 no tool (degrade-plus-flag path)"
-    },
-    {
-      "n": 6,
-      "script": "stage_s0_intake.py, stage_s1_avatar.py, stage_s2_tone.py, stage_s3_title.py, stage_s4_outline.py, stage_s5_chapter.py, stage_s6_rewrite.py, stage_s7_cover.py, stage_s8_deliver.py, stage_s9_assembly.py (ten runners)",
-      "authored_by": "W1.1 (dispatchers); module logic wired from W1.5..W1.18",
-      "purpose": "One idempotent thin runner per stage: compose pins, call Layer 1 or the router, run provers, record artifacts, open the gate",
-      "exit_codes": "0 stage complete and persisted; 2 prover failure (counts a QC attempt); 3 held (credits or callback, or a collaborator not yet wired); 5 unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)",
-      "note": "SPEC 3.4 row 6 names nine runners stage_s1..s9; this build also ships stage_s0_intake.py (a thin wrapper over intake_router.py) so S0 has a stage-inventory entry and an exceptions-replay dispatch. SPEC 3.1 names the S4 runner stage_s4_blurb_outline.py; this build ships it as stage_s4_outline.py per the W1.1 file-ownership list. The S9 assembly logic ships as the sibling helper scripts/stage_s9_assembly_logic.py (authored_by W1.18), imported by the stage_s9_assembly.py dispatcher rather than dispatched directly; it is inventoried here under this row so inventory-equals-shipped-set holds without adding a 33rd normative row. W4.0 (integrator): every sibling collaborator has now landed (mc_board.py at W3.1; the W2.1-2.8 guards and provisioning; the fleet roles and SOPs at W4.1-4.9) and all ten dispatcher _invoke_wiring() bodies are wired to concrete collaborator argv chains, in WIRING order, short-circuiting on the FIXED classify_child_rc contract; S9 drives stage_s9_assembly_logic.py's S9Assembly in-process rather than reimplementing its order-curation/compile/sha-verify machinery. Verified structurally (all ten stage_sN.py --self-test pass) and functionally end-to-end against a real temp ledger on the operator box (S0 against this box's live Google Drive credentials; S1/S9 correctly reach and fail-close at the honest boundary requiring live model-chain credentials this build environment does not carry). Full live proof (a real Convert and Flow PIT, a resolved client model-map, Kie.ai image credentials) is the W5 operator-box canary's job, not this unit's."
-    },
-    {
-      "n": 7,
-      "script": "gate_engine.py",
-      "authored_by": "W1.15",
-      "purpose": "Gate state machine, both-door single endpoint, scoped-token mint and verify, s9_ready arming",
-      "exit_codes": "0 action recorded; 2 invalid or expired token; 3 gate not open"
-    },
-    {
-      "n": 8,
-      "script": "nudge_send.py",
-      "authored_by": "W1.15",
-      "purpose": "The three sanctioned templates only; ledger-resolved recipients; 7-day stuck re-nudge",
-      "exit_codes": "0 sent; 2 template or recipient refusal; 3 delivery path unavailable"
-    },
-    {
-      "n": 9,
-      "script": "drive_adapter.py",
-      "authored_by": "W1.11",
-      "purpose": "Direct Drive and Docs API calls with the BlackCEO-owned delivery service account against the per-client Shared-Drive root (never anyone-can-read); Doc create, per-document view/edit share, export bundle. On a pure client box the per-Doc ops (deliver_doc/deliver_media/do_share/pull_doc_text) route through the n8n credential broker (create_doc/upload_pdf/share_doc_edit/pull_doc_text); broker-preflight probes the broker capabilities and HOLDs by name on a missing action (AF-AE-BROKER-ACTIONS-MISSING)",
-      "exit_codes": "0; 3 API unreachable / broker HOLD; 5 read-back mismatch"
-    },
-    {
-      "n": 10,
-      "script": "drive-tree-provision.py",
-      "authored_by": "W1.11",
-      "purpose": "Idempotent Producer/Anthology/Participant tree under the per-client BlackCEO-hosted Shared-Drive root (resolved per box from GOOGLE_DRIVE_ROOT_FOLDER); never creates a new root. In n8n-broker mode the tree is minted through the broker (create_participant_tree); the operator's own box runs it via the local SA",
-      "exit_codes": "0 tree verified or created; 2 configured root unreachable; 3 API unreachable"
-    },
-    {
-      "n": 11,
-      "script": "pdf_render.py",
-      "authored_by": "W1.12",
-      "purpose": "Deterministic WeasyPrint-class HTML-to-PDF from the house templates, all font tokens at or above 14 point",
-      "exit_codes": "0 rendered; 1 render error; 2 template token below floor"
-    },
-    {
-      "n": 12,
-      "script": "caf_delivery.py",
-      "authored_by": "W1.13",
-      "purpose": "Convert and Flow media upload, exact-key field writes by contact_id, byte-for-byte read-back, control fields, per-gate pipeline-stage update; emits the operator delivery report + signed process certificate via the sibling helper scripts/delivery_report.py (W1.24)",
-      "exit_codes": "0 delivered and verified; 1 unexpected error; 2 tenant mismatch or validation refusal (operator surface); 3 API unreachable or PIT scope-denied (held); 5 read-back mismatch (AF-AE-READBACK-MISMATCH)",
-      "note": "scripts/delivery_report.py (authored_by W1.24) is the canonical operator-channel delivery report (CHECKLIST Part A S8) + signed process certificate (Skill 54 P7) sibling helper, imported by caf_delivery.py at S8; its own exit contract is 0 built/persisted/verified (idempotent no-op); 1 unexpected; 2 bad invocation/malformed input/missing field; 3 operator report dir unwritable (report/cert HELD, delivery is not); 4 Anthropic-family model-id shape in a caller value (AF-AE-ANTHROPIC, refused); 5 certificate self-verify mismatch."
-    },
-    {
-      "n": 13,
-      "script": "cover_render.py",
-      "authored_by": "W1.14",
-      "purpose": "Kie.ai GPT-image-2 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive",
-      "exit_codes": "0 PNG landed; 3 callback lost after re-poll (held)"
-    },
-    {
-      "n": 14,
-      "script": "qc-tier1-anthology.py",
-      "authored_by": "W1.17",
-      "purpose": "Gate B Tier 1 deterministic checks, per-piece and assembly modes",
-      "exit_codes": "0 all pass; 2 bad invocation; 4 one or more failures (list emitted)"
-    },
-    {
-      "n": 15,
-      "script": "qc-strike-gate.py",
-      "authored_by": "W1.16",
-      "purpose": "Both counters: participant rewrite budget 2 with gate re-entry, internal QC attempts 3, hold-and-alert",
-      "exit_codes": "0 within budgets; 4 budget or attempt exhaustion (hold path)"
-    },
-    {
-      "n": 16,
-      "script": "judge_harness.py",
-      "authored_by": "W1.17",
-      "purpose": "Tier 1 semantic checks 13 to 15 plus the Tier 2 ten-dimension rubric on the JUDGE tier",
-      "exit_codes": "0 pass; 2 judge tier equals writer tier (independence violation); 4 any dimension below 8"
-    },
-    {
-      "n": 17,
-      "script": "anthology-cost-ledger.py",
-      "authored_by": "W1.21",
-      "purpose": "Metering choke point, per-deliverable token budgets shared across QC attempts",
-      "exit_codes": "0 metered within budget; 4 ceiling exceeded (blocks the call)"
-    },
-    {
-      "n": 18,
-      "script": "anthology-smoke-test.py",
-      "authored_by": "W1.22",
-      "purpose": "Daily funded-reachability probe, balance endpoints ONLY, total spend at or under one cent; ages the hold queue",
-      "exit_codes": "0 all reachable and funded; 4 provider unreachable or unfunded (alert path)"
-    },
-    {
-      "n": 19,
-      "script": "hold_queue.py",
-      "authored_by": "W1.20",
-      "purpose": "Durable credit-out and callback holds, daily age tick, resume from exact cursor",
-      "exit_codes": "0; 3 still held"
-    },
-    {
-      "n": 20,
-      "script": "exceptions.py",
-      "authored_by": "W1.19",
-      "purpose": "Capture, list, resolve-and-replay through S0",
-      "exit_codes": "0; 3 unknown exception id"
-    },
-    {
-      "n": 21,
-      "script": "alert-dedup.py",
-      "authored_by": "W2.4",
-      "purpose": "Single deduped founder alert path, OpenClaw gateway Telegram only",
-      "exit_codes": "0 sent or correctly suppressed; 3 gateway unreachable"
-    },
-    {
-      "n": 22,
-      "script": "guard-prompt-pins.py",
-      "authored_by": "W2.1",
-      "purpose": "Every baked prompt matches its sha256 pin, zero truncation, zero runtime prompt-base references",
-      "exit_codes": "0 clean; 4 violation"
-    },
-    {
-      "n": 23,
-      "script": "guard-no-anthropic-runtime.py",
-      "authored_by": "W2.2",
-      "purpose": "Zero Anthropic-family identifiers across the full engine file set including every Command Center edit",
-      "exit_codes": "0 clean; 4 violation"
-    },
-    {
-      "n": 24,
-      "script": "guard-font-floor.py",
-      "authored_by": "W1.12",
-      "purpose": "Parses the RENDERED PDF; any glyph below 14 point fails",
-      "exit_codes": "0 clean; 4 violation"
-    },
-    {
-      "n": 25,
-      "script": "guard-cron-inventory.py",
-      "authored_by": "W2.5",
-      "purpose": "Exactly the one daily tick; no heartbeat entry ever; churn leaves zero recurring jobs",
-      "exit_codes": "0 clean; 4 violation"
-    },
-    {
-      "n": 26,
-      "script": "caf_credential_gate.py",
-      "authored_by": "W2.3",
-      "purpose": "Label resolution across all three env stores (live process env first), pairing proof, anti-commingling fingerprint; reports SET or NOT SET only",
-      "exit_codes": "0 all labels resolve and fingerprint clean; 2 missing label; 4 commingling detected"
-    },
-    {
-      "n": 27,
-      "script": "anthology-engine-entry.sh",
-      "authored_by": "W1.1",
-      "purpose": "The ONE sanctioned entry: deps check, model-map pre-gate, bypass scan, manifest hash pin, nonce, fail-closed; then dispatches a stage runner",
-      "exit_codes": "0 run authorized and completed (stage exit returned); 2 usage; 5 bypass; 6 deps; 7 hash-pin; 8 model-map pre-gate"
-    },
-    {
-      "n": 28,
-      "script": "install.sh / preflight.sh",
-      "authored_by": "W1.1",
-      "purpose": "Per-box resolution: model map, credential labels, webhook route, cron tick, Drive root reachability",
-      "exit_codes": "0 box ready; 2 missing prerequisite (named)"
-    },
-    {
-      "n": 29,
-      "script": "verify.sh / verify-deps.sh",
-      "authored_by": "W1.1",
-      "purpose": "READ-ONLY idempotent self-verify",
-      "exit_codes": "0 verified; 4 drift found"
-    },
-    {
-      "n": 30,
-      "script": "provision-anthology-client.sh",
-      "authored_by": "W2.6",
-      "purpose": "Full Section 13.1 provisioning including find-and-bind of the pre-existing standard pipeline (UI-only; STOPS with AF-AE-PIPELINE-UI-CREATE if absent); config writes as the node user",
-      "exit_codes": "0 pass gate; nonzero stops SETUP with an operator surface"
-    },
-    {
-      "n": 31,
-      "script": "revoke-anthology-client.sh",
-      "authored_by": "W2.7",
-      "purpose": "Participant gate-token invalidation, Anthology board archival, Drive share revocation, webhook route disable, data export, verification probe",
-      "exit_codes": "0 revoked and verified; 4 a probe still answers"
-    },
-    {
-      "n": 32,
-      "script": "verify-webhook-t1-t9.sh",
-      "authored_by": "W1.6",
-      "purpose": "The nine intake proofs of Section 13.2, executed and observed",
-      "exit_codes": "0 all nine observed; 4 failing test id emitted"
-    },
-    {
-      "n": 33,
-      "script": "scan-no-secrets.sh",
-      "authored_by": "W2.8",
-      "purpose": "Merge-gate (CI): no hardcoded secret VALUE anywhere in the branch (value never printed; SET/absent only)",
-      "exit_codes": "0 clean; 2 usage; 3 dep (git for --changed); 4 violation"
-    },
-    {
-      "n": 34,
-      "script": "scan-no-json-exports.sh",
-      "authored_by": "W2.8",
-      "purpose": "Merge-gate (CI): none of the nine n8n exports / the prompt CSV present (structural + basename + sha256); concretely enforces AF-AE-EXPORT-LEAK",
-      "exit_codes": "0 clean; 2 usage; 3 dep; 4 violation"
-    },
-    {
-      "n": 35,
-      "script": "scan-no-client-identifiers.sh",
-      "authored_by": "W2.8",
-      "purpose": "Merge-gate (CI): no client identifier / PII (email/phone/denylist token); value never printed",
-      "exit_codes": "0 clean; 2 usage; 3 dep; 4 violation"
-    },
-    {
-      "n": 36,
-      "script": "scan-skill53-untouched.sh",
-      "authored_by": "W2.8",
-      "purpose": "Merge-gate (CI): Skill 53 (single-author book writer) byte-for-byte untouched vs origin/main",
-      "exit_codes": "0 clean; 2 usage; 3 dep (git / base ref / path absent); 4 violation"
-    },
-    {
-      "n": 37,
-      "script": "mc_board.py",
-      "authored_by": "W3.1",
-      "purpose": "FAIL-SOFT Command Center board client (SPEC 11.2): one participant card + one Assembly card per anthology; POST /api/tasks/ingest (create/resolve, idempotent) then POST /api/tasks/{id}/status (move) with Skill 32's existing HMAC (x-webhook-signature over WEBHOOK_SECRET) + Bearer (MC_API_TOKEN) pair; card status mirrors Participants.stage_cursor / anthology assembly_state; producer deliverables land in review (the chapter-approval queue); NEVER emits 'done' (review->done is owned by the QC scorer at >=8.5); board/mirror outage never blocks the pipeline. Reads the local mirror READ-ONLY; anthology_state.py stays the sole writer. Subcommands: sync (create+move), ensure (create only), status (read-only projection), archive (revoke R2: move the Assembly + participant cards to the archived 'blocked' status), reconcile (daily-tick safety net: re-project EVERY ledger subject onto its board card, fail-soft per subject, so a card a stage's fail-soft swallow missed recovers; also the one-time backfill mechanism). Wired into (dispatched by the _invoke_wiring chain of) stage_s0_intake.py (A1: the ensure mirror runs BEFORE the holdable drive-tree-provision step, fully fail-soft, so a held/dark Drive never suppresses the card), stage_s1_avatar.py, stage_s2_tone.py, stage_s6_rewrite.py, stage_s7_cover.py, stage_s8_deliver.py + stage_s9_assembly.py (each stage's TERMINAL sync mirror is fail-soft: a board outage/refusal on the mirror never holds the stage); stage_s3_title.py / stage_s4_outline.py / stage_s5_chapter.py declare it in their WIRING list but defer the card mirror to the gate-decision path and do not dispatch it directly; archive is invoked by revoke-anthology-client.sh R2; reconcile is invoked by the daily tick (anthology-smoke-test.py run) and registered via provision-anthology-client.sh step 8 (--no-deliver). GK-17/A7 (self-heal precedent, U79): reconcile's JSON now carries a `converged` boolean (true iff zero subjects ended 'deferred'/'error' after the sweep) via the pure `_reconcile_sweep` helper mc_board.py factors cmd_reconcile through; anthology-smoke-test.py's reconcile_board() reads that field back and reports the daily-tick's board_reconcile block as status \"unconverged\" (never \"reconciled\") when the sweep ran but did not fully converge -- the ONLY machine-checkable signal a future drift-detector banner (CC's checkAnthologyBoardProjection / BoardDriftBanner.tsx, deep-checks.ts) should escalate on, replacing a bare subprocess-exit-code check that could not tell \"every card landed\" apart from \"the sweep merely ran\".",
-      "exit_codes": "0 synced / created / deduped / archived / reconciled OR fail-soft no-op (board or mirror unavailable, logged and continued); 1 unexpected error; 2 local guard refusal (e.g. an explicit status='done', refused before any I/O)"
-    },
-    {
-      "n": 38,
-      "script": "anthology_snapshot.py",
-      "authored_by": "W-snapshot",
-      "purpose": "CLIENT-BOX Convert and Flow SNAPSHOT import mechanism (Skill-38-style manual-import path). Subcommands: verify-imported (READ-ONLY proof the snapshot landed: the standard pipeline exists BY NAME with all 9 stages + all 28 contract custom fields exist BY KEY; missing pipeline STOPs AF-AE-SNAPSHOT-PIPELINE-MISSING, missing field STOPs AF-AE-SNAPSHOT-FIELD-MISSING); provision-custom-values (IDEMPOTENT GET-check + create-only-missing/update of the four REPLACE-ME location custom values anthology_webhook_url/anthology_hook_secret/producer/producer_email; the hook-secret Authorization value is resolved BY LABEL from ANTHOLOGY_INTAKE_HOOK_SECRET and NEVER printed); stamp-version ($STATE_DIR/snapshot-version.json); plan/self-test (offline). Reuses anthology_registry.CafClient. There is NO agency->subaccount auto-push (REJECTED in config/anthology-snapshot-contract.json; each client owns their own GHL). Wired into provision-anthology-client.sh step 7.5.",
-      "exit_codes": "0 verified/idempotent no-op/dry-run; 1 unexpected error; 2 STOP (snapshot not imported: pipeline/field absent; customValues scope denied); 3 API unreachable / held (incl. hook-secret label NOT SET under --require-live); 5 read-back mismatch (a contract stage name absent from the present pipeline)"
-    },
-    {
-      "n": 39,
-      "script": "qc-snapshot-contract.sh",
-      "authored_by": "W-snapshot",
-      "purpose": "Merge-gate (CI) DRIFT GATE: proves config/anthology-snapshot-contract.json still byte-agrees with the engine's single source of truth (config/field-map.json pipeline name/stages + the 28 field keys/create-names/types + cover-choice options; config/engine-config.template.json intake route path + credential labels), plus the fixture's own invariants (27 LARGE_TEXT + 1 SINGLE_OPTIONS, 8 tags with 3 LIVE, 4 custom values, forms, and the agency->subaccount push standing-REJECTED). Mirrors Skill 38's qc-23-key-bodies.sh so a stale snapshot fails CI before it can ship.",
-      "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT; 2 a required file is missing (gate went blind \u2014 treated as failure)"
-    },
-    {
-      "n": 40,
-      "script": "standing_gate.py",
-      "authored_by": "U-fleet-standing",
-      "purpose": "Fleet standing-gate client: asks the fleet-wide standing-check endpoint whether THIS box is approved for the anthology system BEFORE any participant row is created, Drive folder provisioned, or model call made. FAIL CLOSED (unreachable endpoint, non-200, missing credential, or malformed response are ALL treated as NOT approved). On a definite or suspected refusal also fires the shared rejection notifier so the client is told. Reuses the legacy roster gate's already-propagated FLEET_STANDING_GATE_HEADER/FLEET_STANDING_GATE_SECRET credential \u2014 same n8n httpHeaderAuth, no new secret.",
-      "exit_codes": "0 approved; 2 refused (standing reason_code 'standing' or 'not_enrolled'); 3 endpoint unreachable / credential missing / malformed response (held)"
-    },
-    {
-      "n": 41,
-      "script": "anthology_book.py",
-      "authored_by": "U-book-minter",
-      "purpose": "Producer 'start a book' minter \u2014 the SINGLE authority for Book IDs. Reuses anthology_state.gen_id for the id shape, anthology_state.py upsert-anthology for the ledger row, and anthology_registry.py bind for the CAF binding. Writes no state of its own and holds no credential. Emits the author-facing intake link carrying the minted anthology_id as a hidden form field.",
-      "exit_codes": "0 ok (minted and bound or idempotent no-op); 1 unexpected error; 2 refused (e.g. pipeline unresolved on bind); 5 validation (missing required arg or book-name refusal)"
-    },
-    {
-      "n": 42,
-      "script": "anthology_run_dir.py",
-      "authored_by": "U-run-dir",
-      "purpose": "Single durable per-participant run directory resolver (U059). Every anthology authoring stage resolves the participant's working directory through this ONE function so later stages read back exactly what earlier stages wrote. Canonical layout: state/runs/participants/<safe-participant-id>/working/. Stdlib only (pathlib); no network, no model, no provider.",
-      "exit_codes": "0 (module/library; no standalone CLI \u2014 imported by stage dispatchers and Skill 54 run_anthology.py)"
-    },
-    {
-      "n": 43,
-      "script": "delivery_report.py",
-      "authored_by": "W1.24",
-      "purpose": "Operator-channel delivery report (CHECKLIST Part A S8) + signed process certificate (Skill 54 P7) sibling helper, imported by caf_delivery.py at S8. Builds the full operator-visible delivery report JSON + plain-text render + self-verified signed certificate; Anthropic-family model-id shapes in any caller value are refused (AF-AE-ANTHROPIC).",
-      "exit_codes": "0 built/persisted/verified (idempotent no-op); 1 unexpected; 2 bad invocation / malformed input / missing required field; 3 operator report dir unwritable (report/cert HELD, delivery is not); 4 Anthropic-family model-id shape in a caller value (AF-AE-ANTHROPIC, refused); 5 certificate self-verify mismatch"
-    },
-    {
-      "n": 44,
-      "script": "stage_s9_assembly_logic.py",
-      "authored_by": "W1.18",
-      "purpose": "S9 assembly logic module \u2014 the substance between the two producer decisions that bracket S9. The thin runner stage_s9_assembly.py imports and drives this module in-process. fire_ready() arms the six PRD 3.11 guards; run_assembly() drives order curation, editor introduction, contributor bios, inter-chapter transitions, front/back matter, and the Grand Finale; sign_off() closes the anthology. NEVER writes state directly \u2014 every ledger mutation shells through anthology_state.py.",
-      "exit_codes": "0 ok; 1 unexpected error; 2 prover failure (FrozenChapterMismatch / seam bridge / Grand Finale contract failure \u2014 counts a QC attempt); 3 held (collaborator not yet wired / credit-outs); 5 validation (SlotUnresolved \u2014 AF-AE-SLOT-UNRESOLVED \u2014 or confirm-name mismatch)"
-    }
-  ],
-  "autofails": [
-    {
-      "code": "AF-AE-SLOT-UNRESOLVED",
-      "stage": "any authoring stage",
-      "level": "compose",
-      "trigger": "a legacy Make.com/n8n prompt variable slot did not resolve to a canonical field name (SPEC 6.2); the composer refuses any unresolved slot (fail-closed)",
-      "enforced_by": "stage_sN runner + the prompt composer",
-      "py_symbol": "compose"
-    },
-    {
-      "code": "AF-AE-ANTHROPIC",
-      "stage": "any",
-      "level": "run",
-      "trigger": "a resolved model id or any shipped file carries an Anthropic-family identifier shape",
-      "enforced_by": "model_router.py + guard-no-anthropic-runtime.py + preflight.sh --check",
-      "py_symbol": "deny"
-    },
-    {
-      "code": "AF-AE-PROMPT-PIN",
-      "stage": "any authoring stage",
-      "level": "assets",
-      "trigger": "a baked prompt sha256 != its pin, a truncation boundary, or a surviving [UNCHANGED] placeholder",
-      "enforced_by": "guard-prompt-pins.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-FONT-FLOOR",
-      "stage": "S8/S9",
-      "level": "delivery",
-      "trigger": "a RENDERED PDF carries a glyph below 14 point",
-      "enforced_by": "guard-font-floor.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-TENANT-MISMATCH",
-      "stage": "S0 / delivery",
-      "level": "tenant",
-      "trigger": "the payload location does not equal the anthology registry Convert and Flow Location binding",
-      "enforced_by": "intake_router.py / caf_delivery.py",
-      "py_symbol": "tenant_check"
-    },
-    {
-      "code": "AF-AE-UNROUTABLE",
-      "stage": "S0",
-      "level": "intake",
-      "trigger": "missing or invalid hidden ids (contact_id / anthology_id / stage); captured to Exceptions, never dropped or guessed",
-      "enforced_by": "intake_router.py",
-      "py_symbol": "route"
-    },
-    {
-      "code": "AF-AE-STAGE-MISMATCH",
-      "stage": "S0",
-      "level": "intake",
-      "trigger": "a stage form arrives for a participant whose cursor does not match; captured to Exceptions (stage_mismatch)",
-      "enforced_by": "intake_router.py",
-      "py_symbol": "route"
-    },
-    {
-      "code": "AF-AE-ILLEGAL-TRANSITION",
-      "stage": "any",
-      "level": "ledger",
-      "trigger": "a transition not permitted by the legal-transition matrix (SPEC 7.3); exits nonzero and changes nothing",
-      "enforced_by": "anthology_state.py",
-      "py_symbol": "advance_stage"
-    },
-    {
-      "code": "AF-AE-READBACK-MISMATCH",
-      "stage": "S8",
-      "level": "delivery",
-      "trigger": "a Convert and Flow field write or a Drive write does not read back byte-for-byte in the same job",
-      "enforced_by": "caf_delivery.py / drive_adapter.py",
-      "py_symbol": "write_and_verify"
-    },
-    {
-      "code": "AF-AE-BROKER-ACTIONS-MISSING",
-      "stage": "provisioning STEP 5 (Drive)",
-      "level": "delivery",
-      "trigger": "in n8n-broker mode the deployed Drive-broker workflow does not implement every REQUIRED per-Doc/tree action (create_book_tree, create_participant_tree, create_doc, upload_pdf, share_doc_edit, pull_doc_text); provisioning HOLDs by name rather than dead-ending mid-run at S7/S8",
-      "enforced_by": "drive_adapter.py broker-preflight + provision-anthology-client.sh step5",
-      "py_symbol": "broker_preflight"
-    },
-    {
-      "code": "AF-AE-TITLE-LOCK",
-      "stage": "S3..S9",
-      "level": "content",
-      "trigger": "the locked title or subtitle is not carried byte-exact through outline, chapter, every rewrite, and the cover prompt",
-      "enforced_by": "prove_aw_chapter.py (Skill 54) + qc-tier1-anthology.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-CHAP-BAND",
-      "stage": "S5/S6",
-      "level": "content",
-      "trigger": "the chapter measured stripped words fall outside 2,000 to 3,500 (self-report ignored)",
-      "enforced_by": "prove_aw_chapter.py (Skill 54)",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-REWRITE-BUDGET",
-      "stage": "S6",
-      "level": "run",
-      "trigger": "a rewrite beyond budget 2; a silent third rewrite is an illegal transition",
-      "enforced_by": "qc-strike-gate.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-QC-STRIKEOUT",
-      "stage": "any QC'd deliverable",
-      "level": "run",
-      "trigger": "three internal QC attempts exhausted; HOLD plus one deduped founder alert carrying the failing checks and best draft; standards never relaxed",
-      "enforced_by": "qc-strike-gate.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-JUDGE-INDEPENDENCE",
-      "stage": "Gate B",
-      "level": "qc",
-      "trigger": "the JUDGE tier or persona equals the tier or persona that drafted the piece",
-      "enforced_by": "judge_harness.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-CREDIT-HOLD",
-      "stage": "any billable call",
-      "level": "run",
-      "trigger": "provider insufficient-credits or chain exhaustion; durable HOLD plus ONE deduped founder Telegram alert through the gateway; resume from the exact cursor",
-      "enforced_by": "model_router.py + hold_queue.py + alert-dedup.py",
-      "py_symbol": "hold"
-    },
-    {
-      "code": "AF-AE-S9-GUARD",
-      "stage": "S9",
-      "level": "assembly",
-      "trigger": "a ready-to-assemble guard failed: non-producer auth, an unapproved and non-excluded participant, below-minimum frozen approved chapters, or a --confirm-name mismatch",
-      "enforced_by": "anthology_state.py",
-      "py_symbol": "record_approval"
-    },
-    {
-      "code": "AF-AE-S9-FROZEN",
-      "stage": "S9",
-      "level": "assembly",
-      "trigger": "a manuscript chapter is not byte-identical (sha256) to its frozen approved artifact",
-      "enforced_by": "anthology_state.py / stage_s9_assembly.py",
-      "py_symbol": "compile"
-    },
-    {
-      "code": "AF-AE-FIELD-MISSING",
-      "stage": "provisioning",
-      "level": "setup",
-      "trigger": "a required PRD Section 6 custom field is absent at provisioning; STOP setup with an operator surface, never a silent runtime create",
-      "enforced_by": "provision-anthology-client.sh / caf_delivery.py",
-      "py_symbol": "verify_fields"
-    },
-    {
-      "code": "AF-AE-PIT-SCOPE",
-      "stage": "provisioning",
-      "level": "setup",
-      "trigger": "the Convert and Flow private integration token cannot READ pipelines/opportunities on the location (probed by a read pre-flight -- GoHighLevel exposes no pipeline-create endpoint, so this is never a create-feasibility probe); STOP setup with an operator surface, never a silent fallback",
-      "enforced_by": "provision-anthology-client.sh",
-      "py_symbol": "probe_write_scope"
-    },
-    {
-      "code": "AF-AE-PIPELINE-UI-CREATE",
-      "stage": "provisioning",
-      "level": "setup",
-      "trigger": "the standard Anthology pipeline is absent on the location, GoHighLevel / Convert and Flow exposes NO public v2 API to create a pipeline (the UI is the only create surface), and the ONE Skill 6 browser-control creation attempt (06-ghl-install-pages/tools/ghl_pipeline_builder.py, exact-name mode, verified ONLY by an API re-read -- the builder's own claim is never trusted) failed or was unavailable; STOP setup instructing a one-time UI creation or an explicit pre-existing bind (bind --pipeline-id), never a call to a nonexistent create endpoint and never a faked success",
-      "enforced_by": "provision-anthology-client.sh / anthology_registry.py",
-      "py_symbol": "provision_pipeline"
-    },
-    {
-      "code": "AF-AE-EXPORT-LEAK",
-      "stage": "merge gate",
-      "level": "repo",
-      "trigger": "any of the nine JSON exports content or a key shape appears in the repo",
-      "enforced_by": "scripts/scan-no-json-exports.sh (W2.8 merge-gate export scan; W0.3 originated)",
-      "py_symbol": "scan"
-    },
-    {
-      "code": "AF-AE-CRON-DRIFT",
-      "stage": "cron",
-      "level": "run",
-      "trigger": "more than the one daily tick, or any heartbeat entry; churn leaving a recurring job",
-      "enforced_by": "guard-cron-inventory.py",
-      "py_symbol": "evaluate"
-    },
-    {
-      "code": "AF-AE-COMMINGLE",
-      "stage": "credential",
-      "level": "isolation",
-      "trigger": "an operator, shared, or other-client credential fingerprint is detected in place of the named client's own",
-      "enforced_by": "caf_credential_gate.py",
-      "py_symbol": "fingerprint"
-    },
-    {
-      "code": "AF-AE-TOKEN-REFUSED",
-      "stage": "gates",
-      "level": "auth",
-      "trigger": "a foreign, expired, or replayed participant token",
-      "enforced_by": "gate_engine.py",
-      "py_symbol": "verify_token"
-    },
-    {
-      "code": "AF-AE-BYPASS",
-      "stage": "entry",
-      "level": "run-dir",
-      "trigger": "a hand-rolled ungoverned external sender (n8n webhook, Airtable call, literal Authorization key header) is present in a run directory",
-      "enforced_by": "anthology-engine-entry.sh",
-      "py_symbol": "bypass_scan"
-    },
-    {
-      "code": "AF-AE-HASH-PIN",
-      "stage": "entry",
-      "level": "enforcement",
-      "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)",
-      "enforced_by": "anthology-engine-entry.sh",
-      "py_symbol": "version_hash_pin"
-    },
-    {
-      "code": "AF-AE-UNRESOLVED-MODELMAP",
-      "stage": "entry",
-      "level": "run-dir",
-      "trigger": "a resolved run-dir model-map.json still carries a <CLIENT_*> placeholder (the fleet installer has not resolved this box)",
-      "enforced_by": "preflight.sh --check / anthology-engine-entry.sh",
-      "py_symbol": "check"
-    },
-    {
-      "code": "AE_DEPS_MISSING",
-      "stage": "entry",
-      "level": "deps",
-      "trigger": "python3 is absent",
-      "enforced_by": "anthology-engine-entry.sh",
-      "py_symbol": "deps_check"
-    }
-  ],
-  "personas": {
-    "$note": "Mirror of PRD Section 13, stamped into the fleet persona-matching config at W4.2 so the client's workforce self-invokes the right operator per stage. Personas live inside the pinned prompts, never in runtime config.",
-    "S0": {
-      "role": "anthology-producer-orchestrator",
-      "persona": "none (deterministic code)"
-    },
-    "S1": {
-      "role": "anthology-chapter-author",
-      "persona": "the Avatar Profiler (Skill 52, aa-01..03)"
-    },
-    "S2": {
-      "role": "anthology-chapter-author",
-      "persona": "the Tone Analysts and Blender (tone core 04..08)"
-    },
-    "S3": {
-      "role": "anthology-chapter-author",
-      "persona": "the Senior Title Strategist (aw-06)"
-    },
-    "S4": {
-      "role": "anthology-chapter-author",
-      "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"
-    },
-    "S5": {
-      "role": "anthology-chapter-author",
-      "persona": "the Anthology Chapter Author (aw-09)"
-    },
-    "S6": {
-      "role": "anthology-chapter-author",
-      "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"
-    },
-    "S7": {
-      "role": "anthology-producer-orchestrator",
-      "persona": "the Senior Book-Cover Design Specialist (aw-11)"
-    },
-    "S8": {
-      "role": "anthology-producer-orchestrator",
-      "persona": "none (deterministic rendering and delivery)"
-    },
-    "gates_nudges_readiness": {
-      "role": "anthology-approvals-steward",
-      "persona": "none (gate logic; sanctioned templates only)"
-    },
-    "S9": {
-      "role": "anthology-producer-orchestrator",
-      "persona": "the Anthology Editor voice (ae-01..04), subordinate to producer inputs"
-    },
-    "content_qc": {
-      "role": "anthology-approvals-steward",
-      "persona": "the independent Editorial Judge on the JUDGE tier"
-    }
+  {
+   "id": "S5",
+   "name": "CHAPTER",
+   "runner": "scripts/stage_s5_chapter.py",
+   "tier": "HEAVY-WRITER",
+   "produces_artifact": "working/chapter.md; Chapter Doc plus PDF",
+   "gate": "s5_participant (Approve as-is OR Request rewrite with notes)",
+   "provers": [
+    "prove_aw_chapter.py",
+    "qc-tier1-anthology.py (full)",
+    "judge_harness.py (Tier 2)",
+    "qc-strike-gate.py"
+   ],
+   "persona": "the Anthology Chapter Author (aw-09)"
   },
-  "sibling_boundaries": {
-    "skill_53_book_writer": "NOT deprecated, NOT touched: the single-author twelve-chapter product. Executing the stale 'deprecate BookWriter' directive is a scored build failure.",
-    "skill_54_anthology_writer": "PROMOTED to the authoring core and extended by exactly three bounded extensions (avatar handoff, pinned-prompt completion, intake fields). Building a duplicate anthology skill is a build failure.",
-    "tone_core": "shared-utils/tone-writing-core reused byte-identical; forking it is a build failure (verify_tone_core_sync.py green)."
+  {
+   "id": "S6",
+   "name": "CHAPTER REWRITE",
+   "runner": "scripts/stage_s6_rewrite.py",
+   "tier": "HEAVY-WRITER",
+   "produces_artifact": "new chapter VERSION; re-enters the S5 gate",
+   "gate": "re-enters s5_participant",
+   "provers": [
+    "prove_aw_chapter.py",
+    "judge_harness.py",
+    "qc-strike-gate.py (rewrite budget 2)"
+   ],
+   "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"
+  },
+  {
+   "id": "S7",
+   "name": "COVER IMAGE",
+   "runner": "scripts/stage_s7_cover.py",
+   "tier": "HEAVY-WRITER (prompt) + IMAGE (render)",
+   "produces_artifact": "cover PNG in the participant Drive folder; both link fields",
+   "gate": "none",
+   "provers": [
+    "cover_render callback verify"
+   ],
+   "persona": "the Senior Book-Cover Design Specialist (aw-11)"
+  },
+  {
+   "id": "S8",
+   "name": "PACKAGE AND DELIVER",
+   "runner": "scripts/stage_s8_deliver.py",
+   "tier": "none (deterministic)",
+   "produces_artifact": "every deliverable as Google Doc + 14pt-floor PDF; Convert and Flow media + exact-key field writes; control fields; signed certificate",
+   "gate": "card to review (QC scorer owns review to done)",
+   "provers": [
+    "guard-font-floor.py",
+    "caf_delivery read-back"
+   ],
+   "persona": "none (anthology-producer-orchestrator)"
+  },
+  {
+   "id": "S9",
+   "name": "ANTHOLOGY ASSEMBLY",
+   "runner": "scripts/stage_s9_assembly.py",
+   "tier": "LONGCTX or HEAVY-WRITER",
+   "produces_artifact": "full manuscript Doc plus PDF (producer-ordered, N-1 inter-chapter transitions plus a brand-new titled Grand Finale); manuscript fields",
+   "gate": "s9_ready (arm and fire, all PRD 3.11 guards) then producer 'Confirm the finalized set & order' (triggers the Grand Finale write) then s9_producer (sign-off)",
+   "provers": [
+    "qc-tier1-anthology.py --mode assembly",
+    "frozen-chapter sha256 byte-identity",
+    "prove_transitions (each seam names the next locked title, zero em dashes, frozen chapters byte-unchanged)",
+    "prove_finale (references every chapter, action-steps section, 14pt floor, zero em dashes)"
+   ],
+   "persona": "the Anthology Editor voice (ae-01..06), subordinate to producer inputs"
   }
+ ],
+ "gate_table": {
+  "s1_producer": "board review column; nudge deep-link in; Approve or Hold",
+  "s2_producer": "board review column",
+  "s3_selection": "participant token page; title and subtitle pick; TITLE LOCK one-way",
+  "s4_producer": "board review column",
+  "s4_participant": "participant token page; outline approval; no re-upload path exists",
+  "s5_participant": "participant token page; exactly two actions; notes feed chapter_updates verbatim",
+  "s9_ready": "the producer ready-to-assemble trigger (Assembly card or readiness nudge, both doors one endpoint); guards: own-producer, every participant approved or excluded, >= min_chapters frozen approved chapters, typed --confirm-name, one-way",
+  "s9_producer": "final manuscript sign-off on the Assembly card; closes the anthology"
+ },
+ "engine_owned_prompt_pins": {
+  "$note": "The engine OWNS only the S9 assembly and routing prompts. Authored by W1.18 (ae-01..04) and U9 (ae-05 inter-chapter transition, ae-06 grand finale); sha256 pins STAMPED from the on-disk asset and matched byte-for-byte. Every authoring prompt (aa-01..03, tone 04..08, aw-06..12) lives in Skill 54 / Skill 52 / the tone core and is proven by guard-prompt-pins.py.",
+  "assets/prompts/ae-01-order-curation.md": "2e12ad8db5bb8563c8fed38442c9fb823140796a707eaccef97d71db4ca1e25b",
+  "assets/prompts/ae-02-editor-introduction.md": "78b65803311f6548a3845d1db4fc63249fa5cc229a55c00ebb9e65c4ec8bfdc6",
+  "assets/prompts/ae-03-contributor-bio.md": "5c0600d75d2db74d25f0f401757fa471adc7d17fdd4b630032411f664b99a6e5",
+  "assets/prompts/ae-04-front-back-matter.md": "46a77c5c86cb5f3a9dedc159e82253dc0171bd576919bd6391af306ff8130b0d",
+  "assets/prompts/ae-05-inter-chapter-transition.md": "df4c3fa04b42dd132671f63ba7f95cf9c40e25f5d8a896178557cced84bdbe6b",
+  "assets/prompts/ae-06-grand-finale.md": "da10e35106c617b4798d834a9dac7507b779706c2663ebf33ad7877acb467306"
+ },
+ "field_map_ref": "config/field-map.json",
+ "model_map_ref": "config/model-map.template.json",
+ "config_refs": [
+  "config/engine-config.template.json",
+  "config/route-template.json",
+  "config/nudge-templates/",
+  "config/pdf-house-style/",
+  "config/anthology-snapshot-contract.json"
+ ],
+ "exit_code_house_convention": {
+  "0": "success (including an idempotent no-op)",
+  "1": "unexpected error",
+  "2": "validation or guard refusal",
+  "3": "dependency unavailable or held",
+  "4": "enforced violation detected",
+  "5": "data or read-back mismatch"
+ },
+ "script_inventory": [
+  {
+   "n": 1,
+   "script": "anthology_state.py",
+   "authored_by": "W1.7",
+   "purpose": "Sole ledger writer: schema bootstrap, transitions, approvals (incl. the s9_ready trigger), readiness report, holds, exceptions, mirror reconcile, export bundle",
+   "exit_codes": "0 verified success; 2 illegal transition; 3 unknown key; 4 base unreachable (mirror-queued); 5 validation or confirm-name mismatch"
+  },
+  {
+   "n": 2,
+   "script": "intake_router.py",
+   "authored_by": "W1.5",
+   "purpose": "S0 deterministic intake: secret check, hidden-field validation, tenant check, dedup no-op, exception capture, under-2-second acknowledge, detached stage spawn",
+   "exit_codes": "0 routed or no-op; 2 route-secret refusal; 3 captured to Exceptions (typed reason); 4 ledger unreachable"
+  },
+  {
+   "n": 3,
+   "script": "anthology_registry.py",
+   "authored_by": "W1.8",
+   "purpose": "Per-anthology bindings: find-and-bind pre-existing pipeline (BY NAME; UI-only, never auto-created) and its resolved stage map, form ids, Drive folder",
+   "exit_codes": "0; 2 unknown anthology or binding; 5 validation"
+  },
+  {
+   "n": 4,
+   "script": "model_router.py",
+   "authored_by": "W1.9",
+   "purpose": "The Section 8 tier chain, one call site, metering hooks, typed error classes, Anthropic-family deny patterns",
+   "exit_codes": "0 completion; 2 deny-pattern refusal; 3 chain exhausted, job held; 4 budget ceiling block"
+  },
+  {
+   "n": 5,
+   "script": "search_detect.py",
+   "authored_by": "W1.10",
+   "purpose": "Web-search detection ladder (prefer Perplexity; degrade plus flag), cached per box",
+   "exit_codes": "0 tool detected and cached; 3 no tool (degrade-plus-flag path)"
+  },
+  {
+   "n": 6,
+   "script": "stage_s0_intake.py, stage_s1_avatar.py, stage_s2_tone.py, stage_s3_title.py, stage_s4_outline.py, stage_s5_chapter.py, stage_s6_rewrite.py, stage_s7_cover.py, stage_s8_deliver.py, stage_s9_assembly.py (ten runners)",
+   "authored_by": "W1.1 (dispatchers); module logic wired from W1.5..W1.18",
+   "purpose": "One idempotent thin runner per stage: compose pins, call Layer 1 or the router, run provers, record artifacts, open the gate",
+   "exit_codes": "0 stage complete and persisted; 2 prover failure (counts a QC attempt); 3 held (credits or callback, or a collaborator not yet wired); 5 unresolved prompt slot (AF-AE-SLOT-UNRESOLVED)",
+   "note": "SPEC 3.4 row 6 names nine runners stage_s1..s9; this build also ships stage_s0_intake.py (a thin wrapper over intake_router.py) so S0 has a stage-inventory entry and an exceptions-replay dispatch. SPEC 3.1 names the S4 runner stage_s4_blurb_outline.py; this build ships it as stage_s4_outline.py per the W1.1 file-ownership list. The S9 assembly logic ships as the sibling helper scripts/stage_s9_assembly_logic.py (authored_by W1.18), imported by the stage_s9_assembly.py dispatcher rather than dispatched directly; it is inventoried here under this row so inventory-equals-shipped-set holds without adding a 33rd normative row. W4.0 (integrator): every sibling collaborator has now landed (mc_board.py at W3.1; the W2.1-2.8 guards and provisioning; the fleet roles and SOPs at W4.1-4.9) and all ten dispatcher _invoke_wiring() bodies are wired to concrete collaborator argv chains, in WIRING order, short-circuiting on the FIXED classify_child_rc contract; S9 drives stage_s9_assembly_logic.py's S9Assembly in-process rather than reimplementing its order-curation/compile/sha-verify machinery. Verified structurally (all ten stage_sN.py --self-test pass) and functionally end-to-end against a real temp ledger on the operator box (S0 against this box's live Google Drive credentials; S1/S9 correctly reach and fail-close at the honest boundary requiring live model-chain credentials this build environment does not carry). Full live proof (a real Convert and Flow PIT, a resolved client model-map, Kie.ai image credentials) is the W5 operator-box canary's job, not this unit's."
+  },
+  {
+   "n": 7,
+   "script": "gate_engine.py",
+   "authored_by": "W1.15",
+   "purpose": "Gate state machine, both-door single endpoint, scoped-token mint and verify, s9_ready arming",
+   "exit_codes": "0 action recorded; 2 invalid or expired token; 3 gate not open"
+  },
+  {
+   "n": 8,
+   "script": "nudge_send.py",
+   "authored_by": "W1.15",
+   "purpose": "The three sanctioned templates only; ledger-resolved recipients; 7-day stuck re-nudge",
+   "exit_codes": "0 sent; 2 template or recipient refusal; 3 delivery path unavailable"
+  },
+  {
+   "n": 9,
+   "script": "drive_adapter.py",
+   "authored_by": "W1.11",
+   "purpose": "Direct Drive and Docs API calls with the BlackCEO-owned delivery service account against the per-client Shared-Drive root (never anyone-can-read); Doc create, per-document view/edit share, export bundle. On a pure client box the per-Doc ops (deliver_doc/deliver_media/do_share/pull_doc_text) route through the n8n credential broker (create_doc/upload_pdf/share_doc_edit/pull_doc_text); broker-preflight probes the broker capabilities and HOLDs by name on a missing action (AF-AE-BROKER-ACTIONS-MISSING)",
+   "exit_codes": "0; 3 API unreachable / broker HOLD; 5 read-back mismatch"
+  },
+  {
+   "n": 10,
+   "script": "drive-tree-provision.py",
+   "authored_by": "W1.11",
+   "purpose": "Idempotent Producer/Anthology/Participant tree under the per-client BlackCEO-hosted Shared-Drive root (resolved per box from GOOGLE_DRIVE_ROOT_FOLDER); never creates a new root. In n8n-broker mode the tree is minted through the broker (create_participant_tree); the operator's own box runs it via the local SA",
+   "exit_codes": "0 tree verified or created; 2 configured root unreachable; 3 API unreachable"
+  },
+  {
+   "n": 11,
+   "script": "pdf_render.py",
+   "authored_by": "W1.12",
+   "purpose": "Deterministic WeasyPrint-class HTML-to-PDF from the house templates, all font tokens at or above 14 point",
+   "exit_codes": "0 rendered; 1 render error; 2 template token below floor"
+  },
+  {
+   "n": 12,
+   "script": "caf_delivery.py",
+   "authored_by": "W1.13",
+   "purpose": "Convert and Flow media upload, exact-key field writes by contact_id, byte-for-byte read-back, control fields, per-gate pipeline-stage update; emits the operator delivery report + signed process certificate via the sibling helper scripts/delivery_report.py (W1.24)",
+   "exit_codes": "0 delivered and verified; 1 unexpected error; 2 tenant mismatch or validation refusal (operator surface); 3 API unreachable or PIT scope-denied (held); 5 read-back mismatch (AF-AE-READBACK-MISMATCH)",
+   "note": "scripts/delivery_report.py (authored_by W1.24) is the canonical operator-channel delivery report (CHECKLIST Part A S8) + signed process certificate (Skill 54 P7) sibling helper, imported by caf_delivery.py at S8; its own exit contract is 0 built/persisted/verified (idempotent no-op); 1 unexpected; 2 bad invocation/malformed input/missing field; 3 operator report dir unwritable (report/cert HELD, delivery is not); 4 Anthropic-family model-id shape in a caller value (AF-AE-ANTHROPIC, refused); 5 certificate self-verify mismatch."
+  },
+  {
+   "n": 13,
+   "script": "cover_render.py",
+   "authored_by": "W1.14",
+   "purpose": "Kie.ai GPT-image-2 via Skills 07 and 46, callback with bounded re-poll, PNG to Drive",
+   "exit_codes": "0 PNG landed; 3 callback lost after re-poll (held)"
+  },
+  {
+   "n": 14,
+   "script": "qc-tier1-anthology.py",
+   "authored_by": "W1.17",
+   "purpose": "Gate B Tier 1 deterministic checks, per-piece and assembly modes",
+   "exit_codes": "0 all pass; 2 bad invocation; 4 one or more failures (list emitted)"
+  },
+  {
+   "n": 15,
+   "script": "qc-strike-gate.py",
+   "authored_by": "W1.16",
+   "purpose": "Both counters: participant rewrite budget 2 with gate re-entry, internal QC attempts 3, hold-and-alert",
+   "exit_codes": "0 within budgets; 4 budget or attempt exhaustion (hold path)"
+  },
+  {
+   "n": 16,
+   "script": "judge_harness.py",
+   "authored_by": "W1.17",
+   "purpose": "Tier 1 semantic checks 13 to 15 plus the Tier 2 ten-dimension rubric on the JUDGE tier",
+   "exit_codes": "0 pass; 2 judge tier equals writer tier (independence violation); 4 any dimension below 8"
+  },
+  {
+   "n": 17,
+   "script": "anthology-cost-ledger.py",
+   "authored_by": "W1.21",
+   "purpose": "Metering choke point, per-deliverable token budgets shared across QC attempts",
+   "exit_codes": "0 metered within budget; 4 ceiling exceeded (blocks the call)"
+  },
+  {
+   "n": 18,
+   "script": "anthology-smoke-test.py",
+   "authored_by": "W1.22",
+   "purpose": "Daily funded-reachability probe, balance endpoints ONLY, total spend at or under one cent; ages the hold queue",
+   "exit_codes": "0 all reachable and funded; 4 provider unreachable or unfunded (alert path)"
+  },
+  {
+   "n": 19,
+   "script": "hold_queue.py",
+   "authored_by": "W1.20",
+   "purpose": "Durable credit-out and callback holds, daily age tick, resume from exact cursor",
+   "exit_codes": "0; 3 still held"
+  },
+  {
+   "n": 20,
+   "script": "exceptions.py",
+   "authored_by": "W1.19",
+   "purpose": "Capture, list, resolve-and-replay through S0",
+   "exit_codes": "0; 3 unknown exception id"
+  },
+  {
+   "n": 21,
+   "script": "alert-dedup.py",
+   "authored_by": "W2.4",
+   "purpose": "Single deduped founder alert path, OpenClaw gateway Telegram only",
+   "exit_codes": "0 sent or correctly suppressed; 3 gateway unreachable"
+  },
+  {
+   "n": 22,
+   "script": "guard-prompt-pins.py",
+   "authored_by": "W2.1",
+   "purpose": "Every baked prompt matches its sha256 pin, zero truncation, zero runtime prompt-base references",
+   "exit_codes": "0 clean; 4 violation"
+  },
+  {
+   "n": 23,
+   "script": "guard-no-anthropic-runtime.py",
+   "authored_by": "W2.2",
+   "purpose": "Zero Anthropic-family identifiers across the full engine file set including every Command Center edit",
+   "exit_codes": "0 clean; 4 violation"
+  },
+  {
+   "n": 24,
+   "script": "guard-font-floor.py",
+   "authored_by": "W1.12",
+   "purpose": "Parses the RENDERED PDF; any glyph below 14 point fails",
+   "exit_codes": "0 clean; 4 violation"
+  },
+  {
+   "n": 25,
+   "script": "guard-cron-inventory.py",
+   "authored_by": "W2.5",
+   "purpose": "Exactly the one daily tick; no heartbeat entry ever; churn leaves zero recurring jobs",
+   "exit_codes": "0 clean; 4 violation"
+  },
+  {
+   "n": 26,
+   "script": "caf_credential_gate.py",
+   "authored_by": "W2.3",
+   "purpose": "Label resolution across all three env stores (live process env first), pairing proof, anti-commingling fingerprint; reports SET or NOT SET only",
+   "exit_codes": "0 all labels resolve and fingerprint clean; 2 missing label; 4 commingling detected"
+  },
+  {
+   "n": 27,
+   "script": "anthology-engine-entry.sh",
+   "authored_by": "W1.1",
+   "purpose": "The ONE sanctioned entry: deps check, model-map pre-gate, bypass scan, manifest hash pin, nonce, fail-closed; then dispatches a stage runner",
+   "exit_codes": "0 run authorized and completed (stage exit returned); 2 usage; 5 bypass; 6 deps; 7 hash-pin; 8 model-map pre-gate"
+  },
+  {
+   "n": 28,
+   "script": "install.sh / preflight.sh",
+   "authored_by": "W1.1",
+   "purpose": "Per-box resolution: model map, credential labels, webhook route, cron tick, Drive root reachability",
+   "exit_codes": "0 box ready; 2 missing prerequisite (named)"
+  },
+  {
+   "n": 29,
+   "script": "verify.sh / verify-deps.sh",
+   "authored_by": "W1.1",
+   "purpose": "READ-ONLY idempotent self-verify",
+   "exit_codes": "0 verified; 4 drift found"
+  },
+  {
+   "n": 30,
+   "script": "provision-anthology-client.sh",
+   "authored_by": "W2.6",
+   "purpose": "Full Section 13.1 provisioning including find-and-bind of the pre-existing standard pipeline (UI-only; STOPS with AF-AE-PIPELINE-UI-CREATE if absent); config writes as the node user",
+   "exit_codes": "0 pass gate; nonzero stops SETUP with an operator surface"
+  },
+  {
+   "n": 31,
+   "script": "revoke-anthology-client.sh",
+   "authored_by": "W2.7",
+   "purpose": "Participant gate-token invalidation, Anthology board archival, Drive share revocation, webhook route disable, data export, verification probe",
+   "exit_codes": "0 revoked and verified; 4 a probe still answers"
+  },
+  {
+   "n": 32,
+   "script": "verify-webhook-t1-t9.sh",
+   "authored_by": "W1.6",
+   "purpose": "The nine intake proofs of Section 13.2, executed and observed",
+   "exit_codes": "0 all nine observed; 4 failing test id emitted"
+  },
+  {
+   "n": 33,
+   "script": "scan-no-secrets.sh",
+   "authored_by": "W2.8",
+   "purpose": "Merge-gate (CI): no hardcoded secret VALUE anywhere in the branch (value never printed; SET/absent only)",
+   "exit_codes": "0 clean; 2 usage; 3 dep (git for --changed); 4 violation"
+  },
+  {
+   "n": 34,
+   "script": "scan-no-json-exports.sh",
+   "authored_by": "W2.8",
+   "purpose": "Merge-gate (CI): none of the nine n8n exports / the prompt CSV present (structural + basename + sha256); concretely enforces AF-AE-EXPORT-LEAK",
+   "exit_codes": "0 clean; 2 usage; 3 dep; 4 violation"
+  },
+  {
+   "n": 35,
+   "script": "scan-no-client-identifiers.sh",
+   "authored_by": "W2.8",
+   "purpose": "Merge-gate (CI): no client identifier / PII (email/phone/denylist token); value never printed",
+   "exit_codes": "0 clean; 2 usage; 3 dep; 4 violation"
+  },
+  {
+   "n": 36,
+   "script": "scan-skill53-untouched.sh",
+   "authored_by": "W2.8",
+   "purpose": "Merge-gate (CI): Skill 53 (single-author book writer) byte-for-byte untouched vs origin/main",
+   "exit_codes": "0 clean; 2 usage; 3 dep (git / base ref / path absent); 4 violation"
+  },
+  {
+   "n": 37,
+   "script": "mc_board.py",
+   "authored_by": "W3.1",
+   "purpose": "FAIL-SOFT Command Center board client (SPEC 11.2): one participant card + one Assembly card per anthology; POST /api/tasks/ingest (create/resolve, idempotent) then POST /api/tasks/{id}/status (move) with Skill 32's existing HMAC (x-webhook-signature over WEBHOOK_SECRET) + Bearer (MC_API_TOKEN) pair; card status mirrors Participants.stage_cursor / anthology assembly_state; producer deliverables land in review (the chapter-approval queue); NEVER emits 'done' (review->done is owned by the QC scorer at >=8.5); board/mirror outage never blocks the pipeline. Reads the local mirror READ-ONLY; anthology_state.py stays the sole writer. Subcommands: sync (create+move), ensure (create only), status (read-only projection), archive (revoke R2: move the Assembly + participant cards to the archived 'blocked' status), reconcile (daily-tick safety net: re-project EVERY ledger subject onto its board card, fail-soft per subject, so a card a stage's fail-soft swallow missed recovers; also the one-time backfill mechanism). Wired into (dispatched by the _invoke_wiring chain of) stage_s0_intake.py (A1: the ensure mirror runs BEFORE the holdable drive-tree-provision step, fully fail-soft, so a held/dark Drive never suppresses the card), stage_s1_avatar.py, stage_s2_tone.py, stage_s6_rewrite.py, stage_s7_cover.py, stage_s8_deliver.py + stage_s9_assembly.py (each stage's TERMINAL sync mirror is fail-soft: a board outage/refusal on the mirror never holds the stage); stage_s3_title.py / stage_s4_outline.py / stage_s5_chapter.py declare it in their WIRING list but defer the card mirror to the gate-decision path and do not dispatch it directly; archive is invoked by revoke-anthology-client.sh R2; reconcile is invoked by the daily tick (anthology-smoke-test.py run) and registered via provision-anthology-client.sh step 8 (--no-deliver). GK-17/A7 (self-heal precedent, U79): reconcile's JSON now carries a `converged` boolean (true iff zero subjects ended 'deferred'/'error' after the sweep) via the pure `_reconcile_sweep` helper mc_board.py factors cmd_reconcile through; anthology-smoke-test.py's reconcile_board() reads that field back and reports the daily-tick's board_reconcile block as status \"unconverged\" (never \"reconciled\") when the sweep ran but did not fully converge -- the ONLY machine-checkable signal a future drift-detector banner (CC's checkAnthologyBoardProjection / BoardDriftBanner.tsx, deep-checks.ts) should escalate on, replacing a bare subprocess-exit-code check that could not tell \"every card landed\" apart from \"the sweep merely ran\".",
+   "exit_codes": "0 synced / created / deduped / archived / reconciled OR fail-soft no-op (board or mirror unavailable, logged and continued); 1 unexpected error; 2 local guard refusal (e.g. an explicit status='done', refused before any I/O)"
+  },
+  {
+   "n": 38,
+   "script": "anthology_snapshot.py",
+   "authored_by": "W-snapshot",
+   "purpose": "CLIENT-BOX Convert and Flow SNAPSHOT import mechanism (Skill-38-style manual-import path). Subcommands: verify-imported (READ-ONLY proof the snapshot landed: the standard pipeline exists BY NAME with all 9 stages + all 28 contract custom fields exist BY KEY; missing pipeline STOPs AF-AE-SNAPSHOT-PIPELINE-MISSING, missing field STOPs AF-AE-SNAPSHOT-FIELD-MISSING); provision-custom-values (IDEMPOTENT GET-check + create-only-missing/update of the four REPLACE-ME location custom values anthology_webhook_url/anthology_hook_secret/producer/producer_email; the hook-secret Authorization value is resolved BY LABEL from ANTHOLOGY_INTAKE_HOOK_SECRET and NEVER printed); stamp-version ($STATE_DIR/snapshot-version.json); plan/self-test (offline). Reuses anthology_registry.CafClient. There is NO agency->subaccount auto-push (REJECTED in config/anthology-snapshot-contract.json; each client owns their own GHL). Wired into provision-anthology-client.sh step 7.5.",
+   "exit_codes": "0 verified/idempotent no-op/dry-run; 1 unexpected error; 2 STOP (snapshot not imported: pipeline/field absent; customValues scope denied); 3 API unreachable / held (incl. hook-secret label NOT SET under --require-live); 5 read-back mismatch (a contract stage name absent from the present pipeline)"
+  },
+  {
+   "n": 39,
+   "script": "qc-snapshot-contract.sh",
+   "authored_by": "W-snapshot",
+   "purpose": "Merge-gate (CI) DRIFT GATE: proves config/anthology-snapshot-contract.json still byte-agrees with the engine's single source of truth (config/field-map.json pipeline name/stages + the 28 field keys/create-names/types + cover-choice options; config/engine-config.template.json intake route path + credential labels), plus the fixture's own invariants (27 LARGE_TEXT + 1 SINGLE_OPTIONS, 8 tags with 3 LIVE, 4 custom values, forms, and the agency->subaccount push standing-REJECTED). Mirrors Skill 38's qc-23-key-bodies.sh so a stale snapshot fails CI before it can ship.",
+   "exit_codes": "0 fixture agrees with the source of truth; 1 DRIFT; 2 a required file is missing (gate went blind — treated as failure)"
+  },
+  {
+   "n": 40,
+   "script": "standing_gate.py",
+   "authored_by": "U-fleet-standing",
+   "purpose": "Fleet standing-gate client: asks the fleet-wide standing-check endpoint whether THIS box is approved for the anthology system BEFORE any participant row is created, Drive folder provisioned, or model call made. FAIL CLOSED (unreachable endpoint, non-200, missing credential, or malformed response are ALL treated as NOT approved). On a definite or suspected refusal also fires the shared rejection notifier so the client is told. Reuses the legacy roster gate's already-propagated FLEET_STANDING_GATE_HEADER/FLEET_STANDING_GATE_SECRET credential — same n8n httpHeaderAuth, no new secret.",
+   "exit_codes": "0 approved; 2 refused (standing reason_code 'standing' or 'not_enrolled'); 3 endpoint unreachable / credential missing / malformed response (held)"
+  },
+  {
+   "n": 41,
+   "script": "anthology_book.py",
+   "authored_by": "U-book-minter",
+   "purpose": "Producer 'start a book' minter — the SINGLE authority for Book IDs. Reuses anthology_state.gen_id for the id shape, anthology_state.py upsert-anthology for the ledger row, and anthology_registry.py bind for the CAF binding. Writes no state of its own and holds no credential. Emits the author-facing intake link carrying the minted anthology_id as a hidden form field.",
+   "exit_codes": "0 ok (minted and bound or idempotent no-op); 1 unexpected error; 2 refused (e.g. pipeline unresolved on bind); 5 validation (missing required arg or book-name refusal)"
+  },
+  {
+   "n": 42,
+   "script": "anthology_run_dir.py",
+   "authored_by": "U-run-dir",
+   "purpose": "Single durable per-participant run directory resolver (U059). Every anthology authoring stage resolves the participant's working directory through this ONE function so later stages read back exactly what earlier stages wrote. Canonical layout: state/runs/participants/<safe-participant-id>/working/. Stdlib only (pathlib); no network, no model, no provider.",
+   "exit_codes": "0 (module/library; no standalone CLI — imported by stage dispatchers and Skill 54 run_anthology.py)"
+  },
+  {
+   "n": 43,
+   "script": "delivery_report.py",
+   "authored_by": "W1.24",
+   "purpose": "Operator-channel delivery report (CHECKLIST Part A S8) + signed process certificate (Skill 54 P7) sibling helper, imported by caf_delivery.py at S8. Builds the full operator-visible delivery report JSON + plain-text render + self-verified signed certificate; Anthropic-family model-id shapes in any caller value are refused (AF-AE-ANTHROPIC).",
+   "exit_codes": "0 built/persisted/verified (idempotent no-op); 1 unexpected; 2 bad invocation / malformed input / missing required field; 3 operator report dir unwritable (report/cert HELD, delivery is not); 4 Anthropic-family model-id shape in a caller value (AF-AE-ANTHROPIC, refused); 5 certificate self-verify mismatch"
+  },
+  {
+   "n": 44,
+   "script": "stage_s9_assembly_logic.py",
+   "authored_by": "W1.18",
+   "purpose": "S9 assembly logic module — the substance between the two producer decisions that bracket S9. The thin runner stage_s9_assembly.py imports and drives this module in-process. fire_ready() arms the six PRD 3.11 guards; run_assembly() drives order curation, editor introduction, contributor bios, inter-chapter transitions, front/back matter, and the Grand Finale; sign_off() closes the anthology. NEVER writes state directly — every ledger mutation shells through anthology_state.py.",
+   "exit_codes": "0 ok; 1 unexpected error; 2 prover failure (FrozenChapterMismatch / seam bridge / Grand Finale contract failure — counts a QC attempt); 3 held (collaborator not yet wired / credit-outs); 5 validation (SlotUnresolved — AF-AE-SLOT-UNRESOLVED — or confirm-name mismatch)"
+  },
+  {
+   "n": 45,
+   "script": "provision_snapshot_import.py",
+   "authored_by": "NEW-2",
+   "purpose": "Idempotent Convert and Flow snapshot import into a client sub-account (MASTER-SPEC NEW-2, SAME-AGENCY branch): GET-check-by-name before create (already-imported locations are verified, never re-pushed), PUT /locations/{id} snapshot.override push, bounded snapshot-status poll, resolved field-map.json + provision_report.json outputs, browser UA via reg.CafClient (CF 1010), credential resolution BY LABEL (SET/NOT-SET), AF-AE-SNAPIMPORT-* fail-closed surfaces, --self-test with golden + attack fixtures",
+   "exit_codes": "0 verified success (idempotent no-op / dry run); 1 unexpected error; 2 STOP (missing or drifted fixture, companyId missing, GET-check scope STOP, push refused by scope/validation); 3 HELD (edge/transport, status not completed); 5 read-back mismatch (NOTHING stamped)"
+  },
+  {
+   "n": 46,
+   "script": "snapshot_cut.py",
+   "authored_by": "NEW-1",
+   "purpose": "GHL SNAPSHOT CUTTER (NEW-1): extracts the Anthology Convert and Flow (LeadConnector v2) TEMPLATE location (contract source_template_location.template_location_id, default 2HIKGNgsixWx0yds7Qnx) into the VERSIONED JSON fixture fixtures/snapshot/anthology-engine-v<X.Y.Z>.json carrying pipeline / custom fields / location custom values / tags / forms / workflows (structured inventory ONLY — no GHL workflow JSON export, so scan-no-json-exports.sh stays green; provenance-marked contract entries for forms/tags/workflows when the live read surface is unavailable, fail-closed never fabricated). BYTE-EXACT fieldKey gate vs config/field-map.json provisioning.fields: the live keyset must equal the contract 28 exactly (missing -> AF-AE-SNAPSHOT-FIELD-MISSING STOP; wrong/extra/mutated -> AF-AE-SNAPSHOT-KEY-MISMATCH exit 5); never-a-real-token: the four location custom values are extracted as REPLACE-ME placeholders only and a real-looking value REFUSES the cut. PIT resolved BY LABEL (CONVERT_AND_FLOW_PIT etc.) never printed; internal-rail workflow read via anthology_registry.InternalRailClient (optional Firebase refresh token BY LABEL); browser UA CAF_BROWSER_UA on every request. Subcommands cut / plan / self-test (self-test = golden + 7 attack fixtures, mutation proof). Wired into references/anthology-snapshot-guide.md Section 2-3 (the operator cuts the snapshot with this, then exports).",
+   "exit_codes": "0 success (cut written + gate passed; dry-run/plan/self-test pass); 1 unexpected error; 2 STOP (AF-AE-SNAPSHOT-PIPELINE-MISSING / AF-AE-SNAPSHOT-FIELD-MISSING; PIT scope denied; usage; label NOT SET); 3 HELD (Convert and Flow API unreachable incl. Cloudflare edge 403, internal rail unavailable); 5 mismatch (AF-AE-SNAPSHOT-KEY-MISMATCH byte-exact fieldKey gate; empty-cut refusal)"
+  },
+  {
+   "n": 47,
+   "script": "prove_aw_doc_pullback.py",
+   "authored_by": "NEW-5",
+   "purpose": "U21 confirm-then-pull Doc read-back prover (NEW-5): proves the whole D3 confirm-then-pull cycle end to end — share the throwaway scratch Doc ANYONE-with-link EDIT via drive_adapter.deliver_doc(share_mode=edit) (create + insert + byte read-back + share + share read-back), SIMULATE the co-author's edit by writing a KNOWN TEST STRING via the Docs API, TRIGGER gate_engine.py pullback-revalidate (pulls current text via drive_adapter.pull_doc_text + re-runs the deterministic Tier-1 battery in pullback mode, advisory never blocking), VERIFY the pulled text CONTAINS the test string and Tier-1 revalidation ran. Scratch Doc lives under the operator's OWN Drive root, deleted trash-free after the proof; refuses scratch mode in n8n broker mode (--doc-id against an already-delivered Doc instead). Credentials resolved BY LABEL never printed. AF-AW-PULL-BACK-MISSING / AF-AW-PULL-BACK-DRIFT outputs",
+   "exit_codes": "0 PASS; 1 unexpected error; 2 validation/usage; 3 credential unavailable / API unreachable / ledger mirror unavailable (dependency); 5 proof failure (AF-AW-PULL-BACK-MISSING or AF-AW-PULL-BACK-DRIFT)"
+  },
+  {
+   "n": 48,
+   "script": "guard_cc_anthology_door.py",
+   "authored_by": "NEW-7",
+   "purpose": "Command Center anthology-integration prover (NEW-7): proves the Layer-4 board door over the LIVE Command Center (never docs) — (1) gate route auth: GET /api/anthology/gate is bearer-gated for external callers (no token -> 401 missing-header / 503 mc-api-token-unset, wrong bearer -> 401 token-mismatch, correct bearer passes middleware Gate B and the route answers 400 for the missing subjectKey); (2) done-action 403: POST action \"done\" is refused HTTP 403 by the route's FORBIDDEN_ACTIONS before the engine is shelled (review->done belongs ONLY to the QC auto-scorer >= 8.5; probe body uses an explicit <guard-probe-no-live-subject> placeholder that can never record a real decision); (3) workspace resolution: GET /api/workspaces carries the seeded \"anthology\" slug (lowercase-exact) and GET /api/workspaces/{slug} resolves it by slug (live /workspace/anthology, never a dead link); (4) home-screen tile: GET /api/engine-db reports anthology DB present (true exactly) + the workspace slug — the two fetches src/app/page.tsx + selectProducerCardSlugs gate the producer card on. Fail-closed on every seam; token resolved BY LABEL (MC_API_TOKEN or board.api_token_label) SET/NOT SET only, never printed; house browser UA on every request (Cloudflare 1010); --self-test with golden + attack fixtures over the real predicates; stdlib only",
+   "exit_codes": "0 all four checks PASS; 1 unexpected error; 2 bad invocation (unknown flag / missing argument / bad --url); 3 credential label NOT SET or Command Center unreachable (held, re-runnable); 4 one or more checks FAIL (drift/alarm path)"
+  },
+  {
+   "n": 49,
+   "script": "push_snapshot_to_subaccounts.py",
+   "authored_by": "NEW-3",
+   "purpose": "MASTER-SPEC NEW-3 batch push: push the APPROVED template snapshot (contract snapshot_version or --snapshot-id) to EVERY --target location, apply per-client custom-VALUE overrides (contract location_custom_values keys; hook secret BY LABEL, never printed), emit ONE per-client provision report. The standing cross-agency agency->subaccount auto-push rejection (config/anthology-snapshot-contract.json rejected_mechanisms; qc-snapshot-contract.sh asserts it stands) is ENFORCED here, not described: --tenancy cross_agency or auto with a non-template location id STOPS exit 2 AF-AE-SNAP-PUSH-CROSS-AGENCY-REJECTED BEFORE any network call; only the operator's own template location (source_template_location.template_location_id) or an explicit --tenancy same_agency may push (PUT /locations/{id} snapshot.override + snapshot-status poll + read-back BY KEY + idempotent custom-value fill), mirroring provision_snapshot_import.py's per-location law per target. One failing target never cancels the batch; the aggregate exit is the worst per-target result.",
+   "exit_codes": "0 verified success (every target verified; idempotent no-op / dry run counts as pass); 1 unexpected error; 2 STOP (usage / tenancy cross-agency REJECTED / missing credential or snapshot id / push refused by scope or validation / malformed target / overrides refusal); 3 HELD (edge/transport, status not completed); 5 read-back mismatch (a contract key absent from the present fields)"
+  },
+  {
+   "n": 50,
+   "script": "copy_qc_workflows.py",
+   "authored_by": "NEW-6",
+   "purpose": "COPY-COMPLIANCE QC GATE over the Convert and Flow release-notification workflow exports (MASTER-SPEC NEW-6; contract workflows.copy_law + workflows.release_notifications): five fail-closed checks per workflow with EXACT violation locations (workflow -> node id/name/type -> parameter path -> matched text) — (a) editors never AI/ghostwriter (word-boundary AI + ghostwriter shapes in client-facing text AND node names, enforcement-context excluded), (b) zero U+2014 em-dashes, (c) email AND SMS actions present for every client-facing workflow (trigger-tag or name identified; structural n8n/GHL node-type + action-word sensors so a renamed export cannot evade), (d) stage-appropriate links (email link merge tags {{ contact.anthology_* }} resolved from field-map deliverable_fields via the contract rows, plus a URL/merge reference presence check), (e) per-stage copy invariants (producer-name merge {{ custom_values.producer }}, the standing instruction text, and the workflow's trigger tag byte-equal to its contract row). Subcommands check (files or --directory) / list / list-live / plan / self-test; self-test = golden + attack fixtures (attack fails EVERY client-facing check with exact codes), malformed export fails closed (exit 2, never a silent skip), non-client-facing workflows are exempt from the channel/link/stage checks. Optional --list-live reads the location's workflow names via the PROVEN internal rail (backend.leadconnectorhq.com /workflow/{loc}/list) with the Firebase refresh token resolved BY LABEL (SET/NOT-SET, never printed) and the CAF_BROWSER_UA on every request. Exit codes: 0 all PASS (including an empty set); 1 unexpected; 2 validation/usage/malformed export/sources unreadable; 3 HELD (live list: credential NOT SET or rail unreachable); 4 AF-AE-COPY-* violation detected.",
+   "exit_codes": "0 all audited workflows PASS; 1 unexpected error; 2 validation / usage / malformed export / missing field-map or contract (fail-closed, never blind); 3 HELD (live list only: Firebase refresh token NOT SET or internal rail unreachable); 4 enforced violation detected (AF-AE-COPY-EM-DASH / AF-AE-COPY-AI-WORD / AF-AE-COPY-NO-EMAIL / AF-AE-COPY-NO-SMS / AF-AE-COPY-STAGE-LINKS / AF-AE-COPY-STAGE-TOKENS / AF-AE-COPY-MALFORMED)"
+  },
+  {
+   "n": 51,
+   "script": "canary_e2e_test.py",
+   "authored_by": "NEW-4",
+   "purpose": "MASTER-SPEC NEW-4: ONE complete S0..S9 canary with 2 SYNTHETIC co-authors on the operator box, per-stage verified. S0 intake webhook fire with a LIVE Cloudflare Tunnel (verify-webhook-t1-t9.sh T-battery; --public-url, never invented) plus dedup no-op, tenant/stage/malformed capture with typed reasons, board card fail-soft; S1 avatar + producer board approve + §3 release tag; S2 tone 3,000-word floor (Tier 1) + gate; S3 titles + TITLE LOCK one-way + participant TOKEN-door pick (mint->verify->decide, replayed token refused); S4 blurb+outline both gates both doors; S5 chapter full Gate B (Tier 1 band 2,000-3,500 measured, JUDGE rubric, strike-gate accounting), chapter gate EXACTLY TWO actions, freeze; S6 rewrite budget 2 + rewrite1/2 preservation slots + re-entry; S7 cover SET of 4 named styles + portrait guard + choice field + apply-pick edge; S8 Doc+PDF with 14pt floor on the RENDERED PDF (guard-font-floor), completion notice (nudge_send dry-run), signed process certificate, card to review never done; S9 every PRD 3.11 guard (own-producer, typed confirm-name, floor 2, one-way), order set/adjust/confirm (U9 confirm_order flags the runner for transitions + Grand Finale), compile with frozen-chapter sha256 byte-identity (tampered sha refused), assembly Gate B, s9_producer sign-off. Cross-cutting: email+SMS release workflows (every §3 slug -> snapshot-contract release_notifications send-email+send-sms), Doc pull-back byte-diff (pullback-revalidate + qc-tier1 --mode pullback advisory; live NEW-5 prover driven when Drive creds present else DEFERRED), QC scorer >=8.5 owns review->done (engine never-done + CC qc-scorer.ts QC_PASS_THRESHOLD 8.5 when the CC repo is present), board round-trip both doors, every gate fails closed. Output CANARY-REPORT.json per-stage pass/fail + evidence; DEFERRED never false-passes; --require-live holds on un-executed live stages. Credentials BY LABEL SET/NOT SET only, never printed; browser UA not needed (the canary itself makes zero network calls; every probe shells a sibling that owns its transport); stdlib only",
+   "exit_codes": "0 every stage observed PASS (or cleanly DEFERRED without --require-live); 1 unexpected error; 2 bad invocation / a stage that ran FAILED (report carries the failing stage + evidence; never a false pass); 3 --require-live with un-executed live stages (held); 4 --self-test failed"
+  }
+ ],
+ "autofails": [
+  {
+   "code": "AF-AE-SLOT-UNRESOLVED",
+   "stage": "any authoring stage",
+   "level": "compose",
+   "trigger": "a legacy Make.com/n8n prompt variable slot did not resolve to a canonical field name (SPEC 6.2); the composer refuses any unresolved slot (fail-closed)",
+   "enforced_by": "stage_sN runner + the prompt composer",
+   "py_symbol": "compose"
+  },
+  {
+   "code": "AF-AE-ANTHROPIC",
+   "stage": "any",
+   "level": "run",
+   "trigger": "a resolved model id or any shipped file carries an Anthropic-family identifier shape",
+   "enforced_by": "model_router.py + guard-no-anthropic-runtime.py + preflight.sh --check",
+   "py_symbol": "deny"
+  },
+  {
+   "code": "AF-AE-PROMPT-PIN",
+   "stage": "any authoring stage",
+   "level": "assets",
+   "trigger": "a baked prompt sha256 != its pin, a truncation boundary, or a surviving [UNCHANGED] placeholder",
+   "enforced_by": "guard-prompt-pins.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-FONT-FLOOR",
+   "stage": "S8/S9",
+   "level": "delivery",
+   "trigger": "a RENDERED PDF carries a glyph below 14 point",
+   "enforced_by": "guard-font-floor.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-TENANT-MISMATCH",
+   "stage": "S0 / delivery",
+   "level": "tenant",
+   "trigger": "the payload location does not equal the anthology registry Convert and Flow Location binding",
+   "enforced_by": "intake_router.py / caf_delivery.py",
+   "py_symbol": "tenant_check"
+  },
+  {
+   "code": "AF-AE-UNROUTABLE",
+   "stage": "S0",
+   "level": "intake",
+   "trigger": "missing or invalid hidden ids (contact_id / anthology_id / stage); captured to Exceptions, never dropped or guessed",
+   "enforced_by": "intake_router.py",
+   "py_symbol": "route"
+  },
+  {
+   "code": "AF-AE-STAGE-MISMATCH",
+   "stage": "S0",
+   "level": "intake",
+   "trigger": "a stage form arrives for a participant whose cursor does not match; captured to Exceptions (stage_mismatch)",
+   "enforced_by": "intake_router.py",
+   "py_symbol": "route"
+  },
+  {
+   "code": "AF-AE-ILLEGAL-TRANSITION",
+   "stage": "any",
+   "level": "ledger",
+   "trigger": "a transition not permitted by the legal-transition matrix (SPEC 7.3); exits nonzero and changes nothing",
+   "enforced_by": "anthology_state.py",
+   "py_symbol": "advance_stage"
+  },
+  {
+   "code": "AF-AE-READBACK-MISMATCH",
+   "stage": "S8",
+   "level": "delivery",
+   "trigger": "a Convert and Flow field write or a Drive write does not read back byte-for-byte in the same job",
+   "enforced_by": "caf_delivery.py / drive_adapter.py",
+   "py_symbol": "write_and_verify"
+  },
+  {
+   "code": "AF-AE-BROKER-ACTIONS-MISSING",
+   "stage": "provisioning STEP 5 (Drive)",
+   "level": "delivery",
+   "trigger": "in n8n-broker mode the deployed Drive-broker workflow does not implement every REQUIRED per-Doc/tree action (create_book_tree, create_participant_tree, create_doc, upload_pdf, share_doc_edit, pull_doc_text); provisioning HOLDs by name rather than dead-ending mid-run at S7/S8",
+   "enforced_by": "drive_adapter.py broker-preflight + provision-anthology-client.sh step5",
+   "py_symbol": "broker_preflight"
+  },
+  {
+   "code": "AF-AE-TITLE-LOCK",
+   "stage": "S3..S9",
+   "level": "content",
+   "trigger": "the locked title or subtitle is not carried byte-exact through outline, chapter, every rewrite, and the cover prompt",
+   "enforced_by": "prove_aw_chapter.py (Skill 54) + qc-tier1-anthology.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-CHAP-BAND",
+   "stage": "S5/S6",
+   "level": "content",
+   "trigger": "the chapter measured stripped words fall outside 2,000 to 3,500 (self-report ignored)",
+   "enforced_by": "prove_aw_chapter.py (Skill 54)",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-REWRITE-BUDGET",
+   "stage": "S6",
+   "level": "run",
+   "trigger": "a rewrite beyond budget 2; a silent third rewrite is an illegal transition",
+   "enforced_by": "qc-strike-gate.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-QC-STRIKEOUT",
+   "stage": "any QC'd deliverable",
+   "level": "run",
+   "trigger": "three internal QC attempts exhausted; HOLD plus one deduped founder alert carrying the failing checks and best draft; standards never relaxed",
+   "enforced_by": "qc-strike-gate.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-JUDGE-INDEPENDENCE",
+   "stage": "Gate B",
+   "level": "qc",
+   "trigger": "the JUDGE tier or persona equals the tier or persona that drafted the piece",
+   "enforced_by": "judge_harness.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-CREDIT-HOLD",
+   "stage": "any billable call",
+   "level": "run",
+   "trigger": "provider insufficient-credits or chain exhaustion; durable HOLD plus ONE deduped founder Telegram alert through the gateway; resume from the exact cursor",
+   "enforced_by": "model_router.py + hold_queue.py + alert-dedup.py",
+   "py_symbol": "hold"
+  },
+  {
+   "code": "AF-AE-S9-GUARD",
+   "stage": "S9",
+   "level": "assembly",
+   "trigger": "a ready-to-assemble guard failed: non-producer auth, an unapproved and non-excluded participant, below-minimum frozen approved chapters, or a --confirm-name mismatch",
+   "enforced_by": "anthology_state.py",
+   "py_symbol": "record_approval"
+  },
+  {
+   "code": "AF-AE-S9-FROZEN",
+   "stage": "S9",
+   "level": "assembly",
+   "trigger": "a manuscript chapter is not byte-identical (sha256) to its frozen approved artifact",
+   "enforced_by": "anthology_state.py / stage_s9_assembly.py",
+   "py_symbol": "compile"
+  },
+  {
+   "code": "AF-AE-FIELD-MISSING",
+   "stage": "provisioning",
+   "level": "setup",
+   "trigger": "a required PRD Section 6 custom field is absent at provisioning; STOP setup with an operator surface, never a silent runtime create",
+   "enforced_by": "provision-anthology-client.sh / caf_delivery.py",
+   "py_symbol": "verify_fields"
+  },
+  {
+   "code": "AF-AE-PIT-SCOPE",
+   "stage": "provisioning",
+   "level": "setup",
+   "trigger": "the Convert and Flow private integration token cannot READ pipelines/opportunities on the location (probed by a read pre-flight -- GoHighLevel exposes no pipeline-create endpoint, so this is never a create-feasibility probe); STOP setup with an operator surface, never a silent fallback",
+   "enforced_by": "provision-anthology-client.sh",
+   "py_symbol": "probe_write_scope"
+  },
+  {
+   "code": "AF-AE-PIPELINE-UI-CREATE",
+   "stage": "provisioning",
+   "level": "setup",
+   "trigger": "the standard Anthology pipeline is absent on the location, GoHighLevel / Convert and Flow exposes NO public v2 API to create a pipeline (the UI is the only create surface), and the ONE Skill 6 browser-control creation attempt (06-ghl-install-pages/tools/ghl_pipeline_builder.py, exact-name mode, verified ONLY by an API re-read -- the builder's own claim is never trusted) failed or was unavailable; STOP setup instructing a one-time UI creation or an explicit pre-existing bind (bind --pipeline-id), never a call to a nonexistent create endpoint and never a faked success",
+   "enforced_by": "provision-anthology-client.sh / anthology_registry.py",
+   "py_symbol": "provision_pipeline"
+  },
+  {
+   "code": "AF-AE-EXPORT-LEAK",
+   "stage": "merge gate",
+   "level": "repo",
+   "trigger": "any of the nine JSON exports content or a key shape appears in the repo",
+   "enforced_by": "scripts/scan-no-json-exports.sh (W2.8 merge-gate export scan; W0.3 originated)",
+   "py_symbol": "scan"
+  },
+  {
+   "code": "AF-AE-CRON-DRIFT",
+   "stage": "cron",
+   "level": "run",
+   "trigger": "more than the one daily tick, or any heartbeat entry; churn leaving a recurring job",
+   "enforced_by": "guard-cron-inventory.py",
+   "py_symbol": "evaluate"
+  },
+  {
+   "code": "AF-AE-COMMINGLE",
+   "stage": "credential",
+   "level": "isolation",
+   "trigger": "an operator, shared, or other-client credential fingerprint is detected in place of the named client's own",
+   "enforced_by": "caf_credential_gate.py",
+   "py_symbol": "fingerprint"
+  },
+  {
+   "code": "AF-AE-TOKEN-REFUSED",
+   "stage": "gates",
+   "level": "auth",
+   "trigger": "a foreign, expired, or replayed participant token",
+   "enforced_by": "gate_engine.py",
+   "py_symbol": "verify_token"
+  },
+  {
+   "code": "AF-AE-BYPASS",
+   "stage": "entry",
+   "level": "run-dir",
+   "trigger": "a hand-rolled ungoverned external sender (n8n webhook, Airtable call, literal Authorization key header) is present in a run directory",
+   "enforced_by": "anthology-engine-entry.sh",
+   "py_symbol": "bypass_scan"
+  },
+  {
+   "code": "AF-AE-HASH-PIN",
+   "stage": "entry",
+   "level": "enforcement",
+   "trigger": "the enforcement-set content hash does not match the pinned head (ENGINE-PIN.sha256, when present)",
+   "enforced_by": "anthology-engine-entry.sh",
+   "py_symbol": "version_hash_pin"
+  },
+  {
+   "code": "AF-AE-UNRESOLVED-MODELMAP",
+   "stage": "entry",
+   "level": "run-dir",
+   "trigger": "a resolved run-dir model-map.json still carries a <CLIENT_*> placeholder (the fleet installer has not resolved this box)",
+   "enforced_by": "preflight.sh --check / anthology-engine-entry.sh",
+   "py_symbol": "check"
+  },
+  {
+   "code": "AE_DEPS_MISSING",
+   "stage": "entry",
+   "level": "deps",
+   "trigger": "python3 is absent",
+   "enforced_by": "anthology-engine-entry.sh",
+   "py_symbol": "deps_check"
+  },
+  {
+   "code": "AF-AE-SNAPSHOT-KEY-MISMATCH",
+   "stage": "snapshot cut / import verify",
+   "level": "snapshot",
+   "trigger": "a live template-location fieldKey does not BYTE-EQUAL its intended config/field-map.json key, the 28-key set differs (extra/mutated keys), a location custom value holds a real-looking value (never-a-real-token), or a cut produced an empty fixture",
+   "enforced_by": "snapshot_cut.py (NEW-1)",
+   "py_symbol": "extract_custom_fields"
+  },
+  {
+   "code": "AF-AE-SNAPSHOT-EMPTY",
+   "stage": "snapshot cut",
+   "level": "snapshot",
+   "trigger": "the cut fixture is structurally empty (all section counts zero) — an empty template location must NEVER produce an empty fixture",
+   "enforced_by": "snapshot_cut.py (NEW-1)",
+   "py_symbol": "refuse_empty"
+  }
+ ],
+ "personas": {
+  "$note": "Mirror of PRD Section 13, stamped into the fleet persona-matching config at W4.2 so the client's workforce self-invokes the right operator per stage. Personas live inside the pinned prompts, never in runtime config.",
+  "S0": {
+   "role": "anthology-producer-orchestrator",
+   "persona": "none (deterministic code)"
+  },
+  "S1": {
+   "role": "anthology-chapter-author",
+   "persona": "the Avatar Profiler (Skill 52, aa-01..03)"
+  },
+  "S2": {
+   "role": "anthology-chapter-author",
+   "persona": "the Tone Analysts and Blender (tone core 04..08)"
+  },
+  "S3": {
+   "role": "anthology-chapter-author",
+   "persona": "the Senior Title Strategist (aw-06)"
+  },
+  "S4": {
+   "role": "anthology-chapter-author",
+   "persona": "the Blurb Copywriter (aw-07) and the Outline Architect (aw-08)"
+  },
+  "S5": {
+   "role": "anthology-chapter-author",
+   "persona": "the Anthology Chapter Author (aw-09)"
+  },
+  "S6": {
+   "role": "anthology-chapter-author",
+   "persona": "Dr. Margaret Thornfield, editorial revisionist (aw-10)"
+  },
+  "S7": {
+   "role": "anthology-producer-orchestrator",
+   "persona": "the Senior Book-Cover Design Specialist (aw-11)"
+  },
+  "S8": {
+   "role": "anthology-producer-orchestrator",
+   "persona": "none (deterministic rendering and delivery)"
+  },
+  "gates_nudges_readiness": {
+   "role": "anthology-approvals-steward",
+   "persona": "none (gate logic; sanctioned templates only)"
+  },
+  "S9": {
+   "role": "anthology-producer-orchestrator",
+   "persona": "the Anthology Editor voice (ae-01..04), subordinate to producer inputs"
+  },
+  "content_qc": {
+   "role": "anthology-approvals-steward",
+   "persona": "the independent Editorial Judge on the JUDGE tier"
+  }
+ },
+ "sibling_boundaries": {
+  "skill_53_book_writer": "NOT deprecated, NOT touched: the single-author twelve-chapter product. Executing the stale 'deprecate BookWriter' directive is a scored build failure.",
+  "skill_54_anthology_writer": "PROMOTED to the authoring core and extended by exactly three bounded extensions (avatar handoff, pinned-prompt completion, intake fields). Building a duplicate anthology skill is a build failure.",
+  "tone_core": "shared-utils/tone-writing-core reused byte-identical; forking it is a build failure (verify_tone_core_sync.py green)."
+ }
 }

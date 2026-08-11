@@ -47,13 +47,18 @@ fi
 command -v python3 >/dev/null 2>&1 || { echo "verify: FATAL python3 required" >&2; exit 4; }
 
 SELF_DIR="$SELF_DIR" python3 - <<'PY'
-import io, json, os, re, subprocess, sys
+import hashlib, io, json, os, re, subprocess, sys
 
 root = os.environ["SELF_DIR"]
 def p(*a): return os.path.join(root, *a)
 fails = []
 def need(cond, msg):
     if not cond: fails.append(msg)
+
+# 'man' is resolved at module scope so a malformed ENGINE-MANIFEST can NEVER
+# become a NameError traceback (rc=1): every later use goes through the
+# isinstance guard, and the failure is reported as a clean DRIFT issue instead.
+man = None
 
 # --- house layout presence ---
 for rel in ["SKILL.md", "ENGINE-MANIFEST.json", "INSTRUCTIONS.md", "HOW-TO-USE.md",
@@ -93,11 +98,17 @@ except Exception as exc:
     fails.append("version check error: %s" % exc)
 
 # --- ENGINE-MANIFEST parses with S0..S9 ---
+# Try to resolve 'man' here so the inventory and DRIFT recompute sections can
+# trust it below; when parsing fails, every consumer must isinstance-guard.
 try:
     man = json.load(io.open(p("ENGINE-MANIFEST.json"), encoding="utf-8"))
-    stage_ids = {s.get("id") for s in man.get("stages", [])}
-    for i in range(10):
-        need(("S%d" % i) in stage_ids, "ENGINE-MANIFEST missing stage S%d" % i)
+    if not isinstance(man, dict):
+        fails.append("ENGINE-MANIFEST does not parse to a JSON object")
+        man = None
+    else:
+        stage_ids = {s.get("id") for s in man.get("stages", [])}
+        for i in range(10):
+            need(("S%d" % i) in stage_ids, "ENGINE-MANIFEST missing stage S%d" % i)
 except Exception as exc:
     fails.append("ENGINE-MANIFEST parse error: %s" % exc)
 
@@ -210,7 +221,7 @@ if os.path.isdir(scripts_dir):
             shipped_scripts.add(fn)
 
 inventory_script_names = set()
-if isinstance(man.get("script_inventory"), list):
+if isinstance(man, dict) and isinstance(man.get("script_inventory"), list):
     for row in man["script_inventory"]:
         raw = (row.get("script") or "")
         raw = re.sub(r'\s*\([^)]+\)', '', raw)
@@ -219,30 +230,73 @@ if isinstance(man.get("script_inventory"), list):
             if part:
                 inventory_script_names.add(part)
 
-# Only cross-check names that resolve to scripts/ basenames
-shipped_missing_from_inventory = shipped_scripts - inventory_script_names
-inventory_missing_from_disk = {n for n in inventory_script_names
-                               if n not in shipped_scripts and n.endswith('.py')}
+# Only cross-check names that resolve to scripts/ basenames. Skipped entirely
+# when the manifest did not parse (man is None): the parse error is already a
+# DRIFT issue, and an empty inventory would flag every shipped script as
+# unaccounted -- noise, not signal.
+if isinstance(man, dict):
+    shipped_missing_from_inventory = shipped_scripts - inventory_script_names
+    inventory_missing_from_disk = {n for n in inventory_script_names
+                                   if n not in shipped_scripts and n.endswith('.py')}
 
-if shipped_missing_from_inventory:
-    for fn in sorted(shipped_missing_from_inventory):
-        fails.append("script shipped but NOT in ENGINE-MANIFEST script_inventory: scripts/%s" % fn)
+    if shipped_missing_from_inventory:
+        for fn in sorted(shipped_missing_from_inventory):
+            fails.append("script shipped but NOT in ENGINE-MANIFEST script_inventory: scripts/%s" % fn)
 
-if inventory_missing_from_disk:
-    for fn in sorted(inventory_missing_from_disk):
-        fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
+    if inventory_missing_from_disk:
+        for fn in sorted(inventory_missing_from_disk):
+            fails.append("script_inventory row references a .py script NOT on disk: scripts/%s" % fn)
 
-    # --- no Google API key literal in any owned text file ---
-    _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
-    for rel in owned:
-        fp = p(rel)
-        if not os.path.isfile(fp): continue
-        try:
-            txt = io.open(fp, encoding="utf-8", errors="replace").read()
-        except Exception:
-            continue
-        if _google_api_re.search(txt):
-            fails.append("Google API key literal found in owned file: %s" % rel)
+        # --- no Google API key literal in any owned text file ---
+        _google_api_re = re.compile(r'AIza[0-9A-Za-z_-]{35}')
+        for rel in owned:
+            fp = p(rel)
+            if not os.path.isfile(fp): continue
+            try:
+                txt = io.open(fp, encoding="utf-8", errors="replace").read()
+            except Exception:
+                continue
+            if _google_api_re.search(txt):
+                fails.append("Google API key literal found in owned file: %s" % rel)
+
+# --- enforcement-set hash vs ENGINE-PIN.sha256 (DRIFT recompute) ---
+# The entry's GATE 3 (AF-AE-HASH-PIN) enforces the pin at dispatch time; this
+# READ-ONLY recompute mirrors it so a drift is caught by verify.sh itself as a
+# clean DRIFT (exit 4) -- the same six enforcement candidates, in the same
+# canonical order, as the entry gate and the stamp-pin subcommand.
+enforce_candidates = [
+    p("anthology-engine-entry.sh"),
+    p("ENGINE-MANIFEST.json"),
+    p("scripts", "guard-prompt-pins.py"),
+    p("scripts", "guard-no-anthropic-runtime.py"),
+    p("scripts", "guard-font-floor.py"),
+    p("scripts", "guard-cron-inventory.py"),
+]
+present = [f for f in enforce_candidates if os.path.isfile(f)]
+pin_path = p("ENGINE-PIN.sha256")
+if os.path.isfile(pin_path):
+    try:
+        expected = io.open(pin_path, encoding="utf-8").read().strip()
+    except Exception as exc:
+        fails.append("ENGINE-PIN.sha256 unreadable: %s" % exc)
+        expected = None
+    if expected:
+        if len(present) != len(enforce_candidates):
+            fails.append("enforcement-set DRIFT: %d of %d candidates present (missing: %s)" % (
+                len(present), len(enforce_candidates),
+                ", ".join(os.path.relpath(f, root) for f in enforce_candidates if f not in present)))
+        else:
+            try:
+                h = hashlib.sha256()
+                for f in enforce_candidates:
+                    with io.open(f, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(65536), b""):
+                            h.update(chunk)
+                computed = h.hexdigest()
+                if computed != expected:
+                    fails.append("enforcement-set DRIFT: recomputed %s != pinned %s" % (computed, expected))
+            except Exception as exc:
+                fails.append("enforcement-set hash recompute failed: %s" % exc)
 
 
 # --- clean-env secrets-source regression guard (2026-08-10) ---
