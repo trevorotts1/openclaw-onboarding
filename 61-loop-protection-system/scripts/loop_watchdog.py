@@ -61,7 +61,7 @@ from loop_ledger import Ledger, openclaw_root  # noqa: E402
 
 
 def run_detectors(evidence, thresholds, signatures):
-    """Run D1-D5 over injected/collected evidence. Returns a flat findings list."""
+    """Run D1-D6 over injected/collected evidence. Returns a flat findings list."""
     findings = []
     findings += D.d1_restart_velocity(evidence.get("units", []), thresholds,
                                       warn_streaks=evidence.get("warn_streaks", {}))
@@ -69,6 +69,8 @@ def run_detectors(evidence, thresholds, signatures):
     findings += D.d3_identical_signature(evidence.get("runs", []), thresholds)
     findings += D.d4_timer_refire(evidence.get("crons", []), evidence.get("wedge", {}), thresholds)
     findings += D.d5_transcript_poison(evidence.get("sessions", []), thresholds)
+    findings += D.d6_futile_retry_burst(evidence.get("bursts", []), thresholds,
+                                        signatures)
     return findings
 
 
@@ -960,6 +962,127 @@ def collect_sessions(files=None, thresholds=None, signatures=None):
     return out
 
 
+def _tool_result_of(row):
+    """(toolName, ts, is_error, payload_text) for a tool-result record, else None.
+
+    `payload_text` is handed back ONLY so the caller can COUNT fail-closed markers
+    in it. It is never stored, never returned in a burst measurement, and never
+    reaches a finding - see collect_bursts()."""
+    if row.get("type") != "message":
+        return None
+    m = row.get("message")
+    if not isinstance(m, dict) or m.get("role") != "toolResult":
+        return None
+    name = m.get("toolName")
+    if not isinstance(name, str) or not name:
+        return None
+    ts = _parse_ts(m.get("timestamp")) or _parse_ts(row.get("timestamp")) \
+        or _parse_ts(row.get("ts"))
+    err = m.get("isError") is True
+    d = m.get("details")
+    if not err and isinstance(d, dict):
+        err = str(d.get("status") or "").lower() in ("error", "failed", "blocked", "denied")
+    content = m.get("content")
+    text = ""
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        parts = []
+        for b in content:
+            if isinstance(b, str):
+                parts.append(b)
+            elif isinstance(b, dict):
+                for k in ("text", "output", "content"):
+                    v = b.get(k)
+                    if isinstance(v, str):
+                        parts.append(v)
+        text = "\n".join(parts)
+    elif isinstance(content, dict):
+        for k in ("text", "output"):
+            v = content.get(k)
+            if isinstance(v, str):
+                text = v
+                break
+    return (name, ts, err, text)
+
+
+def collect_bursts(files=None, thresholds=None, signatures=None):
+    """D6 evidence: per (transcript, tool), the heaviest sliding window of calls.
+
+    Reads the SAME bounded transcript tails D5 already reads, so D6 adds a pass
+    over data the tick is holding anyway rather than a new probe surface.
+
+    For each tool name it slides a `window_seconds` window over that tool's call
+    timestamps and keeps the window with the most calls, recording alongside it how
+    many of those calls FAILED at the tool layer and how many carried a FAIL-CLOSED
+    dependency marker in their result payload.
+
+    ⛔ ONLY COUNTS LEAVE THIS FUNCTION. Tool arguments are never read at all - that
+    is the whole design, since arguments are exactly what a rewording agent varies
+    to defeat every other guard. The result payload is scanned for marker presence
+    and then DISCARDED: no matched text, no surrounding payload, no value of any
+    kind enters a burst measurement, so a finding cannot leak a secret that
+    happened to sit next to an auth error.
+
+    Records with no parseable timestamp are counted toward the tool's total but
+    cannot be placed in a window; a transcript where NO record has a timestamp
+    therefore yields no burst rather than a false one. A probe miss is DATA."""
+    th = thresholds or C.load_skill_config("thresholds.json")
+    t = th["d6_futile_retry_burst"]
+    d5t = th["d5_transcript_poison"]
+    sig = signatures if signatures is not None else C.load_signatures()
+    fcm = sig.get("fail_closed_markers") if isinstance(sig, dict) else {}
+    markers = [str(x).lower() for x in ((fcm or {}).get("markers") or [])]
+    if files is None:
+        files = _session_files(max_files=int(d5t["max_session_files"]))
+    window = float(t["window_seconds"])
+    out = []
+    for entry in files:
+        path = entry[0] if isinstance(entry, (tuple, list)) else entry
+        per = {}
+        for row in _iter_jsonl_tail(path, int(d5t["tail_bytes"])):
+            if not isinstance(row, dict):
+                continue
+            hit = _tool_result_of(row)
+            if hit is None:
+                continue
+            name, ts, err, text = hit
+            if ts is None:
+                continue
+            low = text.lower() if text else ""
+            failclosed = bool(low) and any(mk in low for mk in markers)
+            per.setdefault(name, []).append((ts.timestamp(), err, failclosed))
+        for name, seq in per.items():
+            seq.sort()
+            best = None
+            i = 0
+            for j in range(len(seq)):
+                while seq[j][0] - seq[i][0] > window:
+                    i += 1
+                calls = j - i + 1
+                if best is None or calls > best[0]:
+                    errs = 0
+                    fcs = 0
+                    for k in range(i, j + 1):
+                        if seq[k][1]:
+                            errs += 1
+                        if seq[k][2]:
+                            fcs += 1
+                    best = (calls, errs, fcs, seq[j][0] - seq[i][0])
+            if not best:
+                continue
+            # Nothing futile in the heaviest window -> contribute no measurement at
+            # all. The detector's SILENCE RULE would drop it anyway; dropping it
+            # here keeps the evidence dict small on a busy box.
+            if best[1] <= 0 and best[2] <= 0:
+                continue
+            out.append({"unit": "session:%s" % os.path.basename(path),
+                        "path": path, "tool": name, "calls": best[0],
+                        "errors": best[1], "failclosed": best[2],
+                        "span_seconds": round(best[3], 1)})
+    return out
+
+
 def collect_evidence(led=None):
     """Assemble the evidence dict from the box, best-effort. Detectors run over
     whatever is available; a missing source contributes no findings, never an
@@ -970,16 +1093,19 @@ def collect_evidence(led=None):
     D5 (transcript poison) attaches via collect_sessions() and is the one collector
     here that reads a STOCK rather than a flow, so it deliberately does NOT use the
     offset/slice pattern: re-measuring the same tail every tick is the point - the
-    poison persists until something clears it. A completion-rate detector remains
-    unbuilt (windows already carry per-hour `completions` for it); the D6 attach
-    point (a collect_sends() over the sendguard ledger) is likewise not built."""
+    poison persists until something clears it. D6 (semantic retry burst) attaches
+    via collect_bursts() over those SAME bounded tails, so it costs one extra pass
+    rather than a new probe surface. A completion-rate detector remains unbuilt
+    (windows already carry per-hour `completions` for it); a send-guard detector
+    over the sendguard ledger (a future D7) is likewise not built."""
     rows, slice_stats = _read_new_trajectory_rows(led)
     return {"units": collect_units(led),
             "windows": collect_windows(),
             "runs": collect_runs(rows),
             "crons": collect_crons(led),
             "wedge": collect_wedge(led, slice_stats),
-            "sessions": collect_sessions()}
+            "sessions": collect_sessions(),
+            "bursts": collect_bursts()}
 
 
 def self_test():

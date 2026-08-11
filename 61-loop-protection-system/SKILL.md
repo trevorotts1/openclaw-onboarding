@@ -84,6 +84,35 @@ as Skill 60 signals S11-S15 (Open Decision T2) so the fleet keeps ONE vocabulary
 | D3 | **Repeated-identical-signature** | rolling hash over (outcome class + tool-call sequence + target) in the new-bytes-since-last-tick slice; a SUCCESSFUL turn hashes as outcome `OK` and counts at the higher `p1_repeat_success` ceiling | LP-A1/A3/A4, LP-D2 |
 | D4 | **Timer re-fire / wedge / orphan** | cron fire count vs declared cadence; healthy-probe-but-no-progress; orphan-listener pid vs supervisor on :18789; handoff-file age | LP-B2/B3/B5, LP-C1/C2 |
 | D5 | **Self-blocking run / transcript poison** | bounded TAIL of each session transcript: runtime tool-loop block records (matched structurally on `details.status=blocked` + `deniedReason=tool-loop`, never on prose), longest block burst, trailing-window block share, and compaction summaries that captured loop text | LP-A8, the session breaker |
+| D6 | **Futile retry burst (SEMANTIC repetition, ARGUMENT-BLIND)** | same bounded tails: per (transcript, tool), the heaviest sliding 60s window of calls, with how many FAILED and how many carried a fail-closed auth-class refusal in the result payload (counted, then discarded) | LP-A9 |
+
+### D6 is argument-blind on purpose — every other guard on the box is not
+
+D1-D5 and the runtime's own guards all share one assumption: **a loop repeats itself
+exactly.** The runtime keys on `toolName` + `sha256(params)`; this repo's always-armed
+runaway guard keys on `toolName` + `argsHash` + `resultHash`, stricter and therefore
+blinder; D3 hashes outcome class + tool sequence + target. An agent that REWORDS a
+failing intent defeats all four at once without trying to — and OpenClaw exposes no
+per-turn tool-call ceiling to fall back on.
+
+D6 never reads arguments at all. It asks the one question that survives rewording:
+*is this tool producing no progress, over and over?* Its primary face counts
+**fail-closed refusals in the result payload**, because in this class **the tool calls
+SUCCEED** — an `exec` running a curl against a refusing API exits 0 and is recorded
+`status: completed`, so there is no error for an error-keyed detector to find.
+
+**Volume is never the signal.** The obvious design — count same-tool calls in a window —
+was measured against the operator box's real 998-transcript corpus and REJECTED: that
+corpus contains a healthy burst of 460 `exec` calls in 48.2 seconds, and ~100 file/tool
+pairs at or above the incident's own 13-calls-per-60s. A count-only detector would fire
+on roughly a quarter of healthy sessions. D6 requires evidence of FUTILITY, and on that
+same corpus yields 11 findings across 998 transcripts (1.1%) — one of them landing on an
+archived transcript already named for the loop it recorded.
+
+**D6 is a watchdog, not a brake.** It runs on the 15-minute tick and reports after the
+fact. The live fix is doctrine **N40** in the fleet's canonical `AGENTS.md`: against a
+fail-closed dependency, at most 2 attempts, then ONE message stating what is blocked and
+what is needed — and never a narrated hunt in front of a client.
 
 ### D5 measures a STOCK, not a flow - that is the whole point
 

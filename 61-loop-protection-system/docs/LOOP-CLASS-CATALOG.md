@@ -18,6 +18,7 @@ department SOPs and this skill share one vocabulary. The machine-readable form i
 | LP-A6 | F3 | resume cron without light-context: huge input, zero tool calls | D2 | LF-5 set `lightContext:true` |
 | LP-A7 | F2 | dreaming / re-embed under the sanctioned interval; per-agent shared-corpus re-embed | D2 | pin interval >= floor; point at the single shared index |
 | LP-A8 | F15 | a run blocked by the runtime's own identical-call guard, over and over, inside one run; the transcript (and its compaction summaries) fill with the refusals | D5 | LF-10 archive the transcript + roll (move, never delete, never while live); LF-9 abort the run to free the lane (Tier 2); LF-11 prune poisoned checkpoints (Tier 2) |
+| LP-A9 | F16 | an agent REWORDS a failing intent: many calls to one tool in a short window, all with DIFFERENT arguments, against a dependency that is refusing on purpose (auth-class). Every args-keyed guard is silent by construction | D6 | doctrine N40 is the live fix (stop at 2, one message, never narrate); the watchdog reports after the fact — Tier 2, escalate, never auto-fix an auth failure |
 
 ## Family B - PROCESS / SUPERVISOR LOOPS (restart storms: churn + outage, no model call)
 
@@ -62,6 +63,31 @@ emergency recovery is `/new`.
 the loop verbatim, and those are re-injected on resume and SURVIVE a transcript
 roll. Rolling the transcript alone is not a complete fix (that is LF-11's job, and
 it is Tier 2 because the live gateway rewrites the session store).
+
+## A note on LP-A9: it is the only class every OTHER guard is blind to BY CONSTRUCTION
+
+LP-A8 is caught because the runtime refuses the call and leaves a structural record.
+LP-A9 leaves no such record, because **nothing refuses anything**. The agent varies
+its arguments, so the runtime's `(toolName, sha256(params))` guard never matches; the
+always-armed runaway guard needs `resultHash` to match too, so it is stricter and even
+blinder; and D3 hashes the target, which also varies. Three independent guards, one
+shared assumption — *a loop repeats itself exactly* — and an agent that rewords
+violates that assumption without trying to.
+
+It is also the only class where **the tool calls SUCCEED**. `exec` running a curl
+against a fail-closed API exits 0 and is recorded `status: completed`. There is no
+error to count. D6 therefore counts *fail-closed refusals in the result payload*
+(auth-class markers, counted and discarded — never stored), because the futility is
+in what the dependency said, not in what the tool did.
+
+**Recognising it by hand:** the client sees the agent narrating a search — "let me
+check the other endpoint", "trying the credentials file" — several messages in under a
+minute. The tell is not volume, it is *rewording*: each message describes a different
+route to the same blocked thing.
+
+**The fix is doctrine, not detection.** D6 runs on a 15-minute watchdog tick and reports
+after the loop is over. N40 (`AGENTS.md`) is what stops it while it is happening: at most
+2 attempts against a fail-closed dependency, then ONE message, and never a narrated hunt.
 
 ## Two deliberate non-classes (stated so nobody adds them)
 
