@@ -55,12 +55,50 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --skill-dir) SKILL_DIR="$2"; shift 2 ;;
     --json) JSON_MODE=1; shift ;;
+    --self-test) SELFTEST=1; shift ;;
     -h|--help) sed -n '1,60p' "$0"; exit 0 ;;
     *) echo "qc-snapshot-fixture: unknown arg: $1" >&2; exit 2 ;;
   esac
 done
 
 export SKILL_DIR JSON_MODE
+
+# ---- self-test: force-observe BOTH clean PASS and real DRIFT detection -------
+# The mutation proof runs the gate twice on a THROWAWAY copy of the skill dir:
+# (a) untouched -> must PASS; (b) a manifest stage name renamed -> must FAIL.
+# A gate that passes when the world drifts is dead; a gate that fails on a clean
+# tree is broken. Exit 0 = the gate discriminates; 1 = self-test FAILed.
+if [ "${SELFTEST:-0}" -eq 1 ]; then
+  SELFTEST_TMP="$(mktemp -d "${TMPDIR:-/tmp}/qc-snapshot-fixture-selftest.XXXXXX")"
+  trap 'rm -rf "$SELFTEST_TMP"' EXIT
+  cp -R "$SKILL_DIR" "$SELFTEST_TMP/skill"
+  # stage the tamper: S8 name renamed to a plausible-looking but wrong value.
+  python3 - "$SELFTEST_TMP/skill/ENGINE-MANIFEST.json" <<'PY'
+import json, sys
+p = sys.argv[1]
+man = json.load(open(p, encoding="utf-8"))
+for s in man["stages"]:
+    if s["id"] == "S8":
+        s["name"] = "PACKAGE AND SHIP"
+json.dump(man, open(p, "w", encoding="utf-8"), indent=2)
+PY
+  # 1) the TAMPERED tree must FAIL the gate (exit 1 = DRIFT) -- a gate that
+  #    passes when a manifest name drifts is dead. SKILL_DIR must come via
+  #    --skill-dir: the script derives it from its own path, never from env.
+  bash "$0" --skill-dir "$SELFTEST_TMP/skill" --json >/dev/null 2>&1
+  tamper_rc=$?
+  # 2) restore the pristine manifest (byte-exact copy of the real one) and the
+  #    untouched tree must PASS -- a gate that fails on a clean tree is broken.
+  cp "$SKILL_DIR/ENGINE-MANIFEST.json" "$SELFTEST_TMP/skill/ENGINE-MANIFEST.json"
+  bash "$0" --skill-dir "$SELFTEST_TMP/skill" --json >/dev/null 2>&1
+  clean_rc=$?
+  if [ "$clean_rc" -eq 0 ] && [ "$tamper_rc" -eq 1 ]; then
+    echo "qc-snapshot-fixture --self-test: PASS (untouched tree PASS, manifest-name tamper FAIL)"
+    exit 0
+  fi
+  echo "qc-snapshot-fixture --self-test: FAIL (clean_rc=$clean_rc tamper_rc=$tamper_rc; want 0 and 1)" >&2
+  exit 1
+fi
 
 python3 - <<'PYEOF'
 import json
@@ -136,19 +174,33 @@ need(f_stage_names == fm_stage_names,
      "pipeline stage names drift: fixture %s != field-map %s" % (f_stage_names, fm_stage_names))
 need(len(f_stage_names) == 9, "expected 9 pipeline stages, fixture has %d" % len(f_stage_names))
 
-# ---- ENGINE-MANIFEST stage set: S1..S8 names must be EXACTLY the fixture's
-#      pipeline stage names in order (S0 is the intake stage, not a pipeline stage).
+# ---- ENGINE-MANIFEST stage set: ids AND names must be exactly the canonical
+#      S0..S9 roster. The manifest's names are the ENGINE's long names (pinned
+#      byte-exact by the ten stage dispatchers' STAGE_NAME constants -- e.g.
+#      scripts/stage_s0_intake.py STAGE_NAME "INTAKE AND ROUTING"); the fixture
+#      names are the PIPELINE's short names. The two systems are joined by
+#      PIPELINE_TO_ENGINE_STAGE below, but the manifest's own names must still
+#      be pinned: before this assert, renaming a manifest stage name (or any
+#      part of it) passed the gate -- the id checks and the pipeline->engine
+#      forward map never touched the manifest's NAME field.
 man_stages = man.get("stages") or []
 need(len(man_stages) == 10, "ENGINE-MANIFEST must carry exactly S0..S9")
-man_names = []
+EXPECTED_MAN_STAGE_NAMES = {
+    "S0": "INTAKE AND ROUTING", "S1": "AVATAR", "S2": "TONE", "S3": "TITLE",
+    "S4": "BLURB AND OUTLINE", "S5": "CHAPTER", "S6": "CHAPTER REWRITE",
+    "S7": "COVER IMAGE", "S8": "PACKAGE AND DELIVER", "S9": "ANTHOLOGY ASSEMBLY",
+}
 if len(man_stages) == 10:
     for i, s in enumerate(man_stages):
-        need(s.get("id") == "S%d" % i, "ENGINE-MANIFEST stage %d id is %r, expected S%d" % (i, s.get("id"), i))
-        man_names.append((s.get("id"), s.get("name")))
-# The manifest S1..S8 short names must map byte-exact onto the fixture pipeline
-# stage names: Intake is the S0 intake stage (engine name "INTAKE AND ROUTING"),
-# and the pipeline stages Avatar/Tone/Title/Outline/Chapter/Cover/Delivered/Assembled
-# are the engine's S1..S8.
+        sid = "S%d" % i
+        need(s.get("id") == sid, "ENGINE-MANIFEST stage %d id is %r, expected S%d" % (i, s.get("id"), i))
+        need(s.get("name") == EXPECTED_MAN_STAGE_NAMES[sid],
+             "ENGINE-MANIFEST stage %s name %r != canonical name %r"
+             % (sid, s.get("name"), EXPECTED_MAN_STAGE_NAMES[sid]))
+# The pipeline stage names must map byte-exact onto the engine's stage ids:
+# Intake is the S0 intake stage (engine name "INTAKE AND ROUTING"), and the
+# pipeline stages Avatar/Tone/Title/Outline/Chapter/Cover/Delivered/Assembled
+# are the engine's S1..S8 (S6 CHAPTER REWRITE has no pipeline stage).
 PIPELINE_TO_ENGINE_STAGE = {
     "Intake": "S0", "Avatar": "S1", "Tone": "S2", "Title": "S3",
     "Outline": "S4", "Chapter": "S5", "Cover": "S7",
