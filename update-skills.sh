@@ -2145,6 +2145,370 @@ preclear_2026_7_1() {
 # <<< TRAP1-PRECLEAR-END
 
 # ----------------------------------------------------------
+# LEGACY `agents.list` PRE-UPGRADE GATE  (v22.0.8)
+# ----------------------------------------------------------
+# WHAT: refuses to roll — or, preferably, MIGRATES — a box whose openclaw.json
+# still carries the legacy `agents.list` array, before anything on this box
+# changes.
+#
+# THE LANDMINE. The 2026.7.2-beta line REJECTS that key outright:
+#
+#     Gateway failed to start: Invalid config at ~/.openclaw/openclaw.json:
+#     agents: Unrecognized key: "list"
+#
+# The gateway exits 78 (EX_CONFIG) about 0.4s after launch. The shipped
+# LaunchAgent sets KeepAlive with ThrottleInterval=10, so launchd respawns it
+# every ~11s, forever. One affected box booted 701 times in 10 days before the
+# crash-loop breaker latched channel auto-start OFF — at which point the box was
+# COMPLETELY DARK: nothing in, nothing out, and 24 queued deliveries permanently
+# lost.
+#
+# AND IT WAS SILENT. That LaunchAgent wrote StandardErrorPath = /dev/null, so
+# the startup exception was DISCARDED — it survived only in
+# /tmp/openclaw/openclaw-<date>.log. Ten days of investigation walked straight
+# past the actual error for exactly that reason. (The plist defect is fixed
+# separately, but a box provisioned before that fix still throws its startup
+# errors away, so this gate must never depend on reading a gateway log.)
+#
+# WHY A *PRE*-UPGRADE GATE AND NOT A HEALTH CHECK. The key is harmless on
+# 2026.7.1-2 — a box carrying it runs fine and looks completely healthy right up
+# to the moment a version change moves it onto the beta line. By the time a
+# health check could see the crash-loop, the client is already dark. The only
+# useful place to look is BEFORE the box moves. At least one live box still
+# carries this key today, safe only because of the line it happens to be on.
+#
+# WHY HERE (placement is load-bearing, same reason as heal_weekly_cron_updater
+# and reap_dead_skill_manifest above): every exit path below the UPDATE-PENDING
+# prompt and the version gate is an `exit 0`. A box carrying `agents.list` is
+# precisely an ALREADY-POISONED box, i.e. exactly the box that reaches those
+# early exits and would otherwise never be inspected. This call must stay above
+# both of them.
+#
+# MIGRATE, DON'T JUST REFUSE. A hard refusal leaves the box stale forever, so
+# the default is to migrate: back the config up, run `openclaw doctor --fix`
+# (the migration the gateway's own error text prescribes), then RE-VALIDATE.
+# Only a proven-good migration is allowed to proceed.
+#
+# THE POST-MIGRATION CHECK IS NOT OPTIONAL. `agents.list[id=main].workspace` is
+# a real workspace source on this box — oc_resolve_workspace_announced() above
+# reads it FIRST, ahead of agents.defaults.workspace. So a migration that drops
+# the array can silently move the resolved workspace, and CANON_DIR is the
+# symlink TARGET for the box's shared AGENTS.md/TOOLS.md/USER.md. A migration
+# that fixes the crash-loop but re-points those files has traded a loud outage
+# for a silent one. This gate therefore captures the resolved workspace BEFORE
+# migrating and requires it to be byte-identical afterwards; if it moved, the
+# migration is ROLLED BACK and the roll refuses.
+#
+# WHY WE NEVER HAND-DELETE THE KEY. The legacy array holds agent definitions.
+# Dropping it without knowing where a given box's definitions belong in the new
+# schema trades a loud crash-loop for silent agent loss. `openclaw doctor --fix`
+# is the only migration performed here; if it is unavailable or fails, this gate
+# REFUSES rather than improvising one.
+#
+# MODES (OPENCLAW_AGENTS_LIST_MODE, or the mode argument):
+#   migrate  (default) back up -> `openclaw doctor --fix` -> re-validate. On any
+#            failure, ROLL BACK and refuse.
+#   check    detect and report only. Never mutates anything. Refuses if present.
+# There is deliberately NO skip/proceed-anyway mode. A silent proceed is the one
+# outcome this gate exists to make impossible.
+#
+# RETURNS: 0 = clear (or successfully migrated), 3 = REFUSED (matching
+# preclear_2026_7_1's "needs a human" contract). main() maps a refusal to
+# exit 78 (EX_CONFIG) — the same code the landmine itself produces, so a fleet
+# driver can tell a config refusal from a transport failure.
+#
+# SELF-CONTAINED ON PURPOSE: this runs on the `curl ... | bash` path, BEFORE the
+# repo is cloned, so it cannot source scripts/qc-assert-legacy-agents-list.sh.
+# That script is the standalone/CI counterpart and asserts the same invariant.
+# ----------------------------------------------------------
+agents_list_gate() {
+  local mode="${1:-${OPENCLAW_AGENTS_LIST_MODE:-migrate}}"
+  local ocjson ts backup verdict detail ws_before ws_after doctor_out doctor_rc box
+
+  box="$(hostname 2>/dev/null || uname -n 2>/dev/null || echo 'unknown-box')"
+  ocjson="$HOME/.openclaw/openclaw.json"
+  [ -f "/data/.openclaw/openclaw.json" ] && ocjson="/data/.openclaw/openclaw.json"
+
+  if [ ! -f "$ocjson" ]; then
+    echo "  [agents-list] no config at $ocjson (fresh box) -- nothing to migrate."
+    return 0
+  fi
+
+  if ! command -v python3 >/dev/null 2>&1; then
+    # We cannot READ the config, so we cannot prove the key is absent. An
+    # unprovable absence is not an absence (see the negative-result contract in
+    # this repo's other gates): refuse rather than assume clean.
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "python3 is NOT AVAILABLE on this box, so the config could not be parsed at all." \
+      "The legacy \`agents.list\` key was NOT ruled out -- it was never looked for."
+    return 3
+  fi
+
+  verdict="$(_agents_list_detect "$ocjson")"
+  detail="${verdict#*|}"
+  verdict="${verdict%%|*}"
+
+  case "$verdict" in
+    ABSENT)
+      echo "  [agents-list] $ocjson carries no legacy \`agents.list\` key -- safe to proceed. ($detail)"
+      return 0
+      ;;
+    UNDETERMINED)
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The config could not be inspected: $detail" \
+        "An unreadable config is NOT a clean config. Nothing was changed."
+      return 3
+      ;;
+    PRESENT)
+      : # fall through to the refuse/migrate decision below
+      ;;
+    *)
+      _agents_list_refuse_banner "$box" "$ocjson" \
+        "The detector returned an unrecognised verdict (${verdict:-<empty>})." \
+        "Refusing to treat an unrecognised verdict as clean. Nothing was changed."
+      return 3
+      ;;
+  esac
+
+  echo ""
+  echo "  [agents-list] LEGACY SCHEMA DETECTED on $box: $detail"
+
+  if [ "$mode" = "check" ]; then
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The legacy \`agents.list\` key IS PRESENT ($detail)." \
+      "Mode is 'check' -- detection only. Nothing was changed. Re-run in 'migrate' mode to fix it."
+    return 3
+  fi
+
+  if ! command -v openclaw >/dev/null 2>&1; then
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The legacy \`agents.list\` key IS PRESENT ($detail), and the \`openclaw\` CLI is NOT ON PATH here, so the prescribed migration (\`openclaw doctor --fix\`) cannot be run." \
+      "Nothing was changed. This gate will NOT hand-delete the key: the array holds agent definitions, and dropping it blindly trades a loud crash-loop for silent agent loss."
+    return 3
+  fi
+
+  # Capture the workspace the box resolves TODAY, before anything moves.
+  ws_before="$(_agents_list_workspace "$ocjson")"
+
+  ts="$(date +%Y%m%d-%H%M%S)"
+  backup="${ocjson}.bak-pre-agents-list-migration-${ts}"
+  if ! cp -p "$ocjson" "$backup" 2>/dev/null; then
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The legacy \`agents.list\` key IS PRESENT ($detail), but the config could NOT BE BACKED UP to $backup." \
+      "Refusing to migrate a config we cannot roll back. Nothing was changed."
+    return 3
+  fi
+  echo "  [agents-list] backup written: $backup"
+  echo "  [agents-list] workspace resolved BEFORE migration: ${ws_before:-<none declared>}"
+  echo "  [agents-list] running the prescribed migration: openclaw doctor --fix"
+
+  doctor_rc=0
+  doctor_out="$(openclaw doctor --fix 2>&1)" || doctor_rc=$?
+  printf '%s\n' "$doctor_out" | sed 's/^/    | /'
+
+  if [ "$doctor_rc" -ne 0 ]; then
+    _agents_list_restore "$ocjson" "$backup"
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "\`openclaw doctor --fix\` FAILED (rc=$doctor_rc) while migrating the legacy \`agents.list\` key." \
+      "The config was RESTORED from $backup. The box is exactly as it was."
+    return 3
+  fi
+
+  # RE-VALIDATE. A migration that returns 0 is a claim, not a result.
+  verdict="$(_agents_list_detect "$ocjson")"
+  detail="${verdict#*|}"
+  verdict="${verdict%%|*}"
+  if [ "$verdict" != "ABSENT" ]; then
+    _agents_list_restore "$ocjson" "$backup"
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "\`openclaw doctor --fix\` exited 0 but the legacy key is STILL THERE (post-migration verdict: $verdict -- $detail)." \
+      "An exit code is not a migration. The config was RESTORED from $backup."
+    return 3
+  fi
+
+  ws_after="$(_agents_list_workspace "$ocjson")"
+  if [ "$ws_before" != "$ws_after" ]; then
+    _agents_list_restore "$ocjson" "$backup"
+    _agents_list_refuse_banner "$box" "$ocjson" \
+      "The migration removed the legacy key but MOVED THE RESOLVED WORKSPACE: '${ws_before:-<none>}' -> '${ws_after:-<none>}'." \
+      "That workspace is the symlink target for this box's shared AGENTS.md/TOOLS.md/USER.md -- accepting it would trade a loud crash-loop for a silent one. The config was RESTORED from $backup."
+    return 3
+  fi
+
+  echo "  [agents-list] MIGRATED: legacy \`agents.list\` removed, config re-read and verified clean."
+  echo "  [agents-list] workspace unchanged after migration: ${ws_after:-<none declared>}"
+  echo "  [agents-list] backup retained at: $backup"
+  return 0
+}
+
+# Detect the legacy key in a config. Prints "<VERDICT>|<detail>" where VERDICT is
+# ABSENT, PRESENT or UNDETERMINED. Never fails, never writes.
+_agents_list_detect() {
+  local cfg="$1" py out rc
+  # The python source goes to a temp FILE and is then run as a plain
+  # `python3 "$file"` command substitution -- never a heredoc directly inside
+  # `$(...)`. bash 3.2.57 (stock macOS /bin/bash, which is what the fleet's Macs
+  # run) has a parser bug where a multi-line `(` inside a heredoc BODY nested in
+  # `$(...)` breaks its paren matching for the OUTER command substitution and
+  # aborts at PARSE time. Dev boxes running Homebrew bash 5.x never see it, so
+  # the heredoc form can look perfectly fine while being dead on every client
+  # box. Same two-step, same reason, as scripts/qc-assert-config-write-chown.sh.
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-detect.XXXXXX.py")" || {
+    printf 'UNDETERMINED|could not create a temp file to run the detector\n'; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+except Exception as e:
+    print('UNDETERMINED|cannot parse as JSON: %s' % e)
+    raise SystemExit(0)
+
+if not isinstance(cfg, dict):
+    print('UNDETERMINED|top level is not a JSON object')
+    raise SystemExit(0)
+
+agents = cfg.get('agents')
+if agents is None:
+    print('ABSENT|no `agents` block at all')
+    raise SystemExit(0)
+if not isinstance(agents, dict):
+    print('UNDETERMINED|`agents` is a %s, not an object' % type(agents).__name__)
+    raise SystemExit(0)
+if 'list' not in agents:
+    print('ABSENT|`agents` block has %d key(s), none of them `list`' % len(agents))
+    raise SystemExit(0)
+
+val = agents['list']
+if isinstance(val, list):
+    shape = '%d entr(y/ies)' % len(val)
+elif val is None:
+    shape = 'null'
+else:
+    shape = 'a %s' % type(val).__name__
+print('PRESENT|legacy `agents.list` key holds %s' % shape)
+PYEOF
+  rc=0
+  out="$(python3 "$py" "$cfg" 2>&1)" || rc=$?
+  rm -f "$py"
+  if [ "$rc" -ne 0 ]; then
+    printf 'UNDETERMINED|detector exited %s: %s\n' "$rc" "${out:-<no output>}"
+    return 0
+  fi
+  if [ -z "$out" ]; then
+    printf 'UNDETERMINED|detector produced no output\n'
+    return 0
+  fi
+  printf '%s\n' "$out"
+  return 0
+}
+
+# Print the workspace this config resolves to, using the SAME precedence as
+# oc_resolve_workspace_announced(): agents.list[id=main].workspace first, then
+# agents.defaults.workspace. Prints empty when neither is declared. Never fails,
+# never writes. Used to prove a migration did not move the workspace.
+_agents_list_workspace() {
+  local cfg="$1" py out
+  py="$(mktemp "${TMPDIR:-/tmp}/agents-list-workspace.XXXXXX.py")" || { printf ''; return 0; }
+  cat > "$py" <<'PYEOF'
+import json
+import os
+import sys
+
+try:
+    with open(sys.argv[1], encoding='utf-8') as fh:
+        cfg = json.load(fh)
+    agents = cfg.get('agents') or {}
+    if not isinstance(agents, dict):
+        agents = {}
+    for ag in (agents.get('list') or []):
+        if isinstance(ag, dict) and ag.get('id') == 'main' and ag.get('workspace'):
+            print(os.path.expanduser(ag['workspace']))
+            raise SystemExit(0)
+    defaults = agents.get('defaults') or {}
+    ws = defaults.get('workspace') if isinstance(defaults, dict) else None
+    if ws:
+        print(os.path.expanduser(ws))
+except SystemExit:
+    raise
+except Exception:
+    pass
+PYEOF
+  out="$(python3 "$py" "$cfg" 2>/dev/null || true)"
+  rm -f "$py"
+  printf '%s' "$out"
+  return 0
+}
+
+# Roll a config back from its backup. Uses `cat >` rather than `cp`/`mv` so the
+# ORIGINAL inode, owner and mode survive: on a root-run updater a `cp` would
+# leave openclaw.json owned root:root, the gateway (a non-root uid) would get
+# EACCES on reload, and every config-touching feature would go dark while the
+# gateway still reported healthy -- the exact fault
+# scripts/qc-assert-config-write-chown.sh exists to catch.
+_agents_list_restore() {
+  local cfg="$1" backup="$2"
+  # QC-ALLOW-NO-CHOWN: `cat >` writes THROUGH the existing inode, so the file's
+  # owner, group and mode are unchanged by construction -- there is no ownership
+  # to restore. A cp/mv here is what would need a chown; that is exactly why
+  # this is a redirect.
+  if cat "$backup" > "$cfg" 2>/dev/null; then
+    echo "  [agents-list] config RESTORED from $backup (original inode/owner/mode preserved)" >&2
+  else
+    echo "  [agents-list] ✗ RESTORE FAILED -- the backup is still at $backup; restore it by hand before starting the gateway." >&2
+  fi
+}
+
+# The one loud refusal banner, so every refusal path names the box, the config,
+# the reason and the fix in the same shape. Matches preclear_2026_7_1's banner.
+_agents_list_refuse_banner() {
+  local box="$1" cfg="$2" reason="$3" state="$4"
+  echo ""
+  echo "  ################################################################"
+  echo "  ##  ROLL REFUSED -- LEGACY \`agents.list\` SCHEMA GATE           ##"
+  echo "  ################################################################"
+  echo "  ##  Box    : $box"
+  echo "  ##  Config : $cfg"
+  echo "  ##"
+  echo "  ##  $reason"
+  echo "  ##  $state"
+  echo "  ##"
+  echo "  ##  WHY THIS BLOCKS THE ROLL:"
+  echo "  ##    The 2026.7.2-beta line rejects that key outright --"
+  echo "  ##      agents: Unrecognized key: \"list\""
+  echo "  ##    -- and exits 78 (EX_CONFIG) ~0.4s after start. launchd's"
+  echo "  ##    KeepAlive + ThrottleInterval=10 then respawns it every ~11s"
+  echo "  ##    (701 boots in 10 days on the box this was measured on) until"
+  echo "  ##    the crash-loop breaker latches channel auto-start OFF and the"
+  echo "  ##    box goes COMPLETELY DARK. 24 queued deliveries were lost."
+  echo "  ##"
+  echo "  ##  IT IS SILENT: LaunchAgents provisioned before the plist fix set"
+  echo "  ##  StandardErrorPath = /dev/null, so the startup exception is"
+  echo "  ##  DISCARDED. Look in /tmp/openclaw/openclaw-<date>.log, NOT in the"
+  echo "  ##  LaunchAgent's stderr -- there is none."
+  echo "  ##"
+  echo "  ##  THE FIX (run on the box, then re-run this):"
+  echo "  ##    openclaw doctor --fix"
+  echo "  ##"
+  echo "  ##  Verify it took (exit 0 = clean, 1 = still legacy, 3 = unreadable):"
+  echo "  ##    bash scripts/qc-assert-legacy-agents-list.sh"
+  echo "  ##"
+  echo "  ##  DO NOT hand-delete the key. The legacy array holds agent"
+  echo "  ##  definitions; dropping it blindly trades a loud crash-loop for"
+  echo "  ##  silent agent loss."
+  echo "  ##"
+  echo "  ##  ⚠️  AFTER ANY plist CHANGE: \`launchctl kickstart -k\` does NOT"
+  echo "  ##  reload a plist -- it only restarts the running process, and the"
+  echo "  ##  OLD plist stays loaded. Activation needs bootout + bootstrap:"
+  echo "  ##    launchctl bootout gui/\$(id -u)/<label> 2>/dev/null || true"
+  echo "  ##    launchctl bootstrap gui/\$(id -u) <plist-path>"
+  echo "  ################################################################"
+  echo ""
+}
+
+# ----------------------------------------------------------
 # SELF-HEAL: weekly-cron updater URL
 # ----------------------------------------------------------
 # THE BUG THIS REPAIRS
@@ -2576,6 +2940,9 @@ main() {
   if [ "${OPENCLAW_PRECLEAR_2026_7_1:-0}" = "1" ]; then
     PRECLEAR_MODE="apply"
   fi
+  # Standalone legacy-`agents.list` run (--agents-list-check/--agents-list-migrate).
+  # Empty = not standalone; the gate still runs automatically inside the roll.
+  AGENTS_LIST_STANDALONE=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --only)
@@ -2591,8 +2958,19 @@ main() {
       --preclear-2026-7-1)
         PRECLEAR_MODE="apply"
         ;;
+      # Legacy `agents.list` gate, run standalone. The gate ALSO runs
+      # automatically on every roll (see the call in main() below) -- these
+      # flags exist to inspect or migrate a box on its own, before a version
+      # change, without performing a skill update.
+      --agents-list-check)
+        AGENTS_LIST_STANDALONE="check"
+        ;;
+      --agents-list-migrate)
+        AGENTS_LIST_STANDALONE="migrate"
+        ;;
       --help|-h)
         echo "Usage: update-skills.sh [--only \"05,06,35\"] [--preclear-check | --preclear-2026-7-1]"
+        echo "                        [--agents-list-check | --agents-list-migrate]"
         echo "  --only LIST   Install only skill folders whose number prefix matches LIST (comma-separated)"
         echo "                Example: --only \"05,06,36\" installs only skills 05-ghl-setup, 06-ghl-install-pages, 36-ghl-mcp-setup"
         echo "  (no flag)     Install/update all skills"
@@ -2600,6 +2978,18 @@ main() {
         echo "  --preclear-check       Report whether this box carries OpenClaw 2026.7.1 startup-gate"
         echo "                         relics (~/.clawdbot, plugins/installs.json) and whether they are"
         echo "                         SAFE to move. Never moves anything. Exit 3 = live, needs a human."
+        echo ""
+        echo "  --agents-list-check    Report whether this box's openclaw.json still carries the LEGACY"
+        echo "                         \`agents.list\` array. Never changes anything. Exit 3 = present."
+        echo "  --agents-list-migrate  Same detection, then migrate: back up the config, run"
+        echo "                         \`openclaw doctor --fix\`, and RE-VALIDATE (key gone AND the"
+        echo "                         resolved workspace unmoved). Rolls back on any failure."
+        echo "                         The 2026.7.2-beta line rejects \`agents.list\` and exits 78, and"
+        echo "                         launchd then respawns the gateway every ~11s until the crash-loop"
+        echo "                         breaker latches channels OFF and the box goes dark. Run this"
+        echo "                         BEFORE any version change. (This gate also runs automatically on"
+        echo "                         every normal update run.)"
+        echo ""
         echo "  --preclear-2026-7-1    Same detection, then rename the relics (never deletes) -- but ONLY"
         echo "                         if nothing on this box still depends on .clawdbot. Exit 3 = refused."
         echo "                         Needed only immediately before an OpenClaw binary roll to 2026.7.1;"
@@ -2618,6 +3008,16 @@ main() {
     local _pc_rc=0
     preclear_2026_7_1 "$PRECLEAR_MODE" || _pc_rc=$?
     exit "$_pc_rc"
+  fi
+
+  # Standalone legacy-`agents.list` run: inspect (or migrate) this box and exit
+  # WITHOUT performing a skill update. This is the pre-flight a fleet driver runs
+  # against every box BEFORE it moves any of them onto a new OpenClaw build.
+  # Exit 3 = REFUSED / needs a human (same contract as the pre-clear above).
+  if [ -n "$AGENTS_LIST_STANDALONE" ]; then
+    local _al_rc=0
+    agents_list_gate "$AGENTS_LIST_STANDALONE" || _al_rc=$?
+    exit "$_al_rc"
   fi
 
   echo "============================================"
@@ -2652,6 +3052,24 @@ main() {
   # on a run that copies nothing. See reap_dead_skill_manifest() for why this
   # file is deleted rather than restamped.
   reap_dead_skill_manifest
+
+  # LEGACY `agents.list` PRE-UPGRADE GATE. See agents_list_gate() above for the
+  # full rationale. Placement is load-bearing for the SAME reason as the two
+  # calls immediately above: every exit path below this line is an `exit 0`, and
+  # a box carrying `agents.list` is exactly an already-poisoned box that would
+  # otherwise reach one of those early exits and never be inspected.
+  #
+  # A refusal exits 78 (EX_CONFIG) — deliberately the same code the landmine
+  # itself produces, so a fleet driver can tell "this box has a config fault"
+  # from "this box was unreachable". It is NOT 0 and NOT 1: a roll that walks
+  # past a box about to crash-loop has not succeeded.
+  _AGENTS_LIST_RC=0
+  agents_list_gate || _AGENTS_LIST_RC=$?
+  if [ "$_AGENTS_LIST_RC" -ne 0 ]; then
+    echo "FATAL: legacy \`agents.list\` schema gate REFUSED this roll (exit 78 / EX_CONFIG)." >&2
+    echo "       Nothing was installed and no version stamp was written." >&2
+    exit 78
+  fi
 
   # ----------------------------------------------------------
   # Catchup check: if last weekly cron check is older than 7 days,
