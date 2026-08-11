@@ -23,6 +23,19 @@
 #             EXACT violation location (workflow name -> node id/name/type ->
 #             parameter path -> matched text). Exit 4 when ANY workflow has ANY
 #             FAIL; a malformed export is exit 2 (fail-closed, never skipped).
+#             SOURCE-INTEGRITY LOCK (NEW-6 U26 amendment): before any per-node
+#             audit runs, every contract workflows.release_notifications row's
+#             email_link_fields AND sms_link_field are normalized to bare keys
+#             and must resolve into field-map deliverable_fields (the audit
+#             resolves stage links from deliverable_fields, so a workflow that
+#             references a field the map no longer carries, or a map that no
+#             longer carries a field a workflow must reference, would audit a
+#             phantom surface -- closing the deliverable_fields drift blind
+#             spot). Unresolved keys are a located FAIL of the stage_links
+#             check (AF-AE-COPY-STAGE-LINKS), exit 4, naming the contract row
+#             + the missing field. The check command therefore refuses a
+#             drifted field-map/contract pair BEFORE any workflow export is
+#             judged (fail-closed: the audit never runs against a lying map).
 #     list    READ-ONLY: print the names of the workflows a directory/file
 #             carries (importable wiring surface for a CI fan-out).
 #     plan    OFFLINE: print the copy-law contract (the five checks) and the
@@ -49,8 +62,12 @@
 #       deliverable link keys for its own stage (doc_url + pdf_url pair(s) as
 #       {{ contact.<key> }} merge tags). Link fields are resolved from
 #       config/field-map.json deliverable_fields via the contract's
-#       workflows.release_notifications rows (email_link_fields list), so the
-#       audit can never drift from the engine's single source of truth. A
+#       workflows.release_notifications rows (email_link_fields list AND the
+#       sms_link_field, both normalized to bare keys), so the audit can never
+#       drift from the engine's single source of truth. Before any workflow is
+#       judged, the source pair is itself verified: every contract row's link
+#       fields must resolve into deliverable_fields (a rename anywhere on
+#       either side is a located FAIL of this check, never a blind audit). A
 #       workflow that carries NO deliverable fields contract row is audited
 #       for the absence of any {{ contact.anthology_* }} URL reference only.
 #   (e) per_stage_copy: the workflow's human text must carry the stage's
@@ -93,6 +110,12 @@
 #          sending action (check c). exit 4.
 #   AF-AE-COPY-STAGE-LINKS        -> the email body misses the stage's
 #          deliverable link merge tags (check d). exit 4.
+#   AF-AE-COPY-FIELD-DRIFT        -> the contract release_notifications rows
+#          reference link fields that field-map deliverable_fields no longer
+#          carries (bare-key resolution), or the reverse -- the field-map
+#          drifted from the contract surface. Located FAIL of check d, exit 4
+#          (same code as the missing-tag form: both are the stage-link surface
+#          lying to the author).
 #   AF-AE-COPY-STAGE-TOKENS       -> the per-stage copy invariants are absent
 #          (producer merge / standing instruction / trigger-tag tie, check e).
 #          exit 4.
@@ -267,6 +290,121 @@ def row_for_tag(rows, tag: str):
 
 def deliverable_fields(field_map: dict) -> dict:
     return (field_map.get("deliverable_fields") or {})
+
+
+# The one regex that turns a merge string into the bare key it carries, used
+# for EVERY contract-vs-field-map comparison (email_link_fields, sms_link_field
+# and the field-map value side). One normalizer, one truth: a bare key is
+# "anthology_..." and nothing else resolves.
+_BARE_KEY_RE = re.compile(r"anthology_[A-Za-z0-9_]+")
+
+
+def _bare_key(value: str) -> str:
+    """The bare 'anthology_*' key inside a merge-string value, else ''.
+    '{{contact.anthology_avatar_pdf_url}}' -> 'anthology_avatar_pdf_url'.
+    A value that carries no such key resolves to '' (never a match)."""
+    m = _BARE_KEY_RE.search(str(value or ""))
+    return m.group(0) if m else ""
+
+
+def _strict_declared_link_keys(field_map: dict) -> set:
+    """The STRICT set the per-workflow stage-links check judges against:
+    deliverable_fields VALUE keys only (the engine's single source of truth
+    for the link fields a workflow may reference) PLUS the U8 cover-style
+    sample_url fields (which live outside deliverable_fields but ARE the link
+    fields the Cover Picks workflow must reference). The provisioning
+    inventory is deliberately NOT included here: an inventory row proves a
+    field exists on the box, not that the deliverable_fields block still
+    points at it -- a block rename must FAIL the workflow, not be masked by
+    the box inventory. The block-vs-inventory cross-check
+    (_deliverable_fields_rename_violations) separately proves the committed
+    map's deliverable_fields VALUE keys equal the provisioning intended_keys,
+    so a consistent re-key on BOTH sides stays legal while a one-sided rename
+    lies."""
+    declared = set()
+    for pair in deliverable_fields(field_map).values():
+        if isinstance(pair, dict):
+            declared.update(str(v) for v in pair.values() if isinstance(v, str))
+    csf = field_map.get("cover_style_fields") or {}
+    for v in (csf.get("sample_url_fields") or {}).values():
+        if isinstance(v, str) and v.strip():
+            declared.add(v)
+    return declared
+
+
+def resolve_link_field(field_map: dict, merge_or_bare: str) -> str:
+    """The full field key ('contact.<bare>') the field-map declares for a
+    contract link-field reference, else '' (UNRESOLVED). The reference may be
+    a full merge string ('{{contact.anthology_avatar_pdf_url}}'), a full key,
+    or already a bare key; the lookup is by BARE KEY against the STRICT
+    declared link-key set (deliverable_fields values + cover sample_url
+    fields), so a rename on either side of the contract/map boundary surfaces
+    as ''."""
+    if not isinstance(merge_or_bare, str) or not merge_or_bare.strip():
+        return ""
+    bare = _bare_key(merge_or_bare)
+    if not bare:
+        return ""
+    full = "contact." + bare
+    return full if full in _strict_declared_link_keys(field_map) else ""
+
+
+def unresolved_link_fields(field_map: dict, contract: dict) -> list:
+    """Every contract release_notifications link-field reference that the
+    field-map does NOT declare (bare-key resolution), as (workflow_name,
+    merge_string) pairs. email_link_fields AND sms_link_field are both covered:
+    the SMS body carries its link too, so a map that lost the SMS field would
+    silently audit a phantom SMS link. This is the deliverable_fields drift
+    blind-spot lock: the audit never judges a workflow against a lying map."""
+    out = []
+    declared = _strict_declared_link_keys(field_map)
+    for r in workflow_rows(contract):
+        name = (r.get("name") or "").strip()
+        refs = list(r.get("email_link_fields") or [])
+        sms = r.get("sms_link_field")
+        if isinstance(sms, str) and sms.strip():
+            refs.append(sms)
+        for ref in refs:
+            if not isinstance(ref, str) or not ref.strip():
+                continue
+            bare = _bare_key(ref)
+            if not bare:
+                continue
+            # The bare-key resolution: the map must declare the referenced key.
+            if "contact." + bare not in declared:
+                out.append((name or "<unnamed row>", ref.strip()))
+    return out
+
+
+def _deliverable_fields_rename_violations(field_map: dict) -> list:
+    """deliverable_fields block-level drift the union would otherwise mask: a
+    pair whose VALUE keys were renamed while the register still occupies the
+    same slots, AND the renamed keys are NOT in the provisioning inventory
+    (which carries every real provisioned key, byte-exact). Returns human
+    messages; the check command turns each into an AF-AE-COPY-FIELD-DRIFT
+    located FAIL. A block that merely edits an existing key in a way the
+    inventory still matches (a consistent rename on BOTH sides) is a legal
+    re-key, not a drift -- it is the ONE-SIDED rename (block only) that lies."""
+    violations = []
+    inv_keys = set()
+    for row in (field_map.get("provisioning") or {}).get("fields") or []:
+        key = (row or {}).get("intended_key")
+        if isinstance(key, str) and key.strip():
+            inv_keys.add(key)
+    df = deliverable_fields(field_map)
+    for deliverable, pair in sorted(df.items()):
+        if not isinstance(pair, dict):
+            continue
+        for slot in ("doc_url", "pdf_url"):
+            declared_key = pair.get(slot)
+            if not isinstance(declared_key, str) or not declared_key.strip():
+                continue
+            if declared_key not in inv_keys:
+                violations.append(
+                    "deliverable_fields.%s.%s declares %r but provisioning.fields "
+                    "carries no such intended_key (one-sided key rename)"
+                    % (deliverable, slot, declared_key))
+    return violations
 
 
 def load_sources(field_map_path=None, contract_path=None, *, out=None):
@@ -461,18 +599,41 @@ def audit_workflow(export, field_map: dict, contract: dict, *,
         for lf in (row.get("email_link_fields") or []):
             if isinstance(lf, str) and lf.strip():
                 expected.append(lf.strip())
-        # Normalize the contract's exact merge strings to bare keys.
+        # The SMS body carries its link too: when the contract names an
+        # sms_link_field, that field must ALSO resolve into deliverable_fields
+        # (a map that lost the SMS field would otherwise silently audit a
+        # phantom SMS surface). The SMS link itself is not required inside the
+        # email body -- the link-only SMS shape is enforced by check (c).
+        sms_ref = row.get("sms_link_field")
+        if isinstance(sms_ref, str) and sms_ref.strip():
+            expected.append(sms_ref.strip())
+        # Normalize the contract's exact merge strings to bare keys, resolved
+        # against deliverable_fields (the engine's single source of truth).
+        # A reference the map does NOT carry (a key-rename on either side) is a
+        # stage_links FAIL naming the exact field -- the deliverable_fields
+        # drift blind spot, never a blank audit.
+        declared = _strict_declared_link_keys(field_map)
         exp_keys = set()
         for e in expected:
-            m = re.search(r"anthology_[A-Za-z0-9_]+", e)
+            m = _BARE_KEY_RE.search(e)
             if m:
                 exp_keys.add(m.group(0))
+        unresolved = sorted(
+            k for k in exp_keys if "contact." + k not in declared)
+        if unresolved:
+            report["checks"]["stage_links"]["pass"] = False
+            report["checks"]["stage_links"]["fails"].append({
+                "node": "<workflow>", "path": "contract row -> field-map",
+                "detail": "contract link field(s) not declared in field-map "
+                          "deliverable_fields (drift): %s"
+                          % ", ".join("{{ contact.%s }}" % k for k in unresolved)})
         present = set()
         for nid, path, text in texts:
             for m in _LINK_FIELD_RE.finditer(text):
                 present.add(m.group(1))
             # A bare URL is not a link-key reference; URLs are checked below.
-        missing = sorted(k for k in exp_keys if k not in present)
+        missing = sorted(k for k in exp_keys if k not in present and
+                         "contact." + k in declared)
         if missing:
             report["checks"]["stage_links"]["pass"] = False
             report["checks"]["stage_links"]["fails"].append({
@@ -579,6 +740,38 @@ def check_command(files, *, field_map_path=None, contract_path=None,
     fm, ct, why = load_sources(field_map_path, contract_path, out=out)
     if fm is None:
         return EX_STOP
+    # SOURCE-INTEGRITY LOCK (NEW-6 U26 amendment): every contract
+    # release_notifications link field must resolve into field-map
+    # deliverable_fields BEFORE any export is judged. A field-map/contract
+    # pair that drifted apart would audit a phantom workflow surface -- a
+    # renamed key on either side is a located FAIL, never a blind audit.
+    drifted = unresolved_link_fields(fm, ct)
+    if drifted:
+        for wf_name, ref in drifted:
+            out.write("[copy_qc] AF-AE-COPY-FIELD-DRIFT: contract row %r "
+                      "references link field %r that field-map "
+                      "deliverable_fields does not carry (bare-key "
+                      "resolution)\n" % (wf_name, ref))
+        if jsonout is not None:
+            json.dump({"ok": False, "drift": "AF-AE-COPY-FIELD-DRIFT",
+                       "issues": [{"workflow": wf, "link_field": ref}
+                                  for wf, ref in drifted]},
+                      jsonout, indent=2)
+            jsonout.write("\n")
+        return EX_VIOLATION
+    # The block-vs-inventory cross-check catches the one-sided rename the
+    # union would mask (deliverable_fields re-keyed without the provisioning
+    # inventory following): the map is lying about what it provisions.
+    rename_drift = _deliverable_fields_rename_violations(fm)
+    if rename_drift:
+        for msg in rename_drift:
+            out.write("[copy_qc] AF-AE-COPY-FIELD-DRIFT: %s\n" % msg)
+        if jsonout is not None:
+            json.dump({"ok": False, "drift": "AF-AE-COPY-FIELD-DRIFT",
+                       "issues": [{"detail": m} for m in rename_drift]},
+                      jsonout, indent=2)
+            jsonout.write("\n")
+        return EX_VIOLATION
     reports = []
     any_malformed = False
     for fp in files:
@@ -748,13 +941,37 @@ def _golden_workflow(name="Anthology Release: Avatar", tag="anthology-release-av
                       "parameters": params})
     if sms:
         sms_greet = PRODUCER_MERGE if producer_merge else "The editors"
+        sms_body = "Your Avatar is ready. %s" % sms_greet
+        if links:
+            sms_body += " See it: {{ contact.anthology_avatar_doc_url }}."
         nodes.append({"id": "sm-1", "name": "Send SMS", "type": "n8n-nodes-base.twilio",
-                      "parameters": {"smsBody": "Your Avatar is ready. %s" % sms_greet}})
+                      "parameters": {"smsBody": sms_body}})
     if bad_ai:
         nodes[0]["name"] = "AI Avatar Trigger"
     if em_dash:
         nodes[-1]["parameters"]["smsBody"] = "Your Avatar is ready — click the link."
     return {"name": name, "nodes": nodes}
+
+
+def _rename_deliverable_field(fm: dict, deliverable: str) -> dict:
+    """A tampered field-map: ONE deliverable_fields key renamed (the
+    drift-blind-spot attack). The 'avatar' pair keys are renamed
+    'anthology_avatar_*' -> 'anthology_avatr_*' so the contract's avatar link
+    fields stop resolving against the map. The rest of the map is
+    byte-identical."""
+    out = dict(fm)
+    df = dict(fm.get("deliverable_fields") or {})
+    pair = df.get(deliverable)
+    if not isinstance(pair, dict):
+        return out
+    renamed = {}
+    for slot, fk in pair.items():
+        if isinstance(fk, str):
+            fk = fk.replace("anthology_avatar_", "anthology_avatr_", 1)
+        renamed[slot] = fk
+    df[deliverable] = renamed
+    out["deliverable_fields"] = df
+    return out
 
 
 def _attack_workflow(name="Anthology Release: Avatar", tag="anthology-release-avatar"):
@@ -775,6 +992,15 @@ def _attack_workflow(name="Anthology Release: Avatar", tag="anthology-release-av
              "parameters": {}},
         ],
     }
+
+
+def _write_json_temp(td: str, name: str, obj) -> str:
+    """Write a JSON object into a temp dir for a --field-map/--contract
+    override and return the path."""
+    fp = os.path.join(td, name)
+    with open(fp, "w", encoding="utf-8") as fh:
+        json.dump(obj, fh, indent=1)
+    return fp
 
 
 def self_test() -> int:
@@ -846,6 +1072,64 @@ def self_test() -> int:
     em_fail = next(f for f in atk["fails"] if f["code"] == "AF-AE-COPY-EM-DASH")
     assert "a-2" in em_fail["node"], em_fail
 
+    # -- SOURCE-INTEGRITY LOCK (NEW-6 U26 amendment) -------------------------
+    # The contract's link fields must resolve into field-map deliverable_fields
+    # (bare-key resolution) -- a rename on EITHER side is a located FAIL, so a
+    # drifted map can never silently audit a phantom workflow surface.
+    assert unresolved_link_fields(fm, ct) == [], \
+        "committed field-map/contract pair must have every link field resolved, got %r" \
+        % unresolved_link_fields(fm, ct)
+    assert _deliverable_fields_rename_violations(fm) == [], \
+        "committed field-map deliverable_fields must match the provisioning inventory, got %r" \
+        % _deliverable_fields_rename_violations(fm)
+
+    # Golden against a tampered map (a deliverable_fields key rename, the
+    # drift-blind-spot attack): the resolution FAILs, audit_workflow reports
+    # the missing link field with AF-AE-COPY-STAGE-LINKS, and check_command
+    # refuses the pair BEFORE any export is judged (exit 4).
+    g_ren = audit_workflow(_golden_workflow(), _rename_deliverable_field(fm, "avatar"), ct)
+    assert not g_ren["ok"]
+    assert any(f["code"] == "AF-AE-COPY-STAGE-LINKS" for f in g_ren["fails"]), g_ren["fails"]
+    drift_missing = next(f for f in g_ren["fails"]
+                         if "anthology_avatar_pdf_url" in f["detail"])
+    assert drift_missing, g_ren["fails"]
+    # The one-sided rename ALSO trips the block-vs-inventory cross-check.
+    assert _deliverable_fields_rename_violations(
+        _rename_deliverable_field(fm, "avatar")), \
+        "one-sided rename must be flagged by the block-vs-inventory cross-check"
+
+    # A workflow export WITHOUT the email-body link references still FAILs
+    # against a renamed map -- but now the FAIL names the missing field, so the
+    # author sees the phantom surface instead of a blank audit.
+    g5_ren = audit_workflow(_golden_workflow(links=False), _rename_deliverable_field(fm, "avatar"), ct)
+    assert not g5_ren["ok"]
+    assert any(f["code"] == "AF-AE-COPY-STAGE-LINKS" for f in g5_ren["fails"]), g5_ren["fails"]
+
+    # A renamed map must also fail the untouched-field negative (a phantom key
+    # from the old map cannot count as resolved).
+    assert _bare_key("{{contact.anthology_avatar_pdf_url}}") == "anthology_avatar_pdf_url"
+    assert _bare_key("contact.anthology_avatar_doc_url") == "anthology_avatar_doc_url"
+    assert _bare_key("anthology_avatar_doc_url") == "anthology_avatar_doc_url"
+    assert _bare_key("no key here") == ""
+    fm_nopair = dict(fm)
+    fm_nopair["deliverable_fields"] = dict(fm.get("deliverable_fields") or {})
+    fm_nopair["deliverable_fields"].pop("avatar", None)
+    assert resolve_link_field(fm_nopair, "{{contact.anthology_avatar_pdf_url}}") == ""
+    assert resolve_link_field(fm, "{{contact.anthology_avatar_pdf_url}}") == "contact.anthology_avatar_pdf_url"
+    assert resolve_link_field(fm, "anthology_avatar_doc_url") == "contact.anthology_avatar_doc_url"
+    assert resolve_link_field(fm, "bogus_anthology_nonexistent_url") == ""
+    # The contract's own link fields must ALL resolve (incl. sms_link_field):
+    # a committed pair that does not is itself the drift the lock exists for.
+    assert all(
+        resolve_link_field(fm, ref)
+        for r in workflow_rows(ct)
+        for ref in (r.get("email_link_fields") or []) if isinstance(ref, str)
+    ), "every contract email_link_fields ref must resolve into deliverable_fields"
+    assert all(
+        resolve_link_field(fm, r.get("sms_link_field"))
+        for r in workflow_rows(ct) if isinstance(r.get("sms_link_field"), str)
+    ), "every contract sms_link_field must resolve into deliverable_fields"
+
     # -- malformed export: fail-closed, never a silent skip ------------------
     bad = audit_workflow({"name": "Nope", "nodes": "not-a-list"}, fm, ct)
     assert not bad["ok"] and bad["fails"][0]["code"] == "AF-AE-COPY-MALFORMED"
@@ -885,11 +1169,34 @@ def self_test() -> int:
         rc = list_command([fp], out=dev5)
         assert rc == EX_OK and "Anthology Release: Avatar" in dev5.getvalue()
 
+        # NEW-6 U26 amendment: a tampered field-map (deliverable_fields key
+        # rename) must make the whole check command FAIL CLOSED with exit 4
+        # and the AF-AE-COPY-FIELD-DRIFT location -- the audit never runs
+        # against a lying map.
+        import copy as _copy
+        fm_bak = _copy.deepcopy(fm)
+        ct_bak = _copy.deepcopy(ct)
+        try:
+            dev6 = io.StringIO()
+            rc = check_command([fp], field_map_path=_write_json_temp(td, "field-map.json", _rename_deliverable_field(fm, "avatar")),
+                               contract_path=_write_json_temp(td, "contract.json", ct), out=dev6)
+            assert rc == EX_VIOLATION, "renamed-field-map check must exit 4, got %s" % rc
+            assert "AF-AE-COPY-FIELD-DRIFT" in dev6.getvalue(), dev6.getvalue()
+            assert "anthology_avatar_pdf_url" in dev6.getvalue(), dev6.getvalue()
+            # and plan must still work (plan is a contract print, not an audit)
+            dev7 = io.StringIO()
+            rc = plan_command(out=dev7)
+            assert rc == EX_OK and "copy law" in dev7.getvalue()
+        finally:
+            fm, ct = fm_bak, ct_bak
+
     print("copy_qc_workflows self-test: OK "
           "(golden PASS, per-check FAIL ladders [AI word, em-dash, no-email, "
           "no-sms, missing stage links, missing stage tokens], attack fixture "
           "fails EVERY client-facing check with exact locations + codes, "
-          "malformed export fail-closed, non-client-facing exempt, never-print, "
+          "NEW-6 deliverable_fields drift lock [rename attack FAILS with "
+          "AF-AE-COPY-FIELD-DRIFT, exit 4, never a blind audit], malformed "
+          "export fail-closed, non-client-facing exempt, never-print, "
           "offline check/plan/list over fixtures)")
     return EX_OK
 
