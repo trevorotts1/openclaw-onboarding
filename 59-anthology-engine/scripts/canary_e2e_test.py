@@ -67,6 +67,17 @@
 #   --self-test        offline acceptance battery (golden + attack fixtures;
 #                      no network, no live ledger) -> exit 0/4.
 #   --plan             print the stage plan + exit-code contract and exit 0.
+#   --verify-report REPORT_PATH  independently re-check a persisted
+#                      CANARY-REPORT.json claim: recomputes the deterministic
+#                      sha256 chain over the report BODY (every stage's checks
+#                      with result + evidence) AND over the state ledger it
+#                      names (the two SQLite files: anthology_state.db + WAL,
+#                      gate_nonce.db + WAL, in byte order). VALID (exit 0) iff
+#                      the chain matches the report's signature hash, the
+#                      ledger exists at the recorded path, and every DEFERRED
+#                      check carries the deferred-live note. INVALID (exit 4)
+#                      on ANY mismatch or missing ledger. Self-check: a report
+#                      regenerated from the same data reproduces the same hash.
 #   run (default)      execute the full S0..S9 canary against an ISOLATED
 #                      state dir (--state-dir; default a fresh temp dir),
 #                      writing CANARY-REPORT.json (per-stage pass/fail +
@@ -78,11 +89,14 @@
 #   --require-live      any un-executed live stage holds the canary (exit 3).
 #
 # EXIT CODES (house map; ENGINE-MANIFEST exit_code_house_convention):
-#   0  every stage observed PASS (or cleanly DEFERRED without --require-live)
+#   0  every stage observed PASS (or cleanly DEFERRED without --require-live);
+#      --verify-report: chain matches, ledger present, note carried -> VALID
 #   2  bad invocation / a stage that was executed FAILED (the report carries
 #      the failing stage + evidence; the canary NEVER false-passes)
 #   3  --require-live with un-executed live stages (held)
-#   4  --self-test failed (or an invariant the canary itself owns is violated)
+#   4  --self-test failed; --verify-report: INVALID (tampered body, missing
+#      ledger, or a DEFERRED check without the deferred-live note) — an
+#      invariant the canary itself owns is violated
 #   1  unexpected error
 #
 # DOCTRINE (binding, enforced in code):
@@ -102,6 +116,11 @@
 #     reason), never PASS and never silently skipped; --require-live makes any
 #     DEFERRED stage a HOLD. A stage that ran and failed is FAIL and the run
 #     exits 2.
+#   - STAGE-LEVEL, NEVER CHECK-COUNT: a PASS verdict is per STAGE. The summary
+#     ALWAYS carries the deferred-live note (S7 live Kie cover render + S8 live
+#     Doc pull-back are deliberately not exercised by default) so a 12/12 is
+#     never read as every check passing, and --verify-report refuses a report
+#     whose DEFERRED checks carry no note.
 #   - MOVE IN SILENCE: operator-verbose to stdout/stderr + the report; NOTHING
 #     to any client. The canary never sends a client message (nudges are only
 #     exercised --dry-run through nudge_send, and gate_engine open --no-nudge).
@@ -220,6 +239,33 @@ _BASE_ENV_LABELS = (
 CC_REPO_CANDIDATES = (
     os.path.expanduser("~/blackceo-command-center"),
     os.path.expanduser("~/command-center"),
+)
+
+# The two live checks the canary deliberately defers on every default run
+# (exact check names; the summary note and --verify-report both key off these):
+#   S7: a live 4-style cover render is a PAID image generation on the client's
+#       own Kie account -- never spent by default (structural proofs stand).
+#   S8: the live Doc pull-back byte round-trip needs live Drive credentials
+#       (prove_aw_doc_pullback held) -- the structural pull-back proof stands.
+# A report's 12/12 verdict is STAGE-LEVEL; it never claims the deferred live
+# checks ran. Every DEFERRED check in a report MUST carry this note or
+# --verify-report refuses the report.
+DEFERRED_LIVE_CHECKS = (
+    "live 4-style cover render (Kie + Drive landing)",
+    "live Doc pull-back byte round-trip",
+)
+DEFERRED_LIVE_NOTE = (
+    "12/12 is STAGE-LEVEL, not check-level: the two live checks above are "
+    "deliberately deferred on every default run (a live Kie cover render is a "
+    "paid image generation on the client's own account; the live Doc "
+    "pull-back needs live Drive credentials)."
+)
+
+# The ledger files hashed by --verify-report, in deterministic byte order
+# (SQLite DB then its WAL when present; both are part of the state).
+REPORT_LEDGER_FILES = (
+    "anthology_state.db", "anthology_state.db-wal",
+    "gate_nonce.db", "gate_nonce.db-wal",
 )
 
 
@@ -378,7 +424,7 @@ class CanaryRun:
     def build_report(self):
         failed = [s for s in self.stages if s.to_dict()["status"] == "FAIL"]
         deferred = [s for s in self.stages if s.to_dict()["status"] == "DEFERRED"]
-        return {
+        report = {
             "contract": "anthology-engine-canary-report",
             "schema_version": 1,
             "utc": datetime.now(timezone.utc).isoformat(),
@@ -395,6 +441,27 @@ class CanaryRun:
                 "deferred_stages": [s.stage for s in deferred],
             },
         }
+        # Deterministic self-signature: sha256 over the report body PLUS the
+        # state ledger (see compute_report_chain). No secrets, no ledger
+        # contents -- only digests. The report's own claim of PASS can be
+        # re-checked later with --verify-report.
+        signature = {
+            "alg": "sha256",
+            "chain": "v1:report-body+state-ledger",
+            "sha256": compute_report_chain(report, self.state_dir),
+        }
+        report["signature"] = signature
+        # Deferred-live note: the 12/12 verdict is STAGE-LEVEL, never
+        # check-level. The two live checks (S7 live Kie render, S8 live Doc
+        # pull-back) are deliberately not exercised on a default run; the
+        # summary says so in the same breath as the counts, and every
+        # DEFERRED check carries the note.
+        report["summary"]["note"] = DEFERRED_LIVE_NOTE
+        for s in report["stages"]:
+            for c in s["checks"]:
+                if c["result"] == "DEFERRED" and c.get("check") in DEFERRED_LIVE_CHECKS:
+                    c["note"] = DEFERRED_LIVE_NOTE
+        return report
 
 
 def _default_state_dir():
@@ -566,6 +633,152 @@ def _s9_run_dir(state_dir, anthology_id):
 
 def _sha256_text(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+# ---------------------------------------------------------------------------
+# Report-verification (U19): a deterministic hash chain over the report BODY
+# plus the state ledger, so a CANARY-REPORT.json claim can be independently
+# re-checked with zero knowledge of the run that produced it.
+# ---------------------------------------------------------------------------
+def _canonical_json(value):
+    """Deterministic canonical JSON for hashing (sorted keys, separators, no
+    trailing whitespace; NaN/Infinity are serialized non-float32 and thus
+    excluded -- this report never carries them)."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=True)
+
+
+def report_body_digest(report):
+    """sha256 over the report BODY: schema_version + mode + every stage in
+    order with its checks (check name, result, and evidence -- evidence is
+    verified, not reason; reasons may be long). Never includes the signature
+    itself (a self-referential chain is a tautology)."""
+    h = hashlib.sha256()
+    h.update(_canonical_json({
+        "schema_version": report.get("schema_version"),
+        "mode": report.get("mode"),
+        "stages": [
+            {"stage": s.get("stage"), "checks": [
+                {"check": c.get("check"), "result": c.get("result"),
+                 "evidence": c.get("evidence")}
+                for c in (s.get("checks") or [])]}
+            for s in (report.get("stages") or [])
+        ],
+    }).encode("utf-8"))
+    return h.hexdigest()
+
+
+def _sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _ledger_hashes(state_dir):
+    """sha256 per ledger file in the deterministic REPORT_LEDGER_FILES order
+    (missing optional files such as a WAL are skipped deterministically)."""
+    base = Path(state_dir)
+    out = []
+    for rel in REPORT_LEDGER_FILES:
+        p = base / rel
+        if p.is_file():
+            out.append({"file": rel, "sha256": _sha256_file(p)})
+    return out
+
+
+def _chain(parts):
+    h = hashlib.sha256()
+    for part in parts:
+        h.update(part.encode("utf-8"))
+        h.update(b"\n")
+    return h.hexdigest()
+
+
+def compute_report_chain(report, state_dir):
+    """The deterministic chain: body digest, then each ledger file's sha256 in
+    the canonical file order (file name + digest pairs, deterministic)."""
+    parts = ["v1", report_body_digest(report)]
+    for f in _ledger_hashes(state_dir):
+        parts.append("file=%s sha256=%s" % (f["file"], f["sha256"]))
+    return _chain(parts)
+
+
+def check_deferred_live_note(report):
+    """Every DEFERRED check whose name matches a deferred-live check MUST carry
+    the note; a DEFERRED live check without it is a false claim of completion.
+    Returns (ok, problems)."""
+    problems = []
+    for s in (report.get("stages") or []):
+        for c in (s.get("checks") or []):
+            if c.get("result") != "DEFERRED":
+                continue
+            name = c.get("check") or ""
+            if name in DEFERRED_LIVE_CHECKS and not (c.get("note") or ""):
+                problems.append("%s::%s deferred without note" % (s.get("stage"), name))
+    return (not problems), problems
+
+
+def cmd_verify_report(report_path):
+    """Independently re-check a persisted CANARY-REPORT.json claim. Exit 0
+    VALID / 4 INVALID (tampered body, missing ledger, or a deferred-live check
+    without its note). NEVER prints ledger contents or secrets."""
+    try:
+        report = json.loads(Path(report_path).read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        sys.stderr.write("verify-report: cannot read %s: %s\n" % (report_path, exc))
+        return EX_BADINVOKE
+    if not isinstance(report, dict):
+        sys.stderr.write("verify-report: %s does not parse to a JSON object\n" % report_path)
+        return EX_BADINVOKE
+
+    state_dir = (report.get("state_dir") or "").strip()
+    if not state_dir:
+        sys.stderr.write("verify-report: report carries no state_dir\n")
+        return EX_VIOLATION
+    state_dir = Path(state_dir).expanduser()
+    if not state_dir.is_dir():
+        sys.stderr.write("verify-report: state ledger missing (no dir at %s)\n" % state_dir)
+        return EX_VIOLATION
+    if "anthology_state.db" not in [f["file"] for f in _ledger_hashes(state_dir)]:
+        sys.stderr.write("verify-report: anthology_state.db missing under %s\n" % state_dir)
+        return EX_VIOLATION
+
+    expected = (report.get("signature") or {}).get("sha256")
+    computed = compute_report_chain(report, state_dir)
+    if not expected:
+        sys.stderr.write("verify-report: report carries no signature.sha256\n")
+        return EX_VIOLATION
+    if not isinstance(expected, str) or expected != computed:
+        sys.stderr.write(
+            "verify-report: INVALID -- signature mismatch\n"
+            "  expected: %s\n  computed: %s\n"
+            "  (report body and/or the state ledger it names differ from the "
+            "claim)\n" % (expected, computed))
+        return EX_VIOLATION
+
+    note_ok, problems = check_deferred_live_note(report)
+    if not note_ok:
+        sys.stderr.write("verify-report: INVALID -- deferred live checks without "
+                         "the deferred-live note: %s\n" % "; ".join(problems))
+        return EX_VIOLATION
+
+    sys.stdout.write(
+        "verify-report: VALID (sha256 %s)\n"
+        "  contract: %s  verdict: %s  utc: %s\n"
+        "  stages: %d total, %d passed, %d deferred, %d failed\n"
+        "  ledger: %s\n"
+        "  deferred-live note carried: %s\n" % (
+            computed, report.get("contract"), report.get("verdict"),
+            report.get("utc"),
+            (report.get("summary") or {}).get("stages_total"),
+            (report.get("summary") or {}).get("stages_passed"),
+            (report.get("summary") or {}).get("stages_deferred"),
+            (report.get("summary") or {}).get("stages_failed"),
+            "; ".join(f["file"] for f in _ledger_hashes(state_dir)),
+            "yes" if note_ok else "no"))
+    return EX_OK
 
 
 # ---------------------------------------------------------------------------
@@ -1932,7 +2145,13 @@ def cmd_plan():
             ("B2", "BOARD ROUND-TRIP (both doors, never-done)")):
         print("  %-4s %s" % (stage, label))
     print("exit codes: 0 all observed PASS; 2 a stage FAILED; 3 --require-live held;")
-    print("            4 --self-test failed; 1 unexpected error")
+    print("            4 --self-test failed / --verify-report INVALID; 1 unexpected error")
+    print("modes: --verify-report <report> independently re-checks a persisted")
+    print("       CANARY-REPORT.json claim (sha256 chain over report body + the")
+    print("       state ledger it names; exit 0 VALID / 4 INVALID)")
+    print("note: the 12/12 verdict is STAGE-LEVEL; S7 live Kie render + S8 live")
+    print("      Doc pull-back are deliberately deferred on a default run and the")
+    print("      report says so in the summary (deferred-live note).")
     print("secrets: resolved BY LABEL only; SET / NOT SET surfaces; values never printed")
     return EX_OK
 
@@ -2174,6 +2393,67 @@ def self_test():
         check("canary inventoried in ENGINE-MANIFEST script_inventory",
               False, "manifest unreadable: %s" % exc)
 
+    # ---- 6. report-verification (U19): chain determinism + tamper detection --
+    t6 = Path(tempfile.mkdtemp(prefix="canary_verifyreport_"))
+    try:
+        (t6 / "state").mkdir(parents=True)
+        for rel in ("anthology_state.db", "gate_nonce.db"):
+            (t6 / "state" / rel).write_bytes(b"\x00sqlite canary fixture")
+        t6rep = {
+            "contract": "anthology-engine-canary-report", "schema_version": 1,
+            "utc": "2026-08-11T00:00:00+00:00", "state_dir": str(t6 / "state"),
+            "mode": "run", "verdict": "PASS",
+            "stages": [
+                {"stage": "S7", "label": "COVER SET", "status": "PASS",
+                 "checks": [{"check": "live 4-style cover render (Kie + Drive landing)",
+                             "result": "DEFERRED", "note": DEFERRED_LIVE_NOTE}]},
+            ],
+            "summary": {"stages_total": 1, "stages_passed": 1, "stages_deferred": 0,
+                        "stages_failed": 0, "failed_stages": [], "deferred_stages": [],
+                        "note": DEFERRED_LIVE_NOTE},
+        }
+        sig = {"alg": "sha256", "chain": "v1:report-body+state-ledger",
+               "sha256": compute_report_chain(t6rep, t6 / "state")}
+        t6rep["signature"] = sig
+        # determinism: re-computing over the same bytes reproduces the hash.
+        check("report chain is deterministic",
+              compute_report_chain(t6rep, t6 / "state") == sig["sha256"])
+        # tamper: a single changed evidence byte breaks the chain.
+        tampered = json.loads(json.dumps(t6rep))
+        tampered["stages"][0]["checks"][0]["evidence"] = "x"
+        check("tampered report body breaks the chain",
+              compute_report_chain(tampered, t6 / "state") != sig["sha256"])
+        # tamper: a changed ledger byte breaks the chain.
+        (t6 / "state" / "anthology_state.db").write_bytes(b"\x01sqlite canary fixture")
+        check("tampered state ledger breaks the chain",
+              compute_report_chain(t6rep, t6 / "state") != sig["sha256"])
+        # restore the ledger bytes so the VALID round-trip below re-computes
+        # the same hash the signature was made over.
+        (t6 / "state" / "anthology_state.db").write_bytes(b"\x00sqlite canary fixture")
+        # missing ledger: verify must fail closed.
+        t6missing = json.loads(json.dumps(t6rep))
+        t6missing["state_dir"] = str(t6 / "no-such-state")
+        (t6 / "missing.json").write_text(json.dumps(t6missing), encoding="utf-8")
+        rc_v = cmd_verify_report(str(t6 / "missing.json"))
+        check("verify-report fails closed on missing ledger", rc_v == EX_VIOLATION,
+              "rc=%s" % rc_v)
+        # deferred-live check without the note: verify must refuse.
+        t6nonote = json.loads(json.dumps(t6rep))
+        del t6nonote["stages"][0]["checks"][0]["note"]
+        t6nonote["signature"] = {"alg": "sha256",
+                                 "chain": "v1:report-body+state-ledger",
+                                 "sha256": compute_report_chain(t6nonote, t6 / "state")}
+        (t6 / "nonote.json").write_text(json.dumps(t6nonote), encoding="utf-8")
+        rc_v = cmd_verify_report(str(t6 / "nonote.json"))
+        check("verify-report refuses a deferred live check without the note",
+              rc_v == EX_VIOLATION, "rc=%s" % rc_v)
+        # a VALID report round-trips through verify with exit 0.
+        (t6 / "ok.json").write_text(json.dumps(t6rep), encoding="utf-8")
+        rc_v = cmd_verify_report(str(t6 / "ok.json"))
+        check("verify-report VALID exit 0", rc_v == EX_OK, "rc=%s" % rc_v)
+    finally:
+        shutil.rmtree(t6, ignore_errors=True)
+
     passed = sum(1 for _, ok, _ in checks if ok)
     total = len(checks)
     sys.stdout.write("canary_e2e_test self-test: %d/%d passed\n" % (passed, total))
@@ -2204,6 +2484,10 @@ def build_parser():
                          "T8 intake proof (NEVER Tailscale)")
     ap.add_argument("--require-live", action="store_true",
                     help="any un-executed live stage holds the canary (exit 3)")
+    ap.add_argument("--verify-report", default="",
+                    help="independently re-check a persisted CANARY-REPORT.json "
+                         "claim (deterministic sha256 chain over the report body "
+                         "plus the state ledger it names; exit 0 VALID / 4 INVALID)")
     return ap
 
 
@@ -2221,6 +2505,8 @@ def main(argv=None):
             return self_test()
         if args.plan:
             return cmd_plan()
+        if args.verify_report:
+            return cmd_verify_report(args.verify_report)
         return run_canary(args)
     except BrokenPipeError:
         return EX_OK

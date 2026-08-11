@@ -1,8 +1,8 @@
 {
   "contract": "anthology-engine-canary-report",
   "schema_version": 1,
-  "utc": "2026-08-11T01:10:44.239602+00:00",
-  "state_dir": "/Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state",
+  "utc": "2026-08-11T02:07:25.352435+00:00",
+  "state_dir": "canary-run/state",
   "mode": "run",
   "verdict": "PASS",
   "stages": [
@@ -46,7 +46,7 @@
         {
           "check": "ledger bootstrap",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'bootstrap', 'db_path': '/Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/anthology_state.db', 'schema_version': '1', 'base_mode': 'mirror_only'}"
+          "evidence": "{'ok': True, 'action': 'bootstrap', 'db_path': 'canary-run/state/anthology_state.db', 'schema_version': '1', 'base_mode': 'mirror_only'}"
         },
         {
           "check": "upsert producer",
@@ -123,7 +123,7 @@
         {
           "check": "record-artifact(avatar) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_3f9638afe93f4e8e9149', 'type': 'avatar', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_26d8205b8a5d4f5e8999', 'type': 'avatar', 'version': 1}"
         },
         {
           "check": "Tier 1 avatar CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -148,7 +148,7 @@
         {
           "check": "s1_producer board approve commits CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_e80c327eef624fd490d0', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's1_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-avatar', 'status': 'failed_nonfatal'}, 'stage_cursor': 's2_tone', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_669f44d5774b4f36bb79', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's1_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-avatar', 'status': 'failed_nonfatal'}, 'stage_cursor': 's2_tone', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "§3 release tag anthology-release-avatar CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -158,7 +158,7 @@
         {
           "check": "record-artifact(avatar) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_229b76c6acb64459845c', 'type': 'avatar', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_65a94a2d9c5f4dbba2f2', 'type': 'avatar', 'version': 1}"
         },
         {
           "check": "Tier 1 avatar CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -183,7 +183,7 @@
         {
           "check": "s1_producer board approve commits CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_6c8c79980d2e416a9921', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's1_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-avatar', 'status': 'failed_nonfatal'}, 'stage_cursor': 's2_tone', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_7bb1d607aa9544859d88', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's1_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-avatar', 'status': 'failed_nonfatal'}, 'stage_cursor': 's2_tone', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         },
         {
           "check": "§3 release tag anthology-release-avatar CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -200,7 +200,7 @@
         {
           "check": "record-artifact(tone) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_5ce76c9b7d094c268e35', 'type': 'tone', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_2917d993d1144d9e9c9e', 'type': 'tone', 'version': 1}"
         },
         {
           "check": "Tier 1 tone floor >= 3000 words CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -220,12 +220,12 @@
         {
           "check": "s2_producer board approve commits CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_c5886f4d10e34bc1bde3', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's2_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-tone', 'status': 'failed_nonfatal'}, 'stage_cursor': 's3_title', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_b596108330de4d85b379', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's2_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-tone', 'status': 'failed_nonfatal'}, 'stage_cursor': 's3_title', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "record-artifact(tone) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_f902fc7838ca44d38147', 'type': 'tone', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_413d6d5ea5a741dcb9c0', 'type': 'tone', 'version': 1}"
         },
         {
           "check": "Tier 1 tone floor >= 3000 words CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -245,7 +245,7 @@
         {
           "check": "s2_producer board approve commits CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_95d72331d0ce40f1ae35', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's2_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-tone', 'status': 'failed_nonfatal'}, 'stage_cursor': 's3_title', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_e1178f415db648c9a5e8', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's2_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-tone', 'status': 'failed_nonfatal'}, 'stage_cursor': 's3_title', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         }
       ]
     },
@@ -257,7 +257,7 @@
         {
           "check": "record-artifact(titles) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_f820b08222cd4634994e', 'type': 'titles', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_6545fc43887344eeac7e', 'type': 'titles', 'version': 1}"
         },
         {
           "check": "advance to s3_gate CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -267,17 +267,17 @@
         {
           "check": "mint token for s3_selection CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'mint', 'expires_at': 1790298632, 'gate': 's3_selection', 'gate_link': '/participant/v1.eyJleHAiOjE3OTAyOTg2MzIsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTA2MzIsImp0aSI6ImExZjQ4YzVkN2JjYzQzYWQ4ZDE0YmNlNjMwMzRhMjZlIiwicGsiOiJDT05UQUNUY2FuYXJ5T1BhMTo6QU5USGNhbmFyeU9QMDEifQ.DVWhU3YGiY97bwNOC1eiTxjFf9WPBiORnsQaJLD7WvQ', 'ok': True, 'pin': '10566264', 'secret_label': 'ANTHOLOGY_GATE_TOKEN_SECRET', 'secret_status': 'SET', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01', 'token': 'v1.eyJleHAiOjE3OTAyOTg2MzIsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTA2MzIsImp0aSI6ImExZjQ4YzVkN2JjYzQzYWQ4Z"
+          "evidence": "{'action': 'mint', 'expires_at': 1790302033, 'gate': 's3_selection', 'gate_link': '/participant/v1.eyJleHAiOjE3OTAzMDIwMzMsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTQwMzMsImp0aSI6Ijc5ODQ2OTJjOWI1ZDRiODk5MjgyYjY0NTRmYzQ4MzQ4IiwicGsiOiJDT05UQUNUY2FuYXJ5T1BhMTo6QU5USGNhbmFyeU9QMDEifQ.8zS6KX8oqfEC1Yjz2C7Wxhg_4AV7zfJKw1oQtxiHGl4', 'ok': True, 'pin': '89774139', 'secret_label': 'ANTHOLOGY_GATE_TOKEN_SECRET', 'secret_status': 'SET', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01', 'token': 'v1.eyJleHAiOjE3OTAzMDIwMzMsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTQwMzMsImp0aSI6Ijc5ODQ2OTJjOWI1ZDRiODk5M"
         },
         {
           "check": "verify minted token CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'verify', 'expires_at': 1790298632, 'gate': 's3_selection', 'ok': True, 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01', 'valid': True}"
+          "evidence": "{'action': 'verify', 'expires_at': 1790302033, 'gate': 's3_selection', 'ok': True, 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01', 'valid': True}"
         },
         {
           "check": "token-door title pick commits (TITLE LOCK) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_2f849d1707ce43af8ae4', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's3_selection', 'noop': False, 'ok': True, 'stage_cursor': 's4_blurb_outline', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_fe82d550f61243719204', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's3_selection', 'noop': False, 'ok': True, 'stage_cursor': 's4_blurb_outline', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "replayed token refused (AF-AE-TOKEN-REFUSED) CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -297,7 +297,7 @@
         {
           "check": "record-artifact(titles) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_0a22f6eb0937426b9667', 'type': 'titles', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_fdffd435843a40d7a977', 'type': 'titles', 'version': 1}"
         },
         {
           "check": "advance to s3_gate CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -307,17 +307,17 @@
         {
           "check": "mint token for s3_selection CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'mint', 'expires_at': 1790298632, 'gate': 's3_selection', 'gate_link': '/participant/v1.eyJleHAiOjE3OTAyOTg2MzIsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTA2MzIsImp0aSI6ImE1ZDQ5NDcxYWI0MjQ0OWFiZTlkNTI3NjVkY2ZjOWZiIiwicGsiOiJDT05UQUNUY2FuYXJ5T1BiMjo6QU5USGNhbmFyeU9QMDEifQ.v5zjP9xFUtg0QJZrhkRg1oQu-nselkwrLDHlvLQEc28', 'ok': True, 'pin': '59339045', 'secret_label': 'ANTHOLOGY_GATE_TOKEN_SECRET', 'secret_status': 'SET', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01', 'token': 'v1.eyJleHAiOjE3OTAyOTg2MzIsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTA2MzIsImp0aSI6ImE1ZDQ5NDcxYWI0MjQ0OWFiZ"
+          "evidence": "{'action': 'mint', 'expires_at': 1790302034, 'gate': 's3_selection', 'gate_link': '/participant/v1.eyJleHAiOjE3OTAzMDIwMzQsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTQwMzQsImp0aSI6ImI1MmRiYzJlMTcwZTRhMTNiM2Q4NDFjMmVjMzI0MTJiIiwicGsiOiJDT05UQUNUY2FuYXJ5T1BiMjo6QU5USGNhbmFyeU9QMDEifQ.F0V3i9yL-KC_BVzhWnevRZKv38mAx2RcRX_o98TGvGo', 'ok': True, 'pin': '83022110', 'secret_label': 'ANTHOLOGY_GATE_TOKEN_SECRET', 'secret_status': 'SET', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01', 'token': 'v1.eyJleHAiOjE3OTAzMDIwMzQsImciOiJzM19zZWxlY3Rpb24iLCJpYXQiOjE3ODY0MTQwMzQsImp0aSI6ImI1MmRiYzJlMTcwZTRhMTNiM"
         },
         {
           "check": "verify minted token CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'verify', 'expires_at': 1790298632, 'gate': 's3_selection', 'ok': True, 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01', 'valid': True}"
+          "evidence": "{'action': 'verify', 'expires_at': 1790302034, 'gate': 's3_selection', 'ok': True, 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01', 'valid': True}"
         },
         {
           "check": "token-door title pick commits (TITLE LOCK) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_eb9a22f6253a4074b608', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's3_selection', 'noop': False, 'ok': True, 'stage_cursor': 's4_blurb_outline', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_3335849be2464dba9d12', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's3_selection', 'noop': False, 'ok': True, 'stage_cursor': 's4_blurb_outline', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         },
         {
           "check": "replayed token refused (AF-AE-TOKEN-REFUSED) CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -344,12 +344,12 @@
         {
           "check": "record-artifact(blurb) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_6ebed0947ca74e6ea42a', 'type': 'blurb', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_116739daea7445159d77', 'type': 'blurb', 'version': 1}"
         },
         {
           "check": "record-artifact(outline) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_9a17072585b64e2dac74', 'type': 'outline', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_d4dfaab7dc164325b768', 'type': 'outline', 'version': 1}"
         },
         {
           "check": "Tier 1 outline (story placed, title locked) CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -369,7 +369,7 @@
         {
           "check": "s4_producer board approve CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_0ea4bd28b49d49dfb4a7', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's4_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-outline', 'status': 'failed_nonfatal'}, 'stage_cursor': 's4_gate_participant', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_484ec94202de4250a3eb', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's4_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPa1 not found)', 'slug': 'anthology-release-outline', 'status': 'failed_nonfatal'}, 'stage_cursor': 's4_gate_participant', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "open s4_participant CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -379,17 +379,17 @@
         {
           "check": "s4_participant token-door approve CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_693cba35c8c6437a8f61', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's4_participant', 'noop': False, 'ok': True, 'stage_cursor': 's5_chapter', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_858f87a09ce5440ea8e2', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's4_participant', 'noop': False, 'ok': True, 'stage_cursor': 's5_chapter', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "record-artifact(blurb) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_f85b6a07b23e4819a8fd', 'type': 'blurb', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_1a2d1069e242412794ee', 'type': 'blurb', 'version': 1}"
         },
         {
           "check": "record-artifact(outline) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_17ecaac6a0444172a1f0', 'type': 'outline', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_20a2c29f5b0f42eb863f', 'type': 'outline', 'version': 1}"
         },
         {
           "check": "Tier 1 outline (story placed, title locked) CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -409,7 +409,7 @@
         {
           "check": "s4_producer board approve CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_ead9f007e1fa479c95ec', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's4_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-outline', 'status': 'failed_nonfatal'}, 'stage_cursor': 's4_gate_participant', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_93fd7609847b40408114', 'committed': True, 'decision': 'approve', 'door': 'dashboard', 'gate': 's4_producer', 'noop': False, 'ok': True, 'release_tag': {'detail': '[caf_delivery] contact read-back: rejected (HTTP 400: Contact with id CONTACTcanaryOPb2 not found)', 'slug': 'anthology-release-outline', 'status': 'failed_nonfatal'}, 'stage_cursor': 's4_gate_participant', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         },
         {
           "check": "open s4_participant CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -419,7 +419,7 @@
         {
           "check": "s4_participant token-door approve CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_36d5f67662794772b66e', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's4_participant', 'noop': False, 'ok': True, 'stage_cursor': 's5_chapter', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_6daf47963bda4449a6d8', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's4_participant', 'noop': False, 'ok': True, 'stage_cursor': 's5_chapter', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         }
       ]
     },
@@ -431,7 +431,7 @@
         {
           "check": "record-artifact(chapter) CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_96afc346837e4d6e9357', 'type': 'chapter', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_32d14c5f45ea4003826b', 'type': 'chapter', 'version': 1}"
         },
         {
           "check": "advance to s5_gate CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -446,7 +446,7 @@
         {
           "check": "pdf_render chapter",
           "result": "PASS",
-          "evidence": "rendered /Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/runs/participants/CONTACTcanaryOPa1__ANTHcanaryOP01/working/chapter.pdf"
+          "evidence": "rendered canary-run/state/runs/participants/CONTACTcanaryOPa1__ANTHcanaryOP01/working/chapter.pdf"
         },
         {
           "check": "guard-font-floor chapter >= 14pt",
@@ -471,12 +471,12 @@
         {
           "check": "s5 request_rewrite routes to s6_rewrite CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_f3ee8545e82147b5be52', 'committed': True, 'decision': 'request_rewrite', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's6_rewrite', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_952438fbee844d0cb1e2', 'committed': True, 'decision': 'request_rewrite', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's6_rewrite', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "record-artifact(chapter) CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_55093ab45cc64201a18b', 'type': 'chapter', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_3134990d9f3549469326', 'type': 'chapter', 'version': 1}"
         },
         {
           "check": "advance to s5_gate CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -491,7 +491,7 @@
         {
           "check": "pdf_render chapter",
           "result": "PASS",
-          "evidence": "rendered /Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/runs/participants/CONTACTcanaryOPb2__ANTHcanaryOP01/working/chapter.pdf"
+          "evidence": "rendered canary-run/state/runs/participants/CONTACTcanaryOPb2__ANTHcanaryOP01/working/chapter.pdf"
         },
         {
           "check": "guard-font-floor chapter >= 14pt",
@@ -516,7 +516,7 @@
         {
           "check": "s5 request_rewrite routes to s6_rewrite CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_7c838baa4e4049dfb061', 'committed': True, 'decision': 'request_rewrite', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's6_rewrite', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_7ca0ca334bab48fc8b02', 'committed': True, 'decision': 'request_rewrite', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's6_rewrite', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         }
       ]
     },
@@ -528,7 +528,7 @@
         {
           "check": "record rewrite chapter CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_174b1cd853034e99b4d8', 'type': 'chapter', 'version': 2}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_fcd736826b3b4f15b886', 'type': 'chapter', 'version': 2}"
         },
         {
           "check": "rewrite_count == 1 CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -558,7 +558,7 @@
         {
           "check": "s5 approve freezes the rewritten chapter CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_a73a7541c8fc46b1a3a0', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's7_cover', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_750252fb140e485e9c2d', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's7_cover', 'subject_key': 'CONTACTcanaryOPa1::ANTHcanaryOP01'}"
         },
         {
           "check": "frozen chapter artifact CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -573,7 +573,7 @@
         {
           "check": "record rewrite chapter CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_7abe38a5c7e842f1a833', 'type': 'chapter', 'version': 2}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_b302d78433f14cc38af6', 'type': 'chapter', 'version': 2}"
         },
         {
           "check": "rewrite_count == 1 CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -603,7 +603,7 @@
         {
           "check": "s5 approve freezes the rewritten chapter CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'approval_id': 'appr_226b844007ac4ef5b3d7', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's7_cover', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'approval_id': 'appr_16eef3b263f843bbb59d', 'committed': True, 'decision': 'approve', 'door': 'nudge_link', 'gate': 's5_participant', 'noop': False, 'ok': True, 'stage_cursor': 's7_cover', 'subject_key': 'CONTACTcanaryOPb2::ANTHcanaryOP01'}"
         },
         {
           "check": "frozen chapter artifact CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -655,7 +655,8 @@
         {
           "check": "live 4-style cover render (Kie + Drive landing)",
           "result": "DEFERRED",
-          "reason": "deliberately not spent: a live render is a PAID image generation on the client's own Kie account; structural proofs above stand"
+          "reason": "deliberately not spent: a live render is a PAID image generation on the client's own Kie account; structural proofs above stand",
+          "note": "12/12 is STAGE-LEVEL, not check-level: the two live checks above are deliberately deferred on every default run (a live Kie cover render is a paid image generation on the client's own account; the live Doc pull-back needs live Drive credentials)."
         }
       ]
     },
@@ -667,7 +668,7 @@
         {
           "check": "pdf_render chapter",
           "result": "PASS",
-          "evidence": "rendered /Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/runs/participants/CONTACTcanaryOPa1__ANTHcanaryOP01/working/chapter.pdf"
+          "evidence": "rendered canary-run/state/runs/participants/CONTACTcanaryOPa1__ANTHcanaryOP01/working/chapter.pdf"
         },
         {
           "check": "guard-font-floor chapter >= 14pt",
@@ -692,7 +693,7 @@
         {
           "check": "signed process certificate issued CONTACTcanaryOPa1::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'certificate': '/Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/reports/process-certificate_CONTACTcanaryOPa1__ANTHcanaryOP01_20260811T011040Z.json', 'signed': False, 'content_sha256': 'bb3b14ca463f3d63e3766f217a8e196520435a787e26051018304782df75dfe9', 'self_verify': True, 'reason': 'unsigned (content hash intact)'}"
+          "evidence": "{'certificate': 'canary-run/state/reports/process-certificate_CONTACTcanaryOPa1__ANTHcanaryOP01_20260811T020721Z.json', 'signed': False, 'content_sha256': 'bb3b14ca463f3d63e3766f217a8e196520435a787e26051018304782df75dfe9', 'self_verify': True, 'reason': 'unsigned (content hash intact)'}"
         },
         {
           "check": "card projects to review (never done) CONTACTcanaryOPa1::ANTHcanaryOP01",
@@ -712,7 +713,7 @@
         {
           "check": "pdf_render chapter",
           "result": "PASS",
-          "evidence": "rendered /Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/runs/participants/CONTACTcanaryOPb2__ANTHcanaryOP01/working/chapter.pdf"
+          "evidence": "rendered canary-run/state/runs/participants/CONTACTcanaryOPb2__ANTHcanaryOP01/working/chapter.pdf"
         },
         {
           "check": "guard-font-floor chapter >= 14pt",
@@ -737,7 +738,7 @@
         {
           "check": "signed process certificate issued CONTACTcanaryOPb2::ANTHcanaryOP01",
           "result": "PASS",
-          "evidence": "{'certificate': '/Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/reports/process-certificate_CONTACTcanaryOPb2__ANTHcanaryOP01_20260811T011041Z.json', 'signed': False, 'content_sha256': '258b0fcb2d2642a1bc9b218d59180cf7734660c275ea7dc04a3bd7b9e7f7a05d', 'self_verify': True, 'reason': 'unsigned (content hash intact)'}"
+          "evidence": "{'certificate': 'canary-run/state/reports/process-certificate_CONTACTcanaryOPb2__ANTHcanaryOP01_20260811T020722Z.json', 'signed': False, 'content_sha256': '258b0fcb2d2642a1bc9b218d59180cf7734660c275ea7dc04a3bd7b9e7f7a05d', 'self_verify': True, 'reason': 'unsigned (content hash intact)'}"
         },
         {
           "check": "card projects to review (never done) CONTACTcanaryOPb2::ANTHcanaryOP01",
@@ -782,7 +783,8 @@
         {
           "check": "live Doc pull-back byte round-trip",
           "result": "DEFERRED",
-          "reason": "prove_aw_doc_pullback held: "
+          "reason": "prove_aw_doc_pullback held: ",
+          "note": "12/12 is STAGE-LEVEL, not check-level: the two live checks above are deliberately deferred on every default run (a live Kie cover render is a paid image generation on the client's own account; the live Doc pull-back needs live Drive credentials)."
         }
       ]
     },
@@ -844,7 +846,7 @@
         {
           "check": "s9_ready fires (both-door board door)",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-approval', 'gate': 's9_ready', 'anthology_id': 'ANTHcanaryOP01', 'assembly_state': 'ready_confirmed', 'approval_id': 'appr_57c22df14d2b4a19899c', 'frozen_chapter_count': 2}"
+          "evidence": "{'ok': True, 'action': 'record-approval', 'gate': 's9_ready', 'anthology_id': 'ANTHcanaryOP01', 'assembly_state': 'ready_confirmed', 'approval_id': 'appr_c99f9065ee0645d08ae2', 'frozen_chapter_count': 2}"
         },
         {
           "check": "double-fire is an acknowledged no-op (one-way)",
@@ -869,7 +871,7 @@
         {
           "check": "confirm_order persists the finalized order (board door)",
           "result": "PASS",
-          "evidence": "{'action': 'decide', 'assembly_state': 'adjusted', 'committed': True, 'confirm_order': {'detail': '/Users/blackceomacmini/openclaw-onboarding/59-anthology-engine/canary-run/state/runs/s9/ANTHcanaryOP01/request.json', 'flagged': True}, 'decision': 'confirm_order', 'door': 'dashboard', 'ok': True, 'order_len': 2, 'subject_key': 'ANTHcanaryOP01'}"
+          "evidence": "{'action': 'decide', 'assembly_state': 'adjusted', 'committed': True, 'confirm_order': {'detail': 'canary-run/state/runs/s9/ANTHcanaryOP01/request.json', 'flagged': True}, 'decision': 'confirm_order', 'door': 'dashboard', 'ok': True, 'order_len': 2, 'subject_key': 'ANTHcanaryOP01'}"
         },
         {
           "check": "confirm_order flags the S9 runner (transitions + finale)",
@@ -889,7 +891,7 @@
         {
           "check": "record-artifact(anthology_manuscript)",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_b7a173a101a94630b771', 'type': 'anthology_manuscript', 'version': 1}"
+          "evidence": "{'ok': True, 'action': 'record-artifact', 'artifact_id': 'art_3aba5d218be845f19616', 'type': 'anthology_manuscript', 'version': 1}"
         },
         {
           "check": "assembly Gate B over manuscript",
@@ -909,7 +911,7 @@
         {
           "check": "s9_producer sign-off closes the anthology",
           "result": "PASS",
-          "evidence": "{'ok': True, 'action': 'record-approval', 'gate': 's9_producer', 'anthology_id': 'ANTHcanaryOP01', 'assembly_state': 'signed_off', 'delivered_participants': ['CONTACTcanaryOPa1::ANTHcanaryOP01', 'CONTACTcanaryOPb2::ANTHcanaryOP01'], 'approval_id': 'appr_a7da9a159e3f4a8e8974'}"
+          "evidence": "{'ok': True, 'action': 'record-approval', 'gate': 's9_producer', 'anthology_id': 'ANTHcanaryOP01', 'assembly_state': 'signed_off', 'delivered_participants': ['CONTACTcanaryOPa1::ANTHcanaryOP01', 'CONTACTcanaryOPb2::ANTHcanaryOP01'], 'approval_id': 'appr_c8f4084c28934c54a57e'}"
         },
         {
           "check": "anthology status delivered",
@@ -987,6 +989,12 @@
     "stages_deferred": 0,
     "stages_failed": 0,
     "failed_stages": [],
-    "deferred_stages": []
+    "deferred_stages": [],
+    "note": "12/12 is STAGE-LEVEL, not check-level: the two live checks above are deliberately deferred on every default run (a live Kie cover render is a paid image generation on the client's own account; the live Doc pull-back needs live Drive credentials)."
+  },
+  "signature": {
+    "alg": "sha256",
+    "chain": "v1:report-body+state-ledger",
+    "sha256": "92b028a198fb14cfe85380c9ddf026333e5da3dfcd60bcb57e6de13b78889c70"
   }
 }
