@@ -192,6 +192,37 @@ for f in stage_files:
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     need(rc == 0, "stage runner --self-test failed: %s" % f)
 
+# --- U17 drift gate: the snapshot fixture must agree with the source of truth ---
+# scripts/qc-snapshot-fixture.sh (ENGINE-MANIFEST row 52, authored_by U17) is the
+# CI drift gate over fixtures/snapshot/anthology-engine-v1.0.0.json. It runs HERE
+# on every verify so a stale fixture -- or a renamed ENGINE-MANIFEST stage name,
+# field-map key, or form-field name -- fails the engine's own self-verify (exit 4)
+# before it can ship. Exit contract of the gate: 0 agree, 1 DRIFT, 2 blind.
+_gsnap = p("scripts", "qc-snapshot-fixture.sh")
+if os.path.isfile(_gsnap):
+    _r = subprocess.run(["bash", _gsnap, "--skill-dir", root, "--json"],
+                        capture_output=True, text=True, timeout=120)
+    if _r.returncode != 0:
+        _tail = "\n".join((_r.stdout or "").splitlines()[-6:])
+        fails.append("snapshot-fixture drift gate FAILED (rc=%d): %s" % (_r.returncode, _tail))
+else:
+    fails.append("missing U17 drift gate: scripts/qc-snapshot-fixture.sh")
+
+# --- runner roster: the U17 drift gate's own mutation self-test ---
+# The gate must DISCRIMINATE: an untouched tree passes, a manifest-name tamper
+# fails. A gate that passes when the world drifts is dead; a gate that fails on
+# a clean tree is broken. Same roster discipline as the stage-runner
+# --self-test loop above.
+_sg = p("scripts", "qc-snapshot-fixture.sh")
+if os.path.isfile(_sg):
+    _r = subprocess.run(["bash", _sg, "--self-test", "--skill-dir", root],
+                        capture_output=True, text=True, timeout=180)
+    need(_r.returncode == 0,
+         "qc-snapshot-fixture --self-test failed (rc=%d): %s"
+         % (_r.returncode, (_r.stderr or _r.stdout or "").strip().splitlines()[-1] if ((_r.stderr or _r.stdout or "").strip()) else ""))
+else:
+    fails.append("missing U17 drift gate self-test target: scripts/qc-snapshot-fixture.sh")
+
 # --- no Anthropic-family id in any owned text file ---
 owned = ["SKILL.md", "INSTRUCTIONS.md", "HOW-TO-USE.md", "MASTERDOC.md", "REPAIRS.md",
          "CHANGELOG.md", "ENGINE-MANIFEST.json", "anthology-engine-entry.sh",
