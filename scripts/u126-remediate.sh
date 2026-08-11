@@ -41,20 +41,35 @@ _finding() {
 _log() { echo "[fleet-audit-remediate] $*"; }
 _fix() { echo "[fleet-audit-remediate] FIX: $*"; }
 
-# _agents_list_blocks_upgrade — PRE-UPGRADE GATE for F1.
+# _agents_list_blocks_upgrade — FALLBACK PRE-UPGRADE GATE for F1.
 #
 # Prints a reason and returns 0 when this box MUST NOT be moved onto a new
-# OpenClaw build; returns 1 when it is clear to upgrade.
+# OpenClaw build via the BARE `npm update -g openclaw` fallback path; returns 1
+# when that plain path is clear. check_f1_stale_gateway's --apply branch tries
+# the ATOMIC tool (scripts/oc-atomic-upgrade.sh) FIRST when present on the
+# box — this gate is only consulted as the fallback when that tool is missing.
 #
-# F1's fix is `npm update -g openclaw` — a VERSION CHANGE. The 2026.7.2-beta
-# line rejects the legacy `agents.list` key ("agents: Unrecognized key:
-# \"list\""), the gateway exits 78 (EX_CONFIG) ~0.4s after start, launchd's
-# KeepAlive + ThrottleInterval=10 respawns it every ~11s, and the crash-loop
-# breaker eventually latches channel auto-start OFF — the box goes completely
-# dark and queued deliveries are lost. The key is HARMLESS on the older line, so
-# "F1: gateway is stale" fires on exactly the boxes most likely to still carry
-# it. Upgrading without checking the schema converts a healthy-but-stale box
-# into a dark one. FAIL CLOSED: an unreadable config, or no python3, BLOCKS.
+# The fallback fix is `npm update -g openclaw` — a VERSION CHANGE. The
+# 2026.7.2-beta line rejects the legacy `agents.list` key ("agents:
+# Unrecognized key: \"list\""), the gateway exits 78 (EX_CONFIG) ~0.4s after
+# start, launchd's KeepAlive + ThrottleInterval=10 respawns it every ~11s, and
+# the crash-loop breaker eventually latches channel auto-start OFF — the box
+# goes completely dark and queued deliveries are lost. The key is HARMLESS on
+# the older line, so "F1: gateway is stale" fires on exactly the boxes most
+# likely to still carry it. Upgrading without checking the schema converts a
+# healthy-but-stale box into a dark one.
+#
+# ⚠️ `openclaw doctor --fix` IS NOT A REMEDY FOR THIS. Measured, not assumed:
+# on 12 boxes the config's SHA-256 was BYTE-IDENTICAL before and after a
+# `doctor --fix` run, and `openclaw config schema` on 2026.7.1 / 2026.7.1-2
+# reports the `agents` properties as exactly ["defaults","list"] — there is no
+# `entries` for it to migrate TO. It also has a measured SIDE EFFECT: on one
+# box it silently rewrote `agents.defaults.models` pins. The real migration
+# (`agents.list` array -> `agents.entries` object keyed by id) is only safe
+# performed atomically, in the same window as the binary change, by
+# scripts/oc-atomic-upgrade.sh — see check_f1_stale_gateway below.
+#
+# FAIL CLOSED: an unreadable config, or no python3, BLOCKS.
 _agents_list_blocks_upgrade() {
   local cfg="${OC_ROOT}/openclaw.json" py out rc
   [[ -f "$cfg" ]] || return 1
@@ -112,10 +127,27 @@ check_f1_stale_gateway() {
   if [[ "$behind" -gt 2 ]]; then
     _finding "F1" "STALE" "gateway ${local_ver} >2 releases behind ${latest_ver} (~${behind})"
     if [[ "$_APPLY" -eq 1 ]]; then
-      # PRE-UPGRADE GATE — see _agents_list_blocks_upgrade above.
-      local _al_reason=""
+      # THREE-WAY DECISION. 1) the atomic tool, when present, is authoritative
+      # and does the whole quiesce/install/migrate/verify/start procedure --
+      # use it INSTEAD of the bare `npm update -g openclaw`. 2) with no atomic
+      # tool on this box, fall back to the plain update ONLY when the schema
+      # is proven CLEAN. 3) legacy key present, or the schema could not be
+      # determined -- BLOCK. See _agents_list_blocks_upgrade above for why
+      # `openclaw doctor --fix` is not an option here.
+      local _atomic="${OC_ROOT}/scripts/oc-atomic-upgrade.sh" _atomic_rc=0 _al_reason=""
+      if [[ -f "$_atomic" && -r "$_atomic" ]]; then
+        _log "F1: atomic upgrade tool present at ${_atomic} -- using it instead of bare npm update"
+        bash "$_atomic" --upgrade; _atomic_rc=$?
+        case "$_atomic_rc" in
+          0)  _finding "F1" "FIXED" "upgraded via the atomic path (scripts/oc-atomic-upgrade.sh --upgrade)" ;;
+          78) _finding "F1" "BLOCKED" "atomic upgrade REFUSED (rc=78) -- box left exactly as found, see the refusal banner above" ;;
+          70) _finding "F1" "FAILED" "!!! MAXIMUM SEVERITY !!! atomic upgrade ROLLBACK FAILED (rc=70) -- THIS BOX NEEDS A HUMAN NOW, see the banner above for the exact repair commands" ;;
+          *)  _finding "F1" "FAILED" "atomic upgrade exited ${_atomic_rc} (unrecognised) -- treating as failed" ;;
+        esac
+        return 0
+      fi
       if _al_reason="$(_agents_list_blocks_upgrade)"; then
-        _finding "F1" "BLOCKED" "upgrade REFUSED (${_al_reason}) -- fix with 'openclaw doctor --fix', verify with 'bash scripts/qc-assert-legacy-agents-list.sh', then re-run --apply"
+        _finding "F1" "BLOCKED" "upgrade REFUSED (${_al_reason}) -- migrate with 'bash scripts/oc-atomic-upgrade.sh --upgrade' (only safe inside an upgrade window: gateway stopped, binary installed, config rewritten+verified, gateway restarted), verify with 'bash scripts/qc-assert-legacy-agents-list.sh', then re-run --apply"
         return 0
       fi
       _fix "F1: running npm update -g openclaw..."
