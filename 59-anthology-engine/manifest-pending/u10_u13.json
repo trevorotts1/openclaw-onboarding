@@ -1,0 +1,262 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U10-U13-ASSEMBLY-INCOMPLETE",
+      "exit": 2,
+      "meaning": "the template-module set named in the dispatcher's inventory is not fully present, or a module violates the one-entry-point contract, or a shipped template file is not in the set - a template law is never silently skipped"
+    },
+    {
+      "code": "AF-AE-U10-U13-OFFLINE",
+      "exit": 2,
+      "meaning": "a live-verify request on the U10/U13 family - template generation is OFFLINE by construction and there is no live surface to gate; a verify request is a usage STOP, never a silent network probe"
+    },
+    {
+      "code": "AF-AE-COPY-LAW",
+      "exit": 5,
+      "meaning": "an em-dash, a banned byline actor, an unbalanced merge slot, a code fence, or a secret-shaped fragment in a generated string - never a printed payload, and never exit 0 (the fail-closed default of the copy law)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of a family module or battery (enforced violation - the house code, shared with the U02 / U03 / U04 / U05 / U06 / U07 / U08_U09 families)"
+    }
+  ],
+  "authored_by": "U10/U13",
+  "check_modules": [
+    "w1_review_fire",
+    "w2_title_fire",
+    "w3_release_avatar",
+    "w4_release_tone",
+    "w5_release_title",
+    "w6_release_outline",
+    "w7_release_chapter",
+    "w8_release_rewrite",
+    "w9_release_cover",
+    "w10_release_final",
+    "w11_delivered",
+    "w12_chapter_ready"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u10-u13-workflows-law",
+  "docs_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init \u2014 pure namespace container, no runtime code; modules are imported BY NAME; records the package doctrine (fail-closed, secrets by label, browser-UA law for every GoHighLevel / Convert and Flow surface, move in silence; destructive actions require --execute)"
+    },
+    {
+      "name": "copy_rules.py",
+      "role": "the COPY-RULE CONSTANT MODULE \u2014 the single canonical source of the copy law (config/anthology-snapshot-contract.json workflows.copy_law, Trevor's verbatim) plus the two-link and stage-form-link laws for the U10/U13 tag->notification template family: the sanctioned word 'editors', the banned words, zero em-dashes, the sign-off law ('The Editors' or the producer merge), the warm-language law, the stage-form link with anthology_id and stage prefilled, the PDF view + Doc edit link pair per stage, and the never-a-real-token deny machinery. Every sibling imports its constants and deny machinery FROM HERE, so the law is defined once and enforced everywhere"
+    },
+    {
+      "name": "webhook_body.py",
+      "role": "the W1/W2 WEBHOOK BODY BUILDER \u2014 the routed submission shapes the engine's inbound intake hook (/hooks/anthology-intake) accepts and the OUTBOUND custom-webhook POST shapes the tag->notification workflows fire: the body key law (source, stage, decision, notes, cover_choice, anthology_id, contact_id, location), the source law (exactly 'anthology-intake'), the secret-header law (the route secret rides the header, never the body; the outbound POST rides the REPLACE-ME merge only), the decision / notes / cover law (the two s5_gate actions, the four cover styles), the copy law, the standing instruction, and the stage-form pre-fill link"
+    },
+    {
+      "name": "w1_review_fire.py",
+      "role": "the W1 REVIEW FIRE TEMPLATE \u2014 the form_submission-triggered Review Fire workflow (the trigger scoped EXACTLY to the universal-review form, the custom-webhook POST with the REPLACE-ME merges, and the review-decision EMAIL + SMS pair): the chapter PDF view + Doc edit merges, the stage form link pre-filled ?anthology_id=<minted>&stage=<stage> (default s5_gate), and the sign-off 'The Editors' or the producer merge"
+    },
+    {
+      "name": "w2_title_fire.py",
+      "role": "the W2 TITLE FIRE TEMPLATE \u2014 the form_submission-triggered Title Fire workflow (one ACTIVE trigger scoped to the title-select form, the ONE custom-webhook POST action, and the release EMAIL + SMS pair): the Titles PDF view + Doc edit merges, the stage form link pre-filled with the default stage s3_gate, and the sign-off law"
+    },
+    {
+      "name": "w3_release_avatar.py",
+      "role": "the W3 RELEASE-AVATAR TEMPLATE \u2014 the anthology-release-avatar EMAIL + SMS generator (the contract row of the same name, LIVE slug): the Avatar deliverable PDF view + Doc edit links, the byte-exact standing instruction, the stage review form link pre-filled with the default stage s1_gate, the link-only SMS shape, and the sign-off law"
+    },
+    {
+      "name": "w4_release_tone.py",
+      "role": "the W4 RELEASE-TONE TEMPLATE \u2014 the anthology-release-tone EMAIL + SMS generator (the contract row of the same name, LIVE slug): the Tone deliverable PDF view + Doc edit links, the byte-exact standing instruction, the stage review form link pre-filled with the default stage s2_gate, the link-only SMS shape, and the sign-off law"
+    },
+    {
+      "name": "w5_release_title.py",
+      "role": "the W5 RELEASE-TITLE TEMPLATE \u2014 the anthology-release-title EMAIL + SMS generator (the \u00a73 release bus, the S3 TITLE stage's release): the title-select deliverable PDF view + Doc edit links, the byte-exact standing instruction, the stage selection form link pre-filled with the default stage s3_gate (the SAME default the W2 Title Fire sibling uses), the link-only SMS shape, and the sign-off law"
+    },
+    {
+      "name": "w7_release_chapter.py",
+      "role": "the W7 RELEASE-CHAPTER TEMPLATE \u2014 the anthology-release-chapter EMAIL + SMS generator (the contract row of the same name, WIRED-AHEAD slug; fired by gate_engine GATE_RELEASE_SLUG at the s5_producer gate): the chapter deliverable PDF view + Doc edit links, the two-editors'-rewrites-maximum reminder with the rewrite-count of-2 phrase, the masked stage form link (form id and minted anthology id ride as masked markers, never values), and the link-only SMS"
+    },
+    {
+      "name": "w8_release_rewrite.py",
+      "role": "the W8 RELEASE-REWRITE TEMPLATE \u2014 the anthology-release-rewrite EMAIL + SMS generator (the contract row of the same name, WIRED-AHEAD slug; fired at the s6_producer gate): the rewrite1 / rewrite2 preservation-slot deliverable links, the rewrite budget of TWO with the rewrite-count merge, the stage form link with the ?anthology_id=<minted>&stage=s6 query pair, the webhook url and hook-secret MERGE SLOTS by label, and the link-only SMS"
+    },
+    {
+      "name": "w9_release_cover.py",
+      "role": "the W9 RELEASE-COVER TEMPLATE \u2014 the anthology-release-cover EMAIL + SMS generator (the contract row of the same name, WIRED-AHEAD slug; fired by gate_engine GATE_RELEASE_SLUG at the s7_producer gate): the FOUR cover-sample links (Signature / Bold Editorial / Fine Art / Pure Type), the stage form link pre-filled with the s7_cover stage token, the webhook merges by label, and the link-only SMS"
+    },
+    {
+      "name": "w10_release_final.py",
+      "role": "the W10 RELEASE-FINAL TEMPLATE \u2014 the anthology-release-final EMAIL + SMS generator (the contract row of the same name, DOCTRINE slug; STAGE-RUNNER-FIRED at the S8 stage): the final-chapter deliverable PDF view + Doc edit links, the stage form link pre-filled with the s8 stage token (the S8 runner's own STAGE constant), the webhook merges by label, and the link-only SMS"
+    },
+    {
+      "name": "w11_delivered.py",
+      "role": "the W11 DELIVERED TEMPLATE \u2014 the 'Anthology: Book Delivered' EMAIL + SMS generator (the contract row of the same name, DOCTRINE slug; the TERMINAL s9_producer milestone): the manuscript PDF view + Doc edit links, the stage form link pre-filled with the delivered stage token, the webhook merges by label, and the link-only SMS"
+    },
+    {
+      "name": "w12_chapter_ready.py",
+      "role": "the W12 CHAPTER-APPROVAL-READY TEMPLATE \u2014 the producer-side notification generator (the contract seat workflows.producer_notify_out_of_scope names the existing producer-notify workflow 'Chapter Approval Ready', trigger tag anthology-producer-chapter-ready; notifies the PRODUCER, not the author): the chapter deliverable PDF view + Doc edit links, the stage form link pre-filled with the s5 stage token, and the EMAIL-ONLY shape \u2014 actions exactly [\"send-email\"], no SMS action and no webhook"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the U10/U13 TEMPLATE-LAW DISPATCHER \u2014 the offline-plan / offline-self-test driver for the family: imports the template modules BY NAME (importlib, never exec'd from a path), enforces the fail-closed one-entry-point contract (self_test(out) -> int), pins the module inventory and the STAGE_CURSORS vocabulary, runs every module's own battery plus the aggregate copy-law scan over every generated string, and REFUSES a live-verify request (exit 2 \u2014 the OFFLINE law)"
+    },
+    {
+      "name": "docs_workflows.py",
+      "role": "THIS module \u2014 the family's README / documentation as an importable fail-closed pure-data module: the thirteen workflow seats, the copy rules, the module inventory, the house exit codes, the doctrine, and the credential labels; readme() renders FROM the same data the self-test asserts against, so documentation and data cannot drift; performs no I/O at import and holds no credential"
+    }
+  ],
+  "exit_codes": {
+    "0": "verified success - the 13 template documents generated and validated OFFLINE (also plan / self-test / a documented PASS)",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal - usage / a live-verify request (this family is OFFLINE BY CONSTRUCTION; there is no live surface to gate, AF-AE-U10-U13-OFFLINE) / the template-module assembly incomplete (AF-AE-U10-U13-ASSEMBLY-INCOMPLETE: a module the inventory names that does not ship, or a shipped template that is not in the set) / an out-of-vocabulary stage token",
+    "3": "HELD - unused by this family: template generation is OFFLINE, so a dependency or transport state is never consulted (kept for the house 0/1/2/3/5 law)",
+    "4": "self-test FAILED (the AF-AE-TEMPLATE-ATTACK enforced-violation family - a tamper never masquerades as exit 1)",
+    "5": "data or copy-law mismatch - a generated string carrying an em-dash, a banned byline actor, an unbalanced merge slot, a code fence, or a secret-shaped fragment (AF-AE-COPY-LAW; the fail-closed default - never a printed payload, never exit 0)"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "template generation is OFFLINE by construction (the U10/U13 package-init doctrine): no network, no credential, nothing ever sent - there is no live surface and no execute gate; a live-verify request is a usage STOP (exit 2, AF-AE-U10-U13-OFFLINE), never a silent network probe; every generated file is validated against the copy law before it is written - a silently off-law file never ships"
+  },
+  "generated_files": 13,
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "build_anthology_workflows.py",
+  "template_location_id": "2HIKGNgsixWx0yds7Qnx",
+  "u10_u13_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "copy_rules.py",
+      "role": "the COPY-RULE CONSTANT MODULE - the single canonical source of the copy law (contract workflows.copy_law) plus the two-link and stage-form-link laws; every sibling imports its constants and deny machinery FROM HERE"
+    },
+    {
+      "name": "webhook_body.py",
+      "role": "the W1/W2 WEBHOOK BODY BUILDER - the routed submission shapes the inbound intake hook accepts and the OUTBOUND custom-webhook POST shapes the tag->notification workflows fire"
+    },
+    {
+      "name": "w1_review_fire.py",
+      "role": "the W1 REVIEW FIRE TEMPLATE - the form_submission-triggered workflow scoped to the universal-review form (the custom-webhook POST with the REPLACE-ME merges and the review-decision EMAIL + SMS pair); renders OFFLINE through render()"
+    },
+    {
+      "name": "w2_title_fire.py",
+      "role": "the W2 TITLE FIRE TEMPLATE - the form_submission-triggered workflow scoped to the title-select form (the ONE custom-webhook POST action and the release EMAIL + SMS pair); renders OFFLINE through render_workflow()"
+    },
+    {
+      "name": "w3_release_avatar.py",
+      "role": "the W3 RELEASE-AVATAR EMAIL + SMS generator (the contract row 'Anthology Release: Avatar', LIVE slug); renders OFFLINE through render()"
+    },
+    {
+      "name": "w4_release_tone.py",
+      "role": "the W4 RELEASE-TONE EMAIL + SMS generator (the contract row 'Anthology Release: Tone', LIVE slug); renders OFFLINE through render()"
+    },
+    {
+      "name": "w5_release_title.py",
+      "role": "the W5 RELEASE-TITLE EMAIL + SMS generator (the contract row 'Anthology Release: Title', LIVE slug); renders OFFLINE through render()"
+    },
+    {
+      "name": "w6_release_outline.py",
+      "role": "the W6 RELEASE-OUTLINE EMAIL + SMS generator (the contract row 'Anthology Release: Outline & Blurb', LIVE slug - the blurb + outline pairs and the SMS outline-doc link); renders OFFLINE through render()"
+    },
+    {
+      "name": "w7_release_chapter.py",
+      "role": "the W7 RELEASE-CHAPTER EMAIL + SMS generator (the contract row 'Anthology Release: Chapter', WIRED-AHEAD slug; the two-editors reminder and the MASKED stage form link - never a value); renders OFFLINE through render_all()"
+    },
+    {
+      "name": "w8_release_rewrite.py",
+      "role": "the W8 RELEASE-REWRITE EMAIL + SMS generator (the contract row 'Anthology Release: Rewrite', WIRED-AHEAD slug; the rewrite preservation slots and the stage-form link with the ?anthology_id=<minted>&stage=s6 pair); renders OFFLINE through workflow_payload()"
+    },
+    {
+      "name": "w9_release_cover.py",
+      "role": "the W9 RELEASE-COVER EMAIL + SMS generator (the contract row 'Anthology Release: Cover Picks', WIRED-AHEAD slug; the FOUR cover-sample links); renders OFFLINE through workflow_payload()"
+    },
+    {
+      "name": "w10_release_final.py",
+      "role": "the W10 RELEASE-FINAL EMAIL + SMS generator (the contract row 'Anthology Release: Final Chapter', DOCTRINE slug; STAGE-RUNNER-FIRED at the S8 stage); renders OFFLINE through workflow_payload()"
+    },
+    {
+      "name": "w11_delivered.py",
+      "role": "the W11 DELIVERED EMAIL + SMS generator (the contract row 'Anthology: Book Delivered', DOCTRINE slug; the TERMINAL s9_producer milestone); renders OFFLINE through workflow_payload()"
+    },
+    {
+      "name": "w12_chapter_ready.py",
+      "role": "the W12 CHAPTER-APPROVAL-READY generator (the producer-notification seat, trigger tag anthology-producer-chapter-ready; EMAIL ONLY - actions exactly [\"send-email\"], no SMS action, no webhook); renders OFFLINE through workflow_payload()"
+    },
+    {
+      "name": "main_skeleton.py",
+      "role": "the U10/U13 TEMPLATE-LAW DISPATCHER - the offline-plan / offline-self-test driver over the template modules (imports BY NAME, pins the inventory and the STAGE_CURSORS vocabulary, runs the aggregate copy-law scan, and REFUSES a live-verify request)"
+    },
+    {
+      "name": "docs_workflows.py",
+      "role": "the family README / catalog data + drift gate - the thirteen workflow seats, the copy rules, the module inventory, the house exit codes, the AF family, the doctrine, and the credential labels as DATA; readme() renders FROM the same data the self-test asserts against"
+    }
+  ],
+  "verdict": "PASS",
+  "workflow_seats": [
+    {
+      "module": "w1_review_fire",
+      "name": "Anthology Review Fire",
+      "seat": 1
+    },
+    {
+      "module": "w2_title_fire",
+      "name": "Anthology Title Fire",
+      "seat": 2
+    },
+    {
+      "module": "w3_release_avatar",
+      "name": "Anthology Release: Avatar",
+      "seat": 3
+    },
+    {
+      "module": "w4_release_tone",
+      "name": "Anthology Release: Tone",
+      "seat": 4
+    },
+    {
+      "module": "w5_release_title",
+      "name": "Anthology Release: Title",
+      "seat": 5
+    },
+    {
+      "module": "w7_release_chapter",
+      "name": "Anthology Release: Chapter",
+      "seat": 6
+    },
+    {
+      "module": "w8_release_rewrite",
+      "name": "Anthology Release: Rewrite",
+      "seat": 7
+    },
+    {
+      "module": "w9_release_cover",
+      "name": "Anthology Release: Cover Picks",
+      "seat": 8
+    },
+    {
+      "module": "w10_release_final",
+      "name": "Anthology Release: Final Chapter",
+      "seat": 9
+    },
+    {
+      "module": "w11_delivered",
+      "name": "Anthology: Book Delivered",
+      "seat": 10
+    },
+    {
+      "module": "w12_chapter_ready",
+      "name": "Chapter Approval Ready",
+      "seat": 11
+    },
+    {
+      "module": null,
+      "name": "Anthology Intake Fire",
+      "seat": 12
+    },
+    {
+      "module": "w6_release_outline",
+      "name": "Anthology Release: Outline & Blurb",
+      "seat": 13
+    }
+  ]
+}

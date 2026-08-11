@@ -1,0 +1,272 @@
+{
+  "af_codes": [
+    {
+      "code": "AF-AE-U20-ASSEMBLY-INCOMPLETE",
+      "exit": 2,
+      "meaning": "the u20_modules file set named in the assembly roster is not fully present, or a module violates the one-entry-point self_test contract \u2014 a family gate is never silently skipped (dispatcher STOP)"
+    },
+    {
+      "code": "AF-AE-WELCOME-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "an ACTION (the card INSERT / the VERIFY ACTION / the archive statements) was requested WITHOUT --execute \u2014 the Trevor gate: the module reports exactly what it WOULD do and exits without mutating (STOP, never a silent no-op and never a silent write)"
+    },
+    {
+      "code": "AF-AE-WELCOME-DB-MISSING",
+      "exit": 2,
+      "meaning": "no Command Center database found in any candidate location and no DATABASE_PATH env override \u2014 never a write into the unknown, never a guessed path"
+    },
+    {
+      "code": "AF-AE-WELCOME-READ-REFUSED",
+      "exit": 2,
+      "meaning": "the GET-first existence check or the read-back SELECT failed on the found database (missing table / sqlite error / unreadable file) \u2014 never a silent skip, never a seed-into-the-unknown"
+    },
+    {
+      "code": "AF-AE-WELCOME-CARD-REFUSED",
+      "exit": 2,
+      "meaning": "the found database refused the INSERT (sqlite error / constraint / read-only file) \u2014 a refused write is NEVER reported as inserted"
+    },
+    {
+      "code": "AF-AE-WELCOME-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "a post-write read-back does not prove the write byte-for-byte \u2014 the shared house code with the U02 / U03 / U04 / U05 / U06 / U07 / U08_U09 / U10_U13 families (already stamped in ENGINE-MANIFEST.json)"
+    },
+    {
+      "code": "AF-AE-WELCOME-SOURCE-UNREADABLE",
+      "exit": 2,
+      "meaning": "HOW-TO-USE.md is missing or unreadable \u2014 a card that cannot see its law never fabricates a pass"
+    },
+    {
+      "code": "AF-AE-WELCOME-SOURCE-DRIFT",
+      "exit": 5,
+      "meaning": "the guide's section headings no longer match the pinned section law (a heading renamed, dropped, or reordered), or the title line is not the guide's '# ' title \u2014 the card body renders from the guide BY EXACT SECTION ORDER, so a drifted heading structure means the card can silently contradict the guide"
+    },
+    {
+      "code": "AF-AE-WELCOME-CONTENT-VIOLATION",
+      "exit": 5,
+      "meaning": "a content-law break \u2014 'participant' / 'participants' absent from the card body, or the Convert and Flow naming absent \u2014 the producer language is enforced, never described"
+    },
+    {
+      "code": "AF-AE-WELCOME-DB-UNREADABLE",
+      "exit": 2,
+      "meaning": "the engine state database cannot be opened READ-ONLY, or its schema carries no meta table \u2014 the gate's own control: the write is never trusted into the unknown"
+    },
+    {
+      "code": "AF-AE-WELCOME-DB-MISMATCH",
+      "exit": 5,
+      "meaning": "the live meta schema is not the engine's pinned meta schema, or a foreign value already sits under the card's own key \u2014 never a blind insert, never a blind overwrite, never a fabricated state"
+    },
+    {
+      "code": "AF-AE-WELCOME-INSERT-REFUSED",
+      "exit": 2,
+      "meaning": "the INSERT itself failed under --execute (read-only filesystem, locked database, schema drift) \u2014 a refused write is NEVER reported as inserted (HELD exit 3 per class)"
+    },
+    {
+      "code": "AF-AE-WELCOME-CARDS-PRESENT",
+      "exit": 5,
+      "meaning": "the board census carries card(s) \u2014 the zero-cards attack law is violated; the census that is not empty is REFUSED, never certified clean"
+    },
+    {
+      "code": "AF-AE-WELCOME-MALFORMED",
+      "exit": 5,
+      "meaning": "a malformed census \u2014 a missing 'cards' key, a non-list array, or a credential-shaped string on the census \u2014 the attack fixture is DATA, and a census that cannot be judged is refused, never certified clean"
+    },
+    {
+      "code": "AF-AE-WELCOME-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation) \u2014 a census that should have been REFUSED was not caught HERE first"
+    },
+    {
+      "code": "AF-AE-DBC-NO-DB",
+      "exit": 2,
+      "meaning": "the database file is absent, unreadable, or unopenable \u2014 a missing DB is never 'board cleared', never a no-op pass"
+    },
+    {
+      "code": "AF-AE-DBC-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "the card INSERT was requested without --execute \u2014 the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)"
+    },
+    {
+      "code": "AF-AE-DBC-NO-WELCOME",
+      "exit": 5,
+      "meaning": "no Welcome card exists on the anthology board \u2014 a READ-ONLY report that names exactly the remediation: run with --execute to seed it. Never a pass"
+    },
+    {
+      "code": "AF-AE-DBC-SEED-EXISTS",
+      "exit": 0,
+      "meaning": "the seed was requested with --execute but a Welcome card ALREADY exists on the anthology board \u2014 the 'already welcomed' no-op; the seed is idempotent, it never duplicates and never archives"
+    },
+    {
+      "code": "AF-AE-DBC-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation) \u2014 a tamper never masquerades as exit 1"
+    },
+    {
+      "code": "AF-AE-VRBOARD-NO-DB",
+      "exit": 2,
+      "meaning": "no Command Center database found (--db unset, DATABASE_PATH unset, and no candidate exists). STOP \u2014 a board that cannot be read is never 'board clean'"
+    },
+    {
+      "code": "AF-AE-VRBOARD-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "the VERIFY ACTION was requested without --execute \u2014 the Trevor gate: without it the ACTION is a refusal, never a silent no-op; even WITH it the verifier never writes"
+    },
+    {
+      "code": "AF-AE-VRBOARD-TASKS-MISSING",
+      "exit": 2,
+      "meaning": "the tasks table is absent from the board database. STOP \u2014 never a sweep of nothing, never a blind pass"
+    },
+    {
+      "code": "AF-AE-VRBOARD-DRILLS-LIVE",
+      "exit": 5,
+      "meaning": "one or more live ZZZ/SYNTHETIC drill cards on the open board \u2014 the zero-drill law is violated; the report names the masked ids"
+    },
+    {
+      "code": "AF-AE-VRBOARD-NO-WELCOME",
+      "exit": 5,
+      "meaning": "no byte-exact 'Welcome to Anthology' card is LIVE on the open board \u2014 the report names the remediation (the seed ACTION is the sibling's, Trevor-gated, never re-implemented here)"
+    },
+    {
+      "code": "AF-AE-VRBOARD-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test (enforced violation)"
+    },
+    {
+      "code": "AF-AE-U20ARCHIVE-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "the archive statements were requested without --execute \u2014 the statements run ONLY when the caller passed the gate; WITHOUT --execute a live-status anthology is a STOP that names the code and writes NOTHING"
+    },
+    {
+      "code": "AF-AE-U20ARCHIVE-READBACK-MISMATCH",
+      "exit": 5,
+      "meaning": "the post-archive read-back of the LEDGER target does not match the ledger's archived vocabulary byte-exact \u2014 nothing is ever reported archived without read-back"
+    },
+    {
+      "code": "AF-AE-ARCHSTMT-NO-EXECUTE",
+      "exit": 2,
+      "meaning": "the archive UPDATEs were requested without --execute \u2014 the module NEVER writes without the explicit Trevor-gated execute flag (dry-run plans do not require it)"
+    },
+    {
+      "code": "AF-AE-ARCHSTMT-READBACK",
+      "exit": 5,
+      "meaning": "the post-write read-back did not confirm every pinned card archived (exit 5, MISMATCH) or could not be read (exit 3, HELD \u2014 UNDETERMINED, never a verdict)"
+    },
+    {
+      "code": "AF-AE-TEMPLATE-ATTACK",
+      "exit": 4,
+      "meaning": "an attack fixture tripped the OFFLINE self-test of a family battery (enforced violation \u2014 the house code, shared with the U02 / U03 / U04 / U05 / U06 / U07 / U08_U09 / U10_U13 families)"
+    }
+  ],
+  "authored_by": "U20",
+  "check_modules": [
+    "welcome_builder",
+    "welcome_action",
+    "db_connector",
+    "verify_board",
+    "archive_stmt",
+    "archive_action",
+    "attack_no_cards",
+    "golden_6cards",
+    "docs_u20"
+  ],
+  "checks": {},
+  "contract": "anthology-engine-u20-board-hygiene",
+  "exit_codes": {
+    "0": "verified success \u2014 an idempotent no-op (a card / board state already present, an already-archived row, a zero-cards census), a completed dry-run / plan, or the offline self-test; an EMPTY census is a truthful PASS",
+    "1": "unexpected error (top-level guard; never a secret leak)",
+    "2": "STOP refusal \u2014 usage / a database missing or unreadable (AF-AE-WELCOME-DB-MISSING, AF-AE-DBC-NO-DB, AF-AE-VRBOARD-NO-DB / TASKS-MISSING \u2014 never a write into the unknown, never a guessed path) / a HOW-TO-USE.md unreadable (AF-AE-WELCOME-SOURCE-UNREADABLE \u2014 a card that cannot see its law never fabricates a pass) / an ACTION requested WITHOUT --execute (the Trevor gate, the AF-AE-WELCOME-NO-EXECUTE / AF-AE-DBC-NO-EXECUTE / AF-AE-VRBOARD-NO-EXECUTE / AF-AE-U20ARCHIVE-NO-EXECUTE family \u2014 never a silent no-op and never a silent write) / a genuine write refusal",
+    "3": "HELD \u2014 a retryable database condition (locked / busy) or an unreadable read-back (UNDETERMINED \u2014 never a verdict, never a false success)",
+    "4": "self-test FAILED (the AF-AE-WELCOME-ATTACK / AF-AE-DBC-ATTACK / AF-AE-VRBOARD-ATTACK / AF-AE-ARCHSTMT-ATTACK / AF-AE-TEMPLATE-ATTACK family, enforced violation) \u2014 a tamper never masquerades as exit 1",
+    "5": "mismatch / fail-closed default \u2014 a source drift (a heading renamed, dropped, or reordered), a content-law violation (participant(s) or the Convert and Flow naming absent), a foreign value under the card's own key, a drifted meta schema, a read-back that does not prove the write, a live ZZZ/SYNTHETIC drill card on the open board, a Welcome card absent or not byte-exact, a credential-shaped value on a surface (leak-scan REFUSAL), or a malformed / non-empty census refused by the attack fixture \u2014 never a fabricated pass"
+  },
+  "fail_closed": {
+    "any_fail": false,
+    "note": "the family's live surfaces are the sibling modules' own --execute-gated CLIs (the card seed, the board verify, the archive statements) \u2014 each REFUSES without its own --execute (the Trevor gate); this assembler NEVER invokes them and NEVER writes. The engine's database is READ-ONLY in dry-run: without --execute no module may write it."
+  },
+  "kind": "self-test",
+  "schema_version": 1,
+  "script": "cc_board_hygiene.py",
+  "u20_modules": [
+    {
+      "name": "__init__.py",
+      "role": "fail-closed EMPTY package init (pure namespace)"
+    },
+    {
+      "name": "welcome_builder.py",
+      "role": "the PRODUCER WELCOME CARD BUILDER \u2014 HOW-TO-USE.md becomes the card's body copy by exact section order; the ONE INSERT under 'welcome::producer' runs ONLY under --execute (the Trevor gate); READ-ONLY in every non-execute path; idempotent by construction; READ-BACK LAW"
+    },
+    {
+      "name": "welcome_action.py",
+      "role": "the ANTHOLOGY WELCOME CARD SEEDER \u2014 GET-first idempotent seeding of the client's Command Center Anthology board (the Skill 32 step-3 task shape); the card INSERT runs ONLY under --execute; READ-BACK LAW"
+    },
+    {
+      "name": "db_connector.py",
+      "role": "the FAIL-CLOSED SQLITE3 CONNECTOR over mission-control.db \u2014 the shared DB surface (QUERY-ONLY pragma + IMMEDIATE rollback transaction, always rolled back); the card INSERT runs ONLY under --execute"
+    },
+    {
+      "name": "verify_board.py",
+      "role": "the POST-ACTION BOARD VERIFIER \u2014 the read-back half of the Anthology board hygiene ACTION: zero live ZZZ/SYNTHETIC drill cards AND the byte-exact 'Welcome to Anthology' card present on the open board; READ-ONLY by construction; the VERIFY ACTION requires --execute and even WITH it never writes"
+    },
+    {
+      "name": "archive_stmt.py",
+      "role": "the BOARD ARCHIVE STATEMENT BUILDER \u2014 the UPDATE statements that soft-archive the six pinned debris cards (tasks.archived_at); the statements run ONLY under --execute; idempotent; READ-BACK LAW"
+    },
+    {
+      "name": "archive_action.py",
+      "role": "the ARCHIVE ACTION \u2014 the Trevor-gated producer archive surface for the engine's OWN ledger (anthology_state.py, the SOLE writer) plus the Welcome card content; the statements run ONLY under --execute; READ-BACK LAW"
+    },
+    {
+      "name": "attack_no_cards.py",
+      "role": "the ZERO-CARDS ATTACK FIXTURE \u2014 the empty board census is the clean no-op PASS (nothing to sync, nothing to write); a census that carries cards is REFUSED (AF-AE-WELCOME-CARDS-PRESENT); the fixture is DATA and never writes"
+    },
+    {
+      "name": "golden_6cards.py",
+      "role": "the GOLDEN SIX-CARD census fixture \u2014 the canonical board record (Welcome first, Assembly, four participants under the KEYING LAW) with every status byte-exact and the execute_required truth; its fail-closed judge passes the golden census and refuses any drift"
+    },
+    {
+      "name": "test_archive_stmt.py",
+      "role": "the independent pytest battery over the U20 archive ACTION (provenance only)"
+    },
+    {
+      "name": "docs_u20.py",
+      "role": "the U20 tooling README/catalog data + drift gate (the module inventory as DATA)"
+    }
+  ],
+  "verdict": "PASS",
+  "verified_items": [
+    {
+      "id": "producer_voice",
+      "item": 1,
+      "title": "Producer-voice law \u2014 the Welcome card content derives from HOW-TO-USE.md"
+    },
+    {
+      "id": "read_only_dry_run",
+      "item": 2,
+      "title": "Read-only-dry-run law \u2014 the engine's database is READ-ONLY without --execute"
+    },
+    {
+      "id": "trevor_gate",
+      "item": 3,
+      "title": "Trevor gate \u2014 every ACTION surface requires --execute"
+    },
+    {
+      "id": "idempotency",
+      "item": 4,
+      "title": "Idempotency law \u2014 GET-first, seed only if absent"
+    },
+    {
+      "id": "read_back",
+      "item": 5,
+      "title": "Read-back law \u2014 a write is never trusted without read-back"
+    },
+    {
+      "id": "zero_drill",
+      "item": 6,
+      "title": "Zero-drill law \u2014 the open board carries zero synthetic cards and the Welcome card"
+    },
+    {
+      "id": "zero_cards_attack",
+      "item": 7,
+      "title": "Zero-cards attack law \u2014 the empty census is the golden no-op, never a write"
+    }
+  ]
+}
