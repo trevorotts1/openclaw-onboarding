@@ -97,7 +97,13 @@ class Engine:
     # -- verification -----------------------------------------------------
     def _artifacts_present(self, phase: Phase) -> Tuple[bool, List[str]]:
         missing = []
-        for rel in phase.produces_artifact:
+        # U01-R2 (QC FAIL 6.46): the phase's raw produces_artifact may carry
+        # {deck_slug}/{run_dir} tokens (P8.25-WORKBOOK declares
+        # 'working/deliverables/{deck_slug}-WORKBOOK.pdf + {deck_slug}-WORKBOOK-FILLABLE.pdf').
+        # Resolve EVERY pattern through phase.resolve_artifact_patterns(run_dir) BEFORE
+        # globbing/existence checks -- the literal token path never exists on disk and
+        # previously hard-blocked the phase despite real workbook PDFs being present.
+        for rel in phase.resolve_artifact_patterns(self.run_dir):
             matches = list(self.run_dir.glob(rel)) if any(c in rel for c in "*?[") \
                 else ([self.run_dir / rel] if (self.run_dir / rel).exists() else [])
             if not matches:
@@ -113,7 +119,7 @@ class Engine:
                                         recorded_sha=shas.get(rel))
             if not ok:
                 bad.append(f"{rel}: {why}")
-        if not (ps.get("artifacts") or []) and phase.produces_artifact:
+        if not (ps.get("artifacts") or []) and phase.resolve_artifact_patterns(self.run_dir):
             bad.append("phase recorded status=done with an empty artifact list")
         return bad
 
@@ -171,25 +177,62 @@ class Engine:
                     return self._block(phase, f"regeneration reported success but produced "
                                               f"nothing: missing {', '.join(missing)}")
             shas = {}
-            for rel in phase.produces_artifact:
+            # U01-R2: resolve tokens before globbing -- same rule as _artifacts_present,
+            # so the banked sha256 list covers the RESOLVED files, never the literal
+            # {deck_slug} path.
+            for rel in phase.resolve_artifact_patterns(self.run_dir):
                 for m in self.run_dir.glob(rel) if any(c in rel for c in "*?[") else [self.run_dir / rel]:
                     if m.is_file():
                         shas[str(m.relative_to(self.run_dir))] = sha256_file(m)
             # F4 (warn-mode): substance verifier runs after artifact presence, before done checkpoint.
+            # WORK-ITEM-14 (R3 U03): a FAILING substance verifier no longer records a warning
+            # and advances. It BLOCKS the phase (parked resumable) unless an AUTHENTIC
+            # owner_skip_approval token covers this exact phase.
+            # R3 U03-R2 (QC FAIL 8.00): the ONLY authentic source is the operator-signed
+            # waivers.json ledger (validated against the client's own recorded words by
+            # waivers.validate_waiver — client_request_quote + captured_at + issuer).
+            # A token found in this run's own process_manifest.json is a self-mint and
+            # authorizes nothing; owner_skip_approval_authorizes returns None and appends
+            # an AF-FORGED-APPROVAL reason (naming the missing authenticity field) to the
+            # live verifier_notes list, so the block message carries it.
+            # The credential-dependent allowed_simulated exception stays — it degrades the
+            # verifier to a NOTE pass inside phase_verifiers.verify(), so it never reaches
+            # this branch.
             verifier_ok = None
             verifier_notes = None
+            verifier_skipped = None
             try:
                 import phase_verifiers
                 verifier_ok, verifier_notes = phase_verifiers.verify(phase.id, self.run_dir)
                 if not verifier_ok:
-                    self.report.event("phase.verifier_warn",
-                                      f"{phase.id}: {'; '.join(verifier_notes)}")
+                    # Mechanical gate: a substance FAIL parks the phase unless the owner has
+                    # recorded an authentic skip-approval waiver for this exact phase
+                    # (waivers.json, rule mapped to the phase id).  Rejection reasons are
+                    # appended to verifier_notes in place by the authorizer.
+                    token = phase_verifiers.owner_skip_approval_authorizes(
+                        phase.id, verifier_notes, self.run_dir)
+                    if token is not None:
+                        verifier_skipped = token
+                        self.report.event(
+                            "phase.verifier_skipped",
+                            f"{phase.id}: substance check failed ({'; '.join(verifier_notes)}) "
+                            f"but an owner_skip_approval token ({token.get('gate') or token.get('phase_id')}) "
+                            f"recorded by {token.get('approved_by')} authorizes the skip")
+                    else:
+                        self.report.event("phase.verifier_block",
+                                          f"{phase.id}: {'; '.join(verifier_notes)}")
+                        return self._block(
+                            phase,
+                            f"substance check failed: {'; '.join(verifier_notes)}. "
+                            "An owner_skip_approval token for this phase is required to "
+                            "advance it to done.")
             except ImportError:
                 self.report.event("warn", f"{phase.id}: phase_verifiers not importable, "
                                           "substance check skipped")
             self._checkpoint(phase.id, status="done", attested_at=utcnow(), sha256=shas,
                              artifacts=sorted(shas.keys()),
-                             verifier_ok=verifier_ok, verifier_notes=verifier_notes)
+                             verifier_ok=verifier_ok, verifier_notes=verifier_notes,
+                             owner_skip_approval=verifier_skipped)
             done_msg = (phase.client_report.get("done_template") or f"{phase.id} complete")
             self.report.to_requester("progress", done_msg)
             if self.board:
@@ -222,8 +265,18 @@ class Engine:
                 f"({exc}). Fix the manifest; this is not sanitised for you."
             ) from exc
         run_dir_str = str(self.run_dir)
-        return [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
-                for tok in argv]
+        tokens = [run_dir_str if tok == "{run_dir}" else tok.replace("{run_dir}", run_dir_str)
+                  for tok in argv]
+        # D2 (canary DEFECT D2): resolve relative scripts/xxxx.py paths against
+        # the actual scripts directory (parent of the presentation_job package).
+        # Without this, subprocess.run(cwd=run_dir) interprets "scripts/pdf_export.py"
+        # relative to /tmp/canary-spaulding-.../ where no scripts/ subdirectory exists,
+        # causing "can't open file" and a hard BLOCKED after 3 retries.
+        scripts_dir = Path(__file__).resolve().parent.parent
+        return [str(scripts_dir / tok[len('scripts/'):])
+                if tok.startswith('scripts/') and not tok.startswith('/')
+                else tok
+                for tok in tokens]
 
     def _run_script_phase(self, phase: Phase) -> int:
         # U069: tokenise FIRST, substitute SECOND -- via the single shared helper.
@@ -240,7 +293,10 @@ class Engine:
         self._checkpoint(phase.id, pending_cmd=' '.join(argv), pending_started_at=utcnow(),
                          pre_run_artifacts=sorted(
                              str(m.relative_to(self.run_dir))
-                             for rel in phase.produces_artifact
+                             # U01-R2: resolve {deck_slug}/{run_dir} tokens before the scan
+                             # so pre_run_artifacts reflects the real files, not the literal
+                             # token path (QC FAIL 6.46).
+                             for rel in phase.resolve_artifact_patterns(self.run_dir)
                              for m in (self.run_dir.glob(rel) if any(c in rel for c in "*?[")
                                        else ([self.run_dir / rel] if (self.run_dir / rel).exists() else []))
                              if m.is_file()))

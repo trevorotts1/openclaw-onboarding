@@ -1018,18 +1018,97 @@ def load_api_key() -> str:
 PROMPT_FILE_PATTERNS = (
     "working/prompts/slide-{nn:02d}.txt",
     "working/prompts/slide-{nn:02d}-prompt.txt",
+    # R3 / D10: signature decks have a 100-slide FLOOR, so a 3-digit ordinal is
+    # canonical (slide-100.txt .. slide-999.txt). The %02d family above cannot
+    # express it, so the canonical name set extends with an explicit %03d family.
+    # Ordering keeps %02d first, so the zero-padded twin is always preferred when
+    # both spellings exist for the SAME slide (see _canonical_prompt_dir_problems).
+    "working/prompts/slide-{nn:03d}.txt",
+    "working/prompts/slide-{nn:03d}-prompt.txt",
 )
 
 
 def resolve_prompt_path(run_dir: Path, ordinal: int) -> Optional[Path]:
     """Return the rich-prompt file Path for this slide ordinal, or None if no
     candidate file exists. Tries both the slide-NN.txt and slide-NN-prompt.txt
-    naming conventions under working/prompts/."""
+    naming conventions under working/prompts/ — and, for ordinals >= 100
+    (signature decks have a 100-slide floor), the 3-digit slide-NNN.txt /
+    slide-NNN-prompt.txt names (R3 / D10)."""
     for pat in PROMPT_FILE_PATTERNS:
         p = run_dir / pat.format(nn=ordinal)
         if p.exists() and p.is_file():
             return p
     return None
+
+
+# R3 / D10: signature decks have a 100-slide floor, so a 3-digit ordinal is
+# canonical too. The shared prompt_gate (scan_prompt_dir / prompt_dir_problems,
+# FIX-22 / D16) still treats ONLY the %02d family as canonical and flags
+# slide-100.txt as non-canonical — but every build_deck consumer consults the
+# gate ONLY through _canonical_prompt_dir_problems below, which runs the shared
+# scan and overlays the R3 3-digit-canonical rule on top of its verdict. The
+# shared module itself is deliberately NOT changed (its %02d-only contract
+# predates the signature-deck floor and other consumers depend on it); the
+# build_deck-side fix keeps THIS file's canonical name set (PROMPT_FILE_PATTERNS,
+# which already carries the 3-digit family) and the gate verdicts it consumes in
+# agreement.
+# NOTE on why the duplicate verdict passes through UNCHANGED: Python's minimum-
+# width padding never truncates — `{nn:02d}` for nn=100 formats as "100" — so
+# for ordinals 100+ the %02d and %03d families are the SAME spelling, and for
+# ordinals 1-99 the %03d spelling (slide-001.txt) targets the same slide as the
+# %02d twin (slide-01.txt). A collision is therefore ALWAYS between names that
+# resolve to the same ordinal (slide-01 vs slide-1, slide-100 vs slide-0100,
+# slide-01 vs slide-001) and R3 never makes a same-ordinal collision benign —
+# exactly one canonical file per slide stays the rule at any digit width.
+CANONICAL_PROMPT_DIGITS_R3_RE = re.compile(r"^\d{2,3}$")
+
+
+def _prompt_ordinal_field(name: str) -> str:
+    """Extract the raw ordinal FIELD (the digits) from a slide-NN.txt or
+    slide-NN-prompt.txt prompt filename. Mirrors prompt_gate.scan_prompt_dir's
+    digit_part extraction exactly (its idiom), so the R3 re-judgement and the
+    shared scan always agree on what 'the digits' means."""
+    return name[len("slide-"):].split("-")[0].split(".")[0]
+
+
+def _canonical_prompt_dir_problems(run_dir: Path) -> list:
+    """Directory-level prompt problems (duplicates / non-canonical names) as the
+    build_deck gates consume them. Runs the shared prompt_gate detector (FIX-22 /
+    D16), then reconciles the R3 3-digit-canonical overlay on its verdicts:
+      * AF-PROMPT-DUP-FILE verdicts pass through unchanged — see the NOTE above;
+      * AF-PROMPT-NAME is relaxed: a name whose ordinal FIELD is exactly 2 or 3
+        digits is canonical (slide-01..slide-99, slide-100..slide-999, plus the
+        -prompt variants); a 1-digit (`slide-1.txt`) or 4+ digit (`slide-0100.txt`,
+        `slide-1000.txt`) name stays non-canonical (D16).
+    Every consumed gate (preflight rich-prompt _chk_rich_prompts, Prompt-QC
+    teeth check_prompt_qc_teeth) routes through _collect_prompt_problems, the
+    single choke point that calls this, so the two sides can never disagree.
+    Returns [] when the directory is clean, else the fatal problem strings."""
+    pg = _import_prompt_gate()
+    if pg is None:
+        return []
+    base_problems = pg.prompt_dir_problems(run_dir / "working" / "prompts")
+    if not base_problems:
+        return []
+    rep = pg.scan_prompt_dir(run_dir / "working" / "prompts")
+    problems = []
+    for prob in base_problems:
+        if prob.startswith("AF-PROMPT-DUP-FILE"):
+            problems.append(prob)
+        elif prob.startswith("AF-PROMPT-NAME"):
+            # Re-judge every name this message names: keep the verdict ONLY when
+            # at least one of them still has a non-canonical field (1-digit or
+            # 4+ digits). A message whose only offender is now-canonical (e.g.
+            # slide-100.txt) is dropped. The '.txt' tail makes the substring
+            # check unambiguous (slide-100.txt is never a substring of a
+            # slide-1000.txt message).
+            flagged = [n for n in rep.get("non_canonical", []) if n in prob]
+            if any(not CANONICAL_PROMPT_DIGITS_R3_RE.match(_prompt_ordinal_field(n))
+                   for n in flagged):
+                problems.append(prob)
+        else:
+            problems.append(prob)
+    return problems
 
 
 def _norm_ws(s: str) -> str:
@@ -4011,15 +4090,18 @@ def _collect_prompt_problems(run_dir: Path, slides_path: Optional[Path] = None) 
         return [(0, "cannot determine the slide count (no slides.json / "
                     "arc_allocation.json), so the per-slide rich prompts cannot be "
                     "verified. Produce slides.json before render.")]
-    # FIX-22 / D16: BEFORE trusting any per-slide prompt, run the canonical
-    # zero-padded + duplicate-detector over the whole prompts dir. A `slide-1.txt`
-    # vs `slide-01.txt` collision (both target slide 1) or ANY non-%02d prompt
-    # filename is a build-blocking defect — the preflight rich-prompt gate AND the
-    # governed Prompt-QC teeth both route through here, so it is caught at exit 3
-    # before any KIE dispatch, never mid-render.
+    # FIX-22 / D16 + R3 / D10: BEFORE trusting any per-slide prompt, run the
+    # canonical zero-padded + duplicate-detector over the whole prompts dir. A
+    # `slide-1.txt` vs `slide-01.txt` collision (both target slide 1) or ANY
+    # non-canonical prompt filename is a build-blocking defect — the preflight
+    # rich-prompt gate AND the governed Prompt-QC teeth both route through here,
+    # so it is caught at exit 3 before any KIE dispatch, never mid-render. The
+    # shared detector's verdicts go through _canonical_prompt_dir_problems, which
+    # overlays the R3 3-digit-canonical rule (signature-deck 100-slide floor) so
+    # slide-100.txt is accepted while slide-1.txt / slide-1000.txt still fail.
     _pg22 = _import_prompt_gate()
     if _pg22 is not None:
-        dir_problems = _pg22.prompt_dir_problems(run_dir / "working" / "prompts")
+        dir_problems = _canonical_prompt_dir_problems(run_dir)
         if dir_problems:
             # Fatal directory-level defect, reported at the sentinel ordinal -1 so
             # callers can tell it apart from the "slide count unknown" sentinel (0).
