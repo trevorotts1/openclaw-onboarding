@@ -36,6 +36,9 @@ tmp/
 # backup files from automated fixes
 *.bak*
 
+# 59-anthology-engine pre-fix snapshot dirs from automated fixes — never ship
+59-anthology-engine/.backup-pre-*/
+
 # NOTE (v14.10.0): the Skill-6 funnel-matcher catalog index is now COMMITTED. It is
 # written PORTABLY (relative root/sourcePath, no system-specific absolute path), so the
 # old ignore of 06-ghl-install-pages/tools/catalog-index.json was removed. Rebuild with:
