@@ -6,8 +6,12 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 LOG="${1:-${LOG:-/dev/null}}"
 
-# Default run root; overridable via environment (launchd EnvironmentVariables).
-SCAN_ROOT="${SCAN_ROOT:-/Users/blackceomacmini/.openclaw/workspace/departments/Presentations/runs}"
+# Default run root; overridable via environment (launchd EnvironmentVariables,
+# see presentation-watchdog.plist.template -- the plist always passes SCAN_ROOT,
+# and a deployed box installs this script from the same template, so the
+# placeholder below is never the value a live run uses; the repo bans operator
+# paths from committed files). Install must substitute the real run root.
+SCAN_ROOT="${SCAN_ROOT:-<SCAN_ROOT>}"
 
 # Main watchdog pass. Warn mode by default (no --enforce): scans for stalled
 # jobs and reports. Exit status is load-bearing -- set -e semantics preserved.
