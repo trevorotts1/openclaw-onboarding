@@ -399,13 +399,26 @@ correct, not so you can execute it yourself.
 - The variable lives in that service's `.plist` (commonly `~/Library/LaunchAgents/<label>.plist` for
   a per-user agent, or `/Library/LaunchDaemons/<label>.plist` if it was installed to run at boot for
   all users), inside the `<key>EnvironmentVariables</key>` dict.
-- Add or edit the `WEBHOOK_URL` key there, then restart so the change is picked up:
+- Add or edit the `WEBHOOK_URL` key there, then **reload the plist** so the change is picked up:
   ```bash
-  launchctl kickstart -k gui/$(id -u)/<label>          # per-user LaunchAgent
-  # or, if kickstart isn't available for this plist:
-  launchctl unload ~/Library/LaunchAgents/<label>.plist
-  launchctl load ~/Library/LaunchAgents/<label>.plist
+  # bootout + bootstrap — this is the ONLY thing that re-reads the edited plist
+  launchctl bootout   gui/$(id -u)/<label> 2>/dev/null || true
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/<label>.plist
   ```
+
+  > ⛔ **`launchctl kickstart -k` does NOT reload a plist.** It kills and respawns the
+  > process from the job definition launchd **already holds in memory** from the last
+  > `bootstrap`/`load`; it never re-reads the file on disk. Edit the plist, run
+  > `kickstart -k`, and the service comes back with the **old** `EnvironmentVariables` —
+  > the un-edited `WEBHOOK_URL` — while looking like it restarted cleanly. That is a
+  > silent no-op, and it is indistinguishable from a successful change unless you go
+  > and read the running process's environment.
+  >
+  > `kickstart -k` is the correct tool for the *other* job: restarting a service so it
+  > re-reads a **separate config or env file** (`openclaw.json`, a secrets `.env`) that
+  > the program itself opens at startup. Use it there; never after editing the plist.
+  > `unload`/`load` is the older spelling of `bootout`/`bootstrap` and also works — it
+  > is not a fallback "if kickstart isn't available", it is the actual mechanism.
 
 **Branch 2 — VPS / Hostinger Docker, the service is a SEPARATE Docker Compose service (the common case
 when you, the client agent, are running INSIDE the OpenClaw container). Detect this first:**
